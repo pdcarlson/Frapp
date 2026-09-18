@@ -77,3 +77,144 @@
     }
   }
 }
+
+/*
+ * ── Motion ───────────────────────────────────────────────────────────────────
+ *
+ * The Motion sheet's spec (`spec/ui/landing/reference/canvas/Motion.dc.html`),
+ * minus its signature moment. D4 took that sheet whole, and it asked for two
+ * things before the crest could wipe in: a fourth motion class written into
+ * `spec/ui/design-system/README.md` §7 and `foundations.md` §11, and brand
+ * sign-off that a reveal mask and a backing light behind the crest are page
+ * treatment rather than mark design under `brand-identity.md` §2. The sign-off
+ * is the owner's alone and is not cleared, so **the crest pieces are cut, not
+ * trimmed** — the sheet's own instruction, because a 300ms wipe is a different
+ * gesture, not a smaller one. The closing crest paints whole, from frame one,
+ * on every branch. No fourth class is claimed here and neither doc is amended:
+ * everything below sits inside the existing three-class taxonomy, under the
+ * 300ms context-shift ceiling README §7 already sets for section entrances.
+ * Restoring the signature moment is #2378, and it lands with the amendment.
+ *
+ * The durations and easings are the legacy `@repo/theme` motion scale carried
+ * forward (foundations §11: the discipline is settled, the numbers are
+ * provisional). They are restated as custom properties here only because that
+ * scale has no CSS form — `packages/theme/src/tokens.ts` is JavaScript, the
+ * Tailwind preset interpolates it at build time, and `signet.css` declares no
+ * motion token at all. This is a mirror, not a second scale: `app/page.spec.ts`
+ * reads both files and fails if a number here stops matching `tokens.ts`.
+ */
+@layer base {
+  :root {
+    --motion-micro: 140ms;
+    --motion-standard: 220ms;
+    --motion-context: 300ms;
+
+    --motion-ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+    --motion-ease-entrance: cubic-bezier(0.22, 1, 0.36, 1);
+
+    /* Delay between siblings in a once-only reveal. The thread's rows sit
+     * closer together than the section cards do, so they run at their own
+     * step; both are the Motion sheet's (§5, stagger.step / stagger.thread). */
+    --reveal-step: 60ms;
+    --reveal-thread-step: 80ms;
+  }
+}
+
+@layer components {
+  /*
+   * Chrome answers the hand: colour and border only, never scale, translate or
+   * shadow. The focus ring fades at the micro duration; everything else moves
+   * at the standard one. Under reduced motion the transition collapses to 1ms
+   * rather than to `none`, so the state change still lands — a focus ring that
+   * appears is an accessibility affordance, not decoration.
+   */
+  .chrome-motion {
+    transition-property: color, background-color, border-color, outline-color,
+      text-decoration-color;
+    transition-duration: var(--motion-standard);
+    transition-timing-function: var(--motion-ease-standard);
+  }
+
+  .chrome-motion:focus-visible {
+    transition-duration: var(--motion-micro);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chrome-motion,
+    .chrome-motion:focus-visible {
+      transition-duration: 1ms;
+    }
+  }
+
+  /*
+   * Reveal on view, once.
+   *
+   * The base state IS the finished state. `components/reveal-on-view.tsx` adds
+   * `reveal-armed` at mount and `is-in` when the block first intersects, so
+   * with no JavaScript, with no IntersectionObserver, or under reduced motion
+   * neither class is ever added and the block is simply drawn. Nothing here
+   * hides content that something else has to un-hide.
+   *
+   * Arming after paint cannot flash, because a reveal is only ever placed on a
+   * block below the fold: by the time hydration runs, the block has not been
+   * painted. A block already on screen intersects immediately and plays at once.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal-armed .reveal-item {
+      opacity: 0;
+    }
+
+    .reveal-armed .reveal-rule {
+      transform: scaleX(0);
+    }
+
+    .reveal-armed.is-in .reveal-item {
+      animation: landing-reveal-rise var(--motion-context)
+        var(--motion-ease-entrance) both;
+      animation-delay: calc(var(--i, 0) * var(--reveal-step));
+    }
+
+    .reveal-armed.is-in .reveal-rule {
+      animation: landing-rule-draw var(--motion-context)
+        var(--motion-ease-standard) both;
+    }
+  }
+
+  /* The hairline draws from the left, so the rule and the cards it separates
+   * arrive together rather than the line snapping in ahead of them. */
+  .reveal-rule {
+    transform-origin: left center;
+  }
+
+  /* Thread rows rise a shorter distance at a wider step than section cards:
+   * four bubbles arriving 60ms apart at 8px reads as a list re-flowing, not as
+   * a conversation. Nothing inside the frame changes state — no count ticks,
+   * no typing dots, no reaction pops. */
+  .reveal-thread {
+    --reveal-step: var(--reveal-thread-step);
+  }
+
+  .reveal-thread .reveal-item {
+    --reveal-rise: 6px;
+  }
+}
+
+@keyframes landing-reveal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--reveal-rise, 8px));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes landing-rule-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}

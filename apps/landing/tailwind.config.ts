@@ -9,9 +9,12 @@ import sharedConfig, { colorVar } from "@repo/theme/tailwind";
  * binds nothing that its stylesheet does not define and a preset key reading an
  * undefined token is #1145's silent no-color failure. Both surfaces now ship
  * `packages/theme/src/signet.css`, so the two configs OVERLAP heavily — and it
- * is only an overlap, not an identity. `apps/web` alone carries the `mention`
- * and `gold` families; this config alone carries `hero`, `display-lg` and
- * `lead`. Only the common subset is a candidate for the shared preset (#2371);
+ * is only an overlap, not an identity. `apps/web` alone carries the `gold`
+ * family; this config alone carries `hero`, `display-lg` and `lead`. The
+ * `mention` family is now on both, because the rebuilt page's chat frame draws
+ * the unread DM badge and the in-bubble mention chip (#2367); it moved from the
+ * web-only list into the common subset rather than being duplicated by accident.
+ * Only the common subset is a candidate for the shared preset (#2371);
  * the surface-specific keys stay where they are, deliberately, and promoting
  * them would be the defect that issue exists to avoid. Collapsing even the
  * common subset stays a `@repo/theme` refactor rather than landing work: it
@@ -57,6 +60,20 @@ const config: Config = {
         },
         "destructive-text": colorVar("--destructive-text"),
         "info-text": colorVar("--info-text"),
+        /*
+         * "You were addressed". Bound exactly as `apps/web` binds it, and both
+         * halves are needed: `mention` / `mention-foreground` is the unread DM
+         * badge in the chat frame's rail, and `chip` / `chip-text` is the
+         * in-bubble treatment, which is deliberately NOT the mention red
+         * (foundations §5 — red as text inside a bubble is the case that pair
+         * exists for). All four are CSS-only tokens in `signet.css`.
+         */
+        mention: {
+          DEFAULT: colorVar("--mention"),
+          foreground: colorVar("--mention-foreground"),
+          chip: colorVar("--mention-chip"),
+          "chip-text": colorVar("--mention-chip-text"),
+        },
       },
       /*
        * The six locked roles (foundations.md §7) plus the three marketing roles
