@@ -5,12 +5,20 @@
 // switch a title to single quotes the first lock used to miss, or add a
 // third metadata site the hardcoded paths would miss. USPTO stay on
 // 1901. Leave store-name uniqueness on 1829. Landing visual tokens
-// (Geist, bone/bronze) stay frozen until the visual reskin.
+// (Geist, bone/bronze) stay legacy until the token cutover (#2366).
 //
 // SCOPE. Landing metadata titles, JSON-LD SoftwareApplication / brand
-// names, the lockup aria-label, and the spec visual-freeze banner. Do
-// not restyle Geist/bone tokens here. Do not walk apps/web (those
-// titles are already Signet).
+// names, the lockup aria-label, and the spec's status banner. Do not
+// restyle Geist/bone tokens here. Do not walk apps/web (those titles
+// are already Signet).
+//
+// THE STATUS BANNER TRACKS THE RESKIN, SO IT MOVES. It asserted the
+// visual-freeze banner until #2365 lifted that freeze; it now asserts
+// the reskin-in-progress banner. This is the guard working, not an
+// obstacle: the landing spec must always announce its own status at the
+// top, so a slice that changes the status has to come here and say so
+// rather than letting the doc go quiet. The epic (#2364) retires the
+// banner with its last slice, and that slice updates this lock.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -126,8 +134,8 @@ export function chromeSurfaceProblems({ lockup, spec }) {
   if (/aria-label=["']Frapp["']/.test(lockup)) {
     problems.push("lockup aria-label must not be Frapp");
   }
-  if (!/> \*\*VISUAL FREEZE \(bone\/bronze\/Geist\)\.\*\*/.test(spec)) {
-    problems.push("spec must keep the visual-freeze banner");
+  if (!/> \*\*RESKIN IN PROGRESS\*\*/.test(spec)) {
+    problems.push("spec must keep the reskin-in-progress banner");
   }
   return problems;
 }
@@ -175,7 +183,7 @@ test("JSON-LD application and brand names stay Signet", () => {
   assert.deepEqual(jsonLdProblems(readRepo(HOME)), []);
 });
 
-test("lockup aria-label is Signet and spec keeps the visual-freeze banner", () => {
+test("lockup aria-label is Signet and spec keeps its status banner", () => {
   assert.deepEqual(
     chromeSurfaceProblems({
       lockup: readRepo(LOCKUP),
@@ -257,16 +265,16 @@ test("dropping the lockup aria-label fails", () => {
   );
 });
 
-test("dropping the visual-freeze banner fails", () => {
+test("dropping the status banner fails", () => {
   const problems = chromeSurfaceProblems({
     lockup: readRepo(LOCKUP),
     spec: readRepo(SPEC).replace(
-      "> **VISUAL FREEZE (bone/bronze/Geist).**",
-      "> **UNFROZEN (Signet).**",
+      "> **RESKIN IN PROGRESS**",
+      "> **DONE (Signet).**",
     ),
   });
   assert.ok(
-    problems.some((problem) => problem.includes("visual-freeze banner")),
+    problems.some((problem) => problem.includes("reskin-in-progress banner")),
     problems.join("; "),
   );
 });
