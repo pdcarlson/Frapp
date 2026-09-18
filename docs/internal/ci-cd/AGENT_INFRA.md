@@ -277,6 +277,53 @@ agent triages red checks infra-vs-code exactly as for a human-authored PR. Commi
 `chore(deps): …` / `chore(deps-dev): …`; PRs are labelled `area:deps` and carry no release label, so
 they take the default `release:patch` bump.
 
+### A grouped bump of a peer-depended package can land a second copy, not an upgrade
+
+Dependabot [#2369](https://github.com/pdcarlson/Frapp/pull/2369) moved `apps/api` from
+`@nestjs/*@^11.2.1` to `^11.2.4` and reddened five jobs at once — `lint-and-typecheck`,
+`clean-checkout-typecheck`, `api-contract-check`, `api-tests` and `api-docker-build` — on type
+errors naming the *same* type on both sides (`Argument of type 'INestApplication<any>' is not
+assignable to parameter of type 'INestApplication<any>'`): one import path under
+`apps/api/node_modules/@nestjs/common`, the other under the root `node_modules/@nestjs/common`.
+When nothing in a Dependabot diff but `package-lock.json` explains a wall of red, that is the shape
+to recognise.
+
+It is the duplicate-hoisted-copy trap of
+[`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md#why-the-pin-bump-alone-was-not-enough) — its
+§ *Prevention* rule "Check for a duplicate hoisted copy afterward", and the `next`/`geist` case
+under § *Why the pin bump alone was not enough* — arriving through the Dependabot lane instead of an
+advisory sweep. Six packages outside the bumped set peer-depend on the root `@nestjs/common` node
+(`@nestjs/config`, `@nestjs/swagger`, `@nestjs/schedule`, `@sentry/nestjs`, …) on ranges as loose as
+`^11.0.0`, so when the only *direct* dependant moves, the old node still satisfies every one of
+them: npm keeps it, re-marked `"peer": true`, and nests the new version under
+`apps/api/node_modules/` instead. TypeScript is structural, so two copies are not incompatible by
+themselves — what breaks is the declarations inside them that structural typing cannot relate.
+`VersionValue` is `string | typeof VERSION_NEUTRAL | Array<…>` and `VERSION_NEUTRAL` is declared
+`unique symbol`, so two copies declare two distinct symbol types. That is where *this* error bottoms
+out — `Type 'unique symbol' is not assignable to type 'VersionValue | undefined'` — and it is what
+`tsc` names first on the way back up through `VersioningOptions` to the `INestApplication` mismatch
+the jobs report. Do not read it as the only break: `tsc` stops at the first incompatible property,
+and neutralising that symbol in both copies leaves the two `INestApplication` types unrelated
+anyway, through the generic `on` signature reached via `connectMicroservice` (checked by compiling
+two copies against each other, 2026-09-18). This is npm's tree builder, not Dependabot — a plain
+`npm install --package-lock-only` on the same manifest change reproduces the nesting exactly
+(2026-09-18, npm 11.19.1).
+
+**Read the remedy in that document, not here**, `npm update <pkg>`-before-entry-deletion order
+included. What this lane adds to that record is that for a *grouped* bump the cheaper lever is
+enough, provided the siblings move together: with all four `apps/api` ranges at `^11.2.5`,
+`npm update @nestjs/common @nestjs/core @nestjs/platform-express @nestjs/testing
+--package-lock-only` off `origin/main` resolved one hoisted 11.2.5 apiece and no nested copy —
+byte-identical to deleting those four lockfile entries by hand and re-resolving (2026-09-18,
+Node 24.20.0 / npm 11.19.0). Mind the versions there: the fix shipped **11.2.5**, one patch past
+what #2369 proposed, because that release landed while the PR sat red.
+
+`npm dedupe` is not a lever for this — neither it nor a root `overrides` entry moves an existing
+peer resolution, as that same record states. In this repo it never gets that far anyway: it
+re-resolves the whole tree and exits `ERESOLVE` on the `openapi-typescript` peer conflict under
+[TypeScript 7 is native `tsc` plus a TypeScript 6 compiler
+API](#typescript-7-is-native-tsc-plus-a-typescript-6-compiler-api) below.
+
 ### The ignore list is a runtime constraint, not a preference
 
 `react`, `react-dom`, `react-test-renderer`, the `react-native*` family and the Expo client packages
