@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#131211;color:#EDEAE3;font-family:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#E7C86B;text-decoration:none}a:hover{text-decoration:underline;text-underline-offset:3px}
+/* ── Demo 1: the signature moment, looped every 6s so it can be watched. On the page it plays once. ── */
+.m-col{position:relative;overflow:clip}
+.m-col::before{content:"";position:absolute;left:0;top:0;width:1px;height:100%;background:rgba(255,255,255,.08)}
+.m-stage{position:relative;width:300px;height:300px;flex:none}
+.m-light{position:absolute;left:50%;top:38%;width:200%;height:165%;transform:translate(-50%,-50%);pointer-events:none;background:radial-gradient(50% 50% at 50% 50%,rgba(221,184,68,.06) 0%,rgba(221,184,68,.026) 44%,rgba(221,184,68,0) 72%)}
+.m-mark{position:relative;display:block;width:100%;height:100%}
+.m-crest{display:block;width:100%;height:100%}
+@keyframes m-wipe{0%,1%{-webkit-mask-position:100% 0%;mask-position:100% 0%;animation-timing-function:cubic-bezier(.45,.05,.15,1)}9.67%,100%{-webkit-mask-position:0% 100%;mask-position:0% 100%}}
+@keyframes m-settle{0%{transform:translate3d(0,10px,0) scale(.972);animation-timing-function:cubic-bezier(.22,1,.36,1)}10.67%,100%{transform:none}}
+@keyframes m-bloom{0%,1%{opacity:0;animation-timing-function:cubic-bezier(.45,0,.55,1)}12%,100%{opacity:1}}
+@keyframes m-rule{0%,2%{transform:scaleY(0);animation-timing-function:cubic-bezier(.16,1,.3,1)}7%,100%{transform:scaleY(1)}}
+@media (prefers-reduced-motion:no-preference){
+  .m-mark{animation:m-settle 6s infinite}
+  .m-light{animation:m-bloom 6s infinite}
+  .m-col::before{transform-origin:top;animation:m-rule 6s infinite}
+  @supports ((mask-image:linear-gradient(#000,#000)) or (-webkit-mask-image:linear-gradient(#000,#000))){
+    .m-crest{--wipe:linear-gradient(35deg,#000 0 42%,rgba(0,0,0,.45) 53%,transparent 64%);-webkit-mask-image:var(--wipe);mask-image:var(--wipe);-webkit-mask-size:260% 260%;mask-size:260% 260%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:m-wipe 6s infinite}
+  }
+}
+/* ── Demo 2: reveal on view, once. Looped every 5s here. ── */
+.r-strip{position:relative}
+.r-strip::before{content:"";position:absolute;left:0;top:0;width:100%;height:1px;background:rgba(255,255,255,.08);transform-origin:left center}
+@keyframes r-draw{0%{transform:scaleX(0);animation-timing-function:cubic-bezier(.16,1,.3,1)}6%,100%{transform:scaleX(1)}}
+@keyframes r-card0{0%,2.4%{opacity:0;translate:0 8px;animation-timing-function:cubic-bezier(.22,1,.36,1)}8.4%,100%{opacity:1;translate:0 0}}
+@keyframes r-card1{0%,3.6%{opacity:0;translate:0 8px;animation-timing-function:cubic-bezier(.22,1,.36,1)}9.6%,100%{opacity:1;translate:0 0}}
+@keyframes r-card2{0%,4.8%{opacity:0;translate:0 8px;animation-timing-function:cubic-bezier(.22,1,.36,1)}10.8%,100%{opacity:1;translate:0 0}}
+@keyframes t-msg0{0%{opacity:0;translate:0 6px;animation-timing-function:cubic-bezier(.22,1,.36,1)}6%,100%{opacity:1;translate:0 0}}
+@keyframes t-msg1{0%,1.6%{opacity:0;translate:0 6px;animation-timing-function:cubic-bezier(.22,1,.36,1)}7.6%,100%{opacity:1;translate:0 0}}
+@keyframes t-msg2{0%,3.2%{opacity:0;translate:0 6px;animation-timing-function:cubic-bezier(.22,1,.36,1)}9.2%,100%{opacity:1;translate:0 0}}
+@keyframes t-msg3{0%,4.8%{opacity:0;translate:0 6px;animation-timing-function:cubic-bezier(.22,1,.36,1)}10.8%,100%{opacity:1;translate:0 0}}
+@media (prefers-reduced-motion:no-preference){
+  .r-strip::before{animation:r-draw 5s infinite}
+  .r-card0{animation:r-card0 5s infinite}.r-card1{animation:r-card1 5s infinite}.r-card2{animation:r-card2 5s infinite}
+  .t-msg0{animation:t-msg0 5s infinite}.t-msg1{animation:t-msg1 5s infinite}.t-msg2{animation:t-msg2 5s infinite}.t-msg3{animation:t-msg3 5s infinite}
+}
+/* ── Demo 3: hover and focus on chrome. Real :hover here. ── */
+.cta{height:48px;padding:0 24px;border-radius:12px;background:#DDB844;color:#292109;font-size:16px;font-weight:700;display:inline-flex;align-items:center;box-sizing:border-box;border:1px solid transparent;outline:3px solid transparent;outline-offset:0;transition:background-color 220ms cubic-bezier(.16,1,.3,1),border-color 220ms cubic-bezier(.16,1,.3,1),outline-color 140ms cubic-bezier(.16,1,.3,1)}
+.cta:hover,.cta.is-hover{background:#D2AD37;text-decoration:none}
+.cta:focus-visible,.cta.is-focus{outline-color:rgba(221,184,68,.25);border-color:#DDB844}
+.quiet{font-size:14px;line-height:44px;font-weight:600;color:#A9A399;transition:color 220ms cubic-bezier(.16,1,.3,1)}
+.quiet:hover,.quiet.is-hover{color:#EDEAE3;text-decoration:none}
+.plan{border-radius:16px;background:#211E1A;border:1px solid #5F522C;padding:20px;box-sizing:border-box;display:flex;flex-direction:column;gap:12px;position:relative;overflow:hidden;transition:border-color 220ms cubic-bezier(.16,1,.3,1),background-color 220ms cubic-bezier(.16,1,.3,1)}
+.plan:hover,.plan:focus-within,.plan.is-hover{border-color:#DDB844;background:#2A2621}
+@media (prefers-reduced-motion:reduce){.cta,.quiet,.plan{transition-duration:1ms}}
+</style>
+</helmet>
+<div style="width:1440px;height:2000px;box-sizing:border-box;padding:64px 80px;display:flex;flex-direction:column;gap:40px;background:#131211;color:#EDEAE3;overflow:hidden;font-family:'Figtree',system-ui,sans-serif">
+
+<div style="display:flex;flex-direction:column;gap:12px;border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:24px">
+  <p style="margin:0;font-size:14px;line-height:18px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#E7C86B">Motion sheet</p>
+  <h1 style="margin:0;font-size:32px;line-height:37px;font-weight:700;letter-spacing:-.02em">First light, warm room</h1>
+  <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399;max-width:960px">One signature moment on the crest, a warm field that rises with it and holds, hairlines that draw themselves in as you arrive, and chrome that answers the hand. Nothing loops on the page. Nothing moves the H1, the lead or the primary CTA. The demos below loop only so they can be watched.</p>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(12, minmax(0, 1fr));column-gap:24px;align-items:start">
+  <div style="grid-column:1 / span 5;display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">1 · The signature moment</h2>
+    <div class="m-col" style="height:400px;padding:0 0 0 40px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;border-radius:0 16px 16px 0">
+      <div class="m-stage" style="align-self:center">
+        <span class="m-light" aria-hidden="true"></span>
+        <span class="m-mark"><svg class="m-crest" viewBox="0 0 1024 1024" aria-hidden="true"><path fill="#DDB844" d="M188.98 592.26C188.6 595.81 190.31 599.31 191.21 602.67 C192.59 607.82 193.92 612.93 195.64 617.99C201.79 636.11 209.25 654 218.22 670.92 C267.26 763.42 350.53 832.37 437.81 887.43C454.9 898.21 472.03 908.94 489.15 919.67 C494.21 922.84 499.31 925.92 504.43 928.99C506.9 930.47 509.97 933.16 513 932.89 C516.21 931.55 518.79 927.14 520.96 924.49C526.22 918.09 531.25 911.52 535.94 904.69 C550.88 882.9 563.79 859.35 572.88 834.49C592.01 782.13 597.69 723.86 581.4 669.85 C572.94 641.79 559.85 615.7 543.19 591.62C514.52 550.21 473.55 519.59 443.03 479.74 C418.94 448.28 403.41 410.82 398.95 371.41C397.67 360.06 396.7 348.99 396.67 337.54 C396.65 333.35 395.65 327.04 397.64 323.23C398.61 322.65 402.87 333.99 403.56 335.54 C409.84 349.67 417.72 363.45 426.95 375.87C456.99 416.33 500.91 443.82 546.91 462.85 C554.25 465.89 561.55 469.05 568.9 472.1C572.15 473.45 576.33 476.04 579.93 475.61 C583.26 474.33 585.66 469.9 588 467.31C592.67 462.14 597.73 457.34 602.98 452.76 C619.64 438.24 638.1 426.94 658.47 418.4C677.36 410.49 698.21 406.45 718.51 404.41 C730.73 403.18 743.25 403.88 755.26 400.79C793.72 390.89 822.82 359.69 831.62 321.02 C832.37 317.72 833.7 312.59 832.74 309.27C831.34 304.47 823.85 300.08 820.2 296.94 C812.17 290.02 803.98 283.22 796.21 276C794.2 274.13 787.16 269.58 787.63 266.66 C789.39 264.15 793.47 263.83 796.22 263.06C801.87 261.47 808.05 260.49 813.91 259.96 C816.83 259.7 833.44 261.13 833.83 258.7C833.12 256.13 830.24 254.07 828.26 252.43 C821.65 246.96 813.33 243.62 805.24 241.04C781.88 233.6 757.56 228.61 733.55 223.72 C726.37 222.26 719.22 220.81 712.07 219.2C707.47 218.17 701.79 217.88 698 214.78 C691.19 209.2 686.5 200.91 680.54 194.47C672.01 185.24 661.53 177.81 650.38 172.09 C634.03 163.72 616.35 158.99 598.54 155.04C560.49 146.61 519.5 147.45 481.42 155.11 C454.91 160.44 428.32 168.81 405.82 184.28C384.17 199.16 368.22 219.58 354.92 241.95 C333.13 278.62 319.26 321.41 309.44 362.71C299.8 403.2 293.23 444.11 276.67 482.63 C264.4 511.19 245.85 538.41 224.18 560.67C217.25 567.79 209.99 574.74 202.34 581.08 C198.68 584.12 190.72 587.8 188.98 592.26ZM637.89 843.52 C642.22 842.8 647.64 835.39 650.86 832.47C663.14 821.35 674.65 809.27 685.44 796.71 C714.5 762.88 742.28 720.43 730.02 673.67C724.4 652.25 715.33 631.67 704.92 612.13 C691.03 586.02 675.21 559.91 668.16 530.91C663.39 511.29 662.93 489.19 668.04 469.57 C668.88 466.33 677.4 446.98 675.61 445.52C673.05 445.5 669.99 448.94 668.05 450.44 C661.4 455.58 655.48 461.07 650.42 467.8C646.82 472.58 643.07 477.16 640.01 482.32 C635.9 489.25 632.7 496.4 630.44 504.12C615.15 556.28 645.87 607.39 659.04 656.45 C661.42 665.3 664.24 674.56 665.2 683.69C669.51 724.75 667.12 764.52 653.33 803.75 C651.46 809.07 649.79 814.4 647.67 819.64C646.6 822.27 636.73 842.86 637.89 843.52ZM637.98 233.8 C635.99 238.01 627.34 242.23 623.53 244.98C608.22 256.03 590.81 261.83 572.01 256.79 C564.57 254.8 558.08 250.56 551.82 246.22C548.79 244.12 541.73 241.42 540.07 238.22 C540.19 234.79 548.21 228.75 550.62 226.24C564.62 211.66 584.01 206.35 603.46 212.61 C611.35 215.16 618.44 219.88 625.22 224.52C627.84 226.31 637.68 230.62 637.98 233.8Z"></path></svg></span>
+      </div>
+    </div>
+    <p style="margin:0;font-size:12.5px;line-height:17px;color:#A9A399">Demo loops every 6 seconds. On the page: once per load, motion-safe, mount-time; the mark paints whole from the first frame under reduced motion or without mask support.</p>
+  </div>
+  <div style="grid-column:6 / span 7;display:flex;flex-direction:column;gap:16px">
+    <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Four layers on the mark's own subtree, composed as one gesture. Time runs left to right; the bar is 1,000 ms.</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:center;font-size:14px;line-height:18px"><span style="font-weight:600">Crest wipe</span><div style="position:relative;height:28px;background:#1A1A1A;border-radius:8px"><span style="position:absolute;left:6%;width:52%;top:0;height:28px;border-radius:8px;background:#DDB844;color:#292109;font-size:12.5px;font-weight:600;display:flex;align-items:center;padding:0 10px;box-sizing:border-box">60 to 580 ms · signature</span></div></div>
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:center;font-size:14px;line-height:18px"><span style="font-weight:600">Settle (rise 10px, 0.972 to 1)</span><div style="position:relative;height:28px;background:#1A1A1A;border-radius:8px"><span style="position:absolute;left:0;width:64%;top:0;height:28px;border-radius:8px;background:#282314;border:1px solid #5F522C;color:#E7C86B;font-size:12.5px;font-weight:600;display:flex;align-items:center;padding:0 10px;box-sizing:border-box">0 to 640 ms · entrance</span></div></div>
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:center;font-size:14px;line-height:18px"><span style="font-weight:600">Stage light bloom</span><div style="position:relative;height:28px;background:#1A1A1A;border-radius:8px"><span style="position:absolute;left:6%;width:66%;top:0;height:28px;border-radius:8px;background:#282314;border:1px solid #5F522C;color:#E7C86B;font-size:12.5px;font-weight:600;display:flex;align-items:center;padding:0 10px;box-sizing:border-box">60 to 720 ms · ambient, then holds</span></div></div>
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:center;font-size:14px;line-height:18px"><span style="font-weight:600">Hero rule draws</span><div style="position:relative;height:28px;background:#1A1A1A;border-radius:8px"><span style="position:absolute;left:12%;width:30%;top:0;height:28px;border-radius:8px;background:#2A2621;border:1px solid rgba(255,255,255,.14);color:#EDEAE3;font-size:12.5px;font-weight:600;display:flex;align-items:center;padding:0 10px;box-sizing:border-box">120 to 420 ms · standard</span></div></div>
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:center;font-size:12.5px;line-height:17px;color:#A9A399"><span></span><div style="display:flex;justify-content:space-between"><span>0</span><span>250</span><span>500</span><span>750</span><span>1,000 ms</span></div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;border-top:1px solid rgba(255,255,255,.08);font-size:14px;line-height:20px">
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)"><b style="font-weight:600">Wipe.</b> A soft-edged mask uncovers the crest along its own 35-degree diagonal, base to crown. 520 ms, cubic-bezier(.45,.05,.15,1). mask-image only, never a fill change: the path stays #DDB844 and is whole at the end of every branch.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)"><b style="font-weight:600">Settle.</b> The mark rises 10 px and grows from 0.972 to 1 on a transform-only wrapper. 640 ms, the entrance curve. It never descends or overshoots, so it cannot read as a stamp or a seal.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)"><b style="font-weight:600">Light.</b> One radial of the mark's own gold at a 0.06 peak, 200% of the stage wide, rising once and holding. It is the ladder's lighter-surface elevation drawn soft, not a glow. The column clips it, so it never reaches the H1. If it cannot be seen, delete it; never raise it.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)"><b style="font-weight:600">Rule.</b> The column hairline scales in from the top, 300 ms at the standard curve, so the mark and the line it sits against arrive together. The inline border moves to a class so the pseudo-element can replace it.</p>
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(12, minmax(0, 1fr));column-gap:24px;align-items:start">
+  <div style="grid-column:1 / span 6;display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">2 · Reveal on view, once</h2>
+    <div class="r-strip" style="padding-top:24px;display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:24px">
+      <div class="r-card0" style="display:flex;flex-direction:column;gap:8px"><p style="margin:0;font-size:18px;line-height:23px;font-weight:600">President</p><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Chapter meeting check-in is a QR on the screen.</p></div>
+      <div class="r-card1" style="display:flex;flex-direction:column;gap:8px"><p style="margin:0;font-size:18px;line-height:23px;font-weight:600">Treasurer</p><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Paid, open and overdue are one list.</p></div>
+      <div class="r-card2" style="display:flex;flex-direction:column;gap:8px"><p style="margin:0;font-size:18px;line-height:23px;font-weight:600">Secretary</p><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Minutes live where members already look.</p></div>
+    </div>
+    <p style="margin:0;font-size:14px;line-height:20px;color:#A9A399">The rule draws left to right in 300 ms, then each card fades up 8 px over 300 ms, 60 ms after the one before. A 22-line client wrapper adds one class when the block first enters the viewport, so it plays once and never runs backwards; without JavaScript or under reduced motion the block is simply drawn.</p>
+  </div>
+  <div style="grid-column:7 / span 6;display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">2b · The thread arrives</h2>
+    <div style="display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid rgba(255,255,255,.08);border-radius:16px;background:#131211">
+      <div class="t-msg0" style="display:flex;gap:10px"><span style="width:32px;height:32px;border-radius:50%;background:#2A2621;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none">JE</span><span style="padding:10px 14px;border-radius:18px;border-bottom-left-radius:6px;border:1px solid rgba(255,255,255,.08);background:#211E1A;font-size:16px;line-height:24px">Chapter is 6:30 tonight.</span></div>
+      <div class="t-msg1" style="display:flex;gap:10px"><span style="width:32px;flex:none"></span><span style="border-radius:14px;border:1px solid rgba(255,255,255,.08);background:#211E1A;padding:12px 14px;font-size:14px;line-height:20px;display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#A9A399">Event</span><span style="font-size:16px;font-weight:700">Chapter meeting</span><span style="height:34px;padding:0 14px;border-radius:10px;background:#DDB844;color:#292109;font-weight:700;display:inline-flex;align-items:center;align-self:flex-start">Check in</span></span></div>
+      <div class="t-msg2" style="display:flex;justify-content:flex-end"><span style="padding:10px 14px;border-radius:18px;border-bottom-right-radius:6px;background:#DDB844;color:#292109;font-size:16px;line-height:24px">On it. 42 for food.</span></div>
+      <div class="t-msg3" style="display:flex;gap:10px"><span style="width:32px;height:32px;border-radius:50%;background:#2A2621;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none">MC</span><span style="padding:10px 14px;border-radius:18px;border-bottom-left-radius:6px;border:1px solid rgba(255,255,255,.08);background:#211E1A;font-size:16px;line-height:24px"><span style="background:#4C3A1A;color:#FAA81A;border-radius:5px;padding:0 4px;font-weight:600">@Jordan</span> pin the parking map?</span></div>
+    </div>
+    <p style="margin:0;font-size:14px;line-height:20px;color:#A9A399">Messages rise 6 px into place, 80 ms apart, once, when the frame enters view. Nothing inside the frame changes state: no count ticks, no typing dots, no reaction pops. Semantic reds and ambers inherit their row's opacity and nothing else.</p>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(12, minmax(0, 1fr));column-gap:24px;align-items:start">
+  <div style="grid-column:1 / span 3;display:flex;flex-direction:column;gap:8px"><h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">3 · Chrome answers the hand</h2><p style="margin:0;font-size:14px;line-height:20px;color:#A9A399">Colour and border only, 220 ms at the standard curve; the focus ring fades in at 140 ms. No scale, no translate, no shadow. These swatches respond to a real pointer.</p></div>
+  <div style="grid-column:4 / span 9;display:flex;flex-direction:column;gap:24px">
+    <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start"><a class="cta" href="https://app.frapp.live/sign-up">Get started</a><span style="font-size:12.5px;color:#A9A399">rest · --primary</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start"><a class="cta is-hover" href="https://app.frapp.live/sign-up">Get started</a><span style="font-size:12.5px;color:#A9A399">hover · --primary-hover #D2AD37, the engine's own step</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start"><a class="cta is-focus" href="https://app.frapp.live/sign-up">Get started</a><span style="font-size:12.5px;color:#A9A399">focus-visible · 3px ring at 25%, border to the accent</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start"><a class="quiet" href="#product">Product</a><span style="font-size:12.5px;color:#A9A399">quiet link rest · --muted-foreground</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start"><a class="quiet is-hover" href="#product">Product</a><span style="font-size:12.5px;color:#A9A399">quiet link hover · --foreground</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start"><a href="https://frapp.live/join" style="font-size:16px;line-height:44px;font-weight:600;color:#E7C86B;text-decoration:underline;text-underline-offset:3px">Have an invite? Join your chapter</a><span style="font-size:12.5px;color:#A9A399">accent link hover · underline only, colour holds</span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:24px;max-width:760px">
+      <div class="plan"><span aria-hidden="true" style="position:absolute;left:0;top:0;width:100%;height:2px;background:#DDB844"></span><div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:18px;line-height:23px;font-weight:600">Chapter Pro</span><span style="height:24px;padding:0 9px;border-radius:8px;background:#282314;border:1px solid #5F522C;color:#E7C86B;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;box-sizing:border-box">14-day trial</span></div><span style="font-size:40px;line-height:44px;font-weight:700;letter-spacing:-.02em">$149</span><span style="font-size:12.5px;color:#A9A399">rest · --accent-border on --card, gold 2px top rule</span></div>
+      <div class="plan is-hover"><span aria-hidden="true" style="position:absolute;left:0;top:0;width:100%;height:2px;background:#DDB844"></span><div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:18px;line-height:23px;font-weight:600">Chapter Pro</span><span style="height:24px;padding:0 9px;border-radius:8px;background:#282314;border:1px solid #DDB844;color:#F0CD5E;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;box-sizing:border-box">14-day trial</span></div><span style="font-size:40px;line-height:44px;font-weight:700;letter-spacing:-.02em">$149</span><span style="font-size:12.5px;color:#A9A399">hover or focus-within · border to --primary, fill one rung up to --popover</span></div>
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(12, minmax(0, 1fr));column-gap:24px;align-items:start">
+  <div style="grid-column:1 / span 6;display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">4 · Every piece, every branch</h2>
+    <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:0 16px;font-size:14px;line-height:20px;border-top:1px solid rgba(255,255,255,.08)">
+      <p style="margin:0;padding:10px 0;font-weight:600;color:#A9A399;border-bottom:1px solid rgba(255,255,255,.08)">Piece</p><p style="margin:0;padding:10px 0;font-weight:600;color:#A9A399;border-bottom:1px solid rgba(255,255,255,.08)">Reduced motion</p><p style="margin:0;padding:10px 0;font-weight:600;color:#A9A399;border-bottom:1px solid rgba(255,255,255,.08)">No JavaScript, or no support</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)">Crest wipe, settle, light, rule</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">No mask, no transform, light at rest: the finished hero from frame one</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">CSS only. No mask support means no mask: the crest paints whole</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)">Section rules and card reveals</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">Drawn at rest, nothing hidden</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">Base state is the finished state; the wrapper only ever adds a class</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)">Thread arrival</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">Drawn at rest</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">Same</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)">Hover and focus</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">Transition 1 ms, so the state change still lands</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">CSS only</p>
+    </div>
+    <p style="margin:0;font-size:14px;line-height:20px;color:#A9A399">What ships in the cutover: one landing-scoped stylesheet and one client wrapper of about 22 lines (IntersectionObserver, adds a class once, honours prefers-reduced-motion, unobserves after firing). apps/landing goes from three client files to four. The H1 stays the LCP element: the crest is an inline SVG path and the light is a CSS gradient, neither an image request.</p>
+  </div>
+  <div style="grid-column:7 / span 6;display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">5 · Tokens, and the one amendment</h2>
+    <div style="display:grid;grid-template-columns:230px 1fr;gap:0 16px;font-size:14px;line-height:20px;border-top:1px solid rgba(255,255,255,.08)">
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600">duration.micro 140</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">Kept. Focus ring.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600">duration.standard 220</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">Kept. Hover colour and border.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600">duration.context 300</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">Kept. Rule draws, card reveals, thread rows. The ceiling for anything below the fold.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600">easing.standard, .entrance, .exit</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">Kept unchanged from tokens.ts.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600;color:#E7C86B">duration.signature 520</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">New, the amendment. A brand-mark reveal: one moment per page load, at most one play, at most three layers on the mark's own subtree, 700 ms ceiling per layer. Not a section entrance, so the 300 ceiling does not bind it.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600;color:#E7C86B">easing.signature cubic-bezier(.45,.05,.15,1)</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">New. Light ease-in, long tail. The wipe and nothing else.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600;color:#E7C86B">duration.signatureSettle 640</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">New, inside the signature class. Overruns the wipe so the two read as one gesture. Pairs with easing.entrance.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600;color:#E7C86B">duration.ambientRise 660 · easing.ambient cubic-bezier(.45,0,.55,1)</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">New, inside the signature class and under its ceiling. A one-time luminance rise that ends at rest and holds. Never a loop.</p>
+      <p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600;color:#E7C86B">stagger.step 60 · stagger.thread 80</p><p style="margin:0;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);color:#A9A399">New. Delay between siblings in a once-only reveal, in milliseconds, applied through an inline --i.</p>
+    </div>
+    <p style="margin:0;font-size:14px;line-height:20px;color:#A9A399">The amendment is a written change to design-system README section 7's table and a paragraph in foundations section 11, landing in the same commit as the stylesheet. If it is rejected, the crest pieces are cut, not trimmed to 300 ms: a 300 ms wipe is a different gesture. The mask and the light are page treatment, not mark design; brand-identity section 2's gradient ban scopes to mark exploration, and the mark's geometry and fill never change. That reading needs Paul's sign-off, which is decision D4 on the Spec sheet.</p>
+    <p style="margin:0;font-size:14px;line-height:20px;color:#A9A399"><b style="font-weight:600">Later, behind the same wrapper:</b> the check-in dot's bounded two-beat ring when the event frame presents the fact; the officer's reply rising into the thread with a typing row that then leaves the flow; a Check in confirm on the card. All post-launch, all with a screenshot diff of the rest state against the static board first.</p>
+  </div>
+</div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":2000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
