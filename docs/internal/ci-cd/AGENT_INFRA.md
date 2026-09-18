@@ -296,10 +296,18 @@ advisory sweep. Six packages outside the bumped set peer-depend on the root `@ne
 (`@nestjs/config`, `@nestjs/swagger`, `@nestjs/schedule`, `@sentry/nestjs`, …) on ranges as loose as
 `^11.0.0`, so when the only *direct* dependant moves, the old node still satisfies every one of
 them: npm keeps it, re-marked `"peer": true`, and nests the new version under
-`apps/api/node_modules/` instead. Two copies of `@nestjs/common` is two copies of every interface it
-declares, and `tsc` reads them as unrelated nominal types. This is npm's tree builder, not
-Dependabot — a plain `npm install --package-lock-only` on the same manifest change reproduces the
-nesting exactly (2026-09-18, npm 11.19.1).
+`apps/api/node_modules/` instead. TypeScript is structural, so two copies are not incompatible by
+themselves — what breaks is the declarations inside them that structural typing cannot relate.
+`VersionValue` is `string | typeof VERSION_NEUTRAL | Array<…>` and `VERSION_NEUTRAL` is declared
+`unique symbol`, so two copies declare two distinct symbol types. That is where *this* error bottoms
+out — `Type 'unique symbol' is not assignable to type 'VersionValue | undefined'` — and it is what
+`tsc` names first on the way back up through `VersioningOptions` to the `INestApplication` mismatch
+the jobs report. Do not read it as the only break: `tsc` stops at the first incompatible property,
+and neutralising that symbol in both copies leaves the two `INestApplication` types unrelated
+anyway, through the generic `on` signature reached via `connectMicroservice` (checked by compiling
+two copies against each other, 2026-09-18). This is npm's tree builder, not Dependabot — a plain
+`npm install --package-lock-only` on the same manifest change reproduces the nesting exactly
+(2026-09-18, npm 11.19.1).
 
 **Read the remedy in that document, not here**, `npm update <pkg>`-before-entry-deletion order
 included. What this lane adds to that record is that for a *grouped* bump the cheaper lever is
