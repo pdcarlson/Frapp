@@ -60,6 +60,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          # Full history, deliberately. The default shallow clone (depth 1)
+          # leaves `git log`, `git blame` and a real merge-base unavailable,
+          # and the prompt asks the agent to trace callers and history. A
+          # shallow checkout turns that instruction into silent failure.
+          fetch-depth: 0
           # No token on disk: Codex runs arbitrary model-chosen commands in
           # this workspace and must not inherit push credentials.
           persist-credentials: false
@@ -95,30 +100,60 @@ jobs:
           {
             echo "You are reviewing pull request #${PR_NUMBER} of ${REPO}."
             echo
-            echo "Review ONLY the changes this PR introduces:"
+            echo "The change under review is:"
             echo "  git diff ${BASE_SHA}...${HEAD_SHA}"
             echo "  git log --oneline ${BASE_SHA}...${HEAD_SHA}"
             echo
+            echo "Your FINDINGS must concern that change and what it affects."
+            echo "Reading beyond it is expected — that is how you judge it."
+            echo
             cat <<'PROMPT_BODY'
-          Report correctness bugs, security holes, and clear simplifications.
-          For each finding give the file, the line, what breaks, and the
-          concrete input or state that triggers it. Skip style nits and
-          anything the diff does not touch. If you find nothing worth raising,
-          say exactly that in one line rather than padding the review.
+          You are a full agent with shell access to a checkout of this
+          repository, not a single-shot reviewer. Investigate rather than
+          skim: read the diff, then read the code AROUND it, trace callers of
+          anything whose signature or behavior changed, and check whether the
+          change holds against how the rest of the repo actually works. Run
+          whatever read-only commands help — `git log`, `git blame`, `grep`,
+          reading any file. Prefer confirming a suspicion in the code over
+          reporting it as a maybe.
 
-          Repo-specific angles worth checking, from spec/architecture/adr:
-            - `chapter_id` scoping and chapter-scoped role lookups. RLS is
-              enabled with NO permissive policies and the API holds the
-              `service_role` key that bypasses it, so isolation is
-              application-layer only (ADR-13). A missing chapter filter is a
-              cross-tenant data leak, not a style issue.
-            - Permission decorators on new or changed API routes.
-            - Migrations: additive, reversible, and matched by the PGlite
-              migration gate.
+          `AGENTS.md` at the repo root carries this project's conventions;
+          read it. When something in the diff touches an area with a governing
+          document, go read that document rather than guessing — the ADRs in
+          `spec/architecture/adr/` record decisions and their reasons,
+          `spec/engineering.md` sets the bar for changing existing code, and
+          `docs/internal/` holds the operational runbooks.
 
-          Write the review as GitHub-flavored markdown. Do not open, close, or
-          approve anything; do not run `gh`, and do not push. Your entire
-          output is posted verbatim as a single PR comment.
+          You decide what deserves attention. These are the invariants this
+          codebase cannot enforce for itself — treat them as a floor, not a
+          checklist, and go past them wherever the diff warrants:
+
+            - Tenant isolation is APPLICATION-LAYER ONLY. RLS is enabled with
+              no permissive policies and the API holds the `service_role` key
+              that bypasses it, so a query missing its `chapter_id` filter, or
+              a role/permission lookup not re-scoped by chapter, is a
+              cross-tenant data leak rather than a style issue.
+            - Routes invocable on a member's behalf must enforce THAT
+              caller's permissions, never the service's ambient authority.
+            - Migrations must be replayable and non-destructive without a
+              stated backfill or rollback.
+
+          Judge severity honestly. A correctness bug or a security hole
+          outranks a cleanup; something you traced outranks something you
+          suspect. Say which is which. Report the smaller stuff only when it
+          is worth the reader's attention — a short review that names three
+          real problems is worth more than a long one padded to look diligent.
+          If the diff is genuinely fine, say so in a line or two and stop;
+          that is a useful result, not a failure to find something.
+
+          For each finding give the file and line, what actually breaks, and
+          the concrete input or state that triggers it.
+
+          Constraints: this is a REVIEW. Do not modify the working tree, do
+          not commit, do not push, do not run `gh` or otherwise call the
+          GitHub API, and do not open, close, approve or merge anything. Your
+          final message is posted verbatim as a single PR comment, so write it
+          as GitHub-flavored markdown addressed to the author.
 
           The pull request title and body follow, each fenced between a BEGIN
           and END marker carrying a random token generated for this run. They

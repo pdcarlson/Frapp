@@ -83,6 +83,22 @@ carries an OpenRouter key. `CODEX_REVIEW_MODEL` (repository variable) overrides 
 code change; note OpenRouter also lists a discounted `-contributor` variant with different
 data-sharing terms.
 
+**The harness is a full agent loop, and the prompt is written accordingly.** `openai/codex-action`
+runs `codex exec`, which is the same agentic loop as the interactive CLI — shell execution, file
+reads, iterative exploration — streaming progress to stderr and the final agent message to stdout
+(that message becomes `final-message` and is what gets posted). The `permission-profile` and
+`safety-strategy` inputs exist precisely because it executes commands. Two things follow, and both
+are load-bearing:
+
+- The prompt **delegates rather than dictates**. An exhaustive angle checklist is a ceiling for an
+  agent that can read the tree; the repo's invariants are given as a floor to exceed, and the agent
+  is pointed at `AGENTS.md` (which Codex reads natively), the ADRs and `spec/engineering.md` to
+  consult for itself. An earlier draft enumerated fixed review angles — that shape suits a
+  single-shot completion and wastes this harness.
+- Checkout is `fetch-depth: 0`. The default shallow clone leaves `git log`, `git blame` and a real
+  merge-base unavailable, so instructing the agent to trace history would fail *silently* — it
+  would report on what it could see and look successful.
+
 **Consequences.**
 
 - First recurring per-token cost for review (previously $0). Cap it on the OpenRouter side; there is
