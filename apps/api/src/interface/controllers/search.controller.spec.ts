@@ -1,10 +1,8 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import type { Response } from 'express';
 import { SearchController } from './search.controller';
 import { SearchService } from '../../application/services/search.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 
 describe('SearchController', () => {
   let controller: SearchController;
@@ -27,17 +25,10 @@ describe('SearchController', () => {
       searchWithinBudget: jest.fn(),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [SearchController],
       providers: [{ provide: SearchService, useValue: searchService }],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     controller = module.get<SearchController>(SearchController);
   });
