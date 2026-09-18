@@ -1,25 +1,24 @@
 import type { Config } from "tailwindcss";
-import sharedConfig, { colorVar } from "@repo/theme/tailwind";
+import sharedConfig from "@repo/theme/tailwind";
 
 /*
  * The landing surface on the Signet scale, since the #2366 token cutover.
  *
- * Shape mirrors `apps/web/tailwind.config.ts` deliberately: the Signet-only
- * keys sit in the app config rather than the shared preset, because the preset
- * binds nothing that its stylesheet does not define and a preset key reading an
- * undefined token is #1145's silent no-color failure. Both surfaces now ship
- * `packages/theme/src/signet.css`, so the two configs OVERLAP heavily — and it
- * is only an overlap, not an identity. `apps/web` alone carries the `gold`
- * family; this config alone carries `hero`, `display-lg` and `lead`. The
- * `mention` family is now on both, because the rebuilt page's chat frame draws
- * the unread DM badge and the in-bubble mention chip (#2367); it moved from the
- * web-only list into the common subset rather than being duplicated by accident.
- * Only the common subset is a candidate for the shared preset (#2371);
- * the surface-specific keys stay where they are, deliberately, and promoting
- * them would be the defect that issue exists to avoid. Collapsing even the
- * common subset stays a `@repo/theme` refactor rather than landing work: it
- * touches `apps/web`'s config too, and the acceptance test is that BOTH apps'
- * compiled stylesheets come out byte-identical.
+ * Shape mirrors `apps/web/tailwind.config.ts` deliberately, and since #2371
+ * that means it is nearly empty: the Signet keys both surfaces bind now live
+ * once, in the shared preset (`packages/theme/src/tailwind.config.ts`). They
+ * used to sit app-local because the preset binds nothing its stylesheet does
+ * not define and a preset key reading an undefined token is #1145's silent
+ * no-color failure — a real constraint while this surface was frozen on the
+ * legacy stylesheet, and a dead one since it shipped `signet.css`.
+ *
+ * What stays here is what `apps/web` does NOT bind: the three marketing type
+ * roles below. They sit deliberately ABOVE `foundations.md` §7's locked six
+ * (see that file's amendment, and `README.md` §3 rule 4), so promoting them
+ * would put a 72px marketing headline one import away from every product
+ * screen — the defect #2371 exists to avoid, reached from the other side.
+ * `signet.spec.ts` guards the amendment. The mirror-image remainder in
+ * `apps/web` is its `gold` family.
  *
  * `darkMode` stays on the class strategy with nothing setting the class, for
  * the same reason `apps/web` does: Signet is dark-only — the single `:root` IS
@@ -27,10 +26,6 @@ import sharedConfig, { colorVar } from "@repo/theme/tailwind";
  * re-activating under the Tailwind default `media` strategy. This PR deleted
  * the landing's `dark:` variants; the strategy stays pinned so a reintroduced
  * one cannot quietly paint.
- *
- * The three marketing type roles (`--text-hero`, `--text-display-lg`,
- * `--text-lead`) are declared in `app/globals.css` and bound as real utilities
- * below. They are landing-only by design — see the note in that file.
  */
 const config: Config = {
   content: [
@@ -41,51 +36,17 @@ const config: Config = {
   darkMode: "class",
   theme: {
     extend: {
-      colors: {
-        "surface-1": colorVar("--surface-1"),
-        "primary-hover": colorVar("--primary-hover"),
-        "primary-pressed": colorVar("--primary-pressed"),
-        "accent-subtle": colorVar("--accent-subtle"),
-        "accent-subtle-hover": colorVar("--accent-subtle-hover"),
-        "accent-border": colorVar("--accent-border"),
-        "accent-text": colorVar("--accent-text"),
-        disabled: colorVar("--disabled"),
-        warning: {
-          DEFAULT: colorVar("--warning"),
-          foreground: colorVar("--warning-foreground"),
-        },
-        info: {
-          DEFAULT: colorVar("--info"),
-          foreground: colorVar("--info-foreground"),
-        },
-        "destructive-text": colorVar("--destructive-text"),
-        "info-text": colorVar("--info-text"),
-        /*
-         * "You were addressed". Bound exactly as `apps/web` binds it, and both
-         * halves are needed: `mention` / `mention-foreground` is the unread DM
-         * badge in the chat frame's rail, and `chip` / `chip-text` is the
-         * in-bubble treatment, which is deliberately NOT the mention red
-         * (foundations §5 — red as text inside a bubble is the case that pair
-         * exists for). All four are CSS-only tokens in `signet.css`.
-         */
-        mention: {
-          DEFAULT: colorVar("--mention"),
-          foreground: colorVar("--mention-foreground"),
-          chip: colorVar("--mention-chip"),
-          "chip-text": colorVar("--mention-chip-text"),
-        },
-      },
       /*
-       * The six locked roles (foundations.md §7) plus the three marketing roles
-       * this surface adds above them. Same construction as `apps/web`: each key
-       * pairs its size with the role's line height and weight, so `text-body`
-       * carries 16/25/400 rather than only the size.
+       * The three marketing roles this surface adds ABOVE §7's locked six.
+       * The six themselves come from the shared preset (#2371); these do not
+       * join them there, by decision.
        *
-       * The marketing three state their own line height and tracking as tokens,
-       * which the locked six mostly cannot — §7 states a line height only for
-       * `body`, so the other five carry literals here exactly as they do in the
-       * web config (tracked as L-09 in `spec/ui/web-greenfield/tokens.md`; do
-       * not settle it by editing one literal in place).
+       * Unlike the locked six, the marketing three state their own line height
+       * and tracking as tokens, declared in `app/globals.css`. §7 states a line
+       * height only for `body`, which is why the preset's five siblings carry
+       * literals instead (tracked as L-09 in
+       * `spec/ui/web-greenfield/tokens.md`; do not settle it by editing one
+       * literal in place).
        */
       fontSize: {
         hero: [
@@ -110,63 +71,6 @@ const config: Config = {
             lineHeight: "var(--text-lead-line)",
             fontWeight: "var(--text-lead-weight)",
           },
-        ],
-        display: [
-          "var(--text-display)",
-          { lineHeight: "1.15", fontWeight: "var(--text-display-weight)" },
-        ],
-        headline: [
-          "var(--text-headline)",
-          { lineHeight: "1.2", fontWeight: "var(--text-headline-weight)" },
-        ],
-        title: [
-          "var(--text-title)",
-          { lineHeight: "1.3", fontWeight: "var(--text-title-weight)" },
-        ],
-        body: [
-          "var(--text-body)",
-          {
-            lineHeight: "var(--text-body-line)",
-            fontWeight: "var(--text-body-weight)",
-          },
-        ],
-        label: [
-          "var(--text-label)",
-          { lineHeight: "1.3", fontWeight: "var(--text-label-weight)" },
-        ],
-        caption: [
-          "var(--text-caption)",
-          { lineHeight: "1.35", fontWeight: "var(--text-caption-weight)" },
-        ],
-      },
-      minHeight: {
-        touch: "var(--touch-min)",
-        button: "var(--touch-button)",
-      },
-      minWidth: {
-        touch: "var(--touch-min)",
-      },
-      borderRadius: {
-        "2xl": "var(--radius-2xl)",
-      },
-      /*
-       * Shadows are banned on Signet surfaces (foundations.md §10) and
-       * `signet.css` neutralizes every shadow token to `none`. `md` is the one
-       * key the shared preset leaves unbound — it did so because the legacy
-       * landing stylesheet had no `--shadow-md` and an unbound key falls
-       * through to Tailwind's stock scale and compiles a REAL drop shadow.
-       * That is now a live risk on this surface rather than a correct
-       * fallthrough, so it is bound here exactly as `apps/web` binds it.
-       */
-      boxShadow: {
-        md: "var(--shadow-md)",
-      },
-      fontFamily: {
-        sans: [
-          "var(--font-figtree)",
-          "system-ui",
-          "-apple-system",
-          "sans-serif",
         ],
       },
     },

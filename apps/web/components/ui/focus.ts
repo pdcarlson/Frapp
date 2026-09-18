@@ -92,18 +92,17 @@ export const FOCUS_RING =
  * 4.5:1 as text, so 3:1 as non-text UI has real headroom under it. That is why
  * it is robust where accent-8 was merely passing.
  *
- * ## The `accent-text` key is an app key, not a shared-preset key
+ * ## The `accent-text` key is a shared-preset key, as of #2371
  *
- * `ring-accent-text` resolves through `apps/web/tailwind.config.ts`, which
- * already carries `"accent-text": colorVar("--accent-text")` alongside the rest
- * of the Signet-only keys. It used to be unmovable: the shared preset was also
- * read by the frozen `apps/landing`, and `tailwind.config.spec.ts` asserted
- * every preset token was defined in the legacy `globals.css` `:root`, which had
- * no `--accent-text`. #2366 removed both halves of that — landing ships
- * `signet.css`, the legacy stylesheet is deleted, and that spec now reads
- * `signet.css` — so moving this key up is merely UNDONE work rather than
- * forbidden. It is tracked as #2371 and should happen there, with both apps'
- * compiled stylesheets diffed, not as a drive-by tidy-up here.
+ * `ring-accent-text` resolves through `packages/theme/src/tailwind.config.ts`.
+ * It used to live in `apps/web/tailwind.config.ts` and was unmovable: the
+ * shared preset was also read by the frozen `apps/landing`, and
+ * `tailwind.config.spec.ts` asserted every preset token was defined in the
+ * legacy `globals.css` `:root`, which had no `--accent-text`. #2366 removed
+ * both halves of that — landing ships `signet.css`, the legacy stylesheet is
+ * deleted, and that spec now reads `signet.css` — which made the move merely
+ * UNDONE work rather than forbidden. #2371 did it, with both apps' compiled
+ * stylesheets diffed byte-for-byte either side.
  *
  * ## `ring-offset-background` is load-bearing — do not "simplify" it away
  *

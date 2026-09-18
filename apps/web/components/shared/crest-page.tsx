@@ -52,15 +52,17 @@ import { cn } from "@/lib/utils";
  * ## Type roles
  *
  * The board's 28/700 title carries `line-height:1.15`, which is the `display`
- * role's ratio exactly (`tailwind.config.ts`), and the page is a standalone
+ * role's ratio exactly (`packages/theme/src/tailwind.config.ts`), and the page is a standalone
  * anchor with no flow around it — the same shape as the pre-auth entry screen,
  * which `auth-screen.tsx` maps to `display`. So `text-display`, not the headline
  * step. The 12px mono code rounds onto `caption` (12.5).
  *
  * These are the first call sites for lane 1's `--text-*` utilities, which shipped
  * with none. An unbound Tailwind key emits no CSS and raises nothing — #1145's
- * failure mode — so `crest-page.spec.tsx` asserts the three keys against
- * `tailwind.config.ts` rather than trusting that they resolve.
+ * failure mode — so `crest-page.spec.tsx` asserts the three keys against the
+ * app config merged with the shared preset that now declares them
+ * (`packages/theme/src/tailwind.config.ts`), rather than trusting that they
+ * resolve.
  *
  * ## Why the two pages paint their code label from different tokens
  *

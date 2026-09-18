@@ -22,9 +22,11 @@
  * §7's six roles are the whole scale and a seventh is a defect. A marketing role
  * that only one surface may use belongs to that surface.
  *
- * `spec/ui/design-system/README.md` §3 rule 4 was widened in the same PR to name
- * this file as the landing's app-local token home, beside
- * `apps/web/tailwind.config.ts`, and foundations.md §7 carries the amendment
+ * `spec/ui/design-system/README.md` §3 rule 4 sanctions an app-local home for a
+ * role only one surface may use, which is what this file is. (It was widened in
+ * the same PR to name it beside `apps/web/tailwind.config.ts`; #2371 later moved
+ * the shared keys into the preset, leaving these three as the landing's only
+ * app-local entry.) foundations.md §7 carries the amendment
  * that records these three as a landing-only extension. Values are the System
  * sheet's (`spec/ui/landing/reference/canvas/System.dc.html`), restated in
  * `spec/ui/landing/README.md` § Marketing type roles.
