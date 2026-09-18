@@ -120,8 +120,11 @@ describe("landing marketing copy rules", () => {
     expect(renderedPage.match(/role="img"/g) ?? []).toHaveLength(2);
     expect(renderedPage.match(/<ChatFrame\b/g) ?? []).toHaveLength(2);
     expect(renderedPage.match(/<EventFrame\b/g) ?? []).toHaveLength(1);
-    // Every `role="img"` carries an `aria-label`, or it announces nothing.
-    expect(renderedPage.match(/aria-label=/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // Every `role="img"` carries an `aria-label`, or it announces nothing. The
+    // pairing is what makes this bite: counting `aria-label=` anywhere in the
+    // file passed on the nav and the lockup alone, so a frame could lose its
+    // label and the assertion would not notice.
+    expect(renderedPage.match(/role="img"\s+aria-label=/g) ?? []).toHaveLength(2);
     expect(
       flatPage.match(/Names and (messages|events) are illustrative/g) ?? [],
     ).toHaveLength(3);
@@ -279,6 +282,15 @@ describe("landing motion stylesheet", () => {
     ).toMatch(/signature/i);
   });
 
+  it("draws every reveal at rest when printing", () => {
+    // A printed page never scrolls and runs no observer, so an armed block that
+    // was never reached has nothing to clear it and would go to paper blank.
+    expect(globalsSource).toMatch(/@media print\s*\{/);
+    const print = globalsSource.slice(globalsSource.indexOf("@media print"));
+    expect(print).toContain(".reveal-armed .reveal-item");
+    expect(print).toContain(".reveal-armed .reveal-rule");
+  });
+
   it("draws every reveal at rest under reduced motion", () => {
     // The hidden state lives inside the no-preference query, so a reduced
     // motion user never has content hidden that something else must un-hide.
@@ -286,7 +298,25 @@ describe("landing motion stylesheet", () => {
       globalsSource,
     );
     expect(noPreference).not.toBeNull();
-    const hiddenState = globalsSource.indexOf(".reveal-armed .reveal-item");
-    expect(hiddenState).toBeGreaterThan(noPreference!.index);
+
+    /*
+     * Walk to the query's matching close, so this asserts CONTAINMENT rather
+     * than "appears somewhere after". Comparing offsets would have stayed green
+     * if the hidden state were moved out of the query to anywhere below it,
+     * which is precisely the regression that would hide content from a reduced
+     * motion reader.
+     */
+    const open = noPreference!.index + noPreference![0].length;
+    let depth = 1;
+    let cursor = open;
+    while (depth > 0 && cursor < globalsSource.length) {
+      const char = globalsSource[cursor++];
+      if (char === "{") depth++;
+      else if (char === "}") depth--;
+    }
+    expect(
+      globalsSource.slice(open, cursor - 1),
+      "the reveal hidden state must sit inside the no-preference query",
+    ).toMatch(/\.reveal-armed \.reveal-item\s*\{[^}]*opacity:\s*0/);
   });
 });

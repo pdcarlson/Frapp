@@ -39,8 +39,14 @@ import { buildAuthUrls } from "../lib/auth-urls";
  * deliberately a literal there: the mark is locked and never takes the slot.
  */
 
-/* 1440 board, 80pt margins; 390 board, 20pt. */
-const SHELL = "mx-auto w-full max-w-[1280px] px-5 sm:px-20";
+/*
+ * The board's stage, not its content band. Main.dc.html is 1440 wide with
+ * `padding:0 80px`, so the twelve-column track the canvas guides draw is 1280.
+ * Capping at 1280 here would have made the track 1120 and squeezed every span
+ * below. Above 1440 the track stays 1280 and the margins grow, which is the one
+ * behaviour the board does not draw and a cap has to invent.
+ */
+const SHELL = "mx-auto w-full max-w-[1440px] px-5 sm:px-20";
 
 /* Sections start 64 apart on the phone board and 96 on the desktop one. */
 const SECTION_GAP = "pt-16 sm:pt-24";
@@ -65,9 +71,9 @@ const BUTTON_PRIMARY_NAV = `chrome-motion inline-flex h-11 items-center justify-
 
 /* Quiet links lift to the foreground; the accent link holds its colour and
  * underlines instead, so the one gold on the page never becomes two. */
-const LINK_QUIET = `chrome-motion inline-flex h-11 items-center rounded-xs text-label font-semibold text-muted-foreground hover:text-foreground ${FOCUS_RING}`;
+const LINK_QUIET = `chrome-motion inline-flex h-11 items-center rounded-xs border border-transparent text-label font-semibold text-muted-foreground hover:text-foreground ${FOCUS_RING}`;
 
-const LINK_ACCENT = `chrome-motion inline-flex h-11 items-center rounded-xs text-body font-semibold text-accent-text hover:underline hover:underline-offset-[3px] ${FOCUS_RING}`;
+const LINK_ACCENT = `chrome-motion inline-flex h-11 items-center rounded-xs border border-transparent text-body font-semibold text-accent-text hover:underline hover:underline-offset-[3px] ${FOCUS_RING}`;
 
 const PROOF_ROW = "border-b border-border py-4";
 const PROOF_TITLE = "text-body font-semibold text-foreground";
@@ -355,7 +361,7 @@ export default function Home() {
         {/* ── 3 · Proof, chat ────────────────────────────────────────────── */}
         <section id="product" className={`${SHELL} ${SECTION_GAP}`}>
           <div className="grid gap-10 lg:grid-cols-12 lg:gap-x-6">
-            <RevealOnView className="flex flex-col gap-6 lg:col-span-5">
+            <RevealOnView className="flex flex-col gap-6 lg:col-span-4">
               <p className={`${EYEBROW} reveal-item`}>Chat is the spine</p>
               <h2 className={`${SECTION_H2} reveal-item`} style={{ "--i": 1 } as StaggerStyle}>
                 Ops happen in the thread.
@@ -384,7 +390,7 @@ export default function Home() {
               </p>
             </RevealOnView>
 
-            <div className="lg:col-span-7">
+            <div className="lg:col-span-8">
               <ChatFrame
                 variant="full"
                 label="The Signet web app: a channel list beside the general channel, where an event card sits in the conversation with a Check in button and a live count."
@@ -400,7 +406,7 @@ export default function Home() {
               <EventFrame />
             </div>
 
-            <RevealOnView className="flex flex-col gap-6 lg:col-span-6 lg:col-start-7">
+            <RevealOnView className="flex flex-col gap-6 lg:col-span-5 lg:col-start-6">
               <p className={`${EYEBROW} reveal-item`}>Events and check-in</p>
               <h2
                 id="events"
@@ -456,9 +462,9 @@ export default function Home() {
               </p>
             </div>
 
-            <RevealOnView className="grid gap-6 sm:grid-cols-2 lg:col-span-7 lg:col-start-6">
+            <RevealOnView className="grid gap-6 sm:grid-cols-2 lg:col-span-8 lg:col-start-5">
               <div
-                className="reveal-item chrome-motion flex flex-col gap-6 rounded-xl border border-border bg-card p-8 hover:border-primary hover:bg-popover"
+                className="reveal-item chrome-motion flex flex-col gap-6 rounded-xl border border-border bg-card p-8 hover:border-primary hover:bg-popover focus-within:border-primary focus-within:bg-popover"
                 style={{ "--i": 0 } as StaggerStyle}
               >
                 <h3 className="text-title text-foreground">Free</h3>
@@ -493,7 +499,7 @@ export default function Home() {
               </div>
 
               <div
-                className="reveal-item chrome-motion relative flex flex-col gap-6 overflow-hidden rounded-xl border border-accent-border bg-card p-8 hover:border-primary hover:bg-popover"
+                className="reveal-item chrome-motion relative flex flex-col gap-6 overflow-hidden rounded-xl border border-accent-border bg-card p-8 hover:border-primary hover:bg-popover focus-within:border-primary focus-within:bg-popover"
                 style={{ "--i": 1 } as StaggerStyle}
               >
                 <span
@@ -532,9 +538,9 @@ export default function Home() {
         {/* ── 6 · Closing ────────────────────────────────────────────────── */}
         <section
           aria-labelledby="closing"
-          className={`${SHELL} flex flex-col items-start gap-6 pb-24 pt-20 sm:pt-30`}
+          className={`${SHELL} flex flex-col items-center gap-6 pb-24 pt-20 text-center sm:pt-30`}
         >
-          <RevealOnView className="flex flex-col items-start gap-6">
+          <RevealOnView className="flex w-full flex-col items-center gap-6">
             {/*
               Decorative: the heading beside it carries the meaning and the
               header lockup has already named the brand, so a second
@@ -580,7 +586,7 @@ export default function Home() {
                 cta="log-in"
                 surface="cta-band"
                 href={loginUrl}
-                className={`${LINK_QUIET} text-body`}
+                className={LINK_ACCENT}
               >
                 Sign in
               </TrackedCta>

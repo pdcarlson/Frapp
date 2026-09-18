@@ -180,6 +180,28 @@
     }
   }
 
+  /*
+   * Print is the third branch, and it needs its own escape rather than the
+   * reduced-motion one. A printed page has no scrolling and no observer, so a
+   * block armed on screen and never reached would go to paper blank: the hidden
+   * state is live under `no-preference` and nothing in the print context ever
+   * adds `is-in`. Both halves are covered, because a section hairline stuck at
+   * `scaleX(0)` prints as nothing just as surely as a card at `opacity: 0`.
+   */
+  @media print {
+    .reveal-armed .reveal-item,
+    .reveal-armed.is-in .reveal-item {
+      opacity: 1;
+      animation: none;
+    }
+
+    .reveal-armed .reveal-rule,
+    .reveal-armed.is-in .reveal-rule {
+      transform: none;
+      animation: none;
+    }
+  }
+
   /* The hairline draws from the left, so the rule and the cards it separates
    * arrive together rather than the line snapping in ahead of them. */
   .reveal-rule {
