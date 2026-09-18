@@ -231,7 +231,27 @@ export default function Home() {
               <p className="text-sm font-semibold">
                 Chapter Operations Snapshot
               </p>
-              <span className="rounded-full bg-success/15 px-3 py-1 text-caption font-semibold text-success">
+              {/*
+                Ladder step + hue text, NOT foundations §5's 13%-alpha tint
+                recipe, and deliberately. For an alpha-modified success fill
+                Tailwind emits opaque `var(--success)` as the un-guarded
+                fallback and only reaches the translucent mix inside an
+                `@supports (color: color-mix(...))` block. Below that floor
+                (Chrome <111 / Safari <16.2 / Firefox <113) the fill resolves to
+                the same token as `text-success`, so the label renders green on
+                green at 1:1 and vanishes.
+
+                The class name is spelled out nowhere here on purpose: Tailwind
+                scans comments too, so naming it would keep the very utility
+                this avoids alive in the compiled sheet.
+
+                `bg-popover` is one step up from this card's `bg-card`, which is
+                how §10 says elevation is expressed anyway, and puts the label at
+                ~5.9:1 in every browser with no `color-mix` dependency. The
+                same exposure in the shared `badge.tsx` success variant is
+                repo-wide and filed separately rather than forked here.
+              */}
+              <span className="rounded-full bg-popover px-3 py-1 text-caption font-semibold text-success">
                 Subscription active
               </span>
             </div>

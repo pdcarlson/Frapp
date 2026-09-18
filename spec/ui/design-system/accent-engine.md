@@ -132,8 +132,11 @@ Two guards in `packages/theme/src/tailwind.config.spec.ts` hold the invariant:
   `hsl(hsl(...))`, which the browser drops. In a Tailwind arbitrary value the correct form carries
   the type hint: `text-[color:var(--x)]`.
 
-Because the conversion changed only the *format* of these tokens and never a value, `apps/landing`
-— frozen pre-Signet, and explicitly out of scope for #920 — renders identically across it.
+Because the conversion changed only the *format* of these tokens and never a value, it was visually
+inert on every surface. `apps/landing` was frozen pre-Signet and out of scope for #920 at the time,
+so it rendered identically across the conversion; it has since cut over to Signet
+([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) and carries no pre-Signet carve-out
+today.
 
 ### Not yet implemented
 
