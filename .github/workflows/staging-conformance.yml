@@ -78,7 +78,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       # continue-on-error is load-bearing, not laziness. A revoked or rotated
       # machine identity — the #696/#763 incident this workflow exists to catch —

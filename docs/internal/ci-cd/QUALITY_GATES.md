@@ -135,26 +135,33 @@ Two consequences follow, and both are easy to trip over when editing
   whose `from` lies outside the current workspace — otherwise one violation is reported once per
   consuming app. Nothing is lost: every workspace gets its own cruise.
 
-### Pinned to 17.x — check `engines` before bumping
+### On 18.x — check `engines` before bumping
 
-CI runs **Node 20**. dependency-cruiser **18.x** raised its floor to `^22||^24||>=26`, so it fails
-there with `ERROR: Your node version (20.20.2) is not supported`. 17.4.3 accepts
-`^20.12||^22||>=24`, which covers CI and a typical dev machine both.
+Now on **18.x**, unblocked by the Node 20 → 24 move. The history is the point, because the trap it
+sprang is still live for the next major.
 
-**This one does not reproduce locally**, which is what makes it worth writing down: 18.x installs and
-runs perfectly on a modern Node and only fails on the runner. Before bumping the major, compare its
-`engines` against `node-version:` in [`ci.yml`](../../../.github/workflows/ci.yml) — or bump CI's
-Node first, which is a separate decision with its own constraints (`apps/api` pins Node 20
-deliberately; see the WebSocket note in `apps/api/src/infrastructure/supabase/supabase.provider.ts`).
+dependency-cruiser 18.x raised its floor to `^22||^24||>=26`. CI ran Node 20 at the time, so the
+bump failed there with `ERROR: Your node version (20.20.2) is not supported` while installing and
+running perfectly on any modern dev machine — **it did not reproduce locally**. 17.4.3 had accepted
+`^20.12||^22||>=24`, which covered both, which is exactly why nothing caught the difference until
+the runner did.
 
-`expo-server-sdk` 7.x is the same class of engines mismatch, with a different symptom. 6.0.0
-went ESM-only; 7.0.0 raised `engines.node` to `>=22.12.0` (stable `require(esm)`). npm does not
-fail `npm ci` on that (unlike undici 8.x, which is `EBADENGINE`-hard in
-[`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md)), so `api-docker-build` stays green on
-`node:20-alpine`. Jest's CommonJS E2E runtime cannot parse the ESM entry, which is what turns
-`api-tests` red — the stub in [`docs/guides/testing.md`](../../guides/testing.md) §6. Do not treat
-a green Docker build as proof the major is Node-20-safe; lift Docker + CI Node together if a
-future 7.x actually needs 22.12 APIs.
+So before bumping this major, compare its `engines` against `node-version:` in
+[`ci.yml`](../../../.github/workflows/ci.yml) and against `FROM node:` in
+[`apps/api/Dockerfile`](../../../apps/api/Dockerfile). Those three move together; all are on 24
+today, with `engines.node` at `>=24` in the root `package.json`.
+
+`expo-server-sdk` 7.x was the same class of engines mismatch with a different symptom, and the Node
+move cleared it too. 6.0.0 went ESM-only; 7.0.0 raised `engines.node` to `>=22.12.0` (stable
+`require(esm)`). npm does not fail `npm ci` on that (unlike undici 8.x, which is `EBADENGINE`-hard
+in [`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md)), so `api-docker-build` stayed green on
+`node:20-alpine` while Jest's CommonJS runtime could not parse the ESM entry — that is what turned
+`api-tests` red, the stub in [`docs/guides/testing.md`](../../guides/testing.md) §6.
+
+The general lesson survives the specific fix: **a green Docker build is not proof a major is safe on
+the runtime under it.** An ESM-only dependency now loads because Node 24 has stable `require(esm)`
+and Jest ≥ 24.9 honours it, not because the packaging question went away. Lift Docker and CI Node
+together, and read `api-tests` as the check that actually exercises the module graph.
 
 ### Why the baseline is ours rather than `--ignore-known`
 
@@ -273,12 +280,20 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 4.16%** duplicated lines (977 clones, 11,833 duplicated lines, across
-  1,294 files analysed) — measured 2026-09-10 with `npm run check:duplication` after combining
-  the identity-query / named-event extract with first-party Sentry trace origins and the
-  shared `/task` `/event` `/hours` `card_posted` cases. The raw ratio is
-  11,833 / 284,707 = 4.156%, under the 4.3% threshold.
-- **Threshold: 4.3%**, just above it. Not ratcheted down.
+- **Current measurement: 3.88%** duplicated lines (1,030 clones, 12,393 duplicated lines, across
+  1,428 files analysed; 12,393 / 319,277 = 3.882%) — measured 2026-09-17 with
+  `npm run check:duplication` after folding the three inline `chapter_audit_log` writers into
+  `ChapterAuditLogService.record` (#2167), which removed two clone pairs. `main` measured 3.89%
+  / 1,032 clones / 12,422 duplicated lines the same day, so 0.01 of the figure is this change and
+  the rest is slack the ratio had already shed.
+- **Threshold: 4.1%.** Ratcheted from 4.3% on 2026-09-17. The 0.22 of headroom is deliberate:
+  the measured figure has ranged 3.89–4.24% across the seven days to 2026-09-12, so a threshold
+  set just above 3.88% would redden on ordinary drift rather than on a real copy-paste.
+- The **2026-09-10 figure** was 4.16% (977 clones, 11,833 duplicated lines, 1,294 files;
+  11,833 / 284,707 = 4.156%), measured after combining the identity-query / named-event extract
+  with first-party Sentry trace origins and the shared `/task` `/event` `/hours` `card_posted`
+  cases. Kept as the previous datum, not as a baseline to compare a current run against — the
+  denominator has grown since.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
   make a red run green. Set the new value from a *measured* run, never from a guess, and leave
   enough headroom that ordinary drift does not redden it.

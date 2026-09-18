@@ -55,7 +55,9 @@ updates:
     # See AGENTS.md § Gotchas and PR #842.
     #
     # These families therefore move only as a version-locked set, via a
-    # planned Expo SDK upgrade (#289) — never as an isolated Dependabot bump.
+    # planned Expo SDK upgrade (#2329) — never as an isolated Dependabot bump.
+    # (#289 was the SDK 54 → 57 upgrade and is closed; #2329 is the open
+    # tracker for the next one.)
     #
     # KNOWN, DELIBERATE GAP: ignore conditions apply to Dependabot *security*
     # updates as well as version updates, so a CVE in one of these packages
@@ -64,6 +66,19 @@ updates:
     # families need a human/agent to carry a CVE through the SDK-upgrade path.
     # `npm run check:npm-audit` still fails CI on such an advisory, so it
     # surfaces loudly rather than silently.
+    #
+    # The set this gap covers GREW when the Expo client list below was
+    # completed to all 21 packages: it now also suppresses security PRs for
+    # expo-camera, expo-image-picker, expo-document-picker, expo-location and
+    # expo-notifications — the media, file, location and push surfaces. These
+    # entries carry no `update-types`, so in-SDK 57.0.x patches are frozen too,
+    # not just the SDK-line majors that caused the break. Whether that is still
+    # the right trade at 21 packages is #2331; until it is decided, the blanket
+    # ignore stands, because an isolated bump here is what broke the build.
+    # When it does bite: `check:npm-audit` is a required check, so an advisory
+    # here goes red on every open PR at once. The unblock path is an entry in
+    # scripts/npm-audit-allowlist.json (reason + tracking issue + expiry), not
+    # a one-package bump.
     ignore:
       - dependency-name: "react"
       - dependency-name: "react-dom"
@@ -83,11 +98,36 @@ updates:
       # delivery client) with no tie to the mobile SDK lock; globbing would
       # freeze it silently and forever. If an Expo SDK upgrade adds a new
       # client package here, add it to this list.
+      #
+      # This list must cover EVERY `expo-*` entry in apps/mobile/package.json.
+      # That is mechanical, not a per-package judgement: an Expo client
+      # package's major version IS its SDK line. Ten of them sat outside this
+      # list until PR #2338, and two of those cost a production build —
+      # #2218 and #2217 moved expo-apple-authentication and expo-localization to
+      # 58.0.0, and `eas build -p ios` failed with
+      # `type 'Utilities' has no member 'keyWindow'`. Nothing in CI compiles
+      # Swift, so the list is the only gate. Why the rule is mechanical and
+      # what the break looks like: docs/internal/ci-cd/AGENT_INFRA.md
+      # § The ignore list is a runtime constraint, not a preference.
+      # Nothing enforces this roster mechanically today — that is #2330.
+      #
+      # These move only as a version-locked set via a planned SDK upgrade
+      # (#2329), like the React family above.
+      - dependency-name: "expo-apple-authentication"
+      - dependency-name: "expo-application"
+      - dependency-name: "expo-camera"
       - dependency-name: "expo-constants"
+      - dependency-name: "expo-crypto"
+      - dependency-name: "expo-device"
+      - dependency-name: "expo-document-picker"
       - dependency-name: "expo-file-system"
       - dependency-name: "expo-font"
+      - dependency-name: "expo-image-picker"
       - dependency-name: "expo-linking"
+      - dependency-name: "expo-localization"
+      - dependency-name: "expo-location"
       - dependency-name: "expo-network"
+      - dependency-name: "expo-notifications"
       - dependency-name: "expo-router"
       - dependency-name: "expo-secure-store"
       - dependency-name: "expo-sharing"
@@ -126,6 +166,81 @@ updates:
       # (`^2.1.0`) — only its 3.x is unusable here, and a major arrives as its
       # own reviewable PR rather than inside the group.
       - dependency-name: "colorjs.io"
+
+      # ── The postcss / Next pin ───────────────────────────────────────────
+      # `packages/theme` is the only workspace that declares `postcss` at all,
+      # and its range must stay LOW enough to resolve to whatever copy `next`
+      # drags in — not high enough to force its own.
+      #
+      # `next` depends on `postcss` at an EXACT version (`8.5.23` today), so it
+      # pins the hoisted root copy. Raising this declaration above that exact
+      # version does not move the root copy; it makes npm nest a second one at
+      # `packages/theme/node_modules/postcss`. Two copies means two distinct
+      # `Plugin`/`AcceptedPlugin` type identities, and `tailwind.config.spec.ts`
+      # — which hands the Tailwind plugin to postcss — stops compiling with
+      # TS2321 "Excessive stack depth" plus TS2769 "No overload matches this
+      # call". That is what took `@repo/theme#check-types` down in the grouped
+      # PR #2352, which failed `clean-checkout-typecheck` and
+      # `lint-and-typecheck` with it.
+      #
+      # So the *resolved* postcss version is Next's business, not ours: it moves
+      # when `next` moves, which Dependabot still proposes freely.
+      #
+      # This entry carries no `update-types`, deliberately — a postcss MINOR is
+      # what broke the build, so a major-only ignore would not have helped. Two
+      # consequences, stated plainly because the React/Expo block above is right
+      # that they must be: it freezes the declared range in
+      # `packages/theme/package.json`, and it suppresses Dependabot SECURITY PRs
+      # for postcss. The second is narrower than it sounds — the copy that ships
+      # is Next's, and a postcss advisory is cleared by moving `next` or by a
+      # root `overrides` entry, neither of which this touches — but
+      # `npm run check:npm-audit` is the thing that would actually catch it, not
+      # Dependabot.
+      #
+      # This reasoning holds only while Next's exact pin still satisfies the
+      # range below. If `next` ever pins a postcss outside `^8.5.6`, npm nests a
+      # second copy again and `@repo/theme#check-types` fails exactly as in
+      # #2352 — and Dependabot will not be proposing the raise that fixes it.
+      # Raise the range by hand then, or add a root `overrides` entry (one copy
+      # for everyone), which is also the fix if `packages/theme` ever needs a
+      # postcss API newer than Next's pin.
+      - dependency-name: "postcss"
+
+      # ── The NestJS 12 hold ───────────────────────────────────────────────
+      # Majors only. Like the ESLint 10 hold below, this is blocked on a
+      # dependency, not on our own code: `@sentry/nestjs` does not support
+      # NestJS 12 in any stable release. 10.75.0 (newest) still peer-requires
+      # `@nestjs/core`/`@nestjs/common` at `^8||^9||^10||^11`. The only
+      # published build that adds `^12.0.0` is `11.0.0-rc.0` — a release
+      # candidate, and `@sentry/nestjs` is the API's error reporting, so
+      # running it pre-release to satisfy a dependency bump is the wrong trade.
+      #
+      # The four packages move as a set: `@nestjs/platform-express` and
+      # `@nestjs/testing` peer-require `@nestjs/core@^12` from 12.0.1 onward
+      # (12.0.0 still allowed `^11.0.0`). Dependabot proposes the newest in the
+      # major, so #2353 and #2355 were individually unmergeable no matter what
+      # CI said: each bumped one package and left `core`/`common` at 11.
+      # `@nestjs/swagger@12` joins them for the same reason (`^12.0.0` peers).
+      #
+      # Ignoring only the major keeps 11.x minors and patches flowing, so this
+      # is NOT the security gap described for the React/Expo families above.
+      #
+      # NOT held: `@nestjs/schedule`, whose 12.x peers are
+      # `^11.0.0 || ^12.0.0` — it runs on Nest 11 and is already on 12 here.
+      # Check the peer range before adding a fifth entry; "starts with
+      # @nestjs/" is not the rule.
+      #
+      # Re-evaluate when `@sentry/nestjs` 11 ships stable. Tracking: #2357.
+      - dependency-name: "@nestjs/core"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@nestjs/common"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@nestjs/platform-express"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@nestjs/testing"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@nestjs/swagger"
+        update-types: ["version-update:semver-major"]
 
       # ── The ESLint 10 hold ───────────────────────────────────────────────
       # Majors only. ESLint 10 is blocked on a plugin, not on our own code:

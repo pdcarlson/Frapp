@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CustomFieldService } from './custom-field.service';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
+import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { CustomFieldVisibility } from '#domain/entities/chapter-custom-field.entity';
 
@@ -53,6 +55,12 @@ describe('CustomFieldService.findVisibleValuesForMember', () => {
       providers: [
         CustomFieldService,
         { provide: SUPABASE_CLIENT, useValue: supabase },
+        // Read-only path: nothing here audits, but the service now injects the
+        // one audit writer (#2167), so the container needs it bound.
+        {
+          provide: ChapterAuditLogService,
+          useValue: createAuditLogServiceMock(),
+        },
       ],
     }).compile();
     return module.get(CustomFieldService);

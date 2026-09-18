@@ -40,7 +40,9 @@ describe("isSupportedTimeZone", () => {
 
   // Offset forms are NOT portable, and this test used to assert they were
   // accepted — true on the Node 22 sandbox it was written on, false on the
-  // Node 20 that CI and the Dockerfile actually run. Pinning either answer
+  // Node 20 that CI and the Dockerfile ran at the time. (Both now run Node 24,
+  // where they are accepted again — which is exactly the point: the answer
+  // moved underneath the test and the test did not care.) Pinning either answer
   // repeats the mistake this whole module exists to prevent: treating one
   // runtime's timezone verdict as universal. Assert instead the invariant that
   // holds everywhere — the predicate and the normalizer never disagree, so a

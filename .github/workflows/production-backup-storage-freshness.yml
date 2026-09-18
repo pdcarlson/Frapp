@@ -1,0 +1,87 @@
+name: Production backup storage freshness
+
+# Between-dump watch: the nightly production Storage mirror must stay fresh.
+#
+# Launch bar 2 needs both halves of a restore. Nightly Backup
+# (`db-backup.yml`) `backup-production-storage` is the Storage half for
+# `frapp-prod`. The Postgres freshness watch (1963) does not see this job.
+# The reviewer watch (1956) only sees GitHub environment `production-backup`.
+#
+# 14:00 UTC is after the Postgres freshness watch at 13:15 and clear of the
+# observed Storage-mirror window. Measured 2026-09-17 over the last 10
+# scheduled `db-backup.yml` runs on `main`, via
+# `GET /repos/{repo}/actions/workflows/db-backup.yml/runs?branch=main` plus
+# `/runs/{id}/jobs`: `backup-production-storage` started between 10:58 and
+# 13:04 UTC and concluded in under a minute every time (slowest 2026-09-17,
+# 39s; latest finish 2026-09-14T13:05:01Z). The 06:30 cron is nominal —
+# GitHub's scheduled-run lag is what puts the start as late as 13:04, so the
+# margin is sized against the observed start, not the cron.
+#
+# `timeout-minutes: 60` on that job (`db-backup.yml`, double the dump job's
+# 30) is a ceiling, not a duration — do not re-derive this slot from it.
+# The Postgres watch's 13:15 is NOT a safe slot for this job: it was chosen
+# against the dump job's 30-minute budget, and a probe that lands while the
+# mirror is in flight returns a green "in flight" verdict that never reaches
+# the 36h staleness check.
+#
+# Do not change `db-backup.yml` to make this job green.
+#
+# ── Why this job does NOT say `environment: production` ─────────────────────
+# ADR-19 put Required reviewers on the `production` GitHub environment. A
+# `schedule:` job that names it suspends on that gate and expires without
+# probing (#1435). The dump jobs themselves use `production-backup` for the
+# same reason. This workflow names no environment at all.
+#
+# Semantics live in scripts/ci/production-backup-storage-freshness.mjs.
+# Unit tests: scripts/ci/__tests__/production-backup-storage-freshness.test.mjs
+# (`npm run test:ci-scripts`).
+#
+# Not a required PR check.
+
+on:
+  schedule:
+    # 14:00 UTC daily, after the Postgres freshness watch at 13:15 and clear
+    # of the observed Storage-mirror window (see the header for the measured
+    # basis). One of the daily staggered watchdogs. Full schedule:
+    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-backup-storage-freshness
+  cancel-in-progress: false
+
+jobs:
+  storage-freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # List Nightly Backup runs/jobs. Without this, an explicit permissions
+      # block leaves Actions reads at none and every probe 403s.
+      actions: read
+      # The only write scope in this workflow, job-scoped: the alert issue.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Dependency-free (global fetch + the alert-issue helper), so no npm ci —
+      # matching production-guardrails.yml's deliberately minimal action surface.
+      - name: Assert the nightly production Storage mirror is fresh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/production-backup-storage-freshness.mjs

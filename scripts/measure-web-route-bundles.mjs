@@ -58,13 +58,12 @@ const NEXT_DIR = join(ROOT, "apps/web/.next");
 /**
  * Hand-rolled rather than `fs.globSync`, which is Node 22+.
  *
- * This repo declares `engines: { node: ">=20" }` and every CI job pins
- * `node-version: 20`, so a glob here would throw at module-link time —
- * `SyntaxError: does not provide an export named 'globSync'` — on the platform
- * the repo actually supports, while passing on a 22 laptop. That failure mode
- * matters more for this file than most: the numbers it prints are quoted in
- * `spec/ui/resilience/performance-budgets.md` on the argument that they are
- * reproducible, and a script a reviewer cannot run is not.
+ * That constraint has lifted: the repo now declares `engines: { node: ">=24" }`
+ * and every CI job pins `node-version: 24`, so `globSync` would link fine. The
+ * walk stays hand-rolled anyway, because the numbers this script prints are
+ * quoted in `spec/ui/resilience/performance-budgets.md` on the argument that
+ * they are reproducible — changing how the file set is collected would put
+ * that provenance in question to save four lines.
  */
 function findManifests(dir) {
   const found = [];
