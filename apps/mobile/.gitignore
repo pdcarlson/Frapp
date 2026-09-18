@@ -48,8 +48,10 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# local env files. Not just `.env*.local`: EAS uploads whatever git does not ignore and
+# `@expo/env` loads `.env.production` at production bundle mode. See the root .gitignore.
+.env
+.env.*
 
 # typescript
 *.tsbuildinfo

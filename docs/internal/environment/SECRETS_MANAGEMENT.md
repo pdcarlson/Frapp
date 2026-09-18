@@ -93,7 +93,10 @@ changes. That table also flags the one `NEXT_PUBLIC_*` name that is a **literal*
 direct-set client flags/URLs (see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § apps/mobile). There is
 **no Infisical → EAS sync**; any `EXPO_PUBLIC_*` a device build needs must also be set in the EAS
 dashboard (`development` / `preview` / `production`) or a non-secret `eas.json` `build.<profile>.env`
-entry. The six live syncs are Render + Vercel only (next section).
+entry. **This is not limited to `EXPO_PUBLIC_*`:** `SENTRY_AUTH_TOKEN` is build-time only and never
+bundled, yet a Release build *fails* without it in EAS — see
+[`ENV_REFERENCE.md`](./ENV_REFERENCE.md#appsmobile-expo--eas) § apps/mobile. An Infisical entry for
+that name serves `apps/api` / `apps/web`, which do sync; it never reaches EAS. The six live syncs are Render + Vercel only (next section).
 
 ### 5. Configure Secret Syncs
 

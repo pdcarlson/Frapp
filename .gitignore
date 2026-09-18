@@ -3,12 +3,14 @@ node_modules
 .pnp
 .pnp.js
 
-# Local env files
+# Local env files. `.env.*` rather than an enumeration: the previous list covered
+# `.env`, `.env.local` and the three `.env.<mode>.local` names, but NOT `.env.production`,
+# `.env.development` or `.env.test`. That gap is load-bearing for mobile — EAS uploads
+# whatever git does not ignore, and `@expo/env` loads `.env.production` in production
+# bundle mode, so an untracked-but-not-ignored file is a path from a laptop straight into
+# a store binary. No `.env*` file is committed anywhere in this repo; keep it that way.
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
 
 # Cloud sandbox bringup sentinels (scripts/cloud-sandbox-up.sh)
 .cloud-sandbox-up.done
