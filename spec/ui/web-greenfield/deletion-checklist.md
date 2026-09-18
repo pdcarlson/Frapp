@@ -218,10 +218,15 @@ for each is below the list rather than left implied.
 
       **Where the `md` key lives is load-bearing.** It is bound in
       `apps/web/tailwind.config.ts`, with the other Signet-only keys, and deliberately **not** in
-      the shared preset: that preset still serves the frozen `apps/landing`, whose `globals.css`
-      has real shadows and no `--shadow-md`, so binding it there would make `shadow-md` resolve
-      against an undefined property and be dropped — the silent failure #1145 documented, which is
-      the whole reason that app config exists. `signet.css.spec.ts`'s shadow roster now includes
+      the shared preset. The original reason was that the preset also served the legacy
+      `apps/landing` stylesheet, which had real shadows and no `--shadow-md`, so binding it there
+      would make `shadow-md` resolve against an undefined property and be dropped — the silent
+      failure #1145 documented, which is the whole reason that app config exists. The landing's
+      token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) removed that
+      particular consumer, and the key stayed put: `apps/landing/tailwind.config.ts` now binds its
+      own `md` the same way, so both surfaces neutralize `shadow-md` and the preset still binds
+      nothing its stylesheet does not define. Collapsing the two app configs into the preset is a
+      `@repo/theme` refactor of its own, not a consequence of the cutover. `signet.css.spec.ts`'s shadow roster now includes
       `--shadow-md`, so deleting the token fails a test rather than quietly reopening the gap.
 
       **The box is ticked for "no shadow that renders", not "no `shadow-` string".** One inert class

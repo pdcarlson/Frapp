@@ -108,12 +108,14 @@ surface has not deliberately opted into. `signetAccentSemanticVars` is that opt-
 it once its own preset reads bare `var(--token)` throughout. The web shell made that call in the
 #920 cutover (the Delivery (web) row), and native has no stylesheet to collide with at all.
 
-**The web preset is fully migrated: one format, no pairing rule.** Every colour token in
-`packages/theme/src/globals.css` is stored as a **complete colour** (`hsl(30 45% 32%)`, `#C49A3A`,
+**The web preset is fully migrated: one format, no pairing rule.** Every colour token in both
+stylesheets is stored as a **complete colour** (`hsl(30 45% 32%)`, `#C49A3A`,
 `rgba(255,255,255,.08)`) and read through `colorVar()` as a bare `var(--token)`. There is no second
-convention left to pair against, which is the precondition the shell cutover then built on:
-`apps/web` now imports `packages/theme/src/signet.css` — which carries the same one-format rule —
-while `globals.css` remains the landing stylesheet.
+convention left to pair against, which is the precondition the shell cutover then built on. Both
+web surfaces now import `packages/theme/src/signet.css` — `apps/web` since the #920 shell slice,
+`apps/landing` since its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) —
+so the one-format rule is the only rule on any shipping surface. The legacy `globals.css`, which
+used the same format, was deleted with that cutover.
 
 The `--ring` / `--side-*` family moved first, in #1143: those were the tokens chapter branding rewrote,
 and the engine persists hex, so under the old bare-triple convention an injected `#C49A3A` became
@@ -130,8 +132,11 @@ Two guards in `packages/theme/src/tailwind.config.spec.ts` hold the invariant:
   `hsl(hsl(...))`, which the browser drops. In a Tailwind arbitrary value the correct form carries
   the type hint: `text-[color:var(--x)]`.
 
-Because the conversion changed only the *format* of these tokens and never a value, `apps/landing`
-— frozen pre-Signet, and explicitly out of scope for #920 — renders identically across it.
+Because the conversion changed only the *format* of these tokens and never a value, it was visually
+inert on every surface. `apps/landing` was frozen pre-Signet and out of scope for #920 at the time,
+so it rendered identically across the conversion; it has since cut over to Signet
+([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) and carries no pre-Signet carve-out
+today.
 
 ### Not yet implemented
 

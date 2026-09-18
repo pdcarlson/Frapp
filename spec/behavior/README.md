@@ -52,8 +52,8 @@ Each topic file is canonical **intended** behavior. Delivery (which is shipped v
 
 ## Dark Mode
 
-- The web dashboard and mobile are dark-only: the dark palette is the only one they ship, and neither offers a theme control, so "support" here does not mean a choice exists. The landing site is the exception — it still renders light, per the bullet below.
-- Palette, typeface, and dark-first Signet tokens live in [`spec/ui/brand-identity.md`](../ui/brand-identity.md) and [`spec/ui/design-system/`](../ui/design-system/README.md) — do not duplicate values here. The frozen landing site still ships the legacy `@repo/theme` tokens until its reskin — their bare `:root` is the light bone palette and `.dark` is opt-in, so with no such class on `apps/landing` the public site renders light-only; the web dashboard ships Signet dark-only since the #920 shell slice (no theme control).
+- **Every surface is dark-only**: the dark palette is the only one any of them ships, and none offers a theme control, so "support" here does not mean a choice exists. The landing site was the one exception and stopped being one at its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) — see the bullet below.
+- Palette, typeface, and dark-first Signet tokens live in [`spec/ui/brand-identity.md`](../ui/brand-identity.md) and [`spec/ui/design-system/`](../ui/design-system/README.md) — do not duplicate values here. Both web surfaces ship Signet dark-only and neither has a theme control: the web dashboard since the #920 shell slice, the landing site since its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)). `signet.css` has a single `:root` and no light palette, so "dark-first" is the whole appearance rather than a default — the landing's old light bone palette went with the legacy tokens.
 
 ---
 

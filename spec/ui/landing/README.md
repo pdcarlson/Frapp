@@ -1,4 +1,4 @@
-> **RESKIN IN PROGRESS** ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)). The bone/bronze/Geist **visual freeze is lifted**: the reskin is designed, its nine decisions are taken ([below](#decisions-d1-to-d9)), and the target boards are committed under [`reference/`](reference/README.md). `apps/landing` has not moved yet, so what ships today is still bone/bronze/Geist — do not file spec-vs-implementation drift against those leftover tokens until the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merges. Product copy, JSON-LD, lockup word, and the mark are **Signet** and always were.
+> **RESKIN IN PROGRESS** ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)). The bone/bronze/Geist **visual freeze is lifted** and the **token cutover has merged** ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)): `apps/landing` ships Figtree, the Signet ladder and the inlined crest, and the legacy `@repo/theme` tokens are off this surface. Spec-vs-implementation drift against tokens is filable again. What has *not* moved is the **composition** — the page is still the section inventory below, not the boards' eight sections; slice 2 ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)) rebuilds it. Product copy, JSON-LD, lockup word, and the mark are **Signet** and always were.
 
 # UI/UX Specification: Landing Page (frapp.live)
 
@@ -50,15 +50,15 @@ Everything else motion-related on this surface obeys the existing budget in [`..
 
 The six locked type roles are [`../design-system/foundations.md`](../design-system/foundations.md) §7 and bind every Signet surface. The landing needs three roles above the largest locked one (`display`, 32), because a storefront headline is not a product heading.
 
-**These three are an amendment to §7, and they are not settled by this document.** §7 says sizes MUST come from its scale and that inventing an off-scale size is a defect, and [`../design-system/README.md`](../design-system/README.md) §3 rule 4 says a missing role is met by *extending the token definitions*, naming `apps/web/tailwind.config.ts` as the one app-local home. Three 72/48/20 roles declared only in the landing's own stylesheet satisfy neither. So, exactly as D4's signature motion class is an amendment rather than an implementer's call, **slice 1 ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) must land the §7 amendment in the same PR that introduces these tokens**, and settle in that PR which of the two homes they take: `packages/theme/src/signet.css` alongside the locked roles, or the landing stylesheet with §3 rule 4 widened to name it. Slice 0 deliberately touches neither file. Until that lands, the table below is the reskin's intent, not a licence to ship an off-scale size.
+**These three are an amendment to §7, and slice 1 ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) settled it.** The amendment is recorded in [`../design-system/foundations.md`](../design-system/foundations.md#amendment-the-three-marketing-type-roles-landing-only) §7, which is now canonical for them — values included.
 
-| Role | Desktop | Phone | Used by |
-| --- | --- | --- | --- |
-| `--text-hero` | 72 / 74 · 700 · tracking `-0.02em` | 40 / 44 | The hero H1, and nothing else |
-| `--text-display-lg` | 48 / 52 · 700 · tracking `-0.02em` | 32 / 37 (the locked `display` role) | Section H2s and the desktop prices. On phone the two prices take `--text-hero` (40 / 44) so a figure never outweighs the H1 |
-| `--text-lead` | 20 / 30 · 400 | 18 / 27 | Hero and closing paragraphs, and nothing else |
+**Home: the landing stylesheet.** They are declared in [`apps/landing/app/globals.css`](../../../apps/landing/app/globals.css) and bound as utilities by [`apps/landing/tailwind.config.ts`](../../../apps/landing/tailwind.config.ts), and [`../design-system/README.md`](../design-system/README.md) §3 rule 4 was widened in the same PR to name a second app-local token home. The alternative — `packages/theme/src/signet.css`, alongside the locked roles — was rejected: that stylesheet is pinned to `signet.ts`, which is the token source `apps/mobile` reads, so a 72px storefront headline declared there would sit one import away from every product screen on two surfaces where §7's six roles are the whole scale. Using one of these three outside `apps/landing` is a defect, exactly as an off-scale literal is.
+
+**The values are not restated here.** `--text-hero`, `--text-display-lg` and `--text-lead`, their desktop and phone sizes, and which element takes each one live in [`../design-system/foundations.md`](../design-system/foundations.md#amendment-the-three-marketing-type-roles-landing-only) § Amendment. One canonical place per fact — a second copy on this page is a copy that drifts, and it did: it disagreed with the canonical table about the phone pricing figures before that was reconciled.
 
 Type inside the two product frames is transcribed from the design-system and web-greenfield boards and is deliberately **not** on this scale. Do not "correct" it.
+
+**Residual off-scale sizes in `page.tsx`, and why they are not drift.** The token cutover moved this surface's colours, typeface and the type that has a named role — the hero H1, the section H2s, the leads, the figures — onto the scale. It did **not** convert the roughly forty-five remaining stock Tailwind sizes (`text-sm`, `text-xs`, `text-base`) in [`apps/landing/app/page.tsx`](../../../apps/landing/app/page.tsx), because slice 2 ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)) rewrites that file to the section map and deletes them. This is the same posture the web reskin took during #920 — residuals on a surface awaiting its rebuild are tracked by the epic, not filed as drift ([`../design-system/README.md`](../design-system/README.md) §2). The legal layout ([`LegalDocument`](../../../apps/landing/app/components/legal-document.tsx)) is **not** in that carve-out and was converted in the cutover, because slice 2 does not rebuild it.
 
 ## Marketing copy rules
 
@@ -75,7 +75,7 @@ Source of truth: [`apps/landing/app/page.tsx`](../../../apps/landing/app/page.ts
 
 | # | Section | Content |
 | --- | ------- | ------- |
-| 1 | Header (sticky) | `FrappLockup` (Design emblem B PNG + Signet word, links to `/`); anchor nav Features / How it works / Pricing, hidden below `md`; "Log In" (also `md`+ only) and a primary "Get Started" |
+| 1 | Header (sticky) | `FrappLockup` (locked emblem B **inlined as one SVG path** + Signet word, links to `/`); anchor nav Features / How it works / Pricing, hidden below `md`; "Log In" (also `md`+ only) and a primary "Get Started" |
 | 2 | Hero | Eyebrow "The operating system for greek life" (CSS-uppercased), H1 "Replace Discord, OmegaFi, and Life360 with one intentional platform.", sub paragraph on unifying comms/events/study/points/dues, primary CTA "Get Started", secondary "Explore the product", trust line "14-day trial • No per-seat pricing • Stripe-backed billing". Right column is a hand-built "Chapter Operations Snapshot" card — "Subscription active" pill plus four static status lines. **No hero image, no chat mockup.** |
 | 3 | Stats strip | Three static values (50+ chapters, 2,000+ members, 10,000+ events). Values are plain text; there is no count-up animation and no metrics disclaimer. |
 | 4 | Features (`#features`) | Eyebrow "Core capabilities", H2 "One ledger for communication, events, points, and dues." One bordered list, six equal-weight rows in this order: Backwork Library, Real-Time Chat, Events & Attendance, Points & Leaderboard, Study Hours, Billing & Dues. Chat is a peer row, not a lead block, and nothing is framed as an upgrade grid. |
@@ -83,7 +83,7 @@ Source of truth: [`apps/landing/app/page.tsx`](../../../apps/landing/app/page.ts
 | 6 | App showcase | Eyebrow "Product in context", H2 "Web and mobile surfaces designed as one system." Two cards, each a static SVG rendered through `next/image` (`/showcase-dashboard.svg` 1280×900, `/showcase-mobile.svg` 900×900) over a caption: "Dashboard operations console" and "Member mobile loop". Flat art in bordered cards — no device frames, no feature tabs |
 | 7 | Pricing (`#pricing`) | **One** card: "Simple chapter pricing", **$149 / per chapter / month**, five bullets (unlimited members and officers; chat, events, points, study tracking, billing; role-based permissions and audit history; reports and exports; priority implementation support), CTA "Start free trial". Beside it, four always-open FAQ cards — not an accordion. No free tier and no second tier render |
 | 8 | Testimonials | H2 "Built for real chapter operations.", supporting line "Officers run chat, events, hours, and dues in one place.", three quote cards with name / role / chapter |
-| 9 | Final CTA | Full-bleed navy band, H2 "Ready to run your chapter with clarity, speed, and accountability?", sub paragraph, CTA "Get Started" |
+| 9 | Final CTA | Full-bleed band on the elevated ladder step (`bg-card`), H2 "Ready to run your chapter with clarity, speed, and accountability?", sub paragraph, CTA "Get Started" |
 | 10 | Footer | Four columns — Product (Features, Pricing, Get Started), Resources (Documentation → the GitHub `docs/guides` tree in a new tab, Log In), Legal (Terms of Service, Privacy Policy, FERPA Notice), Contact (Support → `/support`, `mailto:team@frapp.live`) — over a copyright line |
 
 Two as-built quirks the table would otherwise hide:
@@ -111,7 +111,7 @@ Do **not** point `openGraph.images` / `twitter.images` at a static `/og-image.pn
 
 **The hero paints text, not an image.** The LCP element is the H1 block — there is no hero image, and no `next/image` call renders above the fold. That is the guard: nothing above the fold may become an image without re-deciding the LCP story, and no `priority` image should be introduced to a hero that has none.
 
-The header lockup is a 32×32 `next/image` of the Design tile (`priority` unset, so not LCP). The only other `next/image` calls are the below-fold showcase mockups in [`apps/landing/app/page.tsx`](../../../apps/landing/app/page.tsx), both explicitly `priority={false}` so they stay lazy and never preempt the text paint. Keep them that way.
+The header lockup **is no longer an image request at all.** It was a 32×32 `next/image` of the Design tile; the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) replaced it with the crest inlined as one SVG path, which removes a request from a component that renders above the fold on every route, the legal pages included. The only `next/image` calls left are the below-fold showcase mockups in [`apps/landing/app/page.tsx`](../../../apps/landing/app/page.tsx), both explicitly `priority={false}` so they stay lazy and never preempt the text paint. Keep them that way, and keep the lockup inline.
 
 ## Pricing truth
 

@@ -4,7 +4,7 @@
 
 > The rules shared by every Signet surface: direction, guardrails, component ownership, state completeness, entitlement gating, accessibility, motion, and the quality gate. Token values live in the sibling docs below; the committed HTML references are the visual truth.
 
-**Scope.** The *process* standards — component ownership (§3), state completeness (§4), entitlement gating (§5), accessibility (§6), motion discipline (§7), the quality gate (§8), and the behavioral bans in §2 — bind **every** UI surface, including [`../landing/README.md`](../landing/README.md). The *visual* specification — §1, the visual bans in §2, and the token docs below — binds the **Signet surfaces**: mobile and the web dashboard ([`../web-dashboard/README.md`](../web-dashboard/README.md)). Landing is the one carve-out left, and it is closing: its reskin is approved and staged ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)), it keeps shipping its legacy design system until the token cutover merges, and [`foundations.md`](foundations.md) §1 owns that split.
+**Scope.** The *process* standards — component ownership (§3), state completeness (§4), entitlement gating (§5), accessibility (§6), motion discipline (§7), the quality gate (§8), and the behavioral bans in §2 — bind **every** UI surface, including [`../landing/README.md`](../landing/README.md). The *visual* specification — §1, the visual bans in §2, and the token docs below — binds **every** surface: mobile, the web dashboard ([`../web-dashboard/README.md`](../web-dashboard/README.md)) and, since the token cutover merged ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)), the landing. The carve-out that used to sit here is gone; what remains of the landing's reskin is composition, not tokens ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)), and [`foundations.md`](foundations.md) §1 owns the wording.
 
 ---
 
@@ -42,7 +42,7 @@ complete, so add the row in the same change that adds the file.
 
 ## 2. De-Google guardrails
 
-Signet must not read as another generic Google/Material utility, and must not behave like one. These bans are research-derived and **binding**; the Binds column states where, per the scope statement above. A visual ban is not a defect on a frozen surface — `apps/landing` legitimately ships fixed-color borders and its light bone palette under the legacy tokens. `apps/web` is no longer that example: its shell is Signet, and residual violations on screens awaiting their per-family truing-up are tracked by the #920 slices, not filed as drift.
+Signet must not read as another generic Google/Material utility, and must not behave like one. These bans are research-derived and **binding**; the Binds column states where, per the scope statement above. Every surface is on the Signet tokens now, so there is no longer a surface where a visual ban does not apply: `apps/landing` shipped fixed-color borders and a light bone palette under the legacy tokens until [#2366](https://github.com/pdcarlson/Frapp/issues/2366), and does not any more. Residual violations on screens awaiting their per-family truing-up are tracked by the #920 slices, not filed as drift.
 
 | Ban | Instead | Binds |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ Rules:
    - Those files keep Radix for behaviour — focus management, portals, keyboard semantics — but their **appearance is [components.md](components.md), not the shadcn scaffold's defaults**, since the #920 primitives slice. A variant the scaffold ships and Signet does not spec is not automatically kept: `Button`'s `outline` was deleted in that slice because Signet's Secondary already is the outlined button, and two live spellings of one recipe is what the cutover rule forbids.
    - A primitive with **no importers is deleted, not kept for later** (the tech-debt protocol in [`AGENTS.md`](../../../AGENTS.md)). Seven went with the primitives slice. "It ships with shadcn" is not a consumer, and neither is an `index` re-export.
 3. Never duplicate token values in app-local files when semantic tokens exist.
-4. If no existing token role fits, extend or amend the token definitions and adopt the new role consistently — never one-off the value at the call site. Signet surfaces extend the Signet token definitions — `packages/theme/src/signet.ts`, its stylesheet `packages/theme/src/signet.css`, and, for web, `apps/web/tailwind.config.ts`; the landing surface extends the legacy `packages/theme/src/tokens.ts` until its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)), which also settles where that surface's three marketing type roles live ([`../landing/README.md`](../landing/README.md#marketing-type-roles)). The per-tenant accent family is not in either file — it comes from the engine ([`accent-engine.md`](accent-engine.md)).
+4. If no existing token role fits, extend or amend the token definitions and adopt the new role consistently — never one-off the value at the call site. Signet surfaces extend the Signet token definitions — `packages/theme/src/signet.ts`, its stylesheet `packages/theme/src/signet.css`, and, per app, `apps/web/tailwind.config.ts` and `apps/landing/tailwind.config.ts`. **Two app-local homes, not one**, since [#2366](https://github.com/pdcarlson/Frapp/issues/2366): a role only one surface may use belongs to that surface, not to the shared stylesheet that `apps/mobile` also reads. The landing's three marketing type roles are the case that settled it — they are declared in `apps/landing/app/globals.css` and bound as utilities in that app's config, because a 72px storefront headline one import away from every product screen is exactly the off-scale defect [`foundations.md`](foundations.md) §7 bans ([`../landing/README.md`](../landing/README.md#marketing-type-roles), and §7's amendment records the roles themselves). The per-tenant accent family is not in either file — it comes from the engine ([`accent-engine.md`](accent-engine.md)).
 
 ---
 
@@ -247,7 +247,7 @@ Token source: `packages/theme/src/tokens.ts` (`motion.duration`, `motion.easing`
 
 A UI change is not ready unless it passes:
 
-1. Visual consistency with the token system the surface actually ships — [`foundations.md`](foundations.md) and [`accent-engine.md`](accent-engine.md) on Signet surfaces, the legacy `@repo/theme` tokens on the frozen landing surface
+1. Visual consistency with the token system the surface actually ships — [`foundations.md`](foundations.md) and [`accent-engine.md`](accent-engine.md), which since [#2366](https://github.com/pdcarlson/Frapp/issues/2366) is every surface
 2. Spacing consistency on the 4px grid
 3. Clear visual hierarchy — each screen has exactly one obvious typographic anchor, so hierarchy is checked per screen and not only per component
 4. Complete state handling (§4)
