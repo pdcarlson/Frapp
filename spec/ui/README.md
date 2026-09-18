@@ -36,16 +36,16 @@ not by the Governs column here. No CI check asserts this table is complete or it
 | [`mobile/`](mobile/README.md) | Mobile app: screen inventory, navigation, interaction patterns | Active |
 | [`web-greenfield/`](web-greenfield/README.md) | The web UI rebuild (#2140): trust order, brand locks, foundation tokens, deletion acceptance | Active — **outranks `web-dashboard/` on visuals and structure while #2140 is open** |
 | [`web-dashboard/`](web-dashboard/README.md) | Admin web app: shell, nav, screens, state | Active (Signet since the #920 shell slice), but see the note below |
-| [`landing/`](landing/README.md) | Marketing site | **Reskin in progress** ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)) — the visual freeze is lifted and the decisions are taken; `apps/landing` still ships bone/bronze/Geist until the token cutover |
+| [`landing/`](landing/README.md) | Marketing site | **Reskin in progress** ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)) — the visual freeze is lifted, the decisions are taken, and the token cutover has merged; `apps/landing` is on Figtree and the Signet ladder, and what remains is the page rebuild |
 | [`brand-identity.md`](brand-identity.md) | Signet identity: name, tagline, mark/logo rules, house gold | Active |
 | [`assets.md`](assets.md) | Logos, icons, asset sync | Active |
 | [`resilience/`](resilience/README.md) | Network resilience, loading/empty/error delivery guarantees, message delivery | Active |
 
 ### The landing during its reskin
 
-`landing/` is **no longer frozen.** [#2364](https://github.com/pdcarlson/Frapp/issues/2364) is reskinning the storefront from a committed set of target boards, so that README now records the reskin's nine decisions, the marketing type roles and the marketing copy rules alongside the storefront as built. Two things did not change with the freeze lift:
+`landing/` is **no longer frozen.** [#2364](https://github.com/pdcarlson/Frapp/issues/2364) is reskinning the storefront from a committed set of target boards, so that README now records the reskin's nine decisions, the marketing type roles and the marketing copy rules alongside the storefront as built. Two things are worth stating alongside it:
 
-- **`apps/landing` still ships Geist + bone/bronze tokens** until the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merges, and the two systems still MUST NOT mix on the surface. The drift rule that follows from that is stated once, in [`landing/README.md`](landing/README.md), and not repeated here.
+- **`apps/landing` is on the Signet tokens** since the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merged — Figtree, the `signet.css` ladder and the inlined crest. The two systems still MUST NOT mix on the surface; there is simply nothing legacy left on this one. What has *not* moved is the page's **composition**, which slice 2 ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)) rebuilds.
 - **It still MUST NOT be extended with new visual design decisions of its own** — those belong in [`design-system/`](design-system/README.md). What `landing/` owns is this surface's application of them: its decisions, its three marketing type roles, and its copy rules.
 
 The web dashboard left the frozen list with the #920 shell slice; its per-screen-family truing-up is tracked on #920.

@@ -7,20 +7,22 @@ import { useEffect } from "react";
 
 /**
  * App Router last-resort error boundary. Replaces the root layout, so it
- * must render its own `<html>`/`<body>` and re-establish Geist + the
+ * must render its own `<html>`/`<body>` and re-establish Figtree + the
  * landing stylesheet. Do not import landing components here — this boundary
  * catches failures in that tree.
  *
- * Frozen bone/bronze + Geist: do not Signet-reskin this screen.
+ * Signet, since the #2366 token cutover: same surface, same system. Every
+ * colour here is a semantic token, so it tracks the ladder rather than
+ * restating it.
  *
  * `Sentry.captureException` is a no-op when `NEXT_PUBLIC_LANDING_SENTRY_DSN`
  * is unset. The payload still goes through `beforeSend` when Sentry is live.
  */
 
-const geistSans = localFont({
-  src: "../../../packages/theme/fonts/GeistVF.woff2",
-  variable: "--font-geist-sans",
-  weight: "100 900",
+const figtree = localFont({
+  src: "../../../packages/theme/fonts/FigtreeVF.woff2",
+  variable: "--font-figtree",
+  weight: "400 700",
   display: "swap",
 });
 
@@ -36,21 +38,21 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <html lang="en" className={geistSans.variable}>
+    <html lang="en" className={figtree.variable}>
       <body className="font-sans antialiased">
         <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
           <div className="w-full max-w-md text-center">
-            <h1 className="text-2xl font-bold tracking-tight text-navy dark:text-white">
+            <h1 className="text-headline text-foreground">
               This page could not load
             </h1>
-            <p className="mt-3 text-sm text-muted-foreground">
+            <p className="mt-3 text-body text-muted-foreground">
               The page couldn&apos;t finish loading, and the error has been
               reported. Reloading usually clears it.
             </p>
             <button
               type="button"
               onClick={() => reset()}
-              className="mt-6 inline-flex h-11 items-center justify-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              className="mt-6 inline-flex min-h-button items-center justify-center rounded-md bg-primary px-6 text-label text-primary-foreground transition-colors hover:bg-primary-hover"
             >
               Reload
             </button>

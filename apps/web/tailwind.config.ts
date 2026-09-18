@@ -2,11 +2,16 @@ import type { Config } from "tailwindcss";
 import sharedConfig, { colorVar } from "@repo/theme/tailwind";
 
 /*
- * Signet-only Tailwind keys live in this app config, not in the shared preset:
- * the preset still serves the frozen `apps/landing`, whose legacy `globals.css`
- * does not define these tokens, and a preset key reading an undefined token is
- * the silent-no-color failure #1145 documented. They migrate into the shared
- * preset when landing reskins. Static values come from
+ * Signet-only Tailwind keys live in this app config rather than the shared
+ * preset. The original reason was that the preset also served the frozen
+ * `apps/landing`, whose legacy `globals.css` defined none of these tokens, and
+ * a preset key reading an undefined token is the silent-no-color failure #1145
+ * documented. That reason expired with #2366: landing ships `signet.css` too,
+ * and `apps/landing/tailwind.config.ts` now carries the same key set.
+ * Collapsing the COMMON SUBSET into the preset is tracked as #2371 — only the
+ * subset, because `mention` and `gold` below are web-only and the landing's
+ * three marketing type roles are landing-only by decision (foundations §7).
+ * Static values come from
  * `packages/theme/src/signet.css`; the accent family is overridden per chapter
  * by the accent engine at runtime. `packages/theme/src/signet.css.spec.ts`
  * asserts every token read here is defined there.
@@ -176,9 +181,12 @@ const config: Config = {
         /*
          * The 20 step — sheets and the AI answer card (foundations.md §8), the
          * ceiling of the map. It lives here rather than in the shared preset
-         * for the same reason the colors above do: the legacy stylesheet the
-         * frozen landing surface ships defines no `--radius-2xl`, and a preset
-         * key reading an undefined token is #1145's silent failure.
+         * for the same reason the colors above do, and with the same expiry:
+         * the legacy stylesheet the frozen landing surface used to ship defined
+         * no `--radius-2xl`, and a preset key reading an undefined token is
+         * #1145's silent failure. That stylesheet is gone (#2366) and
+         * `apps/landing` declares this key too, so it is part of the common
+         * subset #2371 moves up.
          */
         "2xl": "var(--radius-2xl)",
       },

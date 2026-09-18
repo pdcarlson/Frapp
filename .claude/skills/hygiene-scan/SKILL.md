@@ -68,7 +68,7 @@ design question** — do not ship the mechanical half.
 | | |
 | --- | --- |
 | **May edit** | `apps/**` and `packages/**` product code and their tests; under `scripts/**`, dead code and stale allowlist entries only — the check, CI and deploy scripts there *are* the gates, so their logic is never in scope; the gate baselines, downward only (`scripts/dependency-cruiser-known-violations.json` via `--update-baseline` after a clean run, the `.jscpd.json` threshold); **path citations** in any doc — `spec/behavior/**` included — when a fix moves or renames a file (that is doc-sync, not intent), and the **relevant** `docs/` file when a fact it states moved; this skill directory (self-maintenance) |
-| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (owned by the in-flight reskin epic [#2364](https://github.com/pdcarlson/Frapp/issues/2364) — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); the freeze is lifted but those files are another epic's, so a hygiene PR must not race it. Dead code and correctness there are still fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · the legacy `@repo/theme` exports landing consumes · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `git push --no-verify` |
+| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (owned by the in-flight reskin epic [#2364](https://github.com/pdcarlson/Frapp/issues/2364) — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); the freeze is lifted but those files are another epic's, so a hygiene PR must not race it. Dead code and correctness there are still fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `git push --no-verify` |
 | **Volume** | at most **one** PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that branch exists); at most **one open** Hygiene Scan PR at a time; at most **~3** net-new issues per run. Never merge — a human does. |
 
 **Behaviour change is out of scope**, with one exception. Observable behaviour is anything a test,
@@ -249,8 +249,13 @@ a live `dark:` variant in `apps/web`, NativeWind or raw hex or a `fontSize` lite
 `apps/mobile`, a primitive the #920 primitives slice deleted (`accordion`, `progress`,
 `scroll-area`, `separator`, `skeleton`, `sonner`, `tooltip`, `Button`'s `outline` variant) coming
 back — the table in [`signet-cutover`](../signet-cutover/SKILL.md) and
-[`ui-development`](../ui-development/SKILL.md) is the reference. **On `apps/landing` the same
-markers are correct**: it is frozen, and a visual ban is not a defect there.
+[`ui-development`](../ui-development/SKILL.md) is the reference. **`apps/landing` is no longer an
+exemption here.** It shipped those markers legitimately while it was frozen; since its token cutover
+([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) it is a Signet surface, so a leftover
+Geist, bone/bronze, `navy` or `emerald` marker there is a real L2 defect. Note what that does and
+does not license: the marker is reportable, but `apps/landing` **visuals stay hands-off** because
+they belong to the in-flight reskin epic (the Never row above) — so file it, do not fix it in a
+hygiene PR.
 
 **L3 · Duplication and parallel paths.** The jscpd clone list is the floor, not the ceiling — it
 sees textual clones over 50 tokens, not the same logic written twice. Look for the shape: the
@@ -427,8 +432,10 @@ run entry never restates. Keep it to the facts the next run needs.
 - **Whole-pattern or file it.** Never leave a pattern half-migrated.
 - **Net simpler, always.** A fix that adds a copy, a shim, or a parallel path is the wrong fix.
 - **Hands off means hands off.** `apps/landing` visuals (not frozen any more, but owned by the
-  in-flight reskin epic #2364 — same answer, different reason), the seven mobile hotspot files,
-  the legacy theme exports landing consumes.
+  in-flight reskin epic #2364 — same answer, different reason) and the seven mobile hotspot files.
+  The legacy `@repo/theme` exports used to be on this list; they were deleted with the landing's
+  token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)), so there is nothing left
+  to hold off from.
 - **Spec is intent; code is current.** A spec-vs-code contradiction is filed, never resolved by
   editing either side to match the other (`AGENTS.md` § Spec vs code).
 - **Never print secret values.** Names and presence only.

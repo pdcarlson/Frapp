@@ -1,4 +1,79 @@
-@import "@repo/theme/globals.css";
+@import "@repo/theme/signet.css";
 
 /* See `apps/web/app/globals.css` — v4 needs the JS config named explicitly. */
 @config "../tailwind.config.ts";
+
+/*
+ * ── The three marketing type roles ───────────────────────────────────────────
+ *
+ * `spec/ui/design-system/foundations.md` §7 locks six type roles and binds them
+ * to every Signet surface; the largest is `display` at 32. A storefront headline
+ * is not a product heading, so this surface needs three roles ABOVE that ceiling
+ * — and §7 also says a size that does not come from its scale is a defect, which
+ * is why these are named tokens rather than a `text-[72px]` sprinkled through
+ * the page.
+ *
+ * **They live here, on the surface that owns them, and that is the decision this
+ * slice was asked to make.** The alternative was `packages/theme/src/signet.css`
+ * alongside the locked roles, and it is the wrong home: that stylesheet is
+ * pinned to `signet.ts` by `signet.css.spec.ts`, and `signet.ts` is the token
+ * source `apps/mobile` reads. Declaring a 72px marketing headline there would
+ * put it one import away from every product screen on two other surfaces, where
+ * §7's six roles are the whole scale and a seventh is a defect. A marketing role
+ * that only one surface may use belongs to that surface.
+ *
+ * `spec/ui/design-system/README.md` §3 rule 4 was widened in the same PR to name
+ * this file as the landing's app-local token home, beside
+ * `apps/web/tailwind.config.ts`, and foundations.md §7 carries the amendment
+ * that records these three as a landing-only extension. Values are the System
+ * sheet's (`spec/ui/landing/reference/canvas/System.dc.html`), restated in
+ * `spec/ui/landing/README.md` § Marketing type roles.
+ *
+ * ONE breakpoint, and the desktop values are the base. D6 pins the phone board
+ * at 390 and there is no layout breakpoint between 375 and 390, so a single
+ * block covers every phone the board speaks for.
+ *
+ * **The boundary is written as the exact complement of Tailwind's `sm`, not as
+ * a max-width in px, and that is load-bearing.** `sm:` compiles to
+ * `(min-width: 40rem)`. A `(max-width: 639px)` block is NOT its complement:
+ * a viewport at 639.5px — reachable through browser zoom and fractional device
+ * pixel ratios — satisfies neither, so the roles would fall back to their
+ * DESKTOP values while every `sm:` utility stayed off, rendering a 72px hero on
+ * a phone-width screen. `not all and (min-width: 40rem)` closes that sliver by
+ * construction: exactly one of the two sides is always active, whatever the
+ * subpixel width.
+ */
+@layer base {
+  :root {
+    --text-hero: 72px;
+    --text-hero-line: 74px;
+    --text-hero-weight: 700;
+    --text-hero-tracking: -0.02em;
+
+    --text-display-lg: 48px;
+    --text-display-lg-line: 52px;
+    --text-display-lg-weight: 700;
+    --text-display-lg-tracking: -0.02em;
+
+    --text-lead: 20px;
+    --text-lead-line: 30px;
+    --text-lead-weight: 400;
+  }
+
+  @media not all and (min-width: 40rem) {
+    :root {
+      --text-hero: 40px;
+      --text-hero-line: 44px;
+
+      /*
+       * The locked `display` role's 32/37. On phone the marketing H2 collapses
+       * onto the scale rather than keeping an off-scale step of its own.
+       */
+      --text-display-lg: 32px;
+      --text-display-lg-line: 37px;
+
+      --text-lead: 18px;
+      --text-lead-line: 27px;
+    }
+  }
+}

@@ -23,7 +23,7 @@ description: >
 
 | Layer | Location | Purpose |
 |-------|----------|---------|
-| `@repo/theme` | `packages/theme/src/` | Tailwind preset (`./tailwind`) + stylesheets (`./signet.css` Signet, `./globals.css` legacy/landing) + typed Signet tokens (`./signet`, what mobile reads) + the chapter accent resolver (`./accent`). `./tokens` is the legacy bone/bronze/ink token set, consumed only inside the package. |
+| `@repo/theme` | `packages/theme/src/` | Tailwind preset (`./tailwind`) + the Signet stylesheet (`./signet.css`, imported by both web surfaces) + typed Signet tokens (`./signet`, what mobile reads) + the chapter accent resolver (`./accent`). The legacy `./globals.css` export was deleted with #2366. `./tokens` is the legacy bone/bronze/ink token set, consumed only inside the package (the accent fallback and the motion scale). |
 | ShadCN components | `apps/web/components/ui/` | Dashboard primitives and Radix composites (Button, Card, Dialog, Select, Toast, etc.) |
 | App components | `apps/web/components/` | Feature-level components |
 | Pages | `apps/web/app/` | Next.js App Router pages and layouts |
@@ -104,37 +104,53 @@ summarize the tokens as implemented in `@repo/theme`.
 Signet end to end**: `apps/web/app/globals.css` imports `packages/theme/src/signet.css` (dark-only,
 Figtree via `--font-figtree`), and all nine #920 slices have landed — the shell, the shared
 primitives, and every screen family. The migration window is closed, so a legacy class or a live
-`dark:` variant on a dashboard screen is a defect now, not a pending slice. **The landing site has
-NOT been reskinned**: it still ships the legacy chat-first **bone / bronze / ink** palette
-(`packages/theme/src/globals.css`), light-first with Geist Sans — but **its spec is no longer
-frozen**: [#2364](https://github.com/pdcarlson/Frapp/issues/2364) lifted the freeze, took the
-reskin's nine decisions, and staged the cutover, so read
-[`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md) for what the surface is becoming.
-Still do not restyle it toward Signet ad hoc — the cutover is staged and owned, which is a stronger
-reason than the freeze was, not a weaker one. The legacy `navy` / `emerald` **preset keys survive
-for `apps/landing` alone** (existing utility classes keep compiling, but their values map to ink /
-moss / bone-era colors) and go with the token cutover
-([#2366](https://github.com/pdcarlson/Frapp/issues/2366)). That reskin **is** tracked now — #2364 is
-the epic, #920 is `apps/web`, #937 is `apps/mobile`, and the Chunk-12 landing issues (#447, #491)
-are pre-Signet copy work superseded by the epic's page-rebuild slice
-([#2367](https://github.com/pdcarlson/Frapp/issues/2367)). The pricing question that #913/#914
-raised is settled for this surface by decision D3. `royal-blue` is **gone** — the #920 slice-9 cutover deleted it outright,
-along with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed).
+`dark:` variant on a dashboard screen is a defect now, not a pending slice. **The landing site is
+on Signet tokens too**, since its cutover merged ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)):
+`apps/landing/app/globals.css` imports the same `packages/theme/src/signet.css`, loads Figtree via
+`--font-figtree`, and the bone / bronze / ink palette, Geist and the legacy `navy` / `emerald`
+preset keys are all deleted. What has **not** landed is the page's composition — the reskin's
+remaining slices rebuild the sections and add the motion stylesheet — so read
+[`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md) before changing that surface, and
+do not restyle it ad hoc: it is staged and owned.
+
+The landing carries three marketing type roles (`--text-hero`, `--text-display-lg`, `--text-lead`)
+above `foundations.md` §7's locked six. They are declared in `apps/landing/app/globals.css` and are
+**landing-only by decision** (§7's amendment, and `design-system/README.md` §3 rule 4, which names
+two app-local token homes): using one on a product surface is an off-scale defect, and promoting
+them into `packages/theme` would put a 72px marketing headline one import away from every product
+screen.
+
+The legacy brand scale is **gone**, all of it. `royal-blue` went in the #920 slice-9 cutover along
+with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed); `navy` and
+`emerald` — the last two, which mapped to ink / moss / bone-era colors and survived for
+`apps/landing` alone — went with the token cutover
+([#2366](https://github.com/pdcarlson/Frapp/issues/2366)), as did the legacy stylesheet and its
+export. The landing reskin **is** tracked — #2364 is the epic, #920 is `apps/web`, #937 is
+`apps/mobile`, and the Chunk-12 landing issues (#447, #491) are pre-Signet copy work superseded by
+the epic's page-rebuild slice ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)). The pricing
+question that #913/#914 raised is settled for this surface by decision D3.
 
 **`packages/theme` is the shared token package for every surface, not a web-only one.** It already
-serves `apps/web` and `apps/landing` (Tailwind preset + CSS variables) and `apps/mobile` — typed
+serves `apps/web` and `apps/landing` (Tailwind preset + the shared `signet.css`) and `apps/mobile` — typed
 Signet tokens via **`@repo/theme/signet`** in 61 files at last count
 (`grep -rl "@repo/theme/signet" apps/mobile | wc -l`), plus `@repo/theme/accent` at **exactly one
 call site**, `apps/mobile/lib/chapter-branding.ts` (`grep -rn "@repo/theme/accent" apps/mobile`).
 That one-site bound is what keeps the accent engine's blast radius auditable: re-run the grep rather
-than trusting this line, and treat a second importer as a change to argue for, not a detail. Mobile
-does not import `@repo/theme/tokens` at all, and nothing outside `packages/theme` does. The Signet
-tokens live in `packages/theme` too (`src/signet.css`, `src/signet.ts`) — as an **additive
-entrypoint**, leaving the legacy exports that landing still consumes untouched. Two things are
-defects:
-Signet values replacing or bleeding into those legacy exports, and Signet tokens duplicated into
-app-local files instead of extending the package. Component ownership and token-extension rules: §3
-of [`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md).
+than trusting this line, and treat a second importer as a change to argue for, not a detail. There is no `@repo/theme/tokens`
+export any more — #2366 removed it along with `./globals.css`, since nothing
+outside the package imported either. The Signet
+tokens live in `packages/theme` too (`src/signet.css`, `src/signet.ts`), and since
+[#2366](https://github.com/pdcarlson/Frapp/issues/2366) they are the **only** tokens it ships: the
+legacy `./globals.css` stylesheet and export are deleted, so there is no second system to bleed
+into. `./tokens` survives, but only as an internal dependency — the accent engine's bronze fallback
+and the motion scale — never as a surface's token source.
+
+The remaining defect to watch for is **a Signet token duplicated into an app-local file instead of
+extending the package**. Note the deliberate exception: a role only ONE surface may use belongs to
+that surface, which is why the landing's three marketing type roles are app-local and correct.
+Duplicating a *product* token — anything in `foundations.md`'s locked set — into an app config is
+still the defect. Component ownership and token-extension rules: §3 of
+[`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md).
 
 ### Signet tokens (web work reads these)
 
@@ -142,19 +158,28 @@ Web dashboard work uses the token names defined in `packages/theme/src/signet.cs
 file rather than any table here. It holds the fixed foundations (surface ladder `--background` /
 `--surface-1` / `--card`, text ladder, hairline borders) plus the ShadCN-compat pairs the shared
 preset reads, and the house-default accent slot (`--primary` … `--accent-text`) that the chapter
-accent engine overrides at runtime. The Signet-only Tailwind keys live app-locally in
-`apps/web/tailwind.config.ts` until landing reskins — `surface-1`, the `primary-hover` /
-`primary-pressed` and `accent-subtle` / `accent-subtle-hover` / `accent-border` / `accent-text`
-families, `disabled`, `warning`, `info`, `destructive-text`, `mention`, `gold.*`, plus the `2xl`
-border radius, the `fontFamily.sans` → `var(--font-figtree)` override and the custom
-`pointer-coarse` variant. **Read that file rather than this list** — it is the one that compiles,
+accent engine overrides at runtime. The Signet-only Tailwind keys live **app-locally, in two homes** —
+`apps/web/tailwind.config.ts` and, since [#2366](https://github.com/pdcarlson/Frapp/issues/2366),
+`apps/landing/tailwind.config.ts`. Both carry `surface-1`, the `primary-hover` / `primary-pressed`
+and `accent-subtle` / `accent-subtle-hover` / `accent-border` / `accent-text` families, `disabled`,
+`warning`, `info`, `destructive-text`, `info-text`, the `2xl` border radius and the
+`fontFamily.sans` → `var(--font-figtree)` override; `mention` and `gold.*` are web-only, and the
+landing adds the three marketing type roles that are its alone. They sit in the app configs rather
+than the shared preset because the preset must bind nothing its stylesheet does not define (#1145);
+collapsing the two is a `@repo/theme` refactor, not a pending slice. **Read that file rather than this list** — it is the one that compiles,
 and it carries the reasoning for each. `packages/theme/src/signet.css.spec.ts` asserts every key
 reads a defined token.
 
-### Legacy theme tokens (landing-only)
+### Legacy theme tokens — deleted (historical)
 
-The frozen landing theme (`packages/theme/src/globals.css`) defines these semantic colors as CSS
-variables. Every one holds a **complete color value** (`hsl(30 45% 32%)`, `#C49A3A`,
+> `packages/theme/src/globals.css` and its `@repo/theme/globals.css` export were **deleted** in
+> [#2366](https://github.com/pdcarlson/Frapp/issues/2366), when `apps/landing` — their last
+> consumer — moved to `signet.css`. There is no legacy stylesheet to import, and
+> `tailwind.config.spec.ts` was re-pointed at `signet.css` in the same change. What follows is kept
+> for the #1143/#1151 reasoning it carries, not as a live token reference; read
+> `packages/theme/src/signet.css` for what ships.
+
+It defined these semantic colors as CSS variables. Every one held a **complete color value** (`hsl(30 45% 32%)`, `#C49A3A`,
 `rgba(255,255,255,.08)`) — not a bare HSL triple — and the preset reads them through `colorVar()`
 as a plain `var(--token)`. **Never hand-write `hsl(var(--token))` around one**: it emits
 `hsl(hsl(...))`, which the browser drops, and a `tailwind.config.spec.ts` guard fails the build on
@@ -171,14 +196,20 @@ it (#1151). In a Tailwind arbitrary value the correct form carries the type hint
 | `border` | Borders |
 | `ring` | Focus rings |
 
-### Brand color keys (legacy names, remapped values — `apps/landing` only)
+### Brand color keys — all deleted (historical)
 
-Two keys survive in the shared preset, and **neither is a full ramp**:
+> **Nothing below is a key you can reach for.** The shared preset carries no legacy brand scale any
+> more. This section is kept for the class of defect it documents (#916, #1145, #1151), not as an
+> inventory. For current values read `packages/theme/src/signet.css` and the two app configs.
 
-| Key | Steps defined | Maps to | Usage |
-|------|-----------|-----------|-------|
-| `navy` | `DEFAULT` only | ink (`#1F1A15`) | Brand anchor, headers, dark surfaces |
-| `emerald` | `DEFAULT`, `50`, `100`, `400`, `500`, `600` | moss/success ramp | Success states |
+`navy` and `emerald` were the last two, surviving for `apps/landing` alone until
+[#2366](https://github.com/pdcarlson/Frapp/issues/2366) moved that surface to Signet and deleted
+them. What they were:
+
+| Key (deleted) | Steps defined | Mapped to | Replaced by |
+|------|-----------|-----------|-----------|
+| `navy` | `DEFAULT` only | ink (`#1F1A15`) | `text-foreground` / the surface ladder |
+| `emerald` | `DEFAULT`, `50`, `100`, `400`, `500`, `600` | moss/success ramp | the semantic `success` family |
 
 `royal-blue` was **deleted** in the #920 slice-9 cutover — it had zero class sites anywhere in the
 repo. `navy` shed its numbered steps in the same pass, for the same reason: all ten surviving call
@@ -191,12 +222,13 @@ step not in the list above does not fail, it silently falls through to **stock T
 That was #916's root cause — `emerald-700` is absent, so a landing pricing pill rendered stock
 emerald text beside a moss `emerald-100` fill and nothing flagged it.
 
-Both keys exist only for `apps/landing` and go with its reskin, which is not itself tracked (see
-the palette-status note above — #913/#914 block it, they are not it). Never treat
-success-green as the global primary-action color — `primary` (bronze) is the action color, ink is
-the brand anchor. Read the current values from `packages/theme/src/tailwind.config.ts` (the scale
-keys) and `packages/theme/src/globals.css` (the semantic HSL variables) rather than trusting any
-doc's hex table.
+**Both keys are gone.** They existed only for `apps/landing`, and
+[#2366](https://github.com/pdcarlson/Frapp/issues/2366) deleted them from the shared preset when
+that surface moved to Signet — its `text-navy` and `text-emerald-600` sites went to
+`text-foreground` and the semantic `text-success` in the same change. The two paragraphs above are
+kept as the reasoning for a class of defect (#916, #1145, #1151), not as a description of keys you
+can still reach for. Read current values from `packages/theme/src/signet.css` and the two app
+configs rather than trusting any doc's hex table.
 
 ### Custom animations
 
@@ -230,14 +262,15 @@ family — so the hand-registered plugin is gone. The lesson outlives it: an unk
 unknown colour value, is dropped without a warning, so a class family that has never been seen in a
 compiled stylesheet has not been verified.
 
-Each surface's global CSS imports exactly one of the two theme stylesheets — never both:
+Each surface's global CSS imports exactly one theme stylesheet — never both. Both web surfaces now
+import the same one:
 ```css
 /* apps/web/app/globals.css — Signet (dark-only) */
 @import "../../../packages/theme/src/signet.css";
 ```
 ```css
-/* apps/landing/app/globals.css — legacy, frozen */
-@import "../../../packages/theme/src/globals.css";
+/* apps/landing/app/globals.css — Signet (dark-only), since #2366 */
+@import "@repo/theme/signet.css";
 ```
 
 ---
@@ -365,8 +398,9 @@ is no mode switch to test. `apps/web` keeps `darkMode: "class"` deliberately wit
 the class: that was what kept residual `dark:` variants inert while the #920 slices ran, and every
 family has now deleted its own, so `apps/web` ships **zero** live `dark:` variants and the setting
 is a backstop against Tailwind's `media` default re-activating a new one. Do not set the class,
-reintroduce a toggle, or write a fresh `dark:` variant. Landing is unaffected: it stays light-first on the
-legacy `packages/theme/src/globals.css` (its `.dark` block is never toggled).
+reintroduce a toggle, or write a fresh `dark:` variant. The same now applies to `apps/landing`: it is dark-only on
+`signet.css`, its `dark:` variants were deleted with the token cutover, and its config keeps the
+class strategy as the identical backstop.
 
 ### Responsive design
 
