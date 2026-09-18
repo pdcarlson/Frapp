@@ -1,10 +1,15 @@
 # AI Code Review Runbook
 
-> **The CI Claude review was removed (2026-06-04, ADR-14 amendment).** There is no longer a
-> `claude-review.yml` workflow, a `claude-review-gate` required check, a `CLAUDE_CODE_OAUTH_TOKEN`
-> secret, or a `.github/claude-review/` rubric. PR review now happens **locally, before the push**.
+> **The merge-quality gate is local, before the push.** The CI Claude review was removed
+> (2026-06-04, ADR-14 amendment): there is no `claude-review.yml` workflow, no `claude-review-gate`
+> required check, no `CLAUDE_CODE_OAUTH_TOKEN` secret and no `.github/claude-review/` rubric, and
+> nothing has reinstated a blocking CI review.
+>
+> Since 2026-09-18 there **is** an advisory CI reviewer — [`codex-review.yml`](#advisory-ci-review-codex-reviewyml),
+> comment-only, blocking nothing. It does not satisfy or replace the gate below; read it as a second
+> opinion on the PR, not as the thing that lets you push.
 
-## What runs now
+## What gates a push
 
 Review is a **repository-managed Git `pre-push` gate**, not a CI job or an agent-provider hook.
 [`.githooks/pre-push`](../../../.githooks/pre-push) is enabled by the root `prepare` script through
@@ -159,11 +164,146 @@ exercises nonzero denial, repeated retries, exact-SHA and multi-ref evidence, de
 tags, installer wiring, provider-hook removal, and the `/code-review` invocation rule. Each behavior
 test uses a throwaway repository and never touches live evidence.
 
+## Advisory CI review (`codex-review.yml`)
+
+Since 2026-09-18 there is **also** a CI-side reviewer. It does not change anything above: the
+merge-quality gate is still the local `pre-push` + `/diff-review` path, and this job blocks nothing.
+
+[`.github/workflows/codex-review.yml`](../../../.github/workflows/codex-review.yml) installs
+`@openai/codex@0.155.0` and runs the CLI's first-class `codex review` subcommand against a
+bring-your-own-key provider (OpenRouter). [`scripts/ci/codex-review.mjs`](../../../scripts/ci/codex-review.mjs)
+posts the result as **one plain PR comment** marked `<!-- frapp-codex-review -->`, upserted through
+`upsertWakeComment` so a new review replaces the previous one rather than stacking.
+
+**What makes it advisory, and what must not change:**
+
+| Invariant | Why |
+|---|---|
+| Not in [`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) | Advisory means blocking nothing. Do not add it. |
+| Plain comments, **never** a review event | A write-access `CHANGES_REQUESTED` blocks squash on green checks and no agent can clear it (#1875). |
+| `issues: write`, not `pull-requests: write` | `issues` is the permission that posts a PR comment, measured against `pr-base-sync.yml`. |
+| The script always exits 0 | A reviewer problem raises one `routine-state` alert issue instead of reddening CI. |
+| Checkout is `head.sha` | `refs/pull/N/merge` does not exist on a conflicted PR and can lag a push. |
+
+**Skipped runs are deliberate:** drafts, fork PRs (`pull_request` withholds secrets from forks, so
+the reviewer could only fail), and docs-only PRs. Docs-only is measured across the whole PR diff, not
+the last push, so a PR that ever touched code keeps getting reviewed.
+
+### Reading the output
+
+`codex review` sends a strict-JSON schema in its system prompt, **parses the reply itself**, and
+renders Markdown to **stdout** — the banner, warnings and transcript go to **stderr**. So stdout is
+the payload. Findings arrive as `- [P<0-3>] <title> — <path>:<start>-<end>` with the body indented
+beneath; a clean review prints only the model's one-line `overall_explanation`, which is model-written
+prose and not a fixed string.
+
+Severity **ordering is requested, not guaranteed.** It is an instruction in the binary's review
+prompt, read out of the binary and never executed, and the schema it belongs to is prompt-enforced
+rather than API-enforced — so a P3 above a P0 is the model ignoring the prompt, not a bug in the
+renderer or in `codex-review.mjs`.
+
+Before posting, the script rewrites runner-absolute paths to repo-relative, breaks `@mentions` /
+`#123` / `GH-123` outside code so quoted diff hunks cannot notify anyone through the repo's bot, and
+caps the body at GitHub's 65536-character limit. Fenced blocks and inline code spans are left
+byte-identical so `suggestion` blocks stay copy-pasteable.
+
+**Treat findings as advisory opinion.** The output schema is **prompt-enforced, not API-enforced**
+(`text.format` is null in the request), so the model is not prevented from ignoring it, and the model
+itself is a BYOK choice rather than a vendor-tuned reviewer. Verify before acting.
+
+### Troubleshooting
+
+The alert issue **"Advisory codex review is not producing reviews"** (label `routine-state`) is the
+only signal, because the workflow stays green. Its verdict says what happened:
+
+- **`missing-credential`** — the `OPENROUTER_API_KEY` repository secret is absent or empty. Exit 1,
+  with `Missing environment variable` on stderr. The likeliest first failure of this workflow.
+- **`insufficient-credits`** — the provider refused on cost before generating anything. The number in
+  stderr is the **reservation**, not the spend (see the metadata warning below). Raising the key's
+  limit does not raise what a review costs.
+- **`provider-policy-blocked`** — the provider matched the model, then excluded every endpoint serving
+  it on an **account** data policy or guardrail. On OpenRouter that is Zero Data Retention, at
+  `https://openrouter.ai/settings/privacy`. Not a wrong slug: a wrong slug matches *zero* endpoints,
+  this matches some and filters them out. A more data-sharing model tier is not the fix.
+- **`config-error`** — the CLI rejected its configuration. **Also exit 1** — re-measured against CLI
+  0.155.0, a missing key and a bad config key are *not* distinguishable by exit code, which is why
+  the script classifies stderr. (An earlier draft of this runbook claimed `101` for the missing key.
+  That number came from piping the CLI into `head`, which closed stdout and aborted the process; the
+  real code is 1.)
+- **`reviewer-did-not-run`** — no exit code was recorded, so a step before the CLI failed (checkout,
+  install, the instruction-file purge). Read the run log, not the model.
+- **`reviewer-failed`** — any other non-zero exit. `2` is a bad CLI argument; `124` means the
+  900-second `timeout` fired, which is what an unreachable `base_url` looks like — the CLI retries
+  rather than failing fast.
+- **`empty-output`** — exit 0 with nothing on stdout. A reviewer that emits no payload is dead, not
+  clean.
+- **`render-mismatch`** — the model returned schema-valid findings that the script could not parse
+  into bullets. Real findings are being dropped, so this is never treated as clean.
+- **`contract-violation`** — the model returned prose instead of the required JSON. This is about the
+  **model**, not the wiring. ADR-14's revisit trigger for it is to price the native Codex reviewer's
+  credits path.
+- **`clean-unverified`** — no findings, and the raw model message could not be read to confirm the
+  contract. Not an error and not alerted; it is reported honestly rather than claimed as verified.
+
+Two traps worth knowing before debugging:
+
+- A clean review and a contract violation are **byte-indistinguishable on stdout** — both are short
+  prose at exit 0. The script tells them apart by reading the raw pre-render model message out of the
+  session rollout, which is why `CODEX_HOME` is set explicitly.
+- ``warning: Model metadata for `<slug>` not found`` on stderr is **not** a bad-slug signal — it fires
+  for any model under a custom provider, including OpenAI's own, and a genuinely wrong slug fails at
+  the provider instead. **But it is not harmless either.** No metadata means Codex falls back to
+  defaults that reserve the model's **full output width** (65536 tokens observed against OpenRouter),
+  and a provider checks affordability against that *reservation* before generating anything. So on a
+  metered key this warning is the direct cause of an `insufficient-credits` refusal, at a cost far
+  below what a review would actually spend. CLI 0.155.0 exposes no settable top-level
+  `max_output_tokens`, so the reservation cannot be capped from the `codex review` side — the key's
+  limit has to clear it.
+
+**Config gotchas, all executed against CLI 0.155.0:** `codex review` accepts neither `--profile` nor
+`--model`; both the provider and the model are selected with `-c`. `wire_api = "chat"` was removed, so
+a BYOK provider **must** speak the OpenAI Responses API. `CODEX_HOME` is not created on demand.
+`project_doc_fallback_filenames=[]` plus `--strict-config` is what keeps the instruction-file
+precedence chain from failing open.
+
+### Why the reviewer cannot be steered by the PR it reviews
+
+`codex review` reads `AGENTS.override.md`, `AGENTS.md` and configured fallbacks **natively** — no
+prompt wording closes that channel. The workflow closes it structurally: it purges every instruction
+file from the checkout, then restores only the ones present at the **merge base**. Restoring from the
+merge base (not the base tip) is what keeps the purge diff-neutral, so those files simply do not
+appear in the review. The accepted cost is that a legitimate instruction-file change is reviewed under
+the base ref's rules — the local `/diff-review` gate still covers that diff, and this reviewer is
+advisory regardless. The `project_doc_fallback_filenames=[]` setting covers the part of the precedence
+chain the purge cannot reach.
+
+### Testing
+
+`node --test scripts/ci/__tests__/codex-review.test.mjs` covers the classifier (including the
+clean-vs-violation ambiguity and the tri-state contract check), the sanitizer, path relativization,
+the size cap, rollout reading, and that no review endpoint is ever called. Its fixtures are
+transcribed from real CLI output, not invented.
+
 ## Rationale & history
 
-See **ADR-14** and its **2026-06-04 amendment** in [`spec/architecture/adr/adr-14.md`](../../../spec/architecture/adr/adr-14.md)
-for why the CI reviewer (CodeRabbit → self-hosted Claude Action → removed) was retired in favor of this
-local gate. **Correction (2026-09-08):** CodeRabbit comments on ready PRs again (public-repo OSS
-tier). That is advisory only — [`.coderabbit.yaml`](../../../.coderabbit.yaml) sets
-`request_changes_workflow: false` so a write-access `CHANGES_REQUESTED` cannot block squash
-(ADR-14 2026-09-08 amendment). The merge-quality gate is still this local `/diff-review` path.
+See **ADR-14** in [`spec/architecture/adr/adr-14.md`](../../../spec/architecture/adr/adr-14.md) for
+the whole arc: CodeRabbit → a self-hosted Claude review Action → removed entirely (2026-06-04
+amendment) → this local gate → the advisory `codex review` job above.
+
+**CodeRabbit is gone (2026-09-18).** The App was uninstalled by the owner and `.coderabbit.yaml`
+deleted in the same change, in that order — the order mattered at the time, because deleting the
+config first would have dropped CodeRabbit to unconfigured defaults where `request_changes_workflow`
+is ON. There is no CodeRabbit config, App, or review to account for any more, and ADR-14's **2026-09-08**
+amendment — the one that existed solely to keep CodeRabbit from blocking squash — is spent with it.
+
+**The 2026-09-18 decision amendment is NOT spent, and must not be read that way.** Its subject is
+the *replacement*, not the vendor: it is what forbids the `codex review` job from ever being a
+required check, forbids it from `scripts/ci/lib/required-checks.mjs`, and forbids it from posting a
+GitHub review event. Those constraints outlive CodeRabbit entirely.
+
+**The one thing to carry forward outlives the vendor:** any automated reviewer here must post plain
+comments and **never** a GitHub review event, because a write-access `CHANGES_REQUESTED` blocks squash
+on green checks and no agent can clear it (#1875). That constraint is why the `codex review` job holds
+`issues: write` rather than `pull-requests: write`.
+
+The merge-quality gate is, as it has been since 2026-08-01, this local `/diff-review` path.
