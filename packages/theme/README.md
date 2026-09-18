@@ -16,12 +16,22 @@ preview).
 `src/signet.css` is the Signet counterpart of `globals.css`: the dark-only
 foundations as CSS custom properties, the ShadCN-compat pairs the shared
 Tailwind preset reads, and the house-default accent slot (`#DDB844` through
-`deriveSignetPalette`). **`apps/web` imports it** as of slice 1 of #920;
-`apps/landing` keeps importing the legacy `globals.css` until its own reskin. A
-surface imports exactly one of the two — `src/signet.css.spec.ts` pins the
-values against `getSignetCssVars()` / the accent engine and the per-surface
-import wiring in both directions. The legacy `./tokens` entrypoint
-(`getFrappTokens`) now backs the landing surface only.
+`deriveSignetPalette`). **Both web surfaces import it** — `apps/web` as of slice 1 of #920,
+`apps/landing` as of its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)).
+A surface imports exactly one stylesheet, and `src/signet.css.spec.ts` pins the
+values against `getSignetCssVars()` / the accent engine plus the per-surface
+import wiring in both directions.
+
+The legacy `globals.css` is **deleted**, along with its `./globals.css` export,
+in that same cutover — a cutover deletes what it replaces, and a stylesheet no
+surface imports is not a migration window. `src/tailwind.config.spec.ts` was
+re-pointed at `signet.css` in the same change.
+
+The `./tokens` **export** is removed with it — nothing outside the package ever
+imported it. The module itself **stays**, and is not dead:
+`accent.ts` reads `frappTokens.color.brand.bronze` as the accent engine's
+fallback, and both the preset and `signet.ts` read its motion scale. What went
+is the stylesheet, not the token module.
 
 ## Fonts
 
@@ -35,7 +45,12 @@ names, which Android requires). The `typography.family.mono` token is a CSS
 variable and RN-invalid; mobile maps mono to the system stack via
 `MONO_FONT_FAMILY` in `apps/mobile/lib/theme.tsx`.
 
-**Geist Sans** lives at `fonts/GeistVF.woff2` and is now the legacy font for
-`apps/landing` only, loaded with `next/font/local` from its `app/layout.tsx`
-until the landing reskin. See
-[spec/ui/brand-identity.md](../../spec/ui/brand-identity.md).
+`apps/landing` loads the same `fonts/FigtreeVF.woff2` the same way, from its
+own `app/layout.tsx` and `app/global-error.tsx`, since its token cutover
+([#2366](https://github.com/pdcarlson/Frapp/issues/2366)).
+
+**Geist Sans is gone.** `fonts/GeistVF.woff2` was deleted with its last
+consumer in the same cutover: `apps/landing` moved to Figtree, and a replaced
+asset does not outlive the thing that replaced it. Geist is explicitly rejected
+as a typeface — see [spec/ui/brand-identity.md](../../spec/ui/brand-identity.md)
+§3 — so do not re-vendor it.

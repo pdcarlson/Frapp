@@ -4,13 +4,14 @@
 // put Frapp back in metadata titles, JSON-LD, or the lockup aria-label,
 // switch a title to single quotes the first lock used to miss, or add a
 // third metadata site the hardcoded paths would miss. USPTO stay on
-// 1901. Leave store-name uniqueness on 1829. Landing visual tokens
-// (Geist, bone/bronze) stay legacy until the token cutover (#2366).
+// 1901. Leave store-name uniqueness on 1829. Landing visual tokens are
+// Signet since the token cutover (#2366) — Figtree and the signet.css
+// ladder — so there are no legacy tokens left for this lock to protect.
 //
 // SCOPE. Landing metadata titles, JSON-LD SoftwareApplication / brand
-// names, the lockup aria-label, and the spec's status banner. Do not
-// restyle Geist/bone tokens here. Do not walk apps/web (those titles
-// are already Signet).
+// names, the lockup aria-label, and the spec's status banner. This lock is
+// about COPY and identity, not visuals: do not turn it into a token check.
+// Do not walk apps/web (those titles are already Signet).
 //
 // THE STATUS BANNER TRACKS THE RESKIN, SO IT MOVES. It asserted the
 // visual-freeze banner until #2365 lifted that freeze; it now asserts

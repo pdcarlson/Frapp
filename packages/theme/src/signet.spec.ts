@@ -168,11 +168,45 @@ function numbers(cell: string): number[] {
   return (cell.match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
 }
 
+/**
+ * The `--tokens` §7's landing-only amendment names, read out of the amendment
+ * itself rather than listed here.
+ *
+ * `foundations.md` §7 documents three marketing type roles (`--text-hero`,
+ * `--text-display-lg`, `--text-lead`) that `getSignetCssVars()` deliberately
+ * does NOT emit. They are not a platform carve-out like `CSS_ONLY` below — they
+ * are a SURFACE one. They belong to `apps/landing` alone, are declared in that
+ * app's own `globals.css`, and must not reach `signetDarkTokens`, which is what
+ * `apps/mobile` reads: a 72px storefront headline one import away from every
+ * product screen is exactly the off-scale defect §7 bans.
+ *
+ * Derived, not hard-coded, for the reason the rest of this file is: a fourth
+ * marketing role added to that table should not also require editing a literal
+ * here. The guard test below fails loudly if the heading is renamed, so the
+ * three cannot silently fall back into the emitted set.
+ */
+function landingOnlyTokens(): string[] {
+  const after = section("Typography").split(/^### Amendment:/m)[1] ?? "";
+  // Bounded at the next `### `, or the amendment swallows the rest of §7 —
+  // including the `### Type tokens` table, whose six roles ARE emitted. An
+  // unbounded split subtracts the whole Signet type scale and the suite then
+  // asserts that `signet.ts` emits nothing typographic at all.
+  const amendment = after.split(/^### /m)[0] ?? "";
+  // Table rows only. The prose around them names tokens too (`--text-hero` is
+  // discussed in the numbered notes), and a prose mention is not a declaration.
+  const cells = amendment
+    .split("\n")
+    .filter((line) => line.trimStart().startsWith("|"))
+    .map((line) => line.split("|")[1] ?? "");
+  return [...new Set(cells.flatMap((cell) => cell.match(/--[a-z0-9-]+/g) ?? []))];
+}
+
 /** Every `--token` foundations.md names in a table `getSignetCssVars` emits from. */
 function documentedTokens(): string[] {
+  const landingOnly = new Set(landingOnlyTokens());
   return [...COLOR_LADDERS, ...SCALE_TABLES]
     .flatMap((title) => [...tokenTable(title).keys()])
-    .filter((name) => name.startsWith("--"));
+    .filter((name) => name.startsWith("--") && !landingOnly.has(name));
 }
 
 function expectColor(actual: string, specValue: string, label: string): void {
@@ -407,6 +441,30 @@ describe("getSignetCssVars", () => {
     ];
 
     expect(Object.keys(vars).sort()).toEqual(expected.sort());
+  });
+
+  it("still finds §7's landing-only amendment, so the filter means something", () => {
+    // `documentedTokens()` subtracts these. If the amendment heading is renamed
+    // or removed, the subtraction silently empties and the three marketing
+    // roles fall back into the expected set — a failure that would read as
+    // "signet.ts forgot a token" rather than "the spec moved". Fail here
+    // instead, naming the real cause.
+    const landingOnly = landingOnlyTokens();
+    expect(
+      landingOnly,
+      'foundations.md §7 no longer has an "### Amendment:" block naming the ' +
+        "landing-only marketing type roles — either it moved (update this " +
+        "suite) or the roles were promoted into the Signet scale (emit them " +
+        "from signet.ts and delete this filter)",
+    ).toEqual(
+      expect.arrayContaining(["--text-hero", "--text-display-lg", "--text-lead"]),
+    );
+
+    // They are landing-only precisely because they must not reach mobile.
+    for (const name of landingOnly) {
+      expect(vars, `${name} is a landing-only marketing role and must not be a Signet token`)
+        .not.toHaveProperty(name);
+    }
   });
 
   it("emits every fixed token foundations.md names", () => {
