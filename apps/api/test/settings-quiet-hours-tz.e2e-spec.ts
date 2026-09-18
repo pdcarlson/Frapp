@@ -56,9 +56,10 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
     // The local `AuthGuardStub` stays, and `AllowAllGuard` could not replace it:
     // the route reads `@CurrentUser('id')`, i.e. `request.appUser`, which the
     // class-level AuthSyncInterceptor derives from `request.supabaseUser` — and
-    // `AllowAllGuard` deliberately writes neither. The stub's own `appUser`
-    // write is belt-and-braces; the interceptor overwrites it from
-    // `AuthService.syncUser` before the handler runs.
+    // `AllowAllGuard` deliberately writes neither. Only that stub's
+    // `supabaseUser` write is load-bearing: its `appUser` write is dead, because
+    // the interceptor always overwrites it from the mocked `AuthService.syncUser`
+    // before the handler runs. Do not copy that line into a new stub.
     // Mounting the real controller with the real ValidationPipe keeps
     // both links under test: the @Body() DTO binding and the pipe, which is
     // what the DTO unit spec cannot reach.

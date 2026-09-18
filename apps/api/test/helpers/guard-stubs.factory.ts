@@ -163,12 +163,13 @@ export function createGuardStubs(identity: GuardStubIdentity): {
  * this.
  *
  * Named for what it does rather than for the guard it replaces, because it
- * stands in for all three: eleven e2e specs override `PermissionsGuard` with it
- * — the nine that take the identity-writing stubs above, plus
- * `cross-tenant-isolation.e2e-spec.ts`, which runs the real auth and chapter
- * guards on purpose, and `settings-quiet-hours-tz.e2e-spec.ts`, which hand-rolls
- * its own auth stub — and {@link createUnguardedTestingModule} overrides the
- * whole chain with it.
+ * stands in for all three: e2e specs override `PermissionsGuard` with it beside
+ * the identity-writing stubs above, `cross-tenant-isolation.e2e-spec.ts` uses it
+ * as its *only* override while running the real auth and chapter guards,
+ * `settings-quiet-hours-tz.e2e-spec.ts` uses it beside a hand-rolled auth stub,
+ * and {@link createUnguardedTestingModule} overrides the whole chain with it.
+ * `grep -l 'AllowAllGuard' apps/api/test/*.e2e-spec.ts` is the live roster;
+ * a count written here would only rot.
  *
  * **Rule for anyone editing this class: it must keep writing nothing to the
  * request.** It is the `PermissionsGuard` override in
@@ -229,13 +230,14 @@ export class AllowAllGuard implements CanActivate {
  * same argument that gave the e2e stubs above one home; this is the other half
  * of it.
  *
- * Note the narrow scope of that complaint: it is about *substituting for a
- * guard's dependency* rather than overriding the guard. Overriding the Supabase
- * client itself by that token is the correct, documented pattern — fourteen e2e
- * specs do it with `createSupabaseMock()`, and `health.controller.spec.ts` does
- * it because the controller injects the token. Prefer the exported
- * `SUPABASE_CLIENT` constant from `infrastructure/supabase/supabase.provider`
- * over the bare string wherever you do.
+ * Note the narrow scope of that complaint, and the axis it turns on: **who
+ * injects the token.** Supplying `SUPABASE_CLIENT` because the code under test
+ * injects it is right — that is what the e2e specs do with `createSupabaseMock()`,
+ * and what `health.controller.spec.ts` does because `HealthController` itself
+ * injects it. Supplying it so a *guard you are not testing* can construct is
+ * what this helper replaces. Prefer the exported `SUPABASE_CLIENT` constant
+ * from `infrastructure/supabase/supabase.provider` over the bare string
+ * wherever you do supply it.
  *
  * **The four specs in `interface/controllers/` that do not use this are named
  * here so that claim is checkable rather than vacuous.** `health` and `webhook`
@@ -246,10 +248,12 @@ export class AllowAllGuard implements CanActivate {
  * testing module at all, which its own comment explains; that is a simpler
  * answer than this one wherever a controller is thin enough for it.
  * `write-payload-ordering.spec.ts` is the same `new` shape, across three
- * unrelated controllers, and needs no module at all — a testing module *would*
- * reproduce it (measured, against an earlier draft of this paragraph that
- * claimed otherwise), so converting it would not break anything; it would just
- * add a module three controllers do not need.
+ * unrelated controllers. Its reason is in its own header: the `{ ...dto,
+ * chapter_id }` ordering it pins is unreachable over HTTP, so calling the
+ * methods directly *is* the test. A testing module would also work — measured,
+ * against an earlier draft here that claimed it could not — so this is a
+ * preference, not a constraint; leave it alone because there is nothing to gain,
+ * not because converting would break it.
  *
  * **What this does not do.** It writes no `supabaseUser`, `appUser`, `member`
  * or `chapterId`, because a spec calling a controller method directly passes
