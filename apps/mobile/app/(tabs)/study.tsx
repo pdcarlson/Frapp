@@ -33,8 +33,12 @@ import {
   readForegroundPermission,
   requestForegroundPermission,
 } from "@/lib/location";
+import { useFocusEffect } from "expo-router";
 import { statusOf } from "@repo/api-sdk";
-import { subscriptionRefusalOf } from "@/lib/subscription-refusal";
+import {
+  SUBSCRIPTION_REFUSAL_COPY,
+  subscriptionRefusalOf,
+} from "@/lib/subscription-refusal";
 import {
   clearStudyPausedNotification,
   notifyStudyPaused,
@@ -152,6 +156,27 @@ export default function StudyScreen() {
    * re-fires every `MIRROR_RETRY_MS` forever against a permanent 403.
    */
   const [subscriptionRefused, setSubscriptionRefused] = useState(false);
+  /**
+   * Clear the latch whenever the member comes back to this screen.
+   *
+   * Without this the refusal is permanent for the life of the process, and a
+   * tab screen is never unmounted (`tasks.tsx` says the same: "A tab is never
+   * unmounted and the JS context survives days of backgrounding"). So an
+   * officer could resolve the chapter's billing seconds later and this member
+   * would still find Start greyed out until they force-quit the app — a
+   * member-facing dead end, and the same "dead until a force-quit" defect that
+   * got the previous attempt at #2297 reverted.
+   *
+   * Leaving and returning is a deliberate act, not a retry-in-place, so this
+   * does not reintroduce the doomed retry: the next Start tap re-refuses and
+   * re-explains if nothing has actually changed.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      setSubscriptionRefused(false);
+      return undefined;
+    }, []),
+  );
   const [isStarting, setIsStarting] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
   const [canAskForLocation, setCanAskForLocation] = useState(true);
@@ -317,6 +342,16 @@ export default function StudyScreen() {
         );
         return;
       }
+      // A subscription refusal is the one non-404 that is NOT transient, so
+      // the "stay quiet, the next tick is five minutes away" rule below would
+      // never end (#2297). Say why, once — the member otherwise watches the
+      // timer keep counting time the stale-heartbeat rule will later expire
+      // for zero, with only `isReportingStale` and no reason for it.
+      if (subscriptionRefusalOf(error)) {
+        setSubscriptionRefused(true);
+        setFailure(SUBSCRIPTION_REFUSAL_COPY.studySession);
+        return;
+      }
       // Anything else is transient. The server's stale-heartbeat rule owns the
       // consequence and the next tick is five minutes away, so surfacing it
       // would cry wolf on every lift tunnel — but `isReportingStale` puts a
@@ -405,9 +440,18 @@ export default function StudyScreen() {
       } catch (error) {
         if (cancelled) return;
         const refused = subscriptionRefusalOf(error) !== null;
-        if (refused) setSubscriptionRefused(true);
+        if (refused) {
+          setSubscriptionRefused(true);
+          // Set here, not only inside `if (target)` below: a refused *pause*
+          // (target === false) would otherwise grey out Start with nothing on
+          // screen saying why. `StartCard`'s contract is that this `failure`
+          // line carries the explanation and the prop only removes the
+          // affordance — a silently dead control is the Guideline 2.1 shape
+          // this issue exists to remove, not a smaller version of it.
+          setFailure(SUBSCRIPTION_REFUSAL_COPY.studySession);
+        }
         if (target) {
-          setFailure(sessionErrorCopy(error));
+          if (!refused) setFailure(sessionErrorCopy(error));
           // A resume that keeps failing leaves the paused card on screen and
           // the retry loop running — but the tray notice invites the member
           // back to a session that may already be gone (an officer stopping it

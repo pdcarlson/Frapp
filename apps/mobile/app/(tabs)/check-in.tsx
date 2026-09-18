@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useCheckIn, useEvent } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -103,7 +103,30 @@ export default function CheckInScreen() {
   const needsLocation = event?.hasCheckInZone ?? false;
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  /**
+   * A refusal must not outlive the visit that produced it.
+   *
+   * `check-in` is a `Tabs.Screen` with `href: null`, pushed with an `eventId`
+   * param — so it stays mounted after `router.back()` and the same instance is
+   * reused for the next event. Unlike `error`, `blocked` disarms both the
+   * camera decoder and the manual field, so without this reset a member
+   * refused at one event would find the scanner silently dead at the next one,
+   * weeks later, under copy naming a chapter state that has since been fixed.
+   * Only killing the app would clear it.
+   *
+   * Scoped to `blocked` so the 409 "already checked in" and ordinary failures
+   * keep behaving exactly as they did.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      setStatus((current) =>
+        current.kind === "blocked" ? { kind: "idle" } : current,
+      );
+      return undefined;
+    }, []),
+  );
   const [manualCode, setManualCode] = useState("");
 
   const checkIn = useCheckIn();

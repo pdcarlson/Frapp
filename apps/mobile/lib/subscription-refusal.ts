@@ -82,4 +82,21 @@ export const SUBSCRIPTION_REFUSAL_COPY = {
     "Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.",
   study:
     "Your chapter's subscription isn't active, so study sessions can't be recorded. An officer can sort this out for the chapter.",
+  /**
+   * Pause, resume, heartbeat and stop — a session that is ALREADY RUNNING.
+   *
+   * Deliberately different from `study`, and the difference is load-bearing.
+   * Every non-404 failure on these routes leaves the session **active
+   * server-side**, so the member has lost nothing and the End button stays on
+   * screen by design. Telling them study "can't be recorded" here would be
+   * false and expensive: they would walk away believing nothing was banked,
+   * and the stale-heartbeat rule would then close the session EXPIRED for
+   * zero — when tapping End again after an officer sorts the billing out
+   * would have credited the whole thing.
+   *
+   * So this names the state without withdrawing the affordance. It still
+   * offers no *retry-now* instruction, because retrying now cannot win.
+   */
+  studySession:
+    "Your chapter's subscription isn't active, so that didn't save. Your session is still running and its time is safe — an officer can sort this out for the chapter.",
 } as const;

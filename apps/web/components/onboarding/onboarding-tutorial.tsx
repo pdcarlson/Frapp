@@ -112,26 +112,37 @@ const STEPS: Step[] = [
 ];
 
 /**
+ * The routes this tour must not open over.
+ *
+ * It is mounted in `dashboard-shell.tsx` and gated only on
+ * `has_completed_onboarding`, so it is otherwise route-agnostic: it opens over
+ * whatever the member happens to have landed on. Since #2297 `/billing` is a
+ * landing rather than somewhere only a deliberate visitor arrives, and the
+ * tour would cover its "Complete checkout" CTA and then end on "Dive into your
+ * home dashboard."
+ *
+ * WHO THIS ACTUALLY PROTECTS — not the brand-new founder. `ChapterService`
+ * creates the founder's own membership with `has_completed_onboarding: true`
+ * (`chapter.service.ts`), so the tour never fires for the person the wizard
+ * just redirected. It fires for a member whose flag is false and who reaches
+ * `/billing`: an invited member, or a founder who chose "Replay tutorial" in
+ * Profile (`profile-panel.tsx` sets the flag back to false). This guard is
+ * therefore defensive rather than a fix for a live first-run bug — worth
+ * stating, because a comment claiming the founder case would send the next
+ * reader looking for behaviour that cannot occur.
+ *
+ * Suppressed, not dismissed — the flag is left alone, so the tour still opens
+ * the next time that member is anywhere else in the dashboard.
+ */
+const TOUR_SUPPRESSED_PREFIXES = ["/billing"] as const;
+
+/**
  * Shows a skippable slideshow the first time a member lands in the web
  * dashboard. The `has_completed_onboarding` flag lives on the member row
  * and comes back from `/v1/chapters`; updating it via PATCH
  * `/v1/members/me/onboarding` both dismisses the modal and mirrors the
  * mobile onboarding flag so the two surfaces stay consistent.
  */
-/**
- * The routes this tour must not open over.
- *
- * It is mounted in `dashboard-shell.tsx` and gated only on
- * `has_completed_onboarding`, so it is otherwise route-agnostic: it opens over
- * whatever the member landed on. Since #2297 the wizard lands a new founder on
- * `/billing` to complete checkout, and this modal would cover that CTA and
- * then end on "Dive into your home dashboard."
- *
- * Suppressed, not dismissed — the flag is left alone, so the tour still opens
- * the next time the founder is anywhere else in the dashboard.
- */
-const TOUR_SUPPRESSED_PREFIXES = ["/billing"] as const;
-
 export function OnboardingTutorial() {
   const pathname = usePathname();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);

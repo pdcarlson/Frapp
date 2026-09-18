@@ -89,6 +89,65 @@ describe("subscriptionRefusalOf", () => {
   });
 });
 
+/**
+ * The store-commitment guard, and a test of the guard itself.
+ *
+ * The first version of these patterns was far too narrow to do the job its
+ * name claimed: `purchase`, `paying`, a schemeless `frapp.live/subscribe` and
+ * a price written without a `$` all sailed through, as did "give it another
+ * go" past the retry check. A guard that cannot fail on the wording it exists
+ * to catch is worse than none, because it reads like coverage. So the banned
+ * patterns are asserted against known-bad candidates below before they are
+ * applied to the shipped copy.
+ */
+const PURCHASE_PATH =
+  /\b(?:purchas\w*|buy|buying|bought|renew\w*|pay|pays|paying|paid|payment\w*|price\w*|pricing|cost\w*|plan|plans|billing|checkout|check out|subscribe|subscribing|upgrade\w*|card|invoice)\b|\$|\d+\s*(?:\/|per|a)\s*(?:month|year|mo\b|yr\b)|https?:\/\/|\b[a-z0-9-]+\.(?:live|com|app|io|net|org|co)\b/i;
+
+const INVITES_RETRY = /\b(?:try again|tries again|retry|retrying|again later|another go|once more|re-?try)\b/i;
+
+describe("the copy guard itself", () => {
+  it("rejects the wordings that would breach the store declaration", () => {
+    // Every one of these passed the first version of this guard.
+    for (const bad of [
+      "An officer can purchase a seat pack from the Frapp web app.",
+      "An officer can renew it by paying with a card in the web dashboard.",
+      "An officer can fix this at frapp.live/subscription.",
+      "An officer can sort this out — it costs 49 a month.",
+      "An officer can complete checkout on the dashboard.",
+      "Ask an officer to subscribe.",
+      "An officer can upgrade the chapter's plan.",
+      "See https://frapp.live/billing to fix this.",
+    ]) {
+      expect(bad).toMatch(PURCHASE_PATH);
+    }
+  });
+
+  it("rejects retry invitations, including the ones that avoid the word", () => {
+    for (const bad of [
+      "That didn't save — try again.",
+      "Give it another go.",
+      "Retry in a moment.",
+      "Check your connection and try again later.",
+    ]) {
+      expect(bad).toMatch(INVITES_RETRY);
+    }
+  });
+
+  it("does not fire on the vocabulary the shipped copy legitimately needs", () => {
+    // "subscription" and "active" describe the state and must stay allowed;
+    // otherwise the guard would forbid naming the thing that is wrong.
+    expect("Your chapter's subscription isn't active.").not.toMatch(
+      PURCHASE_PATH,
+    );
+    expect("An officer can sort this out for the chapter.").not.toMatch(
+      PURCHASE_PATH,
+    );
+    expect("Your session is still running and its time is safe.").not.toMatch(
+      INVITES_RETRY,
+    );
+  });
+});
+
 describe("SUBSCRIPTION_REFUSAL_COPY", () => {
   const all = Object.values(SUBSCRIPTION_REFUSAL_COPY);
 
@@ -98,9 +157,7 @@ describe("SUBSCRIPTION_REFUSAL_COPY", () => {
     // offered, linked or mentioned in the app". Copy that names checkout here
     // trades this Guideline 2.1 finding for a 3.1.1 one.
     for (const copy of all) {
-      expect(copy).not.toMatch(
-        /checkout|subscribe|upgrade|pay(?:ment)?\b|price|pricing|plan\b|billing|\$|https?:\/\//i,
-      );
+      expect(copy).not.toMatch(PURCHASE_PATH);
     }
   });
 
@@ -114,7 +171,7 @@ describe("SUBSCRIPTION_REFUSAL_COPY", () => {
     // The whole finding is that the app blamed the save and said "try again"
     // for a refusal that cannot be retried into success.
     for (const copy of all) {
-      expect(copy).not.toMatch(/try again|retry|again later/i);
+      expect(copy).not.toMatch(INVITES_RETRY);
     }
   });
 
@@ -122,6 +179,12 @@ describe("SUBSCRIPTION_REFUSAL_COPY", () => {
     expect(SUBSCRIPTION_REFUSAL_COPY.task).toMatch(/task/i);
     expect(SUBSCRIPTION_REFUSAL_COPY.checkIn).toMatch(/check-in/i);
     expect(SUBSCRIPTION_REFUSAL_COPY.study).toMatch(/study/i);
+    // The in-session variant must NOT claim the time was lost — the session is
+    // still live server-side and the End button is still on screen.
+    expect(SUBSCRIPTION_REFUSAL_COPY.studySession).toMatch(/still running/i);
+    expect(SUBSCRIPTION_REFUSAL_COPY.studySession).not.toMatch(
+      /can't be recorded|wasn't saved|lost/i,
+    );
     expect(new Set(all).size).toBe(all.length);
   });
 });

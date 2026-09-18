@@ -9,9 +9,9 @@
 5. API creates chapter with `subscription_status: incomplete`.
 6. Default system roles and default channels (#general, #announcements, #chapter-audit, #alumni) are seeded. Full seeded definitions: [`spec/behavior/onboarding.md`](../behavior/onboarding.md).
 
-Payment is **not** part of chapter creation. Nothing in the onboarding path touches Stripe — the chapter lands at `incomplete` and stays there until someone starts checkout explicitly:
+Payment is **not** part of chapter *creation*: nothing in steps 1-6 touches Stripe, and the chapter lands at `incomplete`. Since [#2297](https://github.com/pdcarlson/Frapp/issues/2297) the **web** wizard then routes the founder to `/billing` so checkout is on the path rather than after it — a landing, not a gate, and #913's 14-day trial means it costs nothing on day zero. Mobile's wizard still ends on the tabs. Destination and rationale are owned by [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § First-Officer Onboarding Wizard; what follows is the checkout flow itself, wherever it is entered from:
 
-7. An officer with `billing:manage` opens `/billing` and starts checkout from the subscription card. `POST /v1/billing/checkout` creates the Stripe Customer (storing `stripe_customer_id`) if the chapter has none, then returns a Checkout URL carrying `chapter_id` in metadata.
+7. An officer with `billing:manage` is on `/billing` (the web wizard's destination, or reached from the nav later) and starts checkout from the subscription card. `POST /v1/billing/checkout` creates the Stripe Customer (storing `stripe_customer_id`) if the chapter has none, then returns a Checkout URL carrying `chapter_id` in metadata.
 8. User completes payment on Stripe and is returned to `/billing?checkout=success`.
 9. Stripe webhook (`checkout.session.completed`) fires; API activates chapter (`subscription_status: active`). The redirect does **not** activate the chapter — the client polls for the webhook rather than assuming it has landed.
 

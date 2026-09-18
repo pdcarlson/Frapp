@@ -113,12 +113,15 @@ describe("the slides", () => {
 
 describe("the routes the tour must not cover", () => {
   /**
-   * Since #2297 the chapter wizard lands a brand-new founder on `/billing` to
-   * complete checkout, because a fresh chapter is `subscription_status
-   * 'incomplete'` and every paid-ops write 403s until it is not. This modal is
-   * gated only on `has_completed_onboarding`, so without this it opens its
-   * slides over the "Complete checkout" CTA and ends on "Dive into your home
-   * dashboard" — covering the one control that resolves the state.
+   * Since #2297 the wizard lands a new founder on `/billing`, and this modal
+   * would otherwise open over its "Complete checkout" CTA and end on "Dive
+   * into your home dashboard".
+   *
+   * The mock below sets `has_completed_onboarding: false`, which is the case
+   * this guard is really for — an invited member, or a founder replaying the
+   * tour from Profile. A wizard-created founder is written with the flag
+   * already `true` (`chapter.service.ts`), so the tour never fires for them;
+   * do not read these tests as proving the founder's first run.
    */
   it("stays shut on the checkout route", () => {
     route.pathname = "/billing";

@@ -98,9 +98,17 @@ export function sessionErrorCopy(error: unknown): string {
   // 403 and the arm below relays the server's own words — which for an
   // `incomplete` chapter are "…complete checkout to use this feature.", a
   // purchase instruction the store declaration forbids in this app (#2297).
-  // Unlike the module-gate branch below this one is NOT keyed on `codeOf`,
-  // which is `null` on every real response (#1020).
-  if (subscriptionRefusalOf(error)) return SUBSCRIPTION_REFUSAL_COPY.study;
+  // Unlike the module-gate branch in `startErrorCopy` this is NOT keyed on
+  // `codeOf`, which is `null` on every real response (#1020).
+  //
+  // `studySession`, not `study`: every non-404 failure here leaves the session
+  // ACTIVE server-side and `endSession` deliberately keeps the End button so
+  // the member can retry once billing is sorted. Saying "study sessions can't
+  // be recorded" would tell them their banked time was lost, and a member who
+  // walks away on that gets the session expired for zero.
+  if (subscriptionRefusalOf(error)) {
+    return SUBSCRIPTION_REFUSAL_COPY.studySession;
+  }
 
   switch (status) {
     case 404:

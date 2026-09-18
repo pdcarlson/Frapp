@@ -72,10 +72,24 @@ describe("subscriptionWriteState", () => {
 
   describe("past_due", () => {
     it("blocks paid writes immediately, grace or not", () => {
+      // `now: NOW` is load-bearing and was missing. Omitted, `now` falls back
+      // to `Date.now()`, against which `hoursAgo(1)` — relative to the frozen
+      // NOW — is weeks old, so this only ever exercised the POST-grace branch
+      // and the "grace or not" in the title was untested. Both are asserted
+      // now: a paid route locks inside the window as well as after it, which
+      // is the free-tier/paid ordering the guard calls load-bearing.
       expect(
         subscriptionWriteState({
           status: "past_due",
           pastDueSince: hoursAgo(1),
+          now: NOW,
+        }),
+      ).toMatchObject({ code: "chapter.subscription.write_locked" });
+      expect(
+        subscriptionWriteState({
+          status: "past_due",
+          pastDueSince: hoursAgo(100),
+          now: NOW,
         }),
       ).toMatchObject({ code: "chapter.subscription.write_locked" });
     });
