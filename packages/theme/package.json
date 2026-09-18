@@ -5,7 +5,6 @@
   "private": true,
   "exports": {
     "./tailwind": "./src/tailwind.config.ts",
-    "./globals.css": "./src/globals.css",
     "./signet.css": "./src/signet.css",
     "./tokens": "./src/tokens.ts",
     "./accent": "./src/accent.ts",

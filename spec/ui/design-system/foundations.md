@@ -145,8 +145,8 @@ The six roles above are the **product** scale and bind every product surface. A 
 
 | Role | Desktop | Phone | Used by |
 | --- | --- | --- | --- |
-| `--text-hero` | 72 / 74 · 700 · tracking `-0.02em` | 40 / 44 | The hero H1, and nothing else |
-| `--text-display-lg` | 48 / 52 · 700 · tracking `-0.02em` | 32 / 37 (the locked `display` role) | Section H2s and the desktop prices |
+| `--text-hero` | 72 / 74 · 700 · tracking `-0.02em` | 40 / 44 | The hero H1. On phone only, also the two pricing figures — see the note below |
+| `--text-display-lg` | 48 / 52 · 700 · tracking `-0.02em` | 32 / 37 (the locked `display` role) | Section H2s, and the pricing figures on desktop |
 | `--text-lead` | 20 / 30 · 400 | 18 / 27 | Hero and closing paragraphs, and nothing else |
 
 **This does not widen the scale for anyone else, and the rule above is unchanged.** Three things keep it that way:
@@ -154,6 +154,8 @@ The six roles above are the **product** scale and bind every product surface. A 
 1. **They are named tokens, not literals.** The off-scale defect the paragraph above describes is a size invented *at a call site*. These are declared once, as roles, with an owner — which is precisely the remedy [`README.md`](README.md) §3 rule 4 prescribes for a missing role.
 2. **They live on the surface that owns them**, in `apps/landing/app/globals.css`, bound as utilities by `apps/landing/tailwind.config.ts`. They are deliberately **not** in `packages/theme/src/signet.css`: that stylesheet is pinned to `signet.ts`, which is the token source `apps/mobile` reads, so a 72px marketing headline declared there would sit one import away from every product screen on two surfaces where the six roles are the whole scale.
 3. **Using one outside `apps/landing` is a defect**, exactly as an off-scale literal is. A product surface that believes it needs a fourth size above `display` is asking for an amendment to the table above, not for a marketing role.
+
+**The one place a role crosses over.** On phone the two pricing figures take `--text-hero` (40 / 44) rather than `--text-display-lg` (32 / 37), so that a price never renders larger than the H1 above it. That is the System sheet's rule ([`../landing/reference/canvas/System.dc.html`](../landing/reference/canvas/System.dc.html)) and it is the only sanctioned use of `--text-hero` outside the hero H1. Desktop is unaffected: there the figures are `--text-display-lg` and the H1 is already the larger role.
 
 Type inside the landing's product frames is transcribed from the design-system and web-greenfield boards and is deliberately **not** on either scale. Do not "correct" it.
 

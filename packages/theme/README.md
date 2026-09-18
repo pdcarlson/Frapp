@@ -22,13 +22,15 @@ A surface imports exactly one stylesheet, and `src/signet.css.spec.ts` pins the
 values against `getSignetCssVars()` / the accent engine plus the per-surface
 import wiring in both directions.
 
-`globals.css` therefore has **no importer left**. It stays on disk for now
-because `src/tailwind.config.spec.ts` is written against it, and because the
-`./tokens` entrypoint it pairs with is still live for a different reason:
+The legacy `globals.css` is **deleted**, along with its `./globals.css` export,
+in that same cutover — a cutover deletes what it replaces, and a stylesheet no
+surface imports is not a migration window. `src/tailwind.config.spec.ts` was
+re-pointed at `signet.css` in the same change.
+
+The `./tokens` entrypoint it used to pair with **stays**, and is not dead:
 `accent.ts` reads `frappTokens.color.brand.bronze` as the accent engine's
-fallback, and both the preset and `signet.ts` read its motion scale. Retiring
-the stylesheet means re-pointing that contract test at `signet.css` — a
-`@repo/theme` change of its own, not landing work.
+fallback, and both the preset and `signet.ts` read its motion scale. What went
+is the stylesheet, not the token module.
 
 ## Fonts
 
@@ -46,8 +48,8 @@ variable and RN-invalid; mobile maps mono to the system stack via
 own `app/layout.tsx` and `app/global-error.tsx`, since its token cutover
 ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)).
 
-**Geist Sans** still sits at `fonts/GeistVF.woff2` and **no surface loads it**.
-`apps/landing` was its last consumer and moved to Figtree with that cutover;
-the file is unreferenced. Geist is explicitly rejected as a typeface — see
-[spec/ui/brand-identity.md](../../spec/ui/brand-identity.md) §3 — so do not
-wire a surface back to it.
+**Geist Sans is gone.** `fonts/GeistVF.woff2` was deleted with its last
+consumer in the same cutover: `apps/landing` moved to Figtree, and a replaced
+asset does not outlive the thing that replaced it. Geist is explicitly rejected
+as a typeface — see [spec/ui/brand-identity.md](../../spec/ui/brand-identity.md)
+§3 — so do not re-vendor it.

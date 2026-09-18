@@ -9,10 +9,11 @@
  * surface (`spec/ui/design-system/foundations.md` §1), and `signet.css.spec.ts`
  * pins that wiring for both apps.
  *
- * The legacy bone/bronze counterpart, `globals.css`, therefore has no importer
- * left. Do not point a surface back at it to resolve an apparent mismatch here:
- * that would put two token systems on one surface, which is the thing §1
- * forbids.
+ * The legacy bone/bronze counterpart, `globals.css`, was DELETED in that same
+ * cutover, along with its package export — a cutover deletes what it replaces,
+ * and a stylesheet no surface imports is not a migration window. There is no
+ * second token system to fall back to, and reintroducing one would put two on a
+ * single surface, which is the thing §1 forbids.
  *
  * Values are the fixed foundations from `spec/ui/design-system/foundations.md`
  * (source-of-truth constants: `signet.ts`, asserted equal by the spec) plus the

@@ -54,11 +54,7 @@ The six locked type roles are [`../design-system/foundations.md`](../design-syst
 
 **Home: the landing stylesheet.** They are declared in [`apps/landing/app/globals.css`](../../../apps/landing/app/globals.css) and bound as utilities by [`apps/landing/tailwind.config.ts`](../../../apps/landing/tailwind.config.ts), and [`../design-system/README.md`](../design-system/README.md) §3 rule 4 was widened in the same PR to name a second app-local token home. The alternative — `packages/theme/src/signet.css`, alongside the locked roles — was rejected: that stylesheet is pinned to `signet.ts`, which is the token source `apps/mobile` reads, so a 72px storefront headline declared there would sit one import away from every product screen on two surfaces where §7's six roles are the whole scale. Using one of these three outside `apps/landing` is a defect, exactly as an off-scale literal is.
 
-| Role | Desktop | Phone | Used by |
-| --- | --- | --- | --- |
-| `--text-hero` | 72 / 74 · 700 · tracking `-0.02em` | 40 / 44 | The hero H1, and nothing else |
-| `--text-display-lg` | 48 / 52 · 700 · tracking `-0.02em` | 32 / 37 (the locked `display` role) | Section H2s and the desktop prices. On phone the two prices take `--text-hero` (40 / 44) so a figure never outweighs the H1 |
-| `--text-lead` | 20 / 30 · 400 | 18 / 27 | Hero and closing paragraphs, and nothing else |
+**The values are not restated here.** `--text-hero`, `--text-display-lg` and `--text-lead`, their desktop and phone sizes, and which element takes each one live in [`../design-system/foundations.md`](../design-system/foundations.md#amendment-the-three-marketing-type-roles-landing-only) § Amendment. One canonical place per fact — a second copy on this page is a copy that drifts, and it did: it disagreed with the canonical table about the phone pricing figures before that was reconciled.
 
 Type inside the two product frames is transcribed from the design-system and web-greenfield boards and is deliberately **not** on this scale. Do not "correct" it.
 

@@ -9,9 +9,11 @@ import sharedConfig, { colorVar } from "@repo/theme/tailwind";
  * binds nothing that its stylesheet does not define and a preset key reading an
  * undefined token is #1145's silent no-color failure. Both surfaces now ship
  * `packages/theme/src/signet.css`, so the two key sets are the same set — that
- * duplication is the next thing to collapse, and it is a `@repo/theme` refactor
- * (the preset's contract test is written against the legacy stylesheet) rather
- * than landing work, so it is filed rather than smuggled in here.
+ * duplication is the next thing to collapse (#2371). It stays a `@repo/theme`
+ * refactor rather than landing work: moving these keys up touches `apps/web`'s
+ * config too, and the acceptance test is that BOTH apps' compiled stylesheets
+ * come out byte-identical, which is not something to prove inside a reskin
+ * slice.
  *
  * `darkMode` stays on the class strategy with nothing setting the class, for
  * the same reason `apps/web` does: Signet is dark-only — the single `:root` IS

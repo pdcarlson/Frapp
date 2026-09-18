@@ -11,7 +11,15 @@ import { describe, expect, it } from "vitest";
 import config from "./tailwind.config";
 
 /**
- * The contract between `globals.css` and the shared Tailwind preset.
+ * The contract between `signet.css` and the shared Tailwind preset.
+ *
+ * **Re-pointed from the legacy `globals.css` when that stylesheet was deleted**
+ * (#2366): `apps/landing` was its last importer, and a contract test aimed at a
+ * retired file asserts nothing about what ships. `signet.css.spec.ts` covers the
+ * same preset-key-is-defined ground for the Signet-only app configs; what lives
+ * only here is the repo-wide `hsl(var(--x))` ban (#1151) and the postcss
+ * compile probes at the bottom, which are the only checks in this package that
+ * drive the real Tailwind pipeline.
  *
  * Two separate defects motivated this file, and both were silent — no console
  * warning, no build error, just an element rendering without the color it
@@ -30,17 +38,17 @@ import config from "./tailwind.config";
  * cannot be added in the wrong format.
  */
 
-const GLOBALS = fileURLToPath(new URL("./globals.css", import.meta.url));
-const css = readFileSync(GLOBALS, "utf8");
+const STYLESHEET = fileURLToPath(new URL("./signet.css", import.meta.url));
+const css = readFileSync(STYLESHEET, "utf8");
 
-// ── globals.css ──────────────────────────────────────────────────────────────
+// ── signet.css ───────────────────────────────────────────────────────────────
 
-/** `--token` → declared value, for one selector block of `globals.css`. */
+/** `--token` → declared value, for one selector block of `signet.css`. */
 function declaredIn(selector: string): Map<string, string> {
   const block = css.match(
     new RegExp(`^\\s*${selector.replace(".", "\\.")}\\s*\\{([\\s\\S]*?)^\\s*\\}`, "m"),
   );
-  if (!block?.[1]) throw new Error(`globals.css has no ${selector} block`);
+  if (!block?.[1]) throw new Error(`signet.css has no ${selector} block`);
 
   const declarations = new Map<string, string>();
   for (const [, name, value] of block[1].matchAll(
@@ -52,7 +60,16 @@ function declaredIn(selector: string): Map<string, string> {
 }
 
 const root = declaredIn(":root");
-const dark = declaredIn(".dark");
+
+/*
+ * There is no `.dark` map any more, and its absence is the point rather than an
+ * omission. The legacy stylesheet had a light `:root` and a `.dark` override, so
+ * this suite had to check that no token was dark-only (undefined in light mode
+ * is the same silent failure by another route). Signet defines a SINGLE
+ * appearance — one `:root`, no light palette — so a dark-only token cannot
+ * exist. `signet.css.spec.ts` asserts the absence of the block itself, so
+ * nothing is lost by dropping the machinery here.
+ */
 
 // ── the preset ───────────────────────────────────────────────────────────────
 
@@ -66,8 +83,9 @@ type Reference = { key: string; token: string; style: "triple" | "complete" };
  * and applies any opacity modifier itself. A string wrapping the property in
  * `hsl(...)` needs a bare HSL triple instead; no key is written that way any
  * more, but the shape is still classified so that reintroducing one is checked
- * rather than waved through. Literal colors — the `navy` and `emerald` legacy
- * brand scales — reference no property and are skipped.
+ * rather than waved through. A literal color would reference no property and be
+ * skipped; the `navy` and `emerald` legacy brand scales were the last such keys
+ * and went with the landing cutover (#2366), so the preset has none today.
  *
  * A **function** value is now a defect rather than a third shape. v3 called it
  * with `{ opacityValue }` and `colorVar` used to be one; v4 dropped that
@@ -147,17 +165,9 @@ describe("every token the preset reads is defined", () => {
   it.each(references)("$key reads $token, which :root defines", ({ token }) => {
     expect(
       root.has(token),
-      `the preset reads ${token} but globals.css :root never defines it — ` +
+      `the preset reads ${token} but signet.css :root never defines it — ` +
         "the class will compile to nothing (#1145)",
     ).toBe(true);
-  });
-
-  it("defines nothing in .dark that :root omits", () => {
-    // A dark-only token is undefined in light mode, which is the same silent
-    // failure by a different route.
-    for (const token of dark.keys()) {
-      expect(root.has(token), `${token} is defined in .dark but not in :root`).toBe(true);
-    }
   });
 
   it("defines every referenced radius and shadow", () => {
@@ -177,18 +187,13 @@ describe("every token the preset reads is defined", () => {
 describe("token format matches how the preset reads it", () => {
   it.each(references)("$token is stored as a $style value", ({ token, style }) => {
     const pattern = style === "triple" ? HSL_TRIPLE : COMPLETE_COLOR;
-    for (const [selector, declarations] of [
-      [":root", root],
-      [".dark", dark],
-    ] as const) {
-      const value = declarations.get(token);
-      if (value === undefined) continue; // .dark legitimately inherits from :root
-      expect(
-        value,
-        `${selector} defines ${token} as "${value}", but the preset reads it as a ` +
-          `${style} value. A mismatch here renders nothing at all (#1143).`,
-      ).toMatch(pattern);
-    }
+    const value = root.get(token);
+    if (value === undefined) return; // covered by the "is defined" assertion above
+    expect(
+      value,
+      `:root defines ${token} as "${value}", but the preset reads it as a ` +
+        `${style} value. A mismatch here renders nothing at all (#1143).`,
+    ).toMatch(pattern);
   });
 });
 
@@ -263,10 +268,10 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
   /**
    * The preset is not the only reader (#1151).
    *
-   * `globals.css` used to wrap tokens itself in its own base and components
-   * layers (`* { border-color: hsl(var(--border)) }`), and so did app code —
-   * three class names in `apps/web`'s dashboard shell and two SVG `fill`s in
-   * `apps/landing`'s lockup. Every one of them hard-coded the bare-triple
+   * The legacy `globals.css` used to wrap tokens itself in its own base and
+   * components layers (`* { border-color: hsl(var(--border)) }`), and so did app
+   * code — three class names in `apps/web`'s dashboard shell and two SVG `fill`s
+   * in `apps/landing`'s lockup. Every one of them hard-coded the bare-triple
    * assumption the preset used to share.
    *
    * Now that every colour token is stored as a **complete colour**, that
@@ -280,15 +285,22 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
    * and only a repo-wide scan can see them.
    *
    * **Scoped to the stylesheet, not to the preset.** The set below is every
-   * complete-colour token `globals.css` declares — *not* only the ones the
-   * preset reads. Some of this file's own tokens are consumed exclusively by
-   * hand, never through a Tailwind colour key: `--brand-lockup-bg` is one (an
-   * SVG `fill` in `apps/landing`, and one of the very sites the #1151 sweep
-   * fixed). Keying on `references` would have left exactly those unguarded —
-   * the token's storage format is what makes the wrapper wrong, so storage is
-   * what the guard keys on.
+   * complete-colour token `signet.css` declares — *not* only the ones the
+   * preset reads. Several of this file's tokens are consumed exclusively by
+   * hand, never through a Tailwind colour key: the scrollbar pair and
+   * `--skeleton-highlight` are painted by `signet.css`'s own components layer.
+   * Keying on `references` would leave exactly those unguarded — the token's
+   * storage format is what makes the wrapper wrong, so storage is what the
+   * guard keys on.
    *
-   * The `--hue-*` family used to be named here as the second example. #1155
+   * The witness used to be `--brand-lockup-bg`, a legacy-stylesheet token whose
+   * one consumer was an SVG `fill` in `apps/landing`'s lockup. It went with
+   * `globals.css` in #2366 — that lockup now inlines the crest with the locked
+   * brand hex, which is a literal by rule and not a token at all. Retargeted
+   * deliberately, as the note it replaces asked: `--scrollbar-thumb` is the
+   * equivalent witness on this stylesheet.
+   *
+   * The `--hue-*` family used to be named here as a second example. #1155
    * deleted those five: they were hand-consumable in principle and consumed by
    * nothing in fact, which is a token to remove rather than a token to guard.
    */
@@ -324,13 +336,13 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
   });
 
   const sources = [
-    { file: GLOBALS, text: css },
+    { file: STYLESHEET, text: css },
     ...appSources.map((file) => ({ file, text: readFileSync(file, "utf8") })),
   ];
 
   /** Every token this stylesheet stores as a complete colour, in either block. */
   const completeTokens = new Set(
-    [...root, ...dark]
+    [...root]
       .filter(([, value]) => COMPLETE_COLOR.test(value))
       .map(([token]) => token),
   );
@@ -351,20 +363,19 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
   });
 
   it("covers the tokens no preset key reads", () => {
-    // The regression this guard was widened to catch. `--brand-lockup-bg` is
-    // the witness: hand-consumed only (an SVG `fill` in `apps/landing`), so a
-    // set keyed on `references` would not contain it.
+    // The regression this guard was widened to catch. `--scrollbar-thumb` is
+    // the witness: hand-consumed only (painted by `signet.css`'s own components
+    // layer, never through a Tailwind colour key), so a set keyed on
+    // `references` would not contain it.
     //
-    // It is the ONLY witness now that #1155 deleted the `--hue-*` family, which
-    // is why this is a named assertion rather than a token-agnostic one. A
-    // count or a size comparison looks more general and is not: today it would
-    // be this same token by another name, and it would additionally go red on a
-    // correct change — wiring `--brand-lockup-bg` into a preset colour key, or
-    // adding any bare-triple preset key — with a message about set sizes that
-    // says nothing about what actually broke. If this token stops being
-    // hand-consumed, retarget this deliberately rather than quietly narrowing
-    // back to `references`.
-    expect(completeTokens.has("--brand-lockup-bg")).toBe(true);
+    // A named assertion rather than a token-agnostic one, for the reason the
+    // `--brand-lockup-bg` version carried: a count or a size comparison looks
+    // more general and is not — it would go red on a correct change, such as
+    // wiring this token into a preset colour key, with a message about set
+    // sizes that says nothing about what actually broke. If this token stops
+    // being hand-consumed, retarget this deliberately rather than quietly
+    // narrowing back to `references`.
+    expect(completeTokens.has("--scrollbar-thumb")).toBe(true);
   });
 
   it("still recognises the shape it is banning", () => {
@@ -377,7 +388,7 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
   it("finds no hand-written wrapper around any complete-colour token", () => {
     expect(
       offenders,
-      "every colour token in globals.css is stored as a complete colour, so " +
+      "every colour token in signet.css is stored as a complete colour, so " +
         "hsl(var(--x)) around one emits hsl(hsl(...)) and renders nothing (#1151). " +
         "Use var(--x) directly — in Tailwind, the arbitrary value needs the type " +
         "hint: text-[color:var(--x)].",

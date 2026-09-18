@@ -23,7 +23,7 @@ description: >
 
 | Layer | Location | Purpose |
 |-------|----------|---------|
-| `@repo/theme` | `packages/theme/src/` | Tailwind preset (`./tailwind`) + stylesheets (`./signet.css` Signet, `./globals.css` legacy/landing) + typed Signet tokens (`./signet`, what mobile reads) + the chapter accent resolver (`./accent`). `./tokens` is the legacy bone/bronze/ink token set, consumed only inside the package. |
+| `@repo/theme` | `packages/theme/src/` | Tailwind preset (`./tailwind`) + the Signet stylesheet (`./signet.css`, imported by both web surfaces) + typed Signet tokens (`./signet`, what mobile reads) + the chapter accent resolver (`./accent`). The legacy `./globals.css` export was deleted with #2366. `./tokens` is the legacy bone/bronze/ink token set, consumed only inside the package (the accent fallback and the motion scale). |
 | ShadCN components | `apps/web/components/ui/` | Dashboard primitives and Radix composites (Button, Card, Dialog, Select, Toast, etc.) |
 | App components | `apps/web/components/` | Feature-level components |
 | Pages | `apps/web/app/` | Next.js App Router pages and layouts |
@@ -158,12 +158,16 @@ collapsing the two is a `@repo/theme` refactor, not a pending slice. **Read that
 and it carries the reasoning for each. `packages/theme/src/signet.css.spec.ts` asserts every key
 reads a defined token.
 
-### Legacy theme tokens (`packages/theme/src/globals.css`)
+### Legacy theme tokens — deleted (historical)
 
-**No surface imports this stylesheet any more** — `apps/landing` was its last consumer and moved to
-`signet.css` with [#2366](https://github.com/pdcarlson/Frapp/issues/2366). It is kept here for
-reading history and for `tailwind.config.spec.ts`, which still pins the preset against it. Do not
-wire a new surface to it. It defines these semantic colors as CSS variables. Every one holds a **complete color value** (`hsl(30 45% 32%)`, `#C49A3A`,
+> `packages/theme/src/globals.css` and its `@repo/theme/globals.css` export were **deleted** in
+> [#2366](https://github.com/pdcarlson/Frapp/issues/2366), when `apps/landing` — their last
+> consumer — moved to `signet.css`. There is no legacy stylesheet to import, and
+> `tailwind.config.spec.ts` was re-pointed at `signet.css` in the same change. What follows is kept
+> for the #1143/#1151 reasoning it carries, not as a live token reference; read
+> `packages/theme/src/signet.css` for what ships.
+
+It defined these semantic colors as CSS variables. Every one held a **complete color value** (`hsl(30 45% 32%)`, `#C49A3A`,
 `rgba(255,255,255,.08)`) — not a bare HSL triple — and the preset reads them through `colorVar()`
 as a plain `var(--token)`. **Never hand-write `hsl(var(--token))` around one**: it emits
 `hsl(hsl(...))`, which the browser drops, and a `tailwind.config.spec.ts` guard fails the build on

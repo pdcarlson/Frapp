@@ -44,7 +44,7 @@ Frapp/
     hooks/          # Shared React hooks (use-members, use-frapp-client, etc.)
     observability/  # Browser-safe observability policy (Sentry PII scrubbing, sample-rate parse)
     org-archetypes/ # Greek-org directory / archetype data
-    theme/          # Tailwind preset + stylesheets: Signet (`signet.css`, both web surfaces) and legacy bone/bronze (`globals.css`, retired — no importer)
+    theme/          # Tailwind preset + the Signet stylesheet (`signet.css`, both web surfaces) and typed tokens
     typescript-config/ # Shared tsconfig
     validation/     # Shared Zod schemas (used by API + web + mobile)
   spec/             # Product spec, behavior spec, architecture, environments
@@ -122,7 +122,7 @@ Frapp/
 | `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
 | `@repo/observability`      | Browser-safe observability policy: Sentry PII scrubbing, correlation types, sample-rate parsing in `[0,1]`, first-party Sentry trace-propagation origins, and the constants that describe the Sentry/PostHog split. Vendor SDK **init calls** stay runtime-local to NestJS, Next.js, and React Native. Identify / groups / hex validation / identified Sentry attach are `@repo/observability/identified-posthog` (web and mobile only). `@repo/observability/next` holds anonymous Next.js option builders (replay-off, both scrubber hooks, debug IDs, path-only analytics) with **no** identify / group / `setUser` APIs — landing imports only that entry. Used by API + web + landing + mobile. |
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill. Consumed by the API (chapter config seed), web Settings + first-officer wizard, and `apps/mobile` (`package.json` declares the workspace dependency; the wizard reads `ARCHETYPES` directly). |
-| `@repo/theme`             | Shared Tailwind preset plus two stylesheets: `signet.css` (dark-only Signet tokens, imported by `apps/web` and, since #2366, `apps/landing`) and the legacy bone/bronze `globals.css` (retired with that cutover; no surface imports it). Typed tokens for non-Tailwind consumers; `accent.ts` holds `resolveChapterAccentColor`, the per-surface accent re-validator. |
+| `@repo/theme`             | Shared Tailwind preset plus one stylesheet: `signet.css` (dark-only Signet tokens), imported by `apps/web` and, since #2366, `apps/landing`. The legacy bone/bronze `globals.css` was deleted in that cutover. Typed tokens for non-Tailwind consumers; `accent.ts` holds `resolveChapterAccentColor`, the per-surface accent re-validator. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
 | `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document` / `archive`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`, `isAnalyticsOptedOut`) used by API + clients. `z.record` requires a key schema and a value schema. |
 

@@ -100,4 +100,7 @@ Signet's direction is dark-first, warm, and consumer-grade. Every fact below has
 
 ## 5. What still ships legacy
 
-The landing site shipped the legacy Frapp **bone/bronze** look until its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merged, and is now on the Signet tokens — the reskin is approved and staged as [#2364](https://github.com/pdcarlson/Frapp/issues/2364), and [#2366](https://github.com/pdcarlson/Frapp/issues/2366) is the slice that moves the tokens. Its README is no longer frozen and records the reskin's decisions — [landing/README.md](landing/README.md). The web dashboard cut over with the #920 shell slice and is Signet — [web-dashboard/README.md](web-dashboard/README.md). Until #2366 merges, new Signet work MUST NOT copy visual patterns from the landing surface as it ships today.
+
+**Nothing does.** The landing site shipped the legacy Frapp **bone/bronze** look until its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merged; it is now on the Signet tokens, and with it the last legacy surface is gone. Its README records the reskin's decisions — [landing/README.md](landing/README.md). The web dashboard cut over with the #920 shell slice — [web-dashboard/README.md](web-dashboard/README.md).
+
+What remains of the landing reskin ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)) is **composition, not tokens**: the page is still laid out as it was before the reskin was designed. So its tokens are safe to read, and its section structure is not yet a pattern to copy into new work.

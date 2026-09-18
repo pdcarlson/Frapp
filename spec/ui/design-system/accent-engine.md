@@ -114,8 +114,8 @@ stylesheets is stored as a **complete colour** (`hsl(30 45% 32%)`, `#C49A3A`,
 convention left to pair against, which is the precondition the shell cutover then built on. Both
 web surfaces now import `packages/theme/src/signet.css` — `apps/web` since the #920 shell slice,
 `apps/landing` since its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) —
-so the one-format rule is the only rule on any shipping surface. `globals.css` keeps the same
-format and no longer has an importer.
+so the one-format rule is the only rule on any shipping surface. The legacy `globals.css`, which
+used the same format, was deleted with that cutover.
 
 The `--ring` / `--side-*` family moved first, in #1143: those were the tokens chapter branding rewrote,
 and the engine persists hex, so under the old bare-triple convention an injected `#C49A3A` became

@@ -49,9 +49,9 @@ Canonical docs (link, don't restate values):
 | --- | --- | --- |
 | Surfaces | **Every surface.** `apps/mobile`; all of `apps/web` (the #920 reskin is complete); `apps/landing` since its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) | None. `apps/landing` was the last legacy consumer and is on Signet tokens now |
 | Direction | Dark-first, warm, consumer (Notion dark / Cash App) | Light-first bone / bronze / ink |
-| Typeface | **Figtree**. Geist is rejected. Both web surfaces ship it vendored at `packages/theme/fonts/FigtreeVF.woff2` (`next/font/local`, `--font-figtree`). | Geist Sans — no surface loads it; `GeistVF.woff2` is an unreferenced file |
+| Typeface | **Figtree**. Geist is rejected. Both web surfaces ship it vendored at `packages/theme/fonts/FigtreeVF.woff2` (`next/font/local`, `--font-figtree`). | Geist Sans — deleted; `GeistVF.woff2` went with its last consumer |
 | House accent | Gold/amber: house gold `#EFB63B`, accent seed `#DDB844` (the mark gold) — never brown-bronze, never royal blue | Bronze `primary`, royal blue leftovers in old specs |
-| Token home | `spec/ui/design-system/foundations.md` (ladder `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621` since #2143); web implementation: `packages/theme/src/signet.css` + `packages/theme/src/signet.ts`, plus per-app keys in `apps/web/tailwind.config.ts` and `apps/landing/tailwind.config.ts` | `packages/theme/src/globals.css` — still on disk, imported by nothing |
+| Token home | `spec/ui/design-system/foundations.md` (ladder `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621` since #2143); web implementation: `packages/theme/src/signet.css` + `packages/theme/src/signet.ts`, plus per-app keys in `apps/web/tailwind.config.ts` and `apps/landing/tailwind.config.ts` | `packages/theme/src/globals.css` — **deleted** (#2366), with its package export |
 | Spec status | Live — [`web-dashboard`](../../../spec/ui/web-dashboard/README.md) is **Active (Signet)**, but [`web-greenfield`](../../../spec/ui/web-greenfield/README.md) outranks it on web visuals while #2140 is open | Reskin in progress on **composition only**: [`landing`](../../../spec/ui/landing/README.md) |
 
 **The two systems MUST NOT mix on one surface**, and there is no longer a surface on the legacy
