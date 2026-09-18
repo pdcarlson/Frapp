@@ -1,4 +1,5 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InternalServerErrorException } from '@nestjs/common';
 import { BackworkController } from './backwork.controller';
 import { BackworkService } from '../../application/services/backwork.service';
@@ -31,16 +32,12 @@ describe('BackworkController', () => {
   };
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createGuardedTestingModule({
       controllers: [BackworkController],
       providers: [
         {
           provide: BackworkService,
           useValue: mockBackworkService,
-        },
-        {
-          provide: 'SUPABASE_CLIENT',
-          useValue: {},
         },
       ],
     }).compile();

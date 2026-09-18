@@ -1,9 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { BillingController } from './billing.controller';
 import { BillingService } from '../../application/services/billing.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import { CreateCheckoutDto, CreatePortalDto } from '../dtos/billing.dto';
 
 describe('BillingController', () => {
@@ -17,17 +15,10 @@ describe('BillingController', () => {
       createPortalSession: jest.fn(),
     } as any;
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createGuardedTestingModule({
       controllers: [BillingController],
       providers: [{ provide: BillingService, useValue: billingService }],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     controller = module.get<BillingController>(BillingController);
   });

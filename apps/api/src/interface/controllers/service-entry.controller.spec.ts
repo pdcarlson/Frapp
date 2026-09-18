@@ -1,11 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InternalServerErrorException } from '@nestjs/common';
 import { ServiceEntryController } from './service-entry.controller';
 import { ServiceEntryService } from '../../application/services/service-entry.service';
 import { RbacService } from '../../application/services/rbac.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequestProofUploadUrlDto } from '../dtos/service-entry.dto';
 
 describe('ServiceEntryController', () => {
@@ -15,7 +13,7 @@ describe('ServiceEntryController', () => {
   beforeEach(async () => {
     service = { requestProofUploadUrl: jest.fn() };
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createGuardedTestingModule({
       controllers: [ServiceEntryController],
       providers: [
         { provide: ServiceEntryService, useValue: service },
@@ -24,14 +22,7 @@ describe('ServiceEntryController', () => {
           useValue: { memberHasAnyPermission: jest.fn() },
         },
       ],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
-      .compile();
+    }).compile();
 
     controller = module.get<ServiceEntryController>(ServiceEntryController);
   });

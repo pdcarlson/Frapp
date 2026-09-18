@@ -1,10 +1,8 @@
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from '../../application/services/notification.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import {
   RegisterPushTokenDto,
   UpdateNotificationPreferenceDto,
@@ -27,7 +25,7 @@ describe('NotificationController', () => {
       updateSettings: jest.fn(),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createGuardedTestingModule({
       controllers: [NotificationController],
       providers: [
         {
@@ -38,12 +36,6 @@ describe('NotificationController', () => {
     })
       .overrideInterceptor(AuthSyncInterceptor)
       .useValue({ intercept: (context: any, next: any) => next.handle() })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
       .compile();
 
     controller = module.get<NotificationController>(NotificationController);

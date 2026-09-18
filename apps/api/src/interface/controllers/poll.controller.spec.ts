@@ -1,8 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { PollController } from './poll.controller';
 import { PollService } from '../../application/services/poll.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
@@ -22,17 +21,10 @@ describe('PollController', () => {
       listPolls: jest.fn(),
     } as any;
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createGuardedTestingModule({
       controllers: [PollController],
       providers: [{ provide: PollService, useValue: pollService }],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     controller = module.get<PollController>(PollController);
   });

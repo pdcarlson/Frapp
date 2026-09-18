@@ -30,7 +30,7 @@ import {
   createTableAwareSupabaseMock,
   type SeededTables,
 } from './helpers/supabase-mock.factory';
-import { PermissionsGuardStub } from './helpers/guard-stubs.factory';
+import { AllowAllGuard } from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
 
@@ -237,7 +237,7 @@ describe('Cross-tenant isolation (e2e)', () => {
         }),
       )
       .overrideGuard(PermissionsGuard)
-      .useClass(PermissionsGuardStub)
+      .useClass(AllowAllGuard)
       .compile();
 
     const instance = moduleFixture.createNestApplication();

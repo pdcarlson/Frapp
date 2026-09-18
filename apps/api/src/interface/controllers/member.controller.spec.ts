@@ -1,9 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { MemberController } from './member.controller';
 import { MemberService } from '../../application/services/member.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import {
   DismissOpsNudgeDto,
   UpdateMemberRolesDto,
@@ -28,17 +26,10 @@ describe('MemberController', () => {
       remove: jest.fn(),
     } as any;
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createGuardedTestingModule({
       controllers: [MemberController],
       providers: [{ provide: MemberService, useValue: memberService }],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     controller = module.get(MemberController);
   });

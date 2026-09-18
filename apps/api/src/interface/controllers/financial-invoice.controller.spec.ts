@@ -1,10 +1,8 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { FinancialInvoiceController } from './financial-invoice.controller';
 import { FinancialInvoiceService } from '../../application/services/financial-invoice.service';
 import { RbacService } from '../../application/services/rbac.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import {
   CreateFinancialInvoiceDto,
   UpdateFinancialInvoiceDto,
@@ -36,7 +34,7 @@ describe('FinancialInvoiceController', () => {
       getInvoiceTransactions: jest.fn(),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createGuardedTestingModule({
       controllers: [FinancialInvoiceController],
       providers: [
         {
@@ -44,19 +42,8 @@ describe('FinancialInvoiceController', () => {
           useValue: service,
         },
         { provide: RbacService, useValue: rbacService },
-        {
-          provide: 'SUPABASE_CLIENT',
-          useValue: {},
-        },
       ],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
-      .compile();
+    }).compile();
 
     controller = module.get<FinancialInvoiceController>(
       FinancialInvoiceController,

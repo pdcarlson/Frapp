@@ -375,9 +375,11 @@ E2E specs build the Nest app from `AppModule` but **mock external dependencies**
 live backend: the Supabase client is overridden via the `SUPABASE_CLIENT` provider token (see
 `apps/api/test/helpers/supabase-mock.factory.ts` / `createSupabaseMock()`), and auth/chapter/permission
 guards are replaced with stubs from `apps/api/test/helpers/guard-stubs.factory.ts`
-(`createGuardStubs()` / `PermissionsGuardStub`). Not every spec uses all of it — `cross-tenant-isolation`
-runs the real auth and chapter guards and takes only `PermissionsGuardStub`, and two specs cannot use
-the factory at all; its docblock names them and why. UUID-typed DTO fields (`@IsUUID()`) must use RFC-4122-valid UUIDs in
+(`createGuardStubs()` / `AllowAllGuard`). Not every spec uses all of it — `cross-tenant-isolation`
+runs the real auth and chapter guards and takes only `AllowAllGuard`, and two specs cannot use
+the factory at all; its docblock names them and why. Controller specs under `apps/api/src`, which
+compile a controller and call its methods directly rather than issuing requests, take
+`overrideGuardChain()` from the same file instead. UUID-typed DTO fields (`@IsUUID()`) must use RFC-4122-valid UUIDs in
 fixtures (correct version/variant nibbles) or the `ValidationPipe` rejects the request with `400`.
 
 Because `AppModule`'s `ConfigModule.forRoot` runs `validateEnv` (`src/config/env.validation.ts`) at

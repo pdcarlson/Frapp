@@ -1,4 +1,14 @@
-import type { CanActivate, ExecutionContext, Type } from '@nestjs/common';
+import type {
+  CanActivate,
+  ExecutionContext,
+  ModuleMetadata,
+  Type,
+} from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import type { TestingModuleBuilder } from '@nestjs/testing';
+import { SupabaseAuthGuard } from '../../src/interface/guards/supabase-auth.guard';
+import { ChapterGuard } from '../../src/interface/guards/chapter.guard';
+import { PermissionsGuard } from '../../src/interface/guards/permissions.guard';
 import type {
   AppUserContext,
   MemberContext,
@@ -78,7 +88,7 @@ export const STUB_MEMBER_ID = 'member-1';
  * Nine e2e specs hand-rolled these two classes, varying only in the identity
  * strings above, so a change to what the real guards put on the request had nine
  * places to reach and no way to tell it had missed one. Use with
- * {@link PermissionsGuardStub}:
+ * {@link AllowAllGuard}:
  *
  * ```ts
  * const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
@@ -147,12 +157,83 @@ export function createGuardStubs(identity: GuardStubIdentity): {
 }
 
 /**
- * Allows every route, so a spec asserts its own subject rather than the RBAC
- * lookup. Parameterless — a spec that needs permissions actually enforced runs
- * the real `PermissionsGuard` instead of configuring this one.
+ * Allows every route and writes nothing to the request, so a spec asserts its
+ * own subject rather than an authorization lookup. Parameterless — a spec that
+ * needs a guard actually enforced runs the real one instead of configuring
+ * this.
+ *
+ * Named for what it does rather than for the guard it replaces, because it
+ * stands in for all three: the ten e2e specs that keep the identity-writing
+ * stubs above override `PermissionsGuard` with it, and
+ * {@link createGuardedTestingModule} overrides the whole chain with it.
  */
-export class PermissionsGuardStub implements CanActivate {
+export class AllowAllGuard implements CanActivate {
   canActivate(): boolean {
     return true;
   }
+}
+
+/**
+ * `Test.createTestingModule` with the three-guard chain — `SupabaseAuthGuard`,
+ * `ChapterGuard`, `PermissionsGuard` — already overridden by
+ * {@link AllowAllGuard}. For a spec that compiles a controller and calls its
+ * methods directly:
+ *
+ * ```ts
+ * const module: TestingModule = await createGuardedTestingModule({
+ *   controllers: [FooController],
+ *   providers: [{ provide: FooService, useValue: fooService }],
+ * }).compile();
+ * ```
+ *
+ * It returns the builder, so a spec that also needs an interceptor or provider
+ * override chains onto it as usual.
+ *
+ * **These overrides are not ceremony, and the reason is not obvious.** No spec
+ * that uses this boots an HTTP app, so the guards never *run* — but Nest
+ * instantiates a controller's enhancers during `.compile()`, and the real
+ * `SupabaseAuthGuard` injects `SUPABASE_CLIENT`, which a controller-only
+ * testing module does not provide. Without the override, `.compile()` throws
+ * `Nest can't resolve dependencies of the SupabaseAuthGuard (?)` and every test
+ * in the file fails. Verified by deleting the block from a spec and running it,
+ * not inferred.
+ *
+ * Twenty-two controller specs had solved that in two incompatible ways. Eighteen
+ * hand-rolled the same six-line override block, in two spellings (`() => true`
+ * and `jest.fn().mockReturnValue(true)`, neither ever asserted on). The other
+ * four instead provided `{ provide: 'SUPABASE_CLIENT', useValue: {} }` so the
+ * *real* guards could construct — a raw string literal rather than the exported
+ * `SUPABASE_CLIENT` token, so a rename of that token would have stopped
+ * providing it silently. Either way a fourth guard on the chain, or a change to
+ * what an existing one injects, had twenty-two places to reach and no way to
+ * tell it had missed one. That is the same argument that gave the e2e stubs
+ * above one home; this is the other half of it.
+ *
+ * **The three controller specs that do not use this are named here so that
+ * claim is checkable rather than vacuous.** `health` and `webhook` declare no
+ * guards at all (`/health` and the Stripe webhook are the documented no-guard
+ * routes), so there is nothing to override — `health.controller.spec.ts`
+ * provides the real `SUPABASE_CLIENT` token because the *controller* injects
+ * it, not a guard. `analytics` constructs its controller with `new` and no
+ * testing module at all, which its own comment explains; that is a simpler
+ * answer than this one wherever a controller is thin enough for it.
+ *
+ * **What this does not do.** It writes no `supabaseUser`, `appUser`, `member`
+ * or `chapterId`, because a spec calling a controller method directly passes
+ * those as arguments — so it proves nothing about the guard chain itself. A
+ * spec that issues a real request needs {@link createGuardStubs}, and one that
+ * asserts *which* guards a controller declares reads
+ * `Reflect.getMetadata('__guards__', FooController)`, which these overrides do
+ * not touch.
+ */
+export function createGuardedTestingModule(
+  metadata: ModuleMetadata,
+): TestingModuleBuilder {
+  return Test.createTestingModule(metadata)
+    .overrideGuard(SupabaseAuthGuard)
+    .useClass(AllowAllGuard)
+    .overrideGuard(ChapterGuard)
+    .useClass(AllowAllGuard)
+    .overrideGuard(PermissionsGuard)
+    .useClass(AllowAllGuard);
 }

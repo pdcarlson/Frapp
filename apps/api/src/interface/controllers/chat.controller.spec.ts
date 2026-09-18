@@ -1,11 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InternalServerErrorException } from '@nestjs/common';
 import { ChatController } from './chat.controller';
 import { ChatService } from '../../application/services/chat.service';
 import { RbacService } from '../../application/services/rbac.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import { SystemPermissions } from '#domain/constants/permissions';
 
 describe('ChatController', () => {
@@ -29,20 +27,13 @@ describe('ChatController', () => {
       requestChatUploadUrl: jest.fn(),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createGuardedTestingModule({
       controllers: [ChatController],
       providers: [
         { provide: ChatService, useValue: service },
         { provide: RbacService, useValue: rbacService },
       ],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
-      .compile();
+    }).compile();
 
     controller = module.get<ChatController>(ChatController);
   });

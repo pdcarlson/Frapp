@@ -1,9 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { CustomFieldController } from './custom-field.controller';
 import { CustomFieldService } from '../../application/services/custom-field.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { PERMISSIONS_ANY_KEY } from '../decorators/permissions.decorator';
 import {
@@ -23,17 +21,10 @@ describe('CustomFieldController', () => {
       remove: jest.fn(),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createGuardedTestingModule({
       controllers: [CustomFieldController],
       providers: [{ provide: CustomFieldService, useValue: service }],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     controller = module.get<CustomFieldController>(CustomFieldController);
   });

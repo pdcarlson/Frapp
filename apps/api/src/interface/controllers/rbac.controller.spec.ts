@@ -1,9 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { RbacController } from './rbac.controller';
 import { RbacService } from '../../application/services/rbac.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   CreateRoleDto,
@@ -28,17 +26,10 @@ describe('RbacController', () => {
       claimPresidency: jest.fn(),
     } as any;
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createGuardedTestingModule({
       controllers: [RbacController],
       providers: [{ provide: RbacService, useValue: rbacService }],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     controller = module.get<RbacController>(RbacController);
   });
