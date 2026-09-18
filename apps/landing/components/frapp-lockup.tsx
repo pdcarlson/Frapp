@@ -11,8 +11,11 @@ import Link from "next/link";
  *     request. The lockup sits in the sticky header, above the fold on every
  *     route including the legal pages, so an inline path removes a request
  *     from that critical path instead of merely keeping it un-`priority`.
- *  2. It scales. The same geometry serves the 32px header tile and the 400px
- *     hero crest slice 2 draws, with no second raster and no blur.
+ *  2. It scales. The same geometry serves the 32px header tile, the footer tile
+ *     and the 56/72px closing crest, with no second raster and no blur. There
+ *     is no crest at the fold: D9 put the officer's chat frame there, and the
+ *     signature moment that would have played on a hero crest went with it
+ *     (cut until brand sign-off, #2378).
  *  3. The mark is LOCKED (`spec/ui/brand-identity.md` §2, `spec/ui/assets.md`
  *     §1). The fill is the literal `#DDB844` the vector carries, NOT
  *     `var(--primary)` — wiring the mark to the accent slot is the one lock a

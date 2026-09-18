@@ -52,7 +52,7 @@ Canonical docs (link, don't restate values):
 | Typeface | **Figtree**. Geist is rejected. Both web surfaces ship it vendored at `packages/theme/fonts/FigtreeVF.woff2` (`next/font/local`, `--font-figtree`). | Geist Sans — deleted; `GeistVF.woff2` went with its last consumer |
 | House accent | Gold/amber: house gold `#EFB63B`, accent seed `#DDB844` (the mark gold) — never brown-bronze, never royal blue | Bronze `primary`, royal blue leftovers in old specs |
 | Token home | `spec/ui/design-system/foundations.md` (ladder `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621` since #2143); web implementation: `packages/theme/src/signet.css` + `packages/theme/src/signet.ts`, plus per-app keys in `apps/web/tailwind.config.ts` and `apps/landing/tailwind.config.ts` | `packages/theme/src/globals.css` — **deleted** (#2366), with its package export |
-| Spec status | Live — [`web-dashboard`](../../../spec/ui/web-dashboard/README.md) is **Active (Signet)**, but [`web-greenfield`](../../../spec/ui/web-greenfield/README.md) outranks it on web visuals while #2140 is open | Reskin in progress on **composition only**: [`landing`](../../../spec/ui/landing/README.md) |
+| Spec status | Live — [`web-dashboard`](../../../spec/ui/web-dashboard/README.md) is **Active (Signet)**, but [`web-greenfield`](../../../spec/ui/web-greenfield/README.md) outranks it on web visuals while #2140 is open | Reskin in progress on **polish only** (slice 3, [#2368](https://github.com/pdcarlson/Frapp/issues/2368)): [`landing`](../../../spec/ui/landing/README.md) |
 
 **The two systems MUST NOT mix on one surface**, and there is no longer a surface on the legacy
 side of that line — so in practice: do not copy bone/bronze/Geist/`#2563EB` onto a Signet
@@ -63,10 +63,13 @@ dashboard screen is a defect now, not a pending slice
 **The landing is mid-reskin, and that changes what its README means.** Its visual freeze was lifted
 by [#2364](https://github.com/pdcarlson/Frapp/issues/2364) slice 0, so that doc carries the reskin's
 nine decisions, three marketing type roles and marketing copy rules — read and implement them. The
-**token** cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) has merged: the surface
-is on Figtree and the Signet ladder, and token drift against it is filable. What has not moved is
-the page's **composition**, which the remaining slices rebuild — so its current section structure is
-not a pattern to copy into new work, even though its tokens now are.
+**token** cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) and the **page rebuild**
+([#2367](https://github.com/pdcarlson/Frapp/issues/2367)) have both merged: the surface is on
+Figtree, the Signet ladder and the boards' section map, so drift is filable against its structure as
+well as its tokens, and its composition IS a pattern to read now. Two carve-outs survive: the two
+product frames inside the page carry literal sizes and radii transcribed from the product boards,
+because frame internals deliberately sit off the marketing scale, and D4's signature moment on the
+crest is cut until brand sign-off clears ([#2378](https://github.com/pdcarlson/Frapp/issues/2378)).
 
 The landing's three marketing type roles (`--text-hero`, `--text-display-lg`, `--text-lead`) sit
 **above** `foundations.md` §7's locked six and are declared in `apps/landing/app/globals.css`.
