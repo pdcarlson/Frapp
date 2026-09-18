@@ -80,36 +80,37 @@ done
 
 Optional: `EXPO_PUBLIC_POSTHOG_HOST` (defaults to `https://us.i.posthog.com` in `lib/posthog/config.ts`). Neither PostHog name is Infisical-synced — EAS dashboard only, like the DSN.
 
-**`SENTRY_AUTH_TOKEN` is the one that is not `EXPO_PUBLIC_*`, and the one that fails the build
-when it is missing.** Every variable above is inlined into the bundle and is public by design.
-This one is the opposite: it is read at build time by `@sentry/react-native`'s Xcode phase to
-upload source maps, is never bundled, and grants write access to `frapp-live` releases — so it
-is created `secret`, not `plaintext`:
+The refs are in [`.github/environments.json`](../../../../.github/environments.json); the anon keys
+come from each project's dashboard → Settings → API (or `GET /v1/projects/<ref>/api-keys`).
+`development` needs nothing here — a development build talks to the local stack through
+`apps/mobile/.env.local`, and `getSupabaseClient()` returns `null` with a visible sign-in notice
+when the pair is missing rather than crashing (`ENV_REFERENCE.md` § Mobile).
+
+**`SENTRY_AUTH_TOKEN` is the one variable here that is not `EXPO_PUBLIC_*`, and the one whose
+absence fails the build rather than degrading.** Everything above is inlined into the bundle and
+public by design; this one is build-time only, never bundled, and is the same org-auth-token class
+as the API's (`org:frapp-live` releases:write). `@sentry/react-native` uploads source maps and
+native debug files from the build itself, and **a Release build with no token fails** — on iOS in
+the Xcode phases, on Android in the Gradle upload task. Mechanism, failure signatures and the
+`SENTRY_DISABLE_AUTO_UPLOAD` / `SENTRY_ALLOW_FAILURE` escape hatches (and why neither is the
+remedy) are in
+[`ENV_REFERENCE.md` § apps/mobile](../../environment/ENV_REFERENCE.md#appsmobile-expo--eas) — that
+row is the canonical account; this section only creates the variable.
 
 ```bash
 cd apps/mobile
-# Token: sentry.io -> Settings -> Auth Tokens (org frapp-live), scopes project:releases + org:read.
+# Sentry -> Settings -> Auth Tokens, at the ORGANIZATION level (frapp-live), not a personal token.
 for ENV in preview production; do
   npx eas env:create --environment $ENV --scope project --visibility secret \
     --name SENTRY_AUTH_TOKEN --value "<token>"
 done
 ```
 
-`preview` and `production` only — those build **Release**, and `scripts/sentry-xcode.sh` skips the
-upload entirely when the Xcode `CONFIGURATION` matches `debug`, so a `development` build does not
-need it. Without it a Release build does **not** degrade to minified traces the way `next build`
-does; the script exits non-zero and the whole EAS build fails at **"Run fastlane" / Xcode**, after
-"Bundle JavaScript" has already succeeded (`ENV_REFERENCE.md` § apps/web, `SENTRY_AUTH_TOKEN`).
-Setting `SENTRY_ALLOW_FAILURE=true` or `SENTRY_DISABLE_AUTO_UPLOAD=true` in `eas.json` would also
-make the build pass, but it ships a store binary whose crashes are permanently unreadable — set
-the token instead.
-
-
-The refs are in [`.github/environments.json`](../../../../.github/environments.json); the anon keys
-come from each project's dashboard → Settings → API (or `GET /v1/projects/<ref>/api-keys`).
-`development` needs nothing here — a development build talks to the local stack through
-`apps/mobile/.env.local`, and `getSupabaseClient()` returns `null` with a visible sign-in notice
-when the pair is missing rather than crashing (`ENV_REFERENCE.md` § Mobile).
+`--visibility secret`, not the `plaintext` above: those values ship inside the binary anyway, this
+one must not be readable back. `preview` and `production` because the upload is skipped whenever the
+compiled Xcode configuration or Gradle variant name contains `debug` — that is keyed on the
+configuration, **not** on the profile name, so a `development` profile given an explicit Release
+`buildConfiguration` would need the token too.
 
 > **Why not `eas secret:create --scope project`, which this section used to say.** A project-scoped
 > secret has one value for every profile, so preview and production builds would have pointed at
