@@ -80,6 +80,31 @@ done
 
 Optional: `EXPO_PUBLIC_POSTHOG_HOST` (defaults to `https://us.i.posthog.com` in `lib/posthog/config.ts`). Neither PostHog name is Infisical-synced — EAS dashboard only, like the DSN.
 
+**`SENTRY_AUTH_TOKEN` is the one that is not `EXPO_PUBLIC_*`, and the one that fails the build
+when it is missing.** Every variable above is inlined into the bundle and is public by design.
+This one is the opposite: it is read at build time by `@sentry/react-native`'s Xcode phase to
+upload source maps, is never bundled, and grants write access to `frapp-live` releases — so it
+is created `secret`, not `plaintext`:
+
+```bash
+cd apps/mobile
+# Token: sentry.io -> Settings -> Auth Tokens (org frapp-live), scopes project:releases + org:read.
+for ENV in preview production; do
+  npx eas env:create --environment $ENV --scope project --visibility secret \
+    --name SENTRY_AUTH_TOKEN --value "<token>"
+done
+```
+
+`preview` and `production` only — those build **Release**, and `scripts/sentry-xcode.sh` skips the
+upload entirely when the Xcode `CONFIGURATION` matches `debug`, so a `development` build does not
+need it. Without it a Release build does **not** degrade to minified traces the way `next build`
+does; the script exits non-zero and the whole EAS build fails at **"Run fastlane" / Xcode**, after
+"Bundle JavaScript" has already succeeded (`ENV_REFERENCE.md` § apps/web, `SENTRY_AUTH_TOKEN`).
+Setting `SENTRY_ALLOW_FAILURE=true` or `SENTRY_DISABLE_AUTO_UPLOAD=true` in `eas.json` would also
+make the build pass, but it ships a store binary whose crashes are permanently unreadable — set
+the token instead.
+
+
 The refs are in [`.github/environments.json`](../../../../.github/environments.json); the anon keys
 come from each project's dashboard → Settings → API (or `GET /v1/projects/<ref>/api-keys`).
 `development` needs nothing here — a development build talks to the local stack through
