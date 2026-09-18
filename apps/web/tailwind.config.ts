@@ -9,8 +9,11 @@ import sharedConfig, { colorVar } from "@repo/theme/tailwind";
  * documented. That reason expired with #2366: landing ships `signet.css` too,
  * and `apps/landing/tailwind.config.ts` now carries the same key set.
  * Collapsing the COMMON SUBSET into the preset is tracked as #2371 — only the
- * subset, because `mention` and `gold` below are web-only and the landing's
- * three marketing type roles are landing-only by decision (foundations §7).
+ * subset, because `gold` below is web-only and the landing's three marketing
+ * type roles are landing-only by decision (foundations §7). `mention` was in
+ * that web-only list until #2367: the rebuilt landing draws a chat frame with
+ * an unread DM badge and an in-bubble mention chip, so its config binds the
+ * same four keys and the family is part of the common subset now.
  * Static values come from
  * `packages/theme/src/signet.css`; the accent family is overridden per chapter
  * by the accent engine at runtime. `packages/theme/src/signet.css.spec.ts`

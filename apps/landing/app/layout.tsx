@@ -15,13 +15,31 @@ const figtree = localFont({
   display: "swap",
 });
 
+/*
+ * The DESCRIPTIONS follow the page body's positioning; the TITLES do not move.
+ *
+ * Both sentences used to sell the ops-consolidation page that #2367 deleted:
+ * one named Discord, OmegaFi and Life360, the other listed six modules side by
+ * side. Marketing copy rules reach the meta description
+ * (`spec/ui/landing/README.md` § Marketing copy rules), so leaving them would
+ * have left the page's only surviving "operating system for Greek Life" claim
+ * in the tag search engines and link previews read. They now match the hero
+ * lead, which is what the Spec sheet's copy deck asks for.
+ *
+ * The titles keep "Signet. Ask your chapter anything." deliberately. D8 holds
+ * that tagline off the page BODY until Ask can answer, and scopes itself to the
+ * body: `spec/ui/brand-identity.md` §1 still locks it as the brand tagline, and
+ * a brand tagline in a title tag is not a product claim about a shipped
+ * control. The page body closes on "Everything your chapter needs is already in
+ * chat." instead.
+ */
 const ogDescription =
-  "One platform for chat, events, study hours, points, backwork, and billing.";
+  "Signet is chat first. Events, check-in and points land in the conversation your chapter already reads.";
 
 export const metadata: Metadata = {
   title: "Signet. Ask your chapter anything.",
   description:
-    "Replace Discord, OmegaFi, and Life360 with one app. Chat, events, study hours, points, and billing for fraternity chapters.",
+    "Signet is chat first. Events, check-in and points land in the conversation your members already read. Free for chat and members, with no card.",
   metadataBase: new URL("https://frapp.live"),
   openGraph: {
     title: "Signet. Ask your chapter anything.",
