@@ -1,6 +1,7 @@
 name: Codex review
 
-# Advisory, comment-only PR review. Decided in ADR-14's "Amendment — 2026-09-18
+# Advisory PR review: inline comments on a `COMMENT` review, plus a summary comment.
+# Never a blocking review event — see below. Decided in ADR-14's "Amendment — 2026-09-18
 # (decision)"; the behaviour this file relies on is recorded in its "Amendment —
 # 2026-09-18 (implementation)". Installs @openai/codex and calls the CLI's
 # first-class `codex review` subcommand against a BYOK provider.
@@ -8,12 +9,27 @@ name: Codex review
 # WHAT ADVISORY MEANS HERE, AND WHY EACH PART IS LOAD-BEARING:
 #   * NOT a required check. Deliberately absent from
 #     scripts/ci/lib/required-checks.mjs. Do not add it.
-#   * NEVER a GitHub review event — plain issue comments only. A write-access
-#     CHANGES_REQUESTED trips the merge ruleset even with green checks, and no
-#     agent can clear it (GITHUB_PAT 401, no MCP dismiss tool, an author cannot
-#     self-approve). Measured on #1875. `issues: write` — not
-#     `pull-requests: write` — is the permission that posts a PR comment,
-#     measured against pr-base-sync.yml.
+#   * NEVER a BLOCKING review event. The ban used to be absolute — no review
+#     event at all — because a write-access CHANGES_REQUESTED trips the merge
+#     ruleset even with green checks and no agent can clear it (GITHUB_PAT 401,
+#     no MCP dismiss tool, an author cannot self-approve). Measured on #1875.
+#     ADR-14's 2026-09-18 (commenting) amendment narrows it to the event types
+#     that actually cause that block, CHANGES_REQUESTED and APPROVED, so findings
+#     can be delivered as a COMMENT review anchored to their lines. COMMENT
+#     blocks nothing. The event is a frozen constant in codex-review.mjs
+#     (REVIEW_EVENT), never a parameter. A test asserts this on the REQUEST — that
+#     an `event` passed by a caller is ignored rather than honoured — NOT by
+#     grepping the source, because the source necessarily names both blocking
+#     events in these very comments and a guard that fails on its own rationale is
+#     one someone deletes.
+#   * The SUMMARY stays an ordinary issue comment, which is load-bearing, not
+#     legacy: on the FINDINGS path upsertWakeComment's delete-then-create fires
+#     `issue_comment action=created`, the event the PR-babysitting agent sessions
+#     listen for. A review submission fires `pull_request_review` and would NOT
+#     wake them, so the summary comment is what keeps that path alive. A CLEAN run
+#     deliberately does not wake: it PATCHes the summary in place, because clean is
+#     the steady state and waking a push-capable session on every clean push is
+#     noise with nothing to act on.
 #   * A reviewer problem must not red this workflow, because a red check here
 #     lands on every open PR and the PR-activity webhook delivers it to every
 #     watching agent session. Every step that can fail for a reason outside our
@@ -45,7 +61,12 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write # the review comment and the alert issue both go through /issues
+  issues: write # the summary comment and the alert issue both go through /issues
+  # Required for the inline COMMENT review (POST /pulls/{n}/reviews) and for
+  # deleting this reviewer's own stale inline comments on a re-review. This IS the
+  # permission that can issue a squash-blocking CHANGES_REQUESTED, which is why
+  # the event is frozen in code rather than configured — see the header.
+  pull-requests: write
 
 env:
   # UNVERIFIED against the vendor: openrouter.ai is egress-blocked from every
@@ -53,6 +74,28 @@ env:
   # The vendor prefix is part of the id — a bare `muse-spark-1.3` is not a valid
   # OpenRouter slug. Kept here so the smoke test changes it in one place.
   REVIEW_MODEL: meta/muse-spark-1.3
+
+  # The CLI banner reported `reasoning effort: none` before this was set, which
+  # made it the most plausible single lever on finding quality — the one live run
+  # returned zero findings on a 2400-line diff. `high` and `xhigh` were both
+  # probed as ACCEPTED under --strict-config against CLI 0.155.0.
+  #
+  # Effort cannot change the output cap, because THERE IS NO output cap on the
+  # wire: `max_output_tokens` is absent from the request entirely (captured and
+  # inspected against CLI 0.155.0 — the key is missing, not set to 65536). The
+  # 65536 reservation the real 402 reported therefore comes from the PROVIDER
+  # supplying the model's full output width in the absence of a cap, which is the
+  # correction ADR-14's commenting amendment records against the earlier "Codex
+  # reserves" phrasing.
+  #
+  # What follows from that is bounded, so state it narrowly: no effort setting can
+  # alter a field that is never sent. Whether raising effort raises the provider's
+  # affordability threshold ANYWAY — if it budgets reasoning on top of that implicit
+  # width — is UNVERIFIED, because openrouter.ai is egress-blocked from every
+  # authoring sandbox. Expect spend per review to rise; do not assume the 402
+  # threshold is unchanged. A knob rather than a literal so it can be retuned
+  # without touching the run line.
+  REVIEW_REASONING_EFFORT: high
 
 jobs:
   codex-review:
@@ -118,6 +161,31 @@ jobs:
           # $RUNNER_TEMP, never the workspace: a scratch file written into the
           # tree would show up in this very diff and in the reviewed tree.
           git diff --name-only "$base_sha" HEAD > "$RUNNER_TEMP/changed-files.txt"
+
+          # Hunk headers only — these are the inline-comment anchors. GitHub
+          # rejects a review comment whose line is outside the PR's diff with a
+          # 422 that discards the WHOLE review, so codex-review.mjs checks each
+          # finding's line against these before anchoring it.
+          #
+          # Written HERE, before the instruction-file purge rewrites the tree, and
+          # into $RUNNER_TEMP for the same reason as the file above: a scratch file
+          # in the workspace would show up in this very diff.
+          #
+          # Headers only, so a 500-file PR does not write a megabyte. `|| true`
+          # because grep exits 1 when it matches nothing (a pure-deletion diff),
+          # and the inherited -e would treat that as fatal.
+          #
+          # --output-indicator-new is NOT cosmetic. With the default `+`, an ADDED
+          # line whose own text begins `++ ` is emitted as `+++ …`, byte-identical
+          # to a real `+++ b/path` file header — verified with git. codex-review.mjs
+          # then read it as a header and attributed every later hunk of that file to
+          # a fabricated path, so real findings there silently lost their anchor;
+          # if the fake path collided with another changed file, the bogus anchor
+          # 422'd the whole review. This repo's docs are full of quoted diffs, so
+          # that content is ordinary. Marking added lines with \002 leaves the
+          # headers as the only lines that can start with `+++` or `@@`.
+          git diff --unified=0 --output-indicator-new=$'\002' "$base_sha" HEAD \
+            | { grep -E '^(\+\+\+|@@)' || true; } > "$RUNNER_TEMP/codex-diff.txt"
           if grep -qvE '(\.mdx?$|^docs/|^spec/)' "$RUNNER_TEMP/changed-files.txt"; then
             echo "skip_reason=" >> "$GITHUB_OUTPUT"
           else
@@ -277,6 +345,7 @@ jobs:
             -c model_provider=openrouter_byok \
             -c 'model_providers.openrouter_byok={name="OpenRouter (BYOK)",base_url="https://openrouter.ai/api/v1",env_key="OPENROUTER_API_KEY",wire_api="responses"}' \
             -c "model=$REVIEW_MODEL" \
+            -c "model_reasoning_effort=$REVIEW_REASONING_EFFORT" \
             -c 'project_doc_fallback_filenames=[]' \
             -c tools.web_search=false \
             -c 'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*"]' \
@@ -311,6 +380,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           CODEX_STDOUT_FILE: ${{ runner.temp }}/codex-stdout.txt
           CODEX_STDERR_FILE: ${{ runner.temp }}/codex-stderr.txt
+          CODEX_DIFF_FILE: ${{ runner.temp }}/codex-diff.txt
           CODEX_EXIT_CODE: ${{ steps.review.outputs.exit_code }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           SKIP_REASON: ${{ steps.gate.outputs.skip_reason }}
