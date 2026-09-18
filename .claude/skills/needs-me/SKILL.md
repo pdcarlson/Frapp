@@ -99,9 +99,9 @@ Then:
    [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md).
 2. **Do everything you can do yourself first**, and say what you did. Only what genuinely requires
    his account, his card, his dashboard, or his judgment should reach him.
-3. **Hand him one step at a time.** Exact setting names, exact secret names (never values), exact
-   URLs, and what he should see when it worked. Wait for the outcome before the next step —
-   a numbered wall of nine steps is how items get half-done.
+3. **Hand him one step at a time**, per [`AGENTS.md` § Operating mindset](../../../AGENTS.md#operating-mindset),
+   which is where that rule lives. Phase 3 is the attended case it is written for: wait for the
+   outcome of each step before giving the next.
 4. **Prove it.** Name what makes it verifiably finished — a green run, a config read-back, a
    commit — and check that, rather than accepting "done".
 5. **Close the loop where the item lives.** An issue-anchored item gets a comment with the proof
