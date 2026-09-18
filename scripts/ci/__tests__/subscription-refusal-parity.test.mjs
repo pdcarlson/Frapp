@@ -63,41 +63,36 @@ function readRepo(rel) {
 }
 
 /**
- * Walk `source` and return every JavaScript string literal in it, skipping
- * comments.
+ * Split `source` into code and string literals, in one pass.
  *
- * WHY A SCANNER AND NOT A REGEX. The obvious
- * `/['"](Chapter subscription [^'"]*)['"]/` is wrong in a way that fails
- * **open**, which is the worst direction for this file. `[^'"]*` stops at the
- * first quote of either kind, so `"Chapter subscription isn't active; …"`
- * captures only `Chapter subscription isn`. Reword the guard and the mirror to
- * two *different* sentences that both contain "isn't" and both sides truncate
- * to the same prefix — `deepEqual` passes, the lock reports parity, and
- * `subscriptionRefusalFromServerMessage` returns `null` for every real 403
- * with every unit test still green. A contraction is a very likely rewording,
- * so this is not a theoretical hazard.
+ * WHY A SCANNER AND NOT A REGEX. `/['"](Chapter subscription [^'"]*)['"]/`
+ * fails **open**: `[^'"]*` stops at the first quote, so
+ * "Chapter subscription isn't active; complete checkout" captures only
+ * "Chapter subscription isn". Reword the guard and the mirror to two
+ * different sentences that both contain a contraction and both truncate to
+ * the same prefix — the lock reports parity, the discriminator is dead, and
+ * every unit test stays green. Stripping comments by regex fails the same
+ * way: cutting each line at its first `//` also cuts `"https://…"` in half.
  *
- * Stripping comments with a regex first has the same shape of bug: cutting
- * each line at its first `//` also cuts `"https://…"` in half, and a `/*`
- * inside a line comment swallows code up to the next `*\/` anywhere in the
- * file. Deleting a `throw` that way would make the count assertion fire with a
- * nonsense diff, and deleting a line from the detector would make
- * `assert.doesNotMatch(…, /codeOf/)` pass while the detector really does use
- * it.
+ * `code` keeps string CONTENTS, because the wiring assertions match on them
+ * (`"blocked"`, `kind: "idle"`). That makes any structural walk over `code`
+ * steerable by string text, which was proven twice — a `}` inside a string
+ * truncated the guard-body walk, a `;` inside one truncated a declaration —
+ * so every literal's span is recorded and the walkers jump them.
  *
- * So: one pass, tracking whether we are in a line comment, a block comment, or
- * a literal. Escapes are honoured, which is what lets an apostrophe or an
- * escaped quote survive intact. Template literals are skipped deliberately —
- * none of the scanned messages is one, and interpolation could not be compared
- * byte-for-byte anyway.
+ * NO REGEX-LITERAL STATE, DELIBERATELY. A previous version tried to detect
+ * regex literals by looking at the preceding character. It was worse than
+ * nothing: `}` was in the operator set, so every JSX `<Foo prop={x} />`
+ * parsed as a regex — 23 bogus spans across the scanned files — while the
+ * two commonest real positions (`=> /…/` and `return /…/`) were missed. The
+ * heuristic is gone. `assertNoRegexLiterals` below turns the residual hazard
+ * into a loud failure instead of a silent misparse.
  */
 function scan(source) {
   const literals = [];
   const spans = [];
   let code = "";
   let i = 0;
-  /** The last non-space character emitted, to tell `/`-as-regex from divide. */
-  let prev = "";
   while (i < source.length) {
     const c = source[i];
     const next = source[i + 1];
@@ -113,34 +108,6 @@ function scan(source) {
       }
       i += 2;
       code += " ";
-      continue;
-    }
-    // A regex literal can contain `//` and quotes. Without this state a
-    // pattern such as /^https?:\/\// reads as a line comment and deletes the
-    // rest of the line — the fail-open shape this file must not contain.
-    if (c === "/" && prev !== "" && "(,=:[!&|?{};+-*%~^".includes(prev)) {
-      const at = code.length;
-      code += c;
-      i += 1;
-      let inClass = false;
-      while (i < source.length) {
-        const r = source[i];
-        if (r === "\\") {
-          code += source.slice(i, i + 2);
-          i += 2;
-          continue;
-        }
-        if (r === "[") inClass = true;
-        else if (r === "]") inClass = false;
-        else if (r === "/" && !inClass) break;
-        else if (r === "\n") break;
-        code += r;
-        i += 1;
-      }
-      code += source[i] ?? "";
-      i += 1;
-      spans.push({ at, end: code.length });
-      prev = "/";
       continue;
     }
     if (c === '"' || c === "'" || c === "`") {
@@ -160,36 +127,52 @@ function scan(source) {
         code += source[i];
         i += 1;
       }
-      code += quote;
+      code += source[i] ?? "";
       i += 1;
-      // Template literals are scanned so their contents cannot be mistaken for
-      // code, but they are not offered as refusal messages: an interpolated
+      const span = { at, end: code.length };
+      spans.push(span);
+      // Template literals are scanned so their contents cannot be read as
+      // code, but are never offered as refusal messages — an interpolated
       // string could not be compared byte-for-byte anyway.
-      // `end` is one past the closing quote, so a structural walk can jump
-      // the whole literal. Without that, a `}` or `;` written inside a string
-      // steers the brace counter — both were proven to make this file's own
-      // guards pass vacuously.
-      if (quote !== "`") literals.push({ value, at, end: code.length });
-      else spans.push({ at, end: code.length });
+      if (quote !== "`") literals.push({ value, ...span });
       continue;
     }
     code += c;
-    if (!/\s/.test(c)) prev = c;
     i += 1;
   }
-  return { literals, code, spans: [...spans, ...literals].sort((a, b) => a.at - b.at) };
+  return { literals, code, spans };
 }
 
 /**
- * Advance `i` past a string or regex span that starts at or contains it.
+ * A regex literal would defeat `scan`, so its presence is a hard failure
+ * rather than something to parse around.
  *
- * `readCode` deliberately KEEPS string contents, because the wiring
- * assertions match on them (`"blocked"`, `kind: "idle"`). That makes every
- * structural walk over `code` steerable by string text unless it skips these
- * spans — which was proven twice: a `}` inside a string in
- * `enforceSubscription` truncated the body so a fifth refusal went unnoticed,
- * and a `;` inside a string in a declaration truncated the slice so the
- * `doesNotMatch` guards passed vacuously.
+ * Conservative and one-directional: it only ever makes the suite RED. A false
+ * positive costs someone a rewrite of one line into a `new RegExp(...)` or a
+ * named constant; a false negative is a silent misparse, which is what this
+ * exists to prevent. `/>` is excluded so JSX self-closing tags do not trip it.
+ */
+const REGEX_LITERAL = /(?:^|[=(,:[!&|?;]|=>|\breturn)\s*\/(?![\s/*>=])/m;
+
+function assertNoRegexLiterals(rel) {
+  const { code } = scan(readRepo(rel));
+  assert.doesNotMatch(
+    code,
+    REGEX_LITERAL,
+    `${rel} appears to contain a regex literal. This lock's scanner has no ` +
+      `regex state — an earlier attempt at one misparsed JSX and missed real ` +
+      `regexes — so a literal here would be scanned as code and could silently ` +
+      `disable these assertions. Rewrite it as \`new RegExp(...)\`, or teach ` +
+      `the scanner properly and test that branch by deleting it and watching ` +
+      `this suite go red.`,
+  );
+}
+
+/**
+ * Advance `i` past the string span containing it.
+ *
+ * Spans are disjoint and produced in ascending order by a single forward
+ * pass, so a linear probe is correct; `end` is one past the closing quote.
  */
 function skipSpan(spans, i) {
   for (const span of spans) {
@@ -203,16 +186,7 @@ function stringLiterals(rel) {
   return scan(readRepo(rel)).literals.map((l) => l.value);
 }
 
-/**
- * Source with comments removed, for the wiring assertions.
- *
- * Shares the scanner above rather than running its own regexes. The earlier
- * regex version stripped block comments FIRST, so a `/*` inside a line comment
- * or a string ate everything up to the next `*\/` anywhere in the file — which
- * would have made `assert.doesNotMatch(detector, /codeOf/)` pass while the
- * detector really did use it. A guard that fails open is the one thing this
- * file must not contain.
- */
+/** Source with comments removed, for the wiring assertions. */
 function readCode(rel) {
   return scan(readRepo(rel)).code;
 }
@@ -231,18 +205,14 @@ function refusalMessages(rel) {
 }
 
 /**
- * Every message `enforceSubscription` throws, however it is worded.
+ * The body of a named member function, brace-matched, skipping strings.
  *
- * Counted from the function body rather than by prefix, because the prefix
- * filter can only ever see messages that already conform: adding a fifth
- * refusal worded "Your chapter trial has ended…" left the count at 4, the
- * mirror un-updated, and the lock green while that 403 rendered to members as
- * an ordinary retryable failure.
+ * Pure so it can be tested against synthetic sources. The repo-reading
+ * wrappers below are one line each; the logic that can be wrong lives here.
  */
-function guardRefusalThrows() {
-  const { code, spans } = scan(readRepo(GUARD));
-  const start = code.indexOf("private enforceSubscription(");
-  assert.ok(start !== -1, `${GUARD} no longer declares enforceSubscription`);
+function functionBodyIn(code, spans, signature) {
+  const start = code.indexOf(signature);
+  if (start === -1) return null;
   let depth = 0;
   let i = code.indexOf("{", start);
   const bodyStart = i;
@@ -258,44 +228,21 @@ function guardRefusalThrows() {
       if (depth === 0) break;
     }
   }
-  const body = code.slice(bodyStart, i);
-  const { literals } = scan(readRepo(GUARD));
-  const inBody = literals
-    .filter((l) => l.at >= bodyStart && l.at < i)
-    .map((l) => l.value);
-  return {
-    throwCount: (body.match(/new ForbiddenException\(/g) ?? []).length,
-    // A space is what separates a message from a `code`: the codes are
-    // dotted identifiers (`chapter.subscription.canceled`), the messages are
-    // sentences. Without this the count reads 8 against 4 throws.
-    messages: inBody.filter(
-      (v) => v.includes(" ") && v.toLowerCase().includes("subscription"),
-    ),
-  };
+  return { body: code.slice(bodyStart, i), at: bodyStart, end: i };
 }
 
 /**
- * The right-hand side of one `const <name> = …;` declaration.
+ * The right-hand side of one `const <name> = …;`, skipping strings.
  *
- * WHY ASSERTIONS ARE ANCHORED THIS WAY. Matching a token against the whole
- * file proves the token exists somewhere, not that the control is gated — and
- * it failed in BOTH directions. Removing the gate from `manualSubmitDisabled`
- * and reordering an unrelated render ternary left the lock fully green while a
- * refused member could still submit; merely reordering the disjuncts, which
- * changes nothing, turned it red. Both were reproduced against earlier
- * versions of this file.
- *
- * The slice ends at the first `;` at brace/paren depth 0, so a declaration
- * containing an inner `;` (a `useMemo` with a block body, say) is captured
- * whole instead of truncating to a head that passes every `doesNotMatch`
- * vacuously. The name must be followed by a non-identifier character, so a
- * `const scanningPaused` declared above `const scanning` cannot silently
- * redirect the assertions to the wrong statement.
+ * Ends at the first `;` at bracket depth 0 that is not inside a literal, so a
+ * declaration containing an inner `;` is captured whole rather than
+ * truncating to a head that passes every `doesNotMatch` vacuously. The name
+ * must be followed by a non-identifier character, so `const scanningPaused`
+ * cannot silently redirect assertions meant for `const scanning`.
  */
-function declaration(rel, name) {
-  const { code, spans } = scan(readRepo(rel));
+function declarationIn(code, spans, name) {
   const at = new RegExp(`const ${name}(?![A-Za-z0-9_$])`).exec(code);
-  assert.ok(at, `${rel} no longer declares \`${name}\``);
+  if (!at) return null;
   let depth = 0;
   for (let i = at.index; i < code.length; i += 1) {
     const jumped = skipSpan(spans, i);
@@ -308,67 +255,112 @@ function declaration(rel, name) {
     else if (c === "}" || c === ")" || c === "]") depth -= 1;
     else if (c === ";" && depth === 0) return code.slice(at.index, i);
   }
-  assert.fail(`${rel}: could not find the end of \`${name}\``);
+  return null;
+}
+
+/**
+ * Every message `enforceSubscription` throws, however it is worded.
+ *
+ * Counted from the body rather than by prefix: the prefix filter can only see
+ * messages that already conform, so a fifth refusal worded "Your chapter
+ * trial has ended…" left the count at 4 and the lock green.
+ */
+function guardRefusalThrows() {
+  const { code, spans, literals } = scan(readRepo(GUARD));
+  const found = functionBodyIn(code, spans, "private enforceSubscription(");
+  assert.ok(found, `${GUARD} no longer declares enforceSubscription`);
+  const inBody = literals
+    .filter((l) => l.at >= found.at && l.at < found.end)
+    .map((l) => l.value);
+  return {
+    throwCount: (found.body.match(/new ForbiddenException\(/g) ?? []).length,
+    // A space separates a message from a `code`: codes are dotted identifiers
+    // (`chapter.subscription.canceled`), messages are sentences.
+    messages: inBody.filter(
+      (v) => v.includes(" ") && v.toLowerCase().includes("subscription"),
+    ),
+  };
+}
+
+function declaration(rel, name) {
+  const { code, spans } = scan(readRepo(rel));
+  const slice = declarationIn(code, spans, name);
+  assert.ok(slice !== null, `${rel} no longer declares \`${name}\``);
+  return slice;
 }
 
 /**
  * The scanner's own tests.
  *
- * Everything below rests on `scan()`, and every hazard here has already been
- * exploited against an earlier version of this file: an apostrophe truncated
- * the extracted message so two different sentences compared equal, a `}` in a
- * string truncated the guard-body walk so a fifth refusal went unnoticed, a
- * `;` in a string truncated a declaration so its `doesNotMatch` guards passed
- * vacuously, and a `//` inside a regex ate the rest of a line. A hand-rolled
- * parser that nothing tests is exactly the kind of guard that reports green
- * while doing nothing.
+ * Every hazard here has been exploited against an earlier version of this
+ * file. The first attempt at these tests asserted on `scan().code` and on
+ * span existence, and was FAKE COVERAGE: deleting the entire regex branch, or
+ * replacing `skipSpan`'s body with `return i`, left them all green. So these
+ * drive the actual walkers — `declarationIn`, `functionBodyIn` — against
+ * synthetic sources, which is the only form that can fail.
  */
-test("the scanner survives the inputs that defeated its predecessors", () => {
-  const literalsOf = (src) => scan(src).literals.map((l) => l.value);
-
-  // An apostrophe inside a double-quoted string. The old `[^'"]*` regex cut
-  // here, so "…isn't active; complete checkout" and "…isn't active; ask an
-  // officer" both reduced to "Chapter subscription isn" and compared EQUAL.
-  assert.deepEqual(
-    literalsOf(`const a = "Chapter subscription isn't active; ask an officer.";`),
-    ["Chapter subscription isn't active; ask an officer."],
+test("an apostrophe cannot truncate an extracted message", () => {
+  // The `[^'"]*` regex cut here, so two DIFFERENT sentences both reduced to
+  // "Chapter subscription isn" and compared equal — parity reported on drift.
+  const { literals } = scan(
+    `const a = "Chapter subscription isn't active; ask an officer.";`,
   );
+  assert.deepEqual(literals.map((l) => l.value), [
+    "Chapter subscription isn't active; ask an officer.",
+  ]);
+});
 
-  // An escaped quote inside a single-quoted string compares equal to the same
-  // sentence written with double quotes, which is what makes the guard/mirror
-  // comparison quote-style agnostic.
-  assert.deepEqual(literalsOf(`const a = 'it\\'s here';`), ["it's here"]);
+test("a quote style does not change the message that comes out", () => {
+  const single = scan(`const a = 'it\\'s here';`).literals[0].value;
+  const double = scan(`const a = "it's here";`).literals[0].value;
+  assert.equal(single, double);
+});
 
-  // Braces and semicolons inside strings must not steer a structural walk.
-  const braces = scan(`function f() { const s = "a } and a ; here"; return 1; }`);
-  assert.ok(
-    braces.spans.some((sp) => sp.end > sp.at),
-    "string spans are not being recorded, so the walkers cannot skip them",
-  );
+test("a semicolon inside a string cannot truncate a declaration", () => {
+  // PROVEN EXPLOIT: with a non-span-aware walk the slice ended at the `;`
+  // inside the string, so `doesNotMatch(slice, /forbidden/)` passed while the
+  // forbidden term sat just past the cut.
+  const src = `const scanning = a !== "x" && b !== "Offline; reconnect" && c !== "forbidden";`;
+  const { code, spans } = scan(src);
+  const slice = declarationIn(code, spans, "scanning");
+  assert.match(slice, /"forbidden"/, "the declaration slice was truncated");
+});
 
-  // A regex containing `//` is not a comment, and must not eat the line.
-  const withRegex = scan(`const LINK = /^https?:\\/\\//;\nconst x = codeOf(e);`);
+test("a brace inside a string cannot truncate a function body", () => {
+  // PROVEN EXPLOIT: this made the refusal count compare 0 against 0 while a
+  // new refusal went unknown to the mirror.
+  const src = `class G { private enforceSubscription() { const s = "a } here"; throw new ForbiddenException({ message: 'Chapter subscription x' }); } }`;
+  const { code, spans } = scan(src);
+  const found = functionBodyIn(code, spans, "private enforceSubscription(");
   assert.match(
-    withRegex.code,
-    /codeOf\(e\)/,
-    "a regex literal swallowed the following line, so guards fail open",
+    found.body,
+    /ForbiddenException/,
+    "the function body was truncated at a brace inside a string",
   );
+});
 
-  // Comments are removed, including one that contains a quote or a brace.
-  const commented = scan(`// don't read this { or this ;\nconst x = 1;`);
-  assert.doesNotMatch(commented.code, /don/);
-  assert.deepEqual(commented.literals.map((l) => l.value), []);
+test("comments are removed, including ones carrying quotes and braces", () => {
+  const { code, literals } = scan(`// don't read { this ; either\nconst x = 1;`);
+  assert.doesNotMatch(code, /don/);
+  assert.deepEqual(literals, []);
+  assert.match(code, /const x = 1;/);
+});
 
-  // Division must not be mistaken for a regex.
-  assert.match(scan(`const r = a / b; const t = c;`).code, /const t = c;/);
-
-  // Template literals are scanned so their contents cannot be read as code,
-  // but are not offered as refusal messages — an interpolated string could not
-  // be compared byte-for-byte anyway.
-  assert.deepEqual(literalsOf("const a = `x ${y} z`;"), []);
-
-  // An unterminated literal terminates rather than hanging.
-  assert.doesNotThrow(() => scan(`const a = "never closed`));
+test("the scanned files contain no regex literal, which the scanner cannot read", () => {
+  // The tripwire that replaced a regex-detection heuristic. The heuristic was
+  // worse than nothing: `}` in its operator set made every JSX `{x} />` parse
+  // as a regex (23 bogus spans across these files) while missing `=> /…/` and
+  // `return /…/`. Failing loudly beats misparsing silently.
+  for (const rel of [GUARD, MIRROR, DETECTOR, TASK_SHEET, CHECK_IN, STUDY, STUDY_ERRORS]) {
+    assertNoRegexLiterals(rel);
+  }
+  // And the tripwire itself must be able to fire.
+  assert.match(`const isUrl = (s) => /^https?:x/.test(s);`, REGEX_LITERAL);
+  assert.match(`return /abc/.test(x);`, REGEX_LITERAL);
+  // …without firing on the JSX and division that fill these files.
+  assert.doesNotMatch(`const row = <Icon name={n} />;`, REGEX_LITERAL);
+  assert.doesNotMatch(`const ratio = total / count;`, REGEX_LITERAL);
+  assert.doesNotMatch(`const ratio = f(a) / g(b);`, REGEX_LITERAL);
 });
 
 test("the guard and the shared mirror carry byte-identical refusal messages", () => {

@@ -296,6 +296,19 @@ export default function StudyScreen() {
   const running = session !== null && !paused;
   const reportingStale = session !== null && isReportingStale(session, now);
 
+  /**
+   * Drop the in-session refusal sentence, and only that one.
+   *
+   * Scoped by value so an ordinary failure's message is never swallowed. The
+   * start-path copy is not cleared here — it is paired with the
+   * `subscriptionRefused` latch and cleared with it on focus.
+   */
+  const clearInSessionRefusal = useCallback(() => {
+    setFailure((current) =>
+      current === SUBSCRIPTION_REFUSAL_COPY.studySession ? null : current,
+    );
+  }, []);
+
   const applyResponse = useCallback((response: unknown, seq: number) => {
     // Nothing held, nothing to apply. Without this an in-flight heartbeat that
     // answers `ACTIVE` moments after the member taps End would put the ended
@@ -311,6 +324,11 @@ export default function StudyScreen() {
       setSession(null);
       sessionIdRef.current = null;
       setNotice(settled.notice);
+      // The in-session refusal copy describes THIS session; once it is gone
+      // the sentence is stale, and leaving it would render "that didn't save
+      // … may not be credited" directly under a re-enabled Start button —
+      // the screen offering and denying the same action at once.
+      clearInSessionRefusal();
       // A session that ended while paused would otherwise leave its "return to
       // Signet to resume" notice in the tray, inviting the member back to a
       // session that no longer exists (#1065).
@@ -326,7 +344,12 @@ export default function StudyScreen() {
     if (next.id !== sessionIdRef.current) return;
     appliedSeqRef.current = seq;
     setSession(next);
-  }, []);
+    // A write just succeeded, so a refusal message still on screen is false.
+    // Nothing else clears it: the focus reset deliberately leaves it alone
+    // (it explains a failed End on a session that is still running), so
+    // without this it survives for the life of the session.
+    clearInSessionRefusal();
+  }, [clearInSessionRefusal]);
 
   /** Let go of a session the server says is gone, and say so. */
   const releaseSession = useCallback((notice: string) => {
