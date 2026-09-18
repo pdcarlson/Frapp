@@ -1274,7 +1274,19 @@ export function Composer({
             {pending.map((attachment) => (
               <li
                 key={attachment.storagePath}
-                className="flex max-w-full items-center gap-1.5 rounded-md border border-border bg-surface-2 py-1 pl-2 pr-1 text-[12.5px]"
+                /*
+                 * `bg-popover`, not `bg-card`. This chip is seated in the
+                 * composer well, which is `bg-surface-1`
+                 * (`COMPOSER_WELL_CLASS`), and `--card` on `--surface-1`
+                 * measures 1.0486:1 — under the contrast fixture's
+                 * `INDISTINGUISHABLE` (`apps/web/tests/signet-contrast.ts`, the
+                 * one place that bound is written), so the chip would read as
+                 * no fill at all. `--popover` on `--surface-1` is 1.1583:1.
+                 * Same skip, for the same reason, as the chapter picker row in
+                 * `layout/chapter-nav-header.tsx`. This was `bg-surface-2`,
+                 * which no config or stylesheet has ever defined (#1423).
+                 */
+                className="flex max-w-full items-center gap-1.5 rounded-md border border-border bg-popover py-1 pl-2 pr-1 text-[12.5px]"
               >
                 <AttachGlyph className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span className="truncate">{attachment.filename}</span>
