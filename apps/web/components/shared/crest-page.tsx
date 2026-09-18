@@ -52,7 +52,7 @@ import { cn } from "@/lib/utils";
  * ## Type roles
  *
  * The board's 28/700 title carries `line-height:1.15`, which is the `display`
- * role's ratio exactly (`tailwind.config.ts`), and the page is a standalone
+ * role's ratio exactly (`packages/theme/src/tailwind.config.ts`), and the page is a standalone
  * anchor with no flow around it — the same shape as the pre-auth entry screen,
  * which `auth-screen.tsx` maps to `display`. So `text-display`, not the headline
  * step. The 12px mono code rounds onto `caption` (12.5).

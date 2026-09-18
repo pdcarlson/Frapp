@@ -262,9 +262,11 @@ const config: Config = {
 };
 ```
 
-`apps/web` additionally layers the Signet-only color tokens, the `2xl` border radius and the
-Figtree `fontFamily.sans` override on top, and keeps `darkMode: "class"` with nothing setting the
-class — read the real `apps/web/tailwind.config.ts`. Both apps name their config from CSS with
+The preset carries the Signet colour tokens, the six locked `fontSize` roles, the touch floors, the
+`2xl` border radius, `boxShadow.md` and the Figtree `fontFamily.sans` stack. Each app layers only
+its own remainder on top — `gold.*` for `apps/web`, the three marketing type roles for
+`apps/landing` — and keeps `darkMode: "class"` with nothing setting the class; read the real
+configs. Both apps name their config from CSS with
 `@config`, which is how a v3-shaped JS config (`presets`, `content`, `darkMode`) still applies
 under v4.
 

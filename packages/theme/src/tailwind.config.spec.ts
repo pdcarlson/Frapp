@@ -499,3 +499,86 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
     }
   });
 });
+
+/**
+ * The boundary #2371 deliberately did NOT collapse.
+ *
+ * That issue moved every key both Next surfaces bind into this preset. Two
+ * families stayed app-local on purpose, and until now nothing asserted it:
+ * `signet.spec.ts` guards the §7 amendment against `signet.ts`'s emitted CSS
+ * variables, which is a different file and a different failure. The risk the
+ * consolidation introduces is the mirror of the one it removed — a later
+ * "tidy-up" sweeping the last two remainders up here too, which would put a
+ * 72px marketing headline one import away from every product screen.
+ *
+ * Asserted from the real configs rather than restated, so a key that moves
+ * fails here instead of being discovered on a screen.
+ */
+describe("the surface-specific keys stay out of the shared preset (#2371)", () => {
+  const WEB_TAILWIND = fileURLToPath(
+    new URL("../../../apps/web/tailwind.config.ts", import.meta.url),
+  );
+  const LANDING_TAILWIND = fileURLToPath(
+    new URL("../../../apps/landing/tailwind.config.ts", import.meta.url),
+  );
+  const fontSize = (config.theme?.extend?.fontSize ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const colors = (config.theme?.extend?.colors ?? {}) as Record<
+    string,
+    unknown
+  >;
+
+  it("carries all six of foundations §7's locked type roles", () => {
+    expect(Object.keys(fontSize).sort()).toEqual([
+      "body",
+      "caption",
+      "display",
+      "headline",
+      "label",
+      "title",
+    ]);
+  });
+
+  it("carries none of the landing's three marketing type roles", () => {
+    // `foundations.md` §7 Amendment and `design-system/README.md` §3 rule 4:
+    // these sit ABOVE the locked scale and are `apps/landing`'s alone.
+    for (const role of ["hero", "display-lg", "lead"]) {
+      expect(
+        fontSize,
+        `${role} is a landing-only marketing role and must not be in the preset`,
+      ).not.toHaveProperty(role);
+    }
+  });
+
+  it("does not carry the web-only `gold` family", () => {
+    // The Ask pill is an `apps/web` treatment; `apps/landing` implements no
+    // such control, so binding it here would claim a treatment it does not draw.
+    expect(colors).not.toHaveProperty("gold");
+  });
+
+  it("leaves each remainder in the app config that owns it", () => {
+    // The other half of the boundary: a key deleted from an app config without
+    // landing anywhere is #1145's silent no-colour failure, which reads
+    // identically to a successful move.
+    const web = readFileSync(WEB_TAILWIND, "utf8");
+    const landing = readFileSync(LANDING_TAILWIND, "utf8");
+
+    for (const token of [
+      "--gold-house",
+      "--gold-on-house",
+      "--gold-ask-fill",
+      "--gold-ask-border",
+      "--gold-ask-text",
+    ]) {
+      expect(web, `apps/web must still bind ${token}`).toContain(token);
+    }
+    expect(landing).not.toContain("--gold-");
+
+    for (const token of ["--text-hero", "--text-display-lg", "--text-lead"]) {
+      expect(landing, `apps/landing must still bind ${token}`).toContain(token);
+    }
+    expect(web).not.toContain("--text-hero");
+  });
+});

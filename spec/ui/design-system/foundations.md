@@ -180,8 +180,8 @@ The same six roles as CSS custom properties, for web surfaces. Mobile reads the 
 | `--text-caption-weight` | `400` | caption weight |
 
 **The other five roles ship a line height this scale does not define.** `display`, `headline`,
-`title`, `label` and `caption` are emitted as Tailwind `fontSize` keys in
-`apps/web/tailwind.config.ts`, and each pairs its size and weight (both read from the custom
+`title`, `label` and `caption` are emitted as Tailwind `fontSize` keys in the shared preset
+`packages/theme/src/tailwind.config.ts` (app-local until [#2371](https://github.com/pdcarlson/Frapp/issues/2371)), and each pairs its size and weight (both read from the custom
 properties above) with a **literal** ratio — `1.15`, `1.2`, `1.3`, `1.3`, `1.35` — chosen when those
 utilities landed rather than derived from anything here. So a screen written against this section and
 a screen written against `text-title` can disagree, with nothing to arbitrate. Either promote the
