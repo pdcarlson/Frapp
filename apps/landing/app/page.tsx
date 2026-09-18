@@ -165,7 +165,7 @@ export default function Home() {
               cta="log-in"
               surface="header"
               href={loginUrl}
-              className="hidden rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted md:inline-flex"
+              className="hidden rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-accent md:inline-flex"
             >
               Log In
             </TrackedCta>
@@ -173,7 +173,7 @@ export default function Home() {
               cta="get-started"
               surface="header"
               href={signupUrl}
-              className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
             >
               Get Started
             </TrackedCta>
@@ -188,12 +188,12 @@ export default function Home() {
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
                 The operating system for greek life
               </p>
-              <h1 className="mt-4 text-balance text-4xl font-extrabold tracking-tight text-navy dark:text-white sm:text-5xl lg:text-6xl">
+              <h1 className="mt-4 text-balance text-hero text-foreground">
                 Replace Discord, OmegaFi, and Life360 with one intentional
                 platform.
               </h1>
             </div>
-            <p className="max-w-xl text-lg text-muted-foreground">
+            <p className="max-w-xl text-lead text-muted-foreground">
               Signet unifies chapter communication, events, study accountability,
               points, and dues workflows so leadership can run operations
               without duct-taped tools.
@@ -203,7 +203,7 @@ export default function Home() {
                 cta="get-started"
                 surface="hero"
                 href={signupUrl}
-                className="inline-flex h-11 items-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                className="inline-flex h-11 items-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
               >
                 Get Started
               </TrackedCta>
@@ -211,13 +211,13 @@ export default function Home() {
                 cta="explore-the-product"
                 surface="hero"
                 href="#showcase"
-                className="inline-flex h-11 items-center rounded-md border border-border bg-card px-6 text-sm font-semibold transition-colors hover:bg-muted"
+                className="inline-flex h-11 items-center rounded-md border border-border bg-card px-6 text-sm font-semibold transition-colors hover:bg-accent"
               >
                 Explore the product
               </TrackedCta>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+              <ShieldCheck className="h-4 w-4 shrink-0 text-success" />
               <span>
                 14-day trial • No per-seat pricing • Stripe-backed billing
               </span>
@@ -231,7 +231,7 @@ export default function Home() {
               <p className="text-sm font-semibold">
                 Chapter Operations Snapshot
               </p>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-600">
+              <span className="rounded-full bg-success/15 px-3 py-1 text-caption font-semibold text-success">
                 Subscription active
               </span>
             </div>
@@ -246,7 +246,7 @@ export default function Home() {
                   key={line}
                   className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"
                 >
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                   <span className="text-sm text-foreground">{line}</span>
                 </div>
               ))}
@@ -255,7 +255,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="border-b border-border bg-muted/30">
+      <section className="border-b border-border bg-surface-1">
         <div className="mx-auto w-full max-w-6xl px-6 py-12">
           <div className="grid gap-8 border-t border-border pt-8 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-border motion-safe:animate-fade-up motion-reduce:animate-none">
             {chapterStats.map((stat) => (
@@ -263,7 +263,7 @@ export default function Home() {
                 key={stat.label}
                 className="sm:px-8 first:sm:pl-0 last:sm:pr-0"
               >
-                <p className="text-3xl font-bold tabular-nums text-navy dark:text-white">
+                <p className="text-display tabular-nums text-foreground">
                   {stat.value}
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
@@ -280,7 +280,7 @@ export default function Home() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             Core capabilities
           </p>
-          <h2 className="mt-4 max-w-2xl text-3xl font-bold tracking-tight text-navy dark:text-white sm:text-4xl">
+          <h2 className="mt-4 max-w-2xl text-display-lg text-foreground">
             One ledger for communication, events, points, and dues.
           </h2>
         </div>
@@ -308,14 +308,14 @@ export default function Home() {
 
       <section
         id="how-it-works"
-        className="border-y border-border bg-muted/30 py-20"
+        className="border-y border-border bg-surface-1 py-20"
       >
         <div className="mx-auto w-full max-w-6xl px-6">
           <div className="border-t border-border pt-4 motion-safe:animate-fade-up motion-reduce:animate-none">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               How it works
             </p>
-            <h2 className="mt-4 text-3xl font-bold tracking-tight text-navy dark:text-white sm:text-4xl">
+            <h2 className="mt-4 text-display-lg text-foreground">
               Launch your chapter in under five minutes.
             </h2>
           </div>
@@ -359,7 +359,7 @@ export default function Home() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             Product in context
           </p>
-          <h2 className="mt-4 text-3xl font-bold tracking-tight text-navy dark:text-white sm:text-4xl">
+          <h2 className="mt-4 text-display-lg text-foreground">
             Web and mobile surfaces designed as one system.
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
@@ -418,7 +418,7 @@ export default function Home() {
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Simple chapter pricing
             </p>
-            <p className="mt-4 text-5xl font-bold tabular-nums text-navy dark:text-white">
+            <p className="mt-4 text-display-lg tabular-nums text-foreground">
               $149
             </p>
             <p className="text-sm text-muted-foreground">per chapter / month</p>
@@ -431,7 +431,7 @@ export default function Home() {
                 "Priority implementation support",
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -440,7 +440,7 @@ export default function Home() {
               cta="start-free-trial"
               surface="pricing"
               href={signupUrl}
-              className="mt-8 inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              className="mt-8 inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
             >
               Start free trial
             </TrackedCta>
@@ -461,10 +461,10 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="border-t border-border bg-muted/30 py-20">
+      <section className="border-t border-border bg-surface-1 py-20">
         <div className="mx-auto w-full max-w-6xl px-6">
           <div className="border-t border-border pt-4 text-center motion-safe:animate-fade-up motion-reduce:animate-none">
-            <h2 className="text-3xl font-bold tracking-tight text-navy dark:text-white sm:text-4xl">
+            <h2 className="text-display-lg text-foreground">
               Built for real chapter operations.
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground">
@@ -493,12 +493,12 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="border-t border-border bg-navy py-20 text-white">
+      <section className="border-t border-border bg-card py-20 text-foreground">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center px-6 text-center">
-          <h2 className="max-w-3xl text-3xl font-bold tracking-tight sm:text-4xl">
+          <h2 className="max-w-3xl text-display-lg">
             Ready to run your chapter with clarity, speed, and accountability?
           </h2>
-          <p className="mt-4 max-w-2xl text-white/70">
+          <p className="mt-4 max-w-2xl text-lead text-muted-foreground">
             Join the chapters using Signet to consolidate operations, reduce
             leadership overhead, and improve member engagement.
           </p>
@@ -506,7 +506,7 @@ export default function Home() {
             cta="get-started"
             surface="cta-band"
             href={signupUrl}
-            className="mt-8 inline-flex h-11 items-center rounded-md bg-white px-6 text-sm font-semibold text-navy transition-colors hover:bg-white/90"
+            className="mt-8 inline-flex min-h-button items-center rounded-md bg-primary px-6 text-label text-primary-foreground transition-colors hover:bg-primary-hover"
           >
             Get Started
           </TrackedCta>

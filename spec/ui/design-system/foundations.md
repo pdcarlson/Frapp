@@ -7,7 +7,7 @@
 ## 1. Sources & Scope
 
 - **Visual truth:** [`reference/signet-design-system.dc.html`](reference/signet-design-system.dc.html). Panel 4h is the written token spec this file transcribes; panels 4a–4g render the same tokens. [`reference/canvas-screens.dc.html`](reference/canvas-screens.dc.html) is the screen-level reference. Where the Canvas header and panel 4h disagree, **the Canvas header wins** — the only such case is radius (§8).
-- **Scope:** these tokens govern **Signet surfaces** — the mobile app and the web dashboard (`apps/web` ships them via `packages/theme/src/signet.css` since the #920 shell cutover), plus the landing site, whose reskin is approved and staged as [#2364](https://github.com/pdcarlson/Frapp/issues/2364). That reskin is **pending, not hypothetical**: [#2366](https://github.com/pdcarlson/Frapp/issues/2366) is the slice that points `apps/landing` at these tokens, and until it merges `apps/landing` keeps shipping the legacy bone/bronze/ink tokens from `packages/theme` (`@repo/theme`). The two systems MUST NOT mix on one surface.
+- **Scope:** these tokens govern **Signet surfaces** — the mobile app and the web dashboard (`apps/web` ships them via `packages/theme/src/signet.css` since the #920 shell cutover), plus the landing site. The landing's token cutover has **merged** ([#2366](https://github.com/pdcarlson/Frapp/issues/2366), a slice of [#2364](https://github.com/pdcarlson/Frapp/issues/2364)): `apps/landing` imports `packages/theme/src/signet.css` and the legacy bone/bronze/ink tokens are off every shipping surface. What is left of that epic is composition, not tokens. The two systems MUST NOT mix on one surface, and there is no longer a surface on the other one.
 - **Naming:** prose says Signet; code identifiers and package names stay `frapp` / `@repo/*` until the deferred repo rename.
 - Brand identity (house gold, the "S" mark, direction) is owned by [`brand-identity.md`](../brand-identity.md). Per-chapter accent generation is owned by [`accent-engine.md`](accent-engine.md). Component-level application of these tokens is owned by [`components.md`](components.md).
 
@@ -112,7 +112,7 @@ The tokens above are fixed; the accent family — `--primary`, `--primary-hover`
 
 Body text MUST NOT render below 16. Label and caption are for controls and metadata, never paragraphs — this is a consumer app read at arm's length, not a dense dashboard.
 
-**Monospace is a separate role with its own family, not a Figtree weight.** Reserve it for numeric, status, and code-like strings where fixed-width character alignment matters — invite tokens, permission keys, user ids, points-table cells, and the Join-code row of the settings screen in the Canvas reference. Its family is the `--font-mono` system stack (`packages/theme/src/globals.css`, exposed as the Tailwind `mono` family by `packages/theme/src/tailwind.config.ts`); the family decision — a system stack, never a bundled webfont — is owned by [`../../architecture/README.md`](../../architecture/README.md) §15. Mono carries no size of its own: it takes the size of the role it sits in.
+**Monospace is a separate role with its own family, not a Figtree weight.** Reserve it for numeric, status, and code-like strings where fixed-width character alignment matters — invite tokens, permission keys, user ids, points-table cells, and the Join-code row of the settings screen in the Canvas reference. Its family is the `--font-mono` system stack (`packages/theme/src/signet.css`, exposed as the Tailwind `mono` family by `packages/theme/src/tailwind.config.ts`); the family decision — a system stack, never a bundled webfont — is owned by [`../../architecture/README.md`](../../architecture/README.md) §15. Mono carries no size of its own: it takes the size of the role it sits in.
 
 > **The mobile study timer is deliberately not on that list.** It used to be. Canvas draws s10's timer in Figtree 700 with
 > `font-variant-numeric: tabular-nums`, which solves the same problem mono was
@@ -138,6 +138,24 @@ symbol because the server mints every PaymentIntent in `usd`. This convention
 shipped on both platforms before it was written down here.
 
 Sizes MUST come from the scale above. Inventing an off-scale font size in screen code — including arithmetic on a role token, e.g. `tokens.type.section - 2` — is a defect, exactly as a raw hex value is ([`../mobile/README.md`](../mobile/README.md)).
+
+### Amendment: the three marketing type roles (landing only)
+
+The six roles above are the **product** scale and bind every product surface. A storefront headline is not a product heading, and the largest locked role — `display`, 32 — is not a hero. So the landing surface carries three additional roles **above** the scale, added with the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) and drawn on the reskin's System sheet ([`../landing/reference/canvas/System.dc.html`](../landing/reference/canvas/System.dc.html)).
+
+| Role | Desktop | Phone | Used by |
+| --- | --- | --- | --- |
+| `--text-hero` | 72 / 74 · 700 · tracking `-0.02em` | 40 / 44 | The hero H1, and nothing else |
+| `--text-display-lg` | 48 / 52 · 700 · tracking `-0.02em` | 32 / 37 (the locked `display` role) | Section H2s and the desktop prices |
+| `--text-lead` | 20 / 30 · 400 | 18 / 27 | Hero and closing paragraphs, and nothing else |
+
+**This does not widen the scale for anyone else, and the rule above is unchanged.** Three things keep it that way:
+
+1. **They are named tokens, not literals.** The off-scale defect the paragraph above describes is a size invented *at a call site*. These are declared once, as roles, with an owner — which is precisely the remedy [`README.md`](README.md) §3 rule 4 prescribes for a missing role.
+2. **They live on the surface that owns them**, in `apps/landing/app/globals.css`, bound as utilities by `apps/landing/tailwind.config.ts`. They are deliberately **not** in `packages/theme/src/signet.css`: that stylesheet is pinned to `signet.ts`, which is the token source `apps/mobile` reads, so a 72px marketing headline declared there would sit one import away from every product screen on two surfaces where the six roles are the whole scale.
+3. **Using one outside `apps/landing` is a defect**, exactly as an off-scale literal is. A product surface that believes it needs a fourth size above `display` is asking for an amendment to the table above, not for a marketing role.
+
+Type inside the landing's product frames is transcribed from the design-system and web-greenfield boards and is deliberately **not** on either scale. Do not "correct" it.
 
 ### Type tokens
 

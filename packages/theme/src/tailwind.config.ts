@@ -72,51 +72,25 @@ const config: Partial<Config> = {
     extend: {
       colors: {
         /*
-         * Legacy brand scale keys, kept for `apps/landing` — the last surface
-         * on this preset's colour values. The KEYS are the pre-rebrand
-         * spellings so its existing utility classes keep compiling; the VALUES
-         * are the bone / bronze / ink palette. Read "navy" as ink.
+         * The legacy brand scale keys — `navy` (ink) and the `emerald` (moss)
+         * partial override — are GONE, deleted with the #2366 landing token
+         * cutover. They existed for exactly one consumer: `apps/landing`, the
+         * last surface on this preset's colour VALUES rather than its semantic
+         * tokens. That surface now imports `packages/theme/src/signet.css` and
+         * its seventeen `text-navy` / `text-emerald-600` / `bg-navy` /
+         * `bg-emerald-100` class sites moved to `text-foreground`, `text-success`
+         * and the surface ladder in the same change.
          *
-         * `royal-blue` (bronze) was deleted in the #920 slice-9 cutover: it had
-         * zero class sites anywhere in the repo, and a key with no consumers is
-         * deleted rather than kept "in case" (signet-cutover skill). `navy`
-         * shed its numbered steps in the same pass for the same reason — every
-         * one of its ten call sites uses the bare `text-navy` / `bg-navy`.
+         * A key with no consumers is deleted rather than kept "in case"
+         * (`.claude/skills/signet-cutover/SKILL.md`: a cutover deletes what it
+         * replaces, and a definition is not evidence anything calls it). This
+         * is the same pass that took `royal-blue`, the `side-*` family and the
+         * `primary` 50–950 ramp — see git history for the values.
          *
-         * `tokens.ts` carries the honest names (`ink`, `bronze`, `moss`); its
-         * matching deprecated aliases went with #917. These scale keys did not
-         * follow, because renaming them means moving the class sites, which is
-         * landing-reskin work — and that reskin has no tracked issue of its own
-         * (#920 is `apps/web`, #937 is `apps/mobile`). #913/#914, cited here
-         * before, are the two `area:product` pricing decisions that *block* it,
-         * not the removal ticket.
-         *
-         * `emerald` is a *partial* override of a stock Tailwind colour, so any
-         * step not listed below still resolves to stock Tailwind green. Reach
-         * only for a step defined here — #916 was exactly that: `emerald-700`
-         * is absent from this block, so the landing pricing pill rendered stock
-         * emerald beside a moss `emerald-100` and nothing flagged it.
-         */
-        navy: {
-          DEFAULT: "#1F1A15" /* ink */,
-        },
-        emerald: {
-          DEFAULT: "#3D6B4A", /* moss */
-          50: "#E6F0E4",
-          100: "#CFE0CC",
-          400: "#6E9C7B",
-          500: "#52805F",
-          600: "#3D6B4A",
-        },
-        /*
-         * The `side-*` sidebar family is gone. It existed for the legacy web
-         * dashboard's always-dark-ink sidebar; the #920 Signet shell replaced
-         * that sidebar with the fixed neutral ladder plus engine accent roles,
-         * `apps/landing` never used a `side-*` class, and a key with zero
-         * consumers is deleted, not kept "in case" (signet-cutover skill). The
-         * engine that wrote those tokens into `chapters.theme_palette` was
-         * itself deleted in the slice-9 cutover; rows written before it keep
-         * them as inert jsonb that nothing reads.
+         * `tokens.ts` still carries the honest bone/bronze/ink names and stays:
+         * `accent.ts` reads `frappTokens.color.brand.bronze` as the accent
+         * engine's fallback, and both this file and `signet.ts` read its motion
+         * scale. What went is the Tailwind SCALE, not the token module.
          */
 
         /* ── Semantic tokens (mapped to CSS variables for ShadCN compatibility) ── */
@@ -198,8 +172,16 @@ const config: Partial<Config> = {
         DEFAULT: "var(--shadow)",
         lg: "var(--shadow-lg)",
       },
+      /*
+       * Figtree since #2366 took the last surface off Geist. Both consuming
+       * apps re-declare `sans` in their own config (they load the font, so they
+       * own the variable name), which makes this key a default nothing reaches
+       * today — but a preset default naming a typeface the house REJECTED
+       * (`brand-identity.md` §3) is a trap for the next surface that adds
+       * itself here and does not think to override it.
+       */
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "system-ui", "-apple-system", "sans-serif"],
+        sans: ["var(--font-figtree)", "system-ui", "-apple-system", "sans-serif"],
         mono: ["var(--font-mono)"],
       },
       keyframes: {

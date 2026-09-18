@@ -108,12 +108,14 @@ surface has not deliberately opted into. `signetAccentSemanticVars` is that opt-
 it once its own preset reads bare `var(--token)` throughout. The web shell made that call in the
 #920 cutover (the Delivery (web) row), and native has no stylesheet to collide with at all.
 
-**The web preset is fully migrated: one format, no pairing rule.** Every colour token in
-`packages/theme/src/globals.css` is stored as a **complete colour** (`hsl(30 45% 32%)`, `#C49A3A`,
+**The web preset is fully migrated: one format, no pairing rule.** Every colour token in both
+stylesheets is stored as a **complete colour** (`hsl(30 45% 32%)`, `#C49A3A`,
 `rgba(255,255,255,.08)`) and read through `colorVar()` as a bare `var(--token)`. There is no second
-convention left to pair against, which is the precondition the shell cutover then built on:
-`apps/web` now imports `packages/theme/src/signet.css` — which carries the same one-format rule —
-while `globals.css` remains the landing stylesheet.
+convention left to pair against, which is the precondition the shell cutover then built on. Both
+web surfaces now import `packages/theme/src/signet.css` — `apps/web` since the #920 shell slice,
+`apps/landing` since its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) —
+so the one-format rule is the only rule on any shipping surface. `globals.css` keeps the same
+format and no longer has an importer.
 
 The `--ring` / `--side-*` family moved first, in #1143: those were the tokens chapter branding rewrote,
 and the engine persists hex, so under the old bare-triple convention an injected `#C49A3A` became

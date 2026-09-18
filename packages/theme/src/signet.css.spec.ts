@@ -13,10 +13,11 @@ import config from "./tailwind.config";
 /**
  * The contract between `signet.css` and everything that reads it.
  *
- * `signet.css` is the Signet stylesheet `apps/web` ships since the #920 shell
- * cutover, sibling to the legacy `globals.css` that keeps serving the frozen
- * `apps/landing`. It is hand-written CSS with three sources of truth it must
- * not drift from, so each is asserted rather than trusted:
+ * `signet.css` is the Signet stylesheet BOTH web surfaces ship — `apps/web`
+ * since the #920 shell cutover, `apps/landing` since the #2366 token cutover.
+ * The legacy `globals.css` it used to be a sibling of now has no importer. It
+ * is hand-written CSS with three sources of truth it must not drift from, so
+ * each is asserted rather than trusted:
  *
  *  1. The fixed foundations — `getSignetCssVars()` in `signet.ts`, itself
  *     pinned to `spec/ui/design-system/foundations.md` by `signet.spec.ts`.
@@ -24,13 +25,15 @@ import config from "./tailwind.config";
  *     (`deriveSignetPalette`), because `accent-engine.md` §3 defines the
  *     no-accent chapter as exactly that pipeline output, and a hand-edited
  *     default would silently diverge from what a saved chapter gets.
- *  3. The Tailwind preset (shared + the `apps/web` extension) — every token a
- *     color key reads must be defined here as a complete color, or the class
- *     compiles to nothing (#1145's failure mode, on the new stylesheet).
+ *  3. The Tailwind preset (shared + the `apps/web` AND `apps/landing`
+ *     extensions) — every token a color key reads must be defined here as a
+ *     complete color, or the class compiles to nothing (#1145's failure mode).
  *
- * It also pins the surface wiring: `apps/web` imports this file, the frozen
- * `apps/landing` imports the legacy one — the "two systems must not mix on one
- * surface" rule (`spec/ui/design-system/foundations.md` §1) as a test.
+ * It also pins the surface wiring: both apps import this file and neither
+ * imports the legacy stylesheet — the "two systems must not mix on one surface"
+ * rule (`spec/ui/design-system/foundations.md` §1) as a test. Before #2366 this
+ * asserted the opposite for `apps/landing`; the boundary it guards is the same
+ * one, now that the cutover has moved that surface across it.
  */
 
 const SIGNET = fileURLToPath(new URL("./signet.css", import.meta.url));
@@ -50,6 +53,9 @@ const LANDING_GLOBALS = fileURLToPath(
  */
 const WEB_TAILWIND = fileURLToPath(
   new URL("../../../apps/web/tailwind.config.ts", import.meta.url),
+);
+const LANDING_TAILWIND = fileURLToPath(
+  new URL("../../../apps/landing/tailwind.config.ts", import.meta.url),
 );
 
 /** `--token` → declared value, for the single `:root` block. */
@@ -200,14 +206,23 @@ describe("the accent-slot defaults are the house seed through the real engine", 
 
 describe("every token the presets read is defined as a complete color", () => {
   const shared = tokensReadBy(config.theme?.extend?.colors);
-  const webExtension = [
-    ...readFileSync(WEB_TAILWIND, "utf8").matchAll(/colorVar\("(--[\w-]+)"\)/g),
-  ].map((m) => m[1]!);
-  const referenced = [...new Set([...shared, ...webExtension])];
+  const appExtension = (source: string): string[] =>
+    [...readFileSync(source, "utf8").matchAll(/colorVar\("(--[\w-]+)"\)/g)].map(
+      (m) => m[1]!,
+    );
+  const webExtension = appExtension(WEB_TAILWIND);
+  // `apps/landing` gained its own Signet-only keys with the #2366 cutover, in
+  // the same app-local shape and for the same #1145 reason. Scanning only the
+  // web config would leave the newer surface's keys unguarded.
+  const landingExtension = appExtension(LANDING_TAILWIND);
+  const referenced = [
+    ...new Set([...shared, ...webExtension, ...landingExtension]),
+  ];
 
   it("scans a real corpus, so an empty result means something", () => {
     expect(shared.length).toBeGreaterThan(15);
     expect(webExtension.length).toBeGreaterThan(10);
+    expect(landingExtension.length).toBeGreaterThan(10);
   });
 
   it.each(referenced)(
@@ -296,9 +311,12 @@ describe("the derived accent steps track the slot rather than restating it", () 
 });
 
 describe("each surface imports exactly its own system", () => {
-  // The freeze boundary as a test: `apps/web` is Signet, `apps/landing` stays
-  // legacy until its own reskin. An import swap on either side silently
-  // reskins a surface it must not touch.
+  // Both web surfaces are Signet since #2366 took the landing across. This used
+  // to be the FREEZE boundary — web Signet, landing legacy — and is now the
+  // no-mixing rule with nothing left on the other side: an import swap on
+  // either side silently reskins a surface it must not touch, and pulling the
+  // legacy stylesheet back onto either one would put two token systems on one
+  // surface.
   const web = readFileSync(WEB_GLOBALS, "utf8");
   const landing = readFileSync(LANDING_GLOBALS, "utf8");
 
@@ -317,9 +335,9 @@ describe("each surface imports exactly its own system", () => {
     expect(web).not.toMatch(/globals\.css"/);
   });
 
-  it("apps/landing imports the legacy stylesheet and not signet.css", () => {
-    expect(landing).toMatch(imports("globals"));
-    expect(landing).not.toMatch(/signet\.css/);
+  it("apps/landing imports signet.css and not the legacy stylesheet", () => {
+    expect(landing).toMatch(imports("signet"));
+    expect(landing).not.toMatch(/globals\.css"/);
   });
 });
 

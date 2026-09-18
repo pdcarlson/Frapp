@@ -249,8 +249,13 @@ a live `dark:` variant in `apps/web`, NativeWind or raw hex or a `fontSize` lite
 `apps/mobile`, a primitive the #920 primitives slice deleted (`accordion`, `progress`,
 `scroll-area`, `separator`, `skeleton`, `sonner`, `tooltip`, `Button`'s `outline` variant) coming
 back — the table in [`signet-cutover`](../signet-cutover/SKILL.md) and
-[`ui-development`](../ui-development/SKILL.md) is the reference. **On `apps/landing` the same
-markers are correct**: it is frozen, and a visual ban is not a defect there.
+[`ui-development`](../ui-development/SKILL.md) is the reference. **`apps/landing` is no longer an
+exemption here.** It shipped those markers legitimately while it was frozen; since its token cutover
+([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) it is a Signet surface, so a leftover
+Geist, bone/bronze, `navy` or `emerald` marker there is a real L2 defect. Note what that does and
+does not license: the marker is reportable, but `apps/landing` **visuals stay hands-off** because
+they belong to the in-flight reskin epic (the Never row above) — so file it, do not fix it in a
+hygiene PR.
 
 **L3 · Duplication and parallel paths.** The jscpd clone list is the floor, not the ceiling — it
 sees textual clones over 50 tokens, not the same logic written twice. Look for the shape: the

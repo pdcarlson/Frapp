@@ -104,15 +104,19 @@ summarize the tokens as implemented in `@repo/theme`.
 Signet end to end**: `apps/web/app/globals.css` imports `packages/theme/src/signet.css` (dark-only,
 Figtree via `--font-figtree`), and all nine #920 slices have landed — the shell, the shared
 primitives, and every screen family. The migration window is closed, so a legacy class or a live
-`dark:` variant on a dashboard screen is a defect now, not a pending slice. **The landing site has
-NOT been reskinned**: it still ships the legacy chat-first **bone / bronze / ink** palette
-(`packages/theme/src/globals.css`), light-first with Geist Sans — but **its spec is no longer
-frozen**: [#2364](https://github.com/pdcarlson/Frapp/issues/2364) lifted the freeze, took the
-reskin's nine decisions, and staged the cutover, so read
-[`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md) for what the surface is becoming.
-Still do not restyle it toward Signet ad hoc — the cutover is staged and owned, which is a stronger
-reason than the freeze was, not a weaker one. The legacy `navy` / `emerald` **preset keys survive
-for `apps/landing` alone** (existing utility classes keep compiling, but their values map to ink /
+`dark:` variant on a dashboard screen is a defect now, not a pending slice. **The landing site is
+on Signet tokens too**, since its cutover merged ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)):
+`apps/landing/app/globals.css` imports the same `packages/theme/src/signet.css`, loads Figtree via
+`--font-figtree`, and the bone / bronze / ink palette, Geist and the legacy `navy` / `emerald`
+preset keys are all deleted. What has **not** landed is the page's composition — the reskin's
+remaining slices rebuild the sections and add the motion stylesheet — so read
+[`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md) before changing that surface, and
+do not restyle it ad hoc: it is staged and owned.
+
+The landing carries three marketing type roles (`--text-hero`, `--text-display-lg`, `--text-lead`)
+above `foundations.md` §7's locked six. They are declared in `apps/landing/app/globals.css` and are
+**landing-only** — using one on a product surface is an off-scale defect. The old text here about
+legacy preset keys mapping to ink /
 moss / bone-era colors) and go with the token cutover
 ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)). That reskin **is** tracked now — #2364 is
 the epic, #920 is `apps/web`, #937 is `apps/mobile`, and the Chunk-12 landing issues (#447, #491)
@@ -142,19 +146,24 @@ Web dashboard work uses the token names defined in `packages/theme/src/signet.cs
 file rather than any table here. It holds the fixed foundations (surface ladder `--background` /
 `--surface-1` / `--card`, text ladder, hairline borders) plus the ShadCN-compat pairs the shared
 preset reads, and the house-default accent slot (`--primary` … `--accent-text`) that the chapter
-accent engine overrides at runtime. The Signet-only Tailwind keys live app-locally in
-`apps/web/tailwind.config.ts` until landing reskins — `surface-1`, the `primary-hover` /
-`primary-pressed` and `accent-subtle` / `accent-subtle-hover` / `accent-border` / `accent-text`
-families, `disabled`, `warning`, `info`, `destructive-text`, `mention`, `gold.*`, plus the `2xl`
-border radius, the `fontFamily.sans` → `var(--font-figtree)` override and the custom
-`pointer-coarse` variant. **Read that file rather than this list** — it is the one that compiles,
+accent engine overrides at runtime. The Signet-only Tailwind keys live **app-locally, in two homes** —
+`apps/web/tailwind.config.ts` and, since [#2366](https://github.com/pdcarlson/Frapp/issues/2366),
+`apps/landing/tailwind.config.ts`. Both carry `surface-1`, the `primary-hover` / `primary-pressed`
+and `accent-subtle` / `accent-subtle-hover` / `accent-border` / `accent-text` families, `disabled`,
+`warning`, `info`, `destructive-text`, `info-text`, the `2xl` border radius and the
+`fontFamily.sans` → `var(--font-figtree)` override; `mention` and `gold.*` are web-only, and the
+landing adds the three marketing type roles that are its alone. They sit in the app configs rather
+than the shared preset because the preset must bind nothing its stylesheet does not define (#1145);
+collapsing the two is a `@repo/theme` refactor, not a pending slice. **Read that file rather than this list** — it is the one that compiles,
 and it carries the reasoning for each. `packages/theme/src/signet.css.spec.ts` asserts every key
 reads a defined token.
 
-### Legacy theme tokens (landing-only)
+### Legacy theme tokens (`packages/theme/src/globals.css`)
 
-The frozen landing theme (`packages/theme/src/globals.css`) defines these semantic colors as CSS
-variables. Every one holds a **complete color value** (`hsl(30 45% 32%)`, `#C49A3A`,
+**No surface imports this stylesheet any more** — `apps/landing` was its last consumer and moved to
+`signet.css` with [#2366](https://github.com/pdcarlson/Frapp/issues/2366). It is kept here for
+reading history and for `tailwind.config.spec.ts`, which still pins the preset against it. Do not
+wire a new surface to it. It defines these semantic colors as CSS variables. Every one holds a **complete color value** (`hsl(30 45% 32%)`, `#C49A3A`,
 `rgba(255,255,255,.08)`) — not a bare HSL triple — and the preset reads them through `colorVar()`
 as a plain `var(--token)`. **Never hand-write `hsl(var(--token))` around one**: it emits
 `hsl(hsl(...))`, which the browser drops, and a `tailwind.config.spec.ts` guard fails the build on
@@ -171,14 +180,20 @@ it (#1151). In a Tailwind arbitrary value the correct form carries the type hint
 | `border` | Borders |
 | `ring` | Focus rings |
 
-### Brand color keys (legacy names, remapped values — `apps/landing` only)
+### Brand color keys — all deleted (historical)
 
-Two keys survive in the shared preset, and **neither is a full ramp**:
+> **Nothing below is a key you can reach for.** The shared preset carries no legacy brand scale any
+> more. This section is kept for the class of defect it documents (#916, #1145, #1151), not as an
+> inventory. For current values read `packages/theme/src/signet.css` and the two app configs.
 
-| Key | Steps defined | Maps to | Usage |
-|------|-----------|-----------|-------|
-| `navy` | `DEFAULT` only | ink (`#1F1A15`) | Brand anchor, headers, dark surfaces |
-| `emerald` | `DEFAULT`, `50`, `100`, `400`, `500`, `600` | moss/success ramp | Success states |
+`navy` and `emerald` were the last two, surviving for `apps/landing` alone until
+[#2366](https://github.com/pdcarlson/Frapp/issues/2366) moved that surface to Signet and deleted
+them. What they were:
+
+| Key (deleted) | Steps defined | Mapped to | Replaced by |
+|------|-----------|-----------|-----------|
+| `navy` | `DEFAULT` only | ink (`#1F1A15`) | `text-foreground` / the surface ladder |
+| `emerald` | `DEFAULT`, `50`, `100`, `400`, `500`, `600` | moss/success ramp | the semantic `success` family |
 
 `royal-blue` was **deleted** in the #920 slice-9 cutover — it had zero class sites anywhere in the
 repo. `navy` shed its numbered steps in the same pass, for the same reason: all ten surviving call
@@ -191,12 +206,13 @@ step not in the list above does not fail, it silently falls through to **stock T
 That was #916's root cause — `emerald-700` is absent, so a landing pricing pill rendered stock
 emerald text beside a moss `emerald-100` fill and nothing flagged it.
 
-Both keys exist only for `apps/landing` and go with its reskin, which is not itself tracked (see
-the palette-status note above — #913/#914 block it, they are not it). Never treat
-success-green as the global primary-action color — `primary` (bronze) is the action color, ink is
-the brand anchor. Read the current values from `packages/theme/src/tailwind.config.ts` (the scale
-keys) and `packages/theme/src/globals.css` (the semantic HSL variables) rather than trusting any
-doc's hex table.
+**Both keys are gone.** They existed only for `apps/landing`, and
+[#2366](https://github.com/pdcarlson/Frapp/issues/2366) deleted them from the shared preset when
+that surface moved to Signet — its `text-navy` and `text-emerald-600` sites went to
+`text-foreground` and the semantic `text-success` in the same change. The two paragraphs above are
+kept as the reasoning for a class of defect (#916, #1145, #1151), not as a description of keys you
+can still reach for. Read current values from `packages/theme/src/signet.css` and the two app
+configs rather than trusting any doc's hex table.
 
 ### Custom animations
 
@@ -230,14 +246,15 @@ family — so the hand-registered plugin is gone. The lesson outlives it: an unk
 unknown colour value, is dropped without a warning, so a class family that has never been seen in a
 compiled stylesheet has not been verified.
 
-Each surface's global CSS imports exactly one of the two theme stylesheets — never both:
+Each surface's global CSS imports exactly one theme stylesheet — never both. Both web surfaces now
+import the same one:
 ```css
 /* apps/web/app/globals.css — Signet (dark-only) */
 @import "../../../packages/theme/src/signet.css";
 ```
 ```css
-/* apps/landing/app/globals.css — legacy, frozen */
-@import "../../../packages/theme/src/globals.css";
+/* apps/landing/app/globals.css — Signet (dark-only), since #2366 */
+@import "@repo/theme/signet.css";
 ```
 
 ---
@@ -365,8 +382,9 @@ is no mode switch to test. `apps/web` keeps `darkMode: "class"` deliberately wit
 the class: that was what kept residual `dark:` variants inert while the #920 slices ran, and every
 family has now deleted its own, so `apps/web` ships **zero** live `dark:` variants and the setting
 is a backstop against Tailwind's `media` default re-activating a new one. Do not set the class,
-reintroduce a toggle, or write a fresh `dark:` variant. Landing is unaffected: it stays light-first on the
-legacy `packages/theme/src/globals.css` (its `.dark` block is never toggled).
+reintroduce a toggle, or write a fresh `dark:` variant. The same now applies to `apps/landing`: it is dark-only on
+`signet.css`, its `dark:` variants were deleted with the token cutover, and its config keeps the
+class strategy as the identical backstop.
 
 ### Responsive design
 

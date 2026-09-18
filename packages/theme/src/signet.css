@@ -3,12 +3,16 @@
 /*
  * Signet design tokens — the dark-first warm charcoal system.
  *
- * This stylesheet is the Signet counterpart of `globals.css`, which keeps the
- * legacy bone/bronze values for the still-frozen `apps/landing`. A surface
- * imports exactly one of the two — `apps/web` imports this file, `apps/landing`
- * imports the legacy one — because the two systems must not mix on one surface
- * (`spec/ui/design-system/foundations.md` §1). `signet.css.spec.ts` pins that
- * wiring in both directions.
+ * This stylesheet is what BOTH web surfaces ship — `apps/web` since the #920
+ * shell cutover, `apps/landing` since its token cutover (#2366). A surface
+ * imports exactly one stylesheet, because the two systems must not mix on one
+ * surface (`spec/ui/design-system/foundations.md` §1), and `signet.css.spec.ts`
+ * pins that wiring for both apps.
+ *
+ * The legacy bone/bronze counterpart, `globals.css`, therefore has no importer
+ * left. Do not point a surface back at it to resolve an apparent mismatch here:
+ * that would put two token systems on one surface, which is the thing §1
+ * forbids.
  *
  * Values are the fixed foundations from `spec/ui/design-system/foundations.md`
  * (source-of-truth constants: `signet.ts`, asserted equal by the spec) plus the

@@ -23,7 +23,7 @@ packages/    — 14 shared workspaces
   hooks/              — Shared React hooks
   observability/      — Browser-safe observability policy (Sentry PII scrubbing, sample-rate parse)
   org-archetypes/     — Greek-org directory / archetype data
-  theme/              — Tailwind config + global styles (legacy bone/bronze until web/landing reskin)
+  theme/              — Tailwind preset + Signet stylesheet/tokens (every surface); legacy bone/bronze retired
   typescript-config/  — Shared tsconfig
   validation/         — Shared Zod schemas
 spec/         — Product spec, behavior spec, architecture, environments

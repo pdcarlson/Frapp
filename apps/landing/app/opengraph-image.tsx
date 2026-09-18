@@ -18,6 +18,16 @@ export const contentType = "image/png";
  * the canonical 1024² raster that `rasterize:brand-assets` renders from
  * `signet-emblem-B.svg` — a raster here because Satori cannot lay out an
  * external SVG, not because the vector is the lesser source (#2153).
+ *
+ * COLOURS ARE LITERALS HERE, and that is not a token bypass. Satori renders
+ * this at request time with no stylesheet and no cascade, so `var(--x)` has
+ * nothing to resolve against and would paint nothing. Each literal below is
+ * therefore annotated with the Signet token it mirrors; if the ladder moves,
+ * these move with it by hand. `signet.css` is still the source — this file is
+ * a transcription of it, not a second opinion.
+ *
+ * Slice 3 (#2368) recomposes this card on the `#131211` stage with the crest
+ * and the tagline in Figtree. This slice only brings its palette onto Signet.
  */
 export default async function OpenGraphImage() {
   const emblemBytes = await readFile(
@@ -34,7 +44,7 @@ export default async function OpenGraphImage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#1A1A1A",
+        backgroundColor: "#1A1A1A", // --surface-1
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
       }}
     >
@@ -62,7 +72,7 @@ export default async function OpenGraphImage() {
             style={{
               fontSize: 96,
               fontWeight: 800,
-              color: "#DDB844",
+              color: "#DDB844", // --primary (D1 mark gold)
               letterSpacing: "-0.04em",
             }}
           >
@@ -72,7 +82,7 @@ export default async function OpenGraphImage() {
             style={{
               fontSize: 28,
               fontWeight: 600,
-              color: "#A89B7A",
+              color: "#A9A399", // --muted-foreground
               letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}
