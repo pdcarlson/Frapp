@@ -1,8 +1,9 @@
 name: Codex review
 
-# Advisory, comment-only PR review (ADR-14, 2026-09-18 amendment). Installs
-# @openai/codex and calls the first-class `codex review` subcommand against a
-# bring-your-own-key model provider.
+# Advisory, comment-only PR review. Decided in ADR-14's "Amendment — 2026-09-18:
+# CodeRabbit retirement decided"; the behaviour this file relies on is recorded in
+# ADR-14's "Amendment — 2026-09-18 (implementation)". Installs @openai/codex and
+# calls the CLI's first-class `codex review` subcommand against a BYOK provider.
 #
 # WHAT ADVISORY MEANS HERE, AND WHY EACH PART IS LOAD-BEARING:
 #   * NOT a required check. Deliberately absent from
@@ -13,8 +14,14 @@ name: Codex review
 #     self-approve). Measured on #1875. `issues: write` — not
 #     `pull-requests: write` — is the permission that posts a PR comment,
 #     measured against pr-base-sync.yml.
-#   * Reviewer trouble never reds this workflow. scripts/ci/codex-review.mjs
-#     always exits 0 and raises ONE `routine-state` alert issue instead.
+#   * A reviewer problem must not red this workflow, because a red check here
+#     lands on every open PR and the PR-activity webhook delivers it to every
+#     watching agent session. Every step that can fail for a reason outside our
+#     control therefore carries `continue-on-error`, and the posting step runs on
+#     `!cancelled()` so it still files the alert issue. THE LIMIT OF THAT CLAIM:
+#     a failed checkout, or a bug in codex-review.mjs itself, still reds the job —
+#     the first is genuine infra (ci-wake classifies it), the second is our defect
+#     and should be loud.
 #
 # NOT `openai/codex-action`: its wrapper runs `codex exec` and cannot reach the
 # `review` subcommand, and on #2396 it failed twice before Codex ran at all —
@@ -41,32 +48,33 @@ permissions:
   issues: write # the review comment and the alert issue both go through /issues
 
 env:
-  # The model is UNVERIFIED against the vendor: openrouter.ai is egress-blocked
-  # from every authoring sandbox, so the slug comes from a search index rather
-  # than OpenRouter itself. It lives here so the smoke test changes it in one
-  # place. The vendor prefix is part of the id — `muse-spark-1.3` is NOT a valid
-  # OpenRouter slug, `meta/muse-spark-1.3` is.
+  # UNVERIFIED against the vendor: openrouter.ai is egress-blocked from every
+  # authoring sandbox, so this slug comes from a search index, not OpenRouter.
+  # The vendor prefix is part of the id — a bare `muse-spark-1.3` is not a valid
+  # OpenRouter slug. Kept here so the smoke test changes it in one place.
   REVIEW_MODEL: meta/muse-spark-1.3
 
 jobs:
   codex-review:
-    # Three guards, all deliberate:
-    #   * Drafts are skipped — a draft is still being written.
-    #   * Fork PRs are skipped because `pull_request` withholds secrets from
-    #     them, so the reviewer could only ever fail and alert. (Using
-    #     `pull_request_target` to get the key would run an agent over
-    #     untrusted head code with a credential in scope. Not worth it for an
-    #     advisory comment.)
-    #   * Docs-only PRs are path-gated in a step below rather than here, so the
-    #     job still reports and can clear a stale comment.
+    # Drafts are skipped (still being written). Fork PRs are skipped because
+    # `pull_request` withholds secrets from them, so the reviewer could only ever
+    # fail and alert — and `pull_request_target`, which would supply the key,
+    # would run an agent over untrusted head code with a billing credential in
+    # scope. Not worth it for an advisory comment.
+    #
+    # Docs-only is NOT gated here: the job still runs so the posting step can
+    # clear a stale review comment when a PR's code changes are reverted out of
+    # the diff. A job-level `if` would strand that comment forever.
     if: >-
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    # An agent job is unbounded by nature and GitHub's default is 360 minutes.
-    # The inner `timeout` below is the one that matters for a hung provider;
-    # this is the backstop for everything else.
-    timeout-minutes: 20
+    # Budgeted against the inner `timeout 900`, not guessed: `fetch-depth: 0` plus
+    # a CLI whose linux-x64 payload unpacks to ~354 MB needs real headroom, and if
+    # the JOB timeout fires during the CLI call then `exit_code` is never written
+    # and the posting step never runs — turning the hang this is all designed to
+    # catch back into a silent cancelled run. 30 - 15 leaves ~15 minutes.
+    timeout-minutes: 30
 
     steps:
       # head.sha, never refs/pull/N/merge: GitHub only maintains the merge ref
@@ -74,8 +82,8 @@ jobs:
       # merge-ref lag can hand the reviewer a tree one push behind the diff it
       # was told to review.
       #
-      # fetch-depth: 0 because `codex review --base` needs the base branch and
-      # a real merge base, and the purge step below restores from it.
+      # fetch-depth: 0 because the merge base must be computable. NOTE this
+      # leaves a DETACHED HEAD with no local branches — see the `--base` note.
       - name: Checkout PR head
         uses: actions/checkout@v4
         with:
@@ -83,18 +91,20 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Skip docs-only changes
+      - name: Classify the diff
         id: gate
+        continue-on-error: true
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
           base_sha="$(git merge-base "origin/$BASE_REF" HEAD)"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+
           # A docs-only PR has nothing for a code reviewer to say. Re-derived
-          # 2026-09-18 over origin/main: 12.0% of the last 100 commits and 8.8%
-          # of the last 250 are docs-only, where docs-only means every changed
-          # path matches the filter below. (The #2396 spike's "~22%" had no
-          # sample window or definition and does not reproduce.)
+          # 2026-09-18 over origin/main with this exact pattern: 12.0% of the last
+          # 100 commits and 8.8% of the last 250 are docs-only. (The #2396 spike's
+          # "~22%" had no sample window or definition and does not reproduce.)
           #
           # Written to a file rather than piped into `grep -q` on purpose. Under
           # `pipefail`, `grep -q` exits as soon as it matches, so git can take a
@@ -102,27 +112,28 @@ jobs:
           # succeeded — which would invert this test and review nothing on a code
           # PR. That is a timing-dependent race, not a certainty: on a 503-file
           # diff it did NOT reproduce locally (pipeline status 0). It is removed
-          # by construction rather than left to luck, because the failure mode is
+          # by construction rather than left to luck, because the failure is
           # silent. An empty diff leaves grep at 1, correctly docs-only.
           #
           # $RUNNER_TEMP, never the workspace: a scratch file written into the
           # tree would show up in this very diff and in the reviewed tree.
           git diff --name-only "$base_sha" HEAD > "$RUNNER_TEMP/changed-files.txt"
           if grep -qvE '(\.mdx?$|^docs/|^spec/)' "$RUNNER_TEMP/changed-files.txt"; then
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "skip_reason=" >> "$GITHUB_OUTPUT"
           else
-            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+            echo "skip_reason=docs-only PR" >> "$GITHUB_OUTPUT"
           fi
-          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node
-        if: steps.gate.outputs.docs_only == 'false'
+        if: steps.gate.outputs.skip_reason == ''
+        continue-on-error: true
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
       - name: Install Codex CLI
-        if: steps.gate.outputs.docs_only == 'false'
+        if: steps.gate.outputs.skip_reason == ''
+        continue-on-error: true
         # Installed OUTSIDE the repository, for two reasons:
         #   * The repo root is an npm-workspaces package. `npm install` there
         #     resolves the whole workspace tree, not just this one package —
@@ -168,12 +179,14 @@ jobs:
       # Tighten the pathspec if one is ever added.
       #
       # Restoring from the MERGE BASE (not the base tip) is what keeps this
-      # diff-neutral: the restored content matches what `codex review` diffs
-      # against, so these files simply do not appear in the review. The accepted
-      # cost is that a legitimate instruction-file change is reviewed under the
-      # base ref's rules; the local /diff-review gate still covers that diff.
+      # diff-neutral, verified by executing the whole sequence against a repo with
+      # a PR-added AGENTS.override.md and a PR-added nested apps/api/AGENTS.md:
+      # afterwards `git diff <merge_base>` listed only the real source change. The
+      # accepted cost is that a legitimate instruction-file change is reviewed
+      # under the base ref's rules; the local /diff-review gate still covers it.
       - name: Pin agent instruction files to the merge base
-        if: steps.gate.outputs.docs_only == 'false'
+        if: steps.gate.outputs.skip_reason == ''
+        continue-on-error: true
         env:
           BASE_SHA: ${{ steps.gate.outputs.base_sha }}
         run: |
@@ -184,27 +197,55 @@ jobs:
             | tr '\n' '\0' | xargs -0r git checkout "$BASE_SHA" --
 
       - name: Run codex review
-        if: steps.gate.outputs.docs_only == 'false'
+        if: steps.gate.outputs.skip_reason == ''
         id: review
+        continue-on-error: true
         env:
-          # Absent secret => empty => the CLI exits 101 and the posting step
-          # raises the alert issue. Deliberately not a hard failure: a missing
-          # credential must not red every PR.
+          # Absent secret => empty => the CLI exits 1 and the posting step raises
+          # the alert issue. Deliberately not a hard failure: a missing credential
+          # must not red every PR.
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
         run: |
           set -uo pipefail
+          # `set -uo pipefail` does NOT disable errexit. Actions runs the script as
+          # `bash -e {0}`, so -e is INHERITED and any failing command below would
+          # abort the step — skipping the `exit_code` write and leaving the posting
+          # step unable to tell "the reviewer failed" (alert, name the cause) from
+          # "the reviewer never ran" (alert, point at the run log). Turned off
+          # explicitly so this step always reaches its output write.
+          set +e
+
           # CODEX_HOME is NOT created on demand — the CLI errors with
-          # "CODEX_HOME points to ... but that path does not exist".
+          # "CODEX_HOME points to ... but that path does not exist". Pointing it at
+          # a fresh runner temp dir is also what closes repo-local Codex config:
+          # plugins, skills, hooks and MCP servers are all configured through
+          # $CODEX_HOME/config.toml and are not auto-discovered from the tree, so an
+          # empty CODEX_HOME means a PR cannot add any of them.
           mkdir -p "$CODEX_HOME"
 
+          # `--base` MUST be the remote-tracking ref, never the bare branch name.
+          # actions/checkout with `ref: <sha>` leaves a DETACHED HEAD and creates
+          # no local branch, so `main` does not resolve — only `origin/main` does.
+          # And `codex review` does NOT fail when it cannot resolve the base: it
+          # silently falls back to a prompt asking the MODEL to find the merge base
+          # via `main@{upstream}`, which does not resolve either. Executed against a
+          # replica of this checkout: `--base main` sent NO merge-base SHA and still
+          # exited 0, while `--base origin/main` sent the correct one. The bare form
+          # is a green check over a review of nothing.
+          #
+          # `--title=` with an equals sign, NOT a separate token. The PR title is
+          # author-controlled, and clap parses a leading `-` as a flag:
+          # `--title "-x fix"` exits 2 before the review starts (executed), which
+          # would file the public "reviewer is broken" alert over a PR title.
+          #
           # `--profile` does NOT work on `codex review`, despite a string in the
           # binary listing it: `codex review --profile foo` => "error: unexpected
-          # argument '--profile' found" (executed, CLI 0.155.0). `--model` is
-          # rejected the same way. `-p/--profile` is on `codex exec` only, so the
-          # provider AND the model are both selected with `-c`.
+          # argument '--profile' found" (executed, CLI 0.155.0). `--model` and
+          # `--cd` are rejected the same way, so the provider AND the model are
+          # both selected with `-c`, and the CLI reviews its cwd.
           #
           # wire_api MUST be "responses": `wire_api = "chat"` is rejected outright
           # in 0.155.0 ("no longer supported"), so there is no wire-protocol
@@ -214,47 +255,66 @@ jobs:
           # channel the purge step cannot: the precedence chain ends in
           # "configured fallback filenames", which an empty list removes.
           #
+          # `shell_environment_policy.exclude` is defence in depth for the billing
+          # credential. Codex's own defaults appear to strip *KEY*/*SECRET*/*TOKEN*
+          # from the environment it hands the agent, but that is an UNPINNED
+          # upstream default, and this job publishes model output to a public
+          # comment. Pinning it costs nothing and does not rely on that default
+          # holding across releases. (codex-review.mjs redacts as well.)
+          #
           # --strict-config makes an unrecognized key a fast, loud failure rather
-          # than a silently ignored one. That matters most for the security
-          # setting above: a renamed key must not fail open.
+          # than a silently ignored one. That matters most for the two security
+          # settings above: a renamed key must not fail open. Verified that this
+          # whole config set loads clean under it.
           #
           # `timeout` is not belt-and-braces. An unreachable base_url makes the
-          # CLI RETRY rather than fail, so without this the job would sit until
-          # the job-level timeout. 124 from timeout is classified as a failure.
-          set +e
-          # Invoked by absolute path, but with the REPO as cwd: `codex review`
-          # has no --cd/-C flag, so it reviews whatever directory it runs in.
+          # CLI RETRY rather than fail, so without this the job would sit until the
+          # job-level timeout. 124 from timeout classifies as a failure.
           timeout 900 "$RUNNER_TEMP/codex-cli/node_modules/.bin/codex" review \
             --strict-config \
-            --base "$BASE_REF" \
-            --title "$PR_TITLE" \
+            --base "origin/$BASE_REF" \
+            --title="$PR_TITLE" \
             -c model_provider=openrouter_byok \
             -c 'model_providers.openrouter_byok={name="OpenRouter (BYOK)",base_url="https://openrouter.ai/api/v1",env_key="OPENROUTER_API_KEY",wire_api="responses"}' \
             -c "model=$REVIEW_MODEL" \
             -c 'project_doc_fallback_filenames=[]' \
             -c tools.web_search=false \
+            -c 'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*"]' \
             > "$RUNNER_TEMP/codex-stdout.txt" 2> "$RUNNER_TEMP/codex-stderr.txt"
-          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
-          set -e
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
 
           # stdout is the payload; the banner, warnings and transcript go to
-          # stderr. Surface stderr in the log because that is where
-          # "Model metadata for `<slug>` not found" shows up — the first sign of
-          # a wrong or unsupported model slug.
+          # stderr. Surfaced in the log because that is where
+          # "Model metadata for `<slug>` not found" shows up. Actions masks
+          # `secrets.*` values in logs, so this is safe here — it is the REST API
+          # paths (comment and issue bodies) that are unmasked, which is why
+          # codex-review.mjs redacts before posting.
           echo "--- codex stderr ---"
           cat "$RUNNER_TEMP/codex-stderr.txt" || true
-        # The slug carries its vendor prefix. `muse-spark-1.3` is NOT a valid
-        # OpenRouter id; `meta/muse-spark-1.3` is. A wrong slug does not fail
-        # loudly — it warns on stderr and degrades to fallback metadata.
-        continue-on-error: true
 
+      # `!cancelled()` rather than `success()`: this step files the alert issue, so
+      # it has to run precisely when something upstream went wrong. It also runs on
+      # a docs-only PR, where SKIP_REASON is set — that is what lets it clear a
+      # stale review comment instead of stranding one.
+      #
+      # CODEX_EXIT_CODE is deliberately allowed to arrive EMPTY (the review step
+      # was skipped, or died before its output write). codex-review.mjs treats
+      # empty as "the reviewer never ran" and alerts; it must never be read as
+      # success, which is why the script parses it explicitly rather than with
+      # Number() — Number("") is 0.
       - name: Post advisory review comment
-        if: steps.gate.outputs.docs_only == 'false'
+        if: ${{ !cancelled() }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           CODEX_STDOUT_FILE: ${{ runner.temp }}/codex-stdout.txt
+          CODEX_STDERR_FILE: ${{ runner.temp }}/codex-stderr.txt
           CODEX_EXIT_CODE: ${{ steps.review.outputs.exit_code }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
+          SKIP_REASON: ${{ steps.gate.outputs.skip_reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # Passed so the script can redact it out of anything it publishes.
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: node scripts/ci/codex-review.mjs

@@ -38,7 +38,7 @@ history. The new gate is provider-neutral for Codex, Claude, Cursor, and humans 
 not server-side or unconditional: Git's `--no-verify`, a changed `core.hooksPath`, or skipped
 installation can bypass it. A nonzero hook result otherwise aborts the push.
 
-## Amendment — 2026-09-18: CodeRabbit retirement decided; advisory CI review to return as a BYOK `codex review` CLI job
+## Amendment — 2026-09-18 (decision): CodeRabbit retirement decided; advisory CI review to return as a BYOK `codex review` CLI job
 
 **Decision.** CodeRabbit is retired by owner decision. Its intended replacement is an **advisory,
 comment-only CI reviewer built on the Codex CLI's first-class `codex review` subcommand**, run with
@@ -347,10 +347,11 @@ behaviour shows those are **necessary but not sufficient**:
 | Case | stdout | exit |
 |---|---|---|
 | Valid JSON, findings | rendered bullets | 0 |
-| Valid JSON, no findings | `No issues found.` | 0 |
+| Valid JSON, no findings | the model's `overall_explanation`, alone — arbitrary prose, NOT a fixed string | 0 |
 | **Model ignores the schema** | **its raw prose, verbatim** | **0** |
-| Provider env key missing | `ERROR: Missing environment variable` (stderr) | **101** |
-| Reserved built-in provider id, or unknown key under `--strict-config` | config error (stderr) | 1 |
+| Provider env key missing | `ERROR: Missing environment variable` (stderr) | **1** |
+| Reserved built-in provider id, or unknown key under `--strict-config` | config error (stderr) | **1** |
+| Bad CLI argument (e.g. a PR title starting with `-`) | clap arg error (stderr) | 2 |
 | Unreachable `base_url` | **hangs — it retries rather than failing** | — |
 
 Row 2 and row 3 are **byte-indistinguishable**: both are short prose at exit 0. So a clean review and
@@ -363,6 +364,17 @@ rollout yields a tri-state `null` — "no claim" — which is reported as `clean
 findings are never downgraded by it.
 
 The hanging row is why the CLI call is wrapped in `timeout 900`; `124` classifies as a failure.
+
+**Correction, same day: the missing-key exit code is 1, not 101.** An earlier revision of this
+amendment recorded 101, in five places. That number was an artifact of the probe rather than the CLI —
+the command was piped into `head`, which closed stdout and aborted the process. Re-measured directly
+with the key unset, the key empty, and with and without `--strict-config`: it is **1** every time.
+The consequence is design-relevant, not cosmetic: **a missing credential and a config error are the
+same exit code**, so neither the alert nor the runbook can route an operator by code alone.
+`scripts/ci/codex-review.mjs` therefore classifies stderr (`Missing environment variable` vs
+`Error loading config.toml`) and emits a distinct `missing-credential` / `config-error` verdict. This
+is exactly the provenance trap the rest of this section is written to avoid, caught by review on the
+implementing branch.
 
 ### Corrections to the decision amendment
 
@@ -408,6 +420,57 @@ docs-only means every changed path matches `*.md`, `*.mdx`, `docs/**` or `spec/*
 So the path gate is worth having but is **not** a major cost lever, and no cost model should lean on
 it. **A cost ceiling is still unset** — the budget question was answered with a model name, and
 per-PR cost stays unknown while `openrouter.ai` is unreachable.
+
+### Defects the implementing review caught, and what they generalise to
+
+These were found by the pre-push review on the implementing branch and fixed there. They are recorded
+because most are properties of `codex review` rather than of this repo's code, so anyone rebuilding
+this will meet them again.
+
+- **`--base` must be the remote-tracking ref.** `actions/checkout` with `ref: <sha>` leaves a detached
+  HEAD and creates no local branch, so `main` does not resolve — and `codex review` does **not** fail
+  when it cannot resolve the base. It silently falls back to a prompt asking the *model* to find the
+  merge base via `main@{upstream}`, which does not resolve either. Executed against a replica of the
+  runner's checkout: `--base main` sent **no merge-base SHA** and still exited 0, while
+  `--base origin/main` sent the correct one. **This is the single highest-impact trap in the whole
+  design** — the bare form is a green check over a review of nothing, on every PR, forever.
+- **`--title` needs the `=` form.** The PR title is author-controlled and clap parses a leading `-` as
+  a flag: `--title "-x fix"` exits **2** before the review starts (executed). On a public repo that
+  turns a PR title into a public "the reviewer is broken" alert issue. `--title="$PR_TITLE"` fixes it.
+- **`set -uo pipefail` does not disable errexit.** Actions runs the script as `bash -e {0}`, so `-e` is
+  inherited; a step that means to be lenient must say `set +e` explicitly. Otherwise a failure before
+  the `exit_code` write makes a failed reviewer indistinguishable from one that never ran.
+- **A fence inside a finding body is indented.** `codex review` indents each body two spaces, so a
+  column-anchored fence regex does not match and a sanitiser rewrites the contents of the
+  ```suggestion block GitHub offers a copy button for. The bound matters in both directions: at 4+
+  spaces GitHub sees an indented code block rather than a fence, so a tracker that toggles on any
+  indent believes it is inside code while GitHub believes it is in prose — and the paragraph after it
+  ships a live `@mention`. Closing also requires the **same** fence character and at least the
+  opener's length.
+- **Model output reaches GitHub through paths Actions does not mask.** Secret masking covers logs, not
+  REST bodies. A credential-bearing agent whose stdout is republished to a public comment and a public
+  issue needs redaction at the publishing boundary, and the `shell_environment_policy` that keeps the
+  key out of the agent's environment should be pinned rather than inherited from an upstream default.
+- **The alert's own sample can break its own fence.** Wrapping untrusted output in ``` lets any fence
+  inside it terminate the wrapper, after which the remainder renders as live Markdown — reopening the
+  notification defect on the alert path. The opener has to outgrow the longest run inside.
+- **Posting the review wakes an agent.** `upsertWakeComment` deletes-then-creates precisely so GitHub
+  delivers `action=created`, which is what the PR-babysitting sessions listen for. So the reviewer's
+  output — model text quoting the PR's own head code — arrives at a session holding push access, from
+  the repo's own trusted bot. This amendment's injection analysis closes what steers *the reviewer*;
+  it never asked what the reviewer's output steers. The comment now wraps the review in an explicit
+  untrusted-data delimiter naming the reviewed SHA. **Generalisation: any advisory bot that posts into
+  a channel agents read is an injection path, not just an output.**
+- **A boolean contract check hid real findings.** Recording only "schema-valid: yes/no" lost the
+  finding *count*, so schema-valid findings that the renderer's bullet form did not match were
+  reported as "clean" — with the literally false reason "schema-valid JSON with no findings" — and real
+  P0s were dropped behind a green check. The count is now compared against what rendered, and a
+  mismatch alerts.
+- **`Number("")` is 0.** An exit code arriving empty because the step died must never coerce to
+  success. It is parsed explicitly and classified as `reviewer-did-not-run`.
+- **"Could not tell" must not clear an alert.** Resolving the alert on `clean-unverified` meant the one
+  failure that blinds the detector (a changed rollout layout, a new CLI pin) would also close the
+  standing alert and post "Recovered" on every run, forever.
 
 ### Still not verified, and still needing the owner
 

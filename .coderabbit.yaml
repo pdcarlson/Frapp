@@ -4,7 +4,7 @@
 # (#1875, #1880). Drafts stay skipped so they do not consume the 1/hour slot.
 #
 # DO NOT DELETE THIS FILE WHILE THE CODERABBIT GITHUB APP IS INSTALLED.
-# CodeRabbit's retirement was decided 2026-09-18 (ADR-14, 2026-09-18 amendment)
+# CodeRabbit's retirement was decided 2026-09-18 (ADR-14, 2026-09-18 DECISION amendment)
 # but not executed: the App is still installed and still reviewing. Removing
 # this config does not disable CodeRabbit — it drops it to unconfigured
 # defaults, where request_changes_workflow is ON, which reproduces the #1875

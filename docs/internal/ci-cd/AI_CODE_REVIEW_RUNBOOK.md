@@ -193,9 +193,14 @@ the last push, so a PR that ever touched code keeps getting reviewed.
 
 `codex review` sends a strict-JSON schema in its system prompt, **parses the reply itself**, and
 renders Markdown to **stdout** — the banner, warnings and transcript go to **stderr**. So stdout is
-the payload. Findings arrive severity-ordered as
-`- [P<0-3>] <title> — <path>:<start>-<end>` with the body indented beneath; a clean review prints only
-the model's one-line explanation.
+the payload. Findings arrive as `- [P<0-3>] <title> — <path>:<start>-<end>` with the body indented
+beneath; a clean review prints only the model's one-line `overall_explanation`, which is model-written
+prose and not a fixed string.
+
+Severity **ordering is requested, not guaranteed.** It is an instruction in the binary's review
+prompt, read out of the binary and never executed, and the schema it belongs to is prompt-enforced
+rather than API-enforced — so a P3 above a P0 is the model ignoring the prompt, not a bug in the
+renderer or in `codex-review.mjs`.
 
 Before posting, the script rewrites runner-absolute paths to repo-relative, breaks `@mentions` /
 `#123` / `GH-123` outside code so quoted diff hunks cannot notify anyone through the repo's bot, and
@@ -211,12 +216,22 @@ itself is a BYOK choice rather than a vendor-tuned reviewer. Verify before actin
 The alert issue **"Advisory codex review is not producing reviews"** (label `routine-state`) is the
 only signal, because the workflow stays green. Its verdict says what happened:
 
-- **`reviewer-failed`** — the CLI exited non-zero. `101` means the provider env key is missing (check
-  the `OPENROUTER_API_KEY` repository secret); `1` is a config error; `124` means the 900-second
-  `timeout` fired, which is what an unreachable `base_url` looks like — the CLI retries rather than
-  failing fast.
+- **`missing-credential`** — the `OPENROUTER_API_KEY` repository secret is absent or empty. Exit 1,
+  with `Missing environment variable` on stderr. The likeliest first failure of this workflow.
+- **`config-error`** — the CLI rejected its configuration. **Also exit 1** — re-measured against CLI
+  0.155.0, a missing key and a bad config key are *not* distinguishable by exit code, which is why
+  the script classifies stderr. (An earlier draft of this runbook claimed `101` for the missing key.
+  That number came from piping the CLI into `head`, which closed stdout and aborted the process; the
+  real code is 1.)
+- **`reviewer-did-not-run`** — no exit code was recorded, so a step before the CLI failed (checkout,
+  install, the instruction-file purge). Read the run log, not the model.
+- **`reviewer-failed`** — any other non-zero exit. `2` is a bad CLI argument; `124` means the
+  900-second `timeout` fired, which is what an unreachable `base_url` looks like — the CLI retries
+  rather than failing fast.
 - **`empty-output`** — exit 0 with nothing on stdout. A reviewer that emits no payload is dead, not
   clean.
+- **`render-mismatch`** — the model returned schema-valid findings that the script could not parse
+  into bullets. Real findings are being dropped, so this is never treated as clean.
 - **`contract-violation`** — the model returned prose instead of the required JSON. This is about the
   **model**, not the wiring. ADR-14's revisit trigger for it is to price the native Codex reviewer's
   credits path.
@@ -265,11 +280,9 @@ tier). That is advisory only — [`.coderabbit.yaml`](../../../.coderabbit.yaml)
 `request_changes_workflow: false` so a write-access `CHANGES_REQUESTED` cannot block squash
 (ADR-14 2026-09-08 amendment). The merge-quality gate is still this local `/diff-review` path.
 
-**CodeRabbit's retirement is decided but NOT executed (2026-09-18).** The App is still installed and
-still commenting — verified on [#2395](https://github.com/pdcarlson/Frapp/pull/2395) at
-2026-09-18T18:30:00Z. Its `.coderabbit.yaml` pin is therefore still the only thing keeping a
-squash-blocking `CHANGES_REQUESTED` off PRs, so **do not delete that file until the App is
-uninstalled** — deleting it first drops CodeRabbit to unconfigured defaults, where
-`request_changes_workflow` is ON. Uninstalling is dashboard-only and needs the owner. The advisory
-`codex review` job above is the intended replacement and is already live; the two overlap until the
-uninstall happens.
+**CodeRabbit's retirement is decided but NOT executed (2026-09-18).** The advisory `codex review`
+job above is the intended replacement and is already live; the two overlap until the App is
+uninstalled, which is dashboard-only and needs the owner. **The deletion order for
+`.coderabbit.yaml` is a safety interlock — uninstall the App first — and its one home is that
+file's own header comment**, with the reasoning in ADR-14's 2026-09-18 amendments. Do not restate
+the rule here: a fourth copy is a fourth thing to forget to update when the App finally goes.
