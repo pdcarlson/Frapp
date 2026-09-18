@@ -51,10 +51,18 @@ nothing until the owner sees it. When a run hits one:
 1. **Keep building everything that does not depend on it.** Do not stall the whole unit on a
    blocker that gates one acceptance criterion.
 2. **File the issue as you go**, per the hard rule above.
-3. **Put it to the owner as an explicit question in your end-of-run report** — the last thing
-   they read, phrased as a decision or an action with the exact steps, and `AskUserQuestion` when
-   a choice is involved. **Not** as a subsection of a long PR body: a *Flagged for review* block
-   is a record, not an ask, and it will be read after merge if at all.
+3. **Ask it. If the blocker is a choice, ask with `AskUserQuestion`** — that is the default, not
+   a garnish on a written summary. A question rendered as options is one the owner answers in a
+   click; the same question in prose is one they have to reconstruct from a report they are
+   skimming, and "I flagged it clearly" is how a decision sits unmade for a week. Give every
+   option the trade-off that actually decides it, and lead with your recommendation — you did the
+   measurement, so withholding a view is not neutrality.
+
+   Where there is no choice to make — an action only they can take — state it as the last thing
+   they read in the end-of-run report, with the exact steps.
+
+   **Not** as a subsection of a long PR body, either way: a *Flagged for review* block is a
+   record, not an ask, and it will be read after merge if at all.
 
 One interruption per run, at a predictable moment. If the owner is present and the blocker is
 small, asking on the spot beats all of this.

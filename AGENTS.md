@@ -78,7 +78,7 @@ Work lives in **GitHub Issues** on this repository. Linear is retired (ADR-16 am
 
 Closing is usually the PR that does the work (`Fixes #N`). Agents may also close directly when done, obsolete, or duplicate (`issue_write` + `state_reason`). The **GitHub MCP** is the only sanctioned tracker path in cloud sandboxes — never `gh` or raw REST. Board: `triage` → Backlog (no state label; priority expected) → `in-progress` → `in-review` → closed. Epics are parent issues with native sub-issues. Start work with `/next` ([`.cursor/commands/next.md`](.cursor/commands/next.md) wraps [`.claude/commands/next.md`](.claude/commands/next.md)). Policy: [`GITHUB_PM.md`](docs/internal/ci-cd/GITHUB_PM.md).
 
-Follow-up that does not belong in the current PR: [`.claude/skills/file-follow-up/SKILL.md`](.claude/skills/file-follow-up/SKILL.md). Human-only blockers: file per that skill **and** ask in the end-of-run report — an issue is durable, not an interruption.
+Follow-up that does not belong in the current PR: [`.claude/skills/file-follow-up/SKILL.md`](.claude/skills/file-follow-up/SKILL.md). Human-only blockers: file per that skill **and** ask — with `AskUserQuestion` when it is a choice, in the end-of-run report when it is an action only the owner can take. An issue is durable, not an interruption; a decision described in prose is neither.
 
 ## Tech debt protocol (non-optional)
 
