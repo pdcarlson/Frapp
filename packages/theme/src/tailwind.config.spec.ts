@@ -143,7 +143,22 @@ function scanColors(): { references: Reference[]; unrecognised: string[] } {
 const { references, unrecognised } = scanColors();
 
 const HSL_TRIPLE = /^\d+(\.\d+)?\s+\d+(\.\d+)?%\s+\d+(\.\d+)?%$/;
-const COMPLETE_COLOR = /^(#[0-9a-f]{3,8}|(hsla?|rgba?)\([^)]*\))$/i;
+/*
+ * `color-mix()` joined this pattern with #2371, which moved `--primary-pressed`
+ * and `--accent-subtle-hover` into the shared preset. Both tokens ARE
+ * `color-mix()` values — the button states `components.md` §3 names but the
+ * accent engine emits no role for — and this suite had never measured them,
+ * because it scans the preset and they used to sit in the two app configs.
+ *
+ * This widens what counts as complete; it does not loosen the check. What the
+ * pattern exists to reject is the bare HSL TRIPLE #1143 was about: a value the
+ * preset must wrap in `hsl(...)` before a property can use it. `color-mix(...)`
+ * is a finished colour that `var()` hands straight to the property, exactly
+ * like the hex and `rgba()` forms beside it. The nested alternative is needed
+ * because its arguments are themselves `var(...)` calls.
+ */
+const COMPLETE_COLOR =
+  /^(#[0-9a-f]{3,8}|(hsla?|rgba?)\([^)]*\)|color-mix\((?:[^()]|\([^()]*\))*\))$/i;
 
 // ── Assertions ───────────────────────────────────────────────────────────────
 

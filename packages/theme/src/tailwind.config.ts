@@ -144,6 +144,62 @@ const config: Partial<Config> = {
         input: colorVar("--input"),
         /* Also written per chapter, from `--signet-accent-ring`. */
         ring: colorVar("--ring"),
+
+        /* ── The Signet keys both surfaces bind (#2371) ──────────────────
+         *
+         * These sat in `apps/web/tailwind.config.ts` and, after #2366,
+         * identically in `apps/landing/tailwind.config.ts`. They lived
+         * app-local because this preset also served the frozen landing,
+         * whose legacy `globals.css` defined none of these tokens, and a
+         * preset key reading an undefined property is #1145's silent
+         * no-color failure. Both surfaces ship `signet.css` now, so every
+         * token below is defined for every consumer of this preset and the
+         * two homes were pure duplication.
+         *
+         * What stays app-local, and why it is not an oversight: the `gold`
+         * family is an `apps/web` treatment (the Ask pill), and the
+         * landing's three marketing type roles sit deliberately ABOVE the
+         * locked six (`foundations.md` §7 amendment). Promoting either
+         * would claim a treatment the other surface does not implement.
+         */
+        "surface-1": colorVar("--surface-1"),
+        "primary-hover": colorVar("--primary-hover"),
+        "primary-pressed": colorVar("--primary-pressed"),
+        "accent-subtle": colorVar("--accent-subtle"),
+        "accent-subtle-hover": colorVar("--accent-subtle-hover"),
+        "accent-border": colorVar("--accent-border"),
+        "accent-text": colorVar("--accent-text"),
+        disabled: colorVar("--disabled"),
+        warning: {
+          DEFAULT: colorVar("--warning"),
+          foreground: colorVar("--warning-foreground"),
+        },
+        info: {
+          DEFAULT: colorVar("--info"),
+          foreground: colorVar("--info-foreground"),
+        },
+        // The AA-lifted danger tone for text/icons on a danger tint (§5).
+        "destructive-text": colorVar("--destructive-text"),
+        // Its info twin, added with the greenfield ladder: solid `--info`
+        // fell under 4.5:1 on `--card` and `--popover` when the ladder
+        // lightened.
+        "info-text": colorVar("--info-text"),
+        /*
+         * "You were addressed". Both halves are needed: `mention` /
+         * `mention-foreground` is the unread DM badge, and `chip` /
+         * `chip-text` is the in-bubble treatment, which is deliberately NOT
+         * the mention red (§5 — red as text inside a bubble is the case that
+         * pair exists for). All four are CSS-only tokens: `signetDarkTokens`
+         * is what `apps/mobile` reads, and mobile draws no in-bubble mention
+         * highlight, but mobile does not consume this preset — only the two
+         * Next surfaces do, and since #2367 both draw the chip.
+         */
+        mention: {
+          DEFAULT: colorVar("--mention"),
+          foreground: colorVar("--mention-foreground"),
+          chip: colorVar("--mention-chip"),
+          "chip-text": colorVar("--mention-chip-text"),
+        },
       },
       borderRadius: {
         xs: "var(--radius-xs)",
@@ -152,35 +208,115 @@ const config: Partial<Config> = {
         md: "var(--radius-md)",
         lg: "var(--radius-lg)",
         xl: "var(--radius-xl)",
+        /*
+         * The 20 step — sheets and the AI answer card (foundations.md §8),
+         * the ceiling of the map. App-local until #2371 for the same
+         * expired #1145 reason as the colors above.
+         */
+        "2xl": "var(--radius-2xl)",
       },
       /*
-       * No `md` key here on purpose. The original reason was that this preset
-       * also served the frozen `apps/landing`, whose `globals.css` defined real
-       * shadows and no `--shadow-md`; binding `md` here would have made
-       * `shadow-md` resolve against an undefined property there and be dropped
-       * — the silent failure #1145 documented. #2366 retired that consumer, and
-       * both app configs now bind their own `md` to the `none` token, so the
-       * key can move up with the rest of the common subset (#2371). Left as-is
-       * for now so this PR changes no compiled output. What follows describes
-       * the retired arrangement: landing was not Signet and not under the
-       * no-shadow ban, so falling through to
-       * Tailwind's stock `shadow-md` is the right answer for it.
+       * `md` is bound here like every other step, as of #2371. It was the one
+       * key this preset deliberately left unbound, because the preset also
+       * served the frozen `apps/landing`, whose legacy `globals.css` defined
+       * real shadows and no `--shadow-md`: binding it here would have made
+       * `shadow-md` resolve against an undefined property on that surface and
+       * be dropped — #1145's silent failure. #2366 retired that consumer and
+       * `signet.css` defines `--shadow-md: none`, so the reason has lapsed.
        *
-       * Signet's own `md` binding lives in `apps/web/tailwind.config.ts` with
-       * the other Signet-only keys.
+       * Leaving it unbound is not the safe default it looks like. Every other
+       * `shadow-*` utility resolves to a token that is `none`; an UNBOUND key
+       * does not inherit that, it falls through to Tailwind's stock scale and
+       * compiles a real drop shadow, past the §10 ban everyone believed the
+       * `none` tokens enforced.
        */
       boxShadow: {
         xs: "var(--shadow-xs)",
         sm: "var(--shadow-sm)",
         DEFAULT: "var(--shadow)",
+        md: "var(--shadow-md)",
         lg: "var(--shadow-lg)",
       },
       /*
+       * The Signet type scale (foundations.md §7) as real utilities. Tailwind
+       * has no equivalent — its `text-sm`/`text-base` ladder is a different
+       * system — so without these keys the six roles are CSS custom properties
+       * no component can reach, and screens keep writing `text-[12.5px]`.
+       *
+       * Each key pairs its size with the role's line height and weight, so
+       * `text-body` carries 16px/25px/400 rather than only the size.
+       *
+       * Sizes and weights are read from the custom properties. **Line heights
+       * are not, and cannot be for five of the six roles:** `foundations.md` §7
+       * states only `--text-body-line` (25px) — it calls that "the only one the
+       * scale states" — so `display` / `headline` / `title` / `label` /
+       * `caption` carry literals here that the type scale does not define.
+       * Those five values were chosen when these utilities landed, not derived
+       * from the spec, and `signet.css` is therefore *not* the one place they
+       * are written. Tracked as L-09 in `spec/ui/web-greenfield/tokens.md`;
+       * settle them there (or in §7) rather than editing one literal in place.
+       *
+       * `apps/landing` adds three MARKETING roles on top of these six, in its
+       * own config. They sit deliberately above the locked scale
+       * (`foundations.md` §7 amendment) and must not be promoted here: that
+       * would put a 72px marketing headline one import away from every product
+       * screen. `signet.spec.ts` guards the amendment.
+       */
+      fontSize: {
+        display: [
+          "var(--text-display)",
+          { lineHeight: "1.15", fontWeight: "var(--text-display-weight)" },
+        ],
+        headline: [
+          "var(--text-headline)",
+          { lineHeight: "1.2", fontWeight: "var(--text-headline-weight)" },
+        ],
+        title: [
+          "var(--text-title)",
+          { lineHeight: "1.3", fontWeight: "var(--text-title-weight)" },
+        ],
+        body: [
+          "var(--text-body)",
+          {
+            lineHeight: "var(--text-body-line)",
+            fontWeight: "var(--text-body-weight)",
+          },
+        ],
+        label: [
+          "var(--text-label)",
+          { lineHeight: "1.3", fontWeight: "var(--text-label-weight)" },
+        ],
+        caption: [
+          "var(--text-caption)",
+          { lineHeight: "1.35", fontWeight: "var(--text-caption-weight)" },
+        ],
+      },
+      /*
+       * Touch floors (foundations.md §9). `min-h-touch` is the 44px minimum the
+       * spec binds on every platform; `min-h-button` is the standard control
+       * height. Tailwind's numeric scale can express both, but not by name, and
+       * the name is the point — a reviewer can see the floor being honored.
+       *
+       * Deliberately NOT here: the `--space-*` grid. Tailwind's own spacing
+       * scale is already this 4px grid (`p-2` is 8px, `gap-4` is 16px), so a
+       * second named spelling would be a parallel token set on one surface,
+       * which `.claude/skills/signet-cutover/SKILL.md` bans. The custom
+       * properties exist for hand-written CSS and for parity with the mobile
+       * token source, not to replace `p-4`.
+       */
+      minHeight: {
+        touch: "var(--touch-min)",
+        button: "var(--touch-button)",
+      },
+      minWidth: {
+        touch: "var(--touch-min)",
+      },
+      /*
        * Figtree since #2366 took the last surface off Geist. Both consuming
-       * apps re-declare `sans` in their own config (they load the font, so they
-       * own the variable name), which makes this key a default nothing reaches
-       * today — but a preset default naming a typeface the house REJECTED
-       * (`brand-identity.md` §3) is a trap for the next surface that adds
+       * apps used to re-declare `sans` in their own config; #2371 deleted those
+       * two redundant copies, so this is now the one place the stack is
+       * written. A preset default naming a typeface the house REJECTED
+       * (`brand-identity.md` §3) would be a trap for the next surface that adds
        * itself here and does not think to override it.
        */
       fontFamily: {

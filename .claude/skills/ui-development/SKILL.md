@@ -164,18 +164,22 @@ Web dashboard work uses the token names defined in `packages/theme/src/signet.cs
 file rather than any table here. It holds the fixed foundations (surface ladder `--background` /
 `--surface-1` / `--card`, text ladder, hairline borders) plus the ShadCN-compat pairs the shared
 preset reads, and the house-default accent slot (`--primary` … `--accent-text`) that the chapter
-accent engine overrides at runtime. The Signet-only Tailwind keys live **app-locally, in two homes** —
-`apps/web/tailwind.config.ts` and, since [#2366](https://github.com/pdcarlson/Frapp/issues/2366),
-`apps/landing/tailwind.config.ts`. Both carry `surface-1`, the `primary-hover` / `primary-pressed`
-and `accent-subtle` / `accent-subtle-hover` / `accent-border` / `accent-text` families, `disabled`,
-`warning`, `info`, `destructive-text`, `info-text`, the `mention` family (`mention` /
-`mention-foreground` / `mention-chip` / `mention-chip-text` — common to both since
-[#2367](https://github.com/pdcarlson/Frapp/issues/2367), when the rebuilt landing gained the chat
-frame's unread DM badge and in-bubble mention chip), the `2xl` border radius and the
-`fontFamily.sans` → `var(--font-figtree)` override; `gold.*` is web-only, and the
-landing adds the three marketing type roles that are its alone. They sit in the app configs rather
-than the shared preset because the preset must bind nothing its stylesheet does not define (#1145);
-collapsing the two is a `@repo/theme` refactor, not a pending slice. **Read that file rather than this list** — it is the one that compiles,
+accent engine overrides at runtime. The Signet Tailwind keys live in the **shared preset**,
+`packages/theme/src/tailwind.config.ts`, since
+[#2371](https://github.com/pdcarlson/Frapp/issues/2371). It carries `surface-1`, the
+`primary-hover` / `primary-pressed` and `accent-subtle` / `accent-subtle-hover` / `accent-border` /
+`accent-text` families, `disabled`, `warning`, `info`, `destructive-text`, `info-text`, the
+`mention` family (`mention` / `mention-foreground` / `mention-chip` / `mention-chip-text`), the six
+locked `fontSize` roles, the `minHeight` / `minWidth` touch floors, the `2xl` border radius,
+`boxShadow.md` and the `fontFamily.sans` → `var(--font-figtree)` stack.
+
+Two remainders stay **app-local**, and they are deliberate rather than leftovers: `gold.*` in
+`apps/web/tailwind.config.ts` (the Ask pill is a web treatment), and the three marketing type roles
+`hero` / `display-lg` / `lead` in `apps/landing/tailwind.config.ts`, which sit above
+`foundations.md` §7's locked six by decision. Those two configs hold nothing else. They used to
+hold the whole set twice over: the keys were app-local because the preset must bind nothing its
+stylesheet defines (#1145), which was true while `apps/landing` was frozen on the legacy
+stylesheet and stopped being true when #2366 put it on `signet.css`. **Read that file rather than this list** — it is the one that compiles,
 and it carries the reasoning for each. `packages/theme/src/signet.css.spec.ts` asserts every key
 reads a defined token.
 

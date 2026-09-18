@@ -211,18 +211,34 @@ describe("every token the presets read is defined as a complete color", () => {
       (m) => m[1]!,
     );
   const webExtension = appExtension(WEB_TAILWIND);
-  // `apps/landing` gained its own Signet-only keys with the #2366 cutover, in
-  // the same app-local shape and for the same #1145 reason. Scanning only the
-  // web config would leave the newer surface's keys unguarded.
+  // Both app configs are still scanned even though #2371 left them holding
+  // almost nothing — `apps/web` its five `gold-*` keys, `apps/landing` none at
+  // all. The scan is what would catch a key reappearing app-locally, which is
+  // the regression that issue was about, so it outlives the duplication.
   const landingExtension = appExtension(LANDING_TAILWIND);
   const referenced = [
     ...new Set([...shared, ...webExtension, ...landingExtension]),
   ];
 
   it("scans a real corpus, so an empty result means something", () => {
-    expect(shared.length).toBeGreaterThan(15);
-    expect(webExtension.length).toBeGreaterThan(10);
-    expect(landingExtension.length).toBeGreaterThan(10);
+    /*
+     * Re-derived for the homes #2371 left behind, not lowered to whatever
+     * passes. The preset absorbed the common subset, so its floor goes UP (39
+     * today); `apps/web` keeps only the five `gold-*` keys, and `apps/landing`
+     * keeps NO colour keys at all — its entire colour surface is shared now.
+     *
+     * The two app numbers are exact rather than floors on purpose: they are
+     * small, closed sets now, and a key reappearing in an app config is the
+     * regression this whole issue was about. The preset's is still a floor,
+     * because tokens legitimately get added there.
+     *
+     * `referenced` is what the parametrized assertion below consumes, so it is
+     * the one that actually has to be non-trivial.
+     */
+    expect(shared.length).toBeGreaterThan(30);
+    expect(webExtension).toHaveLength(5);
+    expect(landingExtension).toHaveLength(0);
+    expect(referenced.length).toBeGreaterThan(30);
   });
 
   it.each(referenced)(
@@ -239,12 +255,12 @@ describe("every token the presets read is defined as a complete color", () => {
   );
 
   it("defines every radius token the preset reads", () => {
-    // Both halves: the shared preset's scale keys, and the Signet-only ones
-    // the `apps/web` config adds on top. The 20 step lives in the app config
-    // because the legacy stylesheet — since deleted (#2366) — had no
-    // `--radius-2xl`, so scanning only the shared preset would leave exactly
-    // the newest key unguarded. Both app configs declare it now; it moves up
-    // with the rest of the common subset in #2371.
+    // The 20 step used to live in the `apps/web` config, because the legacy
+    // stylesheet — since deleted (#2366) — had no `--radius-2xl`, and scanning
+    // only the shared preset would have left exactly the newest key unguarded.
+    // #2371 moved it up, so the preset's own scale now covers it and the
+    // app-local scan is INVERTED rather than deleted: it pins that no radius
+    // key has drifted back into an app config.
     const shared = Object.values(
       config.theme!.extend!.borderRadius as Record<string, string>,
     ).map((value) => String(value).match(/var\((--[\w-]+)\)/)?.[1]);
@@ -254,8 +270,9 @@ describe("every token the presets read is defined as a complete color", () => {
       ),
     ].map((m) => m[1]!);
 
-    expect(webOnly.length).toBeGreaterThan(0);
-    for (const token of [...shared, ...webOnly]) {
+    expect(shared).toContain("--radius-2xl");
+    expect(webOnly).toEqual([]);
+    for (const token of shared) {
       expect(token).toBeDefined();
       expect(root.has(token!), `signet.css must define ${token}`).toBe(true);
     }
