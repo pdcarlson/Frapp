@@ -108,10 +108,16 @@ primitives, and every screen family. The migration window is closed, so a legacy
 on Signet tokens too**, since its cutover merged ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)):
 `apps/landing/app/globals.css` imports the same `packages/theme/src/signet.css`, loads Figtree via
 `--font-figtree`, and the bone / bronze / ink palette, Geist and the legacy `navy` / `emerald`
-preset keys are all deleted. What has **not** landed is the page's composition — the reskin's
-remaining slices rebuild the sections and add the motion stylesheet — so read
-[`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md) before changing that surface, and
-do not restyle it ad hoc: it is staged and owned.
+preset keys are all deleted. **The page rebuild has landed too**
+([#2367](https://github.com/pdcarlson/Frapp/issues/2367)): `apps/landing/app/page.tsx` is built to
+the Spec sheet's section map, and `apps/landing/app/globals.css` carries the landing motion block
+(`--motion-*`, `.chrome-motion`, `.reveal-armed`, `landing-reveal-rise` / `landing-rule-draw`) — a
+CSS mirror of the `packages/theme/src/tokens.ts` scale that `apps/landing/app/page.spec.ts` pins,
+not a second scale, so do not declare another one beside it. What is left is slice 3
+([#2368](https://github.com/pdcarlson/Frapp/issues/2368)), polish, plus D4's signature moment, which
+is deliberately cut pending brand sign-off ([#2378](https://github.com/pdcarlson/Frapp/issues/2378)).
+Read [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md) before changing that surface,
+and do not restyle it ad hoc: it is staged and owned.
 
 The landing carries three marketing type roles (`--text-hero`, `--text-display-lg`, `--text-lead`)
 above `foundations.md` §7's locked six. They are declared in `apps/landing/app/globals.css` and are
@@ -162,8 +168,11 @@ accent engine overrides at runtime. The Signet-only Tailwind keys live **app-loc
 `apps/web/tailwind.config.ts` and, since [#2366](https://github.com/pdcarlson/Frapp/issues/2366),
 `apps/landing/tailwind.config.ts`. Both carry `surface-1`, the `primary-hover` / `primary-pressed`
 and `accent-subtle` / `accent-subtle-hover` / `accent-border` / `accent-text` families, `disabled`,
-`warning`, `info`, `destructive-text`, `info-text`, the `2xl` border radius and the
-`fontFamily.sans` → `var(--font-figtree)` override; `mention` and `gold.*` are web-only, and the
+`warning`, `info`, `destructive-text`, `info-text`, the `mention` family (`mention` /
+`mention-foreground` / `mention-chip` / `mention-chip-text` — common to both since
+[#2367](https://github.com/pdcarlson/Frapp/issues/2367), when the rebuilt landing gained the chat
+frame's unread DM badge and in-bubble mention chip), the `2xl` border radius and the
+`fontFamily.sans` → `var(--font-figtree)` override; `gold.*` is web-only, and the
 landing adds the three marketing type roles that are its alone. They sit in the app configs rather
 than the shared preset because the preset must bind nothing its stylesheet does not define (#1145);
 collapsing the two is a `@repo/theme` refactor, not a pending slice. **Read that file rather than this list** — it is the one that compiles,

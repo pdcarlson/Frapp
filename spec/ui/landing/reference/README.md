@@ -1,12 +1,17 @@
-# Landing reskin reference (target state)
+# Landing reskin reference
 
-> **Target state, not yet built.** [`../README.md`](../README.md) still governs what `apps/landing`
-> ships. Its *visual freeze* was lifted by the reskin epic's slice 0 and the nine decisions are
-> taken, but that changed the spec, not the code: the boards under [`canvas/`](canvas/) become the
-> rank-1 visual truth for the landing surface ([`../../README.md`](../../README.md) § Precedence,
-> rule 1) only when the epic's cutover PR lands. Until then they bind nothing, and drift between
-> them and [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) is expected, not a
-> bug to file.
+> **These boards now bind.** The epic's cutover landed in two parts — tokens in slice 1
+> ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) and the composition in slice 2
+> ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)) — so the boards under [`canvas/`](canvas/)
+> are the rank-1 visual truth for the landing surface ([`../../README.md`](../../README.md)
+> § Precedence, rule 1). Drift between them and
+> [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) is a filable bug now rather
+> than an expected gap, with three standing exceptions, none of them drift: the two decisions below
+> that supersede what the boards draw (D8 and D9), the signature moment, which is **cut** from the
+> shipped page until brand sign-off clears
+> ([#2378](https://github.com/pdcarlson/Frapp/issues/2378)), and anything
+> [`spec/behavior/`](../../../behavior/README.md) contradicts, which wins over a board on what the
+> product does.
 
 ## What this is
 
@@ -66,7 +71,9 @@ wins, not the board:**
   [`canvas/HeroB.dc.html`](canvas/HeroB.dc.html) — the officer's chat bleeding off the right edge —
   so the hero drawn on [`canvas/Main.dc.html`](canvas/Main.dc.html) and
   [`canvas/Phone.dc.html`](canvas/Phone.dc.html) is superseded. Everything below the fold on those
-  two boards still stands. D4's signature moment moves with it, onto the **closing** crest.
+  two boards still stands. D4's signature moment was to move with it, onto the **closing** crest;
+  it is cut from the shipped page until brand sign-off clears
+  ([#2378](https://github.com/pdcarlson/Frapp/issues/2378)), so that crest paints whole.
 - **D8 holds the tagline.** The close drawn on the page boards reads "Ask your chapter anything.";
   the page ships "Everything your chapter needs is already in chat." instead, until Ask is real.
   The scope is the page body only — `layout.tsx`'s meta title and the OG title keep the tagline as
