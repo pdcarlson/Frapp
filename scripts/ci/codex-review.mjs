@@ -324,6 +324,13 @@ export function classifyStderr(stderr) {
   if (/guardrail restrictions and data policy|ZDR violation|endpoints out of \d+ requested/i.test(text)) {
     return "provider-policy-blocked";
   }
+  // Also met on a real run. The provider checks affordability against the
+  // RESERVATION (max_tokens) before generating anything, so a key whose remaining
+  // limit is smaller than the reservation is refused outright — even though the
+  // run would only have SPENT a fraction of it.
+  if (/402 Payment Required|requires more credits|insufficient credits|can only afford/i.test(text)) {
+    return "insufficient-credits";
+  }
   return null;
 }
 
@@ -440,6 +447,26 @@ export function classifyReview({
           "policy, or pick a model whose provider satisfies the policy you want to " +
           "keep. Note a `-contributor`-style tier is usually MORE data-sharing, so it " +
           "is not the fix for a ZDR exclusion.",
+      };
+    }
+    if (signature === "insufficient-credits") {
+      return {
+        verdict: "insufficient-credits",
+        shouldPost: false,
+        shouldAlert: true,
+        shouldResolveAlert: false,
+        reason:
+          "The provider refused on cost before generating anything. Read the stderr " +
+          "number carefully: it is the RESERVATION, not the spend. Codex has no " +
+          "metadata for a BYOK model — that is what the `Model metadata for <slug> " +
+          "not found` warning means — so it falls back to defaults that reserve the " +
+          "model's full output width (65536 tokens was observed). The provider checks " +
+          "affordability against that reservation up front, so a key limit smaller " +
+          "than the reservation refuses every request while the actual cost of a " +
+          "review would be a fraction of it. Raising the key's limit does NOT raise " +
+          "what a review costs; it only lets the reservation clear. There is no " +
+          "supported `codex review` flag to cap the reservation — `max_output_tokens` " +
+          "is not a settable top-level config key in CLI 0.155.0.",
       };
     }
     if (signature === "config-error") {
@@ -692,6 +719,11 @@ export function buildAlertBody({
     "- OpenRouter's Responses endpoint is reachable. `codex review` requires " +
       '`wire_api = "responses"`; `"chat"` was removed in CLI 0.155.0, so ' +
       "there is no wire-protocol fallback.",
+    "- An `insufficient-credits` verdict is about the RESERVATION, not the spend. " +
+      "Codex reserves a BYOK model's full output width (no metadata for the slug " +
+      "means fallback defaults), and the provider checks affordability against " +
+      "that up front. Raise the key's limit — it does not raise what a review " +
+      "actually costs.",
     "- A `provider-policy-blocked` verdict is an ACCOUNT setting at the provider, " +
       "not a repo problem: the model matched but every endpoint serving it was " +
       "excluded by a data policy or guardrail. On OpenRouter see " +

@@ -218,6 +218,13 @@ only signal, because the workflow stays green. Its verdict says what happened:
 
 - **`missing-credential`** — the `OPENROUTER_API_KEY` repository secret is absent or empty. Exit 1,
   with `Missing environment variable` on stderr. The likeliest first failure of this workflow.
+- **`insufficient-credits`** — the provider refused on cost before generating anything. The number in
+  stderr is the **reservation**, not the spend (see the metadata warning below). Raising the key's
+  limit does not raise what a review costs.
+- **`provider-policy-blocked`** — the provider matched the model, then excluded every endpoint serving
+  it on an **account** data policy or guardrail. On OpenRouter that is Zero Data Retention, at
+  `https://openrouter.ai/settings/privacy`. Not a wrong slug: a wrong slug matches *zero* endpoints,
+  this matches some and filters them out. A more data-sharing model tier is not the fix.
 - **`config-error`** — the CLI rejected its configuration. **Also exit 1** — re-measured against CLI
   0.155.0, a missing key and a bad config key are *not* distinguishable by exit code, which is why
   the script classifies stderr. (An earlier draft of this runbook claimed `101` for the missing key.
@@ -243,9 +250,15 @@ Two traps worth knowing before debugging:
 - A clean review and a contract violation are **byte-indistinguishable on stdout** — both are short
   prose at exit 0. The script tells them apart by reading the raw pre-render model message out of the
   session rollout, which is why `CODEX_HOME` is set explicitly.
-- ``warning: Model metadata for `<slug>` not found`` on stderr is **not** a bad-slug signal. It fires
-  for any model under a custom provider, including OpenAI's own. A genuinely wrong slug fails at the
-  provider, not here.
+- ``warning: Model metadata for `<slug>` not found`` on stderr is **not** a bad-slug signal — it fires
+  for any model under a custom provider, including OpenAI's own, and a genuinely wrong slug fails at
+  the provider instead. **But it is not harmless either.** No metadata means Codex falls back to
+  defaults that reserve the model's **full output width** (65536 tokens observed against OpenRouter),
+  and a provider checks affordability against that *reservation* before generating anything. So on a
+  metered key this warning is the direct cause of an `insufficient-credits` refusal, at a cost far
+  below what a review would actually spend. CLI 0.155.0 exposes no settable top-level
+  `max_output_tokens`, so the reservation cannot be capped from the `codex review` side — the key's
+  limit has to clear it.
 
 **Config gotchas, all executed against CLI 0.155.0:** `codex review` accepts neither `--profile` nor
 `--model`; both the provider and the model are selected with `-c`. `wire_api = "chat"` was removed, so

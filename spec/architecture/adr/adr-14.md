@@ -484,6 +484,38 @@ this will meet them again.
   failure that blinds the detector (a changed rollout layout, a new CLI pin) would also close the
   standing alert and post "Recovered" on every run, forever.
 
+### What the first live runs against OpenRouter established
+
+The harness was proven against a stub; these are from the real provider, on PR #2405.
+
+- **`POST https://openrouter.ai/api/v1/responses` accepts Codex's payload.** This was the largest
+  open risk, because `wire_api = "chat"` was removed in 0.155.0 and there is no fallback. Both
+  failures below are *semantic* refusals from the provider — a policy 404 and a cost 402 — reached
+  after the request was parsed and routed to a model. The beta endpoint does not choke on the
+  OpenAI-specific parameters the CLI always sends (`include: ["reasoning.encrypted_content"]`,
+  `reasoning`, `prompt_cache_key`, `client_metadata`). **The endpoint risk is retired.**
+- **Account data policy can exclude every endpoint for a model.** Verbatim: *"0 endpoints out of 1
+  requested are available matching your guardrail restrictions and data policy … ZDR violation
+  (account settings)"*. Note **"out of 1 requested"** — the slug matched an endpoint and policy then
+  removed it, which is what distinguishes this from a wrong slug (zero matches). Verdict
+  `provider-policy-blocked`. A more data-sharing model tier is **not** the remedy for a ZDR
+  exclusion; it is likelier to be excluded for the same reason.
+- **The `Model metadata not found` warning is not cosmetic, and an earlier revision of this amendment
+  was wrong to imply it was.** No metadata for a BYOK slug means Codex falls back to defaults that
+  reserve the model's full output width — **65536 tokens**, observed. Providers check affordability
+  against that *reservation* before generating anything, so a metered key whose remaining limit is
+  below it refuses every request: *"You requested up to 65536 tokens, but can only afford 9411."*
+  Verdict `insufficient-credits`. Two consequences worth stating plainly:
+  - **A key limit sized to expected spend does not work.** It must clear the reservation, which is
+    far larger. Raising it does not raise what a review costs — a reservation is not a charge.
+  - **The reservation cannot be capped from the `codex review` side.** `max_output_tokens` exists in
+    the binary but is not a settable top-level config key in 0.155.0 (probed under
+    `--strict-config`); `model_context_window` and `model_auto_compact_token_limit` are accepted but
+    govern input context, not the output reservation.
+
+Both were classified as a generic `reviewer-failed` telling the operator to read stderr until each
+got its own signature. Their test fixtures are the real stderr, verbatim.
+
 ### Still not verified, and still needing the owner
 
 - The smoke test itself: one real `codex review` against `meta/muse-spark-1.3` through OpenRouter's
