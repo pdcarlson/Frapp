@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import {
   StudyGeofenceController,
   StudySessionController,
@@ -25,7 +25,7 @@ describe('StudyController', () => {
       listSessions: jest.fn(),
     };
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [StudyGeofenceController, StudySessionController],
       providers: [
         {

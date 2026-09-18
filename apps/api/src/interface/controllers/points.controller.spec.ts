@@ -1,8 +1,7 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { PointsController } from './points.controller';
 import { PointsService } from '../../application/services/points.service';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   AdjustPointsDto,
@@ -23,7 +22,7 @@ describe('PointsController', () => {
       listTransactions: jest.fn(),
     } as any;
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [PointsController],
       providers: [{ provide: PointsService, useValue: pointsService }],
     }).compile();

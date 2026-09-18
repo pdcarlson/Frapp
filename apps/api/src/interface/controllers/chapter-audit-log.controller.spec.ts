@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ChapterAuditLogController } from './chapter-audit-log.controller';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
 
@@ -23,7 +23,7 @@ describe('ChapterAuditLogController', () => {
       list: jest.fn(),
     } as never;
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ChapterAuditLogController],
       providers: [{ provide: ChapterAuditLogService, useValue: service }],
     }).compile();

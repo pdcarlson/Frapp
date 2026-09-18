@@ -1,6 +1,6 @@
 import { InternalServerErrorException } from '@nestjs/common';
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ChapterDocumentController } from './chapter-document.controller';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
 import { RequestDocumentUploadUrlDto } from '../dtos/chapter-document.dto';
@@ -14,7 +14,7 @@ describe('ChapterDocumentController', () => {
   };
 
   beforeEach(async () => {
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ChapterDocumentController],
       providers: [
         {

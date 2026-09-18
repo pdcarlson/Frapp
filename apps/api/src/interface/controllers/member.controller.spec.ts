@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { MemberController } from './member.controller';
 import { MemberService } from '../../application/services/member.service';
 import {
@@ -26,7 +26,7 @@ describe('MemberController', () => {
       remove: jest.fn(),
     } as any;
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [MemberController],
       providers: [{ provide: MemberService, useValue: memberService }],
     }).compile();

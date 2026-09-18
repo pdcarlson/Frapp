@@ -1,6 +1,6 @@
 import { TaskStatus } from '#domain/entities/task.entity';
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { TaskController } from './task.controller';
 import { TaskService } from '../../application/services/task.service';
 import { RbacService } from '../../application/services/rbac.service';
@@ -32,7 +32,7 @@ describe('TaskController', () => {
       memberHasAnyPermission: jest.fn(),
     } as any;
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [TaskController],
       providers: [
         { provide: TaskService, useValue: taskService },

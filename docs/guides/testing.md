@@ -168,6 +168,21 @@ Interceptors / middleware:
 - `requestIdMiddleware` — attaches `x-request-id` when missing and forwards when present (Express middleware, before guards)
 - Logging interceptor — ensures it logs request/response metadata (can be smoke-tested)
 
+### Getting past the guard chain in a controller spec
+
+A controller spec compiles the controller and calls its methods directly, so the guards never
+*run* — but Nest instantiates a controller's enhancers during `.compile()`, and `SupabaseAuthGuard`
+injects `SUPABASE_CLIENT`, which a controller-only testing module does not provide. Use
+`createUnguardedTestingModule()` from `apps/api/test/helpers/guard-stubs.factory.ts` in place of
+`Test.createTestingModule()`; it returns the builder, so any further `.overrideProvider()` /
+`.overrideInterceptor()` chains onto it as usual. Do **not** provide a bare `'SUPABASE_CLIENT'`
+string literal to let the real guards construct instead — that was the minority pattern the helper
+replaced, and it would survive a rename of the exported token silently.
+
+A controller that declares no guards at all (`health`, `webhook`) needs none of this, and a
+controller thin enough to construct with `new` (`analytics`) is simpler still. The helper's docblock
+names all three and why.
+
 ## 4a. Repository tenant-scope tests
 
 The 33 Supabase repositories under `apps/api/src/infrastructure/supabase/repositories/` long had no
@@ -377,9 +392,9 @@ live backend: the Supabase client is overridden via the `SUPABASE_CLIENT` provid
 guards are replaced with stubs from `apps/api/test/helpers/guard-stubs.factory.ts`
 (`createGuardStubs()` / `AllowAllGuard`). Not every spec uses all of it — `cross-tenant-isolation`
 runs the real auth and chapter guards and takes only `AllowAllGuard`, and two specs cannot use
-the factory at all; its docblock names them and why. Controller specs under `apps/api/src`, which
-compile a controller and call its methods directly rather than issuing requests, take
-`overrideGuardChain()` from the same file instead. UUID-typed DTO fields (`@IsUUID()`) must use RFC-4122-valid UUIDs in
+the factory at all; its docblock names them and why. Controller specs under `apps/api/src` are unit
+tests and take a different helper from the same file — see [§4](#4-guards-and-interceptors).
+UUID-typed DTO fields (`@IsUUID()`) must use RFC-4122-valid UUIDs in
 fixtures (correct version/variant nibbles) or the `ValidationPipe` rejects the request with `400`.
 
 Because `AppModule`'s `ConfigModule.forRoot` runs `validateEnv` (`src/config/env.validation.ts`) at

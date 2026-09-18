@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InternalServerErrorException } from '@nestjs/common';
 import { ServiceEntryController } from './service-entry.controller';
 import { ServiceEntryService } from '../../application/services/service-entry.service';
@@ -13,7 +13,7 @@ describe('ServiceEntryController', () => {
   beforeEach(async () => {
     service = { requestProofUploadUrl: jest.fn() };
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ServiceEntryController],
       providers: [
         { provide: ServiceEntryService, useValue: service },

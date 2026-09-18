@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import type { Response } from 'express';
 import { SearchController } from './search.controller';
 import { SearchService } from '../../application/services/search.service';
@@ -25,7 +25,7 @@ describe('SearchController', () => {
       searchWithinBudget: jest.fn(),
     };
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [SearchController],
       providers: [{ provide: SearchService, useValue: searchService }],
     }).compile();

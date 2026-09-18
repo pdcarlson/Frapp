@@ -25,7 +25,7 @@ jest.mock('@repo/chapter-theme', () => ({
 }));
 
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InternalServerErrorException } from '@nestjs/common';
 import { ChapterController } from './chapter.controller';
 import { ChapterService } from '../../application/services/chapter.service';
@@ -56,7 +56,7 @@ describe('ChapterController', () => {
     } as any;
     chapterOnboardingService = { onboard: jest.fn() };
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ChapterController],
       providers: [
         { provide: ChapterService, useValue: chapterService },

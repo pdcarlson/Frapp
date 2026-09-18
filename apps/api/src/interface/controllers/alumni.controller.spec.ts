@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { AlumniController } from './alumni.controller';
 import { MemberService } from '../../application/services/member.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -18,7 +18,7 @@ describe('AlumniController', () => {
       findAlumniByChapter: jest.fn(),
     } as any;
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [AlumniController],
       providers: [{ provide: MemberService, useValue: memberService }],
     }).compile();

@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { CustomRoleController } from './custom-role.controller';
 import { CustomRoleService } from '../../application/services/custom-role.service';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -21,7 +21,7 @@ describe('CustomRoleController', () => {
       remove: jest.fn(),
     };
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [CustomRoleController],
       providers: [{ provide: CustomRoleService, useValue: service }],
     }).compile();

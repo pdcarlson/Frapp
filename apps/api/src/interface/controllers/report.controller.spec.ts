@@ -1,7 +1,7 @@
 import { ServerResponse } from 'node:http';
 import { BadRequestException } from '@nestjs/common';
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ReportController } from './report.controller';
 import {
   REPORT_MAX_ROWS,
@@ -71,7 +71,7 @@ describe('ReportController', () => {
       exportPdf: jest.fn().mockResolvedValue(exportResult),
     } as any;
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ReportController],
       providers: [
         { provide: ReportService, useValue: reportService },

@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InternalServerErrorException } from '@nestjs/common';
 import { ChatController } from './chat.controller';
 import { ChatService } from '../../application/services/chat.service';
@@ -27,7 +27,7 @@ describe('ChatController', () => {
       requestChatUploadUrl: jest.fn(),
     };
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ChatController],
       providers: [
         { provide: ChatService, useValue: service },

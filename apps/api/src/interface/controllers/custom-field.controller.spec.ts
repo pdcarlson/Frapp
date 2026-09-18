@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { CustomFieldController } from './custom-field.controller';
 import { CustomFieldService } from '../../application/services/custom-field.service';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -21,7 +21,7 @@ describe('CustomFieldController', () => {
       remove: jest.fn(),
     };
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [CustomFieldController],
       providers: [{ provide: CustomFieldService, useValue: service }],
     }).compile();

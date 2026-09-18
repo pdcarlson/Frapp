@@ -94,6 +94,7 @@ curl http://localhost:3001/health
 
 All tests live alongside their source in `apps/api/src/`:
 - Services: `application/services/<name>.service.spec.ts`
+- Controllers: `interface/controllers/<name>.controller.spec.ts`
 - Guards: `interface/guards/<name>.guard.spec.ts`
 - Interceptors: `interface/interceptors/<name>.interceptor.spec.ts`
 - Utils: `domain/utils/<name>.spec.ts`
@@ -114,6 +115,13 @@ const module: TestingModule = await Test.createTestingModule({
 
 Repositories and adapters are mocked via `jest.fn()` on each method. Service specs define their own
 fixtures inline.
+
+**A controller spec uses `createUnguardedTestingModule()`** (`apps/api/test/helpers/guard-stubs.factory.ts`)
+in place of `Test.createTestingModule()`. Nest instantiates a controller's enhancers during
+`.compile()`, so the real `SupabaseAuthGuard` demands `SUPABASE_CLIENT` even though no guard ever
+runs in a spec that calls controller methods directly; the helper overrides the three-guard chain
+and returns the builder to chain onto. Do not provide a bare `'SUPABASE_CLIENT'` literal instead.
+Full rule: [`docs/guides/testing.md` § 4](../../../docs/guides/testing.md#4-guards-and-interceptors).
 
 **Repository tenant-scope specs are the exception, and they must use the shared harness.**
 `createTenantHarness` (`apps/api/test/helpers/tenant-scope.harness.ts`) seeds two chapters whose rows

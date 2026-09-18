@@ -1,6 +1,6 @@
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from '../../application/services/notification.service';
 import {
@@ -25,7 +25,7 @@ describe('NotificationController', () => {
       updateSettings: jest.fn(),
     };
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [NotificationController],
       providers: [
         {

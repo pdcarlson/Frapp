@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { BillingController } from './billing.controller';
 import { BillingService } from '../../application/services/billing.service';
 import { CreateCheckoutDto, CreatePortalDto } from '../dtos/billing.dto';
@@ -15,7 +15,7 @@ describe('BillingController', () => {
       createPortalSession: jest.fn(),
     } as any;
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [BillingController],
       providers: [{ provide: BillingService, useValue: billingService }],
     }).compile();

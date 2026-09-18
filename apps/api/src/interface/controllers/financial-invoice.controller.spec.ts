@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { FinancialInvoiceController } from './financial-invoice.controller';
 import { FinancialInvoiceService } from '../../application/services/financial-invoice.service';
 import { RbacService } from '../../application/services/rbac.service';
@@ -34,7 +34,7 @@ describe('FinancialInvoiceController', () => {
       getInvoiceTransactions: jest.fn(),
     };
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [FinancialInvoiceController],
       providers: [
         {

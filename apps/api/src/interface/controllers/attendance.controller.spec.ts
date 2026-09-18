@@ -1,5 +1,5 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from '../../application/services/attendance.service';
 import { CheckInDto, UpdateAttendanceDto } from '../dtos/attendance.dto';
@@ -19,7 +19,7 @@ describe('AttendanceController', () => {
       mintCheckInToken: jest.fn(),
     };
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [AttendanceController],
       providers: [
         {

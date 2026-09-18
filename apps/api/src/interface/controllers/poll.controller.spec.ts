@@ -1,8 +1,7 @@
 import { TestingModule } from '@nestjs/testing';
-import { createGuardedTestingModule } from '#test/helpers/guard-stubs.factory';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { PollController } from './poll.controller';
 import { PollService } from '../../application/services/poll.service';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -21,7 +20,7 @@ describe('PollController', () => {
       listPolls: jest.fn(),
     } as any;
 
-    const module: TestingModule = await createGuardedTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [PollController],
       providers: [{ provide: PollService, useValue: pollService }],
     }).compile();
