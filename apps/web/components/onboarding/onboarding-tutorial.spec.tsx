@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { chapters, currentChapter, updateOnboarding } = vi.hoisted(() => ({
+const { chapters, currentChapter, updateOnboarding, route } = vi.hoisted(() => ({
+  // Mutable so a test can put the member on a specific route. The tour is
+  // mounted in `dashboard-shell.tsx` and is otherwise route-agnostic.
+  route: { pathname: "/" },
   chapters: {
     data: [
       {
@@ -20,6 +23,10 @@ vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => chapters,
   useCurrentChapter: () => currentChapter,
   useUpdateOnboarding: () => updateOnboarding,
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => route.pathname,
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -101,5 +108,41 @@ describe("the slides", () => {
     render(<OnboardingTutorial />);
     expect(screen.queryByText(/frapp/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Welcome to Tau Nu on Signet\./)).toBeInTheDocument();
+  });
+});
+
+describe("the routes the tour must not cover", () => {
+  /**
+   * Since #2297 the wizard lands a new founder on `/billing`, and this modal
+   * would otherwise open over its "Complete checkout" CTA and end on "Dive
+   * into your home dashboard".
+   *
+   * The mock below sets `has_completed_onboarding: false`, which is the case
+   * this guard is really for — an invited member, or a founder replaying the
+   * tour from Profile. A wizard-created founder is written with the flag
+   * already `true` (`chapter.service.ts`), so the tour never fires for them;
+   * do not read these tests as proving the founder's first run.
+   */
+  it("stays shut on the checkout route", () => {
+    route.pathname = "/billing";
+    try {
+      render(<OnboardingTutorial />);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally {
+      route.pathname = "/";
+    }
+  });
+
+  it("still opens everywhere else, so the tour is suppressed and not consumed", () => {
+    // The flag is deliberately left untouched on the suppressed route, so the
+    // founder does not silently lose the tour by having landed on checkout.
+    route.pathname = "/chat";
+    try {
+      render(<OnboardingTutorial />);
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(updateOnboarding.mutateAsync).not.toHaveBeenCalled();
+    } finally {
+      route.pathname = "/";
+    }
   });
 });

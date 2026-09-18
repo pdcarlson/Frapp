@@ -21,6 +21,13 @@ export interface StartCardProps {
   /** True when more than one zone exists, so the row is worth tapping. */
   canChooseZone: boolean;
   isStarting: boolean;
+  /**
+   * The chapter's subscription refused a session write (#2297). Permanent
+   * until an officer resolves it, so Start is disabled rather than left
+   * inviting a tap that 403s every time. The explanation is the screen's
+   * `failure` line; this only removes the affordance.
+   */
+  isBlocked?: boolean;
   graceCopy: string;
   onChooseZone: () => void;
   onStart: () => void;
@@ -30,6 +37,7 @@ export function StartCard({
   zone,
   canChooseZone,
   isStarting,
+  isBlocked = false,
   graceCopy,
   onChooseZone,
   onStart,
@@ -67,14 +75,22 @@ export function StartCard({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Start session"
-        accessibilityState={{ disabled: !zone || isStarting, busy: isStarting }}
-        disabled={!zone || isStarting}
+        accessibilityState={{
+          disabled: !zone || isStarting || isBlocked,
+          busy: isStarting,
+        }}
+        disabled={!zone || isStarting || isBlocked}
         onPress={onStart}
         style={({ pressed }) => [
           styles.startButton,
           { backgroundColor: accent },
-          !zone || isStarting ? styles.startButtonDisabled : null,
-          pressed && zone && !isStarting ? styles.startButtonPressed : null,
+          // `isBlocked` greys it too. Disabling without greying leaves a
+          // control that reads as live and silently swallows the tap — the
+          // dead end #2297 removes, not a smaller version of it.
+          !zone || isStarting || isBlocked ? styles.startButtonDisabled : null,
+          pressed && zone && !isStarting && !isBlocked
+            ? styles.startButtonPressed
+            : null,
         ]}
       >
         <Text style={[styles.startLabel, { color: tokens.color.gold.onHouse }]}>

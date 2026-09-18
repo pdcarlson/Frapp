@@ -33,7 +33,12 @@ import {
   readForegroundPermission,
   requestForegroundPermission,
 } from "@/lib/location";
+import { useFocusEffect } from "expo-router";
 import { statusOf } from "@repo/api-sdk";
+import {
+  SUBSCRIPTION_REFUSAL_COPY,
+  subscriptionRefusalOf,
+} from "@/lib/subscription-refusal";
 import {
   clearStudyPausedNotification,
   notifyStudyPaused,
@@ -144,6 +149,53 @@ export default function StudyScreen() {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  /**
+   * The subscription gate refused a session write (#2297). Tracked separately
+   * from `failure` because it is the one failure that must not be retried.
+   *
+   * Its only consumer is `isBlocked` on `StartCard`. The mirror-retry timer is
+   * stopped by the local `refused` const in that effect's catch, NOT by this
+   * state — do not merge the two. Reading this state there would re-arm the
+   * timer on every tab return, and deleting the local guard on the belief that
+   * this state covers it would spin the mirror against a permanent 403.
+   */
+  const [subscriptionRefused, setSubscriptionRefused] = useState(false);
+  /**
+   * Clear the latch whenever the member comes back to this screen.
+   *
+   * Without this the refusal is permanent for the life of the process, and a
+   * tab screen is never unmounted (`tasks.tsx` says the same: "A tab is never
+   * unmounted and the JS context survives days of backgrounding"). So an
+   * officer could resolve the chapter's billing seconds later and this member
+   * would still find Start greyed out until they force-quit the app — a
+   * member-facing dead end, and the same "dead until a force-quit" defect that
+   * got the previous attempt at #2297 reverted.
+   *
+   * Leaving and returning is a deliberate act, not a retry-in-place, so this
+   * does not reintroduce the doomed retry: the next Start tap re-refuses and
+   * re-explains if nothing has actually changed.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      setSubscriptionRefused(false);
+      // The copy goes with the latch, but ONLY the start-path copy. Clearing
+      // that one without the latch would leave an enabled Start button sitting
+      // directly under a sentence saying study sessions cannot be recorded —
+      // the screen offering and denying the same action at once.
+      //
+      // `studySession` is deliberately NOT cleared. It explains a refused
+      // pause, heartbeat or End on a session that is still running, and
+      // nothing re-renders it on return: wiping it would leave a live timer
+      // and an End button with no reason attached until the next refused
+      // write, which may be `HEARTBEAT_INTERVAL_MS` away or never. An ordinary
+      // failure's message survives a tab switch for the same reason, as it
+      // always has.
+      setFailure((current) =>
+        current === SUBSCRIPTION_REFUSAL_COPY.study ? null : current,
+      );
+      return undefined;
+    }, []),
+  );
   const [isStarting, setIsStarting] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
   const [canAskForLocation, setCanAskForLocation] = useState(true);
@@ -244,6 +296,28 @@ export default function StudyScreen() {
   const running = session !== null && !paused;
   const reportingStale = session !== null && isReportingStale(session, now);
 
+  /**
+   * A session write just succeeded, so nothing about the refusal still holds.
+   *
+   * Clears the latch as well as the sentence, and the pairing is the point: a
+   * successful response proves the gate is passing, so a latch left `true`
+   * here would grey out Start while the only explanation for it — the
+   * `failure` line — had just been wiped. That is the silently dead control
+   * this issue exists to remove, and it is reachable: heartbeats are refused,
+   * an officer fixes the billing, and the next heartbeat succeeds but reports
+   * the session already EXPIRED by the server's stale rule.
+   *
+   * The sentence is cleared by value so an ordinary failure's message is
+   * never swallowed. The start-path copy is not touched here; it is paired
+   * with the same latch and cleared with it on focus.
+   */
+  const clearRefusalState = useCallback(() => {
+    setSubscriptionRefused(false);
+    setFailure((current) =>
+      current === SUBSCRIPTION_REFUSAL_COPY.studySession ? null : current,
+    );
+  }, []);
+
   const applyResponse = useCallback((response: unknown, seq: number) => {
     // Nothing held, nothing to apply. Without this an in-flight heartbeat that
     // answers `ACTIVE` moments after the member taps End would put the ended
@@ -259,6 +333,11 @@ export default function StudyScreen() {
       setSession(null);
       sessionIdRef.current = null;
       setNotice(settled.notice);
+      // The in-session refusal copy describes THIS session; once it is gone
+      // the sentence is stale, and leaving it would render "that didn't save
+      // … may not be credited" directly under a re-enabled Start button —
+      // the screen offering and denying the same action at once.
+      clearRefusalState();
       // A session that ended while paused would otherwise leave its "return to
       // Signet to resume" notice in the tray, inviting the member back to a
       // session that no longer exists (#1065).
@@ -274,7 +353,12 @@ export default function StudyScreen() {
     if (next.id !== sessionIdRef.current) return;
     appliedSeqRef.current = seq;
     setSession(next);
-  }, []);
+    // A write just succeeded, so a refusal message still on screen is false.
+    // Nothing else clears it: the focus reset deliberately leaves it alone
+    // (it explains a failed End on a session that is still running), so
+    // without this it survives for the life of the session.
+    clearRefusalState();
+  }, [clearRefusalState]);
 
   /** Let go of a session the server says is gone, and say so. */
   const releaseSession = useCallback((notice: string) => {
@@ -307,6 +391,16 @@ export default function StudyScreen() {
         releaseSession(
           "That session has already been closed somewhere else. Your credited time is safe.",
         );
+        return;
+      }
+      // A subscription refusal is the one non-404 that is NOT transient, so
+      // the "stay quiet, the next tick is five minutes away" rule below would
+      // never end (#2297). Say why, once — the member otherwise watches the
+      // timer keep counting time the stale-heartbeat rule will later expire
+      // for zero, with only `isReportingStale` and no reason for it.
+      if (subscriptionRefusalOf(error)) {
+        setSubscriptionRefused(true);
+        setFailure(SUBSCRIPTION_REFUSAL_COPY.studySession);
         return;
       }
       // Anything else is transient. The server's stale-heartbeat rule owns the
@@ -396,8 +490,19 @@ export default function StudyScreen() {
         applyResponse(response, seq);
       } catch (error) {
         if (cancelled) return;
+        const refused = subscriptionRefusalOf(error) !== null;
+        if (refused) {
+          setSubscriptionRefused(true);
+          // Set here, not only inside `if (target)` below: a refused *pause*
+          // (target === false) would otherwise grey out Start with nothing on
+          // screen saying why. `StartCard`'s contract is that this `failure`
+          // line carries the explanation and the prop only removes the
+          // affordance — a silently dead control is the Guideline 2.1 shape
+          // this issue exists to remove, not a smaller version of it.
+          setFailure(SUBSCRIPTION_REFUSAL_COPY.studySession);
+        }
         if (target) {
-          setFailure(sessionErrorCopy(error));
+          if (!refused) setFailure(sessionErrorCopy(error));
           // A resume that keeps failing leaves the paused card on screen and
           // the retry loop running — but the tray notice invites the member
           // back to a session that may already be gone (an officer stopping it
@@ -405,10 +510,15 @@ export default function StudyScreen() {
           // is still there and is the honest surface for a failed resume.
           void clearStudyPausedNotification();
         }
-        retryTimer = setTimeout(
-          () => setMirrorRetry((count) => count + 1),
-          MIRROR_RETRY_MS,
-        );
+        // A refusal is permanent until the chapter's subscription is sorted
+        // out, so re-arming here would spin the pause/resume mirror forever
+        // against a 403 nothing on this device can clear.
+        if (!refused) {
+          retryTimer = setTimeout(
+            () => setMirrorRetry((count) => count + 1),
+            MIRROR_RETRY_MS,
+          );
+        }
       }
     })();
 
@@ -483,6 +593,7 @@ export default function StudyScreen() {
       } else {
         setFailure(startErrorCopy(error));
       }
+      if (subscriptionRefusalOf(error)) setSubscriptionRefused(true);
     } finally {
       setIsStarting(false);
     }
@@ -659,6 +770,7 @@ export default function StudyScreen() {
             zone={selectedZone}
             canChooseZone={zones.length > 1}
             isStarting={isStarting}
+            isBlocked={subscriptionRefused}
             graceCopy={graceWindowCopy(selectedZone)}
             onChooseZone={() => zoneSheetRef.current?.present()}
             onStart={handleStartPress}
