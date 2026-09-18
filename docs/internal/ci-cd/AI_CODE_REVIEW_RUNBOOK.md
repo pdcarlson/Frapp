@@ -280,8 +280,13 @@ amendment) → this local gate → the advisory `codex review` job above.
 **CodeRabbit is gone (2026-09-18).** The App was uninstalled by the owner and `.coderabbit.yaml`
 deleted in the same change, in that order — the order mattered at the time, because deleting the
 config first would have dropped CodeRabbit to unconfigured defaults where `request_changes_workflow`
-is ON. There is no CodeRabbit config, App, or review to account for any more, and the two 2026-09-08
-and 2026-09-18 amendments that governed it are spent.
+is ON. There is no CodeRabbit config, App, or review to account for any more, and ADR-14's **2026-09-08**
+amendment — the one that existed solely to keep CodeRabbit from blocking squash — is spent with it.
+
+**The 2026-09-18 decision amendment is NOT spent, and must not be read that way.** Its subject is
+the *replacement*, not the vendor: it is what forbids the `codex review` job from ever being a
+required check, forbids it from `scripts/ci/lib/required-checks.mjs`, and forbids it from posting a
+GitHub review event. Those constraints outlive CodeRabbit entirely.
 
 **The one thing to carry forward outlives the vendor:** any automated reviewer here must post plain
 comments and **never** a GitHub review event, because a write-access `CHANGES_REQUESTED` blocks squash

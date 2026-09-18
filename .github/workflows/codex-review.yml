@@ -1,9 +1,9 @@
 name: Codex review
 
-# Advisory, comment-only PR review. Decided in ADR-14's "Amendment — 2026-09-18:
-# CodeRabbit retirement decided"; the behaviour this file relies on is recorded in
-# ADR-14's "Amendment — 2026-09-18 (implementation)". Installs @openai/codex and
-# calls the CLI's first-class `codex review` subcommand against a BYOK provider.
+# Advisory, comment-only PR review. Decided in ADR-14's "Amendment — 2026-09-18
+# (decision)"; the behaviour this file relies on is recorded in its "Amendment —
+# 2026-09-18 (implementation)". Installs @openai/codex and calls the CLI's
+# first-class `codex review` subcommand against a BYOK provider.
 #
 # WHAT ADVISORY MEANS HERE, AND WHY EACH PART IS LOAD-BEARING:
 #   * NOT a required check. Deliberately absent from

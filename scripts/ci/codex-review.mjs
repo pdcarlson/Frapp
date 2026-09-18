@@ -659,7 +659,7 @@ export function buildAlertBody({
     "",
     "**Where to look**",
     "",
-    "- `OPENROUTER_API_KEY` is set as a repository secret (exit 101 means it is not).",
+    "- `OPENROUTER_API_KEY` is set as a repository secret. A `missing-credential` verdict means it is not — the CLI exits **1** with `Missing environment variable` on stderr. Note exit 1 is ALSO a config error, which is why the verdict above comes from classifying stderr rather than from the code.",
     "- The model slug above is a real OpenRouter id, **including the vendor " +
       "prefix** — the prefix is part of the id, and a bare name is not a valid slug.",
     "- OpenRouter's Responses endpoint is reachable. `codex review` requires " +
