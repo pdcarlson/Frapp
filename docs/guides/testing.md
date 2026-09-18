@@ -175,13 +175,16 @@ A controller spec compiles the controller and calls its methods directly, so the
 injects `SUPABASE_CLIENT`, which a controller-only testing module does not provide. Use
 `createUnguardedTestingModule()` from `apps/api/test/helpers/guard-stubs.factory.ts` in place of
 `Test.createTestingModule()`; it returns the builder, so any further `.overrideProvider()` /
-`.overrideInterceptor()` chains onto it as usual. Do **not** provide a bare `'SUPABASE_CLIENT'`
-string literal to let the real guards construct instead — that was the minority pattern the helper
-replaced, and it would survive a rename of the exported token silently.
+`.overrideInterceptor()` chains onto it as usual. Do **not** instead provide a stub
+`'SUPABASE_CLIENT'` so the *real* guards can construct — that was the minority pattern the helper
+replaced, and it leaves a guard live in a spec that never exercises it. (Overriding the Supabase
+client by that token for a *controller* that injects it, as `health.controller.spec.ts` does, is a
+different thing and is correct; prefer the exported `SUPABASE_CLIENT` constant to the bare string.)
 
-A controller that declares no guards at all (`health`, `webhook`) needs none of this, and a
-controller thin enough to construct with `new` (`analytics`) is simpler still. The helper's docblock
-names all three and why.
+Four specs in `interface/controllers/` do not use the helper: `health` and `webhook` declare no
+guards at all, and `analytics` and `write-payload-ordering` construct their controllers with `new`,
+which is simpler wherever a controller is thin enough for it. The helper's docblock names all four
+and why.
 
 ## 4a. Repository tenant-scope tests
 
@@ -391,8 +394,9 @@ live backend: the Supabase client is overridden via the `SUPABASE_CLIENT` provid
 `apps/api/test/helpers/supabase-mock.factory.ts` / `createSupabaseMock()`), and auth/chapter/permission
 guards are replaced with stubs from `apps/api/test/helpers/guard-stubs.factory.ts`
 (`createGuardStubs()` / `AllowAllGuard`). Not every spec uses all of it — `cross-tenant-isolation`
-runs the real auth and chapter guards and takes only `AllowAllGuard`, and two specs cannot use
-the factory at all; its docblock names them and why. Controller specs under `apps/api/src` are unit
+runs the real auth and chapter guards and takes only `AllowAllGuard`, `settings-quiet-hours-tz`
+hand-rolls its own auth stub and takes only `AllowAllGuard`, and `analytics-identity` cannot use the
+factory at all; its docblock names each exception and why. Controller specs under `apps/api/src` are unit
 tests and take a different helper from the same file — see [§4](#4-guards-and-interceptors).
 UUID-typed DTO fields (`@IsUUID()`) must use RFC-4122-valid UUIDs in
 fixtures (correct version/variant nibbles) or the `ValidationPipe` rejects the request with `400`.

@@ -53,8 +53,12 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
     // method guards when compiling the controller even though this suite never
     // hits those routes, so they take `AllowAllGuard` from the shared factory —
     // the same class the controller specs' `createUnguardedTestingModule` uses.
-    // The local `AuthGuardStub` stays: this route needs `supabaseUser` on the
-    // request, which `AllowAllGuard` deliberately never writes.
+    // The local `AuthGuardStub` stays, and `AllowAllGuard` could not replace it:
+    // the route reads `@CurrentUser('id')`, i.e. `request.appUser`, which the
+    // class-level AuthSyncInterceptor derives from `request.supabaseUser` — and
+    // `AllowAllGuard` deliberately writes neither. The stub's own `appUser`
+    // write is belt-and-braces; the interceptor overwrites it from
+    // `AuthService.syncUser` before the handler runs.
     // Mounting the real controller with the real ValidationPipe keeps
     // both links under test: the @Body() DTO binding and the pipe, which is
     // what the DTO unit spec cannot reach.

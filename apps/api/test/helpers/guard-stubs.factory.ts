@@ -163,11 +163,22 @@ export function createGuardStubs(identity: GuardStubIdentity): {
  * this.
  *
  * Named for what it does rather than for the guard it replaces, because it
- * stands in for all three: ten e2e specs override `PermissionsGuard` with it
- * (nine of them alongside the identity-writing stubs above, and
+ * stands in for all three: eleven e2e specs override `PermissionsGuard` with it
+ * — the nine that take the identity-writing stubs above, plus
  * `cross-tenant-isolation.e2e-spec.ts`, which runs the real auth and chapter
- * guards on purpose), and {@link createUnguardedTestingModule} overrides the
+ * guards on purpose, and `settings-quiet-hours-tz.e2e-spec.ts`, which hand-rolls
+ * its own auth stub — and {@link createUnguardedTestingModule} overrides the
  * whole chain with it.
+ *
+ * **Rule for anyone editing this class: it must keep writing nothing to the
+ * request.** It is the `PermissionsGuard` override in
+ * `cross-tenant-isolation.e2e-spec.ts`, which runs the *real* `SupabaseAuthGuard`
+ * and `ChapterGuard` — and `PermissionsGuard` runs last. A stub that set
+ * `chapterId` or `member` "for convenience" would overwrite the context the real
+ * `ChapterGuard` had just resolved, and every cross-tenant assertion in that
+ * suite would pass against a hard-coded tenant. Nothing in the code enforces
+ * this; a spec that needs identity on the request uses
+ * {@link createGuardStubs}.
  */
 export class AllowAllGuard implements CanActivate {
   canActivate(): boolean {
@@ -209,15 +220,22 @@ export class AllowAllGuard implements CanActivate {
  * hand-rolled the same six-line override block, in two spellings (`() => true`
  * and `jest.fn().mockReturnValue(true)`, neither ever asserted on). The other
  * four instead provided `{ provide: 'SUPABASE_CLIENT', useValue: {} }` so the
- * *real* guards could construct. That provider was written as a raw string
- * literal rather than the exported `SUPABASE_CLIENT` token, so a rename of the
- * token would have stopped providing it silently — and it appeared in **six**
- * specs, not four: `financial-invoice` and `study` carried it *and* the
- * override block, where it did nothing at all. Either way a fourth guard on the
- * chain, or a change to
- * what an existing one injects, had twenty-two places to reach and no way to
- * tell it had missed one. That is the same argument that gave the e2e stubs
- * above one home; this is the other half of it.
+ * *real* guards could construct — an empty object standing in for a client
+ * nothing would call, purely to satisfy the injector. Six specs in that
+ * directory carried that provider, not four: `financial-invoice` and `study`
+ * carried it *and* the override block, where it did nothing at all. Either way
+ * a fourth guard on the chain, or a change to what an existing one injects, had
+ * twenty-two places to reach and no way to tell it had missed one. That is the
+ * same argument that gave the e2e stubs above one home; this is the other half
+ * of it.
+ *
+ * Note the narrow scope of that complaint: it is about *substituting for a
+ * guard's dependency* rather than overriding the guard. Overriding the Supabase
+ * client itself by that token is the correct, documented pattern — fourteen e2e
+ * specs do it with `createSupabaseMock()`, and `health.controller.spec.ts` does
+ * it because the controller injects the token. Prefer the exported
+ * `SUPABASE_CLIENT` constant from `infrastructure/supabase/supabase.provider`
+ * over the bare string wherever you do.
  *
  * **The four specs in `interface/controllers/` that do not use this are named
  * here so that claim is checkable rather than vacuous.** `health` and `webhook`
@@ -227,19 +245,11 @@ export class AllowAllGuard implements CanActivate {
  * it, not a guard. `analytics` constructs its controller with `new` and no
  * testing module at all, which its own comment explains; that is a simpler
  * answer than this one wherever a controller is thin enough for it.
- * `write-payload-ordering.spec.ts` is the same `new` shape and **must stay that
- * way**: it passes hostile DTOs positionally to pin the #849 spread ordering, a
- * shape a testing module cannot reproduce.
- *
- * **Rule for anyone editing {@link AllowAllGuard}: it must keep writing nothing
- * to the request.** It is the `PermissionsGuard` override in
- * `cross-tenant-isolation.e2e-spec.ts`, which runs the *real* `SupabaseAuthGuard`
- * and `ChapterGuard` — and `PermissionsGuard` runs last. A stub that set
- * `chapterId` or `member` "for convenience" would overwrite the context the real
- * `ChapterGuard` had just resolved, and every cross-tenant assertion in that
- * suite would pass against a hard-coded tenant. Nothing in the code enforces
- * this; a spec that needs identity on the request uses
- * {@link createGuardStubs}.
+ * `write-payload-ordering.spec.ts` is the same `new` shape, across three
+ * unrelated controllers, and needs no module at all — a testing module *would*
+ * reproduce it (measured, against an earlier draft of this paragraph that
+ * claimed otherwise), so converting it would not break anything; it would just
+ * add a module three controllers do not need.
  *
  * **What this does not do.** It writes no `supabaseUser`, `appUser`, `member`
  * or `chapterId`, because a spec calling a controller method directly passes
