@@ -315,6 +315,15 @@ export function classifyStderr(stderr) {
   if (/Error loading config\.toml|unknown configuration field/i.test(text)) {
     return "config-error";
   }
+  // Met on the first real run against OpenRouter. The provider matched the model,
+  // then removed every endpoint serving it because the ACCOUNT's data policy
+  // (Zero Data Retention) excluded them — surfacing as a 404 whose text is about
+  // policy, not about a missing route. Without this signature it classified as a
+  // generic `reviewer-failed` telling the operator to "read stderr", when the fix
+  // is one specific settings page and nothing to do with the repo at all.
+  if (/guardrail restrictions and data policy|ZDR violation|endpoints out of \d+ requested/i.test(text)) {
+    return "provider-policy-blocked";
+  }
   return null;
 }
 
@@ -413,6 +422,24 @@ export function classifyReview({
           "repository secret is absent or empty. This is the most likely first " +
           "failure of this workflow, and it is NOT a config error even though both " +
           "exit 1.",
+      };
+    }
+    if (signature === "provider-policy-blocked") {
+      return {
+        verdict: "provider-policy-blocked",
+        shouldPost: false,
+        shouldAlert: true,
+        shouldResolveAlert: false,
+        reason:
+          "The provider matched the model and then excluded every endpoint serving " +
+          "it, because of the ACCOUNT's data policy or guardrails — not because of " +
+          "anything in this repo, and not a bad key or a wrong slug (a wrong slug " +
+          "matches zero endpoints; this matched some and filtered them out). On " +
+          "OpenRouter this is the Zero Data Retention setting at " +
+          "https://openrouter.ai/settings/privacy. Either allow the endpoint's data " +
+          "policy, or pick a model whose provider satisfies the policy you want to " +
+          "keep. Note a `-contributor`-style tier is usually MORE data-sharing, so it " +
+          "is not the fix for a ZDR exclusion.",
       };
     }
     if (signature === "config-error") {
@@ -665,6 +692,11 @@ export function buildAlertBody({
     "- OpenRouter's Responses endpoint is reachable. `codex review` requires " +
       '`wire_api = "responses"`; `"chat"` was removed in CLI 0.155.0, so ' +
       "there is no wire-protocol fallback.",
+    "- A `provider-policy-blocked` verdict is an ACCOUNT setting at the provider, " +
+      "not a repo problem: the model matched but every endpoint serving it was " +
+      "excluded by a data policy or guardrail. On OpenRouter see " +
+      "https://openrouter.ai/settings/privacy (Zero Data Retention). A more " +
+      "data-sharing model tier does NOT fix a ZDR exclusion.",
     "- A `reviewer-did-not-run` verdict means an earlier step failed (install, " +
       "checkout, the instruction-file purge) — check the run log, not the model.",
     "- A `contract-violation` verdict is about the MODEL, not the wiring: the " +

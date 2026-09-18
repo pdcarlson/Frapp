@@ -64,6 +64,14 @@ const STDERR_MISSING_KEY = "ERROR: Missing environment variable: `OPENROUTER_API
 /** Real stderr for a rejected config key under --strict-config (also exit 1). */
 const STDERR_CONFIG = "Error loading config.toml: unknown configuration field `bogus` in -c/--config override";
 
+/**
+ * Real stderr from the FIRST live run against OpenRouter, verbatim. The provider
+ * matched the model and then removed every endpoint serving it because the
+ * account required Zero Data Retention. Exit 1, like the two above.
+ */
+const STDERR_POLICY = `ERROR: unexpected status 404 Not Found: 0 endpoints out of 1 requested are available matching your guardrail restrictions and data policy. We removed them for the following reasons (an endpoint may have matched multiple reasons):
+ZDR violation (account settings): 1 endpoint excluded; configurable at https://openrouter.ai/settings/privacy, url: https://openrouter.ai/api/v1/responses`;
+
 const VALID_RAW = JSON.stringify({
   findings: [],
   overall_correctness: "patch is correct",
@@ -116,6 +124,10 @@ test("classifyStderr separates the two causes that share exit 1", () => {
   assert.equal(classifyStderr(STDERR_MISSING_KEY), "missing-credential");
   assert.equal(classifyStderr(STDERR_CONFIG), "config-error");
   assert.equal(classifyStderr("Error loading config.toml: model_providers contains reserved built-in provider IDs"), "config-error");
+  // Met in production: the provider matched the model then filtered every endpoint
+  // out on account policy. Distinct from a wrong slug (which matches ZERO
+  // endpoints) and from anything in this repo.
+  assert.equal(classifyStderr(STDERR_POLICY), "provider-policy-blocked");
   // An unrecognised stderr must fall through rather than guess.
   assert.equal(classifyStderr("error: unexpected argument '-x' found"), null);
   assert.equal(classifyStderr(""), null);
@@ -189,6 +201,16 @@ test("exit 1 is split by stderr, because the CLI uses it for two causes", () => 
   const config = classifyReview({ exitCode: "1", stdout: "", stderr: STDERR_CONFIG });
   assert.equal(config.verdict, "config-error");
   assert.equal(config.shouldAlert, true);
+
+  const policy = classifyReview({ exitCode: "1", stdout: "", stderr: STDERR_POLICY });
+  assert.equal(policy.verdict, "provider-policy-blocked");
+  assert.equal(policy.shouldAlert, true);
+  assert.equal(policy.shouldResolveAlert, false);
+  // It must route the operator at the provider's settings, and must NOT send them
+  // chasing a slug or a more data-sharing model tier.
+  assert.match(policy.reason, /openrouter\.ai\/settings\/privacy/);
+  assert.match(policy.reason, /wrong slug matches zero endpoints|matches zero endpoints/i);
+  assert.match(policy.reason, /contributor/);
 
   // Unrecognised stderr falls through to the generic verdict rather than guessing.
   const other = classifyReview({ exitCode: "2", stdout: "", stderr: "error: unexpected argument" });
@@ -467,7 +489,7 @@ test("model output in the alert is sanitized, relativized and fenced unescapably
 
 test("the alert explains every verdict that can file it", () => {
   const body = buildAlertBody({ verdict: "render-mismatch", reason: "r" });
-  for (const verdict of ["reviewer-did-not-run", "contract-violation", "render-mismatch"]) {
+  for (const verdict of ["reviewer-did-not-run", "contract-violation", "render-mismatch", "provider-policy-blocked"]) {
     assert.ok(body.includes(verdict), `${verdict} is explained`);
   }
   assert.match(body, /OPENROUTER_API_KEY/);
