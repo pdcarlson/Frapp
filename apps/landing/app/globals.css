@@ -213,14 +213,69 @@
 
   /* Thread rows rise a shorter distance at a wider step than section cards:
    * four bubbles arriving 60ms apart at 8px reads as a list re-flowing, not as
-   * a conversation. Nothing inside the frame changes state — no count ticks,
-   * no typing dots, no reaction pops. */
+   * a conversation. Nothing inside THIS frame changes state — no count ticks,
+   * no typing dots, no reaction pops — which is the Motion sheet's §2b and is
+   * still exactly true. Slice 3 added the check-in ring below, and that is in
+   * the EVENT frame; the typing row §5 lists beside it was not built, because
+   * the product's own typing indicator is a line above the composer and never
+   * fires for the viewer's own message. Why, and what the alternatives are:
+   * #2387. */
   .reveal-thread {
     --reveal-step: var(--reveal-thread-step);
   }
 
   .reveal-thread .reveal-item {
     --reveal-rise: 6px;
+  }
+
+  /*
+   * The check-in dot's bounded two-beat ring — the first of the Motion sheet's
+   * "later, behind the same wrapper" pieces (§5), landed in slice 3 (#2368).
+   *
+   * It fires once, when the event frame first enters view, on the dot beside
+   * "Check-in is open". That state is real rather than decorative: an event's
+   * check-in is open only inside its window (`spec/behavior/events.md`), and the
+   * shipped mobile detail draws the same card from the same fact
+   * (`apps/mobile/app/(tabs)/event-details.tsx`). What is drawn here is emphasis
+   * on that fact arriving, not a claim that the product animates a dot.
+   *
+   * **It is the micro-feedback class, played twice, and the whole gesture still
+   * ends inside the context ceiling.** Each beat is one `--motion-micro`, which
+   * is the class §7 gives 100 to 180ms; two of them is 280, under the 300ms
+   * context duration §7 sets as the ceiling for anything below the fold. So it
+   * claims an existing class rather than arriving at one by arithmetic — and if
+   * a later gesture cannot be described that way, it is a new class and needs
+   * the amendment, not a cleverer sum. The obvious alternative — one beat at
+   * `--motion-context`, iterated twice — runs for twice that ceiling and would
+   * only be legal by the letter: it writes no number above the limit, so it
+   * slips past `app/page.spec.ts`'s duration guard while breaching the budget
+   * that guard exists to protect. A gesture that long is the Motion sheet's
+   * SIGNATURE class, which needs the taxonomy amendment #2378 is blocked on.
+   * Nothing here claims that class, so nothing here needs it.
+   *
+   * (That guard reads this file whole, comments included, which is why the
+   * arithmetic above is spelled out in words. It is blunt on purpose.)
+   *
+   * It has no rest state, which is why it needs no reduced-motion or print
+   * escape the way a revealed card does. The ring is not content: if it never
+   * plays, nothing is missing from the frame, and the dot beside it is drawn at
+   * full strength on every branch. That is also why the rule that paints it
+   * lives inside the no-preference query rather than being cancelled there.
+   */
+  .checkin-ring::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    border: 2px solid var(--success);
+    opacity: 0;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal-armed.is-in .checkin-ring::after {
+      animation: landing-checkin-ring var(--motion-micro)
+        var(--motion-ease-standard) 2;
+    }
   }
 }
 
@@ -241,5 +296,18 @@
   }
   to {
     transform: scaleX(1);
+  }
+}
+
+/* Expands off the dot and fades, twice. No fill mode: each beat ends back at
+ * the base `opacity: 0`, so the ring leaves nothing behind to clear. */
+@keyframes landing-checkin-ring {
+  from {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.4);
   }
 }

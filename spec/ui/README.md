@@ -11,7 +11,7 @@ Signet is the rebrand of Frapp. Its dark-first, warm, consumer design system was
 | [`design-system/reference/signet-design-system.dc.html`](design-system/reference/signet-design-system.dc.html) | Design-system panels: foundations, components, iconography, states |
 | [`design-system/reference/canvas-screens.dc.html`](design-system/reference/canvas-screens.dc.html) | The 23 mobile screens (Canvas) |
 
-A third set of boards, the landing reskin under [`landing/reference/`](landing/reference/README.md), is committed as **target state, not a source of truth**: rule 1 below does not apply to it, and its README owns the statement of when that changes.
+A third set of boards, the landing reskin under [`landing/reference/`](landing/reference/README.md), **ranks with those two under rule 1** for the landing surface. It was committed as target state and stopped being that when the cutover merged in two parts, tokens in [#2366](https://github.com/pdcarlson/Frapp/issues/2366) and the composition in [#2367](https://github.com/pdcarlson/Frapp/issues/2367). Its README owns the boards' status, including the three standing exceptions that are not drift.
 
 Naming: spec prose says **Signet**. Code identifiers, package names, domains, and bundle ids remain `frapp` / `@repo/*` / `frapp.live` for now — the repo rename is deferred. When citing code, cite real current names.
 
@@ -36,14 +36,14 @@ not by the Governs column here. No CI check asserts this table is complete or it
 | [`mobile/`](mobile/README.md) | Mobile app: screen inventory, navigation, interaction patterns | Active |
 | [`web-greenfield/`](web-greenfield/README.md) | The web UI rebuild (#2140): trust order, brand locks, foundation tokens, deletion acceptance | Active — **outranks `web-dashboard/` on visuals and structure while #2140 is open** |
 | [`web-dashboard/`](web-dashboard/README.md) | Admin web app: shell, nav, screens, state | Active (Signet since the #920 shell slice), but see the note below |
-| [`landing/`](landing/README.md) | Marketing site | **Reskin in progress** ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)) — the visual freeze is lifted, the decisions are taken, and both cutover slices have merged; `apps/landing` is on Figtree, the Signet ladder and the boards' composition, and what remains is slice 3 ([#2368](https://github.com/pdcarlson/Frapp/issues/2368)), polish |
+| [`landing/`](landing/README.md) | Marketing site | **Reskin built out** ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)) — the visual freeze is lifted, the decisions are taken, and both cutover slices have merged; `apps/landing` is on Figtree, the Signet ladder and the boards' composition, and slice 3 ([#2368](https://github.com/pdcarlson/Frapp/issues/2368)) closed out the polish; what remains of the epic is owner decisions rather than build work |
 | [`brand-identity.md`](brand-identity.md) | Signet identity: name, tagline, mark/logo rules, house gold | Active |
 | [`assets.md`](assets.md) | Logos, icons, asset sync | Active |
 | [`resilience/`](resilience/README.md) | Network resilience, loading/empty/error delivery guarantees, message delivery | Active |
 
 ### The landing during its reskin
 
-`landing/` is **no longer frozen.** [#2364](https://github.com/pdcarlson/Frapp/issues/2364) is reskinning the storefront from a committed set of target boards, so that README now records the reskin's nine decisions, the marketing type roles and the marketing copy rules alongside the storefront as built. Two things are worth stating alongside it:
+`landing/` is **no longer frozen.** [#2364](https://github.com/pdcarlson/Frapp/issues/2364) reskinned the storefront from a committed set of boards that now bind it, so that README records the reskin's nine decisions, the marketing type roles and the marketing copy rules alongside the storefront as built. Two things are worth stating alongside it:
 
 - **`apps/landing` is on the Signet tokens** since the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merged — Figtree, the `signet.css` ladder and the inlined crest. The two systems still MUST NOT mix on the surface; there is simply nothing legacy left on this one. The page's **composition** moved with slice 2 ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)): `apps/landing/app/page.tsx` renders the boards' section map, so the surface is current Signet in structure as well as tokens, and the boards under [`landing/reference/`](landing/reference/README.md) bind it now.
 - **It still MUST NOT be extended with new visual design decisions of its own** — those belong in [`design-system/`](design-system/README.md). What `landing/` owns is this surface's application of them: its decisions, its three marketing type roles, and its copy rules.

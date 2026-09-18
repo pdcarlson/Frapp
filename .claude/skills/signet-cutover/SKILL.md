@@ -49,10 +49,10 @@ Canonical docs (link, don't restate values):
 | --- | --- | --- |
 | Surfaces | **Every surface.** `apps/mobile`; all of `apps/web` (the #920 reskin is complete); `apps/landing` since its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) | None. `apps/landing` was the last legacy consumer and is on Signet tokens now |
 | Direction | Dark-first, warm, consumer (Notion dark / Cash App) | Light-first bone / bronze / ink |
-| Typeface | **Figtree**. Geist is rejected. Both web surfaces ship it vendored at `packages/theme/fonts/FigtreeVF.woff2` (`next/font/local`, `--font-figtree`). | Geist Sans — deleted; `GeistVF.woff2` went with its last consumer |
+| Typeface | **Figtree**. Geist is rejected. Both web surfaces ship it vendored at `packages/theme/fonts/FigtreeVF.woff2` (`next/font/local`, `--font-figtree`); static `Figtree-{Regular,Bold}.ttf` sit beside it for `next/og`, which cannot parse a variable woff2 — see that package's README before vendoring any fourth copy. | Geist Sans — deleted; `GeistVF.woff2` went with its last consumer |
 | House accent | Gold/amber: house gold `#EFB63B`, accent seed `#DDB844` (the mark gold) — never brown-bronze, never royal blue | Bronze `primary`, royal blue leftovers in old specs |
 | Token home | `spec/ui/design-system/foundations.md` (ladder `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621` since #2143); web implementation: `packages/theme/src/signet.css` + `packages/theme/src/signet.ts`, plus per-app keys in `apps/web/tailwind.config.ts` and `apps/landing/tailwind.config.ts` | `packages/theme/src/globals.css` — **deleted** (#2366), with its package export |
-| Spec status | Live — [`web-dashboard`](../../../spec/ui/web-dashboard/README.md) is **Active (Signet)**, but [`web-greenfield`](../../../spec/ui/web-greenfield/README.md) outranks it on web visuals while #2140 is open | Reskin in progress on **polish only** (slice 3, [#2368](https://github.com/pdcarlson/Frapp/issues/2368)): [`landing`](../../../spec/ui/landing/README.md) |
+| Spec status | Live — [`web-dashboard`](../../../spec/ui/web-dashboard/README.md) is **Active (Signet)**, but [`web-greenfield`](../../../spec/ui/web-greenfield/README.md) outranks it on web visuals while #2140 is open | None. [`landing`](../../../spec/ui/landing/README.md) was the last one, and [#2364](https://github.com/pdcarlson/Frapp/issues/2364) built it out through slice 3 ([#2368](https://github.com/pdcarlson/Frapp/issues/2368)) |
 
 **The two systems MUST NOT mix on one surface**, and there is no longer a surface on the legacy
 side of that line — so in practice: do not copy bone/bronze/Geist/`#2563EB` onto a Signet
@@ -60,11 +60,12 @@ screen. The `apps/web` migration window is **closed**: a legacy class or a live 
 dashboard screen is a defect now, not a pending slice
 ([`ui-development`](../ui-development/SKILL.md)).
 
-**The landing is mid-reskin, and that changes what its README means.** Its visual freeze was lifted
-by [#2364](https://github.com/pdcarlson/Frapp/issues/2364) slice 0, so that doc carries the reskin's
-nine decisions, three marketing type roles and marketing copy rules — read and implement them. The
-**token** cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) and the **page rebuild**
-([#2367](https://github.com/pdcarlson/Frapp/issues/2367)) have both merged: the surface is on
+**The landing's reskin is built out, and that changes what its README means.** Its visual freeze was
+lifted by [#2364](https://github.com/pdcarlson/Frapp/issues/2364) slice 0, so that doc carries the
+reskin's nine decisions, three marketing type roles and marketing copy rules — read and implement
+them. The **token** cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)), the **page
+rebuild** ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)) and the **polish slice**
+([#2368](https://github.com/pdcarlson/Frapp/issues/2368)) have all merged: the surface is on
 Figtree, the Signet ladder and the boards' section map, so drift is filable against its structure as
 well as its tokens, and its composition IS a pattern to read now. Two carve-outs survive: the two
 product frames inside the page carry literal sizes and radii transcribed from the product boards,
@@ -74,9 +75,11 @@ crest is cut until brand sign-off clears ([#2378](https://github.com/pdcarlson/F
 The landing's three marketing type roles (`--text-hero`, `--text-display-lg`, `--text-lead`) sit
 **above** `foundations.md` §7's locked six and are declared in `apps/landing/app/globals.css`.
 They are landing-only: reaching for one on a product surface is an off-scale defect, exactly as a
-raw hex is. §7's amendment records why. The target boards under
-[`spec/ui/landing/reference/`](../../../spec/ui/landing/reference/README.md) are **target state**:
-they bind nothing until the cutover, and their README is the one place that status is stated.
+raw hex is. §7's amendment records why. The boards under
+[`spec/ui/landing/reference/`](../../../spec/ui/landing/reference/README.md) were target state and
+**now bind** — both cutover slices merged, so they are rank-1 visual truth for this surface and drift
+against them is filable. Their README is the one place that status is stated, including the standing
+exceptions.
 
 Product marks ship locked emblem B from [`spec/ui/assets.md`](../../../spec/ui/assets.md); do not
 restyle them piecemeal.
