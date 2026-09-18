@@ -1,0 +1,260 @@
+name: Codex review
+
+# Advisory, comment-only PR review (ADR-14, 2026-09-18 amendment). Installs
+# @openai/codex and calls the first-class `codex review` subcommand against a
+# bring-your-own-key model provider.
+#
+# WHAT ADVISORY MEANS HERE, AND WHY EACH PART IS LOAD-BEARING:
+#   * NOT a required check. Deliberately absent from
+#     scripts/ci/lib/required-checks.mjs. Do not add it.
+#   * NEVER a GitHub review event — plain issue comments only. A write-access
+#     CHANGES_REQUESTED trips the merge ruleset even with green checks, and no
+#     agent can clear it (GITHUB_PAT 401, no MCP dismiss tool, an author cannot
+#     self-approve). Measured on #1875. `issues: write` — not
+#     `pull-requests: write` — is the permission that posts a PR comment,
+#     measured against pr-base-sync.yml.
+#   * Reviewer trouble never reds this workflow. scripts/ci/codex-review.mjs
+#     always exits 0 and raises ONE `routine-state` alert issue instead.
+#
+# NOT `openai/codex-action`: its wrapper runs `codex exec` and cannot reach the
+# `review` subcommand, and on #2396 it failed twice before Codex ran at all —
+# once at `read_server_info` on an empty key, once in 415 ms at its own
+# `Check repository write access` gate rejecting `frapp-base-sync[bot]` with
+# permission `none`. pr-base-sync.yml sweeps every open PR on every push to
+# main, so that second failure would redden the whole open-PR fleet on every
+# sweep. Installing the CLI removes the wrapper and both failure modes.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# One review per PR head. A superseded run's review describes a commit that is
+# no longer the head, so cancelling it loses nothing — and this is never a
+# required check, so a cancelled conclusion strands nothing.
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write # the review comment and the alert issue both go through /issues
+
+env:
+  # The model is UNVERIFIED against the vendor: openrouter.ai is egress-blocked
+  # from every authoring sandbox, so the slug comes from a search index rather
+  # than OpenRouter itself. It lives here so the smoke test changes it in one
+  # place. The vendor prefix is part of the id — `muse-spark-1.3` is NOT a valid
+  # OpenRouter slug, `meta/muse-spark-1.3` is.
+  REVIEW_MODEL: meta/muse-spark-1.3
+
+jobs:
+  codex-review:
+    # Three guards, all deliberate:
+    #   * Drafts are skipped — a draft is still being written.
+    #   * Fork PRs are skipped because `pull_request` withholds secrets from
+    #     them, so the reviewer could only ever fail and alert. (Using
+    #     `pull_request_target` to get the key would run an agent over
+    #     untrusted head code with a credential in scope. Not worth it for an
+    #     advisory comment.)
+    #   * Docs-only PRs are path-gated in a step below rather than here, so the
+    #     job still reports and can clear a stale comment.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # An agent job is unbounded by nature and GitHub's default is 360 minutes.
+    # The inner `timeout` below is the one that matters for a hung provider;
+    # this is the backstop for everything else.
+    timeout-minutes: 20
+
+    steps:
+      # head.sha, never refs/pull/N/merge: GitHub only maintains the merge ref
+      # while the PR is mergeable, so a conflicted PR hard-fails checkout, and
+      # merge-ref lag can hand the reviewer a tree one push behind the diff it
+      # was told to review.
+      #
+      # fetch-depth: 0 because `codex review --base` needs the base branch and
+      # a real merge base, and the purge step below restores from it.
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Skip docs-only changes
+        id: gate
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          base_sha="$(git merge-base "origin/$BASE_REF" HEAD)"
+          # A docs-only PR has nothing for a code reviewer to say. Re-derived
+          # 2026-09-18 over origin/main: 12.0% of the last 100 commits and 8.8%
+          # of the last 250 are docs-only, where docs-only means every changed
+          # path matches the filter below. (The #2396 spike's "~22%" had no
+          # sample window or definition and does not reproduce.)
+          #
+          # Written to a file rather than piped into `grep -q` on purpose. Under
+          # `pipefail`, `grep -q` exits as soon as it matches, so git can take a
+          # SIGPIPE (141) and set the PIPELINE status non-zero even though grep
+          # succeeded — which would invert this test and review nothing on a code
+          # PR. That is a timing-dependent race, not a certainty: on a 503-file
+          # diff it did NOT reproduce locally (pipeline status 0). It is removed
+          # by construction rather than left to luck, because the failure mode is
+          # silent. An empty diff leaves grep at 1, correctly docs-only.
+          #
+          # $RUNNER_TEMP, never the workspace: a scratch file written into the
+          # tree would show up in this very diff and in the reviewed tree.
+          git diff --name-only "$base_sha" HEAD > "$RUNNER_TEMP/changed-files.txt"
+          if grep -qvE '(\.mdx?$|^docs/|^spec/)' "$RUNNER_TEMP/changed-files.txt"; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node
+        if: steps.gate.outputs.docs_only == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Codex CLI
+        if: steps.gate.outputs.docs_only == 'false'
+        # Installed OUTSIDE the repository, for two reasons:
+        #   * The repo root is an npm-workspaces package. `npm install` there
+        #     resolves the whole workspace tree, not just this one package —
+        #     minutes of work this job has no use for, and a failure mode
+        #     unrelated to reviewing.
+        #   * It keeps `node_modules/` out of the tree the reviewer reads and
+        #     diffs. The reviewer has shell access in a read-only sandbox; there
+        #     is no reason to hand it a dependency tree to wander into.
+        #
+        # Pinned exactly: this is the only job holding a billing credential, and a
+        # floating range would swap the reviewer under us. The related gap — that
+        # .github/dependabot.yml declares only `package-ecosystem: npm` and so
+        # never bumps a pin like this one — is already tracked as #1540. Do not
+        # re-file it.
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/codex-cli"
+          npm install --prefix "$RUNNER_TEMP/codex-cli" \
+            --no-save --no-audit --no-fund @openai/codex@0.155.0
+
+      # The injection channel is in the harness, not a prompt: `codex review`
+      # reads project instruction files NATIVELY, respecting
+      # AGENTS.override.md > AGENTS.md > configured fallbacks. So a PR could
+      # otherwise rewrite the rules it is reviewed under. Closed structurally by
+      # controlling the tree: purge every instruction file, then restore only
+      # the ones the merge base has.
+      #
+      # This exact form is the one ADR-14 records as tested; four shorter
+      # variants are broken. Specifically:
+      #   * `git checkout <sha> -- AGENTS.md '**/AGENTS.md'` restores NOTHING and
+      #     exits 1 when a pathspec matches no file — it is all-or-nothing.
+      #   * Restoring cannot remove a file the PR ADDED, and AGENTS.override.md
+      #     outranks AGENTS.md, so the purge must come first.
+      #   * `git ls-tree` supports no glob pathspecs and rejects `:(glob)`.
+      #   * Under `set -euo pipefail` a `grep` matching nothing exits 1 and kills
+      #     the pipeline, hence `|| true`.
+      #
+      # Note the deliberate asymmetry: the purge pathspec `*AGENTS.md` matches
+      # more than the restore grep (`FOO_AGENTS.md` would be purged and not
+      # restored, showing up as a spurious deletion in the review). No such file
+      # exists today — the two sets are identical on this tree, checked
+      # 2026-09-18 — and purging wider than restoring is the fail-safe direction.
+      # Tighten the pathspec if one is ever added.
+      #
+      # Restoring from the MERGE BASE (not the base tip) is what keeps this
+      # diff-neutral: the restored content matches what `codex review` diffs
+      # against, so these files simply do not appear in the review. The accepted
+      # cost is that a legitimate instruction-file change is reviewed under the
+      # base ref's rules; the local /diff-review gate still covers that diff.
+      - name: Pin agent instruction files to the merge base
+        if: steps.gate.outputs.docs_only == 'false'
+        env:
+          BASE_SHA: ${{ steps.gate.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          git ls-files -z -- '*AGENTS.md' '*AGENTS.override.md' | xargs -0r rm -f
+          git ls-tree -r --name-only "$BASE_SHA" \
+            | { grep -E '(^|/)AGENTS(\.override)?\.md$' || true; } \
+            | tr '\n' '\0' | xargs -0r git checkout "$BASE_SHA" --
+
+      - name: Run codex review
+        if: steps.gate.outputs.docs_only == 'false'
+        id: review
+        env:
+          # Absent secret => empty => the CLI exits 101 and the posting step
+          # raises the alert issue. Deliberately not a hard failure: a missing
+          # credential must not red every PR.
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: |
+          set -uo pipefail
+          # CODEX_HOME is NOT created on demand — the CLI errors with
+          # "CODEX_HOME points to ... but that path does not exist".
+          mkdir -p "$CODEX_HOME"
+
+          # `--profile` does NOT work on `codex review`, despite a string in the
+          # binary listing it: `codex review --profile foo` => "error: unexpected
+          # argument '--profile' found" (executed, CLI 0.155.0). `--model` is
+          # rejected the same way. `-p/--profile` is on `codex exec` only, so the
+          # provider AND the model are both selected with `-c`.
+          #
+          # wire_api MUST be "responses": `wire_api = "chat"` is rejected outright
+          # in 0.155.0 ("no longer supported"), so there is no wire-protocol
+          # fallback if OpenRouter's Responses endpoint (beta) misbehaves.
+          #
+          # `project_doc_fallback_filenames=[]` closes the half of the injection
+          # channel the purge step cannot: the precedence chain ends in
+          # "configured fallback filenames", which an empty list removes.
+          #
+          # --strict-config makes an unrecognized key a fast, loud failure rather
+          # than a silently ignored one. That matters most for the security
+          # setting above: a renamed key must not fail open.
+          #
+          # `timeout` is not belt-and-braces. An unreachable base_url makes the
+          # CLI RETRY rather than fail, so without this the job would sit until
+          # the job-level timeout. 124 from timeout is classified as a failure.
+          set +e
+          # Invoked by absolute path, but with the REPO as cwd: `codex review`
+          # has no --cd/-C flag, so it reviews whatever directory it runs in.
+          timeout 900 "$RUNNER_TEMP/codex-cli/node_modules/.bin/codex" review \
+            --strict-config \
+            --base "$BASE_REF" \
+            --title "$PR_TITLE" \
+            -c model_provider=openrouter_byok \
+            -c 'model_providers.openrouter_byok={name="OpenRouter (BYOK)",base_url="https://openrouter.ai/api/v1",env_key="OPENROUTER_API_KEY",wire_api="responses"}' \
+            -c "model=$REVIEW_MODEL" \
+            -c 'project_doc_fallback_filenames=[]' \
+            -c tools.web_search=false \
+            > "$RUNNER_TEMP/codex-stdout.txt" 2> "$RUNNER_TEMP/codex-stderr.txt"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set -e
+
+          # stdout is the payload; the banner, warnings and transcript go to
+          # stderr. Surface stderr in the log because that is where
+          # "Model metadata for `<slug>` not found" shows up — the first sign of
+          # a wrong or unsupported model slug.
+          echo "--- codex stderr ---"
+          cat "$RUNNER_TEMP/codex-stderr.txt" || true
+        # The slug carries its vendor prefix. `muse-spark-1.3` is NOT a valid
+        # OpenRouter id; `meta/muse-spark-1.3` is. A wrong slug does not fail
+        # loudly — it warns on stderr and degrades to fallback metadata.
+        continue-on-error: true
+
+      - name: Post advisory review comment
+        if: steps.gate.outputs.docs_only == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CODEX_STDOUT_FILE: ${{ runner.temp }}/codex-stdout.txt
+          CODEX_EXIT_CODE: ${{ steps.review.outputs.exit_code }}
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: node scripts/ci/codex-review.mjs

@@ -1,10 +1,15 @@
 # AI Code Review Runbook
 
-> **The CI Claude review was removed (2026-06-04, ADR-14 amendment).** There is no longer a
-> `claude-review.yml` workflow, a `claude-review-gate` required check, a `CLAUDE_CODE_OAUTH_TOKEN`
-> secret, or a `.github/claude-review/` rubric. PR review now happens **locally, before the push**.
+> **The merge-quality gate is local, before the push.** The CI Claude review was removed
+> (2026-06-04, ADR-14 amendment): there is no `claude-review.yml` workflow, no `claude-review-gate`
+> required check, no `CLAUDE_CODE_OAUTH_TOKEN` secret and no `.github/claude-review/` rubric, and
+> nothing has reinstated a blocking CI review.
+>
+> Since 2026-09-18 there **is** an advisory CI reviewer — [`codex-review.yml`](#advisory-ci-review-codex-reviewyml),
+> comment-only, blocking nothing. It does not satisfy or replace the gate below; read it as a second
+> opinion on the PR, not as the thing that lets you push.
 
-## What runs now
+## What gates a push
 
 Review is a **repository-managed Git `pre-push` gate**, not a CI job or an agent-provider hook.
 [`.githooks/pre-push`](../../../.githooks/pre-push) is enabled by the root `prepare` script through
@@ -159,6 +164,98 @@ exercises nonzero denial, repeated retries, exact-SHA and multi-ref evidence, de
 tags, installer wiring, provider-hook removal, and the `/code-review` invocation rule. Each behavior
 test uses a throwaway repository and never touches live evidence.
 
+## Advisory CI review (`codex-review.yml`)
+
+Since 2026-09-18 there is **also** a CI-side reviewer. It does not change anything above: the
+merge-quality gate is still the local `pre-push` + `/diff-review` path, and this job blocks nothing.
+
+[`.github/workflows/codex-review.yml`](../../../.github/workflows/codex-review.yml) installs
+`@openai/codex@0.155.0` and runs the CLI's first-class `codex review` subcommand against a
+bring-your-own-key provider (OpenRouter). [`scripts/ci/codex-review.mjs`](../../../scripts/ci/codex-review.mjs)
+posts the result as **one plain PR comment** marked `<!-- frapp-codex-review -->`, upserted through
+`upsertWakeComment` so a new review replaces the previous one rather than stacking.
+
+**What makes it advisory, and what must not change:**
+
+| Invariant | Why |
+|---|---|
+| Not in [`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) | Advisory means blocking nothing. Do not add it. |
+| Plain comments, **never** a review event | A write-access `CHANGES_REQUESTED` blocks squash on green checks and no agent can clear it (#1875). |
+| `issues: write`, not `pull-requests: write` | `issues` is the permission that posts a PR comment, measured against `pr-base-sync.yml`. |
+| The script always exits 0 | A reviewer problem raises one `routine-state` alert issue instead of reddening CI. |
+| Checkout is `head.sha` | `refs/pull/N/merge` does not exist on a conflicted PR and can lag a push. |
+
+**Skipped runs are deliberate:** drafts, fork PRs (`pull_request` withholds secrets from forks, so
+the reviewer could only fail), and docs-only PRs. Docs-only is measured across the whole PR diff, not
+the last push, so a PR that ever touched code keeps getting reviewed.
+
+### Reading the output
+
+`codex review` sends a strict-JSON schema in its system prompt, **parses the reply itself**, and
+renders Markdown to **stdout** — the banner, warnings and transcript go to **stderr**. So stdout is
+the payload. Findings arrive severity-ordered as
+`- [P<0-3>] <title> — <path>:<start>-<end>` with the body indented beneath; a clean review prints only
+the model's one-line explanation.
+
+Before posting, the script rewrites runner-absolute paths to repo-relative, breaks `@mentions` /
+`#123` / `GH-123` outside code so quoted diff hunks cannot notify anyone through the repo's bot, and
+caps the body at GitHub's 65536-character limit. Fenced blocks and inline code spans are left
+byte-identical so `suggestion` blocks stay copy-pasteable.
+
+**Treat findings as advisory opinion.** The output schema is **prompt-enforced, not API-enforced**
+(`text.format` is null in the request), so the model is not prevented from ignoring it, and the model
+itself is a BYOK choice rather than a vendor-tuned reviewer. Verify before acting.
+
+### Troubleshooting
+
+The alert issue **"Advisory codex review is not producing reviews"** (label `routine-state`) is the
+only signal, because the workflow stays green. Its verdict says what happened:
+
+- **`reviewer-failed`** — the CLI exited non-zero. `101` means the provider env key is missing (check
+  the `OPENROUTER_API_KEY` repository secret); `1` is a config error; `124` means the 900-second
+  `timeout` fired, which is what an unreachable `base_url` looks like — the CLI retries rather than
+  failing fast.
+- **`empty-output`** — exit 0 with nothing on stdout. A reviewer that emits no payload is dead, not
+  clean.
+- **`contract-violation`** — the model returned prose instead of the required JSON. This is about the
+  **model**, not the wiring. ADR-14's revisit trigger for it is to price the native Codex reviewer's
+  credits path.
+- **`clean-unverified`** — no findings, and the raw model message could not be read to confirm the
+  contract. Not an error and not alerted; it is reported honestly rather than claimed as verified.
+
+Two traps worth knowing before debugging:
+
+- A clean review and a contract violation are **byte-indistinguishable on stdout** — both are short
+  prose at exit 0. The script tells them apart by reading the raw pre-render model message out of the
+  session rollout, which is why `CODEX_HOME` is set explicitly.
+- ``warning: Model metadata for `<slug>` not found`` on stderr is **not** a bad-slug signal. It fires
+  for any model under a custom provider, including OpenAI's own. A genuinely wrong slug fails at the
+  provider, not here.
+
+**Config gotchas, all executed against CLI 0.155.0:** `codex review` accepts neither `--profile` nor
+`--model`; both the provider and the model are selected with `-c`. `wire_api = "chat"` was removed, so
+a BYOK provider **must** speak the OpenAI Responses API. `CODEX_HOME` is not created on demand.
+`project_doc_fallback_filenames=[]` plus `--strict-config` is what keeps the instruction-file
+precedence chain from failing open.
+
+### Why the reviewer cannot be steered by the PR it reviews
+
+`codex review` reads `AGENTS.override.md`, `AGENTS.md` and configured fallbacks **natively** — no
+prompt wording closes that channel. The workflow closes it structurally: it purges every instruction
+file from the checkout, then restores only the ones present at the **merge base**. Restoring from the
+merge base (not the base tip) is what keeps the purge diff-neutral, so those files simply do not
+appear in the review. The accepted cost is that a legitimate instruction-file change is reviewed under
+the base ref's rules — the local `/diff-review` gate still covers that diff, and this reviewer is
+advisory regardless. The `project_doc_fallback_filenames=[]` setting covers the part of the precedence
+chain the purge cannot reach.
+
+### Testing
+
+`node --test scripts/ci/__tests__/codex-review.test.mjs` covers the classifier (including the
+clean-vs-violation ambiguity and the tri-state contract check), the sanitizer, path relativization,
+the size cap, rollout reading, and that no review endpoint is ever called. Its fixtures are
+transcribed from real CLI output, not invented.
+
 ## Rationale & history
 
 See **ADR-14** and its **2026-06-04 amendment** in [`spec/architecture/adr/adr-14.md`](../../../spec/architecture/adr/adr-14.md)
@@ -167,3 +264,12 @@ local gate. **Correction (2026-09-08):** CodeRabbit comments on ready PRs again 
 tier). That is advisory only — [`.coderabbit.yaml`](../../../.coderabbit.yaml) sets
 `request_changes_workflow: false` so a write-access `CHANGES_REQUESTED` cannot block squash
 (ADR-14 2026-09-08 amendment). The merge-quality gate is still this local `/diff-review` path.
+
+**CodeRabbit's retirement is decided but NOT executed (2026-09-18).** The App is still installed and
+still commenting — verified on [#2395](https://github.com/pdcarlson/Frapp/pull/2395) at
+2026-09-18T18:30:00Z. Its `.coderabbit.yaml` pin is therefore still the only thing keeping a
+squash-blocking `CHANGES_REQUESTED` off PRs, so **do not delete that file until the App is
+uninstalled** — deleting it first drops CodeRabbit to unconfigured defaults, where
+`request_changes_workflow` is ON. Uninstalling is dashboard-only and needs the owner. The advisory
+`codex review` job above is the intended replacement and is already live; the two overlap until the
+uninstall happens.
