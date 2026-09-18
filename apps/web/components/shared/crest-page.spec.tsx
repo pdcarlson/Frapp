@@ -12,6 +12,7 @@ const { back, push, captureException } = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ back, push }) }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
+import sharedConfig from "@repo/theme/tailwind";
 import tailwindConfig from "@/tailwind.config";
 import NotFound from "@/app/not-found";
 import RouteError from "@/app/error";
@@ -251,10 +252,22 @@ describe("the type roles it is the first caller of", () => {
     // An unbound key emits no CSS and throws no error — #1145's failure mode —
     // so the three this file reaches are asserted against the config rather
     // than trusted.
-    const fontSize = (
-      tailwindConfig.theme?.extend as { fontSize?: Record<string, unknown> }
-    )?.fontSize;
-    expect(Object.keys(fontSize ?? {})).toEqual(
+    //
+    // The preset is merged in explicitly, because #2371 moved the six locked
+    // roles there and a plain module import does not resolve `presets` — a
+    // check reading only `tailwind.config.ts` would go red for a move that
+    // changed no compiled output. Spelled out rather than walked generically:
+    // the chain is one preset deep, and `packages/theme`'s own suite is what
+    // asserts the preset's key set. What matters here is that `text-display`
+    // emits a rule, not which file declares it.
+    const fontSize = {
+      ...(sharedConfig.theme?.extend as { fontSize?: Record<string, unknown> })
+        ?.fontSize,
+      ...(
+        tailwindConfig.theme?.extend as { fontSize?: Record<string, unknown> }
+      )?.fontSize,
+    };
+    expect(Object.keys(fontSize)).toEqual(
       expect.arrayContaining(["display", "body", "caption"]),
     );
   });

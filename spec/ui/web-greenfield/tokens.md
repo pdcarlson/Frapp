@@ -57,7 +57,8 @@ constants in `signet.ts` for mobile. They had **no CSS custom properties**, so w
 them at all. They do now: `--text-*`, `--space-*`, `--touch-*`.
 
 A custom property alone is not reachable from a component, so the two families that add capability
-are also bound as utilities in `apps/web/tailwind.config.ts`:
+are also bound as utilities in the shared preset `packages/theme/src/tailwind.config.ts` (they were
+bound per-app until [#2371](https://github.com/pdcarlson/Frapp/issues/2371) collapsed the duplication):
 
 | Family | Utilities | Why |
 | ------ | --------- | --- |
@@ -149,7 +150,9 @@ which only restated the spec. **L-05 is closed as of 2026-09-13** by lane 7
 ([#2147](https://github.com/pdcarlson/Frapp/issues/2147)), in the direction that leaves its tokens
 standing. L-02, L-03, L-04, L-06, L-07 and L-09 are open.
 
-L-08 and L-09 reached past this epic, so they carry issues —
+L-06, L-07, L-08 and L-09 reached past this epic, so they carry issues —
+[#2399](https://github.com/pdcarlson/Frapp/issues/2399),
+[#2398](https://github.com/pdcarlson/Frapp/issues/2398),
 [#2153](https://github.com/pdcarlson/Frapp/issues/2153), now closed, and
 [#2154](https://github.com/pdcarlson/Frapp/issues/2154) — and outlive this directory, which is
 retired when [#2140](https://github.com/pdcarlson/Frapp/issues/2140) closes. The rest are lane-1
@@ -315,6 +318,9 @@ single edit that would retint all of them at once. See
 
 ### L-06 — The ladder is pitched unevenly, and its tightest rung got tighter
 
+**Tracked as [#2399](https://github.com/pdcarlson/Frapp/issues/2399)**, which carries the full
+call-site survey and a proof that the remedy this section proposes is not reachable.
+
 The re-pitch was not uniform. Adjacent-step contrast, old to new:
 
 | Rung | Was | Now |
@@ -339,11 +345,19 @@ the cheap way out of this step, and a lane picking this up must solve the 1.0486
 contrast merits — most likely by re-pitching `--card`. The rung stays as shipped either way; this
 lane changes no value.
 
-One live call site was affected and is fixed at the call site rather than by moving a token
-(`chapter-switcher.tsx`, whose row hover now skips to `--popover`). The ladder itself is left as
+One live call site was known to be affected and was fixed at the call site rather than by moving a
+token (`chapter-nav-header.tsx`, whose chapter-picker row hover skips to `--popover`). **It is not
+the only one.** A later sweep — `git grep -n "hover:bg-card\\|bg-card" apps/web`, cross-referenced
+against the container each site is seated in — found the same rung under the nav rail, the top bar
+and the channel list. [#2399](https://github.com/pdcarlson/Frapp/issues/2399) carries the table, and
+is where the count belongs: a number restated here is one nobody can re-derive. The ladder itself is left as
 [#2143](https://github.com/pdcarlson/Frapp/issues/2143) specified, because re-pitching it is a
 design decision for the framework, not a review fix. For reference, `--card` at `#232019` would give
 1.0709 / 1.0817 — better balanced than either the old or the new ladder — if the framework wants it.
+Neither value reaches 1.15, and **none can**: with `--surface-1` and `--popover` pinned, the
+luminance `--card` would need to clear 1.15 against the rung below is higher than the one it may
+have to leave 1.15 for the rung above, so the interval is empty
+([#2399](https://github.com/pdcarlson/Frapp/issues/2399) shows the arithmetic).
 
 **The framework has now landed and does not want it.** The board states `--card: #211E1A`, the
 shipped value, and says nothing about adjacent-step pitch (L-01). So `#232019` has no artifact behind
@@ -354,6 +368,9 @@ remedy, not the defect. Resolving this now means either a design decision the bo
 reopening it with Design.
 
 ### L-07 — `FOCUS_RING` is unguarded and non-conforming on several seeds
+
+**Tracked as [#2398](https://github.com/pdcarlson/Frapp/issues/2398)**, which carries the re-derived
+measurements, the full call-site list and the conflict with the committed board.
 
 The lane fixed `FOCUS_RING_OFFSET`. The **other** recipe, `FOCUS_RING` — which
 [`components.md`](../design-system/components.md) §2 applies to every focusable control — was not
@@ -503,7 +520,8 @@ Tracked as [#2154](https://github.com/pdcarlson/Frapp/issues/2154).
 claimed no new value was invented. Both are true of the sizes and weights and false of the line
 heights. `foundations.md` §7 states exactly one — `--text-body-line` (25px), which it calls "the only
 one the scale states" — so `display`, `headline`, `title`, `label` and `caption` carry literals in
-`apps/web/tailwind.config.ts` (`1.15`, `1.2`, `1.3`, …) that no spec defines. The block's own comment
+the shared preset `packages/theme/src/tailwind.config.ts` (`1.15`, `1.2`, `1.3`, …) that no spec
+defines — app-local until [#2371](https://github.com/pdcarlson/Frapp/issues/2371). The block's own comment
 claimed the values were read from the custom properties; that comment is corrected in this change.
 
 Either promote the five into `foundations.md` §7 and `signet.css` as real tokens, or state in §7 that
@@ -519,7 +537,8 @@ matches the spec and a screen that matches the utilities can disagree, with noth
 - **Almost no new token was invented for a value the spec did not already carry.** The scrollbar
   family is the recorded exception, added as a new section rather than slipped in. One further
   exception was *not* recorded at the time and is now L-09: five of the six `--text-*` line heights
-  are literals in `apps/web/tailwind.config.ts` that the type scale never states.
+  are literals in the shared preset `packages/theme/src/tailwind.config.ts` (app-local until
+  [#2371](https://github.com/pdcarlson/Frapp/issues/2371)) that the type scale never states.
 - **No guard was loosened to make the change pass.** Where a measurement moved, the pin moved with
   it and says why. Where a floor was genuinely breached, the implementation changed instead. The one
   threshold that was raised, `INDISTINGUISHABLE` in `apps/web/tests/signet-contrast.ts`, is a

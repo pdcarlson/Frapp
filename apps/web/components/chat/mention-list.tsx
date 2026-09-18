@@ -145,11 +145,25 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
             type="button"
             role="option"
             aria-selected={index === clampedIndex}
+            /*
+             * There is no hover fill, deliberately: `onMouseEnter` below makes
+             * the hovered row the SELECTED row, so selection is the hover
+             * feedback and a second recipe can only disagree with it.
+             *
+             * This carried `hover:bg-surface-2`, which no config or stylesheet
+             * has ever defined, so it emitted nothing (#1423). Repointing it at
+             * a real fill is what surfaces the problem: the keyboard handler
+             * moves selection without the pointer moving, so a row left under a
+             * stationary cursor keeps `:hover` while another row is selected,
+             * and any fill here paints a second row that looks chosen. The
+             * ladder offers nothing anyway — this list is seated on `--popover`,
+             * the top of it, and the step below measures 1.1046:1, under the
+             * fixture's `INDISTINGUISHABLE` and pinned as such by
+             * `shared/elevation-contrast.spec.ts`.
+             */
             className={cn(
               "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[13px]",
-              index === clampedIndex
-                ? "bg-accent-subtle text-accent-text"
-                : "hover:bg-surface-2",
+              index === clampedIndex && "bg-accent-subtle text-accent-text",
             )}
             onMouseEnter={() => setSelectedIndex(index)}
             onClick={() => selectItem(index)}
