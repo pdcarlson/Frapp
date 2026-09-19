@@ -91,3 +91,52 @@ describe("sessionErrorCopy", () => {
     expect(sessionErrorCopy({})).toContain("server-side time");
   });
 });
+
+describe("the subscription gate, on both study paths", () => {
+  /**
+   * The real wire shape: `AllExceptionsFilter` emits exactly these four keys
+   * and drops the guard's `code` (#1020), which is why the module-gate branch
+   * above is keyed on something that is always `null` in production (#2393)
+   * and why this one is keyed on the message instead.
+   */
+  const refusal = {
+    statusCode: 403,
+    error: "Forbidden",
+    message:
+      "Chapter subscription is not active; complete checkout to use this feature.",
+    requestId: "req_test",
+  };
+
+  it("replaces the relayed server message on start", () => {
+    // Without this branch the 403 arm returns `serverMessage`, so the member
+    // is shown "…complete checkout to use this feature." — a purchase
+    // instruction inside the iOS app, which the store declaration forbids.
+    const copy = startErrorCopy(refusal);
+    expect(copy).not.toMatch(/checkout/i);
+    expect(copy).toMatch(/officer/i);
+  });
+
+  it("replaces the relayed server message on pause/resume/stop", () => {
+    const copy = sessionErrorCopy(refusal);
+    expect(copy).not.toMatch(/checkout/i);
+    expect(copy).toMatch(/officer/i);
+  });
+
+  it("leaves an ordinary permission denial exactly as it was", () => {
+    // The other direction, and the one a previous attempt broke: a plain 403
+    // still relays the server's own sentence and keeps its retry.
+    const denial = {
+      statusCode: 403,
+      error: "Forbidden",
+      message: "Alumni cannot record study hours.",
+      requestId: "req_test",
+    };
+    expect(startErrorCopy(denial)).toBe("Alumni cannot record study hours.");
+    expect(sessionErrorCopy(denial)).toBe("Alumni cannot record study hours.");
+  });
+
+  it("leaves the 404 and 409 cases untouched", () => {
+    expect(sessionErrorCopy({ statusCode: 404 })).toMatch(/already been closed/i);
+    expect(startErrorCopy({ statusCode: 404 })).toMatch(/no longer available/i);
+  });
+});

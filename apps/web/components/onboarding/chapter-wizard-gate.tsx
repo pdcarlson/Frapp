@@ -193,10 +193,12 @@ const ChapterWizardBoundary = catchError<{ onDismiss: () => void }>(
 
 /**
  * First-officer onboarding wizard (Chunk 03). Fires when a signed-in user has
- * no chapters. Turns "I just signed up" into "I'm in #general with my chapter
- * set up": directory autofill → archetype → identity → invite, then routes to
- * /chat?channel=general. All writes go through the cold-path onboarding
- * endpoint — never the chat Edge Functions.
+ * no chapters. Turns "I just signed up" into "my chapter is set up and I can
+ * use it": directory autofill → archetype → identity → invite, then routes to
+ * /billing (#2297 — a fresh chapter is `subscription_status 'incomplete'`, so
+ * every paid-ops write 403s until checkout; the welcome message is still
+ * seeded into #general and waiting). All writes go through the cold-path
+ * onboarding endpoint — never the chat Edge Functions.
  */
 export function ChapterWizardGate() {
   const chaptersQuery = useAccessibleChapters();
