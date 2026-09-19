@@ -172,16 +172,28 @@ merge-quality gate is still the local `pre-push` + `/diff-review` path, and this
 [`.github/workflows/codex-review.yml`](../../../.github/workflows/codex-review.yml) installs
 `@openai/codex@0.155.0` and runs the CLI's first-class `codex review` subcommand against a
 bring-your-own-key provider (OpenRouter). [`scripts/ci/codex-review.mjs`](../../../scripts/ci/codex-review.mjs)
-posts the result as **one plain PR comment** marked `<!-- frapp-codex-review -->`, upserted through
-`upsertWakeComment` so a new review replaces the previous one rather than stacking.
+posts findings as **inline comments on one `COMMENT` review**, plus **one summary PR comment** marked
+`<!-- frapp-codex-review -->`, so a new review replaces the previous one rather than stacking. Each
+inline comment is marked `<!-- frapp-codex-review-finding -->` and swept on the next run.
+
+The summary comment is the **guaranteed carrier**: any finding not actually delivered inline — because
+its line is outside the diff, or because GitHub rejected the anchors — is quoted in it. No finding
+depends on the reviews API succeeding.
+
+**How it upserts depends on the verdict, deliberately:**
+
+| Verdict | Mechanism | Why |
+|---|---|---|
+| findings | `upsertWakeComment` — delete-then-create | Fires `issue_comment action=created`, the event the PR-babysitting sessions listen for. A review submission fires `pull_request_review` and would **not** wake them, so this comment is what keeps that path alive. |
+| clean / clean-unverified | `upsertQuietComment` — `PATCH` in place | `edited` wakes nothing. Clean is the steady state, so waking a push-capable session on every clean push would be noise with nothing to act on. Only a PR with no summary yet gets a `POST`. |
 
 **What makes it advisory, and what must not change:**
 
 | Invariant | Why |
 |---|---|
 | Not in [`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) | Advisory means blocking nothing. Do not add it. |
-| Plain comments, **never** a review event | A write-access `CHANGES_REQUESTED` blocks squash on green checks and no agent can clear it (#1875). |
-| `issues: write`, not `pull-requests: write` | `issues` is the permission that posts a PR comment, measured against `pr-base-sync.yml`. |
+| **Never** `CHANGES_REQUESTED` or `APPROVED` | The first blocks squash on green checks and no agent can clear it (#1875); the second would satisfy a human-review requirement nothing human looked at. `COMMENT` does neither. `REVIEW_EVENT` is a frozen constant in the script, not a parameter — an `event` passed by a caller is ignored. |
+| `issues: write` **and** `pull-requests: write` | `issues` posts the summary comment and the alert issue (measured against `pr-base-sync.yml`); `pull-requests` posts the inline review and deletes this reviewer's own stale inline comments. Nothing wider — `contents: write` would let an advisory reviewer push. |
 | The script always exits 0 | A reviewer problem raises one `routine-state` alert issue instead of reddening CI. |
 | Checkout is `head.sha` | `refs/pull/N/merge` does not exist on a conflicted PR and can lag a push. |
 
@@ -197,15 +209,39 @@ the payload. Findings arrive as `- [P<0-3>] <title> — <path>:<start>-<end>` wi
 beneath; a clean review prints only the model's one-line `overall_explanation`, which is model-written
 prose and not a fixed string.
 
+**The `[P<0-3>]` tag is optional, and assuming otherwise was a real bug.** The renderer does not derive
+it from the schema's numeric `priority` field — it appears only when the *model* wrote it into the title
+string, which the system prompt asks for and nothing enforces. A schema-valid review whose titles
+omitted it was classified `render-mismatch` and dropped behind an alert. Detection therefore keys on the
+**location** (`code_location` is a required schema field the renderer always emits), and a finding with
+no priority is reported with none rather than a guessed one. See ADR-14's 2026-09-18 commenting
+amendment.
+
+**A clean run now posts.** `clean` says verified; `clean-unverified` says clean is *assumed* because the
+raw reply could not be read back, and still leaves a standing alert open. Silence used to make a
+working reviewer indistinguishable from a dead one.
+
 Severity **ordering is requested, not guaranteed.** It is an instruction in the binary's review
 prompt, read out of the binary and never executed, and the schema it belongs to is prompt-enforced
 rather than API-enforced — so a P3 above a P0 is the model ignoring the prompt, not a bug in the
 renderer or in `codex-review.mjs`.
 
-Before posting, the script rewrites runner-absolute paths to repo-relative, breaks `@mentions` /
-`#123` / `GH-123` outside code so quoted diff hunks cannot notify anyone through the repo's bot, and
-caps the body at GitHub's 65536-character limit. Fenced blocks and inline code spans are left
+Before posting, the script rewrites runner-absolute paths to repo-relative (which is also what the
+inline-comment `path` field needs), breaks `@mentions` / `#123` / `GH-123` outside code so quoted diff
+hunks cannot notify anyone through the repo's bot, and caps every body at GitHub's 65536-character
+limit. The cap truncates the **payload**, not the assembled body: capping the whole body used to cut
+the closing `</untrusted_external_data>` tag off a large review, unclosing the delimiter on the one
+comment that wakes a push-capable agent session. Fenced blocks and inline code spans are left
 byte-identical so `suggestion` blocks stay copy-pasteable.
+
+**Anchoring is conservative, and two details are load-bearing.** Only lines the diff actually changed
+are anchorable, from `git diff --unified=0` hunk headers written by the gate step. The capture keeps
+hunk **ranges**, not a flat set of lines, because GitHub requires both ends of a multi-line comment in
+the **same hunk** — a span across two hunks 422s and discards the whole review. And it passes
+`--output-indicator-new`, because with the default `+` an added line beginning `++ ` is emitted as
+`+++ …` and is indistinguishable from a file header, which fabricated a path and silently lost the
+anchors for the rest of that file. A finding that cannot be anchored travels in the summary; a 422
+anyway retries the review without anchors, and then every finding travels in the summary.
 
 **Treat findings as advisory opinion.** The output schema is **prompt-enforced, not API-enforced**
 (`text.format` is null in the request), so the model is not prevented from ignoring it, and the model
@@ -244,6 +280,21 @@ only signal, because the workflow stays green. Its verdict says what happened:
   credits path.
 - **`clean-unverified`** — no findings, and the raw model message could not be read to confirm the
   contract. Not an error and not alerted; it is reported honestly rather than claimed as verified.
+- **`diff-not-inspected`** — the reviewer raised nothing **and** said it could not inspect the diff.
+  `codex review` reads the diff by running shell commands in a sandbox; when that sandbox cannot start
+  every command fails, and the model correctly reports zero findings. Exit 0 plus a schema-valid empty
+  findings list otherwise reads as a *verified clean review of code nothing read* — met in production
+  on #2420. Alerts, posts nothing. The fix is environment-side: install `bubblewrap` on the runner, or
+  pick a sandbox mode it can start (the latter widens what the model may execute over untrusted head
+  code, so treat it as a security decision). Note the `Codex could not find bubblewrap on PATH`
+  warning appears on **every** run on this image and is *not* by itself a failure.
+- **`findings-unverified`** — findings rendered, but the raw model message could not be read to
+  confirm the contract. The findings **are posted** (an unreadable rollout must never downgrade a
+  review that found something), and the summary says the contract was not confirmed. Like
+  `clean-unverified` it neither raises nor clears the alert: it is the same "the detector could not
+  see" state, and only a contract-confirmed run may resolve the alert. The asymmetry this replaced was
+  exploitable — one blinding failure plus any em-dashed `file:line` citation in model prose cleared
+  the alert, because the finding pattern also matches a URL's port.
 
 Two traps worth knowing before debugging:
 
@@ -252,13 +303,20 @@ Two traps worth knowing before debugging:
   session rollout, which is why `CODEX_HOME` is set explicitly.
 - ``warning: Model metadata for `<slug>` not found`` on stderr is **not** a bad-slug signal — it fires
   for any model under a custom provider, including OpenAI's own, and a genuinely wrong slug fails at
-  the provider instead. **But it is not harmless either.** No metadata means Codex falls back to
-  defaults that reserve the model's **full output width** (65536 tokens observed against OpenRouter),
-  and a provider checks affordability against that *reservation* before generating anything. So on a
-  metered key this warning is the direct cause of an `insufficient-credits` refusal, at a cost far
-  below what a review would actually spend. CLI 0.155.0 exposes no settable top-level
-  `max_output_tokens`, so the reservation cannot be capped from the `codex review` side — the key's
-  limit has to clear it.
+  the provider instead. **But it is not harmless either.** The request carries **no
+  `max_output_tokens` at all** — captured off the wire against CLI 0.155.0, the key is absent from the
+  payload rather than set to a number — so a provider with no cap to honour reserves the model's
+  **full output width** (65536 tokens observed against OpenRouter) and checks affordability against
+  that *reservation* before generating anything. So on a metered key this warning is the direct cause
+  of an `insufficient-credits` refusal, at a cost far above what a review would actually spend. There
+  is no settable top-level `max_output_tokens` in 0.155.0, and nothing to lower even if there were —
+  the key's limit has to clear the reservation instead.
+
+  Note this reads the other way round from an earlier phrasing that said Codex *reserves* the width:
+  Codex sends no cap and the provider supplies the width. The practical consequence is the same, but
+  it matters for `model_reasoning_effort` — no effort setting can change a field that is never sent,
+  while whether the provider budgets reasoning *on top of* that implicit width is unverified. See
+  ADR-14's 2026-09-18 commenting amendment.
 
 **Config gotchas, all executed against CLI 0.155.0:** `codex review` accepts neither `--profile` nor
 `--model`; both the provider and the model are selected with `-c`. `wire_api = "chat"` was removed, so
@@ -299,11 +357,13 @@ amendment — the one that existed solely to keep CodeRabbit from blocking squas
 **The 2026-09-18 decision amendment is NOT spent, and must not be read that way.** Its subject is
 the *replacement*, not the vendor: it is what forbids the `codex review` job from ever being a
 required check, forbids it from `scripts/ci/lib/required-checks.mjs`, and forbids it from posting a
-GitHub review event. Those constraints outlive CodeRabbit entirely.
+squash-blocking review event. Those constraints outlive CodeRabbit entirely.
 
-**The one thing to carry forward outlives the vendor:** any automated reviewer here must post plain
-comments and **never** a GitHub review event, because a write-access `CHANGES_REQUESTED` blocks squash
-on green checks and no agent can clear it (#1875). That constraint is why the `codex review` job holds
-`issues: write` rather than `pull-requests: write`.
+**The one thing to carry forward outlives the vendor:** any automated reviewer here must **never** post
+a `CHANGES_REQUESTED` or `APPROVED` review, because the first blocks squash on green checks with no way
+for an agent to clear it (#1875) and the second would satisfy a human-review requirement nothing human
+looked at. Read as an absolute ban on review events until ADR-14's 2026-09-18 commenting amendment
+narrowed it to those two types — the harm was always the event *type*, and a `COMMENT` review blocks
+and satisfies nothing, which is what lets findings sit on the lines they are about.
 
 The merge-quality gate is, as it has been since 2026-08-01, this local `/diff-review` path.
