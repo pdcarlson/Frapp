@@ -27,6 +27,10 @@ import {
   validateNewTask,
 } from "@/lib/tasks/create-task";
 import { todayIsoDate } from "@/lib/more/service-hours";
+import {
+  SUBSCRIPTION_REFUSAL_COPY,
+  subscriptionRefusalOf,
+} from "@/lib/subscription-refusal";
 
 /**
  * s19 — the "New task" bottom sheet (`canvas-screens.dc.html`, `id="s19"`).
@@ -112,6 +116,14 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [titleFocused, setTitleFocused] = useState(false);
     const [search, setSearch] = useState("");
     const [submitFailed, setSubmitFailed] = useState(false);
+    /**
+     * A subscription refusal is a different outcome from a failed save, not a
+     * worse one (#2297). It is permanent for as long as the chapter is not
+     * active, so this sheet stops offering "try again" and stops offering the
+     * Create button at all — retrying is the one thing that cannot work.
+     * `submitFailed` keeps its exact old meaning: a save that might succeed.
+     */
+    const [subscriptionRefused, setSubscriptionRefused] = useState(false);
 
     const roster = useMemo(
       () => selectRoster(rosterQuery.data),
@@ -144,7 +156,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     };
     const body = validateNewTask(draft);
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
-    const canSubmit = body !== null && !createTask.isPending;
+    const canSubmit =
+      body !== null && !createTask.isPending && !subscriptionRefused;
 
     const reset = useCallback(() => {
       setTitle("");
@@ -153,6 +166,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setAssigneeId(null);
       setSearch("");
       setSubmitFailed(false);
+      setSubscriptionRefused(false);
       setTitleFocused(false);
     }, [at]);
 
@@ -169,6 +183,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const submit = useCallback(() => {
       if (!body) return;
       setSubmitFailed(false);
+      setSubscriptionRefused(false);
       createTask.mutate(body, {
         onSuccess: () => {
           const wasSelf = body.assignee_id === viewerUserId;
@@ -176,7 +191,15 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           dismiss();
           onCreated?.(assigneeName, wasSelf);
         },
-        onError: () => setSubmitFailed(true),
+        onError: (error) => {
+          // Ordinary failures keep the retry they have always had; only a
+          // subscription refusal takes it away, because only it cannot win.
+          if (subscriptionRefusalOf(error)) {
+            setSubscriptionRefused(true);
+            return;
+          }
+          setSubmitFailed(true);
+        },
       });
     }, [
       body,
@@ -283,6 +306,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           {pointsInvalid ? (
             <Text style={styles.error}>
               Points must be a whole number, up to 100,000.
+            </Text>
+          ) : null}
+
+          {subscriptionRefused ? (
+            <Text style={styles.error}>
+              {SUBSCRIPTION_REFUSAL_COPY.task}
             </Text>
           ) : null}
 

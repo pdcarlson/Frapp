@@ -935,6 +935,7 @@ export {
   SUBSCRIPTION_GRACE_PERIOD_MS,
   isSubscriptionStatus,
   isWithinSubscriptionGrace,
+  subscriptionRefusalFromServerMessage,
   subscriptionWriteState,
 } from "./subscription";
 // Client-side analytics opt-out. Fourth shared client gate alongside `can`,
@@ -952,6 +953,7 @@ export {
 export type { ConnectionInput, ConnectionState } from "./connection-state";
 export type {
   SubscriptionBlockCode,
+  SubscriptionRefusal,
   SubscriptionStatus,
   SubscriptionWriteClass,
   SubscriptionWriteState,
