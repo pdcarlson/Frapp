@@ -10,6 +10,7 @@ import {
   useMembers,
   useUpdateAttendanceStatus,
 } from "@repo/hooks";
+import type { MemberProfile } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,13 +47,6 @@ type AttendanceRow = {
   status?: AttendanceStatus;
   check_in_time?: string | null;
   excuse_reason?: string | null;
-};
-
-type MemberSummary = {
-  id?: string;
-  user_id?: string;
-  display_name?: string | null;
-  email?: string | null;
 };
 
 export function AttendancePanel({ eventId }: { eventId: string }) {
@@ -94,12 +88,12 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
     [attendanceQuery.data],
   );
   const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
+    () => asArray<MemberProfile>(membersQuery.data),
     [membersQuery.data],
   );
 
   const memberById = useMemo(() => {
-    const map = new Map<string, MemberSummary>();
+    const map = new Map<string, MemberProfile>();
     for (const member of members) {
       if (member.user_id) {
         map.set(String(member.user_id), member);

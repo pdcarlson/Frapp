@@ -14,6 +14,7 @@ import {
   useTransferPresidency,
   useUpdateRole,
 } from "@repo/hooks";
+import type { MemberProfile } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -59,13 +60,6 @@ type Role = {
   display_order: number;
   color: string | null;
   created_at: string;
-};
-
-type MemberSummary = {
-  id?: string;
-  user_id?: string;
-  display_name?: string | null;
-  role_ids?: string[];
 };
 
 /**
@@ -202,7 +196,7 @@ export function RolesAndPermissionsPage() {
 
   const roles = useMemo(() => asArray<Role>(rolesQuery.data), [rolesQuery.data]);
   const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
+    () => asArray<MemberProfile>(membersQuery.data),
     [membersQuery.data],
   );
 

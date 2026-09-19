@@ -11,6 +11,7 @@ import {
   useOverdueInvoices,
   useTransitionInvoiceStatus,
 } from "@repo/hooks";
+import type { MemberProfile } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { formatBareDate } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
@@ -113,11 +114,6 @@ type Invoice = {
   created_at?: string;
 };
 
-type MemberSummary = {
-  user_id?: string;
-  display_name?: string | null;
-};
-
 type StatusFilter = "all" | "draft" | "open" | "overdue" | "paid" | "void";
 
 const STATUS_FILTERS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
@@ -218,7 +214,7 @@ export function InvoiceList({ id }: { id?: string }) {
     (overdueQuery.isPending && overdueQuery.fetchStatus === "paused");
 
   const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
+    () => asArray<MemberProfile>(membersQuery.data),
     [membersQuery.data],
   );
   const memberNameById = useMemo(() => {

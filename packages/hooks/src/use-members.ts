@@ -7,9 +7,27 @@ import {
   useQueryClient,
   keepPreviousData,
 } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import type { OpsNudgeModuleKey } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
+
+/**
+ * One member row as `GET /v1/members` and `GET /v1/members/search` serve it.
+ *
+ * An alias over the generated contract type rather than a hand-written shape,
+ * because a restatement is a second answer to a question the contract already
+ * answers — and a weaker one. Every consumer that wrote its own declared the
+ * fields optional and `display_name` nullable; `MemberProfileDto` has both
+ * required and `display_name` non-nullable (`users.display_name` is
+ * `NOT NULL DEFAULT ''`), so a `?? fallback` on it is a guard that cannot fire
+ * and an `''` name still reaches the label. Read the shape from
+ * `apps/api/openapi.json`, which `check:api-contract` keeps honest.
+ *
+ * `custom_fields` is on the DTO but present only on single-member reads, which
+ * is why it is optional there — a list row never carries it.
+ */
+export type MemberProfile = components["schemas"]["MemberProfileDto"];
 
 export function useMembers(options?: { enabled?: boolean }) {
   const client = useFrappClient();

@@ -12,7 +12,7 @@ import {
   useTasks,
   useUpdateTaskStatus,
 } from "@repo/hooks";
-import type { TaskStatus } from "@repo/hooks";
+import type { MemberProfile, TaskStatus } from "@repo/hooks";
 import { formatBareDate as formatDate } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
@@ -90,12 +90,6 @@ type Task = {
   created_at: string;
 };
 
-type MemberSummary = {
-  id?: string;
-  user_id?: string;
-  display_name?: string | null;
-};
-
 const COLUMNS: {
   status: TaskStatus;
   label: string;
@@ -157,7 +151,7 @@ export function TasksBoard() {
     [tasksQuery.data],
   );
   const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
+    () => asArray<MemberProfile>(membersQuery.data),
     [membersQuery.data],
   );
   const membersByUserId = useMemo(() => {

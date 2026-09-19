@@ -13,6 +13,7 @@ import {
   useUpdateMemberRoles,
   useOrgConfig,
 } from "@repo/hooks";
+import type { MemberProfile } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
@@ -63,23 +64,6 @@ import { stateMicrocopy } from "@/lib/state-microcopy";
 
 const PAGE_SIZE = 25;
 
-type MemberRow = {
-  id: string;
-  user_id: string;
-  chapter_id: string;
-  role_ids: string[];
-  has_completed_onboarding: boolean;
-  created_at: string;
-  updated_at: string;
-  display_name: string;
-  avatar_url: string | null;
-  bio: string | null;
-  graduation_year: number | null;
-  current_city: string | null;
-  current_company: string | null;
-  email: string;
-};
-
 type RoleOption = { id: string; name: string; isPresident: boolean };
 
 type SortKey = "name" | "role" | "points" | "joined";
@@ -120,11 +104,11 @@ function parseSort(value: SortValue): { key: SortKey; dir: SortDir } {
   return { key: key as SortKey, dir: dir as SortDir };
 }
 
-function memberId(member: MemberRow): string {
+function memberId(member: MemberProfile): string {
   return String(member.id ?? member.user_id ?? "");
 }
 
-function displayNameOf(member: MemberRow): string {
+function displayNameOf(member: MemberProfile): string {
   return typeof member.display_name === "string" &&
     member.display_name.length > 0
     ? member.display_name
@@ -209,7 +193,7 @@ export function MembersDirectory() {
   const activeQuery = usingSearch ? searchQuery : membersQuery;
 
   const members = useMemo(
-    () => asArray<MemberRow>(activeQuery.data),
+    () => asArray<MemberProfile>(activeQuery.data),
     [activeQuery.data],
   );
 
@@ -261,24 +245,24 @@ export function MembersDirectory() {
   // selected cohort never silently loses its <option> mid-search.
   const cohortOptions = useMemo(() => {
     const years = new Set<number>();
-    for (const member of asArray<MemberRow>(membersQuery.data)) {
+    for (const member of asArray<MemberProfile>(membersQuery.data)) {
       if (typeof member.graduation_year === "number")
         years.add(member.graduation_year);
     }
     return [...years].sort((a, b) => b - a);
   }, [membersQuery.data]);
 
-  const pointsOf = (member: MemberRow) =>
+  const pointsOf = (member: MemberProfile) =>
     pointsByUserId.get(member.user_id) ?? 0;
   // `null` until presence has resolved for this chapter — the dot renders
   // nothing rather than claiming Offline, which would be a statement about the
   // member sourced from our own unfinished join.
-  const presenceStatusOf = (member: MemberRow): PresenceStatus | null =>
+  const presenceStatusOf = (member: MemberProfile): PresenceStatus | null =>
     presence.isReady ? presence.statusOf(member.user_id) : null;
   // `null`, not an em dash, for the same reason `formatJoined` returns one: an
   // absent role drops out of the `·`-joined meta line rather than rendering a
   // placeholder glyph.
-  const primaryRoleName = (member: MemberRow): string | null => {
+  const primaryRoleName = (member: MemberProfile): string | null => {
     const firstId = Array.isArray(member.role_ids)
       ? member.role_ids[0]
       : undefined;

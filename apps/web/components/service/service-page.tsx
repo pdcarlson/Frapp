@@ -12,6 +12,7 @@ import {
   useReviewServiceEntry,
   useServiceEntries,
 } from "@repo/hooks";
+import type { MemberProfile } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -80,11 +81,6 @@ type ServiceEntry = {
   created_at: string;
 };
 
-type MemberSummary = {
-  user_id?: string;
-  display_name?: string | null;
-};
-
 export function ServiceHoursPage() {
   const { toast } = useToast();
   const { isOffline } = useNetwork();
@@ -126,7 +122,7 @@ export function ServiceHoursPage() {
     [entriesQuery.data],
   );
   const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
+    () => asArray<MemberProfile>(membersQuery.data),
     [membersQuery.data],
   );
   const memberNameById = useMemo(() => {

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { AdjustGlyph } from "@/components/points/points-glyphs";
 import { useAdjustPoints, useMembers } from "@repo/hooks";
+import type { MemberProfile } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +22,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { getErrorMessage } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 
 type MemberOption = {
   userId: string;
@@ -63,11 +64,7 @@ export function PointsAdjustmentDialog({
   const [reason, setReason] = useState("");
 
   const memberOptions = useMemo(() => {
-    const membersData = membersQuery.data as unknown;
-    if (!Array.isArray(membersData) || membersData.length === 0) {
-      return [];
-    }
-    return (membersData as Record<string, unknown>[])
+    return asArray<MemberProfile>(membersQuery.data)
       .map((member) => {
         const userId = String(member.user_id ?? "");
         if (!userId) return null;
