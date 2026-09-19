@@ -15,6 +15,8 @@ import {
   type ReportResponse,
   type ReportTruncation,
 } from "@repo/hooks";
+import type { MemberProfile } from "@repo/hooks";
+import { displayNameOrNull } from "@repo/hooks/display-names";
 import { formatLocaleDateTime } from "@repo/formatting";
 import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -116,14 +118,13 @@ function buildEventOptions(data: unknown): PickerOption[] {
  * concern like this): the roster projection carries no `email`, and email is
  * what the AC asks for to disambiguate same-named members.
  */
-function buildMemberOptions(data: unknown): PickerOption[] {
-  return asRecords(data)
+function buildMemberOptions(members: MemberProfile[]): PickerOption[] {
+  return members
     .map((member) => {
-      const id = String(member.user_id ?? "");
+      const id = member.user_id;
       if (!id) return null;
-      const displayName =
-        typeof member.display_name === "string" ? member.display_name : "";
-      const email = typeof member.email === "string" ? member.email : "";
+      const displayName = displayNameOrNull(member.display_name) ?? "";
+      const email = member.email;
       const label = displayName
         ? email
           ? `${displayName} (${email})`
@@ -328,7 +329,7 @@ export function ReportsPage() {
     [eventsQuery.data],
   );
   const memberOptions = useMemo(
-    () => buildMemberOptions(membersQuery.data),
+    () => buildMemberOptions(membersQuery.data ?? []),
     [membersQuery.data],
   );
 

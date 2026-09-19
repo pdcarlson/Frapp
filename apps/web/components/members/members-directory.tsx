@@ -14,6 +14,7 @@ import {
   useOrgConfig,
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
+import { displayNameOrNull } from "@repo/hooks/display-names";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
@@ -109,10 +110,10 @@ function memberId(member: MemberProfile): string {
 }
 
 function displayNameOf(member: MemberProfile): string {
-  return typeof member.display_name === "string" &&
-    member.display_name.length > 0
-    ? member.display_name
-    : `Member ${String(member.user_id ?? "").slice(0, 8)}`;
+  return (
+    displayNameOrNull(member.display_name) ??
+    `Member ${member.user_id.slice(0, 8)}`
+  );
 }
 
 /**
@@ -192,10 +193,7 @@ export function MembersDirectory() {
   const usingSearch = deferredQuery.length > 0;
   const activeQuery = usingSearch ? searchQuery : membersQuery;
 
-  const members = useMemo(
-    () => asArray<MemberProfile>(activeQuery.data),
-    [activeQuery.data],
-  );
+  const members = useMemo(() => activeQuery.data ?? [], [activeQuery.data]);
 
   const roleOptions = useMemo<RoleOption[]>(() => {
     return asArray<Record<string, unknown>>(rolesQuery.data).flatMap((role) => {
@@ -245,7 +243,7 @@ export function MembersDirectory() {
   // selected cohort never silently loses its <option> mid-search.
   const cohortOptions = useMemo(() => {
     const years = new Set<number>();
-    for (const member of asArray<MemberProfile>(membersQuery.data)) {
+    for (const member of membersQuery.data ?? []) {
       if (typeof member.graduation_year === "number")
         years.add(member.graduation_year);
     }

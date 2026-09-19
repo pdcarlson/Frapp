@@ -42,6 +42,24 @@ export function resolveDisplayName(
 ): string | null {
   const name = names[userId];
   if (typeof name !== "string") return null;
+  return displayNameOrNull(name);
+}
+
+/**
+ * The same rule as {@link resolveDisplayName}, for a caller holding the member
+ * row rather than the id-keyed map.
+ *
+ * Worth having rather than writing `name || fallback` per site, because the
+ * mistake it prevents is the one the codebase keeps making: `display_name` is
+ * `NOT NULL DEFAULT ''` and `MemberProfileDto` types it `string`, so
+ * `member.display_name ?? fallback` is a guard that cannot fire and renders a
+ * blank label for a member who never set a name. Trimming is part of the rule,
+ * not a nicety — a name of spaces is as unset as an empty one.
+ *
+ * `null` rather than a fallback string for the reason {@link resolveDisplayName}
+ * gives: each caller picks its own copy. This shares the *rule*, not the wording.
+ */
+export function displayNameOrNull(name: string): string | null {
   const trimmed = name.trim();
   return trimmed.length > 0 ? trimmed : null;
 }

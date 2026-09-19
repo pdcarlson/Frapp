@@ -14,7 +14,7 @@ import {
   useTransferPresidency,
   useUpdateRole,
 } from "@repo/hooks";
-import type { MemberProfile } from "@repo/hooks";
+import { displayNameOrNull } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -195,10 +195,7 @@ export function RolesAndPermissionsPage() {
   const transferPresidency = useTransferPresidency();
 
   const roles = useMemo(() => asArray<Role>(rolesQuery.data), [rolesQuery.data]);
-  const members = useMemo(
-    () => asArray<MemberProfile>(membersQuery.data),
-    [membersQuery.data],
-  );
+  const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
 
   const [activeRoleId, setActiveRoleId] = useState<string | null>(null);
   const activeRole = useMemo(
@@ -671,7 +668,8 @@ export function RolesAndPermissionsPage() {
                       key={member.id ?? member.user_id ?? "unknown"}
                       value={String(member.id ?? member.user_id ?? "")}
                     >
-                      {member.display_name ?? "Unnamed member"}
+                      {displayNameOrNull(member.display_name) ??
+                        "Unnamed member"}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -17,15 +17,25 @@ import { resolveDisplayName, type DisplayNameMap } from "./display-names";
  *
  * An alias over the generated contract type rather than a hand-written shape,
  * because a restatement is a second answer to a question the contract already
- * answers — and a weaker one. Every consumer that wrote its own declared the
- * fields optional and `display_name` nullable; `MemberProfileDto` has both
- * required and `display_name` non-nullable (`users.display_name` is
- * `NOT NULL DEFAULT ''`), so a `?? fallback` on it is a guard that cannot fire
- * and an `''` name still reaches the label. Read the shape from
+ * answers. The two ways it went wrong here are worth keeping, because they are
+ * different: six of the seven copies were *weaker* — `user_id` optional,
+ * `display_name` nullable, where the DTO has both required and `display_name`
+ * non-nullable — while the seventh matched the DTO field for field and had
+ * simply *drifted*, transcribing fourteen of its fifteen required fields and
+ * missing `custom_role_ids` (added after the copy was written). A narrowness
+ * check would not have caught the second. Read the shape from
  * `apps/api/openapi.json`, which `check:api-contract` keeps honest.
  *
- * `custom_fields` is on the DTO but present only on single-member reads, which
- * is why it is optional there — a list row never carries it.
+ * **Prefer {@link useChapterRoster} when a surface needs only a name or an
+ * avatar.** This type is the *full* profile — email, bio, graduation year, city
+ * and company — so taking it widens what a display-only screen can reach
+ * (#1000, #986). Several consumers of this alias read `user_id` and
+ * `display_name` and nothing else; their narrow local types used to say so, and
+ * this one does not.
+ *
+ * `custom_fields` is on the DTO but present only on single-member reads — and
+ * already filtered there to the fields the requesting viewer may see, server
+ * side (`MemberService.findProfileById`). A list row never carries it.
  */
 export type MemberProfile = components["schemas"]["MemberProfileDto"];
 
