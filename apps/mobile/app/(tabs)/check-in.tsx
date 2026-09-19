@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useCheckIn, useEvent } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -19,6 +19,10 @@ import {
 } from "@/lib/events/check-in-code";
 import { createScanLatch } from "@/lib/events/scan-latch";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
+import {
+  SUBSCRIPTION_REFUSAL_COPY,
+  subscriptionRefusalOf,
+} from "@/lib/subscription-refusal";
 import { latLngOf, requireForegroundFix } from "@/lib/location";
 import { selectEventDetail } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
@@ -46,13 +50,38 @@ type Status =
   | { kind: "idle" }
   | { kind: "submitting" }
   | { kind: "success"; message: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  /**
+   * The subscription gate refused the write (#2297). Terminal for as long as
+   * the chapter is not active, so — unlike `error` — it re-arms neither the
+   * scanner nor the manual field. A separate variant rather than a flag on
+   * `error`, so "no retry" is structural and a future branch cannot forget it.
+   */
+  | { kind: "blocked"; message: string };
 
 function errorMessage(error: unknown, fallback: string): string {
   if (statusOf(error) === 409) {
     return "You're already checked in for this event.";
   }
   return serverMessageOf(error) ?? fallback;
+}
+
+/**
+ * Which terminal state a failed check-in lands in.
+ *
+ * A subscription refusal must not fall through to `errorMessage`, which
+ * relays the server string verbatim — for an `incomplete` chapter that reads
+ * "…complete checkout to use this feature.", i.e. a purchase instruction
+ * rendered inside the iOS app, which the store declaration forbids.
+ */
+function failureStatus(error: unknown): Status {
+  if (subscriptionRefusalOf(error)) {
+    return { kind: "blocked", message: SUBSCRIPTION_REFUSAL_COPY.checkIn };
+  }
+  return {
+    kind: "error",
+    message: errorMessage(error, "Couldn't check you in."),
+  };
 }
 
 export default function CheckInScreen() {
@@ -74,7 +103,36 @@ export default function CheckInScreen() {
   const needsLocation = event?.hasCheckInZone ?? false;
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  /**
+   * A refusal must not outlive the visit that produced it.
+   *
+   * `check-in` is a `Tabs.Screen` with `href: null`, pushed with an `eventId`
+   * param — so it stays mounted after `router.back()` and the same instance is
+   * reused for the next event. Unlike `error`, `blocked` disarms both the
+   * camera decoder and the manual field, so without this reset a member
+   * refused at one event would find the scanner silently dead at the next one,
+   * weeks later, under copy naming a chapter state that has since been fixed.
+   * Only killing the app would clear it.
+   *
+   * `success` is reset for the same reason and was already wrong before this
+   * change: it disarms the same decoder, so a member who checked in at one
+   * event re-entered at the next one to a live-but-deaf camera under "You're
+   * checked in. +10 pts" for the *previous* event — and believed it. Ordinary
+   * failures and the 409 "already checked in" keep behaving exactly as they
+   * did, because those leave the scanner armed.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      setStatus((current) =>
+        current.kind === "blocked" || current.kind === "success"
+          ? { kind: "idle" }
+          : current,
+      );
+      return undefined;
+    }, []),
+  );
   const [manualCode, setManualCode] = useState("");
 
   const checkIn = useCheckIn();
@@ -134,10 +192,7 @@ export default function CheckInScreen() {
             : "You're checked in.",
         });
       } catch (error) {
-        setStatus({
-          kind: "error",
-          message: errorMessage(error, "Couldn't check you in."),
-        });
+        setStatus(failureStatus(error));
       } finally {
         // Released on both paths so a failed scan can be retried. A latch that
         // stayed closed after an error would strand the member on a dead screen.
@@ -190,12 +245,16 @@ export default function CheckInScreen() {
     void requestCameraPermission();
   }, [cameraPermission, requestCameraPermission]);
 
-  const scanning = status.kind !== "submitting" && status.kind !== "success";
+  const scanning =
+    status.kind !== "submitting" &&
+    status.kind !== "success" &&
+    status.kind !== "blocked";
 
   const manualSubmitDisabled =
     !isPlausibleManualCode(manualCode) ||
     writeBlockedReason !== null ||
     status.kind === "submitting" ||
+    status.kind === "blocked" ||
     checkIn.isPending;
 
   return (
@@ -277,7 +336,7 @@ export default function CheckInScreen() {
             </View>
           ) : status.kind === "success" ? (
             <Text style={styles.success}>{status.message}</Text>
-          ) : status.kind === "error" ? (
+          ) : status.kind === "error" || status.kind === "blocked" ? (
             <Text style={styles.error}>{status.message}</Text>
           ) : null}
 

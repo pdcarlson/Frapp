@@ -12,7 +12,7 @@
  * Two properties this file deliberately keeps:
  *
  * - **Writes only.** The guard returns early for `GET/HEAD/OPTIONS`
- *   (`chapter.guard.ts:207`), so a lapsed chapter can still read everything.
+ *   (`chapter.guard.ts:211`), so a lapsed chapter can still read everything.
  *   Callers gate write affordances; read surfaces stay untouched.
  * - **Never a security boundary.** §5 rule 5 — a direct API call bypasses all
  *   of this, and the server gate stays regardless. This exists so the user is
@@ -143,6 +143,57 @@ const REQUIRED: SubscriptionWriteState = {
 };
 
 const ALLOWED: SubscriptionWriteState = { allowed: true };
+
+/** The refused arm of `SubscriptionWriteState`, named so callers can hold one. */
+export type SubscriptionRefusal = Extract<
+  SubscriptionWriteState,
+  { allowed: false }
+>;
+
+/**
+ * Every refusal `enforceSubscription` can throw, in the guard's own branch
+ * order. Derived from the four constants above so there is exactly one copy of
+ * each message in this package.
+ */
+const SUBSCRIPTION_REFUSALS: readonly SubscriptionRefusal[] = [
+  CANCELED,
+  WRITE_LOCKED,
+  INVITE_BLOCKED,
+  REQUIRED,
+];
+
+/**
+ * Recognise a subscription refusal from the server's `message` string.
+ *
+ * **Why prose and not `codeOf`.** The guard throws
+ * `ForbiddenException({ code, message })`, but `AllExceptionsFilter` serialises
+ * exactly `{statusCode, error, message, requestId}` — `code` is dropped on
+ * every response, so `codeOf` is always `null` in production (#1020, open; its
+ * option 2 is to accept message mapping as the contract, which is what this
+ * is). A bare `statusOf(error) === 403` is not a substitute either: these same
+ * write routes 403 for `PermissionsGuard` denials and the `chapter.context.*`
+ * family, which are transient and must keep their retry. The message is the
+ * only discriminator that actually reaches a client.
+ *
+ * **Do not "improve" this back to `codeOf`.** It will typecheck, return `null`
+ * for every real response, and silently restore the bug this closes.
+ *
+ * Matching is exact against the four `reason` strings already defined above —
+ * never a prefix. `BillingService` throws a 400 that also opens with
+ * "Chapter subscription …" (*"is past due, not cancelled"*), and a prefix test
+ * would claim it.
+ *
+ * A drift guard (`scripts/ci/__tests__/subscription-refusal-parity.test.mjs`,
+ * run by `npm run test:ci-scripts`) asserts these four strings are
+ * byte-identical to the ones `chapter.guard.ts` throws, so a reworded guard
+ * message fails a test instead of quietly disabling this.
+ */
+export function subscriptionRefusalFromServerMessage(
+  message: string | null | undefined,
+): SubscriptionRefusal | null {
+  if (typeof message !== "string" || message.length === 0) return null;
+  return SUBSCRIPTION_REFUSALS.find((r) => r.reason === message) ?? null;
+}
 
 /**
  * Would a write to a route in `writeClass` be rejected by `ChapterGuard` right
