@@ -10,6 +10,7 @@ import {
   useMembers,
   useUpdateAttendanceStatus,
 } from "@repo/hooks";
+import { displayNameOrNull } from "@repo/hooks/display-names";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,13 +47,6 @@ type AttendanceRow = {
   status?: AttendanceStatus;
   check_in_time?: string | null;
   excuse_reason?: string | null;
-};
-
-type MemberSummary = {
-  id?: string;
-  user_id?: string;
-  display_name?: string | null;
-  email?: string | null;
 };
 
 export function AttendancePanel({ eventId }: { eventId: string }) {
@@ -93,20 +87,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
     () => asArray<AttendanceRow>(attendanceQuery.data),
     [attendanceQuery.data],
   );
-  const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
-    [membersQuery.data],
-  );
-
-  const memberById = useMemo(() => {
-    const map = new Map<string, MemberSummary>();
-    for (const member of members) {
-      if (member.user_id) {
-        map.set(String(member.user_id), member);
-      }
-    }
-    return map;
-  }, [members]);
+  const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
 
   type Row = {
     userId: string;
@@ -125,7 +106,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
       if (!member.user_id) continue;
       result.set(String(member.user_id), {
         userId: String(member.user_id),
-        displayName: member.display_name ?? "Unnamed member",
+        displayName: displayNameOrNull(member.display_name) ?? "Unnamed member",
         email: member.email ?? "",
         status: "UNRECORDED",
         checkInTime: null,
@@ -137,13 +118,18 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
     for (const entry of attendance) {
       const userId = entry.user_id ? String(entry.user_id) : "";
       if (!userId) continue;
+      // Reached only when `result` has no row for this attendee — and `result`
+      // was just built from every member with a `user_id`, so by construction
+      // this attendee is not on the roster. A roster lookup here can therefore
+      // only miss; it used to be one, keyed and guarded identically to the loop
+      // above, which made the literals below read as a last resort rather than
+      // the only outcome.
       const base =
         result.get(userId) ??
         ({
           userId,
-          displayName:
-            memberById.get(userId)?.display_name ?? "Non-member attendee",
-          email: memberById.get(userId)?.email ?? "",
+          displayName: "Non-member attendee",
+          email: "",
           status: "UNRECORDED" as const,
           checkInTime: null,
           excuseReason: null,
@@ -162,7 +148,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
     return Array.from(result.values()).sort((a, b) =>
       a.displayName.localeCompare(b.displayName),
     );
-  }, [attendance, memberById, members]);
+  }, [attendance, members]);
 
   const filteredRows = rows.filter((row) =>
     statusFilter === "ALL" ? true : row.status === statusFilter,

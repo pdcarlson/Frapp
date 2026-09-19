@@ -191,8 +191,8 @@ function RolesMatrixSection({ packLabel }: { packLabel: string | null }) {
   const memberCounts = useMemo(() => {
     if (!membersQuery.isSuccess) return null;
     const counts = new Map<string, number>();
-    for (const member of asArray<{ role_ids?: string[] }>(membersQuery.data)) {
-      for (const roleId of member.role_ids ?? []) {
+    for (const member of membersQuery.data ?? []) {
+      for (const roleId of member.role_ids) {
         counts.set(roleId, (counts.get(roleId) ?? 0) + 1);
       }
     }
