@@ -40,7 +40,33 @@ export function resolveDisplayName(
   names: DisplayNameMap,
   userId: string,
 ): string | null {
-  const name = names[userId];
+  return displayNameOrNull(names[userId]);
+}
+
+/**
+ * The same rule as {@link resolveDisplayName}, for a caller holding the member
+ * row rather than the id-keyed map.
+ *
+ * Worth having rather than writing `name || fallback` per site, because the
+ * mistake it prevents is the one the codebase keeps making: `display_name` is
+ * `NOT NULL DEFAULT ''` and `MemberProfileDto` types it `string`, so
+ * `member.display_name ?? fallback` is a guard that cannot fire and renders a
+ * blank label for a member who never set a name. Trimming is part of the rule,
+ * not a nicety — a name of spaces is as unset as an empty one.
+ *
+ * `null` rather than a fallback string for the reason {@link resolveDisplayName}
+ * gives: each caller picks its own copy. This shares the *rule*, not the wording.
+ *
+ * Takes `string | null | undefined` rather than `string`, for the same reason
+ * {@link resolveDisplayName} type-guards the value it reads out of the map: not
+ * every caller holds a contract-typed row. `/v1/search` ships no response DTO,
+ * so the Find bar's member rows are hand-narrowed and nullable, and a spec may
+ * hand a component a partial row. A non-string is "no name", not a `.trim()`
+ * that throws mid-render.
+ */
+export function displayNameOrNull(
+  name: string | null | undefined,
+): string | null {
   if (typeof name !== "string") return null;
   const trimmed = name.trim();
   return trimmed.length > 0 ? trimmed : null;

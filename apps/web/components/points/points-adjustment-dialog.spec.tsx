@@ -14,7 +14,12 @@ vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useAdjustPoints: () => ({ mutateAsync: mockAdjustMutate, isPending: false }),
   useMembers: () => ({
-    data: [{ user_id: "u-1", display_name: "Rush Chair" }],
+    data: [
+      { user_id: "u-1", display_name: "Rush Chair" },
+      // `users.display_name` is NOT NULL DEFAULT '', so this is what a member
+      // who never set a name actually looks like on the wire.
+      { user_id: "u-2", display_name: "" },
+    ],
   }),
 }));
 
@@ -50,6 +55,35 @@ const amountInput = () => screen.getByLabelText(/amount/i);
 const categorySelect = () => screen.getByLabelText(/category/i);
 const reasonField = () => screen.getByLabelText(/reason/i);
 const cancel = () => screen.getByRole("button", { name: /cancel/i });
+
+describe("PointsAdjustmentDialog member labels", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("never offers an option whose name slot is blank", () => {
+    // The picker is the only control identifying the target of an adjustment
+    // or a fine, so an unlabelled option is unusable rather than untidy. This
+    // used to read `display_name ?? userId`, and `??` cannot fire on a field
+    // the contract types `string` — the empty name went straight through.
+    chapter.active();
+    renderDialog();
+
+    const labels = Array.from(
+      memberSelect().querySelectorAll("option"),
+    ).map((option) => option.textContent ?? "");
+
+    expect(labels).toContain("Rush Chair (u-1)");
+    // Asserts the invariant, not the wording: #2422 is still to decide which
+    // of the repo's four no-name spellings wins, and pinning this one here
+    // would make that change look like a regression.
+    for (const label of labels) {
+      expect(label.trimStart()).toBe(label);
+      expect(label).not.toMatch(/^\s*\(/);
+      expect(label.split(" (")[0]).not.toBe("");
+    }
+  });
+});
 
 describe("PointsAdjustmentDialog subscription gating", () => {
   beforeEach(() => {

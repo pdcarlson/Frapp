@@ -11,6 +11,7 @@ import {
   useOverdueInvoices,
   useTransitionInvoiceStatus,
 } from "@repo/hooks";
+import { displayNameOrNull } from "@repo/hooks/display-names";
 import { can } from "@repo/validation";
 import { formatBareDate } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
@@ -113,11 +114,6 @@ type Invoice = {
   created_at?: string;
 };
 
-type MemberSummary = {
-  user_id?: string;
-  display_name?: string | null;
-};
-
 type StatusFilter = "all" | "draft" | "open" | "overdue" | "paid" | "void";
 
 const STATUS_FILTERS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
@@ -217,15 +213,15 @@ export function InvoiceList({ id }: { id?: string }) {
     overdueQuery.isError ||
     (overdueQuery.isPending && overdueQuery.fetchStatus === "paused");
 
-  const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
-    [membersQuery.data],
-  );
+  const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
   const memberNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const member of members) {
       if (member.user_id) {
-        map.set(String(member.user_id), member.display_name ?? "Unnamed member");
+        map.set(
+          String(member.user_id),
+          displayNameOrNull(member.display_name) ?? "Unnamed member",
+        );
       }
     }
     return map;
@@ -523,7 +519,8 @@ export function InvoiceList({ id }: { id?: string }) {
                             key={member.user_id ?? "unknown"}
                             value={String(member.user_id ?? "")}
                           >
-                            {member.display_name ?? "Unnamed member"}
+                            {displayNameOrNull(member.display_name) ??
+                              "Unnamed member"}
                           </SelectItem>
                         ))}
                       </SelectContent>

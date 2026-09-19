@@ -30,6 +30,7 @@ import {
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import { displayNameOrNull } from "@repo/hooks/display-names";
 import { normalizeRoleOptions } from "@/lib/roles";
 
 type MemberRecord = Record<string, unknown>;
@@ -232,10 +233,16 @@ export function MemberDetailSheet({
   }, [open, memberRoleIds, memberCustomRoleIds]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // `displayNameOrNull` rather than a local `length > 0`: this sheet opens from
+  // a `members-directory.tsx` row, so the two render the same member's name in
+  // one interaction, and a whitespace-only name passed the old check — leaving
+  // a visually blank heading beside a row that had already fallen back.
   const displayName =
-    typeof resolvedMember?.display_name === "string" && resolvedMember.display_name.length > 0
-      ? resolvedMember.display_name
-      : "Unknown member";
+    displayNameOrNull(
+      typeof resolvedMember?.display_name === "string"
+        ? resolvedMember.display_name
+        : null,
+    ) ?? "Unknown member";
   const userId =
     typeof resolvedMember?.user_id === "string" ? resolvedMember.user_id : "unknown-user";
   // Distinct from the display-formatted `userId` above: this is null rather

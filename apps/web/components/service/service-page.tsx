@@ -12,6 +12,7 @@ import {
   useReviewServiceEntry,
   useServiceEntries,
 } from "@repo/hooks";
+import { displayNameOrNull } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -80,11 +81,6 @@ type ServiceEntry = {
   created_at: string;
 };
 
-type MemberSummary = {
-  user_id?: string;
-  display_name?: string | null;
-};
-
 export function ServiceHoursPage() {
   const { toast } = useToast();
   const { isOffline } = useNetwork();
@@ -125,15 +121,15 @@ export function ServiceHoursPage() {
     () => asArray<ServiceEntry>(entriesQuery.data),
     [entriesQuery.data],
   );
-  const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
-    [membersQuery.data],
-  );
+  const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
   const memberNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of members) {
       if (m.user_id)
-        map.set(String(m.user_id), m.display_name ?? "Unnamed member");
+        map.set(
+          String(m.user_id),
+          displayNameOrNull(m.display_name) ?? "Unnamed member",
+        );
     }
     return map;
   }, [members]);

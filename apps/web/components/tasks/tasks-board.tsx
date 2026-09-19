@@ -13,6 +13,7 @@ import {
   useUpdateTaskStatus,
 } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
+import { displayNameOrNull } from "@repo/hooks/display-names";
 import { formatBareDate as formatDate } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
@@ -90,12 +91,6 @@ type Task = {
   created_at: string;
 };
 
-type MemberSummary = {
-  id?: string;
-  user_id?: string;
-  display_name?: string | null;
-};
-
 const COLUMNS: {
   status: TaskStatus;
   label: string;
@@ -156,15 +151,15 @@ export function TasksBoard() {
     () => asArray<Task>(tasksQuery.data),
     [tasksQuery.data],
   );
-  const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
-    [membersQuery.data],
-  );
+  const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
   const membersByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of members) {
       if (m.user_id)
-        map.set(String(m.user_id), m.display_name ?? "Unnamed member");
+        map.set(
+          String(m.user_id),
+          displayNameOrNull(m.display_name) ?? "Unnamed member",
+        );
     }
     return map;
   }, [members]);
@@ -477,7 +472,8 @@ export function TasksBoard() {
                               key={member.user_id ?? "unknown"}
                               value={String(member.user_id ?? "")}
                             >
-                              {member.display_name ?? "Unnamed member"}
+                              {displayNameOrNull(member.display_name) ??
+                                "Unnamed member"}
                             </SelectItem>
                           ))}
                         </SelectContent>

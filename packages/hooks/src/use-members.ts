@@ -7,9 +7,37 @@ import {
   useQueryClient,
   keepPreviousData,
 } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import type { OpsNudgeModuleKey } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
+
+/**
+ * One member row as `GET /v1/members` and `GET /v1/members/search` serve it.
+ *
+ * An alias over the generated contract type rather than a hand-written shape,
+ * because a restatement is a second answer to a question the contract already
+ * answers. The two ways it went wrong here are worth keeping, because they are
+ * different: six of the seven copies were *weaker* — `user_id` optional,
+ * `display_name` nullable, where the DTO has both required and `display_name`
+ * non-nullable — while the seventh matched the DTO field for field and had
+ * simply *drifted*, transcribing fourteen of its fifteen required fields and
+ * missing `custom_role_ids` (added after the copy was written). A narrowness
+ * check would not have caught the second. Read the shape from
+ * `apps/api/openapi.json`, which `check:api-contract` keeps honest.
+ *
+ * **Prefer {@link useChapterRoster} when a surface needs only a name or an
+ * avatar.** This type is the *full* profile — email, bio, graduation year, city
+ * and company — so taking it widens what a display-only screen can reach
+ * (#1000, #986). Several consumers of this alias read `user_id` and
+ * `display_name` and nothing else; their narrow local types used to say so, and
+ * this one does not.
+ *
+ * `custom_fields` is on the DTO but present only on single-member reads — and
+ * already filtered there to the fields the requesting viewer may see, server
+ * side (`MemberService.findProfileById`). A list row never carries it.
+ */
+export type MemberProfile = components["schemas"]["MemberProfileDto"];
 
 export function useMembers(options?: { enabled?: boolean }) {
   const client = useFrappClient();
