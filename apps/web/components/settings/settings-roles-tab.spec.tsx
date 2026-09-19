@@ -158,6 +158,37 @@ describe("SettingsRolesTab", () => {
     expect(screen.queryByText("n/a")).not.toBeInTheDocument();
   });
 
+  it("counts the members holding each role", () => {
+    // The only test that enters the `memberCounts` loop at all. Every other
+    // fixture is `data: []` or `data: undefined`, so the loop body — which
+    // reads `member.role_ids` straight off the contract type — was executed
+    // by nothing before this.
+    mockUseMembers.mockReturnValue({
+      data: [
+        { user_id: "u-1", role_ids: ["role-member"] },
+        { user_id: "u-2", role_ids: ["role-member", "role-pledge"] },
+        { user_id: "u-3", role_ids: [] },
+      ],
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+    });
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
+    );
+
+    expect(
+      screen.getByRole("columnheader", { name: /Member, 2 members/ }),
+    ).toBeInTheDocument();
+    // `role-pledge` is labelled "New Member" by the ifc archetype.
+    expect(
+      screen.getByRole("columnheader", { name: /New Member, 1 member$/ }),
+    ).toBeInTheDocument();
+  });
+
   it("shows no member count at all when the members read has not landed", () => {
     // Not "0". An officer auditing who holds the President role would read a
     // zero as a fact, and act on it.

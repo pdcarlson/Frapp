@@ -93,6 +93,15 @@ describe("displayNameOrNull", () => {
     expect(displayNameOrNull("  Bob Ortiz  ")).toBe("Bob Ortiz");
   });
 
+  it("treats a non-string as unset rather than throwing on .trim()", () => {
+    // Not every caller holds a contract-typed row: `/v1/search` ships no
+    // response DTO, so the Find bar's member rows are nullable, and a spec can
+    // hand a component a partial row. `resolveDisplayName` has always guarded
+    // this; the row-shaped sibling has to as well.
+    expect(displayNameOrNull(null)).toBeNull();
+    expect(displayNameOrNull(undefined)).toBeNull();
+  });
+
   it("agrees with resolveDisplayName, which is the same rule over a map", () => {
     // If these two ever disagree the codebase is back to two answers for one
     // question, which is what folding the rule into one helper prevents.

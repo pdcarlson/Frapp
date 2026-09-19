@@ -74,10 +74,13 @@ describe("PointsAdjustmentDialog member labels", () => {
     ).map((option) => option.textContent ?? "");
 
     expect(labels).toContain("Rush Chair (u-1)");
-    expect(labels).toContain("u-2 (u-2)");
+    // Asserts the invariant, not the wording: #2422 is still to decide which
+    // of the repo's four no-name spellings wins, and pinning this one here
+    // would make that change look like a regression.
     for (const label of labels) {
       expect(label.trimStart()).toBe(label);
       expect(label).not.toMatch(/^\s*\(/);
+      expect(label.split(" (")[0]).not.toBe("");
     }
   });
 });

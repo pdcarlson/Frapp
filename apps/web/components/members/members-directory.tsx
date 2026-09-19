@@ -261,19 +261,14 @@ export function MembersDirectory() {
   // absent role drops out of the `·`-joined meta line rather than rendering a
   // placeholder glyph.
   const primaryRoleName = (member: MemberProfile): string | null => {
-    const firstId = Array.isArray(member.role_ids)
-      ? member.role_ids[0]
-      : undefined;
+    const firstId = member.role_ids[0];
     if (!firstId) return null;
     return roleNameById.get(firstId) ?? firstId;
   };
 
   const filteredMembers = useMemo(() => {
     return members.filter((member) => {
-      if (
-        roleFilter !== "all" &&
-        !(member.role_ids ?? []).includes(roleFilter)
-      ) {
+      if (roleFilter !== "all" && !member.role_ids.includes(roleFilter)) {
         return false;
       }
       if (
@@ -408,7 +403,7 @@ export function MembersDirectory() {
     const targets = sortedMembers.filter(
       (member) =>
         selectedMemberIds.includes(memberId(member)) &&
-        !(member.role_ids ?? []).includes(bulkRoleId),
+        !member.role_ids.includes(bulkRoleId),
     );
     if (targets.length === 0) {
       toast({
@@ -422,7 +417,7 @@ export function MembersDirectory() {
       targets.map((member) =>
         updateRolesMutation.mutateAsync({
           id: memberId(member),
-          role_ids: [...new Set([...(member.role_ids ?? []), bulkRoleId])],
+          role_ids: [...new Set([...member.role_ids, bulkRoleId])],
         }),
       ),
     );

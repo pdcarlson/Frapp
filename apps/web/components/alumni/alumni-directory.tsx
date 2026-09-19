@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { SearchGlyph } from "@/components/members/directory-glyphs";
 import { useAlumni } from "@repo/hooks";
+import { displayNameOrNull } from "@repo/hooks/display-names";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -289,7 +290,7 @@ export function AlumniDirectory() {
         <ul role="list" className={denseListClassName}>
           {alumni.map((alum) => {
             const id = alum.id ?? alum.user_id;
-            const name = alum.display_name ?? "Unnamed alum";
+            const name = displayNameOrNull(alum.display_name) ?? "Unnamed alum";
             /*
               The bounded fields only. The bio used to ride at the end of this
               join on lane 4's "free text last" rule, and that rule does not
