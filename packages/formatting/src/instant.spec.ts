@@ -2,11 +2,20 @@
  * TZ is America/Los_Angeles (vitest.config + package.json `test` script), so a
  * case that would only pass at UTC fails here.
  *
- * Scope, stated exactly: `locale.spec.ts` and `bare-date.spec.ts` already
- * cover what the members built on this primitive do with an unreadable value,
- * and repeating those here would make two files go red for one decision. What
- * is below is only what nothing else pins — the `unknown` rejection, and the
- * boundary between this parse and the bare-date cluster's.
+ * Scope, stated exactly. This file does **not** hold the only coverage of
+ * `parseInstant` — it cannot, because every member built on it parses through
+ * it, so `locale.spec.ts`, `bare-date.spec.ts` and `protected-clusters.spec.ts`
+ * all fail on a broken guard too (measured: dropping the non-string clause
+ * reddens 5 cases across 3 files, only 1 of them here; dropping the NaN branch
+ * reddens 7 across 4, only 2 here). That redundancy is the package working as
+ * intended and is not something to delete.
+ *
+ * What this file adds is the primitive's contract stated **directly**, so a
+ * change to it fails with a message naming it rather than naming a formatter,
+ * plus the one case nothing else reaches: a bare-date-shaped string that is not
+ * a date. An earlier draft asserted each member's placeholder over again; those
+ * cases were removed because they restated `locale.spec.ts` verbatim, not
+ * because member-level coverage is redundant.
  */
 import { describe, expect, it } from "vitest";
 import { parseInstant } from "./instant";
@@ -26,7 +35,7 @@ describe("parseInstant", () => {
     expect(parseInstant("not-a-date")).toBeNull();
   });
 
-  it("rejects every non-string, including the ones `new Date` accepts", () => {
+  it("rejects every non-string — including the ones `new Date` accepts", () => {
     // This is the clause with teeth, and the reason the guard is `unknown`
     // rather than `string`: drop it and a loosely-typed JSON field holding
     // `null` or `0` becomes a *valid* Date at the Unix epoch, so a caller
@@ -38,6 +47,14 @@ describe("parseInstant", () => {
     expect(parseInstant(new Date("2026-08-12T18:30:00Z"))).toBeNull();
     expect(parseInstant(undefined)).toBeNull();
     expect(parseInstant({})).toBeNull();
+  });
+
+  it("returns null for the empty string, which the NaN branch would too", () => {
+    // Not a claim that the `value === ""` clause has teeth — it does not.
+    // `new Date("")` is already an Invalid Date, so the clause only skips
+    // constructing one and this case passes with it deleted. It is here to pin
+    // the *result* for `""`, which callers do rely on, not the shortcut.
+    expect(new Date("").toString()).toBe("Invalid Date");
     expect(parseInstant("")).toBeNull();
   });
 

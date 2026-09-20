@@ -134,11 +134,17 @@ const BARE_DATE_COLUMNS = [
  * is watched at all: it *is* that `new Date(value)`, so reaching for it on a
  * bare `date` column renders the previous day exactly as `formatLocaleDate`
  * does. It was private to the package until it was exported to delete the
- * hand-rolled copies of it — which moved it from a shape rule 1 could see
- * (`new Date(`) to a blessed, lint-clean import that only this list catches.
- * `parseBareDateUtcNoon` / `parseBareDateLocalMidnight` /
- * `parseInstantOrBareUtcNoon` are the members a bare column takes instead, and
- * are deliberately absent from this list.
+ * hand-rolled copies of it, and that export is what makes it rule 2's problem:
+ * a named, blessed, lint-clean import. Note it was never rule 1's — that rule
+ * matches only `new Date(…).toLocale*String()` with **no arguments**, so a bare
+ * `new Date(x)` assigned to a variable has always passed it. Neither rule
+ * covered the hand-rolled copies; they were found by reading, not by this file.
+ *
+ * `formatBareDate` is what a bare `date` column takes — line 90 above, and the
+ * positive controls below both use it. It is absent from this list for the same
+ * reason the two bare-date *parsers* are: they read the column correctly. Do
+ * not read their absence as an invitation to hand-roll a formatter on top of
+ * one; `formatBareDate` already is that formatter.
  */
 const UTC_MIDNIGHT_MEMBERS = [
   "formatLocaleDate",

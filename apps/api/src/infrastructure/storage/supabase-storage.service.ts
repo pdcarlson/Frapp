@@ -272,12 +272,22 @@ export class SupabaseStorageService implements IStorageProvider {
         // Date would silently compare false against every cutoff instead.
         //
         // `satisfies` keeps the compile-time assertion the deleted local
-        // `parseTimestamp(value: string | null | undefined)` carried for free.
-        // `StorageListEntry` is derived from whatever `@supabase/storage-js`
-        // returns, and that type entry point has moved between versions; a bump
-        // that retypes `created_at` must break `tsc` here rather than compile
-        // clean into a `null` that stops `report-retention.service.ts` reaping
-        // anything, since `parseInstant` takes `unknown` by design.
+        // `parseTimestamp(value: string | null | undefined)` carried for free —
+        // exactly that strength, no more. `StorageListEntry` is derived from
+        // whatever `@supabase/storage-js` returns, and that type entry point has
+        // moved between versions; `parseInstant` takes `unknown` by design, so
+        // without this a bump that retypes `created_at` would compile clean and
+        // every `createdAt` would go permanently `null`. What that costs is the
+        // *age-based* sweep in `report-retention.service.ts` (`isExpired` is
+        // false for a null), not erasure — `purgeChapterReports` /
+        // `purgeUserReports` apply no age filter by design, precisely so
+        // deletion still removes objects the sweep cannot age out. The sweep
+        // also counts nulls and warns, so the state is loud rather than silent;
+        // this assertion is what keeps it from arising at all.
+        //
+        // Verified to fail on a retype to `Date`, `number` or `unknown`
+        // (`error TS1360`). A retype to `any` still satisfies it silently, as it
+        // did the parameter this replaced.
         createdAt: parseInstant(
           entry.created_at satisfies string | null | undefined,
         ),
