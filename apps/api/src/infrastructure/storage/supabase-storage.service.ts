@@ -270,7 +270,17 @@ export class SupabaseStorageService implements IStorageProvider {
         // supplies, not something this codebase writes, so an age-based caller
         // must be able to tell "stored at T" from "no idea when". An Invalid
         // Date would silently compare false against every cutoff instead.
-        createdAt: parseInstant(entry.created_at),
+        //
+        // `satisfies` keeps the compile-time assertion the deleted local
+        // `parseTimestamp(value: string | null | undefined)` carried for free.
+        // `StorageListEntry` is derived from whatever `@supabase/storage-js`
+        // returns, and that type entry point has moved between versions; a bump
+        // that retypes `created_at` must break `tsc` here rather than compile
+        // clean into a `null` that stops `report-retention.service.ts` reaping
+        // anything, since `parseInstant` takes `unknown` by design.
+        createdAt: parseInstant(
+          entry.created_at satisfies string | null | undefined,
+        ),
       }));
   }
 

@@ -9,9 +9,15 @@
  * decision rather than restating it.
  *
  * The guard is `unknown` rather than `string` because the widest call sites
- * read an unnarrowed JSON field. `""` is rejected ahead of `new Date`, which
- * would otherwise return an `Invalid Date` for it — the same `null`, reached
- * without constructing anything.
+ * read an unnarrowed JSON field — a number, a `Date`, or `null` reaching one
+ * is a non-value here, where `new Date` would have accepted all three
+ * (`new Date(null)` is the Unix epoch, not an `Invalid Date`). That rejection
+ * is the one part of this guard with observable behaviour, and
+ * `instant.spec.ts` pins it.
+ *
+ * The `""` clause is not: `new Date("")` is already an `Invalid Date`, so the
+ * clause only skips constructing one. It is carried over verbatim from the
+ * helper this replaced rather than claimed as a behaviour.
  *
  * This is the primitive, not a formatter. `locale.ts` and `bare-date.ts` both
  * parse through it, and the distinction their docs protect is *which string

@@ -5,7 +5,8 @@
  * **UTC midnight**, which renders as the previous calendar day west of
  * Greenwich. That is not one member's quirk: `formatLocaleDate`,
  * `formatLocaleDateTime` and `formatClock` all parse through the single
- * `parseInstant` helper in `locale.ts`, so **all three** carry it. A bare
+ * `parseInstant` helper in `instant.ts` — the same one this file uses — so
+ * **all three** carry it. A bare
  * `date` column takes {@link formatBareDate}, never any of the three.
  *
  * Two *parsers* stay distinct on purpose — and {@link formatBareDate} at the

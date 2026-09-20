@@ -154,13 +154,13 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   }
 
   const checkedIn = countCheckedIn(attendance);
-  const start = new Date(payload.start_time).getTime();
-  const end = new Date(payload.end_time).getTime();
+  const start = parseInstant(payload.start_time);
+  const end = parseInstant(payload.end_time);
   const windowOpen =
-    Number.isFinite(start) &&
-    Number.isFinite(end) &&
-    now >= start &&
-    now <= end + CHECK_IN_GRACE_MS;
+    !!start &&
+    !!end &&
+    now >= start.getTime() &&
+    now <= end.getTime() + CHECK_IN_GRACE_MS;
   const actionsDisabled = !isConfirmed || checkIn.isPending;
 
   const handleCheckIn = async (): Promise<void> => {

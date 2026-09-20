@@ -107,14 +107,11 @@ export function EventsCalendar({
     }
     for (const bucket of map.values()) {
       bucket.sort((first, second) => {
-        const firstTime =
-          typeof first.start_time === "string"
-            ? new Date(first.start_time).getTime()
-            : 0;
-        const secondTime =
-          typeof second.start_time === "string"
-            ? new Date(second.start_time).getTime()
-            : 0;
+        // `?? 0` is unreachable: only rows the `parseInstant` filter above
+        // accepted are in this bucket. It stays as the total function the
+        // comparator contract needs, not as a second readability decision.
+        const firstTime = parseInstant(first.start_time)?.getTime() ?? 0;
+        const secondTime = parseInstant(second.start_time)?.getTime() ?? 0;
         return firstTime - secondTime;
       });
     }
