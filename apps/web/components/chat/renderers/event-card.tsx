@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { EventPayload } from "@repo/chat-integrations";
 import { can } from "@repo/validation";
+import { parseInstant } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,8 +75,8 @@ function countCheckedIn(data: unknown): number {
 }
 
 function formatRange(startIso: string, endIso: string): string {
-  const start = new Date(startIso);
-  if (Number.isNaN(start.getTime())) return startIso;
+  const start = parseInstant(startIso);
+  if (!start) return startIso;
   const date = start.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -84,8 +85,8 @@ function formatRange(startIso: string, endIso: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
-  const end = new Date(endIso);
-  if (Number.isNaN(end.getTime())) return `${date}, ${startTime}`;
+  const end = parseInstant(endIso);
+  if (!end) return `${date}, ${startTime}`;
   const endTime = end.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",

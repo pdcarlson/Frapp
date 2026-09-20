@@ -4,6 +4,7 @@ export {
   formatLocaleDateTime,
 } from "./locale";
 export { formatPaddedStopwatch, formatTimer } from "./stopwatch";
+export { parseInstant } from "./instant";
 export {
   formatBareDate,
   parseBareDateLocalMidnight,

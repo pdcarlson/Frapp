@@ -10,7 +10,7 @@
  * force one of the two surfaces to render the wrong register.
  */
 
-import { dayDelta } from "@repo/formatting";
+import { dayDelta, parseInstant } from "@repo/formatting";
 
 /**
  * Grace minutes after `end_time` during which check-in stays open.
@@ -33,13 +33,6 @@ function clock(date: Date): string {
   });
 }
 
-/** `Invalid Date` guard — the API can hand back anything a bad write stored. */
-function parse(iso: string | null | undefined): Date | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 /**
  * The detail header line: "Tonight · 6:00 – 7:00 PM", "Tomorrow · …",
  * "Sat, Mar 14 · …". Returns `""` for unparseable input rather than the string
@@ -51,9 +44,9 @@ export function formatEventWindow(
   endTime: string,
   now: Date,
 ): string {
-  const start = parse(startTime);
+  const start = parseInstant(startTime);
   if (!start) return "";
-  const end = parse(endTime);
+  const end = parseInstant(endTime);
 
   const days = dayDelta(now, start);
   let day: string;
@@ -78,7 +71,7 @@ export function formatEventWindow(
 
 /** The s06 row label — shorter, since the row already carries the event name. */
 export function formatEventRowTime(startTime: string, now: Date): string {
-  const start = parse(startTime);
+  const start = parseInstant(startTime);
   if (!start) return "";
   const days = dayDelta(now, start);
   if (days === 0) return `Today · ${clock(start)}`;
@@ -115,8 +108,8 @@ export function resolveCheckInWindow(
   endTime: string,
   now: Date,
 ): CheckInWindow {
-  const start = parse(startTime);
-  const end = parse(endTime);
+  const start = parseInstant(startTime);
+  const end = parseInstant(endTime);
   if (!start || !end) {
     return { state: "unknown", closesAt: null, opensAt: null };
   }
@@ -157,7 +150,9 @@ export function sortEventsByStart<T extends { start_time?: unknown }>(
   return events
     .map((event) => ({
       event,
-      at: parse(typeof event.start_time === "string" ? event.start_time : null),
+      // `parseInstant` is the narrowing too: a non-string `start_time` is a
+      // non-value, the same as an unreadable one.
+      at: parseInstant(event.start_time),
     }))
     .filter((entry): entry is { event: T; at: Date } => entry.at !== null)
     .sort((a, b) => a.at.getTime() - b.at.getTime())

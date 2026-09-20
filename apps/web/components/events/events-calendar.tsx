@@ -6,7 +6,7 @@ import { EventsGlyph } from "@/components/events/chapter-ops-glyphs";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
-import { formatClock } from "@repo/formatting";
+import { formatClock, parseInstant } from "@repo/formatting";
 
 type EventRow = Record<string, unknown>;
 
@@ -95,11 +95,8 @@ export function EventsCalendar({
   const eventsByDay = useMemo(() => {
     const map = new Map<string, EventRow[]>();
     for (const event of events) {
-      const startRaw =
-        typeof event.start_time === "string" ? event.start_time : null;
-      if (!startRaw) continue;
-      const start = new Date(startRaw);
-      if (Number.isNaN(start.getTime())) continue;
+      const start = parseInstant(event.start_time);
+      if (!start) continue;
       const key = localDayKey(start);
       const bucket = map.get(key);
       if (bucket) {

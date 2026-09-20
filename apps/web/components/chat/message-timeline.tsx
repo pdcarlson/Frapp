@@ -19,6 +19,7 @@ import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import { MessageItem } from "./message-item";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import { authorGroupingKey, useAuthorAvatars } from "@repo/hooks";
+import { parseInstant } from "@repo/formatting";
 
 const GROUPING_GAP_MS = 5 * 60 * 1000;
 
@@ -167,8 +168,8 @@ const TimelineScroller = forwardRef<
 
 /** Local calendar day, so "yesterday" breaks where the reader's day breaks. */
 function dayKey(iso: string): string {
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return "";
+  const at = parseInstant(iso);
+  if (!at) return "";
   return `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}`;
 }
 

@@ -4,6 +4,8 @@
  * owns that distinction).
  */
 
+import { parseInstant } from "@repo/formatting";
+
 /** Minutes as the drawn `2.1 hrs`. Singular below 1.05 so `1.0 hrs` never ships. */
 export function formatHoursLabel(minutes: number): string {
   const hours = Math.max(0, minutes) / 60;
@@ -17,8 +19,8 @@ export function formatHoursValue(minutes: number): string {
 }
 
 function timeOfDay(value: string): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+  const date = parseInstant(value);
+  if (!date) return null;
   return date.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -26,8 +28,8 @@ function timeOfDay(value: string): string | null {
 }
 
 function weekday(value: string): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+  const date = parseInstant(value);
+  if (!date) return null;
   return date.toLocaleDateString(undefined, { weekday: "short" });
 }
 

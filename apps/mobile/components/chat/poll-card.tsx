@@ -7,6 +7,7 @@ import {
   tallyPollVotes,
   type PollOption,
 } from "@repo/chat-core/polls";
+import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -162,10 +163,8 @@ export function PollCard({
     );
   }
 
-  const closesAt = payload.closes_at ? new Date(payload.closes_at) : null;
-  const isClosed = closesAt
-    ? !Number.isNaN(closesAt.getTime()) && closesAt.getTime() < now
-    : false;
+  const closesAt = parseInstant(payload.closes_at);
+  const isClosed = closesAt ? closesAt.getTime() < now : false;
   const canVote = isConfirmed && !isClosed && viewerId !== null;
 
   const cast = (option: PollOption) => {
