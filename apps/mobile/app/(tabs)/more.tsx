@@ -143,7 +143,7 @@ export default function MoreScreen() {
       <NavTile
         href="/profile"
         title="Profile"
-        description="Your membership, role, and points."
+        description="Your membership details and points."
         accessibilityHint="Open your member profile."
       />
       <NavTile

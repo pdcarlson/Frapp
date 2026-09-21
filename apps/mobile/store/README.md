@@ -217,7 +217,20 @@ Signet is the app your chapter actually runs on.
 
 Members get one place for the things that used to live in six group chats: chapter announcements and channels, upcoming events with a check-in code at the door, study hours that count toward chapter goals, points and your house rank, dues and payment history, and the member directory.
 
-Officers get the tools to run the chapter without a spreadsheet: invite members with a link, assign roles and permissions, post to the right channel, take attendance by QR code, track service and study hours, and see who has paid.
+Officers get the two things they need on their feet: take attendance at the door with a QR code, and post an announcement every member gets. Setting the chapter up — roles and permissions, dues and who has paid, service-hour approvals, channels and points — is on the web dashboard.
+
+> **Rewritten 2026-09-21; every verb re-verified against the binary (Guideline 2.3), and four of the six did not survive.** The old sentence read "invite members with a link, assign roles and permissions, post to the right channel, take attendance by QR code, track service and study hours, and see who has paid". Verdicts, each confirmed by an independent adversarial pass:
+>
+> | Old claim | Verdict | Evidence |
+> | --- | --- | --- |
+> | take attendance by QR code | **ships on iOS** | `app/(tabs)/host-check-in.tsx`, reached from the "Host check-in" tile in `more.tsx` and gated `events:update` |
+> | post to the right channel | **partly ships — kept, reworded** | An officer holding `announcements:post` gets a live composer in the read-only `#announcements` channel, and that send fans an URGENT push chapter-wide: `chat-thread.tsx` `canSend={canSend && channelCanPost}` off the server's `can_post`. But **creating or organising channels is web-only** (`useCreateChannel`'s only consumer is `apps/web/components/chat-admin/`), so "the right channel" overclaimed. Now "post an announcement every member gets" |
+> | invite members with a link | **partial — dropped** | `useCreateInvite` has exactly one consumer in `apps/mobile`, the one-time founding wizard (`app/(auth)/create-chapter.tsx`), reachable only while the account belongs to **zero** chapters. An officer of an existing chapter has no invite affordance, the role is hardcoded `Member`, and the link points at the web app. Invites are already covered honestly by the invite-only paragraph below |
+> | assign roles and permissions | **web only** | `components/directory/member-detail-sheet.tsx` renders a read-only `Role` value row; no mutation is imported. The editor is `apps/web/components/roles/` |
+> | track service and study hours | **web only** | No approve control on iOS — `service-hours.tsx`'s only mutation is `useCreateServiceEntry`, and `approve_service_entry`'s single non-test caller is reached from the web page. Officer-wide *study* tracking exists nowhere: `study.controller.ts`'s list has no admin branch at all |
+> | see who has paid | **web only** | Both mobile `useInvoices` call sites pass the viewer's id, and `selectInvoiceRows` filters to it. The chapter ledger is `apps/web/components/billing/invoice-list.tsx` |
+>
+> Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-entry-scoping.spec.ts` pins the fix.
 
 Signet is invite-only. Your chapter's officers create the chapter on the web and send you an invite link; open it on your phone and you are in.
 

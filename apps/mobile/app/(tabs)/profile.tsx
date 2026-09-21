@@ -5,6 +5,7 @@ import {
   useCurrentUser,
   useMyPoints,
   useServiceEntries,
+  useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
@@ -55,8 +56,14 @@ export default function ProfileScreen() {
   const chapterId = useActiveChapterId();
 
   const userQuery = useCurrentUser();
+  const viewerUserId = useViewerUserId();
   const pointsQuery = useMyPoints();
-  const serviceQuery = useServiceEntries();
+  // Scoped to the viewer for the same reason `service-hours.tsx` is: unscoped,
+  // this endpoint hands a `service:approve` holder the whole chapter, and this
+  // card presents the total as the viewer's own service hours.
+  const serviceQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
+    enabled: !!viewerUserId,
+  });
 
   const profile = useMemo(
     () => selectViewerProfile(userQuery.data),

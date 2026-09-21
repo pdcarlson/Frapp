@@ -5,7 +5,11 @@ import {
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
-import { useCreateServiceEntry, useServiceEntries } from "@repo/hooks";
+import {
+  useCreateServiceEntry,
+  useServiceEntries,
+  useViewerUserId,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { formatMinutesRounded } from "@repo/formatting";
 import { ScreenShell } from "@/components/screen-shell";
@@ -55,7 +59,16 @@ export default function ServiceHoursScreen() {
   const styles = createStyles(tokens, accent);
   const sheetRef = useRef<BottomSheetModal>(null);
 
-  const entriesQuery = useServiceEntries();
+  // Scoped to the viewer on purpose. Unscoped, this endpoint returns the whole
+  // chapter to anyone holding `service:approve` — so an officer saw every
+  // member's entries in a list whose rows carry no name, and the "Approved"
+  // card totalled the chapter's minutes under a screen that says "you've
+  // logged". `null` is "/v1/users/me has not answered yet", so the request
+  // waits rather than firing once unscoped.
+  const viewerUserId = useViewerUserId();
+  const entriesQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
+    enabled: !!viewerUserId,
+  });
   const createEntry = useCreateServiceEntry();
 
   const rows = useMemo(
@@ -115,7 +128,10 @@ export default function ServiceHoursScreen() {
   }
 
   function renderList() {
-    if (entriesQuery.isPending) return <SkeletonLines lines={3} />;
+    // `viewerUserId === null` is the id still resolving. The query is disabled
+    // until then, so `isPending` alone would not cover it.
+    if (viewerUserId === null || entriesQuery.isPending)
+      return <SkeletonLines lines={3} />;
     if (entriesQuery.isError) {
       return (
         <ErrorState

@@ -59,6 +59,15 @@ export function NavTile({
       <View
         accessibilityRole="button"
         accessibilityLabel={title}
+        // The reason is wired to the control, not merely printed inside it.
+        // `accessibilityRole="button"` plus an explicit label collapses the
+        // children for a screen reader, so without this the one tile that has
+        // to explain itself was the one tile that did not: a VoiceOver user
+        // heard "Adjust points, dimmed, button" and no reason why. Same rule
+        // the pressable branch below follows, and the same rule
+        // `service-hours.tsx` and `balance-card.tsx` state for a blocked
+        // control.
+        accessibilityHint={accessibilityHint ?? description}
         accessibilityState={{ disabled: true }}
         style={[styles.tile, styles.tileDisabled]}
       >
