@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { parseInstant } from '@repo/formatting';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
 import type {
   IStorageProvider,
@@ -69,20 +70,6 @@ type StorageListEntry = NonNullable<
     ReturnType<ReturnType<SupabaseClient['storage']['from']>['list']>
   >['data']
 >[number];
-
-/**
- * Storage timestamps as a Date, or null when absent or unparseable.
- *
- * The listing is metadata the backend supplies, not something this codebase
- * writes, so an age-based caller must be able to tell "stored at T" from "no
- * idea when" — `new Date(undefined)` would hand it an Invalid Date that
- * silently compares false against every cutoff instead.
- */
-function parseTimestamp(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
 
 @Injectable()
 export class SupabaseStorageService implements IStorageProvider {
@@ -279,7 +266,31 @@ export class SupabaseStorageService implements IStorageProvider {
       .filter((entry) => entry.id !== null)
       .map((entry) => ({
         path: `${prefix}/${entry.name}`,
-        createdAt: parseTimestamp(entry.created_at),
+        // `parseInstant`, not `new Date`: the listing is metadata the backend
+        // supplies, not something this codebase writes, so an age-based caller
+        // must be able to tell "stored at T" from "no idea when". An Invalid
+        // Date would silently compare false against every cutoff instead.
+        //
+        // `satisfies` keeps the compile-time assertion the deleted local
+        // `parseTimestamp(value: string | null | undefined)` carried for free —
+        // exactly that strength, no more. `StorageListEntry` is derived from
+        // whatever `@supabase/storage-js` returns, and that type entry point has
+        // moved between versions; `parseInstant` takes `unknown` by design, so
+        // without this a bump that retypes `created_at` would compile clean and
+        // every `createdAt` would go permanently `null`. What that costs is the
+        // *age-based* sweep in `report-retention.service.ts` (`isExpired` is
+        // false for a null), not erasure — `purgeChapterReports` /
+        // `purgeUserReports` apply no age filter by design, precisely so
+        // deletion still removes objects the sweep cannot age out. The sweep
+        // also counts nulls and warns, so the state is loud rather than silent;
+        // this assertion is what keeps it from arising at all.
+        //
+        // Verified to fail on a retype to `Date`, `number` or `unknown`
+        // (`error TS1360`). A retype to `any` still satisfies it silently, as it
+        // did the parameter this replaced.
+        createdAt: parseInstant(
+          entry.created_at satisfies string | null | undefined,
+        ),
       }));
   }
 

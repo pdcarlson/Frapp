@@ -122,17 +122,35 @@ const BARE_DATE_COLUMNS = [
  * The members that parse with `new Date(value)` and therefore read a bare
  * `YYYY-MM-DD` as UTC midnight.
  *
- * All three share one `parseInstant` helper in `packages/formatting/src/locale.ts`,
- * so all three carry the defect — confirmed under `TZ=America/Los_Angeles`:
- * `formatLocaleDateTime("2026-08-12")` is `"8/11/2026, 5:00:00 PM"` and
- * `formatClock("2026-08-12")` is `"Aug 11, 5:00 PM"`. No `apps/web` call site
- * passes a bare-date column to the latter two today; they are watched because
- * a rule narrower than the defect is how this guard was wrong the first time.
+ * The first three share one `parseInstant` helper,
+ * `packages/formatting/src/instant.ts` — confirmed under
+ * `TZ=America/Los_Angeles`: `formatLocaleDateTime("2026-08-12")` is
+ * `"8/11/2026, 5:00:00 PM"` and `formatClock("2026-08-12")` is
+ * `"Aug 11, 5:00 PM"`. No `apps/web` call site passes a bare-date column to
+ * the latter two today; they are watched because a rule narrower than the
+ * defect is how this guard was wrong the first time.
+ *
+ * `parseInstant` itself is the fourth, and is watched for the same reason it
+ * is watched at all: it *is* that `new Date(value)`, so reaching for it on a
+ * bare `date` column renders the previous day exactly as `formatLocaleDate`
+ * does. It was private to the package until it was exported to delete the
+ * hand-rolled copies of it, and that export is what makes it rule 2's problem:
+ * a named, blessed, lint-clean import. Note it was never rule 1's — that rule
+ * matches only `new Date(…).toLocale*String()` with **no arguments**, so a bare
+ * `new Date(x)` assigned to a variable has always passed it. Neither rule
+ * covered the hand-rolled copies; they were found by reading, not by this file.
+ *
+ * `formatBareDate` is what a bare `date` column takes — line 90 above, and the
+ * positive controls below both use it. It is absent from this list for the same
+ * reason the two bare-date *parsers* are: they read the column correctly. Do
+ * not read their absence as an invitation to hand-roll a formatter on top of
+ * one; `formatBareDate` already is that formatter.
  */
 const UTC_MIDNIGHT_MEMBERS = [
   "formatLocaleDate",
   "formatLocaleDateTime",
   "formatClock",
+  "parseInstant",
 ] as const;
 
 /**
@@ -263,7 +281,7 @@ describe("date display goes through the right @repo/formatting member", () => {
     `;
     expect(wrongMemberCalls(boundary)).toEqual(["formatLocaleDate(entry.date)"]);
 
-    // The other two members share `locale.ts`'s `parseInstant`, so they carry
+    // The other two members share `instant.ts`'s `parseInstant`, so they carry
     // the identical bare-date defect and are watched too.
     const siblings = `
       import { formatClock, formatLocaleDateTime as stamp } from "@repo/formatting";
@@ -274,5 +292,27 @@ describe("date display goes through the right @repo/formatting member", () => {
       "formatClock(task.due_date)",
       "stamp(archive.start_date)",
     ]);
+
+    // The primitive under all three, now that it is exported. This is the
+    // shape rule 1 cannot see — no `new Date(` token, a blessed import — and
+    // it is the habit the consolidation that exported it creates.
+    const primitive = `
+      import { parseInstant } from "@repo/formatting";
+      parseInstant(invoice.due_date)?.toLocaleDateString();
+      const when = parseInstant(entry.date);
+    `;
+    expect(wrongMemberCalls(primitive)).toEqual([
+      "parseInstant(invoice.due_date)",
+      "parseInstant(entry.date)",
+    ]);
+
+    // …and it must stay silent on a timestamptz column, and on the bare-date
+    // members that exist precisely to be reached for instead.
+    const primitiveOk = `
+      import { parseInstant, parseBareDateUtcNoon } from "@repo/formatting";
+      parseInstant(message.created_at);
+      parseBareDateUtcNoon(invoice.due_date);
+    `;
+    expect(wrongMemberCalls(primitiveOk)).toEqual([]);
   });
 });

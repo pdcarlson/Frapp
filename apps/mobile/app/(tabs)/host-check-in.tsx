@@ -15,6 +15,7 @@ import {
   useMintCheckInToken,
   usePermissionList,
 } from "@repo/hooks";
+import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { formatCountdown } from "@/lib/events/format";
@@ -56,8 +57,9 @@ function useCountdown(expiresAt: string | undefined): number {
 
   useEffect(() => {
     if (!expiresAt) return;
-    const deadline = new Date(expiresAt).getTime();
-    if (Number.isNaN(deadline)) return;
+    const expiry = parseInstant(expiresAt);
+    if (!expiry) return;
+    const deadline = expiry.getTime();
 
     const tick = () => setRemaining(deadline - Date.now());
     tick();

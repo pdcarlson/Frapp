@@ -13,7 +13,7 @@
  * `user_id` is not the viewer's" — and s11 is a *member* surface, so it filters
  * to the viewer entirely rather than only gating the button.
  */
-import { parseBareDateUtcNoon } from "@repo/formatting";
+import { parseBareDateUtcNoon, parseInstant } from "@repo/formatting";
 import { num, records, str } from "../more/narrow";
 
 export type InvoiceStatus = "DRAFT" | "OPEN" | "PAID" | "VOID";
@@ -142,8 +142,8 @@ function formatCalendarDate(value: string): string {
 
 /** A full ISO instant → `"Feb 3"` in the member's own zone. */
 function formatInstant(value: string): string | null {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : shortDate(date);
+  const date = parseInstant(value);
+  return date ? shortDate(date) : null;
 }
 
 /**

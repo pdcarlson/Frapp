@@ -43,20 +43,20 @@ import {
 } from "@/components/shared/subscription-gate";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { getErrorMessage } from "@/lib/utils";
+import { parseInstant } from "@repo/formatting";
 
 type EventRecord = Record<string, unknown>;
 
 export function isoToLocalInput(value: unknown): string {
-  if (typeof value !== "string") return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
+  const date = parseInstant(value);
+  if (!date) return "";
   const timezoneOffset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 16);
 }
 
 function localInputToIso(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
+  const date = parseInstant(value);
+  if (!date) return "";
   return date.toISOString();
 }
 

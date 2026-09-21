@@ -7,6 +7,7 @@
  * to fill the slot would dress an arbitrary choice up as a chapter decision.
  * Filed separately.
  */
+import { parseInstant } from "@repo/formatting";
 import { metaLine, num, records, str } from "./narrow";
 
 export interface DocumentRow {
@@ -24,9 +25,8 @@ export interface DocumentFolder {
 
 /** `2026-08-12T…` → `"Aug 12"`. `null` for anything unparseable. */
 function formatUploadedAt(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+  const date = parseInstant(value);
+  if (!date) return null;
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 

@@ -17,6 +17,7 @@ import {
   type PollOption,
 } from "@repo/chat-core/polls";
 import { useNow } from "@repo/hooks";
+import { parseInstant } from "@repo/formatting";
 
 interface PollCardProps {
   message: ChatMessage;
@@ -63,10 +64,8 @@ export function PollCard({
     );
   }
 
-  const closesAt = payload.closes_at ? new Date(payload.closes_at) : null;
-  const isClosed = closesAt
-    ? !Number.isNaN(closesAt.getTime()) && closesAt.getTime() < now
-    : false;
+  const closesAt = parseInstant(payload.closes_at);
+  const isClosed = closesAt ? closesAt.getTime() < now : false;
   /*
     `!viewerId`, not `!== null`. The prop says `string` now, but a JSX spread of
     a loosely-typed object is not prop-checked, so `undefined` can still arrive
