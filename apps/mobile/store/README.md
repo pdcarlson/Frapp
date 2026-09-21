@@ -191,7 +191,7 @@ the work; the detail lives there, not here.
 
 | # | Risk | Kind |
 | --- | --- | --- |
-| — | **No screenshots exist**, and the preview route to them is blocked by #2415 (see the note at the top of this file) | hard gate |
+| [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **No screenshots exist**, and the preview route to them is blocked by #2415 (see the note at the top of this file). Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked | hard gate |
 | [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` is empty and `production` has no Stripe key — owns both the screenshot route and the 3.1.5 argument below | hard gate |
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | No App Review demo user exists in `frapp-prod`; the demo seed is Docker-only. The reviewer cannot sign in | hard gate |
