@@ -200,8 +200,8 @@ export default function MoreScreen() {
       <NavTile
         href="/service-hours"
         title="Service hours"
-        description="Log philanthropy work and track approvals."
-        accessibilityHint="Review submitted service entries and approvals."
+        description="Log philanthropy work and track your own status."
+        accessibilityHint="Log a service entry and see whether yours were approved."
       />
       <NavTile
         href="/preferences"

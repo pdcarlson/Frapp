@@ -180,7 +180,7 @@ export default function CreateChapter() {
     } catch (caught) {
       setError(
         serverMessageOf(caught) ??
-          "Couldn't create an invite. You can invite members later from the directory.",
+          "Couldn't create an invite. You can invite members from the web dashboard.",
       );
     }
   }
