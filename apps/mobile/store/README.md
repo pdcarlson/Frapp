@@ -199,7 +199,7 @@ the work; the detail lives there, not here.
 | [#2305](https://github.com/pdcarlson/Frapp/issues/2305) | The live privacy policy still claims photo-library collection the binary cannot perform; both stores fetch that URL | 5.1.2 |
 | [#2298](https://github.com/pdcarlson/Frapp/issues/2298) / [#2300](https://github.com/pdcarlson/Frapp/issues/2300) / [#2301](https://github.com/pdcarlson/Frapp/issues/2301) | Sign-in tagline advertises Ask; two permanently inert controls; the `sheet-demo` dev route ships and is reachable via `frapp://sheet-demo` | 2.1 |
 | [#2304](https://github.com/pdcarlson/Frapp/issues/2304) | This file's § Description claims officer features the iOS binary does not ship | 2.3 |
-| [#2334](https://github.com/pdcarlson/Frapp/issues/2334) | Sign in with Apple has never been observed working against `frapp-prod`; a dead Apple button beside a live Google one is a 4.8 rejection | 4.8 |
+| [#2334](https://github.com/pdcarlson/Frapp/issues/2334) | **Smoke-test Sign in with Apple on the TestFlight build before submitting.** At the pinned `expo-apple-authentication ~57.0.2` a nil `keyWindow` reaches an uncatchable Swift `fatalError`, i.e. a SIGTRAP abort on the sign-in screen with the browser-OAuth fallback unreachable — and no live Apple sign-in has ever been observed against `frapp-prod`. The unit suite gives **zero** signal because it never loads the native module. A crash on the first screen a reviewer touches outranks the 4.8 question it also raises | 4.8 + crash |
 
 ## Description
 
@@ -276,14 +276,15 @@ table exists because nothing else states what a reviewer will actually be shown.
 
 | The notes say | Do before submitting |
 | --- | --- |
-| A reviewer account and a working invite token | Create the App Review demo user in `frapp-prod` (#2309) and mint a token whose expiry outlasts review — #2308 records a 24h default with no override |
+| A reviewer account that can sign in | Create the App Review demo user in `frapp-prod` (#2309), **already joined to the seeded chapter**, and give App Review its email and password. Do not plan on an invite: 24h hardcoded, single-use, no override. The seeded chapter also needs `subscription_status` `active`, or two tabs 403 (#2297) |
 | Location confirms "inside a chapter study zone" | Add one study zone to the reviewer's chapter. Zone creation is web-dashboard-only, so it cannot be done from the app being reviewed |
 | "direct messages your chapter has started" | Start one DM into the reviewer's account from the web dashboard; the DIRECT section is hidden entirely when the list is empty |
 | Dues paid by Stripe PaymentSheet | Raise an OPEN invoice against the reviewer's **own** member row — the Dues CTA is viewer-scoped, so a new account sees no Pay control at all. Then either ship the key (#2415) or drop the dues sentence |
 
 ## Review notes (App Store Connect → App Review Information)
 
-- The app is invite-only. A reviewer account and a test chapter invite are provided in the Notes field at submission time. Give the reviewer the **invite token** (or the full `https://app.frapp.live/join?token=…` link to paste): the join screen accepts either and extracts the token from a pasted link. Universal links are not configured, so tapping an `https://` invite link opens the web app, not this app — do not describe the link as opening the app.
+- The app is invite-only. **Give App Review an email and password for a seeded account that is already a member of a chapter — never an invite token.** Put them in the Sign-In Required fields, not prose. Invites cannot work here: `prepareInviteData` hardcodes `expiresAt.setHours(+24)` and `redeem` throws `GoneException` on `used_at` or on a past `expires_at`, with no override parameter anywhere — so a token is dead before a first review answers and certainly dead on a re-review. (Corrected 2026-09-21; this bullet used to hand over a token, and every earlier note about "minting one whose expiry outlasts review" was describing something the API cannot do.)
+- Universal links are not configured, so tapping an `https://` invite link opens the web app, not this app — do not describe any link as opening the app. If a reviewer ever does need to redeem by hand, the join screen accepts a bare token or a full `https://app.frapp.live/join?token=…` pasted link and extracts the token from either; that is a fallback, not the route to describe.
 - Camera is used only to scan a chapter's event check-in QR code. Location is used only while the app is open, to confirm the member is inside a chapter study zone or at the event being checked in to; there is no background location.
 - Sign in with Apple and Sign in with Google are offered on the sign-in screen (Guideline 4.8: Apple is required once Google is offered). Password and magic-link remain. A reviewer still joins with the invite token after signing in — membership follows the signed-in user id, including Apple Hide My Email.
 - No in-app purchases and no digital goods. The app is designed to take **chapter dues** by card (Stripe PaymentSheet on the Dues tab): these are membership dues owed to the member's own real-world organization, i.e. goods and services consumed outside the app (guideline 3.1.5), not digital content. Chapter *subscriptions* to Signet itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
