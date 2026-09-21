@@ -47,6 +47,7 @@ interface UpNextTask {
 export interface UpNextStripProps {
   events: unknown;
   tasks: unknown;
+  viewerUserId: string | null;
   /** Injected so the relative labels are deterministic under test. */
   now?: Date;
 }
@@ -104,8 +105,26 @@ export function selectNextEvent(
  * midnight; mixing that with the noon parse would pick a different "nearest"
  * task if a chat card ever handed a full timestamp beside a bare due date.
  */
-export function selectNextTask(tasks: unknown): UpNextTask | null {
+/**
+ * `viewerUserId` is required, not optional, because `GET /v1/tasks` widens for
+ * an admin — `task.service.ts` returns `isAdmin ? findByChapter(chapterId) :
+ * findByAssignee(chapterId, userId)` — and this strip is drawn as the viewer's
+ * one glanceable "what's next". Unfiltered, a `tasks:manage` officer saw
+ * whichever member's task fell due soonest, in destructive red, occupying the
+ * single slot their own task should hold; tapping it landed on a board that is
+ * assignee-filtered, so the task was not there. `lib/tasks/board.ts` already
+ * applies this rule (`assignee_id !== viewerUserId` → skip) and `useTasks`'s own
+ * docblock states it: "A surface drawn as a personal board therefore has to
+ * filter by assignee itself." A `null` id yields no task rather than an
+ * unfiltered one.
+ */
+export function selectNextTask(
+  tasks: unknown,
+  viewerUserId: string | null,
+): UpNextTask | null {
+  if (!viewerUserId) return null;
   const open = asArray(tasks)
+    .filter((row) => str(row, "assignee_id") === viewerUserId)
     .map((row) => {
       const id = str(row, "id");
       const title = str(row, "title");
@@ -183,7 +202,12 @@ export function isDueUrgent(dueDate: string, now: Date): boolean {
   return dayDelta(now, due) <= 1;
 }
 
-export function UpNextStrip({ events, tasks, now }: UpNextStripProps) {
+export function UpNextStrip({
+  events,
+  tasks,
+  viewerUserId,
+  now,
+}: UpNextStripProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
@@ -192,7 +216,10 @@ export function UpNextStrip({ events, tasks, now }: UpNextStripProps) {
   // straddle a tick and disagree about what "today" means.
   const at = useMemo(() => now ?? new Date(), [now]);
   const event = useMemo(() => selectNextEvent(events, at), [events, at]);
-  const task = useMemo(() => selectNextTask(tasks), [tasks]);
+  const task = useMemo(
+    () => selectNextTask(tasks, viewerUserId),
+    [tasks, viewerUserId],
+  );
 
   if (!event && !task) return null;
 

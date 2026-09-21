@@ -57,16 +57,18 @@ export function NavTile({
   if (disabled) {
     return (
       <View
+        // `accessible` is set explicitly: a bare RN `View` is not an
+        // accessibility element, so without it the role, label, hint and
+        // disabled state below are advisory at best and the children are read
+        // as loose text. The two precedents for wiring a reason to a blocked
+        // control — `service-hours.tsx` and `components/dues/balance-card.tsx`
+        // — are both `Pressable`s, which set this for free; this branch is not,
+        // which is why the one tile that has to explain itself was the one that
+        // did not. A VoiceOver user heard "Adjust points, dimmed, button" and
+        // no reason why.
+        accessible
         accessibilityRole="button"
         accessibilityLabel={title}
-        // The reason is wired to the control, not merely printed inside it.
-        // `accessibilityRole="button"` plus an explicit label collapses the
-        // children for a screen reader, so without this the one tile that has
-        // to explain itself was the one tile that did not: a VoiceOver user
-        // heard "Adjust points, dimmed, button" and no reason why. Same rule
-        // the pressable branch below follows, and the same rule
-        // `service-hours.tsx` and `balance-card.tsx` state for a blocked
-        // control.
         accessibilityHint={accessibilityHint ?? description}
         accessibilityState={{ disabled: true }}
         style={[styles.tile, styles.tileDisabled]}

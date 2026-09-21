@@ -16,10 +16,14 @@ import { describe, expect, it } from "vitest";
  * and the chapter's minutes totalled as their own.
  *
  * The web approval queue (`apps/web/components/service/service-page.tsx`) is
- * the one deliberate unscoped caller: it is gated on `service:approve` and
- * exists to show every entry. So this is a per-call-site rule, not something
- * the hook can default, which is why it is pinned here rather than fixed by
- * making `userId` required.
+ * the one deliberate unscoped caller, because it exists to show every entry.
+ * Note what that does NOT mean: the route itself carries no permission gate —
+ * `permission="service:approve"` wraps only the approve and reject controls, so
+ * any `members:view` holder can open the page. That is why its own
+ * personally-framed card ("Your pending entries", with a Withdraw that deletes)
+ * filters by the viewer even though the read behind it is unscoped. So this is
+ * a per-call-site rule, not something the hook can default, which is why it is
+ * pinned here rather than fixed by making `userId` required.
  *
  * Shape follows `lib/observability/wiring.spec.ts`: read the source and assert
  * the wiring, because the defect was a missing argument at a call site and no
@@ -47,25 +51,38 @@ describe("service entries are read scoped to the viewer", () => {
     it(`${screen} passes the viewer id and waits for it`, () => {
       const text = source(screen);
 
-      // The id is threaded in, not omitted.
       expect(text).toContain("useViewerUserId");
-      expect(text).toMatch(/useServiceEntries\(\s*viewerUserId/);
 
-      // And the request is held until the id is known, so it cannot fire once
-      // unscoped and paint the chapter's data before the scoped read lands.
-      expect(text).toMatch(/enabled:\s*!!viewerUserId/);
+      // Both halves asserted inside ONE call expression. Matching them
+      // separately was a hole: `useServiceEntries(viewerUserId ?? undefined)`
+      // beside an unrelated `useMyPoints({ enabled: !!viewerUserId })` passed
+      // two independent regexes while the request went out unscoped on the
+      // first render. `[^)]*` cannot cross the closing paren, so the `enabled`
+      // has to belong to this call.
+      expect(text).toMatch(
+        /useServiceEntries\(\s*viewerUserId[^;]*?enabled:\s*!!viewerUserId/s,
+      );
 
       // The bare call is the bug. Guard the exact shape it had.
       expect(text).not.toMatch(/useServiceEntries\(\s*\)/);
     });
   }
 
-  it("keeps the officer queue on web, where unscoped is the point", () => {
+  it("keeps the officer queue on web unscoped, but its personal card filtered", () => {
     // Asserted from mobile so the rule stays stated in one place: if someone
     // ever moves the approval queue onto the phone, this is the line that has
     // to be revisited rather than quietly widened.
     const webQueue = source("../../apps/web/components/service/service-page.tsx");
+
+    // The queue read is deliberately unscoped — that is the whole point of an
+    // approval queue.
     expect(webQueue).toContain("useServiceEntries()");
     expect(webQueue).toContain('permission="service:approve"');
+
+    // But the "Your pending entries" card on that same page is personal and its
+    // Withdraw deletes, and `DELETE /v1/service-entries/:id` accepts
+    // `service:approve` — so an unfiltered card let an approver delete another
+    // member's pending entry and its proof. The filter is the guard.
+    expect(webQueue).toMatch(/e\.user_id === viewerUserId/);
   });
 });

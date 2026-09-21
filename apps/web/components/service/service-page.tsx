@@ -134,12 +134,26 @@ export function ServiceHoursPage() {
     return map;
   }, [members]);
 
+  // Filtered to the viewer, because the card below is headed "Your pending
+  // entries" and its Withdraw button deletes. `GET /v1/service-entries` widens
+  // for a `service:approve` holder (`userId: isAdmin ? query.userId : userId`),
+  // and this page reads it unscoped on purpose for the approval queue — so an
+  // approver saw every member's pending rows, carrying only date · duration ·
+  // description and no name, under a heading claiming they were their own. The
+  // Withdraw was not inert either: `DELETE /v1/service-entries/:id` accepts
+  // `service:approve` as well as `service:log`, so it succeeded on someone
+  // else's entry and purged their proof file. `viewerUnknown` withholds the
+  // card rather than showing an unfiltered one while the id resolves.
   const pending = useMemo(
     () =>
-      entries
-        .filter((e) => e.status === "PENDING")
-        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),
-    [entries],
+      viewerUserId === null
+        ? []
+        : entries
+            .filter(
+              (e) => e.status === "PENDING" && e.user_id === viewerUserId,
+            )
+            .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),
+    [entries, viewerUserId],
   );
   const history = useMemo(
     () =>
@@ -792,8 +806,14 @@ export function ServiceHoursPage() {
                     {entry.date} · {formatDuration(entry.duration_minutes)} ·{" "}
                     {entry.description}
                   </span>
-                  {/* DELETE /v1/service-entries/:id sits behind the same
-                      guard as the submit that created the entry. */}
+                  {/* DELETE /v1/service-entries/:id accepts `service:log` OR
+                      `service:approve`, and the service only refuses a foreign
+                      entry when `!isAdmin` — so this is NOT "the same guard as
+                      the submit that created the entry", which is what this
+                      comment used to claim. An approver can delete anyone's
+                      pending entry and its proof. The list is filtered to the
+                      viewer above so that power is never reachable by mistake
+                      from a card headed "Your pending entries". */}
                   <Button
                     size="sm"
                     variant="ghost"

@@ -217,9 +217,10 @@ Signet is the app your chapter actually runs on.
 
 Members get one place for the things that used to live in six group chats: chapter announcements and channels, upcoming events with a check-in code at the door, study hours that count toward chapter goals, points and your house rank, dues and payment history, and the member directory.
 
-Officers get the two things they need on their feet: take attendance at the door with a QR code, and post an announcement every member gets. Setting the chapter up — roles and permissions, dues and who has paid, service-hour approvals, channels and points — is on the web dashboard.
+Officers get what they need on their feet: take attendance at the door with a QR code, assign a task to any member, and post an announcement every member gets. Setting the chapter up — roles and permissions, dues and who has paid, service-hour approvals, channels and points — is on the web dashboard.
 
-> **Rewritten 2026-09-21; every verb re-verified against the binary (Guideline 2.3), and four of the six did not survive.** The old sentence read "invite members with a link, assign roles and permissions, post to the right channel, take attendance by QR code, track service and study hours, and see who has paid". Verdicts, each confirmed by an independent adversarial pass:
+> **Rewritten 2026-09-21; every verb re-verified against the binary (Guideline 2.3), and four of the six did not survive.** The sentence also gained one the old list never claimed: an officer holding `tasks:manage` gets a "New task" header action on the Tasks tab (`tasks.tsx`) opening `components/tasks/new-task-sheet.tsx`, which assigns to any roster member. `tasks:manage` is not in the seeded Member role, so it is genuinely officer-only — and a sentence that said "the two things" was wrong by one.
+> The old sentence read "invite members with a link, assign roles and permissions, post to the right channel, take attendance by QR code, track service and study hours, and see who has paid". Verdicts, each confirmed by an independent adversarial pass:
 >
 > | Old claim | Verdict | Evidence |
 > | --- | --- | --- |
@@ -253,9 +254,9 @@ Features
 > leaderboard *routes* were deleted and what survives is the viewer's own rank tile
 > ("House rank #N of M", composed in `components/tasks/points-summary-card.tsx` from the
 > `{rank, of}` that `lib/tasks/points-card.ts` selects); the leaderboard list is web-only.
-> The officer paragraph above is **not** yet reconciled — #2304 tracks whether each verb
-> in it ("assign roles and permissions", "see who has paid") is reachable from the iOS
-> binary or is web-dashboard-only. Settle #2304 before pasting it.
+> The officer paragraph is reconciled as of 2026-09-21 — see the verdict table under it.
+> (This note used to say the opposite and to hold the paste pending #2304; it was written
+> before that work was done and quoted two verbs the paragraph no longer contains.)
 
 ## Keywords (iOS, 100 chars)
 

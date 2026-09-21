@@ -7,6 +7,7 @@ import {
 } from "@gorhom/bottom-sheet";
 import {
   useCreateServiceEntry,
+  useCurrentUser,
   useServiceEntries,
   useViewerUserId,
 } from "@repo/hooks";
@@ -66,6 +67,13 @@ export default function ServiceHoursScreen() {
   // logged". `null` is "/v1/users/me has not answered yet", so the request
   // waits rather than firing once unscoped.
   const viewerUserId = useViewerUserId();
+  // The query behind `useViewerUserId`, for its error state: the helper reports a
+  // failed `/v1/users/me` as `null`, the same value it means by "pending", and
+  // the read below is gated on that id — so without this the screen shimmers
+  // forever on a dead call, with no pull-to-refresh to escape by
+  // (`ScreenShell` is a bare ScrollView). The C3 ruling, as dues and tasks
+  // already apply it.
+  const viewerQuery = useCurrentUser();
   const entriesQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
     enabled: !!viewerUserId,
   });
@@ -128,8 +136,20 @@ export default function ServiceHoursScreen() {
   }
 
   function renderList() {
-    // `viewerUserId === null` is the id still resolving. The query is disabled
-    // until then, so `isPending` alone would not cover it.
+    if (viewerQuery.isError) {
+      return (
+        <ErrorState
+          title="Couldn't load your account"
+          body="Your service hours are filtered to you, so this has to load first."
+          onRetry={() => void viewerQuery.refetch()}
+          isRetrying={viewerQuery.isFetching}
+        />
+      );
+    }
+
+    // `viewerUserId === null` here is "/v1/users/me has not answered yet" — the
+    // error case is already handled above. The entries query is disabled until
+    // the id lands, so `isPending` alone would not cover it.
     if (viewerUserId === null || entriesQuery.isPending)
       return <SkeletonLines lines={3} />;
     if (entriesQuery.isError) {
