@@ -175,11 +175,28 @@ Three attempts have been retired, in order:
   `claude-review-gate` check) — removed 2026-06-04. There is no such workflow, no such required
   check, no `CLAUDE_CODE_OAUTH_TOKEN` secret and no `.github/claude-review/` rubric.
 - **An advisory `codex review` job** (`codex-review.yml`, BYOK via OpenRouter) — shipped
-  2026-09-18, removed 2026-09-21. It never completed a single review that inspected a diff: its
-  live runs failed on an OpenRouter data-policy exclusion, then on an output-reservation credit
-  refusal, and finally on a runner sandbox that could not start — the last of which made the model
-  report it had read nothing while the harness scored the run as a verified clean review. Its
-  model was never evaluated, because no run ever reached one.
+  2026-09-18, removed 2026-09-21. It never completed a single review that inspected a diff. Three
+  distinct live failures, each dated and reproducible, in order:
+  - **Data-policy exclusion**, on PR [#2405](https://github.com/pdcarlson/Frapp/pull/2405). The
+    provider returned *"0 endpoints out of 1 requested are available matching your guardrail
+    restrictions and data policy … ZDR violation (account settings)"* — an account setting at
+    `https://openrouter.ai/settings/privacy`, not a wrong model slug (a wrong slug matches *zero*
+    endpoints, not "1 requested").
+  - **Credit refusal**, same PR. With no metadata for a BYOK slug the CLI sends no
+    `max_output_tokens`, so the provider reserves the model's full output width — **65536 tokens,
+    observed** — and checks affordability against that reservation before generating: *"You
+    requested up to 65536 tokens, but can only afford 9411."* A key limit sized to expected spend
+    therefore never works; a reservation is not a charge.
+  - **Sandbox failure**, on PR [#2420](https://github.com/pdcarlson/Frapp/pull/2420), run
+    [35403461435](https://github.com/pdcarlson/Frapp/actions/runs/35403461435). `codex review`
+    reads the diff by running shell commands in a sandbox; the runner image has no `bubblewrap` on
+    `PATH` and the CLI's bundled copy could not start, so every command failed. The model
+    correctly reported it could not inspect anything and raised nothing — and the harness scored
+    exit 0 + schema-valid + zero findings as a **verified clean review of code nothing had read**.
+
+  **That last trap generalises to any sandboxed CI reviewer** and is the reason to distrust a
+  zero-findings run: silence from a reviewer that cannot read is indistinguishable from a clean
+  diff. The model (`meta/muse-spark-1.3`) was never evaluated, because no run ever reached one.
 
 **The one constraint that outlives all three.** Any automated reviewer added here must **never**
 post a `CHANGES_REQUESTED` or `APPROVED` review. The first blocks squash on green checks with no

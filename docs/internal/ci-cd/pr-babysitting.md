@@ -400,9 +400,11 @@ changes would break the first, and none should ever be made:**
 One exposure this review does not eliminate: `pr-base-sync.yml` pins `actions/checkout@v4` and
 `actions/create-github-app-token@v3` by **mutable major tag**, and the second is the action that
 receives the private key. A compromised tag executes in exactly the job that holds it. Both are
-`actions/*` and mutable tags are the convention across all eleven workflows here, so this is not a
+`actions/*`, and mutable major tags are this repo's prevailing convention (a handful of third-party
+actions aside — `docker/*`, `dorny/paths-filter`, `lycheeverse/lychee-action`), so this is not a
 deviation — but it is the shortest path to the key, and SHA-pinning at least the token minter is
-the cheapest hardening available if that trade is ever revisited.
+the cheapest hardening available if that trade is ever revisited. Count the workflows with
+`ls .github/workflows/*.yml` rather than trusting a number written here.
 
 One pre-existing property this rests on: `main` requires **zero** approving reviews — and since
 #1340 it is the only branch, so there is no branch anywhere that requires one (the PR review
