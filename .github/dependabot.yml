@@ -26,10 +26,19 @@ updates:
       timezone: Etc/UTC
     # Grouped minor+patch = 1 PR; anything left is a major, and majors are
     # deliberately ungrouped so each gets its own reviewable diff — except the
-    # `vitest` group, which is grouped at every level (see its comment). That
-    # group is guaranteed to fire on any week vitest ships, so budget one slot
-    # for it against the limit above.
-    open-pull-requests-limit: 5
+    # `vitest` group, which is grouped at every level (see its comment).
+    #
+    # Raised 5 -> 6 when that group landed. It is guaranteed to fire on any
+    # week vitest ships, so it permanently consumes one slot; at 5, a week with
+    # four PRs already open plus a vitest release hit the cap, and Dependabot
+    # drops the overflow SILENTLY — no error, no comment, nothing in a log that
+    # says a PR was withheld. The 6th slot is that group's, not extra headroom
+    # for majors. If another always-on group is ever added, raise this again by
+    # one for the same reason.
+    #
+    # Version updates only: security PRs are exempt from this limit and do not
+    # count toward it, so a full queue can never suppress one.
+    open-pull-requests-limit: 6
     labels:
       - "area:deps"
     # `include: scope` makes Dependabot append the scope itself — "(deps)" for

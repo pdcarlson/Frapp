@@ -269,7 +269,7 @@ non-allowlisted high/critical advisory.
 a single root `package-lock.json`, so one `npm` entry covers all eighteen. Per-workspace entries would
 open duplicate PRs against the same lockfile — don't add them.
 
-**Schedule and noise floor.** Weekly, Monday 09:00 UTC, `open-pull-requests-limit: 5`. Minor and
+**Schedule and noise floor.** Weekly, Monday 09:00 UTC, `open-pull-requests-limit: 6`. Minor and
 patch updates are grouped into **one** PR (`npm-minor-and-patch`); majors are deliberately left
 ungrouped so each arrives as its own reviewable diff. Every Dependabot PR costs a babysit cycle under
 the [Autonomous PR lifecycle](../../../AGENTS.md), which is why grouping is aggressive.
@@ -284,6 +284,12 @@ second group entry carries `applies-to: security-updates`, because groups defaul
 version-update lane only. See
 [The vitest 5 major is held on jest-dom's matcher types](#the-vitest-5-major-is-held-on-jest-doms-matcher-types)
 below for the measured trees and why one of the two PRs went green anyway.
+
+The limit went 5 → 6 with that group, and the 6th slot is *its*, not new headroom: the group fires
+on every week vitest ships, and Dependabot drops overflow past the cap **silently** — no error, no
+comment, nothing saying a PR was withheld. Security PRs are exempt from the limit and never counted
+against it, so a full queue cannot suppress one. Add another always-on group and this needs raising
+again by one.
 
 **Who babysits.** Nobody special — Dependabot PRs flow through the normal lifecycle: CI runs (`npm
 ci`, lint, type-check, `api-tests`, `web-tests`, `api-docker-build`) plus the audit gate, and an
