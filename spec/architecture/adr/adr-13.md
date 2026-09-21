@@ -28,7 +28,7 @@
   to adopt the native features as well, or instead, has not been decided; ADR-17's revisit trigger
   has fired and is unactioned. And Actions minutes are **not** metered. The CodeRabbit consequence is the
   one worth reading twice: its free OSS tier would apply again, and that constraint is exactly what
-  ADR-14 gave as its reason for replacing CodeRabbit — so that decision rested on a premise that has
+  the 2026-06-01 code-review decision gave as its reason for replacing CodeRabbit — so that decision rested on a premise that has
   since lapsed. It is moot only because the CI reviewer it introduced was itself abandoned on
   2026-06-04 in favour of a local pre-push gate, for reasons that had nothing to do with visibility.
   The required-reviewer bullet already carries its own dated correction above.
