@@ -180,7 +180,7 @@ export default function CreateChapter() {
     } catch (caught) {
       setError(
         serverMessageOf(caught) ??
-          "Couldn't create an invite. You can invite members later from the directory.",
+          "Couldn't create an invite. You can invite members from the web dashboard.",
       );
     }
   }
@@ -692,7 +692,7 @@ function InviteStep({
     <View style={styles.stack}>
       <Text style={styles.body}>
         Share a join link so your chapter can hop into #general. This step is
-        optional — you can always invite members later.
+        optional — you can invite more members later from the web dashboard.
       </Text>
       {inviteLink ? (
         <View style={styles.dashedCard}>

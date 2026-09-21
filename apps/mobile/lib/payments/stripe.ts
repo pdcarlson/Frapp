@@ -36,11 +36,22 @@ import type { StripeModule } from "./stripe-types";
  * ## Two things have to be true before a Pay button does anything
  *
  * The native module has to exist **and** a publishable key has to be
- * configured. `apps/web` already draws that line — `ENV_REFERENCE.md` records
- * that when `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` is unset "`getStripe()` returns
- * `null` and no Pay affordance renders". `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is
- * the mobile counterpart and is optional for exactly the same reason: local dev,
- * CI and Expo Go all run without it, and none of them can take a payment anyway.
+ * configured. `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is the mobile counterpart of
+ * `apps/web`'s `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` and is optional for exactly
+ * the same reason: local dev, CI and Expo Go all run without it, and none of them
+ * can take a payment anyway.
+ *
+ * **Only the reason carries over from web — the rendering does not.** Web hides the
+ * control; mobile keeps it and disables it with the reason stated. See
+ * {@link stripeUnavailableReason} and the §5 rule below.
+ *
+ * This matters because it already went wrong once: this comment used to put web's
+ * "no Pay affordance renders" beside the claim of sameness, and
+ * `apps/mobile/store/README.md` § Review notes copied it into the App Review notes as
+ * "the Pay affordance does not render in any build". Nothing has been submitted, so it
+ * reached no live listing — but it would have told a reviewer to hunt for an absent
+ * control while a disabled one sat on screen. State mobile's behavior here and let
+ * `ENV_REFERENCE.md` own web's.
  */
 const stripeModule = createIsolatedModule<StripeModule>({
   packageName: "@stripe/stripe-react-native",

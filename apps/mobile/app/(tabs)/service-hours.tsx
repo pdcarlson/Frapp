@@ -5,7 +5,12 @@ import {
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
-import { useCreateServiceEntry, useServiceEntries } from "@repo/hooks";
+import {
+  useCreateServiceEntry,
+  useCurrentUser,
+  useServiceEntries,
+  useViewerUserId,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { formatMinutesRounded } from "@repo/formatting";
 import { ScreenShell } from "@/components/screen-shell";
@@ -55,7 +60,23 @@ export default function ServiceHoursScreen() {
   const styles = createStyles(tokens, accent);
   const sheetRef = useRef<BottomSheetModal>(null);
 
-  const entriesQuery = useServiceEntries();
+  // Scoped to the viewer on purpose. Unscoped, this endpoint returns the whole
+  // chapter to anyone holding `service:approve` — so an officer saw every
+  // member's entries in a list whose rows carry no name, and the "Approved"
+  // card totalled the chapter's minutes under a screen that says "you've
+  // logged". `null` is "/v1/users/me has not answered yet", so the request
+  // waits rather than firing once unscoped.
+  const viewerUserId = useViewerUserId();
+  // The query behind `useViewerUserId`, for its error state: the helper reports a
+  // failed `/v1/users/me` as `null`, the same value it means by "pending", and
+  // the read below is gated on that id — so without this the screen shimmers
+  // forever on a dead call, with no pull-to-refresh to escape by
+  // (`ScreenShell` is a bare ScrollView). The C3 ruling, as dues and tasks
+  // already apply it.
+  const viewerQuery = useCurrentUser();
+  const entriesQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
+    enabled: !!viewerUserId,
+  });
   const createEntry = useCreateServiceEntry();
 
   const rows = useMemo(
@@ -115,7 +136,22 @@ export default function ServiceHoursScreen() {
   }
 
   function renderList() {
-    if (entriesQuery.isPending) return <SkeletonLines lines={3} />;
+    if (viewerQuery.isError) {
+      return (
+        <ErrorState
+          title="Couldn't load your account"
+          body="Your service hours are filtered to you, so this has to load first."
+          onRetry={() => void viewerQuery.refetch()}
+          isRetrying={viewerQuery.isFetching}
+        />
+      );
+    }
+
+    // `viewerUserId === null` here is "/v1/users/me has not answered yet" — the
+    // error case is already handled above. The entries query is disabled until
+    // the id lands, so `isPending` alone would not cover it.
+    if (viewerUserId === null || entriesQuery.isPending)
+      return <SkeletonLines lines={3} />;
     if (entriesQuery.isError) {
       return (
         <ErrorState

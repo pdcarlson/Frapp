@@ -110,7 +110,11 @@ export default function ChatHomeScreen() {
       subtitle="Your chapter's channels and direct messages."
       headerAction={<AskPill onPress={() => askSheetRef.current?.present()} />}
     >
-      <UpNextStrip events={eventsQuery.data} tasks={tasksQuery.data} />
+      <UpNextStrip
+        events={eventsQuery.data}
+        tasks={tasksQuery.data}
+        viewerUserId={viewerId}
+      />
 
       {/*
         A failed unread fetch must not read as "everything is read". The counts

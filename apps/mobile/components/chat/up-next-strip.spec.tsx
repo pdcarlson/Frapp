@@ -97,46 +97,150 @@ describe("selectNextEvent", () => {
 });
 
 describe("selectNextTask", () => {
+  // Every fixture carries `assignee_id: VIEWER`, because the selector is
+  // assignee-scoped: `GET /v1/tasks` widens for an admin, and this strip is
+  // drawn as the viewer's own next task.
+  const VIEWER = "viewer-1";
+
   it("returns the nearest due task", () => {
-    const task = selectNextTask([
-      { id: "b", title: "Later", due_date: at(2026, 7, 25), status: "TODO" },
-      { id: "a", title: "Sooner", due_date: at(2026, 7, 17), status: "TODO" },
-    ]);
+    const task = selectNextTask(
+      [
+        {
+          id: "b",
+          title: "Later",
+          due_date: at(2026, 7, 25),
+          status: "TODO",
+          assignee_id: VIEWER,
+        },
+        {
+          id: "a",
+          title: "Sooner",
+          due_date: at(2026, 7, 17),
+          status: "TODO",
+          assignee_id: VIEWER,
+        },
+      ],
+      VIEWER,
+    );
 
     expect(task?.title).toBe("Sooner");
   });
 
   it("excludes completed tasks", () => {
-    const task = selectNextTask([
-      {
-        id: "done",
-        title: "Done",
-        due_date: at(2026, 7, 16),
-        status: "COMPLETED",
-      },
-      { id: "open", title: "Open", due_date: at(2026, 7, 20), status: "TODO" },
-    ]);
+    const task = selectNextTask(
+      [
+        {
+          id: "done",
+          title: "Done",
+          due_date: at(2026, 7, 16),
+          status: "COMPLETED",
+          assignee_id: VIEWER,
+        },
+        {
+          id: "open",
+          title: "Open",
+          due_date: at(2026, 7, 20),
+          status: "TODO",
+          assignee_id: VIEWER,
+        },
+      ],
+      VIEWER,
+    );
 
     expect(task?.title).toBe("Open");
   });
 
   it("keeps overdue tasks — they are the most urgent thing the strip can say", () => {
-    const task = selectNextTask([
-      {
-        id: "late",
-        title: "Overdue",
-        due_date: at(2026, 6, 1),
-        status: "OVERDUE",
-      },
-      { id: "soon", title: "Soon", due_date: at(2026, 7, 17), status: "TODO" },
-    ]);
+    const task = selectNextTask(
+      [
+        {
+          id: "late",
+          title: "Overdue",
+          due_date: at(2026, 6, 1),
+          status: "OVERDUE",
+          assignee_id: VIEWER,
+        },
+        {
+          id: "soon",
+          title: "Soon",
+          due_date: at(2026, 7, 17),
+          status: "TODO",
+          assignee_id: VIEWER,
+        },
+      ],
+      VIEWER,
+    );
 
     expect(task?.title).toBe("Overdue");
   });
 
+  it("ignores another member's task, even when it is due sooner", () => {
+    // The officer case. An admin's `GET /v1/tasks` carries the whole chapter,
+    // so without the assignee filter the strip headlines someone else's work in
+    // the one slot — and tapping it lands on a board that is assignee-filtered,
+    // where the task is not there.
+    const task = selectNextTask(
+      [
+        {
+          id: "theirs",
+          title: "Book the DJ",
+          due_date: at(2026, 6, 1),
+          status: "OVERDUE",
+          assignee_id: "someone-else",
+        },
+        {
+          id: "mine",
+          title: "Mine",
+          due_date: at(2026, 7, 20),
+          status: "TODO",
+          assignee_id: VIEWER,
+        },
+      ],
+      VIEWER,
+    );
+
+    expect(task?.title).toBe("Mine");
+  });
+
+  it("returns null when every open task belongs to someone else", () => {
+    expect(
+      selectNextTask(
+        [
+          {
+            id: "theirs",
+            title: "Theirs",
+            due_date: at(2026, 7, 17),
+            status: "TODO",
+            assignee_id: "someone-else",
+          },
+        ],
+        VIEWER,
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null rather than an unfiltered task when the viewer is unknown", () => {
+    expect(
+      selectNextTask(
+        [
+          {
+            id: "a",
+            title: "Sooner",
+            due_date: at(2026, 7, 17),
+            status: "TODO",
+            assignee_id: VIEWER,
+          },
+        ],
+        null,
+      ),
+    ).toBeNull();
+  });
+
   it("survives malformed input", () => {
-    expect(selectNextTask(undefined)).toBeNull();
-    expect(selectNextTask([{ id: "a", title: "No due date" }])).toBeNull();
+    expect(selectNextTask(undefined, VIEWER)).toBeNull();
+    expect(
+      selectNextTask([{ id: "a", title: "No due date" }], VIEWER),
+    ).toBeNull();
   });
 });
 

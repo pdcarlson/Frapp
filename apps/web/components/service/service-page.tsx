@@ -134,12 +134,34 @@ export function ServiceHoursPage() {
     return map;
   }, [members]);
 
+  // Every pending entry in the chapter, and deliberately so: this feeds the
+  // ADMIN REVIEW QUEUE, which exists to show work that is not yours.
+  // `GET /v1/service-entries` widens for a `service:approve` holder
+  // (`userId: isAdmin ? query.userId : userId`) and this page reads it unscoped
+  // for exactly that reason. Do not filter this one — the queue is the point.
   const pending = useMemo(
     () =>
       entries
         .filter((e) => e.status === "PENDING")
         .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),
     [entries],
+  );
+
+  // The viewer's own pending entries, which is a different list with a
+  // different job: the "Your pending entries" card at the bottom, whose
+  // Withdraw deletes. It used to render from `pending` above, so an approver
+  // saw every member's rows — date · duration · description, no name — under a
+  // heading claiming they were their own, each with a live Withdraw. That was
+  // not inert: `DELETE /v1/service-entries/:id` accepts `service:approve` as
+  // well as `service:log`, and the service only refuses a foreign entry when
+  // `!isAdmin`, so it succeeded and purged the other member's proof file. While
+  // the viewer id is still resolving this is empty rather than unfiltered.
+  const myPending = useMemo(
+    () =>
+      viewerUserId === null
+        ? []
+        : pending.filter((e) => e.user_id === viewerUserId),
+    [pending, viewerUserId],
   );
   const history = useMemo(
     () =>
@@ -721,6 +743,12 @@ export function ServiceHoursPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* `pending` is chapter-wide on purpose here, matching `history`,
+              which is also everything the viewer may see — that is what the
+              description above claims. The second branch says "above" because
+              an approver reads the review queue above this card; a member who
+              cannot approve sees their pending entries only in the card BELOW,
+              so it names neither position. */}
           {history.length === 0 && pending.length === 0 ? (
             <NestedEmpty
               title="No service activity yet"
@@ -728,8 +756,8 @@ export function ServiceHoursPage() {
             />
           ) : history.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nothing reviewed yet. PENDING entries above haven&apos;t been
-              approved or rejected.
+              Nothing reviewed yet. Pending entries haven&apos;t been approved or
+              rejected.
             </p>
           ) : (
             <ul className="divide-y divide-border">
@@ -773,7 +801,25 @@ export function ServiceHoursPage() {
         </CardFooter>
       </Card>
 
-      {pending.length > 0 ? (
+      {viewerUnknown ? (
+        /* The viewer id is what scopes this card, so without it there is no
+           honest list to show. But withholding the card silently is the wrong
+           half of §5 rule 4 — a member whose `/v1/users/me` failed would find
+           their only way to correct an entry simply gone, with no reason and no
+           retry, which is the silent-dead-control gap #1346 records. Say which
+           of the two states it is, in the same words the Approve control uses
+           for them. */
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Your pending entries</CardTitle>
+            <CardDescription>
+              {viewerLoading
+                ? "Confirming your account\u2026"
+                : "We couldn't confirm your account, so withdrawing is unavailable. Reload to try again."}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : myPending.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Your pending entries</CardTitle>
@@ -783,7 +829,7 @@ export function ServiceHoursPage() {
           </CardHeader>
           <CardContent>
             <ul className="divide-y divide-border">
-              {pending.map((entry) => (
+              {myPending.map((entry) => (
                 <li
                   key={entry.id}
                   className="flex items-center justify-between py-2 text-sm"
@@ -792,8 +838,14 @@ export function ServiceHoursPage() {
                     {entry.date} · {formatDuration(entry.duration_minutes)} ·{" "}
                     {entry.description}
                   </span>
-                  {/* DELETE /v1/service-entries/:id sits behind the same
-                      guard as the submit that created the entry. */}
+                  {/* DELETE /v1/service-entries/:id accepts `service:log` OR
+                      `service:approve`, and the service only refuses a foreign
+                      entry when `!isAdmin` — so this is NOT "the same guard as
+                      the submit that created the entry", which is what this
+                      comment used to claim. An approver can delete anyone's
+                      pending entry and its proof. The list is filtered to the
+                      viewer above so that power is never reachable by mistake
+                      from a card headed "Your pending entries". */}
                   <Button
                     size="sm"
                     variant="ghost"

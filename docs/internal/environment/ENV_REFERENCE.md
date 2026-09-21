@@ -431,8 +431,14 @@ CI, a local `expo start`, and every Expo Go session run without it, and none of
 them can take a payment anyway. `EXPO_PUBLIC_APP_URL` and `EXPO_PUBLIC_LANDING_URL`
 are optional in the same way — unset, invite links and legal pages fall back to
 the production origins documented in the table. `EXPO_PUBLIC_ASK_ENABLED` is optional in a
-stronger sense — nothing sets it anywhere today, which is what keeps the mocked
-Ask corpus off every shipped build (`spec/ui/mobile/screens.md` s17).
+stronger sense — nothing in this repo sets it. **That is not the same as it being off in
+a shipped build, and this line used to say it was (corrected 2026-09-21).** Every profile
+in `apps/mobile/eas.json` declares `environment`, so a server-side `eas env:set` reaches
+the bundle with no repo change and no CI signal — the route that already delivers
+`EXPO_PUBLIC_SENTRY_DSN` and `EXPO_PUBLIC_POSTHOG_KEY`. Only
+`eas env:list --environment production` settles whether the mocked Ask corpus
+(`spec/ui/mobile/screens.md` s17) is off in a store binary, which matters because #2259
+and the store listing's omission of Ask both rest on it.
 
 ### Client-exposure audit
 
