@@ -33,8 +33,17 @@
 > dashboard** — there is no Infisical→EAS sync, so it does not arrive on its own — and a real error
 > has to be captured from a **dev build on a physical device**, which needs the EAS project tracked
 > in [#938](https://github.com/pdcarlson/Frapp/issues/938). Expo Go cannot exercise a native SDK's
-> crash handling, so "it works in Go" is not evidence. Until both land, a silent `frapp-mobile`
-> means "not configured", not "no errors".
+> crash handling, so "it works in Go" is not evidence.
+>
+> **Partly discharged, 2026-09-21.** `EXPO_PUBLIC_SENTRY_DSN` **is** set in the EAS
+> `production` environment ([#2415](https://github.com/pdcarlson/Frapp/issues/2415),
+> owner's `env:list` 2026-09-18); `preview` and `development` are still unset. So do not
+> re-enter a production DSN by hand — pasting `frapp-web`'s is the mistake this file
+> warns against. The second half of #1361 stands: no real event has ever been captured,
+> and `frapp-mobile` holds **0** releases and **0** errors in 90d. For a `preview` or
+> `development` build a silent `frapp-mobile` still means "not configured", not "no
+> errors"; for a `production` build it no longer does, and silence there is worth
+> investigating as ingest or source-map upload rather than shrugging at.
 >
 > Environment tagging is per build profile in the committed `eas.json`
 > (`development` / `staging` / `production`), not a dashboard value — an EAS profile exposes no

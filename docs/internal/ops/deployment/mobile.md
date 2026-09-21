@@ -59,6 +59,14 @@ eas build --profile development --platform ios
 
 **Option C: Preview build (share with testers)**
 
+> **Not usable today (2026-09-21).** The EAS `preview` environment holds only
+> `SENTRY_AUTH_TOKEN` ([#2415](https://github.com/pdcarlson/Frapp/issues/2415), owner's
+> `env:list` 2026-09-18), so a `preview` build has no `EXPO_PUBLIC_SUPABASE_URL` /
+> `_ANON_KEY` and `getSupabaseClient()` returns `null` — it installs and then reports
+> sign-in unavailable. Nothing fails at build time, because the fences in
+> `apps/mobile/app.config.js` all return early unless the profile is `production`. Run
+> § 6.3 for `preview` first, or you will pay for a build you cannot sign into.
+
 ```bash
 eas build --profile preview --platform all
 # Generates installable links for iOS (ad-hoc) and Android (APK)

@@ -187,7 +187,8 @@ describe("SUBSCRIPTION_REFUSAL_COPY", () => {
   const all = Object.values(SUBSCRIPTION_REFUSAL_COPY);
 
   it("names no price, plan, purchase path or link on any surface", () => {
-    // `apps/mobile/store/README.md:32`/`:179` are the submitted App Store
+    // `apps/mobile/store/README.md` § Identity (Price) and § Review notes are
+    // the submitted App Store
     // Connect answers: no in-app purchases, and subscriptions "are not
     // offered, linked or mentioned in the app". Copy that names checkout here
     // trades this Guideline 2.1 finding for a 3.1.1 one.

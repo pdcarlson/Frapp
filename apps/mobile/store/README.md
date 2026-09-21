@@ -3,8 +3,10 @@
 The text and answers the two store consoles ask for, kept next to the app so
 they are reviewed like code. Nothing here is read by a build; it is what a human
 pastes into App Store Connect and the Play Console when creating the listing
-(procedure: [`docs/internal/ops/deployment/mobile.md`](../../../docs/internal/ops/deployment/mobile.md)
-§ Mobile). **Screenshots are not committed and none exist — App Store Connect does not
+(build and EAS environment procedure:
+[`docs/internal/ops/deployment/mobile.md`](../../../docs/internal/ops/deployment/mobile.md)
+§ 6 — note that it covers `eas` setup only and says nothing about screenshots, listing
+fields or submission, so there is no written capture procedure to follow). **Screenshots are not committed and none exist — App Store Connect does not
 accept a submission without them**, and the documented route to them is itself blocked:
 the EAS `preview` environment holds only `SENTRY_AUTH_TOKEN`
 ([#2415](https://github.com/pdcarlson/Frapp/issues/2415)), so a preview build installs
@@ -52,25 +54,54 @@ search.
 > talks to `api.frapp.live`, whose `/health` and `/health/ready` also return 200 on the
 > same check.
 >
-> **Re-checked 2026-09-21 — the 2026-09-14 reading below it was stale and is replaced.**
-> The production API is live on commit `7e47ec5` (2026-09-16, deploy
-> `dep-dalvt9ou01pc73av5tq0`, status `live`), which is **29** commits behind `main`, not
-> 160; the six of those commits that touch `apps/api` are dependency bumps and internal
-> refactors, so there is no known contract break between the store binary and the API it
-> will talk to. `frapp-prod` migrations are **current** — its applied list ends at the
-> same `20260915210100` the repo does, and it already carries
-> `chat_reports_and_blocks`, so the Guideline 1.2 server side is deployed to production
-> and #2257 is client-only work. (`mcp__Render__list_deploys` on
-> `srv-d6lqu41aae7s73f62df0`; `mcp__Supabase__list_migrations` on
-> `unttyvyfezddlyafcydh`.) The Resend gap was not re-verified and does not affect a
-> reviewer, who is handed a token directly rather than emailed one. **Re-check again
-> before submitting**; a 200 on `/health` says the service is up, not that it matches
-> the app.
+> **Re-checked 2026-09-21. The superseded 2026-09-14 reading is kept below rather than
+> deleted, because it is the record of how the gap was found.** The production API is
+> live on commit `7e47ec5` (2026-09-16, deploy `dep-dalvt9ou01pc73av5tq0`, status
+> `live`) — **29** commits behind `main`, not 160
+> (`git rev-list --count 7e47ec5..origin/main`). Of those, **five** touch `apps/api`
+> and **six** touch `apps/api packages/api-sdk packages/validation`; run the command with
+> the packages included, because the store binary compiles them too and an `apps/api`-only
+> filter cannot see the client half of a contract.
 >
-> **What is actually in `frapp-prod` today (2026-09-21): 2 chapters, 7 member rows but
-> only 2 auth users, 2 invites, 3 invoices of which 2 are OPEN, 5 events, 11 chat
-> messages, 0 DM channels and 0 study zones.** Three of the review notes below describe
-> things a reviewer therefore cannot reach — see § Seed the reviewer's chapter.
+> **No contract break, and here is the check rather than the characterization:**
+> `git diff 7e47ec5 origin/main -- apps/api/src/interface/controllers apps/api/src/interface/dto apps/api/openapi.json packages/api-sdk`
+> returns only `*.controller.spec.ts` changes — no route-decorator diff, no `openapi.json`
+> change, no SDK change — and `apps/api/src/interface/guards/chapter.guard.ts` is
+> byte-identical. Do not describe the window as only bumps and refactors: `a3a042d`
+> (#2417) touches no `apps/api` file but adds `subscriptionRefusalFromServerMessage` to
+> `packages/validation/src/subscription.ts`, which matches the API's 403 **prose** because
+> `AllExceptionsFilter` drops `code` (#1020). That is the one prose-coupled contract in
+> the window: it holds only while those refusal strings are byte-identical, which today
+> they are. Reword a `chapter.guard.ts` message and deploy the API alone and the store
+> binary stops recognizing a subscription refusal.
+>
+> `frapp-prod` migrations are **current** — its applied list ends at the same
+> `20260915210100` the repo does (83 files; the old "81" was stale) — and it already
+> carries `chat_reports_and_blocks`, so the Guideline 1.2 **write** path is deployed.
+> That narrows #2257 to client work but does not close it: nothing anywhere reads
+> `/v1/chat/reports`, including the web dashboard, and 1.2 requires acting on a report,
+> not only accepting it — so an officer review surface is still owed. (`mcp__Render__list_deploys`
+> on `srv-d6lqu41aae7s73f62df0`; `mcp__Supabase__list_migrations` on
+> `unttyvyfezddlyafcydh`.) **Re-check again before submitting**; a 200 on `/health` says
+> the service is up, not that it matches the app.
+>
+> **Superseded, kept as the provenance of the Resend gap (2026-09-14):** production then
+> served `0ca478e` (2026-09-08), ~160 commits behind `main`, with 76 of the repo's 81
+> migrations, and had no Resend key — the deployed commit was titled *"fix: do not claim
+> invite email was sent when production has no Resend key"*. The Resend gap was **not**
+> re-verified on 2026-09-21; it is owned by
+> [`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md). It does not
+> affect a reviewer, who is handed a token directly rather than emailed one.
+>
+> **What `frapp-prod` held on 2026-09-21:** 2 chapters, 7 member rows but only 2 auth
+> users, 2 invites, 3 invoices of which 2 are OPEN, 5 events, 11 chat messages, 0 DM
+> channels and 0 study zones. Produced with `mcp__Supabase__execute_sql` on
+> `unttyvyfezddlyafcydh` — `select count(*)` over `chapters`, `members`, `auth.users`,
+> `invites`, `financial_invoices` (total and `where status = 'OPEN'`), `events`,
+> `chat_messages`, `chat_channels where type in ('DM','GROUP_DM')` and `study_geofences`.
+> **These invert as soon as § Seed the reviewer's chapter is acted on — re-run the query
+> rather than trusting the figures.** Three review notes below describe things a reviewer
+> cannot currently reach; that section is the fix.
 
 ## As submitted — App Store Connect (recorded 2026-09-14)
 
@@ -153,9 +184,10 @@ record; each is a review-time or launch risk.
 | [#2261](https://github.com/pdcarlson/Frapp/issues/2261) | Terms of Service carries no minimum-age clause |
 | [#2262](https://github.com/pdcarlson/Frapp/issues/2262) | The FERPA notice cites a redaction feature that is not built |
 
-**Added 2026-09-21 by a full re-audit of this file against the binary and the live
-providers.** The rows above were what completing the console surfaced; these are what
-reading the app surfaced, and two of them are hard gates rather than risks.
+The rows above are what completing the console surfaced. These came from reading the
+binary and the live providers on 2026-09-21, and two are hard gates rather than risks —
+App Store Connect will not take the submission at all. Each links the issue that owns
+the work; the detail lives there, not here.
 
 | # | Risk | Kind |
 | --- | --- | --- |
@@ -174,7 +206,9 @@ reading the app surfaced, and two of them are hard gates rather than risks.
 > Deliberately omits Ask. [`spec/ui/brand-identity.md`](../../../spec/ui/brand-identity.md)
 > gives the tagline as "Ask your chapter anything." and positions Signet as the
 > AI-first operating system for Greek life, but Ask is gated behind
-> `EXPO_PUBLIC_ASK_ENABLED` (default off, set by no `eas.json` profile) and answers
+> `EXPO_PUBLIC_ASK_ENABLED` (default off, and set by no `eas.json` profile — but see the
+> dues note below on why that is *not* proof it is off in a build: only
+> `eas env:list --environment production` settles it) and answers
 > from a hand-written table in `apps/mobile/lib/ask/corpus.ts`. Store metadata that
 > advertised it would be inaccurate under Guideline 2.3. **Use the tagline as the
 > subtitle once Ask genuinely ships** — the subtitle is editable on any new version.
@@ -204,7 +238,8 @@ Features
 > (`app/(tabs)/index.tsx`). `frapp-prod` has **0** DM channels, so a reviewer would have
 > found neither the feature nor a way to produce it. "leaderboards" → "house rank": the
 > leaderboard *routes* were deleted and what survives is the viewer's own rank tile
-> ("House rank #N of M", `lib/tasks/points-card.ts`); the leaderboard list is web-only.
+> ("House rank #N of M", composed in `components/tasks/points-summary-card.tsx` from the
+> `{rank, of}` that `lib/tasks/points-card.ts` selects); the leaderboard list is web-only.
 > The officer paragraph above is **not** yet reconciled — #2304 tracks whether each verb
 > in it ("assign roles and permissions", "see who has paid") is reachable from the iOS
 > binary or is web-dashboard-only. Settle #2304 before pasting it.
@@ -219,17 +254,19 @@ First release.
 
 ## Seed the reviewer's chapter
 
-**Added 2026-09-21.** The review notes below promise a reviewer three things that
-`frapp-prod` cannot currently show them. A reviewer who follows the notes and finds
-nothing files that as the app not working, so this is a prerequisite list, not a polish
-list. Counts are from `frapp-prod` on 2026-09-21.
+The review notes below promise a reviewer four things a fresh demo account cannot see.
+A reviewer who follows the notes and finds nothing files it as the app not working, so
+this is a prerequisite list, not a polish list. **Every row is a seeding step, and each
+one inverts a count in § Identity's production reading** — re-run that query afterwards
+rather than trusting either place. The work itself is tracked on the issues named; this
+table exists because nothing else states what a reviewer will actually be shown.
 
-| The notes say | Production has | Do before submitting |
-| --- | --- | --- |
-| A reviewer account and a working invite token | 2 auth users, 2 invites, and **no App Review demo user** (#2309) | Create the demo user in `frapp-prod` and mint a token whose expiry outlasts review (#2308 notes the 24h default with no override) |
-| Location confirms "inside a chapter study zone" | **0** study zones | Add one study zone to the reviewer's chapter — zone creation is web-dashboard-only, so it cannot be done from the app being reviewed |
-| "Chapter channels and direct messages" | **0** DM channels | Start one DM into the reviewer's account from the web dashboard, or the DIRECT section never renders |
-| Dues paid by Stripe PaymentSheet | 2 OPEN invoices, **no** Stripe key | Either ship the key (#2415) or drop the dues sentence — the invoice is there, so the reviewer will see the disabled button either way |
+| The notes say | Do before submitting |
+| --- | --- |
+| A reviewer account and a working invite token | Create the App Review demo user in `frapp-prod` (#2309) and mint a token whose expiry outlasts review — #2308 records a 24h default with no override |
+| Location confirms "inside a chapter study zone" | Add one study zone to the reviewer's chapter. Zone creation is web-dashboard-only, so it cannot be done from the app being reviewed |
+| "direct messages your chapter has started" | Start one DM into the reviewer's account from the web dashboard; the DIRECT section is hidden entirely when the list is empty |
+| Dues paid by Stripe PaymentSheet | Raise an OPEN invoice against the reviewer's **own** member row — the Dues CTA is viewer-scoped, so a new account sees no Pay control at all. Then either ship the key (#2415) or drop the dues sentence |
 
 ## Review notes (App Store Connect → App Review Information)
 
@@ -260,10 +297,19 @@ list. Counts are from `frapp-prod` on 2026-09-21.
   > key (`disabledReason`); `components/dues/balance-card.tsx` then renders "Pay now" at
   > half opacity, inert, captioned "Card payments aren't switched on for this build yet.
   > Ask your treasurer how to pay this invoice." That is the design system's §5
-  > disable-and-name-the-reason rule and a test pins it. `frapp-prod` has 2 OPEN invoices,
-  > so the disabled button **will** be on screen. Either ship the key or drop the
-  > sentence — but do not tell a reviewer to look for a control that is absent, because
-  > what they will find is one that is present and dead.
+  > disable-and-name-the-reason rule and a test pins it.
+  >
+  > **But whether the reviewer sees it at all depends on the reviewer's own invoice, not
+  > on the chapter's.** `dues.tsx` calls `useInvoices(viewerUserId)` and
+  > `selectInvoiceRows(..., viewerUserId)`, which keeps only rows where
+  > `row.userId === viewerUserId`; `target` comes from those, and `payLabel` is `null`
+  > without one. `frapp-prod`'s 2 OPEN invoices belong to the two pre-existing auth
+  > users, so a **freshly created demo account has no Pay control whatsoever** —
+  > `balance-card.spec.tsx` pins that case as "hides the CTA entirely when there is
+  > nothing to pay", and the card reads "You're all paid up". So there are two distinct
+  > ways the dues sentence misleads a reviewer, and seeding fixes only one: either ship
+  > the key or drop the sentence, and either way raise an OPEN invoice against the
+  > reviewer's own member row (§ Seed the reviewer's chapter).
 
 ## Privacy questionnaire answers
 
@@ -288,8 +334,8 @@ what still has to change where.
 | Identifiers → User ID | App Functionality, **Analytics** | Yes | No |
 | Identifiers → Device ID | App Functionality | Yes | No |
 | Usage Data → Product Interaction | **Analytics** | Yes | No |
-| Diagnostics → Crash Data | App Functionality | No | No |
-| Diagnostics → Performance Data | App Functionality | No | No |
+| Diagnostics → Crash Data ‡ | App Functionality | No | No |
+| Diagnostics → Performance Data ‡ | App Functionality | No | No |
 
 Declared **not** collected: all Financial Info (including Payment Info),
 Purchases, Sensitive Info, Contacts, Health & Fitness, Emails or Text Messages,
@@ -324,8 +370,10 @@ Advertising Data, Browsing History, Search History.
 > So crash and performance events carry the same identifier, and under Apple's rules
 > both rows are **Linked: Yes**. The two answers cannot both be right, and an internal
 > contradiction in the privacy answers is the kind of thing a 5.1.2 review picks up.
-> Change both rows in App Store Connect; nothing in CI can see the console, so this
-> footnote is the only reminder.
+> Change both rows **in App Store Connect**. As with the † row, the `No` values stay as
+> written in the table above, because this table is the record of what was entered on
+> 2026-09-14 — the `‡` marks them as answers to correct in the console, not values to
+> edit here. Nothing in CI can see the console, so this footnote is the only reminder.
 
 Where each answer comes from:
 
@@ -398,11 +446,19 @@ Google Play Data safety: data is encrypted in transit; users delete in the app o
 - Track for the first upload: **internal** (`eas.json` `submit.production.android.track`), then closed testing → production. A new personal developer account must run a closed test with at least 12 testers for 14 days before production is unlocked.
 - Target audience: 18 and over (college students); not designed for children.
 
-> **This contradicts § Identity, and the two are 200 lines apart.** iOS is declared
-> **13+**, the Android content rating **Everyone**, and the Android target audience
-> **18 and over** — three different answers to one question, in one file. Play runs its
-> own consistency check between a content rating and a target audience, and a reviewer
-> comparing the two listings can see the rest. It also interacts with #2261: with no
-> minimum-age clause in the Terms, **18+ is unbackable on either store**, which is the
-> reason 13+ was chosen for iOS in the first place. Reconcile to one number — and decide
-> it with #2261, not separately, since the clause is what makes the number defensible.
+> **Read this next to § Identity, which declares iOS 13+ and an Android content rating
+> of Everyone.** These are three separate declarations answering three separate
+> questions, so "Everyone" beside an 18-and-over target audience is not self-evidently a
+> contradiction, and this file asserts no cross-store consistency rule it can cite.
+> **Do not "simplify" them to one number, and in particular do not lower the Android
+> target audience.** An under-18 target audience pulls in Play's families and
+> child-safety policy set, which an app shipping chapter channels and DMs with no
+> member-level report or block (#2257, still open) does not satisfy — a harder rejection
+> than any listing untidiness.
+>
+> The reasoning actually on record is in § Age rating: 13+ was chosen over the calculated
+> 4+ **because** of the DMs-without-report-or-block situation and a college audience, and
+> 18+ was rejected for two reasons, one of them Apple-specific. The live item is #2261 —
+> the Terms carry no minimum-age clause — and it is a blocker on *raising* the floor, not
+> an input to be traded off. Settle #2261; leave the three declarations as they are
+> unless it changes the answer.

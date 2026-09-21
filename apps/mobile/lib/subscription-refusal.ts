@@ -9,8 +9,8 @@
  * retry that can never succeed. That is the Guideline 2.1 finding: the app
  * blamed the save instead of explaining the state.
  *
- * WHAT THE COPY MAY NOT SAY. `apps/mobile/store/README.md:32` and `:179` are
- * the submitted App Store Connect answers: the app has **no in-app purchases**
+ * WHAT THE COPY MAY NOT SAY. `apps/mobile/store/README.md` § Identity (the Price row)
+ * and § Review notes carry the submitted App Store Connect answers: the app has **no in-app purchases**
  * and chapter subscriptions "are bought on the web dashboard and are not
  * offered, linked or mentioned in the app". So none of this copy names a price,
  * a plan, a purchase path or a link — it points at a chapter officer, who is

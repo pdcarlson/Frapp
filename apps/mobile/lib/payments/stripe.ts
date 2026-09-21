@@ -41,14 +41,17 @@ import type { StripeModule } from "./stripe-types";
  * the same reason: local dev, CI and Expo Go all run without it, and none of them
  * can take a payment anyway.
  *
- * **Only the reason carries over from web — the rendering does not.** `ENV_REFERENCE.md`
- * records that web hides the control ("`getStripe()` returns `null` and no Pay affordance
- * renders"). Mobile does the opposite, by design: see {@link stripeUnavailableReason}
- * and the §5 rule below, where the Dues tab keeps the control and disables it with the
- * reason stated. This comment used to quote the web sentence next to the claim of
- * sameness, and `apps/mobile/store/README.md` copied it into the App Review notes as
- * "the Pay affordance does not render in any build" — which sent the store listing out
- * describing a control the binary actually shows. Do not restate web's behavior here.
+ * **Only the reason carries over from web — the rendering does not.** Web hides the
+ * control; mobile keeps it and disables it with the reason stated. See
+ * {@link stripeUnavailableReason} and the §5 rule below.
+ *
+ * This matters because it already went wrong once: this comment used to put web's
+ * "no Pay affordance renders" beside the claim of sameness, and
+ * `apps/mobile/store/README.md` § Review notes copied it into the App Review notes as
+ * "the Pay affordance does not render in any build". Nothing has been submitted, so it
+ * reached no live listing — but it would have told a reviewer to hunt for an absent
+ * control while a disabled one sat on screen. State mobile's behavior here and let
+ * `ENV_REFERENCE.md` own web's.
  */
 const stripeModule = createIsolatedModule<StripeModule>({
   packageName: "@stripe/stripe-react-native",
