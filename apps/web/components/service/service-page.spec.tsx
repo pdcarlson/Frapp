@@ -87,6 +87,12 @@ const logTrigger = () => screen.getByRole("button", { name: /log service/i });
 const approveButton = () => screen.getByRole("button", { name: /approve/i });
 const rejectButton = () => screen.getByRole("button", { name: /reject/i });
 const withdrawButton = () => screen.getByRole("button", { name: /withdraw/i });
+// Asserted as an element rather than a boolean: `expect(noWithdraw()).toBe(true)`
+// fails with "expected false to be true", which tells whoever broke it nothing.
+const expectNoWithdraw = () =>
+  expect(
+    screen.queryByRole("button", { name: /withdraw/i }),
+  ).not.toBeInTheDocument();
 const viewProofButton = () =>
   screen.getByRole("button", { name: /view proof/i });
 
@@ -105,7 +111,10 @@ describe("ServiceHoursPage subscription gating", () => {
     expect(logTrigger()).toBeEnabled();
     expect(approveButton()).toBeEnabled();
     expect(rejectButton()).toBeEnabled();
-    expect(withdrawButton()).toBeEnabled();
+    // No Withdraw for this viewer: "Your pending entries" is scoped to the
+    // submitter, and `admin-9` did not submit `PENDING_ENTRY`. Its gating is
+    // asserted in the submitter context below.
+    expectNoWithdraw();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -142,7 +151,7 @@ describe("ServiceHoursPage subscription gating", () => {
 
     expect(approveButton()).toBeDisabled();
     expect(rejectButton()).toBeDisabled();
-    expect(withdrawButton()).toBeDisabled();
+    expectNoWithdraw();
   });
 
   it("never gates reading a proof", () => {
@@ -161,7 +170,6 @@ describe("ServiceHoursPage subscription gating", () => {
     const describedBy = logTrigger().getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
     expect(approveButton()).toHaveAttribute("aria-describedby", describedBy);
-    expect(withdrawButton()).toHaveAttribute("aria-describedby", describedBy);
     expect(document.getElementById(describedBy!)).toHaveTextContent(
       /subscription is not active/i,
     );
@@ -209,7 +217,7 @@ describe("ServiceHoursPage subscription gating", () => {
 
     expect(logTrigger()).toBeEnabled();
     expect(approveButton()).toBeEnabled();
-    expect(withdrawButton()).toBeEnabled();
+    expectNoWithdraw();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -241,6 +249,78 @@ describe("ServiceHoursPage subscription gating", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
     expect(logTrigger()).toBeDisabled();
+  });
+});
+
+describe("ServiceHoursPage withdraw is the submitter's own", () => {
+  // The "Your pending entries" card is scoped to the viewer because its
+  // Withdraw deletes, and `DELETE /v1/service-entries/:id` accepts
+  // `service:approve` as well as `service:log` — the service only refuses a
+  // foreign entry when `!isAdmin`. Unfiltered, a reviewer could delete another
+  // member's pending entry and its proof from a card headed as their own.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // A default, like the three sibling blocks have. `clearAllMocks` resets
+    // calls but NOT `mockReturnValue`, so without this a test added here would
+    // silently inherit whichever viewer ran last and could assert the right
+    // thing for the wrong reason.
+    chapter.active();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+  });
+
+  it("offers Withdraw to the member who submitted the entry", () => {
+    render(<ServiceHoursPage />);
+
+    expect(withdrawButton()).toBeEnabled();
+  });
+
+  it("gates the submitter's Withdraw with the rest of the writes", () => {
+    chapter.incomplete();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    render(<ServiceHoursPage />);
+
+    expect(withdrawButton()).toBeDisabled();
+    expect(withdrawButton()).toHaveAttribute(
+      "aria-describedby",
+      logTrigger().getAttribute("aria-describedby"),
+    );
+  });
+
+  it("shows Withdraw to nobody else, however privileged", () => {
+    chapter.active();
+    mockFrappUser.mockReturnValue({ userId: "admin-9", isLoading: false });
+    render(<ServiceHoursPage />);
+
+    // The entry is still visible in the review queue — this is a filter on the
+    // personal card, not on what an approver may see.
+    expect(screen.getByText(/soup kitchen shift/i)).toBeInTheDocument();
+    expectNoWithdraw();
+  });
+
+  it("shows no list while the viewer is resolving, and says that is why", () => {
+    mockFrappUser.mockReturnValue({ userId: null, isLoading: true });
+    render(<ServiceHoursPage />);
+
+    expectNoWithdraw();
+    // Deliberately different wording from the Approve control's "Checking who
+    // you are…": both can be on screen at once, and a shared string would make
+    // either one's assertion ambiguous.
+    expect(screen.getByText(/confirming your account/i)).toBeInTheDocument();
+  });
+
+  it("explains an errored viewer instead of silently dropping the card", () => {
+    // `useViewerUserId` reports a FAILED `/v1/users/me` as `null`, the same
+    // value it means by "pending" — so without this the member whose lookup
+    // errored would find their only way to correct an entry simply gone.
+    mockFrappUser.mockReturnValue({ userId: null, isLoading: false });
+    render(<ServiceHoursPage />);
+
+    expectNoWithdraw();
+    expect(
+      screen.getByText(/couldn't confirm your account, so withdrawing/i),
+    ).toBeInTheDocument();
+    // Still headed as the viewer's card, so the sentence has a subject.
+    expect(screen.getByText(/your pending entries/i)).toBeInTheDocument();
   });
 });
 
