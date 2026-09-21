@@ -7,7 +7,9 @@
 #
 # Noise floor: every Dependabot PR costs agent babysitting (the normal PR
 # lifecycle in AGENTS.md), so minor+patch updates are collapsed into a single
-# weekly PR. Majors stay individual — they need to be read one at a time.
+# weekly PR. Majors stay individual — they need to be read one at a time —
+# EXCEPT the vitest family, which is grouped at every level because its
+# packages peer-pin each other exactly. See the `vitest` group below.
 #
 # Safety net: CI (`npm ci`, lint, type-check, unit + E2E suites) plus the
 # blocking high/critical audit gate (`npm run check:npm-audit`, #618) is what
@@ -23,8 +25,20 @@ updates:
       time: "09:00"
       timezone: Etc/UTC
     # Grouped minor+patch = 1 PR; anything left is a major, and majors are
-    # deliberately ungrouped so each gets its own reviewable diff.
-    open-pull-requests-limit: 5
+    # deliberately ungrouped so each gets its own reviewable diff — except the
+    # `vitest` group, which is grouped at every level (see its comment).
+    #
+    # Raised 5 -> 6 when that group landed. It is guaranteed to fire on any
+    # week vitest ships, so it permanently consumes one slot; at 5, a week with
+    # four PRs already open plus a vitest release hit the cap, and Dependabot
+    # drops the overflow SILENTLY — no error, no comment, nothing in a log that
+    # says a PR was withheld. The 6th slot is that group's, not extra headroom
+    # for majors. If another always-on group is ever added, raise this again by
+    # one for the same reason.
+    #
+    # Version updates only: security PRs are exempt from this limit and do not
+    # count toward it, so a full queue can never suppress one.
+    open-pull-requests-limit: 6
     labels:
       - "area:deps"
     # `include: scope` makes Dependabot append the scope itself — "(deps)" for
@@ -36,9 +50,68 @@ updates:
       prefix-development: "chore"
       include: scope
     groups:
+      # ── The vitest family moves as one PR, at every update type ──────────
+      # `@vitest/coverage-v8` peer-requires `vitest` at an EXACT version, and
+      # vitest returns the favour (2026-09-21,
+      # `npm view @vitest/coverage-v8 peerDependencies` -> vitest pinned to the
+      # same exact version). `vitest` is declared by every workspace that has
+      # tests; the coverage reporter is declared once, at the root. So a
+      # half-move does not fail — npm satisfies both constraints by splitting
+      # the shared hoisted node in two, and one side of that split is invisible
+      # to CI. The measured trees, the two PRs they came from, and why one of
+      # them went GREEN are in docs/internal/ci-cd/AGENT_INFRA.md
+      # § The vitest 5 major is held on jest-dom's matcher types. Deliberately
+      # not restated here — see the React-pin note below on what happens to a
+      # version pair copied into this file.
+      #
+      # Packages are NAMED, not globbed as `@vitest/*`, for the same reason the
+      # Expo block below refuses `expo-*`: the scope is not homogeneous.
+      # `@vitest/eslint-plugin` (the renamed `eslint-plugin-vitest`) lives in it
+      # but peers `vitest: "*"` and versions on its own line — globbing would
+      # drag it into a group whose whole premise is the exact peer pin, and the
+      # ignore below would freeze its majors forever. If a vitest-internal
+      # package is adopted (`@vitest/ui`, `@vitest/browser`, a coverage
+      # provider), add it to BOTH lists here and to the ignore block; check
+      # `npm view <pkg> peerDependencies.vitest` first — an exact pin means it
+      # belongs, `*` means it does not.
+      #
+      # `npm-minor-and-patch` below excludes the same two names. GitHub documents
+      # first-match group assignment, but dependabot-core has a standing bug
+      # where a dependency lands in EVERY matching group, so treat the exclusion
+      # as required rather than redundant, and keep the two lists in sync.
+      #
+      # Deliberately carries NO `update-types`, unlike every other group here:
+      # the exact peer makes a PATCH split the tree exactly as a major does.
+      # Narrowing this to majors would re-open the bug where nobody looks.
+      #
+      # Cost: a vitest-family minor or patch now arrives as its own PR instead
+      # of folding into the weekly grouped one. +1 PR on the weeks vitest ships,
+      # against a split tree that CI cannot reliably catch.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/coverage-v8"
+      # `applies-to` defaults to version-updates, and SECURITY updates ignore
+      # groups entirely unless a group opts in. Without this second entry a
+      # security bump of either package alone would rebuild exactly the split
+      # tree the group above exists to prevent — and security PRs are exempt
+      # from `open-pull-requests-limit`, so nothing would throttle it either.
+      # Same patterns, security lane. Dependabot alerts are currently disabled
+      # on this repo (#921), so this is dormant until that toggle flips.
+      vitest-security:
+        applies-to: security-updates
+        patterns:
+          - "vitest"
+          - "@vitest/coverage-v8"
       npm-minor-and-patch:
         patterns:
           - "*"
+        # Kept in lockstep with the `vitest` group above — see its comment.
+        # Names, not `@vitest/*`: `@vitest/eslint-plugin` must stay in this
+        # group if it is ever adopted.
+        exclude-patterns:
+          - "vitest"
+          - "@vitest/coverage-v8"
         update-types:
           - minor
           - patch
@@ -265,6 +338,98 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@eslint/js"
         update-types: ["version-update:semver-major"]
+
+      # ── The vitest 5 hold ────────────────────────────────────────────────
+      # Majors only. Like the ESLint 10 hold above, the blocking half is a
+      # dependency, not our own code: `@testing-library/jest-dom` has no
+      # release whose types work with vitest 5. vitest 5 widened its assertion
+      # interface to two type parameters while jest-dom still augments the
+      # one-parameter shape, and TypeScript merges a generic interface only
+      # when the parameter lists are IDENTICAL — so the augmentation silently
+      # does not merge and every jest-dom matcher ceases to exist, taking
+      # `lint-and-typecheck` and `clean-checkout-typecheck` down wholesale.
+      #
+      # A SECOND, independent blocker is ours: one apps/mobile spec reads a
+      # mock call recorded at module load, which vitest 5 no longer has.
+      #
+      # Both reproduced locally (2026-09-21). The signatures, the measured
+      # blast radius and the re-evaluation commands are in
+      # docs/internal/ci-cd/AGENT_INFRA.md
+      # § The vitest 5 major is held on jest-dom's matcher types — kept there
+      # rather than here so there is one copy to refresh, not two.
+      #
+      # Security: ignoring the major keeps 4.x minors and patches flowing, so
+      # this is much narrower than the React/Expo gap above — but it is not
+      # zero. `ignore` suppresses Dependabot SECURITY updates too, so a CVE
+      # whose lowest fixed version is 5.x would open no PR. `check:npm-audit`
+      # is the backstop that goes red on every open PR at once, as with the
+      # React/Expo and postcss blocks; below high/critical it is silent.
+      # vitest is a devDependency and never ships to users, which is why this
+      # is an accepted trade rather than a blocker on the hold.
+      #
+      # NOT held, and it must stay that way: `@testing-library/jest-dom`.
+      # It is the package that BREAKS under vitest 5, which makes it tempting
+      # to freeze — but its next release is the exact trigger for lifting this
+      # hold. Ignoring it would strand the upgrade permanently, and nothing
+      # would go red to say so. Same rule as `@nestjs/schedule` above: the
+      # package implicated in a hold is not automatically part of it.
+      #
+      # Named, not globbed as `@vitest/*` — see the group above on
+      # `@vitest/eslint-plugin`. Add a vitest-internal package here only if
+      # `npm view <pkg> peerDependencies.vitest` is an exact pin.
+      #
+      # Lifting this needs BOTH blockers cleared, not just jest-dom: drop the
+      # two entries once jest-dom ships vitest 5 types AND the apps/mobile spec
+      # no longer depends on an import-time mock call. Dropping them on
+      # jest-dom alone lands a PR that is red on `mobile-validate`. Keep the
+      # group either way — it is not part of this hold. Tracking: #2445.
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/coverage-v8"
+        update-types: ["version-update:semver-major"]
+
+      # ── The jsdom 30.1 hold ──────────────────────────────────────────────
+      # Minors and majors. Blocked on an upstream interaction, not on our code:
+      # under jsdom 30.1.0 a Radix overlay cannot be opened a SECOND time in
+      # the same test file. The first one opens; every one after it leaves the
+      # trigger at `aria-expanded="false"`, and no interaction rescues it —
+      # keyDown Enter, ArrowDown, pointerDown and click were all measured and
+      # all fail. That reddens `web-tests` on any spec file that opens more
+      # than one menu or select, which is most of them.
+      #
+      # This is NOT our specs leaking state between tests, which is what it
+      # looks like at first: the DOM is clean at the start of the failing test
+      # (zero body children, no leftover portals, no `pointer-events` on body),
+      # each failing test passes in ISOLATION, and a thirty-line file with a
+      # vanilla `DropdownMenu` and no product code reproduces it exactly.
+      # Do not go looking for the leak; there isn't one. #2451 has the repro.
+      #
+      # Measured 2026-09-21, npm 10.9.7, `npm install jsdom@<v> --no-save` on
+      # an otherwise untouched main:
+      #   30.0.1  apps/web chapter-nav-header.spec.tsx -> 11 passed
+      #   30.1.0  same file, same commit              -> 4 failed, 7 passed
+      #
+      # Held at the MINOR, not just the major, because 30.1.0 is itself a minor
+      # and is what breaks — a major-only ignore would not have stopped it. That
+      # makes this wider than the vitest and ESLint holds above: a jsdom 30.0.x
+      # patch still flows, nothing else does.
+      #
+      # It cost the weekly grouped PR: #2436 carried seventeen updates and went
+      # red on this one, holding the other sixteen hostage. With this entry the
+      # group regenerates without jsdom and those sixteen land.
+      #
+      # jsdom is declared four times (root, apps/web, packages/hooks,
+      # packages/chat-core), all devDependencies; this entry matches by name
+      # so it covers all four. Nothing here ships, so the suppressed-security-PR
+      # consequence that the React/Expo block describes is bounded to test
+      # tooling; `check:npm-audit` still gates it.
+      #
+      # Re-evaluate by dropping the entry and running `web-tests`; the
+      # thirty-line repro in #2451 is faster still. Tracking: #2451.
+      - dependency-name: "jsdom"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
       # ── TypeScript 7 dual-install ────────────────────────────────────────
       # TypeScript 7 is native tsc with no JS compiler API. The `typescript`
