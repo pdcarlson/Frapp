@@ -19,7 +19,11 @@
  * imported from the strip unchanged and re-exported for the board's callers.
  */
 
-import { dayDelta, parseInstantOrBareUtcNoon } from "@repo/formatting";
+import {
+  dayDelta,
+  parseInstant,
+  parseInstantOrBareUtcNoon,
+} from "@repo/formatting";
 
 export { isDueUrgent } from "@/components/chat/up-next-strip";
 
@@ -36,12 +40,6 @@ export function parseTaskDate(value: string): Date | null {
   // Protected cluster — UTC noon for bare dates, not formatLocaleDate's
   // `new Date(value)` (UTC midnight).
   return parseInstantOrBareUtcNoon(value);
-}
-
-/** Any parseable instant — `completed_at` is a full ISO timestamp, not a date. */
-function parseInstant(value: string): Date | null {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /**

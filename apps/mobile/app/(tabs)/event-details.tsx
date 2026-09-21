@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEvent } from "@repo/hooks";
+import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { exportEventToCalendar } from "@/lib/calendar-export";
@@ -79,9 +80,10 @@ export default function EventDetailsScreen() {
   const endTime = event?.end_time;
   useEffect(() => {
     if (!endTime) return;
-    const closesAt =
-      new Date(endTime).getTime() + CHECK_IN_GRACE_MINUTES * 60_000;
-    if (!Number.isFinite(closesAt) || Date.now() > closesAt) return;
+    const end = parseInstant(endTime);
+    if (!end) return;
+    const closesAt = end.getTime() + CHECK_IN_GRACE_MINUTES * 60_000;
+    if (Date.now() > closesAt) return;
 
     const id = setInterval(() => {
       setNow(new Date());
