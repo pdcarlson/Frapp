@@ -266,13 +266,24 @@ the supply-chain story; the blocking half is `npm run check:npm-audit` (above), 
 non-allowlisted high/critical advisory.
 
 **One ecosystem entry, at the root.** `apps/*` and `packages/*` are npm workspaces resolving through
-a single root `package-lock.json`, so one `npm` entry covers all sixteen. Per-workspace entries would
+a single root `package-lock.json`, so one `npm` entry covers all eighteen. Per-workspace entries would
 open duplicate PRs against the same lockfile — don't add them.
 
 **Schedule and noise floor.** Weekly, Monday 09:00 UTC, `open-pull-requests-limit: 5`. Minor and
 patch updates are grouped into **one** PR (`npm-minor-and-patch`); majors are deliberately left
 ungrouped so each arrives as its own reviewable diff. Every Dependabot PR costs a babysit cycle under
 the [Autonomous PR lifecycle](../../../AGENTS.md), which is why grouping is aggressive.
+
+**The one exception to "majors arrive alone": the `vitest` group.** `vitest` and
+`@vitest/coverage-v8` are grouped at *every* update type, because they peer-require each other at an
+exact version. Moving one half alone does not fail — npm silently lands a **second** vitest and
+leaves half the tree on the old version, *which* half depending on which package moved — so a patch
+splits the tree just as badly as a major does. Grouping by update type is the normal noise-floor
+lever; this group exists for correctness instead, and it costs +1 PR on the weeks vitest ships. A
+second group entry carries `applies-to: security-updates`, because groups default to the
+version-update lane only. See
+[The vitest 5 major is held on jest-dom's matcher types](#the-vitest-5-major-is-held-on-jest-doms-matcher-types)
+below for the measured trees and why one of the two PRs went green anyway.
 
 **Who babysits.** Nobody special — Dependabot PRs flow through the normal lifecycle: CI runs (`npm
 ci`, lint, type-check, `api-tests`, `web-tests`, `api-docker-build`) plus the audit gate, and an
@@ -463,6 +474,93 @@ v10 incompatibility we trip. That workaround was rejected for now because it run
 outside its declared peer range and hardcodes a React version that has to be hand-synced with the
 real pin. When `eslint-plugin-react` declares v10 support, drop these two ignore entries and the
 upgrade should be close to a no-op. Original PRs: #943 (`eslint`), #944 (`@eslint/js`).
+
+### The vitest 5 major is held on jest-dom's matcher types
+
+`vitest` and `@vitest/coverage-v8` ignore **major** updates only; 4.x minors and patches still flow.
+They are named rather than globbed as `@vitest/*` on purpose — `@vitest/eslint-plugin` (the renamed
+`eslint-plugin-vitest`) sits in that scope but peers `vitest: "*"` and versions on its own line, so
+a glob would freeze its majors forever and drag it into a group premised on the exact peer pin. Same
+rule as `expo-*` vs `expo-server-sdk` above. Two independent things break under vitest 5, and only
+the first is a hold.
+
+**Upstream, and the reason this is a hold.** vitest 5 widened its assertion interface to two type
+parameters (`interface Assertion<R extends void | Promise<void> = void, T = unknown>`).
+`@testing-library/jest-dom` still augments the one-parameter shape (`interface Assertion<T = any>`).
+TypeScript merges a generic interface's declarations only when the type parameter lists are
+*identical*, so the augmentation quietly fails to merge and **every jest-dom matcher stops
+existing**. `tsc` emits one error per matcher call site, and `apps/web` has **1,637 of them across
+82 spec files** (2026-09-21; counted by matching the jest-dom matcher names against
+`apps/web/**/*.spec.tsx`, and spot-checked against #2439's `lint-and-typecheck` log, whose per-file
+error lines match site for site). So `check-types` fails in the four figures, not the dozens, all of
+it reading `Property 'toBeInTheDocument' does not exist on type 'Assertion<void, HTMLElement>'`, and
+it takes `lint-and-typecheck` and `clean-checkout-typecheck` down wholesale.
+`@testing-library/jest-dom@7.0.1` is the newest published release (2026-09-21,
+`npm view @testing-library/jest-dom version`) — there is nothing to upgrade to.
+
+When a wall of `TS2339: Property 'toBeX' does not exist on type 'Assertion<…>'` appears after a test
+runner bump and nothing in the diff touched the specs, this arity mismatch is the shape to
+recognise. The matchers did not break; the augmentation stopped merging.
+
+What makes this a *hold* rather than an open question: it was measured, like the ESLint 10 hold. The
+only in-repo fix is a hand-written augmentation re-declaring jest-dom's matcher surface against the
+two-parameter interface — **50 matchers**, hand-synced with every jest-dom release, for a package
+whose own types are meant to be the source of truth. Rejected for the same reason the ESLint 10
+`settings.react.version` workaround was.
+
+**Ours, and not covered by the hold lifting.** `apps/mobile/lib/theme.spec.tsx:104` fails under
+vitest 5 with `AssertionError: expected undefined to be defined` (1 failed / 1000 passed). It finds a
+`Platform.select` call made at *module load* by scanning `vi.mocked(Platform.select).mock.calls`, and
+under vitest 5 the call is not there. Not root-caused to a named vitest 5 change. Note
+`apps/mobile/vitest.config.ts` *leaves `clearMocks` at its default of off* — deliberately, per the
+NOTE at its line 12 — specifically to keep that record alive. There is **no `clearMocks` key**: the
+constraint is real but nothing pins it, so a vitest release that flips the default breaks
+`theme.spec.tsx` with nothing in the config to stop it. The rewrite should retire that dependency
+rather than deepen it. So when jest-dom ships, this is still not a pure version bump.
+
+**Why neither Dependabot PR was the upgrade it claimed to be.** Worth recording in detail, because
+CI said so in only one of the two cases. `@vitest/coverage-v8` peer-requires `vitest` at an *exact*
+version and vitest returns the favour, so moving one half never fails the install — **npm duplicates
+instead**. `vitest` is declared by 12 workspaces and `@vitest/coverage-v8` once at the root, which
+today resolves to a single hoisted `node_modules/vitest`. That node has **13** consumers, not 12:
+`@repo/api-sdk` runs `vitest run` while declaring no `vitest` devDependency of its own, so it binds
+to the hoisted copy — `ci.yml` says so in as many words ("The package uses the hoisted workspace
+vitest; this step does not add a lockfile entry"). Move one half and that node splits in two
+(counted 2026-09-21 from each branch's `package-lock.json`, npm 10.9.7):
+
+| branch | root `vitest` | root `coverage-v8` | nested workspace copies | CI |
+| --- | --- | --- | --- | --- |
+| `main` | 4.1.11 | 4.1.11 | none | green |
+| [#2437](https://github.com/pdcarlson/Frapp/pull/2437) (`coverage-v8` alone) | **5.0.1** | 5.0.1 | **12 × 4.1.11** | **green** |
+| [#2439](https://github.com/pdcarlson/Frapp/pull/2439) (`vitest` alone) | 4.1.11 | 4.1.11 | **12 × 5.0.1** | red |
+
+One install becomes thirteen either way — the duplicate-hoisted-copy trap of
+[A grouped bump of a peer-depended package can land a second copy, not an upgrade](#a-grouped-bump-of-a-peer-depended-package-can-land-a-second-copy-not-an-upgrade)
+above, reached through the ungrouped-**major** lane rather than the grouped one. Nested copies are
+not merely wasteful here:
+[A group regeneration can drop `jsdom`, and vitest resolves it from the root](#a-group-regeneration-can-drop-jsdom-and-vitest-resolves-it-from-the-root)
+below records what a relocated vitest actually breaks, because vitest loads its environment from its
+own install location.
+
+The asymmetry is the part to internalise. #2439 moved the copy the **tests** load, so it went red and
+argued for itself. #2437 moved only the copy **coverage** loads — and **nothing in CI runs
+`test:cov`** — so it went fully green, with coverage bound to vitest 5.0.1 while every suite except
+`@repo/api-sdk`'s ran on 4.1.11. (`@repo/api-sdk` is the 13th consumer above: its suite ran on
+5.0.1, in `lint-and-typecheck`, and passed — the only vitest 5 runtime evidence this repo has.) That
+PR would have merged. A green Dependabot PR touching a package CI never exercises is worth one look
+at the lockfile before trusting the checkmark.
+
+The `vitest` **group** is the permanent half of the fix and is *not* part of the hold: it keeps the
+family together at every update type, so the split cannot recur when the hold lifts. It is two
+entries — groups default to `applies-to: version-updates`, and security updates ignore groups
+unless one opts in, so a security bump of either package alone would rebuild the same split tree
+(dormant while Dependabot alerts stay disabled, #921).
+
+Lifting the hold needs **both** blockers cleared, not just jest-dom: drop the two `ignore` entries
+once jest-dom ships vitest 5 types **and** `apps/mobile/lib/theme.spec.tsx` no longer depends on an
+import-time mock call. Dropping them on jest-dom alone lands a PR that is red on `mobile-validate` —
+the failure this section predicts. **Keep the group** either way. Tracking:
+[#2445](https://github.com/pdcarlson/Frapp/issues/2445).
 
 ### eslint-plugin-react-hooks 7 compiler rules
 
