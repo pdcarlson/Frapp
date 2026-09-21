@@ -45,7 +45,7 @@
     "@electric-sql/pglite": "^0.5.8",
     "@electric-sql/pglite-pgvector": "^0.0.9",
     "@typescript/native": "npm:typescript@7.0.2",
-    "@vitest/coverage-v8": "4.1.11",
+    "@vitest/coverage-v8": "5.0.1",
     "concurrently": "^10.0.5",
     "dependency-cruiser": "^18.3.1",
     "jscpd": "^5.2.0",
