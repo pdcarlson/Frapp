@@ -215,13 +215,10 @@ that has already failed three times.
   the self-wake that used to backstop it prompts and was retired (see "Wake coverage"), so that
   gap is accepted and a human notices instead. Keeping this workflow's surface minimal is
   therefore load-bearing, not just tidy.
-- Scope note vs. ADR-14: the "no inline GitHub comments" trade-off recorded for AI *review* **no
-  longer holds** — ADR-14's 2026-09-18 commenting amendment narrowed the review-event ban to
-  `CHANGES_REQUESTED` / `APPROVED`, and the advisory reviewer now posts findings as inline comments on
-  a `COMMENT` review, marked `<!-- frapp-codex-review-finding -->` (see
-  `AI_CODE_REVIEW_RUNBOOK.md`). That is review commentary and a PR can carry it. None of it changes
-  THIS watchdog: the wake comment is machine signaling about CI state, and a healthy PR still carries
-  no wake comment at all.
+- Scope note vs. AI review: there is no CI-side AI reviewer at all any more — the advisory
+  `codex-review.yml` was removed 2026-09-21 (see `AI_CODE_REVIEW_RUNBOOK.md`), so nothing posts
+  review findings on a PR. That never changed THIS watchdog in any case: the wake comment is machine
+  signaling about CI state, and a healthy PR still carries no wake comment at all.
 
 Because `workflow_run` executes the **default branch's** copy of the workflow and script, changes
 to either take effect only after merging to `main` — they cannot be exercised from the PR that
@@ -403,9 +400,11 @@ changes would break the first, and none should ever be made:**
 One exposure this review does not eliminate: `pr-base-sync.yml` pins `actions/checkout@v4` and
 `actions/create-github-app-token@v3` by **mutable major tag**, and the second is the action that
 receives the private key. A compromised tag executes in exactly the job that holds it. Both are
-`actions/*` and mutable tags are the convention across all eleven workflows here, so this is not a
+`actions/*`, and mutable major tags are this repo's prevailing convention (a handful of third-party
+actions aside — `docker/*`, `dorny/paths-filter`, `lycheeverse/lychee-action`), so this is not a
 deviation — but it is the shortest path to the key, and SHA-pinning at least the token minter is
-the cheapest hardening available if that trade is ever revisited.
+the cheapest hardening available if that trade is ever revisited. Count the workflows with
+`ls .github/workflows/*.yml` rather than trusting a number written here.
 
 One pre-existing property this rests on: `main` requires **zero** approving reviews — and since
 #1340 it is the only branch, so there is no branch anywhere that requires one (the PR review
