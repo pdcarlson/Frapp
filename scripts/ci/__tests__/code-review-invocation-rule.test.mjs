@@ -1,6 +1,6 @@
 // Executable check on the /code-review invocation rule.
 //
-// WHY THIS EXISTS. ADR-14 recorded this rule wrong twice: first too restrictive
+// WHY THIS EXISTS. This rule was recorded wrong twice: first too restrictive
 // ("only a human keystroke can invoke it"), then too permissive ("whenever the
 // turn's prompt mentions it in prose"). The second time, the correct regex was
 // written down in the runbook two lines above the wrong gloss — extraction was
@@ -38,7 +38,6 @@ const RUNBOOK_REL = "docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md";
 // rest must agree with it character for character.
 const REGEX_SITES = [
   RUNBOOK_REL,
-  "spec/architecture/adr/adr-14.md",
   ".claude/skills/diff-review/SKILL.md",
 ];
 
@@ -87,11 +86,48 @@ function unwrapCodeSpan(cell) {
   return sgl[1];
 }
 
+// COLLECTION-TIME WORK IS CAPTURED, NOT THROWN, and this is load-bearing.
+// A synchronous throw in a `describe` body is printed but does NOT fail the run:
+// on Node >= 22 it reports `# tests 0 / # fail 0` and **exits 0**. Verified on
+// v22.22.2 by pointing RUNBOOK_REL at a missing file — exit code 0. Because
+// `ci-scripts-tests` is a required check (`required-checks.mjs`) invoked as
+// `node --test scripts/ci/__tests__/*.test.mjs`, that means this entire guard can
+// die — renamed runbook, deleted regex line — while CI stays green and nobody
+// learns the rule stopped being enforced. Capturing the error and rethrowing it
+// inside a registered `test()` is what turns that back into a red build.
+let setupError = null;
+let runbook = "";
+let literal = "";
+let scan = /(?:)/;
+let rows = [];
+try {
+  runbook = readRepoFile(RUNBOOK_REL);
+  literal = extractRegexLiteral(runbook, RUNBOOK_REL);
+  scan = new RegExp(literal);
+  rows = parseTable(runbook);
+} catch (err) {
+  setupError = err;
+}
+
 describe("/code-review invocation rule", () => {
-  const runbook = readRepoFile(RUNBOOK_REL);
-  const literal = extractRegexLiteral(runbook, RUNBOOK_REL);
-  const scan = new RegExp(literal);
-  const rows = parseTable(runbook);
+  test("the suite's own inputs loaded", () => {
+    // Must be first: every other assertion here is meaningless if this failed,
+    // and without it the failure is invisible (see the comment above).
+    assert.ifError(setupError);
+
+    // A vacuity floor on the cross-file check below. REGEX_SITES[0] IS the
+    // runbook, so that iteration compares `literal` to itself; only the
+    // remaining entries are genuine comparisons. At length 1 the loop is a
+    // tautology that still reports green. Deleting a site because it went
+    // stale is the cheap fix someone will reach for — this makes them keep at
+    // least one real peer.
+    assert.ok(
+      REGEX_SITES.length >= 2,
+      `REGEX_SITES has ${REGEX_SITES.length} entry — the cross-file identity ` +
+        `check needs a peer besides ${RUNBOOK_REL} or it compares the runbook ` +
+        `to itself. Add the new home of the regex; do not shorten this list.`,
+    );
+  });
 
   test("the runbook states a usable scan regex", () => {
     assert.match(
@@ -124,10 +160,12 @@ describe("/code-review invocation rule", () => {
 
   // The heart of it: every documented claim, executed.
   for (const row of rows) {
-    const sample = unwrapCodeSpan(row.cell);
     const shouldMatch = row.verdict === "✅";
     const label = shouldMatch ? "matches" : "does NOT match";
-    test(`runbook claims ${JSON.stringify(sample)} ${label}`, () => {
+    test(`runbook claims ${row.cell} ${label}`, () => {
+      // Unwrapped HERE, not at collection time: `unwrapCodeSpan` asserts, and an
+      // assert in the `describe` body exits 0 (see the top of this file).
+      const sample = unwrapCodeSpan(row.cell);
       assert.equal(
         scan.test(sample),
         shouldMatch,
