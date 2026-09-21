@@ -5,7 +5,8 @@
  * **UTC midnight**, which renders as the previous calendar day west of
  * Greenwich. That is not one member's quirk: `formatLocaleDate`,
  * `formatLocaleDateTime` and `formatClock` all parse through the single
- * `parseInstant` helper in `locale.ts`, so **all three** carry it. A bare
+ * `parseInstant` helper in `instant.ts` — the same one this file uses — so
+ * **all three** carry it. A bare
  * `date` column takes {@link formatBareDate}, never any of the three.
  *
  * Two *parsers* stay distinct on purpose — and {@link formatBareDate} at the
@@ -19,23 +20,20 @@
  * Do not fold either into `formatLocaleDate` / `new Date(value)`.
  */
 
-const BARE_DATE = /^\d{4}-\d{2}-\d{2}$/;
+import { parseInstant } from "./instant";
 
-function asDate(isoLocalOrZ: string): Date | null {
-  const parsed = new Date(isoLocalOrZ);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
+const BARE_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** `YYYY-MM-DD` at UTC noon, or `null` when the value is not a bare date. */
 export function parseBareDateUtcNoon(value: string): Date | null {
   if (!BARE_DATE.test(value)) return null;
-  return asDate(`${value}T12:00:00Z`);
+  return parseInstant(`${value}T12:00:00Z`);
 }
 
 /** `YYYY-MM-DD` at local midnight, or `null` when the value is not a bare date. */
 export function parseBareDateLocalMidnight(value: string): Date | null {
   if (!BARE_DATE.test(value)) return null;
-  return asDate(`${value}T00:00:00`);
+  return parseInstant(`${value}T00:00:00`);
 }
 
 /**
@@ -46,7 +44,7 @@ export function parseBareDateLocalMidnight(value: string): Date | null {
  * use this rather than forcing the noon parse.
  */
 export function parseInstantOrBareUtcNoon(value: string): Date | null {
-  return parseBareDateUtcNoon(value) ?? asDate(value);
+  return parseBareDateUtcNoon(value) ?? parseInstant(value);
 }
 
 /**

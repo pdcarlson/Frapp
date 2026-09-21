@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
+import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -72,8 +73,8 @@ export interface MessageBubbleProps {
 export const QUICK_REACTION = "👍";
 
 export function formatMessageTime(createdAt: string): string {
-  const at = new Date(createdAt);
-  if (Number.isNaN(at.getTime())) return "";
+  const at = parseInstant(createdAt);
+  if (!at) return "";
   return at.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
