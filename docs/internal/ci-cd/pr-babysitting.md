@@ -215,13 +215,10 @@ that has already failed three times.
   the self-wake that used to backstop it prompts and was retired (see "Wake coverage"), so that
   gap is accepted and a human notices instead. Keeping this workflow's surface minimal is
   therefore load-bearing, not just tidy.
-- Scope note vs. ADR-14: the "no inline GitHub comments" trade-off recorded for AI *review* **no
-  longer holds** — ADR-14's 2026-09-18 commenting amendment narrowed the review-event ban to
-  `CHANGES_REQUESTED` / `APPROVED`, and the advisory reviewer now posts findings as inline comments on
-  a `COMMENT` review, marked `<!-- frapp-codex-review-finding -->` (see
-  `AI_CODE_REVIEW_RUNBOOK.md`). That is review commentary and a PR can carry it. None of it changes
-  THIS watchdog: the wake comment is machine signaling about CI state, and a healthy PR still carries
-  no wake comment at all.
+- Scope note vs. AI review: there is no CI-side AI reviewer at all any more — the advisory
+  `codex-review.yml` was removed 2026-09-21 (see `AI_CODE_REVIEW_RUNBOOK.md`), so nothing posts
+  review findings on a PR. That never changed THIS watchdog in any case: the wake comment is machine
+  signaling about CI state, and a healthy PR still carries no wake comment at all.
 
 Because `workflow_run` executes the **default branch's** copy of the workflow and script, changes
 to either take effect only after merging to `main` — they cannot be exercised from the PR that

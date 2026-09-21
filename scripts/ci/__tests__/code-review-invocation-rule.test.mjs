@@ -1,6 +1,6 @@
 // Executable check on the /code-review invocation rule.
 //
-// WHY THIS EXISTS. ADR-14 recorded this rule wrong twice: first too restrictive
+// WHY THIS EXISTS. This rule was recorded wrong twice: first too restrictive
 // ("only a human keystroke can invoke it"), then too permissive ("whenever the
 // turn's prompt mentions it in prose"). The second time, the correct regex was
 // written down in the runbook two lines above the wrong gloss — extraction was
@@ -38,7 +38,6 @@ const RUNBOOK_REL = "docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md";
 // rest must agree with it character for character.
 const REGEX_SITES = [
   RUNBOOK_REL,
-  "spec/architecture/adr/adr-14.md",
   ".claude/skills/diff-review/SKILL.md",
 ];
 
