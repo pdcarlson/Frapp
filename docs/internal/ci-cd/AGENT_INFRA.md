@@ -565,6 +565,55 @@ import-time mock call. Dropping them on jest-dom alone lands a PR that is red on
 the failure this section predicts. **Keep the group** either way. Tracking:
 [#2445](https://github.com/pdcarlson/Frapp/issues/2445).
 
+### jsdom is held at 30.0.x: Radix overlays open only once per test file on 30.1
+
+`jsdom` ignores **minor and major** updates; 30.0.x patches still flow. Under jsdom 30.1.0 a Radix
+overlay cannot be opened a *second* time in the same test file. The first opens normally; every one
+after it leaves its trigger at `aria-expanded="false"`, and nothing rescues it — `keyDown` Enter,
+`ArrowDown`, `pointerDown` and `click` were each measured and each fails. Since most `apps/web`
+component specs open more than one menu or select, `web-tests` goes red broadly.
+
+**It is not cross-test state leakage, which is exactly what it looks like.** Worth stating plainly,
+because the obvious diagnosis is wrong and costs an afternoon:
+
+- Each failing test **passes in isolation** on the same jsdom.
+- The DOM is *clean* when the failing test starts — zero body children, no leftover
+  `[data-radix-popper-content-wrapper]`, no `pointer-events` on `body`, no stray `aria-hidden`.
+- A thirty-line spec with a vanilla `DropdownMenu` and no product code reproduces it exactly.
+- Dismissing a stale layer first (an `Escape` before each test) changes nothing.
+
+So there is no leak to find. Do not go looking for one.
+
+Measured 2026-09-21 (npm 10.9.7), via `npm install jsdom@<version> --no-save` on an otherwise
+untouched `main`, reverting cleanly in both directions:
+
+| jsdom | `apps/web/components/layout/chapter-nav-header.spec.tsx` |
+| --- | --- |
+| 30.0.1 | 11 passed |
+| 30.1.0 | **4 failed**, 7 passed |
+
+Held at the **minor**, not just the major, because 30.1.0 is itself a minor — a major-only ignore
+would not have caught it. That makes this hold wider than the vitest and ESLint ones above, and it
+is the reason to revisit it rather than leave it standing indefinitely.
+
+What it cost: [#2436](https://github.com/pdcarlson/Frapp/pull/2436), the weekly grouped PR, carried
+seventeen updates and went red on this one — holding the other sixteen hostage. That is the case
+the `vitest` group above cannot help with, because here the group is working correctly and one
+member of it is genuinely broken. With this entry the group regenerates without `jsdom`.
+
+`jsdom` is declared four times — the root plus `apps/web`, `packages/hooks` and
+`packages/chat-core` — every one of them a devDependency, and the root copy is the one vitest
+actually loads (see the section cross-referenced above). The `ignore` entry matches by dependency
+name, so it covers all four. Nothing here ships, so the suppressed-security-PR consequence the
+React/Expo block describes is bounded to test tooling, with `check:npm-audit` still gating it.
+Re-evaluate by dropping the entry and running `web-tests`; the repro in
+[#2451](https://github.com/pdcarlson/Frapp/issues/2451) is faster.
+
+This is the second way jsdom has broken this repo's tests from outside the diff — see
+[A group regeneration can drop `jsdom`, and vitest resolves it from the root](#a-group-regeneration-can-drop-jsdom-and-vitest-resolves-it-from-the-root)
+below for the other, which is about *where* it resolves rather than *which version*. Both come back
+to the same fact: it is a root devDependency that every rendering workspace relies on implicitly.
+
 ### eslint-plugin-react-hooks 7 compiler rules
 
 `eslint-plugin-react-hooks` 7.x enables React Compiler rules on top of the two classic

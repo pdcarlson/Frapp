@@ -388,6 +388,49 @@ updates:
       - dependency-name: "@vitest/coverage-v8"
         update-types: ["version-update:semver-major"]
 
+      # ── The jsdom 30.1 hold ──────────────────────────────────────────────
+      # Minors and majors. Blocked on an upstream interaction, not on our code:
+      # under jsdom 30.1.0 a Radix overlay cannot be opened a SECOND time in
+      # the same test file. The first one opens; every one after it leaves the
+      # trigger at `aria-expanded="false"`, and no interaction rescues it —
+      # keyDown Enter, ArrowDown, pointerDown and click were all measured and
+      # all fail. That reddens `web-tests` on any spec file that opens more
+      # than one menu or select, which is most of them.
+      #
+      # This is NOT our specs leaking state between tests, which is what it
+      # looks like at first: the DOM is clean at the start of the failing test
+      # (zero body children, no leftover portals, no `pointer-events` on body),
+      # each failing test passes in ISOLATION, and a thirty-line file with a
+      # vanilla `DropdownMenu` and no product code reproduces it exactly.
+      # Do not go looking for the leak; there isn't one. #2451 has the repro.
+      #
+      # Measured 2026-09-21, npm 10.9.7, `npm install jsdom@<v> --no-save` on
+      # an otherwise untouched main:
+      #   30.0.1  apps/web chapter-nav-header.spec.tsx -> 11 passed
+      #   30.1.0  same file, same commit              -> 4 failed, 7 passed
+      #
+      # Held at the MINOR, not just the major, because 30.1.0 is itself a minor
+      # and is what breaks — a major-only ignore would not have stopped it. That
+      # makes this wider than the vitest and ESLint holds above: a jsdom 30.0.x
+      # patch still flows, nothing else does.
+      #
+      # It cost the weekly grouped PR: #2436 carried seventeen updates and went
+      # red on this one, holding the other sixteen hostage. With this entry the
+      # group regenerates without jsdom and those sixteen land.
+      #
+      # jsdom is declared four times (root, apps/web, packages/hooks,
+      # packages/chat-core), all devDependencies; this entry matches by name
+      # so it covers all four. Nothing here ships, so the suppressed-security-PR
+      # consequence that the React/Expo block describes is bounded to test
+      # tooling; `check:npm-audit` still gates it.
+      #
+      # Re-evaluate by dropping the entry and running `web-tests`; the
+      # thirty-line repro in #2451 is faster still. Tracking: #2451.
+      - dependency-name: "jsdom"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+
       # ── TypeScript 7 dual-install ────────────────────────────────────────
       # TypeScript 7 is native tsc with no JS compiler API. The `typescript`
       # package is aliased to `@typescript/typescript6@6.0.2` (Nest CLI,
