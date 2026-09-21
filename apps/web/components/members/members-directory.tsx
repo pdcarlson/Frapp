@@ -15,6 +15,7 @@ import {
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
 import { displayNameOrNull } from "@repo/hooks/display-names";
+import { parseInstant } from "@repo/formatting";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
@@ -126,10 +127,10 @@ function displayNameOf(member: MemberProfile): string {
  * screen reader has to announce standing in for nothing at all.
  */
 function formatJoined(value: string): string | null {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime())
-    ? null
-    : parsed.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  const parsed = parseInstant(value);
+  return parsed
+    ? parsed.toLocaleDateString(undefined, { month: "short", year: "numeric" })
+    : null;
 }
 
 /**
@@ -302,14 +303,12 @@ export function MembersDirectory() {
             `formatJoined` already treats an unparseable date as absent; this
             is the same fact reaching the sort.
           */
-          const joinedA = new Date(a.created_at).getTime();
-          const joinedB = new Date(b.created_at).getTime();
-          const badA = Number.isNaN(joinedA);
-          const badB = Number.isNaN(joinedB);
-          if (badA && badB) return 0;
-          if (badA) return 1;
-          if (badB) return -1;
-          return (joinedA - joinedB) * factor;
+          const joinedA = parseInstant(a.created_at);
+          const joinedB = parseInstant(b.created_at);
+          if (!joinedA && !joinedB) return 0;
+          if (!joinedA) return 1;
+          if (!joinedB) return -1;
+          return (joinedA.getTime() - joinedB.getTime()) * factor;
         }
         case "role": {
           /*

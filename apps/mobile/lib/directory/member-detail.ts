@@ -13,6 +13,7 @@
  * do not hold — the same "omit, don't fake" call `lib/more/profile.ts`
  * already makes for the drawn attendance stat no member can read.
  */
+import { parseInstant } from "@repo/formatting";
 import { formatGraduationYear } from "../more/profile";
 import {
   initialsFor,
@@ -78,9 +79,8 @@ function stringArray(value: unknown): string[] {
 }
 
 function formatJoinedDate(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+  const date = parseInstant(value);
+  if (!date) return null;
   return date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",

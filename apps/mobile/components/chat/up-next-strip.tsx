@@ -1,7 +1,11 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { dayDelta, parseInstantOrBareUtcNoon } from "@repo/formatting";
+import {
+  dayDelta,
+  parseInstant,
+  parseInstantOrBareUtcNoon,
+} from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -71,8 +75,10 @@ export function selectNextEvent(
       const name = str(row, "name");
       const startTime = str(row, "start_time");
       if (!id || !name || !startTime) return null;
-      const at = new Date(startTime).getTime();
-      if (Number.isNaN(at) || at < now.getTime()) return null;
+      const start = parseInstant(startTime);
+      if (!start) return null;
+      const at = start.getTime();
+      if (at < now.getTime()) return null;
       return {
         at,
         event: {
@@ -120,8 +126,8 @@ export function selectNextTask(tasks: unknown): UpNextTask | null {
 
 /** Today shows a clock time; anything further out shows the day instead. */
 export function formatEventTime(startTime: string, now: Date): string {
-  const start = new Date(startTime);
-  if (Number.isNaN(start.getTime())) return "";
+  const start = parseInstant(startTime);
+  if (!start) return "";
   const days = dayDelta(now, start);
   const clock = start.toLocaleTimeString(undefined, {
     hour: "numeric",
