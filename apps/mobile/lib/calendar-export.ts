@@ -1,6 +1,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { Platform } from "react-native";
+import { parseInstant } from "@repo/formatting";
 import { toRRuleLine } from "@repo/validation";
 import { InvalidArgumentException } from "./errors";
 
@@ -30,8 +31,8 @@ export function escapeIcsText(value: string): string {
 }
 
 export function toIcsTimestamp(isoString: string): string {
-  const parsedDate = new Date(isoString);
-  if (Number.isNaN(parsedDate.getTime())) {
+  const parsedDate = parseInstant(isoString);
+  if (!parsedDate) {
     throw new InvalidArgumentException(`Invalid calendar timestamp: ${isoString}`);
   }
   return `${parsedDate.toISOString().replace(/[-:]/g, "").split(".")[0]}Z`;

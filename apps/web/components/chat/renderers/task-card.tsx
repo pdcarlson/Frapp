@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
 import { can } from "@repo/validation";
-import { parseBareDateLocalMidnight } from "@repo/formatting";
+import { parseBareDateLocalMidnight, parseInstant } from "@repo/formatting";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -126,8 +126,8 @@ function formatDate(value: string): string {
   // do not fold into formatLocaleDate (`new Date(value)` is UTC midnight).
   const local = parseBareDateLocalMidnight(value);
   if (local) return local.toLocaleDateString();
-  const instant = new Date(value);
-  if (Number.isNaN(instant.getTime())) return value;
+  const instant = parseInstant(value);
+  if (!instant) return value;
   return instant.toLocaleDateString();
 }
 

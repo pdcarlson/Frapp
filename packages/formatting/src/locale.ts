@@ -19,12 +19,7 @@
  * generics for those behaviors.
  */
 
-function parseInstant(value: unknown): Date | null {
-  if (typeof value !== "string" || value === "") return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
-}
+import { parseInstant } from "./instant";
 
 /**
  * Full locale datetime, or `"—"` when the value is missing / unparseable.

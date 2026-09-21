@@ -59,7 +59,10 @@ import {
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
-import { formatLocaleDateTime as formatDate } from "@repo/formatting";
+import {
+  formatLocaleDateTime as formatDate,
+  parseInstant,
+} from "@repo/formatting";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { getErrorMessage } from "@/lib/utils";
@@ -175,11 +178,12 @@ export function EventsPage() {
     const now = nowTick;
     return calendarEvents.filter((event) => {
       if (timeFilter === "all") return true;
-      const startRaw =
-        typeof event.start_time === "string" ? event.start_time : null;
-      if (!startRaw) return timeFilter === "upcoming";
-      const startMs = new Date(startRaw).getTime();
-      if (Number.isNaN(startMs)) return timeFilter === "upcoming";
+      const start = parseInstant(event.start_time);
+      // An event whose start cannot be read is shown under "upcoming" and
+      // hidden under "past": it may still be ahead, and hiding it everywhere
+      // would lose the row rather than mis-sort it.
+      if (!start) return timeFilter === "upcoming";
+      const startMs = start.getTime();
       if (timeFilter === "upcoming" && startMs < now) return false;
       if (timeFilter === "past" && startMs >= now) return false;
       return true;
