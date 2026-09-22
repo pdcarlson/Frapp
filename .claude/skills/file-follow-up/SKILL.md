@@ -97,11 +97,11 @@ owner can clear:
      mid-batch and routes the question to the release comment and the report (§1.3 and its Exits
      table).
 
-Ask at the end of the run, so the owner gets one interruption at a predictable moment. If the owner
-is present and the blocker is small, ask on the spot. If they clear it then and there, there's
-nothing left to file. If it's still open when the run ends, file it: a blocker with no issue behind
-it is invisible to the next session and to the Human Action List, whatever the owner said in the
-moment.
+Ask at the end of the run, so the owner gets one interruption at a predictable moment. The one
+exception to filing as you go: if the owner is present and the blocker is small, ask on the spot
+first, and if they clear it then and there, there's nothing to file. Anything they don't clear on
+the spot gets filed right away, because a blocker with no issue behind it is invisible to the next
+session and to the Human Action List, whatever the owner said in the moment.
 
 A PR body is neither channel. Still write its *Flagged for review* block (`/next` requires it, and
 PR Follow-ups harvests those sections into the Human Action List), but it is a record, not an ask.

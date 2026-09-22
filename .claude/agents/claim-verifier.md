@@ -1,6 +1,7 @@
 ---
 name: claim-verifier
 description: Adversarially checks one claim against the repo and runtime — a review finding, an issue's "already done" or "still blocked" state, a doc statement, or a proposed close-on-proof — and returns CONFIRMED, PLAUSIBLE, or REFUTED with evidence. Use when a procedure calls for an independent verdict before acting. Read-only.
+disallowedTools: Edit, Write, NotebookEdit, mcp__github__issue_write, mcp__github__sub_issue_write, mcp__github__add_issue_comment, mcp__github__add_reply_to_pull_request_comment, mcp__github__resolve_review_thread, mcp__github__create_pull_request, mcp__github__update_pull_request, mcp__github__update_pull_request_branch, mcp__github__actions_run_trigger
 model: inherit
 ---
 

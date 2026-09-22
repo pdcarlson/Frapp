@@ -22,9 +22,9 @@ finding, commit any fixes, review the new commit, then push.
 **Why not Codex project hooks?** Verified against the installed Codex CLI 0.144.0-alpha.4 on
 2026-09-16: `PreToolUse` hooks can block Codex-issued shell commands when they return a valid block
 response, but they are tool-level (not Git- or human-level), trust can be bypassed, and the available
-hook configuration exposes no fail-closed-on-crash/timeout guarantee. Claude hooks have
-the same provider-specific coverage problem. The Git hook therefore owns enforcement; provider
-configs no longer duplicate it.
+hook configuration exposes no fail-closed-on-crash/timeout guarantee. Claude and Cursor hooks have
+the same provider-specific coverage problem (Cursor retired 2026-09-22, ADR-16 amendment 10). The
+Git hook therefore owns enforcement; provider configs no longer duplicate it.
 
 This is consistent default-path enforcement, **not an unconditional server-side gate**. Git aborts a
 push when an installed `pre-push` hook exits nonzero, but a user can deliberately use

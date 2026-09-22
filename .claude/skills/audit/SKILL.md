@@ -41,9 +41,12 @@ context-heavy reading. Before filing a finding whose proof is more than one read
 
 ## Code quality
 
-**Layering.** Dependencies flow Interface → Application → Domain ← Infrastructure. Red flags:
-controllers importing from `infrastructure/` directly, services importing from `interface/` (DTOs,
-guards), domain entities importing `@nestjs/*` or `@supabase/*`.
+**Layering.** Dependencies flow Interface → Application → Infrastructure → Domain: outer layers
+may import inner ones, never the reverse (enforced by `scripts/dependency-cruiser.cjs`; see
+[`api-development`](../api-development/SKILL.md)). Red flags: services importing from `interface/`
+(DTOs, guards), `infrastructure/` importing `application/` or `interface/`, domain importing
+another layer or `@nestjs/*` / `@supabase/*`, and code outside `domain/` importing it by a relative
+path instead of `#domain/*`.
 
 **Patterns.** Audit API code against the conventions in
 [`api-development`](../api-development/SKILL.md) (token-bound repositories, the guard chain, DTO

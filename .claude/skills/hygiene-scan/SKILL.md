@@ -41,7 +41,8 @@ It holds only while every run is grounded, whole-pattern, verified, reviewed, an
 - Never merge. The human merge is what licenses unattended product-code edits.
 - One PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that exists), and one open
   Hygiene Scan PR at a time: reviewer bandwidth is scarce and stacked hygiene PRs conflict.
-- At most ~3 net-new issues per run; the Curator's net-growth budget binds here too.
+- At most ~3 net-new issues per run, ~2 when more than 40 `suggestion` issues are open: the
+  Curator's net-growth budget binds here too.
 - Never print secret values; names and presence only.
 
 **May edit:** `apps/**` and `packages/**` code and tests; in `scripts/**`, dead code and stale
@@ -206,9 +207,8 @@ rule.
   permission unwrap, and for an old implementation live beside its replacement with no flag or
   documented window (`signet-cutover` § Cutover deletes what it replaces).
 - **L4 · Layering.** `scripts/dependency-cruiser.cjs` is the enforced boundary; the audit skill's
-  red flags (domain importing `@nestjs/*` or `@supabase/*`, a service importing a DTO, a controller
-  reaching into `infrastructure/`) are the intent. Fix toward the enforced rule; when the ideal
-  costs duplication, it's a design question.
+  red flags (domain importing `@nestjs/*` or `@supabase/*`, a service importing a DTO) are the
+  intent. Fix toward the enforced rule; when the ideal costs duplication, it's a design question.
 - **L5 · Correctness in old code.** The `spec/engineering.md` rule sections, read against files
   nobody has opened in months, for what grep misses (fallbacks, empty states, cents validation,
   control semantics).
@@ -293,8 +293,8 @@ pass; manufacturing a change to show work is a failure.
    (commands, outcomes, what couldn't run); a behaviour change gets its own heading. Use `Fixes #N`
    for tracked work and label `release:patch`. If the GitHub MCP is unavailable, push the branch,
    report its name, and stop; there is no sanctioned fallback.
-3. Fix your own CI, then stop; don't subscribe (`AGENTS.md` § Autonomous PR lifecycle is for
-   interactive sessions). *Autofix on PR create* is on for this routine, so a subscribed session
+3. Fix your own CI, then stop; don't subscribe (routines are exempt from `AGENTS.md` § Autonomous
+   PR lifecycle). *Autofix on PR create* is on for this routine, so a subscribed session
    would be a second driver on the branch. Read the check runs once (`pull_request_read
    get_check_runs`): fix, re-review, and push a failure in code you touched; re-run an
    infrastructure death. Don't widen the PR for an unrelated red check or push an empty commit.
@@ -311,8 +311,8 @@ with any design question spelled out, and a visible dedup line:
 agent-suggestion: v1 fp=hygiene/<slug> file=<primary-path>
 ```
 
-Search that `fp=` (open and closed) first. Past the ~3-issue cap, findings go to the ledger for a
-later run to promote.
+Search that `fp=` (open and closed) first. Past the filing cap in [Hard limits](#hard-limits),
+findings go to the ledger for a later run to promote.
 
 Append one comment per run to the "Hygiene Scan — ledger" issue in this shape, and never rewrite its
 body; run state lives in the comments. It is state for the next

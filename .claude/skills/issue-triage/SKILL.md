@@ -32,8 +32,6 @@ organizes the whole inbox, whoever filed it, but destroys only what agents own.
   get_labels` for `suggestion` before each such write; if it's absent, skip and log. A
   human-filed item that looks wrong stays in triage with a comment for the human. One that only
   lacks an Agent brief isn't held: an absent brief reads as `depth:deep`.
-- On human and planning issues, only fill an absent priority. Don't re-bucket, re-prioritize,
-  close, or re-body them, and don't restructure epics.
 - `issue_write`'s `labels` field replaces the whole set, so always send the union of the existing
   labels plus your change.
 - Leave `in-progress` and `in-review` issues alone (claims and sweeps belong to `/next`), and
@@ -100,10 +98,16 @@ List every open issue labeled `triage`. For each:
    - `suggestion`-owned, or clearly well-formed and actionable: remove `triage`.
    - Human-action holds: a `[pr-followup][human]` or bare `[human]` title prefix, or a body
      opening with `**Human action required — hold in triage`. Never promote these, because
-     `/next` can't do the work. Leave them in triage, touching only priority and estimate. The
+     `/next` can't do the work. Leave them in triage, touching only priority, estimate, and the
+     `suggestion` label under the marker rule below. The
      [`pr-followups`](../pr-followups/SKILL.md) routine owns their lifecycle (`fp=pr-followup/`,
-     `fp=human/`). If a `[human]`-titled item lacks the `suggestion` label or the `fp=human/`
-     marker, backfill both, since the label is what lets its owner routine close it.
+     `fp=human/`). Adding `suggestion` hands an issue to the routines: it's what lets PR Follow-ups
+     close it and any routine re-body it. So adding it is a destructive write, never a way to pass
+     the ownership check. Authorship can't tell you who filed an issue, because agents file through
+     the MCP as the owner, so decide from the body. A `[human]` item that already carries a visible
+     `fp=human/` or `fp=pr-followup/` marker line came from the agent filing template: add the
+     missing `suggestion` label. One with no marker gets neither label nor marker; list it in the
+     report as an unowned `[human]` item for the owner to adopt or close.
    - Ambiguous, under-specified, or a significant human decision: leave it in triage with a short
      comment on what's needed. Don't force-promote work a human should accept.
 
@@ -126,6 +130,8 @@ keeps real work from being buried under suggestions in `/next`.
   or dedup only `suggestion`-owned issues, and only with proof. Never mark a `scope:production`
   issue `stale` or raise its priority for age; those are parked by owner decision (see the roster
   in ROUTINES.md).
+- **Ownership:** on human and planning issues in the Backlog, only fill an absent priority. Don't
+  re-bucket, re-prioritize, close, or re-body them, and don't restructure epics.
 
 ## Comment once, not once per run
 

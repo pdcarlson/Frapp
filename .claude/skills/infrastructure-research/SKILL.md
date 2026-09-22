@@ -49,14 +49,17 @@ scripts do).
 
 ### The `api.github.com` route rule
 
-From a cloud sandbox, whether a request to `api.github.com` succeeds depends on its route. The
-session and the token don't matter.
+From a cloud sandbox, whether a request to `api.github.com` succeeds depends on its route, not on
+the token.
 
-- **Through the proxy.** Anything that honours `HTTPS_PROXY`, including plain `curl` and `gh`, goes
-  through the agent proxy. On every repo-scoped path, the proxy answers **403**
-  `{"message":"GitHub access is not enabled for this session"}`. The `Authorization` header makes no
-  difference. `GET /user` returns 200 on the same route, so a probe that never touches a repo path
-  looks healthy.
+- **Through the proxy.** Anything that honours `HTTPS_PROXY` goes through the agent proxy, and the
+  proxy can 403 repo-scoped paths whatever `Authorization` header is sent. On 2026-09-02 (one host,
+  one PAT) it answered 403 `{"message":"GitHub access is not enabled for this session"}` on every
+  repo path. On 2026-09-22 it passed `/repos/{r}`, `/rulesets` and `/issues` (200) but 403'd
+  `/environments` and `/branches/main/protection` with `Access to this GitHub API path is not
+  permitted through this proxy.` Which paths get through varies by session. `gh` reads
+  `HTTPS_PROXY`, so it's expected to take this route (not measured). `GET /user` returns 200 on
+  this route, so a probe that never touches a repo path looks healthy.
 - **Direct.** The same request gets 200 from GitHub itself, with `x-github-request-id` set. Two
   ways to send it direct: node's built-in `fetch`, which ignores `HTTPS_PROXY`
   (`/root/.ccr/README.md`), or `curl --noproxy '*'`.

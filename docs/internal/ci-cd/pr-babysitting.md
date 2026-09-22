@@ -70,7 +70,7 @@ actually matters. `pr-base-guard` is unaffected and still the only workflow that
 feature-base PR.
 
 Verifying the guard: it is pure shell over one payload field, so it is exercised by the
-incident bases directly — `main` exits 0; the incidents' feature-branch bases, `main-ish`, `release/1.0`, and an
+incident bases directly — `main` exits 0; `cursor/...` (the incidents' feature-branch bases), `main-ish`, `release/1.0`, and an
 empty ref all exit 1 (fails closed on anything unrecognised). `production` now exits 1 too,
 which is correct: since #1340 a PR targeting it is a mistake. It also passed on its own PR
 (#1132, check run `base-branch`), which is the end-to-end proof that a no-`branches`

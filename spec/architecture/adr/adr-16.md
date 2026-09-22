@@ -2,23 +2,30 @@
 
 **Decision (2026-06-01):** Adopt **Linear** as Frapp's canonical project-management system and retire the in-repo markdown backlog (`docs/backlog/`).
 
-**Removed 2026-09-05.** The Decision, Rationale, Consequences, Trigger to revisit and amendments 1–3 described operating Linear: the cut-over steps, the MCP probe results, the key-led automation, and how the 250-issue cap bound on active rather than Backlog issues. **Linear was retired on 2026-08-08** (amendment 5 below) and the workspace is gone, so none of it describes anything that exists. Kept, because it is the part nobody can reconstruct:
+**Removed 2026-09-05.** The Decision, Rationale, Consequences, Trigger to revisit and amendments 1–3 described operating Linear: the cut-over steps, the MCP probe results, Cursor's key-led automation, and how the 250-issue cap bound on active rather than Backlog issues. **Linear was retired on 2026-08-08** (amendment 5 below) and the workspace is gone, so none of it describes anything that exists. Kept, because it is the part nobody can reconstruct:
 
 - **Why the flat-file backlog was retired:** diff-able and agent-readable, but a poor human PM surface — no board, no prioritisation UI, manual reconciliation, and it went stale as fast as the code.
 - **Alternative rejected:** GitHub Projects, which had been rejected once before and was unreachable from the cloud agent (no Projects MCP tool, no `gh` CLI in the web sandbox).
 - **The escape hatch it named, never evaluated:** the deleted Trigger to revisit listed "cost or team changes make a different tool (or **self-hosted Plane**) preferable". Plane was the direction to move *toward* if cost changed — it was never assessed and never rejected. Do not read it as ruled out.
 - **The risk that materialised:** the decision recorded MCP availability as its main risk and mitigated it by keeping GitHub Issues as a synced always-available surface. That mitigation is what made the 2026-08-08 retirement cheap — Linear's MCP write tools requiring a manual permission step per call is what finally forced it.
-- **Dated measurements the deleted amendments carried**, kept because they are evidence rather than narration. Amendment 3's cap finding, verified via `/next` on **2026-06-03**: the workspace held **276 non-archived issues — 260 Backlog, ~2 active** — and issue creation still succeeded at 276, which is how the 250 cap was established as binding on *active* (Started + Unstarted) rather than on the Backlog. Amendment 2's probe established that a headless background agent had **no Linear MCP and no injected credentials**, which is the only reason a `LINEAR_API_KEY` (a cloud-agent secret, used against `https://api.linear.app/graphql`) was ever minted — it is dead and marked for revocation in [`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md). Amendment 1 also recorded a non-Linear fact: `/triage`, `/status` and `/next-task` were deleted and replaced by `/next`.
+- **Dated measurements the deleted amendments carried**, kept because they are evidence rather than narration. Amendment 3's cap finding, verified via `/next` on **2026-06-03**: the workspace held **276 non-archived issues — 260 Backlog, ~2 active** — and issue creation still succeeded at 276, which is how the 250 cap was established as binding on *active* (Started + Unstarted) rather than on the Backlog. Amendment 2's probe established that a headless Cursor background agent had **no Linear MCP and no injected credentials**, which is the only reason a `LINEAR_API_KEY` (a Cursor cloud-agent secret, used against `https://api.linear.app/graphql`) was ever minted — it is dead and marked for revocation in [`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md). Amendment 1 also recorded a non-Linear fact: `/triage`, `/status` and `/next-task` were deleted and replaced by `/next`.
 
 Work tracking today is **GitHub Issues** — see amendment 5 and [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md).
 
-**Read amendments 4–10 below with one caveat.** Amendments **5–7 and 10 are current**; amendments 8 and 9 are removed (see the note in their place). Amendment **4 is not as originally written**: it predates the Linear retirement by five days, so it still calls the routines "Linear Issue Curator"/"Linear Triage", names `.claude/skills/linear-curator/` and `linear-triage/` (renamed since to `issue-curator/` and `issue-triage/`), and its "Unchanged and reaffirmed" bullet states *"issues are born in Linear, never GitHub"* — **which amendment 5 explicitly reverses**. What remains historically true of amendment 4 is the 2026-08-03 move of scheduled agents onto Claude Code Routines (the scheduled path today). It also cites amendments 1–3 by number in four places; those are removed, and what they said is: (1) the original keyless MCP access model, (2) a `LINEAR_API_KEY`/GraphQL exception to it, and (3) that Linear's 250-issue cap bound on *active* (Started + Unstarted) issues rather than Backlog — a cap that no longer applies to anything, GitHub Issues having none.
+**Read amendments 4–10 below with one caveat.** Amendments **5–7 and 10 are current**; amendments 8 and 9 are removed (see the note in their place). Amendment **4 is not as originally written**: it predates the Linear retirement by five days, so it still calls the routines "Linear Issue Curator"/"Linear Triage", names `.claude/skills/linear-curator/` and `linear-triage/` (renamed since to `issue-curator/` and `issue-triage/`), and its "Unchanged and reaffirmed" bullet states *"issues are born in Linear, never GitHub"* — **which amendment 5 explicitly reverses**. **Corrected 2026-09-09:** the other surviving claim — that automations live only on Claude Code Routines and Cursor was retired — was reversed by **amendment 8**. **Corrected 2026-09-10:** amendment 8 then ranked Cursor primary and scheduled Claude teardown; **amendment 9** reverses that ranking. **Corrected 2026-09-22:** amendment 10 retired Cursor again, so that claim holds once more; amendments 8–9 are removed. What remains historically true of amendment 4 is the 2026-08-03 move of scheduled agents onto Claude Code Routines (the scheduled path today). It also cites amendments 1–3 by number in four places; those are removed, and what they said is: (1) the original keyless MCP access model, (2) a `LINEAR_API_KEY`/GraphQL exception to it, and (3) that Linear's 250-issue cap bound on *active* (Started + Unstarted) issues rather than Backlog — a cap that no longer applies to anything, GitHub Issues having none.
 
-#### ADR-16 amendment 4 — backlog automations move to Claude Code Routines (2026-08-03)
+#### ADR-16 amendment 4 — backlog automations move to Claude Code Routines; Cursor retired (2026-08-03)
 
-Development has consolidated on Claude Code, so the **Linear Issue Curator** and **Linear Triage**
-flows now run as scheduled **Claude Code Routines** — fresh cloud sessions in the same web
-environment as interactive work, on the same staggered daily cadence.
+**Corrected 2026-09-09 (amendment 8); corrected again 2026-09-10 (amendment 9):** "Cursor was retired" is no longer true — Cursor Cloud is a first-class agent environment. Amendment 8 then made it *primary* with Claude as fallback pending teardown; amendment 9 reverses that ranking. Both Cursor Cloud and Claude Code are independent first-class environments. Claude Code Routines remain a live scheduled path. Linear stays retired (amendment 5) — this correction does not restore Linear or `LINEAR_API_KEY`. The rest of this amendment is the 2026-08-03 historical record of the move onto Claude Routines.
+
+**Corrected 2026-09-22 (amendment 10):** the correction above held from 2026-09-09 until Cursor was
+retired again on 2026-09-22, so "Cursor was retired" is true once more. Amendments 8–9 are removed
+(see the note in their place). Linear stays retired.
+
+The two backlog automations no longer run on Cursor. Development has consolidated on Claude Code, so
+the **Linear Issue Curator** and **Linear Triage** flows now run as scheduled **Claude Code
+Routines** — fresh cloud sessions in the same web environment as interactive work, on the same
+staggered daily cadence.
 
 - **Keyless again — amendment 1's access model is restored.** Routine sessions inherit the
   environment's injected **native Linear MCP**, so amendment 2's `LINEAR_API_KEY`/GraphQL exception
@@ -26,8 +33,8 @@ environment as interactive work, on the same staggered daily cadence.
   it. The key can be revoked; if the MCP is unavailable at fire time the routine stops and reports —
   no key fallback.
 - **Behavior contracts moved into the repo's skill layer:** `.claude/skills/linear-curator/SKILL.md`
-  and `.claude/skills/linear-triage/SKILL.md`; the task playbooks migrated to `.claude/skills/` as
-  well. Runbook + paste-ready Routine prompts:
+  and `.claude/skills/linear-triage/SKILL.md`; the `.cursor/` tree is deleted and the task playbooks
+  it held migrated to `.claude/skills/` as well. Runbook + paste-ready Routine prompts:
   [`docs/internal/ci-cd/ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 - **Amplified in the move:** a fourth curator discovery lens (live runtime signals — Sentry, Supabase
   advisors, CI — through the MCPs the environment injects); a per-issue **Agent brief**
@@ -155,22 +162,51 @@ routine models.
 
 #### ADR-16 amendments 8–9 — removed 2026-09-22
 
-Amendments 8 (2026-09-09) and 9 (2026-09-10) set up, then ran, a second agent harness beside
-Claude Code. Amendment 10 retired it and deleted every file they described, so neither describes
-anything that exists. Neither touched amendment 5: GitHub Issues stays canonical and Linear stays
-retired.
+Amendment 8 (2026-09-09) made **Cursor Cloud** the primary agent environment, with Claude Code as a
+fallback pending a teardown PR, and added the `.cursor/environment.json` start contract, a
+fail-closed Cursor review-gate adapter and paste-ready Cursor Automations. Amendment 9 (2026-09-10)
+reversed that ranking: Cursor Cloud and Claude Code became independent first-class environments and
+the teardown was cancelled. Amendment 10 retired Cursor and deleted the Cursor files they described
+(listed under amendment 10); the Claude Code files they also described stay (amendment 10, What
+stays). Neither touched amendment 5: GitHub Issues stays canonical and Linear stays retired. Kept,
+because it is the part nobody can reconstruct:
+
+- **Never run the same routine on two schedulers at once.** Amendment 9 kept Cursor Automations
+  paste-ready beside Claude Code Routines only on that condition, and rejected dual-running Curator
+  and Triage on both, because one routine on two schedulers double-files.
+- **Cursor project hooks fail open by default**, which is why `.cursor/hooks.json` registered the
+  review-gate adapter with `failClosed: true`. It is also why amendment 8 rejected a dual-path hold
+  (Claude primary, Cursor "also supported"): a Cursor session that ships without owning the gate is
+  a fail-open push path.
+- **Cursor cron Automations attach no repository by default**; every code-writing Automation had to
+  attach this repo.
+- **User secrets are unavailable during Cursor Builds**, so `DOCKERHUB_*` had to be environment or
+  team secrets.
+- **Alternative rejected:** Bugbot and Cursor's built-in `/review` as the review gate. They write no
+  evidence marker; `/diff-review` stayed the gate.
+- **Issue trail:** epic #2017, and with it #2024 (paste the Cursor Automations), #2027 (disable
+  Claude Routines once Cursor Automations were observed) and #2028 (delete `.claude/**`), closed `not_planned` on
+  2026-09-10 via #2108 / PR #2110. The Cursor start contract landed in PR #2043. The Cursor egress
+  allowlist is #2025.
 
 #### Correction — 2026-09-16: review enforcement is no longer harness-specific
 
-The review-adapter details of amendments 8–9 are superseded. Claude Code sessions and humans share
-the repository-managed [Git pre-push hook](../../../.githooks/pre-push), installed by the root
-`prepare` script, with exact pushed-commit evidence at `.cache/diff-review/<PUSHED_COMMIT_SHA>`. No
-project hook intercepts pushes. See the [review runbook](../../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+Amendments 8–9 remain the history of making Cursor and Claude independent first-class environments,
+but their review-adapter details are superseded. Both now share the repository-managed
+[Git pre-push hook](../../../.githooks/pre-push), installed by the root `prepare` script, with exact
+pushed-commit evidence at `.cache/diff-review/<PUSHED_COMMIT_SHA>`. Cursor and Claude project hooks
+no longer intercept pushes. See the [review runbook](../../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
-#### ADR-16 amendment 10 — Cursor retired; Claude Code is the only agent harness (2026-09-22)
+**Corrected 2026-09-22:** amendments 8–9 are removed and Cursor is retired (amendment 10). #2322,
+the change behind this correction, emptied `.cursor/hooks.json` and deleted the Cursor pre-push
+adapter; amendment 10 deleted the rest of the `.cursor/` tree. Claude Code sessions and humans share
+the hook today, and no project hook intercepts pushes.
+
+#### ADR-16 amendment 10 — Cursor retired (2026-09-22)
 
 **Decision (owner, 2026-09-22):** Frapp no longer uses Cursor. Cursor Cloud, Cursor Automations
-and Bugbot are retired, and **Claude Code (web and CLI) is the only agent harness**. Development
+and Bugbot are retired, and **Claude Code (web and CLI) is the agent harness the repo configures**.
+The Git pre-push gate still covers any other local tool (for example Codex) and humans. Development
 happens in Claude Code web sessions and on local laptops. This supersedes amendments 8–9, removed
 above.
 
@@ -199,5 +235,5 @@ from the 2026-09-16 correction above, satisfied by `/diff-review`.
 **Alternatives rejected:** keeping the Cursor files in-tree as dormant legacy. The owner asked for
 Cursor to be removed entirely, and a contract nobody runs still reads as current to the next agent.
 
-**Trigger to revisit:** none scheduled. Taking on a second agent harness is a new decision and a new
-amendment, not a restore of the deleted files.
+**Trigger to revisit:** none scheduled. Bringing back Cursor, or adding another cloud harness with
+its own repo contract, is a new decision and a new amendment, not a restore of the deleted files.

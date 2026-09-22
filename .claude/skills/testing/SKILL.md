@@ -23,7 +23,7 @@ failures. `scripts/ci/lib/required-checks.mjs` is the canonical list of required
 | Single API test file | `npm run test -w apps/api -- --testPathPatterns="event.service"` |
 | Repository tenant-scope specs only | `npm run test -w apps/api -- --testPathPatterns="\.repository\.spec\.ts$\|repositories/"` |
 | Live-PostgREST integration suite | `npm run test:integration -w apps/api` |
-| Build `packages/*` (what CI's package-build step runs) | `npx turbo run build --filter='./packages/*'` |
+| Build `packages/*` (what CI's `packages-build` job runs) | `npx turbo run build --filter='./packages/*'` |
 
 Jest 30 takes the plural `--testPathPatterns`. The singular `--testPathPattern` no longer
 exists. The tenant-scope pattern keys on the filename so module-local repositories are included,
@@ -75,6 +75,8 @@ in the last row; path-gated jobs are still required.
 | `web-responsive-floor` (path-gated) | `npm run test:floor -w apps/web` (every dashboard route at 375px without horizontal scroll) |
 | `landing-fold` (path-gated) | `npm run test:fold -w apps/landing` (fold geometry at 1440x900 and 390x844) |
 | `web-production-build` | The Vercel-parity build below |
+| `packages-build` | `npx turbo run build --filter='./packages/*'` |
+| `changes` | Nothing to run locally. It computes the path filter for the path-gated jobs and is required because `web-tests` needs it |
 | Run in CI but not required | `pglite-migrations` (`npm run check:pglite-migrations`), and the advisory `migration-lock-safety` (`npm run check:migration-lock-safety`) and `duplicate-detection` (`npm run check:duplication`) |
 
 Mobile specs that assert calendar days must build dates with local-time constructors, not ISO

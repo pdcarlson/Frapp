@@ -42,9 +42,10 @@ with `Fixes #N` on merge. In cloud sandboxes the GitHub MCP is the only *sanctio
 above are for Actions and laptops. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 
 **The `api.github.com` route rule (measured 2026-09-02).** Reachability of `api.github.com` from a
-cloud sandbox is **route-dependent, not session-dependent**. This file used to say
-"session-dependent (observed both proxy-blocked and working, 2026-08-08)"; that framing was wrong.
-Measured on one host, with one `GITHUB_PAT`, inside one minute:
+cloud sandbox is **route-dependent**: the direct route works, and what the proxy route passes
+varies by session and path (corrected 2026-09-22, below). This file used to say
+"session-dependent (observed both proxy-blocked and working, 2026-08-08)"; that framing missed the
+route. Measured on one host, with one `GITHUB_PAT`, inside one minute:
 
 - A request that honours `HTTPS_PROXY` (measured with `curl`; `gh` reads the same proxy env and is
   expected to behave identically, not separately measured) reaches the agent proxy's
@@ -55,7 +56,13 @@ Measured on one host, with one `GITHUB_PAT`, inside one minute:
   read `HTTPS_PROXY` (documented in `/root/.ccr/README.md`) — returns **200 from GitHub itself**,
   carrying `server: github.com` and `x-github-request-id`.
 
-So the 403 is produced by the **proxy route**, not by GitHub and not by the session's identity.
+**Corrected 2026-09-22:** "every repo-scoped path" held for that session, not in general. A later
+session's proxy passed `/repos/{r}`, `/rulesets` and `/issues` (200) and 403'd only `/environments`
+and `/branches/main/protection`, with or without `Authorization`, and with a different message:
+`{"message":"Access to this GitHub API path is not permitted through this proxy."}`. The direct
+route returned 200 on all five.
+
+So the 403 is produced by the **proxy route**, not by GitHub and not by the token.
 Direct egress is bounded only by the environment network allowlist, which carries `api.github.com`.
 Two rules follow: never regenerate the PAT with broader scopes to chase one of these 403s — the
 token was never what failed — and never set `NODE_USE_ENV_PROXY=1` for these scripts, which would
@@ -794,12 +801,12 @@ Dependabot alert it is a **blocking** CI gate (see the `check:npm-audit` rows ab
 
 | Key               | Value  | Effect                                                                                                                                                                                                                                                           |
 | ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-merge loop — the five-step contract in AGENTS.md § "Autonomous PR lifecycle": open PR → subscribe → **read the wake comments** (the self-wake step was retired 2026-08-08 — it prompts and cannot be allowlisted; see [`pr-babysitting.md` → Wake coverage](pr-babysitting.md#wake-coverage)) → **triage infra-vs-code** → fix until merge-ready (or a self-contained next step). |
+| `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-green loop, whose steps and stop conditions are in [`AGENTS.md` § Autonomous PR lifecycle](../../../AGENTS.md#autonomous-pr-lifecycle-cloud-sessions); wake-path facts are in [`pr-babysitting.md` → Wake coverage](pr-babysitting.md#wake-coverage). `send_later` (self-wake) was retired 2026-08-08: it prompts and can't be allowlisted. |
 | `permissions.allow` | `Workflow` + GitHub MCP babysit/tracker tools | Auto-approves the multi-agent **Workflow** tool so `/next ultracode` fan-outs don't stall on a prompt. Lists the **GitHub MCP** tools the babysit loop and tracker need (`subscribe`/`unsubscribe_pr_activity`, issue/PR reads and writes, `actions_run_trigger`). The 21 `Claude_Code_Remote` / kebab-case / connector-UUID entries for `send_later` and the trigger family were **removed** — they were inert on the cloud surface (ceiling rule) and were being misread as permission. Do not re-add them to "allowlist" `send_later`; it still prompts. `merge_pull_request`, `enable_pr_auto_merge`, `push_files`, `create_or_update_file`, and `delete_file` stay unlisted — merging and direct repo-content writes are not repo-sanctioned (the harness `mcp__github__*` wildcard may still auto-approve them on cloud; the merge gate is policy — see "Applied permission allows"). Linear allows were removed with the retirement (#680). |
 | `skipWorkflowUsageWarning` | `true` | Marks the multi-agent workflow usage warning as accepted. Per the settings schema (an `@internal` key, read out of the 2.1.220 build — re-verify on newer builds): "Until set, auto permission mode prompts before running a workflow." Set so unattended sessions don't stall on that prompt; a launch that prompts anyway on some build falls back to inline checks (see `/next`). |
 | `hooks` | SessionStart | Wires [`session-start.sh`](../../../.claude/hooks/session-start.sh) for cloud-sandbox bringup. Review enforcement is provider-neutral in [`.githooks/pre-push`](../../../.githooks/pre-push). A second PreToolUse hook (`linear-autoallow.sh`, PR #676) auto-approved Linear's write tools; it was deleted with the Linear retirement — see "Applied permission allows" below. Details: [`AI_CODE_REVIEW_RUNBOOK.md`](AI_CODE_REVIEW_RUNBOOK.md) and [`AGENTS.md`](../../../AGENTS.md) § Claude Code web sandbox. |
 
-Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../../AGENTS.md) under "Autonomous PR lifecycle". Keep the two in sync when changing either.
+Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../../AGENTS.md) under "Autonomous PR lifecycle". That is canonical; the `doneMeansMerged` row above links to it rather than restating the steps.
 
 ## Shared CI script library (`scripts/ci/lib/`)
 

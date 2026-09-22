@@ -98,13 +98,18 @@ Reads accept issue numbers (`issue_read`, `list_issues`, `search_issues`); write
 
 ### Label roster
 
-This is the only copy. Labels auto-create on first use, so a typo'd label is a real label; if one
-looks off, check it with `issue_read get_labels` on a labeled issue.
+This is the only copy; [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy) links here
+and keeps only the tracker rules built on these labels. Labels auto-create on first use (verified
+2026-08-08), so a typo'd label is a real label; if one looks off, check it with
+`issue_read get_labels` on a labeled issue.
 
 - **State:** `triage` · `in-progress` · `in-review` (Backlog = open with none of these)
-- **Priority:** `P1` (urgent) · `P2` (high) · `P3` (medium) · `P4` (low), exactly one per triaged
-  issue
-- **Ownership / lifecycle:** `suggestion` · `stale` · `human`. `human` (in use on #1146) is
+- **Priority:** `P1` (urgent, drop everything) · `P2` (high) · `P3` (medium) · `P4` (low), exactly
+  one per triaged issue. Absent means unprioritized, which `/next` ranks last.
+- **Ownership / lifecycle:** `suggestion` · `stale` · `human`. `suggestion` marks what the
+  routines own, so it's the boundary for destructive writes
+  ([rule 2](#shared-ownership-boundary-all-routines)). `stale` marks an aging suggestion that
+  can't be proven resolved; it stays open. `human` (in use on #1146) is
   decorative, not a hold mechanism. The human-action hold is the `[human]` /
   `[pr-followup][human]` title prefix or the `**Human action required — hold in triage` body
   opener, per [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy), and `/next` §0.2
@@ -135,16 +140,20 @@ looks off, check it with `issue_read get_labels` on a labeled issue.
     Supabase stack for the integration suite), and a missing spec under its surface label (#2456
     and #2282 are `area:mobile`). Whether a third home helps or splits one class three ways is open.
 - **Scope:** `scope:production`: work that only becomes relevant once a production environment
-  exists (owner decision 2026-08-10; see
-  [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the
-  [decision record on #814](https://github.com/pdcarlson/Frapp/issues/814#issuecomment-5245093672),
-  which lives in that comment, not #814's rebuilt-each-run body). Parked by choice, not blocked
+  exists (owner decision 2026-08-10; the
+  [decision record on #814](https://github.com/pdcarlson/Frapp/issues/814#issuecomment-5245093672)
+  lives in that comment, not #814's rebuilt-each-run body). Parked by choice, not blocked
   and not stale: don't mark these `stale`, raise their priority for age, or re-file duplicates.
+  Since 2026-08-30 the premise no longer holds: production is live (`frapp-prod`, deployed by
+  `deploy-production.yml`; [ADR-20](../../../spec/architecture/adr/adr-20.md)), so don't read the
+  label as evidence that a production-shaped risk is theoretical. Redefining its scope is the
+  owner's call, tracked in #1381.
 - **Routine infrastructure:** `routine-state` (cross-run state stores, never work; `/next` and the
   routines skip them)
 - **Legacy:** `bug`, `Improvement` and `release:*` persist on old issues; don't add them to new
-  issues. On PRs, `release:*` is live: every PR carries one and it drives the production version
-  bump.
+  issues. On PRs, `release:*` is live: every PR should carry one (Dependabot's carry none), and a
+  PR with no label counts as `release:patch` in the production version bump
+  ([`AGENT_INFRA.md` → Release labels](AGENT_INFRA.md#release-labels)).
 
 ## Settings (per routine, set in the Routines UI)
 
@@ -360,9 +369,10 @@ removed in #1597. Update this file alongside a skill only when the rule lives in
 - Keep the [label roster](#label-roster) current. It is the only copy:
   [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy),
   [`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) and
-  [`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md) link here instead of listing
-  areas, because a duplicated enum drifts and can't carry the scope caveats the entries have.
-  Adding a label is a one-place edit; keep it that way.
+  [`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md) link here instead of restating
+  it, because a duplicated roster drifts and can't carry the scope caveats the entries have.
+  Adding a label is a one-place edit; renaming or redefining one also touches the skills that use
+  it by name.
 - Point a routine's lens commands at the command CI gates on, not the underlying tool. A routine
   files issues from a check's output, so a command that reports more than the gate blocks on turns
   accepted decisions back into new issues: use `npm run check:npm-audit` (the `dependency-audit`

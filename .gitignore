@@ -57,6 +57,10 @@ supabase/.branches/
 # download one and feed it to a JWT generator, which can happen from any directory.
 *.p8
 
+# Editor-local state. MCP configs kept here (.cursor/mcp.json and the like) can carry credentials,
+# and EAS uploads whatever git does not ignore.
+.cursor/
+
 # Agent-local state, never committed:
 #   settings.local.json holds one machine's permission grants (previously ignored
 #   only by a developer's global gitignore, so a fresh clone left it stageable);

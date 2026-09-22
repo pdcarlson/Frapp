@@ -92,39 +92,11 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
 
 ## Labels and priority (lean taxonomy)
 
-- **Priority is a label:** **`P1`** (urgent — drop everything) · **`P2`** (high) · **`P3`**
-  (medium) · **`P4`** (low). Exactly one per triaged issue; absent = unprioritized (ranked last,
-  not startable out of Triage). Mapped 1:1 from Linear's Urgent/High/Medium/Low at migration.
-- **`area:<x>`** groups by surface. The canonical roster is the one in
-  [`ROUTINES.md` → Tracker access](ROUTINES.md#tracker-access-shared-by-all-routines), which routine
-  self-maintenance keeps current. This file links to it rather than holding a second copy — the two
-  lists had already drifted apart (#1077), which is what a duplicated enum does.
-- **`suggestion`** is the routine-ownership marker (which issues the backlog routines own) — the
-  hard boundary for destructive routine writes.
-- **`stale`** marks an aging suggestion that can't be *proven* resolved — kept, left open.
-- **`triage`**, **`in-progress`**, **`in-review`** are the state labels above.
-- **`routine-state`** marks routine infrastructure issues (cross-run state stores, never work) —
-  excluded from `/next` candidacy and from every routine's triage/grooming scope.
-- **`scope:production`** marks work that only becomes relevant once a production environment
-  exists. Added 2026-08-10 on the owner's decision to defer production and make staging the
-  near-term goal. These issues are **parked by choice, not blocked and not stale**: routines must
-  not mark them `stale`, must not raise their priority for age, and must not re-file duplicates of
-  them. The production Render service being suspended and `frapp-web` having no production
-  deployment are intentional states, not findings. Revisit when production becomes a goal; see #814
-  for the decision record. **Caveat (2026-08-30):** this bullet's premise — that production does not
-  yet exist — no longer holds. `frapp-prod` is live and `deploy-production.yml` deploys to it
-  ([`spec/architecture/adr/adr-20.md`](../../../spec/architecture/adr/adr-20.md)). Its provider-guardrail preflight briefly failed on the
-  retired Vercel Git integration and blocked production deploys; #1579 inverted that assertion on
-  2026-09-02 (canonical record: ADR-21 in [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md), with its 2026-09-02
-  amendment; the CI-driven Vercel deploy that replaces the integration is still #1578). The label's scope is the
-  owner's to redefine, so nothing here changes on an agent's initiative; but do not read this
-  bullet as evidence that a production-shaped risk is theoretical. Tracked in #1381.
-- Legacy labels from the pre-Linear era (`bug`, `Improvement`, `release:*`) persist on old issues;
-  `release:*` still drives version bumps ([`AGENT_INFRA.md`](AGENT_INFRA.md)). Don't extend the
-  legacy set to new issues.
-- Labels **auto-create on first use** (verified 2026-08-08: applying a nonexistent label via
-  `issue_write` creates it), so there is no provisioning step — but stick to the rosters above and
-  the linked `area:*` list; a typo'd label is a real label.
+The label roster, with what each label means and the caveats on it, is in
+[`ROUTINES.md` → Label roster](ROUTINES.md#label-roster). This file links to it rather than
+holding a second copy, because duplicated rosters drift: the two `area:*` lists had drifted apart
+(#1077), and the `scope:production` caveat reached only one of the two copies. The rules below are
+the tracker behaviour built on those labels.
 
 **Blocked-by has no native relation.** Express dependencies as a **`Blocked by #N`** line in the
 issue body's meta block. `/next` §1.1 verifies blockers against the repo, not the tracker, before
@@ -185,6 +157,8 @@ Unchanged from the Linear era. An issue's description may carry a machine-readab
   field means `deep`.
 - **`model`** — suggested tier for the session that picks it up (`fable` for cross-cutting,
   architectural, security-sensitive, or subtle-correctness work). Advisory, read at spin-up.
+  Sessions default to Opus 5.5, which does about 95% of the work here (owner decision 2026-09-22),
+  so `any` means that default and `fable` marks the minority of issues that warrant Fable.
 - **`ultracode`** — whether multi-agent orchestration likely pays for itself.
 
 **Who writes it:** the curator files every suggestion with a brief; the triage routine backfills

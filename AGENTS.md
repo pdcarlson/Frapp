@@ -123,7 +123,7 @@ When the user gives you a durable environment hint or tool workaround not docume
 
 ## Claude Code web sandbox
 
-Claude Code (web and CLI) is the only agent harness. Bringup is under [Starting the dev environment](#starting-the-dev-environment); sandbox detail: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md); local-only `.env.local` and SWC notes: [`LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md).
+Claude Code (web and CLI) is the agent harness this repo configures. Bringup is under [Starting the dev environment](#starting-the-dev-environment); sandbox detail: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md); local-only `.env.local` and SWC notes: [`LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md).
 
 - **Review gate:** `/diff-review`. [`.githooks/pre-push`](.githooks/pre-push), installed by the root `prepare` script, requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for every pushed commit, whoever pushes it; retrying doesn't release it. Never push with `--no-verify`: the hook is local, so nothing server-side catches the bypass.
 - **Tracker and PRs:** GitHub Issues through the GitHub MCP, `mcp__github__*` ([Work tracking](#work-tracking)). PRs go against `main` with `create_pull_request` / `update_pull_request`, never `gh`. `.claude/settings.json` sets `doneMeansMerged: true`.
@@ -133,6 +133,8 @@ Claude Code (web and CLI) is the only agent harness. Bringup is under [Starting 
 ## Autonomous PR lifecycle (cloud sessions)
 
 A task is done when its PR is green and review-clean, not when the code is pushed. Wake-path facts: [`pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md).
+
+Scheduled routines are exempt and follow their own skill's PR rules ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)): they don't subscribe, because *Autofix on PR create* already drives the Docs Upkeep and Hygiene Scan PRs, and a human merges every routine PR.
 
 1. Open a PR against `main`, the only legal base, without being asked.
 2. Subscribe with `subscribe_pr_activity`. Don't call `send_later` or add it to `permissions.allow`: it prompts the owner, so it can't run unattended. The PR-activity webhook plus the repo's `CI wake` and `PR base sync` comments cover wakes ([wake coverage](docs/internal/ci-cd/pr-babysitting.md#wake-coverage)).

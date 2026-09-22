@@ -46,8 +46,12 @@ Conventions that are easy to get wrong:
 - A loading, empty, or error state inside a `<CardContent>` uses
   `components/shared/nested-states.tsx`, not `async-states.tsx`, which paints `--card` and would
   vanish inside a card.
-- Focus indicators come from the recipes in `components/ui/focus.ts`, which all focusable controls
-  share. `typography.ts` (`EYEBROW`) and `duotone.tsx` are shared recipes too.
+- Take focus indicators from the recipes in `components/ui/focus.ts` (`FOCUS_RING`,
+  `FOCUS_RING_OFFSET`, `FOCUS_RING_SHELL` and the rest) instead of writing focus classes at the call
+  site, because a hand-copied string escapes a grep for the constant. A few call sites still write
+  their own and aren't precedent: the default-role `<select>` in `settings/settings-roles-tab.tsx`,
+  the notification links in `layout/dashboard-notification-drawer.tsx`, and the reload button in
+  `app/global-error.tsx`. `typography.ts` (`EYEBROW`) and `duotone.tsx` are shared recipes too.
 
 ## Tailwind and theming
 

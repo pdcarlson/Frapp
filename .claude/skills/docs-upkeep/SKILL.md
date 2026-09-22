@@ -132,10 +132,12 @@ Otherwise:
 3. **Push and open** the PR against `main` with `mcp__github__create_pull_request`. If the GitHub
    MCP is unavailable, push the branch, report its name, and stop; `gh` and raw REST are not
    sanctioned paths. If `git push` itself fails, stop and report.
-4. **Fix CI failures you caused, then stop.** A red `link-check` from a heading you renamed or a
-   file you moved is yours: fix it and push. Anything else (code you didn't touch, a flake, an
-   infra error) goes in the report. Never widen the PR outside the allowlist to chase a check, and
-   don't babysit the PR to merge; merging is a human's call.
+4. **Fix CI failures you caused, then stop; don't subscribe.** *Autofix on PR create* is on for
+   this routine, so a subscribed session would be a second driver on the branch. A red
+   `link-check` from a heading you renamed or a file you moved is yours: fix it and push. Anything
+   else (code you didn't touch, a flake, an infra error) goes in the report. Never widen the PR
+   outside the allowlist to chase a check, and don't babysit the PR to merge; merging is a human's
+   call.
 
 ## Guardrails
 

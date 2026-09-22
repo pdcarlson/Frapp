@@ -100,8 +100,9 @@ project:
 Don't take the host from `SUPABASE_URL` in `apps/*/.env.local`. In a sandbox, that holds the local
 stack's URL (`http://127.0.0.1:54321`).
 
-The allowlist carries the staging hosts and no production ones, so a typo fails closed. Don't rely on it: a mistyped `POST`
-is your mistake, not the proxy's. If a task seems to require production, it doesn't. Stop and ask
+The sandbox allowlist carries the staging hosts and no production ones, so a typo in a sandbox
+request fails closed. MCP calls don't go through it at all. Either way, don't rely on it: a
+mistyped `POST` is your mistake, not the proxy's. If a task seems to require production, it doesn't. Stop and ask
 the owner.
 
 ## Authentication
@@ -122,12 +123,15 @@ that setting still gates Preview deployments, and both staging hosts are Preview
 URLs are gated too, so they don't work around it.
 
 Fixing this is a human task, tracked in [#1951](https://github.com/pdcarlson/Frapp/issues/1951).
-Don't disable protection, generate a `protectionBypass`, or change the project's protection
-settings. The Vercel MCP principal is on the team (`list_teams` shows it and `list_deployments`
-works, checked 2026-09-22), so read deployment state through it. `get_access_to_vercel_url` mints a
-share link that bypasses Vercel Authentication, so the rule above rules it out.
-`web_fetch_vercel_url` returned 403 when the principal wasn't on the team, and hasn't been re-tested
-since.
+Don't disable protection, generate a `protectionBypass`, change the project's protection settings,
+or get past Vercel Authentication any other way until #1951 is fixed. Read deployment state through
+the Vercel MCP's `list_deployments`, `get_deployment`, and `list_deployment_events` (in a session on
+2026-09-22 its principal could see the team and list deployments; if yours gets a 403 or an empty
+list, report that rather than reading it as deployment state). Don't call `get_access_to_vercel_url`
+or `web_fetch_vercel_url` on any host. Both exist to get past Vercel Authentication (the first mints
+a `_vercel_share` link, and the second fetches with the principal's access), and neither goes
+through the sandbox allowlist, so a production hostname wouldn't fail closed. Anything only they
+could show you stays `blocked`.
 
 #1951 is done when `curl -I https://app.staging.frapp.live/sign-in` returns the Signet app instead
 of `Login – Vercel`. Until then, these are all `blocked`, never passed:
@@ -253,7 +257,8 @@ session.
 In a PR body or issue comment, name the tier that actually ran. These are three different claims:
 
 - `verified locally` — local stack / PGlite / Jest
-- `verified against staging` — deployed staging, egress confirmed by preflight
+- `verified against staging` — deployed staging, egress confirmed by preflight (an MCP fetch
+  never counts)
 - `blocked` — could not run, with the reason and the missing piece named
 
 Never write the second when you did the first, and never write either for a check that couldn't

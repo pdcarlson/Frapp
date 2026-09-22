@@ -379,8 +379,8 @@ decide (a dashboard toggle, a credential, an unmet acceptance criterion you are 
 goes to him as a question, per [`file-follow-up`](../skills/file-follow-up/SKILL.md): AskUserQuestion
 when it is a decision and you hold no sibling claims, your end-of-run report otherwise, or whenever
 blocking on a prompt would stall the run. Still write the block; the PR Follow-ups routine harvests
-it into the Human Action List. If Paul is present and the action is small, ask on the spot, and file
-it only if it's still open when the run ends.
+it into the Human Action List. If Paul is present and the action is small, ask on the spot; file it
+unless he clears it then and there.
 
 ## Phase 4 — ship and sync
 
