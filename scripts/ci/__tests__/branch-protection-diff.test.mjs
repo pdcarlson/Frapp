@@ -16,10 +16,12 @@ import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 // Before #1383 `configure-branch-protection.mjs` had exactly one API call and
 // exactly one method — PUT — so it could report only what it INTENDED to write.
 // These cover the read-back that replaced the checkmark. The network call itself
-// is deliberately untested here and untestable from a sandbox: `api.github.com`
-// is reachable in some sessions and 403s through the proxy in others (#680's
-// evidence table records both on the same day). Everything below is a pure
-// function over a plain object for that reason.
+// is deliberately untested here: this suite runs in CI (`test:ci-scripts`) with
+// no admin-read PAT, and live protection is admin state that drifts, so a live
+// call would test the environment rather than the diff. The live read is
+// `npm run configure:branch-protection:verify`; when it works from a cloud
+// sandbox is GITHUB_BRANCH_PROTECTION_RUNBOOK.md's to say (the `--verify` mode).
+// Everything below is a pure function over a plain object for that reason.
 
 /** Source text of a sibling script, for the assertions that read code as data. */
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");

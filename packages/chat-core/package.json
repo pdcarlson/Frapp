@@ -26,7 +26,7 @@
     "@repo/chat-integrations": "*",
     "@repo/validation": "*",
     "@supabase/supabase-js": "^2.116.0",
-    "@tanstack/react-query": "^5.102.8"
+    "@tanstack/react-query": "^5.103.1"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",

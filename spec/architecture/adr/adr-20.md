@@ -48,7 +48,9 @@ the ones a later reader would otherwise re-litigate.
 - **Branch protection cannot be verified by an agent.** `api.github.com` returns 403 to
   authenticated and unauthenticated requests alike from a cloud sandbox, and the GitHub MCP exposes
   no branch-protection tool. Step 4 of any rollout is evidenced only by a human's own run output.
-  This is why #813, #1166 and #1138 recur.
+  This is why #813, #1166 and #1138 recur. — amended 2026-09-22: the 403 was the agent proxy's
+  route, not the endpoint. An agent can now read protection over node's direct `fetch` route
+  (amendment 2026-09-02, (b), below); applying it stays a human step by policy.
 - **A `frapp-prod` data-loss event is unrecoverable until stage 5** — amended 2026-09-06: the
   nightly production dump job now exists (decision 2's amendment); the exposure closes on its first
   successful scheduled run. A hosted staging Storage restore rehearsal passed 2026-09-07 (#1421);
