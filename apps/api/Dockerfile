@@ -60,11 +60,11 @@ RUN npm run build --workspace=apps/api
 # § Release naming says which do) → the script skips sentry-cli and still
 # strips `*.map` so the runner does not ship TypeScript. Set but sentry-cli
 # fails (inject or upload: cannot be resolved or started, non-zero exit,
-# signal, or time bound) → the script prints one `WARNING:` line, still
-# strips `*.map`, and exits 0: the upload is best effort and must not gate
+# signal, or time bound) → the script prints one `WARNING:` line per failed
+# step, still strips `*.map`, and exits 0: the upload is best effort and must not gate
 # shipping (#2431). Inject rewrites dist in place, so the script copies dist
-# to `apps/api/.sentry-inject-snapshot-*` first (outside dist, and removed
-# afterwards; from apps/api/ the runner takes only dist/ and package.json,
+# to `apps/api/.sentry-inject-snapshot-*` first (outside dist; its removal is
+# attempted on every path, and a leftover only logs a `NOTE:`; from apps/api/ the runner takes only dist/ and package.json,
 # which the script's spec pins) and restores it from that copy if inject
 # fails. Only a failure to strip, or to restore dist, exits non-zero. Do not
 # add `|| true` here; that would hide those too.

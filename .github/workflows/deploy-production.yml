@@ -641,8 +641,9 @@ jobs:
           #     rather than against it: a guard whose correctness depends on a
           #     sync that is currently broken is not a guard.
           #
-          # So on the day SENTRY_AUTH_TOKEN is added to Infisical `prod` (pending
-          # human work, spec/behavior/observability.md), a dry run WILL create a
+          # So whenever SENTRY_AUTH_TOKEN is in Infisical `prod` (whether it already
+          # is has not been verified; spec/behavior/observability.md § Release
+          # naming), a dry run WILL create a
           # Sentry release unless the pulled file is stripped too. Closing that
           # means editing the file `vercel pull` writes, between the pull and the
           # build, inside `buildVercelProject` — shared with staging, and its
@@ -697,8 +698,8 @@ jobs:
               echo "One difference inside the build itself: a real run compiles with"
               echo "\`SENTRY_AUTH_TOKEN\` present and so uploads source maps and creates a Sentry"
               echo "release. This run cleared the copy in the job environment, which does NOT"
-              echo "cover the copy \`vercel pull\` writes into the pulled env file — so once that"
-              echo "token is provisioned in Infisical \`prod\`, a dry run may still mint a Sentry"
+              echo "cover the copy \`vercel pull\` writes into the pulled env file — so whenever that"
+              echo "token is in Infisical \`prod\` (not verified either way), a dry run may mint a Sentry"
               echo "release. Either way, a green build here does not prove the real build's"
               echo "Sentry upload will succeed."
             else

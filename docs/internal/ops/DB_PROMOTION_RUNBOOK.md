@@ -416,7 +416,8 @@ One difference sits _inside_ the build, and it is the easiest thing here to
 misread: a real run compiles with `SENTRY_AUTH_TOKEN` present and therefore
 uploads source maps and creates a Sentry release. A dry run clears that token —
 but only the copy in the job environment, **not** the copy `vercel pull` writes
-into the pulled env file. So once that token is provisioned in Infisical `prod`,
+into the pulled env file. So whenever that token is in Infisical `prod` (whether
+it already is has not been verified — [observability § Release naming](../../../spec/behavior/observability.md#release-naming)),
 **a dry run may still create a Sentry release** for a commit that never shipped.
 If you are chasing production errors attributed to a version that was never
 deployed, a dry run is a live suspect, not a ruled-out one. Either way, a green

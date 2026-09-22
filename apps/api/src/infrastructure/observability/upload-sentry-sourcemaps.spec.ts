@@ -78,7 +78,7 @@ const FIXTURE_MAPS = ['interface/filter.js.map', 'main.js.map'];
 function cleanedUp(distDir?: string): string {
   return (
     (distDir ? `restored ${distDir} from its pre-inject snapshot, ` : '') +
-    'stripped *.map; build continues'
+    'stripped *.map; build continues (clear the Docker build cache to retry the upload)'
   );
 }
 
@@ -294,8 +294,8 @@ describe('runSentrySourcemapUpload when sentry-cli fails (best effort, #2431)', 
     expect(lines).toEqual([
       'WARNING: sentry-cli sourcemaps inject failed (status=null signal=none ' +
         'error=ENOENT: spawnSync /app/node_modules/.bin/sentry-cli ENOENT): ' +
-        '(no output); frapp-api source maps NOT uploaded ' +
-        '(best effort, #2431); clear the Docker build cache to retry',
+        '(no output); frapp-api source-map upload not confirmed ' +
+        '(best effort, #2431)',
       cleanedUp(distDir),
     ]);
     expect(stripSourceMapFiles(distDir)).toEqual([]);
@@ -317,8 +317,7 @@ describe('runSentrySourcemapUpload when sentry-cli fails (best effort, #2431)', 
     expect(lines).toEqual([
       'WARNING: sentry-cli sourcemaps upload failed (status=1 signal=none error=none): ' +
         'error: API request failed caused by: 401 Unauthorized; ' +
-        'frapp-api source maps NOT uploaded (best effort, #2431); ' +
-        'clear the Docker build cache to retry',
+        'frapp-api source-map upload not confirmed (best effort, #2431)',
       cleanedUp(),
     ]);
     expect(stripSourceMapFiles(distDir)).toEqual([]);
@@ -498,7 +497,7 @@ describe('inject runs under a snapshot of dist', () => {
     expect(siblingsOf(distDir)).toEqual(['dist']);
     expect(log.mock.calls.map(([line]) => line)).toEqual([
       expect.stringMatching(
-        /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=none\): \(no output\); frapp-api source maps NOT uploaded /,
+        /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=none\): \(no output\); frapp-api source-map upload not confirmed /,
       ),
       cleanedUp(distDir),
     ]);
@@ -574,7 +573,7 @@ describe('inject runs under a snapshot of dist', () => {
     expect(runCli).not.toHaveBeenCalled();
     expect(log.mock.calls.map(([line]) => line)).toEqual([
       expect.stringMatching(
-        /^WARNING: could not snapshot .* before sentry-cli sourcemaps inject, so inject did not run \(ENOSPC: simulated failure, mkdtemp .*\); frapp-api source maps NOT uploaded \(best effort, #2431\)/,
+        /^WARNING: could not snapshot .* before sentry-cli sourcemaps inject, so inject did not run \(ENOSPC: simulated failure, mkdtemp .*\); frapp-api source-map upload not confirmed \(best effort, #2431\)/,
       ),
       // Nothing was restored: inject never touched dist.
       cleanedUp(),
@@ -620,7 +619,7 @@ describe('inject runs under a snapshot of dist', () => {
     // The failure is logged; a restore or strip that did not happen is not.
     expect(log.mock.calls.map(([line]) => line)).toEqual([
       expect.stringMatching(
-        /^WARNING: sentry-cli sourcemaps inject failed \(status=1 .*\): inject failed; frapp-api source maps NOT uploaded /,
+        /^WARNING: sentry-cli sourcemaps inject failed \(status=1 .*\): inject failed; frapp-api source-map upload not confirmed /,
       ),
     ]);
     expect(siblingsOf(distDir)).toEqual(['dist']);
@@ -652,7 +651,7 @@ describe('inject runs under a snapshot of dist', () => {
     ).toBe('uploaded');
     expect(log.mock.calls.map(([line]) => line)).toEqual([
       expect.stringMatching(
-        /^WARNING: could not remove the pre-inject snapshot .*\(EBUSY: .*\); it is outside dist, so it does not ship$/,
+        /^NOTE: could not remove the pre-inject snapshot .*\(EBUSY: .*\); it is outside dist, so it does not ship$/,
       ),
       expect.stringMatching(/^uploaded API source maps/),
     ]);
@@ -1054,6 +1053,16 @@ function dockerInstructions(dockerfile: string): string[] {
     .filter((line) => line !== '');
 }
 
+/** Each named stage's base: another stage's name, or an image reference. */
+function stageBases(dockerfile: string): Map<string, string> {
+  const bases = new Map<string, string>();
+  for (const line of dockerInstructions(dockerfile)) {
+    const match = /^FROM (?:--\S+ )*(\S+) AS (\S+)$/i.exec(line);
+    if (match) bases.set(match[2].toLowerCase(), match[1].toLowerCase());
+  }
+  return bases;
+}
+
 type StageCopy = { from: string | undefined; sources: string[] };
 
 /**
@@ -1297,6 +1306,33 @@ describe('API Docker / CI wiring', () => {
         )
         .sort(),
     ).toEqual(['dist', 'package.json']);
+    // Nor may the builder's tree reach the runner another way: the runner
+    // must not be based on the builder, and no stage it copies from may be
+    // descended from the builder (such a stage carries the builder's whole
+    // apps/api/, snapshot included).
+    const descendsFromBuilder = (
+      bases: Map<string, string>,
+      name: string | undefined,
+    ): boolean => {
+      for (let at = name; at; at = bases.get(at)) {
+        if (at === 'builder') return true;
+      }
+      return false;
+    };
+    const bases = stageBases(dockerfile);
+    expect(descendsFromBuilder(bases, bases.get('runner'))).toBe(false);
+    expect(
+      copies
+        .map((copy) => copy.from)
+        .filter(
+          (from) => from !== 'builder' && descendsFromBuilder(bases, from),
+        ),
+    ).toEqual([]);
+    // The check itself catches a runner built on a builder-derived stage.
+    const derived = stageBases(
+      'FROM a AS builder\nFROM builder AS slim\nFROM slim AS runner\n',
+    );
+    expect(descendsFromBuilder(derived, derived.get('runner'))).toBe(true);
     // The parser sees what Docker sees: a copy of the whole builder app, by
     // stage index, is caught.
     expect(

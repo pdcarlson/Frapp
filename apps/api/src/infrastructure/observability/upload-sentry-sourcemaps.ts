@@ -69,8 +69,8 @@ export const SENTRY_CLI_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
  * A sibling, never inside `distDir`: inject would rewrite a snapshot there,
  * and the runner stage copies `apps/api/dist/` wholesale. From `apps/api/`
  * the runner copies only `dist/` and `package.json` (the Docker wiring test
- * pins that), so even a snapshot whose removal failed cannot ship. It is
- * removed on every path regardless.
+ * pins that), so even a snapshot whose removal failed cannot ship. Removal
+ * is still attempted on every path; a failure logs a NOTE, not a WARNING.
  */
 export const INJECT_SNAPSHOT_PREFIX = '.sentry-inject-snapshot-';
 
@@ -389,14 +389,21 @@ export function runSentrySourcemapUpload(
   // The WARNING states only the failure and goes out first, so a restore or
   // strip that then throws still leaves the cause in the build log. What was
   // done to dist is logged only after it is done.
+  // The WARNING claims only what is known when it is written: the step
+  // failed, so the upload is not confirmed (a step stopped mid-upload may
+  // have sent part of it). Whether the build continues, and the cache advice
+  // that only a continuing build needs, go on the cleanup line after it.
   const warn = (what: string) =>
     log(
-      `WARNING: ${what}; frapp-api source maps NOT uploaded ` +
-        `(best effort, #2431); clear the Docker build cache to retry`,
+      `WARNING: ${what}; frapp-api source-map upload not confirmed ` +
+        `(best effort, #2431)`,
     );
   const stripAndContinue = (done: string[] = []): 'failed' => {
     stripSourceMapFiles(plan.distDir);
-    log(`${[...done, 'stripped *.map'].join(', ')}; build continues`);
+    log(
+      `${[...done, 'stripped *.map'].join(', ')}; build continues ` +
+        `(clear the Docker build cache to retry the upload)`,
+    );
     return 'failed';
   };
   const giveUp = (what: string) => {
@@ -453,7 +460,9 @@ export function runSentrySourcemapUpload(
 }
 
 // Not fatal: the snapshot sits beside dist, and from apps/api/ the runner
-// stage copies only dist/ and package.json, so a leftover cannot ship.
+// stage copies only dist/ and package.json, so a leftover cannot ship. Logged
+// as NOTE, not WARNING: `WARNING:` lines mean a sentry-cli step failed, and a
+// leftover snapshot is not that.
 function discardSnapshot(
   snapshotDir: string,
   log: (message: string) => void,
@@ -462,7 +471,7 @@ function discardSnapshot(
     rmSync(snapshotDir, { recursive: true, force: true });
   } catch (error) {
     log(
-      `WARNING: could not remove the pre-inject snapshot ${snapshotDir} ` +
+      `NOTE: could not remove the pre-inject snapshot ${snapshotDir} ` +
         `(${describeError(error, [])}); it is outside dist, so it does not ship`,
     );
   }
