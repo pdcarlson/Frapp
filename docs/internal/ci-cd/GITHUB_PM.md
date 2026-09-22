@@ -9,9 +9,11 @@ decision record, viability probes, and the FRA-→#N migration mapping live in
 > **Status: live** (migrated 2026-08-08). Every open Linear issue either already had a GitHub twin
 > (the June import) or was recreated as a GitHub issue during the migration; open issues carry
 > priority labels. The Linear workspace stays readable until the owner deletes it; no repo
-> contract reads or writes it. (Caveat until the owner finishes the wind-down: the legacy
-> scheduled Routines and the still-connected Linear GitHub integration can touch it — see
-> [`ROUTINES.md`](ROUTINES.md#how-to-create-them-ui) step 3 and #680's checklist.)
+> contract reads or writes it. (Caveat until the owner finishes the wind-down: #680's checklist
+> doesn't yet record the Linear GitHub integration as disconnected, and while it is connected a
+> Linear-side change can sync onto a GitHub issue. The legacy Routines are resolved: none has a
+> Linear-derived name or a Linear connector, and each carries a current prompt; `list_triggers`,
+> 2026-09-22.)
 >
 > **Why the migration:** Linear's MCP write tools (`save_issue` etc.) required a manual permission
 > approval in every Claude Code cloud session, and three config-level fixes (#667, #669, #676)

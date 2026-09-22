@@ -6,8 +6,15 @@ shares. The prompts are thin; the behavior contract is each routine's skill, whi
 from `main` at run time.
 
 Each routine runs as a Claude Code Routine (claude.ai/code → the Frapp environment → Routines).
-Editing a prompt block here changes nothing that runs until a human re-pastes it, so a prompt change
-also needs a `[human]` issue asking for the re-paste. Decision record: ADR-16 amendments 4–10 in
+Editing a prompt block or a Settings row here changes nothing that runs until the live Routine is
+updated, and that update belongs after the PR changing it merges, since the run reads its skill from `main`.
+In a session the owner is attending, an agent can update a Routine an agent created with
+`update_trigger` (as of 2026-09-22, PR Follow-ups and Docs Upkeep); `list_triggers` shows how each
+was created, and `update_trigger` refuses the rest ("Agents can only update routines they
+created"). A Routine created in the UI (as of 2026-09-22, Issue Curator, Issue Triage, Hygiene
+Scan) can only be edited there, so hand the owner the new text. Whenever the live Routine isn't
+updated in the same session, which includes every scheduled run, file a `[human]` issue carrying
+the new prompt text or setting and the PR it waits on. Decision record: ADR-16 amendments 4–10 in
 [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md).
 
 | # | Routine | Skill (behavior contract) | When (ET) | What it does |
@@ -16,7 +23,12 @@ also needs a `[human]` issue asking for the re-paste. Decision record: ADR-16 am
 | 2 | **Issue Triage** | [`issue-triage`](../../../.claude/skills/issue-triage/SKILL.md) | daily 09:00, an hour after #1 | Works the `triage` inbox and a Backlog batch: priorities (what [`/next`](../../../.claude/commands/next.md) ranks by), briefs, dedup, promotion |
 | 3 | **PR Follow-ups** | [`pr-followups`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:00, before #1–2 so that morning's passes see what it filed | Files what recent PRs left for a human; republishes the "PR Follow-ups — Human Action List" |
 | 4 | **Docs Upkeep** | [`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md) | weekly Wed 07:00 | Fixes a rotating fifth of the docs corpus in one docs-only PR (repairs rather than files, because filed docs debt ages) |
-| 5 | **Hygiene Scan** | [`hygiene-scan`](../../../.claude/skills/hygiene-scan/SKILL.md) | daily 06:00, first each morning | Fixes one bounded hygiene theme in one product-code PR; files the rest |
+| 5 | **Hygiene Scan** | [`hygiene-scan`](../../../.claude/skills/hygiene-scan/SKILL.md) | daily 23:00, the evening before, so it runs first each day | Fixes one bounded hygiene theme in one product-code PR; files the rest |
+
+The account also holds a sixth Routine, "Next steps" (created in the UI; hourly `/next`), disabled
+since 2026-09-05. It isn't one of these five: it would claim and ship backlog work, product code
+included, which is outside the ownership boundary below. Leave it disabled; deleting it is the
+owner's call, in the UI.
 
 ## Shared ownership boundary (all routines)
 
@@ -162,13 +174,13 @@ Cron values are UTC during EDT; shift +1h when ET returns to EST.
 | Setting | Value | Notes |
 |---|---|---|
 | Environment | The Frapp Claude Code web environment | Sessions clone the repo and load `.claude/` skills from `main`. |
-| Schedule | Curator daily 08:00 ET; Triage daily 09:00 ET; PR Follow-ups weekly Mon 07:00 ET; Docs Upkeep weekly Wed 07:00 ET; Hygiene Scan daily 06:00 ET | UTC cron: `0 12 * * *`, `0 13 * * *`, `0 11 * * 1`, `0 11 * * 3`, `0 10 * * *`. Docs Upkeep is on Wednesday so it never shares a morning with PR Follow-ups. If a PR Follow-ups batch runs long, move it to twice weekly with `0 11 * * 1,4`. |
+| Schedule | Curator daily 08:00 ET; Triage daily 09:00 ET; PR Follow-ups weekly Mon 07:00 ET; Docs Upkeep weekly Wed 07:00 ET; Hygiene Scan daily 23:00 ET | UTC cron: `0 12 * * *`, `0 13 * * *`, `0 11 * * 1`, `0 11 * * 3`, `0 3 * * *`. Docs Upkeep is on Wednesday so it never shares a morning with PR Follow-ups. If a PR Follow-ups batch runs long, move it to twice weekly with `0 11 * * 1,4`. |
 | Model | All five: Opus 5.5 (`claude-opus-5-5`) | Owner decision, 2026-09-22. |
 | Autofix on PR create | Off for Curator, Triage and PR Follow-ups. On for Docs Upkeep and Hygiene Scan. | The first three open a PR only for self-maintenance; the other two open one on most runs. |
 | Session | Fresh session per run | Each run re-reads its skill from `main`. |
 | Access | GitHub MCP | Plus the repo itself for Hygiene Scan's gates. No secrets in the environment config. |
-| Connectors | None extra | GitHub is the MCP and the repository attachment, not a connector. An extra connector is standing write access (Linear is retired). |
-| Completion notification | Hygiene Scan: on if the UI has it | It opens a product-code PR the same day. |
+| Connectors | Issue Curator, PR Follow-ups and Docs Upkeep: Sentry, Supabase, Vercel, Render, PostHog. Issue Triage and Hygiene Scan: none. | These three read provider state: the Curator's runtime-signals and `/audit` lenses, PR Follow-ups' close-on-proof audit of `[human]` items (Sentry and PostHog settings among them), and `infrastructure-research`. A run missing one reports that source as unavailable. Attach nothing else: a connector is standing access for an unattended run, write tools included (the Supabase connector can run SQL against production). As of 2026-09-22 (`list_triggers`) the live Routines also carry Stripe, Mermaid-Chart, visualize and Wispr-Flow, and Triage and Hygiene Scan carry provider connectors they don't read; the owner can detach those in the UI. GitHub is the MCP and the repository attachment, not a connector. |
+| Completion notification | Push for all; PR Follow-ups also emails | Each run ends with a report meant for the owner. |
 
 ## Routine prompts (copy-paste)
 
@@ -271,7 +283,7 @@ End earlier only if nothing more can move without the human or a protected resou
 Your final message is the run report the skill specifies.
 ```
 
-**Routine 5 — "Hygiene Scan"** (daily 06:00 ET):
+**Routine 5 — "Hygiene Scan"** (daily 23:00 ET):
 
 ```text
 You are the Hygiene Scan agent for the Frapp repository: each day you fix one bounded, verified
@@ -292,9 +304,10 @@ These limits hold regardless:
 
 The run is done when at most one Hygiene Scan PR (one theme, or one small batch as the skill
 allows) is open, or you've written down why there is none; the rest is filed or in the ledger; and
-the ledger comment is posted. This runs unattended: keep working through everything that doesn't need the human, and put any status note
-in the same message as your next tool call. End earlier only if nothing more can move without the
-human or a protected resource blocks you. Your final message is the run report the skill specifies.
+the ledger comment is posted. This runs unattended: keep working through everything that doesn't
+need the human, and put any status note in the same message as your next tool call. End earlier
+only if nothing more can move without the human or a protected resource blocks you. Your final
+message is the run report the skill specifies.
 ```
 
 ## How to create them (UI)
@@ -306,12 +319,10 @@ human or a protected resource blocks you. Your final message is the run report t
    [Routine prompts](#routine-prompts-copy-paste). A routine's `.claude/skills/<name>/` must be on
    `main` before you enable it, since that's where the session reads it.
 2. Enable all five, and confirm each shows a next-run time.
-3. **One-time migration (2026-08); delete this step once done.** The predecessor Routines
-   "Linear Issue Curator", "Linear Triage" and the old "PR Follow-ups" have stored prompts that write
-   to Linear. The Linear MCP stays injected until the Linear connector is removed from claude.ai,
-   and Linear's GitHub integration can sync a Linear-side close onto a real GitHub issue. Before
-   their next firing, pause them, re-paste their prompts (renaming the two Linear-named ones), or
-   delete and recreate them.
+
+Create routines in the UI. One created with `create_trigger` from an agent session can come out with
+no repository and no connectors attached (Docs Upkeep did, on 2026-09-22), and a run without the repo
+can't load its skill; check both before enabling it.
 
 ## Verify
 
@@ -367,7 +378,8 @@ removed in #1597. Update this file alongside a skill only when the rule lives in
 ## Maintenance
 
 - Behavior changes go in the skills. Change a prompt block here only when the prompt itself must
-  change, and then file the `[human]` re-paste issue, since nothing reads this file at run time.
+  change, then update the live Routine as the top of this file describes, since nothing reads this
+  file at run time.
 - Keep the [label roster](#label-roster) current. It is the only copy:
   [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy),
   [`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) and
