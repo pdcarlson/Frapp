@@ -4,324 +4,268 @@ description: >
   Verify a change against the deployed staging environment — the live web dashboard, landing
   site, API, and hosted Supabase — instead of only the local stack. Use when a claim needs the
   real deployment to settle it: live Realtime/Presence, RLS as GoTrue actually enforces it,
-  a staging-only regression, or "is staging actually serving the new build". Staging web
-  and landing custom domains are Vercel Authentication-gated (#1951) until Preview hosts
-  are excepted — not a correlated walkthrough target. Also read it before pointing Playwright, `curl`, or a Supabase
-  client at any `frapp.live` or `supabase.co` host from a sandbox.
+  a staging-only regression, or "is staging actually serving the new build". Staging web and
+  landing custom domains are Vercel Authentication-gated (#1951), so they are not a walkthrough
+  target yet. Also read it before pointing Playwright, `curl`, or a Supabase client at any
+  `frapp.live` or `supabase.co` host from a sandbox.
 ---
 
 # Live verification (deployed staging)
 
-> Use when the local stack cannot settle the question and the deployed staging environment can.
-> Local-stack work: [`testing`](../testing/SKILL.md). Provider runtime truth via MCP:
-> [`infrastructure-research`](../infrastructure-research/SKILL.md).
-
-> **2026-09-04 — all four staging halves are live again.** Both Vercel projects are unlinked from
-> Git (`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so no *push* deploys them — but
-> [#1578](https://github.com/pdcarlson/Frapp/issues/1578) landed the CI-driven replacement:
-> `deploy-vercel-staging.yml` builds and uploads web and landing after CI succeeds on `main`, then
-> aliases both hostnames. A web or landing check against staging therefore tests the current build
-> again, as it did before the unlink; between 2026-09-01 and 2026-09-04 it did not, because those
-> hosts were frozen at landing `2bf143b` and web `0372c6d`. Allow for the deploy to finish — CI
-> then a two-project build — before reading a host as stale. Canonical record: **ADR-21** in
-> [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md).
-> Deploy freshness is not Signet HTML: Vercel Authentication still gates those Preview
-> custom domains — [§3](#vercel-authentication).
-
-Sandbox sessions can reach **deployed staging** when the cloud environment's network
-allowlist carries the live-egress lines
+Use this skill when the local stack can't settle a question and deployed staging can. For
+local-stack work, use [`testing`](../testing/SKILL.md). For provider state, use
+[`infrastructure-research`](../infrastructure-research/SKILL.md). A sandbox can reach staging only
+when the environment allowlist carries the live-egress lines
 ([`CLOUD_SANDBOX.md` § Live staging egress](../../../docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress)).
-That is a real capability and a real blast radius. This skill is the posture for using it.
+You're done when the claim is reported at the tier that actually ran ([Reporting](#reporting)).
+
+CI deploys staging web and landing with `deploy-vercel-staging.yml` after CI passes on `main`. Once
+that deploy finishes, staging serves the current build
+([ADR-21](../../../spec/architecture/adr/adr-21.md)).
 
 ## The three rules
 
-1. **Probe before you claim.** Egress is environment config, not a repo fact. It can be
-   absent, and this file cannot tell you. Run the preflight.
-2. **Staging only. Never production.** Not as a preference — as a hard stop.
-3. **Read-only unless the task requires a write.** Then own the cleanup.
+1. **Probe before you claim.** Egress is environment config, not a repo fact, and it can be off.
+   Run the preflight.
+2. **Staging only, never production.** This is a hard stop. The two share apex domains, and you
+   can't take a request back.
+3. **Read-only unless the task requires a write.** If it does, you own the cleanup.
 
-## 1. Preflight — is egress actually on?
+## Preflight
 
-**Read the manifest; do not hand-roll a probe.** Bringup already answered this and wrote
-it down:
+Don't write your own probe. Read the manifest that bringup already wrote:
 
 ```bash
 python3 -m json.tool .cloud-sandbox-capabilities.json
 ```
 
-Run it — do not wait for the summary. The SessionStart hook does summarise the manifest into
-your context, but only in a **cloud sandbox** (it is gated on the `/etc/frapp-cloud-sandbox`
-marker, so on a laptop it never fires however many manifests are on disk), and only on a fire
-that finds the manifest already written — which a **fresh container's first session** never
-is, because that same hook is what launches bringup about a second before the probe writes. **No `EGRESS:` line in your context is
-not evidence the probe did not run.** If the file is genuinely missing (laptop session, or bringup did not run),
-generate it: `bash scripts/cloud-sandbox-egress-probe.sh`.
+Read it even if no `EGRESS:` line showed up in your context. The SessionStart hook only summarises
+the manifest in a cloud sandbox (it checks for the `/etc/frapp-cloud-sandbox` marker) and only if
+the manifest already exists. On a fresh container's first session, it doesn't exist yet. If the
+file is missing (on a laptop, or when bringup didn't run), generate it with
+`bash scripts/cloud-sandbox-egress-probe.sh`.
 
-**Check `probe_ok` before anything else.** `false` means the probe could not run at all —
-`hosts[]` is empty and so are `staging_reachable` and `production_blocked_as_expected`. Those
-empty arrays look exactly like "nothing was reachable" and mean nothing of the kind: it is
-the inconclusive row below, applied to every host at once. Re-run the probe
-(`bash scripts/cloud-sandbox-egress-probe.sh`).
-
-If it still cannot run, report the live check under the **`blocked` tier** ([§7](#7-reporting))
-— never `passed` — and name the reason the manifest actually gives you: *the probe could not
-run (`python3` unavailable / no writable temp dir / the builder failed)*. Do **not** name a
-missing allowlist line, and do not file a human-only blocker against the environment: nothing
-was probed, so there is no evidence the network is involved at all. Two different things share
-the word `blocked` here — the §7 reporting tier ("could not run, reason named") and the
-manifest `status` in the table below (a refused connection). A `probe_ok: false` manifest is
-the first and not the second.
+Check `probe_ok` first. If it's `false`, the probe couldn't run, and the empty `hosts[]`,
+`staging_reachable`, and `production_blocked_as_expected` arrays mean nothing. Re-run the probe. If
+it still can't run, report the check as `blocked` and give the reason the manifest gives
+(`python3` unavailable, no writable temp dir, or the builder failed). Don't blame the allowlist or
+file a blocker against the environment. Nothing was probed.
 
 With `probe_ok: true`, read each host's `status`:
 
 | Manifest `status` | Meaning | Do |
 | ----------------- | ------- | -- |
-| `reachable` | the host answered (any HTTP code). `302` and `404` mean the *socket* worked, not that Signet HTML loaded. On staging web/landing a 302 is often Vercel Authentication — see [§3](#vercel-authentication) | Proceed to the next gate; do not claim the UI loaded |
-| `blocked` | the connection was refused at the connect layer. Usually a policy denial, but curl exits 35 and 7 are grouped in too, so **a host that is simply down looks identical** and nothing in the sandbox separates them | Stop. Report it as not reachable and name the host. Only call it environment config (below) once you have checked the allowlist line is genuinely absent |
-| `timeout` / `no_dns` / `unknown` | the probe **could not tell** | Neither proceed nor report a block. Re-run the probe; if it stays inconclusive, say so in those words |
+| `reachable` | The host answered with some HTTP code. The socket works, but the app may not have loaded. On staging web/landing, a 302 is usually [Vercel Authentication](#vercel-authentication). | Go on to the next gate. Don't claim the UI loaded. |
+| `blocked` | The connection was refused (curl exit 56, 35, or 7). A host that's down looks the same as a policy denial. | Stop and report the host as not reachable. |
+| `timeout` / `no_dns` / `unknown` | The probe couldn't tell. | Don't proceed, and don't report a block. Re-run the probe. If it's still inconclusive, say so in those words. |
 
-That last row is the one that gets misread. An inconclusive probe is not a block, and
-reporting it as one sends the owner to edit an allowlist that was never the problem.
+The manifest's `blocked` status means a refused connection. The reporting tier `blocked` means a
+check that couldn't run. A `probe_ok: false` manifest is the reporting kind, not the manifest kind.
 
-Two things the manifest gives you that a bare `curl` does not: the `warnings` array already
-carries the correct remedy wording, and a `SECURITY` warning means a **production** host
-answered — treat that as a stop-everything finding, not as extra capability.
-`curl -sS "$HTTPS_PROXY/__agentproxy/status"` remains ground truth for which host the proxy
-refused, under `recentRelayFailures`.
+Don't name a cause you haven't checked. "`api-staging` did not answer" is always a valid report.
+"`api-staging` is not allowlisted" needs evidence that the line is missing. The proxy's own
+`detail` reads `policy denial or upstream failure`. To see which hosts the proxy refused, check
+`recentRelayFailures` in `curl -sS "$HTTPS_PROXY/__agentproxy/status"`. The manifest's `warnings`
+array already has the right remedy wording.
 
-When egress is genuinely off, that is a **human-only blocker** — an allowlist is dashboard
-config, not something an agent can work around. Say exactly which line is missing, quoting
-[`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress),
-and file it per [`file-follow-up`](../file-follow-up/SKILL.md). Do not silently fall back to
-the local stack and report the check as done — that is the silent-coverage failure
-`scripts/ci/staging-conformance.mjs` was written to stop. A check that could not run is
-**blocked**, never **passed**.
+A `SECURITY` warning means a production host answered. Stop everything and report it.
 
-"Genuinely off" is a higher bar than a `blocked` status. The probe groups curl exits 56, 35
-and 7, so **a staging host that is merely down reports `blocked` too, and nothing in the
-sandbox separates the two** — the proxy's own `detail` reads `policy denial or upstream
-failure`. The tier is `blocked` either way, and `blocked` obliges you to name the reason; what
-it does not entitle you to is naming the *wrong* one. Do not assert the allowlist is at fault
-unless you have checked the line is actually absent from the environment. "`api-staging` did
-not answer" is always reportable; "`api-staging` is not allowlisted" needs evidence. Same rule,
-same wording, in [`CLOUD_SANDBOX.md`'s `blocked` row](../../../docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress).
+If egress really is off, you can't fix it. The allowlist is dashboard config, so it's a
+human-only blocker. Name the missing line, quoting
+[`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress), and
+file it per [`file-follow-up`](../file-follow-up/SKILL.md). Don't fall back to the local stack and
+report the check as done. `scripts/ci/staging-conformance.mjs` was written to stop that kind of
+silent coverage loss.
 
-## 2. Never point at production
+## Never point at production
 
-Production and staging share an apex on **both** domains:
-
-| Staging — allowed | Production — **never** |
-| ----------------- | ---------------------- |
+| Staging — allowed | Production — never |
+| ----------------- | ------------------ |
 | `staging.frapp.live` | `frapp.live` |
 | `app.staging.frapp.live` | `app.frapp.live` / `www.frapp.live` |
 | `api-staging.frapp.live` | `api.frapp.live` |
 | `hnoyzpidbmizhbqaiity.supabase.co` | `unttyvyfezddlyafcydh.supabase.co` |
 
-Before any command carrying a hostname, read the hostname. `api.frapp.live` and
-`api-staging.frapp.live` differ by nine characters and by every consequence.
+Read the hostname in every command before you run it.
 
-The Supabase row is the dangerous one: **nothing in either ref says which is which.** Never
-type a `supabase.co` host from memory or from a doc. Resolve it from one of the two sources
-that *name* the project: `mcp__Supabase__list_projects`, or the `staging_supabase` entry in
-`.cloud-sandbox-capabilities.json`, which carries the label `frapp-staging Supabase`
-alongside the URL — but only on a `probe_ok: true` manifest; a degraded one has an empty
-`hosts[]` and cannot resolve anything, so fall back to `mcp__Supabase__list_projects` rather
-than to memory. Do **not** reach for `SUPABASE_URL` in `apps/*/.env.local` — in a cloud
-sandbox bringup writes the *local* stack there (`http://127.0.0.1:54321`), so it answers a
-different question than the one you are asking. If you cannot say out loud which project a
-ref belongs to, you do not yet know enough to send it a request.
+Supabase refs are where mistakes happen, because neither ref says which project it is. Never type a
+`supabase.co` host from memory or copy one from a doc. Resolve it from a source that names the
+project:
 
-The allowlist is a backstop that should never be the thing that catches you — it enumerates
-staging hosts precisely so a typo fails closed rather than reaching prod, but a `POST` you
-meant for staging is your responsibility before it is the proxy's.
+- `mcp__Supabase__list_projects`.
+- The `staging_supabase` entry in `.cloud-sandbox-capabilities.json`, which carries the label
+  `frapp-staging Supabase`. This only works on a `probe_ok: true` manifest, because a degraded one
+  has an empty `hosts[]`.
 
-If a task appears to *require* production, it does not. Stop and ask the owner.
+Don't take the host from `SUPABASE_URL` in `apps/*/.env.local`. In a sandbox, that holds the local
+stack's URL (`http://127.0.0.1:54321`).
 
-## 3. Authentication
+The sandbox allowlist carries the staging hosts and no production ones, so a typo in a sandbox
+request fails closed. MCP calls don't go through it at all. Either way, don't rely on it: a
+mistyped `POST` is your mistake, not the proxy's. If a task seems to require production, it doesn't. Stop and ask
+the owner.
 
-Egress (§1) only proves the socket. Staging web and landing have **two** further gates:
-Vercel Authentication in front of the hostname, then Signet/Supabase auth inside the app.
-The API host `api-staging.frapp.live` is Render, not Vercel, and is not the first gate.
+## Authentication
+
+Egress only proves the socket works. Staging web and landing have two more gates. First, Vercel
+Authentication sits in front of the hostname. Second, Signet/Supabase auth runs inside the app.
+`api-staging.frapp.live` is on Render, so the Vercel gate doesn't apply to it.
 
 ### Vercel Authentication
 
-Unauthenticated `https://app.staging.frapp.live` and `https://staging.frapp.live` are **not**
-the Signet app today. They 302 to `https://vercel.com/sso-api` (`Login – Vercel`). That is
-**Vercel Authentication**, not Password Protection, not a Signet 401, and not a second
-product layer.
+Unauthenticated requests to `https://app.staging.frapp.live` and `https://staging.frapp.live`
+return a 302 to `https://vercel.com/sso-api` (`Login – Vercel`), not the Signet app. That redirect
+is Vercel Authentication. It isn't Password Protection and it isn't a Signet 401.
 
-Both Vercel projects store `ssoProtection.deploymentType = all_except_custom_domains`. On
-this Hobby plan, Vercel Authentication with Standard Protection still gates **Preview**
-deployments, including Preview custom domains whose `gitBranch=main` (those two staging
-hostnames). Production custom domains (`app.frapp.live`, `frapp.live`) are what the stored
-enum excepts. Do not read the field name as “every custom domain is public.”
+Both projects store `ssoProtection.deploymentType = all_except_custom_domains`. On this Hobby plan,
+that setting still gates Preview deployments, and both staging hosts are Preview custom domains on
+`gitBranch=main`. Only the Production custom domains are excepted. Unique Preview `*.vercel.app`
+URLs are gated too, so they don't work around it.
 
-Human tracker: [#1951](https://github.com/pdcarlson/Frapp/issues/1951). An agent cannot
-except those hosts or upgrade the plan. Do not disable protection, do not generate a
-`protectionBypass`, do not call `update_project_deployment_protection`. Done when
-`curl -I https://app.staging.frapp.live/sign-in` is the Signet app, not `Login – Vercel`.
+Fixing this is a human task, tracked in [#1951](https://github.com/pdcarlson/Frapp/issues/1951).
+Don't disable protection, generate a `protectionBypass`, change the project's protection settings,
+or get past Vercel Authentication any other way until #1951 is fixed. Read deployment state through
+the Vercel MCP's `list_deployments`, `get_deployment`, and `list_deployment_events` (in a session on
+2026-09-22 its principal could see the team and list deployments; if yours gets a 403 or an empty
+list, report that rather than reading it as deployment state). Don't call `get_access_to_vercel_url`
+or `web_fetch_vercel_url` on any host. Both exist to get past Vercel Authentication (the first mints
+a `_vercel_share` link, and the second fetches with the principal's access), and neither goes
+through the sandbox allowlist, so a production hostname wouldn't fail closed. Anything only they
+could show you stays `blocked`.
 
-**Observation (2026-09-10 ~21:03–21:08Z, Vercel REST + unauthenticated GET, redirect
-manual):** both staging custom domains and current Preview unique `*.vercel.app` hosts
-returned 302 `vercel.com/sso-api`. Password / Trusted IP / `protectionBypass` / Firewall
-were absent. Vercel MCP `get_access_to_vercel_url` / `web_fetch_vercel_url` returned 403
-(`Failed to create shareable URL` / `Failed to check deployment`) because the MCP
-principal is not on the Hobby team (`list_teams` empty). Unique Preview URLs are not an
-unauthenticated workaround. Do not re-probe those MCP tools until membership or protection
-actually changes.
+#1951 is done when `curl -I https://app.staging.frapp.live/sign-in` returns the Signet app instead
+of `Login – Vercel`. Until then, these are all `blocked`, never passed:
 
-Until #1951 is cleared, a correlated web+API walkthrough, a Playwright run against
-`PLAYWRIGHT_BASE_URL=https://app.staging.frapp.live`, and a screenshot of “the deployed UI”
-are **blocked**, never passed. A preflight `reachable` with `http_code: 302` is this
-redirect, not the app.
+- a correlated web+API walkthrough,
+- a Playwright run against `https://app.staging.frapp.live`,
+- a screenshot of "the deployed UI".
+
+A preflight result of `reachable` with `http_code: 302` is this redirect.
 
 ### Staging smoke credentials
 
-Authenticated Signet probes use the staging smoke account convention already established by
-`scripts/ci/staging-conformance.mjs`:
-`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`, plus a staging project URL and
-anon key. In CI those come from two different places — the smoke pair are GitHub Actions
-secrets (`.github/workflows/staging-conformance.yml`), while `SUPABASE_URL` /
-`SUPABASE_ANON_KEY` are injected by the Infisical step, per
-[`SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEMENT.md). Do not
-propose adding the latter as GitHub secrets; they are already stored once, in Infisical.
+Authenticated Signet probes follow the convention in `scripts/ci/staging-conformance.mjs`:
+`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`, plus a staging project URL and anon key.
+In CI, the smoke pair are GitHub Actions secrets (`.github/workflows/staging-conformance.yml`).
+`SUPABASE_URL` / `SUPABASE_ANON_KEY` come from the Infisical step
+([`SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEMENT.md)). Don't propose
+adding those two as GitHub secrets.
 
-**In a sandbox, none of it is set.** The staging *URL* you can get from the manifest (above);
-the anon key and the smoke credentials you cannot, and the smoke user itself is still the
-open human-action ask in **#893** (the `[human]` there is a title prefix, not a label — do
-not search for it as one). So treat an authenticated staging check as **blocked**, never
-passed, until told otherwise.
+In a sandbox, none of these are set. You can get the staging URL from the manifest. You can't get
+the anon key or the smoke credentials. The smoke user is still an open human task,
+[#893](https://github.com/pdcarlson/Frapp/issues/893). `[human]` is a title prefix there, not a
+label. Report an authenticated staging check as `blocked` until you're told otherwise.
 
-**Do not read the URL and key from bare `SUPABASE_URL` / `SUPABASE_ANON_KEY` in a sandbox,
-and never ask for them to be set as sandbox environment variables.** `staging-conformance.mjs`
-reads those names because it runs in **CI**, where nothing else is competing for them. In a
-sandbox they are the *local* stack's names: bringup writes them into `apps/api/.env.local`,
-and `ConfigModule.forRoot({ envFilePath: [...] })` in `apps/api/src/app.module.ts` merges
-`{ ...envFile, ...process.env }` — so a real environment variable of that name **wins over
-the file**, repointing `supabase.provider.ts` at whatever host was exported. The rule: a
-sandbox-side staging credential must use a name **no app-boot path reads** — a `STAGING_`
-prefix is the obvious shape — and be passed explicitly to the check that needs it. If such
-a variable is ever provisioned it belongs in
-[`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md), which is the
-single source of truth for env var names; none exists there today.
+Never read staging values from bare `SUPABASE_URL` / `SUPABASE_ANON_KEY` in a sandbox, and never ask
+for them to be set as sandbox env vars. Those names belong to the local stack there. Bringup writes
+them into `apps/api/.env.local`, and `ConfigModule.forRoot` in `apps/api/src/app.module.ts` lets
+`process.env` override that file. An exported `SUPABASE_URL` would repoint the local API. If you
+need a staging credential in a sandbox:
 
-Rules: use the dedicated smoke account, never a real member's credentials. Never use a
-service-role key for a check an anon or authenticated key can perform — the point of an
-RLS check is that it runs *as* a constrained role. Never commit any of it. `.env.local` is
-gitignored and the pre-commit **gitleaks** scan catches JWT material as a backstop — but it has no
-`*.supabase.co` rule, so do not treat "the hook would have caught it" as coverage for a pasted
-config block.
+- Give it a name no app-boot path reads, such as one with a `STAGING_` prefix.
+- Pass it explicitly to the check.
+- If it's provisioned as an environment variable, register it in
+  [`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md). None exists there today.
 
-If the credential is absent, that is the same **blocked, not passed** outcome as §1.
+Rules for credentials:
 
-## 4. What live staging is good for
+- Use the dedicated smoke account, never a real member's credentials.
+- Don't use a service-role key for a check an anon or authenticated key can do. An RLS check has to
+  run as the constrained role to mean anything.
+- Never commit any of it. The pre-commit gitleaks scan catches JWTs. It has no `*.supabase.co` rule,
+  so it won't catch a pasted config block.
 
-The cases where it beats the local stack:
+## What live staging is good for
 
-- **Realtime / Presence as the hosted stack negotiates it** — local Supabase does not
-  reproduce the hosted WebSocket path. Pair with [`realtime-resilience`](../realtime-resilience/SKILL.md).
-- **RLS as GoTrue enforces it**, with a real JWT. The PGlite tier
-  (`npm run check:pglite-migrations`) does assert *enforcement* black-box for four tables —
-  it reads them through a non-owner role granted `authenticated`, with `auth.uid()`/`auth.role()`
-  stubbed per scenario — so a policy whose predicate is wrong is settled in-loop and does not
-  need staging. What only hosted staging settles is a **real GoTrue-minted JWT** (claims beyond
-  `sub`/`role`, including `custom_access_token_hook` output) and `TO anon` targeting, since
-  PGlite has no `anon` role. Read the job's output before deciding you need staging.
-- **`custom_access_token_hook` actually being enabled** — the exact drift class that went
-  unnoticed in #805.
-- **Is staging serving this commit** — **API:** `GET https://api-staging.frapp.live/health`
-  `commit` (Render). **Web/landing:** CI deploys them again (ADR-21 / #1578), but an
-  unauthenticated fetch of the custom domains returns Vercel Authentication HTML, not the
-  bundle, so it does not prove your commit. Read the aliased deployment via Vercel MCP/REST
-  instead. Alias lag when you *can* see the app:
-  [`vercel.md`](../../../docs/internal/ops/deployment/vercel.md).
+- **Realtime and Presence** as the hosted stack negotiates them. Local Supabase doesn't reproduce
+  the hosted WebSocket path. Pair this with [`realtime-resilience`](../realtime-resilience/SKILL.md).
+- **RLS with a real GoTrue-minted JWT.** `npm run check:pglite-migrations` already tests policy
+  enforcement black-box for `chat_messages`, `chat_message_actions`, `members`, and
+  `financial_invoices`, with `auth.uid()`/`auth.role()` stubbed, so a wrong predicate on those
+  tables is settled locally. You need staging only for claims beyond `sub`/`role` (including
+  `custom_access_token_hook` output) and for `TO anon` targeting, because PGlite has no `anon`
+  role. Read that job's output before you decide you need staging.
+- **Whether `custom_access_token_hook` is actually enabled.** This has drifted unnoticed before.
+- **Which commit staging serves.**
+  - API: read the `commit` field of `GET https://api-staging.frapp.live/health`.
+  - Web and landing: read the aliased deployment through the Vercel MCP or REST. The custom
+    domains return the Vercel Authentication page, not the bundle.
+  - For alias lag, see [`vercel.md`](../../../docs/internal/ops/deployment/vercel.md).
+    Per-deployment `*.vercel.app` URLs aren't allowlisted.
 
 ### Playwright against the deployed UI
 
-Until [#1951](https://github.com/pdcarlson/Frapp/issues/1951) is cleared, this command does
-not load Signet. `PLAYWRIGHT_BASE_URL=https://app.staging.frapp.live` hits Vercel
-Authentication first ([§3](#vercel-authentication)); the page under
-test is `Login – Vercel`. Do not treat that run as a correlated walkthrough or a floor check.
-
-`apps/web/playwright.config.ts` already honours `PLAYWRIGHT_BASE_URL`; setting it skips the
-local `webServer` entirely. No code change needed:
+`apps/web/playwright.config.ts` honours `PLAYWRIGHT_BASE_URL`, and skips the local `webServer`
+when it's set:
 
 ```bash
 PLAYWRIGHT_BASE_URL=https://app.staging.frapp.live npm run test:floor -w apps/web
 ```
 
-**Unauthenticated, this run measures no dashboard route — every `responsive-floor.spec.ts` test
-aborts before the floor is read.** (That spec is one test per `DASHBOARD_ROUTES` entry in
-`apps/web/tests/visual/routes.ts`; count them there, not here. `test:floor` runs the whole
-`tests/visual/` directory, so the pre-auth suite's handful of tests still run and pass —
-a partially-green run is not evidence any dashboard route was measured.)
-With an external `PLAYWRIGHT_BASE_URL` the config skips `webServer`, so `SUPABASE_AUTH_BYPASS`
-is never applied. Every dashboard route is in `PROTECTED_ROUTE_PREFIXES`, so each redirects to
-`/sign-in?redirectTo=%2F…` (`URLSearchParams.set` percent-encodes the slash, so the spec's
-`toHaveURL` regex cannot match). `toHaveURL` is the **first** assertion in
-`responsive-floor.spec.ts`, ahead of the `<main>` visibility check and the `scrollWidth`
-evaluate — so every test stops there and not one route is measured.
+Until #1951 is fixed, this run loads `Login – Vercel`. Even after that, an unauthenticated run
+measures no dashboard route:
 
-That guard is doing its job: the sign-in card holds 375px unconditionally, so without it the
-whole suite would go *green* having never rendered the dashboard shell. Never "fix" that assertion
-to make a run pass — converting a false green into an honest red is the whole reason it exists.
+- With an external base URL, `SUPABASE_AUTH_BYPASS` is never applied.
+- Every route in `PROTECTED_ROUTE_PREFIXES` redirects to `/sign-in?redirectTo=%2F…`.
+- `toHaveURL` is the first assertion in `responsive-floor.spec.ts`, so every floor test fails
+  there.
+- The pre-auth tests still pass. A partly green run doesn't show that any dashboard route was
+  measured.
 
-**But do not invert it into a verification.** A wall of red `toHaveURL` failures tells you only
-that you did not reach the dashboard. That is exactly what an unauthenticated run looks like,
-and also what a genuinely regressed staging redirect, an expired session, or a Vercel SSO wall
-looks like — so the result distinguishes none of them, and it is never evidence the deployed
-pages hold 375px. Read the URL each test actually landed on before concluding anything.
+Don't loosen that assertion to make the run pass. The sign-in card holds 375px, so without the
+assertion the suite would pass without ever rendering the dashboard.
 
-§3 notes Vercel Authentication still gates the hostname, and no staging smoke credential is
-provisioned today, so pointing this suite at staging measures zero protected routes. Until
-both change, treat it as a reachability probe, not a floor check: **the 375px gate is the
-local `web-responsive-floor` run, and a staging run is not a substitute for it.** A screenshot
-of those custom domains today is `Login – Vercel`, not the deployed Signet UI.
+Don't read the red run as a result either. An unauthenticated run, a regressed redirect, an
+expired session, and the SSO wall all fail the same way. Check the URL each test landed on.
 
-There is no pixel-baseline suite to point at staging any more — `web-visual-regression`,
-its spec and its committed PNGs were deleted (see
-[`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)). When #1951 is cleared, a
-screenshot of the aliased host is the current CI build (ADR-21), not the 2026-09-01–09-04
-frozen window.
+The 375px gate is the local `web-responsive-floor` run, and a staging run doesn't replace it. No
+pixel-baseline suite exists any more ([`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)).
 
-## 5. Writes and cleanup
+## Writes and cleanup
 
 Default to read-only: `GET`, `HEAD`, sign-in, subscribe-and-observe.
 
-When a check genuinely needs a write, before issuing it: know what you are creating, how
-you will identify it later, and how you will remove it. Prefer the smoke account's own
-chapter and data. Clean up in the same session — staging is shared, and a session's leftover
-rows become the next session's confusing failure. If cleanup fails, say so explicitly and
-name what was left behind; silently orphaning test data is worse than the original gap.
+Before a write, know three things: what you'll create, how you'll find it again, and how you'll
+remove it. Prefer the smoke account's own chapter and data.
 
-Never run a destructive or schema-changing operation against hosted staging to "test" it.
-Migrations validate on PGlite and on the local stack. Schema changes reach staging through
-the promotion flow in [`DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md),
-not from an agent session.
+Clean up in the same session. Staging is shared, and your leftover rows become the next session's
+confusing failure. If cleanup fails, say so and name what was left behind.
 
-## 6. What this does not cover
+Never run a destructive or schema-changing operation against hosted staging. Migrations are
+validated on PGlite and the local stack. Schema changes reach staging only through
+[`DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md), never from an agent
+session.
 
-- **Push fanout (APNS/FCM)** — unreachable from any sandbox, not allowlisted, not proposed
-  for it. Still the "Runtime checks BLOCKED" protocol in
+## What this does not cover
+
+- **Push fanout (APNS/FCM).** APNS is unreachable from a sandbox. FCM's endpoint is reachable, but
+  delivery needs service-account credentials and a real device token, so don't report FCM as
+  network-blocked. End-to-end push stays under the "Runtime checks BLOCKED" protocol in
   [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md).
-- **Provider APIs** (Render, Vercel, Sentry, PostHog) — blocked to direct
-  `fetch`, reached via **MCP**, which does not go through the network allowlist at all. Use
-  [`infrastructure-research`](../infrastructure-research/SKILL.md). (The live allowlist carries
-  an unexplained bare `vercel.com` line — drift, not a sanctioned direct-`fetch` path; see
-  [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md#whats-configured-in-the-web-ui).)
-  Only sanctioned exception: **Infisical
-  has no MCP connector** — it is reached by direct `fetch` via the allowlisted
-  `app.infisical.com` instead ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)); in
-  an environment without that allowlist line, report Infisical state as unverified.
-- **Production**, in every form.
+- **Provider APIs (Render, Vercel, Sentry, PostHog).** Direct `fetch` is blocked. Reach them
+  through MCP, which bypasses the allowlist, per
+  [`infrastructure-research`](../infrastructure-research/SKILL.md).
+  - The bare `vercel.com` allowlist line is unexplained drift, not a sanctioned path
+    ([`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md#whats-configured-in-the-web-ui)).
+  - Infisical is the exception. It has no MCP connector, so reach it by direct `fetch` to
+    `app.infisical.com` ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)). Without that
+    allowlist line, report Infisical state as unverified.
+- **Production**, in any form.
 
-## 7. Reporting
+## Reporting
 
-In a PR body or issue comment, state which tier actually ran. These are three different
-claims and collapsing them is how #696 and #805 stayed invisible:
+In a PR body or issue comment, name the tier that actually ran. These are three different claims:
 
 - `verified locally` — local stack / PGlite / Jest
-- `verified against staging` — deployed staging, egress confirmed by preflight
+- `verified against staging` — deployed staging, egress confirmed by preflight. `get_deployment`
+  called with the staging hostname itself counts for which build staging serves (a READY build
+  isn't necessarily the one the domain points at); a page fetched through an MCP never counts
 - `blocked` — could not run, with the reason and the missing piece named
 
-Never write the second when you did the first.
+Never write the second when you did the first, and never write either for a check that couldn't
+run. Blurring the tiers is how staging drift goes unnoticed. For example:
+
+```text
+RLS on chat_messages: verified locally (check:pglite-migrations).
+Hook claim via real JWT: blocked — no staging smoke credential in the sandbox (#893).
+```

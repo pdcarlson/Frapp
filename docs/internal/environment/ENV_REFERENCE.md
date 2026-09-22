@@ -611,7 +611,7 @@ required to create a Supabase client!`. Which route you see is whichever build w
 Both variables are read non-null-asserted in `lib/supabase/client.ts`, so TypeScript never flags the gap.
 
 Vercel supplies these. Locally, run the build under `npx infisical run` or export your local stack's
-values. In a Cursor Cloud or Claude Code cloud sandbox nothing is needed:
+values. In a Claude Code cloud sandbox nothing is needed:
 [`scripts/cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh) writes them to
 `apps/web/.env.local` at session start (#1156), so a red `npm run build -w apps/web` there is a real
 failure rather than a missing-env one.

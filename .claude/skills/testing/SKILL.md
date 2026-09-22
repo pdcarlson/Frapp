@@ -2,197 +2,167 @@
 name: testing
 description: >
   Run tests, verify code changes, and keep local checks in parity with CI. Use when running or
-  writing tests (unit, E2E, Playwright visual), editing `*.spec.ts` files or CI workflow config,
+  writing tests (unit, E2E, Playwright), editing `*.spec.ts` files or CI workflow config,
   verifying changes before a push, or setting up the test environment — lint and unit tests need
   only `npm install`; integration/manual testing needs Docker + Supabase.
 ---
 
 # Testing
 
-> Use when running tests, verifying changes, or setting up the test environment.
-
----
+Use this to pick which checks to run for a change, run them the way CI does, and read their
+failures. `scripts/ci/lib/required-checks.mjs` is the canonical list of required checks
+(`CI_CHECKS` for the `ci.yml` jobs below), and `.github/workflows/ci.yml` has the exact steps.
 
 ## Quick reference
 
 | What | Command |
 |------|---------|
-| All lint | `npm run lint` (read-only) |
+| Core pre-push subset (secret scan, lint, types, API unit tests, contract, migration safety with a commit range, audit) | `npm run ci:local-gate` |
 | API-only lint | `npm run lint:api` (read-only) |
-| API lint autofix | `npm run lint:api:fix` — the only lint script that writes; why: [contributing.md §5](../../../docs/guides/contributing.md#5-linting-types-and-tests) |
-| Type-check | `npm run check-types` |
-| API `nest build` (Render / Docker parity) | `npm run build -w apps/api` |
-| API image (optional, needs Docker) | `docker build -f apps/api/Dockerfile .` |
-| API unit tests | `npm run test -w apps/api` |
-| Repository tenant-scope specs only | `npm run test -w apps/api -- --testPathPatterns="\.repository\.spec\.ts$\|repositories/"` — the first half keys on the filename so the module-local repositories are included; the second keeps the three meta-specs (`tenant-scope-coverage`, `tenant-scope.harness`, `no-as-never`) that actually enforce the ledgers |
-| API E2E tests (mocked Supabase, no live services) | `npm run test:e2e -w apps/api` |
-| Web unit tests (Vitest / jsdom) | `npm run test -w apps/web` |
-| Mobile unit tests (Vitest) | `npm run test -w apps/mobile` |
-| Shared hooks tests (Vitest / jsdom) | `npm run test -w packages/hooks` |
-| Shared validation tests (Vitest) | `npm run test -w @repo/validation` |
-| Shared formatting tests (Vitest) | `npm run test -w @repo/formatting` |
-| Single test file | `npm run test -w apps/api -- --testPathPatterns=<pattern>` |
-| PGlite migration validator | `npm run check:pglite-migrations` |
-| Contract check | `npm run check:api-contract` |
-| Migration check | `npm run check:migration-safety` |
-| npm audit gate (high/critical) | `npm run check:npm-audit` (offline: `-- --soft-network`) |
-| Vercel-parity production build | `npm ci --omit=dev && npx turbo run build --filter=web --filter=landing` — **destroys your dev tree**; `npm ci` to restore |
-| 375px responsive floor (Playwright, blocking gate once rolled out) | `npm run test:floor -w apps/web` |
-| Landing fold geometry (Playwright, blocking gate once rolled out) | `npm run test:fold -w apps/landing` |
+| API lint autofix | `npm run lint:api:fix`, the only lint script that writes ([contributing.md §5](../../../docs/guides/contributing.md#5-linting-types-and-tests)) |
+| Single API test file | `npm run test -w apps/api -- --testPathPatterns="event.service"` |
+| Repository tenant-scope specs only | `npm run test -w apps/api -- --testPathPatterns="\.repository\.spec\.ts$\|repositories/"` |
+| Live-PostgREST integration suite | `npm run test:integration -w apps/api` |
+| Build `packages/*` (what CI's `packages-build` job runs) | `npx turbo run build --filter='./packages/*'` |
 
----
+Jest 30 takes the plural `--testPathPatterns`. The singular `--testPathPattern` no longer
+exists. The tenant-scope pattern keys on the filename so module-local repositories are included,
+and the `repositories/` half picks up the meta-specs that enforce the ledgers
+(`tenant-scope-coverage`, `tenant-scope.harness`, `no-as-never`).
 
-## Environment setup for testing
+The root has no `test` script and `turbo.json` has no `test` task, so `npm run lint` and
+`npm run check-types` run no test suite. Run the suites for the workspaces you touched.
 
-### Minimal (lint + unit tests only)
+## Environment tiers
 
-Unit tests and lint do **not** require Docker, Supabase, or running services. Just `npm install`.
+| Tier | Setup | What it runs |
+|------|-------|--------------|
+| Node only | `npm install` | Lint, type-check, `nest build`, every unit suite, API E2E (mocked Supabase), `check:api-contract`, `check:migration-safety`, `check:pglite-migrations` (Postgres in WASM), `test:ci-scripts`, `check:dep-cruiser` (after `packages/*` are built) |
+| + Chromium | `npx playwright install chromium` | `test:floor -w apps/web`, `test:fold -w apps/landing`. Each starts its own app server with stand-in env |
+| + Docker | A running Docker daemon | `docker build -f apps/api/Dockerfile .` |
+| + local Supabase | Docker, then `npx supabase start` and `npx supabase db push --local` | `test:integration -w apps/api` (skips cleanly without a stack, and no CI job runs it), manual API testing, running the apps |
+| Staging | none locally | The [`live-verification`](../live-verification/SKILL.md) skill |
 
-```bash
-npm install
-npm run lint
-npm run test -w apps/api
-npm run check-types
+To run the apps, prefer Infisical-injected env: `npm run dev:api` (port 3001) and `npm run dev:web`
+(port 3000). Where Infisical is unavailable, and always in a cloud sandbox (whose bringup has
+already written `.env.local`), use `npm run start:dev -w apps/api` and `npm run dev -w apps/web`,
+which read `.env.local` (see
+[`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md) § "Booting the API"). Full
+bringup: [`AGENTS.md`](../../../AGENTS.md) § "Starting the dev environment". Check the API with
+`curl http://localhost:3001/health`, which reports `"status":"ok"` when the database and storage
+are connected.
+
+## CI parity checklist
+
+Before pushing, run the rows your change touches. Every job here is a required check except those
+in the last row; path-gated jobs are still required.
+
+| CI job | Run locally |
+|--------|-------------|
+| `lint-and-typecheck` | `npm run check-types`, `npm run build -w apps/api` (full `nest build`, which catches what `tsc --noEmit` misses), `npm run lint`, `npm run check:brand-assets`, and `npm run test -w <ws>` for `apps/landing`, `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, `@repo/api-sdk` |
+| `clean-checkout-typecheck` | `npm run check-types` and `npm run lint` on a tree with no prebuilt `packages/*/dist`. This guards the `^build` wiring in `turbo.json` |
+| `api-tests` | `npm run test -w apps/api`, `npm run test:e2e -w apps/api`, `npm run test:ai-evals -w apps/api` |
+| `web-tests` (path-gated) | `npm run test -w apps/web`, plus `-w packages/hooks`, `-w packages/chat-core`, `-w packages/chat-integrations`. The job runs on any `packages/**` change |
+| `mobile-validate` | `npm run lint -w apps/mobile`, `npm run check-types -w apps/mobile`, `npm run test -w apps/mobile` and again with `TZ=Asia/Tokyo`. For `app.json` or dependency changes, run `npx expo prebuild --no-install --clean --platform all` in `apps/mobile` |
+| `api-docker-build` | `docker build -f apps/api/Dockerfile .` (CI also boots the image and probes `/health`) |
+| `api-contract-check` | `npm run check:api-contract`. CI also runs the advisory `check:api-breaking` |
+| `dependency-cruiser` | `npm run check:dep-cruiser` |
+| `migration-safety` | `npm run check:migration-safety -- --base "$(git merge-base origin/main HEAD)" --head HEAD` |
+| `dependency-audit` | `npm run check:npm-audit`. Add `-- --soft-network` when offline. Fails on any high/critical advisory not in `scripts/npm-audit-allowlist.json` |
+| `secret-scan` | `npm run check:secrets -- --base "$(git merge-base origin/main HEAD)" --head HEAD` |
+| `ci-scripts-tests` | `npm run test:ci-scripts` |
+| `chapter-directory-seed` | `npm run check:chapter-directory-seed` |
+| `web-responsive-floor` (path-gated) | `npm run test:floor -w apps/web` (every dashboard route at 375px without horizontal scroll) |
+| `landing-fold` (path-gated) | `npm run test:fold -w apps/landing` (fold geometry at 1440x900 and 390x844) |
+| `web-production-build` | The Vercel-parity build below |
+| `packages-build` | `npx turbo run build --filter='./packages/*'` |
+| `changes` | Nothing to run locally. It computes the path filter for the path-gated jobs and is required because `web-tests` needs it |
+| Run in CI but not required | `pglite-migrations` (`npm run check:pglite-migrations`), and the advisory `migration-lock-safety` (`npm run check:migration-lock-safety`) and `duplicate-detection` (`npm run check:duplication`) |
+
+Mobile specs that assert calendar days must build dates with local-time constructors, not ISO
+strings ending in `Z`. CI runs in UTC and again in Asia/Tokyo so a timezone bug shows up in one of
+the two.
+
+### Browser suites
+
+`test:floor` and `test:fold` store no baseline and compare no pixels. They read geometry off the
+rendered page, so nothing drifts and nothing needs regenerating. The snapshot suite that diffed
+committed PNGs was deleted because its baselines drifted with every Chromium bump.
+**Never re-add an `--update-snapshots` step to a checklist** — there are no baselines to update.
+
+- A new spec in `apps/web/tests/visual/` joins `web-responsive-floor` automatically (see its
+  `README.md`).
+- `apps/landing/tests/visual/` holds one spec on purpose. Playwright exits 1 when it collects no
+  tests, and that is the only guard against the job going green with nothing asserted. With a
+  second spec, deleting the first would still pass. If you add one, port the sibling-reading
+  guard from `apps/web`.
+- The fold suite serves a production build (`next start` on port 3102), because under `next dev`
+  the stylesheet arrives after hydration and no reveal ever arms.
+- If the preinstalled Chromium's revision doesn't match the pinned `@playwright/test`, results are
+  unaffected, because no pixels are compared. The browser only has to launch.
+
+### Vercel-parity production build
+
+`web-production-build` builds `apps/web` and `apps/landing` on a devDependency-pruned tree. It is
+the only check that runs the program `next build` type-checks in production, and gaps here have
+twice caused production outages that no other check saw.
+
+```sh
+npm ci --omit=dev
+npx --yes "turbo@$(node -p "require('./package-lock.json').packages['node_modules/turbo'].version")" run build --filter=web --filter=landing
+npm ci   # restore the dev tree afterwards
 ```
 
-### Full (integration / manual testing)
+`turbo` is a devDependency, so after the prune a bare `npx turbo` would fetch whatever version
+the registry serves, which is why CI pins the lockfile version this way. Two traps each produce a
+false pass:
 
-Requires Docker + Supabase. See the "Starting the dev environment" section in
-[`AGENTS.md`](../../../AGENTS.md).
-
-Prefer Infisical-injected envs as the primary method — **except in a cloud sandbox**: there,
-bringup already writes `.env.local`, so skip straight to the fallback below (see
-[`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md) § "Booting the API";
-Infisical reach from a sandbox also depends on the environment allowlist,
-[#1279](https://github.com/pdcarlson/Frapp/issues/1279)):
-```bash
-sudo dockerd &>/tmp/dockerd.log &
-sleep 3
-npx supabase start
-npx supabase db push --local
-npm run dev:api     # Infisical-injected, port 3001
-npm run dev:web     # Infisical-injected, port 3000
-```
-
-Fall back to `.env.local` files only when Infisical is unavailable (NestJS ConfigModule reads `.env.local` then `.env` — `.env.local` is a fallback, not the primary method):
-```bash
-npm run start:dev -w apps/api   # reads .env.local, port 3001
-npm run dev -w apps/web         # reads .env.local, port 3000
-```
-
-### Health verification
-
-```bash
-curl http://localhost:3001/health
-# {"status":"ok","database":"connected","uptime":...}
-```
-
----
+- `apps/web/.env.local`: `next build` prerenders `/chat`, which needs `NEXT_PUBLIC_*`. Sandbox
+  bringup writes this file, but CI builds with the stand-ins from `apps/web/playwright.config.ts`.
+  Move the file aside or export those stand-ins.
+- Stale `packages/*/dist` and turbo cache from a dev-tree build turn the package builds into cache
+  hits. Add `--force`.
 
 ## API unit tests
 
-### Location and naming
+Specs live beside their source under `apps/api/src/`. Service specs mock repositories with
+`jest.fn()` through `Test.createTestingModule`. Full guide:
+[`docs/guides/testing.md`](../../../docs/guides/testing.md) (§4 guards, §4a tenant scope, §6 E2E
+scaffolding and `createSupabaseMock()`, §6a integration).
 
-All tests live alongside their source in `apps/api/src/`:
-- Services: `application/services/<name>.service.spec.ts`
-- Controllers: `interface/controllers/<name>.controller.spec.ts`
-- Guards: `interface/guards/<name>.guard.spec.ts`
-- Interceptors: `interface/interceptors/<name>.interceptor.spec.ts`
-- Utils: `domain/utils/<name>.spec.ts`
+Controller specs that build a testing module use `createUnguardedTestingModule()`
+(`apps/api/test/helpers/guard-stubs.factory.ts`) instead of `Test.createTestingModule()`. Nest
+instantiates the controller's guards during `.compile()`, so the real `SupabaseAuthGuard` demands
+`SUPABASE_CLIENT` even though no guard runs. Don't work around that by stubbing
+`'SUPABASE_CLIENT'`. Provide it only when the code under test injects it. Two kinds of controller
+spec don't need the helper: controllers with no guards (`health`, `webhook`) and specs that
+construct the controller with `new` (`analytics`, `write-payload-ordering`).
 
-### Mocking pattern
+Repository specs must use `createTenantHarness` (`apps/api/test/helpers/tenant-scope.harness.ts`).
+It seeds two chapters whose rows collide on every column except `id` and `chapter_id`, so only a
+real tenant filter narrows the result. `expectTenantScoped(chapterId, fn)` asserts the predicate
+was applied and no foreign row was read or written. Follow
+`supabase-task.repository.spec.ts` as the example.
 
-Tests use `@nestjs/testing` `TestingModule` with manual mocks:
+- `tenant-scope-coverage.spec.ts` fails if a `*.repository.ts` anywhere under `apps/api/src`
+  (module-local ones included, found through `#test/helpers/repository-corpus`) has no harness
+  spec and no reason in `TENANT_SCOPE_BACKLOG`.
+- When you extend the harness, also extend `tenant-scope.harness.spec.ts`, which proves each guard
+  still fails against a deliberately broken repository. A harness that can't fail looks identical
+  to a clean codebase.
 
-```typescript
-const module: TestingModule = await Test.createTestingModule({
-  providers: [
-    MyService,
-    { provide: MY_REPOSITORY, useValue: mockRepo },
-    { provide: SUPABASE_CLIENT, useValue: mockSupabase },
-  ],
-}).compile();
-```
-
-Repositories and adapters are mocked via `jest.fn()` on each method. Service specs define their own
-fixtures inline.
-
-**A controller spec that builds a testing module uses `createUnguardedTestingModule()`**
-(`apps/api/test/helpers/guard-stubs.factory.ts`) in place of `Test.createTestingModule()`. Nest
-instantiates a controller's enhancers during `.compile()`, so the real `SupabaseAuthGuard` demands
-`SUPABASE_CLIENT` even though no guard ever runs in a spec that calls controller methods directly;
-the helper overrides the three-guard chain and returns the builder to chain onto. Do not instead
-supply a stub `'SUPABASE_CLIENT'` so a guard you are not testing can construct — supply that token
-only when the code under test injects it. Two kinds of controller spec need none of this and should
-stay as they are: one whose controller declares no guards (`health`, `webhook` — and
-`health.controller.spec.ts` supplies `SUPABASE_CLIENT` under the exported constant because
-`HealthController` itself injects it), and one that constructs its controller with `new`
-(`analytics`, `write-payload-ordering`). Full rule:
-[`docs/guides/testing.md` § 4](../../../docs/guides/testing.md#4-guards-and-interceptors).
-
-**Repository tenant-scope specs are the exception, and they must use the shared harness.**
-`createTenantHarness` (`apps/api/test/helpers/tenant-scope.harness.ts`) seeds two chapters whose rows
-collide on every column except `id` and `chapter_id`, so any predicate but the tenant one matches
-both rows and only a real tenant filter narrows the result:
-
-```typescript
-const harness = createTenantHarness({
-  tables: { roles: [inA({ id: ROLE_A, name: 'Treasurer' }), inB({ id: ROLE_B, name: 'Treasurer' })] },
-});
-const repo = new SupabaseRoleRepository(harness.client);
-
-await harness.expectTenantScoped(CHAPTER_B, () => repo.findByChapter(CHAPTER_B));
-```
-
-`expectTenantScoped` asserts the tenant predicate was applied, no foreign row was written, and no
-foreign row was returned. Hand-rolling a double instead loses the colliding-twin check, which is what
-stops a spec passing for the wrong reason — `tenant-scope-coverage.spec.ts` fails if a repository
-spec does not call `createTenantHarness`. Full treatment, including `tenantColumns`,
-`untenantedTables` and `collisionExempt`: [`docs/guides/testing.md`](../../../docs/guides/testing.md) §4a.
-
-Two rules when touching this area:
-
-- Extending the harness means extending `tenant-scope.harness.spec.ts`, which proves each guard still
-  fails against a deliberately broken repository. A harness that cannot fail is indistinguishable
-  from a clean codebase.
-- Adding a `*.repository.ts` **anywhere under `apps/api/src`** — module-local ones included — means
-  adding its tenant-scope spec, or a reason in `TENANT_SCOPE_BACKLOG`. CI fails if you do neither.
-  The corpus is `#test/helpers/repository-corpus`, not a directory or a filename prefix.
-
-For the full treatment — service coverage goals, guard/interceptor test targets, coverage
-expectations, and the E2E scaffolding (the `jest-e2e.json` CommonJS transform quirks and the
-`createSupabaseMock()` factory in `apps/api/test/helpers/`) — see the testing guide:
-[`docs/guides/testing.md`](../../../docs/guides/testing.md).
-
-### E2E tests (compact)
-
-`npm run test:e2e -w apps/api` boots the app from `AppModule` with the Supabase client overridden
-via the `SUPABASE_CLIENT` provider token and guards stubbed — deterministic, no live services or
-secrets needed. Details and gotchas (env defaults, UUID-valid fixtures) are in
-[`docs/guides/testing.md`](../../../docs/guides/testing.md) §6.
-
-### Running a subset
-
-```bash
-# Single file (via npm workspace flag). Jest 30 uses the plural
-# `--testPathPatterns`; the singular `--testPathPattern` flag is gone.
-npm run test -w apps/api -- --testPathPatterns="event.service"
-
-# Pattern match
-npm run test -w apps/api -- --testPathPatterns="billing"
-```
-
----
+`npm run test:e2e -w apps/api` boots `AppModule` with `SUPABASE_CLIENT` overridden and guards
+stubbed, so it needs no live services or secrets.
 
 ## Contract and migration checks
 
 ### API contract (`check:api-contract`)
 
-Verifies that `openapi.json` and `packages/api-sdk/src/types.ts` are up to date when API source changes. It **regenerates** both artifacts and fails if the committed copies differ — it is not a git-diff heuristic (that was replaced because it false-positived on contract-neutral controller edits and false-negatived when only one artifact needed updating).
+This check regenerates `apps/api/openapi.json` and `packages/api-sdk/src/types.ts` and fails if
+the committed copies differ. It bootstraps Nest with placeholder credentials and builds
+`packages/*` itself, so it works on a fresh clone after `npm install`, but it is slower than the
+other `check:*` scripts. To fix a failure:
 
-Regenerating **does** bootstrap NestJS, using placeholder credentials — the export only builds the Swagger document and never calls Supabase or Stripe, so no real secrets are needed. It also needs the shared workspace packages built; the script builds `./packages/*` itself, so `npm run check:api-contract` works on a fresh sandbox after `npm install`. Budget more time for it than the other `check:*` scripts.
-
-If this fails after changing API endpoints:
 ```bash
 npm run openapi:export -w apps/api
 npm run generate -w packages/api-sdk
@@ -200,200 +170,51 @@ npm run generate -w packages/api-sdk
 
 ### Migration safety (`check:migration-safety`)
 
-Validates migration filenames match `{14-digit-timestamp}_{snake_case}.sql`, that version prefixes
-are unique, and that a migration change also touches one of the promotion docs
-([`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md),
-[`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md)).
+This check validates migration filenames (`{14-digit-timestamp}_{snake_case}.sql`) and unique
+version prefixes. It also checks that every migration has an entry, in the documented shape, in
+both [`DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md) and
+[`DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md), across the whole
+tree on every run. With `--base`/`--head` it also requires a migration change to touch one of
+those docs. Without a range it skips that half and says so, which is why the checklist passes one.
+Migrations older than the gate are grandfathered in `UNLEDGERED` in
+[`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs). That list is
+shrink-only, and `RATCHET_VERSION_CEILING` rejects newer entries, so a new migration needs real
+doc entries.
 
-Separately and more strictly, it asserts **per-migration ledger coverage in both docs**, whole-tree,
-on every run — including the bare push invocation, not just PRs. Coverage is matched by entry
-**shape**, so naming a migration in prose does not count; each runbook states the shapes it accepts.
-Migrations predating the gate are grandfathered in `UNLEDGERED` in
-[`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs), which is
-**shrink-only**: `RATCHET_VERSION_CEILING` rejects any entry newer than the gate, so a new migration
-must carry a real entry in both docs rather than an allowlist line.
+Reading failures:
 
-**Exit 1 means the change violates a rule**, and several checks use it: an invalid or duplicate
-migration filename, a migration PR that touched neither runbook, and `ledger coverage`. Coverage
-itself has four cases, and only the first is fixed by writing an entry — a migration with no entry
-(`missing`), an allowlist line for a migration that now *has* one (`covered`) or that is no longer on
-disk (`absent`), and a rollback entry naming a migration that does not exist (`orphan`). The other
-three are fixed by editing `UNLEDGERED` or the runbook. Read the failure line, which names both the
-file and the remedy, rather than assuming you owe an entry.
-
-One caveat on that split: `main()` wraps every check in a catch-all that also exits **1**, so an
-unexpected error carries the same code as a rule violation. The one you are most likely to meet is
-`Unable to diff changed files for base=… head=…`, which means the checkout is too shallow for the
-`--base`/`--head` range — an environment problem, not your diff. If the message is not one of the
-cases above, suspect the checkout before your change.
-
-**Exit 2 means the gate cannot do its job** — it is refusing to grade rather than returning a
-verdict: a renamed runbook `MIGRATION_DOCS` no longer resolves, a declared doc with no entry shape, a
-declared ledger that cannot be read, a malformed `--base`/`--head`, or a post-ceiling migration added
-to `UNLEDGERED` (`UNLEDGERED grew`). Some of those *are* your own change — the rename and the
-allowlist line especially — so exit 2 is not a signal to escalate past your own diff.
-
----
+- **Exit 1** means a rule was violated. Ledger coverage has four cases, and only `missing` is fixed
+  by writing an entry. `covered` (an allowlist line for a migration that now has an entry) and
+  `absent` (an allowlist line for a file no longer on disk) are fixed in `UNLEDGERED`. `orphan` (a
+  rollback entry naming a missing migration) is fixed in the runbook. The failure line names the
+  file and the remedy.
+- A catch-all in `main()` also exits 1 on unexpected errors. `Unable to diff changed files for
+  base=… head=…` means the checkout is too shallow for the range, so fetch more history before
+  suspecting your diff.
+- **Exit 2** means the gate can't grade: a renamed runbook, a declared doc with no entry shape, an
+  unreadable ledger, a malformed `--base`/`--head`, or a post-ceiling migration added to
+  `UNLEDGERED` (`UNLEDGERED grew`). Several of these come from your own change, so check your diff
+  before escalating.
 
 ## Manual testing workflows
 
-### Auth flow (end-to-end)
+The local Supabase API is at `http://127.0.0.1:54321`, Studio at `http://127.0.0.1:54323`, the API
+at `http://localhost:3001`, web at `:3000`, and landing at `:3002`.
 
-1. Create a user via Supabase Auth:
 ```bash
-curl -X POST http://127.0.0.1:54321/auth/v1/signup \
-  -H "apikey: <ANON_KEY>" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"Password123!"}'
+# Sign up, then use the returned access_token
+curl -X POST http://127.0.0.1:54321/auth/v1/signup -H "apikey: <ANON_KEY>" \
+  -H "Content-Type: application/json" -d '{"email":"test@example.com","password":"Password123!"}'
+curl http://localhost:3001/v1/users/me -H "Authorization: Bearer <token>"   # creates the users row
+
+# Create a chapter. The DTO whitelist rejects any extra key with a 400
+curl -X POST http://localhost:3001/v1/chapters -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" -d '{"name":"Test Chapter","university":"Test University"}'
+
+# Chapter-scoped call
+curl http://localhost:3001/v1/events -H "Authorization: Bearer <token>" -H "x-chapter-id: <chapter_id>"
 ```
 
-2. Use the returned `access_token` to hit the API:
-```bash
-curl http://localhost:3001/v1/users/me \
-  -H "Authorization: Bearer <access_token>"
-```
-
-The API's `AuthSyncInterceptor` auto-creates a `users` row on first authenticated request.
-
-### Chapter operations (requires auth + chapter)
-
-Most endpoints need `Authorization` + `x-chapter-id` headers. Create a chapter first:
-```bash
-curl -X POST http://localhost:3001/v1/chapters \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Test Chapter","greek_letters":"ΑΒΓ","university":"Test University"}'
-```
-
-Then use the chapter ID:
-```bash
-curl http://localhost:3001/v1/events \
-  -H "Authorization: Bearer <token>" \
-  -H "x-chapter-id: <chapter_id>"
-```
-
-### Web dashboard (GUI)
-
-Open `http://localhost:3000` in browser. Auth flows go through Supabase — the sign-in flow is currently in development. Use Supabase Studio (`http://127.0.0.1:54323`) to inspect data directly.
-
----
-
-## CI parity checklist
-
-Before pushing, verify these pass locally (mirrors the CI pipeline):
-
-1. `npm run lint` → `CI / lint-and-typecheck`
-2. `npm run check-types` → `CI / lint-and-typecheck` (includes `apps/api` via `tsc -p tsconfig.build.json`, same program as `nest build`)
-3. `npm run build -w apps/api` → `CI / lint-and-typecheck` (full `nest build`; catches issues `tsc --noEmit` alone might miss)
-4. `docker build -f apps/api/Dockerfile .` → `CI / api-docker-build` (optional locally; needs Docker)
-5. `npm run test -w apps/api` → `CI / api-tests` (the job also runs the E2E suite,
-   `npm run test:e2e -w apps/api` — run it too when API wiring changes)
-6. `npm run test -w apps/web` → `CI / web-tests` (Vitest / jsdom unit suite; the
-   Playwright visual tests under `tests/visual/**` are excluded by
-   `apps/web/vitest.config.ts` and run separately — see item 12).
-   The same job also runs the shared packages web consumes that nothing else
-   covers: `npm run test -w packages/hooks`,
-   `npm run test -w packages/chat-core`, and
-   `npm run test -w packages/chat-integrations`. Run those too when you touch
-   `packages/**` — the job's path filter covers that glob, so a change there
-   exercises those suites. `web-tests` is a required check (ADR-15 2026-08-19
-   amendment).
-7. The shared-package and landing unit suites → `CI / lint-and-typecheck`. **This is not all of
-   landing's coverage** — `apps/landing/vitest.config.ts` excludes `**/tests/visual/**`, whose
-   Playwright fold suite runs separately, see item 14. The job runs
-   `npm run test -w apps/landing` plus `-w @repo/validation`, `@repo/color`, `@repo/formatting`,
-   `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` — the canonical roster is the
-   `lint-and-typecheck` entry in
-   [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs), the one home
-   for the check names and for what each one validates, kept as a comment beside its array entry so
-   it lands in the diff of any change that edits the entry. The `lint-and-typecheck` row in
-   `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Required Status Checks is a hand-kept
-   copy that nothing asserts — `check:doc-tables` used to compare copies like it, and was deleted
-   with the other docs gates — so read `required-checks.mjs` over that row, and
-   `.github/workflows/ci.yml` when you need the exact step. Run the suites for whatever you
-   touched. Not covered by items 1–2: the root has no `test` script and `turbo.json` declares no
-   `test` task, so nothing else runs them.
-8. `npm run test -w apps/mobile` → `CI / mobile-validate` (Vitest; likewise not
-   reached by the mobile lint or typecheck steps)
-9. `npm run check:api-contract` → `CI / api-contract-check`
-10. `npm run check:migration-safety` → `CI / migration-safety`
-11. `npm run check:npm-audit` → `CI / dependency-audit` (npm audit gate: fails on
-   any high/critical advisory not allowlisted in
-   `scripts/npm-audit-allowlist.json`; needs registry network — append
-   `-- --soft-network` to warn instead of fail when offline. Most likely to
-   fire on dependency/lockfile PRs, or when a new advisory was published
-   upstream since the last CI run)
-12. `npm run test:floor -w apps/web` → `CI / web-responsive-floor` (every
-   dashboard route without horizontal scroll at 375px). A **required** check
-   (#1152): it stores no baseline and compares no pixels, so there is nothing to
-   drift and nothing to regenerate. It runs the whole
-   `apps/web/tests/visual/` directory, so a new spec added there joins this gate
-   by default — see
-   [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md).
-
-   There is no `test:visual` / `web-visual-regression` step any more. That
-   advisory snapshot job, its spec and its sixteen baselines were deleted:
-   baselines pinned to CI's Chromium build drifted with every bump, so the red X
-   was usually answered by regenerating the fixture. **Never re-add a
-   `--update-snapshots` step to a checklist** — there are no baselines to update.
-
-13. **Vercel-parity production build** → `CI / web-production-build` (**required**).
-   Builds `apps/web` and `apps/landing` on a devDependency-pruned tree, which is
-   the only place anything runs the program `next build` type-checks in
-   production. Two production outages came from this gap (#1331, #1372) and both
-   were invisible to every other check.
-
-   ```sh
-   npm ci --omit=dev
-   npx turbo run build --filter=web --filter=landing
-   npm ci            # restore the dev tree afterwards
-   ```
-
-   Two traps, both of which produced a false pass while this job was being
-   written:
-   - **`apps/web/.env.local`.** `next build` prerenders `/chat`, which
-     constructs a Supabase browser client, so the build needs `NEXT_PUBLIC_*`
-     set. The cloud sandbox's bringup writes that file, so a local run passes
-     using env CI does not have. Move it aside, or export the stand-ins from
-     [`apps/web/playwright.config.ts`](../../../apps/web/playwright.config.ts).
-   - **Stale `packages/*/dist` and the turbo cache.** A previous dev-tree build
-     leaves both behind, so the package builds can be cache hits and never
-     exercise the pruned tree. Add `--force` when you want to be sure.
-
-   Neither is exotic: a local run is only evidence when it fails for the reason
-   CI would.
-
-14. `npm run test:fold -w apps/landing` → `CI / landing-fold` (added by
-   [#2368](https://github.com/pdcarlson/Frapp/issues/2368)). The landing's fold
-   at the two widths the reskin boards commit to, 1440x900 and 390x844. Same
-   lane as item 12 and for the same reason it is allowed to block: **it stores
-   no baseline and compares no pixels**, so there is nothing to drift and
-   nothing to regenerate. It reads geometry off the rendered page.
-
-   Two things about it are load-bearing:
-
-   - **It serves a production build**, not `next dev`. Under dev the stylesheet
-     arrives after hydration, so every `RevealOnView` measures itself inside the
-     viewport, takes its measure-before-arm early return and never arms —
-     measured at 1440x900, dev arms 0 blocks and `next start` arms 6. A
-     dev-served run would assert against a page whose motion never engages, so
-     the suite carries an explicit assertion that something armed.
-   - **The directory holds one spec on purpose.** Playwright exits 1 on a run
-     that collects no tests, which is what stops the job going green having
-     asserted nothing, and that guard keys on the collected-test count. A second
-     spec here would mask the first one's removal — see
-     `apps/web/playwright.config.ts`, and port apps/web's sibling-reading guard
-     if you add one.
-
-   Same sandbox caveat as item 12: the preinstalled Chromium's revision may not
-   match the pinned `@playwright/test`, and because this suite compares no
-   pixels the skew cannot affect its result — the browser only has to launch.
-
----
-
-## Updating this skill
-
-When you discover new testing patterns, fixtures, or gotchas:
-1. Add them to the relevant section above.
-2. If a new test utility or shared mock factory is created, document it under "Mocking pattern".
-3. If new CI checks are added, update the "CI parity checklist" and "Quick reference" sections.
+A fresh token carries no `active_chapter_id` claim, so chapter-scoped routes need the
+`x-chapter-id` header. Once the token carries the claim, a header that disagrees with it gets
+`403 chapter.context.mismatch`.

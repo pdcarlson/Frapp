@@ -1,538 +1,382 @@
 # Scheduled backlog agents
 
-Canonical, version-controlled spec for Frapp's scheduled backlog agents.
+The version-controlled spec for Frapp's five scheduled agents. Routines are configured in a UI, not
+as code, so this file is what you copy into it: settings, prompts, and the rules every routine
+shares. The prompts are thin; the behavior contract is each routine's skill, which the session reads
+from `main` at run time.
 
-**Claude Code Routines** (claude.ai/code → the Frapp environment → **Routines**)
-are a live scheduled path. **Cursor Automations**
-(<https://cursor.com/docs/cloud-agent/automations>) are an optional Cursor
-scheduled path. Paste-ready specs are in
-[Cursor Automation specs](#cursor-automation-specs-paste-ready-not-live) below.
-Do **not** enable the same routine on both harnesses — Curator/Triage would
-double-file `suggestion` issues. This session cannot create or enable Automations
-(the Cursor Automations MCP is read-only).
+Each routine runs as a Claude Code Routine (claude.ai/code → the Frapp environment → Routines).
+Editing a prompt block here changes nothing that runs until a human re-pastes it, so a prompt change
+also needs a `[human]` issue asking for the re-paste. Decision record: ADR-16 amendments 4–10 in
+[`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md).
 
-Routines are configured in the UI (config-as-code isn't supported), so this file
-is the source of truth you copy into either UI. Keep it in sync in both
-directions: editing a prompt block here changes nothing that runs until a human
-re-pastes it, so a prompt change lands as a `[human]` issue, never as a note
-parked in this file (open one: #1685 is the pattern). History:
-ADR-16 amendments 4–9 in [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md);
-Linear-to-GitHub migration: #680.
-
-There are **five** scheduled agents — three daily, two weekly. Three write to **GitHub Issues** on
-this repository (Linear is retired); the fourth writes docs; the fifth writes product code:
-
-| # | Routine | Skill (behavior contract) | When |
-| --- | --- | --- | --- |
-| 1 | **Issue Curator** | [`.claude/skills/issue-curator/SKILL.md`](../../../.claude/skills/issue-curator/SKILL.md) | daily 08:00 ET |
-| 2 | **Issue Triage** | [`.claude/skills/issue-triage/SKILL.md`](../../../.claude/skills/issue-triage/SKILL.md) | daily 09:00 ET (~1h after #1) |
-| 3 | **PR Follow-ups** | [`.claude/skills/pr-followups/SKILL.md`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:00 ET (a full hour before #1–2 that morning) |
-| 4 | **Docs Upkeep** | [`.claude/skills/docs-upkeep/SKILL.md`](../../../.claude/skills/docs-upkeep/SKILL.md) | weekly Wed 07:00 ET |
-| 5 | **Hygiene Scan** | [`.claude/skills/hygiene-scan/SKILL.md`](../../../.claude/skills/hygiene-scan/SKILL.md) | daily 06:00 ET (before everything else that morning) |
-
-The curator **creates and maintains** `suggestion` issues in the **`triage`** inbox. An hour later
-the triage routine works **both** the **`triage` inbox** (prioritize, bucket, backfill Agent
-briefs, dedup, promote to Backlog) **and the existing Backlog** (set sane priority labels in
-batches — the main job, since `/next` ranks by priority — and epic-attach only suggestions that
-*clearly* fit) — feeding clean, ranked work to
-[`/next`](../../../.claude/commands/next.md). Weekly, the **PR Follow-ups** harvester audits its
-previously filed items against reality, sweeps recent (and progressively older) PRs for
-human-action and deferred items — "Flagged for review" sections, agent-stated TODOs, unresolved
-review threads — researches how each gets done, files them into the **`triage`** inbox
-(`[pr-followup]` / `[pr-followup][human]`, `suggestion`-labeled, `fp=pr-followup/…` markers),
-audits the `fp=human/…` blocker issues any agent session may file under the
-[`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) skill, and
-republishes the **"PR Follow-ups — Human Action List"** tracking issue; running it on Monday
-*before* #1–2 means that same morning's curator/triage passes maintain and rank what it filed. Also weekly, on a different day, **Docs Upkeep** sweeps a rotating fifth of the docs corpus,
-verifies its claims against code and providers, and **fixes what is wrong in a docs-only PR** — the
-first routine that repairs rather than files, because docs debt filed as an issue reliably ages
-instead of getting done. Daily, before any of the others, **Hygiene Scan** grounds itself in the
-repo's engineering standards and gates, reads a calendar-derived slice of the codebase *whole* —
-legacy patterns, grandfathered violations and orphaned code included, never just the recent diff —
-and **fixes one bounded, verified theme in a product-code PR**, filing what it will not fix
-unattended. It is the only routine allowed to edit product code (ADR-16 amendment 7). The routine
-prompts are thin — the real rules live in the skill files, which the routine session loads from the
-repo.
-
-> **Hard rule (see `AGENTS.md`):** all issues are **opened on GitHub with the `triage` label**.
-> Work is **closed via PRs** (`Fixes #N`, native close-on-merge) or an explicit
-> `issue_write` close with the right `state_reason`. These routines never write to Linear (retired)
-> and never touch product code — their single repo-write permission is the
-> [self-maintenance](#self-maintenance-the-update-themselves-contract) docs-only PR. **Docs Upkeep
-> is the one exception to the *scope* of that PR, never to the product-code ban:** its whole job is
-> editing `docs/` and `spec/`, on the same never-self-merged terms. **Hygiene Scan is the one
-> exception to the product-code ban itself** (ADR-16 amendment 7): its fix PR edits `apps/**` and
-> `packages/**`, on the same never-self-merged, one-PR-per-run, reviewed-before-push terms, under
-> the fix rules its skill spells out — it is a *repair* routine, never a feature routine.
+| # | Routine | Skill (behavior contract) | When (ET) | What it does |
+| --- | --- | --- | --- | --- |
+| 1 | **Issue Curator** | [`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md) | daily 08:00 | Maintains the agent-owned `suggestion` issues; files a few new ones into `triage` |
+| 2 | **Issue Triage** | [`issue-triage`](../../../.claude/skills/issue-triage/SKILL.md) | daily 09:00, an hour after #1 | Works the `triage` inbox and a Backlog batch: priorities (what [`/next`](../../../.claude/commands/next.md) ranks by), briefs, dedup, promotion |
+| 3 | **PR Follow-ups** | [`pr-followups`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:00, before #1–2 so that morning's passes see what it filed | Files what recent PRs left for a human; republishes the "PR Follow-ups — Human Action List" |
+| 4 | **Docs Upkeep** | [`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md) | weekly Wed 07:00 | Fixes a rotating fifth of the docs corpus in one docs-only PR (repairs rather than files, because filed docs debt ages) |
+| 5 | **Hygiene Scan** | [`hygiene-scan`](../../../.claude/skills/hygiene-scan/SKILL.md) | daily 06:00, first each morning | Fixes one bounded hygiene theme in one product-code PR; files the rest |
 
 ## Shared ownership boundary (all routines)
 
-The six routine-facing skills ([`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md),
-[`issue-triage`](../../../.claude/skills/issue-triage/SKILL.md),
-[`pr-followups`](../../../.claude/skills/pr-followups/SKILL.md),
-[`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md),
-[`hygiene-scan`](../../../.claude/skills/hygiene-scan/SKILL.md), and the tracker angle in
-[`diff-review`](../../../.claude/skills/diff-review/SKILL.md)) **point here** instead of restating
-this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
+The routine skills and the tracker angle of [`diff-review`](../../../.claude/skills/diff-review/SKILL.md)
+point here instead of restating these rules. Policy detail:
+[`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
 
-1. **Issues live on GitHub Issues** (this repository). Linear is retired — never write to it,
-   never treat it as a fallback, never open a Linear issue.
-2. **Destructive writes** (close, mark-duplicate, re-body, including adding an Agent brief) are
-   allowed **only** on issues carrying the **`suggestion`** label. Confirm with `issue_read
-   get_labels` before every such write; if `suggestion` is absent, SKIP and log. Human-filed and
-   planning issues are strictly read-only for destructive actions.
-3. **Never modify product code. Never open feature PRs.** Repo writes are docs-only, never merged
-   by the routine, at most one PR per run, and confined to a path allowlist:
-   - Routines 1–3: the [self-maintenance PR](#self-maintenance-the-update-themselves-contract),
-     restricted to the routine's own skill files and this runbook.
-   - **Routine 4 (Docs Upkeep):** its sweep PR, over `docs/**`, `spec/**`, the root guides, and
-     its own skill directory — editing those *is* its job
-     ([`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md), ADR-16 amendment 6). The
-     product-code ban binds it exactly as it binds the others.
-   - **Routine 5 (Hygiene Scan):** the one routine the product-code ban does **not** bind
-     (ADR-16 amendment 7). Its fix PR edits `apps/**` and `packages/**` (and, under `scripts/**`,
-     only dead code and stale allowlist entries — never a check, CI or deploy script's logic) under
-     the fix rules in
-     [`hygiene-scan`](../../../.claude/skills/hygiene-scan/SKILL.md) — grounded, whole-pattern,
-     net simpler, verified, one theme per run. It still never opens *feature* PRs, never merges,
-     never touches migrations, CI workflows, dependency versions, or a frozen surface's visuals,
-     and caps at one open PR at a time. Everything else in this list binds it as written.
-4. **GitHub MCP only. If it is unavailable, stop and report** — no `gh`, no REST, no scratch
-   file. **REST is never a substitute for the MCP on tracker work, read or write**: no routine
-   lists, searches, reads, files, labels, closes or comments on an issue or PR over REST, and a
-   missing MCP is a full stop, not a prompt to find another route. The carve-out is narrow and is
-   not tracker work: a **read** of provider *settings* the MCP exposes no tool for — branch
-   protection, environments, rulesets, repo visibility, vulnerability alerts (see
-   [Tracker access](#tracker-access-shared-by-all-routines)) — plus the one body-fidelity
-   verification read that
-   [`GITHUB_PM.md`](GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
-   licenses on its own terms. Neither makes REST a tracker path, and neither lifts the stop rule.
-   Routines 4 and 5 are the exception: they write a PR rather than issues, so an unavailable MCP
-   does not block the sweep or the scan — push the branch, report its name, and stop. They stop
-   and report if **git push** fails.
-5. **`issue_write` labels replace the whole set.** Always send the union of existing labels plus
-   the change.
-6. **Comment once, not once per run.** Before commenting on an issue, read its existing comments
-   (`issue_read get_comments`). If a prior run already said the same thing and it is still
-   accurate, stay silent and surface it in the run report instead. The MCP cannot edit comments,
-   so the only choices are post-again or stay-silent, and a standing comment is already in force
-   for `/next`, which reads it. The rule is **don't restate what stands** — not *don't comment
-   again*: when you have genuinely new information, post it, leading with the new part and
-   referencing the standing comment rather than re-deriving it. It binds **every** comment a
-   routine writes. Worked example, evidence, and the triage-specific procedure:
+1. **Issues live on GitHub Issues** (this repository). Open every issue with the `triage` label;
+   close work through a PR (`Fixes #N`) or an explicit `issue_write` close with the right
+   `state_reason`. Never write to Linear: it is retired, nothing reads it, and it is not a fallback.
+2. **Destructive writes** (close, mark duplicate, re-body, including adding an Agent brief) are
+   allowed only on issues labeled `suggestion`, because routines own only what agents filed;
+   human-filed and planning issues are read-only to them for these actions. Confirm the label with
+   `issue_read get_labels` before each such write; if it's absent, skip and log.
+3. **No product code (routine 5 excepted) and no feature PRs.** Repo writes are at most one PR
+   per run, never merged by the routine (a human merge is what licenses an unattended write), and
+   confined to a path allowlist:
+   - Routines 1–3: the [self-maintenance PR](#self-maintenance-the-update-themselves-contract), on
+     its allowlist.
+   - Routine 4 (Docs Upkeep): its sweep PR over the corpus its skill defines (`docs/**`, `spec/**`,
+     `.claude/skills/**/*.md`, every tracked `AGENTS.md`, root `CONTRIBUTING.md` and `README.md`),
+     ADR-16 amendment 6. The product-code ban binds it.
+   - Routine 5 (Hygiene Scan): the one routine the product-code ban does not bind (ADR-16
+     amendment 7). Its fix PR edits `apps/**` and `packages/**`, and in `scripts/**` only dead code
+     and stale allowlist entries, never a check, CI or deploy script's logic, under the fix rules in
+     its skill. It never opens feature PRs, never touches migrations, CI workflows, dependency
+     versions or a frozen surface's visuals, and keeps at most one PR open at a time.
+4. **GitHub MCP only; if it is unavailable, stop and report.** The MCP is auditable and its writes
+   are lossless, so no routine lists, searches, reads, files, labels, closes or comments on an issue
+   or PR over `gh` or REST, or parks tracker work in a scratch file, and a missing MCP is a full
+   stop, not a prompt to find another route. REST is allowed for two reads only, neither of them
+   tracker work: provider settings the MCP has no tool for (branch protection, environments,
+   rulesets, repo visibility, vulnerability alerts), and the body-fidelity verification read that
+   [`GITHUB_PM.md`](GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity) licenses.
+   Neither lifts the stop rule. Routines 4 and 5 write a PR rather than issues, so a missing MCP
+   doesn't block their sweep or scan: push the branch, report its name, and stop. They stop and
+   report if `git push` fails.
+5. **`issue_write` labels replace the whole set.** Send the union of the existing labels and your
+   change.
+6. **Comment once, not once per run.** Read the existing comments (`issue_read get_comments`)
+   before commenting. The MCP can't edit comments, and a standing comment is already in force for
+   `/next`, which reads it, so if a prior run said the same thing and it's still accurate, stay
+   silent and put it in the run report. Post again only with genuinely new information, leading
+   with the new part and referencing the standing comment. This binds every comment a routine
+   writes. Triage's procedure:
    [`issue-triage` → Comment once](../../../.claude/skills/issue-triage/SKILL.md#comment-once-not-once-per-run).
+7. **A `Blocked by #N` comment doesn't gate `/next`.** The blocker filter in
+   [`next.md`](../../../.claude/commands/next.md) §0.2 reads `Blocked by #N` body lines only (an
+   Agent brief, by contrast, is read from comments too). So on an issue rule 2 won't let you
+   re-body, a blocker can be reported but not enforced: comment it, then list the issue in the run
+   report as needing an owner body edit.
 
-7. **A `Blocked by #N` comment does not gate `/next`.** Unlike an Agent brief — which `/next` reads
-   from a comment as readily as from the body — the blocker filter is body-only:
-   [`next.md`](../../../.claude/commands/next.md) §0.2 condition 3 disqualifies a candidate on
-   *"a `Blocked by #N` **body line** whose #N is still open"*, and §1.1 re-verifies **those body
-   lines** against the repo. Nothing reads blockers out of comments. So rule 2's re-body
-   restriction has a real cost here: on an issue a routine may not re-body, a blocker can only be
-   *reported*, never enforced, and the issue keeps ranking as claimable. Comment anyway (a `/next`
-   session sees it during §1.2 and saves the re-derivation), then surface it in the run report as
-   needing an owner body edit. #1293 is the standing example, and its first item, **#460, was
-   repaired on 2026-08-27** — its body now carries `Blocked by #714` and `Blocked by #457`, both
-   of which were still open when this was re-checked on 2026-09-15, so the filter has a live
-   blocker to bite on. Cite #460 as what the fix looks like, not as a live defect. The issues
-   still missing markers are tracked on #1293 itself, and **that list ages** — #1370, cited there
-   as a live instance, closed 2026-09-01, as did #1385, the human-gated blocker it waited on.
-
-   **Verify a candidate against the issue, never against #1293's comment stream**, which now
-   contradicts itself: comments dated 2026-08-31 and 2026-09-04 still describe #460 as missing its
-   `Blocked by` lines, which is provably false — #460's `updated_at` has not moved since
-   2026-08-27, so the body cannot have lost and regained them. A comment thread is an append-only
-   log of what was true when each entry was written, and no run goes back to correct one. Read the
-   body and the blockers' current state; that takes two calls and is the only account that cannot
-   be stale. The rule itself is unchanged and still verified 2026-09-03 against
-   [`next.md`](../../../.claude/commands/next.md) §0.2 condition 3 and §1.1 — note condition 3's
-   predicate is "no open blocker **surviving §1.1**", so a tracker-open blocker screens a candidate
-   at §0.2 and §1.1 adjudicates it against the repo.
-
-Triage (only) may *organize* any `triage` item (priority, `Blocked by`, promote). That exception
-is spelled in the triage skill; it does not widen destructive writes.
-
----
+Triage alone may organize any `triage` item (priority, `Blocked by`, promotion), as its skill
+spells out. That doesn't widen destructive writes.
 
 ## Tracker access (shared by all routines)
 
-Routine sessions run in the Frapp **Claude Code web** environment (live Routines)
-or a **Cursor Cloud** Automation (optional; do not dual-run the same job). Both harnesses
-expose a **GitHub MCP** — the same path `/next` uses. No API key, no REST, no secrets to
-manage. (Direct REST to `api.github.com` *is* reachable from these sandboxes where the
-environment's network allowlist carries it — the 403 a proxied `curl` gets is the agent proxy's
-route answering, not GitHub; sent direct (`curl --noproxy '*'`, or node's built-in `fetch`, which
-does not read `HTTPS_PROXY`) the same call returns 200. Measured 2026-09-02 in a cloud sandbox; see
-the `api.github.com` route rule under [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status).
-It is a **read** channel for provider *settings* the MCP exposes no tool for — branch protection,
-environments, rulesets, repo visibility, vulnerability alerts — and never a tracker path: nothing
-about it licenses listing, searching, filing, labelling, closing or commenting on issues or PRs
-over REST. Rule 4 above and the stop rule below are unchanged: if the MCP is unavailable the
-routine stops and reports, and REST is not the fallback.) Each run starts by loading the GitHub
-MCP tool schemas for **this harness** (Cursor-native names like `issue_read` / `issue_write`;
-Claude sessions use `mcp__github__*` prefixes — do not freeze a prefix) and verifying access
-(e.g. `issue_read` on a known issue resolves). **If the MCP is unavailable,
-the routine stops and reports — there is no fallback tracker.** Routine 4 writes no issues, and
-routine 5 only files follow-ups and opens its PR through it, so this section does not gate their
-sweep or scan; see rule 4 of the
-[ownership boundary](#shared-ownership-boundary-all-routines).
+Routine sessions run in the Frapp Claude Code web environment, which exposes a GitHub MCP, the same
+path `/next` uses, with no keys to manage. Start each run by loading the GitHub MCP tool schemas
+(named like `mcp__github__issue_read`; don't hard-code the prefix) and confirming access with an
+`issue_read` on a known issue. If the MCP is unavailable, stop and report: there is no fallback
+tracker. Routines 4 and 5 are the exception in rule 4.
 
-> **Whether an MCP read is safe to rewrite from is a measurement, not a constant — check it, don't
-> remember it.** It has flipped four times. The fidelity table, the probe that produces it, the
-> operative rule, and what to do when the probe is red all live in
-> [`GITHUB_PM.md` → Reading a body you intend to rewrite](GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity),
-> which is the canonical statement — **read it there rather than trusting a summary here.** As of
-> **2026-09-05** all three read paths measured faithful, so a rewrite sourced from a read is
-> permitted; re-run the probe against fixture #1736 before any bulk pass.
->
-> Two things that hold either way, because they are cheap insurance rather than consequences of the
-> current measurement: the `fp=` marker is a **visible line, not an HTML comment**, and the `fp=`
-> **lookup is healthy** — `search_issues` resolves fingerprints precisely, so dedup needs no
-> redesign. Since it matches semantically rather than by number, still confirm the returned `number`
-> is the issue you meant. Each skill states the rule for its own writes.
+Direct REST to `api.github.com` is reachable from these sandboxes (a 403 on a proxied `curl` says
+nothing about the PAT; see [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status)),
+and rule 4 limits it to the two reads it names.
 
-**Label roster** (auto-created on first use; re-verify with `issue_read get_labels` on a labeled
-issue if anything looks off):
-
-- **State:** `triage` · `in-progress` · `in-review` (Backlog = open with none of these)
-- **Priority:** `P1` (urgent) · `P2` (high) · `P3` (medium) · `P4` (low) — exactly one per
-  triaged issue
-- **Ownership / lifecycle:** `suggestion` · `stale` · `human` (in use on #1146; **decorative
-  only — it is not a hold mechanism**. The human-action hold is recognised by the `[human]` /
-  `[pr-followup][human]` title prefix or the `**Human action required — hold in triage` body
-  opener, per [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy); `/next` §0.2 reads
-  the *title*. So a `human`-labelled issue whose title carries no prefix is held by its `triage`
-  label alone, and promoting it would expose it to `/next` — the #709 failure mode. Whether this
-  label should become a fourth recognised hold form is an open question for the owner, not a
-  routine's call)
-- **Area:** `area:api` · `area:web` · `area:db` · `area:deps` · `area:security` · `area:ci` ·
-  `area:docs` · `area:product` · `area:ux` · `area:research` · `area:dx` (created in use rather
-  than declared — it carries no label description; see #1049 and #1059. Rostered 2026-08-18 so
-  routines stop reading it as a typo; its scope is the owner's to define) · `area:infra`
-  (same story, rostered 2026-08-21 — in use on #1138, #1148, #1235 and #1240 for
-  branch-protection, repo-settings and staging-environment work that is neither `area:ci` nor
-  `area:dx`; carries no label description, and its scope is likewise the owner's to define) ·
-  `area:mobile` (same story, rostered 2026-08-24 — in use on #1237 for `apps/mobile` work that
-  is neither `area:ux` nor `area:api`; carries no label description, and its scope is likewise
-  the owner's to define) · `area:chat` (same story, rostered 2026-09-02 — in use on #1499 for
-  chat dispatch work spanning `packages/chat-core` and its call sites; carries no label
-  description, and its scope is likewise the owner's to define. Note it **overlaps** the surface
-  labels rather than partitioning them, since chat ships on web, mobile and the API — #1499 alone
-  touches `packages/chat-core` plus `apps/web` and `apps/mobile` call sites — so an issue can
-  reasonably carry `area:chat` *and* a surface label. Whether that is intended is the owner's
-  call, not a routine's) · `area:ops` (same story, rostered 2026-09-10 — in use on #2125 for
-  Supabase Auth custom-domain work; carries no label description, and its scope is likewise the
-  owner's to define. It sits closest to `area:infra`, which already covers staging-environment and
-  provider-settings work, so the two are **not** cleanly separated today — whether `area:ops`
-  should stay or fold into `area:infra` is the owner's call, not a routine's. Rostered rather than
-  re-bucketed for the usual reason: a routine reading an unrostered label as a typo is the failure
-  this list exists to prevent) · `area:landing` (same story, rostered 2026-09-11 — in use on #2150
-  for `apps/landing` PostHog module work; carries no label description, and its scope is likewise
-  the owner's to define. Like `area:chat` it **overlaps** rather than partitions: `apps/landing` is
-  a surface `area:web` could also claim, so whether landing work should carry its own label or fold
-  into `area:web` is the owner's call, not a routine's. Rostered rather than re-bucketed for the
-  same reason as the five above) · `area:testing` (same story, rostered 2026-09-22 — in use on
-  #2451 for the jsdom 30.1 Radix-overlay hold; carries no label description, and its scope is
-  likewise the owner's to define. It **overlaps** rather than partitions, and along two axes at
-  once: test debt is already filed under `area:ci` when it is test *infrastructure* — #2450
-  (`test:cov` runs nowhere), #827 (no Supabase stack for the integration suite) — and under the
-  surface label when it is a missing *spec*, as #2456 and #2282 are (both `area:mobile`). Whether a
-  third home helps or just splits one class three ways is the owner's call, not a routine's.
-  Rostered rather than re-bucketed for the same reason as the six above)
-- **Scope:** `scope:production` — work that only becomes relevant once a production environment
-  exists (owner decision 2026-08-10; see
-  [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the
-  [decision record on #814](https://github.com/pdcarlson/Frapp/issues/814#issuecomment-5245093672) —
-  the decision lives in that comment, not #814's rebuilt-each-run body). Parked **by choice**, not
-  blocked and not stale: routines must not mark these `stale`, must not raise their priority for
-  age, and must not re-file duplicates of them.
-- **Routine infrastructure:** `routine-state` (cross-run state stores, never work — skipped by `/next` and by this file's routines)
-- Legacy (`bug`, `Improvement`, `release:*`) persists on old issues; don't extend it.
+Whether an MCP read is faithful enough to rewrite a body from is a measurement that has flipped
+several times, so read the current table in
+[`GITHUB_PM.md` → Reading a body you intend to rewrite](GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
+rather than remembering it, and re-run its probe against fixture #1736 before any bulk rewrite. Two
+things hold whatever it says: the `fp=` marker you write is a visible line, not an HTML comment, and
+`search_issues` finds fingerprints reliably but matches semantically, so confirm the returned
+`number` is the issue you meant.
 
 Reads accept issue numbers (`issue_read`, `list_issues`, `search_issues`); writes go through
-`issue_write` (create/update/close) and `add_issue_comment`. Epic structure uses native sub-issues
+`issue_write` (create/update/close) and `add_issue_comment`. Epics use native sub-issues
 (`sub_issue_write`, `issue_read get_sub_issues`).
 
----
+### Label roster
 
-## Settings (per agent, set in the Cursor Automations UI or Claude Routines UI)
+This is the only copy; [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy) links here
+and keeps only the tracker rules built on these labels. Labels auto-create on first use (verified
+2026-08-08), so a typo'd label is a real label; if one looks off, check it with
+`issue_read get_labels` on a labeled issue.
 
-Cursor Automations are an **optional** Cursor scheduled path. Claude Routines UI
-remains a **live** scheduled path. Do not run the same routine on both. Cron values below are UTC during EDT (shift +1h when ET returns to EST).
+- **State:** `triage` · `in-progress` · `in-review` (Backlog = open with none of these)
+- **Priority:** `P1` (urgent, drop everything) · `P2` (high) · `P3` (medium) · `P4` (low), exactly
+  one per triaged issue. Absent means unprioritized, which `/next` ranks last.
+- **Ownership / lifecycle:** `suggestion` · `stale` · `human`. `suggestion` marks what the
+  routines own, so it's the boundary for destructive writes
+  ([rule 2](#shared-ownership-boundary-all-routines)). `stale` marks an aging suggestion that
+  can't be proven resolved; it stays open. `human` (in use on #1146) is
+  decorative, not a hold mechanism. The human-action hold is the `[human]` /
+  `[pr-followup][human]` title prefix or the `**Human action required — hold in triage` body
+  opener, per [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy), and `/next` §0.2
+  checks those, not labels. So a `human`-labelled issue with no prefix is held by its `triage`
+  label alone, and promoting it exposes it to `/next`. Whether `human` should become a fourth
+  recognised hold form is the owner's call, not a routine's.
+- **Area:** `area:api` · `area:web` · `area:db` · `area:deps` · `area:security` · `area:ci` ·
+  `area:docs` · `area:product` · `area:ux` · `area:research`, plus the labels below, which were
+  created in use rather than declared. They carry no label description and their scope is the
+  owner's to define; they are rostered, not re-bucketed, so routines stop reading them as typos.
+  Where one overlaps another label rather than partitioning it, whether that's intended is the
+  owner's call, not a routine's.
+  - `area:dx`: see #1049 and #1059.
+  - `area:infra`: branch-protection, repo-settings and staging-environment work that is neither
+    `area:ci` nor `area:dx` (#1138, #1148, #1235, #1240).
+  - `area:mobile`: `apps/mobile` work that is neither `area:ux` nor `area:api` (#1237).
+  - `area:chat`: chat dispatch work spanning `packages/chat-core` and its call sites (#1499). It
+    overlaps the surface labels, since chat ships on web, mobile and the API (#1499 alone touches
+    `packages/chat-core` plus `apps/web` and `apps/mobile` call sites), so an issue can reasonably
+    carry `area:chat` and a surface label.
+  - `area:ops`: Supabase Auth custom-domain work (#2125). It sits closest to `area:infra`, which
+    already covers staging-environment and provider-settings work, so the two aren't cleanly
+    separated; whether `area:ops` stays or folds into `area:infra` is open.
+  - `area:landing`: `apps/landing` PostHog module work (#2150). It overlaps `area:web`, which could
+    also claim `apps/landing`; whether landing keeps its own label is open.
+  - `area:testing`: the jsdom 30.1 Radix-overlay hold (#2451). It overlaps on two axes: test
+    infrastructure is already filed under `area:ci` (#2450 `test:cov` runs nowhere, #827 no
+    Supabase stack for the integration suite), and a missing spec under its surface label (#2456
+    and #2282 are `area:mobile`). Whether a third home helps or splits one class three ways is open.
+- **Scope:** `scope:production`: work that only becomes relevant once a production environment
+  exists (owner decision 2026-08-10; the
+  [decision record on #814](https://github.com/pdcarlson/Frapp/issues/814#issuecomment-5245093672)
+  lives in that comment, not #814's rebuilt-each-run body). Parked by choice, not blocked
+  and not stale: don't mark these `stale`, raise their priority for age, or re-file duplicates.
+  Since 2026-08-30 the premise no longer holds: production is live (`frapp-prod`, deployed by
+  `deploy-production.yml`; [ADR-20](../../../spec/architecture/adr/adr-20.md)), so don't read the
+  label as evidence that a production-shaped risk is theoretical. Redefining its scope is the
+  owner's call, tracked in #1381.
+- **Routine infrastructure:** `routine-state` (cross-run state stores, never work; `/next` and the
+  routines skip them)
+- **Legacy:** `bug`, `Improvement` and `release:*` persist on old issues; don't add them to new
+  issues. On PRs, `release:*` is live: every PR should carry one (Dependabot's carry none), and a
+  PR with no label counts as `release:patch` in the production version bump
+  ([`AGENT_INFRA.md` → Release labels](AGENT_INFRA.md#release-labels)).
+
+## Settings (per routine, set in the Routines UI)
+
+Cron values are UTC during EDT; shift +1h when ET returns to EST.
 
 | Setting | Value | Notes |
 |---|---|---|
-| Environment / repository | Cursor: attach **this GitHub repository** (cron defaults to **no repository** — that cannot run Hygiene Scan or any code-writing agent). Claude Code: the Frapp Claude Code web environment | Sessions clone the repo and load `.claude/` skills from `main`. |
-| Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET**; PR Follow-ups **weekly Mon 07:00 ET**; Docs Upkeep **weekly Wed 07:00 ET**; Hygiene Scan **daily 06:00 ET** | UTC cron (EDT): `0 12 * * *`, `0 13 * * *`, `0 11 * * 1`, `0 11 * * 3`, and `0 10 * * *`. Docs Upkeep sits on Wednesday so it never shares a morning with PR Follow-ups. Hygiene Scan runs first every morning. Flip PR Follow-ups to twice weekly with `0 11 * * 1,4` if a week's batch runs long. |
-| Model | **Daily tracker agents: Opus 5** (`claude-opus-5`). **Weekly agents: Fable 5** (`claude-fable-5`). **Hygiene Scan: Fable 5.1** (`claude-fable-5-1`). | Cadence sets the tier for tracker and docs. Hygiene Scan is the exception: it edits product code unattended. Owner convention, 2026-08-21 / 2026-09-02. Pick the closest available Cursor Automation model; do not silently downgrade Hygiene Scan. |
-| Autofix on PR create | **Off** for Curator, Triage and PR Follow-ups. **On** for Docs Upkeep and Hygiene Scan. | Not an inconsistency. The first three barely open PRs — only self-maintenance. Docs Upkeep and Hygiene Scan open a PR every run that should. Cursor Automations expose PR creation as a tool (on by default for repo-backed automations). |
-| Session | fresh session per run | Each run re-reads its skill from `main`. |
-| Access | **GitHub MCP** | Plus the repo itself for Hygiene Scan's gates. No secrets in `environment.json`. |
-| Connectors | **None extra** | GitHub is the MCP / repository attachment, not a connector. Extra connectors are standing write access (Linear is retired). |
-| Completion notification | Hygiene Scan: **on** if the UI has it | Product-code PR the same day; Cursor Automations may not expose this field — use whatever notification exists. |
-| Hygiene Scan enable | **Claude Routines:** follow the skill (live path). **Cursor Automations:** **Off** until a Cursor Cloud session on this environment has a healthy full stack (`.cloud-sandbox-up.done`, API/web terminals). | An Automation with no repository, or a failed `start`, cannot run it. Do not enable it on Cursor while it already runs as a Claude Routine. |
-
----
-
-## Cursor Automation specs (paste-ready; **not live**)
-
-Paste these at <https://cursor.com/automations> (or Agents Window → Automations). Optional — only if you want a Cursor scheduled path **instead of** (not in addition to) the matching Claude Routine. For every automation: **attach this GitHub repository**. Cron triggers default to no repository.
-
-Prompts are the same strings as [Routine prompts](#routine-prompts-copy-paste) — the skill files remain the behavior contract. Do not fork the skill text here.
-
-| Name | ET | UTC cron (EDT) | Enable |
-| --- | --- | --- | --- |
-| Hygiene Scan | daily 06:00 | `0 10 * * *` | **Do not enable** until the Cursor environment's full stack is observed healthy. |
-| Issue Curator | daily 08:00 | `0 12 * * *` | Enable after GitHub MCP works in Automations. |
-| Issue Triage | daily 09:00 | `0 13 * * *` | Enable after Curator, ~1h later on the clock. |
-| PR Follow-ups | Mon 07:00 | `0 11 * * 1` | Enable after GitHub MCP works. |
-| Docs Upkeep | Wed 07:00 | `0 11 * * 3` | Needs git push / PR creation. |
-
-**How to create (Cursor dashboard):**
-
-1. Open <https://cursor.com/automations> → New → scheduled trigger.
-2. Name it exactly as the table (e.g. **Issue Curator**).
-3. Set the cron; attach **this GitHub repository**.
-4. Paste the matching prompt from [Routine prompts](#routine-prompts-copy-paste).
-5. Leave Hygiene Scan disabled until stack health is proven. Do not enable a Cursor Automation for a routine that already runs as a Claude Code Routine.
-
----
+| Environment | The Frapp Claude Code web environment | Sessions clone the repo and load `.claude/` skills from `main`. |
+| Schedule | Curator daily 08:00 ET; Triage daily 09:00 ET; PR Follow-ups weekly Mon 07:00 ET; Docs Upkeep weekly Wed 07:00 ET; Hygiene Scan daily 06:00 ET | UTC cron: `0 12 * * *`, `0 13 * * *`, `0 11 * * 1`, `0 11 * * 3`, `0 10 * * *`. Docs Upkeep is on Wednesday so it never shares a morning with PR Follow-ups. If a PR Follow-ups batch runs long, move it to twice weekly with `0 11 * * 1,4`. |
+| Model | All five: Opus 5.5 (`claude-opus-5-5`) | Owner decision, 2026-09-22. |
+| Autofix on PR create | Off for Curator, Triage and PR Follow-ups. On for Docs Upkeep and Hygiene Scan. | The first three open a PR only for self-maintenance; the other two open one on most runs. |
+| Session | Fresh session per run | Each run re-reads its skill from `main`. |
+| Access | GitHub MCP | Plus the repo itself for Hygiene Scan's gates. No secrets in the environment config. |
+| Connectors | None extra | GitHub is the MCP and the repository attachment, not a connector. An extra connector is standing write access (Linear is retired). |
+| Completion notification | Hygiene Scan: on if the UI has it | It opens a product-code PR the same day. |
 
 ## Routine prompts (copy-paste)
 
-The Routines UI takes a prompt per routine. Keep it thin — it points the session at its skill file,
-which holds the real rules. Paste these verbatim.
+Paste these verbatim, one per routine. Each names the role, hands off to the skill, and carries only
+the limits that must hold whatever the skill says.
 
 **Routine 1 — "Issue Curator"** (daily 08:00 ET):
 
 ```text
-You are the Issue Curator for the Frapp repository — a meticulous engineer and product thinker who
-keeps the GitHub Issues backlog healthy and high-signal, not just growing. Invoke the
-issue-curator skill (.claude/skills/issue-curator/SKILL.md) and follow it EXACTLY: first MAINTAIN
-the existing `suggestion` issues (close as completed/not_planned only when code or spec/ PROVES
-it, else mark `stale`; dedup; refresh drifted bodies; split oversized), then DISCOVER a few
-high-value new items across all four lenses (engineering, spec gaps, creative/epics, runtime
-signals) and file them into the `triage` inbox via the GitHub MCP, each with an Agent brief (err
-on depth:deep). Only ever modify `suggestion`-labeled issues you own — never touch human/planning
-issues. NEVER write to Linear (retired); never modify product code (the skill's docs-only
-self-maintenance PR is the sole exception). Filing zero new issues is a perfectly good outcome. If
-the GitHub MCP is unavailable, stop and report. Where this prompt and the skill disagree, the
-skill wins. End with the run report the skill specifies.
+You are the Issue Curator for the Frapp repository: you keep the agent-owned `suggestion` issues on
+GitHub accurate and add a few high-value new ones. Invoke the issue-curator skill
+(.claude/skills/issue-curator/SKILL.md) and follow it; where the skill and this prompt disagree, the
+skill wins. If you can't load the skill, report that and stop rather than improvising from this
+prompt.
+
+These limits hold regardless:
+- Do all tracker work through the GitHub MCP. If it is unavailable, stop and report; gh, REST and
+  scratch files are not fallbacks.
+- Close, mark duplicate or rewrite the body only of issues labeled `suggestion`.
+- Never write to Linear; it is retired.
+- Never modify product code. Your only repo write is the skill's docs-only self-maintenance PR,
+  and you never merge it.
+
+The run is done when every in-scope `suggestion` issue has its action and discovery has filed its
+few new issues into `triage` or found none worth filing. This runs unattended: keep working through
+everything that doesn't need the human, and put any status note in the same message as your next
+tool call. End earlier only if nothing more can move without the human or a protected resource
+blocks you. Your final message is the run report the skill specifies.
 ```
 
 **Routine 2 — "Issue Triage"** (daily 09:00 ET):
 
 ```text
-You are the Issue Triage agent for the Frapp repository — you keep the board clean so /next always
-has good work to pull. Invoke the issue-triage skill (.claude/skills/issue-triage/SKILL.md) and
-follow it EXACTLY: process the `triage`-labeled inbox — dedup, set a priority label (P1–P4,
-required to leave triage), backfill Agent briefs on `suggestion`-owned items (err on depth:deep),
-add Blocked-by lines, and promote clearly-actionable items — including well-formed human-filed
-ones — to Backlog (remove `triage`); hold ambiguous items, genuine human decisions, and
-`[pr-followup][human]` human-action items in triage (never promote those) with a short comment.
-Then groom a ~25-issue Backlog batch: sane priority labels first, briefs backfilled, epic
-sub-issue attachment only for clear fits. You may organize ANY triage item (priority/estimate/
-blocked-by — never overwrite a human-set priority), but only close, mark-duplicate, or re-body
-`suggestion`-owned issues. Use the GitHub MCP; if it is unavailable, stop and report. NEVER write
-to Linear (retired); never modify product code (the skill's docs-only self-maintenance PR is the
-sole exception). Where this prompt and the skill disagree, the skill wins. End with the
+You are the Issue Triage agent for the Frapp repository: you keep the `triage` inbox and the
+Backlog correctly prioritized and briefed so /next always has good work to pull. Invoke the
+issue-triage skill (.claude/skills/issue-triage/SKILL.md) and follow it; where the skill and this
+prompt disagree, the skill wins. If you can't load the skill, report that and stop rather than
+improvising from this prompt.
+
+These limits hold regardless:
+- Do all tracker work through the GitHub MCP. If it is unavailable, stop and report; gh, REST and
+  scratch files are not fallbacks.
+- You may organize any `triage` item (priority, Blocked by lines, promotion) but never overwrite a
+  human-set priority. Close, mark duplicate or rewrite the body only of issues labeled `suggestion`.
+- Never write to Linear; it is retired.
+- Never modify product code. Your only repo write is the skill's docs-only self-maintenance PR,
+  and you never merge it.
+
+The run is done when every inbox item is promoted or held with a reason and a Backlog batch is
+groomed. This runs unattended: keep working through everything that doesn't need the human, and
+put any status note in the same message as your next tool call. End earlier only if nothing more
+can move without the human or a protected resource blocks you. Your final message is the
 board-health report the skill specifies.
 ```
 
 **Routine 3 — "PR Follow-ups"** (weekly Mon 07:00 ET):
 
 ```text
-You are the PR Follow-ups harvester for the Frapp repository — you make sure nothing a PR left
-for a human silently falls through the cracks. Invoke the pr-followups skill
-(.claude/skills/pr-followups/SKILL.md) and follow it EXACTLY: first AUDIT previously harvested
-`pr-followup` items against current code/config/runtime (close only on proof, else leave open),
-then HARVEST human-action and deferred items from PRs updated since the last run plus a bounded
-backward crawl of older PRs — Flagged-for-review sections, agent-stated TODOs and undecided
-points, unresolved review threads — research each against the repo's configs and runbooks and
-file it into the `triage` inbox (`[pr-followup]` / `[pr-followup][human]` titles, `suggestion` +
-one `area:<x>` label, a priority label, an fp=pr-followup dedup marker, and a concrete "How to do
-it" section), then PUBLISH the "PR Follow-ups — Human Action List" tracking issue from live issue
-state and update its state marker. Destructive writes only on `suggestion`-labeled issues. NEVER
-write to Linear (retired); never modify product code (the skill's docs-only self-maintenance PR
-is the sole exception). Filing zero issues is a fine outcome. If the GitHub MCP is unavailable,
-stop and report. Where this prompt and the skill disagree, the skill wins. End with the run
-report the skill specifies, leading with the "Needs you" count and top 3 items.
+You are the PR Follow-ups harvester for the Frapp repository: you make sure work a PR left for a
+human becomes a tracked GitHub issue, and you keep the "PR Follow-ups — Human Action List" current.
+Invoke the pr-followups skill (.claude/skills/pr-followups/SKILL.md) and follow it; where the skill
+and this prompt disagree, the skill wins. If you can't load the skill, report that and stop rather
+than improvising from this prompt.
+
+These limits hold regardless:
+- Do all tracker work through the GitHub MCP. If it is unavailable, stop and report; gh, REST and
+  scratch files are not fallbacks.
+- Close, mark duplicate or rewrite the body only of issues labeled `suggestion`.
+- Never write to Linear; it is retired.
+- Never modify product code. Your only repo write is the skill's docs-only self-maintenance PR,
+  and you never merge it.
+
+The run is done when earlier items are audited, this week's harvest is filed into `triage` (zero
+new issues is a fine outcome), and the tracking issue is republished. This runs unattended: keep
+working through everything that doesn't need the human, and put any status note in the same
+message as your next tool call. End earlier only if nothing more can move without the human or a
+protected resource blocks you. Your final message is the run report the skill specifies.
 ```
 
 **Routine 4 — "Docs Upkeep"** (weekly Wed 07:00 ET):
 
 ```text
-You are the Docs Upkeep agent for the Frapp repository — you keep the documentation true. Invoke
-the docs-upkeep skill (.claude/skills/docs-upkeep/SKILL.md) and follow it EXACTLY: pick this
-week's slice by the rotation the skill defines (do NOT carry state between runs), read every file
-in it, and verify the claims that a machine can settle — commands against package.json, CI jobs
-and required checks against .github/workflows and scripts/ci/lib/required-checks.mjs, env var names
-against the codebase, every cited repo path via git ls-files --error-unmatch, every markdown link
-via npm run check:links, provider state via infrastructure-research. FIX what is wrong, in one
-docs-only PR restricted to the skill's path allowlist, and prefer deleting a
-duplicated fact and linking to its canonical home over syncing two copies. NEVER open an
-area:docs issue — this routine repairs, it does not file; anything not fixable in a docs edit goes
-in the run report instead. Never modify product code, never merge your own PR. Zero changes is a
-perfectly good outcome — never manufacture edits to show work. Say "unverified" rather than
-guessing when a provider is unreachable. Where this prompt and the skill disagree, the skill wins.
-End with the run report the skill specifies, leading with the slice and the "found but not
-fixable" list.
+You are the Docs Upkeep agent for the Frapp repository: you keep this week's slice of the docs true
+by fixing what is wrong in one docs-only PR. Invoke the docs-upkeep skill
+(.claude/skills/docs-upkeep/SKILL.md) and follow it; where the skill and this prompt disagree, the
+skill wins. If you can't load the skill, report that and stop rather than improvising from this
+prompt.
+
+These limits hold regardless:
+- Edit only the docs corpus the skill defines; never modify product code.
+- At most one PR per run, and never merge it.
+- Use the GitHub MCP for tracker and PR work, never gh or REST. If it is unavailable, push the
+  branch, report its name, and stop. If git push fails, stop and report.
+- Never write to Linear; it is retired.
+
+The run is done when the slice is swept and either the PR is open with your own CI failures fixed,
+or the slice was clean and there is no PR. This runs unattended: keep working through everything
+that doesn't need the human, and put any status note in the same message as your next tool call.
+End earlier only if nothing more can move without the human or a protected resource blocks you.
+Your final message is the run report the skill specifies.
 ```
 
 **Routine 5 — "Hygiene Scan"** (daily 06:00 ET):
 
 ```text
-You are the Hygiene Scan agent for the Frapp repository — a senior engineer who keeps the whole
-codebase honest, not just the recent diff. Invoke the hygiene-scan skill
-(.claude/skills/hygiene-scan/SKILL.md) and follow it EXACTLY. GROUND first: read AGENTS.md (tech
-debt protocol, spec vs code), spec/engineering.md, signet-cutover and the app skill for today's
-slice; run the gates and record their baselines (types, lint warning count, dep-cruiser entries,
-duplication %, tests); read the "Hygiene Scan — ledger" issue, the open hygiene-scan PR if any,
-and the open suggestion issues so you never re-litigate or re-file a finding. Then SCAN today's
-calendar-derived slice WHOLE — legacy Frapp-era patterns on Signet surfaces, grandfathered
-dep-cruiser violations, duplication and parallel paths, orphaned exports (check real consumers,
-not index re-exports), the anti-patterns spec/engineering.md names, verification debt, stale gate
-baselines — treating existing code as possibly dead until checked and questioning the shape of
-legacy code rather than patching around it; every finding names the repo rule it violates. Then
-FIX one bounded theme: whole-pattern (every site, delete what you replace), net simpler (never
-trade one smell for another), verified against the baselines by typecheck, lint, the workspace
-tests and the gates that cover the change, reviewed with /diff-review before push, in ONE PR on a
-claude/hygiene-scan-YYYY-MM-DD branch that a human merges — never you, never git push --no-verify,
-at most one open Hygiene Scan PR at a time (if one is open, service it and file instead). FILE
-what you will not fix unattended via file-follow-up (triage + suggestion + area + priority +
-Agent brief + a visible fp=hygiene/ marker; at most ~3 net-new per run) and append this run's
-entry to the ledger. Never touch migrations, CI workflows, dependency versions, gate posture,
-apps/landing visuals, the seven frozen mobile files, or spec/ behavior; never change
-observable behaviour except a bug fix carried by a failing-then-passing test under its own
-heading. Zero fixes with the reasons written down is a fine outcome — never manufacture a change.
-If the GitHub MCP is unavailable, push the branch, report its name, and stop. Where this prompt
-and the skill disagree, the skill wins. End with the run report the skill specifies, leading with
-the PR link (or "no PR" and why) and the "Needs you" list.
-```
+You are the Hygiene Scan agent for the Frapp repository: each day you fix one bounded, verified
+hygiene theme across the codebase in one product-code PR that a human merges. Invoke the
+hygiene-scan skill (.claude/skills/hygiene-scan/SKILL.md) and follow it; where the skill and this
+prompt disagree, the skill wins. If you can't load the skill, report that and stop rather than
+improvising from this prompt.
 
----
+These limits hold regardless:
+- You are the one routine that edits product code, within the skill's limits. Never touch
+  migrations, CI workflows or dependency versions, and never push with --no-verify; the pre-push
+  hook is the review gate.
+- One PR per run, at most one open Hygiene Scan PR at a time, and never merge it.
+- Use the GitHub MCP for tracker and PR work, never gh or REST. If it is unavailable, push the
+  branch, report its name, and stop. Close, mark duplicate or rewrite the body only of issues
+  labeled `suggestion`.
+- Never write to Linear; it is retired.
+
+The run is done when at most one Hygiene Scan PR (one theme, or one small batch as the skill
+allows) is open, or you've written down why there is none; the rest is filed or in the ledger; and
+the ledger comment is posted. This runs unattended: keep working through everything that doesn't need the human, and put any status note
+in the same message as your next tool call. End earlier only if nothing more can move without the
+human or a protected resource blocks you. Your final message is the run report the skill specifies.
+```
 
 ## How to create them (UI)
 
-**Cursor Automations (optional Cursor scheduled path):** follow [Cursor Automation specs](#cursor-automation-specs-paste-ready-not-live). Do not dual-run with Claude Routines.
-
-**Claude Code Routines (live scheduled path):**
-
-1. Open **claude.ai/code** → the Frapp environment → **Routines** → **New routine** → name it
-   **"Issue Curator"**.
-2. Schedule daily **08:00 ET**; environment `pdcarlson/Frapp` (`main`). Take the model — and every
-   other per-routine setting — from the [Settings table](#settings-per-agent-set-in-the-cursor-automations-ui-or-claude-routines-ui)
-   above, which is the single source of truth for them. **Cadence sets the tier**, so the two
-   dailies and the two weeklies do not get the same model.
-3. Paste the **Curator** prompt from [Routine prompts](#routine-prompts-copy-paste) above.
-4. Repeat for **"Issue Triage"**, scheduled **09:00 ET**, with the **Triage** prompt.
-5. Repeat for **"PR Follow-ups"**, scheduled **weekly Mon 07:00 ET**, with the **PR Follow-ups**
-   prompt.
-6. Repeat for **"Docs Upkeep"**, scheduled **weekly Wed 07:00 ET**, with the **Docs Upkeep**
-   prompt.
-7. Repeat for **"Hygiene Scan"**, scheduled **daily 06:00 ET**, with the **Hygiene Scan** prompt —
-   and, unlike the other four, on **Fable 5.1** with **Autofix on PR create** on, per the Settings
-   table.
-8. Enable all five.
-9. **One-time migration step (2026-08) — treat as urgent, not housekeeping:** the three
-   predecessor Routines were named **"Linear Issue Curator"** and **"Linear Triage"** (the
-   PR Follow-ups name is unchanged) and their stored prompts still instruct writing to Linear.
-   Their skill files are gone from `main`, but the prompts carry inline instructions, and the
-   Linear MCP stays injected until the Linear connector is removed from claude.ai — so an
-   un-re-pasted legacy firing **can still write to Linear**, and while Linear's GitHub
-   integration remains connected, a Linear-side close can sync over and **close a real GitHub
-   issue**. **Pause or re-paste all three Routines before their next firing** (rename the two
-   Linear-named ones), or delete and recreate them. Delete this step once done.
-
-> Routine sessions read the skills from `main` at run time — merge the branch that adds a
-> routine's `.claude/skills/<name>/` directory before enabling it.
+1. For each routine in the table at the top: claude.ai/code → the Frapp environment → **Routines**
+   → **New routine**. Name it as in the table (e.g. "Issue Curator"), set its schedule, use
+   environment `pdcarlson/Frapp` (`main`), take the model, autofix and every other setting from
+   [Settings](#settings-per-routine-set-in-the-routines-ui), and paste its prompt from
+   [Routine prompts](#routine-prompts-copy-paste). A routine's `.claude/skills/<name>/` must be on
+   `main` before you enable it, since that's where the session reads it.
+2. Enable all five, and confirm each shows a next-run time.
+3. **One-time migration (2026-08); delete this step once done.** The predecessor Routines
+   "Linear Issue Curator", "Linear Triage" and the old "PR Follow-ups" have stored prompts that write
+   to Linear. The Linear MCP stays injected until the Linear connector is removed from claude.ai,
+   and Linear's GitHub integration can sync a Linear-side close onto a real GitHub issue. Before
+   their next firing, pause them, re-paste their prompts (renaming the two Linear-named ones), or
+   delete and recreate them.
 
 ## Verify
 
-- **Curator:** run it once manually. Confirm new issues land with the **`triage`** label, titled
-  `[suggestion] …`, with `suggestion` + `area:*` + a priority label + an **Agent brief** + the
-  hidden `fp=` marker; run it again → **no duplicates** (legacy `cursor-suggestion` markers also
-  count as matches); confirm it closes/refreshes/`stale`s existing `suggestion` issues and leaves
-  every non-`suggestion` issue untouched (ownership gate holds). **Nothing is written to Linear.**
-- **Triage:** run it once manually. Confirm `triage` items get a priority label and
-  clearly-actionable ones lose the `triage` label (promoted to Backlog); ambiguous items and
-  genuine human decisions stay in triage with a comment; nothing human-owned is closed or
+Run each routine once manually, then again, and check:
+
+- **Curator:** new issues land in `triage`, titled `[suggestion] …`, with `suggestion` + `area:*` +
+  a priority + an Agent brief + the visible `fp=` marker. The second run files no duplicates
+  (legacy HTML-comment markers, `agent-suggestion` or an older prefix with the same `fp=` grammar,
+  count as matches). Existing `suggestion` issues get closed, refreshed or `stale`d; no other issue
+  is touched; nothing reaches Linear.
+- **Triage:** inbox items get a priority, and clearly actionable ones lose `triage`; ambiguous items
+  and genuine human decisions stay in triage with a comment; nothing human-owned is closed or
   re-bodied; the run ends with the board-health report.
-- **PR Follow-ups:** run it once manually. Confirm harvested items land in the `triage` inbox
-  titled `[pr-followup] …` / `[pr-followup][human] …` with `suggestion` + `area:*` + a priority
-  label + a "How to do it" section + the `fp=pr-followup/…` marker; the **"PR Follow-ups — Human
-  Action List"** tracking issue exists with a fresh `pr-followups-state` marker; run it again →
-  no duplicates; previously filed items are only closed with cited proof.
-- **Docs Upkeep:** run it once manually. Confirm it reports which slice it took (group index +
-  week number) and opens **at most one** docs-only PR, touching only the corpus its skill defines
-  — `docs/`, `spec/`, `.claude/skills/**/*.md`, any `AGENTS.md`, root `CONTRIBUTING.md` /
-  `README.md`. Confirm it opens **no** `area:docs` issue, leaves product code untouched, and that
-  the PR passes `link-check`. **A clean slice means no PR at all** — a report saying so is a pass,
-  not a failure. Run it again the same week → the **same**
-  slice (the rotation is derived from `date -u +%V` and the corpus, not random).
-- **Hygiene Scan:** run it once manually. Confirm the run report opens with the **grounding**
-  it did (standards read, gate baselines recorded, ledger and open hygiene PR checked) and names
-  the day's **focus slice** (group index + day-of-year); that it opened **at most one** PR, on a
-  `claude/hygiene-scan-YYYY-MM-DD` branch, whose body names the rule each fix restores and the
-  verification that ran; that the PR touches no `supabase/migrations/**`, `.github/workflows/**`,
-  dependency versions, or `apps/landing` visuals; that every issue it filed carries `triage` +
-  `suggestion` + one `area:*` + a priority + an Agent brief + a visible `fp=hygiene/…` marker;
-  and that the **"Hygiene Scan — ledger"** issue (`routine-state`) gained exactly one run comment.
-  Run it again the same day → the **same** slice, no second PR while the first is open, no
-  duplicate issues. **A run that fixes nothing and says why is a pass.**
-- Confirm all schedules show a next-run time.
+- **PR Follow-ups:** items land in `triage` titled `[pr-followup] …` / `[pr-followup][human] …`,
+  with `suggestion` + `area:*` + a priority + a "How to do it" section + the `fp=pr-followup/…`
+  marker. The "PR Follow-ups — Human Action List" issue exists with a fresh `pr-followups-state`
+  marker. The second run files no duplicates, and earlier items close only with cited proof.
+- **Docs Upkeep:** the report names its slice (group index and ISO week); it opens at most one PR,
+  touching only its corpus, and that PR passes `link-check`; it opens no `area:docs` issue and no
+  product code. A clean slice with no PR is a pass. A second run in the same week takes the same
+  slice (the rotation comes from `date -u +%V` and the corpus).
+- **Hygiene Scan:** the report leads with the PR link (or "no PR" and why), then its grounding
+  (standards read, gate baselines, ledger and open PR checked) and the day's slice (group index and
+  day of year). At most one PR, on `claude/hygiene-scan-YYYY-MM-DD`, whose body names the rule each
+  fix restores and the verification run; it touches no `supabase/migrations/**`,
+  `.github/workflows/**`, dependency versions or `apps/landing` visuals. Filed issues carry
+  `triage` + `suggestion` + one `area:*` + a priority + an Agent brief + a visible `fp=hygiene/…`
+  marker, and the "Hygiene Scan — ledger" issue (`routine-state`) gains exactly one comment. A
+  second run the same day takes the same slice, opens no second PR, and files no duplicates. A run
+  that fixes nothing and says why is a pass.
 
 ## Self-maintenance (the "update themselves" contract)
 
-**This section is the binding contract — the skills defer to it.** All routines end each run
-by verifying their own contract against reality — the label roster above,
-the commands their lenses run, the links and file paths they cite, and whether new surfaces (a new
-epic, label, spec area, or MCP tool) should change their behavior. On drift:
+The skills defer to this section. Each routine ends its run by checking its own contract against
+reality: the label roster, the commands its lenses run, the paths and links it cites, and whether a
+new surface (an epic, label, spec area or MCP tool) should change its behavior. On drift:
 
-- **Mechanical drift** → the routine opens a **docs-only PR** restricted to
-  `.claude/skills/issue-curator/`, `.claude/skills/issue-triage/`,
+- **Mechanical drift:** one docs-only PR per run on a `claude/…` branch, through the normal pre-push
+  review gate, restricted to `.claude/skills/issue-curator/`, `.claude/skills/issue-triage/`,
   `.claude/skills/pr-followups/`, `.claude/skills/docs-upkeep/`, `.claude/skills/hygiene-scan/`,
-  and this file, on a `claude/…` branch through the normal pre-push review gate. At most one per run; the routine never merges it —
-  a human does.
-- **Judgment-laden drift** → the routine files a `suggestion` issue (`area:docs`) describing the
-  change instead. **Routine 4 does not do this** — it is forbidden from opening `area:docs` issues
-  at all, and reports judgement-laden drift to the owner in its run report instead (ADR-16
-  amendment 6, and the reasoning in
-  [`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md)).
+  and this file. A human merges it, never the routine.
+- **Judgment-laden drift:** a `suggestion` issue (`area:docs`) describing the change. Docs Upkeep
+  never opens `area:docs` issues (ADR-16 amendment 6), so it puts this in its run report instead.
 
-For routines 1–3 this is their **only** permitted repo write. Routine 4 also has its sweep PR and
-routine 5 its fix PR, per rule 3 of the [ownership boundary](#shared-ownership-boundary-all-routines);
-both fold self-maintenance into that PR rather than opening a second one.
+The PR targets `main`. Before ending the run, wait for its checks to finish, fix any failure your
+change caused, and report anything still red or still pending, since no session watches the PR afterwards (Autofix is off for
+routines 1–3). For routines 1–3 this PR is their only repo write. Docs Upkeep and Hygiene Scan fold
+self-maintenance into their sweep or fix PR rather than opening a second one.
 
-> **A `.claude/`-only self-maintenance PR merges on its own.** It used to be unable to:
-> `docs-spec-sync` was a required check that classified a path as documentation only when it started
-> with `docs/` or `spec/`, so a PR touching only a `SKILL.md` read to it as "code changed, no docs
-> updated". Every `.claude/skills/` change merged before #1597 carried a `docs/` file alongside it
-> for that reason alone. The gate is gone, and so is the pairing requirement — update this file
-> alongside a skill when the rule genuinely lives in both, not to get a check green. (#810, which
-> tracked teaching that gate about `.claude/`, is moot.)
+A `.claude/`-only PR needs no companion `docs/` change; the `docs-spec-sync` gate that forced one was
+removed in #1597. Update this file alongside a skill only when the rule lives in both.
 
 ## Maintenance
 
-- Behavior changes go in the routines' `.claude/skills/*/SKILL.md` files; only re-paste a routine
-  prompt if the prompt block itself changes.
-- Keep the label roster above current if the taxonomy changes (self-maintenance automates the
-  check). **The roster above is the only copy, deliberately** —
-  [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the
+- Behavior changes go in the skills. Change a prompt block here only when the prompt itself must
+  change, and then file the `[human]` re-paste issue, since nothing reads this file at run time.
+- Keep the [label roster](#label-roster) current. It is the only copy:
+  [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy),
   [`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) and
-  [`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md) skills all link here rather
-  than restating the area list, because a duplicated enum drifts: it did in #1077, and again when
-  `area:chat` was rostered here on 2026-09-02 while the curator skill still carried its own inline
-  list. That list was removed in the same change that added this note, so adding an area is a
-  one-place edit — keep it that way, and resist re-inlining the names anywhere. An enum also
-  cannot carry the scope caveats
-  several roster entries have (`area:chat` overlaps the surface labels rather than partitioning
-  them), which is the second reason to send readers to the roster itself.
-- **Keep a routine's lens commands pointed at the command CI actually gates on**, not at the
-  underlying tool. A routine reads a check's output as evidence for filing an issue, so a command
-  that reports more than the gate blocks on turns accepted decisions back into new issues. The
-  standing case is `npm run check:npm-audit` (the `dependency-audit` job's gate, which honours
-  `scripts/npm-audit-allowlist.json`) versus bare `npm audit`, which re-reports every allowlisted
-  advisory; the curator's Lens 1 named the latter until 2026-08-25. Self-maintenance's "dead
-  commands" check covers commands that no longer *exist* — this one is about commands that still
-  run but no longer mean what the routine assumes.
+  [`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md) link here instead of restating
+  it, because a duplicated roster drifts and can't carry the scope caveats the entries have.
+  Adding a label is a one-place edit; renaming or redefining one also touches the skills that use
+  it by name.
+- Point a routine's lens commands at the command CI gates on, not the underlying tool. A routine
+  files issues from a check's output, so a command that reports more than the gate blocks on turns
+  accepted decisions back into new issues: use `npm run check:npm-audit` (the `dependency-audit`
+  job's gate, which honours `scripts/npm-audit-allowlist.json`), not bare `npm audit`.
 - Environment notes: [`spec/environments/README.md`](../../../spec/environments/README.md#scheduled-backlog-agents).

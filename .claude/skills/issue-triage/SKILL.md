@@ -9,306 +9,169 @@ description: >
 
 # Issue Triage (routine 2 of 5)
 
-You keep the board clean so [`/next`](../../commands/next.md) always has good work to pull. This
-routine runs **after** the [`issue-curator`](../issue-curator/SKILL.md) creation pass (≈1h later)
-and keeps the GitHub Issues board healthy. Triage is **not only the `triage` inbox** — most work
-lives in the **Backlog** (open issues without a state label), so this routine does two jobs:
-**(A) process the `triage` inbox**, and **(B) groom the existing Backlog** — get priority labels
-right (the main job, since `/next` ranks by priority), backfill
-[Agent briefs](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode),
-and attach issues to epics only when they *clearly* fit.
-
-**Ownership, tracker, and the product-code ban** —
-[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
-This routine only organizes the tracker. The single exception is the shared
-[self-maintenance step](#self-maintenance-update-yourself).
-
-## Tracker access
-
-Use the **GitHub MCP** — load schemas first, e.g.
-`ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
-mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__sub_issue_write")` — and
-verify access at the start of the run. **If the GitHub MCP is unavailable, stop and report — no
-fallback.** The label roster and shared routine config live in
-[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
-
-> **Whether a body edit may be sourced from an MCP read is a measurement that has flipped four
-> times — check it, don't remember it.** The fidelity table, the probe, the operative rule, and the
-> fallback when the probe is red:
-> [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
-> — the canonical statement, deliberately not restated here. As of **2026-09-05** all three read
-> paths measured faithful, so backfilling an Agent brief into an existing body is permitted; re-run
-> the probe against fixture #1736 before a bulk pass.
->
-> **Re-measured 2026-09-22 (triage run): still green on every leg that could be run.** Steps 1-3
-> (`issue_read get`, `list_issues`, `search_issues`) and step 5 (`get_comments`, both controls) all
-> returned #1736's three vectors intact — the HTML comment, the tag outside the fence *and* all five
-> `<Tabs.Screen …/>` lines inside the `tsx` fence, and literal `'` `"` `&` `>` plus the comment
-> control's bare `<` and `&&`. Vector 2, the discriminator, is the one that decides this, and it is
-> intact on all four paths.
->
-> **Step 4 (the direct REST ground-truth read) could not be run** — unauthenticated
-> `api.github.com` answered `403 rate limit exceeded` for the sandbox's shared egress IP. That is a
-> missing confirmation leg, not a red probe: the four MCP legs agree with each other *and* with the
-> fixture's own in-body answer key, which describes what a sanitizing read returns (five blank
-> lines) and is therefore discriminating on its own. Treat a run that loses step 4 the same way —
-> say so rather than reporting an unqualified green.
->
-> Note the canonical fidelity table in `GITHUB_PM.md` still carries the 2026-09-05 measurement.
-> That file is **outside** the routine self-maintenance path allowlist
-> ([`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract)),
-> so this note deliberately does not restate the table — it records that a later measurement exists
-> and agrees. Docs Upkeep or the owner refreshes the canonical copy. The same hazard applies to every routine that
-> re-bodies an issue.
->
-> **Agent-brief backfills have been blocked and unblocked four times.** Refused 2026-08-10 and
-> -08-12; allowed 2026-08-14; refused again 2026-08-20; **allowed again 2026-09-05** on a fixture
-> round-trip through all three read paths. That history is the reason the rule is written as a
-> measurement rather than a verdict: **re-run the probe against #1736 at the start of a run that
-> intends to backfill briefs into existing bodies**, and record in the run log that you did. A
-> backfill pass touches ~25 bodies, so it is precisely the case the operative rule's one condition
-> exists for.
->
-> **When the probe is red, add a brief by leaving a comment instead** — or by authoring the full
-> replacement body yourself, which is safe in every round. Never round-trip a body through a lossy
-> read to add a section to it; that is the destructive edit Pass A step 3 and Pass B would
-> otherwise perform at scale.
->
-> **What still works:** the `fp=` **lookup**. `search_issues` resolves fingerprints precisely (1 hit
-> for a real one, 0 for a fabricated one), so dedup needs no redesign — only the marker format
-> changed, to a **visible line**. Start each run with the marker-count guard in `GITHUB_PM.md`.
->
-> `search_issues` is a **semantic** search, not a fetch-by-number, so it can miss or mis-rank the
-> issue you want. Query it with distinctive words from the target's own title, then **check that a
-> returned item's `number` is the issue you intend** before using it.
+You keep the board clean so [`/next`](../../commands/next.md) always has good work to pull. The
+run follows the [`issue-curator`](../issue-curator/SKILL.md) by about an hour and does two jobs:
+(A) process the `triage` inbox, and (B) groom a batch of the Backlog (open issues with no state
+label). `/next` ranks by priority label, so correct priorities are the main job in both. The run
+is done when every inbox item is promoted or held with a reason, a Backlog batch is groomed, and
+the [board-health report](#board-health-report) is written.
 
 ## Ownership: organize freely, destroy narrowly
 
-Shared rules:
-[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
-Triage's job is to **organize the whole inbox**, whoever filed it — so setting a **priority
-label**, an **`Estimate:` line**, and **`Blocked by #N`** lines on any `triage` item is in scope.
-But **destructive** actions (close, mark duplicate, re-body) are limited to **`suggestion`-owned**
-issues:
+The shared contract is
+[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
+and [→ Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines):
+GitHub MCP only (stop and report if it's unavailable), Linear is retired, no product code. Triage
+organizes the whole inbox, whoever filed it, but destroys only what agents own.
 
-- **Organize (any `triage` item):** fill an *absent* priority label (never overwrite a human-set
-  one), record Blocked-by (body line on a body you authored, comment otherwise — and note a
-  comment does **not** gate `/next`; see Pass A step 4), attach to an epic where it clearly
-  belongs, promote to Backlog (remove `triage`).
-- **Destroy (`suggestion`-owned only):** close as junk/obsolete (`not_planned`), mark duplicate
-  (`duplicate` + `duplicate_of`), edit the body (including adding an Agent brief). **Never** close
-  or re-body a human/internal issue — a human-filed item that looks wrong stays in triage with a
-  comment for the human. One that merely lacks an Agent brief is **not** held: an absent brief
-  simply reads as `depth:deep` to `/next`, so nothing is blocked.
+- **Organize (any `triage` item):** fill an absent priority label, add an `Estimate:` line,
+  record `Blocked by #N`, attach to an epic where it clearly belongs, and promote to Backlog by
+  removing `triage`. Never overwrite a priority a human set.
+- **Destroy (`suggestion`-labeled only):** close as `not_planned`, mark `duplicate` with
+  `duplicate_of`, or edit the body (including adding an Agent brief). Check `issue_read
+  get_labels` for `suggestion` before each such write; if it's absent, skip and log. A
+  human-filed item that looks wrong stays in triage with a comment for the human. One that only
+  lacks an Agent brief isn't held: an absent brief reads as `depth:deep`.
+- `issue_write`'s `labels` field replaces the whole set, so always send the union of the existing
+  labels plus your change.
+- Leave `in-progress` and `in-review` issues alone (claims and sweeps belong to `/next`), and
+  `routine-state` issues too (routine infrastructure, never work).
+- Never print secret values. The only repo write this routine makes is the
+  [self-maintenance](#self-maintenance-update-yourself) PR.
 
-Run the pre-write gate (`issue_read get_labels`, confirm `suggestion` is present) before any
-**destructive** write. And remember `issue_write`'s `labels` field **replaces the whole set** —
-always send the union of existing labels plus your change.
+**Reading before a body edit.** Start each run with the marker-count guard in
+[`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run).
+Whether a body edit may be sourced from an MCP read is a measurement that has flipped before, not
+a fixed fact: the table, the probe, and the fallback when it's red are in
+[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+A brief backfill touches many bodies, so before one, re-run the probe against fixture #1736 and
+record the result in the report. If a leg can't run (say, the direct REST read hits a rate limit),
+say so rather than reporting an unqualified green. When the probe is red, add a
+brief as a comment, or author the full replacement body yourself; never round-trip a body through
+a lossy read to add a section.
 
-## Pass A — the `triage` inbox (the main job)
+`search_issues` is semantic, not a fetch by number. Query with distinctive words from the
+target's title and confirm the returned `number` before using it.
 
-Pull everything labeled **`triage`** (`list_issues` with `labels: ["triage"]`, state OPEN). For
-each:
+## Pass A — the triage inbox
 
-1. **Dedup.** If it duplicates an existing open issue: when the triage item is
-   `suggestion`-owned, close it as `duplicate` with `duplicate_of` the canonical; otherwise leave
-   it and comment the likely duplicate for a human.
-2. **Prioritize.** Set a **priority label** (`P1`–`P4`) from impact — **required**: an issue may
-   not leave triage without one. On human-filed items, only fill an *absent* priority — never
-   overwrite one a human set. Optionally add an `Estimate: <fibonacci>` body line if scope is
+List every open issue labeled `triage`. For each:
+
+1. **Dedup.** If it duplicates an open issue: when it's `suggestion`-owned, close it as
+   `duplicate` with `duplicate_of` the canonical; otherwise leave it and comment the likely
+   duplicate for a human.
+2. **Prioritize.** Set a priority label `P1`–`P4` from impact; no issue leaves triage without
+   one. A routine suggestion is usually `P3` or `P4`; `P2` is for genuine high impact (security,
+   data loss, broken core flows). Optionally add an `Estimate: <fibonacci>` line when scope is
    clear.
-3. **Agent brief.** On `suggestion`-owned items missing one, add the `### Agent brief` section
-   (template in the [curator skill](../issue-curator/SKILL.md#agent-brief); field policy in
-   [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode));
-   fix a brief that is obviously mis-calibrated (a schema-touching change marked `skim`). **Err
-   deeper**: when unsure between two depths, pick the deeper one. **Deliver it as a body edit when
-   the probe is green, and as a comment when it is not** — a brief in the body is what actually
-   gates `/next`, so prefer it, but adding a section to someone else's body means round-tripping
-   that body through the read, which is only safe while the fidelity table is current (see the
-   read-fidelity block above). `/next` reads the brief either way — including a
-   correction a previous run already commented, so check for one first
-   ([comment once](#comment-once-not-once-per-run)).
-4. **Blocked-by.** Record `Blocked by #N` where a dependency is obvious — but know what a comment
-   can and cannot buy you here, because this is **not** symmetric with the Agent brief in step 3.
+3. **Agent brief.** On `suggestion`-owned items, add a missing `### Agent brief` (format in the
+   [curator skill](../issue-curator/SKILL.md#agent-brief), field policy in
+   [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode)),
+   and correct one that's mis-calibrated (a schema-touching change marked `skim`) or out of
+   roster. Test each value against the roster (`depth:skim|standard|deep`, `model:fable|any`,
+   `ultracode:yes|no`) rather than a list of known-bad spellings, since new ones keep appearing.
+   Between two depths, pick the deeper. Deliver it in the body when the probe is green (the
+   brief is a description section), and as a comment when it isn't, which `/next` also reads. Check for a correction a
+   previous run already commented first ([comment once](#comment-once-not-once-per-run)).
+4. **Blocked-by.** Record `Blocked by #N` where a dependency is obvious. `/next` reads blockers
+   only from body lines ([`next.md`](../../commands/next.md) §0.2 condition 3 and §1.1), so a
+   commented blocker doesn't stop the issue ranking as claimable.
+   - On a body you may edit (one you authored this run, or a `suggestion`-owned body under step
+     3's probe condition), write the line.
+   - On a human-filed body, the ownership boundary bars the rewrite. Comment anyway, since a
+     `/next` session reads it during verification, but list the issue in the report as needing
+     an owner body edit. The comment doesn't fix it.
+5. **Epic attach.** Attach it as a sub-issue when it clearly belongs to an open epic; otherwise
+   leave it standalone.
+   - Epics are titled both `[Epic] <name>` and `Epic: <name>`, and `has_children: true` is the
+     structural check that doesn't depend on the title. Match all three. Which title form is
+     canonical is the owner's call (#2189), not a routine's.
+   - A child that names its parent (`Umbrella: #N`, `Epic: #N`) is evidence about #N even when #N
+     has no epic title and no children yet. Attach on that claim: it flips `has_children`, which
+     lets the `Fixes`-vs-`Part of` guard in
+     [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md) stop a single-slice PR from
+     closing the whole umbrella. Never infer an umbrella from topic similarity.
+   - `sub_issue_write` takes the parent's `issue_number` and the child's `sub_issue_id`, which is
+     its internal id, not its number. Get it from an `issue_write` result or `issue_read get`;
+     `list_issues` doesn't return it.
+6. **Promote or hold.**
+   - `suggestion`-owned, or clearly well-formed and actionable: remove `triage`.
+   - Human-action holds: a `[pr-followup][human]` or bare `[human]` title prefix, or a body
+     opening with `**Human action required — hold in triage`. Never promote these, because
+     `/next` can't do the work. Leave them in triage, touching only priority and estimate. The
+     [`pr-followups`](../pr-followups/SKILL.md) routine owns their lifecycle (`fp=pr-followup/`,
+     `fp=human/`). Never add `suggestion` yourself. It hands an issue to the routines (it's what
+     lets PR Follow-ups close it and any routine re-body it), and nothing you can read tells you
+     whether the label was omitted or the owner removed it to take the item over: agents file
+     through the MCP as the owner, and label history isn't exposed. List `[human]` items that lack
+     it in the report, noting whether the body carries an agent `fp=` marker, so the owner can
+     adopt or close them.
+   - Ambiguous, under-specified, or a significant human decision: leave it in triage with a short
+     comment on what's needed. Don't force-promote work a human should accept.
 
-   **`/next` reads blockers from the body only.** [§0.2 condition 3](../../commands/next.md)
-   disqualifies a candidate on *"a `Blocked by #N` **body line** whose #N is still open"*, and §1.1
-   then re-verifies **those body lines** against the repo. It does not discover blockers from
-   comments. So a commented `Blocked by` is **not** honored by the selection filter: the issue
-   still ranks as claimable on every run. (Verified 2026-09-03 against §0.2 condition 3 and §1.1.)
+## Pass B — Backlog grooming
 
-   That leaves two cases:
-   - **A body you authored this run** — write the line into the body. This is the only delivery
-     that actually gates `/next`.
-   - **Anyone else's body** — the **ownership boundary** on non-`suggestion` issues still bars a
-     rewrite, and that bar is unaffected by read fidelity: it is about whose issue it is, not about
-     whether the read is lossy. Leave the comment anyway, since a `/next`
-     session reads it during §1.2 verification and it saves that session the re-derivation — but
-     **do not treat the comment as the fix**, and surface the issue in the
-     [board-health report](#board-health-report) as needing an owner body edit.
+Groom about 25 Backlog issues per run, oldest-groomed first, so successive runs cover the whole
+Backlog. Much of the `suggestion` backlog lands unprioritized, and a correct priority is what
+keeps real work from being buried under suggestions in `/next`.
 
-   This is the failure #1293 documents, and a comment would not have stopped any of the ranked
-   sessions it burned — which is the point. Its worked example, #460, has since been **repaired**,
-   so read it as the example of the fix rather than of a live defect; the blocker numbers and dates
-   are in
-   [`ROUTINES.md` rule 7](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
-   rather than restated here.
-
-   **Do not inherit a live example from #1293 — re-read its comments.** That list ages between
-   runs, and a stale one sends you looking for a defect that someone already fixed.
-5. **Epic attach.** Attach as a sub-issue (`sub_issue_write`) when it clearly belongs to an open
-   epic. If none fit, leave it standalone. **Match both title forms** — `[Epic] <name>` and
-   `Epic: <name>` are both in live use, so a brackets-only reading skips the colon form, and
-   `has_children: true` is the structural check that does not depend on the title at all. A
-   2026-09-13 sweep of every open issue found 14 epics in the bracketed form and one (#2140) in the
-   colon form — so a bracketed match silently declines to attach anything to it. **Treat the colon
-   form as a live, growing convention rather than a single exception:** #2351 ("Epic: Signet Release
-   Train", filed 2026-09-17, 5 workstreams, `has_children: true`) is a second, found by the
-   2026-09-18 triage run. Do not hard-code #2140 as *the* colon-form epic, and do not trust either
-   count as current — the bracketed total has not been re-swept since 2026-09-13. Which form is
-   canonical is an open docs question tracked in **#2189**, not a matter for a routine to settle;
-   until it closes, match both and let `has_children` arbitrate.
-
-   **Neither check finds a *new* umbrella, and that is the case that costs the most.** #2196
-   ("Ship Signet to the iOS App Store — submission track") is an umbrella by construction — its
-   body enumerates the work and several issues name it as `Umbrella: #2196` — yet it carries no
-   epic prefix in either form and, until 2026-09-17, `has_children: false`. So the title match and
-   the structural check both declined it, while a single-slice PR carrying `Fixes #2196` would have
-   closed the whole submission track. The cheap third signal is the **child's** body: an issue that
-   names a parent (`Umbrella: #N`, `Epic: #N`) is evidence about #N regardless of #N's own title,
-   and attaching one child flips `has_children` so the Phase 4 `Fixes`-vs-`Part of` guard in
-   [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md) protects the parent from then on.
-   Attach on the child's own claim of parentage; do **not** infer an umbrella from topic
-   similarity, which is the force-bucketing Pass B forbids.
-
-   **`sub_issue_id` is the issue's internal id, not its number.** `sub_issue_write` takes
-   `issue_number` for the *parent* and `sub_issue_id` for the *child* — passing the child's issue
-   number there fails or attaches the wrong issue. The id comes back on every `issue_write` result
-   (`{"id": "...", "url": "..."}`) and from `issue_read get`; `list_issues` does not return it.
-6. **Promote or hold:**
-   - `suggestion`-owned **or** clearly well-formed and actionable → **remove the `triage` label**
-     (that is the promotion to Backlog).
-   - **Exception — human-action holds:** a `[pr-followup][human]` or bare `[human]` title
-     prefix, or a body opening with `**Human action required — hold in triage`, means the item
-     needs Paul, not an agent — **never promote it** (that would hand `/next` work it cannot do);
-     leave it in triage untouched apart from priority/estimate. The weekly
-     [`pr-followups`](../pr-followups/SKILL.md) routine owns its lifecycle (namespaces
-     `fp=pr-followup/` and `fp=human/`). If a `[human]`-titled item is missing the `suggestion`
-     label or the `fp=human/` marker, backfill both (that's organizational repair, and the label
-     is what lets its owner routine close it).
-   - Ambiguous, under-specified, or a significant human-filed decision → **leave in triage** + a
-     short comment on what's needed. Don't force-promote work a human should accept.
-   - **Comment once, not once per run** — see [the rule below](#comment-once-not-once-per-run),
-     which binds every comment this routine writes, holds included.
-
-## Pass B — Backlog grooming (priority first; epics only when they fit)
-
-Most work lives in the **Backlog** (open, no state label), and much of the AI-filed `suggestion`
-backlog lands unprioritized. `/next` ranks the Backlog **purely by priority label**, so the most
-valuable backlog job is **getting priorities right** — that's what keeps genuine work from being
-buried under suggestions. Each run, groom a batch (~25 issues, oldest-groomed first so successive
-runs walk the whole Backlog):
-
-- **Prioritize (the main job):** set a sensible **priority label** on any `suggestion`-owned
-  Backlog issue missing one, and fix obviously-wrong ones. **Don't inflate** — a routine
-  suggestion is `P3`/`P4`; `P2` is for genuine high-impact (security, data-loss, broken core
-  flows). Correct priority is what protects real work in `/next`.
-- **Agent briefs:** within the same batch, backfill missing briefs on `suggestion`-owned issues
-  and correct mis-calibrated ones — same rules as Pass A step 3, **including the probe check before
-  a body-edit backfill** and **not re-stating a correction a prior run already
-  commented** ([comment once](#comment-once-not-once-per-run)). An out-of-roster value is worth
-  one correcting comment, never a second; the systemic fix is tracked in #1205. Treat the roster
-  itself (`depth:skim|standard|deep`, `model:fable|any`) as the test rather than matching a list
-  of known-bad spellings — `depth:shallow`/`medium` and `model:sonnet` were the first three, and
-  `model:opus` turned up later on a path none of them named. Check what the value *is*, not
-  whether you recognise it.
-- **Epic-attach ONLY clear fits:** attach a suggestion as an epic's sub-issue **only when it
-  unambiguously belongs** to that epic's scope. **Leave general, cross-cutting, infra, or
-  speculative suggestions standalone — most suggestions stay standalone, and that's correct.**
-  Never force-bucket to "clear the pile." For a `suggestion`-owned issue already attached to an
-  epic it doesn't fit, you may detach it.
-- **Estimate:** optional `Estimate:` body line when scope is clear.
-- **Stale / dups:** add `stale` to obvious aging `suggestion`s the curator missed; close/dedup
-  only `suggestion`-owned issues, and only with proof. Never mark a **`scope:production`** issue
-  `stale` or age-bump its priority — those are parked by owner decision (see the label roster in
-  [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md)).
-- **Ownership:** on human/planning issues, only fill an *absent* priority — never re-bucket,
-  re-prioritize, close, or re-body them. Don't restructure epics.
-
-Goal: a Backlog where every item has a **sane priority label** and an **Agent brief** (on
-`suggestion`-owned issues), and **only genuinely-scoped** suggestions sit under epics.
+- **Priority:** set one on any `suggestion`-owned issue missing it, and fix obviously wrong ones,
+  with the same calibration as Pass A step 2.
+- **Agent briefs:** backfill and correct them on `suggestion`-owned issues, under the same rules
+  as Pass A step 3 (probe before a body-edit backfill, comment once).
+- **Epics:** attach a suggestion only when it unambiguously belongs to the epic's scope. Most
+  suggestions stay standalone, and that's correct: general, cross-cutting, infra, or speculative
+  work doesn't belong under an epic, and force-bucketing to clear the pile hides it. You may
+  detach a `suggestion`-owned issue from an epic it doesn't fit.
+- **Estimate:** an optional `Estimate:` line when scope is clear.
+- **Stale and duplicates:** add `stale` to obviously aging suggestions the curator missed. Close
+  or dedup only `suggestion`-owned issues, and only with proof. Never mark a `scope:production`
+  issue `stale` or raise its priority for age; those are parked by owner decision (see the roster
+  in ROUTINES.md).
+- **Ownership:** on human and planning issues in the Backlog, only fill an absent priority. Don't
+  re-bucket, re-prioritize, close, or re-body them, and don't restructure epics.
 
 ## Comment once, not once per run
 
-Canonical statement:
-[`ROUTINES.md` → Shared ownership boundary, rule 6](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines),
-which binds all routines. This section is the triage-specific procedure and the evidence behind it;
-where the two disagree, `ROUTINES.md` wins.
+[`ROUTINES.md` rule 6](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
+is the canonical statement, and it binds every comment this routine writes: holds, brief
+corrections, Blocked-by notes, and their Pass B equivalents. Before commenting, read the issue's
+comments (`issue_read get_comments`). If a standing comment already says it and is still
+accurate, stay silent and surface the re-handle in the report. The MCP can't edit comments, so
+the only choices are posting again or staying silent.
 
-**Binds every comment this routine writes** — Pass A holds, Agent-brief corrections, Blocked-by
-lines, and the Pass B equivalents. Before commenting, read the issue's existing comments
-(`issue_read get_comments`). If a prior run's comment already says the same thing and it is still
-accurate, **say nothing and re-handle it silently** — the [report](#board-health-report) is where a
-silent action gets surfaced. Comment again only when the substance has actually changed, or when
-the point can be narrowed into a specific question the owner can answer in one reply.
-
-The MCP **cannot edit comments**, so "update the existing one" is not available: the only choices
-are post-again or stay-silent. Stay silent.
-
-Left unguarded this compounds badly, and it has now done so on both paths:
-
-- **Holds** — #679 accumulated **three** near-identical "held — Linear is retired, please close"
-  comments (2026-08-09, -08-13, -08-18) and #821 **three** of "held — gated on #826". On #679 they
-  bury the one comment that carries real content — a five-slice decomposition of #718 that nothing
-  else records.
-- **Brief corrections** — #1220 carries **two** comments re-deriving the *same* correction
-  (2026-08-23, -08-25), each mapping `depth:medium`→`standard` and `model:sonnet`→`any` from
-  scratch. The second posted a day *after* the hold rule landed (#1258), because that rule was
-  written for holds only (#1206) and did not reach this path.
-
-Note what #1220's second comment gets **right**, because it is the distinction the rule turns on:
-it also carried real news — that #1270 is blocked by #1220, and a fourth call site at
-`ui/toast.tsx:82`. That comment was worth posting. What it should not have done is re-derive the
-brief correction already standing above it.
-
-So the rule is **don't restate what stands**, not *don't comment again*. When you have something
-new, lead with the new thing and reference the standing comment rather than repeating it. A
-correction already on the issue is **already in force** — `/next` reads the standing comment.
-Re-deriving it adds no signal and costs the `updated_at` inflation that makes Pass B's
-"oldest-groomed first" ordering misleading. Suppressing a genuinely new blocker to avoid a second
-comment is the worse failure of the two.
-
-## Board-health report
-
-End every run with a short report (in your reply — routines surface it to the maintainer):
-
-- Inbox: items processed, promoted, held (and why, one line each for holds).
-- Backlog: batch groomed, priorities set/corrected, briefs backfilled.
-- Anomalies you did **not** act on: `in-progress` issues that look abandoned (leave the sweep to
-  `/next` §0.7 — report only), human-filed items waiting on a decision, suspected duplicates
-  across the ownership boundary.
-- One-line signal for the curator: open-`suggestion` count and whether consolidation mode binds.
+The rule is "don't restate what stands", not "don't comment again". A standing correction is
+already in force, because `/next` reads it. Restating it buries the comments that carry real
+content, and each repeat bumps `updated_at`, which skews Pass B's oldest-groomed-first order.
+When you do have something new (a new blocker, another affected call site), post it, lead with
+the new part, and reference the standing comment instead of re-deriving it. Narrowing a standing
+point into one question the owner can answer in a reply also counts as new. Holding back a
+genuinely new blocker to avoid a second comment is the worse failure.
 
 ## Self-maintenance (update yourself)
 
-End the run by checking this file and the shared config in
-[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) against the live repo (label roster,
-links, tool names). Mechanical drift → a docs-only PR **per the binding contract in
-[`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract)**
-(that section — not this paragraph — defines the allowed paths and limits). Judgment-laden drift →
-file a `suggestion` (`area:docs`) instead. That contract is the **only** repo write this routine is
-permitted, ever.
+At the end of the run, check this file and the shared config in
+[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) against the live repo: label roster,
+links, tool names. Act on drift at most once per run, under the contract in
+[`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract),
+which sets the allowed paths and limits: mechanical drift gets the docs-only PR, and
+judgment-laden drift gets a `suggestion` (`area:docs`).
 
-## Guardrails
+## Board-health report
 
-- **Organize broadly, destroy narrowly** — close/duplicate/re-body only `suggestion`-owned issues
-  ([shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines));
-  never close a human-filed issue.
-- **Never** auto-promote a human-filed triage item that reads like a real decision — surface it
-  instead.
-- **Never** print secret values.
-- Setting a priority label is mandatory when removing `triage` (promotion).
-- Leave **`in-progress`** and **`in-review`** issues alone entirely — claims and sweeps belong to
-  `/next`, not this routine. Leave **`routine-state`** issues alone too — routine infrastructure,
-  never inbox or Backlog work.
-- A run that only organizes/holds and promotes nothing is still a success.
+This runs unattended. Work through both passes without stopping to summarize or offer options,
+and put any status note in the same message as your next tool call. End the run when the inbox
+and the Backlog batch are done, or when nothing more can move (the GitHub MCP is unavailable, or
+the marker-count guard failed and body writes are off). A run that only organizes and holds is
+still a success. The final message is this report, which the routine surfaces to the maintainer:
+
+- Marker-count guard result, and the probe result if you edited bodies (noting any leg you
+  couldn't run).
+- Inbox: items processed, promoted, and held, with a one-line reason per hold.
+- Backlog: batch size, priorities set or corrected, briefs backfilled.
+- Blockers you could only comment, listed as needing an owner body edit.
+- Anomalies you didn't act on: `in-progress` issues that look abandoned (the sweep is `/next`
+  §0.7's job), human-filed items waiting on a decision, suspected duplicates across the ownership
+  boundary.
+- For the curator: the open-`suggestion` count, and whether consolidation mode (more than 40)
+  binds.

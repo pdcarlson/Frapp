@@ -9,258 +9,182 @@ description: >
 
 # Issue Curator (routine 1 of 5)
 
-You are a meticulous engineer and product thinker who keeps the GitHub Issues backlog **healthy and
-high-signal, not just growing**. Each run does **two jobs in order**: **(1) MAINTAIN** the existing
-`suggestion` issues — resolve/close what's provably done, link duplicates, refresh what drifted,
-split what's oversized — then **(2) DISCOVER** high-value new work and file it **into the `triage`
-inbox**. The paired **triage** routine ([`issue-triage`](../issue-triage/SKILL.md)) runs ~1h later
-and prioritizes/promotes what lands in triage — this skill does **not** do triage.
+Keep the `suggestion` backlog healthy and high-signal rather than just growing. Each run first
+maintains the open `suggestion` issues (one action each), then discovers a few high-value new
+issues and files them into the `triage` inbox, within the net-growth budget. The
+[`issue-triage`](../issue-triage/SKILL.md) routine runs about an hour later and prioritizes and
+promotes what lands there, so propose a priority but leave inbox grooming, re-bucketing, and
+Backlog promotion to it.
 
-**Ownership, tracker, and the product-code ban** — read
+## Ownership boundary
+
+The shared contract is
 [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
-first. The single repo-write exception is the [self-maintenance step](#self-maintenance-update-yourself)
-at the end of the run.
+and [→ Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines):
+GitHub MCP only (stop and report if it's unavailable), Linear is retired, no product code, comment
+once. On top of that:
 
-## Tracker access
+- Destructive writes happen only on `suggestion`-labeled issues. Check with `issue_read
+  get_labels` before each write; if `suggestion` is absent, skip and log it. This routine applies
+  the gate to organizational writes too (re-label, split): it owns only `suggestion` issues.
+  Epics, planning items, and anything a human filed are read-only. Link to them freely.
+- When a suggestion duplicates a non-`suggestion` issue, close your suggestion as `duplicate`
+  with `duplicate_of` the other one. Leave the other issue alone, apart from at most one
+  back-reference comment.
+- `issue_write`'s `labels` field replaces the whole set, so always send the union of the existing
+  labels plus your change.
+- Never print secret values.
+- The only repo write this routine makes is the [self-maintenance](#self-maintenance-update-yourself)
+  PR.
 
-Use the **GitHub MCP** — the same path `/next` uses. Load schemas first, e.g.
-`ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
-mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__sub_issue_write")`. Verify
-access at the start of the run (an `issue_read` on a known issue resolves). **If the GitHub MCP is
-unavailable, stop and report — no fallback**: no `gh`, no REST, no scratch files. **REST is never a
-substitute for the MCP on tracker work, read or write** — reachability is route-dependent, not
-session-dependent, and that changes nothing. The carve-out is only for provider settings the MCP
-exposes no tool for (branch protection, environments, rulesets, repo visibility,
-`vulnerability-alerts`) and the raw-`body` verification read the read-fidelity section below
-licenses — never issues, PRs or comments. The label roster and shared routine config live in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+## Phase 1 — Maintenance
 
-## Ownership boundary (read first — hard invariant)
+Start with the marker-count guard in
+[`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run).
+Then list the open `suggestion` issues and give each exactly one action, grounded in current code
+and `spec/`. Two groups are different:
 
-Shared rules:
-[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
-This routine's extra constraint: it owns **only** `suggestion` issues, including organizational
-writes (re-label, split), not just destructive ones.
+- Skip issues whose marker starts `fp=pr-followup/` or `fp=human/` entirely. The weekly
+  [`pr-followups`](../pr-followups/SKILL.md) routine owns them, and a human action can't be
+  proven done from code.
+- `scope:production` issues are parked by owner decision (see the roster in ROUTINES.md), not
+  aging. Never mark them `stale`, raise their priority for age, or file duplicates of them.
 
-> **Every other issue — epics, planning items, anything a human filed — is strictly READ-ONLY.**
-> Reference or link to them freely; **never edit, reopen, close, or re-label them.**
-
-- **Pre-write gate (mandatory).** Before *any* write to an issue, fetch its labels
-  (`issue_read get_labels`) and confirm `suggestion` is present; if not, **SKIP and log it**.
-- **Duplicate across the boundary.** If a suggestion duplicates a human/internal
-  (non-`suggestion`) issue, close **your suggestion** as `duplicate` with `duplicate_of` the
-  internal one — **never touch the internal issue** (at most one back-reference comment).
-
-## Run order: maintain first, then discover
-
-1. **Phase 1 — Maintenance** over open `suggestion` issues (always first).
-2. **Phase 2 — Discovery** across four lenses, **budgeted by what Phase 1 found**.
-3. **Self-maintenance** — verify this contract still matches reality (see below).
-
-## Phase 1 — Maintenance pass (`suggestion` issues)
-
-Pull the open suggestion set (`list_issues` with `labels: ["suggestion"]`, state OPEN) and triage
-each — **except issues whose marker fingerprint starts `fp=pr-followup/` or `fp=human/`**: those
-are owned by the weekly [`pr-followups`](../pr-followups/SKILL.md) routine, whose audit rules
-differ (human actions can't be proven from code/spec), so skip them entirely. Issues labeled
-**`scope:production`** are **parked by owner decision** (2026-08-10; see the label roster in
-[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md)), not aging — never mark them `stale`,
-never raise their priority for age, and never file duplicates of them. Pick **exactly one** action
-per issue, grounded in **current code and `spec/`** (not a hunch):
-
-| Situation (must be provable from code/spec) | Action |
+| What you can prove from code or spec | Action |
 | --- | --- |
-| Referenced behavior now **exists / implemented** — the suggestion is **done** | Close as **`completed`** + comment citing the proving file/path (and PR if known) |
-| Code/spec **moved on** so it's **moot / superseded** | Close as **`not_planned`** + comment why it's obsolete |
-| **Duplicate** of another `suggestion` issue | **Close the newer/worse-specified one** as `duplicate` with `duplicate_of` the canonical, comment the link. Never edit the canonical beyond a back-link |
-| Intent **still valid** but file/line refs or context **drifted** | **Correct the body** when the fidelity probe is green (it is, as of 2026-09-05) — a drifted body is what wastes the next reader's run, and a stack of correcting comments is a poor substitute for an accurate issue. **Comment instead when the probe is red**, or when you cannot re-run it. Either way keep the `fp=` marker, and include an [Agent brief](#agent-brief) if one is missing. Leave open |
-| **Aging / uncertain** — you **cannot prove** resolved/duplicate/obsolete | Add the **`stale`** label + a short comment ("no longer matches X as of <date>; confirm or close"). **Leave it open** |
-| Still accurate and active | **Skip** — leave untouched |
+| The behavior now exists | Close `completed`, commenting with the proving path (and PR if known) |
+| Code or spec moved on, so it's moot | Close `not_planned`, commenting why |
+| Duplicate of another `suggestion` | Close the newer or worse-specified one as `duplicate` with `duplicate_of` the canonical, and comment the link. Touch the canonical only for a back-link |
+| Still valid, but refs or context drifted | Correct the body when the fidelity probe is green; comment when it's red or you can't run it. Keep the `fp=` marker, add an [Agent brief](#agent-brief) if missing, leave open |
+| Nothing provable, and it looks aged | Add `stale` plus a short comment ("no longer matches X as of <date>; confirm or close"). Leave open |
+| Accurate and active | Leave untouched |
 
-**The bar for closing is "provable."** Only close when you can point at the code or spec that
-makes it so. Otherwise mark **`stale`** and leave it open. When in doubt, do not close.
+A close needs proof you can point at; when in doubt, mark `stale` instead, because a wrong close
+silently drops real work. When the proof is a direct citation, cite it and close. When it rests on
+inference (behavior spread across modules, "superseded" judged from a redesign), you can hand the
+close to a `claim-verifier` agent (`.claude/agents/claim-verifier.md`) and close only on
+CONFIRMED. Don't spin one up for a close you can already cite.
 
-**Label writes replace the whole set.** `issue_write`'s `labels` field overwrites — always send
-the union of the existing labels plus your change, never just the addition.
+**Body rewrites.** Whether an MCP read is safe to rewrite from is a measurement that has flipped
+before. The table, the probe, and the fallback when it's red live in
+[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+This routine refreshes and splits bodies, so it's the most exposed to a regression: re-run the
+probe against fixture #1736 before a refresh pass, and say in the run report that you did.
 
-**Reading a body you intend to rewrite.** Whether an MCP read is safe to rewrite from is a
-**measurement that has flipped four times**, not a fixed property. The fidelity table, the probe,
-the operative rule, and the fallback when the probe is red are in
-[`GITHUB_PM.md` → Reading a body you intend to rewrite (MCP read fidelity)](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
-— **read it there; this skill deliberately does not restate it.** As of **2026-09-05** all three
-read paths measured faithful. This routine refreshes and splits bodies, so it is the routine most
-exposed to a regression: **re-run the probe against fixture #1736 before a refresh pass**, and note
-in the run log that you did.
+- Put anything additive (a note, a finding, an Agent brief) in `add_issue_comment`. Rewrite only
+  when the body is wrong; that keeps issues readable whatever the probe says.
+- When you write a body, confirm the `fp=` marker line is in what you sent. Without it, the next
+  run re-files the issue as net-new.
+- Legacy markers are HTML comments (`<!-- agent-suggestion: v1 fp=… -->`, or an older prefix with
+  the same `fp=` grammar) and still valid. A marker you can't see is "unknown", never "absent", so never
+  re-file on that basis alone. When you refresh a body for another reason, promote the marker to
+  the visible form. Don't rewrite a body only to change the marker.
 
-**Even so, prefer a comment over a rewrite.** Anything additive — a note, a finding, an Agent brief
-— goes in `add_issue_comment`. That preference is about keeping an issue readable rather than about
-read fidelity, so it survives whatever the table says. Rewrite when the body is *wrong*.
+**Splits.** Split an oversized suggestion into native sub-issues only when each child is
+independently executable. Each child is a full suggestion: its own `suggestion` and `area:<x>`
+labels, `fp=` marker, and Agent brief. The parent keeps a checklist. Create a child with
+`issue_write`'s `parent_issue_number`, or attach it with `sub_issue_write`, whose `sub_issue_id`
+is the child's internal id (from the `issue_write` result or `issue_read get`), not its number.
 
-Whenever you *do* write a body, **confirm the `fp=` marker is present in what you sent** — it is a
-visible line now, so it reads back, and a missing one makes the next run re-file the issue as
-net-new.
+## Phase 2 — Discovery
 
-**The `fp=` lookup is unaffected.** `search_issues` resolves fingerprints precisely — a real one
-returns exactly its issue, a fabricated one returns zero — so dedup below needs no redesign. Since
-it matches *semantically* rather than by number, verify the returned `number` is the issue you mean.
-Start each run with the marker-count guard in `GITHUB_PM.md`.
+Surface high-value work the project doesn't track yet, across the whole codebase, the spec, the
+UX, and the runtime, not just whatever prompted the run.
 
-**Legacy markers.** Older suggestions carry a `<!-- cursor-suggestion: v1 fp=… -->` or
-`<!-- agent-suggestion: v1 fp=… -->` marker as an **HTML comment**. Those are still stored and still
-valid, and as of 2026-09-05 readable again — but the rule stands whatever the current measurement:
-**a marker you cannot see is "unknown", never "absent"**; never re-file on that basis alone. New filings use the visible-line form below. When you
-refresh a body for any other reason, promote the marker to the visible form; never rewrite a body
-*only* to change the marker.
+### Net-growth budget
 
-**Split a genuinely oversized suggestion** into native **sub-issues** (`sub_issue_write` with the
-parent) only when each child is independently executable; each child is a normal suggestion (its
-own `suggestion` + `area:<x>` labels, its own `fp=` marker, its own Agent brief). The parent keeps
-a checklist.
+The budget is what keeps the backlog lean. GitHub has no issue cap, so this is the only throttle,
+and it exists for signal quality: `/next` ranks this backlog, and filler buries real work.
 
-## Phase 2 — Discovery pass (four lenses) — budget-bound
+- Prefer refreshing an existing near-match over filing a new issue.
+- File at most about 3 net-new suggestions per run. When more than 40 `suggestion` issues are
+  open, cap at about 2 and spend the run consolidating.
+- Filing zero is valid and common, and a run that nets negative is a good outcome. Don't lower the
+  bar to produce output.
+- You can fan the search out (a subagent per area is worth it when an area means heavy reading,
+  such as spec-vs-code), but every candidate still passes dedup, the quality bar, and the cap.
+  More finders never means more filings.
 
-Surface high-value work the project doesn't already track. Look across the whole codebase, the
-spec, the UX, and the runtime — not just whatever prompted the run.
+### Where to look
 
-### Net-growth budget (this is what stops the backlog ballooning)
+- **Engineering gaps.** Run the [`/audit`](../audit/SKILL.md) playbook: `npm run check-types`,
+  `npm run lint`, `npm run check:npm-audit`, `npm run check:api-contract`,
+  `npm run check:migration-safety`. None needs a manual package build first. `check:api-contract`
+  regenerates the contract artifacts when API files changed; discard those edits
+  (`git checkout -- .`) and never commit them. Beyond the checks, look for weak tests on complex logic, N+1 or in-memory
+  aggregation, large unsplit modules, auth-guard and RLS gaps, secret exposure, and CI holes.
+  - Use `npm run check:npm-audit` (the CI `dependency-audit` gate), not bare `npm audit`. The raw
+    report counts per package and ignores the time-boxed, issue-tracked allowlist in
+    `scripts/npm-audit-allowlist.json`, so filing from it duplicates advisories already tracked.
+    File from the gate's output.
+- **Product gaps.** Compare `spec/product/`, `spec/behavior/`, `spec/architecture/`, and
+  `spec/ui/` against the code: unbuilt or partial features, missing cross-surface flows,
+  unimplemented invariants, edge cases, and anti-fraud rules. Ground every idea in the spec or in
+  evidence; don't invent unscoped features.
+- **Next steps and research.** Beyond fixing what's broken, propose concrete forward work (a
+  spike, a short design doc, a metric to add). Ideate against the open epics as well as the code,
+  and attach work that advances an epic as its sub-issue. Label forward-looking items
+  `area:research`. Epics are titled both `[Epic] <name>` and
+  `Epic: <name>`, so match both, or find them by structure (`has_children: true`), which doesn't
+  depend on the title. Judge whether an epic still needs proposals from its merged PRs rather
+  than its sub-issue checkboxes, since lane issues often stay open after their PRs merge.
+- **Runtime signals** (best effort). Live evidence makes these the highest-signal issues.
+  - Sentry MCP: new or growing error clusters, and regressions on recent releases. Read the
+    organization slug, projects, and region from
+    [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md). A wrong slug returns 403,
+    which looks like a revoked grant, so call `find_organizations` before recording Sentry as
+    unreachable.
+  - Supabase MCP: `get_advisors` security and performance findings from both hosted projects.
+    Their advisor sets differ (some extensions exist on production only), so reading one misses
+    findings. Take both from [`.github/environments.json`](../../../.github/environments.json)
+    (read via `scripts/ci/lib/environments.mjs`), match its `supabaseProjectName` entries against
+    `list_projects`, and attribute each finding to its environment.
+  - GitHub MCP: repeated CI failures or flaky jobs on recent `main` runs.
 
-- **Maintenance first.** Prune/consolidate before filing anything new.
-- **Prefer refreshing an existing near-match over filing new.**
-- **Conservative net-new cap.** File at most **~3** net-new suggestions per run; when there are
-  **> 40 open `suggestion` issues**, cap at **~2** and spend the run consolidating. (The backlog
-  has been well past 40 for a while — treat consolidation as the standing mode until Phase 1 says
-  otherwise.) A run that **nets negative** is a great outcome.
-- **No platform cap.** GitHub Issues has no active-issue limit. The backlog stays lean **by choice** — the net-new budget above is the only throttle, and it exists for signal quality.
-- **No quota, quality gate only.** Filing **zero** is valid and common. Never pad a run.
-- **Fan-out is fine; the budget still binds.** You may parallelize the lenses (e.g. with the
-  Workflow tool) to *find* candidates, but every candidate still passes the dedup check, the
-  quality gate, and the net-new cap before filing. More finders never means more filings.
+  Cite the evidence (error ID, advisor name, run link) in the issue. If a tool is absent or
+  genuinely refuses, skip that source and note it in the run report; never guess runtime state.
+  An error caused by an argument you supplied is your bug, so fix the argument before recording
+  the source as unavailable.
 
-### Lens 1 — Engineering gaps
+## Filing a new issue
 
-Run the audit playbook ([`/audit`](../audit/SKILL.md)): `npm run check-types`, `npm run lint`,
-`npm run check:npm-audit`, `npm run check:api-contract`, `npm run check:migration-safety`. All five run
-on a fresh sandbox with no manual package build, but for three different reasons — do not collapse them:
-`check-types` and `lint` are turbo tasks wired to `^build` in `turbo.json`; `check:api-contract` is a
-root node script that builds `./packages/*` itself before regenerating; `check:npm-audit` and
-`check:migration-safety` need no build at all. `^build` covers **only** the turbo tasks. Plus: weak tests
-on complex logic, N+1/in-memory aggregation, large unsplit modules, auth-guard/RLS gaps, secret
-exposure, CI holes. `npm run lint` is read-only and never edits files, but `npm run check:api-contract`
-regenerates the contract artifacts when API-related files changed — treat those edits as throwaway
-(`git checkout -- .`); never commit them.
+Every issue this routine creates has:
 
-**Use `check:npm-audit`, not bare `npm audit`.** The CI `dependency-audit` job gates on
-`npm run check:npm-audit` (`scripts/check-npm-audit.mjs`), which blocks a high/critical advisory
-*unless* it carries a time-boxed, issue-tracked entry in `scripts/npm-audit-allowlist.json` — that
-gate, not the raw report, is what this repo treats as a vulnerability finding. The raw report counts
-*package* findings, so it inflates: on 2026-08-25 `npm audit` reported **17 findings (12 moderate, 5
-high)**, which the gate resolved to **3 unique advisories**, of which the two high ones are
-allowlisted `image-size` CVEs **already tracked by #923** (expiring 2026-11-15) — so the gate passed.
-File from the gate's output; a suggestion raised off the raw report would have duplicated #923.
+- Title `[suggestion] <imperative title>`.
+- Labels: `triage` (the inbox), `suggestion` (the ownership and dedup anchor), exactly one
+  `area:<x>` from the roster in
+  [`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines),
+  and a priority `P1`–`P4`. Read the roster itself rather than a remembered list, since several
+  entries carry scope notes and some overlap. A routine suggestion is usually `P3` or `P4`; keep
+  `P1`/`P2` for security, data loss, and broken core flows, because `/next` ranks by priority.
+- An [Agent brief](#agent-brief), always.
+- Optionally, a parent epic when it clearly belongs to one.
+- A body in the [template](#description-template), ending with the visible `fp=` marker line.
 
-### Lens 2 — Product & behavior gaps (grounded in `spec/`)
+**Dedup.** The fingerprint is `fp=<area>/<slug(title)>`, anchored to `file=<primary-path>` (no
+line number). Prefer a distinctive slug; two or three specific words beat a generic phrase.
 
-Compare `spec/product/`, `spec/behavior/`, `spec/architecture/`, `spec/ui/` against what's
-implemented: unbuilt/partial spec'd features, missing cross-surface flows, unimplemented
-invariants/edge-cases/anti-fraud. A spec'd capability with no/partial code is a **product gap**
-worth filing.
+1. `search_issues` (open and closed) for the `fp=` string. The matcher is semantic, so a hit
+   counts only if the returned body contains the literal `fp=` string, and its `number` is the
+   issue you mean. Skipping on a topical near-match is a false skip, which is silent and worse
+   than a duplicate.
+2. Legacy comment-form markers count as matches but can be invisible to search, so no hit is weak
+   evidence. Also search the finding's key terms.
+3. Search the key terms against `[human]` titles too. If an open `fp=human/` blocker already
+   tracks the same action (dashboard toggles and advisor findings are the usual overlap), skip:
+   a promotable twin would send `/next` into a wall the held issue already documents.
+4. On a real match, skip, or refresh the open issue.
 
-### Lens 3 — Creative next steps & research, including existing epics
-
-Beyond fixing what's broken, propose where to go next — inventive but concrete (a spike, a short
-design doc, a metric to add). **Ideate against the live epics, not just the codebase:** read the
-open epic parent issues and propose self-contained next issues that advance them — attach such
-an issue as a sub-issue of its epic so triage can place it. Label forward-looking items
-`area:research`.
-
-**Epics are titled two ways, so a literal `[Epic]` match misses one of them.** Both
-`[Epic] <name>` and `Epic: <name>` are in live use: a sweep of every open issue on 2026-09-13 found
-14 bracketed (#426–#432, #718, #720, #937, #1381, #1597, #1649, #2037) and exactly one colon-form
-(#2140). Match either, or find them by structure instead — `has_children: true` is what actually
-makes something an epic and does not depend on the title at all. Check "has open children"
-*separately* if you need it, rather than folding it into the definition: #432 is `has_children:
-true` with its only sub-issue closed.
-
-This bit the 2026-09-13 run, whose brackets-only reading skipped #2140 entirely — an epic whose
-seven lane PRs had all merged to `main` between 2026-09-10 and 2026-09-13 (#2152, #2161, #2163,
-#2164, #2171/#2172/#2174, #2178, #2179). Note the lane *issues* mostly stayed open as those PRs
-merged, so `sub_issues_summary` read 2/7 while the work was effectively done — a reason to read the
-PRs, not the checkboxes, when judging whether an epic still needs proposals. The same blind spot is
-in [`issue-triage`](../issue-triage/SKILL.md)'s epic-attach step, corrected in the same change.
-
-### Lens 4 — Runtime & ops signals (best effort)
-
-Where the session has the tools, ground suggestions in what's actually happening in production —
-this lens files the highest-signal issues because the evidence is live, not hypothetical:
-
-- **Sentry MCP** (if available): new or growing error clusters, regressions on recent releases.
-  **Never guess the organization slug — read it** from
-  [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md), its canonical home, which also
-  names the projects and the region. Guessing is not a harmless miss: a wrong slug answers **403**,
-  which reads like a revoked grant rather than a typo, and on 2026-09-17 it cost a run a bogus
-  "Sentry is unreachable" conclusion that was one step from a `[human]` re-auth issue against a
-  connector that works. `find_organizations` is the one call that tells the two apart; make it
-  before recording the source as dark.
-- **Supabase MCP** (if available): `get_advisors` security/performance findings. **There are two
-  hosted projects, not one**, and their advisor sets genuinely differ, so reading either alone
-  misses findings. Measured 2026-09-17: production carried 112 `pg_graphql_*_table_exposed` WARNs
-  that staging did not, because `pg_graphql` is installed on production only (#1366). Take both
-  environments from [`.github/environments.json`](../../../.github/environments.json) — the one
-  place a deployed environment's provider ids and names are declared, read via
-  `scripts/ci/lib/environments.mjs` rather than parsed inline — and match its `supabaseProjectName`
-  entries against `list_projects`. Do not restate the names or refs here; that file's own header
-  exists to stop exactly this becoming another copy. Check both, and attribute every finding to the
-  environment it came from.
-- **GitHub MCP**: repeated CI failures or flaky jobs on recent `main` runs.
-
-Cite the live evidence (error ID, advisor name, run link) in the issue. If a tool isn't present in
-this session, skip the source silently — never guess at runtime state. "Not present" means the tool
-is absent or genuinely refuses; an error caused by an argument you supplied is your bug, so re-check
-the argument before recording the source as unavailable.
-
-## Filing a new issue (into the `triage` inbox)
-
-Every issue this routine **creates**:
-
-- Labels: **`triage`** (intake — the triage routine prioritizes and promotes it) +
-  **`suggestion`** (always — the ownership/dedup/lifecycle anchor) + exactly one **`area:<x>`**
-  (canonical roster in
-  [`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines)
-  — don't restate it here; a second copy is how it drifted before, in #1077 and again when
-  `area:chat` was rostered. **Read the roster rather than an enum**: several entries carry scope
-  caveats a list of names cannot, including which labels overlap the others rather than
-  partitioning them) + a **priority
-  label** (`P1`–`P4`) from impact — promotion out of triage requires one, so propose it now.
-  **Don't inflate:** a routine suggestion is `P3`/`P4`; reserve `P1`/`P2` for genuine high-impact
-  (security, data-loss, broken core flows). `/next` ranks by priority, so inflated suggestions
-  bury real work.
-- An **[Agent brief](#agent-brief)** — always.
-- Optionally attached as a sub-issue of an epic when it clearly belongs to one (Lens 3).
-- Description in the template below, ending with the hidden `fp=` dedup marker.
-
-**Dedup (idempotent re-runs).** Fingerprint `fp = <area>/<slug(title)>` anchored to
-`file=<primary-path>` (no line number). Before creating: `search_issues` (open **and** closed) for
-the `fp=` string; if found → **skip** (or refresh the open one). Legacy `cursor-suggestion` and
-comment-form `agent-suggestion` markers use the same `fp=` format and count as matches — but a
-comment-form marker is invisible to the search index as well as to the read, so **absence of a hit
-is weak evidence**; also search the finding's key terms before concluding an issue is net-new.
-**And confirm a hit before skipping on it:** the matcher is semantic, so a generic-worded `fp=`
-pulls in topical near-matches that do not carry the string (verified — `fp=docs/backfill-missing-dedup-markers`
-returns 4 issues, only one of which holds it). A hit counts only if the returned body actually
-contains the literal `fp=` string, which is checkable now that markers are visible lines. Skipping
-on a near-match is a **false skip** — silent, and worse than a duplicate. **Also search the finding's key terms
-against `[human]` titles** — if an open `fp=human/` blocker already tracks the same action
-(dashboard toggles and advisor findings are the usual overlap), skip: filing a promotable twin
-would route `/next` into a wall the held issue already documents. Embed the marker:
-a visible `` `agent-suggestion: v1 fp=<area>/<slug> file=<path>` `` line — **a visible line, not an
-HTML comment**. The read has repeatedly deleted comments, hiding the marker from the search index
-too; it currently does not, and the form stays regardless because it costs nothing.
+Embed the marker as a visible line, `` `agent-suggestion: v1 fp=<area>/<slug> file=<path>` ``,
+not an HTML comment. MCP reads have dropped HTML comments before, which hid markers from the read
+and the search index alike.
 
 ### Agent brief
 
-Issues on this board are executed by agents, so every suggestion carries a machine-readable brief
-telling the executing agent how hard to dig. Policy (field meanings, defaults, how `/next` honors
-it): [`GITHUB_PM.md` → Agent briefs](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode).
-Format:
+The brief tells the executing agent how hard to dig. Field meanings and how `/next` honors them
+are in
+[`GITHUB_PM.md` → Agent briefs](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode),
+which wins where the two disagree.
 
 ```markdown
 ### Agent brief
@@ -268,9 +192,8 @@ Format:
 <one line on where the depth should go — what to verify, which subsystem to load>
 ```
 
-**Err on the side of `depth:deep`** — the policy section above defines the field calibrations, and
-where this file and it disagree, policy wins. Suggest `model:fable` + `ultracode:yes` for
-cross-cutting, architectural, security-sensitive, or subtle-correctness work; `model:any` otherwise.
+Err toward `depth:deep`. Suggest `model:fable` and `ultracode:yes` for cross-cutting,
+architectural, security-sensitive, or subtle-correctness work, and `model:any` otherwise.
 
 ### Description template
 
@@ -292,7 +215,7 @@ cross-cutting, architectural, security-sensitive, or subtle-correctness work; `m
 <what's wrong, missing, or worth pursuing>
 
 ### Rationale & impact
-<why it matters — tie product/behavior items to the spec or the user; cite live evidence for Lens 4>
+<why it matters — tie product/behavior items to the spec or the user; cite live evidence for runtime signals>
 
 ### Suggested fix / first step
 <concrete next step; for ideas, the smallest spike>
@@ -308,37 +231,30 @@ _Filed by the Issue Curator routine. Edit freely; keep the `fp=` line above — 
 and it must stay a visible line (an HTML comment has repeatedly been invisible to the MCP read)._
 ```
 
-Title format: `[suggestion] <imperative title>`. `type:` is body metadata, not a label.
+`type:` is body metadata, not a label.
 
 ## Self-maintenance (update yourself)
 
-End every run by checking this contract against reality — the routine keeps itself current instead
-of silently rotting:
+At the end of the run, check this file against the repo: the label roster in
+[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md), the engineering-gap commands in
+`package.json`, the paths and links named here, and any new epic, label, spec area, or MCP tool
+that discovery should use. Act on drift at most once per run, under the contract in
+[`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract),
+which sets the allowed paths and limits: mechanical drift gets the docs-only PR, and
+judgment-laden drift gets a `suggestion` (`area:docs`, usually `depth:standard`).
 
-- **Label-roster drift:** do the state/priority/area labels in
-  [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) still match the live repo?
-- **Dead commands:** do the Lens 1 commands still exist in `package.json`?
-- **Stale references:** do the spec directories, skills, and doc links this file names still exist?
-- **New surfaces:** did a new epic, label, spec area, or MCP tool appear that a lens should use?
+## How the run ends
 
-Then act, once per run at most: **mechanical drift** (renamed label, dead command, moved file) →
-open a docs-only PR **per the binding contract in
-[`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract)**
-(that section — not this paragraph — defines the allowed paths and limits); **judgment-laden
-drift** (a lens seems wrong, a new lens seems warranted, policy tension) → file a normal
-`suggestion` (`area:docs`, usually `depth:standard`) describing the change instead. That contract
-is the **only** repo write this routine is permitted, ever.
+This runs unattended. Work through maintenance and discovery without stopping to summarize or
+offer options, and put any status note in the same message as your next tool call. End the run
+when every in-scope suggestion has its action and discovery has used or declined its budget, or
+when nothing more can move (the GitHub MCP is unavailable, or the marker-count guard failed and
+body writes are off). The final message is the run report:
 
-## Guardrails
-
-- **Ownership boundary is absolute** — see
-  [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
-  Pre-write label gate before every write; never touch a non-`suggestion` issue.
-- **Never** print secret values (follow `AGENTS.md`).
-- Ground every close in code/spec you can cite; else mark `stale`. Don't invent unscoped features.
-- If a check can't run (e.g. Supabase down), note it in the issue rather than guessing.
-- Zero new issues is a success, not a failure. Don't lower the bar to produce output.
-- **Don't do triage's job** — propose a priority label, but leave inbox grooming, re-bucketing,
-  and Backlog promotion to [`issue-triage`](../issue-triage/SKILL.md).
-- End the run with a short report: maintenance actions taken, issues filed (with numbers), and
-  anything the next run should know.
+- Marker-count guard result, and whether you ran the fidelity probe before body writes.
+- Maintenance: each issue touched, with its action (closed `completed` / `not_planned` /
+  `duplicate`, refreshed, commented, `stale`, split).
+- Filed: new issue numbers, plus candidates skipped as duplicates (with the matching issue).
+- Runtime sources skipped, and why.
+- Self-maintenance PR or `area:docs` suggestion, if any.
+- Anything the next run should know.

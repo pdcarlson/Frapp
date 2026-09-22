@@ -26,7 +26,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # env files. The create-next-app default re-included `.env.example` via `!.env.example`;
-# dropped because this repo has no `.env.example` by policy (AGENTS.md § Secrets) and a
+# dropped because this repo has no `.env.example` by policy (AGENTS.md § Credentials and secrets) and a
 # deeper negation silently defeats the root `.env.*` rule for this workspace alone.
 .env*
 

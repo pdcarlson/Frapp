@@ -62,7 +62,7 @@ sys.stdout.write("".join(parts))
 # See docs/internal/environment/CLOUD_SANDBOX.md.
 if { [ -f /etc/frapp-cloud-sandbox ] || [ "${FRAPP_CLOUD_SANDBOX:-}" = "1" ]; } && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
   LOCK=/tmp/cloud-sandbox-up.lock
-  STARTING_MSG=" CLOUD SANDBOX: a local Supabase + API stack is starting in the BACKGROUND. Before using the database or booting the API, wait for ${ROOT}/.cloud-sandbox-up.done (success) or .cloud-sandbox-up.failed (error); live log at /tmp/cloud-sandbox-up.log. It generates apps/api/.env.local and apps/web/.env.local; boot the API with 'npm run start:dev -w apps/api', and 'npm run build -w apps/web' works once it lands. Bringup also writes ${ROOT}/.cloud-sandbox-capabilities.json (deployed-staging egress: what is reachable, what is correctly blocked, and any SECURITY warning) — read it instead of probing hosts by hand. If it FAILS, STOP and tell the user exactly what to fix in the Claude Code web environment (network policy / missing env var) per docs/internal/environment/CLOUD_SANDBOX.md 'When bringup fails' — do NOT work around it. ONE EXCEPTION: a sentinel reading '(dependencies)' is yours to fix here and now with 'npm ci' — the stack is already up, only node_modules is unusable."
+  STARTING_MSG=" Cloud sandbox: a local Supabase + API stack is starting in the background. Before using the database or booting the API, wait for ${ROOT}/.cloud-sandbox-up.done (success) or .cloud-sandbox-up.failed (error); live log at /tmp/cloud-sandbox-up.log. Bringup writes apps/api/.env.local and apps/web/.env.local, so 'npm run start:dev -w apps/api' boots the API and 'npm run build -w apps/web' works without Infisical. It also writes ${ROOT}/.cloud-sandbox-capabilities.json (which deployed-staging hosts are reachable, which are correctly blocked, and any SECURITY warning); read that instead of probing hosts. If bringup fails, stop and tell the user what to change in the Claude Code web environment (network policy or a missing env var), per docs/internal/environment/CLOUD_SANDBOX.md 'When bringup fails'. That is environment config a session can't fix from inside, and a workaround hides it. The exception is a sentinel reading '(dependencies)': the stack is up and only node_modules is unusable, so run 'npm ci' yourself."
 
   launch_bringup() {
     nohup bash "$ROOT/scripts/cloud-sandbox-up.sh" >/tmp/cloud-sandbox-up.log 2>&1 &
@@ -74,7 +74,7 @@ if { [ -f /etc/frapp-cloud-sandbox ] || [ "${FRAPP_CLOUD_SANDBOX:-}" = "1" ]; } 
     launch_bringup
     msg="${msg}${STARTING_MSG}"
   elif [ -f "$ROOT/.cloud-sandbox-up.done" ] || [ -f "$ROOT/.cloud-sandbox-up.failed" ]; then
-    msg="${msg} CLOUD SANDBOX: stack bringup already finished this session — check ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed and /tmp/cloud-sandbox-up.log."
+    msg="${msg} Cloud sandbox: stack bringup already finished this session — check ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed and /tmp/cloud-sandbox-up.log."
   else
     # The lock exists but no .done/.failed sentinel has been written. Either a
     # prior bringup is still running, or it was killed (e.g. the session was
@@ -84,14 +84,14 @@ if { [ -f /etc/frapp-cloud-sandbox ] || [ "${FRAPP_CLOUD_SANDBOX:-}" = "1" ]; } 
     prev_pid="$(cat "$LOCK/pid" 2>/dev/null || true)"
     if [ -n "$prev_pid" ] && kill -0 "$prev_pid" 2>/dev/null \
       && ps -p "$prev_pid" -o args= 2>/dev/null | grep -q cloud-sandbox-up; then
-      msg="${msg} CLOUD SANDBOX: stack bringup is still running (pid ${prev_pid}). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
+      msg="${msg} Cloud sandbox: stack bringup is still running (pid ${prev_pid}). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
     else
       rm -rf "$LOCK"
       if mkdir "$LOCK" 2>/dev/null; then
         launch_bringup
-        msg="${msg} CLOUD SANDBOX: cleared a stale bringup lock (a previous run died with no sentinel) and restarted the stack in the BACKGROUND.${STARTING_MSG}"
+        msg="${msg} Cloud sandbox: cleared a stale bringup lock (a previous run died with no sentinel) and restarted the stack in the background.${STARTING_MSG}"
       else
-        msg="${msg} CLOUD SANDBOX: a concurrent session reclaimed the bringup lock; wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
+        msg="${msg} Cloud sandbox: a concurrent session reclaimed the bringup lock; wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
       fi
     fi
   fi

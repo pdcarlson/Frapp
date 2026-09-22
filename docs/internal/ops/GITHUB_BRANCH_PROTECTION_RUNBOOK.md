@@ -59,29 +59,28 @@ echo 'GITHUB_PAT=<token>' >> .env
 > resolved — `--repo` still overrides both.
 
 > **Reads work from a hosted session; the apply is a human step by policy.** The hosted environment
-> injects `GITHUB_PAT`, and reaching `api.github.com` from a Claude Code cloud sandbox is
-> **route-dependent, not session-dependent**: the agent proxy's GitHub-credential layer answers
-> **403** `GitHub access is not enabled for this session` on every repo-scoped path, whatever
-> `Authorization` header is sent, while node's built-in `fetch` and `curl --noproxy '*'` go direct
-> and return **200** from GitHub itself. The measurement and its evidence live in
+> injects `GITHUB_PAT`, and from a Claude Code cloud sandbox node's built-in `fetch` and
+> `curl --noproxy '*'` go direct and return **200** from GitHub itself. Requests that honour
+> `HTTPS_PROXY` take the agent proxy route instead, whose results say nothing about the PAT. The
+> rule and its measurements live in
 > [`AGENT_INFRA.md` — the `api.github.com` route rule](../ci-cd/AGENT_INFRA.md#work-status); this
 > runbook only consumes the rule. The 2026-08-27 403 once recorded here — against
 > `GET /repos/pdcarlson/Frapp/branches/main/protection` — was a `curl` probe, so it measured the
-> proxy, not GitHub. [#680](https://github.com/pdcarlson/Frapp/issues/680)'s evidence table records
-> 403 and 200 for this endpoint class on the same day, and the route rule explains that pattern
-> without the session having to be the variable — but be honest about what that table says: it is a
-> **single row, and it attributes both the 403 and the 200 to `curl`**. So it does not corroborate
-> the route rule on its own; either the 200 was taken on a different route than the row implies, or
-> the row is imprecise. Today's direct measurement settles the rule either way.
+> proxy route, not the PAT. [#680](https://github.com/pdcarlson/Frapp/issues/680)'s evidence table
+> records 403 and 200 for this endpoint class on the same day — but be honest about what that table
+> says: it is a **single row, and it attributes both the 403 and the 200 to `curl`**. So it does not
+> corroborate the route rule on its own; either the 200 was taken on a different route than the
+> row implies, the proxy route answered differently in two sessions, or the row is imprecise. The
+> direct measurement settles the read either way.
 >
-> **Do not regenerate the PAT with broader scopes** — the 403 is not an auth failure. It looked
-> like one because `GET /user` *through* the proxy returns 200 (the proxy allows non-repo paths),
-> so the token appeared to work everywhere except the paths that mattered. To tell the layers
-> apart when you do hit a 403: a proxy 403 carries neither `server: github.com` nor
-> `x-github-request-id`, and a 403 that carries both came from GitHub and is a real permission
-> answer. And **do not set `NODE_USE_ENV_PROXY=1`** for these scripts: that puts node back on the
-> 403 route. Check with `npm run configure:branch-protection:verify`, which **fails loudly** rather
-> than passing when a read is refused — see `--verify` below for the dated result.
+> **Do not regenerate the PAT with broader scopes** — a proxy-route 403 is not an answer about the
+> PAT. It looked like one because `GET /user` *through* the proxy returns 200, so the token
+> appeared to work everywhere except the paths that mattered. Judge a 403 by its route, not its
+> headers: only a 403 on the direct route is a permission answer about the PAT (why:
+> [`AGENT_INFRA.md` → Work status](../ci-cd/AGENT_INFRA.md#work-status)). And **do not set
+> `NODE_USE_ENV_PROXY=1`** for these scripts: that puts node back on the proxy route. Check with
+> `npm run configure:branch-protection:verify`, which **fails loudly** rather than passing when a
+> read is refused — see `--verify` below for the dated result.
 >
 > **Applying branch protection is still a human step with an admin PAT — by policy, not because it
 > is unreachable.** The GitHub MCP server is the sanctioned write path for issues, PRs and comments
@@ -139,10 +138,10 @@ code and a printed delta rather than a checkmark.
 
 > **This works from an agent session as long as the environment allowlists `api.github.com`** — the
 > script reads it through node's `fetch`, which takes the direct route rather than the agent proxy
-> that 403s repo-scoped paths (see **Prerequisites** above). It is the only agent-usable live read
+> route (see **Prerequisites** above). It is the only agent-usable live read
 > this runbook prescribes as a *command*: the `gh api` recipes further down are for laptops and
 > Actions, because `gh` is not installed in these sandboxes and honours `HTTPS_PROXY`, so it would
-> land on the 403 route. The dated `GET` observations elsewhere in this file were taken over that
+> land on the proxy route. The dated `GET` observations elsewhere in this file were taken over that
 > same direct route and can be re-taken the same way. **A successful read in one session is not
 > evidence the next will work**: the direct route depends on that environment's network allowlist,
 > which this repository does not control — so try it, but never assume it.
@@ -373,7 +372,7 @@ Common causes and fixes:
 
 > **Both fixes above are human steps.** The bare `npm run configure:branch-protection` is a live
 > `PUT`, and `gh` is a laptop/Actions tool — it is not installed in a cloud sandbox and reads
-> `HTTPS_PROXY`, so it would take the 403 route from one. An agent diagnosing a stuck check runs
+> `HTTPS_PROXY`, so it would take the proxy route from one. An agent diagnosing a stuck check runs
 > `npm run configure:branch-protection:verify` to establish what live protection actually holds,
 > edits the roster array in the same PR, and leaves the apply to a human with an admin PAT.
 
