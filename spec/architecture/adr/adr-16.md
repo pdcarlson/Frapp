@@ -12,11 +12,15 @@
 
 Work tracking today is **GitHub Issues** — see amendment 5 and [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md).
 
-**Read amendments 4–9 below with one caveat each way.** Amendments **5–7 and 9 are current**. Amendment **8 is not as originally written**: its Cursor-primary / Claude-fallback / later-teardown operating model is reversed by **amendment 9**. Amendment **4 is not as originally written**: it predates the Linear retirement by five days, so it still calls the routines "Linear Issue Curator"/"Linear Triage", names `.claude/skills/linear-curator/` and `linear-triage/` (renamed since to `issue-curator/` and `issue-triage/`), and its "Unchanged and reaffirmed" bullet states *"issues are born in Linear, never GitHub"* — **which amendment 5 explicitly reverses**. **Corrected 2026-09-09:** the other surviving claim — that automations live only on Claude Code Routines and Cursor was retired — was reversed by **amendment 8**. **Corrected 2026-09-10:** amendment 8 then ranked Cursor primary and scheduled Claude teardown; **amendment 9** reverses that ranking. What remains historically true of amendment 4 is the 2026-08-03 move of scheduled agents onto Claude Code Routines (still a live scheduled path). It also cites amendments 1–3 by number in four places; those are removed, and what they said is: (1) the original keyless MCP access model, (2) a `LINEAR_API_KEY`/GraphQL exception to it, and (3) that Linear's 250-issue cap bound on *active* (Started + Unstarted) issues rather than Backlog — a cap that no longer applies to anything, GitHub Issues having none.
+**Read amendments 4–10 below with one caveat.** Amendments **5–7 and 10 are current**; amendments 8 and 9 are removed (see the note in their place). Amendment **4 is not as originally written**: it predates the Linear retirement by five days, so it still calls the routines "Linear Issue Curator"/"Linear Triage", names `.claude/skills/linear-curator/` and `linear-triage/` (renamed since to `issue-curator/` and `issue-triage/`), and its "Unchanged and reaffirmed" bullet states *"issues are born in Linear, never GitHub"* — **which amendment 5 explicitly reverses**. **Corrected 2026-09-09:** the other surviving claim — that automations live only on Claude Code Routines and Cursor was retired — was reversed by **amendment 8**. **Corrected 2026-09-10:** amendment 8 then ranked Cursor primary and scheduled Claude teardown; **amendment 9** reverses that ranking. **Corrected 2026-09-22:** amendment 10 retired Cursor again, so that claim holds once more; amendments 8–9 are removed. What remains historically true of amendment 4 is the 2026-08-03 move of scheduled agents onto Claude Code Routines (the scheduled path today). It also cites amendments 1–3 by number in four places; those are removed, and what they said is: (1) the original keyless MCP access model, (2) a `LINEAR_API_KEY`/GraphQL exception to it, and (3) that Linear's 250-issue cap bound on *active* (Started + Unstarted) issues rather than Backlog — a cap that no longer applies to anything, GitHub Issues having none.
 
 #### ADR-16 amendment 4 — backlog automations move to Claude Code Routines; Cursor retired (2026-08-03)
 
 **Corrected 2026-09-09 (amendment 8); corrected again 2026-09-10 (amendment 9):** "Cursor was retired" is no longer true — Cursor Cloud is a first-class agent environment. Amendment 8 then made it *primary* with Claude as fallback pending teardown; amendment 9 reverses that ranking. Both Cursor Cloud and Claude Code are independent first-class environments. Claude Code Routines remain a live scheduled path. Linear stays retired (amendment 5) — this correction does not restore Linear or `LINEAR_API_KEY`. The rest of this amendment is the 2026-08-03 historical record of the move onto Claude Routines.
+
+**Corrected 2026-09-22 (amendment 10):** the correction above held from 2026-09-09 until Cursor was
+retired again on 2026-09-22, so "Cursor was retired" is true once more. Amendments 8–9 are removed
+(see the note in their place). Linear stays retired.
 
 The two backlog automations no longer run on Cursor. Development has consolidated on Claude Code, so
 the **Linear Issue Curator** and **Linear Triage** flows now run as scheduled **Claude Code
@@ -153,49 +157,89 @@ unattended is where a weaker judgement is most expensive.
 
 - Runbook: [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
-#### ADR-16 amendment 8 — Cursor Cloud is the primary agent environment (2026-09-09)
+**Corrected 2026-09-22:** the owner moved all five Routines, Hygiene Scan included, to Opus 5.5.
+The Settings table in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) is canonical for
+routine models.
 
-**Corrected 2026-09-10 (amendment 9):** Cursor-primary / Claude-fallback / teardown #2028 is no longer the operating model. Both harnesses are independent and first-class. The rest of this amendment is the 2026-09-09 historical record of adding Cursor Cloud as a shipping environment (fail-closed review gate, `.cursor/environment.json` contract, paste-ready Automations).
+#### ADR-16 amendments 8–9 — removed 2026-09-22
 
-**Decision (as of 2026-09-09, superseded by amendment 9):** make **Cursor Cloud** Frapp's primary agent environment and retire Claude Code as *primary*. Claude files (`.claude/**`, `scripts/cloud-sandbox-up.sh`) stay in-tree as fallback until Automations are observed and a later teardown PR in the same epic (#2017, teardown #2028).
+Amendment 8 (2026-09-09) made **Cursor Cloud** the primary agent environment, with Claude Code as a
+fallback pending a teardown PR, and added the `.cursor/environment.json` start contract, a
+fail-closed Cursor review-gate adapter and paste-ready Cursor Automations. Amendment 9 (2026-09-10)
+reversed that ranking: Cursor Cloud and Claude Code became independent first-class environments and
+the teardown was cancelled. Both review-gate adapters they described were deleted first, by #2322
+(2026-09-16), when review moved to the provider-neutral Git pre-push hook (see the 2026-09-16
+correction below): the Cursor adapter `.cursor/hooks/pre-push-review-gate.sh`, and the Claude
+adapter `.claude/hooks/pre-push-review-gate.sh` with its `.claude/settings.json` `PreToolUse`
+wiring. #2322 also emptied `.cursor/hooks.json`. Amendment 10 then retired Cursor and deleted the
+rest of the Cursor files they described (listed under amendment 10). The other Claude Code files
+they described stay (amendment 10, What stays). Neither touched amendment 5: GitHub Issues stays
+canonical and Linear stays retired. Kept, because it is the part nobody can reconstruct:
 
-This reverses amendment 4's "Cursor retired" operating model. It does **not** reverse amendment 5: GitHub Issues stays canonical; Linear stays retired; do not restore `LINEAR_API_KEY`.
+- **Never run the same routine on two schedulers at once.** Amendment 9 kept Cursor Automations
+  paste-ready beside Claude Code Routines only on that condition, and rejected dual-running Curator
+  and Triage on both, because one routine on two schedulers double-files.
+- **Cursor project hooks fail open by default**, which is why `.cursor/hooks.json` registered the
+  review-gate adapter with `failClosed: true`. It is also why amendment 8 rejected a dual-path hold
+  (Claude primary, Cursor "also supported"): a Cursor session that ships without owning the gate is
+  a fail-open push path.
+- **Cursor cron Automations attach no repository by default**; every code-writing Automation had to
+  attach this repo.
+- **User secrets are unavailable during Cursor Builds**, so `DOCKERHUB_*` had to be environment or
+  team secrets.
+- **Alternative rejected:** Bugbot and Cursor's built-in `/review` as the review gate. They write no
+  evidence marker; `/diff-review` stayed the gate.
+- **Issue trail:** epic #2017, and with it #2024 (paste the Cursor Automations), #2027 (disable
+  Claude Routines once Cursor Automations were observed) and #2028 (delete `.claude/**`), closed `not_planned` on
+  2026-09-10 via #2108 / PR #2110. The Cursor start contract landed in PR #2043. The Cursor egress
+  allowlist was tracked as #2025, and Cursor-only connector and token setup as #2026 and
+  #2072; all three were closed with amendment 10.
 
-**What is true as of this amendment (verified against the repo and Cursor docs, 2026-09-09; Prompt 2 rework the same day after #2043 landed on `main`):**
-
-- Interactive work: Cursor Cloud. Public contract: [`.cursor/environment.json`](../../../.cursor/environment.json) (`install` `scripts/cursor-agent-install.sh`, `start` `scripts/cursor-cloud-up.sh`, terminals `scripts/cursor-cloud-terminal.sh` — #2043). Skills currently live under `.claude/skills/` (Cursor loads that tree). Moving them to `.cursor/skills/` is a gated later step — not this change. `/next` on Cursor is [`.cursor/commands/next.md`](../../../.cursor/commands/next.md) pointing at the existing procedure.
-- Pre-push review gate: **`/diff-review`**. Cursor Cloud loads project [`.cursor/hooks.json`](../../../.cursor/hooks.json) (`beforeShellExecution`, `failClosed: true`; Cursor defaults fail-open). A thin adapter reuses `.claude/hooks/pre-push-review-gate.sh`. Evidence marker `.cache/diff-review/<HEAD_SHA>`. Cursor built-ins (`/review`, Bugbot) are not the gate. Runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](../../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
-- PR babysit: harness-owned. Do not freeze subscribe/PR tool names in this ADR or in `AGENTS.md`. Wake-path *facts* (CI wake comments, base-sync) live in [`pr-babysitting.md`](../../../docs/internal/ci-cd/pr-babysitting.md).
-- Scheduled agents: **intended** runtime is Cursor Automations. Paste-ready specs live in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md). They are **not live** until a human pastes them (#2024) and a run is observed (#2027). Cron Automations default to no repository — every code-writing automation must attach this repo. Hygiene Scan must not be enabled without a healthy repo-backed stack.
-- Egress: production-withholding allowlist is a dashboard decision (#2025). Canonical host list stays in [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md). Do not invent hosts; do not put secrets in `environment.json`.
-- Secrets: user secrets are unavailable during Cursor Builds; `DOCKERHUB_*` must be environment/team secrets.
-
-**Alternatives rejected:** a dual-path hold with Claude remaining primary while Cursor is "also supported" — the review-gate hole on Cursor is a fail-open push path, so Cursor must own the gate if it is the session that ships. Silent deletion of `.claude/**` in the same change — Cursor still loads `.claude/skills` and `start` still calls `cloud-sandbox-up.sh`. Making Bugbot the review gate. Restoring Linear. Prescribing this harness's subscribe/PR tool names in `AGENTS.md`.
-
-**Trigger to revisit (superseded 2026-09-10):** Cursor Automations observed healthy (#2027) → teardown PR (#2028) may delete Claude-only surfaces without leaving a dual skill tree. Skills move `.claude/skills` → `.cursor/skills` is gated on the owner confirming the Prompt 1 `/env setup` chat is finished. Amendment 9 cancels that teardown path.
-
-#### ADR-16 amendment 9 — Cursor Cloud and Claude Code are independent first-class agent environments (2026-09-10)
-
-**Decision:** reverse amendment 8's "Cursor is primary / Claude is fallback / later teardown" operating model. **Cursor Cloud and Claude Code are independent, first-class agent environments.** Neither is primary. Neither is a fallback pending deletion. Claude files (`.claude/**`, SessionStart, `scripts/cloud-sandbox-setup.sh`) stay. Cursor files (`.cursor/environment.json`, fail-closed hooks, `scripts/cursor-cloud-up.sh`) stay. Shared bringup (`scripts/cloud-sandbox-up.sh`) stays shared. Skills stay under `.claude/skills/` because both harnesses load that tree — do not copy into `.cursor/skills/` and do not delete `.claude/**`.
-
-This does **not** reverse amendment 5: GitHub Issues stays canonical; Linear stays retired; do not restore `LINEAR_API_KEY`.
-
-**What is true as of this amendment:**
-
-- Interactive work: either harness. Cursor public contract: [`.cursor/environment.json`](../../../.cursor/environment.json) (`install` `scripts/cursor-agent-install.sh`, `start` `scripts/cursor-cloud-up.sh`, terminals `scripts/cursor-cloud-terminal.sh` — #2043). Claude public contract: Claude web Setup script (`scripts/cloud-sandbox-setup.sh`) plus SessionStart ([`.claude/hooks/session-start.sh`](../../../.claude/hooks/session-start.sh)). Both wait on `.cloud-sandbox-up.done`. Agent instructions: [`AGENTS.md`](../../../AGENTS.md).
-- Pre-push review gate: **`/diff-review`**, same evidence marker (`.cache/diff-review/<HEAD_SHA>`). Cursor adapter: [`.cursor/hooks.json`](../../../.cursor/hooks.json) `beforeShellExecution` with `failClosed: true`. Claude adapter: `.claude/hooks/pre-push-review-gate.sh` via `.claude/settings.json` `PreToolUse`. Each session that ships owns its adapter. Cursor built-ins (`/review`, Bugbot) are not the gate. Runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](../../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
-- Scheduled agents: Claude Code Routines remain a live scheduled path. Cursor Automations remain paste-ready in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) for a Cursor scheduled path. Do not run the same routine on both at once (they would double-file). There is no planned Claude Routines disable and no planned `.claude/**` teardown.
-- Skills home: `.claude/skills/` is the single skill tree. Cursor loads it. Moving to `.cursor/skills/` is not planned.
-- Egress: production-withholding allowlist is a dashboard decision on whichever harness you use (#2025 for Cursor). Canonical host list stays in [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md).
-
-**Alternatives rejected:** restoring amendment 4's "Cursor retired / Claude-only". Keeping Cursor-primary with Claude as a temporary fallback (#2017 / #2028). Silent deletion of either tree. Dual-running Curator/Triage on both scheduled platforms. Restoring Linear. Making Bugbot the review gate.
-
-**Trigger to revisit:** none scheduled. Revisit only if one harness stops being able to ship independently.
-
-### Correction — 2026-09-16: review enforcement is no longer harness-specific
+#### Correction — 2026-09-16: review enforcement is no longer harness-specific
 
 Amendments 8–9 remain the history of making Cursor and Claude independent first-class environments,
 but their review-adapter details are superseded. Both now share the repository-managed
 [Git pre-push hook](../../../.githooks/pre-push), installed by the root `prepare` script, with exact
 pushed-commit evidence at `.cache/diff-review/<PUSHED_COMMIT_SHA>`. Cursor and Claude project hooks
 no longer intercept pushes. See the [review runbook](../../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+
+**Corrected 2026-09-22:** amendments 8–9 are removed and Cursor is retired (amendment 10). #2322,
+the change behind this correction, emptied `.cursor/hooks.json` and deleted the Cursor pre-push
+adapter; amendment 10 deleted the rest of the `.cursor/` tree. Claude Code sessions and humans share
+the hook today, and no project hook intercepts pushes.
+
+#### ADR-16 amendment 10 — Cursor retired (2026-09-22)
+
+**Decision (owner, 2026-09-22):** Frapp no longer uses Cursor. Cursor Cloud, Cursor Automations
+and Bugbot are retired, and **Claude Code (web and CLI) is the agent harness the repo configures**.
+The Git pre-push gate still covers any other local tool (for example Codex) and humans. Development
+happens in Claude Code web sessions and on local laptops. This supersedes amendments 8–9, removed
+above.
+
+This does **not** reverse amendment 5: GitHub Issues stays canonical; Linear stays retired; do not
+restore `LINEAR_API_KEY`.
+
+**Deleted in the same change:**
+
+- The `.cursor/` tree: `.cursor/environment.json` (the Cursor Cloud contract), `.cursor/hooks.json`,
+  and `.cursor/commands/next.md`.
+- The Cursor scripts: `scripts/cursor-agent-install.sh`, `scripts/cursor-agent-prepull.sh`,
+  `scripts/cursor-cloud-up.sh`, `scripts/cursor-cloud-terminal.sh`, and `scripts/cursor-node.sh`.
+- The paste-ready Cursor Automation specs in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+- The Cursor review-gate test. Its Cursor case is gone, and what remained of
+  `scripts/ci/__tests__/cursor-review-gate.test.mjs` is now
+  [`review-gate-hooks.test.mjs`](../../../scripts/ci/__tests__/review-gate-hooks.test.mjs), which checks
+  Claude's hooks and the Git pre-push hook.
+
+**What stays:** `.claude/**`, the Claude Code web Setup script (`scripts/cloud-sandbox-setup.sh`),
+SessionStart ([`.claude/hooks/session-start.sh`](../../../.claude/hooks/session-start.sh)), and the
+bringup in `scripts/cloud-sandbox-up.sh`, which was shared and is now Claude Code web's alone. Skills
+stay under `.claude/skills/`. Claude Code Routines are the scheduled path; their prompts live in
+[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md). The review gate is the Git pre-push hook
+from the 2026-09-16 correction above, satisfied by `/diff-review`.
+
+**Alternatives rejected:** keeping the Cursor files in-tree as dormant legacy. The owner asked for
+Cursor to be removed entirely, and a contract nobody runs still reads as current to the next agent.
+
+**Trigger to revisit:** none scheduled. Bringing back Cursor, or adding another cloud harness with
+its own repo contract, is a new decision and a new amendment, not a restore of the deleted files.

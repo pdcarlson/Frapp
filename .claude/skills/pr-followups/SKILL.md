@@ -1,249 +1,184 @@
 ---
 name: pr-followups
 description: >
-  Run the PR Follow-ups routine (3 of 5) — harvest human-action and deferred items out of recent
-  pull requests (Flagged-for-review sections, agent-stated TODOs, unresolved review threads),
-  research how each one gets done against the repo's configs and runbooks, file them as tracked
-  GitHub issues, refresh the "PR Follow-ups — Human Action List" tracking issue, and audit
-  previously filed items (including older PRs) for whether they've actually been done. Use when
-  the scheduled "PR Follow-ups" routine fires, or when asked to collect or audit PR follow-up
-  items.
+  Run the PR Follow-ups routine (3 of 5): harvest human-action and deferred items from recent pull
+  requests (Flagged-for-review sections, agent-stated TODOs, unresolved review threads), research
+  how each gets done, file them as tracked GitHub issues, refresh the "PR Follow-ups — Human Action
+  List" tracking issue, and audit previously filed items for whether they've been done. Use when
+  the scheduled "PR Follow-ups" routine fires, or when asked to collect or audit PR follow-up items.
 ---
 
 # PR Follow-ups harvester (routine 3 of 5)
 
-Agent-driven PRs routinely end with things **no PR can finish**: "Flagged for review" lists,
-deferred decisions, credential rotations, dashboard clicks, verification the sandbox couldn't run.
-Merging the PR silently drops them. This routine sweeps them into **GitHub Issues** — the
-canonical tracker — so nothing needs a human to remember a PR thread. Each run does **three jobs
-in order**: **(1) AUDIT** previously harvested items against reality, **(2) HARVEST** new items
-from recent (and progressively older) PRs, **(3) PUBLISH** the human-action list.
+Agent PRs often end with work no PR can finish (flagged decisions, credential rotations, dashboard
+clicks, unrun verification), and merging drops it. This routine turns that work into GitHub
+issues. Each run does three jobs in order: **audit** what earlier runs filed, **harvest** new
+items, **publish** the Human Action List. An item is done when its issue is closed; the list never
+lives in a scratch file.
 
-**Check-off is issue state — not this routine's memory.** An item is "done" when its issue is
-closed; the harvested list never lives in a scratch file. **Ownership, tracker, and the
-product-code ban** —
-[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
-The sole repo-write exception is the docs-only self-maintenance PR defined in
-[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract).
+## Hard limits
 
-## Access
+- Ownership, the product-code ban and the docs-only self-maintenance PR are shared by every
+  routine:
+  [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+  Destructive writes only on `suggestion`-labeled issues; never write to Linear.
+- GitHub MCP only. If it is unavailable, stop and report; REST and `gh` are not a fallback for
+  tracker work (rule 4 there has the narrow settings-read carve-out).
+- Never print secret values; name secrets only.
 
-Everything runs through the **GitHub MCP** — the only sanctioned tracker path, and `gh`/REST is
-not a fallback for anything below. **REST is never a substitute for the MCP on tracker work, read or
-write.** (Direct `api.github.com` *is* reachable from a sandbox — reachability is route-dependent,
-not session-dependent — but the carve-out is narrow and is not tracker work: provider *settings* the
-MCP exposes no tool for — branch protection, environments, rulesets, repo visibility,
-`vulnerability-alerts` — plus the one raw-`body` verification read that
-[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
-licenses on its own terms. Neither makes REST a tracker path — never list, search, file, label,
-close or comment over it — and neither lifts the stop rule.) Load schemas first, e.g.
-`ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
-mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__list_pull_requests,
-mcp__github__pull_request_read")`. Verify access up front (an `issue_read` on a known issue
-resolves). **If the GitHub MCP is unavailable, stop and report — no fallback**, and no REST or `gh`
-in its place. The label roster lives in
-[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines).
-PR reads use `list_pull_requests` and `pull_request_read` (`get`, `get_comments`,
-`get_review_comments`).
+## Your namespace
 
-## Ownership boundary (this routine's partition)
+You own `suggestion` issues whose marker starts `fp=pr-followup/` or `fp=human/`. The daily curator
+skips them, because its close-on-code-proof and instant-`stale` rules don't fit human actions.
+Beyond dedup reads, you don't touch `suggestion` issues outside these namespaces.
 
-Shared rules:
-[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
-Policy: [`GITHUB_PM.md` → Ownership boundary](../../../docs/internal/ci-cd/GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
+`fp=human/` issues are human-only blockers any session may file per
+[file-follow-up](../file-follow-up/SKILL.md): title `[human] <action>`, the hold-in-triage opener,
+and `source=` in the marker where yours carry `pr=`. Treat them exactly like `[pr-followup][human]`
+items.
 
-Within the `suggestion` set, lifecycle ownership is partitioned by fingerprint namespace: issues
-whose marker starts `fp=pr-followup/` **or `fp=human/`** belong to **this** routine — the daily
-curator skips them (its "provable from code/spec" close bar and instant-`stale` rule don't fit
-human actions), and this routine never touches `suggestion` issues outside its namespaces beyond
-dedup reads. The `fp=human/` namespace holds **human-only blocker issues filed by any agent
-session** per [file-follow-up](../file-follow-up/SKILL.md): title `[human] <action>`,
-`suggestion`-labeled, hold-in-triage opener, `source=` instead of `pr=` in the marker. This
-routine audits and closes them exactly like `[pr-followup][human]` items and publishes them on
-the Human Action List.
+## Setup
 
-## State: the Human Action List tracking issue
+Load the `mcp__github__` tool schemas you need (`list_issues`, `issue_read`, `issue_write`,
+`add_issue_comment`, `search_issues`, `list_pull_requests`, `pull_request_read`) and confirm access
+with an `issue_read` on a known issue. Label roster:
+[`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines).
 
-All cross-run state lives in one **pinned GitHub issue** titled
-**"PR Follow-ups — Human Action List"** (find it with
-`search_issues query:"PR Follow-ups — Human Action List in:title"` — and if that returns nothing,
-confirm with a `list_issues` sweep for the `routine-state` label before concluding it is missing:
-a search false-zero here would trigger the bootstrap below, duplicating the tracking issue and
-silently resetting the watermark. Create it only on a confirmed miss, with
-`issue_write` — label it **`routine-state`** and nothing else: that label marks routine
-infrastructure, which `/next` and the triage routine both skip, so the tracking issue can never be
-claimed or promoted as work — and ask the maintainer to pin it). Its body carries, in an HTML
-comment at the end:
+Then run the
+[marker-count guard](../../../docs/internal/ci-cd/GITHUB_PM.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run):
+two calls that fail closed if the read or index path has regressed. Read fidelity has flipped
+before; the current measurement is in
+[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+
+## State: the tracking issue
+
+Cross-run state lives in one pinned issue titled **"PR Follow-ups — Human Action List"** (#814).
+Find it with `search_issues query:"PR Follow-ups — Human Action List in:title"`; if that returns
+nothing, confirm with a `list_issues` sweep for the `routine-state` label before concluding it is
+missing, since a search false-zero would bootstrap a duplicate and reset the watermark. Create it
+only on a confirmed miss, labeled `routine-state` and nothing else (so `/next` and triage never
+treat it as work), and ask the maintainer to pin it.
 
 ```html
 <!-- pr-followups-state: v1 last-run=<ISO date> newest-pr=#<N> backfill-oldest=#<N> backfill-empty-streak=<0|1|2> backfill-done=<yes|no> -->
 ```
 
-- `newest-pr` — the highest PR number already harvested (forward watermark).
-- `backfill-oldest` — the lowest PR number reached crawling backwards (audit watermark).
-- `backfill-done=yes` once the backward crawl has reached the beginning of useful history.
+`newest-pr` is the forward watermark (highest PR harvested), `backfill-oldest` the lowest PR the
+backward crawl reached, and `backfill-done=yes` means that crawl has reached the start of useful
+history.
 
-If the issue or marker is missing, bootstrap: window = PRs updated in the last 8 days,
-`backfill-oldest` = the oldest PR in that window.
+The body carries this state twice: in a visible code fence, with a note declaring the fence
+authoritative, and in the HTML comment. Read the watermarks from the fence and keep the note. A
+lossy read has hidden HTML comments before, and a marker that looks missing triggers the bootstrap,
+which silently re-crawls instead of failing.
 
-> **Read fidelity is a measurement that has flipped four times — check it, don't remember it.**
-> Full table, probe, operative rule and red-probe fallback:
-> [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
-> — canonical, deliberately not restated here. As of **2026-09-05** all three read paths measured
-> faithful.
->
-> The vector that bites *this* routine is HTML comments, because the `pr-followups-state` marker was
-> historically written as one. When that vector fails the marker is invisible even though it is
-> there; republishing the tracking issue from that text deletes it, and since a missing marker is
-> the bootstrap trigger, the next run silently resets to an 8-day window and re-crawls history it
-> had already audited rather than failing loudly. **The mitigation does not depend on the current
-> measurement** — see the next paragraph.
->
-> Because this routine **rebuilds the whole tracking-issue body from live issue state every run**,
-> it is on the safe side of that rule: it authors the replacement text rather than round-tripping
-> the old one. Keep it that way — never patch the existing body, and never source the state marker
-> from a read. **Start each run with the marker-count guard** in
-> [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run):
-> two calls that fail closed if the read or index path has regressed again.
->
-> **#814's state marker: the visible fence is authoritative.** #814 carries the state twice — an
-> HTML comment *and* a visible code fence — with a parenthetical declaring the **fence**
-> authoritative. **That parenthetical is correct and must stay.** (A 2026-08-14 revision of this
-> file told the next run to invert it and make the HTML comment the source of truth; that
-> instruction was written while `search_issues` was believed lossless and would have made the
-> watermark unreadable. It has been reverted.) When you rebuild the body, write both, keep the
-> fence declared authoritative, and read the state from the fence.
+Rebuild the whole body from live issue state every run. Never patch or round-trip the old body:
+text you author this run is safe whatever the read path is doing.
 
-## Job 1 — Audit previously harvested items
+Bootstrap (issue or marker genuinely missing): harvest PRs updated in the last 8 days and set
+`backfill-oldest` to the oldest of them.
 
-Fetch the open namespace items by **listing, not searching**: page `list_issues state:OPEN`
-(fields `number,title,labels,updated_at`) and filter client-side on the `[pr-followup]` /
-`[pr-followup][human]` / `[human]` **title prefixes**. Marker-based `search_issues` queries are a
-cross-check only.
+## Job 1: Audit what's already filed
 
-> **Prefix searches against the semantic index return false zeros — measured 2026-09-07.** That
-> run's `search_issues query:"fp=pr-followup in:body state:open"` and
-> `query:"[pr-followup] in:title state:open"` both returned **0** while dozens of such issues were
-> open with visible-line markers (direct `issue_read` confirmed them open). Exact full-fingerprint
-> lookups still resolve — the marker-count guard's control (a complete `fp=docs/…` string) passed
-> in the same session — so dedup by exact `fp=` string keeps working; it is *prefix* and
-> *title-token* queries the semantic matcher drops. **An empty prefix search is not evidence of an
-> empty namespace** — a run that trusts one audits nothing and silently skips Job 1.
->
-> The older caveat stands too: items filed before 2026-08-20 may carry `fp=` inside an
-> `<!-- … -->` comment the index may not see. When you touch such an issue for any other reason,
-> promote its marker to the visible form.
+List, don't search: page `list_issues state:OPEN` (fields `number,title,labels,updated_at`) and
+filter client-side on the `[pr-followup]`, `[pr-followup][human]` and `[human]` title prefixes.
+Prefix and title-token searches return false zeros from the semantic index, and a run that trusts
+one audits nothing.
 
-For each,
-decide **from current code, config, CI history, or runtime evidence** — never from the issue's
-age:
+Decide each item from current code, config, CI history or runtime evidence, never from its age:
 
 | Provable situation | Action |
 | --- | --- |
-| The action was done (code merged, secret rotated and pipeline green, setting changed) | Close as **`completed`** + comment citing the proof (commit, green run, config read) |
-| Moot — the surrounding system changed so the item no longer applies | Close as **`not_planned`** + comment why |
-| Cannot prove either | Leave open; add `stale` + a dated comment only if untouched > 30 days |
+| Done (code merged, secret rotated and pipeline green, setting changed) | Close `completed`, comment citing the proof (commit, green run, config read) |
+| Moot (the system changed so it no longer applies) | Close `not_planned`, comment why |
+| Neither provable | Leave open; add `stale` plus a dated comment only if untouched over 30 days |
 
-The bar is the curator's: **close only on proof**. This job is what answers "has the stuff from
-further back actually been done?" — it runs every time, before anything new is filed.
+Close only on proof. When a close rests on a chain of evidence rather than one read, hand the
+"done" claim to the `claim-verifier` agent to try to refute it first. When you touch an older issue
+whose `fp=` marker sits inside an HTML comment, promote the marker to the visible form.
 
-## Job 2 — Harvest
+## Job 2: Harvest
 
-### Which PRs
+**Which PRs.** Forward: every PR (merged, closed or open) updated since `last-run` minus a day of
+overlap, which dedup makes safe. Backward, while `backfill-done=no`: also up to 10 PRs below
+`backfill-oldest`. A chunk that yields nothing increments `backfill-empty-streak`, any yield resets
+it, and at 2 set `backfill-done=yes`.
 
-1. **Forward:** all PRs (merged, closed, and open) with `updated_at` in the window since
-   `last-run` minus 1 day of overlap (dedup makes overlap safe).
-2. **Backward (audit crawl):** while `backfill-done=no`, also take up to **10** PRs below
-   `backfill-oldest`. Stopping rule, evaluated across runs via the marker: a chunk yielding zero
-   items increments `backfill-empty-streak`; any yield resets it to 0; at 2, set
-   `backfill-done=yes`. This is how coverage eventually reaches "even further back" without one
-   giant run.
+**What counts.** From each PR's body, comments and review threads:
 
-### What counts as a follow-up item
+- "Flagged for review" sections (the `/next` PLAUSIBLE valve) and "Human action required",
+  "Known limitations", "Deferred", "Follow-up" or "Out of scope" sections.
+- Unchecked checklist items describing post-merge work (not template boilerplate).
+- Agent comments saying something is undecided, blocked on the human, or left for later.
+- Unresolved review threads on merged PRs that end on an open question or a promised follow-up.
 
-Read each PR's body, its issue-style comments, and its review threads. Harvest:
+Skip resolved threads, descriptions of the PR's own contents, bot linkbacks, CI noise, and
+anything already tracked. If the thread shows Paul already decided, it's settled; don't harvest it.
 
-- **"Flagged for review" sections** — the `/next` NEEDS_HUMAN valve — and any "Human action
-  required", "Known limitations", "Deferred", "Follow-up", "Out of scope" sections.
-- **Unchecked checklist items** in the PR body that describe post-merge work (not PR-template
-  boilerplate).
-- **Agent comments** stating something is undecided, blocked on the human, or left for later
-  (credential rotations, dashboard/UI steps, product decisions, unverified behavior).
-- **Unresolved review threads on merged PRs** whose last state is an open question or a promised
-  follow-up.
+**For each item:**
 
-Skip: resolved threads, items merely describing the PR's own contents, bot linkbacks, CI noise,
-and anything already tracked (see dedup).
+1. **Classify**: `human-action` (needs an account, dashboard, credential, purchase or product
+   decision) or `agent-doable` (an agent could ship it as a PR).
+2. **Research** before filing: the files and config it touches, the runbooks
+   ([`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md),
+   [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md), `docs/internal/ops/`), and
+   [`/infrastructure-research`](../infrastructure-research/SKILL.md) for provider state. Write a
+   **How to do it** section: numbered steps, exact setting, secret and file names, and what proves
+   it done. If it turns out to be done already, don't file.
+3. **Dedup** on `fp=pr-followup/<slug>`, with the slug taken from the action, not the PR title.
+   Search open and closed issues for the exact `fp=` string (a hit counts only if the returned
+   body contains it) and for the PR number, and check the issues the PR itself links. A near-match
+   open issue gets a refresh comment, not a duplicate. A PR-number hit is worth reading, but a zero
+   from it proves nothing: it is a token query, and those false-zero.
+4. **File** with `issue_write`:
+   - Title `[pr-followup] <imperative action>`, or `[pr-followup][human] …` for human-action items.
+   - Labels `triage` + `suggestion` + one `area:<x>` + one priority (`P1` only for broken
+     pipelines or security).
+   - Body: summary, source (PR link and quoted text), classification, **How to do it**, acceptance
+     criteria, an
+     [Agent brief](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode)
+     for agent-doable items, an optional `Estimate:` line, and last the visible marker line
+     `` `agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N>` ``. Keep it a visible line, not an
+     HTML comment, so a lossy read can't hide it from dedup.
+   - Human-action items open with `**Human action required — hold in triage; not for /next.**`
+     so triage keeps them in the inbox.
 
-### Classify, research, file
+File at most about 10 per run, highest impact first, and log what you dropped for the next run.
+Zero filings is a normal outcome.
 
-For each surviving item:
+## Job 3: Publish the Human Action List
 
-1. **Classify** — `human-action` (needs an account, dashboard, credential, purchase, or product
-   decision an agent cannot make) vs `agent-doable` (an ordinary follow-up an agent could ship as
-   a PR).
-2. **Research** — ground it before filing: read the files/config it touches and the relevant
-   runbooks ([`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md),
-   [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md), `docs/internal/ops/`), and use
-   [`/infrastructure-research`](../infrastructure-research/SKILL.md) for provider runtime truth.
-   Write a **"How to do it"** section: concrete numbered steps, exact setting/secret/file names,
-   what proves it done. If research shows the item is already done, don't file — that's a Job 1
-   outcome discovered early.
-3. **Dedup** — fingerprint `fp=pr-followup/<slug>` (slug from the action, not the PR title).
-   Before filing, `search_issues` open **and** closed for the `fp=` string **and** for the PR
-   number; a near-match open issue gets refreshed (comment + link), not duplicated. Also check
-   issues the PR itself references. Treat only *hits* as meaningful: a bare PR number is a token
-   query of the class Job 1's blockquote measures as false-zeroing, so a zero from it clears
-   nothing — the exact-`fp=` search and the PR's own issue links are the legs that count.
-4. **File** via `issue_write` create:
-   - Title: `[pr-followup] <imperative action>` — human-action items get `[pr-followup][human]`.
-   - Labels: **`triage`** + **`suggestion`** + one `area:<x>` + a priority label (don't inflate;
-     `P1` only for broken pipelines/security).
-   - Description: summary · source (PR link + quoted text) · classification · **How to do it**
-     (the research) · acceptance criteria · an **Agent brief**
-     ([`GITHUB_PM.md` → Agent briefs](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode))
-     for agent-doable items · optionally an `Estimate:` line · ending with
-     a visible `` `agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N>` `` line (a visible line, not
-     an HTML comment — the read has repeatedly deleted comments, hiding the marker from the search
-     index too; the form stays even now that it does not, because it costs nothing).
-   - `[human]` items additionally open with `**Human action required — hold in triage; not for
-     /next.**` so the triage routine keeps them in the inbox instead of promoting them.
-- **Budget:** at most **~10** new issues per run, highest-impact first; log what was dropped and
-  let the next run pick it up. Zero filings is a normal outcome.
+Rebuild the tracking issue body with `issue_write` update:
 
-## Job 3 — Publish the Human Action List
+1. **Needs you**: every open `[human]` item from both namespaces, by priority:
+   `#N — title — one-line "do this" — source` (the PR, or the marker's `source=` for
+   session-filed blockers). Checkboxes are fine, but issue state is canonical: a ticked box on an
+   open issue is a prompt to close that issue.
+2. **Agent queue**: open agent-doable `pr-followup` items, one line each.
+3. **Recently closed**: items closed since the last run, with what proved them done.
+4. **State**: the fence, its authority note, and the `pr-followups-state` comment, with new
+   watermarks and `last-run`.
 
-Rebuild the tracking issue's body from **live issue state** (never from memory) via `issue_write`
-update:
+Comment on an issue only when you have something it doesn't already say
+([`ROUTINES.md` rule 6](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)).
 
-1. **Needs you** — every open `[human]` item (both namespaces): `#N — title — one-line "do
-   this" — source` (the source PR for harvested items; the marker's `source=` value for
-   session-filed `fp=human/` blockers). Order by priority. Checkboxes are welcome, but state is canonical — a checked box without a
-   closed issue is a prompt to close the issue.
-2. **Agent queue** — open agent-doable `pr-followup` items (one line each; `/next` will get them).
-3. **Recently closed** — items closed since the last run, with what proved them done.
-4. Refresh the `pr-followups-state` marker (new watermarks, `last-run`).
+## How the run ends
 
-End the run with a short report: audit outcomes (closed/stale/left), PRs scanned (forward +
-backward), issues filed (numbers), tracking issue updated, and anything the next run should know.
-The routine's completion notification is Paul's weekly digest — put the "Needs you" count and top
-3 items in the final message.
+Work through all three jobs without stopping to summarize; put any status note in the same message
+as your next tool call. Stop early only if the GitHub MCP is unavailable or the marker-count guard
+fails, and report that as the finding. Otherwise the run ends when the tracking issue is
+republished, and your final message is the run report.
+
+## Run report
+
+Paul gets this as the weekly digest, so lead with the **Needs you** count and the top 3 items.
+Then: audit outcomes (closed, staled, left open), PRs scanned forward and backward, issues filed
+(numbers), the tracking-issue update, what you dropped, and anything the next run should know.
 
 ## Self-maintenance
 
-Same binding contract as the other routines —
-[`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract):
-verify this file's tool names, doc links, and the state-marker format still match reality;
-mechanical drift → one docs-only PR (allowed paths include `.claude/skills/pr-followups/`);
-judgment-laden drift → file a `suggestion` (`area:docs`) instead.
-
-## Guardrails
-
-- Shared ownership boundary:
-  [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
-- Never print secret values; reference secret **names** only (follow `AGENTS.md`).
-- Close only on proof; when unsure, leave open and say why.
-- Don't re-litigate decisions a human already made in the PR thread — if the thread shows Paul
-  decided, the item is closed, not harvested.
-- One comment per issue per run at most — no comment spam on unchanged items.
-- Zero new issues is a success; never pad the run.
+Per
+[`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract),
+check this file's tool names, links and state-marker format against reality. Mechanical drift goes
+in one docs-only PR (`.claude/skills/pr-followups/` is on the allowlist); judgment-laden drift
+becomes a `suggestion` issue (`area:docs`).

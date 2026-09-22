@@ -42,9 +42,10 @@ with `Fixes #N` on merge. In cloud sandboxes the GitHub MCP is the only *sanctio
 above are for Actions and laptops. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 
 **The `api.github.com` route rule (measured 2026-09-02).** Reachability of `api.github.com` from a
-cloud sandbox is **route-dependent, not session-dependent**. This file used to say
-"session-dependent (observed both proxy-blocked and working, 2026-08-08)"; that framing was wrong.
-Measured on one host, with one `GITHUB_PAT`, inside one minute:
+cloud sandbox is **route-dependent**: the direct route works, and what the proxy route passes
+varies by session and path (corrected 2026-09-22, below). This file used to say
+"session-dependent (observed both proxy-blocked and working, 2026-08-08)"; that framing missed the
+route. Measured on one host, with one `GITHUB_PAT`, inside one minute:
 
 - A request that honours `HTTPS_PROXY` (measured with `curl`; `gh` reads the same proxy env and is
   expected to behave identically, not separately measured) reaches the agent proxy's
@@ -55,11 +56,26 @@ Measured on one host, with one `GITHUB_PAT`, inside one minute:
   read `HTTPS_PROXY` (documented in `/root/.ccr/README.md`) — returns **200 from GitHub itself**,
   carrying `server: github.com` and `x-github-request-id`.
 
-So the 403 is produced by the **proxy route**, not by GitHub and not by the session's identity.
+**Corrected 2026-09-22:** "every repo-scoped path" held for that session, not in general, and not
+every proxy-route 403 is the proxy's. Through the proxy in a later session:
+
+- `/repos/{r}`, `/rulesets` and `/issues/1` returned **200** from GitHub.
+- `/environments` returned the proxy's own **403**, with no GitHub headers:
+  `{"message":"Access to this GitHub API path is not permitted through this proxy."}`.
+- `/branches/main/protection` returned **GitHub's** 403 (`server: github.com`,
+  `x-accepted-github-permissions: administration=read`, `"Resource not accessible by
+  integration"`). The proxy substitutes its own integration credential, which lacks
+  `administration:read`, whatever `Authorization` header you send.
+
+Sent direct with `GITHUB_PAT`, `/environments` and `/branches/main/protection` both returned 200.
+
+So which paths pass the proxy route varies by session and path, and a 403 there comes either from
+the proxy's path policy or from GitHub rejecting the proxy's credential. **Neither says anything
+about the PAT**: don't treat a proxy-route result, 200 or 403, as evidence about permissions.
 Direct egress is bounded only by the environment network allowlist, which carries `api.github.com`.
-Two rules follow: never regenerate the PAT with broader scopes to chase one of these 403s — the
+Two rules follow: never regenerate the PAT with broader scopes to chase a proxy-route 403 — the
 token was never what failed — and never set `NODE_USE_ENV_PROXY=1` for these scripts, which would
-push node onto the 403 route.
+push node onto the proxy route.
 
 What this does **not** change: the GitHub MCP stays the sanctioned **write** path for issues, PRs
 and comments, and tracker workflows still go through it. Direct REST is a **read** channel for
@@ -794,12 +810,12 @@ Dependabot alert it is a **blocking** CI gate (see the `check:npm-audit` rows ab
 
 | Key               | Value  | Effect                                                                                                                                                                                                                                                           |
 | ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-merge loop — the six-step contract in AGENTS.md § "Autonomous PR lifecycle": open PR → subscribe → **read the wake comments** (the self-wake step was retired 2026-08-08 — it prompts and cannot be allowlisted; see [`pr-babysitting.md` → Wake coverage](pr-babysitting.md#wake-coverage)) → **triage infra-vs-code** → fix until merge-ready (or a self-contained next step). |
+| `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-green loop, whose steps and stop conditions are in [`AGENTS.md` § Autonomous PR lifecycle](../../../AGENTS.md#autonomous-pr-lifecycle-cloud-sessions); wake-path facts are in [`pr-babysitting.md` → Wake coverage](pr-babysitting.md#wake-coverage). `send_later` (self-wake) was retired 2026-08-08: it prompts and can't be allowlisted. |
 | `permissions.allow` | `Workflow` + GitHub MCP babysit/tracker tools | Auto-approves the multi-agent **Workflow** tool so `/next ultracode` fan-outs don't stall on a prompt. Lists the **GitHub MCP** tools the babysit loop and tracker need (`subscribe`/`unsubscribe_pr_activity`, issue/PR reads and writes, `actions_run_trigger`). The 21 `Claude_Code_Remote` / kebab-case / connector-UUID entries for `send_later` and the trigger family were **removed** — they were inert on the cloud surface (ceiling rule) and were being misread as permission. Do not re-add them to "allowlist" `send_later`; it still prompts. `merge_pull_request`, `enable_pr_auto_merge`, `push_files`, `create_or_update_file`, and `delete_file` stay unlisted — merging and direct repo-content writes are not repo-sanctioned (the harness `mcp__github__*` wildcard may still auto-approve them on cloud; the merge gate is policy — see "Applied permission allows"). Linear allows were removed with the retirement (#680). |
 | `skipWorkflowUsageWarning` | `true` | Marks the multi-agent workflow usage warning as accepted. Per the settings schema (an `@internal` key, read out of the 2.1.220 build — re-verify on newer builds): "Until set, auto permission mode prompts before running a workflow." Set so unattended sessions don't stall on that prompt; a launch that prompts anyway on some build falls back to inline checks (see `/next`). |
-| `hooks` | SessionStart | Wires [`session-start.sh`](../../../.claude/hooks/session-start.sh) for cloud-sandbox bringup. Review enforcement is provider-neutral in [`.githooks/pre-push`](../../../.githooks/pre-push). A second PreToolUse hook (`linear-autoallow.sh`, PR #676) auto-approved Linear's write tools; it was deleted with the Linear retirement — see "Applied permission allows" below. Details: [`AI_CODE_REVIEW_RUNBOOK.md`](AI_CODE_REVIEW_RUNBOOK.md) and [`AGENTS.md`](../../../AGENTS.md) § Cursor Cloud specific instructions / § Claude Code web sandbox. |
+| `hooks` | SessionStart | Wires [`session-start.sh`](../../../.claude/hooks/session-start.sh) for cloud-sandbox bringup. Review enforcement is provider-neutral in [`.githooks/pre-push`](../../../.githooks/pre-push). A second PreToolUse hook (`linear-autoallow.sh`, PR #676) auto-approved Linear's write tools; it was deleted with the Linear retirement — see "Applied permission allows" below. Details: [`AI_CODE_REVIEW_RUNBOOK.md`](AI_CODE_REVIEW_RUNBOOK.md) and [`AGENTS.md`](../../../AGENTS.md) § Claude Code web sandbox. |
 
-Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../../AGENTS.md) under "Autonomous PR lifecycle". Keep the two in sync when changing either.
+Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../../AGENTS.md) under "Autonomous PR lifecycle". That is canonical; the `doneMeansMerged` row above links to it rather than restating the steps.
 
 ## Shared CI script library (`scripts/ci/lib/`)
 
@@ -1278,7 +1294,7 @@ If a chunk crosses a boundary the sandbox still can't reach (push fanout; anythi
 
 ### Sandbox-blocked tooling — known list
 
-- **Docker / `supabase start` / `supabase db reset`:** the daemon is not started by default. In a **Cursor Cloud** or **Claude Code web** sandbox configured per [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md) (Cursor `start` → `scripts/cursor-cloud-up.sh` → shared `scripts/cloud-sandbox-up.sh`; Claude SessionStart → the same shared script; Full/Custom network), that script brings up Docker + local Supabase and writes `apps/api/.env.local` plus `apps/web/.env.local`, so the full stack and `npm run start:dev -w apps/api` work with no Infisical, and `npm run build -w apps/web` prerenders instead of dying on the missing `NEXT_PUBLIC_SUPABASE_*` vars (#1156). Where that wiring is absent (unconfigured env, plain CI), there is still no daemon: use the PGlite harness for migration validation.
+- **Docker / `supabase start` / `supabase db reset`:** the daemon is not started by default. In a **Claude Code web** sandbox configured per [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md) (SessionStart → `scripts/cloud-sandbox-up.sh`; Full/Custom network), that script brings up Docker + local Supabase and writes `apps/api/.env.local` plus `apps/web/.env.local`, so the full stack and `npm run start:dev -w apps/api` work with no Infisical, and `npm run build -w apps/web` prerenders instead of dying on the missing `NEXT_PUBLIC_SUPABASE_*` vars (#1156). Where that wiring is absent (unconfigured env, plain CI), there is still no daemon: use the PGlite harness for migration validation.
 - **Supabase MCP write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`):** not granted by `.claude/settings.json` (its allow rules cover only the Workflow tool and the claude-code-remote scheduling and PR-watch tools — no Supabase entries), so they prompt — and unattended sandboxes cannot approve the prompt. `list_projects` has been observed to go through. Do not assume any MCP tool works until you've tried it.
 - **Outbound HTTP to arbitrary hosts:** governed by the sandbox's network policy. Through the agent proxy the failure shape is `curl: (56) CONNECT tunnel failed, response 403`; `curl -sS "$HTTPS_PROXY/__agentproxy/status"` names the refused host under `recentRelayFailures`. Note `supabase start` pulls images from **AWS ECR Public** (`public.ecr.aws`) + **CloudFront** (`*.cloudfront.net`), which the **Trusted** policy does not reliably allow — add those hosts to a Custom allowlist. **Deployed staging** (`staging.frapp.live`, `*.staging.frapp.live`, `api-staging.frapp.live`, and the `frapp-staging` Supabase ref) is reachable *if and only if* the environment carries those lines. **Do not probe by hand and do not assume — read `.cloud-sandbox-capabilities.json`,** which `scripts/cloud-sandbox-egress-probe.sh` writes at the repo root within seconds of bringup starting, long before its `.done` sentinel. The SessionStart hook summarises it too, but only on a fire that finds it already written — never on a fresh container's first session, nor on any fire that starts a bringup — so read the file rather than waiting for the line. Check its `probe_ok` first: `false` means the probe could not run, and the empty `hosts`/`staging_reachable` arrays that come with it are **not** evidence that staging is blocked (nor that the production assertion passed). With `probe_ok: true`, its `warnings` array distinguishes *blocked* from *inconclusive*, which a hand-rolled `curl` will not. See [Live staging egress](../environment/CLOUD_SANDBOX.md#live-staging-egress) and [`.claude/skills/live-verification/SKILL.md`](../../../.claude/skills/live-verification/SKILL.md). **Production is never allowlisted** — the probe asserts that negatively, and a reachable prod host is reported as a SECURITY warning rather than as extra capability. Provider APIs (Render, Vercel, Sentry, PostHog) stay blocked to direct `fetch` and are reached via **MCP**, which bypasses the allowlist entirely; **Infisical is the only sanctioned exception** — it has no secrets-capable MCP connector and is reached by direct `fetch` via `app.infisical.com` on the environment allowlist ([#1279](https://github.com/pdcarlson/Frapp/issues/1279); canonical statement: [CLOUD_SANDBOX.md § What this does not unlock](../environment/CLOUD_SANDBOX.md#what-this-does-not-unlock)).
 - **System packages requiring `apt-get` / root:** unavailable. The PGlite WASM bundle is npm-installable and needs none.

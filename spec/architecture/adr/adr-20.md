@@ -171,6 +171,15 @@ the ones a later reader would otherwise re-litigate.
   fallback, not an MCP replacement. This satisfies the read half of the trigger below; the write
   half is a policy choice and stands.
 
+  **Corrected 2026-09-22:** (b)'s "the session was never the variable" and its "**every**
+  repo-scoped path" held for the 2026-09-02 session, not in general. In a later session the proxy
+  route passed some repo paths (200) and 403'd others, and not every such 403 was the proxy's: on
+  `/branches/main/protection` it was GitHub's, rejecting the integration credential the proxy
+  substitutes for any `Authorization` header. So what the proxy route passes varies by session and
+  path, and its 403s say nothing about the PAT. The direct route with `GITHUB_PAT` still returned
+  200, so the read half above stands. Measurements:
+  [`AGENT_INFRA.md` → Work status](../../../docs/internal/ci-cd/AGENT_INFRA.md#work-status).
+
   The 2026-09-01 caution holds unchanged: a read reports what an admin last applied, so re-read
   rather than cite. Re-read on 2026-09-02, `main` still carried 21 required contexts with
   `strict: true`, `enforce_admins: true`, `required_linear_history: true`,

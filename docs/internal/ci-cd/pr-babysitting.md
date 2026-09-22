@@ -70,7 +70,7 @@ actually matters. `pr-base-guard` is unaffected and still the only workflow that
 feature-base PR.
 
 Verifying the guard: it is pure shell over one payload field, so it is exercised by the
-incident bases directly — `main` exits 0; `cursor/...`, `main-ish`, `release/1.0`, and an
+incident bases directly — `main` exits 0; `cursor/...` (the incidents' feature-branch bases), `main-ish`, `release/1.0`, and an
 empty ref all exit 1 (fails closed on anything unrecognised). `production` now exits 1 too,
 which is correct: since #1340 a PR targeting it is a mistake. It also passed on its own PR
 (#1132, check run `base-branch`), which is the end-to-end proof that a no-`branches`
@@ -143,13 +143,12 @@ normal state of a healthy PR — check the checks UI, not the comment history, f
 net — it is the one layer that misses nothing — but it prompts the owner on every call, so on the
 cloud surface it is not usable unattended and is deliberately not armed (below). The coverage it
 would have added is a known, accepted gap, not an oversight.
-Reachability of `api.github.com` from a sandbox is **route-dependent, not session-dependent**: the
-2026-08-08 pair (an org-connect 403, and a 200 the same day in another session) is the proxy route
-against the direct one, not two moods of one session — the measured rule is under
-[`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status). That changes what is *readable*, not what is *polled*. An awake agent can read GitHub
+`api.github.com` is readable from a sandbox over the direct route; which route to use, and why, is
+under [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status). That changes what is *readable*, not what is *polled*. An awake agent can read GitHub
 directly for ground truth, but nothing in this sandbox runs while the session is asleep, so
 background polling of GitHub still cannot be relied on and the coverage gap argument is unchanged.
-Treat GitHub as reachable only while awake — through MCP tools for writes, direct REST for reads.
+Treat GitHub as reachable only while awake, through the MCP tools; direct REST only for the
+settings reads the MCP has no tool for.
 
 **Do not call `send_later` on the cloud surface, and do not try to fix it from the
 repo.** Directly observed (2026-08-08): it **still prompted the owner** through every allow-list
