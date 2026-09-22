@@ -19,8 +19,8 @@ import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 // is deliberately untested here: this suite runs in CI (`test:ci-scripts`) with
 // no admin-read PAT, and live protection is admin state that drifts, so a live
 // call would test the environment rather than the diff. The live read is
-// `npm run configure:branch-protection:verify`, which works from a cloud sandbox
-// over node's direct `fetch` route (ADR-20 amendment of 2026-09-02, (b)).
+// `npm run configure:branch-protection:verify`; when it works from a cloud
+// sandbox is GITHUB_BRANCH_PROTECTION_RUNBOOK.md's to say (the `--verify` mode).
 // Everything below is a pure function over a plain object for that reason.
 
 /** Source text of a sibling script, for the assertions that read code as data. */

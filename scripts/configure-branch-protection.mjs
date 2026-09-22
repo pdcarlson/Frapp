@@ -539,7 +539,7 @@ async function main() {
           `--verify cannot confirm ${branch}: live protection is unreadable (${readFailure}). ` +
             "An unreadable answer is not a passing one, so this fails rather than reporting a " +
             "match. node's fetch goes direct unless NODE_USE_ENV_PROXY=1 or --use-env-proxy " +
-            "routes it through a proxy. Direct, a 403 is GitHub's answer to the token sent, " +
+            "(on the command line or in NODE_OPTIONS) routes it through a proxy. Direct, a 403 is GitHub's answer to the token sent, " +
             "unless it reads \"Host not in allowlist\": that is this environment's network " +
             "allowlist, which then needs api.github.com. Through a cloud sandbox's agent proxy, " +
             "a 403 says nothing about the token, whatever its body: drop the switch and re-run " +
