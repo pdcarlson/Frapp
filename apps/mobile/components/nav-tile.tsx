@@ -69,7 +69,10 @@ export function NavTile({
         accessible
         accessibilityRole="button"
         accessibilityLabel={title}
-        accessibilityHint={accessibilityHint ?? description}
+        // The reason, not the enabled-state hint: a caller's
+        // `accessibilityHint` describes what the row would open, which a
+        // disabled row cannot do.
+        accessibilityHint={description}
         accessibilityState={{ disabled: true }}
         style={[styles.tile, styles.tileDisabled]}
       >

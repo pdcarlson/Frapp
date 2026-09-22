@@ -39,11 +39,11 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * The reference draws a "Going ✓ / Can't make it" row and a "GOING · 31" count.
  * Neither has a server behind it: `spec/behavior/events.md` records that
  * "pre-event RSVP intent (going / maybe / not-going, ahead of the window) is
- * not yet modelled". Both are omitted, and one plain line says what does count
- * — checking in. The row used to render disabled in its drawn position; a
- * control that can never be enabled is the "coming soon" shape App Review
- * Guideline 2.1 rejects (#2300), so it comes back only with the endpoint
- * (#1035).
+ * not yet modelled". Both are omitted, and while check-in is still possible
+ * one plain line says what does count — checking in. The row used to render
+ * disabled in its drawn position; a control that can never be enabled is the
+ * "coming soon" shape App Review Guideline 2.1 rejects (#2300), so it comes
+ * back only with the endpoint (#1035).
  */
 
 export default function EventDetailsScreen() {
@@ -241,10 +241,14 @@ export default function EventDetailsScreen() {
         )}
       </View>
 
-      {/* No RSVP control — see the file header. */}
-      <Text style={styles.attendanceNote}>
-        Check in at the event to be counted.
-      </Text>
+      {/* No RSVP control — see the file header. Only while checking in is
+          still possible: under a closed or unreadable window it would
+          contradict the card above. */}
+      {window?.state === "open" || window?.state === "upcoming" ? (
+        <Text style={styles.attendanceNote}>
+          Check in at the event to be counted.
+        </Text>
+      ) : null}
 
       {event.hasCheckInZone ? (
         <View style={styles.zoneNote}>

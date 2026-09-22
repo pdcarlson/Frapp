@@ -182,7 +182,7 @@ record; each is a review-time or launch risk.
 | [#2259](https://github.com/pdcarlson/Frapp/issues/2259) | Guideline 2.1 — the ✦ Ask pill renders with Ask switched off |
 | ~~[#2260](https://github.com/pdcarlson/Frapp/issues/2260)~~ | Closed 2026-09-18 — answered ("it is not set"), superseded by #2415 |
 | [#2261](https://github.com/pdcarlson/Frapp/issues/2261) | Terms of Service carries no minimum-age clause |
-| [#2262](https://github.com/pdcarlson/Frapp/issues/2262) | The FERPA notice cites a redaction feature that is not built |
+| ~~[#2262](https://github.com/pdcarlson/Frapp/issues/2262)~~ | Fixed in the repo 2026-09-22: the FERPA notice no longer points at a redaction tool. Live only after the next Deploy production |
 
 The rows above are what completing the console surfaced. These came from reading the
 binary and the live providers on 2026-09-21, and the rows marked **hard gate** are gates rather than risks —
@@ -351,9 +351,10 @@ states what a reviewer will actually be shown.
 Same facts as https://frapp.live/privacy. The photo-library row was the one place the
 two agreed *and were both wrong* — the policy described collection the binary could not
 perform after #2296 removed the picker. #2464 rebuilt that capability for real (chat
-photo upload), so policy and table are correct again on that point and the row's strike
-is gone; read its footnote before acting on #2305, whose acceptance criteria were
-written against the removed-capability premise. The table below is **what was declared
+photo upload), so the table's row is correct again and its strike is gone. The policy
+still named a profile-photo picker iOS does not have, and #2305 narrowed it to chat
+photos on 2026-09-22 (live after the next Deploy production). The row's footnote has
+the detail. The table below is **what was declared
 in App Store Connect on 2026-09-14**, in Apple's own data-type names — the console
 offers a fixed list, so this is the paste, not a paraphrase. A struck row is an
 answer since withdrawn: the recorded values stay as entered, and the footnote says
