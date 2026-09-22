@@ -6,11 +6,12 @@ import fs, {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, posix, relative, sep } from 'node:path';
 import ts from 'typescript';
 import {
   API_SENTRY_ORG,
@@ -60,6 +61,24 @@ function siblingsOf(distDir: string): string[] {
 function snapshotsBeside(distDir: string): string[] {
   return siblingsOf(distDir).filter((name) =>
     name.startsWith(INJECT_SNAPSHOT_PREFIX),
+  );
+}
+
+/** The `*.map` files in dist, relative and `/`-separated, without removing any. */
+function mapFilesIn(distDir: string): string[] {
+  return readdirSync(distDir, { recursive: true, encoding: 'utf8' })
+    .filter((name) => name.endsWith('.map'))
+    .map((name) => name.split(sep).join('/'))
+    .sort();
+}
+
+const FIXTURE_MAPS = ['interface/filter.js.map', 'main.js.map'];
+
+/** The plain line logged once dist has been cleaned up after a failure. */
+function cleanedUp(distDir?: string): string {
+  return (
+    (distDir ? `restored ${distDir} from its pre-inject snapshot, ` : '') +
+    'stripped *.map; build continues'
   );
 }
 
@@ -270,12 +289,14 @@ describe('runSentrySourcemapUpload when sentry-cli fails (best effort, #2431)', 
     expect(outcome).toBe('failed');
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[1]).toBe('inject');
+    // The WARNING states the failure; what was done about it is logged
+    // after it happened, on a line of its own.
     expect(lines).toEqual([
       'WARNING: sentry-cli sourcemaps inject failed (status=null signal=none ' +
         'error=ENOENT: spawnSync /app/node_modules/.bin/sentry-cli ENOENT): ' +
-        '(no output); dist restored from its pre-inject snapshot; ' +
-        'frapp-api source maps NOT uploaded, *.map stripped, ' +
-        'build continues (best effort, #2431); clear the Docker build cache to retry',
+        '(no output); frapp-api source maps NOT uploaded ' +
+        '(best effort, #2431); clear the Docker build cache to retry',
+      cleanedUp(distDir),
     ]);
     expect(stripSourceMapFiles(distDir)).toEqual([]);
     expect(readFileSync(join(distDir, 'main.js'), 'utf8')).toBe(MAIN_JS);
@@ -293,10 +314,13 @@ describe('runSentrySourcemapUpload when sentry-cli fails (best effort, #2431)', 
           },
     );
     expect(outcome).toBe('failed');
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(
-      /^WARNING: sentry-cli sourcemaps upload failed \(status=1 signal=none error=none\): error: API request failed caused by: 401 Unauthorized; frapp-api source maps NOT uploaded/,
-    );
+    expect(lines).toEqual([
+      'WARNING: sentry-cli sourcemaps upload failed (status=1 signal=none error=none): ' +
+        'error: API request failed caused by: 401 Unauthorized; ' +
+        'frapp-api source maps NOT uploaded (best effort, #2431); ' +
+        'clear the Docker build cache to retry',
+      cleanedUp(),
+    ]);
     expect(stripSourceMapFiles(distDir)).toEqual([]);
     expect(siblingsOf(distDir)).toEqual(['dist']);
   });
@@ -340,7 +364,10 @@ describe('runSentrySourcemapUpload when sentry-cli fails (best effort, #2431)', 
       );
     });
     expect(outcome).toBe('failed');
-    expect(lines).toHaveLength(1);
+    expect(lines).toEqual([
+      expect.stringMatching(/^WARNING: /),
+      cleanedUp(distDir),
+    ]);
     expect(lines[0]).not.toContain('\n');
     expect(lines[0]).toContain(
       "error=MODULE_NOT_FOUND: Cannot find module '@sentry/cli' Require stack: - x.js)",
@@ -385,9 +412,11 @@ describe('runSentrySourcemapUpload when sentry-cli fails (best effort, #2431)', 
       stdout: '',
       stderr: '',
     }));
-    expect(lines).toHaveLength(1);
+    expect(lines.filter((line) => line.startsWith('WARNING: '))).toEqual([
+      lines[0],
+    ]);
     expect(lines[0]).not.toContain('\n');
-    expect(lines[0]).not.toContain(token);
+    expect(lines.join('\n')).not.toContain(token);
     expect(lines[0]).toContain(
       'error=EACCES: spawn failed with [redacted] end)',
     );
@@ -405,6 +434,7 @@ describe('inject runs under a snapshot of dist', () => {
   it('snapshots dist beside it for inject and discards it before upload', () => {
     const distDir = fixtureDist();
     const seen: Record<string, string[]> = {};
+    const maps: Record<string, string[]> = {};
     let snapshotMain: string | undefined;
     expect(
       runSentrySourcemapUpload({
@@ -414,6 +444,7 @@ describe('inject runs under a snapshot of dist', () => {
         // such as a failed expect, into a failed step.
         runCli: (args) => {
           seen[args[1] ?? ''] = siblingsOf(distDir);
+          maps[args[1] ?? ''] = mapFilesIn(distDir);
           if (args[1] === 'inject') {
             const [snapshot] = snapshotsBeside(distDir);
             snapshotMain = readFileSync(
@@ -433,6 +464,9 @@ describe('inject runs under a snapshot of dist', () => {
     ]);
     expect(snapshotMain).toBe(MAIN_JS);
     expect(seen.upload).toEqual(['dist']);
+    // Both steps need the maps: inject rewrites them, upload sends them. The
+    // strip comes after upload, never before.
+    expect(maps).toEqual({ inject: FIXTURE_MAPS, upload: FIXTURE_MAPS });
     // A good inject is kept: the shipped JS carries its debug IDs.
     expect(readFileSync(join(distDir, 'main.js'), 'utf8')).toBe(injectedMain);
     expect(siblingsOf(distDir)).toEqual(['dist']);
@@ -462,10 +496,48 @@ describe('inject runs under a snapshot of dist', () => {
     expect(existsSync(join(distDir, 'stray.js'))).toBe(false);
     expect(stripSourceMapFiles(distDir)).toEqual([]);
     expect(siblingsOf(distDir)).toEqual(['dist']);
-    expect(log).toHaveBeenCalledTimes(1);
-    expect(log.mock.calls[0]?.[0]).toMatch(
-      /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=none\): \(no output\); dist restored from its pre-inject snapshot; /,
-    );
+    expect(log.mock.calls.map(([line]) => line)).toEqual([
+      expect.stringMatching(
+        /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=none\): \(no output\); frapp-api source maps NOT uploaded /,
+      ),
+      cleanedUp(distDir),
+    ]);
+  });
+
+  // spawnSync reports a step it stopped itself with `error` AND `signal`.
+  it.each([
+    ['ETIMEDOUT', 'at its time bound'],
+    ['ENOBUFS', 'for overflowing its output buffer'],
+  ])('restores dist when spawnSync stops inject with %s (%s)', (code) => {
+    const distDir = fixtureDist();
+    const log = jest.fn<void, [string]>();
+    expect(
+      runSentrySourcemapUpload({
+        env,
+        distDir,
+        runCli: () => {
+          writeFileSync(join(distDir, 'main.js'), 'cons');
+          return {
+            status: null,
+            signal: 'SIGKILL',
+            error: { code, message: `spawnSync /x/sentry-cli ${code}` },
+            stdout: '',
+            stderr: '',
+          };
+        },
+        log,
+      }),
+    ).toBe('failed');
+    expect(readFileSync(join(distDir, 'main.js'), 'utf8')).toBe(MAIN_JS);
+    expect(log.mock.calls.map(([line]) => line)).toEqual([
+      expect.stringMatching(
+        new RegExp(
+          `^WARNING: sentry-cli sourcemaps inject failed \\(status=null signal=SIGKILL error=${code}: `,
+        ),
+      ),
+      cleanedUp(distDir),
+    ]);
+    expect(siblingsOf(distDir)).toEqual(['dist']);
   });
 
   it('keeps the injected JS when only upload fails (upload only reads dist)', () => {
@@ -500,10 +572,13 @@ describe('inject runs under a snapshot of dist', () => {
       'failed',
     );
     expect(runCli).not.toHaveBeenCalled();
-    expect(log).toHaveBeenCalledTimes(1);
-    expect(log.mock.calls[0]?.[0]).toMatch(
-      /^WARNING: could not snapshot .* before sentry-cli sourcemaps inject, so inject did not run \(ENOSPC: simulated failure, mkdtemp .*\); frapp-api source maps NOT uploaded, \*\.map stripped, build continues/,
-    );
+    expect(log.mock.calls.map(([line]) => line)).toEqual([
+      expect.stringMatching(
+        /^WARNING: could not snapshot .* before sentry-cli sourcemaps inject, so inject did not run \(ENOSPC: simulated failure, mkdtemp .*\); frapp-api source maps NOT uploaded \(best effort, #2431\)/,
+      ),
+      // Nothing was restored: inject never touched dist.
+      cleanedUp(),
+    ]);
     expect(readFileSync(join(distDir, 'main.js'), 'utf8')).toBe(MAIN_JS);
     expect(stripSourceMapFiles(distDir)).toEqual([]);
   });
@@ -542,9 +617,12 @@ describe('inject runs under a snapshot of dist', () => {
         log,
       }),
     ).toThrow(/^restoring .* from its pre-inject snapshot .* failed: ENOENT/);
-    expect(log).toHaveBeenCalledWith(
-      expect.stringMatching(/^WARNING: sentry-cli sourcemaps inject failed/),
-    );
+    // The failure is logged; a restore or strip that did not happen is not.
+    expect(log.mock.calls.map(([line]) => line)).toEqual([
+      expect.stringMatching(
+        /^WARNING: sentry-cli sourcemaps inject failed \(status=1 .*\): inject failed; frapp-api source maps NOT uploaded /,
+      ),
+    ]);
     expect(siblingsOf(distDir)).toEqual(['dist']);
 
     const again = fixtureDist();
@@ -632,20 +710,29 @@ describe('stripping *.map stays fatal on every path', () => {
     },
   );
 
-  it('logs the WARNING before a failure path strips and throws', () => {
-    const distDir = fixtureDist();
-    failUnlinkOf(join(distDir, 'main.js.map'));
-    const log = jest.fn();
-    expect(() =>
-      runSentrySourcemapUpload({
-        env,
-        distDir,
-        runCli: () => ({ status: 1, stdout: '', stderr: 'nope' }),
-        log,
-      }),
-    ).toThrow(/EBUSY/);
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^WARNING: /));
-  });
+  it.each([
+    ['inject', () => ({ status: 1, stdout: '', stderr: 'nope' })],
+    [
+      'upload',
+      (args: string[]) =>
+        args[1] === 'inject' ? ok : { status: 1, stdout: '', stderr: 'nope' },
+    ],
+  ])(
+    'logs the %s WARNING before a strip that throws, and claims no cleanup',
+    (step, runCli) => {
+      const distDir = fixtureDist();
+      failUnlinkOf(join(distDir, 'main.js.map'));
+      const log = jest.fn<void, [string]>();
+      expect(() =>
+        runSentrySourcemapUpload({ env, distDir, runCli, log }),
+      ).toThrow(/EBUSY/);
+      expect(log.mock.calls.map(([line]) => line)).toEqual([
+        expect.stringMatching(
+          new RegExp(`^WARNING: sentry-cli sourcemaps ${step} failed `),
+        ),
+      ]);
+    },
+  );
 
   it.each(paths)(
     'main() exits 1 when one *.map cannot be unlinked, on the %s path',
@@ -835,10 +922,12 @@ describe('defaultRunSentryCli', () => {
           log,
         }),
       ).toBe('failed');
-      expect(log).toHaveBeenCalledTimes(1);
-      expect(log.mock.calls[0]?.[0]).toMatch(
-        /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=none\)/,
-      );
+      expect(log.mock.calls.map(([line]) => line)).toEqual([
+        expect.stringMatching(
+          /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=none\)/,
+        ),
+        cleanedUp(distDir),
+      ]);
       expect(stripSourceMapFiles(distDir)).toEqual([]);
     });
 
@@ -857,36 +946,57 @@ describe('defaultRunSentryCli', () => {
         }),
       ).toBe('failed');
       expect(readFileSync(join(distDir, 'main.js'), 'utf8')).toBe(MAIN_JS);
-      expect(log).toHaveBeenCalledTimes(1);
-      expect(log.mock.calls[0]?.[0]).toMatch(
-        /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=none\)/,
-      );
+      expect(log.mock.calls.map(([line]) => line)).toEqual([
+        expect.stringMatching(
+          /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=none\)/,
+        ),
+        cleanedUp(distDir),
+      ]);
       expect(stripSourceMapFiles(distDir)).toEqual([]);
       expect(siblingsOf(distDir)).toEqual(['dist']);
     });
 
     posixIt(
-      'kills a hung binary at its time bound and reports ETIMEDOUT',
+      'kills a hung inject at its time bound, reports ETIMEDOUT, and restores what it truncated',
       () => {
-        // `exec` so the SIGKILL hits the sleeper itself; an orphaned `sleep`
-        // would hold the stdout pipe open until it finished.
-        process.env.SENTRY_BINARY_PATH = fakeBinary('exec sleep 30');
+        // Cut main.js short the way inject's O_TRUNC write does, note that it
+        // happened, then hang until the time bound kills it. `exec` so the
+        // SIGKILL hits the sleeper itself and no orphan outlives the test.
+        const marker = join(
+          mkdtempSync(join(tmpdir(), 'frapp-fake-cli-ran-')),
+          'truncated',
+        );
+        process.env.SENTRY_BINARY_PATH = fakeBinary(
+          `printf cons > "$3/main.js"\n: > '${marker}'\nexec sleep 30`,
+        );
         const distDir = fixtureDist();
+        const original = readFileSync(join(distDir, 'main.js'));
         const log = jest.fn<void, [string]>();
         const started = Date.now();
         expect(
           runSentrySourcemapUpload({
             env: { SENTRY_AUTH_TOKEN: 'sntrys_test' },
             distDir,
-            timeoutsMs: { inject: 300, upload: 300 },
+            timeoutsMs: { inject: 1000, upload: 1000 },
             log,
           }),
         ).toBe('failed');
         expect(Date.now() - started).toBeLessThan(10_000);
-        expect(log).toHaveBeenCalledTimes(1);
-        expect(log.mock.calls[0]?.[0]).toMatch(
-          /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=ETIMEDOUT: /,
+        // The kill came after the truncation, so the restore had work to do.
+        expect(existsSync(marker)).toBe(true);
+        expect(log.mock.calls.map(([line]) => line)).toEqual([
+          expect.stringMatching(
+            /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=ETIMEDOUT: /,
+          ),
+          cleanedUp(distDir),
+        ]);
+        expect(readFileSync(join(distDir, 'main.js')).equals(original)).toBe(
+          true,
         );
+        expect(
+          readFileSync(join(distDir, 'interface', 'filter.js'), 'utf8'),
+        ).toBe(FILTER_JS);
+        expect(snapshotsBeside(distDir)).toEqual([]);
         expect(stripSourceMapFiles(distDir)).toEqual([]);
       },
     );
@@ -927,16 +1037,66 @@ function emitBuiltEntry(root: string): string {
   return emit(join(__dirname, 'upload-sentry-sourcemaps.ts'));
 }
 
-/** Docker's view of the instructions: comments dropped, `\` lines joined. */
+/**
+ * Docker's view of the instructions, as BuildKit's parser builds them:
+ * comment lines and whitespace-only lines dropped (inside a `\` continuation
+ * too, where Docker skips them and keeps joining), then each line that ends
+ * in `\`, trailing blanks allowed, joined to the next.
+ */
 function dockerInstructions(dockerfile: string): string[] {
   return dockerfile
     .split('\n')
-    .filter((line) => !line.trimStart().startsWith('#'))
+    .filter((line) => line.trim() !== '' && !line.trimStart().startsWith('#'))
     .join('\n')
-    .replace(/\\\r?\n/g, ' ')
+    .replace(/\\[ \t]*\r?\n/g, ' ')
     .split('\n')
     .map((line) => line.replace(/\s+/g, ' ').trim())
     .filter((line) => line !== '');
+}
+
+type StageCopy = { from: string | undefined; sources: string[] };
+
+/**
+ * The `COPY` instructions of one stage, with `--from` resolved to a stage
+ * name (a numeric `--from` is a stage index) and every source made absolute,
+ * since a `--from` source is relative to that stage's root, not its WORKDIR.
+ */
+function stageCopies(dockerfile: string, stage: string): StageCopy[] {
+  const instructions = dockerInstructions(dockerfile);
+  const stages = instructions
+    .filter((line) => /^FROM /i.test(line))
+    .map((line) => /\sAS\s+(\S+)$/i.exec(line)?.[1]?.toLowerCase());
+  const start = instructions.findIndex((line) =>
+    new RegExp(`^FROM \\S+ AS ${stage}$`, 'i').test(line),
+  );
+  expect(start).toBeGreaterThan(-1);
+  const next = instructions.findIndex(
+    (line, index) => index > start && /^FROM /i.test(line),
+  );
+  return instructions
+    .slice(start + 1, next === -1 ? undefined : next)
+    .filter((line) => /^COPY /i.test(line))
+    .map((line) => {
+      const words = line.split(' ').slice(1);
+      const flags: string[] = [];
+      while (words[0]?.startsWith('--')) flags.push(words.shift() ?? '');
+      const rest = words.join(' ');
+      const paths = rest.startsWith('[')
+        ? (JSON.parse(rest) as string[])
+        : words;
+      const from = flags
+        .find((flag) => flag.startsWith('--from='))
+        ?.slice('--from='.length)
+        .toLowerCase();
+      return {
+        from: from && /^\d+$/.test(from) ? stages[Number(from)] : from,
+        sources: paths
+          .slice(0, -1)
+          .map((source) =>
+            posix.normalize(source.startsWith('/') ? source : `/${source}`),
+          ),
+      };
+    });
 }
 
 const DOCKER_UPLOAD_RUN =
@@ -948,7 +1108,9 @@ describe('the built entry, run by node as the Docker step runs it', () => {
   const posixIt = process.platform === 'win32' ? it.skip : it;
 
   function builtTree() {
-    const root = mkdtempSync(join(tmpdir(), 'frapp-api-built-'));
+    // Real path: node runs the entry from its real path, so the dist the
+    // script logs is under it even where the temp dir is a symlink (macOS).
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'frapp-api-built-')));
     const entry = emitBuiltEntry(root);
     const distDir = writeFixtureDist(join(root, 'dist'));
     return { root, distDir, entry: relative(root, entry) };
@@ -1006,7 +1168,7 @@ describe('the built entry, run by node as the Docker step runs it', () => {
   });
 
   posixIt(
-    'exits 0 with one WARNING and an untouched module when inject is killed mid-write',
+    'exits 0 with one WARNING, then the cleanup, and an untouched module when inject is killed mid-write',
     () => {
       const { root, distDir, entry } = builtTree();
       // Found by resolution from the entry's directory, like the real one.
@@ -1030,10 +1192,12 @@ describe('the built entry, run by node as the Docker step runs it', () => {
       const run = runNode(root, [entry], { SENTRY_AUTH_TOKEN: 'sntrys_test' });
       expect(run.status).toBe(0);
       expect(run.signal).toBeNull();
-      expect(run.lines).toHaveLength(1);
-      expect(run.lines[0]).toMatch(
-        /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=none\)/,
-      );
+      expect(run.lines).toEqual([
+        expect.stringMatching(
+          /^WARNING: sentry-cli sourcemaps inject failed \(status=null signal=SIGKILL error=none\)/,
+        ),
+        cleanedUp(distDir),
+      ]);
       expect(readFileSync(join(distDir, 'main.js'), 'utf8')).toBe(MAIN_JS);
       expect(stripSourceMapFiles(distDir)).toEqual([]);
       expect(snapshotsBeside(distDir)).toEqual([]);
@@ -1088,17 +1252,59 @@ describe('API Docker / CI wiring', () => {
         line.includes('upload-sentry-sourcemaps'),
       ),
     ).toEqual([DOCKER_UPLOAD_RUN]);
-    expect(
-      dockerInstructions(
-        `${DOCKER_UPLOAD_RUN} \\\n    # comment\n    || true\n`,
-      ),
-    ).toEqual([`${DOCKER_UPLOAD_RUN} || true`]);
+    // Shapes Docker joins into one instruction, so the check above sees them.
+    for (const shape of [
+      `${DOCKER_UPLOAD_RUN} \\\n    # comment\n    || true\n`,
+      `${DOCKER_UPLOAD_RUN} \\\n\n    || true\n`,
+      `${DOCKER_UPLOAD_RUN} \\\n  \t \r\n    || true\n`,
+      `${DOCKER_UPLOAD_RUN} \\  \n    || true\n`,
+    ]) {
+      expect(dockerInstructions(shape)).toEqual([
+        `${DOCKER_UPLOAD_RUN} || true`,
+      ]);
+    }
     const buildIndex = dockerfile.indexOf(
       'RUN npm run build --workspace=apps/api',
     );
     const uploadIndex = dockerfile.indexOf('upload-sentry-sourcemaps.js');
     expect(buildIndex).toBeGreaterThan(-1);
     expect(uploadIndex).toBeGreaterThan(buildIndex);
+  });
+
+  it('takes only dist/ and package.json from the builder apps/api/ into the runner', () => {
+    // The pre-inject snapshot is made at apps/api/.sentry-inject-snapshot-*
+    // in the builder, beside dist, and a failure to remove it is only a
+    // warning because of this: nothing else under apps/api/ reaches the
+    // runner, and no builder source is apps/api/ or a directory above it.
+    const api = '/app/apps/api/';
+    const copies = stageCopies(dockerfile, 'runner');
+    expect(copies.length).toBeGreaterThan(0);
+    const fromBuilder = copies
+      .filter((copy) => copy.from === 'builder')
+      .flatMap((copy) => copy.sources)
+      // `/` becomes '', which the ancestor check below still catches.
+      .map((source) => source.replace(/\/+$/, ''));
+    expect(fromBuilder.filter((source) => /[*?[]/.test(source))).toEqual([]);
+    expect(
+      fromBuilder
+        // Under apps/api/, or apps/api itself or a directory above it (kept
+        // whole, so it cannot match).
+        .filter(
+          (source) => source.startsWith(api) || api.startsWith(`${source}/`),
+        )
+        .map((source) =>
+          source.startsWith(api) ? source.slice(api.length) : source,
+        )
+        .sort(),
+    ).toEqual(['dist', 'package.json']);
+    // The parser sees what Docker sees: a copy of the whole builder app, by
+    // stage index, is caught.
+    expect(
+      stageCopies(
+        'FROM a AS deps\nFROM a AS builder\nFROM a AS runner\nCOPY --from=1 /app/apps/ ./apps/\n',
+        'runner',
+      ),
+    ).toEqual([{ from: 'builder', sources: ['/app/apps/'] }]);
   });
 
   it('does not pass SENTRY_AUTH_TOKEN into api-docker-build (discarded image)', () => {

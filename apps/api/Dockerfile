@@ -63,10 +63,11 @@ RUN npm run build --workspace=apps/api
 # signal, or time bound) → the script prints one `WARNING:` line, still
 # strips `*.map`, and exits 0: the upload is best effort and must not gate
 # shipping (#2431). Inject rewrites dist in place, so the script copies dist
-# to `apps/api/.sentry-inject-snapshot-*` first (outside dist, which is all
-# the runner takes from here, and removed afterwards) and restores it from
-# that copy if inject fails. Only a failure to strip, or to restore dist,
-# exits non-zero. Do not add `|| true` here; that would hide those too.
+# to `apps/api/.sentry-inject-snapshot-*` first (outside dist, and removed
+# afterwards; from apps/api/ the runner takes only dist/ and package.json,
+# which the script's spec pins) and restores it from that copy if inject
+# fails. Only a failure to strip, or to restore dist, exits non-zero. Do not
+# add `|| true` here; that would hide those too.
 # A failed upload is cached with this layer, so a same-commit rebuild does
 # not retry it; clear the build cache to retry. No glibc shim (`gcompat`):
 # the `@sentry/cli-linux-x64` binary npm installs here is static-pie.

@@ -21,14 +21,16 @@ import { readDeployedCommit } from './deployed-commit';
  *
  * Best effort when the token IS set, too (#2431): if `sentry-cli` cannot be
  * resolved or started, exits non-zero, is killed by a signal, or outlives its
- * time bound, this logs one `WARNING:` line naming the step and returns
- * `'failed'`, and the build still succeeds. Symbolicated stack traces are
- * telemetry; they must not gate shipping the API. Before this, a failing
- * inject turned every `frapp-api-staging` Render build red for days while
- * staging kept serving an old image. Two things stay hard failures, because
- * each would ship a wrong image: stripping `*.map` (the runner must never
- * ship TypeScript, so every path strips), and restoring dist after a failed
- * inject (see INJECT_SNAPSHOT_PREFIX). An error in either still exits 1.
+ * time bound, this logs one `WARNING:` line naming the step, puts dist right
+ * (restore after a failed inject, then strip), logs a second, plain line
+ * saying what it did only once it is done, and returns `'failed'`; the build
+ * still succeeds. Symbolicated stack traces are telemetry; they must not
+ * gate shipping the API. Before this, a failing inject turned every
+ * `frapp-api-staging` Render build red for days while staging kept serving
+ * an old image. Two things stay hard failures, because each would ship a
+ * wrong image: stripping `*.map` (the runner must never ship TypeScript, so
+ * every path strips), and restoring dist after a failed inject (see
+ * INJECT_SNAPSHOT_PREFIX). An error in either still exits 1.
  *
  * Do not `ENV` the token in the Dockerfile. ARG is enough for this RUN.
  */
@@ -66,8 +68,9 @@ export const SENTRY_CLI_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
  *
  * A sibling, never inside `distDir`: inject would rewrite a snapshot there,
  * and the runner stage copies `apps/api/dist/` wholesale. From `apps/api/`
- * the runner copies only `dist/` and `package.json`, so even a snapshot whose
- * removal failed cannot ship. It is removed on every path regardless.
+ * the runner copies only `dist/` and `package.json` (the Docker wiring test
+ * pins that), so even a snapshot whose removal failed cannot ship. It is
+ * removed on every path regardless.
  */
 export const INJECT_SNAPSHOT_PREFIX = '.sentry-inject-snapshot-';
 
@@ -166,11 +169,18 @@ type SentryCliModule = { SentryCli?: { getPath?: unknown } };
  * `SentryCli.getPath()` (optional-dependency binary, its download fallback,
  * or `SENTRY_BINARY_PATH`).
  *
- * Not the package's `bin/sentry-cli`: that is a JS wrapper that relays the
- * native child's exit with `process.exit(code)` and forwards SIGTERM, so a
- * native process killed by a signal (OOM, segfault, or spawnSync's own
- * timeout/ENOBUFS kill) comes back as exit 0, and a failed upload would be
- * logged as uploaded.
+ * Not the package's `bin/sentry-cli`, a Node wrapper that spawns this binary
+ * as its own child, for two reasons:
+ * - It relays the child's exit with `process.exit(code)`, and `code` is null
+ *   when the child dies by a signal, so a native CLI killed by the OOM killer
+ *   or a segfault comes back as exit 0 and a failed step reads as success.
+ * - spawnSync's timeout or ENOBUFS kill (SIGKILL) would reach only the
+ *   wrapper, which dies without passing it on. The step then does report
+ *   SIGKILL, but the native process is orphaned and keeps running: an inject
+ *   would go on rewriting dist while it is restored from its snapshot, and
+ *   could leave the restored dist cut short after all.
+ * Spawning the native binary directly puts the kill on the process doing the
+ * writing.
  */
 export function sentryCliBin(resolveFrom: string = __dirname): string {
   const entry = resolveSentryCliModule(resolveFrom);
@@ -372,18 +382,26 @@ export function runSentrySourcemapUpload(
     }
   };
   const secrets = secretVariants(env.SENTRY_AUTH_TOKEN);
-  // Best effort (see the module comment): report, strip, succeed. A failed
-  // upload after a good inject leaves debug IDs in the shipped JS with no
-  // maps behind them, which symbolicates no worse than no inject at all.
+  // Best effort (see the module comment): report, clean up dist, succeed. A
+  // failed upload after a good inject leaves debug IDs in the shipped JS with
+  // no maps behind them, which symbolicates no worse than no inject at all.
+  //
+  // The WARNING states only the failure and goes out first, so a restore or
+  // strip that then throws still leaves the cause in the build log. What was
+  // done to dist is logged only after it is done.
   const warn = (what: string) =>
     log(
-      `WARNING: ${what}; frapp-api source maps NOT uploaded, *.map stripped, ` +
-        `build continues (best effort, #2431); clear the Docker build cache to retry`,
+      `WARNING: ${what}; frapp-api source maps NOT uploaded ` +
+        `(best effort, #2431); clear the Docker build cache to retry`,
     );
+  const stripAndContinue = (done: string[] = []): 'failed' => {
+    stripSourceMapFiles(plan.distDir);
+    log(`${[...done, 'stripped *.map'].join(', ')}; build continues`);
+    return 'failed';
+  };
   const giveUp = (what: string) => {
     warn(what);
-    stripSourceMapFiles(plan.distDir);
-    return 'failed' as const;
+    return stripAndContinue();
   };
 
   // Inject under a snapshot of dist (see INJECT_SNAPSHOT_PREFIX).
@@ -405,14 +423,16 @@ export function runSentrySourcemapUpload(
       );
     }
     const injected = run('inject', plan.injectArgs);
+    // Restore on ANY failure, never only on some of its shapes: a step
+    // stopped at its time bound (ETIMEDOUT) or for overflowing its output
+    // buffer (ENOBUFS) carries both `error` and `signal`, and was killed
+    // wherever it was, possibly mid-write.
     if (!cliSucceeded(injected)) {
-      warn(
-        `${describeCliFailure('inject', injected, env.SENTRY_AUTH_TOKEN)}; ` +
-          `dist restored from its pre-inject snapshot`,
-      );
+      warn(describeCliFailure('inject', injected, env.SENTRY_AUTH_TOKEN));
       restoreDistFromSnapshot(snapshotDir, plan.distDir);
-      stripSourceMapFiles(plan.distDir);
-      return 'failed';
+      return stripAndContinue([
+        `restored ${plan.distDir} from its pre-inject snapshot`,
+      ]);
     }
   } finally {
     if (snapshotDir) discardSnapshot(snapshotDir, log);
