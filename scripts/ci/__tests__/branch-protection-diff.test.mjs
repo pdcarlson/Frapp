@@ -7,7 +7,6 @@ import {
   assertRosterFloor,
   buildProtectionPayload,
   diffProtection,
-  fetchUsesEnvProxy,
   formatProtectionDiff,
   hasProtectionDrift,
   normalizeProtection,
@@ -492,44 +491,5 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
         `the ${entry} ROLLOUT note lost its human-step / :verify guard`,
       );
     }
-  });
-});
-
-// The --verify failure hint names the route rather than guessing a cause from
-// the 403's body, because one body ("Resource not accessible by integration")
-// comes back on both routes. So the route check itself has to be right.
-describe("fetchUsesEnvProxy", () => {
-  const proxy = { HTTPS_PROXY: "http://proxy.invalid:8080" };
-
-  it("is false by default: node's fetch ignores the proxy env", () => {
-    assert.equal(fetchUsesEnvProxy({ env: { ...proxy }, execArgv: [] }), false);
-  });
-
-  it("is true for each switch that routes fetch through the proxy", () => {
-    assert.equal(fetchUsesEnvProxy({ env: { ...proxy, NODE_USE_ENV_PROXY: "1" }, execArgv: [] }), true);
-    assert.equal(fetchUsesEnvProxy({ env: { ...proxy }, execArgv: ["--use-env-proxy"] }), true);
-    assert.equal(
-      fetchUsesEnvProxy({
-        env: { ...proxy, NODE_OPTIONS: "--max-old-space-size=8192 --use-env-proxy" },
-        execArgv: [],
-      }),
-      true,
-    );
-    assert.equal(
-      fetchUsesEnvProxy({ env: { https_proxy: proxy.HTTPS_PROXY, NODE_USE_ENV_PROXY: "1" }, execArgv: [] }),
-      true,
-    );
-  });
-
-  it("is false when the switch is on but no proxy is set", () => {
-    assert.equal(fetchUsesEnvProxy({ env: { NODE_USE_ENV_PROXY: "1" }, execArgv: [] }), false);
-  });
-
-  it("does not match a different flag that merely contains the name", () => {
-    assert.equal(
-      fetchUsesEnvProxy({ env: { ...proxy, NODE_OPTIONS: "--no-use-env-proxy-x" }, execArgv: [] }),
-      false,
-    );
-    assert.equal(fetchUsesEnvProxy({ env: { ...proxy, NODE_USE_ENV_PROXY: "0" }, execArgv: [] }), false);
   });
 });

@@ -191,24 +191,6 @@ function describeError(error) {
   return causeText ? `${error.message}: ${causeText}` : error.message;
 }
 
-/**
- * Whether node's global `fetch` in this process goes through HTTPS_PROXY.
- *
- * By default it doesn't: it ignores the proxy env and goes direct. Only
- * NODE_USE_ENV_PROXY=1 or --use-env-proxy (on the command line or in
- * NODE_OPTIONS) route it through the proxy, and then only when a proxy is set.
- * In a cloud sandbox that is the agent proxy's route, whose 403s say nothing
- * about the token (ADR-20 amendment of 2026-09-02, (b)). This is the one part of
- * a read failure's cause the process can observe rather than guess.
- */
-function fetchUsesEnvProxy({ env = process.env, execArgv = process.execArgv } = {}) {
-  const switchedOn =
-    env.NODE_USE_ENV_PROXY === "1" ||
-    execArgv.includes("--use-env-proxy") ||
-    /(?:^|\s)--use-env-proxy(?:\s|$)/.test(env.NODE_OPTIONS ?? "");
-  return switchedOn && Boolean(env.HTTPS_PROXY || env.https_proxy);
-}
-
 // ── Branch protection payloads ──────────────────────────────────────────────
 
 function buildProtectionPayload(branch) {
@@ -549,19 +531,19 @@ async function main() {
         // the other three get misdiagnosed. Even one body can come from either
         // route: "Resource not accessible by integration" is the proxy route's
         // 403 on this endpoint and also an Actions GITHUB_TOKEN's 403 direct.
-        // The route is what this process can observe, so that is the hint.
-        const routeHint = fetchUsesEnvProxy()
-          ? "This run sent node's fetch through HTTPS_PROXY (NODE_USE_ENV_PROXY=1 or " +
-            "--use-env-proxy). In a cloud sandbox that is the agent proxy's route, where a 403 " +
-            "says nothing about the token, whatever its body: unset the switch and re-run " +
-            "before touching the PAT."
-          : "This run went direct (node's fetch ignores HTTPS_PROXY by default), so a 403 is " +
-            "GitHub's answer to the token sent, unless it reads \"Host not in allowlist\": " +
-            "that is this environment's network allowlist, which then needs api.github.com.";
+        // Nor does this process re-derive its own route: Node picks it at
+        // startup from env, flags, NO_PROXY and fallbacks this file would only
+        // be guessing at. So the hint is keyed on the switch, which the
+        // operator can check.
         throw new Error(
           `--verify cannot confirm ${branch}: live protection is unreadable (${readFailure}). ` +
             "An unreadable answer is not a passing one, so this fails rather than reporting a " +
-            `match. ${routeHint} Route rule: ADR-20 amendment of 2026-09-02, (b), and its ` +
+            "match. node's fetch goes direct unless NODE_USE_ENV_PROXY=1 or --use-env-proxy " +
+            "routes it through a proxy. Direct, a 403 is GitHub's answer to the token sent, " +
+            "unless it reads \"Host not in allowlist\": that is this environment's network " +
+            "allowlist, which then needs api.github.com. Through a cloud sandbox's agent proxy, " +
+            "a 403 says nothing about the token, whatever its body: drop the switch and re-run " +
+            "before touching the PAT. Route rule: ADR-20 amendment of 2026-09-02, (b), and its " +
             "2026-09-22 correction.",
         );
       }
@@ -684,4 +666,4 @@ if (isDirectRun) {
 // `scripts/ci/lib/required-checks.mjs` and consumers import them from there
 // directly — a pass-through would leave exactly the coupling #1383 removed,
 // with this module still on the deploy path's import graph.
-export { assertKnownArgs, buildProtectionPayload, fetchUsesEnvProxy };
+export { assertKnownArgs, buildProtectionPayload };
