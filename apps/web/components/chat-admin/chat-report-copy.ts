@@ -70,6 +70,10 @@ export const CHAT_REPORT_TABS: readonly ChatReportTab[] = [
   },
 ];
 
+/** The removal's confirmation, which names the message it removes. */
+const REMOVE_CONFIRM_BODY =
+  "This removes this one message for everyone and marks the report actioned. Nothing else in the conversation changes, and a direct message stays private: officers can't open it. This cannot be undone.";
+
 export const chatReportCopy = {
   title: "Reported messages",
   description:
@@ -83,28 +87,96 @@ export const chatReportCopy = {
   offlineDescription: "Reconnect to review reported messages.",
   noChapterTitle: "No chapter selected",
   noChapterDescription: "Pick an active chapter to review its reports.",
+  /**
+   * Restates `CHAT_REPORT_QUEUE_PERMISSIONS` (`@repo/validation`) in words;
+   * `chat-report-copy.spec.ts` fails if it stops naming one of them.
+   */
   deniedDescription:
     "Reviewing reported messages needs the members:view and channels:manage permissions. Ask your chapter president to grant access.",
   noContent: "This message had no text.",
   detailsLabel: "Reporter's note",
-  messageGone: "The message no longer exists, so there's nothing to remove.",
-  messageAlreadyDeleted:
-    "The sender already deleted this message, so there's nothing to remove.",
+  /**
+   * An open report whose message was hard-deleted (`message_id` is null — a
+   * channel delete, or the import purge). There is nothing to remove, so the
+   * row offers Mark actioned instead. Says what happened, not who did it.
+   */
+  messageGone:
+    "This message no longer exists, so there's nothing to remove. Mark actioned to close the report.",
   offlineWrite: "Reconnect to make changes.",
   removeConfirm: {
-    title: "Remove this message?",
-    description:
-      "This removes this one message for everyone and marks the report actioned. Nothing else in the conversation changes, and a direct message stays private: officers can't open it. This cannot be undone.",
+    /** Names the author, so the dialog says which message it removes. */
+    title: (author: string) => `Remove the message from ${author}?`,
+    description: (content: string | null | undefined) => {
+      const excerpt = messageExcerpt(content);
+      return excerpt
+        ? `It reads “${excerpt}”. ${REMOVE_CONFIRM_BODY}`
+        : REMOVE_CONFIRM_BODY;
+    },
     confirmLabel: "Remove message",
   },
   toast: {
     reviewed: "Report marked reviewed.",
     dismissed: "Report dismissed.",
+    actioned: "Report marked actioned.",
     removed: "Message removed. The report is marked actioned.",
+    /**
+     * The removal succeeded but the message was already gone
+     * (`message_already_deleted`). Neutral on purpose: its sender, another
+     * officer, or an earlier attempt could have removed it, and the queue
+     * cannot tell which.
+     */
+    alreadyRemoved:
+      "This message was already removed. The report is marked actioned.",
     reviewedFailed: "Couldn't mark the report reviewed.",
     dismissedFailed: "Couldn't dismiss the report.",
+    actionedFailed: "Couldn't mark the report actioned.",
     removeFailed: "Couldn't remove the message.",
   },
+} as const;
+
+/** Long enough to tell two reports by the same member apart, short enough to read aloud. */
+const EXCERPT_LENGTH = 40;
+
+/**
+ * The start of a report's snapshot, whitespace collapsed, for an accessible
+ * name or the confirmation. Null when the message had no text.
+ */
+export function messageExcerpt(
+  content: string | null | undefined,
+): string | null {
+  const text = content?.replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  if (text.length <= EXCERPT_LENGTH) return text;
+  return `${text.slice(0, EXCERPT_LENGTH - 1).trimEnd()}…`;
+}
+
+/**
+ * "message from Harper Lane, “You should quit the chapter…”" — what a row's
+ * controls act on, so each control's accessible name says which report it is
+ * for. Every row carries the same four verbs; without this a screen reader's
+ * button list is a column of identical "Dismiss"es.
+ */
+export function reportedMessageSubject(
+  author: string,
+  content: string | null | undefined,
+): string {
+  const excerpt = messageExcerpt(content);
+  return excerpt
+    ? `message from ${author}, “${excerpt}”`
+    : `message from ${author}`;
+}
+
+/**
+ * Accessible names for a row's controls. Each starts with the visible label so
+ * speech input ("click Dismiss") still finds it (WCAG 2.5.3, label in name),
+ * and ends with the {@link reportedMessageSubject} that tells rows apart — the
+ * `Delete ${role.label}` convention the roles table uses.
+ */
+export const chatReportActionLabel = {
+  reviewed: (subject: string) => `Mark reviewed: report on ${subject}`,
+  dismissed: (subject: string) => `Dismiss report on ${subject}`,
+  actioned: (subject: string) => `Mark actioned: report on ${subject}`,
+  remove: (subject: string) => `Remove ${subject}`,
 } as const;
 
 const SECOND = 1_000;

@@ -294,7 +294,7 @@ const SURFACE_GATES: readonly { file: string; match: string }[] = [
   { file: "components/settings/settings-page.tsx", match: 'permission="semester:rollover"' },
   { file: "components/service/service-page.tsx", match: 'permission="service:approve"' },
   { file: "components/chat-admin/chat-admin-page.tsx", match: 'permission="channels:manage"' },
-  { file: "components/chat-admin/chat-reports-card.tsx", match: 'allOf={["members:view", "channels:manage"]}' },
+  { file: "components/chat-admin/chat-reports-card.tsx", match: "allOf={CHAT_REPORT_QUEUE_PERMISSIONS}" },
 ];
 
 /**

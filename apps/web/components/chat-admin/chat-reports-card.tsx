@@ -12,8 +12,9 @@ import {
   useResolveChatReport,
 } from "@repo/hooks";
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
-import { serverMessageOf, statusOf } from "@repo/api-sdk";
+import { serverMessageOf } from "@repo/api-sdk";
 import { formatLocaleDateTime } from "@repo/formatting";
+import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,8 +42,10 @@ import { useToast } from "@/hooks/use-toast";
 import {
   CHAT_REPORT_REASON_LABEL,
   CHAT_REPORT_TABS,
+  chatReportActionLabel,
   chatReportCopy as copy,
   reportAge,
+  reportedMessageSubject,
 } from "./chat-report-copy";
 import type { ChatReportTab } from "./chat-report-copy";
 
@@ -60,13 +63,16 @@ import type { ChatReportTab } from "./chat-report-copy";
  *   exit; `details` is the reporter's note, not their identity.
  * - **Remove takes the report, not the message.** `useRemoveReportedMessage`
  *   posts the report id alone, and the control only exists on an open report
- *   whose message is still there.
+ *   whose message is still there; a row whose message is gone offers Mark
+ *   actioned instead. The server is idempotent on the message, so "already
+ *   removed" is a success the card reports as such, never an error that blames
+ *   anyone for it.
  *
- * The gate is `members:view` **and** `channels:manage` — the route's full
- * requirement (`ChatReportController`: the class floor plus the handler), not
- * just the page's `channels:manage`. A custom role can hold one without the
- * other, and without this gate that officer would get a Retry that can only
- * ever 403.
+ * The gate is `CHAT_REPORT_QUEUE_PERMISSIONS` (`@repo/validation`) —
+ * `members:view` **and** `channels:manage`, the route's full requirement
+ * (`ChatReportController`: the class floor plus the handler), not just the
+ * page's `channels:manage`. A custom role can hold one without the other, and
+ * without this gate that officer would get a Retry that can only ever 403.
  *
  * The routes are `@SubscriptionExempt()` (member safety has no billing
  * exception), so the writes here are not subscription-gated — only disabled
@@ -75,7 +81,7 @@ import type { ChatReportTab } from "./chat-report-copy";
 export function ChatReportsCard() {
   return (
     <Can
-      allOf={["members:view", "channels:manage"]}
+      allOf={CHAT_REPORT_QUEUE_PERMISSIONS}
       deniedFallback={
         <Card>
           <CardHeader>
@@ -96,20 +102,83 @@ export function ChatReportsCard() {
   );
 }
 
+type RowAction = "reviewed" | "dismissed" | "actioned" | "remove";
+type Resolution = Exclude<RowAction, "remove">;
+
+const FAILED_TOAST: Record<Resolution, string> = {
+  reviewed: copy.toast.reviewedFailed,
+  dismissed: copy.toast.dismissedFailed,
+  actioned: copy.toast.actionedFailed,
+};
+
 function ChatReportsQueue() {
   const [status, setStatus] = useState<ChatReportStatus>("open");
   const { confirm, confirmDialog } = useConfirmDialog();
-  // Reports whose removal the server refused with 409 while the report stayed
-  // open: the sender had already deleted the message. The row still carries a
-  // `message_id`, so without this the control would come back live and refuse
-  // again on every click. Keyed off the status and the report's own state
-  // after the refetch, never off the error's wording — and held here rather
-  // than in the list so a tab switch, which unmounts the list, keeps it.
-  const [alreadyDeleted, setAlreadyDeleted] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const markAlreadyDeleted = (id: string) =>
-    setAlreadyDeleted((current) => new Set(current).add(id));
+  const { toast } = useToast();
+  const resolve = useResolveChatReport();
+  const remove = useRemoveReportedMessage();
+
+  // Per row, so acting on one report leaves the others live; the shared
+  // mutation's own `isPending` / `variables` describe only the latest call.
+  // **Held here, above the tabs, and so are the handlers that set it.** Radix
+  // unmounts an inactive panel, so state kept in the list would be dropped by a
+  // tab switch mid-write and the row would come back with live buttons while
+  // its write was still in flight — a second click on a write the first has
+  // not finished.
+  const [busy, setBusy] = useState<Readonly<Record<string, RowAction>>>({});
+
+  function markBusy(id: string, action: RowAction | null) {
+    setBusy((current) => {
+      const next = { ...current };
+      if (action) next[id] = action;
+      else delete next[id];
+      return next;
+    });
+  }
+
+  async function handleResolve(report: ChatReport, next: Resolution) {
+    markBusy(report.id, next);
+    try {
+      await resolve.mutateAsync({ id: report.id, status: next });
+      toast({ description: copy.toast[next] });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        description: serverMessageOf(error) ?? FAILED_TOAST[next],
+      });
+    } finally {
+      markBusy(report.id, null);
+    }
+  }
+
+  async function handleRemove(report: ChatReport, author: string) {
+    const confirmed = await confirm({
+      title: copy.removeConfirm.title(author),
+      description: copy.removeConfirm.description(report.reported_content),
+      confirmLabel: copy.removeConfirm.confirmLabel,
+    });
+    if (!confirmed) return;
+    markBusy(report.id, "remove");
+    try {
+      const result = await remove.mutateAsync(report.id);
+      toast({
+        description: result.message_already_deleted
+          ? copy.toast.alreadyRemoved
+          : copy.toast.removed,
+      });
+    } catch (error) {
+      // Whatever the server says, in its words — a 409 here means the report
+      // changed since it loaded (another officer resolved it, or its message
+      // was hard-deleted), and the queue refetches either way. No status is
+      // translated into a claim about who did what.
+      toast({
+        variant: "destructive",
+        description: serverMessageOf(error) ?? copy.toast.removeFailed,
+      });
+    } finally {
+      markBusy(report.id, null);
+    }
+  }
 
   return (
     <Card>
@@ -144,9 +213,9 @@ function ChatReportsQueue() {
               {/* Radix unmounts inactive panels, so one slice is read at a time. */}
               <ReportList
                 tab={tab}
-                confirm={confirm}
-                alreadyDeleted={alreadyDeleted}
-                onAlreadyDeleted={markAlreadyDeleted}
+                busy={busy}
+                onResolve={(report, next) => void handleResolve(report, next)}
+                onRemove={(report, author) => void handleRemove(report, author)}
               />
             </TabsContent>
           ))}
@@ -156,84 +225,21 @@ function ChatReportsQueue() {
   );
 }
 
-type Confirm = ReturnType<typeof useConfirmDialog>["confirm"];
-type RowAction = "reviewed" | "dismissed" | "remove";
-
 function ReportList({
   tab,
-  confirm,
-  alreadyDeleted,
-  onAlreadyDeleted,
+  busy,
+  onResolve,
+  onRemove,
 }: {
   tab: ChatReportTab;
-  confirm: Confirm;
-  alreadyDeleted: ReadonlySet<string>;
-  onAlreadyDeleted: (reportId: string) => void;
+  busy: Readonly<Record<string, RowAction>>;
+  onResolve: (report: ChatReport, next: Resolution) => void;
+  onRemove: (report: ChatReport, author: string) => void;
 }) {
   const query = useChatReports(tab.status);
   const { isOffline } = useNetwork();
-  const { toast } = useToast();
   const { nameFor } = useMemberDisplayNames();
   const now = useNow();
-  const resolve = useResolveChatReport();
-  const remove = useRemoveReportedMessage();
-
-  // Per row, so acting on one report leaves the others live. The shared
-  // mutation's own `isPending` / `variables` describe only the latest call.
-  const [busy, setBusy] = useState<Record<string, RowAction>>({});
-
-  function markBusy(id: string, action: RowAction | null) {
-    setBusy((current) => {
-      const next = { ...current };
-      if (action) next[id] = action;
-      else delete next[id];
-      return next;
-    });
-  }
-
-  async function handleResolve(
-    report: ChatReport,
-    next: "reviewed" | "dismissed",
-  ) {
-    markBusy(report.id, next);
-    try {
-      await resolve.mutateAsync({ id: report.id, status: next });
-      toast({ description: copy.toast[next] });
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        description:
-          serverMessageOf(error) ??
-          (next === "reviewed"
-            ? copy.toast.reviewedFailed
-            : copy.toast.dismissedFailed),
-      });
-    } finally {
-      markBusy(report.id, null);
-    }
-  }
-
-  async function handleRemove(report: ChatReport) {
-    const confirmed = await confirm({
-      title: copy.removeConfirm.title,
-      description: copy.removeConfirm.description,
-      confirmLabel: copy.removeConfirm.confirmLabel,
-    });
-    if (!confirmed) return;
-    markBusy(report.id, "remove");
-    try {
-      await remove.mutateAsync(report.id);
-      toast({ description: copy.toast.removed });
-    } catch (error) {
-      if (statusOf(error) === 409) onAlreadyDeleted(report.id);
-      toast({
-        variant: "destructive",
-        description: serverMessageOf(error) ?? copy.toast.removeFailed,
-      });
-    } finally {
-      markBusy(report.id, null);
-    }
-  }
 
   const paused = query.isPending && query.fetchStatus === "paused";
   if ((isOffline && anyReadUncached(query)) || paused) {
@@ -292,9 +298,8 @@ function ReportList({
             nameFor={nameFor}
             busy={busy[report.id] ?? null}
             offline={isOffline}
-            messageAlreadyDeleted={alreadyDeleted.has(report.id)}
-            onResolve={(next) => void handleResolve(report, next)}
-            onRemove={() => void handleRemove(report)}
+            onResolve={(next) => onResolve(report, next)}
+            onRemove={(author) => onRemove(report, author)}
           />
         ))}
       </ul>
@@ -309,7 +314,6 @@ function ReportRow({
   nameFor,
   busy,
   offline,
-  messageAlreadyDeleted,
   onResolve,
   onRemove,
 }: {
@@ -319,9 +323,8 @@ function ReportRow({
   nameFor: (userId: string) => string | null;
   busy: RowAction | null;
   offline: boolean;
-  messageAlreadyDeleted: boolean;
-  onResolve: (next: "reviewed" | "dismissed") => void;
-  onRemove: () => void;
+  onResolve: (next: Resolution) => void;
+  onRemove: (author: string) => void;
 }) {
   const author = resolveAuthorLabel(
     {
@@ -332,11 +335,13 @@ function ReportRow({
     null,
   );
   const isOpen = report.status === "open";
+  // Hard-deleted (a channel delete, or the import purge): nothing to remove,
+  // and the server refuses a removal on it. Mark actioned closes it instead.
   const messageGone = report.message_id === null;
-  const canRemove = isOpen && !messageGone && !messageAlreadyDeleted;
   const disabled = busy !== null || offline;
   const disabledTitle = offline ? copy.offlineWrite : undefined;
   const content = report.reported_content?.trim();
+  const subject = reportedMessageSubject(author, report.reported_content);
 
   return (
     <li
@@ -393,53 +398,82 @@ function ReportRow({
 
       {isOpen ? (
         <div className="space-y-2">
-          {messageGone || messageAlreadyDeleted ? (
-            <p className="text-xs text-muted-foreground">
-              {messageGone ? copy.messageGone : copy.messageAlreadyDeleted}
-            </p>
+          {messageGone ? (
+            <p className="text-xs text-muted-foreground">{copy.messageGone}</p>
           ) : null}
           <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
+            <RowButton
+              label="Mark reviewed"
+              accessibleName={chatReportActionLabel.reviewed(subject)}
+              pending={busy === "reviewed"}
               disabled={disabled}
               title={disabledTitle}
               onClick={() => onResolve("reviewed")}
-            >
-              {busy === "reviewed" ? (
-                <Loader2 className="animate-spin" aria-hidden="true" />
-              ) : null}
-              Mark reviewed
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
+            />
+            <RowButton
+              label="Dismiss"
+              accessibleName={chatReportActionLabel.dismissed(subject)}
+              pending={busy === "dismissed"}
               disabled={disabled}
               title={disabledTitle}
               onClick={() => onResolve("dismissed")}
-            >
-              {busy === "dismissed" ? (
-                <Loader2 className="animate-spin" aria-hidden="true" />
-              ) : null}
-              Dismiss
-            </Button>
-            {canRemove ? (
-              <Button
-                variant="destructive"
-                size="sm"
+            />
+            {messageGone ? (
+              <RowButton
+                label="Mark actioned"
+                accessibleName={chatReportActionLabel.actioned(subject)}
+                pending={busy === "actioned"}
                 disabled={disabled}
                 title={disabledTitle}
-                onClick={onRemove}
-              >
-                {busy === "remove" ? (
-                  <Loader2 className="animate-spin" aria-hidden="true" />
-                ) : null}
-                Remove message
-              </Button>
-            ) : null}
+                onClick={() => onResolve("actioned")}
+              />
+            ) : (
+              <RowButton
+                label="Remove message"
+                accessibleName={chatReportActionLabel.remove(subject)}
+                variant="destructive"
+                pending={busy === "remove"}
+                disabled={disabled}
+                title={disabledTitle}
+                onClick={() => onRemove(author)}
+              />
+            )}
           </div>
         </div>
       ) : null}
     </li>
+  );
+}
+
+function RowButton({
+  label,
+  accessibleName,
+  variant = "secondary",
+  pending,
+  disabled,
+  title,
+  onClick,
+}: {
+  label: string;
+  /** Starts with `label` (label in name) and says which report it acts on. */
+  accessibleName: string;
+  variant?: "secondary" | "destructive";
+  pending: boolean;
+  disabled: boolean;
+  title: string | undefined;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      variant={variant}
+      size="sm"
+      disabled={disabled}
+      title={title}
+      aria-label={accessibleName}
+      onClick={onClick}
+    >
+      {pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+      {label}
+    </Button>
   );
 }

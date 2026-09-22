@@ -281,12 +281,46 @@ describe("ChatReportsCard — async states", () => {
   });
 });
 
+describe("ChatReportsCard — accessible names", () => {
+  it("names every control after the report it acts on, so rows cannot be confused", () => {
+    reportsByStatus.value = {
+      open: settled([
+        report(),
+        report({
+          id: "r-2",
+          reported_sender_id: null,
+          reported_author_name: "old_handle",
+          reported_content: "second report",
+        }),
+      ]),
+    };
+    render(<ChatReportsCard />);
+
+    expect(
+      screen.getByRole("button", {
+        name: "Remove message from Harper Lane, “You should quit the chapter, nobody wan…”",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Dismiss report on message from old_handle, “second report”",
+      }),
+    ).toBeInTheDocument();
+    // One of each verb per row, and no two share a name.
+    const names = screen
+      .getAllByRole("button", { name: /^(Mark reviewed|Dismiss|Remove)/ })
+      .map((button) => button.getAttribute("aria-label"));
+    expect(names).toHaveLength(6);
+    expect(new Set(names).size).toBe(6);
+  });
+});
+
 describe("ChatReportsCard — resolving", () => {
   it("marks a report reviewed through the resolve hook", async () => {
     const user = userEvent.setup();
     render(<ChatReportsCard />);
 
-    await user.click(screen.getByRole("button", { name: "Mark reviewed" }));
+    await user.click(screen.getByRole("button", { name: /^Mark reviewed/ }));
 
     expect(mockResolve).toHaveBeenCalledWith({ id: "r-1", status: "reviewed" });
     expect(mockRemove).not.toHaveBeenCalled();
@@ -299,7 +333,7 @@ describe("ChatReportsCard — resolving", () => {
     const user = userEvent.setup();
     render(<ChatReportsCard />);
 
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await user.click(screen.getByRole("button", { name: /^Dismiss/ }));
 
     expect(mockResolve).toHaveBeenCalledWith({
       id: "r-1",
@@ -323,7 +357,7 @@ describe("ChatReportsCard — resolving", () => {
     render(<ChatReportsCard />);
 
     const first = row(/nobody wants you here/);
-    await user.click(within(first).getByRole("button", { name: "Dismiss" }));
+    await user.click(within(first).getByRole("button", { name: /^Dismiss/ }));
 
     expect(first).toHaveAttribute("aria-busy", "true");
     for (const button of within(first).getAllByRole("button")) {
@@ -336,7 +370,44 @@ describe("ChatReportsCard — resolving", () => {
     finish({});
     await waitFor(() =>
       expect(
-        within(first).getByRole("button", { name: "Dismiss" }),
+        within(first).getByRole("button", { name: /^Dismiss/ }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it("keeps a row's controls held across a tab switch while its write is in flight", async () => {
+    // Radix unmounts the inactive panel. Pending state kept inside the list
+    // was dropped by the switch, and the row came back with live buttons over
+    // a write that had not finished.
+    const user = userEvent.setup();
+    let finish: (value: unknown) => void = () => {};
+    mockResolve.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    reportsByStatus.value = {
+      open: settled([report()]),
+      reviewed: settled([]),
+    };
+    render(<ChatReportsCard />);
+
+    await user.click(
+      within(row(/nobody wants you here/)).getByRole("button", {
+        name: /^Dismiss/,
+      }),
+    );
+    await user.click(screen.getByRole("tab", { name: "Reviewed" }));
+    await user.click(screen.getByRole("tab", { name: "Open" }));
+
+    const back = row(/nobody wants you here/);
+    expect(back).toHaveAttribute("aria-busy", "true");
+    for (const button of within(back).getAllByRole("button")) {
+      expect(button).toBeDisabled();
+    }
+
+    finish({});
+    await waitFor(() =>
+      expect(
+        within(row(/nobody wants you here/)).getByRole("button", {
+          name: /^Dismiss/,
+        }),
       ).toBeEnabled(),
     );
   });
@@ -349,7 +420,7 @@ describe("ChatReportsCard — resolving", () => {
     });
     render(<ChatReportsCard />);
 
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await user.click(screen.getByRole("button", { name: /^Dismiss/ }));
 
     expect(mockToast).toHaveBeenCalledWith({
       variant: "destructive",
@@ -361,7 +432,7 @@ describe("ChatReportsCard — resolving", () => {
     mockOffline.value = true;
     render(<ChatReportsCard />);
 
-    for (const name of ["Mark reviewed", "Dismiss", "Remove message"]) {
+    for (const name of [/^Mark reviewed/, /^Dismiss/, /^Remove message/]) {
       const button = screen.getByRole("button", { name });
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute("title", "Reconnect to make changes.");
@@ -370,17 +441,28 @@ describe("ChatReportsCard — resolving", () => {
 });
 
 describe("ChatReportsCard — removing the reported message", () => {
-  it("asks first, stating it is one message, for everyone, and that the conversation stays closed", async () => {
+  async function confirmRemove(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: /^Remove message/ }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Remove message" }),
+    );
+  }
+
+  it("asks first, naming the message, and stating it is one message, for everyone, with the conversation still closed", async () => {
     const user = userEvent.setup();
     render(<ChatReportsCard />);
 
-    await user.click(screen.getByRole("button", { name: "Remove message" }));
+    await user.click(screen.getByRole("button", { name: /^Remove message/ }));
 
     const dialog = await screen.findByRole("dialog");
     expect(
-      within(dialog).getByText("Remove this message?"),
+      within(dialog).getByText("Remove the message from Harper Lane?"),
     ).toBeInTheDocument();
     const description = within(dialog).getByText(/this one message/);
+    expect(description).toHaveTextContent(
+      /It reads “You should quit the chapter, nobody wan…”/,
+    );
     expect(description).toHaveTextContent(/for everyone/);
     expect(description).toHaveTextContent(/marks the report actioned/);
     expect(description).toHaveTextContent(/officers can't open it/);
@@ -391,7 +473,7 @@ describe("ChatReportsCard — removing the reported message", () => {
     const user = userEvent.setup();
     render(<ChatReportsCard />);
 
-    await user.click(screen.getByRole("button", { name: "Remove message" }));
+    await user.click(screen.getByRole("button", { name: /^Remove message/ }));
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
@@ -403,13 +485,13 @@ describe("ChatReportsCard — removing the reported message", () => {
 
   it("sends the report id alone once confirmed", async () => {
     const user = userEvent.setup();
+    mockRemove.mockResolvedValue({
+      ...report({ status: "actioned" }),
+      message_already_deleted: false,
+    });
     render(<ChatReportsCard />);
 
-    await user.click(screen.getByRole("button", { name: "Remove message" }));
-    const dialog = await screen.findByRole("dialog");
-    await user.click(
-      within(dialog).getByRole("button", { name: "Remove message" }),
-    );
+    await confirmRemove(user);
 
     await waitFor(() => expect(mockRemove).toHaveBeenCalledTimes(1));
     expect(mockRemove).toHaveBeenCalledWith("r-1");
@@ -419,62 +501,77 @@ describe("ChatReportsCard — removing the reported message", () => {
     });
   });
 
-  it("offers no Remove when the message is gone, and says why", () => {
+  it("says plainly when the message was already removed, without saying by whom", async () => {
+    // The server is idempotent on the message: its sender, another officer or
+    // an earlier attempt may have removed it, and the report closes anyway.
+    const user = userEvent.setup();
+    mockRemove.mockResolvedValue({
+      ...report({ status: "actioned" }),
+      message_already_deleted: true,
+    });
+    render(<ChatReportsCard />);
+
+    await confirmRemove(user);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        description:
+          "This message was already removed. The report is marked actioned.",
+      }),
+    );
+    expect(JSON.stringify(mockToast.mock.calls)).not.toMatch(/sender/i);
+  });
+
+  it("offers Mark actioned instead of Remove when the message is gone, and says why", async () => {
+    const user = userEvent.setup();
     reportsByStatus.value = { open: settled([report({ message_id: null })]) };
     render(<ChatReportsCard />);
 
     expect(
-      screen.queryByRole("button", { name: "Remove message" }),
+      screen.queryByRole("button", { name: /^Remove message/ }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        "The message no longer exists, so there's nothing to remove.",
+        "This message no longer exists, so there's nothing to remove. Mark actioned to close the report.",
       ),
     ).toBeInTheDocument();
-    // Resolving is still the way out.
-    expect(screen.getByRole("button", { name: "Dismiss" })).toBeEnabled();
+    // Resolving without acting is still available.
+    expect(screen.getByRole("button", { name: /^Dismiss/ })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: /^Mark actioned/ }));
+
+    expect(mockResolve).toHaveBeenCalledWith({ id: "r-1", status: "actioned" });
+    expect(mockRemove).not.toHaveBeenCalled();
+    expect(mockToast).toHaveBeenCalledWith({
+      description: "Report marked actioned.",
+    });
   });
 
-  it("retires Remove after a 409 on a report that stays open, so it cannot refuse twice", async () => {
+  it("shows the server's own words for a 409, and never blames the sender", async () => {
     const user = userEvent.setup();
     mockRemove.mockRejectedValue({
       statusCode: 409,
-      message: "The reported message is already deleted",
+      message: "This report is no longer open",
     });
     render(<ChatReportsCard />);
 
-    await user.click(screen.getByRole("button", { name: "Remove message" }));
-    const dialog = await screen.findByRole("dialog");
-    await user.click(
-      within(dialog).getByRole("button", { name: "Remove message" }),
-    );
+    await confirmRemove(user);
 
     await waitFor(() =>
-      expect(
-        screen.getByText(
-          "The sender already deleted this message, so there's nothing to remove.",
-        ),
-      ).toBeInTheDocument(),
+      expect(mockToast).toHaveBeenCalledWith({
+        variant: "destructive",
+        description: "This report is no longer open",
+      }),
     );
-    expect(
-      screen.queryByRole("button", { name: "Remove message" }),
-    ).not.toBeInTheDocument();
-    expect(mockToast).toHaveBeenCalledWith({
-      variant: "destructive",
-      description: "The reported message is already deleted",
-    });
+    expect(screen.queryByText(/sender already deleted/i)).toBeNull();
   });
 
-  it("keeps Remove after a failure that is not a 409", async () => {
+  it("keeps Remove after a failure, for a retry", async () => {
     const user = userEvent.setup();
     mockRemove.mockRejectedValue({ statusCode: 500 });
     render(<ChatReportsCard />);
 
-    await user.click(screen.getByRole("button", { name: "Remove message" }));
-    const dialog = await screen.findByRole("dialog");
-    await user.click(
-      within(dialog).getByRole("button", { name: "Remove message" }),
-    );
+    await confirmRemove(user);
 
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith({
@@ -483,8 +580,8 @@ describe("ChatReportsCard — removing the reported message", () => {
       }),
     );
     expect(
-      screen.getByRole("button", { name: "Remove message" }),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: /^Remove message/ }),
+    ).toBeEnabled();
   });
 });
 

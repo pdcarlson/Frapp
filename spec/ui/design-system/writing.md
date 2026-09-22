@@ -154,7 +154,7 @@ The tables below are the canonical strings for high-frequency state messages, so
 | Offline (permission check), control slot | — | `Offline — can't check your access.` |
 | Offline (permission check), whole surface | `Can't confirm your access` | `Reconnect to check whether you can <do the thing the surface does>.` |
 
-A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Polls unavailable offline" states a fact about the polls; here we do not know whether this member may see them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are in the five tables below.
+A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Polls unavailable offline" states a fact about the polls; here we do not know whether this member may see them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are the `Offline (permission check)` rows in the surface tables below.
 
 Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.tsx`) carries the first string; the second is passed to `<Can offlineFallback>` at each screen-level gate. Behaviour is [README.md](README.md) §4.
 
@@ -455,10 +455,17 @@ The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/
 | Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review reported messages.` |
 | Permission denied | `Reported messages` | `Reviewing reported messages needs the members:view and channels:manage permissions. Ask your chapter president to grant access.` |
-| Nothing to remove | — | `The message no longer exists, so there's nothing to remove.` (hard-deleted) · `The sender already deleted this message, so there's nothing to remove.` (after a 409) |
-| Remove confirmation | `Remove this message?` | `This removes this one message for everyone and marks the report actioned. Nothing else in the conversation changes, and a direct message stays private: officers can't open it. This cannot be undone.` · confirm `Remove message` |
+| Nothing to remove | — | `This message no longer exists, so there's nothing to remove. Mark actioned to close the report.` (hard-deleted; the row offers `Mark actioned` in place of `Remove message`) |
+| Remove confirmation | `Remove the message from <author>?` | `It reads “<first 40 characters>”. This removes this one message for everyone and marks the report actioned. Nothing else in the conversation changes, and a direct message stays private: officers can't open it. This cannot be undone.` (the quote is dropped for a message with no text) · confirm `Remove message` |
+| Removed (toast) | — | `Message removed. The report is marked actioned.` |
+| Already removed (toast) | — | `This message was already removed. The report is marked actioned.` |
+| Resolved (toast) | — | `Report marked reviewed.` · `Report dismissed.` · `Report marked actioned.` |
+| Refused (toast) | — | The server's own message (`This report is no longer open`, …), else `Couldn't remove the message.` / `Couldn't mark the report reviewed.` / `Couldn't dismiss the report.` / `Couldn't mark the report actioned.` |
+| Row control names (accessible) | — | `Mark reviewed: report on message from <author>, “<excerpt>”` · `Dismiss report on …` · `Mark actioned: report on …` · `Remove message from <author>, “<excerpt>”` |
 
-The confirmation says the conversation stays closed because that is the rule an officer is most likely to assume away: removing a message from a DM does not open the DM. The row has no channel name or kind to say "direct message" more specifically — the report snapshots the message, not its channel.
+The confirmation says the conversation stays closed because that is the rule an officer is most likely to assume away: removing a message from a DM does not open the DM. The row has no channel name or kind to say "direct message" more specifically — the report snapshots the message, not its channel. It names the author and quotes the start of the message because every row carries the same verbs, and a confirmation that could belong to any row is not a confirmation of this one; the row's accessible names carry the same subject for the same reason.
+
+**"Already removed" names no one.** The removal is idempotent on the message — its sender, another officer's delete, a sibling report's removal or an earlier attempt may each be why it is gone — and the queue cannot tell which, so the copy states the outcome and not a culprit.
 
 Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 
