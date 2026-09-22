@@ -1,6 +1,57 @@
-# Frapp — The Operating System for Greek Life
+# Signet
 
-Frapp is a multi-tenant SaaS platform that replaces the disjointed tools fraternity chapters rely on (Discord, OmegaFi, Life360) with a single, unified mobile and web experience.
+**Chat is the spine.** Signet is a multi-tenant chat app for Greek-letter organizations in which
+every other capability — events, tasks, dues, points, polls — is a *chat integration*, surfaced
+inline in the conversation rather than parked behind its own nav tab. Chat itself is free,
+unlimited, and non-optional: it is the default landing route on web and mobile.
+
+Tiers, audience, vocabulary, and the rest of the positioning live in
+[`spec/product/positioning.md`](spec/product/positioning.md).
+
+## Modules are chat integrations
+
+An ops module ships as the same four surfaces rather than as a bespoke feature:
+
+- a **slash command** in the composer — the primary way members create and act on artifacts;
+- one or more **rich message renderers**, keyed off the artifact `kind`;
+- a **system channel** (`#events`, `#dues`, …) where the module's system messages land;
+- an **optional dashboard view** — only when a calendar, kanban, or leaderboard materially adds
+  something, and always secondary to chat.
+
+Modules are gated per chapter, and the gating rules have qualifiers worth reading before you write a
+check against them — absence is not disablement, and the always-on lock is a UI lock. They are
+stated once, in [`spec/behavior/integrations.md`](spec/behavior/integrations.md) § Module Gating.
+
+Which modules exist is `MODULE_CATALOG` in
+[`packages/org-archetypes`](packages/org-archetypes); the pattern and the invariants every renderer
+must honour are in [`spec/behavior/integrations.md`](spec/behavior/integrations.md). Those two
+disagree today — the spec's prose roster omits two modules that ship slash commands, tracked as
+[#2468](https://github.com/pdcarlson/Frapp/issues/2468) — so read the catalog as the mechanism and
+the spec as the pattern.
+
+## AI
+
+Signet's AI surface (Q&A, summarization, drafting) is built on **authoritative sources only**, and
+that is the product decision rather than an implementation detail — a smaller AI that is reliably
+right instead of a bigger one that is frequently embarrassing.
+
+Stable prose is indexed and retrieved: meeting minutes and transcripts, uploaded chapter documents,
+and formal announcements. Live structured data — officer roster, events, dues amounts, points
+balances, attendance — is **never embedded**; the model reads it at answer time through the same
+permission-guarded API endpoints the rest of the product uses, so structured answers are correct
+when given and inherit the caller's permissions. In v1 the chapter chat sits deliberately outside
+the corpus — casual channels are not indexed, and DMs never are regardless of channel settings —
+with a v2+ revisit explicitly reserved. Vault documents are excluded by default, and every answer
+must cite its source inline.
+
+**It is specified, not shipped.** There is no `ai` module in `apps/api`. Both clients already carry
+the ✦ Ask entry, deliberately rather than by oversight: on web it is a shell with no engine behind
+it, and on mobile it opens a sheet that answers from a synthetic corpus when a build flag is set and
+states why it cannot when it is not. Nothing in this repo sets that flag — which is **not** the same
+as it being off in a given store build, a question only EAS can answer
+([`ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md)). Scope, non-goals, the citation
+mechanism, and how the mock deliberately differs from the real contract:
+[`spec/behavior/ai.md`](spec/behavior/ai.md).
 
 ## Repository Structure
 
@@ -10,41 +61,35 @@ apps/
   web/        — Next.js admin dashboard (app.frapp.live)
   mobile/     — Expo mobile app (iOS + Android)
   landing/    — Next.js marketing site (frapp.live)
-  (Developer docs: repo-root `docs/guides/` — no Next.js docs app.)
-packages/    — 14 shared workspaces
-  api-sdk/            — Generated TypeScript API client
-  brand-assets/       — Canonical SVG marks (favicon + lockup); sync via `npm run sync:brand-assets`
-  chapter-theme/      — Chapter accent palette derivation (legacy web token map until Signet reskin)
-  chat-core/          — Platform-neutral chat hot path (cache, send, realtime) behind injected adapters
-  chat-integrations/  — Chat slash-command / integration helpers
-  color/              — Shared WCAG contrast math
-  eslint-config/      — Shared ESLint configuration
-  formatting/         — Shared date/time/duration display helpers (web + mobile)
-  hooks/              — Shared React hooks
-  observability/      — Browser-safe observability policy (Sentry PII scrubbing, sample-rate parse)
-  org-archetypes/     — Greek-org directory / archetype data
-  theme/              — Tailwind preset + Signet stylesheet/tokens (every surface); legacy bone/bronze retired
-  typescript-config/  — Shared tsconfig
-  validation/         — Shared Zod schemas
+packages/     — shared workspaces (`@repo/*`): API SDK, chat hot path, theme, hooks, validation, …
 spec/         — Product spec, behavior spec, architecture, environments
 supabase/     — Supabase project config + migrations
+docs/         — Developer guides and runbooks (no Next.js docs app)
 ```
+
+The per-package inventory lives in
+[`spec/architecture/README.md` § 4](spec/architecture/README.md#4-shared-packages), not here. The
+hand-written copy this file used to carry had drifted on two of its fourteen entries, which is the
+argument against keeping a second one.
 
 ## Tech Stack
 
-| Layer         | Technology                                  |
-| ------------- | ------------------------------------------- |
-| Monorepo      | Turborepo + npm workspaces                  |
-| Web + Landing | Next.js (App Router), Tailwind, ShadCN UI   |
-| Mobile        | Expo, React Native, Expo Router, RN StyleSheet |
-| API           | NestJS 11, TypeScript (strict)              |
-| Database      | PostgreSQL via Supabase                     |
-| Auth          | Supabase Auth                               |
-| Storage       | Supabase Storage                            |
-| Realtime      | Supabase Realtime                           |
-| Billing       | Stripe                                      |
-| Push          | Expo Push Service                           |
-| CI/CD         | GitHub Actions + Vercel + EAS               |
+Turborepo + npm workspaces. NestJS (TypeScript, strict) on the API; Next.js App Router with Tailwind
+and ShadCN UI on web and landing; Expo / React Native with Expo Router and RN `StyleSheet` on
+mobile. Postgres, auth, storage, and realtime are all Supabase. Billing is Stripe; push is the Expo
+Push Service; CI/CD is GitHub Actions with Vercel and EAS.
+
+The canonical table is
+[`spec/architecture/README.md` § 1](spec/architecture/README.md#1-high-level-stack).
+
+## A note on the two names
+
+The product is **Signet**. Code identifiers, the root npm package name, the Expo `slug`, the iOS
+bundle id (`live.frapp.mobile`), and the domains are all still `frapp` — and that split is a binding
+rule, not an oversight: prose says Signet, identifiers stay `frapp` until the deferred rename. It is
+stated once, in [`spec/ui/brand-identity.md`](spec/ui/brand-identity.md), which also says the
+rename's own tracking belongs in GitHub Issues rather than in a doc. Treat the two names as one
+product, and do not "fix" a `frapp` identifier on sight.
 
 ## Spec-Driven Development
 

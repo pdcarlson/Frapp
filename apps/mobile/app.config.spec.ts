@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -791,9 +792,19 @@ describe("native permission declarations (#2296)", () => {
    * - A plugin *can* also call `AndroidConfig.Permissions.withBlockedPermissions`
    *   off such an option, which strips what another plugin contributed and can
    *   never be granted on Android. That is what `expo-image-picker` did to
-   *   CAMERA, and it is why QR check-in was broken — but no plugin in `app.json`
-   *   behaves that way now. The resolved-permission test above is what covers
-   *   that route.
+   *   CAMERA, and it is why QR check-in was broken. **One plugin in `app.json`
+   *   still behaves that way**: `expo-image-picker`'s `microphonePermission:
+   *   false` reaches `withBlockedPermissions(['android.permission.RECORD_AUDIO'])`.
+   *   That is deliberate and currently harmless — nothing requests the
+   *   microphone, and `expo-camera` sets `recordAudioAndroid: false` so nothing
+   *   contributes RECORD_AUDIO for the block to strip. It stops being harmless
+   *   the moment a slice turns `recordAudioAndroid` back on or adds a
+   *   microphone surface: the block would silently remove the permission on
+   *   every Android build, which is the #2296 defect in a new permission. The
+   *   resolved-permission test above pins CAMERA only, so nothing would go red
+   *   — decline this option's twin, or widen that test, in the same slice.
+   *   `expo-camera` and `expo-location` add their Android permissions via
+   *   `withPermissions` unconditionally and block nothing.
    *
    * Every other declined option below is safe precisely because no source file
    * asks for it (no microphone, FaceID, motion or background-location use); add
@@ -804,6 +815,8 @@ describe("native permission declarations (#2296)", () => {
     "cameraPermission",
     // study zones, and the check-in location confirm
     "locationWhenInUsePermission",
+    // lib/chat/attachment-upload.ts → requestMediaLibraryPermissionsAsync()
+    "photosPermission",
   ];
 
   it("lets no plugin decline a permission a screen requests at runtime", () => {
@@ -825,6 +838,30 @@ describe("native permission declarations (#2296)", () => {
     expect(permissionOptions()).toEqual([
       ["expo-camera:cameraPermission", "Signet uses the camera to scan the check-in code at chapter events."],
       ["expo-camera:microphonePermission", false],
+      // `expo-image-picker` carries NO `cameraPermission` key, deliberately, and
+      // that is not the omitted-option hazard the block above warns about.
+      // `IOSConfig.Permissions.applyPermissions` resolves each key as
+      // `permissions[key] || infoPlist[key] || default`, so an undefined option
+      // falls through to whatever a plugin already wrote before reaching the
+      // vendor default — and `expo-camera` above always writes
+      // NSCameraUsageDescription explicitly, in either plugin order. Setting it
+      // to `false` is what must never happen: that is the #2296 defect, because
+      // image-picker compiles a declined `cameraPermission` into
+      // `withBlockedPermissions(['android.permission.CAMERA'])` and strips the
+      // permission QR check-in requests. The resolved-permission test above is
+      // the tripwire for exactly that.
+      //
+      // `microphonePermission: false` IS set, and must stay set. Omitting it is
+      // not inert here: `withAndroidImagePickerPermissions` adds
+      // `android.permission.RECORD_AUDIO` whenever the option is anything other
+      // than `false`, and the iOS half would write the vendor's default
+      // microphone purpose string for a feature this app does not have — a
+      // Guideline 5.1.1(i) finding of the same shape `photosPermission` used to
+      // be. Declining is safe because nothing requests the microphone, and it
+      // strips nothing another plugin contributes: `expo-camera` above sets
+      // `recordAudioAndroid: false`, so it never adds RECORD_AUDIO either.
+      ["expo-image-picker:microphonePermission", false],
+      ["expo-image-picker:photosPermission", "Signet uses your photo library so you can send photos in chapter chat."],
       ["expo-location:locationAlwaysAndWhenInUsePermission", false],
       ["expo-location:locationAlwaysPermission", false],
       ["expo-location:locationWhenInUsePermission", "Signet confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code."],
@@ -843,15 +880,61 @@ describe("native permission declarations (#2296)", () => {
     ).toEqual([]);
   });
 
-  it("does not depend on the media pickers no source file imports", () => {
+  it("depends on a media picker only where a surface imports one", () => {
     const pkg = requireConfig("./package.json") as {
       dependencies: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
     const all = { ...pkg.dependencies, ...(pkg.devDependencies ?? {}) };
-    // Re-add these in the slice that actually builds a picker surface (#1045
-    // added them ahead of one); expo-image-picker also strips CAMERA above.
-    expect(all["expo-image-picker"]).toBeUndefined();
+
+    // `expo-image-picker` came back with the chat photo-upload surface, which
+    // is the condition #2296 set on re-adding it ("a picker returns only with
+    // the slice that actually builds a picker surface"). `lib/chat/attachment-upload.ts`
+    // is that importer, and the assertion below is what keeps the dependency
+    // honest: if the surface is ever deleted, this test fails rather than
+    // leaving a photo-library purpose string in the binary for nothing, which
+    // is the Guideline 5.1.1(i) finding the whole episode was about.
+    expect(all["expo-image-picker"]).toBeDefined();
+    expect(all["expo-image-manipulator"]).toBeDefined();
+
+    // Still absent, and for the original reason: no surface picks a document.
     expect(all["expo-document-picker"]).toBeUndefined();
+  });
+
+  it("keeps a source importer for every media picker it depends on", () => {
+    // The pairing above is only meaningful if something actually imports them.
+    // #1045 shipped the dependency a month ahead of any importer, and the
+    // purpose string rode along into the binary for a feature that did not
+    // exist; this is the check that would have caught it. Spec files do not
+    // count — a mock is not a surface.
+    const mobileRoot = path.dirname(fileURLToPath(import.meta.url));
+
+    function importersUnder(dir: string): string[] {
+      const found: string[] = [];
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          found.push(...importersUnder(full));
+          continue;
+        }
+        if (!/\.tsx?$/.test(entry.name)) continue;
+        if (/\.spec\.[tj]sx?$/.test(entry.name)) continue;
+        const source = readFileSync(full, "utf8");
+        if (
+          source.includes("expo-image-picker") ||
+          source.includes("expo-image-manipulator")
+        ) {
+          found.push(path.relative(mobileRoot, full));
+        }
+      }
+      return found;
+    }
+
+    const importers = [
+      ...importersUnder(path.join(mobileRoot, "lib")),
+      ...importersUnder(path.join(mobileRoot, "components")),
+    ];
+
+    expect(importers).not.toEqual([]);
   });
 });

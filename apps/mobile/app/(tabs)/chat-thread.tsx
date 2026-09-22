@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -17,6 +17,7 @@ import {
   useChannelNotificationPreferences,
   useMarkChannelRead,
   useMemberDisplayNames,
+  useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -27,6 +28,7 @@ import {
   selectChannelNotificationLevel,
 } from "@/components/chat/notification-level-control";
 import { PollCard } from "@/components/chat/poll-card";
+import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { selectPostCapability } from "@/lib/chat/channel-list";
 import { getKeyboardPath } from "@/lib/keyboard";
@@ -92,6 +94,9 @@ export default function ChatThreadScreen() {
     react,
     unreact,
     act,
+    attachments,
+    addAttachment,
+    removeAttachment,
     draft,
     setDraft,
     sendError,
@@ -127,6 +132,8 @@ export default function ChatThreadScreen() {
   //    land, but the cursor was stamped before them. Stamping again on blur
   //    covers that burst in one request, where re-stamping per message would be
   //    one POST per message.
+  const requestUploadUrl = useRequestChatUploadUrl();
+
   const markRead = useMarkChannelRead();
   const markReadMutate = markRead.mutate;
   useFocusEffect(
@@ -136,6 +143,92 @@ export default function ChatThreadScreen() {
       return () => markReadMutate(channelId);
     }, [channelId, markReadMutate]),
   );
+
+  /**
+   * Pick a photo, upload it, and stage the claim.
+   *
+   * `isUploading` is state rather than the mutation's own `isPending` because
+   * the picker half runs before any mutation starts — the member is in the
+   * system photo sheet, which is most of the wall-clock time, and an attach
+   * button that stays live through it invites a second picker on top of the
+   * first.
+   *
+   * Failures land in `attachError`, which feeds the composer hint. There is no
+   * toast on this platform (chat-core's are no-ops here), so a swallowed error
+   * would be completely invisible to the member.
+   */
+  const [isUploading, setIsUploading] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  /**
+   * Re-entry guard, a ref rather than the `isUploading` state beside it.
+   *
+   * Same reason `sendingRef` is a ref in `use-chat-channel.ts`: two taps
+   * landing in one tick both read the pre-commit state value and both open a
+   * picker. On Android the second `launchImageLibraryAsync` rejects with an
+   * already-in-progress error. The state flag still exists, because it is what
+   * paints the spinner.
+   */
+  const uploadingRef = useRef(false);
+  /**
+   * The channel this screen is currently showing.
+   *
+   * `chat-thread` is a `Tabs.Screen` that React Navigation keeps mounted, so
+   * `channelId` changes *in place* — the component does not remount. An upload
+   * started in one channel can therefore resolve while another is on screen,
+   * and the claim it produces is bound to the channel it was minted under
+   * (`validateAttachmentInputs` re-checks the path prefix server-side). Staging
+   * it into the wrong composer would produce a 400 the member can only escape
+   * by discarding, since Retry replays the identical claim.
+   */
+  const attachChannelRef = useRef(channelId);
+  useEffect(() => {
+    attachChannelRef.current = channelId;
+  }, [channelId]);
+
+  // Attach state is per-channel, like the hook's own errors (#1431). Reset
+  // inline during render rather than in an effect, matching that pattern.
+  const [attachResetChannelId, setAttachResetChannelId] = useState(channelId);
+  if (attachResetChannelId !== channelId) {
+    setAttachResetChannelId(channelId);
+    if (attachError !== null) setAttachError(null);
+    // A spinner carried into the new channel would sit there disabled and
+    // never clear: the in-flight upload resolves against the old channel and
+    // is discarded below.
+    if (isUploading) setIsUploading(false);
+  }
+
+  const handleAttach = useCallback(() => {
+    // `channelId` is null until the route param resolves. The attach control
+    // is already gated on `canSend`, which is false in that window, so this is
+    // the belt to that braces rather than a reachable branch.
+    if (uploadingRef.current || !channelId) return;
+    uploadingRef.current = true;
+    const forChannelId = channelId;
+    setAttachError(null);
+    setIsUploading(true);
+    void (async () => {
+      try {
+        const result = await pickAndUploadPhoto(
+          forChannelId,
+          requestUploadUrl.mutateAsync,
+        );
+        // The member left this channel while the PUT was in flight. The bytes
+        // are in the bucket under the old channel's prefix; abandoning the
+        // claim leaves an unreferenced object for the retention pass, which is
+        // the same trade the composer already makes for a removed chip — and
+        // far better than staging a claim the send would reject forever.
+        if (attachChannelRef.current !== forChannelId) return;
+        if (result.status === "attached") {
+          addAttachment(result.attachment);
+        } else if (result.status === "refused") {
+          setAttachError(result.reason);
+        }
+      } finally {
+        uploadingRef.current = false;
+        if (attachChannelRef.current === forChannelId) setIsUploading(false);
+      }
+    })();
+  }, [addAttachment, channelId, requestUploadUrl.mutateAsync]);
 
   const handleChangeText = useCallback(
     (next: string) => {
@@ -148,6 +241,10 @@ export default function ChatThreadScreen() {
   );
 
   const handleSend = useCallback(() => {
+    // Clear first: `attachError` sits ahead of `sendError` in the hint chain
+    // below, and a stale photo-permission line would hide the one report that
+    // a message never reached the outbox.
+    setAttachError(null);
     void send(draft);
   }, [send, draft]);
 
@@ -403,6 +500,7 @@ export default function ChatThreadScreen() {
           // this surface has a queue, so it labels. `lib/connection/state.ts`
           // holds the rule for the surfaces that have to block instead.
           disabledHint={
+            attachError ??
             sendError ??
             // `canSend` first. It is false until `ctx` resolves, and
             // `ChatComposer` keys `editable` on it — so leading with the
@@ -420,10 +518,29 @@ export default function ChatThreadScreen() {
                   ? "This channel is read-only. Posting requires the announcements:post permission."
                   : "Alumni can read this channel but not post. Alumni may post in #alumni and direct messages."
                 : appOffline
-                  ? "You're offline — messages send when you reconnect."
+                  ? "You're offline — messages send when you reconnect, but photos need a connection."
                   : null)
           }
-          hintTone={sendError ? "error" : "muted"}
+          hintTone={sendError || attachError ? "error" : "muted"}
+          attachments={attachments}
+          onAttach={handleAttach}
+          onRemoveAttachment={removeAttachment}
+          isUploading={isUploading}
+          // An upload is a live PUT with no outbox behind it, unlike a send —
+          // so unlike the composer itself, the attach control does have to go
+          // dark offline. It stays visible and states why rather than
+          // disappearing.
+          // Gates the control only; the member-facing reason rides the single
+          // `disabledHint` above rather than competing with it for the one
+          // hint slot. Two hints for one composer is how the offline case
+          // ended up promising delivery for a photo that would not be sent.
+          attachDisabledReason={
+            !channelCanPost
+              ? "You can't post in this channel."
+              : appOffline
+                ? "offline"
+                : null
+          }
         />
       </KeyboardAvoidingView>
     </SafeAreaView>

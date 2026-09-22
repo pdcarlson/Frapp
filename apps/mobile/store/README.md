@@ -196,7 +196,7 @@ the work; the detail lives there, not here.
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | No App Review demo user exists in `frapp-prod`; the demo seed is Docker-only. The reviewer cannot sign in | hard gate |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 (restated as a blocker, not a risk): API and production DB ship report/block, **no client consumes either** | blocker |
-| [#2305](https://github.com/pdcarlson/Frapp/issues/2305) | The live privacy policy still claims photo-library collection the binary cannot perform; both stores fetch that URL | 5.1.2 |
+| [#2305](https://github.com/pdcarlson/Frapp/issues/2305) | The live privacy policy's photo-library claim was written when the binary could not upload; #2464 shipped chat photo upload, so re-check what the policy should now say rather than deleting the claim; both stores fetch that URL | 5.1.2 |
 | [#2298](https://github.com/pdcarlson/Frapp/issues/2298) / [#2300](https://github.com/pdcarlson/Frapp/issues/2300) / [#2301](https://github.com/pdcarlson/Frapp/issues/2301) | Sign-in tagline advertises Ask; two permanently inert controls; the `sheet-demo` dev route ships and is reachable via `frapp://sheet-demo` | 2.1 |
 | [#2304](https://github.com/pdcarlson/Frapp/issues/2304) | This file's § Description claims officer features the iOS binary does not ship | 2.3 |
 | [#2334](https://github.com/pdcarlson/Frapp/issues/2334) | **Smoke-test Sign in with Apple on the TestFlight build before submitting.** At the pinned `expo-apple-authentication ~57.0.2` a nil `keyWindow` reaches an uncatchable Swift `fatalError`, i.e. a SIGTRAP abort on the sign-in screen with the browser-OAuth fallback unreachable — and no live Apple sign-in has ever been observed against `frapp-prod`. The unit suite gives **zero** signal because it never loads the native module. A crash on the first screen a reviewer touches outranks the 4.8 question it also raises | 4.8 + crash |
@@ -343,11 +343,12 @@ states what a reviewer will actually be shown.
 
 ## Privacy questionnaire answers
 
-Same facts as https://frapp.live/privacy — including, for now, the struck row below,
-where the two still agree with each other and **both are wrong about the binary**: the
-published policy describes photo-library collection and this table records it as
-declared, while #2296 removed the capability entirely. #2305 owns correcting both
-halves. The table below is **what was declared
+Same facts as https://frapp.live/privacy. The photo-library row was the one place the
+two agreed *and were both wrong* — the policy described collection the binary could not
+perform after #2296 removed the picker. #2464 rebuilt that capability for real (chat
+photo upload), so policy and table are correct again on that point and the row's strike
+is gone; read its footnote before acting on #2305, whose acceptance criteria were
+written against the removed-capability premise. The table below is **what was declared
 in App Store Connect on 2026-09-14**, in Apple's own data-type names — the console
 offers a fixed list, so this is the paste, not a paraphrase. A struck row is an
 answer since withdrawn: the recorded values stay as entered, and the footnote says
@@ -359,7 +360,7 @@ what still has to change where.
 | Contact Info → Email Address | App Functionality | Yes | No |
 | Contact Info → Phone Number | App Functionality | Yes | No |
 | Location → Precise Location | App Functionality | Yes | No |
-| ~~User Content → Photos or Videos~~ † | App Functionality | Yes | No |
+| User Content → Photos or Videos † | App Functionality | Yes | No |
 | User Content → Other User Content | App Functionality | Yes | No |
 | Identifiers → User ID | App Functionality, **Analytics** | Yes | No |
 | Identifiers → Device ID | App Functionality | Yes | No |
@@ -371,24 +372,31 @@ Declared **not** collected: all Financial Info (including Payment Info),
 Purchases, Sensitive Info, Contacts, Health & Fitness, Emails or Text Messages,
 Advertising Data, Browsing History, Search History.
 
-> † **Withdrawn — still to be corrected in the console (owner action, #2196 §4).**
-> The row keeps its entered values because this table is the record of what was
-> *actually entered* on 2026-09-14, and it was entered; the strike marks the answer as
-> withdrawn without destroying the paste. The app cannot access the photo
-> library and never could: the declaration rode on `expo-image-picker`, which no source
-> file ever imported, and #2296 removed the package and its purpose string outright.
-> Until someone clears this answer in App Store Connect the console still claims a
-> collection the binary cannot perform, which is the label half of the same Guideline
-> 5.1.2 problem #2305 tracks in the privacy policy. Nothing in CI can see the console,
-> so this line is the only reminder.
+> † **Withdrawn, then reinstated — verify the console still carries it before
+> submitting (owner action).** This row has been right, wrong, and right again, and
+> the values were never edited in App Store Connect, so what to do now depends on
+> what is actually in the console.
 >
-> **Note for whoever implements #2305.** Its acceptance criterion 3 asks for this row to
-> be "removed, or set to not-collected". Deleting it would destroy the 2026-09-14
-> console paste this table exists to hold, so #2296 struck it and kept the entered
-> values instead — the row no longer *asserts* current collection, which satisfies that
-> criterion's intent. If #2305 wants the values gone as well, say so there and move them
-> into this footnote rather than dropping them; do not read this paragraph as a veto on
-> the criterion, and do not close #2305 with the criterion silently unmet.
+> The arc: entered 2026-09-14 on the strength of `expo-image-picker`'s declaration,
+> which no source file ever imported. #2296 removed the package and its purpose
+> string outright, at which point the console claimed a collection the binary could
+> not perform, and this row was struck pending an owner correction (#2196 §4). #2464
+> then built the surface the picker was always for — photo upload in chat
+> (`lib/chat/attachment-upload.ts`) — so the app now genuinely does read the photo
+> library and upload what the member picks. The declaration is accurate again and the
+> strike is removed.
+>
+> **What this means in practice.** If nobody cleared the answer, the console is now
+> correct by accident and no change is needed — confirm it reads as above and move on.
+> If it *was* cleared in the window between #2296 and #2464, it must be re-added
+> before the build that carries photo upload ships, or the label under-declares. Either
+> way this is a console check nothing in CI can see, which is why the line stays.
+>
+> **Note for whoever implements #2305.** Its acceptance criterion 3 asked for this row
+> to be "removed, or set to not-collected", on the premise that the binary could not
+> upload. #2464 falsified that premise. Do not action that criterion as written —
+> re-read it against the shipped capability first, and say so on #2305 rather than
+> clearing an answer that is now true.
 >
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The
@@ -410,15 +418,16 @@ Where each answer comes from:
 - **Phone Number** — chapters can define a member field of type `phone`
   (`CustomFieldTypeSchema` in `packages/validation/src/index.ts`). There is no
   address field type, which is why **Physical Address** is not declared.
-- **Other User Content** — chat messages. Apple's
+- **Other User Content** — chat messages **and chat photo attachments**. Apple's
   "Emails or Text Messages" type is not used; in-app chat belongs here.
-  Backwork file uploads also land in this type, but **not from the iOS binary**,
-  which has no upload path at all: `app/(tabs)/documents.tsx` omits the upload
-  affordance, `app/(tabs)/service-hours.tsx` omits proof attachment, and
-  `components/chat/message-attachments.tsx` only renders what the web dashboard
-  sent — all three for want of a file picker (#2296 removed the one that was
-  declared ahead of them). The row stays because chat text alone justifies it;
-  the upload half is a web-dashboard practice until a picker slice ships.
+  The iOS binary now does upload: #2464 shipped the chat photo picker
+  (`lib/chat/attachment-upload.ts`), so a member's photo goes from the library
+  to the chat bucket from the phone. That is also what reinstated the
+  Photos or Videos row above — read its footnote before touching either.
+  Two upload surfaces are still web-dashboard-only and still omit their
+  affordance deliberately: `app/(tabs)/documents.tsx` (backwork/document
+  upload) and `app/(tabs)/service-hours.tsx` (proof attachment). Both could now
+  be built on the same picker, and neither is claimed here as shipped.
 - **User ID carries Analytics** because PostHog identifies members with
   `distinct_id = hmac_sha256(salt, user_id)`. The derivation lives in
   `hashUserIdForAnalytics` (`packages/validation/src/analytics.ts`), called from
