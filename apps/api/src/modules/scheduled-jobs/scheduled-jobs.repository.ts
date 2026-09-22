@@ -16,9 +16,7 @@ import { TaskStatus } from '#domain/entities';
 // this module.
 export type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
 import type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
-
-/** Postgres unique-violation. A losing claim, not an error. */
-const UNIQUE_VIOLATION = '23505';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 
 /**
  * PostgREST caps responses at `max_rows` (1000 — `supabase/config.toml`) and
@@ -344,7 +342,9 @@ export class ScheduledJobsRepository {
       .insert(row);
 
     if (!error) return true;
-    if (error.code === UNIQUE_VIOLATION) return false;
+    // A losing claim, not an error: the unique constraint is the dedup
+    // mechanism, so another worker got there first.
+    if (error.code === PG_UNIQUE_VIOLATION) return false;
 
     logThrowable(
       this.logger,

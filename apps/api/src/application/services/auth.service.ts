@@ -1,20 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
-
-/** Postgres `unique_violation`, as surfaced by PostgREST. */
-const UNIQUE_VIOLATION = '23505';
+import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 
 export const PLACEHOLDER_EMAIL_HOST = 'users.invalid';
 export const APPLE_PRIVATE_RELAY_HOST = 'privaterelay.appleid.com';
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === UNIQUE_VIOLATION
-  );
-}
 
 function stringField(value: unknown): string | null {
   if (typeof value !== 'string') return null;

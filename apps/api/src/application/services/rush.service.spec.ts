@@ -11,7 +11,7 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import type { RushCandidate } from '#domain/entities/rush-candidate.entity';
 import { ChatService } from './chat.service';
-import { PG_UNIQUE_VIOLATION } from '#domain/repositories/chat.repository.interface';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 
 describe('RushService', () => {
   let service: RushService;

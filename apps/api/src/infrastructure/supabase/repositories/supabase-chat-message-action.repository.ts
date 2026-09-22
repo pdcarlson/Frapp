@@ -6,10 +6,8 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import type { IChatMessageActionRepository } from '#domain/repositories/chat.repository.interface';
-import {
-  ChatMessageActionDuplicateError,
-  PG_UNIQUE_VIOLATION,
-} from '#domain/repositories/chat.repository.interface';
+import { ChatMessageActionDuplicateError } from '#domain/repositories/chat.repository.interface';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { ChatMessageAction } from '#domain/entities/chat.entity';
 
 @Injectable()
@@ -37,7 +35,7 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
       .select('*')
       .single();
     if (error) {
-      if ((error as { code?: string }).code === PG_UNIQUE_VIOLATION) {
+      if (error.code === PG_UNIQUE_VIOLATION) {
         throw new ChatMessageActionDuplicateError(
           data.message_id,
           data.user_id,

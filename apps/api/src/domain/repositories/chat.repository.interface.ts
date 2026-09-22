@@ -23,9 +23,6 @@ export const CHANNEL_READ_RECEIPT_REPOSITORY =
 export const CHAT_MESSAGE_BOOKMARK_REPOSITORY =
   'CHAT_MESSAGE_BOOKMARK_REPOSITORY';
 
-/** Postgres unique-violation error code. */
-export const PG_UNIQUE_VIOLATION = '23505';
-
 /**
  * Thrown by `IChatMessageRepository.create` when the partial unique index
  * `idx_chat_messages_dedupe` rejects the insert. Callers should re-select
@@ -234,8 +231,9 @@ export interface IChannelReadReceiptRepository {
 export interface IChatMessageBookmarkRepository {
   /**
    * Idempotent create. Returns the existing row on a repeat rather than
-   * raising `PG_UNIQUE_VIOLATION`, so a double-tap or an offline retry is a
-   * no-op instead of an error the client has to special-case.
+   * raising `PG_UNIQUE_VIOLATION` (`#domain/constants/postgres-error-codes`),
+   * so a double-tap or an offline retry is a no-op instead of an error the
+   * client has to special-case.
    */
   create(
     userId: string,

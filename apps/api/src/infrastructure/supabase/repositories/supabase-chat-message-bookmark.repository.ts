@@ -53,7 +53,8 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
    *
    * `upsert` with `ignoreDuplicates: false` on the `(user_id, message_id)`
    * unique constraint returns the existing row on a repeat instead of raising
-   * `PG_UNIQUE_VIOLATION`, so a double-tap or an offline retry is a no-op
+   * `PG_UNIQUE_VIOLATION` (`#domain/constants/postgres-error-codes`), so a
+   * double-tap or an offline retry is a no-op
    * rather than an error the caller must catch and translate. Note the update
    * branch rewrites the row to the same values — `created_at` is not in the
    * payload, so the original bookmark time survives a repeat.
