@@ -244,13 +244,13 @@ function buildProtectionPayload(branch) {
 // The read is deliberately shaped as pure functions over plain objects, with the
 // network confined to `callGitHubApi`, because the call itself is the one part
 // that cannot be relied on from an agent session. Reaching `api.github.com` from
-// a cloud sandbox is SESSION-DEPENDENT: ADR-20 and #1385 record 403 for
-// authenticated and unauthenticated requests alike, and the ADR-20 amendment of
-// 2026-09-01 records this same endpoint returning 200 from a sandbox with a PAT
-// loaded from `.env.local`. #680's evidence table records both on the same day.
-// Do not read either observation as the general rule. Keeping the semantics in
-// functions that take a response rather than fetch one is what makes the diff
-// unit-testable regardless of which way a given session falls.
+// a cloud sandbox is ROUTE-DEPENDENT (ADR-20 amendment of 2026-09-02, (b), and
+// AGENT_INFRA.md → Work status). Node's global `fetch`, which `ghRequest` uses,
+// ignores HTTPS_PROXY and goes direct, and that route has returned 200 with a
+// PAT. The agent proxy's route (curl, or node under NODE_USE_ENV_PROXY=1)
+// passes some repo paths and 403s others, varying by session. Keeping the
+// semantics in functions that take a response rather than fetch one is what
+// makes the diff unit-testable whichever route a given run takes.
 //
 // The GET shape is NOT the PUT shape, which is the trap here. GitHub returns the
 // booleans wrapped — `enforce_admins: {enabled: true}` — where the PUT takes them
@@ -532,9 +532,11 @@ async function main() {
         throw new Error(
           `--verify cannot confirm ${branch}: live protection is unreadable (${readFailure}). ` +
             "An unreadable answer is not a passing one, so this fails rather than reporting a " +
-            "match. If the cause is a 403 with no GitHub response headers, that is the sandbox " +
-            "egress proxy and the read has to happen from a machine with direct network access " +
-            "(ADR-20, and its 2026-09-01 amendment — reachability is session-dependent).",
+            "match. If the cause is a 403 reading \"GitHub access is not enabled for this " +
+            "session\", the request went through a cloud sandbox's agent proxy rather than " +
+            "direct. node's fetch takes that route only under NODE_USE_ENV_PROXY=1 or " +
+            "--use-env-proxy, so drop them " +
+            "(ADR-20 amendment of 2026-09-02, (b) — reachability is route-dependent).",
         );
       }
     } else {
