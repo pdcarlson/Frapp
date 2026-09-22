@@ -55,10 +55,13 @@ RUN npm run build --workspace=apps/api
 #
 # ARG, not ENV: do not bake `SENTRY_AUTH_TOKEN` into later layers. Render
 # passes service env vars matching these ARG names at build time. Unset
-# (CI, laptops, Render until Infisical carries the name) → the script
-# skips sentry-cli and still strips `*.map` so the runner does not ship
-# TypeScript. `gcompat` is Alpine's glibc shim for the linux-x64 CLI
-# binary; only needed when a token is present.
+# (CI, laptops) → the script skips sentry-cli and still strips `*.map` so
+# the runner does not ship TypeScript. Set but sentry-cli fails (inject or
+# upload) → the script prints one `WARNING:` line, still strips `*.map`,
+# and exits 0: the upload is best effort and must not gate shipping
+# (#2431). Only a failure to strip exits non-zero. Do not add `|| true`
+# here; that would hide a strip failure too. `gcompat` is Alpine's glibc
+# shim for the linux-x64 CLI binary; only needed when a token is present.
 ARG SENTRY_AUTH_TOKEN
 ARG RENDER_GIT_COMMIT
 RUN if [ -n "$SENTRY_AUTH_TOKEN" ]; then apk add --no-cache gcompat; fi \

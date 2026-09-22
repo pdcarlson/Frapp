@@ -1,9 +1,18 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   API_SENTRY_ORG,
   API_SENTRY_PROJECT,
+  type CliResult,
+  defaultRunSentryCli,
+  describeCliFailure,
   planSentrySourcemapUpload,
   runSentrySourcemapUpload,
   sentryCliBin,
@@ -105,24 +114,6 @@ describe('runSentrySourcemapUpload', () => {
     expect(stripSourceMapFiles(distDir)).toEqual([]);
   });
 
-  it('injects then uploads and fails closed if inject fails', () => {
-    const distDir = fixtureDist();
-    const runCli = jest.fn((args: string[]) => {
-      if (args[1] === 'inject') {
-        return { status: 1, stdout: '', stderr: 'inject boom' };
-      }
-      return { status: 0, stdout: '', stderr: '' };
-    });
-    expect(() =>
-      runSentrySourcemapUpload({
-        env: { SENTRY_AUTH_TOKEN: 'sntrys_test' },
-        distDir,
-        runCli,
-      }),
-    ).toThrow(/inject failed/);
-    expect(runCli).toHaveBeenCalledTimes(1);
-  });
-
   it('injects then uploads and strips maps on success', () => {
     const distDir = fixtureDist();
     const calls: string[][] = [];
@@ -157,9 +148,170 @@ describe('runSentrySourcemapUpload', () => {
   });
 });
 
+describe('runSentrySourcemapUpload when sentry-cli fails (best effort, #2431)', () => {
+  const token = 'sntrys_test_secret_value';
+  // What spawnSync returned on Render: the binary path did not exist.
+  const enoent: CliResult = {
+    status: null,
+    signal: null,
+    error: {
+      code: 'ENOENT',
+      message: 'spawnSync /app/node_modules/.bin/sentry-cli ENOENT',
+    },
+    stdout: '',
+    stderr: '',
+  };
+
+  function run(runCli: (args: string[]) => CliResult) {
+    const distDir = fixtureDist();
+    const log = jest.fn<void, [string]>();
+    const outcome = runSentrySourcemapUpload({
+      env: { SENTRY_AUTH_TOKEN: token },
+      distDir,
+      runCli: jest.fn(runCli),
+      log,
+    });
+    return { distDir, log, outcome, lines: log.mock.calls.map(([m]) => m) };
+  }
+
+  it('returns failed, warns with the spawn error, and strips maps when inject cannot spawn', () => {
+    const calls: string[][] = [];
+    const { distDir, lines, outcome } = run((args) => {
+      calls.push(args);
+      return enoent;
+    });
+    expect(outcome).toBe('failed');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]).toBe('inject');
+    expect(lines).toEqual([
+      'WARNING: sentry-cli sourcemaps inject failed (status=null signal=none ' +
+        'error=ENOENT: spawnSync /app/node_modules/.bin/sentry-cli ENOENT): ' +
+        '(no output); frapp-api source maps NOT uploaded, *.map stripped, ' +
+        'build continues (best effort, #2431)',
+    ]);
+    expect(stripSourceMapFiles(distDir)).toEqual([]);
+    expect(existsSync(join(distDir, 'main.js'))).toBe(true);
+  });
+
+  it('returns failed, names upload, and strips maps when upload exits non-zero', () => {
+    const { distDir, lines, outcome } = run((args) =>
+      args[1] === 'inject'
+        ? { status: 0, stdout: 'injected', stderr: '' }
+        : {
+            status: 1,
+            stdout: '',
+            stderr: 'error: API request failed\n  caused by: 401 Unauthorized',
+          },
+    );
+    expect(outcome).toBe('failed');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(
+      /^WARNING: sentry-cli sourcemaps upload failed \(status=1 signal=none error=none\): error: API request failed caused by: 401 Unauthorized; /,
+    );
+    expect(stripSourceMapFiles(distDir)).toEqual([]);
+  });
+
+  it('reports the signal when sentry-cli is killed', () => {
+    const { lines, outcome } = run(() => ({
+      status: null,
+      signal: 'SIGKILL',
+      stdout: '',
+      stderr: '',
+    }));
+    expect(outcome).toBe('failed');
+    expect(lines[0]).toContain('inject failed (status=null signal=SIGKILL');
+  });
+
+  it('treats a runner that throws (no @sentry/cli installed) as a failed step', () => {
+    const { distDir, lines, outcome } = run(() => {
+      throw Object.assign(
+        new Error("Cannot find module '@sentry/cli/package.json'"),
+        { code: 'MODULE_NOT_FOUND' },
+      );
+    });
+    expect(outcome).toBe('failed');
+    expect(lines[0]).toContain(
+      "error=MODULE_NOT_FOUND: Cannot find module '@sentry/cli/package.json'",
+    );
+    expect(stripSourceMapFiles(distDir)).toEqual([]);
+  });
+
+  it('never prints the auth token even if sentry-cli echoes it', () => {
+    const { lines } = run(() => ({
+      status: 1,
+      stdout: '',
+      stderr: `bad token ${token}`,
+    }));
+    expect(lines[0]).not.toContain(token);
+    expect(lines[0]).toContain('bad token [redacted]');
+  });
+});
+
+describe('describeCliFailure', () => {
+  it('keeps multi-line CLI output on one line and falls back to stdout', () => {
+    expect(
+      describeCliFailure('upload', {
+        status: 2,
+        stdout: 'line one\n\nline two\n',
+        stderr: '',
+      }),
+    ).toBe(
+      'sentry-cli sourcemaps upload failed (status=2 signal=none error=none): line one line two',
+    );
+  });
+});
+
 describe('sentryCliBin', () => {
-  it('resolves the workspace-hoisted binary from the Docker build cwd', () => {
-    expect(sentryCliBin('/app')).toBe('/app/node_modules/.bin/sentry-cli');
+  it('resolves the @sentry/cli version apps/api declares, not a hoisted copy', () => {
+    const declared = (
+      JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>;
+      }
+    ).devDependencies['@sentry/cli'];
+    const bin = sentryCliBin();
+    expect(bin).toMatch(/[\\/]@sentry[\\/]cli[\\/]bin[\\/]sentry-cli$/);
+    const resolved = (
+      JSON.parse(
+        readFileSync(join(dirname(dirname(bin)), 'package.json'), 'utf8'),
+      ) as { version: string }
+    ).version;
+    expect(resolved).toBe(declared);
+  });
+
+  it('finds the copy nested under apps/api when the root has none (Docker deps stage)', () => {
+    // `npm ci --workspace=apps/api ...` installs only apps/api's nested copy;
+    // the root node_modules has no @sentry/cli at all.
+    const root = mkdtempSync(join(tmpdir(), 'frapp-api-cli-'));
+    const pkgDir = join(root, 'apps/api/node_modules/@sentry/cli');
+    mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(
+      join(pkgDir, 'package.json'),
+      '{"name":"@sentry/cli","version":"0.0.0"}\n',
+    );
+    const scriptDir = join(root, 'apps/api/dist/infrastructure/observability');
+    mkdirSync(scriptDir, { recursive: true });
+    expect(sentryCliBin(scriptDir)).toBe(join(pkgDir, 'bin', 'sentry-cli'));
+  });
+});
+
+describe('defaultRunSentryCli', () => {
+  it('reaches a working sentry-cli through the resolved package', () => {
+    const result = defaultRunSentryCli(['--version']);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/^sentry-cli \d+\.\d+\.\d+/);
+  });
+
+  it('surfaces a spawn error instead of a bare null status', () => {
+    const result = defaultRunSentryCli(
+      ['--version'],
+      join(tmpdir(), 'frapp-api-no-such-dir', String(process.pid)),
+    );
+    expect(result.status).toBeNull();
+    expect(result.error?.code).toBe('ENOENT');
+    expect(describeCliFailure('inject', result)).toMatch(
+      /^sentry-cli sourcemaps inject failed \(status=null signal=none error=ENOENT: /,
+    );
   });
 });
 
@@ -178,6 +330,9 @@ describe('API Docker / CI wiring', () => {
     expect(dockerfile).toMatch(/ARG RENDER_GIT_COMMIT/);
     expect(dockerfile).toContain('gcompat');
     expect(dockerfile).not.toMatch(/ENV SENTRY_AUTH_TOKEN/);
+    // Best effort is decided in the script (#2431), not by swallowing the
+    // step's exit code, which would also hide a failure to strip `*.map`.
+    expect(dockerfile).not.toMatch(/upload-sentry-sourcemaps\.js\s*(\|\||;)/);
     const buildIndex = dockerfile.indexOf(
       'RUN npm run build --workspace=apps/api',
     );
