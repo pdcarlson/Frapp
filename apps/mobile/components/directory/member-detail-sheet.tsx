@@ -231,7 +231,7 @@ export const MemberDetailSheet = forwardRef<
                 {isBlocked ? (
                   <ListRow
                     label={`Unblock ${blockTarget.displayName}`}
-                    description="Their messages show in chat again."
+                    description="Their messages in this chapter's chat show again."
                     disabled={blockActions.isPending}
                     onPress={() =>
                       confirmUnblockMember({
@@ -243,12 +243,14 @@ export const MemberDetailSheet = forwardRef<
                 ) : (
                   <ListRow
                     label={`Block ${blockTarget.displayName}`}
-                    description="Hides their messages from you in chat. They aren't told."
+                    description="Hides their messages from you in this chapter's chat. They aren't told."
                     destructive
                     disabled={blockActions.isPending}
                     onPress={() =>
                       confirmBlockMember({
                         name: blockTarget.displayName,
+                        // Listed in the directory: that is where this is.
+                        inDirectory: true,
                         run: () => blockActions.block(blockTarget.userId),
                       })
                     }

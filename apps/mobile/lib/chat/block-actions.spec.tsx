@@ -4,18 +4,25 @@ import { act, renderHook } from "@testing-library/react";
 import { Alert } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { chatMessagesKey } from "@repo/chat-core/types";
+import { emptyCache, mergeServerRow } from "@repo/chat-core/cache";
+import {
+  chatMessagesKey,
+  type ChannelCache,
+  type RawChatMessage,
+} from "@repo/chat-core/types";
 
 const mutations = vi.hoisted(() => ({
   block: vi.fn(),
   unblock: vi.fn(),
 }));
+const api = vi.hoisted(() => ({ GET: vi.fn() }));
 
 vi.mock("@repo/hooks", async () => {
   const actual =
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
   return {
     ...actual,
+    useFrappClient: () => api,
     useBlockMember: () => ({ mutateAsync: mutations.block, isPending: false }),
     useUnblockMember: () => ({
       mutateAsync: mutations.unblock,
@@ -26,12 +33,15 @@ vi.mock("@repo/hooks", async () => {
 
 import {
   BLOCK_FAILURE_BODY,
+  BLOCK_NOT_A_MEMBER_BODY,
+  blockConfirmBody,
   confirmBlockMember,
   confirmUnblockMember,
   useBlockActions,
 } from "./block-actions";
 
 const BLOCKED = "22222222-2222-4222-8222-222222222222";
+const FRIEND = "33333333-3333-4333-8333-333333333333";
 
 function wrapperFor(queryClient: QueryClient) {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -48,16 +58,71 @@ async function flush() {
   });
 }
 
+/** A row as `GET /v1/channels/{id}/messages` serves it. */
+function restRow(
+  id: string,
+  senderId: string,
+  overrides: Partial<RawChatMessage> = {},
+): RawChatMessage {
+  return {
+    id,
+    channel_id: "chan-1",
+    sender_id: senderId,
+    author_name: null,
+    content: `body ${id}`,
+    kind: "text",
+    created_at: `2026-09-15T18:00:0${id.slice(-1)}.000000+00:00`,
+    sender_blocked: false,
+    ...overrides,
+  };
+}
+
+/** A Realtime echo: the raw row, no `sender_blocked` at all. */
+function echoRow(id: string, senderId: string): RawChatMessage {
+  const row = restRow(id, senderId);
+  delete row.sender_blocked;
+  return row;
+}
+
+function seed(
+  queryClient: QueryClient,
+  channelId: string,
+  rows: RawChatMessage[],
+) {
+  queryClient.setQueryData<ChannelCache>(
+    chatMessagesKey(channelId),
+    rows.reduce((cache, row) => mergeServerRow(cache, row), emptyCache()),
+  );
+}
+
+function cacheOf(queryClient: QueryClient, channelId: string) {
+  return queryClient.getQueryData<ChannelCache>(chatMessagesKey(channelId))!;
+}
+
+function page(rows: RawChatMessage[]) {
+  return { data: rows, response: new Response(null, { status: 200 }) };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   vi.mocked(Alert.alert).mockClear();
   mutations.block.mockReset();
   mutations.unblock.mockReset();
+  api.GET.mockReset();
 });
 
 describe("useBlockActions", () => {
-  it("re-reads every cached thread after a block, so the server re-masks them", async () => {
+  it("a block re-runs no thread query and fetches nothing — the list alone hides them", async () => {
     mutations.block.mockResolvedValue({ id: "b1" });
     const queryClient = new QueryClient();
+    seed(queryClient, "chan-1", [restRow("m1", BLOCKED)]);
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useBlockActions(), {
       wrapper: wrapperFor(queryClient),
@@ -66,40 +131,110 @@ describe("useBlockActions", () => {
     await act(() => result.current.block(BLOCKED));
 
     expect(mutations.block).toHaveBeenCalledWith(BLOCKED);
-    // A prefix of every channel's key, not only the open thread's.
-    const [call] = invalidate.mock.calls;
-    const prefix = call![0]!.queryKey as readonly unknown[];
-    expect(chatMessagesKey("any-channel").slice(0, prefix.length)).toEqual(
-      prefix,
-    );
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(api.GET).not.toHaveBeenCalled();
   });
 
-  it("does the same after an unblock, which is what brings their words back", async () => {
+  it("an unblock re-reads only threads holding that member's masked copies, without re-running their query", async () => {
     mutations.unblock.mockResolvedValue(undefined);
     const queryClient = new QueryClient();
+    seed(queryClient, "chan-1", [
+      restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
+    ]);
+    seed(queryClient, "chan-2", [restRow("m2", FRIEND)]);
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    api.GET.mockResolvedValue(
+      page([restRow("m1", BLOCKED, { content: "the real words" })]),
+    );
     const { result } = renderHook(() => useBlockActions(), {
       wrapper: wrapperFor(queryClient),
     });
 
     await act(() => result.current.unblock(BLOCKED));
+    await flush();
 
     expect(mutations.unblock).toHaveBeenCalledWith(BLOCKED);
-    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(api.GET).toHaveBeenCalledTimes(1);
+    expect(api.GET).toHaveBeenCalledWith("/v1/channels/{id}/messages", {
+      params: { path: { id: "chan-1" }, query: { limit: 50 } },
+    });
+    expect(cacheOf(queryClient, "chan-1").byId["m1"]).toMatchObject({
+      content: "the real words",
+      sender_blocked: false,
+    });
   });
 
-  it("touches no cache when the write fails", async () => {
-    mutations.block.mockRejectedValue(new Error("offline"));
+  it("keeps a Realtime write that lands while the re-read is in flight (finding 3)", async () => {
+    mutations.unblock.mockResolvedValue(undefined);
     const queryClient = new QueryClient();
-    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    seed(queryClient, "chan-1", [
+      restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
+    ]);
+    const response = deferred<ReturnType<typeof page>>();
+    api.GET.mockReturnValue(response.promise);
     const { result } = renderHook(() => useBlockActions(), {
       wrapper: wrapperFor(queryClient),
     });
 
-    await expect(act(() => result.current.block(BLOCKED))).rejects.toThrow(
+    await act(() => result.current.unblock(BLOCKED));
+    expect(api.GET).toHaveBeenCalledTimes(1);
+
+    // The live echo writes a new message into the cache mid-request, the same
+    // way the realtime manager's `patchCache` does.
+    act(() => {
+      queryClient.setQueryData<ChannelCache>(
+        chatMessagesKey("chan-1"),
+        (cache) => mergeServerRow(cache!, echoRow("m9", FRIEND)),
+      );
+    });
+
+    await act(async () => {
+      response.resolve(
+        page([restRow("m1", BLOCKED, { content: "the real words" })]),
+      );
+      await Promise.resolve();
+    });
+    await flush();
+
+    const cache = cacheOf(queryClient, "chan-1");
+    expect(cache.byId["m9"]).toBeDefined();
+    expect(cache.order).toContain("m9");
+    expect(cache.byId["m1"]!.content).toBe("the real words");
+  });
+
+  it("an unblock still succeeds when the re-read fails", async () => {
+    mutations.unblock.mockResolvedValue(undefined);
+    const queryClient = new QueryClient();
+    seed(queryClient, "chan-1", [
+      restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
+    ]);
+    api.GET.mockRejectedValue(new Error("offline"));
+    const { result } = renderHook(() => useBlockActions(), {
+      wrapper: wrapperFor(queryClient),
+    });
+
+    await expect(
+      act(() => result.current.unblock(BLOCKED)),
+    ).resolves.toBeUndefined();
+    await flush();
+    expect(cacheOf(queryClient, "chan-1").byId["m1"]!.content).toBe("hidden");
+  });
+
+  it("touches no cache when the write fails", async () => {
+    mutations.unblock.mockRejectedValue(new Error("offline"));
+    const queryClient = new QueryClient();
+    seed(queryClient, "chan-1", [
+      restRow("m1", BLOCKED, { sender_blocked: true }),
+    ]);
+    const { result } = renderHook(() => useBlockActions(), {
+      wrapper: wrapperFor(queryClient),
+    });
+
+    await expect(act(() => result.current.unblock(BLOCKED))).rejects.toThrow(
       "offline",
     );
-    expect(invalidate).not.toHaveBeenCalled();
+    expect(api.GET).not.toHaveBeenCalled();
   });
 });
 
@@ -111,7 +246,7 @@ describe("confirmBlockMember / confirmUnblockMember", () => {
 
   it("names the member, and runs nothing until confirmed", () => {
     const run = vi.fn().mockResolvedValue(undefined);
-    confirmBlockMember({ name: "Blake", run });
+    confirmBlockMember({ name: "Blake", inDirectory: true, run });
 
     expect(vi.mocked(Alert.alert).mock.calls[0]![0]).toBe("Block Blake?");
     expect(run).not.toHaveBeenCalled();
@@ -119,6 +254,17 @@ describe("confirmBlockMember / confirmUnblockMember", () => {
       .find((button) => button.style === "cancel")
       ?.onPress?.();
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it("says a block is this chapter's, and promises the directory only when it is true", () => {
+    expect(blockConfirmBody(true)).toMatch(/this chapter's chat/);
+    expect(blockConfirmBody(true)).toMatch(/stay in the directory/);
+    expect(blockConfirmBody(false)).not.toMatch(/directory/);
+
+    confirmBlockMember({ name: "Blake", inDirectory: false, run: vi.fn() });
+    expect(vi.mocked(Alert.alert).mock.calls[0]![1]).toBe(
+      blockConfirmBody(false),
+    );
   });
 
   it("falls back to a neutral name when the roster cannot resolve one", () => {
@@ -131,7 +277,7 @@ describe("confirmBlockMember / confirmUnblockMember", () => {
   it("runs on confirm, then calls onDone", async () => {
     const run = vi.fn().mockResolvedValue(undefined);
     const onDone = vi.fn();
-    confirmBlockMember({ name: "Blake", run, onDone });
+    confirmBlockMember({ name: "Blake", inDirectory: true, run, onDone });
 
     buttons()
       .find((button) => button.style === "destructive")
@@ -156,6 +302,23 @@ describe("confirmBlockMember / confirmUnblockMember", () => {
     expect(Alert.alert).toHaveBeenLastCalledWith(
       "Couldn't unblock Blake",
       BLOCK_FAILURE_BODY,
+    );
+  });
+
+  it("says a 404 means they left the chapter, not that the connection failed (finding 11)", async () => {
+    const run = vi
+      .fn()
+      .mockRejectedValue({ statusCode: 404, message: "Member not found" });
+    confirmBlockMember({ name: "Blake", inDirectory: false, run });
+
+    buttons()
+      .find((button) => button.style === "destructive")
+      ?.onPress?.();
+    await flush();
+
+    expect(Alert.alert).toHaveBeenLastCalledWith(
+      "Couldn't block Blake",
+      BLOCK_NOT_A_MEMBER_BODY,
     );
   });
 });

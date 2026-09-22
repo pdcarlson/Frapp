@@ -78,6 +78,8 @@ export interface PollCardProps {
    */
   nameFor: (userId: string) => string | null;
   replyParent?: ChatMessage | null;
+  /** The placeholder when the block list hides the parent — see `MessageBubbleProps`. */
+  replyParentHidden?: string;
   onVote: (
     messageId: string,
     actionType: string,
@@ -102,6 +104,7 @@ export function PollCard({
   isConfirmed,
   nameFor,
   replyParent,
+  replyParentHidden,
   onVote,
   onRetry,
   onDiscard,
@@ -148,6 +151,7 @@ export function PollCard({
       disabled={!isConfirmed}
       onReact={onReact}
       onUnreact={onUnreact}
+      onLongPress={onOpenActions}
       styles={styles}
       align="flex-start"
     />
@@ -157,6 +161,7 @@ export function PollCard({
       <ReplyQuote
         message={message}
         replyParent={replyParent}
+        hiddenText={replyParentHidden}
         nameFor={nameFor}
         viewerId={viewerId}
         borderColor={tokens.color.border.hairline}
@@ -166,8 +171,11 @@ export function PollCard({
 
   // Same shape as `MessageBubble`'s incoming row: the gesture on a wrapper that
   // is not itself an accessibility element (so the option buttons stay
-  // reachable), and the screen-reader action on the card's own text.
+  // reachable), and the screen-reader action on an accessible `View` around
+  // the card's own text — never on a bare `Text` (see
+  // `messageActionsA11yProps`).
   const a11yActions = messageActionsA11yProps(onOpenActions);
+  const hasActions = !!onOpenActions;
 
   if (!payload) {
     return (
@@ -177,10 +185,12 @@ export function PollCard({
         disabled={!onOpenActions}
         style={styles.card}
       >
-        {replyQuote}
-        <Text style={styles.malformed} {...a11yActions}>
-          Malformed poll · {message.content}
-        </Text>
+        <View accessible={hasActions} {...a11yActions}>
+          {replyQuote}
+          <Text style={styles.malformed}>
+            Malformed poll · {message.content}
+          </Text>
+        </View>
         {statusAndActions}
         {reactionRow}
       </Pressable>
@@ -203,11 +213,11 @@ export function PollCard({
       disabled={!onOpenActions}
       style={styles.card}
     >
-      {replyQuote}
-      <Text style={styles.eyebrow}>Poll{isClosed ? " · Closed" : ""}</Text>
-      <Text style={styles.question} {...a11yActions}>
-        {payload.question}
-      </Text>
+      <View accessible={hasActions} {...a11yActions}>
+        {replyQuote}
+        <Text style={styles.eyebrow}>Poll{isClosed ? " · Closed" : ""}</Text>
+        <Text style={styles.question}>{payload.question}</Text>
+      </View>
       <View style={styles.options}>
         {payload.options.map((option) => {
           const count = byOption[option.id] ?? 0;

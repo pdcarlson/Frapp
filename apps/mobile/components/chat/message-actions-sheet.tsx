@@ -6,7 +6,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  AccessibilityInfo,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import {
   BottomSheetModal,
   BottomSheetScrollView,
@@ -34,7 +41,10 @@ import {
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import {
+  REPORT_ALREADY_BODY,
+  REPORT_ALREADY_TITLE,
   REPORT_FAILED_BODY,
+  REPORT_FAILED_TITLE,
   REPORT_REASON_OPTIONS,
   REPORT_SENT_BODY,
   REPORT_SENT_TITLE,
@@ -58,7 +68,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * **Which rows show is decided by the caller**, from `messageActionsFor` in
  * `lib/chat/blocks.ts`: this component is never opened on the viewer's own
- * message, and `canBlock` is false for the system actor and imported rows.
+ * message, and `canBlock` is false for the system actor, imported rows and a
+ * sender the loaded roster no longer lists.
+ *
+ * **Every report outcome reaches the member.** On screen while the form is up;
+ * as an alert if they dismissed it before a failure came back, the same way a
+ * dismissed Block reports its failure; and to VoiceOver through
+ * `AccessibilityInfo.announceForAccessibility`, because
+ * `accessibilityLiveRegion` is Android-only.
  */
 
 const REPORT_SNAP_POINTS = ["85%"];
@@ -70,7 +87,25 @@ export interface MessageActionsTarget {
   blockUserId: string | null;
   /** Resolved display name, or `null` when the roster cannot name them. */
   senderName: string | null;
+  /**
+   * Whether the loaded roster lists the sender, which is what makes the block
+   * confirmation's "they stay in the directory" true. `false` when the roster
+   * has not loaded.
+   */
+  senderInDirectory: boolean;
 }
+
+/** What the report form shows once a request has come back. */
+type ReportOutcome = "sent" | "already";
+
+/** Says an outcome aloud on iOS, where `accessibilityLiveRegion` does nothing. */
+function announce(message: string) {
+  AccessibilityInfo.announceForAccessibility(message);
+}
+
+/** Copy for the "Block" row wherever the sheet offers it. */
+const BLOCK_ROW_DESCRIPTION =
+  "Hides their messages from you in this chapter's chat.";
 
 export interface MessageActionsSheetHandle {
   present: () => void;
@@ -102,7 +137,7 @@ export const MessageActionsSheet = forwardRef<
 
   const [reason, setReason] = useState<ChatReportReason | null>(null);
   const [details, setDetails] = useState("");
-  const [sent, setSent] = useState(false);
+  const [outcome, setOutcome] = useState<ReportOutcome | null>(null);
   const [failed, setFailed] = useState(false);
 
   // A new target is a new form. Reset during render rather than in an effect
@@ -114,7 +149,7 @@ export const MessageActionsSheet = forwardRef<
     setFormFor(targetMessageId);
     setReason(null);
     setDetails("");
-    setSent(false);
+    setOutcome(null);
     setFailed(false);
   }
 
@@ -124,6 +159,8 @@ export const MessageActionsSheet = forwardRef<
    * another message's sheet must not mark *that* one sent — the same
    * stale-completion guard `use-chat-channel.ts` puts on its error sinks. The
    * second is mirrored in an effect because refs cannot be written in render.
+   * A result that is no longer current is not dropped: a failure becomes an
+   * alert (see the component doc).
    */
   const inFlightFor = useRef<string | null>(null);
   const currentTargetRef = useRef(targetMessageId);
@@ -139,6 +176,7 @@ export const MessageActionsSheet = forwardRef<
 
   const senderLabel = target?.senderName ?? UNNAMED_MEMBER;
   const canBlock = !!target?.blockUserId;
+  const senderInDirectory = target?.senderInDirectory ?? false;
 
   // The report sheet's `stackBehavior="replace"` dismisses the menu as it
   // mounts, so closing the form returns to the thread, not to the menu.
@@ -152,12 +190,13 @@ export const MessageActionsSheet = forwardRef<
       if (!userId) return;
       confirmBlockMember({
         name: target?.senderName ?? null,
+        inDirectory: senderInDirectory,
         run: () => block(userId),
         onDone: () =>
           (sheet === "menu" ? menuRef : reportRef).current?.dismiss(),
       });
     },
-    [block, target],
+    [block, senderInDirectory, target],
   );
 
   const submitReport = useCallback(() => {
@@ -166,12 +205,25 @@ export const MessageActionsSheet = forwardRef<
     inFlightFor.current = messageId;
     setFailed(false);
     void (async () => {
+      let result: ReportOutcome;
       try {
-        await report.mutateAsync({ messageId, reason, details });
-        if (isCurrent(messageId)) setSent(true);
+        const filed = await report.mutateAsync({ messageId, reason, details });
+        result = filed.alreadyReported ? "already" : "sent";
       } catch {
-        if (isCurrent(messageId)) setFailed(true);
+        if (isCurrent(messageId)) {
+          setFailed(true);
+          announce(REPORT_FAILED_BODY);
+        } else {
+          // Dismissed, or moved to another message, before the failure came
+          // back. Dropping it would leave the member believing the report
+          // went through.
+          Alert.alert(REPORT_FAILED_TITLE, REPORT_FAILED_BODY);
+        }
+        return;
       }
+      if (!isCurrent(messageId)) return;
+      setOutcome(result);
+      announce(result === "already" ? REPORT_ALREADY_BODY : REPORT_SENT_TITLE);
     })();
   }, [details, isCurrent, reason, report, target]);
 
@@ -179,7 +231,7 @@ export const MessageActionsSheet = forwardRef<
     inFlightFor.current = null;
     setReason(null);
     setDetails("");
-    setSent(false);
+    setOutcome(null);
     setFailed(false);
   }, []);
 
@@ -200,13 +252,13 @@ export const MessageActionsSheet = forwardRef<
           <ListSection>
             <ListRow
               label="Report message"
-              description="Sends it to your chapter's moderation queue."
+              description="Your chapter's officers will be able to see it."
               onPress={openReport}
             />
             {canBlock ? (
               <ListRow
                 label={`Block ${senderLabel}`}
-                description="Hides their messages from you in chat."
+                description={BLOCK_ROW_DESCRIPTION}
                 destructive
                 onPress={() => startBlock("menu")}
               />
@@ -230,21 +282,25 @@ export const MessageActionsSheet = forwardRef<
           contentContainerStyle={styles.body}
           keyboardShouldPersistTaps="handled"
         >
-          {sent ? (
+          {outcome ? (
             <>
               <SheetHeader
-                title={REPORT_SENT_TITLE}
+                title={
+                  outcome === "already"
+                    ? REPORT_ALREADY_TITLE
+                    : REPORT_SENT_TITLE
+                }
                 onCancel={() => reportRef.current?.dismiss()}
                 cancelLabel="Done"
               />
               <Text style={styles.bodyText} accessibilityLiveRegion="polite">
-                {REPORT_SENT_BODY}
+                {outcome === "already" ? REPORT_ALREADY_BODY : REPORT_SENT_BODY}
               </Text>
               {canBlock ? (
                 <ListSection>
                   <ListRow
                     label={`Block ${senderLabel}`}
-                    description="Hides their messages from you in chat."
+                    description={BLOCK_ROW_DESCRIPTION}
                     destructive
                     onPress={() => startBlock("report")}
                   />

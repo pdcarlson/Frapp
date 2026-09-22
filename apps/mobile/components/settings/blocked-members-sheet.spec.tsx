@@ -52,7 +52,13 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import { BlockedMembersSheet } from "./blocked-members-sheet";
+import {
+  BLOCKED_MEMBERS_EMPTY_BODY,
+  BLOCKED_MEMBERS_ERROR_BODY,
+  BLOCKED_MEMBERS_ERROR_TITLE,
+  BLOCKED_MEMBERS_SCOPE,
+  BlockedMembersSheet,
+} from "./blocked-members-sheet";
 
 function list(
   status: BlockedUserIds["status"],
@@ -90,13 +96,20 @@ describe("BlockedMembersSheet", () => {
   it("never reports an unreadable list as 'nobody blocked'", () => {
     state.blockList = list("unavailable");
     const flat = text(render());
-    expect(flat).toContain("Couldn't load your blocked members");
+    expect(flat).toContain(BLOCKED_MEMBERS_ERROR_TITLE);
+    expect(flat).toContain(BLOCKED_MEMBERS_ERROR_BODY);
     expect(flat).not.toContain("You haven't blocked anyone");
   });
 
   it("says the list is empty only off a confirmed read", () => {
     state.blockList = list("ready");
     expect(text(render())).toContain("You haven't blocked anyone");
+    expect(BLOCKED_MEMBERS_EMPTY_BODY).toMatch(/this chapter's chat/);
+  });
+
+  it("says the list is this chapter's — a member can be in several", () => {
+    state.blockList = list("ready", [BLAKE]);
+    expect(text(render())).toContain(BLOCKED_MEMBERS_SCOPE);
   });
 
   it("lists blocked members by name, falling back for one who left the chapter", () => {

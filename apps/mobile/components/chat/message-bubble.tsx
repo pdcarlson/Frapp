@@ -75,6 +75,14 @@ export interface MessageBubbleProps {
    */
   replyParent?: ChatMessage | null;
   /**
+   * What the quote says instead of the parent when the viewer's block list
+   * hides that parent — tombstoned or held (#2312 §1). The thread passes
+   * `replyParent: null` alongside it, so the parent's words never reach this
+   * component in the first place; this only picks the honest placeholder over
+   * "Original message not loaded". Decided in `thread-message-row.tsx`.
+   */
+  replyParentHidden?: string;
+  /**
    * Opens the message actions sheet (report, block — #2257). Passed only for a
    * message that offers them (`messageActionsFor` in `lib/chat/blocks.ts`), so
    * its absence is what keeps the long-press off the viewer's own bubble.
@@ -100,15 +108,18 @@ type MessageActionsA11yProps =
   | Record<string, never>;
 
 /**
- * The accessibility half of a message's long-press, for the text elements a
- * screen reader actually lands on.
+ * The accessibility half of a message's long-press, for the containers a
+ * screen reader lands on.
  *
  * The gesture lives on a wrapping `Pressable` marked `accessible={false}` —
  * an accessible wrapper would fold the reaction chips and attachment buttons
  * inside it into one element and hide them from VoiceOver. So the action rides
- * the message's own text instead: `longpress` with a label is a named custom
- * action in the iOS actions rotor and the double-tap-and-hold on Android.
- * Returns nothing when there are no actions to open.
+ * an **accessible `View`** around the message's own header and text instead,
+ * never a bare `<Text>`: custom actions on a `Text` are not reliably surfaced
+ * by VoiceOver under the new architecture, and a `View` with `accessible` is the
+ * element iOS exposes them on. `longpress` with a label is a named custom action
+ * in the iOS actions rotor and the double-tap-and-hold on Android. Returns
+ * nothing when there are no actions to open.
  */
 export function messageActionsA11yProps(
   onOpenActions: (() => void) | undefined,
@@ -138,7 +149,14 @@ interface ReactionGroup {
   mine: boolean;
 }
 
-/** Drops non-reaction action types and emptied groups. */
+/**
+ * Drops non-reaction action types and emptied groups.
+ *
+ * Counts whatever `message.reactions` holds. The s05 thread hands every bubble
+ * and card a message whose reactions already went through the viewer's block
+ * list (`visibleReactions` in `lib/chat/blocks.ts`, applied in
+ * `thread-message-row.tsx`), so a blocked member's reaction never reaches here.
+ */
 export function groupReactions(
   message: ChatMessage,
   viewerId: string | null,
@@ -168,6 +186,7 @@ export function MessageBubble({
   onReact,
   onUnreact,
   replyParent,
+  replyParentHidden,
   onOpenActions,
 }: MessageBubbleProps) {
   const { tokens } = useFrappTheme();
@@ -192,6 +211,7 @@ export function MessageBubble({
       <MineMessageBubble
         message={message}
         replyParent={replyParent}
+        replyParentHidden={replyParentHidden}
         viewerId={viewerId}
         nameFor={nameFor}
         time={time}
@@ -224,6 +244,11 @@ export function MessageBubble({
   //
   // A deleted message shows none: the API 404s the attachment list anyway, but
   // the client must not offer the affordance in the first place.
+  //
+  // `onLongPress` is forwarded to each file: an attachment is its own
+  // `Pressable`, and an inner Pressable claims the touch, so without it a long
+  // press on a photo — the whole of a photo-only message since #2464 — would
+  // open the file instead of the actions the rest of the row opens.
   const attachments =
     !message.is_deleted && message.attachment_count > 0 ? (
       <MessageAttachments
@@ -231,28 +256,38 @@ export function MessageBubble({
         messageId={message.id}
         count={message.attachment_count}
         isMine={false}
+        onLongPress={onOpenActions}
       />
     ) : null;
 
   const a11yActions = messageActionsA11yProps(onOpenActions);
+  const hasActions = !!onOpenActions;
 
-  const body = message.is_deleted ? (
+  const quote =
+    message.reply_to_id && !message.is_deleted ? (
+      <ReplyQuote
+        message={message}
+        replyParent={replyParent}
+        hiddenText={replyParentHidden}
+        nameFor={nameFor}
+        viewerId={viewerId}
+        borderColor={tokens.color.border.hairline}
+        textColor={tokens.color.text.muted}
+      />
+    ) : null;
+
+  const text = message.is_deleted ? (
     <Text style={styles.deleted}>{DELETED_MESSAGE_PLACEHOLDER}</Text>
-  ) : (
-    <>
-      {message.content.length > 0 ? (
-        <Text style={styles.bodyTheirs} {...a11yActions}>
-          {message.content}
-        </Text>
-      ) : null}
-      {attachments}
-    </>
-  );
+  ) : message.content.length > 0 ? (
+    <Text style={styles.bodyTheirs}>{message.content}</Text>
+  ) : null;
 
   return (
     // The long-press target is the whole row, so a file-only message has one
     // too. `accessible={false}` keeps the chips and attachments inside it
-    // individually reachable — see `messageActionsA11yProps`.
+    // individually reachable — see `messageActionsA11yProps`, which is why the
+    // screen-reader action sits on the two accessible containers below (the
+    // header, which every row has, and the quote-and-text) rather than here.
     <Pressable
       accessible={false}
       onLongPress={onOpenActions}
@@ -268,21 +303,17 @@ export function MessageBubble({
       </View>
 
       <View style={styles.theirsColumn}>
-        <Text style={styles.metaText} {...a11yActions}>
-          {`${authorLabel} · ${time}`}
-        </Text>
+        <View accessible={hasActions} {...a11yActions}>
+          <Text style={styles.metaText}>{`${authorLabel} · ${time}`}</Text>
+        </View>
         <View style={styles.bubbleTheirs}>
-          {message.reply_to_id && !message.is_deleted ? (
-            <ReplyQuote
-              message={message}
-              replyParent={replyParent}
-              nameFor={nameFor}
-              viewerId={viewerId}
-              borderColor={tokens.color.border.hairline}
-              textColor={tokens.color.text.muted}
-            />
+          {quote || text ? (
+            <View accessible={hasActions} {...a11yActions}>
+              {quote}
+              {text}
+            </View>
           ) : null}
-          {body}
+          {attachments}
         </View>
 
         <ReactionRow
@@ -291,6 +322,7 @@ export function MessageBubble({
           disabled={!isConfirmed}
           onReact={onReact}
           onUnreact={onUnreact}
+          onLongPress={onOpenActions}
           styles={styles}
           align="flex-start"
         />
@@ -307,6 +339,7 @@ export function MessageBubble({
 function MineMessageBubble({
   message,
   replyParent,
+  replyParentHidden,
   viewerId,
   nameFor,
   time,
@@ -320,6 +353,7 @@ function MineMessageBubble({
 }: {
   message: ChatMessage;
   replyParent: ChatMessage | null | undefined;
+  replyParentHidden: string | undefined;
   viewerId: string | null;
   nameFor: (userId: string) => string | null;
   time: string;
@@ -376,6 +410,7 @@ function MineMessageBubble({
           <ReplyQuote
             message={message}
             replyParent={replyParent}
+            hiddenText={replyParentHidden}
             nameFor={nameFor}
             viewerId={viewerId}
             borderColor={accentOnPrimary}
@@ -477,6 +512,7 @@ export function ReactionRow({
   disabled,
   onReact,
   onUnreact,
+  onLongPress,
   styles,
   align,
 }: {
@@ -485,6 +521,13 @@ export function ReactionRow({
   disabled: boolean;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
+  /**
+   * The row's long-press (the message actions), forwarded to every chip. A
+   * chip is its own `Pressable` and claims the touch, so without this a long
+   * press on one ends as a tap — a reaction toggled — instead of opening the
+   * actions the rest of the message opens.
+   */
+  onLongPress?: () => void;
   styles: Pick<
     ReturnType<typeof createStyles>,
     | "reactionRow"
@@ -518,6 +561,7 @@ export function ReactionRow({
               ? onUnreact(messageId, group.emoji)
               : onReact(messageId, group.emoji)
           }
+          onLongPress={onLongPress}
           style={[
             styles.reactionChip,
             group.mine ? styles.reactionChipMine : null,
@@ -537,6 +581,7 @@ export function ReactionRow({
           accessibilityLabel={`React with ${QUICK_REACTION}`}
           hitSlop={9}
           onPress={() => onReact(messageId, QUICK_REACTION)}
+          onLongPress={onLongPress}
           style={styles.reactionChip}
         >
           <Text style={styles.reactionText}>{`${QUICK_REACTION} +`}</Text>

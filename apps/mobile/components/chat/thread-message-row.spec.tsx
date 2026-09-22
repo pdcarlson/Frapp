@@ -9,7 +9,10 @@ import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { BlockState, ThreadRow } from "@/lib/chat/blocks";
 
-const attachmentHook = vi.hoisted(() => ({ calls: 0 }));
+const attachmentHook = vi.hoisted(() => ({
+  calls: 0,
+  data: [] as unknown[],
+}));
 
 vi.mock("@repo/hooks", async () => {
   const actual =
@@ -18,7 +21,7 @@ vi.mock("@repo/hooks", async () => {
     ...actual,
     useMessageAttachments: () => {
       attachmentHook.calls += 1;
-      return { isPending: false, isError: false, data: [] };
+      return { isPending: false, isError: false, data: attachmentHook.data };
     },
   };
 });
@@ -39,6 +42,7 @@ import {
   TOMBSTONE_STALE_TEXT,
   TOMBSTONE_TEXT,
 } from "./blocked-message-tombstone";
+import { HELD_QUOTE_TEXT } from "./reply-quote";
 import { ThreadMessageRow } from "./thread-message-row";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
@@ -73,15 +77,26 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
   };
 }
 
-const READY_WITH_BLOCKED: BlockState = {
-  status: "ready",
-  ids: new Set([BLOCKED]),
-};
+function blockState(
+  status: BlockState["status"],
+  ids: string[],
+  extras: { unblocked?: string[]; cleared?: string[] } = {},
+): BlockState {
+  return {
+    status,
+    ids: new Set(ids),
+    unblocked: new Set(extras.unblocked ?? []),
+    cleared: new Set(extras.cleared ?? []),
+  };
+}
+
+const READY_WITH_BLOCKED = blockState("ready", [BLOCKED]);
 
 function renderRow(
   row: ThreadRow,
   overrides: {
     blockState?: BlockState;
+    replyParent?: ChatMessage | null;
     onOpenActions?: (message: ChatMessage) => void;
     onUnblock?: (userId: string) => void;
   } = {},
@@ -94,7 +109,7 @@ function renderRow(
           row={row}
           viewerId={VIEWER}
           nameFor={(id) => (id === BLOCKED ? "Blake" : "Casey")}
-          replyParent={undefined}
+          replyParent={overrides.replyParent}
           blockState={overrides.blockState ?? READY_WITH_BLOCKED}
           onVote={vi.fn()}
           onRetry={vi.fn()}
@@ -120,7 +135,12 @@ function longPressTargets(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   attachmentHook.calls = 0;
+  attachmentHook.data = [];
 });
+
+function flat(tree: ReactTestRenderer): string {
+  return JSON.stringify(tree.toJSON());
+}
 
 describe("ThreadMessageRow — tombstone", () => {
   // A raw Realtime row from a blocked member: real content, files, reactions
@@ -177,22 +197,225 @@ describe("ThreadMessageRow — tombstone", () => {
     expect(longPressTargets(tree)).toHaveLength(0);
   });
 
-  it("withholds Unblock on a masked leftover once the list says they are unblocked", () => {
+  it("withholds Unblock on a masked leftover once this client unblocked them", () => {
     const tree = renderRow(
       {
         message: { ...leaked, _blockEvaluated: true, sender_blocked: true },
         visibility: "tombstone",
       },
-      { blockState: { status: "ready", ids: new Set() } },
+      { blockState: blockState("ready", [], { unblocked: [BLOCKED] }) },
     );
     const flat = JSON.stringify(tree.toJSON());
 
     expect(flat).toContain(TOMBSTONE_STALE_TEXT);
     expect(flat).not.toContain("Unblock");
   });
+
+  it("keeps Unblock when a ready list merely lacks them — a block made elsewhere looks like that (finding 6)", () => {
+    const tree = renderRow(
+      {
+        message: { ...leaked, _blockEvaluated: true, sender_blocked: true },
+        visibility: "tombstone",
+      },
+      { blockState: blockState("ready", []) },
+    );
+    expect(flat(tree)).toContain(TOMBSTONE_TEXT);
+    expect(flat(tree)).toContain("Unblock");
+  });
+});
+
+describe("ThreadMessageRow — reactions (finding 2)", () => {
+  // `reaction:` plus arbitrary text: a blocked member's reaction is their words.
+  const insult = reactionActionType("go away loser");
+
+  it("never draws a blocked member's reaction, on anyone's message", () => {
+    for (const sender of [FRIEND, VIEWER]) {
+      const tree = renderRow({
+        message: message({
+          sender_id: sender,
+          reactions: {
+            [insult]: [BLOCKED],
+            [reactionActionType("👍")]: [FRIEND, BLOCKED],
+          },
+        }),
+        visibility: "visible",
+      });
+      expect(flat(tree)).not.toContain("go away loser");
+      // The blocked reactor is not counted either.
+      expect(flat(tree)).toContain("👍 1");
+    }
+  });
+
+  it("shows only the viewer's own reactions while the list is unavailable", () => {
+    const tree = renderRow(
+      {
+        message: message({
+          _blockEvaluated: true,
+          reactions: {
+            [insult]: [FRIEND],
+            [reactionActionType("👍")]: [FRIEND, VIEWER],
+          },
+        }),
+        visibility: "visible",
+      },
+      { blockState: blockState("unavailable", []) },
+    );
+    expect(flat(tree)).not.toContain("go away loser");
+    expect(flat(tree)).toContain("👍 1");
+  });
+});
+
+describe("ThreadMessageRow — reply quotes (finding 7, #2312 §1)", () => {
+  const parentWords = "the parent's real words";
+
+  function reply(overrides: Partial<ChatMessage> = {}) {
+    return message({
+      id: "reply-1",
+      client_message_id: "client-reply-1",
+      reply_to_id: "parent-1",
+      content: "replying",
+      ...overrides,
+    });
+  }
+
+  function parent(overrides: Partial<ChatMessage> = {}) {
+    return message({
+      id: "parent-1",
+      client_message_id: "client-parent-1",
+      content: parentWords,
+      ...overrides,
+    });
+  }
+
+  it("quotes a blocked member's message as the tombstone, never its text", () => {
+    for (const sender of [FRIEND, VIEWER]) {
+      const tree = renderRow(
+        { message: reply({ sender_id: sender }), visibility: "visible" },
+        { replyParent: parent({ sender_id: BLOCKED }) },
+      );
+      expect(flat(tree)).toContain(TOMBSTONE_TEXT);
+      expect(flat(tree)).not.toContain(parentWords);
+      expect(flat(tree)).not.toContain("Blake");
+    }
+  });
+
+  it("quotes a server-masked parent the same way, whatever the list says", () => {
+    const tree = renderRow(
+      { message: reply(), visibility: "visible" },
+      {
+        replyParent: parent({
+          sender_id: BLOCKED,
+          sender_blocked: true,
+          content: "[masked]",
+        }),
+        blockState: blockState("ready", []),
+      },
+    );
+    expect(flat(tree)).toContain(TOMBSTONE_TEXT);
+    expect(flat(tree)).not.toContain("[masked]");
+  });
+
+  it("quotes a held parent as hidden while the list is unreadable — fail closed", () => {
+    const tree = renderRow(
+      { message: reply(), visibility: "visible" },
+      {
+        replyParent: parent({ _blockEvaluated: false }),
+        blockState: blockState("unavailable", []),
+      },
+    );
+    expect(flat(tree)).toContain(HELD_QUOTE_TEXT);
+    expect(flat(tree)).not.toContain(parentWords);
+  });
+
+  it("quotes a visible parent as before", () => {
+    const tree = renderRow(
+      { message: reply(), visibility: "visible" },
+      { replyParent: parent() },
+    );
+    expect(flat(tree)).toContain(parentWords);
+  });
 });
 
 describe("ThreadMessageRow — message actions", () => {
+  it("reaches the actions from a photo, which is the whole of a photo-only message (finding 8)", () => {
+    attachmentHook.data = [
+      {
+        id: "att-1",
+        filename: "IMG_0001.jpg",
+        content_type: "image/jpeg",
+        download_url: "https://example.test/signed",
+        width: 100,
+        height: 100,
+        byte_size: 1024,
+      },
+    ];
+    const onOpenActions = vi.fn();
+    const target = message({ content: "", attachment_count: 1 });
+    const tree = renderRow(
+      { message: target, visibility: "visible" },
+      { onOpenActions },
+    );
+
+    const photo = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Open IMG_0001.jpg",
+    );
+    expect(typeof photo.props.onLongPress).toBe("function");
+    act(() => photo.props.onLongPress());
+    expect(onOpenActions).toHaveBeenCalledWith(target);
+  });
+
+  it("reaches the actions from a reaction chip instead of toggling it (finding 8)", () => {
+    const onOpenActions = vi.fn();
+    const target = message({
+      reactions: { [reactionActionType("🔥")]: [FRIEND] },
+    });
+    const tree = renderRow(
+      { message: target, visibility: "visible" },
+      { onOpenActions },
+    );
+
+    const chips = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        typeof node.props.accessibilityLabel === "string" &&
+        (node.props.accessibilityLabel.startsWith("🔥") ||
+          node.props.accessibilityLabel.startsWith("React with")),
+    );
+    expect(chips.length).toBeGreaterThan(0);
+    for (const chip of chips) {
+      act(() => chip.props.onLongPress());
+    }
+    expect(onOpenActions).toHaveBeenCalledTimes(chips.length);
+  });
+
+  it("puts the screen-reader action on accessible containers, never on a Text (finding 10)", () => {
+    for (const target of [
+      message(),
+      message({ content: "", attachment_count: 1 }),
+      message({
+        kind: "poll",
+        payload: {
+          question: "Formal theme?",
+          options: [{ id: "o1", label: "Masquerade" }],
+        },
+      }),
+    ]) {
+      const tree = renderRow({ message: target, visibility: "visible" });
+      const withAction = tree.root.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          Array.isArray(node.props.accessibilityActions),
+      );
+      expect(withAction.length).toBeGreaterThan(0);
+      for (const node of withAction) {
+        expect(node.type).toBe("View");
+        expect(node.props.accessible).toBe(true);
+      }
+    }
+  });
+
   it("opens the actions for someone else's message by long-press", () => {
     const onOpenActions = vi.fn();
     const target = message();
@@ -283,6 +506,11 @@ describe("ThreadMessageRow — message actions", () => {
       },
       { onOpenActions },
     );
-    expect(longPressTargets(tree)).toHaveLength(1);
+    const [row] = longPressTargets(tree).filter(
+      (node) => node.props.accessible === false,
+    );
+    expect(row).toBeDefined();
+    act(() => row!.props.onLongPress());
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
   });
 });

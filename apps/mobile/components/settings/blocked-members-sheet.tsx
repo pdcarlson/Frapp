@@ -39,6 +39,22 @@ const SNAP_POINTS = ["65%"];
 
 export const BLOCKED_MEMBERS_TITLE = "Blocked members";
 
+/**
+ * The sheet's strings, exported so `spec/ui/design-system/writing.md` and the
+ * spec can point at one home. A block is scoped to one chapter and a member can
+ * belong to several (`spec/behavior/chat/README.md` § Block), so the sheet says
+ * which chapter it is listing.
+ */
+export const BLOCKED_MEMBERS_SCOPE = "Blocks apply in this chapter only.";
+export const BLOCKED_MEMBERS_EMPTY_TITLE = "You haven't blocked anyone";
+export const BLOCKED_MEMBERS_EMPTY_BODY =
+  "Block someone from a message or their profile in the directory. Their messages in this chapter's chat are hidden from you, and they aren't told.";
+export const BLOCKED_MEMBERS_ERROR_TITLE = "Couldn't load your blocked members";
+export const BLOCKED_MEMBERS_ERROR_BODY =
+  "Check your connection and try again. Your blocks haven't changed.";
+export const BLOCKED_MEMBERS_STALE =
+  "Couldn't refresh this list. It may be missing a recent change.";
+
 export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
   function BlockedMembersSheet(_props, ref) {
     const { tokens } = useFrappTheme();
@@ -75,24 +91,22 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
         <SkeletonLines lines={3} showTile={false} />
       ) : blockList.status === "unavailable" && rows.length === 0 ? (
         <ErrorState
-          title="Couldn't load your blocked members"
-          body="The list didn't reach the server. Nothing about your blocks has changed."
+          title={BLOCKED_MEMBERS_ERROR_TITLE}
+          body={BLOCKED_MEMBERS_ERROR_BODY}
           onRetry={blockList.retry}
           isRetrying={blockList.isRetrying}
         />
       ) : rows.length === 0 ? (
         <EmptyState
           glyph="⊘"
-          title="You haven't blocked anyone"
-          body="Block someone from a message or their profile in the directory. Their messages in chat are hidden from you, and they aren't told."
+          title={BLOCKED_MEMBERS_EMPTY_TITLE}
+          body={BLOCKED_MEMBERS_EMPTY_BODY}
         />
       ) : (
         <>
+          <Text style={styles.stale}>{BLOCKED_MEMBERS_SCOPE}</Text>
           {blockList.status === "unavailable" ? (
-            <Text style={styles.stale}>
-              Couldn&apos;t refresh this list. It may be missing a recent
-              change.
-            </Text>
+            <Text style={styles.stale}>{BLOCKED_MEMBERS_STALE}</Text>
           ) : null}
           <ListSection>
             {rows.map((row) => (

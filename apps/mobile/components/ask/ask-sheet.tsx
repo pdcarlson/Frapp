@@ -1,15 +1,16 @@
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
+  BottomSheetBackdrop,
   BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetTextInput,
+  type BottomSheetBackdropProps,
 } from "@gorhom/bottom-sheet";
 import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   SheetGrabber,
-  SheetScrim,
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
 import { AnswerCard } from "@/components/ask/answer-card";
@@ -69,6 +70,9 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * tracks the device rather than a phone the drawing was made on.
  */
 const ASK_SNAP_POINTS = ["78%"];
+
+/** `rgba(0,0,0,.55)` as drawn; the backdrop's own default is 0.5. */
+const SCRIM_OPACITY = 0.55;
 
 /**
  * How long the in-flight state is held.
@@ -165,6 +169,21 @@ export const AskSheet = forwardRef<BottomSheetModal>(
     // reads. The flag is fixed for a build, so this never flips mid-session.
     if (!isAskAvailable()) return null;
 
+    const renderBackdrop = useCallback(
+      (props: BottomSheetBackdropProps) => (
+        <BottomSheetBackdrop
+          {...props}
+          // The scrim belongs to the presented sheet only: it fades in at the
+          // first detent and is gone once dismissed, so nothing dims a screen
+          // that has no sheet over it.
+          appearsOnIndex={0}
+          disappearsOnIndex={-1}
+          opacity={SCRIM_OPACITY}
+        />
+      ),
+      [],
+    );
+
     return (
       <BottomSheetModal
         ref={ref}
@@ -181,7 +200,7 @@ export const AskSheet = forwardRef<BottomSheetModal>(
         keyboardBehavior="interactive"
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
-        backdropComponent={SheetScrim}
+        backdropComponent={renderBackdrop}
         onDismiss={reset}
       >
         <BottomSheetScrollView

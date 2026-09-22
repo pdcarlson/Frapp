@@ -35,6 +35,10 @@ const SCRIM_OPACITY = 0.55;
  * sheet only: it fades in at the first detent and is gone once dismissed, so
  * nothing dims a screen that has no sheet over it. A plain function of its
  * props, so it can be passed directly without a per-sheet `useCallback`.
+ *
+ * s17 (`components/ask/ask-sheet.tsx`) drew this first and still renders its
+ * own identical backdrop; folding it onto this is left to the next change that
+ * rewrites that file, rather than churning it here.
  */
 export function SheetScrim(props: BottomSheetBackdropProps) {
   return (

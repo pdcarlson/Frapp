@@ -23,14 +23,25 @@ export const REPORT_REASON_OPTIONS = CHAT_REPORT_REASONS.map((reason) => ({
 }));
 
 /**
- * Where a report goes, stated as far as it is true today. The API files it into
- * the chapter's moderation queue (readable by `channels:manage` holders) and
- * strips the reporter from everything it serves — so this promises neither a
- * reviewer nor a response time.
+ * Where a report goes, stated as far as it is true in every channel type. The
+ * API files it into the chapter's moderation queue, readable by `channels:manage`
+ * holders — the chapter's officers — and never tells the reported member. It
+ * does not promise a reviewer or a response time, and it does not claim the
+ * reporter is hidden from the officers who read the queue.
  */
 export const REPORT_SENT_TITLE = "Report sent";
 export const REPORT_SENT_BODY =
-  "It's in your chapter's moderation queue. Reports don't show who filed them.";
+  "Your chapter's officers can see this report. The member you reported isn't told.";
 
+/**
+ * The API keeps one open report per member per message and hands the first one
+ * back to a second attempt, so nothing new was filed (`alreadyReported` from
+ * `useReportMessage`). "Report sent" would claim a second report.
+ */
+export const REPORT_ALREADY_TITLE = "Already reported";
+export const REPORT_ALREADY_BODY =
+  "You already reported this message, and that report is still open. Your chapter's officers can see it.";
+
+export const REPORT_FAILED_TITLE = "Couldn't send your report";
 export const REPORT_FAILED_BODY =
   "Your report didn't send. Check your connection and try again.";

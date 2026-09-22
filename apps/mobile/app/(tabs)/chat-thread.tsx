@@ -14,7 +14,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   resolveAuthorName,
-  useBlockedUserIds,
   useChannel,
   useChannelNotificationPreferences,
   useMarkChannelRead,
@@ -41,12 +40,12 @@ import {
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import {
-  applyBlockList,
   messageActionsFor,
-  type BlockState,
+  rosterMembership,
   type ThreadRow,
 } from "@/lib/chat/blocks";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import { selectPostCapability } from "@/lib/chat/channel-list";
 import { getKeyboardPath } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
@@ -132,7 +131,19 @@ export default function ChatThreadScreen() {
   // Resolving by `sender_id` is what makes it work for a message that arrived
   // over the live `postgres_changes` echo as well as one from the REST page — a
   // join on the message payload could only ever have covered the latter.
-  const { nameFor } = useMemberDisplayNames();
+  const roster = useMemberDisplayNames();
+  const { nameFor } = roster;
+  // Whether a sender is still a member, from that same roster — Block is not
+  // offered for someone it no longer lists, because the API 404s them.
+  const isMember = useMemo(
+    () =>
+      rosterMembership({
+        byId: roster.byId,
+        isPending: roster.isPending,
+        isError: roster.isError,
+      }),
+    [roster.byId, roster.isPending, roster.isError],
+  );
 
   // Opening a channel stamps the read cursor to server `now()`; there is no
   // mark-read-to-a-message API. Its invalidation of `["channels"]` refreshes the
@@ -268,16 +279,12 @@ export default function ChatThreadScreen() {
   // The viewer's block list, applied on top of the server's mask (#2257,
   // #2315). The server masks what it serves, but a row that arrived over the
   // live echo was never evaluated, so the thread decides per row from
-  // provenance and this list — see `lib/chat/blocks.ts`. Held rows are not
-  // rendered; `BlockListNotice` says so.
-  const blockList = useBlockedUserIds();
-  const blockState = useMemo<BlockState>(
-    () => ({ status: blockList.status, ids: blockList.ids }),
-    [blockList.status, blockList.ids],
-  );
-  const thread = useMemo(
-    () => applyBlockList(messages, blockState, viewerId),
-    [messages, blockState, viewerId],
+  // provenance, this list and this session's clearances — see
+  // `lib/chat/use-thread-block-list.ts`. Held rows are not rendered;
+  // `BlockListNotice` says so.
+  const { blockList, blockState, thread } = useThreadBlockList(
+    messages,
+    viewerId,
   );
 
   // Inverted list wants newest first; the cache hands back oldest first.
@@ -285,9 +292,10 @@ export default function ChatThreadScreen() {
 
   // Parent lookup for reply quotes (#1727), built once per window rather
   // than scanned per row — same map web's timeline uses. Built over every
-  // cached message, held and tombstoned ones included: whether a block hides a
-  // blocked member's words *quoted by someone else* is an open product
-  // decision (#2312), not something this lookup should settle by omission.
+  // cached message, held and tombstoned ones included, so a reply can tell
+  // "hidden by your block list" from "not loaded": `ThreadMessageRow`
+  // classifies the parent and never hands a hidden one's words to the quote
+  // (#2312 §1).
   const byId = useMemo(() => {
     const index = new Map<string, ChatMessage>();
     for (const message of messages) index.set(message.id, message);
@@ -313,16 +321,18 @@ export default function ChatThreadScreen() {
   );
   const openActions = useCallback(
     (message: ChatMessage) => {
-      const actions = messageActionsFor(message, viewerId);
+      const actions = messageActionsFor(message, viewerId, isMember);
       if (!actions.canOpen) return;
       setActionTarget({
         messageId: message.id,
         blockUserId: actions.canBlock ? message.sender_id : null,
         senderName: resolveAuthorName(message, nameFor),
+        senderInDirectory:
+          message.sender_id !== null && isMember(message.sender_id) === true,
       });
       actionsSheetRef.current?.present();
     },
-    [nameFor, viewerId],
+    [isMember, nameFor, viewerId],
   );
 
   const renderItem = useCallback(
@@ -478,19 +488,6 @@ export default function ChatThreadScreen() {
           />
         ) : null}
 
-        {/*
-          A failed *re*-read keeps what is already on screen. Block and unblock
-          re-read every cached thread, and TanStack keeps `data` when that
-          refetch fails; replacing a loaded thread with "Couldn't load
-          messages" over a background refresh would read as the conversation
-          vanishing. The next live row's merge clears the error.
-        */}
-        {channelId && loadError && messages.length > 0 ? (
-          <Text accessibilityRole="alert" style={styles.saveError}>
-            Couldn&apos;t refresh messages. Showing what&apos;s already loaded.
-          </Text>
-        ) : null}
-
         {!channelId ? (
           <View style={styles.stateBlock}>
             <Text style={styles.stateTitle}>No channel selected</Text>
@@ -503,7 +500,7 @@ export default function ChatThreadScreen() {
             <ActivityIndicator color={tokens.color.text.muted} />
             <Text style={styles.stateBody}>Loading messages…</Text>
           </View>
-        ) : loadError && messages.length === 0 ? (
+        ) : loadError ? (
           <View style={styles.stateBlock}>
             <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
             <Text style={styles.stateBody}>{loadError.message}</Text>

@@ -13,19 +13,23 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * does, and this is what keeps its files from mounting (#2324 tracks the
  * server-side half of that).
  *
- * **No "tap to expand".** The spec's table said the blocker could expand a
- * tombstone, but a server-masked row arrives with its content already withheld,
+ * **Unblock is the only action — no "tap to expand".** The owner's decision
+ * (2026-09-22): a server-masked row arrives with its content already withheld,
  * so expand could only ever work for the rows that happened to arrive over the
  * live echo — an affordance that works on some rows and not others. The
  * durable way back is Unblock, here and in Settings.
+ *
+ * These strings are the tombstone's, and a reply quoting a hidden message uses
+ * the same words (`thread-message-row.tsx`), so the two cannot disagree.
  */
 export interface BlockedMessageTombstoneProps {
   /** Shown only in the accessibility label and the confirm prompt. */
   senderName: string | null;
   /**
-   * `false` once the sender is off the viewer's list but this row is still the
-   * server's masked copy (older than the page the unblock re-read). There is
-   * nothing to unblock, so the control is withheld rather than left dead.
+   * `false` only when this client confirmed unblocking the sender and this row
+   * is still the server's masked copy (older than the page the unblock
+   * re-read). There is nothing to unblock, so the control is withheld rather
+   * than left dead. See `tombstoneCanUnblock` in `lib/chat/blocks.ts`.
    */
   canUnblock: boolean;
   onUnblock: () => void;

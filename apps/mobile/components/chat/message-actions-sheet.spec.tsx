@@ -2,7 +2,7 @@
 import React, { createRef } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
-import { Alert } from "react-native";
+import { AccessibilityInfo, Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 
@@ -51,9 +51,13 @@ import {
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
 } from "./message-actions-sheet";
+import { blockConfirmBody } from "@/lib/chat/block-actions";
 import {
+  REPORT_ALREADY_BODY,
   REPORT_FAILED_BODY,
+  REPORT_FAILED_TITLE,
   REPORT_SENT_BODY,
+  REPORT_SENT_TITLE,
 } from "@/lib/chat/report-reasons";
 
 const BLOCKED = "22222222-2222-4222-8222-222222222222";
@@ -94,9 +98,25 @@ async function flush() {
 
 beforeEach(() => {
   vi.mocked(Alert.alert).mockClear();
+  vi.mocked(AccessibilityInfo.announceForAccessibility).mockClear();
   report.mutateAsync.mockReset();
   blockActions.block.mockReset();
 });
+
+/** What `useReportMessage` resolves. */
+function filed(alreadyReported = false) {
+  return { report: { id: "r1" }, alreadyReported };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 describe("MessageActionsSheet — menu", () => {
   it("offers Report and Block for a blockable sender", () => {
@@ -104,6 +124,7 @@ describe("MessageActionsSheet — menu", () => {
       messageId: "m1",
       blockUserId: BLOCKED,
       senderName: "Blake",
+      senderInDirectory: true,
     });
     expect(text(tree)).toContain("Report message");
     expect(text(tree)).toContain("Block Blake");
@@ -114,6 +135,7 @@ describe("MessageActionsSheet — menu", () => {
       messageId: "m1",
       blockUserId: null,
       senderName: "Signet",
+      senderInDirectory: false,
     });
     expect(text(tree)).toContain("Report message");
     expect(text(tree)).not.toContain("Block Signet");
@@ -125,12 +147,14 @@ describe("MessageActionsSheet — menu", () => {
       messageId: "m1",
       blockUserId: BLOCKED,
       senderName: "Blake",
+      senderInDirectory: true,
     });
 
     pressByLabel(tree, "Block Blake");
     expect(Alert.alert).toHaveBeenCalledTimes(1);
     const [title, body, buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
     expect(title).toBe("Block Blake?");
+    expect(body).toBe(blockConfirmBody(true));
     expect(body).toMatch(/won't be told/);
     expect(blockActions.block).not.toHaveBeenCalled();
 
@@ -146,6 +170,7 @@ describe("MessageActionsSheet — report", () => {
     messageId: "m1",
     blockUserId: BLOCKED,
     senderName: "Blake",
+    senderInDirectory: true,
   };
 
   function sendButton(tree: ReactTestRenderer) {
@@ -166,7 +191,7 @@ describe("MessageActionsSheet — report", () => {
   });
 
   it("files the chosen reason and details against the message", async () => {
-    report.mutateAsync.mockResolvedValue({ id: "r1" });
+    report.mutateAsync.mockResolvedValue(filed());
     const tree = render(target);
 
     pressByLabel(tree, "Harassment or bullying");
@@ -185,6 +210,75 @@ describe("MessageActionsSheet — report", () => {
     expect(text(tree)).toContain(REPORT_SENT_BODY);
     // Promises neither a reviewer nor a response time.
     expect(REPORT_SENT_BODY).not.toMatch(/within|hours|days|respond/i);
+    // VoiceOver hears it too: `accessibilityLiveRegion` is Android-only.
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      REPORT_SENT_TITLE,
+    );
+  });
+
+  it("says it was already reported, rather than 'Report sent', when the API hands back the open report", async () => {
+    report.mutateAsync.mockResolvedValue(filed(true));
+    const tree = render(target);
+
+    pressByLabel(tree, "Spam");
+    act(() => sendButton(tree).props.onPress());
+    await flush();
+
+    expect(text(tree)).toContain(REPORT_ALREADY_BODY);
+    expect(text(tree)).not.toContain(REPORT_SENT_BODY);
+    expect(text(tree)).not.toContain(REPORT_SENT_TITLE);
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      REPORT_ALREADY_BODY,
+    );
+  });
+
+  it("still reports a failure that comes back after the sheet was dismissed (finding 9)", async () => {
+    const request = deferred<ReturnType<typeof filed>>();
+    report.mutateAsync.mockReturnValue(request.promise);
+    const tree = render(target);
+
+    pressByLabel(tree, "Spam");
+    act(() => sendButton(tree).props.onPress());
+    const reportSheet = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "BottomSheetModal" &&
+        typeof node.props.onDismiss === "function",
+    );
+    act(() => reportSheet.props.onDismiss());
+
+    await act(async () => {
+      request.reject(new Error("offline"));
+      await Promise.resolve();
+    });
+    await flush();
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      REPORT_FAILED_TITLE,
+      REPORT_FAILED_BODY,
+    );
+  });
+
+  it("does not alert over a success that comes back after dismissal", async () => {
+    const request = deferred<ReturnType<typeof filed>>();
+    report.mutateAsync.mockReturnValue(request.promise);
+    const tree = render(target);
+
+    pressByLabel(tree, "Spam");
+    act(() => sendButton(tree).props.onPress());
+    const reportSheet = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "BottomSheetModal" &&
+        typeof node.props.onDismiss === "function",
+    );
+    act(() => reportSheet.props.onDismiss());
+
+    await act(async () => {
+      request.resolve(filed());
+      await Promise.resolve();
+    });
+    await flush();
+
+    expect(Alert.alert).not.toHaveBeenCalled();
   });
 
   it("says so when the report did not send, and keeps the form", async () => {
@@ -197,10 +291,15 @@ describe("MessageActionsSheet — report", () => {
 
     expect(text(tree)).toContain(REPORT_FAILED_BODY);
     expect(text(tree)).not.toContain(REPORT_SENT_BODY);
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      REPORT_FAILED_BODY,
+    );
+    // On screen, so no alert on top of it.
+    expect(Alert.alert).not.toHaveBeenCalled();
   });
 
   it("starts a fresh form for the next message", async () => {
-    report.mutateAsync.mockResolvedValue({ id: "r1" });
+    report.mutateAsync.mockResolvedValue(filed());
     let tree!: ReactTestRenderer;
     act(() => {
       tree = create(
