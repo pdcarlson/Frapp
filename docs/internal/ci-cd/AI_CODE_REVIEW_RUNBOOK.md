@@ -22,15 +22,14 @@ finding, commit any fixes, review the new commit, then push.
 **Why not Codex project hooks?** Verified against the installed Codex CLI 0.144.0-alpha.4 on
 2026-09-16: `PreToolUse` hooks can block Codex-issued shell commands when they return a valid block
 response, but they are tool-level (not Git- or human-level), trust can be bypassed, and the available
-hook configuration exposes no fail-closed-on-crash/timeout guarantee. Claude and Cursor hooks have
+hook configuration exposes no fail-closed-on-crash/timeout guarantee. Claude hooks have
 the same provider-specific coverage problem. The Git hook therefore owns enforcement; provider
 configs no longer duplicate it.
 
 This is consistent default-path enforcement, **not an unconditional server-side gate**. Git aborts a
 push when an installed `pre-push` hook exits nonzero, but a user can deliberately use
 `git push --no-verify`, change `core.hooksPath`, or skip installation. There is no attempt-count
-release: retrying a denied push can never create evidence. Cursor built-ins (`/review`, Bugbot) are
-not canonical and do not write the marker.
+release: retrying a denied push can never create evidence.
 
 ### Which review skill
 
@@ -119,7 +118,7 @@ Do **not** use `git push --no-verify` instead: that deliberately bypasses the re
 `/diff-review` reproduces the bundled workflow (scope → parallel finder subagents per angle → one
 independent verifier subagent per candidate → a single `ReportFindings` call) and additionally encodes
 Frapp's own invariants as review angles: `chapter_id` scoping and chapter-scoped role lookups,
-permission decorators, the PGlite migration gate, the doc-sync mandate, the tracker rule (GitHub Issues), and
+permission decorators, the PGlite migration gate, broken doc pointers, the tracker rule (GitHub Issues), and
 verification honesty. The per-candidate verifier pass is what makes an agent-run review trustworthy
 rather than the agent agreeing with its own work — do not weaken it.
 
@@ -156,7 +155,7 @@ rather than the agent agreeing with its own work — do not weaken it.
 
 ## Testing the gate
 
-`node --test scripts/ci/__tests__/review-gate.test.mjs scripts/ci/__tests__/cursor-review-gate.test.mjs scripts/ci/__tests__/code-review-invocation-rule.test.mjs`
+`node --test scripts/ci/__tests__/review-gate.test.mjs scripts/ci/__tests__/review-gate-hooks.test.mjs scripts/ci/__tests__/code-review-invocation-rule.test.mjs`
 exercises nonzero denial, repeated retries, exact-SHA and multi-ref evidence, deletions, annotated
 tags, installer wiring, provider-hook removal, and the `/code-review` invocation rule. Each behavior
 test uses a throwaway repository and never touches live evidence.

@@ -10,43 +10,38 @@ allowed-tools: Agent, Task, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(
 
 # Review this branch's diff
 
-Frapp's pre-PR review gate — the review an agent can **always** run.
+Frapp's pre-push review gate, and the review an agent can always run. Done means the findings are
+reported, each one is fixed or filed, and the gate marker exists for the commit you are pushing.
 
-**Try `/code-review` first.** The bundled command is richer (per-model-tuned effort cells, a
-workflow-backed verifier pass at `high`/`xhigh`/`max`, cloud `ultra` mode, `--fix`, `--comment`), and
-it is *conditionally* model-invocable: `Skill(skill: "code-review")` succeeds only when the current
-turn's prompt carries the token `/code-review` **whitespace-delimited on both sides** (regex
+**Try `/code-review` first.** The bundled command is richer, but a model can invoke it only when the
+current turn's prompt carries the token whitespace-delimited on both sides (regex
 `(?<!\S)/code-review(?=$|\s)`). Backticks, quotes, `**bold**`, and a trailing `.` or `,` all defeat
-it — so **expect refusal by default**, including on prompts that plainly read as asking for a review.
-If it returns `cannot be used with Skill tool due to disable-model-invocation`, that condition simply
-is not met — expected, not an error — so fall through to this skill. It is also always refused inside a sub-agent.
-Note that `/code-review` does **not** write the gate marker (Phase 4 below); this skill does.
+the match, and it is always refused inside a subagent, so expect refusal. A result reading
+`cannot be used with Skill tool due to disable-model-invocation` means the condition isn't met; carry
+on with this skill. Full rule: `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`. `/code-review` knows
+nothing of the Frapp-specific angles below and does not write the gate marker, so after it runs,
+cover those angles here and write the marker (Phase 4) yourself.
 
-Use this skill when `/code-review` is refused, and for the Frapp-specific angles below, which the
-bundled command has no knowledge of. Full invocation rule:
-`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`.
+Don't get past the gate with `git push --no-verify`: it bypasses the hook and leaves no review
+evidence.
 
-**Do not weaken this into a rubber stamp.** You are usually reviewing your own work, so the
-independent verification pass in Phase 2 is what makes the result trustworthy. Skipping it turns
-this skill into you agreeing with yourself.
+You are usually reviewing your own work. The independent verifier pass in Phase 2 is what makes the
+result more than you agreeing with yourself, so it runs at every effort level.
 
 ## Phase 0 — Scope
 
-Establish the diff. In order, first that yields a non-empty result:
+Use the first of these that is non-empty:
 
-1. `git diff @{upstream}...HEAD` — the unpushed commits.
-2. `git diff origin/main...HEAD` — when no upstream is configured (the usual case on a fresh branch).
-3. `git diff HEAD~1` — a single-commit branch.
+1. `git diff @{upstream}...HEAD`
+2. `git diff origin/main...HEAD` (no upstream, the usual case on a fresh branch)
+3. `git diff HEAD~1`
 
-Additionally run `git diff HEAD` and include uncommitted changes when the tree is dirty. If an
-explicit `<target>` argument is given (a path, a ref, or a range), it overrides all of the above.
+Add `git diff HEAD` when the tree is dirty. An explicit `<target>` (path, ref, or range) overrides
+all of this. State the scope in one line (base, head, file count). If the diff is empty, say so and
+stop.
 
-State the resolved scope in one line — base, head, file count — before reviewing. If the diff is
-empty, say so and stop; do not invent findings.
-
-Effort controls the **generic** angle count and the findings cap. The Frapp-specific angles are
-always included at every level — they are cheap, targeted greps, and several may be bundled into one
-subagent. Never drop them to fit a budget.
+Effort sets the generic angle count and the findings cap. The Frapp-specific angles run at every
+level: they are cheap, targeted searches, and several can share one finder.
 
 | Level | Generic angles | Findings cap | Gap sweep |
 |---|---|---|---|
@@ -54,186 +49,148 @@ subagent. Never drop them to fit a budget.
 | `high` (default) | 5 | 10 | no |
 | `xhigh` | 5 | 15 | yes |
 
+The gap sweep is one more `diff-finder` after Phase 2, given the surviving findings, with the angle
+"what the other angles missed". Verify its candidates the same way.
+
 ## Phase 1 — Find
 
-Launch finder subagents **in parallel, in a single message** (`Agent`, subagent_type
-`general-purpose`), one per angle. Give each the resolved diff scope and its angle only. Each
-returns at most 6 candidates, every one with `file`, `line`, a one-sentence `summary`, and a
-concrete `failure_scenario` — specific inputs or state leading to a wrong result. A candidate
-without a plausible failure scenario is not a finding; drop it.
+Launch one `diff-finder` agent per angle, all in one message so they run in parallel, and give each
+the resolved scope and its angle. (Where an agent type here or in Phase 2 isn't available,
+run a general-purpose agent with its `.claude/agents/` file's body as the prompt.) Each returns
+up to 6 candidates with `file`, `line`, `summary`, and `failure_scenario`. Drop a candidate with no
+plausible failure scenario.
 
 ### Generic angles
 
-- **Hunk scan.** Line by line through every changed hunk. Also read the *unchanged* lines of any
-  function that was touched — most real bugs are interactions between new and existing lines.
-- **Removed behavior.** For every deleted or replaced line, what did it do, and who depended on it?
-  Guard clauses, error branches, cleanup, and fallbacks that quietly disappeared.
-- **Caller/callee tracing.** For each changed signature, return shape, or thrown error, find every
-  caller and confirm they still hold. Grep for the symbol; don't assume the diff shows all uses.
-- **Language pitfalls.** Missing `await` (especially a floating promise whose rejection is
-  swallowed), `null`/`undefined` confusion, off-by-one, unhandled rejection paths, `catch` blocks
-  that discard the error, shell scripts unquoted or missing `set -u` guarantees.
-- **Reuse, simplification, efficiency.** An existing helper that should have been used instead of
-  new code; logic that collapses; an avoidable N+1 or repeated full scan.
+- **Hunk scan.** Every changed hunk, plus the unchanged lines of each touched function, since most
+  bugs are interactions between new and existing lines.
+- **Removed behavior.** For each deleted or replaced line, what it did and who depended on it:
+  guards, error branches, cleanup, fallbacks.
+- **Caller/callee tracing.** For each changed signature, return shape, or thrown error, grep every
+  caller; the diff doesn't show all uses.
+- **Language pitfalls.** Missing `await` (a floating promise swallows its rejection),
+  `null`/`undefined` confusion, off-by-one, `catch` blocks that discard the error, unquoted shell
+  variables or a missing `set -u`.
+- **Reuse, simplification, efficiency.** An existing helper the new code duplicates, logic that
+  collapses, an avoidable N+1 or repeated full scan.
 
-### Frapp-specific angles — always include these
+### Frapp-specific angles
 
-These encode invariants this codebase cannot enforce for itself. Each is a real, previously observed
-failure mode, not a hypothetical.
+These encode invariants the codebase can't enforce for itself.
 
-- **Tenant isolation.** RLS is enabled on every base table with **no permissive policies** (the
-  chat hot path's narrow client-read policies are the audited exception — see
-  `docs/internal/security/AUTHORIZATION_MODEL.md`), and the
-  API holds the `service_role` key, which bypasses RLS entirely. Isolation for API queries is
-  therefore *application-layer only*. Flag any new query missing `.eq('chapter_id', chapterId)`, and any role
-  or permission lookup not re-scoped by `chapter_id` — a stray cross-chapter `role_id` otherwise
-  leaks permissions. `apps/api/src/application/services/search.service.ts` is the reference pattern:
-  it filters candidates through `canAccessChannel` and re-scopes roles by chapter.
+- **Tenant isolation.** RLS is on for every base table with no permissive policies (the chat hot
+  path's narrow client-read policies are the audited exception; see
+  `docs/internal/security/AUTHORIZATION_MODEL.md`), but the API holds the `service_role` key, which
+  bypasses RLS. Isolation for API queries is therefore application-layer only. Flag a new query
+  without `.eq('chapter_id', chapterId)`, and a role or permission lookup not re-scoped by
+  `chapter_id` (a cross-chapter `role_id` leaks permissions). Reference pattern:
+  `apps/api/src/application/services/search.service.ts`, which filters through `canAccessChannel`
+  and re-scopes roles by chapter.
 - **Permission enforcement.** New controller routes need `@RequirePermissions` or
-  `@RequireAnyOfPermissions`. Anything invocable on a member's behalf must enforce *that caller's*
-  permissions, never the service's ambient authority.
-- **Migration safety.** Migrations must pass `npm run check:migration-safety` and replay under
-  PGlite (`npm run check:pglite-migrations`). Flag anything that breaks the PGlite path — a
-  `create extension` is the known trap. Flag destructive DDL without a stated backfill or rollback.
-- **Docs — the reviewer.** The standard is
-  [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md); this angle
-  reads a diff against it. No check requires a doc edit — the gate that did was deleted in #1597 for
-  producing filler — so never flag a PR for lacking one. Flag these. Every search below is the
-  `Grep` tool — `git grep` is not in this skill's `allowed-tools`, so do not reach for it.
-  - **Section references.** For every heading the diff renames or removes — including a
-    `* ## Heading` inside a block comment, since source files carry headings too — take the *old*
-    text off the diff's `-` side and search the tree for it: the bare heading, the section-symbol
-    forms (`§ Heading`, `§ "Heading"`), and the `#heading-slug` anchor. Search the whole tree, not
-    only `docs/` and `spec/` — such references live in source comments, and in tests that key on a
-    doc's section titles, where a renamed heading fails a suite. A prose `§` reference is validated
-    by nothing; a markdown link with an `#anchor` under the trees `.github/workflows/links.yml`
-    walks is validated by that checker, so prefer the link in anything you write.
-  - **Deletion sweep.** For every file, exported symbol, npm script, workflow job id or command the
-    diff deletes, search the corpus for prose naming it. A deletion is not finished while a doc
-    still gives instructions about the deleted thing. Separate a live instruction from a
-    deliberately historical reference: a removals table or a dated amendment *needs* the dead name
-    and is not a finding; a step someone will try to follow is. When you cannot tell, treat it as
-    live.
-  - **Roster drift.** For every array, job id, workspace list, table or version constant the diff
-    changes, search for a doc that restates it by hand. This is the case that reads as a pure code
-    change while the breakage sits in a doc nobody on the PR opened.
+  `@RequireAnyOfPermissions`. Anything invoked on a member's behalf enforces that caller's
+  permissions, not the service's ambient authority.
+- **Migration safety.** Migrations pass `npm run check:migration-safety` and replay under PGlite
+  (`npm run check:pglite-migrations`); `create extension` is the known PGlite breaker. Flag
+  destructive DDL with no stated backfill or rollback.
+- **Docs**, read against
+  [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md). No check
+  requires a doc edit, so never flag a PR for lacking one. Grep the whole tree, not only `docs/` and
+  `spec/`: source comments and tests key on doc headings too.
+  - **Section references.** For each heading the diff renames or removes (including a
+    `* ## Heading` in a block comment), search for the old text as a bare heading, as `§ Heading`
+    and `§ "Heading"`, and as a `#slug` anchor. `.github/workflows/links.yml` validates markdown
+    `#anchor` links in the trees it walks; nothing validates a prose `§` reference, so prefer the
+    link in anything you write.
+  - **Deletion sweep.** For each deleted file, exported symbol, npm script, workflow job id, or
+    command, find prose that still names it. A live instruction is a finding; a deliberately
+    historical mention (a removals table, a dated amendment) is not. When unsure, treat it as live.
+  - **Roster drift.** For each array, job id, workspace list, table, or version constant the diff
+    changes, search for docs that restate it by hand; the breakage sits in a doc nobody on the PR
+    opened. Known restatements (not exhaustive; treat an unlisted source the same way):
 
-    The semantic sweep in [#1635](https://github.com/pdcarlson/Frapp/issues/1635) adjudicated 57
-    duplicated facts and found **52 already had a false copy in the tree**. These are the sources
-    whose rosters that sweep found restated in prose — when the diff touches one, search the corpus
-    before you approve it. The list is the useful residue of that sweep's per-fact analysis, not an
-    exhaustive inventory; treat a source not named here the same way.
-
-    | Source of truth | Search these when it changes |
+    | Source of truth | Docs that restate it |
     | --- | --- |
     | `scripts/ci/lib/required-checks.mjs` (`CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS`) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `spec/environments/README.md`, `QUALITY_GATES.md`, `docs/README.md`, `docs/hooks/README.md` |
-    | `.github/workflows/ci.yml` job steps (esp. which workspaces `web-tests` runs) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `docs/hooks/README.md` |
-    | `CHAT_MESSAGE_KINDS` (declared in **three** files: `@repo/validation`, `chat.entity.ts`, `@repo/chat-core`) | `spec/behavior/chat/README.md`, `spec/architecture/README.md` |
+    | `.github/workflows/ci.yml` job steps (which workspaces `web-tests` runs) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `docs/hooks/README.md` |
+    | `CHAT_MESSAGE_KINDS`, declared in three files (`@repo/validation`, `chat.entity.ts`, `@repo/chat-core`) | `spec/behavior/chat/README.md`, `spec/architecture/README.md` |
     | `push-rules.ts:defaultLevelFor` | `spec/behavior/notifications.md`, `spec/architecture/README.md` |
-    | `packages/validation/src/upload-allowlists.ts` (`MAX_UPLOAD_BYTES`, kinds) — **per-bucket caps differ**; `config.toml` is not the same number | `content-validation.md`, `spec/architecture/README.md` § 7, `AUTHORIZATION_MODEL.md` |
+    | `packages/validation/src/upload-allowlists.ts` (`MAX_UPLOAD_BYTES`, kinds); per-bucket caps differ, and `config.toml` is a different number | `content-validation.md`, `spec/architecture/README.md` § 7, `AUTHORIZATION_MODEL.md` |
     | `buildChapterConfigFromArchetype` (which seeds are `structuredClone`d) | `spec/engineering.md`, `spec/architecture/README.md` |
     | `DEFAULT_SYSTEM_ROLES` / `DEFAULT_CHANNELS` / `SystemPermissions` | `spec/behavior/rbac.md`, `spec/behavior/chat/README.md`, `spec/behavior/alumni.md`, `spec/product/modules.md`, `spec/product/personas.md`, `AUTHORIZATION_MODEL.md` |
     | `scripts/check-env-slugs.mjs:INFISICAL_ENV_SLUGS` | `ENV_REFERENCE.md`, `SECRETS_MANAGEMENT.md`, `docs/guides/env-config.md`, `spec/environments/README.md` |
     | Storage bucket declarations in `supabase/migrations/` | `spec/architecture/README.md` § 7, `AUTHORIZATION_MODEL.md` |
     | `apps/web/tests/visual/routes.ts` | `apps/web/tests/visual/README.md` |
-    | The exact React pin — every `package.json` naming it, root `overrides` included (`git ls-files '*package.json' \| xargs grep -ln '"react": "19'`) | `AGENTS.md`, `MOBILE_TESTING.md`, `SECURITY_FIXES.md` |
-    | The two `QueryClient` defaults — `apps/web/lib/providers/query-provider.tsx` and `apps/mobile/lib/query-client.ts` — **they differ, and an unset option resolves per platform** | `spec/ui/resilience/`, `spec/ui/web-dashboard/README.md` |
-    | The `delete from` block in the `anonymize_user` RPC (latest migration re-creating it wins) | `spec/behavior/data-retention.md` |
-    | `throttle-profiles.decorator.ts` **and every handler applying one** — the profile is applied by hand per route, never inherited | `spec/behavior/README.md` § Per-route rate limits, `docs/guides/api-architecture.md` |
-    | Appearance config — `apps/web/app/providers.tsx` (whether a theme provider exists at all) and `apps/mobile/app.json`'s `userInterfaceStyle` | `spec/behavior/README.md` § Dark Mode, `spec/architecture/README.md` §§ 3.2 and 3.3, `spec/ui/web-dashboard/README.md`, `spec/ui/mobile/README.md` |
+    | The React pin in every `package.json`, root `overrides` included (`git ls-files '*package.json' \| xargs grep -ln '"react": "19'`) | `AGENTS.md`, `MOBILE_TESTING.md`, `SECURITY_FIXES.md` |
+    | `QueryClient` defaults in `apps/web/lib/providers/query-provider.tsx` and `apps/mobile/lib/query-client.ts`; they differ, and an unset option resolves per platform | `spec/ui/resilience/`, `spec/ui/web-dashboard/README.md` |
+    | The `delete from` block of the `anonymize_user` RPC (the latest migration re-creating it wins) | `spec/behavior/data-retention.md` |
+    | `throttle-profiles.decorator.ts` and every handler applying a profile (applied per route, never inherited) | `spec/behavior/README.md` § Per-route rate limits, `docs/guides/api-architecture.md` |
+    | Appearance config: `apps/web/app/providers.tsx` (whether a theme provider exists) and `userInterfaceStyle` in `apps/mobile/app.json` | `spec/behavior/README.md` § Dark Mode, `spec/architecture/README.md` §§ 3.2 and 3.3, `spec/ui/web-dashboard/README.md`, `spec/ui/mobile/README.md` |
 
-    **A hand-maintained count is the highest-risk form.** Prefer deleting it and linking over
-    syncing it — that is what the standard says, and a count with no mechanism behind it is a future
-    contradiction whether or not it is true today.
-  - **Placement and duplication.** A new or moved fact belongs in the home the standard names — not
-    a stray file added so the change looks documented, and not an unowned section appended to
-    whichever doc was open; the test is what that doc is *for*. Two homes for one fact is a defect:
-    merge them and link, rather than syncing both.
-  - **The two rewrite defects.** Flag a rewrite that states more than the original verified — one
-    case widened into a claim about all of them. Flag an edit that drops a dated stamp, a run link,
-    a run id, a PR number, or the command behind a figure: that is evidence, not narration.
+    A hand-maintained count is the riskiest form: prefer deleting it and linking over syncing it.
+  - **Placement and duplication.** A new or moved fact goes in the home the standard names, judged by
+    what each doc is for, not in a stray new file or an unowned section of whichever doc was open.
+    Two homes for one fact is a defect: merge them and link.
+  - **Rewrite defects.** A rewrite that claims more than the original verified (one case widened
+    into a claim about all). An edit that drops a dated stamp, run link, run id, PR number, or the
+    command behind a figure; those are evidence, not narration.
 
-  **What this angle dropped.** CI used to scan the whole corpus every run: cited paths resolve,
-  filename references resolve, hand-copied rosters match their source, and every doc sits in a
-  declared home under a conforming name. This angle inherits only the slice of each that the
-  diff makes visible, and doc naming and placement are now conventions the standard states rather
-  than rules a machine enforces. **It cannot catch drift between two files when neither is in the
-  diff.** Nor does CI close that gap: what still runs and over which trees — including the fixed
-  `SCAN_ROOTS` list the env-slug check reads, which is narrower than the corpus and does not include
-  `.claude/` — is in [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md), which is its one home;
-  read it there rather than restating it here. That is the accepted cost of deleting the gates: a
-  clean review here is not evidence that the corpus is clean, and must never be reported as if it
-  were.
-- **Blast radius, not diff radius.** "Pre-existing" is not grounds to drop a candidate, and a finder
-  that drops one for that reason is under-reporting. Judge every such candidate against
-  [`spec/engineering.md`](../../../spec/engineering.md#changing-existing-code) § Changing existing
-  code, which draws the fence — do not re-derive it here.
-- **Tracker rule.** Issues are opened on GitHub with the `triage` label. Shared boundary:
-  [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
-  Flag any code, script, or workflow that writes to a retired tracker.
+  This angle sees only the drift the diff makes visible. It can't catch two files drifting apart
+  when neither is in the diff, and CI doesn't close that gap either (what CI still scans is in
+  [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)). Never report a clean review as evidence
+  that the corpus is clean.
+- **Blast radius, not diff radius.** "Pre-existing" is no reason to drop a candidate. Judge it
+  against [`spec/engineering.md`](../../../spec/engineering.md#changing-existing-code) § Changing
+  existing code, which draws the fence.
+- **Tracker.** Flag code, scripts, or workflows that write to a retired tracker. Issues live on
+  GitHub ([`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)).
 - **Secrets.** No secret values in source, logs, error messages, or committed files. Local Supabase
   demo keys are not secrets; real Stripe or Infisical values are.
-- **Verification honesty.** Flag any comment, doc line, or PR text claiming a check was run that the
-  diff shows could not have been — for example asserting an E2E pass when the stack cannot start.
+- **Verification honesty.** Flag a comment, doc line, or PR text claiming a check ran that the diff
+  shows could not have (an E2E pass when the stack can't start).
 
-## Phase 2 — Verify (do not skip)
+## Phase 2 — Verify
 
-For **each surviving candidate**, launch one independent verifier subagent. Give it the candidate
-and the file, and instruct it to actively try to *disprove* the finding by reading the surrounding
-code. It returns exactly one verdict:
-
-- `CONFIRMED` — the failure scenario holds; it traced the path.
-- `PLAUSIBLE` — cannot fully confirm without running it, but the concern is real.
-- `REFUTED` — something already prevents this (a guard upstream, a type constraint, a caller
-  invariant). It must name what.
-
-Discard everything `REFUTED`. Run verifiers in parallel where there are several.
+Launch one `claim-verifier` agent per surviving candidate, in parallel, with the candidate's file,
+line, summary, and failure scenario. It tries to disprove the finding and returns `CONFIRMED`,
+`PLAUSIBLE`, or `REFUTED` with evidence. Discard everything `REFUTED`.
 
 ## Phase 3 — Synthesize and report
 
-Rank: correctness and security above cleanups; `CONFIRMED` above `PLAUSIBLE`. A docs finding that
-names a concrete broken pointer, an orphaned section reference, or a removed dated stamp is a
-**correctness** finding, not a cleanup, and is not dropped to fit the cap. Merge findings that
-share one root cause into a single entry. Cap at the effort level's limit.
+Rank correctness and security above cleanups, and `CONFIRMED` above `PLAUSIBLE`. A docs finding that
+names a concrete broken pointer, an orphaned section reference, or a dropped dated stamp is a
+correctness finding and is not cut to fit the cap. Merge findings that share a root cause. Cap at the
+level's limit.
 
-Report with **one `ReportFindings` call**, most severe first, setting `level` to the effort used and
-`verdict` on each finding. Pass an empty array when nothing survived — that is a valid, useful
-result. When you use the tool, don't *also* restate each finding as prose; the host UI renders them.
+Report with one `ReportFindings` call, most severe first, with `level` set to the effort used and
+`verdict` on each finding. Pass an empty array when nothing survived. Don't also restate the findings
+as prose; the host renders them.
 
-**If `ReportFindings` is unavailable** (it is gated — absent at `low` effort, under
-`--output-format text|json`, and behind a feature flag), fall back to a numbered prose list with the
-same fields per finding: file, line, verdict, summary, failure scenario. Never finish a review having
-emitted nothing — silence is indistinguishable from a clean diff, which is the one outcome you must
-not fake.
+If `ReportFindings` is unavailable (it is absent at `low` effort, under
+`--output-format text|json`, and behind a feature flag), write a numbered list with the same fields:
+file, line, verdict, summary, failure scenario. Always emit one or the other, because silence is
+indistinguishable from a clean diff.
 
-Then act on every finding. Do one of exactly two things per finding:
+Then act on every finding, one of two ways:
 
-1. **Fix it** in the working tree, or
-2. **File a self-contained follow-up** per [`file-follow-up`](../file-follow-up/SKILL.md) (not a
-   drive-by `issue_write` with only `triage`) with an explicit reason for deferring.
+1. Fix it in the working tree.
+2. File a self-contained follow-up per [`file-follow-up`](../file-follow-up/SKILL.md), with the
+   reason for deferring.
 
-Record the disposition where it is auditable: after acting, re-call `ReportFindings` with `outcome`
-set per finding (`fixed` / `skipped` / `no_change_needed`) — that is what the field is for. A short
-prose line mapping each finding to its disposition is also fine and is *not* what the "don't restate
-as prose" rule above is about; that rule is only to avoid duplicating the rendered findings list.
-
-Never silently leave a finding unaddressed. If the GitHub MCP is unreachable, say so and carry the
-finding forward in your summary and the PR body rather than dropping it.
+Record the dispositions by calling `ReportFindings` again with `outcome` set per finding (`fixed`,
+`skipped`, `no_change_needed`); a one-line prose mapping of finding to disposition is also fine. If
+the GitHub MCP is unreachable, say so and carry the unfiled finding in your summary and the PR body.
 
 ## Phase 4 — Record that the review ran
 
-Write a marker so the pre-push gate can tell a real review from a retried push:
+After reporting and acting on the findings, write the marker the pre-push hook checks:
 
 ```sh
 mkdir -p "$(git rev-parse --show-toplevel)/.cache/diff-review" \
   && touch "$(git rev-parse --show-toplevel)/.cache/diff-review/$(git rev-parse HEAD)"
 ```
 
-**Use the absolute repo-root path, as above — not a `.cache/…` path relative to the cwd.** The hook
-reads `<repo-root>/.cache/diff-review/<SHA>`, so a marker written from `apps/api` lands somewhere the
-hook never looks. `.gitignore` matches `.cache/diff-review/` at any depth, so a stray copy is
-invisible in `git status` and the mismatch would be silent — the push remains denied until evidence exists.
-
-Only do this **after** reporting and acting on findings. The gate keys on the HEAD SHA, so committing
-fixes invalidates the marker by design — re-run this skill on the new HEAD, and the review always
-covers exactly what gets pushed.
+Use the absolute repo-root path, as above, not a `.cache/…` path relative to the cwd.
+`.githooks/pre-push` reads `<repo-root>/.cache/diff-review/<SHA>`, so a marker written from
+`apps/api` lands where the hook never looks and the push stays denied. The marker is keyed to the
+commit, so committing fixes invalidates it by design: re-run this skill on the new HEAD, and the
+review always covers exactly what gets pushed.

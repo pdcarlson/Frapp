@@ -56,7 +56,7 @@ bash scripts/local-dev-setup.sh
 # bash scripts/local-dev-setup.sh --reset-supabase-data
 ```
 
-The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, the local Postgres default-ACL repair (fatal if it fails; `FRAPP_SKIP_ACL_REPAIR=1` overrides), optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (Cursor Cloud and the Claude Code cloud sandbox do — see [`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md)). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
+The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, the local Postgres default-ACL repair (fatal if it fails; `FRAPP_SKIP_ACL_REPAIR=1` overrides), optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (the Claude Code cloud sandbox does — see [`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md)). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
 
 **Manual sequence** (equivalent):
 
@@ -226,7 +226,7 @@ angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus fo
 defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
 `.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
-**Code review is a repository-managed Git pre-push gate, not a CI check.** Frapp's gate is **`/diff-review`** — not Bugbot. The root `prepare` script installs [`.githooks/pre-push`](../../.githooks/pre-push) through `core.hooksPath`, so local Codex, cloud agents, and humans share one mechanism. Every non-deletion ref update requires evidence for its exact pushed commit at `.cache/diff-review/<PUSHED_COMMIT_SHA>`; retrying cannot satisfy it. Git guarantees that the hook's nonzero exit aborts the push when installed, but `--no-verify`, a changed hooks path, or skipped installation bypass it, so it is not an unconditional server-side gate. Details live in the [review runbook](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+**Code review is a repository-managed Git pre-push gate, not a CI check.** Frapp's gate is **`/diff-review`**. The root `prepare` script installs [`.githooks/pre-push`](../../.githooks/pre-push) through `core.hooksPath`, so local Codex, cloud agents, and humans share one mechanism. Every non-deletion ref update requires evidence for its exact pushed commit at `.cache/diff-review/<PUSHED_COMMIT_SHA>`; retrying cannot satisfy it. Git guarantees that the hook's nonzero exit aborts the push when installed, but `--no-verify`, a changed hooks path, or skipped installation bypass it, so it is not an unconditional server-side gate. Details live in the [review runbook](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 - On `main`, conversation resolution is not required, so unresolved review threads do not block merge.
 - There is no second branch with a stricter policy. The human gate on what reaches users is the `production` **environment**'s Required reviewers, which pauses the deploy itself (#1340).
@@ -447,10 +447,10 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Every migration should have a documented rollback strategy in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.
 - See `docs/internal/ops/deployment/` for the full migration deployment workflow.
 
-## Cursor Cloud and Claude Code
+## Claude Code web
 
-Frapp is developed in **Cursor Cloud** and **Claude Code web** independently (ADR-16 amendment 9). Cursor public contract: [`.cursor/environment.json`](../../.cursor/environment.json) (`start` is `scripts/cursor-cloud-up.sh`, which runs shared `scripts/cloud-sandbox-up.sh`). Claude public contract: Setup script `scripts/cloud-sandbox-setup.sh` plus SessionStart, which launches the same bringup. Full configuration and failure troubleshooting: [`docs/internal/environment/CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md). Agent instructions: [`AGENTS.md`](../../AGENTS.md).
+Frapp's cloud agent environment is **Claude Code web** (ADR-16 amendment 10). Public contract: Setup script `scripts/cloud-sandbox-setup.sh` plus SessionStart, which launches the bringup in `scripts/cloud-sandbox-up.sh`. Full configuration and failure troubleshooting: [`docs/internal/environment/CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md). Agent instructions: [`AGENTS.md`](../../AGENTS.md).
 
 ## Scheduled backlog agents
 
-**Claude Code Routines** are a live scheduled path. **Cursor Automations** are an optional Cursor scheduled path — do not dual-run the same routine on both. Canonical prompts, cron, and enable notes: [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). Do not restate liveness here. Linear stays retired (ADR-16 amendment 5).
+**Claude Code Routines** are the scheduled path. Canonical prompts, cron, and enable notes: [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). Do not restate liveness here. Linear stays retired (ADR-16 amendment 5).

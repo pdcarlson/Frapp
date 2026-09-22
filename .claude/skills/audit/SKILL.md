@@ -9,377 +9,226 @@ description: >
 
 # Audit & Quality Review
 
-> Read before performing code audits, security reviews, dependency checks, migration reviews, or
-> quality assessments — whether interactively or as a read-only pass inside a scheduled routine
-> (e.g. the [Issue Curator](../issue-curator/SKILL.md)'s engineering-gaps lens). In read-only
-> runs, findings are filed as GitHub issues rather than fixed in place — except in
-> [`docs-upkeep`](../docs-upkeep/SKILL.md) (routine 4), which fixes documentation in a docs-only PR
-> and never files `area:docs` issues (ADR-16 amendment 6), and
-> [`hygiene-scan`](../hygiene-scan/SKILL.md) (routine 5), which fixes code hygiene in a
-> product-code PR (ADR-16 amendment 7). `npm run lint` is read-only in
-> every workspace and will not touch your tree — `npm run lint:api:fix` is the only *lint* script
-> that writes, and no audit needs it. `npm run check:api-contract` does regenerate `openapi.json`
-> and `packages/api-sdk/src/types.ts` when API-related files changed; treat those edits as throwaway
-> (`git checkout -- .`) — never commit them.
+The checks, commands and repo-specific traps for auditing Frapp, interactively or as a read-only
+lens inside a scheduled routine such as the [Issue Curator](../issue-curator/SKILL.md). A read-only
+run files findings as GitHub issues instead of fixing them. Two routines fix instead:
+[`docs-upkeep`](../docs-upkeep/SKILL.md) fixes docs in a docs-only PR and never files `area:docs`
+issues, and [`hygiene-scan`](../hygiene-scan/SKILL.md) fixes code hygiene in a product-code PR.
 
----
+A broad audit splits well across subagents by audit type, since each is independent,
+context-heavy reading. Before filing a finding whose proof is more than one read, the
+`claim-verifier` agent can try to refute it.
+
+## Commands that write
+
+- `npm run lint` is read-only in every workspace. `npm run lint:api:fix` and `npm run format`
+  write; no audit needs them.
+- `npm run check:api-contract` regenerates `apps/api/openapi.json` and
+  `packages/api-sdk/src/types.ts` when API-related files changed. Treat those edits as throwaway
+  (`git checkout -- apps/api/openapi.json packages/api-sdk/src/types.ts`) and never commit them.
+- Never run the bare `npm run configure:branch-protection`; see [Branch protection](#branch-protection).
 
 ## Audit types
 
 | Audit | What to check | Key files |
 |-------|---------------|-----------|
-| Code quality | Architecture adherence, DRY, naming, typing | `apps/api/src/`, `apps/web/`, `packages/` |
+| Code quality | Layering, DRY, naming, typing | `apps/api/src/`, `apps/web/`, `packages/` |
 | Security | Auth guards, RLS, input validation, secret exposure | Guards, DTOs, migrations, `.env*`, workflows |
-| Dependencies | Outdated packages, vulnerabilities, license issues | `package.json` (root + workspaces), `package-lock.json` |
-| API contract | Spec drift, breaking changes, DTO completeness | `openapi.json`, `packages/api-sdk/src/types.ts` |
-| Database | Migration safety, schema consistency, RLS coverage | `supabase/migrations/`, `database.types.ts` |
-| CI/CD | Workflow correctness, secret exposure, check coverage | `.github/workflows/` |
+| Dependencies | Vulnerabilities, outdated packages, licenses | `package.json` (root and workspaces), `package-lock.json` |
+| API contract | Spec drift, breaking changes, DTO completeness | `apps/api/openapi.json`, `packages/api-sdk/src/types.ts` |
+| Database | Migration safety, schema consistency, RLS coverage | `supabase/migrations/`, `apps/api/src/infrastructure/supabase/database.types.ts` |
+| CI/CD | Workflow correctness, secret exposure, check coverage | `.github/workflows/`, `scripts/ci/` |
 
----
+## Code quality
 
-## Code quality audit workflow
+**Layering.** Dependencies flow Interface → Application → Domain ← Infrastructure. Red flags:
+controllers importing from `infrastructure/` directly, services importing from `interface/` (DTOs,
+guards), domain entities importing `@nestjs/*` or `@supabase/*`.
 
-### 1. Architecture layer compliance
+**Patterns.** Audit API code against the conventions in
+[`api-development`](../api-development/SKILL.md) (token-bound repositories, the guard chain, DTO
+decorators).
 
-Verify the dependency direction: Interface → Application → Domain ← Infrastructure.
+**Types.** `npm run check-types` works straight after `npm install`: `check-types` depends on
+`^build` in `turbo.json`, so turbo builds the shared packages first. That wiring covers only the
+turbo tasks (`build`, `lint`, `check-types`), not the root `check:*` scripts. Look for `any`,
+`@ts-ignore` and untyped parameters.
 
-Red flags:
-- Controllers importing from `infrastructure/` directly (should go through services)
-- Services importing from `interface/` (DTOs, guards)
-- Domain entities importing from `@nestjs/*` or `@supabase/*`
+**Lint.** `npm run lint`. Every workspace except `apps/api` runs `--max-warnings 0`; the API's
+warnings don't fail CI, so count them as debt rather than as passing.
 
-### 2. Pattern consistency
-
-Check that new code follows established patterns:
-- Repositories use `{ provide: TOKEN, useClass: Impl }` binding
-- Services use `@Inject(TOKEN)` for repositories, not concrete classes
-- Controllers use the standard guard chain (`SupabaseAuthGuard`, `ChapterGuard`, `PermissionsGuard`)
-- DTOs use `class-validator` decorators + `@ApiProperty`/`@ApiPropertyOptional`
-
-### 3. Type safety
-
-```bash
-npm run check-types   # Turbo runs tsc --noEmit across all workspaces
-```
-
-No manual package build first — `check-types` depends on `^build` in `turbo.json`, so turbo builds
-the shared packages as part of the run. This works on a fresh sandbox straight after `npm install`.
-
-Mind the scope: `^build` applies to the **turbo tasks** (`build`, `lint`, `check-types`) and nothing
-else. The root `check:*` scripts are plain node scripts that turbo never schedules, so this
-paragraph does not transfer to them — see [API contract audit](#api-contract-audit) for how
-`check:api-contract` gets its build.
-
-Check for `any` types, `@ts-ignore`, and untyped function parameters.
-
-### 4. Lint
-
-```bash
-npm run lint   # ESLint across all lint-enabled workspaces
-```
-
-The API has strict lint rules. Warnings are tracked but currently tolerated — see AGENTS.md gotchas.
-
----
-
-## Security audit workflow
+## Security
 
 ### Auth and authorization
 
-1. **Every controller** should have `@UseGuards(SupabaseAuthGuard, ChapterGuard)` unless it's:
-   - `/health` (no auth)
-   - Webhook endpoints (signature verification only)
-   - Chapter creation (no chapter guard, since no chapter exists yet)
-
-2. **Every endpoint — read or write — that accesses or returns protected user/chapter data** must
-   additionally have `@UseGuards(PermissionsGuard)` with explicit `@RequirePermissions()` (or
-   `@RequireAnyOfPermissions()`). This includes GET/list endpoints — e.g. `member.controller.ts`
-   uses `MEMBERS_VIEW` on reads, and `financial-invoice.controller.ts` lists own invoices for
-   members but requires `billing:view` to list all or read others' invoices. Class-level defaults
-   are fine where they keep behavior consistent; route-level `@RequirePermissions` is **merged**
-   with the class list by `PermissionsGuard`, so both apply.
-
-3. **Audit the permissions**: Check `domain/constants/permissions.ts` for the permission enum. Verify each controller method uses the correct permission.
+1. Controllers carry `@UseGuards(SupabaseAuthGuard, ChapterGuard)` unless there is no chapter
+   context to check: `/health` (no auth), webhooks (signature verification only), and user-scoped
+   routes that come before or outside membership (chapter creation, `chapter-directory`,
+   `analytics`). A new exception needs a stated reason.
+2. Every endpoint that reads or writes protected user or chapter data, GET and list included, also
+   needs `PermissionsGuard` with `@RequirePermissions()` or `@RequireAnyOfPermissions()`. See
+   `member.controller.ts` (`MEMBERS_VIEW` on reads) and `financial-invoice.controller.ts` (own
+   invoices for members, `billing:view` for everyone else's). Route-level permissions are merged
+   with the class-level list, so both apply.
+3. Check each method's permission against the enum in
+   `apps/api/src/domain/constants/permissions.ts`.
 
 ### RLS coverage
 
-All tables in `supabase/migrations/` must have `ENABLE ROW LEVEL SECURITY`. Almost every table then carries **no permissive policies** (default deny) — data access goes through the `service_role` client in the API. The deliberate exceptions are the chat hot path's client-read policies (`chat_message_actions`, membership-scoped `chat_messages` reads); the per-table posture inventory is [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../../docs/internal/security/AUTHORIZATION_MODEL.md) — audit a new permissive policy against it, not against "no policies exist".
+Every table in `supabase/migrations/` must `ENABLE ROW LEVEL SECURITY`. Almost every table then
+has no permissive policies (default deny), because the API reaches data through the
+`service_role` client. The deliberate exceptions are the chat hot path's client-read policies
+(`chat_message_actions`, membership-scoped `chat_messages` reads). The per-table inventory is
+[`AUTHORIZATION_MODEL.md`](../../../docs/internal/security/AUTHORIZATION_MODEL.md); audit a new
+permissive policy against it.
 
-To verify (per migration file, each `CREATE TABLE` must have a matching `ALTER TABLE … ENABLE ROW LEVEL SECURITY` in the same file):
-
-```bash
-python3 <<'PY'
-import glob
-import re
-from pathlib import Path
-
-# Matches: create table [schema.]name ( ... ) — schema and name quoted or unquoted
-create_re = re.compile(
-    r"""
-    CREATE\s+TABLE\s+
-    (?:IF\s+NOT\s+EXISTS\s+)?
-    (?:
-      (?:"(?P<qschema>[a-zA-Z0-9_]+)"|(?P<uschema>[a-zA-Z0-9_]+))\.
-    )?
-    (?:"(?P<qname>[a-zA-Z0-9_]+)"|(?P<uname>[a-zA-Z0-9_]+))
-    \s*\(
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
-
-
-def rls_pattern(schema, table):
-    """Match ENABLE RLS for the same table as CREATE (qualified ALTER or unqualified, Frapp-style)."""
-    esc_t = re.escape(table)
-    ident = rf'(?:"{esc_t}"|{esc_t})'
-    if schema:
-        esc_s = re.escape(schema)
-        qualified = (
-            rf"ALTER\s+TABLE\s+{esc_s}\.{ident}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY"
-        )
-        # Migrations often use `alter table users` without repeating the schema
-        unqualified = (
-            rf"ALTER\s+TABLE\s+{ident}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY"
-        )
-        return re.compile(rf"(?:{qualified}|{unqualified})", re.IGNORECASE)
-    return re.compile(
-        rf"ALTER\s+TABLE\s+(?:[a-zA-Z0-9_]+\.)?{ident}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY",
-        re.IGNORECASE,
-    )
-
-root = Path("supabase/migrations")
-failed = False
-for path in sorted(glob.glob(str(root / "*.sql"))):
-    text = Path(path).read_text(encoding="utf-8")
-    tables = []
-    for m in create_re.finditer(text):
-        sch = m.group("qschema") or m.group("uschema")
-        name = m.group("qname") or m.group("uname")
-        tables.append((sch, name))
-    if not tables:
-        continue
-    for sch, t in tables:
-        label = f"{sch}.{t}" if sch else t
-        if not rls_pattern(sch, t).search(text):
-            print(f"MISSING RLS: {path} table {label}")
-            failed = True
-        else:
-            print(f"OK: {path} table {label}")
-if failed:
-    raise SystemExit(1)
-PY
-```
+`npm run check:pglite-migrations` (the CI `pglite-migrations` job) applies every migration to an
+in-process Postgres and fails if any public table lacks RLS, if the policy inventory drifts from
+`AUTHORIZATION_MODEL.md` §4, or if a non-owner probe role can read what it shouldn't. It needs no
+Docker. What it can't judge is whether a new policy's predicate is right; that is the review.
 
 ### Input validation
 
-- DTOs must use `class-validator` decorators (`@IsString`, `@MaxLength`, `@IsUUID`, etc.)
-- `ValidationPipe` is configured globally in `configureApp()` (`apps/api/src/bootstrap.ts`), not in `main.ts`, with `whitelist: true` (strips unknown fields) and `forbidNonWhitelisted: true`
+DTOs use `class-validator` decorators (`@IsString`, `@MaxLength`, `@IsUUID`, …). The global
+`ValidationPipe` is set in `configureApp()` (`apps/api/src/bootstrap.ts`), not `main.ts`, with
+`whitelist: true` and `forbidNonWhitelisted: true`.
 
 ### Secret exposure
 
-Check for:
-- Hardcoded secrets in source (keys, tokens, passwords)
-- Secrets logged in interceptors or error handlers
-- Secrets in CI workflow outputs
-- `.env*` files not in `.gitignore`
+Beyond hardcoded secrets, check what interceptors and error handlers log, what CI workflows echo,
+and that `.env*` files are gitignored.
+
+## Dependencies
 
 ```bash
-npm audit   # Check for known vulnerabilities in dependencies
+npm run check:npm-audit      # what CI gates on; honors scripts/npm-audit-allowlist.json
+npm outdated                 # add -w <workspace> for one workspace
 ```
 
----
+File from the gate's output, not bare `npm audit`, which re-reports every allowlisted advisory as
+if it were new.
 
-## Dependency audit
+For a transitive CVE, use the root `overrides` block in `package.json` rather than per-workspace
+upgrades. Pin to the patched range the advisory cites, then re-resolve only that package with
+`npm update <pkg>` (a plain `npm install` keeps the old resolution).
 
-```bash
-npm audit                    # Vulnerability scan
-npm outdated                 # Check for outdated packages
-npm outdated -w apps/api     # Per-workspace
-```
+Never delete `package-lock.json`. A full rebuild drops the optional platform binaries for every
+host except the one that ran it and re-resolves hundreds of unrelated packages. If
+`npm update <pkg>` won't move a nested copy, delete just that lockfile entry and its `node_modules`
+directory, then `npm update <parent>`. Confirm a single resolution with `npm ls <pkg> --all`;
+optional peer dependencies can keep a stale hoisted copy alive.
 
-Key dependencies to watch:
-- `@supabase/supabase-js` and `@supabase/ssr` — breaking changes between major versions
-- `@nestjs/*` — NestJS 11 is current; watch for deprecations
-- `next` — Next.js App Router APIs change between versions
-- `@tanstack/react-query` — hook API changes
-- `stripe` — webhook signature verification changes
+The CI `dependency-audit` job (`npm run check:npm-audit`) fails on high and critical advisories.
+Fix in range where possible; otherwise add a time-boxed, issue-tracked entry to
+`scripts/npm-audit-allowlist.json` per
+[`SECURITY_FIXES.md`](../../../docs/internal/security/SECURITY_FIXES.md) § npm audit sweep + CI gate.
 
-For **transitive CVEs**, prefer the root `overrides` block in [`/package.json`](../../../package.json) (established in #245 / [`docs/internal/security/SECURITY_FIXES.md`](../../../docs/internal/security/SECURITY_FIXES.md)) over per-workspace upgrades. Pin to the patched range cited by the advisory, then re-resolve **only the affected package** with `npm update <pkg>` (a plain `npm install` keeps the old resolution). **Never `rm package-lock.json`** — a full rebuild drops the optional platform binaries for every host except the one that ran it and re-resolves hundreds of unrelated packages (verified in #291/#699; see SECURITY_FIXES.md's "Prevention" and "Two corrections" notes). If `npm update <pkg>` won't move a nested copy, delete just that entry from the lockfile and its `node_modules` dir, then `npm update <parent>` to re-resolve the subtree. Afterwards confirm a single resolution with `npm ls <pkg> --all` (optional peer deps can keep a stale hoisted copy alive — the #684 trap). High/critical advisories are enforced by the CI `dependency-audit` gate (`npm run check:npm-audit`): fix in-range where possible, otherwise add a time-boxed, issue-tracked entry to `scripts/npm-audit-allowlist.json` per SECURITY_FIXES.md § npm audit sweep + CI gate.
+## API contract
 
----
+`npm run check:api-contract` regenerates the contract and fails if the committed copies differ.
+Run it after any controller or DTO change. It builds the shared packages itself and bootstraps
+NestJS with placeholder credentials (it never calls Supabase or Stripe), so it works on a fresh
+sandbox, but it is slower than the other `check:*` scripts. It writes; see
+[Commands that write](#commands-that-write).
 
-## API contract audit
+For a manual review, open Swagger UI at `http://localhost:3001/docs` and compare it with
+`spec/product/`: undocumented endpoints, missing `@ApiOperation` summaries, schemas that don't
+match their DTOs.
 
-### Check for drift
+## Database migrations
 
-```bash
-npm run check:api-contract
-```
+`npm run check:migration-safety` (`scripts/check-migration-safety.mjs`) checks only:
 
-This **regenerates** `openapi.json` and `types.ts` and fails if the committed copies differ, so it
-catches drift that a git-diff heuristic would miss. Run after any controller or DTO change.
+- filenames match `{14-digit-timestamp}_{snake_case}.sql`, with no duplicate timestamps;
+- a migration change also updates one of the runbooks in `MIGRATION_DOCS`, and every migration has
+  an entry in both runbooks, with a shrink-only `UNLEDGERED` allowlist for older migrations.
 
-Regenerating bootstraps NestJS (with placeholder credentials — it only builds the Swagger document
-and never calls Supabase or Stripe) and needs the shared packages built, which the script does
-itself. So it runs on a fresh sandbox after `npm install`, and takes noticeably longer than the
-other `check:*` scripts.
+Exit 2, not 1, means the gate can't do its job rather than that your change is wrong: a rename
+outran `MIGRATION_DOCS`, a declared doc has no entry shape in `LEDGER_ENTRY_PATTERNS`, or
+`UNLEDGERED` gained a migration newer than `RATCHET_VERSION_CEILING`. For that last one, delete
+the line you added and write the ledger entry instead.
 
-### Manual review
+It never reads the SQL. `npm run check:pglite-migrations` proves the migrations apply and the RLS
+posture holds, and `npm run check:migration-lock-safety` (Squawk, advisory only) flags patterns
+that take a heavy lock on a live table. The rest is review:
 
-1. Open `http://localhost:3001/docs` (Swagger UI)
-2. Verify endpoints match the product spec under `spec/product/`
-3. Check for undocumented endpoints or missing `@ApiOperation` summaries
-4. Verify request/response schemas match DTOs
+- RLS enabled on each new table in the same migration that creates it.
+- No destructive operation without a rollback plan in
+  [`DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md).
+- Foreign keys have deliberate `ON DELETE` behavior.
+- Indexes on frequently queried columns.
+- An `update_updated_at` trigger on tables with an `updated_at` column.
+- No raw user input in SQL (repositories use parameterized queries).
 
----
+## CI/CD
 
-## Database migration audit
-
-### Filename validation
-
-```bash
-npm run check:migration-safety
-```
-
-Implemented by `scripts/check-migration-safety.mjs`. It validates **only**:
-
-- Filenames match `{14-digit-timestamp}_{snake_case}.sql`
-- No duplicate timestamps
-- A migration change also updates one of the two runbooks named by
-  `MIGRATION_DOCS` in that script. Separately, and more strongly, the gate
-  asserts whole-tree **per-migration** coverage in *both* runbooks by entry
-  shape, with a shrink-only `UNLEDGERED` allowlist for migrations predating it
-- Those declared runbooks are still tracked. Exit **2**, not 1, means the gate
-  cannot do its job rather than that your change is wrong, and it now has three
-  causes: a rename outran `MIGRATION_DOCS`; a declared doc has no entry shape in
-  `LEDGER_ENTRY_PATTERNS`; or `UNLEDGERED` gained a migration newer than
-  `RATCHET_VERSION_CEILING` (the allowlist is shrink-only — "UNLEDGERED grew"
-  means delete the line you just added and write the ledger entry instead)
-
-It does **not** inspect migration SQL for RLS. For per-table RLS coverage, use the **RLS coverage** section above and its Python verification script.
-
-### Content review checklist
-
-For each migration:
-- [ ] RLS enabled on new tables
-- [ ] No destructive operations without rollback plan in [`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md)
-- [ ] Foreign keys have appropriate `ON DELETE` behavior
-- [ ] Indexes added for frequently queried columns
-- [ ] `update_updated_at` trigger added for tables with `updated_at` column
-- [ ] No raw user input in SQL (parameterized queries in repositories)
-
----
-
-## CI/CD audit
-
-### Workflow checks
+Workflows with specific audit concerns (the full set is `.github/workflows/`):
 
 | Workflow | File | Key concerns |
 |----------|------|--------------|
-| CI | `.github/workflows/ci.yml` | All required CI jobs passing, correct branch triggers |
-| Deploy (staging) | `.github/workflows/deploy-api.yml` | Secret handling, migration gating, health checks |
-| Deploy (production) | `.github/workflows/deploy-production.yml` | SHA validation (ancestor of `main` + CI green), the replay/apply fence, provider guardrail preflight (currently red — see next row), deploy-by-commit, strict CANCELED handling |
-| Production guardrails | `.github/workflows/production-guardrails.yml` | Render auto-deploy off and tracking `main` — dashboard-only and fails open; the Vercel half is red as of 2026-09-02 and is to be **inverted, not dropped** — see below |
-| Release | `.github/workflows/release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
-| Docs | `.github/workflows/docs.yml` | One job, `env-slugs` — Infisical environment slugs resolve, over the fixed `SCAN_ROOTS` list in `scripts/check-env-slugs.mjs`, not the repo. **Not a documentation gate** |
-| Links | `.github/workflows/links.yml` | One job, `link-check` — lychee, offline: markdown links and heading anchors resolve. External URLs are never fetched |
+| CI | `ci.yml` | Required jobs passing, correct triggers |
+| Deploy (staging) | `deploy-api.yml` | Secret handling, migration gating, health checks |
+| Deploy (production) | `deploy-production.yml` | SHA must be an ancestor of `main` and CI-green, the migration replay and working-tree fence, the provider guardrail preflight, deploy-by-commit, `CANCELED` treated as failure |
+| Production guardrails | `production-guardrails.yml` | Render `frapp-api-prod` auto-deploy off, tracking `main`, health check path `/health`; Vercel `frapp-web` and `frapp-landing` not linked to Git |
+| Release | `release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
+| Docs | `docs.yml` | One job, `env-slugs`: Infisical environment slugs resolve, over the `SCAN_ROOTS` in `scripts/check-env-slugs.mjs`. Not a documentation gate. |
+| Links | `links.yml` | One job, `link-check`: offline lychee over markdown links and heading anchors; external URLs are never fetched |
 
-Both Vercel projects were unlinked from Git (landing 2026-09-01, web 2026-09-02). The old
-`assertVercelProductionBranch` read an absent `project.link.productionBranch` and treated it as a
-violation — red daily, and red as the `deploy-production.yml` preflight, where it blocked production
-deploys (`--migrations-only` drops only frapp-landing's assertion; frapp-web's stays). **Repaired by
-#1579 on 2026-09-02** — the assertion is now `assertVercelNoGitLink`, and the two Vercel jobs in
-`verify-deployments.yml` were removed. The canonical record of the unlink and everything it broke is **ADR-21** in
-[`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md) — read it there, do not
-re-derive it here.
+The guardrail settings live only in provider dashboards and fail open: if one drifts, merges to
+`main` can reach production ungated. Both Vercel projects are deliberately unlinked from Git
+([ADR-21](../../../spec/architecture/adr/adr-21.md)), so the invariant to audit is that they stay
+unlinked: Vercel `list_projects` should report `link: null` for both, and a present Git link is the
+finding.
 
-**The Vercel row stays auditable, pointed the other way.** No Production Branch setting exists while
-`link` is null, but *staying unlinked* is itself unversioned dashboard state, so #1579 **inverted**
-the assertion rather than deleting it. So audit the invariant that replaced it: **both
-projects are still unlinked** — Vercel `list_projects` reports `link: null` for `frapp-web` and
-`frapp-landing`, and a **present** Git link is now the finding.
+`docs.yml` and `links.yml` are all that reads the docs corpus. Neither is a required check, and
+neither validates a doc's claims. The old gates for cited paths, filename references, rosters and
+placement were removed on purpose; don't propose them back. The repo relies on
+[`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the
+docs angle in [`diff-review`](../diff-review/SKILL.md), and
+[`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md) says what runs and what nothing checks.
 
-**Do not audit for documentation coverage that no longer exists.** The `docs.yml` and `links.yml`
-rows above are the whole of what reads the docs corpus. Neither is a required check, and neither
-validates a doc's **claims**. The gates that checked cited paths, filename references, hand-copied
-rosters and doc placement were deleted, and are not to be proposed back — the replacement is
-[`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the docs
-angle in [`diff-review`](../diff-review/SKILL.md). What still runs, over which trees, and what
-nothing checks: [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md) — read it there rather than
-restating it here.
-
-### Secret exposure in workflows
-
-- Verify secrets are accessed via `${{ secrets.* }}`, never echoed or logged
-- Check `permissions:` blocks are minimal
-- Verify `pull_request_target` triggers don't expose secrets to untrusted forks
+**Workflow secrets.** Secrets only via `${{ secrets.* }}`, never echoed or logged; minimal
+`permissions:` blocks; no `pull_request_target` trigger that exposes secrets to forks.
 
 ### Branch protection
 
-From an agent session run **this command and nothing else** — it reads live protection, diffs it
-against the roster, and writes nothing:
+From an agent session, run only the read-only diff:
 
 ```bash
 npm run configure:branch-protection:verify
 ```
 
-> **Never the bare `npm run configure:branch-protection`** — with no flags it is a LIVE `PUT` of the
-> whole protection payload (the script prints `Mode: LIVE`). And never
-> `npm run configure:branch-protection --dry-run` **without** the `--` separator: npm swallows the
-> flag, the script sees zero argv, `assertKnownArgs` has nothing to reject, and it **applies**.
-> Applying branch protection is a human step with an admin PAT, by policy — an audit never applies.
+Bare `npm run configure:branch-protection` is a live `PUT` of the whole protection payload (it
+prints `Mode: LIVE`). `npm run configure:branch-protection --dry-run` without the `--` separator
+also applies, because npm swallows the flag and the script sees no arguments. Applying branch
+protection is a human step with an admin PAT; an audit never applies.
 
-(`configure-branch-protection` reads `GITHUB_PAT` first, with aliases tolerated (`GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`) — export it per [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
+The script reads `GITHUB_PAT` (aliases `GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`); see
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+`:verify` exits non-zero and names each divergence from `CI_CHECKS` / `DOCS_CHECKS` /
+`DRIFT_CHECKS` in `scripts/ci/lib/required-checks.mjs`, which is the comparand. The human-readable
+roster is the runbook's § Required Status Checks.
 
-`:verify` exits non-zero on any divergence and names it, so read that output rather than eyeballing a
-dry run. It diffs against `CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS` in
-[`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs), which is the
-comparand; the human-readable roster is
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
-§ Required Status Checks.
+## Spec compliance
 
----
-
-## Spec compliance audit
-
-**`spec/` is intended behavior; code is current behavior.** Disagreement is a tracked bug to file — do not silently rewrite working code to match a stale spec, or a spec to match a bug. When auditing:
-
-1. **Product**: Compare implemented features against domains under `spec/product/`
-2. **Behavior**: Verify edge cases and invariants from topics under `spec/behavior/` are tested
-3. **Architecture**: Check stack choices and patterns match [`spec/architecture/README.md`](../../../spec/architecture/README.md)
-4. **Environments**: Verify env setup matches [`spec/environments/README.md`](../../../spec/environments/README.md)
-
----
+`spec/` is intended behavior and code is current behavior. A disagreement is a bug to file; don't
+rewrite working code to match a stale spec, or a spec to match a bug (`AGENTS.md` § Spec vs code).
+Compare features with `spec/product/`, check that the edge cases and invariants in
+`spec/behavior/` are tested, and check stack and patterns against
+[`spec/architecture/README.md`](../../../spec/architecture/README.md) and environments against
+[`spec/environments/README.md`](../../../spec/environments/README.md).
 
 ## Reporting findings
 
-Structure your findings as:
-
 ```markdown
-## Audit: [Type] — [Date]
+## Audit: <type> — <date>
 
 ### Critical (must fix)
-- ...
-
 ### Warnings (should fix)
-- ...
-
-### Observations (nice to have)
-- ...
-
-### Recommendations
-- ...
+### Observations
 ```
 
-**Do not commit one-off audit markdown to the repo** — per
-[`docs/internal/DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md),
-narrative audit writeups are exactly the kind of file the docs restructure removed. Deliver the
-report in the conversation (or run output), fold durable facts into the canonical doc, and file
-actionable findings as **GitHub** issues.
-
----
-
-## Updating this skill
-
-- Document new security patterns (e.g., CSRF, CSP headers) in the security section as they land.
-- Update the CI/CD audit table whenever new CI checks are added.
+Each finding names the file, the rule it breaks, and the fix. Deliver the report in the
+conversation or run output, fold durable facts into their canonical doc, and file actionable
+findings as GitHub issues. Don't commit audit write-ups to the repo; narrative audit docs are what
+[`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) rules out.

@@ -3,121 +3,87 @@ description: Claim the next viable unit of tracker work — one GitHub issue, or
 argument-hint: "[123 ...] [--plan-only N]"
 ---
 
-Work tracking lives in **GitHub Issues** on `pdcarlson/Frapp` (issue numbers like `#123`), reached
-via the **GitHub MCP** — the canonical hub. New issues are created with the `triage` label; PRs
-close work with `Fixes #N` (native close-on-merge, one line per issue). Policy lives in
-[`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md); this file is procedure. Policy does not
-belong here — if a rule is needed on every `/next` run *and* in other skills, put it in
-`GITHUB_PM.md` and link. Where they disagree, the doc wins and this file is the bug.
+Claim one unit of work (usually one GitHub issue on `pdcarlson/Frapp`, sometimes a small coherent
+batch), ship it as one PR, and leave the tracker cleaner than you found it. Several sessions run
+this at once. The Phase 0 claim protocol keeps them off each other's work, so it runs before
+anything expensive.
 
-Claim one **unit** of work — usually a single issue, sometimes a small coherent batch — complete it,
-and leave the tracker cleaner than you found it. **Several sessions run this at once** — the claim
-protocol in Phase 0 is what keeps them off each other's work, so it comes before anything expensive.
+Policy lives in [`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md); this file is the
+procedure. Where they disagree, `GITHUB_PM.md` wins and this file is the bug. A rule that every
+`/next` run and other skills both need belongs there, linked from here.
 
 ## Invariants
 
-**Claim before you think.** The old flow verified first and marked In Progress later; that window is
-exactly how two agents end up building the same issue. Selection and claim now happen first, and
-verification runs against work you already own. Claiming is two reversible calls — churn is cheap and
-honest; overlap is not.
+**Claim before you think.** Selection and claim come first; verification runs against work you
+already own. A claim is two reversible writes, while two agents building the same issue is waste
+nobody can undo.
 
-**Do not start in plan mode.** Phase 0 writes to the tracker and plan mode forbids writes. If a plan
-is demanded before work begins, the Phase 1.2 verification comment posted to the issue *is* the
-plan — it lands where a sibling agent or Paul will actually see it. Plan mode belongs only on a §1.3
-veto, where a human is genuinely about to be asked something.
+**Don't start in plan mode.** Phase 0 writes to the tracker, and plan mode forbids writes. If a plan
+is demanded, the §1.2 verification comment on the issue is the plan. Plan mode belongs only on a
+§1.3 veto.
 
-**GitHub Issues is canonical and has no fallback.** If any `mcp__github__*` tracker call fails,
-**stop and say so**. Do not proceed unclaimed, do not substitute another tracker or a scratch
-file, do not defer the writes. No claim means no work. The MCP is the only sanctioned tracker
-path — **if it is unavailable, stop and report**; never fall back to `gh`/REST. **REST is never a
-substitute for the MCP on tracker work, read or write.** (Direct `api.github.com` is reachable —
-reachability is route-dependent, not session-dependent — but the carve-out is narrow and is not
-tracker work: provider *settings* the MCP exposes no tool for — branch protection, environments,
-rulesets, repo visibility, `vulnerability-alerts` — plus the one raw-`body` verification read that
-[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
-licenses on its own terms. Neither makes REST a tracker path — never list, search, file, label,
-close or comment over it — and neither lifts the stop rule.) Load schemas first, e.g.
+**The GitHub MCP is the only tracker path.** If any `mcp__github__*` tracker call fails, stop and
+report: no unclaimed work, no `gh`, REST, other tracker, or scratch file, no deferred writes. REST's
+narrow carve-outs
+([`GITHUB_PM.md` → How agents reach the tracker](../../docs/internal/ci-cd/GITHUB_PM.md#how-agents-reach-the-tracker))
+never cover listing, searching, filing, labeling, closing, or commenting. Load schemas first:
 `ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__search_pull_requests")`.
 
-**Ownership is per run, not per turn.** From `AGENT-CLAIM` until the PR is open, you own exactly the
-issues you claimed — every one of them. Ending a *turn* mid-run needs only a heartbeat. Ending the
-*run* — you will not resume this work in this session — requires an `AGENT-RELEASE` or
-`AGENT-HANDOFF` **per still-held issue** as your last action before responding. The Exits table is
-the complete list of run-ending situations; if yours is not there, the run is not ending. An issue
-left silently In Progress is a bug you introduced, and a batch gives you N chances to introduce it.
+**Ownership is per run, not per turn.** From your `AGENT-CLAIM` until the PR is open, you own every
+issue you claimed. Ending a turn mid-run needs only a heartbeat. Ending the run (you won't resume
+this work in this session) needs an `AGENT-RELEASE` or `AGENT-HANDOFF` on each still-held issue as
+your last action before responding. The Exits table lists every run-ending situation; if yours isn't
+there, the run isn't ending. An issue left silently In Progress is blocked for every other session
+until its lease expires.
 
-**One coherent unit per invocation — usually one issue, sometimes a small batch.** The unit of
-shipping never changes: **one branch, one coherent, revertible PR.** What may vary is how many issues
-that PR closes. Batch only when every member independently clears §0.2 and the set reads as *one
-change* — same root cause, same subsystem, or mechanical kin a reviewer would want in one diff.
-Caps — they bound **elective** batching: `MAX_BATCH` members, combined estimate ≤ 8; any single
-issue estimated ≥ 5 (or reading that large) runs solo. An inseparable parent+sub-issue unit ("add
-column" + "use column") is claimed whole regardless of member count — it was never elective — but
-its combined estimate still counts: past 8 that is an E4 conversation, not a silent claim. An
-unestimated member may join only when it is honestly small: count it as **2** toward the ceiling,
-batch at most one unestimated member, and if you cannot size it, it runs solo. Estimates (the
-optional `Estimate: <fibonacci>` body line) gate *batching*, never candidacy. Batching is for
-coherence, not throughput: if the PR body would need an unrelated section per issue, those are
-separate runs — that parallelism belongs at the session layer. The old test still applies per
-member — *would this be a shippable, revertible PR by itself?* — it just no longer forces "separate
-sessions" when the pieces are small and belong together.
+**One coherent unit per invocation.** One branch, one coherent, revertible PR; what varies is how
+many issues it closes. Batch only when every member independently clears §0.2, would be a
+shippable PR by itself, and the set reads as one change: same root cause, same subsystem, or
+mechanical kin a reviewer would want in one diff. If the PR body would need an unrelated section per
+issue, those are separate runs. The `MAX_BATCH` caps bound elective batching. An inseparable
+parent+sub-issue unit ("add column" + "use column") is claimed whole regardless of member count, but
+its combined estimate still counts: past 8 it is an E4 conversation, not a silent claim. An
+unestimated member may join only when it is honestly small: it counts as 2 toward the ceiling, a
+batch takes at most one, and one you can't size runs solo. Estimates (the optional
+`Estimate: <fibonacci>` body line) gate batching, never candidacy.
 
-**Nothing discovered is dropped.** Any defect, drift, or missing coverage you notice mid-run has
-exactly two exits: **fix it now** — when it sits within or adjacent to the surface you are already
-touching, doesn't change the PR's revert story, **and would not itself trip a §1.3 veto** (an
-E2-class change — destructive DDL, auth/RLS, billing — is never a drive-by; file it) — or **file
-it** (`issue_write` create → labels `triage` + a priority + one `area:<x>`, with `file:line`
-evidence and an Agent brief when you can write one). A drive-by fix small enough to review as part
-of the diff needs no issue — note it in the PR body. A fixed defect that warrants its own record
-(user-visible behavior, security, anything someone would later search the tracker for) gets filed
-**and claimed into the batch** — same `CLAIM_ID`, claim comment and all. A record-keeping claim
-records work already done, so it sits **outside** `MAX_BATCH` and the estimate ceiling, which cap
-*planned scope at composition time* — on a solo run it simply makes the PR a two-issue PR. Filing a
-second one is a signal the unit was mis-scoped: finish, and say so in the PR. That record-keeping
-claim on an issue you *just self-filed* is the sole exception to "triage is never claimable", which
-otherwise governs auto-starting inbox work. Everything else is filed and left for the board.
-Silence is the only failure mode.
+**Nothing discovered is dropped.** A defect, drift, or coverage gap you notice mid-run is fixed now
+or filed. Fix it now when it sits in or next to the surface you're touching, doesn't change the PR's
+revert story, and wouldn't itself trip a §1.3 veto (destructive DDL, auth/RLS, and billing are never
+drive-bys); note it in the PR body. Otherwise file it (`issue_write` create, labels `triage` + a
+priority + one `area:<x>`, `file:line` evidence, an Agent brief when you can). A fixed defect that
+deserves its own record (user-visible, security, anything someone would search the tracker for) is
+filed and claimed into the unit: same `CLAIM_ID`, claim comment and all. This record-keeping claim
+sits outside `MAX_BATCH` and the estimate ceiling, which cap planned scope, and it is the only time a
+`triage` issue is claimable. Needing a second one means the unit was mis-scoped: finish, and say so
+in the PR.
 
-**Ultracode changes how thoroughly a step is done — never which steps happen, and never what gets
-written to the tracker.** Each fan-out below is specified as independent checks with named outputs:
-with the **Workflow** tool, run them as a fan-out; without it, run them inline in the same order. A
-plain `/next` must still work end to end. Never make a decision depend on a subagent's return shape.
+**Ultracode changes how thoroughly a step is done, never which steps run or what is written to the
+tracker.** The opt-in is `ultracode` in this command's arguments or a session-level ultracode
+reminder; the harness never emits that reminder on a slash-command turn, so the argument alone
+counts. When opted in, run the named fan-out points with the Workflow tool: §1.1, §1.2, Phase 3's
+lens pass, and Phase 2's narrow exception. Everything else stays inline, and without the opt-in the
+fan-out points run inline in the same order. A Workflow launch that prompts or is refused is tool
+unavailability, not an opt-out: run that step inline instead of waiting on an approval. A subagent
+that errors or returns nothing is a check not run; redo it inline. Fan-outs are for independent,
+context-heavy reading; don't spawn subagents to re-check your own work.
 
-**`ultracode` in this command's arguments IS the Workflow opt-in.** The harness `ultracode` scan
-runs only on the human-typed, pre-expansion prompt and skips any input starting with `/` (read out
-of the 2.1.220 build like the Phase 3 `/code-review` rule — re-verify on newer builds), so on a
-slash-command turn (`/next ultracode`) no system-reminder will ever confirm ultracode. Do not read
-the missing reminder as "not opted in" and quietly downgrade to plain Agent calls. When the
-arguments carry `ultracode`, or a session-level ultracode reminder is present, run the specified
-fan-outs — §1.1, §1.2, Phase 3, and Phase 2's narrow exception when it qualifies — with the
-**Workflow** tool on this file's authority. Workflow launches auto-approve (`.claude/settings.json`
-allows the tool and pre-accepts the usage warning). If a launch prompts or is refused anyway (older
-build, ignored setting), that is tool unavailability, not an opt-out: run that fan-out inline per
-the invariant above — never sit waiting on an approval. Cost stays bounded because the fan-out
-points are enumerated and capped; everything not named as a fan-out stays inline in every mode.
-
-**Honor the issue's Agent brief.** The description may carry an `### Agent brief` section —
-`` `depth:<skim|standard|deep>` · `model:<fable|any>` · `ultracode:<yes|no>` `` (policy:
+**Honor the issue's Agent brief**, an `### Agent brief` section in the description or in a triage
+comment (`` `depth:<skim|standard|deep>` · `model:<fable|any>` · `ultracode:<yes|no>` ``; policy in
 [`GITHUB_PM.md` → Agent briefs](../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode)).
-`depth` sets how hard to dig, never which steps run: every phase below still happens and
-`/diff-review` is never reduced. `deep` — **or an absent brief or `depth:` field, which means
-deep** — warrants the widest verification and review fan-out you can run; `standard` is the ordinary path; `skim` means
-the floors of each step suffice (the issue is mechanical — don't inflate it). `model:` and
-`ultracode:` are spin-up hints for whoever launches sessions, not runtime switches — a running
-session never changes model; `--plan-only` carries them into its emitted prompts.
+`depth` sets how hard to dig, never which steps run, and `/diff-review` is never reduced. An absent
+brief or `depth:` field means `deep`, the widest verification and review you can run; `skim` means
+each step's floor suffices. `model:` and `ultracode:` are spin-up hints for whoever launches
+sessions, which `--plan-only` carries into its prompts.
 
-**Never report a step you did not run.** If you reduced scope or skipped a check, say so in both the
-issue comment and your reply. Never claim a test, migration, or app run you didn't actually execute.
+**Evidence of live work** is a live claim comment, a branch named in one, or a linked PR
+(`search_pull_requests` for the issue number / `Fixes #N`), never assignees or labels: migrated
+issues carry stale assignees, and an `in-progress` label can outlive its session.
 
-**Assignees and label state tell you nothing about live work.** Migrated issues carry stale
-assignees, and an `in-progress` label can outlive a dead session. The only evidence of live work is
-a **live claim comment**, a branch named in one, or a linked PR (`search_pull_requests` for the
-issue number / `Fixes #N`).
-
-**Label writes replace the whole set.** `issue_write`'s `labels` field overwrites the issue's
-labels. Every label change below means: read the current labels (`issue_read get_labels`), apply
-the delta, write back the full union. Never send only the label you're adding.
+**Label writes replace the whole set.** `issue_write`'s `labels` field overwrites the issue's labels,
+so every label change below means: read the set (`issue_read get_labels`), apply the delta, write
+back the full union.
 
 ## Constants
 
@@ -129,159 +95,127 @@ the delta, write back the full union. Never send only the label you're adding.
 | `ORPHAN_AGE` | **72 hours** — an `in-progress` issue with *no* claim comment, no linked PR and no activity this long is abandoned |
 | Sentinels | `AGENT-CLAIM` `AGENT-RECLAIM` `AGENT-HEARTBEAT` `AGENT-RELEASE` `AGENT-HANDOFF` `AGENT-STALE-FLAG` — always the comment's first line |
 
-A claim is **live** when its `claim_id` has no later `AGENT-RELEASE` carrying the same id **and**
-its lease has not expired. Lease age is measured from server time — the `created_at` that
-`issue_read get_comments` returns for the claim comment or its newest `AGENT-HEARTBEAT` — never
-from a timestamp written inside a comment body, which is the author's own clock. (The GitHub MCP
-cannot edit comments, so heartbeats are always fresh `AGENT-HEARTBEAT` comments; the newest one
-with your `claim_id` is the lease clock.) One `claim_id` may appear on several issues at once (a
-batch); liveness is always judged **per issue, in that issue's own comment stream** — an
-`AGENT-RELEASE` posted on one member releases that member only, and sweepers never need to look
-past the issue they are inspecting **to judge liveness**. *Taking over* is different: a `Batch:`
-line in a dead claim obligates the whole batch (§0.7's all-or-nothing rule).
+A claim is **live** when its `claim_id` has no later `AGENT-RELEASE` carrying the same id and its
+lease hasn't expired. Measure lease age from server time: the `created_at` that
+`issue_read get_comments` returns for the claim comment or its newest `AGENT-HEARTBEAT`, never a
+timestamp written inside a comment body (the author's own clock). The MCP can't edit comments, so
+every heartbeat is a fresh comment. One `claim_id` may appear on several issues (a batch), but
+liveness is always judged per issue, in that issue's own comment stream: an `AGENT-RELEASE` on one
+member releases that member only. Taking over is different: a `Batch:` line in a dead claim
+obligates the whole batch (§0.7).
 
 ## Modes
 
-**`/next`** — the full flow.
+- **`/next`**: the full flow.
+- **`/next 123 [124 …]`**: skip ranking (§0.3–0.4) but still claim and verify (§0.5–0.6) each named
+  issue, since it may already be held. Several numbers claim as one batch under the same caps and
+  coherence test; if the set doesn't honestly batch, say so and ask rather than silently splitting
+  it or shipping an incoherent PR. `triage` issues are never claimable in any mode (except the
+  record-keeping claim above), and §0.2 condition 5 applies here too: a human naming a `[human]`
+  item doesn't make it agent-doable. If you lose the race on a named issue, report who holds it and
+  don't fall back to ranking; the human picked issues, not a category. Losing one member of a named
+  batch doesn't abandon the rest: proceed with what you won (subject to §0.5's coherence escape)
+  and report the loss.
+- **`ultracode`** anywhere in the arguments: the Workflow opt-in (see Invariants).
+- **`/next --plan-only N`**: rank and emit N ready-to-paste `/next <number>` prompts, then stop.
+  Write nothing to the tracker (no claims, no sweep, no advisory comments); each claim happens when
+  its session starts. Carry each issue's Agent brief into its prompt: prefix `ultracode ` when the
+  brief says `ultracode:yes` (either spelling opts in), and append a one-line note when it names a
+  `model:` so the launcher picks the right model. Group issues that pass the batching test into one
+  prompt (`/next 123 124`) at plan time, so the session layer and in-run batching don't fight over
+  them.
 
-**`/next 123 [124 …]`** — skip ranking (§0.3–0.4); still claim and verify (§0.5–0.6) per named
-issue, since a named issue may already be held. Several numbers claim as one batch — the caps and
-the coherence test still apply, and if the named set doesn't honestly batch, say so in your reply and
-ask rather than silently splitting or silently shipping an incoherent PR. Backlog issues are
-claimable as usual; **`triage`-labeled issues never are, in any mode** (sole exception: the
-record-keeping claim in "Nothing discovered is dropped"). **§0.2 condition 5 applies in named mode
-too** — a human naming a `[human]` item does not make it doable by an agent. If you lose the race on a named issue,
-**report who holds it** — do not fall back to ranking, because the human picked the issues, not a
-category. Losing one member of a named batch does not abandon the rest: proceed with what you won —
-subject to §0.5's coherence escape when the lost member was the batch's point — and report the loss.
+**Inside a Workflow, the orchestrator claims and subagents don't.** A parallel fan-out starts N
+agents in the same second, the worst input for a claim race. Run Phase 0 in the orchestrator,
+sequentially, once per unit, then hand each subagent one issue number or one pre-composed batch.
+After the fan-out, reconcile every issue you claimed, even when the workflow fails, because a
+subagent that errored, timed out, or returned nothing looks exactly like one that died, and its claim
+leaks:
 
-**`/next --plan-only N`** — rank and emit N ready-to-paste `/next <number>` prompts, then stop.
-**Write nothing to the tracker** — no claims, no sweep, no advisory comments. This is how you spin
-up a batch of sessions without leaking N claims: each claim happens when its session actually
-starts. Carry each issue's Agent brief into its emitted prompt: prefix the prompt with `ultracode `
-when the brief says `ultracode:yes` (the pasted turn then starts with `ultracode`, not `/`, so the
-harness scan fires and supplies the session-level reminder the opt-in paragraph above accepts — the
-prefix and argument spellings are equivalent opt-ins, not competitors), and append a one-line note
-when it names a `model:` so the launcher picks the right session model. An emitted prompt may name
-a batch (`/next 123 124`) when the ranked issues batch under the invariant's test — group at plan
-time, so the session layer and in-run batching don't fight over the same related issues.
-
-**Inside a Workflow, the orchestrator claims and subagents do not.** A `parallel()` fan-out starts N
-agents in the same second — the worst possible input for a claim race. Run Phase 0 in the
-orchestrator, sequentially, once per issue; then hand each subagent one issue number or one
-pre-composed batch — the batch decision is the orchestrator's, made at claim time, never a
-subagent's. A deterministic
-partition beats optimistic claiming whenever a coordinator exists. **After the fan-out, reconcile
-every issue you claimed** — a subagent that errored, timed out, or returned nothing is
-indistinguishable from one that died, and its claim leaks. `in-review` with a PR → leave it; `in-progress` with a branch → post `AGENT-HANDOFF` on its
-behalf; `in-progress` with nothing → `AGENT-RELEASE` `session-ending` and back to Backlog (remove
-the label). Reconcile even when the workflow fails.
+- `in-review` with a PR: leave it.
+- `in-progress` with a branch: post `AGENT-HANDOFF` on its behalf.
+- `in-progress` with nothing: `AGENT-RELEASE` `session-ending`, remove the label (back to Backlog).
 
 ## Phase 0 — select and claim
 
-Nothing here is delegated: a subagent re-fetches the same list and widens the window this protocol
-exists to close. Every second between reading the backlog and writing the claim is race window, so
-housekeeping (§0.7) waits until after you hold the claim.
+Nothing here is delegated, and housekeeping (§0.7) waits until you hold a claim: every second
+between reading the backlog and writing the claim is race window.
 
 **0.1 — Generate `CLAIM_ID`.** One `openssl rand -hex 4`, reused all run.
 
-**0.2 — Build the candidate set.** `list_issues(owner:"pdcarlson", repo:"frapp", state:OPEN)` —
-request the **`labels` and `title`** fields and page as needed (condition 5 reads `title`; omitting
-it silently makes that condition unevaluable, which fails **open**). An issue is a candidate when
-**all** hold:
+**0.2 — Build the candidate set.** `list_issues(owner:"pdcarlson", repo:"Frapp", state:OPEN)`,
+requesting the `title`, `labels`, `updated_at`, and `body` fields and paging as needed. Condition 5
+reads the title; if it's missing, that condition silently passes everything. An issue is a candidate
+when all hold:
 
-1. It carries **no state label** (`triage`, `in-progress`, `in-review` all disqualify — `triage`
-   means the item is still in the inbox and needs promotion plus a priority first; **who** may
-   promote it is
-   [`GITHUB_PM.md` → Ownership boundary](../../docs/internal/ci-cd/GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly)'s
-   to state rather than this file's; `in-review` means a PR is already waiting on a human) and
-   **no `routine-state` label** (routine infrastructure — e.g. the "PR Follow-ups — Human Action
-   List" tracking issue — is never work to claim).
-2. No live claim comment (`issue_read get_comments`; skip the read for issues untouched since
-   before `LEASE`).
+1. No state label (`triage`, `in-progress`, `in-review`) and no `routine-state` label. `triage`
+   items need promotion and a priority first (who may promote them:
+   [`GITHUB_PM.md` → Ownership boundary](../../docs/internal/ci-cd/GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly));
+   `in-review` means a PR is waiting on a human; `routine-state` issues are routine infrastructure,
+   never work.
+2. No live claim comment (`issue_read get_comments`; skip the read for issues not updated within
+   `LEASE`).
 3. No open blocker surviving §1.1 — a `Blocked by #N` body line whose #N is still open.
 4. No linked PR in any state other than closed-unmerged (`search_pull_requests` for the issue
-   number). An **open** PR means the work is already in flight — note the drift, suggest
-   `in-review`, skip. A **merged** PR on a still-open issue is already shipped — report it, change
-   nothing. A **closed, unmerged** PR does not disqualify: claim it and record
-   `Prior art: PR #NNN (closed, unmerged)` in the claim comment. Treat a PR as authoritative only
-   when it names the issue number.
-5. **No `[human]` tag in the title's leading bracket run**, matched **case-insensitively**. A
-   `[human]` item is by definition something no agent session can do — that is the whole of this
-   condition's job.
+   number; a PR counts only when it names the issue number). An open PR means the work is in flight:
+   note the drift, suggest `in-review`, skip. A merged PR on a still-open issue means it already
+   shipped: report it, change nothing. A closed, unmerged PR doesn't disqualify: claim it and record
+   `Prior art: PR #NNN (closed, unmerged)` in the claim comment.
+5. No human-action hold: no `[human]` tag anywhere in the title's leading run of `[...]` tags,
+   matched case-insensitively (`[pr-followup][human] …` is held), and no body opening
+   `**Human action required — hold in triage`. No agent session can do these. The forms are defined
+   in [`GITHUB_PM.md` → Labels and priority](../../docs/internal/ci-cd/GITHUB_PM.md#labels-and-priority-lean-taxonomy).
 
-   Match the **whole leading run of `[...]` tags**, not just the first one — `[pr-followup][human]
-   Enable the custom_access_token_hook` (#805) does not *begin* with `[human]`, and neither do
-   #806/#811/#812/#813/#826. `GITHUB_PM.md`'s hold rule already names both spellings
-   (`[human]`/`[pr-followup][human]`). Also honour its third form: the body opener
-   `**Human action required — hold in triage`, for the older items that predate the prefix
-   (see #908, and #765/#689 which carry no bracket at all). The convention is load-bearing
-   elsewhere — the curator and triage skills read it; `/next` was the one place that never did.
+Epics are candidates like anything else. The hazard is closing one early, which Phase 4 guards, so
+don't add an epic filter here. Surface each candidate's `Estimate:` line and Agent brief in the
+shortlist as sizing context; neither is a filter.
 
-**Epics are candidates like anything else.** A parent issue is not disqualified, is not
-deprioritised, and is not announced differently — if it ranks first, take it. The real hazard is
-not *claiming* an epic, it is **closing** one: a single-slice PR carrying `Fixes #<epic>` closes
-the parent on merge with its remaining slices unwritten. That is a Phase 4 problem and it is
-solved there (see "Never `Fixes` a parent with open children"), so nothing about it belongs in
-candidacy. Do not re-add an epic filter here.
+**0.3 — Rank.** Reclaimable started work from §0.7 first, since finishing beats starting. Then by
+priority label (`P1`→`P4`, no priority label last), tie-broken by lower issue number. Never skip an
+issue for being unestimated, small, or large; prefer the most valuable viable work, including large,
+high-impact issues. The order is deterministic so concurrent agents agree on it and the claim
+resolves collisions. To keep sessions from colliding in lockstep, start at the candidate whose index
+is the first hex digit of your `CLAIM_ID` modulo 3 (0, 1, or 2) and walk from there, wrapping to the
+top.
 
-Read the body with `issue_read get` where the list is thin. Surface each candidate's **`Estimate:`**
-line and its **Agent brief** line (`depth:` / `model:` / `ultracode:`, when present) as sizing
-context in the shortlist — neither is a filter.
+**0.4 — Auto-pick.** Take the candidate your walk starts at and go. Then scan the remaining candidates for members that
+batch with it under the invariant's test, within the caps, and compose the batch now. A batch is
+fixed at claim time and only shrinks (lost races, per-member vetoes); it grows only through the
+record-keeping claim. Don't ask which issue to work: the ranking is the answer. Ask only when the
+ranking can't decide: no candidate clears §0.2 (report why; don't settle for a worse issue), or the
+top two are genuinely tied and materially different in kind. Announce the pick, the batch if any,
+and the runners-up without waiting for permission.
 
-**0.3 — Rank.** Reclaimable started work from §0.7 first — finishing beats starting. Then by
-**priority label** (`P1`→`P2`→`P3`→`P4`; **no priority label last**), tie-broken by **lower issue
-number**. Estimates are sizing context and never a filter: never skip an issue for being
-unestimated, small, or large, and **don't shy away from larger, high-impact issues** — prefer the
-most valuable viable work. The ordering is deterministic so concurrent agents agree on it and the
-claim resolves the collision. To keep five sessions from colliding in lockstep, **start at the
-candidate whose index is the first hex digit of your `CLAIM_ID` modulo 3** (so 0, 1, or 2) and walk
-from there, wrapping to the top.
+**0.5 — Claim it.** GitHub has no compare-and-swap (`issue_write` is last-write-wins), so the claim
+is the comment, the only append-only, server-ordered record, and the `in-progress` label is a
+projection of it. For each candidate in order:
 
-**0.4 — Auto-pick.** Take rank 1 and go. **Batch extension:** having picked rank 1, scan the
-remaining candidates for members that batch with it under the invariant's test — same root cause,
-same subsystem, mechanical kin — respecting the caps. Compose the batch **now**, before claiming: a
-batch is fixed at claim time and only ever shrinks (lost races, per-member vetoes); it never grows
-mid-run except through the record-keeping claim in "Nothing discovered is dropped". Do **not** ask
-which issue to work — that is the babysitting this command exists to remove, and the ranking is
-already the answer. Ask only when the ranking cannot decide: no candidate clears §0.2 (report why —
-do not settle for a worse issue), or the top two are genuinely tied and materially different in
-kind. Announce the pick — and the batch, if any — and the runners-up; you are not asking permission.
-
-**0.5 — Claim it.** GitHub has **no compare-and-swap** — `issue_write` is last-write-wins and cannot
-be a lock. The comment stream is the only append-only, server-ordered structure available, so **the
-claim is the comment; the `in-progress` label is a projection of it.** For each candidate in rank
-order:
-
-1. `issue_read get_comments` — skip if a live claim exists.
-2. **Post the claim comment first** (`add_issue_comment` with `AGENT-CLAIM`, or `AGENT-RECLAIM`
-   for a §0.7 takeover).
-3. Then add the **`in-progress`** label (read-modify-write the full label set).
-4. **VERIFY (§0.6).** Lost → yield and take the next candidate.
+1. `issue_read get_comments`; skip it if a live claim exists.
+2. Post the claim comment (`add_issue_comment` with `AGENT-CLAIM`, or `AGENT-RECLAIM` for a §0.7
+   takeover).
+3. Then add the `in-progress` label (read-modify-write the full set).
+4. Verify (§0.6). Lost: yield and take the next candidate.
 
 Comment before label, always: if the session dies between the two writes, the issue keeps a live
-claim and the §0.2 filter still honours it. Walk until you win or the list is exhausted (cap 8). If
-every attempt lost to a *live* claim, report **"backlog saturated with active agents"**; if you
-simply ran out of candidates, say that instead — different problems, different fixes.
+claim that the §0.2 filter honours. Walk until you win or the list is exhausted (cap 8). If every
+attempt lost to a live claim, report "backlog saturated with active agents"; if you ran out of
+candidates, say that instead. They are different problems with different fixes.
 
-A batch claims **sequentially in global rank order** — the deterministic §0.3 order every session
-agrees on, not your staggered walk, which applies only to where the *first* member came from.
-Total-order acquisition is what keeps two batching sessions from deadlocking over opposite ends of
-the same set. Post **all** of the batch's claims before starting any implementation; both §0.6
-verifies then cover **every** member. A lost race on one member yields that member only — release
-`lost-race`, labels untouched, shrink the batch, continue. Never abandon won members over a lost
-one, and never "top up" a shrunk batch with a fresh candidate after implementation has begun. One
-exception to shrink-and-continue: if the **lost member was the batch's point** — an anchor whose
-dependents cannot ship alone — the survivors no longer cohere; release them too, each per its own
-Exits row, and continue with whatever still stands alone. Never rebuild a lost member's content in
-your own branch: its race winner is building it concurrently, and that is the double-build this
-protocol exists to prevent.
+A batch claims sequentially in global rank order: the §0.3 order every session agrees on, not your
+staggered walk, which only chose the first member. Total-order acquisition keeps two batching
+sessions from deadlocking over opposite ends of the same set. Post every member's claim before
+implementing anything; both §0.6 verifies cover every member. A lost race yields that member only:
+release it `lost-race` with labels untouched, shrink the batch, continue. Never abandon won members
+over a lost one, and never top up a shrunk batch after implementation has begun. The one exception
+(the coherence escape): if the lost member was the batch's point, an anchor whose dependents can't
+ship alone, release the survivors too, each per its Exits row, and continue with whatever still
+stands alone. Never rebuild a lost member's content in your own branch; its winner is building it.
 
-**0.6 — Verify, twice.** Once immediately after the label write, and again immediately before the
-**first repo mutation** in Phase 2 — the second costs one read and is all that stands between you and
-a replica-lag collision. Wait ≥15s after posting the claim before the first verify, so you are not
-reading your own stale view. Both times, rebuild the live-claim set from `issue_read get_comments`,
-and re-apply the `in-progress` label once if something clobbered it (twice means contested — yield).
+**0.6 — Verify, twice.** Once right after the label write, and again right before the first repo
+mutation in Phase 2; the second costs one read and is all that stands between you and a replica-lag
+collision. Wait at least 15s after posting the claim before the first verify, so you aren't reading
+your own stale view. Both times, rebuild the live-claim set from `issue_read get_comments`, and
+re-apply the `in-progress` label once if something clobbered it (twice means contested: yield).
 Then:
 
 | Situation | Action |
@@ -292,266 +226,232 @@ Then:
 | Identical `created_at` | Lexicographically smallest `claim_id` wins |
 | Identical `created_at` *and* `claim_id` | Both yield; re-run with a fresh id |
 
-Yield only to a **strictly earlier** live claim. "Yield whenever another claim exists" deadlocks —
-both agents see both comments and both back off. On a loss: post the lost-race release, **leave the
-labels alone** (the winner wants `in-progress` on — reverting it is the most commonly botched step
-here), skip that issue for this run, and start over at §0.5 with the next candidate.
+Yield only to a strictly earlier live claim; "yield whenever another claim exists" deadlocks, since
+both agents see both comments and both back off. On a loss, post the `lost-race` release, leave the
+labels alone (the winner wants `in-progress` on), skip that issue for this run, and return to §0.5
+with the next candidate.
 
-**0.7 — Sweep leaked claims (after your own claim is verified).** Housekeeping for the next agent, so
-it never runs ahead of your claim. Over **`in-progress`** only — **`in-review` is never swept**:
+**0.7 — Sweep leaked claims (after your own claim is verified).** Over `in-progress` issues only;
+`in-review` is never swept.
 
-- **Live claim** → leave it alone.
-- **Expired lease, no linked PR in any state but closed-unmerged, and no branch pushed within `LEASE`**
-  (`git ls-remote --heads origin` — a push counts as a heartbeat) → reclaimable. It enters §0.3 at the
-  top of the ranking and must still clear §0.2's blocker and PR criteria **and condition 5** — a
-  `[human]` item claimed by a since-dead session is the one case where a stale `in-progress` label
-  would otherwise launder it straight past the filter that exists to stop it. Taking it needs an
-  `AGENT-RECLAIM`; then wait a full read cycle *and re-read* before mutating anything.
-- **No claim comment at all, no linked PR, `updated_at` older than `ORPHAN_AGE`** → post
-  `AGENT-STALE-FLAG` and remove the `in-progress` label (back to Backlog). Do **not** pick it up
-  this run.
-- **Batch reclaim is all-or-nothing.** A claim comment carrying a `Batch:` line marks a shared
-  branch. To take over any member, post `AGENT-RECLAIM` on **every** listed member — global rank
-  order, one fresh claim id — before touching the branch; if any member's reclaim loses to a live
-  claim, release the ones you took (`lost-race`) and walk away. Two owners on one batch branch is
-  the exact damage this rule prevents.
+- Live claim: leave it alone.
+- Expired lease, no linked PR in any state but closed-unmerged, and no branch pushed within `LEASE`
+  (`git ls-remote --heads origin`; a push counts as a heartbeat): reclaimable. It enters §0.3 at the
+  top and must still clear §0.2 conditions 3, 4, and 5, so a dead session's claim can't launder a
+  `[human]` item past the hold. Take it with `AGENT-RECLAIM`, then wait a full read cycle and re-read
+  before mutating anything.
+- No claim comment at all, no linked PR, `updated_at` older than `ORPHAN_AGE`: post
+  `AGENT-STALE-FLAG` and remove the `in-progress` label (back to Backlog). Don't pick it up this run.
+- Batch reclaim is all-or-nothing. A claim carrying a `Batch:` line marks a shared branch. To take
+  over any member, post `AGENT-RECLAIM` on every listed member (global rank order, one fresh claim
+  id) before touching the branch. If any member's reclaim loses to a live claim, release the ones you
+  took (`lost-race`) and walk away; two owners on one batch branch is the damage this prevents.
 
-Never take over an issue with an open linked PR: two branches diverging on one issue is the exact
-damage this prevents. **At most 2 demotions per run** — a logic bug must not sweep the board; report
-the rest. Skip any issue whose newest sentinel comment is an `AGENT-STALE-FLAG` — i.e. no
-`AGENT-CLAIM`/`AGENT-RECLAIM`/`AGENT-HEARTBEAT` is newer than the flag (the comment stream is the
-observable record; there is no label-change timeline to read) — so ten runs don't post ten flags.
+Never take over an issue with an open linked PR: two branches would diverge on one issue. At most 2
+demotions per run, so a logic bug can't sweep the board; report the rest. Skip any issue whose newest
+sentinel comment is an `AGENT-STALE-FLAG` (no `AGENT-CLAIM`/`AGENT-RECLAIM`/`AGENT-HEARTBEAT` newer
+than the flag), so repeated runs don't stack flags.
 
 ## Phase 1 — verify the work is still real
 
-Under a batch, this phase runs **per member**: each issue gets its own §1.1/§1.2 verdicts and its
-own verification comment. A live blocker fires per member — **excise that member** (release it per
-the Exits table) and continue with the rest. A **veto** on one member is handled differently from
-§1.3's solo flow: never block on AskUserQuestion while holding sibling claims — that starvation is
-exactly what §1.3's release-first design exists to avoid. Excise the vetoed member (release
-`out-of-scope`, writing the open question into the release comment), **carry the question to your
-end-of-run report**, and continue the rest. §1.3's release-then-ask flow applies when the veto
-covers the whole unit — a solo run, or every member — in which case release everything first, then
-ask. And in every case: if the excised member was the batch's point, release the others too, each
-per its own row.
+Under a batch this phase runs per member, each with its own verdicts and verification comment. A
+live blocker or a veto on one member excises that member and the rest continue. Never ask mid-batch:
+blocking on AskUserQuestion while holding sibling claims starves them. Release a vetoed member
+`out-of-scope` with the open question in the release comment, and carry the question to your
+end-of-run report. §1.3's release-then-ask flow applies only when the veto covers the whole unit (a
+solo run, or every member). If the excised member was the batch's point, release the others too,
+each per its own Exits row.
 
-**1.1 — Blocked-by verification.** `Blocked by #N` lines go stale: blockers get merged and nobody
-edits the body. Answer *"is this actually still blocked?"* against the repo and git history, not
-against the tracker — one check per blocker (cap 6), each returning `{blockerId, resolved,
-evidence, confidence}`. Fan out with `pipeline` under Ultracode; inline otherwise, stopping at the
-first confirmed live blocker. Still blocked → release `blocked-discovered`, remove `in-progress`
-(back to Backlog), take the next rank.
+**1.1 — Blocked-by verification.** `Blocked by #N` lines go stale: blockers merge and nobody edits the
+body. Check each blocker (cap 6) against the repo and git history, not the tracker. Under ultracode
+each check is a [`claim-verifier`](../agents/claim-verifier.md) on the claim "#N still blocks this
+issue", returning `{blockerId, resolved, evidence, confidence}`; run them as a fan-out. Otherwise
+run the same checks inline and stop at the first confirmed live blocker. A blocker is resolved only
+on evidence (a REFUTED verdict); PLAUSIBLE is still blocked. Still blocked: release
+`blocked-discovered`, remove `in-progress` (back to Backlog), take the next rank.
 
 **1.2 — Spec-vs-code verification.** The most expensive autonomous failure is building something
-already built, or building against a spec that no longer describes the codebase. Three checks, none
-optional, `parallel` under Ultracode (a barrier is right — you cannot implement on partial verdicts):
+already built, or building against a spec that no longer describes the code. Three checks, all
+required. Under ultracode run them as a parallel fan-out and wait for all three before implementing;
+otherwise run them inline:
 
-1. **Already done?** → `{alreadyDone: none|partial|full, evidence, residual}`
-2. **Spec drift** — every statement in the description no longer true → `{claim, reality, severity}`
-3. **Surface area** — files, patterns to follow, tests that must change, destructive? → `{files,
-   patterns, tests, destructive}`
+1. **Already done?** A `claim-verifier` on "this issue's work is already done" →
+   `{alreadyDone: none|partial|full, evidence, residual}`
+2. **Spec drift.** A `claim-verifier` over the description's statements, returning each one no
+   longer true → `{claim, reality, severity}`
+3. **Surface area.** Files, patterns to follow, tests that must change, destructive? →
+   `{files, patterns, tests, destructive}`. This is exploration, not verification; a general
+   subagent or inline read.
 
-Read AGENTS.md and the real spec files the issue links to. **If the issue and the spec conflict, the
-spec wins.** Scale the three checks' thoroughness by the brief's `depth` (the floor is always all
-three): `deep` means also reading the surrounding subsystem and runtime evidence, not just the named
-files. Post the result to the issue with `add_issue_comment` — that comment is the plan.
+Read AGENTS.md and the spec files the issue links. If the issue and the spec conflict, the spec wins.
+Scale thoroughness by the brief's `depth` (the floor is always all three); `deep` also reads the
+surrounding subsystem and runtime evidence, not just the named files. Post the result to the issue
+with `add_issue_comment`; that comment is the plan.
 
-If **`alreadyDone: full`**: post the evidence, close the issue as **`completed`** (`issue_write`
-state closed, state_reason completed), release `superseded`, and report. Don't ask; it is one click
-to undo. Duplicates: close as **`duplicate`** with `duplicate_of` the canonical.
+If `alreadyDone: full`: post the evidence, close the issue as `completed` (`issue_write` state
+closed, state_reason completed), release `superseded`, and report. Don't ask; it is one click to
+undo. A duplicate closes as `duplicate` with `duplicate_of` the canonical issue.
 
-**1.3 — Vetoes: the complete list of stop-and-ask points.** If one fires, **release the claim first** —
-human deliberation is unbounded and holding a claim through it starves siblings — then ask with
-AskUserQuestion. **Re-claiming after approval means running §0.5 and §0.6 in full with a fresh
-`CLAIM_ID`**: approval authorizes the work, not the claim, and the issue was free the whole time.
+**1.3 — Vetoes: the complete list of stop-and-ask points.** If one fires, release the claim first
+(human deliberation is unbounded, and holding a claim through it starves siblings), then ask with
+AskUserQuestion. Re-claiming after approval means running §0.5 and §0.6 in full with a fresh
+`CLAIM_ID`: approval authorizes the work, not the claim, and the issue was free the whole time.
 
-- **E1 — a one-way door on product intent.** Terminology that will propagate, public API/route naming,
-  pricing/billing/legal copy, or something the user explicitly deferred to themselves. Test: *if this
-  is wrong, does fixing it after merge cost more than a follow-up PR?* Ordinary visual and editorial
-  choices are **not** E1 — implement them consistent with existing screens and flag them in the PR.
+- **E1 — a one-way door on product intent.** Terminology that will propagate, public API/route
+  naming, pricing/billing/legal copy, or something the user explicitly deferred to themselves. Test:
+  if this is wrong, does fixing it after merge cost more than a follow-up PR? Ordinary visual and
+  editorial choices are not E1: implement them consistent with existing screens and flag them in the
+  PR.
 - **E2 — destructive or irreversible.** Dropping or renaming columns/tables, data backfills, auth/RLS
-  changes, deleting a public route or API, anything touching billing. Additive schema change (new
-  nullable column, new table) is fine **as a migration file committed to the PR**; applying any
+  changes, deleting a public route or API, anything touching billing. An additive schema change (new
+  nullable column, new table) is fine as a migration file committed to the PR; applying any
   migration directly to a hosted project is always E2.
-- **E3 — the issue no longer describes reality:** a high-severity drift item, or `alreadyDone: partial`.
-- **E4 — scope explosion:** surface area beyond ~8 files, or crossing a shared type, the auth layer, or
-  the schema, when the issue read as small (estimate ≤2, or unestimated and small-sounding).
+- **E3 — the issue no longer describes reality:** a high-severity drift item, or
+  `alreadyDone: partial`.
+- **E4 — scope explosion:** surface area beyond ~8 files, or crossing a shared type, the auth layer,
+  or the schema, when the issue read as small (estimate ≤2, or unestimated and small-sounding).
 - **E5 — nothing viable.** Report why.
 
-Everything else you decide yourself. The line is **ask about intent, never about execution**: anything
-recoverable by reading the resulting PR — design, internal naming, which helper, how to test — is
-yours. All vetoes fire **before implementation begins**; a run goes end to end or stops early, never a
-mid-flight interrupt on half-built work.
+Everything else you decide yourself. Ask about intent, never about execution: anything recoverable by
+reading the resulting PR (design, internal naming, which helper, how to test) is yours. All vetoes
+fire before implementation begins; a run goes end to end or stops early, never interrupting
+half-built work.
 
-If an issue turns out to be genuinely two unrelated efforts, ship the coherent slice you can verify and
-**file self-contained follow-ups** (`issue_write` create, labels `triage` + a priority + `area:<x>`)
-for the rest.
+If an issue turns out to be two unrelated efforts, ship the coherent slice you can verify and file
+self-contained follow-ups (`issue_write` create, labels `triage` + a priority + `area:<x>`) for the
+rest.
 
 ## Phase 2 — implement
 
-**Run the second verify (§0.6) now**, before the first file write.
+Run the second verify (§0.6) before the first file write.
 
-Branch from `main`. On **Cursor Cloud**, use the session's assigned branch. On **Claude Code**, `claude/<slug>`. In a harness-managed cloud session, the assigned branch always wins. Either way, that branch is this file's **unit branch**. Focused commits. **Commit locally; do not push yet** — the
-pre-push gate owns the first push (Phase 3). Record the branch name in a heartbeat comment on the
-first commit: local work is invisible to the reclaim rules, and the claim comment stream, not a
-remote branch, is your liveness beacon.
+Branch from `main` as `claude/<slug>`; in a harness-managed cloud session, the session's assigned
+branch always wins. That branch is the **unit branch**. Make focused commits locally and don't
+push yet: the pre-push gate owns the first push (Phase 3). Name the branch in a heartbeat on the first commit, because local work is
+invisible to the reclaim rules and the comment stream is your only liveness beacon.
 
-Write the code yourself, inline and sequential. Parallel writers on one working tree collide — same-file
-edits, duplicated helpers, one agent importing a symbol another just renamed — with no cheap merge
-step. **One narrow exception**, requiring all three: §1.2 found ≥3 file groups with no shared imports
-or symbols, each with its own tests, and the issue is genuinely large. Then `pipeline` the groups with
-an explicit **file allowlist per agent**, each returning `{group, filesTouched, testsAdded,
-neededOutsideAllowlist}`. A non-empty `neededOutsideAllowlist` is the collision detector — you handle
-it; agents never reach across. Every integrating edit (shared types, exports, wiring) is yours.
-Codemod-shaped work passes this test; feature work usually does not.
+Write the code yourself, inline and sequentially. Parallel writers on one working tree collide
+(same-file edits, duplicated helpers, one agent importing a symbol another just renamed) with no
+cheap merge step. One narrow exception, requiring all three: §1.2 found ≥3 file groups with no
+shared imports or symbols, each with its own tests, and the issue is genuinely large. Then, under
+ultracode, fan the groups out with an explicit file allowlist per agent, each returning
+`{group, filesTouched, testsAdded, neededOutsideAllowlist}`. A non-empty `neededOutsideAllowlist` is
+the collision detector: you handle it, and agents never reach across. Every integrating edit (shared
+types, exports, wiring) is yours. Codemod-shaped work passes this test; feature work usually doesn't.
 
-**Heartbeat into the tracker, not to the user** — under session fan-out nobody is watching this
-session. Post an **`AGENT-HEARTBEAT`** comment (same `claim_id`) on **every issue you hold** — one
-per batch member — at each checkpoint: verification done, first commit, each meaningful commit,
-before and after any long-running command, PR opened, and any time you would otherwise go quiet.
-(The GitHub MCP cannot edit comments, so each heartbeat is a fresh comment; the newest one is the
-lease clock. Keep them terse — one line — so the thread stays readable.) Heartbeating all members
-keeps every issue's own comment stream authoritative — sweepers and §0.2 readers never have to
-follow a pointer to some "primary" member. **Re-read each issue at each heartbeat**: if someone
-closed it, or a later `AGENT-RECLAIM` superseded you on your only member, stop and ask. Superseded
-on **one member of a batch** → treat it as a lost race: excise the member per §0.5's coherence
-rule, keep its commits out of what you push (revert them, or name them in the release comment for
-the reclaimer), and continue the rest.
+Heartbeat into the tracker, not to the user; nobody is watching this session. Post a one-line
+`AGENT-HEARTBEAT` (same `claim_id`) on every issue you hold at each checkpoint: verification done,
+first commit, each meaningful commit, before and after any long-running command, PR opened, and
+whenever you'd otherwise go quiet. Re-read each issue at each heartbeat. If someone closed it, or a
+later `AGENT-RECLAIM` superseded you on your only member, stop and ask. Superseded on one member of a
+batch: treat it as a lost race, excise it per §0.5's coherence escape, keep its commits out of what
+you push (revert them, or name them in the release comment for the reclaimer), and continue.
 
-Verify end-to-end — run the tests and the app. Never claim a step you didn't run.
+Verify end to end: run the tests and the app.
 
 ## Phase 3 — review at push, the single gate
 
-**Run [`/diff-review`](../skills/diff-review/SKILL.md). Always, unreduced.** The pre-push review-gate
-repository Git hook ([`.githooks/pre-push`](../../.githooks/pre-push)) blocks a push until
-`.cache/diff-review/<PUSHED_COMMIT_SHA>` exists, and `/diff-review` is what writes it. **Do not bother trying
-`/code-review`:** its model invocation is waived only when the turn's prompt carries `/code-review`
-whitespace-delimited on both sides, and a `/next` turn is a slash-command expansion, which the scan
-skips — so it is refused 100% of the time here, even if you typed the token as an argument to `/next`.
-It also does not write the marker. There is no separate CI review and no duplicate step — this hook is
-the only pre-PR review gate.
+Run [`/diff-review`](../skills/diff-review/SKILL.md), always and unreduced. The pre-push hook
+([`.githooks/pre-push`](../../.githooks/pre-push)), the only pre-PR review gate, refuses a push
+until `.cache/diff-review/<PUSHED_COMMIT_SHA>` exists, and `/diff-review` writes it. Don't try
+`/code-review`: a `/next` turn is a slash-command expansion, which its invocation scan skips, so it
+is always refused here.
 
-Address every finding: fix it, or file a self-contained `triage` follow-up with a reason.
-**Committing fixes changes HEAD, which invalidates the marker and re-gates the push — so re-run
-`/diff-review` after any post-review commit.** The review always covers exactly what you push. Never
-push around the gate, and **never delete, revert, stash, or gitignore a file to make it pass** — if
-the gate objects to a file, review the file.
+Address every finding: fix it, or file a self-contained `triage` follow-up with a reason. A
+post-review commit changes HEAD and invalidates the marker, so re-run `/diff-review` after it; the
+review always covers exactly what you push. Never push around the gate (`--no-verify`), and never
+delete, revert, stash, or gitignore a file to make it pass. If the gate objects to a file, review the
+file.
 
-Autonomy removes the human's eyes from the diff, so under Ultracode this gets **more** budget, not
-less — and a frozen diff has zero write contention, making it the safest thing here to parallelize.
-Size each lens's budget by the brief's `depth` as well — the floor is always all five lenses;
-`deep` (or no brief) earns the widest budget per lens. A batch concentrates several issues' surface
-under one review with a fixed findings cap, so **any batch of ≥ 2 runs `/diff-review` at `xhigh`** —
-per-issue depth must not be silently diluted by batching.
-Layer an **additional** fan-out *on top of* `/diff-review` (never instead of it): five lenses in
-`parallel` — correctness and edge cases; security (authz, injection, secrets, Supabase RLS);
-acceptance-criteria conformance; repo conventions and simplification; test adequacy — each returning
-`{file, line, severity, claim, suggestedFix}`. Then one skeptic per finding, tasked with *disproving*
-it by reading the actual code → `{verdict: CONFIRMED|REFUTED|NEEDS_HUMAN, evidence}`. Fix
-**CONFIRMED**; put **NEEDS_HUMAN** in the PR body under *Flagged for review* — that valve is what lets
-a run finish instead of stopping to ask. Its sub-agents inherit the session model.
+A batch of 2 or more runs `/diff-review` at `xhigh`: it concentrates several issues' surface under
+one fixed findings cap, and batching must not dilute per-issue depth.
 
-**The *Flagged for review* block is a record, not an ask.** Anything on it that needs Paul to *act
-or decide* — a dashboard toggle, a credential, an unmet acceptance criterion you are shipping
-around — also goes to him as an explicit question, per
-[`.claude/skills/file-follow-up/SKILL.md`](../skills/file-follow-up/SKILL.md): `AskUserQuestion`
-when it is a decision and you are not holding sibling claims, your **end-of-run report** otherwise
-— for an action, or for any run where blocking on a prompt would stall it. The *Flagged for
-review* block still gets written — routine 3 harvests those sections into the Human Action List,
-so it is read on a schedule — but it is a record, and a record is not an ask. File the issue
-*and* ask. And if Paul is
-present and the action is small, just ask on the spot — a 15-second toggle is not worth a
-follow-up issue's lifecycle.
+Under ultracode, layer a lens pass on top of `/diff-review`, never instead of it: no human reads the
+diff before the PR, and a frozen diff is the safest thing here to parallelize. Launch five
+[`diff-finder`](../agents/diff-finder.md) agents on the unit branch's diff, one per lens: correctness and edge cases; security (authz, injection, secrets, Supabase RLS);
+acceptance-criteria conformance; repo conventions and simplification; test adequacy. Size each
+lens's budget by the brief's `depth` (the floor is all five; `deep` or no brief earns the widest).
+Then one `claim-verifier` per candidate. Fix CONFIRMED, drop REFUTED, and put PLAUSIBLE in the PR
+body under *Flagged for review*; that valve is what lets a run finish instead of stopping to ask.
+
+The *Flagged for review* block is a record, not an ask. Anything on it that needs Paul to act or
+decide (a dashboard toggle, a credential, an unmet acceptance criterion you are shipping around) also
+goes to him as a question, per [`file-follow-up`](../skills/file-follow-up/SKILL.md): AskUserQuestion
+when it is a decision and you hold no sibling claims, your end-of-run report otherwise, or whenever
+blocking on a prompt would stall the run. Still write the block; the PR Follow-ups routine harvests
+it into the Human Action List. If Paul is present and the action is small, ask on the spot, and file
+it only if it's still open when the run ends.
 
 ## Phase 4 — ship and sync
 
-If the unit changed a fact a doc asserts, update that doc **in this same PR** — the §1.2 drift items
-are the minimum list. Nothing requires a doc edit otherwise. Put files in their canonical home per
-[`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md); **never drop a
-stray file, or append an unrelated note, to make a change look documented.** If the unit genuinely
-changed nothing a doc describes, change no doc — inventing one is the failure
-([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)).
+If the unit changed a fact a doc asserts, update that doc in this same PR; the §1.2 drift items are
+the minimum list, per member. Put files in their canonical home per
+[`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md). Never drop a
+stray file or append an unrelated note to make a change look documented; if the unit changed nothing
+a doc describes, change no doc ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)).
 
-Push and open the PR with **`Fixes #N`** in the PR **body** — the literal magic word, not a prose
-mention, and the body specifically: **GitHub ignores closing keywords in the PR title** — **one
-line per batch member**. GitHub's close-on-merge handles multiple `Fixes` lines natively; each
-named issue closes as `completed` when the PR merges. Body: what changed, why, which
-acceptance criteria **each member** satisfies, and the *Flagged for review* list. Docs are per member
-too: nothing mechanical catches a batch that documents only one of its issues, so each member's §1.2
-drift items get their own fix or an explicit note that none was needed.
+Push and open the PR with one `Fixes #N` line per member in the PR body. GitHub ignores closing
+keywords in the title, and a prose mention doesn't close. The body covers what changed, why, which
+acceptance criteria each member satisfies, the *Flagged for review* list, and any step you reduced
+or skipped. Each member's §1.2 drift items get their own fix or an explicit note that none was
+needed; nothing mechanical catches a batch that documents only one of its issues.
 
-**Never `Fixes` a parent with open children.** Before writing the line, `issue_read get` each
-member. When it reports `has_children: true` and any child is still open, write **`Part of #N`**
-instead — a prose reference GitHub does not treat as a closing keyword — and say in the body which
-slice this PR actually delivers. `Fixes #<parent>` would close the whole epic on merge with its
-remaining slices unwritten, and the merge is irreversible in a way the claim never was.
+**Never `Fixes` a parent with open children.** Before writing each line, `issue_read get` the member.
+When it reports `has_children: true` and any child is still open, write `Part of #N` instead and say
+which slice this PR delivers: `Fixes #<parent>` would close the epic on merge with its remaining
+slices unwritten, and a merge is irreversible in a way a claim never was. `Fixes` is correct again
+when `sub_issues_summary` shows `completed >= total`, or when every open child is a member of this
+PR. Gate on `has_children`: `sub_issues_summary` is returned only when children exist, so a
+`total > completed` check on a missing summary fails open.
 
-This is the *only* place epics need special handling. Claiming one is fine and §0.2 deliberately
-does not filter them; the damage is closing one early, and it is this line that does that. Two
-refinements worth knowing:
+Move every member to In Review: swap `in-progress` for `in-review` (read-modify-write) and comment
+the PR link on each, naming any step you reduced or skipped. Don't post `AGENT-RELEASE`; the open PR is the marker now. Babysit the PR to
+merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR lifecycle. On merge, GitHub closes
+each `Fixes`-named issue as `completed`; where it didn't, close it yourself (`issue_write` state
+closed + `completed`) and remove any leftover `in-review` label. The issue's state is the status;
+there are no manual board moves.
 
-- **`completed >= total` in `sub_issues_summary` means `Fixes` is correct again** — every slice has
-  landed, so closing the parent is exactly right.
-- **A parent+sub-issue batch keeps `Fixes` on both.** If every open child is a member of this same
-  PR, they all close together and nothing is stranded — that is the inseparable unit the invariant
-  above sanctions.
+**After a merge, the run may loop.** When a PR merges, or the whole unit exits as `superseded` or
+`blocked-discovered`, and your context is still healthy (roughly under two-thirds spent, no
+compaction yet), return to Phase 0 with a fresh `CLAIM_ID`. Reset the branch whose PR just merged
+(`git fetch origin main && git checkout -B <that branch> origin/main`; never `checkout -B` a branch
+whose PR is still open) and claim the next unit. The loop never runs past a human: `user-aborted`,
+`plan-rejected`, or any release that leaves a question with Paul ends the run. It is for ranked runs
+only; a named-issue run (`/next 123`) ends when its unit ships, because the human picked the scope.
+Otherwise end and leave the next unit to a fresh session; a degraded session claiming new work is
+worse than an idle board.
 
-Gate on `has_children`, not on `sub_issues_summary` alone: verified 2026-08-16, `issue_read get`
-returns `has_parent`/`has_children` on every issue but returns `sub_issues_summary` **only when
-children exist** (#426 → both; #718, #947 → neither). A check written as `total > completed` reads
-`undefined > undefined` → false when the summary is missing, and fails **open** into the exact
-irreversible case it exists to prevent.
+**Pipelining: at most two open PRs, same context bar as the loop.** While a PR is open you may claim
+the next unit on a fresh from-`main` branch named `<unit-branch>-p2`; this line is the standing grant
+for the suffixed branch. Never branch B from A.
 
-Move **every member** to **In Review**: swap its `in-progress` label for **`in-review`**
-(read-modify-write) and `add_issue_comment` the PR link on each. Do **not** post an
-`AGENT-RELEASE` — the open PR is the marker now, and the claim comments stay as the record of who
-did the work. **Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR
-lifecycle:** subscribe using this harness's PR/CI tools; repo-side wake comments (`CI wake`,
-`PR base sync`) still apply. Triage each
-red check infra-vs-code before pushing a "fix" — an ordinary red CI arrives silently through the
-webhook and is yours to classify from the run itself; a `CI wake` comment appears only when the
-outcome was cancelled/timed-out or an infra retry gave up — address and resolve review threads. On merge, GitHub closes each `Fixes`-named issue as `completed`; for any member
-where it didn't fire, `issue_write` state closed + `completed` yourself. Remove a closed member's
-`in-review` label if GitHub left it (labels survive closing — harmless, but tidy). Solo project:
-the issue's state is the status — no manual board moves.
-
-**After the merge, the run may loop.** `/next` ships one coherent unit per PR — not one per
-session. When a PR merges — or the whole unit exits as `superseded` or `blocked-discovered`,
-releases that answer *this unit can't ship* — and your context is still healthy (roughly: under
-two-thirds spent, no compaction yet), you may return to Phase 0 with a **fresh `CLAIM_ID`**: restart
-**the branch whose PR just merged** from `origin/main` (`git fetch origin main && git checkout -B
-<that branch> origin/main`) — never `checkout -B` a branch whose PR is still open — and claim the
-next unit. The loop never runs past a human: `user-aborted`, `plan-rejected`, or any release that
-leaves a question with Paul ends the run. And it is for **ranked** runs only: a named-issue run
-(`/next 123`) ends when its named unit ships — the human picked the scope; don't self-extend it
-into ranking. Otherwise end and let a fresh session take it — a degraded session claiming new work
-is worse than an idle board.
-
-**Pipelining — at most two open PRs, same context bar as the loop.** Babysit wall-time is idle
-time; while a PR is open — and only while under the loop's context-health bar — you may claim the
-next unit on a **fresh from-`main` branch** named `<unit-branch>-p2` (never branch B from A — the
-branch model is from-`main` only, and this line is the standing grant for the suffixed branch,
-approved with this doctrine's PR). Each hard rule below closes a verified hazard, not a
-hypothetical:
-
-- **Review the ref you push.** The Git hook checks every exact pushed commit, including explicit
-  refspecs and worktrees; a marker for another branch cannot authorize it. Keep the branch checked
-  out anyway so `/diff-review` scopes and records the intended HEAD.
-- **Commit WIP before every branch switch**, so a babysit fix on PR A never pulls B's half-built
-  work into review scope (`/diff-review` includes dirty-tree changes) or lands on the wrong branch.
-  Each `/diff-review` covers exactly one branch's HEAD.
-- **Migrations in both PRs → pick non-colliding version prefixes up front.** Branch protection's
-  `strict: true` re-runs the collision check after the first merge; expect an
-  `update_pull_request_branch` + fresh-CI cycle on the surviving PR, and don't try to re-review
-  `main`'s own merge delta — the gate doesn't ask for it.
-- The [`AGENTS.md`](../../AGENTS.md) babysit obligations read **plural**: subscribe per PR using this harness's tools. Wake comments read per PR, stop conditions evaluated over the set.
+- Review the ref you push. The hook checks every exact pushed commit, including explicit refspecs
+  and worktrees, so a marker for another branch can't authorize it. Keep the branch checked out so
+  `/diff-review` scopes and records the intended HEAD.
+- Commit WIP before every branch switch, so a babysit fix on PR A never pulls B's half-built work
+  into review scope (`/diff-review` includes dirty-tree changes) or lands on the wrong branch.
+- Migrations in both PRs: pick non-colliding version prefixes up front. Branch protection's
+  `strict: true` re-runs the checks after the first merge, so expect an
+  `update_pull_request_branch` and fresh CI on the surviving PR; the gate doesn't ask you to
+  re-review `main`'s merge delta.
+- The [`AGENTS.md`](../../AGENTS.md) babysit obligations read plural: subscribe per PR, read wake
+  comments per PR, and evaluate stop conditions over the set.
 
 ## Exits
 
-Act **before** you respond. Releasing an issue that has committed work is worse than leaving it
-claimed, because the next agent restarts from zero on top of it: work exists → hand off, never
-release. Under a batch, every row applies **per member** — a release or handoff on one member never
-speaks for another, and a run ends only when every still-held member has its exit action.
+`/next` usually runs unattended, alongside other sessions. Keep working through everything that
+doesn't need Paul: the claim, the plan comment, opening the PR, and each green check are not
+stopping points. Put status notes in the same message as your next tool call. A summary announcing
+the next step, an offer to continue, or a list of decisions you could make yourself is not a stop:
+make the call, record it in the PR, and keep going. The valid stops are the rows below, the §1.3
+vetoes, and Phase 2's closed-or-superseded check. When the run ends, your final message is the run
+report: each PR link, each held issue's exit, anything reduced or skipped, and every open question
+for Paul.
+
+Act before you respond. Releasing an issue that has committed work is worse than leaving it claimed,
+because the next agent restarts from zero on top of it: work exists → hand off, never release. Under
+a batch every row applies per member; a release or handoff on one member never speaks for another,
+and the run ends only when every still-held member has its exit action.
 
 | Situation | Action |
 | --- | --- |
@@ -581,7 +481,7 @@ Post literally, substituting bracketed values; the sentinel is always the first 
 ```text
 🤖 AGENT-CLAIM `claim:a3f19c2e`
 
-**Claimed by:** `/next` session `a3f19c2e` (acting as Paul Carlson; Cursor Cloud or Claude Code)
+**Claimed by:** `/next` session `a3f19c2e` (acting as Paul Carlson; Claude Code)
 **Branch:** `claude/fix-signup-redirect` (local until review passes)
 **Batch:** solo — or: #100 · #101 · #102 (one claim comment per member, same claim id; this lease renews on this issue's own comment stream)
 **Prior art:** none
@@ -610,7 +510,7 @@ PR AND no branch pushed within the lease, post an AGENT-RECLAIM before starting.
 #100 is free. Any agent may claim it.
 ```
 
-**AGENT-RECLAIM** — a reclaim *is* a claim: §0.6 applies to it identically.
+**AGENT-RECLAIM** — a reclaim is a claim, and §0.6 applies to it identically.
 
 ```text
 🤖 AGENT-RECLAIM `claim:c1d90a55`
@@ -636,7 +536,8 @@ Taking this over. If the original agent is alive, post AGENT-RELEASE — this cl
 **Takeover:** allowed — post AGENT-RECLAIM per §0.7's all-or-nothing batch rule (every member, before touching the branch) and continue here. Do NOT restart from scratch.
 ```
 
-**AGENT-STALE-FLAG** — the §0.7 demotion. Keep the closing line verbatim; it is load-bearing for trust.
+**AGENT-STALE-FLAG** — the §0.7 demotion. Keep the closing line as written; it tells the owner
+nothing but labels changed.
 
 ```text
 🤖 AGENT-STALE-FLAG
@@ -649,5 +550,3 @@ If you are actively working this, re-add the label and post an AGENT-CLAIM (or j
 
 _Swept by /next. Only labels changed — no code, branches, or PRs were touched._
 ```
-
-If blocked on a decision that's mine, stop and ask with AskUserQuestion.

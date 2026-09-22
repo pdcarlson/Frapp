@@ -10,121 +10,108 @@ description: >
 
 # File follow-up work as a GitHub issue
 
-Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work surfaces that doesn't
-belong in the current PR, **file it as a GitHub issue** (`issue_write` create, labels `triage` +
-one `area:<x>` + a priority). Issues are completed by AI agents, so write each one to be executed
-cold by a fresh agent.
-
-Policy (labels, states, Agent briefs, ownership): [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md).
-This skill is the agent playbook.
-
-## Proven human-only blockers
-
-The moment you have **proven** something needs the human — an environment/network-policy change
-only the owner can make, a missing credential or external account, a dashboard-only toggle, a
-purchase or product decision — file a GitHub issue before moving on.
-
-- *Proven* means at least one real attempt with the failure output in hand, not a guess.
-- *Needs the human* means no agent session could do it either — if a better-provisioned agent
-  session could (Docker, creds, a different harness), that's ordinary blocked work, not a `[human]`
-  one.
-
-**Format:** title **`[human] <imperative action>`**, labels `triage` + `suggestion` + one
-`area:<x>` + a priority. Body opens with `**Human action required — hold in triage; not for /next.**`
-followed by what you tried, the exact error/output as proof, and precisely what the human must do
-(exact setting/secret/file names), ending with
-a visible `` `agent-suggestion: v1 fp=human/<slug> source=<session|pr#N|issue#N>` `` line — a
-visible line, not an HTML comment. The read has repeatedly deleted comments (hiding the marker from
-the search index too); it currently does not, and the form stays regardless because it costs
-nothing.
-
-The weekly **PR Follow-ups** routine owns the `fp=human/` namespace: it audits these against
-reality, publishes every open one on the **Human Action List**, and closes them on proof — the
-`suggestion` label is what permits that close, so never omit it. Never work around a blocker
-silently, never leave it only in chat, and never make the next session re-discover it.
-
-## Filing is necessary but not sufficient — end the run by *asking*
-
-An issue is durable, but it is not an interruption, and a blocker only the owner can clear does
-nothing until the owner sees it. When a run hits one:
-
-1. **Keep building everything that does not depend on it.** Do not stall the whole unit on a
-   blocker that gates one acceptance criterion.
-2. **File the issue as you go**, per the hard rule above.
-3. **Ask it — and pick the channel by what the blocker is and who is actually there.**
-
-   - **A choice, with the owner reachable → `AskUserQuestion`.** That is the default for a
-     decision, not a garnish on a written summary: a question rendered as options is one the
-     owner answers in a click, where the same question in prose has to be reconstructed from a
-     report they are skimming. Give every option the trade-off that actually decides it **and the
-     exact steps its answer commits to**, and lead with your recommendation — you did the
-     measurement, so withholding a view is not neutrality.
-
-     **Release the claim before you ask.** Deliberation is unbounded and a held claim starves
-     every other session — [`next.md`](../../commands/next.md) §1.3, which is where the
-     re-claim-afterwards rule lives too.
-   - **An action only they can take, or any blocker in a run nobody is watching → the end-of-run
-     report**, as the last thing they read, with the exact steps. A prompt nobody is there to
-     answer is not an ask, it is a stall: the scheduled routines run unattended, and a `/next`
-     batch that blocks on one starves the sibling claims it is holding. That command bans a
-     mid-batch ask outright and routes the question to the release comment and the report
-     instead (§1.3 and that command's Exits table); this is the same rule, not an exception to it.
-
-   Either way the ask lands **at the end of the run** — that is what keeps it to the one
-   interruption, at the predictable moment, that the line below promises.
-
-   **A PR body is neither channel.** Still write the *Flagged for review* block: `/next` requires
-   it as the valve that lets a run finish instead of stopping, and the weekly PR Follow-ups
-   routine harvests those sections into the Human Action List, so it is read on a schedule. But
-   it is a **record of what you found, not an ask** — anything on it needing the owner to act or
-   decide goes through one of the two channels above as well.
-
-One interruption per run, at a predictable moment. If the owner is present and the blocker is
-small, asking on the spot beats waiting for the end of the run — but it never replaces step 2. A
-blocker with no issue behind it is invisible to the next session and to the Human Action List,
-whatever the owner said in the moment.
+When work surfaces that doesn't belong in the current PR, file it as a GitHub issue (`issue_write`
+create) written so a fresh agent can execute it cold. Cloud VMs are ephemeral, so anything left only
+in chat or in the next session's memory is lost. Policy on labels, states, Agent briefs, and
+ownership lives in [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md); this is the agent
+playbook.
 
 ## When to file
 
-- A **proven human-only blocker** — per the hard rule above.
-- Deferred / out-of-scope work discovered mid-task (data backfills, follow-up refactors).
-- **Blocked verification** — when the sandbox can't run something (Docker/Supabase won't start,
-  missing external creds), file an issue so the gap is tracked. **Never check a verification box
-  you couldn't actually run** — say it's blocked and link the issue.
-- Review findings you're not fixing in the current PR (with a reason).
-- A bug or security hole found outside the current scope.
+- Deferred or out-of-scope work found mid-task (data backfills, follow-up refactors).
+- Blocked verification: the sandbox can't run something (Docker or Supabase won't start, missing
+  external creds). Say it's blocked and link the issue; never check a verification box you couldn't
+  run.
+- Review findings you aren't fixing in this PR, with the reason.
+- A bug or security hole outside the current scope.
 - Cross-cutting prerequisites or blockers.
+- A proven human-only blocker (below).
 
-**Don't file** for trivial nits you can fix in the current PR (just fix them), or duplicates —
-search first (`search_issues`, open **and** closed) before creating.
+Fix trivial nits in the current PR instead of filing them. Search first (`search_issues`, open and
+closed, including `[human]` titles) and refresh a near-match rather than duplicating it.
 
 ## How to write one (so an agent can execute it)
 
-- **Meta block:** a **priority label** (`P1` urgent / `P2` high / `P3` medium / `P4` low),
-  `Blocked by #N` lines where relevant, originating PR, one `area:<x>` label, and an **Agent
-  brief** (`depth:` / `model:` / `ultracode:` — err on `depth:deep`; policy in
+Labels: `triage`, exactly one `area:<x>`, and a priority (`P1` urgent, `P2` high, `P3` medium, `P4`
+low). The `area:` roster lives in
+[`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines).
+
+Body:
+
+- **Meta block:** `Blocked by #N` lines where relevant (dependencies are body lines, not labels),
+  the originating PR, and an `### Agent brief` (`depth:` / `model:` / `ultracode:`; lean toward
+  `depth:deep`; syntax in
   [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode)).
-- **Problem/context:** what's wrong and why it matters, with exact file paths + line refs.
-- **Acceptance criteria:** an objectively verifiable checkbox list.
+- **Problem/context:** what's wrong and why it matters, with exact file paths and line refs.
+- **Acceptance criteria:** objectively verifiable checkboxes.
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Fixes #N`, criteria met, CI green."
 
-`area:<x>` groups by surface — canonical roster in
-[`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines).
-Don't restate it here; a second copy is how it drifted before (#1077).
-Express dependencies as a **`Blocked by #N`** body line, not a label.
+Lifecycle: filed with `triage` → accepted to Backlog (label removed, priority confirmed) → claimed
+via `/next` → PR with `Fixes #N`. An issue with an open `Blocked by #N` isn't started.
 
-## Lifecycle (short)
+## Proven human-only blockers
 
-File with `triage` → accepted to **Backlog** (label removed, priority confirmed) → an agent
-claims it via `/next` → PR with `Fixes #N`. Express blockers as `Blocked by #N` lines so an
-issue isn't started until they're resolved.
+File one the moment you have proven that something needs the human: an environment or
+network-policy change only the owner can make, a missing credential or external account, a
+dashboard-only toggle, a purchase, or a product decision.
 
-Scheduled routines 1–3 have a narrower write surface (`suggestion`-labeled issues only; no
-product-code PRs) — [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
-[`docs-upkeep`](../docs-upkeep/SKILL.md) (routine 4) differs on both counts: it opens docs-only
-PRs and files nothing here except a proven human-only blocker.
-[`hygiene-scan`](../hygiene-scan/SKILL.md) (routine 5) files through this skill exactly as feature
-work does — the label set above plus its own visible `fp=hygiene/…` marker so daily runs dedup —
-under the per-run cap its skill sets.
-**This skill is used from feature work; it does not put you under that product-code ban.**
+- *Proven* means at least one real attempt, with the failure output in hand.
+- *Needs the human* means no agent session could do it either. If a better-provisioned session
+  could (Docker, creds, a different environment), it's ordinary blocked work, filed as above.
+
+Title `[human] <imperative action>`; labels `triage`, `suggestion`, one `area:<x>`, and a priority.
+Body:
+
+```markdown
+**Human action required — hold in triage; not for /next.**
+
+Tried: <what you ran>. Output: <the exact error, as proof>.
+Steps for the owner: <numbered, with exact setting, secret, and file names>.
+
+`agent-suggestion: v1 fp=human/<slug> source=<session|pr#N|issue#N>`
+```
+
+Keep the marker a visible line, not an HTML comment: lossy reads have stripped comment-form markers
+from bodies and the search index before. The weekly PR Follow-ups routine owns `fp=human/`: it
+audits these against reality, lists every open one on the Human Action List, and closes them on
+proof. The `suggestion` label is what permits that close, so always include it.
+
+## Filing is necessary but not sufficient — end the run by *asking*
+
+An issue is durable, but it reaches no one until the owner looks. When a run hits a blocker only the
+owner can clear:
+
+1. Keep building everything that doesn't depend on it. One blocked acceptance criterion doesn't
+   stall the unit.
+2. File the issue as you go.
+3. Ask, choosing the channel by what the blocker is and who is there:
+   - **A choice, with the owner reachable:** `AskUserQuestion`, since options are answered in a
+     click and prose has to be reconstructed from a report. Give each option the trade-off that
+     decides it and the exact steps its answer commits to, and lead with your recommendation.
+     Release any claim before asking, because deliberation is unbounded and a held claim starves
+     other sessions ([`next.md`](../../commands/next.md) §1.3, which also covers re-claiming).
+   - **An action only they can take, or any blocker in an unattended run:** the end-of-run report,
+     as the last thing they read, with exact steps. A prompt nobody is there to answer is a stall,
+     and a `/next` batch blocked on one starves the sibling claims it holds; that command never asks
+     mid-batch and routes the question to the release comment and the report (§1.3 and its Exits
+     table).
+
+Ask at the end of the run, so the owner gets one interruption at a predictable moment. If the owner
+is present and the blocker is small, ask on the spot. If they clear it then and there, there's
+nothing left to file. If it's still open when the run ends, file it: a blocker with no issue behind
+it is invisible to the next session and to the Human Action List, whatever the owner said in the
+moment.
+
+A PR body is neither channel. Still write its *Flagged for review* block (`/next` requires it, and
+PR Follow-ups harvests those sections into the Human Action List), but it is a record, not an ask.
+Anything there that needs the owner to act or decide also goes through one of the two channels
+above.
+
+## Filing from a routine
+
+Routines file through this skill under their own limits: the
+[shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
+plus their own skill's rules ([`docs-upkeep`](../docs-upkeep/SKILL.md) files only human-only
+blockers; [`hygiene-scan`](../hygiene-scan/SKILL.md) adds a visible `fp=hygiene/…` marker and a
+per-run cap). Those limits bind the routines, not feature work that uses this skill.

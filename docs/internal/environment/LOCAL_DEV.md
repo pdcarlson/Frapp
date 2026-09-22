@@ -1,6 +1,6 @@
 # Local development
 
-> **Cursor Cloud and Claude Code web** are independent first-class agent environments — see
+> **Claude Code web** is the cloud agent environment — see
 > [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) and [`AGENTS.md`](../../../AGENTS.md). This file is the
 > **laptop/local** path: running Frapp on a machine you own.
 
@@ -62,10 +62,10 @@ Requires Expo Go on a device or emulator; not usable on typical headless VMs.
 
 Build `.env.local` per app using `npx supabase status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
 
-## Cloud sandbox (Cursor Cloud and Claude Code)
+## Cloud sandbox (Claude Code web)
 
-Cursor Cloud and Claude Code web are independent first-class agent environments; they share
-`scripts/cloud-sandbox-up.sh`. Full config (`.cursor/environment.json`, Claude Setup script,
+Claude Code web is the cloud agent environment; its bringup is
+`scripts/cloud-sandbox-up.sh`. Full config (Setup script,
 env vars, network policy), auto-bringup, and failure troubleshooting live in
 [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md).
 It generates `apps/api/.env.local` and `apps/web/.env.local`, so the API boots and `npm run build -w apps/web` succeeds without Infisical.
@@ -142,7 +142,7 @@ is stubbed, no daemon or database needed), run it with
 
 ## Related docs
 
-- [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) — Cursor Cloud and Claude Code web
+- [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) — Claude Code web
 - [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) — Infisical project, syncs, login
 - [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) — variable list per app
 - [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md) — agent/provider creds + cloud-sandbox vars

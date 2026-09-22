@@ -1,9 +1,9 @@
 ---
 name: hygiene-scan
 description: >
-  Run the Hygiene Scan routine (5 of 5) — ground in the repo's engineering standards and gates,
-  read a calendar-derived slice of the codebase whole (legacy patterns, grandfathered violations,
-  orphaned code — never just the recent diff), fix one bounded, verified hygiene theme in a
+  Run the Hygiene Scan routine (5 of 5): ground in the repo's engineering standards and gates, read
+  a calendar-derived slice of the codebase whole (legacy patterns, grandfathered violations,
+  orphaned code, not just the recent diff), fix one bounded, verified hygiene theme in a
   product-code PR a human merges, and file or ledger the rest. Use when the scheduled "Hygiene
   Scan" routine fires, or when asked to scan the codebase for hygiene debt and fix it rather than
   report it.
@@ -11,281 +11,213 @@ description: >
 
 # Hygiene Scan (routine 5 of 5)
 
-The tracker routines keep the backlog honest and Docs Upkeep keeps the docs honest. This one keeps
-the **code** honest, and it is the only routine allowed to edit product code.
-
-It exists for the reason [`docs-upkeep`](../docs-upkeep/SKILL.md) exists: hygiene that gets *filed*
-ages. The [Issue Curator](../issue-curator/SKILL.md)'s engineering lens turns duplication and
-layering drift into `suggestion` issues, and `/next` reaches them after everything ranked above
-them. Meanwhile the repo has **no dead-code tooling at all**, its anti-pattern catalogue
-(the rule sections of [`spec/engineering.md`](../../../spec/engineering.md), which it says to read
-as a checklist) is enforced only by
-whoever happens to be reading, [`scripts/dependency-cruiser-known-violations.json`](../../../scripts/dependency-cruiser-known-violations.json)
-"exists to shrink" and only shrinks when a run does it (this routine emptied it on 2026-09-07 —
-keeping it empty is now the job, and a new entry is a regression to refuse, not a baseline to
-re-record), and the [`.jscpd.json`](../../../.jscpd.json) threshold only
-ratchets down when someone consolidates. This routine is the scheduled hand that does the
-consolidating.
-
-It earns the right to touch product code unattended by being **grounded, whole-pattern, verified,
-reviewed, and merged by a human** — every run, no exceptions. The license and its limits are
+This is the one unattended routine that edits product code. Filed hygiene ages behind feature work,
+and nothing else consolidates, so each run fixes one theme itself. A run is done when at most one
+PR (one theme, or one small batch per Phase 2) is open for a human to merge (or you've written
+down why there is none), the rest is filed or ledgered, and the run report is written. The license
+and its limits:
 [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
-rule 3 and ADR-16 amendment 7 in [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md).
+rule 3, and ADR-16 amendment 7 in [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md).
+It holds only while every run is grounded, whole-pattern, verified, reviewed, and human-merged.
 
----
+## Hard limits
+
+- Never touch `supabase/migrations/**`, `.github/workflows/**`, or a dependency version
+  (`package.json` deps, `package-lock.json`): schema changes hit shared databases, workflows are the
+  gates judging this PR, and an upgrade is a behaviour change needing its own review.
+- Never change a gate's posture (required ↔ advisory); that is the owner's call
+  ([`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)).
+- Never change `apps/landing` visuals. The page is built to binding boards
+  (`spec/ui/landing/reference/`) and its open items are owner decisions, so a visual change there is
+  design work. Dead code and correctness there are fair game.
+- Never edit the seven frozen mobile files, which change only through a single integrator PR so
+  parallel slices don't collide ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md)
+  § Hotspot freeze). Under `apps/mobile/`: `app/_layout.tsx`, `app/(tabs)/_layout.tsx`,
+  `lib/theme.tsx`, `components/screen-shell.tsx`, `lib/href.ts`, `package.json`, `app.json`.
+- Never edit `spec/behavior/**` or `spec/product/**` prose: it is intent, never "corrected" to match
+  code. Only a path citation there may change, when a fix moves a file.
+- Never `git push --no-verify`; the pre-push hook is the review gate. If it can't find valid
+  evidence, stop and report the blocker.
+- Never merge. The human merge is what licenses unattended product-code edits.
+- One PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that exists), and one open
+  Hygiene Scan PR at a time: reviewer bandwidth is scarce and stacked hygiene PRs conflict.
+- At most ~3 net-new issues per run; the Curator's net-growth budget binds here too.
+- Never print secret values; names and presence only.
+
+**May edit:** `apps/**` and `packages/**` code and tests; in `scripts/**`, dead code and stale
+allowlist entries only (the check, CI and deploy scripts are the gates); gate baselines, downward
+only (`scripts/dependency-cruiser-known-violations.json`, the `.jscpd.json` threshold); path
+citations in any doc, `spec/behavior/**` included, when a fix moves a file, and the relevant `docs/`
+file when a fact it states moved; this skill directory.
+
+**Behaviour stays unchanged:** anything a test, API consumer, user, or the database can observe
+(status, shape, message, rendered output, persisted data, side-effect order and timing). The one
+exception is a bug inside the pattern you are cleaning that violates what its own tests, comments,
+or the spec already require, in a way no caller could rely on (an off-by-one, a guard that can't
+fire, a `catch` that swallows what it logs), and that a fails-then-passes test covers. Put it under
+its own PR-body heading. A spec-vs-code disagreement about what *should* happen is filed, never
+resolved by editing either side (`AGENTS.md` § Spec vs code). A security or tenant-isolation bug is
+not hygiene: file it `P1`/`P2` at once and lead the report with it; fix it here only if this run has
+a PR and the fix is one line the new test covers.
 
 ## The three habits this routine exists to enforce
 
-**1. Ground before you touch.** Every finding names the repo rule it violates — a line in
-`AGENTS.md`, `spec/engineering.md`, a skill, a gate — and every fix names the rule it restores.
-Taste is not a rule. "Established idiom" is not a rule until you have grepped for it and found it.
-The first scheduled sweep (#1539) restyled a line of the **frozen** `apps/landing` surface on the
-strength of an "established opacity idiom" that exists nowhere in the repo, and moved a file out of
-a grandfathered dep-cruiser violation without shrinking the baseline. Both were avoidable by
-reading first. Phase 0 below is not optional and is not short.
+1. **Ground before you touch.** Every finding names the repo rule it violates (a line in
+   `AGENTS.md`, `spec/engineering.md`, a skill, a gate), and every fix names the rule it restores.
+   Taste isn't a rule, and an "established idiom" isn't one until grep finds it. An ungrounded fix is
+   an opinion applied to product code with nobody watching.
+2. **Question the shape, not just the diff.** The repo is mid-rebuild (Frapp → Signet): treat
+   existing code as possibly dead until checked, not as precedent. Read the slice whole, the oldest
+   file as hard as yesterday's PR. When a legacy shape is wrong, the finding is "this should not
+   exist in this form". Phase 2 bounds that judgment; it never switches it off.
+3. **Never trade one smell for another.** A fix leaves fewer copies, fewer lines, fewer ways to do
+   one thing, or stricter types, and worsens none of them. Dropping a framework import from
+   `domain/` by wrapping the call in the same try/catch at four sites adds duplication; the right
+   fix is a typed domain error translated once at the boundary. If you can't see the right fix,
+   file it with the design question instead of shipping the mechanical half.
 
-**2. Question the shape, not just the diff.** `AGENTS.md` § Tech debt protocol: this repo is
-mid-rebuild (Frapp → Signet), so *treat existing code as possibly dead until you have checked, not
-as precedent*, and *when the existing shape is wrong, rebuild it rather than patch around it*. Age
-is not evidence of correctness. Scan the slice **whole** — the oldest file gets the same scrutiny as
-yesterday's PR — and when a legacy shape is wrong, the finding is "this should not exist in this
-form", not "this has a typo". Unattended, that judgement is bounded (Phase 2), never absent.
+## Phase 0 — Ground
 
-**3. Never trade one smell for another.** A hygiene fix leaves the codebase with **fewer copies,
-fewer lines, fewer ways to do the same thing, or stricter types** — at least one, and never the
-reverse of any. #1539's cautionary case: to remove one `@nestjs/common` import from `domain/`, it
-wrapped the same call in a try/catch at four sites — three byte-identical copies in application
-services, plus one inside the storage adapter's existing local helper — then filed #1538 to
-dedupe the three (the fourth is passed as a bare `forEach` callback and must stay as it is; #1538
-says so). The "clean" fix that adds duplication is the wrong fix; the right one there is a typed
-domain error translated once at the boundary. If you cannot see the right fix, **file it with the
-design question** — do not ship the mechanical half.
-
----
-
-## Repo write permission
-
-| | |
-| --- | --- |
-| **May edit** | `apps/**` and `packages/**` product code and their tests; under `scripts/**`, dead code and stale allowlist entries only — the check, CI and deploy scripts there *are* the gates, so their logic is never in scope; the gate baselines, downward only (`scripts/dependency-cruiser-known-violations.json` via `--update-baseline` after a clean run, the `.jscpd.json` threshold); **path citations** in any doc — `spec/behavior/**` included — when a fix moves or renames a file (that is doc-sync, not intent), and the **relevant** `docs/` file when a fact it states moved; this skill directory (self-maintenance) |
-| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (owned by the in-flight reskin epic [#2364](https://github.com/pdcarlson/Frapp/issues/2364) — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); the freeze is lifted but those files are another epic's, so a hygiene PR must not race it. Dead code and correctness there are still fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `git push --no-verify` |
-| **Volume** | at most **one** PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that branch exists); at most **one open** Hygiene Scan PR at a time; at most **~3** net-new issues per run. Never merge — a human does. |
-
-**Behaviour change is out of scope**, with one exception. Observable behaviour is anything a test,
-an API consumer, a user, or the database can see: response status, shape or message; rendered
-output; persisted data; the order or timing of side effects. A hygiene fix preserves all of it. The
-exception is a **bug found inside the pattern you are already cleaning**, small enough to carry a
-test that fails before and passes after: fix it, and give it its own heading in the PR body so the
-reviewer sees a behaviour change and not a refactor. "Bug" here means code that violates what its
-own tests, its own comments, or the spec *already* require, in a way no caller could be relying on
-— an off-by-one, a guard that can never fire, a `catch` that swallows the error it logs. Where spec
-and code disagree about what *should* happen, that is a contradiction to file, never a bug to fix
-(`AGENTS.md` § Spec vs code). A security or tenant-isolation bug is never "hygiene": file it
-`P1`/`P2` immediately with the evidence and lead the run report with it; fix it in this run's PR
-only when there is one and the change is a single line the new test covers, otherwise leave it to
-`/next`, which picks a `P1` first.
-
----
-
-## Phase 0 — Ground (the first quarter of the run, not the first minute)
+Spend about the first quarter of the run here.
 
 ### 0.1 Read the standards you will cite
 
-In this order, and actually read them — the run's findings are only as good as this list:
-
-1. `AGENTS.md` § Tech debt protocol, § Spec vs code, § Documentation sync mandate.
-2. [`spec/engineering.md`](../../../spec/engineering.md) § Changing existing code (the rebuild-not-patch
-   standard and its sequencing rule) and the rule sections after it — Identity and ownership,
-   Catalog lookups and defaults, Seeds and shared state, Input handling, Empty states,
-   Accessibility, Aggregations, Privacy — which the doc itself says to treat as a checklist.
-3. [`signet-cutover`](../signet-cutover/SKILL.md) — what is Signet, what is legacy, what is frozen.
-   The `apps/web` migration window is **closed** ([`ui-development`](../ui-development/SKILL.md)):
-   a legacy class or a live `dark:` variant on a dashboard screen is a defect now, not a pending slice.
-4. The app skill for today's slice: [`api-development`](../api-development/SKILL.md) (layers, guard
-   chain, the never-do list) or [`ui-development`](../ui-development/SKILL.md) (component layers,
-   token rules, data layer), plus [`realtime-resilience`](../realtime-resilience/SKILL.md) whenever
-   the slice touches `packages/chat-core` or a realtime subscription.
-5. [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md) — which gate is required,
-   which is advisory, and why posture is not yours to change.
-6. [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) — the
-   standard for the moment a doc you are relying on turns out to be wrong. Fix the doc in the same
-   PR when it is small and in scope; report it otherwise. A stale doc is never a licence to skip
-   the check it describes.
+`AGENTS.md` § Tech debt protocol, § Spec vs code, § Documentation discipline;
+[`spec/engineering.md`](../../../spec/engineering.md) § Changing existing code and the rule sections
+after it (a checklist); [`signet-cutover`](../signet-cutover/SKILL.md) (in `apps/web`, a legacy class
+or live `dark:` variant is a defect now); the slice's app skill,
+[`api-development`](../api-development/SKILL.md) or [`ui-development`](../ui-development/SKILL.md),
+plus [`realtime-resilience`](../realtime-resilience/SKILL.md) when the slice touches
+`packages/chat-core` or a realtime subscription;
+[`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md); and
+[`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md). When a doc
+you rely on is wrong, fix it in the PR if small and in scope, else report it; a stale doc never
+licenses skipping the check it describes.
 
 ### 0.2 Name today's slice — deterministically, carrying no state
 
-Sessions are fresh per run. Derive the slice from the calendar alone:
+Sessions carry no state, so the date alone picks the slice:
 
 ```sh
 J=$(date -u +%j); echo $(( 10#$J % 5 ))
 ```
 
-`%j` is the zero-padded day of year, so parse it base 10 (`10#$J`) or `008` and `009` throw. `-u`
-keeps a manual re-run on the same answer as the scheduled firing. 365 is divisible by 5, so the
-cycle is stable across years; a leap year shifts it by one day, which is accepted.
+`%j` is zero-padded, so parse it base 10 (`10#$J`) or `008` and `009` throw; `-u` keeps a manual
+re-run on the scheduled answer. 365 is divisible by 5, so the cycle is stable across years (a leap
+year shifts it a day, accepted).
 
 | Group | Slice (read it whole) | Grounding skill |
 | --- | --- | --- |
 | 0 | `apps/api/src/domain`, `apps/api/src/application` | `api-development` |
-| 1 | `apps/api/src/interface`, `apps/api/src/infrastructure`, `apps/api/src/modules`, `apps/api/src/config`, the `apps/api/src/*.ts` bootstrap files, `apps/api/test`, `packages/api-sdk` (hand-written code only), `packages/validation`; `supabase/` is read for context and is **flag-only** | `api-development` |
+| 1 | `apps/api/src/interface`, `apps/api/src/infrastructure`, `apps/api/src/modules`, `apps/api/src/config`, the `apps/api/src/*.ts` bootstrap files, `apps/api/test`, `packages/api-sdk` (hand-written code only), `packages/validation`; `supabase/` is read for context and is flag-only | `api-development` |
 | 2 | `apps/web`, `packages/theme`, `packages/color`, `packages/chapter-theme`, `packages/brand-assets`, `packages/formatting` | `ui-development`, `signet-cutover` |
 | 3 | `apps/mobile`, `packages/chat-core`, `packages/chat-integrations`, `packages/hooks` | `ui-development`, `signet-cutover`, `realtime-resilience` |
-| 4 | `packages/org-archetypes`, `packages/observability`, `packages/eslint-config`, `packages/typescript-config`, `scripts/`, `apps/landing` (dead code and correctness only — never visuals), and the gates' own baselines | `testing`, `QUALITY_GATES.md` |
+| 4 | `packages/org-archetypes`, `packages/observability`, `packages/eslint-config`, `packages/typescript-config`, `scripts/`, `apps/landing` (dead code and correctness only), and the gates' own baselines | `testing`, `QUALITY_GATES.md` |
 
-The slice bounds the **deep read**, not the fix: a pattern found in the slice is fixed everywhere it
-occurs (Phase 2's whole-pattern rule), and the repo-wide lenses in Phase 1 run every day. Groups
-differ in reading weight; budget for it and say in the report where you stopped. **Do not re-scope
-the slice to balance it** — a slice that depends on judgement is not reproducible, and
-`ROUTINES.md` § Verify asserts that two runs on one day take the same one.
-
-**Read the slice in a fixed order and record where you stopped.** Take `git ls-files` over the
-group's directories in its own order, skip generated files (`packages/api-sdk/src/types.ts`,
-`apps/api/openapi.json`, `*.d.ts`, snapshots — `check:api-contract` regenerates the first two, so
-"unused" there is not a finding), and read top to bottom. When the run budget ends before the list
-does, the ledger's `carry:` line names the last file reached, and the next run of the same group
-starts from the file after it rather than from the top. Not finishing group 2 or 3 in one pass is
-normal; a group that is never finished is a finding for the owner.
+The slice bounds the deep read, not the fix: a pattern found there is fixed everywhere it occurs.
+Don't re-scope a slice to balance it, because `ROUTINES.md` § Verify checks that two runs on one day
+take the same one. Read `git ls-files` over the group in order, skipping generated files
+(`packages/api-sdk/src/types.ts`, `apps/api/openapi.json`, `*.d.ts`, snapshots; "unused" there is
+not a finding). If the budget runs out first, the ledger's `carry:` line names the last file read
+and the group's next run resumes after it. Groups 2 and 3 often need several passes; a group that
+never finishes is a finding for the owner.
 
 ### 0.3 Run the gates and record their baselines
 
-Before touching anything, run and **write down** the numbers you will compare against after the fix:
-
 | Baseline | Command | Record |
 | --- | --- | --- |
-| Types | `npm run check-types` | must be clean |
-| Lint | `npm run lint` | clean, **plus the `apps/api` warning count** — that workspace's lint script has no `--max-warnings 0`, so warnings pass silently; the run must not add one |
-| Layering | `npm run check:dep-cruiser` | the violation / baselined / new counts. The baseline is **empty** as of 2026-09-07, so the expected reading is `0 violation(s), 0 baselined, 0 new` — a non-zero `violation(s)` is a regression on `main` to report, and a non-zero `baselined` means someone re-recorded rather than fixed. If entries are ever back, also record any **stale** ones it lists (a stale entry is a free baseline shrink) |
-| Duplication | `npm run check:duplication` | the measured percentage and the clone list (`npx jscpd --config .jscpd.json --reporters consoleFull` for every clone) |
-| Tests | `npm run test -w <workspace>` for each workspace in the slice | pass, and the count |
-| Coverage ledgers | read the backlog tables in [`tenant-scope-coverage.spec.ts`](../../../apps/api/src/infrastructure/supabase/repositories/tenant-scope-coverage.spec.ts), [`no-as-never.spec.ts`](../../../apps/api/src/infrastructure/supabase/repositories/no-as-never.spec.ts), [`dto-constraint-coverage.spec.ts`](../../../apps/api/src/interface/dtos/dto-constraint-coverage.spec.ts), [`signet.css.spec.ts`](../../../packages/theme/src/signet.css.spec.ts) | every deferred entry is a standing finding with its reason already written |
+| Types | `npm run check-types` | clean |
+| Lint | `npm run lint` | clean, plus the `apps/api` warning count: its lint script has no `--max-warnings 0`, so warnings pass silently, and the run must not add one |
+| Layering | `npm run check:dep-cruiser` | violation / baselined / new counts. The baseline is empty, so expect `0 violation(s), 0 baselined, 0 new`; non-zero violations are a regression on `main` to report, and non-zero baselined means someone re-recorded instead of fixing |
+| Duplication | `npm run check:duplication` | the percentage and clone list (`npx jscpd --config .jscpd.json --reporters consoleFull` shows every clone) |
+| Tests | `npm run test -w <workspace>` per workspace in the slice | pass, and the count |
+| Coverage ledgers | the backlog tables in [`tenant-scope-coverage.spec.ts`](../../../apps/api/src/infrastructure/supabase/repositories/tenant-scope-coverage.spec.ts), [`no-as-never.spec.ts`](../../../apps/api/src/infrastructure/supabase/repositories/no-as-never.spec.ts), [`dto-constraint-coverage.spec.ts`](../../../apps/api/src/interface/dtos/dto-constraint-coverage.spec.ts), [`signet.css.spec.ts`](../../../packages/theme/src/signet.css.spec.ts) | each deferred entry is a standing finding with its reason written |
 
-`check-types` and `lint` are turbo tasks wired to `^build`, so they work on a fresh sandbox after
-the SessionStart install; the root `check:*` scripts are plain node and need no build — **except**
-`check:dep-cruiser`, which resolves `@repo/*` imports through each package's `main`/`exports` —
-for most packages a built `dist/`. Run `npx turbo run build --filter='./packages/*'` first on a
-fresh sandbox, or those imports report as `not-to-unresolvable`: dozens of "new violations" that
-are none (observed 2026-09-02).
-`check:api-contract` regenerates `openapi.json` and `packages/api-sdk/src/types.ts` — run it only
-in Phase 3, and read a changed artifact as "this fix changed the contract", i.e. behaviour.
-`check:links` needs `npm run install:lychee` first — stated once in
-[`AGENTS.md` § Lint, test, build, type-check](../../../AGENTS.md#lint-test-build-type-check), linked
-rather than restated here so the link gate that walks `.claude/` catches it if that heading moves.
+`check:dep-cruiser` resolves `@repo/*` through each package's `main`/`exports`, which for several
+packages is a built `dist/`: on a fresh sandbox run `npx turbo run build --filter='./packages/*'`
+first, or you get dozens of false `not-to-unresolvable` violations. `check:api-contract` regenerates
+`openapi.json` and `packages/api-sdk/src/types.ts`, so run it only in Phase 3. `check:links` needs
+lychee installed first ([`AGENTS.md` § Lint, test, build, type-check](../../../AGENTS.md#lint-test-build-type-check)).
 
 ### 0.4 Read what earlier runs already decided
 
-- **The ledger.** `search_issues query:"Hygiene Scan — ledger"` — a `routine-state` issue. The
-  matcher is semantic, so **a hit counts only if its title is exactly `Hygiene Scan — ledger` and
-  it carries `routine-state`**; the PR Follow-ups tracking issue is the near-match it will offer
-  you. No such issue → create it (`issue_write`, labelled `routine-state` and nothing else — the
-  carve-out `GITHUB_PM.md` grants routine infrastructure, the same one `pr-followups` uses — and
-  ask the owner to pin it). Read the **newest** comments: `issue_read get` gives the `comments`
-  count, and `get_comments` pages oldest-first, so fetch `perPage: 30` at `page: ceil(count / 30)`
-  (and the page before it when that one holds fewer than ten). A `declined:` line is a standing
-  decision for 30 days unless `git log` shows the file changed since; a `carry:` line is the
-  previous run talking to you. Never rewrite the ledger's body — it is append-only (Phase 5).
-- **The open PR.** `list_pull_requests state:open base:main` — the `head` filter is an exact
-  `owner:branch`, not a prefix, so page through and filter client-side on `head.ref` starting
-  `claude/hygiene-scan-`. If one is open, this run **services it and files only** — see 0.5.
-- **Open issues.** `search_issues` for `fp=hygiene/` (open **and** closed) so you never re-file, and
-  for the key terms of each candidate so you find the Curator's `suggestion` that already tracks
-  it — fixing that one and writing `Fixes #N` is the best outcome a run can have. Confirm a hit
-  actually carries the marker text before skipping on it; the matcher is semantic.
-- **Recent merges.** `git log --oneline -30 origin/main` — a pattern that landed yesterday with a
-  reviewer's blessing is not yours to reverse today; file the disagreement instead.
+- **The ledger.** `search_issues query:"Hygiene Scan — ledger"`. The matcher is semantic: a hit
+  counts only with the exact title `Hygiene Scan — ledger` and the `routine-state` label (the PR
+  Follow-ups tracking issue is the near-miss it offers). If none exists, create it with
+  `issue_write`, labelled `routine-state` only (the routine-infrastructure carve-out in
+  `GITHUB_PM.md`), and ask the owner to pin it. `get_comments` pages oldest-first, so take the
+  `comments` count from `issue_read get` and fetch `perPage: 30` at `page: ceil(count / 30)`, plus
+  the page before if that one holds fewer than ten. A `declined:` line stands for 30 days unless
+  `git log` shows the file changed since; `carry:` is the last run talking to you.
+- **The open PR.** `list_pull_requests state:open base:main`, filtered client-side on `head.ref`
+  starting `claude/hygiene-scan-` (the `head` filter is an exact `owner:branch`, not a prefix).
+- **Issues.** Search `fp=hygiene/` (open and closed) so you never re-file, and each candidate's key
+  terms to find the Curator `suggestion` already tracking it; fixing that with `Fixes #N` is the best
+  outcome a run can have. Confirm a hit carries the marker text before skipping on it.
+- **Recent merges.** `git log --oneline -30 origin/main`. A pattern a reviewer approved yesterday
+  isn't yours to reverse; file the disagreement.
 
 ### 0.5 If a Hygiene Scan PR is already open
 
-Reviewer bandwidth is the scarce resource, and stacked hygiene PRs conflict with each other. So:
-check the open PR's mergeability, CI on its head, and unresolved review threads, and act on every
-one per `AGENTS.md` § Autonomous PR lifecycle — merge `origin/main` into it, fix a real failure,
-answer or implement review asks. Every push to that branch goes through Phase 4's review gate
-exactly as a new PR would, and never widens it beyond its theme. Then run Phase 0–1 and Phase 5
-in full, but **open no second PR**:
-findings go to the ledger (and up to the filing cap to the tracker), and the report says which PR
-is still waiting on a human.
-
----
+Service it: mergeability, CI on its head, unresolved review threads, each handled per `AGENTS.md`
+§ Autonomous PR lifecycle (merge `origin/main` in, fix real failures, answer or implement review
+asks), with every push through Phase 4's review gate and within its theme. Then run Phases 0, 1
+and 5, but open no second PR; findings go to the ledger and, up to the cap, the tracker.
 
 ## Phase 1 — Scan
 
-Fan out for breadth — sub-agents per lens or per directory are fine (`AGENTS.md` § Operating
-mindset) — but **verify every candidate yourself** before it reaches the ledger: open the file, check the
-consumers, name the rule. A candidate without a rule and a consumer check is not a finding.
+Slice lenses are independent reads: on a large slice, give each lens or directory to a subagent
+that returns candidates in the finding format below, and keep gate output and quick greps yourself.
+A delegated candidate is a lead until you have opened the file, checked consumers, and named the
+rule.
 
 ### Repo-wide signal lenses — every run, whatever the slice
 
-- **Gate output.** Every `jscpd` clone above `minLines`, every `apps/api` lint warning, every
-  coverage-ledger backlog entry, and any `dependency-cruiser` entry that has come back (the
-  baseline has been empty since 2026-09-07, so there should be none — one that reappears is a
-  finding about how it got there, not a violation to grandfather). These are findings the repo has
-  *already made* — you are choosing which one to close.
-- **Named anti-patterns, by grep.** The canonical bad forms from `spec/engineering.md`'s rule
-  sections (`+e.target.value`, an unguarded `ARCHETYPES[…]` subscript, a hardcoded actor
-  id, a `<div onClick>`, a division without a zero guard, a `.single()` where the row may be
-  absent, a cast or `@ts-expect-error` on a `.insert`/`.update`/`.upsert` payload — `as never` is
-  only one spelling; `as any`, `as unknown as …` and the expanded
-  `Database[…]['Insert']` erase as much, and `no-as-never.spec.ts` covers only
-  `*.repository.ts`, so service-layer writes are yours to grep — a bare `SupabaseClient` injection, a raw `fetch` where
-  `@repo/hooks` owns the data layer) and the layering red flags from
+- **Gate output.** Every jscpd clone, every `apps/api` lint warning, every coverage-ledger entry, and
+  any dep-cruiser entry that reappeared (find how it got there; don't grandfather it). These are
+  findings the repo has already made.
+- **Named anti-patterns, by grep.** The canonical bad forms in `spec/engineering.md`'s rule sections,
+  plus: a `.single()` where the row may be absent, a bare `SupabaseClient` injection, a raw `fetch`
+  where `@repo/hooks` owns the data layer, and a cast or `@ts-expect-error` on an
+  `.insert`/`.update`/`.upsert` payload. `as never` is one spelling (`as any`, `as unknown as …` and
+  an expanded `Database[…]['Insert']` erase as much), and `no-as-never.spec.ts` covers only
+  `*.repository.ts`, so grep service-layer writes. Also the layering red flags in
   [`api-development`](../api-development/SKILL.md) and [`audit`](../audit/SKILL.md).
-- **Two ways to do one thing.** A helper in `packages/*` reimplemented locally; the same guard
-  hand-copied across screens with a comment admitting it; a wrapper kept "for now" beside the thing
-  it wraps. `git grep` the helper's name and its body's distinctive line.
+- **Two ways to do one thing.** A `packages/*` helper reimplemented locally, a guard hand-copied
+  across screens, a wrapper kept "for now" beside what it wraps. `git grep` the name and the body's
+  most distinctive line.
 
 ### Slice lenses — the deep read of today's group
 
-**L1 · Orphans and possibly-dead code.** There is no tooling for this; you are it. For each export
-in the slice: `git grep -n '<name>' -- apps packages scripts` excluding the definition and any
-barrel re-export. Zero real importers → candidate. Before calling anything dead, check the
-non-import consumers: file-based routes (`apps/mobile/app/**`, `apps/web/app/**`) are consumed by
-the router; NestJS providers by module registration; specs by path strings in `jest.mock`; assets
-by URL. A definition, an `index.ts` re-export, or a "we might need it later" comment is not a
-consumer (`AGENTS.md` § Tech debt protocol; `spec/ui/design-system/README.md` §3: a primitive with
-no importers is deleted, not kept).
-
-**L2 · Legacy Frapp on a Signet surface.** Geist, bone/bronze/ink, `#2563EB`, `royal-blue-*`,
-`navy-900`, an undefined Tailwind key that compiles to nothing, `hsl(var(--token))` hand-wrapping,
-a live `dark:` variant in `apps/web`, NativeWind or raw hex or a `fontSize` literal in
-`apps/mobile`, a primitive the #920 primitives slice deleted (`accordion`, `progress`,
-`scroll-area`, `separator`, `skeleton`, `sonner`, `tooltip`, `Button`'s `outline` variant) coming
-back — the table in [`signet-cutover`](../signet-cutover/SKILL.md) and
-[`ui-development`](../ui-development/SKILL.md) is the reference. **`apps/landing` is no longer an
-exemption here.** It shipped those markers legitimately while it was frozen; since its token cutover
-([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) it is a Signet surface, so a leftover
-Geist, bone/bronze, `navy` or `emerald` marker there is a real L2 defect. Note what that does and
-does not license: the marker is reportable, but `apps/landing` **visuals stay hands-off** because
-they belong to the in-flight reskin epic (the Never row above) — so file it, do not fix it in a
-hygiene PR.
-
-**L3 · Duplication and parallel paths.** The jscpd clone list is the floor, not the ceiling — it
-sees textual clones over 50 tokens, not the same logic written twice. Look for the shape: the
-same parse-and-guard, the same error translation, the same interval hook, the same permission
-unwrap. Then look for the *parallel path*: an old implementation left live beside its replacement
-without a flag or a documented window (`signet-cutover` § Cutover deletes what it replaces).
-
-**L4 · Layering and coupling.** The `dependency-cruiser` rules are the repo's actual boundary
-(`scripts/dependency-cruiser.cjs`); the audit skill's red flags (domain importing `@nestjs/*` or
-`@supabase/*`, a service importing a DTO, a controller reaching into `infrastructure/`) are the
-intent behind them. Fix toward the rule the repo *enforces*, and when the ideal costs duplication
-(habit 3) the finding is a design question, not a mechanical move.
-
-**L5 · Correctness anti-patterns in old code.** The `spec/engineering.md` checklist applied to
-files nobody has opened in months: `find` results dereferenced without an `undefined` branch,
-missing `length === 0` states, unguarded division, a `Number()` on raw input, a `z.number()` where
-a cents column needs `.int().nonnegative()`, non-semantic interactives, a soft-disabled control
-without `aria-disabled`. These are the visual-prototype defects the standard warns about, and
-legacy screens are where they survive.
-
-**L6 · Verification debt.** Consolidated logic with no test of the helper; a spec that asserts
-nothing (`expect(true)`); a coverage-ledger backlog entry whose reason no longer holds; a
-`TENANT_SCOPE_BACKLOG` repository that has since grown a write path. A fix that consolidates logic
-ships a test for the consolidated helper when none exists — the repo's own idiom for this class of
-thing is the tree-walking ledger spec, so extend one rather than inventing a new shape.
-
-**L7 · The gates themselves.** A stale baseline entry (the file moved and the violation is gone —
-#1539 left two); a jscpd threshold that can drop after a consolidation; an allowlist entry in
-`scripts/npm-audit-allowlist.json` past its stated expiry. Ratchets only move one way, and moving
-them is in scope.
+- **L1 · Orphans.** No tool does this. For each export, `git grep -n '<name>' -- apps packages
+  scripts` minus the definition and barrel re-exports; zero importers makes a candidate. Then check
+  non-import consumers: file-based routes (`apps/mobile/app/**`, `apps/web/app/**`), NestJS module
+  registration, `jest.mock` path strings, asset URLs. A definition, an `index.ts` re-export, or a
+  "might need it later" comment is not a consumer.
+- **L2 · Legacy Frapp on a Signet surface.** Geist, bone/bronze/ink, `#2563EB`, `royal-blue-*`,
+  `navy-900`, a Tailwind key that compiles to nothing, hand-wrapped `hsl(var(--token))`, a live
+  `dark:` in `apps/web`, NativeWind or raw hex or a `fontSize` literal in `apps/mobile`, or a
+  primitive the #920 slice deleted coming back (`accordion`, `progress`, `scroll-area`, `separator`,
+  `skeleton`, `sonner`, `tooltip`, `Button`'s `outline`). `apps/landing` is a Signet surface, so a
+  leftover Geist, bone/bronze, `navy` or `emerald` marker there is a defect; file it, since its
+  visuals are off-limits.
+- **L3 · Duplication and parallel paths.** jscpd sees textual clones of 50+ tokens, not the same
+  logic written twice: look for the repeated parse-and-guard, error translation, interval hook, or
+  permission unwrap, and for an old implementation live beside its replacement with no flag or
+  documented window (`signet-cutover` § Cutover deletes what it replaces).
+- **L4 · Layering.** `scripts/dependency-cruiser.cjs` is the enforced boundary; the audit skill's
+  red flags (domain importing `@nestjs/*` or `@supabase/*`, a service importing a DTO, a controller
+  reaching into `infrastructure/`) are the intent. Fix toward the enforced rule; when the ideal
+  costs duplication, it's a design question.
+- **L5 · Correctness in old code.** The `spec/engineering.md` rule sections, read against files
+  nobody has opened in months, for what grep misses (fallbacks, empty states, cents validation,
+  control semantics).
+- **L6 · Verification debt.** Consolidated logic with no helper test, a spec asserting nothing, a
+  ledger entry whose reason no longer holds, a `TENANT_SCOPE_BACKLOG` repository that grew a write
+  path. A consolidating fix ships a test for the helper when none exists; the repo's idiom is the
+  tree-walking ledger spec, so extend one rather than inventing a new shape.
+- **L7 · The gates.** A stale baseline entry, a jscpd threshold that can drop, a
+  `scripts/npm-audit-allowlist.json` entry past its expiry. Ratchets move one way.
 
 ### What a finding looks like
 
@@ -299,118 +231,92 @@ verify:    <which gate/test proves no behaviour change>
 class:     fix-now | file | decline (<reason>)
 ```
 
----
-
 ## Phase 2 — Choose one theme
 
-Fix **one theme per run**: one rule restored across every site it applies to (a helper extracted
-and *all* its copies replaced; a dead module and *all* its re-exports removed; a legacy token
-replaced on *every* Signet screen that carries it), **or** a batch of at most ~6 unrelated small
-cleanups — never both in one PR, because a reviewer must be able to hold the PR's one idea in mind.
-A candidate ships only if every line below is true:
+Fix one theme: one rule restored at every site (a helper extracted and all copies replaced, a dead
+module and all its re-exports removed, a legacy token replaced on every screen carrying it), or
+else a batch of at most ~6 unrelated small cleanups, never both, so the reviewer holds one idea.
+Ship a candidate only if it is:
 
-- **Grounded.** The rule it restores is named and cited. Not taste, not "cleaner".
-- **Whole-pattern, and it deletes what it replaces.** Every site, no shim, no "the rest in a
-  follow-up" — a half-migrated pattern is two ways to do one thing, which is itself a finding.
-  When the whole pattern is genuinely too large for one reviewable PR, ship the first step of a
-  sequence you declare up front (`spec/engineering.md` § Changing existing code) and file the
-  rest as an ordered epic with sub-issues.
-- **Net simpler** (habit 3). Count copies and lines before and after.
-- **Verifiable.** A typecheck, lint, test, or gate can demonstrate no behaviour changed. If the
-  only evidence is that you read it carefully, it is not a hygiene fix.
-- **Bounded.** A reviewer reads it in one sitting. Mechanical breadth is cheap to review (one
-  pattern, forty sites); mixed themes are not.
-- **Not on the never list**, and not a behaviour change (except the tested-bug exception above).
+- **Grounded:** the restored rule is cited.
+- **Whole-pattern, deleting what it replaces:** every site, no shim, no "rest in a follow-up",
+  because a half-migrated pattern is two ways to do one thing. If the whole is too big for one
+  reviewable PR, ship step one of a sequence declared up front (`spec/engineering.md` § Changing
+  existing code) and file the rest as an ordered epic with sub-issues.
+- **Net simpler:** count copies and lines before and after.
+- **Verified by a gate:** a typecheck, lint, test, or gate shows no behaviour changed. Careful
+  reading alone doesn't count.
+- **Bounded:** readable in one sitting. One pattern at forty sites is cheap to review; mixed themes
+  are not.
+- **Allowed:** clear of the hard limits and the behaviour rule.
 
-Prefer, in order: a fix that **closes a `suggestion` issue** (`Fixes #N`); a fix that **shrinks a
-gate baseline**; a fix that **deletes** more than it adds; then everything else.
-
-Decline — to the ledger, with the reason — anything that is taste, anything on a frozen surface,
-anything whose "clean" fix adds copies, anything needing a product or design decision. **Zero
-fixes is a fine outcome.** A run that reports "the slice held up" or "everything I found needs a
-decision" and says why is a pass; a run that manufactures a change to show work is a failure.
-
----
+Prefer a fix that closes a `suggestion` issue, then one that shrinks a gate baseline, then one that
+deletes more than it adds. Decline to the ledger, with the reason, anything that is taste,
+off-limits, adds copies, or needs a product or design decision. Zero fixes with written reasons is a
+pass; manufacturing a change to show work is a failure.
 
 ## Phase 3 — Fix and verify
 
-1. Branch `claude/hygiene-scan-YYYY-MM-DD` from `origin/main`. Parallel implementers per workspace
-   are fine when the files are disjoint; each reports a diff description, not "done".
-2. **Verify against the Phase 0.3 baselines**, in the sandbox, and record the outcome for the PR body:
-   `npm run check-types`; `npm run lint` (the `apps/api` warning count did not rise);
-   `npm run test -w <workspace> --if-present` for every workspace touched (some packages have no
-   suite — say so, don't record a missing script as a failure); `npm run check:dep-cruiser` **plain
-   first**. The baseline is empty, so the normal outcome is that you never run
-   `-- --update-baseline` at all: re-recording is how a violation gets tolerated, and there is
-   nothing left to tolerate. Run it only to *remove* an entry that is gone, only when the plain
-   run reports `0 new`, and check the JSON diff is **deletions only** — the runner re-records
-   *every* current violation, so a re-record with a new violation present grows the baseline with
-   no red signal. A diff that adds an entry is a fix to back out, never a baseline to accept; `npm run check:duplication` (the
-   percentage did not rise; lower the `.jscpd.json` threshold to just above the new number when a
-   consolidation moved it, never below it); `npm run check:api-contract` when any file under
-   `apps/api/src` changed (a changed artifact means the contract changed — back the fix out);
-   `npm run test:ci-scripts` when `scripts/` changed; `npm run check:links` when a heading or a
-   linked file moved. `npm run ci:local-gate` runs lint, types, API tests, the contract check, the
-   secret scan, migration safety and the audit gate in one go and is the parity run to do last.
-3. **A check you could not run is reported as not run**, never as passed — the same honesty rule
-   every routine carries. If the sandbox cannot run a suite, say so in the PR body and the report.
-4. **Docs.** A moved or renamed file that a doc cites gets the doc fixed in the same PR. Only a
-   markdown link is caught for you, by `check:links`; a path in backticks is caught by nothing, so
-   grep the old name yourself before you move it. Otherwise a mechanical PR changes no doc at all —
-   nothing requires one, and a filler line in an unrelated doc is a review finding
-   ([`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md)).
-5. End with the **"debt spotted"** note `AGENTS.md` requires — one line per item you saw and did
-   not take, with its issue or ledger reference.
-
----
+1. Branch `claude/hygiene-scan-YYYY-MM-DD` from `origin/main`. Parallel implementers are fine for
+   disjoint files in separate workspaces; each reports its diff.
+2. Compare against the Phase 0.3 baselines and record each outcome for the PR body:
+   - `npm run check-types`; `npm run lint` (the `apps/api` warning count did not rise).
+   - `npm run test -w <workspace> --if-present` per touched workspace; a package with no suite is
+     recorded as such, not as a failure.
+   - `npm run check:dep-cruiser`, plain. Re-recording is how violations get tolerated, so run
+     `-- --update-baseline` only to remove an entry that's gone, only after a plain run reports
+     `0 new`, and confirm the JSON diff is deletions only. The runner re-records every current
+     violation, so a re-record with a new one present grows the baseline silently; a diff that adds
+     an entry means back the fix out.
+   - `npm run check:duplication`: the percentage did not rise. After a consolidation, lower the
+     `.jscpd.json` threshold to just above the new number, never below.
+   - `npm run check:api-contract` when anything under `apps/api/src` changed. A changed artifact
+     means the contract changed; back the fix out.
+   - `npm run test:ci-scripts` when `scripts/` changed; `npm run check:links` when a heading or
+     linked file moved.
+   - `npm run ci:local-gate` last, as the parity run (lint, types, API tests, contract, secret scan,
+     migration safety, audit).
+3. A check you could not run is recorded as not run, in the PR body and the report.
+4. When a fix moves or renames a file a doc cites, fix the doc in the same PR. `check:links` catches
+   only markdown links, not backticked paths, so grep the old name before moving it. Otherwise a
+   mechanical PR changes no doc.
+5. End with the "debt spotted" note `AGENTS.md` requires: one line per item seen and not taken, with
+   its issue or ledger reference.
 
 ## Phase 4 — Review, push, open the PR
 
-1. **Review before pushing, for real.** Run [`/diff-review`](../diff-review/SKILL.md) at `high`
-   or better and act on every finding. You are reviewing your own unattended edit of product
-   code; the independent verifier pass is the whole reason this routine is allowed to exist. The
-   pre-push hook (`.githooks/pre-push`) denies `git push` without the review
-   marker for the current HEAD; committing invalidates the marker by design, so review **last**.
-   Never use `git push --no-verify`; if the hook cannot find valid evidence, stop and report the blocker rather than bypassing it.
-2. **Push and open** against `main` with `mcp__github__create_pull_request`, filling the PR
-   template. The body must carry, per fix: **the rule restored** (cited), **the consumers
-   checked**, and **the verification that ran** (commands and outcomes, including what could not
-   run). Any behaviour change sits under its own heading. Close tracked work with `Fixes #N`. Label
-   `release:patch`. If the GitHub MCP is
-   unavailable, push the branch, report its name, and stop — there is no sanctioned fallback.
-3. **Fix your own CI, then stop — do not subscribe.** `AGENTS.md` § Autonomous PR lifecycle
-   (`doneMeansMerged`, subscribe, babysit) is written for interactive sessions and does not apply
-   here: merging is forbidden, and the Routines setting *Autofix on PR create* is **on** for this
-   routine, so a routine session that also subscribes puts two drivers on one branch pushing
-   different fixes. Instead, before the report, read the PR's check runs once
-   (`pull_request_read get_check_runs`); a failure in code you just touched is yours — fix it,
-   re-review (the marker keys on HEAD), push; an infra death is a re-run. Never widen the PR to
-   chase a red check outside your theme, never push an empty commit to kick CI, and **never
-   merge**. Then the run ends with the report; autofix is the single driver after that, and a
-   review comment waits for the next run's Phase 0.5.
-
----
+1. Run [`/diff-review`](../diff-review/SKILL.md) at `high` or better after the final commit and act
+   on every finding. The pre-push hook (`.githooks/pre-push`) refuses a push without the review
+   marker for HEAD, and any commit invalidates it.
+2. Open the PR against `main` with `mcp__github__create_pull_request`, filling the PR template. Per
+   fix, the body gives the rule restored (cited), the consumers checked, and the verification run
+   (commands, outcomes, what couldn't run); a behaviour change gets its own heading. Use `Fixes #N`
+   for tracked work and label `release:patch`. If the GitHub MCP is unavailable, push the branch,
+   report its name, and stop; there is no sanctioned fallback.
+3. Fix your own CI, then stop; don't subscribe (`AGENTS.md` § Autonomous PR lifecycle is for
+   interactive sessions). *Autofix on PR create* is on for this routine, so a subscribed session
+   would be a second driver on the branch. Read the check runs once (`pull_request_read
+   get_check_runs`): fix, re-review, and push a failure in code you touched; re-run an
+   infrastructure death. Don't widen the PR for an unrelated red check or push an empty commit.
+   Review comments wait for the next run's 0.5.
 
 ## Phase 5 — File the rest, and write the ledger
 
-**File** what you will not fix unattended through [`file-follow-up`](../file-follow-up/SKILL.md),
-exactly as feature work does: labels `triage` + `suggestion` + one `area:<x>` + a priority
-(`P3`/`P4` for hygiene; `P1`/`P2` only for the security or data-loss bug that is not hygiene at
-all), an **Agent brief** (`model:fable` for anything cross-cutting), the finding in the format
-above with the design question spelled out when there is one, and a visible dedup line:
+File what you won't fix through [`file-follow-up`](../file-follow-up/SKILL.md): `triage` +
+`suggestion` + one `area:<x>` + a priority (`P3`/`P4` for hygiene; `P1`/`P2` only for a security or
+data-loss bug), an Agent brief (`model:fable` when cross-cutting), the finding in the format above
+with any design question spelled out, and a visible dedup line:
 
 ```text
 agent-suggestion: v1 fp=hygiene/<slug> file=<primary-path>
 ```
 
-Search that `fp=` before filing (open and closed). Cap at **~3 net-new issues per run** — the
-Curator's net-growth budget binds here too, and a hygiene backlog that balloons is the failure
-mode this routine replaces. Everything past the cap goes to the ledger, where a later run can
-promote it.
+Search that `fp=` (open and closed) first. Past the ~3-issue cap, findings go to the ledger for a
+later run to promote.
 
-**Ledger.** Append **one comment** to the "Hygiene Scan — ledger" issue per run, in this shape,
-and never rewrite its body — that body is append-only by design and run state lives in the comments,
-so the rule holds regardless of what the read is doing (`ROUTINES.md` § Tracker access):
+Append one comment per run to the "Hygiene Scan — ledger" issue in this shape, and never rewrite its
+body; run state lives in the comments. It is state for the next
+run, so it never restates earlier entries.
 
 ```text
 hygiene-scan run: v1 date=YYYY-MM-DD slice=<0-4> pr=#<N>|none filed=#<a>,#<b>|none
@@ -420,61 +326,39 @@ found:    fp=hygiene/<slug> file=<path> — <one line>      (past the filing cap
 carry:    <what the next run should know: where you stopped, a baseline that can ratchet, a PR waiting on a human>
 ```
 
-This is state, not a status update: the "comment once" rule is about restating what stands, and a
-run entry never restates. Keep it to the facts the next run needs.
+## How the run ends
 
----
-
-## Budget and guardrails
-
-- **Zero fixes is a success** when the reasons are written down. Never lower the bar to have a PR.
-- **One theme, one PR, one open at a time.** No stacking, no "while I'm here".
-- **Whole-pattern or file it.** Never leave a pattern half-migrated.
-- **Net simpler, always.** A fix that adds a copy, a shim, or a parallel path is the wrong fix.
-- **Hands off means hands off.** `apps/landing` visuals (not frozen any more, but owned by the
-  in-flight reskin epic #2364 — same answer, different reason) and the seven mobile hotspot files.
-  The legacy `@repo/theme` exports used to be on this list; they were deleted with the landing's
-  token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)), so there is nothing left
-  to hold off from.
-- **Spec is intent; code is current.** A spec-vs-code contradiction is filed, never resolved by
-  editing either side to match the other (`AGENTS.md` § Spec vs code).
-- **Never print secret values.** Names and presence only.
-- **Say "not run" rather than guessing.** A verification you did not run did not happen.
-- **Never** migrations, CI workflows, dependency versions, gate posture, `git push --no-verify`,
-  an empty commit, a self-merge.
-
----
+Nothing from grounding through the ledger needs the human, so work straight through, putting
+progress notes in the same message as the next tool call. End when the ledger comment is posted and
+the PR is open, or you've decided on no PR and written why. End early only when a protected resource
+blocks you (the pre-push hook refuses; the cloud sandbox failed to come up, per `AGENTS.md`) or
+nothing left can move without the human. A missing GitHub MCP doesn't stop the scan: it ends the
+run at Phase 4 with the branch pushed. A single check you can't run is recorded as not run, not a
+reason to stop. A summary announcing the next step, an offer to continue, or a list of
+non-blocking decisions is not an ending. The final message is the run report.
 
 ## Run report
 
-End every run with, in this order:
+In this order:
 
-1. **Lead line** — the PR link and its one-sentence theme, or "no PR" and why; then any
-   security/data-loss bug found (issue number) before anything else.
-2. **Grounding** — the standards read, the slice (group + day of year), the baselines recorded
-   (types, lint warnings, dep-cruiser entries, duplication %, tests), what the ledger and the open
-   PR said.
-3. **Fixed** — one line per fix: rule restored, sites, verification outcome. Which baselines
-   moved.
-4. **Filed** — issue numbers with one line each.
-5. **Declined / found, not filed** — the ledger lines, so the owner can overrule a decline.
-6. **Needs you** — the design questions, the frozen-surface findings, the spec-vs-code
-   contradictions, the open PR waiting on review. This is the section the owner reads; be specific
-   enough to decide from.
-7. **Not run** — anything you could not verify, and why.
-8. **Debt spotted** — even when "none".
-
----
+1. **Lead line:** the PR link and its one-sentence theme, or "no PR" and why; then any security or
+   data-loss issue filed.
+2. **Grounding:** standards read, the slice (group and day of year), baselines (types, lint
+   warnings, dep-cruiser counts, duplication %, tests), what the ledger and open PR said.
+3. **Fixed:** per fix, the rule restored, sites, verification outcome; which baselines moved.
+4. **Filed:** issue numbers, one line each.
+5. **Declined / found, not filed:** the ledger lines, so the owner can overrule a decline.
+6. **Needs you:** design questions, off-limits findings, spec-vs-code contradictions, the PR waiting
+   on review, each specific enough to decide from.
+7. **Not run:** anything you couldn't verify, and why.
+8. **Debt spotted:** even when "none".
 
 ## Self-maintenance
 
 Same contract as the other routines
 ([`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract)),
-folded into this run's PR rather than a second one. Each run, verify: the commands in the Phase
-0.3 table still exist in `package.json`; the slice table still names real directories (a new
-package or a moved layer joins its group); the ledger-spec paths and the skills this file cites
-still resolve; the frozen list still matches `signet-cutover` and `spec/ui/mobile/navigation.md`.
-Fix mechanical drift here in the same PR (pairing it with `ROUTINES.md` when the PR would
-otherwise touch no `docs/` file — the `.claude/`-only trap). Judgement-laden drift — a lens that
-seems wrong, a slice that should split, a guardrail that seems too tight or too loose — goes in the
-run report under "Needs you", never a self-authored rewrite of what this routine is *for*.
+folded into this run's PR. Check each run that the Phase 0.3 commands exist in `package.json`, the
+slice table names real directories (a new package joins a group), cited paths and skills resolve,
+and the frozen list matches `spec/ui/mobile/navigation.md`. Fix mechanical drift here.
+Judgment-laden drift (a lens that seems wrong, a slice that should split, a limit that seems off)
+goes under "Needs you", never into a self-authored rewrite of what this routine is for.

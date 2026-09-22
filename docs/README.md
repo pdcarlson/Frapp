@@ -25,4 +25,4 @@ roster drifts, and the last one did: it omitted two of the three **required** ga
 responsive floor and the Vercel-parity production build) and listed coverage, which
 `QUALITY_GATES.md` states outright is measured and **not** gated.
 
-Tech debt found in the Frapp → Signet rebuild is tracked as **GitHub Issues**, not in a doc — see [`AGENTS.md` § Tech debt protocol](../AGENTS.md#tech-debt-protocol-non-optional) for what to do when you find orphaned or contradictory code.
+Tech debt found in the Frapp → Signet rebuild is tracked as **GitHub Issues**, not in a doc — see [`AGENTS.md` § Tech debt protocol](../AGENTS.md#tech-debt-protocol) for what to do when you find orphaned or contradictory code.

@@ -11,7 +11,7 @@ decision record, viability probes, and the FRA-→#N migration mapping live in
 > priority labels. The Linear workspace stays readable until the owner deletes it; no repo
 > contract reads or writes it. (Caveat until the owner finishes the wind-down: the legacy
 > scheduled Routines and the still-connected Linear GitHub integration can touch it — see
-> [`ROUTINES.md`](ROUTINES.md#how-to-create-them-ui) step 8 and #680's checklist.)
+> [`ROUTINES.md`](ROUTINES.md#how-to-create-them-ui) step 3 and #680's checklist.)
 >
 > **Why the migration:** Linear's MCP write tools (`save_issue` etc.) required a manual permission
 > approval in every Claude Code cloud session, and three config-level fixes (#667, #669, #676)
@@ -25,10 +25,8 @@ decision record, viability probes, and the FRA-→#N migration mapping live in
 
 ```
 GitHub Issues (canonical: planning, status, Triage intake)
-   ▲ Cursor Cloud (interactive `/next` path) via the GitHub MCP
    ▲ Claude Code (web, interactive `/next` path) via the GitHub MCP
    ▲ Claude Code Routines (live scheduled path)
-   ▲ Cursor Automations (optional Cursor scheduled path — do not dual-run the same routine as Claude Routines; see [`ROUTINES.md`](ROUTINES.md))
    ▲ PRs close work natively (Fixes #N on merge)
 ```
 
@@ -68,8 +66,6 @@ GitHub Issues (canonical: planning, status, Triage intake)
 
 | Actor | Reaches GitHub Issues via | Notes |
 | --- | --- | --- |
-| **Cursor Cloud** (interactive `/next` path) | **GitHub MCP** (`issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | Same stop rule as Claude: if the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP for the raw-body verification read and provider-*settings* paths. Procedure: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). PR babysit uses this harness's subscription tools — do not freeze a catalog here; see [`AGENTS.md`](../../../AGENTS.md). |
-| **Cursor Automations** (optional Cursor scheduled path) | The **same GitHub MCP** once Automations exist | Paste-ready specs: [`ROUTINES.md`](ROUTINES.md). Do not enable the same routine that already runs as a Claude Code Routine (they would double-file). Cron defaults to no repository — attach **this GitHub repository**. Do not enable Hygiene Scan without a healthy repo-backed stack. |
 | **Claude Code** (web) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only sanctioned path for tracker work — reads and writes alike.** The MCP is auditable, and writes through it are lossless. Shell access to `api.github.com` is **route-dependent, not session-dependent** (corrected 2026-09-02; the 2026-08-08 observation of both a 403 and a success is explained by route, not by session): the proxied route 403s on every repo-scoped path, the direct one returns 200 from GitHub. **That direct route is never a substitute for the MCP.** If the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP: a verification read of an issue's raw `body` when you need to see what the MCP's read mangled, plus the provider-*settings* paths the MCP exposes no tool for. Never to create, edit, label, close or comment. Procedure and measurements: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). `gh` is not installed. No fallback tracker. |
 | **Claude Code Routines** (scheduled, live) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep and Hygiene Scan excepted — they write a PR, not issues, and push the branch and report its name when the MCP is down). See [`ROUTINES.md`](ROUTINES.md). |
 | **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` — tracker writes inside GitHub Actions only | The PAT works in Actions and on laptops. Corrected 2026-09-02: it is not dead in a cloud sandbox either — it fails only on the proxied route (403 on repo-scoped paths) and works on the direct one. That is a read channel, not a licence to do tracker work outside the MCP. **Branch protection, from an agent session: run `npm run configure:branch-protection:verify` (read-only) and nothing else.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. *Applying* stays a human step with an admin PAT — policy, not lack of capability. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |

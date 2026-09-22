@@ -11,435 +11,160 @@ description: >
 
 # UI Development
 
-> Read before building or modifying UI in the mobile app, web dashboard, landing site, or shared component packages.
->
-> Signet vs legacy Frapp tokens, visual truth, and "a cutover deletes what it replaces":
-> [`signet-cutover`](../signet-cutover/SKILL.md). Realtime / connection / topic teardown:
-> [`realtime-resilience`](../realtime-resilience/SKILL.md).
-
----
+Where frontend code lives and the conventions that aren't obvious from reading it. For which
+tokens and typefaces are current, which reference board is visual truth, and how a cutover
+works, see [`signet-cutover`](../signet-cutover/SKILL.md). For realtime subscriptions, connection
+state, and topic teardown, see [`realtime-resilience`](../realtime-resilience/SKILL.md).
 
 ## Architecture overview
 
-| Layer | Location | Purpose |
-|-------|----------|---------|
-| `@repo/theme` | `packages/theme/src/` | Tailwind preset (`./tailwind`) + the Signet stylesheet (`./signet.css`, imported by both web surfaces) + typed Signet tokens (`./signet`, what mobile reads) + the chapter accent resolver (`./accent`). The legacy `./globals.css` export was deleted with #2366. `./tokens` is the legacy bone/bronze/ink token set, consumed only inside the package (the accent fallback and the motion scale). |
-| ShadCN components | `apps/web/components/ui/` | Dashboard primitives and Radix composites (Button, Card, Dialog, Select, Toast, etc.) |
-| App components | `apps/web/components/` | Feature-level components |
-| Pages | `apps/web/app/` | Next.js App Router pages and layouts |
-| Landing | `apps/landing/app/` | Marketing site (separate Next.js app; inline Tailwind, no shared component package) |
-| Mobile screens | `apps/mobile/app/` | Expo Router screens (React Native — no Tailwind classes) |
-| Mobile components | `apps/mobile/components/` | React Native composites |
+| Layer | Location | Notes |
+|-------|----------|-------|
+| `@repo/theme` | `packages/theme/src/` | Exports `./tailwind` (shared preset), `./signet.css` (both web surfaces), `./signet` (typed tokens, what mobile reads), `./accent` (chapter accent resolver). `src/tokens.ts` is internal only (the accent fallback and the motion scale) |
+| ShadCN primitives | `apps/web/components/ui/` | Dashboard primitives and Radix composites. There is no shared web-component package |
+| Web features / pages | `apps/web/components/`, `apps/web/app/` | Next.js App Router |
+| Landing | `apps/landing/app/` | Separate Next.js app with inline Tailwind |
+| Mobile | `apps/mobile/app/` (Expo Router screens), `apps/mobile/components/` | React Native, no Tailwind classes |
 
----
+## Web components (`apps/web`)
 
-## Component patterns
+Primitives follow ShadCN conventions: CVA variants, `cn()` from `@/lib/utils`, and Radix for
+behavior. To add one, copy it into `components/ui/` and install its Radix package with
+`npm install @radix-ui/react-<primitive> -w apps/web`. Don't add a registry primitive for a single
+call site. Several were deleted for having only one, and the replacements are
+`components/shared/async-states.tsx` (skeletons), `components/ui/toast.tsx` + `hooks/use-toast.ts`
+(toasts), and `DropdownMenuSeparator`'s classes (a rule).
 
-### ShadCN / Radix components (`apps/web`)
+Conventions that are easy to get wrong:
 
-Located in `apps/web/components/ui/`. There is no shared web-component workspace — dashboard
-primitives live here, landing uses inline Tailwind, and mobile uses React Native composites.
-
-```typescript
-import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-```
-
-These follow ShadCN conventions:
-- Class Variance Authority (CVA) for variant-based styling
-- `cn()` utility from `@/lib/utils` (clsx + tailwind-merge)
-- Radix UI primitives for accessible behavior
-
-Available components: avatar, badge, button, card, command, dialog, dropdown-menu, duotone, focus, input, label, popover, select, sheet, switch, table, tabs, textarea, toast, toaster, typography.
-
-`accordion`, `progress`, `scroll-area`, `separator`, `skeleton`, `sonner` and
-`tooltip` were **deleted** by the #920 primitives slice — each had exactly one
-reference in the repo, its own definition — along with their npm dependencies.
-Do not re-add one from the ShadCN registry to satisfy a single call site; the
-replacements are `components/shared/async-states.tsx` for skeletons,
-`components/ui/toast.tsx` + `hooks/use-toast.ts` for toasts, and
-`DropdownMenuSeparator`'s `-mx-1 my-1 h-px bg-border` for a rule. `Button` has
-no `outline` variant either — Signet's Secondary *is* the outlined button.
-`apps/web/components/ui/focus.ts`, `apps/web/components/ui/duotone.tsx` and
-`apps/web/components/ui/typography.ts` (the `EYEBROW` recipe) are shared
-recipes rather than components.
-
-Three things the #920 Directory & Finance slice settled, which are easy to
-re-derive wrongly:
-
-- **`Badge` ships the §5 Semantic kind in three hues** — `success`, `warning`,
-  `destructive`. A status label takes one of them, never `default`: `default`
-  is the *chapter accent*, so a red-accented chapter renders `PAID` as its
-  danger badge. `outline` (Hairline) is for metadata that must not read as a
-  status at all.
-- **`Table`'s row hover and selection are a matched pair** — `accent-3` for
-  hover, `accent-4` plus `accent-11` text for selection. Do not re-spell either
-  at a call site, and do not collapse them into one tint: they are
-  luminance-equivalent, and only the second carries a step. The reasoning and
-  the measurements are in the file's own header.
-- **A state rendered inside a `<CardContent>` uses
-  `components/shared/nested-states.tsx`**, not `async-states.tsx`. The latter
-  paints `--card`, which is 1.00:1 inside a card.
-
-### Adding a new ShadCN component
-
-ShadCN components are copy-pasted from the ShadCN registry, not installed via CLI. To add one:
-1. Create file in `apps/web/components/ui/`
-2. Install the Radix dependency: `npm install @radix-ui/react-<primitive> -w apps/web`
-3. Use `cn()` for class merging, `cva()` for variants
-4. Follow existing patterns in the directory for consistency
-
----
+- `Button` has no `outline` variant. Signet's Secondary is the outlined button.
+- A status `Badge` takes `success`, `warning`, or `destructive`, never `default`. `default` is the
+  chapter accent, so a red-accented chapter would render `PAID` as a danger badge. `outline` is for
+  metadata that must not read as a status.
+- `Table` row hover (`accent-3`) and selection (`accent-4` plus `accent-11` text) are a matched
+  pair. Don't re-spell either at a call site or merge them. The reasoning is in the file header.
+- A loading, empty, or error state inside a `<CardContent>` uses
+  `components/shared/nested-states.tsx`, not `async-states.tsx`, which paints `--card` and would
+  vanish inside a card.
+- Focus indicators come from the recipes in `components/ui/focus.ts`, which all focusable controls
+  share. `typography.ts` (`EYEBROW`) and `duotone.tsx` are shared recipes too.
 
 ## Tailwind and theming
 
-The canonical design-system contract (component ownership matrix, state completeness standard,
-fail-fast entitlement gating, accessibility gates, motion) lives in
-[`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md); the tables below
-summarize the tokens as implemented in `@repo/theme`.
+Signet (dark-only, Figtree) is the only design system, and every surface is on it. The design
+contract (component ownership, state completeness, accessibility gates, token extension) is
+[`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md). For token values,
+read the files that compile rather than any table:
 
-**Palette status (read this before styling anything):** the repo's canonical design system is
-**Signet** — dark-only, warm neutrals, gold accent seed, Figtree — specified under
-[`spec/ui/design-system/`](../../../spec/ui/design-system/README.md). **The web dashboard is
-Signet end to end**: `apps/web/app/globals.css` imports `packages/theme/src/signet.css` (dark-only,
-Figtree via `--font-figtree`), and all nine #920 slices have landed — the shell, the shared
-primitives, and every screen family. The migration window is closed, so a legacy class or a live
-`dark:` variant on a dashboard screen is a defect now, not a pending slice. **The landing site is
-on Signet tokens too**, since its cutover merged ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)):
-`apps/landing/app/globals.css` imports the same `packages/theme/src/signet.css`, loads Figtree via
-`--font-figtree`, and the bone / bronze / ink palette, Geist and the legacy `navy` / `emerald`
-preset keys are all deleted. **The page rebuild has landed too**
-([#2367](https://github.com/pdcarlson/Frapp/issues/2367)): `apps/landing/app/page.tsx` is built to
-the Spec sheet's section map, and `apps/landing/app/globals.css` carries the landing motion block
-(`--motion-*`, `.chrome-motion`, `.reveal-armed`, `landing-reveal-rise` / `landing-rule-draw`) — a
-CSS mirror of the `packages/theme/src/tokens.ts` scale that `apps/landing/app/page.spec.ts` pins,
-not a second scale, so do not declare another one beside it. What is left is slice 3
-([#2368](https://github.com/pdcarlson/Frapp/issues/2368)), polish, plus D4's signature moment, which
-is deliberately cut pending brand sign-off ([#2378](https://github.com/pdcarlson/Frapp/issues/2378)).
-Read [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md) before changing that surface,
-and do not restyle it ad hoc: it is staged and owned.
+- `packages/theme/src/signet.css` holds the CSS variables: surface and text ladders, hairlines,
+  ShadCN-compat pairs, and the house accent slot the accent engine overrides at runtime.
+- `packages/theme/src/tailwind.config.ts` is the shared preset that binds them as Tailwind keys.
+  `signet.css.spec.ts` asserts that every key reads a defined token.
+- `packages/theme/src/signet.ts` has the typed tokens for mobile.
 
-The landing carries three marketing type roles (`--text-hero`, `--text-display-lg`, `--text-lead`)
-above `foundations.md` §7's locked six. They are declared in `apps/landing/app/globals.css` and are
-**landing-only by decision** (§7's amendment, and `design-system/README.md` §3 rule 4, which names
-two app-local token homes): using one on a product surface is an off-scale defect, and promoting
-them into `packages/theme` would put a 72px marketing headline one import away from every product
-screen.
+Each surface's `globals.css` imports exactly one theme stylesheet, `@repo/theme/signet.css`. Each
+app names its config with `@config`, which is how the v3-shaped JS config (`presets`, `content`,
+`darkMode`) applies under Tailwind v4.
 
-The legacy brand scale is **gone**, all of it. `royal-blue` went in the #920 slice-9 cutover along
-with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed); `navy` and
-`emerald` — the last two, which mapped to ink / moss / bone-era colors and survived for
-`apps/landing` alone — went with the token cutover
-([#2366](https://github.com/pdcarlson/Frapp/issues/2366)), as did the legacy stylesheet and its
-export. The landing reskin **is** tracked — #2364 is the epic, #920 is `apps/web`, #937 is
-`apps/mobile`, and the Chunk-12 landing issues (#447, #491) are pre-Signet copy work superseded by
-the epic's page-rebuild slice ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)). The pricing
-question that #913/#914 raised is settled for this surface by decision D3.
+Rules:
 
-**`packages/theme` is the shared token package for every surface, not a web-only one.** It already
-serves `apps/web` and `apps/landing` (Tailwind preset + the shared `signet.css`) and `apps/mobile` — typed
-Signet tokens via **`@repo/theme/signet`** in 61 files at last count
-(`grep -rl "@repo/theme/signet" apps/mobile | wc -l`), plus `@repo/theme/accent` at **exactly one
-call site**, `apps/mobile/lib/chapter-branding.ts` (`grep -rn "@repo/theme/accent" apps/mobile`).
-That one-site bound is what keeps the accent engine's blast radius auditable: re-run the grep rather
-than trusting this line, and treat a second importer as a change to argue for, not a detail. There is no `@repo/theme/tokens`
-export any more — #2366 removed it along with `./globals.css`, since nothing
-outside the package imported either. The Signet
-tokens live in `packages/theme` too (`src/signet.css`, `src/signet.ts`), and since
-[#2366](https://github.com/pdcarlson/Frapp/issues/2366) they are the **only** tokens it ships: the
-legacy `./globals.css` stylesheet and export are deleted, so there is no second system to bleed
-into. `./tokens` survives, but only as an internal dependency — the accent engine's bronze fallback
-and the motion scale — never as a surface's token source.
-
-The remaining defect to watch for is **a Signet token duplicated into an app-local file instead of
-extending the package**. Note the deliberate exception: a role only ONE surface may use belongs to
-that surface, which is why the landing's three marketing type roles are app-local and correct.
-Duplicating a *product* token — anything in `foundations.md`'s locked set — into an app config is
-still the defect. Component ownership and token-extension rules: §3 of
-[`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md).
-
-### Signet tokens (web work reads these)
-
-Web dashboard work uses the token names defined in `packages/theme/src/signet.css` — read that
-file rather than any table here. It holds the fixed foundations (surface ladder `--background` /
-`--surface-1` / `--card`, text ladder, hairline borders) plus the ShadCN-compat pairs the shared
-preset reads, and the house-default accent slot (`--primary` … `--accent-text`) that the chapter
-accent engine overrides at runtime. The Signet Tailwind keys live in the **shared preset**,
-`packages/theme/src/tailwind.config.ts`, since
-[#2371](https://github.com/pdcarlson/Frapp/issues/2371). It carries `surface-1`, the
-`primary-hover` / `primary-pressed` and `accent-subtle` / `accent-subtle-hover` / `accent-border` /
-`accent-text` families, `disabled`, `warning`, `info`, `destructive-text`, `info-text`, the
-`mention` family (`mention` / `mention-foreground` / `mention-chip` / `mention-chip-text`), the six
-locked `fontSize` roles, the `minHeight` / `minWidth` touch floors, the `2xl` border radius,
-`boxShadow.md` and the `fontFamily.sans` → `var(--font-figtree)` stack.
-
-Two remainders stay **app-local**, and they are deliberate rather than leftovers: `gold.*` in
-`apps/web/tailwind.config.ts` (the Ask pill is a web treatment), and the three marketing type roles
-`hero` / `display-lg` / `lead` in `apps/landing/tailwind.config.ts`, which sit above
-`foundations.md` §7's locked six by decision. Those two configs hold nothing else. They used to
-hold the whole set twice over: the keys were app-local because the preset must bind nothing its
-stylesheet does **not** define (#1145), which was true while `apps/landing` was frozen on the
-legacy stylesheet and stopped being true when #2366 put it on `signet.css`. **Read that file rather than this list** — it is the one that compiles,
-and it carries the reasoning for each. `packages/theme/src/signet.css.spec.ts` asserts every key
-reads a defined token.
-
-### Legacy theme tokens — deleted (historical)
-
-> `packages/theme/src/globals.css` and its `@repo/theme/globals.css` export were **deleted** in
-> [#2366](https://github.com/pdcarlson/Frapp/issues/2366), when `apps/landing` — their last
-> consumer — moved to `signet.css`. There is no legacy stylesheet to import, and
-> `tailwind.config.spec.ts` was re-pointed at `signet.css` in the same change. What follows is kept
-> for the #1143/#1151 reasoning it carries, not as a live token reference; read
-> `packages/theme/src/signet.css` for what ships.
-
-It defined these semantic colors as CSS variables. Every one held a **complete color value** (`hsl(30 45% 32%)`, `#C49A3A`,
-`rgba(255,255,255,.08)`) — not a bare HSL triple — and the preset reads them through `colorVar()`
-as a plain `var(--token)`. **Never hand-write `hsl(var(--token))` around one**: it emits
-`hsl(hsl(...))`, which the browser drops, and a `tailwind.config.spec.ts` guard fails the build on
-it (#1151). In a Tailwind arbitrary value the correct form carries the type hint —
-`text-[color:var(--foreground)]`.
-
-| Token | Usage |
-|-------|-------|
-| `background` / `foreground` | Page background and text |
-| `card` / `card-foreground` | Card surfaces |
-| `primary` / `primary-foreground` | Primary actions (deep bronze — replaced royal blue) |
-| `muted` / `muted-foreground` | Subdued text and backgrounds |
-| `destructive` / `destructive-foreground` | Danger states |
-| `border` | Borders |
-| `ring` | Focus rings |
-
-### Brand color keys — all deleted (historical)
-
-> **Nothing below is a key you can reach for.** The shared preset carries no legacy brand scale any
-> more. This section is kept for the class of defect it documents (#916, #1145, #1151), not as an
-> inventory. For current values read `packages/theme/src/signet.css` and the shared preset
-> `packages/theme/src/tailwind.config.ts`.
-
-`navy` and `emerald` were the last two, surviving for `apps/landing` alone until
-[#2366](https://github.com/pdcarlson/Frapp/issues/2366) moved that surface to Signet and deleted
-them. What they were:
-
-| Key (deleted) | Steps defined | Mapped to | Replaced by |
-|------|-----------|-----------|-----------|
-| `navy` | `DEFAULT` only | ink (`#1F1A15`) | `text-foreground` / the surface ladder |
-| `emerald` | `DEFAULT`, `50`, `100`, `400`, `500`, `600` | moss/success ramp | the semantic `success` family |
-
-`royal-blue` was **deleted** in the #920 slice-9 cutover — it had zero class sites anywhere in the
-repo. `navy` shed its numbered steps in the same pass, for the same reason: all ten surviving call
-sites are the bare `text-navy` / `bg-navy`, all of them in `apps/landing`. **A class naming a
-key or step that is not defined above compiles to nothing** — no error, no warning, an unstyled
-element (#1145, #1151). Do not reach for `bg-royal-blue-600` or `text-navy-900`.
-
-**`emerald` is a *partial* override of a stock Tailwind colour**, which is the sharper hazard: a
-step not in the list above does not fail, it silently falls through to **stock Tailwind green**.
-That was #916's root cause — `emerald-700` is absent, so a landing pricing pill rendered stock
-emerald text beside a moss `emerald-100` fill and nothing flagged it.
-
-**Both keys are gone.** They existed only for `apps/landing`, and
-[#2366](https://github.com/pdcarlson/Frapp/issues/2366) deleted them from the shared preset when
-that surface moved to Signet — its `text-navy` and `text-emerald-600` sites went to
-`text-foreground` and the semantic `text-success` in the same change. The two paragraphs above are
-kept as the reasoning for a class of defect (#916, #1145, #1151), not as a description of keys you
-can still reach for. Read current values from `packages/theme/src/signet.css` and the shared preset
-`packages/theme/src/tailwind.config.ts` rather than trusting any doc's hex table.
-
-### Custom animations
-
-Pre-defined in the theme: `fade-up`, `fade-in`, `count-up`, `slide-down`, `slide-in-right`. Use via `animate-fade-up`, `animate-slide-down`, etc.
-
-### Consuming the theme
-
-Web and landing apps extend the shared config:
-```typescript
-// apps/web/tailwind.config.ts
-import sharedConfig from "@repo/theme/tailwind";
-const config: Config = {
-  presets: [sharedConfig],
-  content: [
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./components/**/*.{js,ts,jsx,tsx,mdx}",
-  ],
-};
-```
-
-The preset carries the Signet colour tokens, the six locked `fontSize` roles, the touch floors, the
-`2xl` border radius, `boxShadow.md` and the Figtree `fontFamily.sans` stack. Each app layers only
-its own remainder on top — `gold.*` for `apps/web`, the three marketing type roles for
-`apps/landing` — and keeps `darkMode: "class"` with nothing setting the class; read the real
-configs. Both apps name their config from CSS with
-`@config`, which is how a v3-shaped JS config (`presets`, `content`, `darkMode`) still applies
-under v4.
-
-`pointer-coarse` is worth knowing about as history: v3.4 shipped no such variant, so every
-`pointer-coarse:` class in the tree compiled to nothing at all, silently, until the config
-registered one by hand. v4 ships it stock — along with `pointer-fine` and the `any-pointer-*`
-family — so the hand-registered plugin is gone. The lesson outlives it: an unknown variant, like an
-unknown colour value, is dropped without a warning, so a class family that has never been seen in a
-compiled stylesheet has not been verified.
-
-Each surface's global CSS imports exactly one theme stylesheet — never both. Both web surfaces now
-import the same one:
-```css
-/* apps/web/app/globals.css — Signet (dark-only) */
-@import "../../../packages/theme/src/signet.css";
-```
-```css
-/* apps/landing/app/globals.css — Signet (dark-only), since #2366 */
-@import "@repo/theme/signet.css";
-```
-
----
+- Extend the package, don't copy. A Signet product token (anything in `foundations.md`'s locked
+  set) duplicated into an app-local file is a defect. A role only one surface may use belongs to
+  that surface, which is why the two app-local remainders are deliberate. `gold.*` lives in
+  `apps/web/tailwind.config.ts` for the Ask pill. The landing's three marketing type roles
+  (`--text-hero`, `--text-display-lg`, `--text-lead`) are declared in `apps/landing/app/globals.css`
+  and bound in `apps/landing/tailwind.config.ts`. They sit above `foundations.md` §7's locked six
+  and are landing-only by decision, so using one on a product surface is an off-scale defect.
+- `@repo/theme/accent` has exactly one mobile importer, `apps/mobile/lib/chapter-branding.ts`
+  (check with `grep -rn "@repo/theme/accent" apps/mobile`). Keeping it to one keeps the accent
+  engine's blast radius auditable, so a second importer is a change you have to argue for.
+- Tokens hold complete color values, and the preset reads them as a plain `var(--token)`. Never
+  write `hsl(var(--token))`, because it emits `hsl(hsl(...))`, which the browser drops, and
+  `tailwind.config.spec.ts` fails on it. In an arbitrary value, use the type hint
+  `text-[color:var(--foreground)]`.
+- A class that names an undefined key, step, or variant compiles to nothing, with no warning. Until
+  a class family shows up in a compiled stylesheet, it isn't verified.
+- The web and landing apps are dark-only, with no theme provider and nothing setting `.dark`. Both
+  keep `darkMode: "class"` as a backstop so Tailwind's `media` default can't activate a stray
+  variant. Don't set the class, add a toggle, or write a `dark:` variant. A legacy class or a live
+  `dark:` variant on either surface is a defect.
+- Landing has its own spec and binding reference boards, so read
+  [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md) before changing it rather than
+  restyling ad hoc. Its motion block in `apps/landing/app/globals.css` mirrors the
+  `packages/theme/src/tokens.ts` scale (`apps/landing/app/page.spec.ts` pins it), so don't declare
+  a second scale.
+- The web dashboard is desktop-first (layouts assume `lg`+) and must still hold the 375px floor
+  (`test:floor`). The landing is mobile-first. Breakpoints are stock Tailwind.
 
 ## Mobile app (`apps/mobile`)
 
-`apps/mobile` is the mobile Signet surface. Start at
-[`spec/ui/mobile/README.md`](../../../spec/ui/mobile/README.md) — it and its siblings
-(`screens.md`, `navigation.md`, `patterns.md`) own the screen inventory, IA, and interaction
-patterns; tokens, components, icons, and copy come from
-[`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md). Read those before
-writing a screen. The constraints below are the ones most often violated by web habits:
+Read [`spec/ui/mobile/README.md`](../../../spec/ui/mobile/README.md) and its siblings (`screens.md`,
+`navigation.md`, `patterns.md`) before writing a screen. They own the screen inventory, IA, and
+patterns, and the design-system README owns tokens, components, icons, and copy. These are the
+constraints web habits most often break:
 
-- **Typed `StyleSheet` token factories, not NativeWind.** A screen calls `useFrappTheme()`
-  (`apps/mobile/lib/theme.tsx`) and passes the tokens to a `createStyles(tokens: SignetTokens)`
-  factory that returns a `StyleSheet` — see `apps/mobile/components/nav-tile.tsx`. NativeWind was
-  removed entirely in S1 of #937 (configs, deps, and the tsconfig `nativewind-env.d.ts` entry) and
-  MUST NOT come back on a Signet surface.
-- **Signet is dark-only.** The theme context is `{ tokens: SignetTokens }` from
-  `@repo/theme/signet` — there is no light/dark preference, no `resolvedTheme`, and no
-  `useColorScheme` in the theme layer. Provider chain (outer→inner): `GestureHandlerRootView` >
+- Style with typed `StyleSheet` token factories, not NativeWind (removed). A screen calls
+  `useFrappTheme()` from `apps/mobile/lib/theme.tsx` and passes the tokens to a
+  `createStyles(tokens: SignetTokens)` factory. Follow `apps/mobile/components/nav-tile.tsx`.
+- The theme is dark-only. The context is `{ tokens: SignetTokens }`, with no light/dark preference,
+  no `resolvedTheme`, and no `useColorScheme`.
+- Don't put raw hex or hand-set type in screen code. Set type only through
+  `typeRole(tokens.typography.role.X)`, which carries the per-weight Figtree family.
+  `fontSize`/`fontWeight` literals, or arithmetic on a role token, are defects. Use `tint(hue)` for
+  semantic fills (0.13 default, 0.3 for borders), `MONO_FONT_FAMILY` for mono, and
+  `avatarRadius(size)` for avatars. All of these live in `lib/theme.tsx`.
+- Provider chain in `app/_layout.tsx`, outer to inner: `GestureHandlerRootView` >
   `SafeAreaProvider` > `FrappThemeProvider` > `AuthSessionProvider` > `FrappProvider` >
   `ObservabilityIdentityProvider` > `AnalyticsProvider` > `KeyboardProviderGuarded` >
-  `BottomSheetModalProvider`.
-- **No raw hex in screen code, no hand-set type.** Colors come from the Signet tokens; type is set
-  only through `typeRole(tokens.typography.role.X)` (which carries the per-weight Figtree family —
-  `fontSize`/`fontWeight` literals or arithmetic on a role token are defects). Semantic fills use
-  `tint(hue)` (~13% default, 0.3 for borders); mono uses `MONO_FONT_FAMILY`; avatars use
-  `avatarRadius(size)`. All helpers live in `apps/mobile/lib/theme.tsx`. Figtree loads in
-  `app/_layout.tsx` from `@expo-google-fonts/figtree` behind a splash hold.
-- **Expo Go is the only current run path** (`npm run start -w apps/mobile`, then scan from a
-  physical device or local emulator — it cannot be verified headless). Modules that do not run in Go
-  — Stripe React Native, remote push, `react-native-keyboard-controller` — MUST sit behind an
-  isolation module that does a runtime environment check and degrades gracefully, so importing a
-  screen never crashes Go. Screen code MUST NOT import them directly — an ESLint
-  `no-restricted-imports` error enforces this; the keyboard module is `apps/mobile/lib/keyboard.tsx`
-  (`KeyboardProviderGuarded` / `getKeyboardPath`).
-- **Seven files are frozen — building a screen means ADDING files.** `app/_layout.tsx`,
-  `app/(tabs)/_layout.tsx`, `lib/theme.tsx`, `components/screen-shell.tsx`, `lib/href.ts`,
-  `package.json`, `app.json`. Every planned route is already registered hidden (`href: null`) with a
-  stub backing file, so a screen slice fills in the stub and never touches the tab layout. If you
-  genuinely need one of the seven — a new dependency, a config plugin, a new shared prop — that is a
-  separate integrator PR, not part of your slice. Full rule:
-  [`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze.
-- **Route strings are not compile-checked in CI.** `typedRoutes` is on, but the generated types are
-  gitignored and only `expo start` writes them, so under a bare `tsc` `Href` is just `string`.
-  `apps/mobile/lib/routes.spec.ts` is the guard that actually runs — if you add or move a route, it
-  is what tells you a link went stale.
-- **Everything under `app/` ships.** expo-router builds the route table from a `require.context`
-  over the whole directory, so any file you drop in it — a spec, a fixture, a render helper — is a
-  route module and lands in the production bundle. A spec next to its screen drags `vitest` into the
-  Metro graph and kills `expo export`; that is how #2347 broke an iOS production build, and
-  `apps/mobile/lib/routes.spec.ts` now fails if it finds one. Screen-adjacent logic that wants a test
-  goes in `lib/`, and a spec that must render the whole screen lives there too, reaching back through
-  the `@/` alias (`lib/onboarding/join-screen.spec.tsx`). Full rule:
-  [`docs/internal/mobile/MOBILE_TESTING.md`](../../../docs/internal/mobile/MOBILE_TESTING.md)
-  § Gotchas.
-
-Everything else — component variants, states, iconography, copy — is specified in the docs linked
-above and is not restated here.
-
----
+  `BottomSheetModalProvider`. Figtree loads there behind a splash hold.
+- Expo Go is the local run path (`npm run start -w apps/mobile`, then scan from a device or
+  emulator). It can't be verified headless. Native modules that crash Go at launch or break
+  `expo export --platform web` (Stripe React Native, `expo-notifications`,
+  `react-native-keyboard-controller`, `expo-apple-authentication`) must be imported through their
+  isolation modules (`@/lib/payments/stripe`, `@/lib/notifications/push`, `@/lib/keyboard`,
+  `@/lib/apple-auth`), which check the runtime and degrade. ESLint `no-restricted-imports` rejects
+  a direct import.
+- Seven files are frozen: `app/_layout.tsx`, `app/(tabs)/_layout.tsx`, `lib/theme.tsx`,
+  `components/screen-shell.tsx`, `lib/href.ts`, `package.json`, `app.json`. Every planned route
+  is already registered hidden (`href: null`) with a stub file, so building a screen means filling
+  in the stub. A change that needs one of the seven (a dependency, including an internal `@repo/*`
+  package, a config plugin, a shared prop) is a separate integrator PR. See
+  [`navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze.
+- Route strings aren't compile-checked in CI, because typed-route output is gitignored and only
+  `expo start` writes it. `apps/mobile/lib/routes.spec.ts` is the guard that runs.
+- Everything under `app/` ships. expo-router bundles every file there as a route module, so a spec
+  or fixture beside a screen pulls `vitest` into Metro and breaks `expo export`. `routes.spec.ts`
+  fails on one. Put testable logic, and whole-screen render specs, in `lib/` (for example
+  `lib/onboarding/join-screen.spec.tsx`). See
+  [`MOBILE_TESTING.md`](../../../docs/internal/mobile/MOBILE_TESTING.md) § Gotchas.
 
 ## Data layer for UI
 
-### API SDK (`@repo/api-sdk`)
+- **Fetching:** use TanStack Query through the shared hooks in `@repo/hooks`, never raw `fetch`.
+  Import from the package root. `packages/hooks/src/` (one module per feature domain, re-exported
+  by `index.ts`) is the inventory, so check it before writing a new hook. Reads are `useQuery` with
+  `queryFn` calling `client.GET`. Writes are `useMutation` calling `client.POST/PATCH/DELETE`,
+  with `onSuccess` invalidating queries. Hooks need both `QueryClientProvider` and
+  `FrappClientProvider` above them.
+- **API client:** `@repo/api-sdk` is the `openapi-fetch` client generated from
+  `apps/api/openapi.json`. Regenerate it through the contract steps in
+  [`api-development`](../api-development/SKILL.md) rather than editing `types.ts`.
+- **Web provider chain:** `AppProviders` in `apps/web/app/providers.tsx`, wired into
+  `app/layout.tsx`, nests `QueryProvider` > `FrappProvider` (API client with the Supabase token and
+  chapter id) > `ObservabilityIdentityProvider` > `AnalyticsProvider` > `NetworkProvider`. The
+  providers live in `apps/web/lib/providers/`. New pages inherit all of them, so don't re-wrap.
+  There is no theme provider.
+- **Forms:** shared Zod schemas come from `@repo/validation`, used with React Hook Form or
+  `parse`/`safeParse`. They are UX only, because the API DTOs are the enforcement. The same package
+  owns the client gates (`can`/`canAll`/`canAny`, `isModuleEnabled`, `subscriptionWriteState`,
+  `isAnalyticsOptedOut`), so use them rather than re-deriving permission or module state.
+- **State:** the active chapter lives in a Zustand store (`apps/web/lib/stores/chapter-store.ts`,
+  persisted to localStorage). Server state lives in TanStack Query. There is no other global store.
 
-Generated TypeScript client from `openapi.json`. Uses `openapi-fetch` for type-safe requests.
+## Verifying UI changes
 
-### React hooks (`@repo/hooks`)
-
-All data fetching uses TanStack Query via shared hooks — never raw `fetch`. Import from the package root (barrel export in `packages/hooks/src/index.ts`):
-
-```typescript
-import { useCurrentUser, useUpdateUser, useMembers, useCurrentChapter } from "@repo/hooks";
-```
-
-The barrel re-exports every module under `packages/hooks/src/` — one per feature domain (members, events, chat, billing, …) plus the client and query-key helpers. Check that directory before writing a new hook; it, not any list here, is the current inventory (a hand-copied list drifted here before — it had already missed three modules when it was removed).
-
-Pattern:
-- `useQuery` for reads: `queryKey` for caching, `queryFn` calls `client.GET`
-- `useMutation` for writes: `mutationFn` calls `client.POST/PATCH/DELETE`, `onSuccess` invalidates queries
-- All hooks require both `QueryClientProvider` (TanStack Query — provides caching, invalidation, and retry logic) and `FrappClientProvider` (provides the typed API client) in the component tree
-
-### Provider chain (web app)
-
-```text
-QueryProvider (TanStack Query)
-  └─ FrappProvider (API client with Supabase auth token + chapter ID)
-       └─ ObservabilityIdentityProvider (PostHog identify/groups + Sentry user — renders no UI)
-            └─ AnalyticsProvider (product analytics)
-                 └─ NetworkProvider (online/offline state)
-                      └─ App content
-```
-
-The chain is assembled in `AppProviders` (`apps/web/app/providers.tsx`) and wired into the root layout (`apps/web/app/layout.tsx`); the individual providers live in `apps/web/lib/providers/`. There is no theme provider — the web dashboard is dark-only Signet, and `next-themes` left with the #920 shell slice. New pages get all providers automatically — do not re-wrap.
-
-### Validation (`@repo/validation`)
-
-Shared Zod schemas for form validation:
-```typescript
-import { CreateChapterSchema, UpdateUserSchema } from "@repo/validation";
-```
-
-Use with React Hook Form or direct `parse`/`safeParse` for client-side validation that matches API expectations.
-
----
-
-## State management
-
-- **Chapter selection**: Zustand store at `apps/web/lib/stores/chapter-store.ts`. Persists `activeChapterId` to localStorage.
-- **Server state**: TanStack Query (via `@repo/hooks`). No Redux or other global state.
-
----
-
-## Testing UI changes
-
-### Visual verification
-
-After making UI changes, start the dev server and verify in-browser (setup details in
-[`docs/internal/environment/LOCAL_DEV.md`](../../../docs/internal/environment/LOCAL_DEV.md)):
-```bash
-npm run dev -w apps/web   # http://localhost:3000
-npm run dev -w apps/landing  # http://localhost:3002
-```
-
-Mobile is verified on a device, not in a browser — see the run-path constraint above.
-
-### Dark mode
-
-Signet web is **dark-only**: there is no `next-themes`, no theme provider, and nothing toggles a
-`.dark` class — the single `:root` block in `packages/theme/src/signet.css` is the theme, so there
-is no mode switch to test. `apps/web` keeps `darkMode: "class"` deliberately with nothing setting
-the class: that was what kept residual `dark:` variants inert while the #920 slices ran, and every
-family has now deleted its own, so `apps/web` ships **zero** live `dark:` variants and the setting
-is a backstop against Tailwind's `media` default re-activating a new one. Do not set the class,
-reintroduce a toggle, or write a fresh `dark:` variant. The same now applies to `apps/landing`: it is dark-only on
-`signet.css`, its `dark:` variants were deleted with the token cutover, and its config keeps the
-class strategy as the identical backstop.
-
-### Responsive design
-
-Tailwind breakpoints are standard: `sm` (640px), `md` (768px), `lg` (1024px), `xl` (1280px). The **web dashboard** (`apps/web`) is **desktop-first** (dense layouts and side navigation assume `lg`+); the **landing** (`apps/landing`) is **mobile-first** (single column and touch targets by default, then progressive enhancement at `sm`/`md`).
-
-## Accessibility
-
-Preserve ARIA attributes, test keyboard navigation (Tab, Shift+Tab, Enter, Escape, Arrow keys), ensure visible focus indicators using the `ring` theme token, use semantic HTML (`button`, `nav`, `main`), provide alt text and aria-labels for icon-only buttons, and test with screen readers (VoiceOver, NVDA). Reference Radix UI Accessibility and keep Radix primitives' defaults when implementing custom components.
-
----
-
-## Updating this skill
-
-When new patterns emerge:
-1. Document new ShadCN component additions and their Radix dependencies.
-2. If the provider chain changes (e.g., auth middleware is added), update the "Provider chain" section.
-3. If new shared hooks are added to `@repo/hooks`, mention them in the data layer section.
+Run `npm run dev -w apps/web` (http://localhost:3000) or `npm run dev -w apps/landing`
+(http://localhost:3002) and check the change in a browser. Setup:
+[`LOCAL_DEV.md`](../../../docs/internal/environment/LOCAL_DEV.md). Mobile is verified on a device
+through Expo Go. For the unit and Playwright suites each surface runs in CI, see the
+[`testing`](../testing/SKILL.md) skill.
