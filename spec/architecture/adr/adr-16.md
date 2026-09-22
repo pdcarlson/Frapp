@@ -157,9 +157,10 @@ unattended is where a weaker judgement is most expensive.
 
 - Runbook: [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
-**Corrected 2026-09-22:** the owner moved all five Routines, Hygiene Scan included, to Opus 5.5.
-The Settings table in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) is canonical for
-routine models.
+**Corrected 2026-09-22:** the owner moved all five Routines, Hygiene Scan included, to Opus 5.5,
+and Hygiene Scan runs at 23:00 ET (03:00 UTC), not 06:00. The Settings table in
+[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) is canonical for routine models and
+schedules.
 
 #### ADR-16 amendments 8–9 — removed 2026-09-22
 
@@ -237,6 +238,9 @@ bringup in `scripts/cloud-sandbox-up.sh`, which was shared and is now Claude Cod
 stay under `.claude/skills/`. Claude Code Routines are the scheduled path; their prompts live in
 [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md). The review gate is the Git pre-push hook
 from the 2026-09-16 correction above, satisfied by `/diff-review`.
+
+**Outside the repo:** the owner confirmed on 2026-09-22 that no Cursor Automations remain, and the
+Cursor-only `[human]` issues (#2025, #2026, #2072) and the Cursor/Linear check #740 were closed.
 
 **Alternatives rejected:** keeping the Cursor files in-tree as dormant legacy. The owner asked for
 Cursor to be removed entirely, and a contract nobody runs still reads as current to the next agent.
