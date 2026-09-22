@@ -10,14 +10,14 @@
 ## Privacy Policy
 
 - Displayed on the landing site (frapp.live/privacy) and linked from the app footer.
-- Covers: what data is collected (account info, location data for study hours, uploaded files, chat messages), how data is used (to provide the service, not sold to third parties), third-party services (Supabase, Stripe, Expo Push), data retention (see [`data-retention.md`](data-retention.md)), user rights (deletion on request — the shipped page grants no access or correction right, and does not mention cookies or the per-chapter analytics that `chapters.analytics_opt_out` gates).
+- Covers: what data is collected (account info, location data for study hours, uploaded files, chat messages), how data is used (to provide the service, not sold to third parties), third-party services (the page's "3. Service Providers" section, in [`apps/landing/app/privacy/page.tsx`](../../apps/landing/app/privacy/page.tsx), is the list — do not restate it here; it named only three providers when the page named five, and missed Resend, #2305), data retention (see [`data-retention.md`](data-retention.md)), user rights (deletion on request — the shipped page grants no access or correction right, and does not mention cookies or the per-chapter analytics that `chapters.analytics_opt_out` gates).
 
 ## FERPA Notice
 
 - A specific callout (frapp.live/ferpa) that Backwork materials are shared voluntarily by members.
 - Signet is not an educational institution and does not access student education records.
 - Members are responsible for ensuring they have the right to share uploaded materials.
-- Members are encouraged to use the redaction feature to remove personal information before uploading.
+- Members are told to remove identifying details themselves before uploading. The page must not point at a redaction tool: the one in [`backwork.md` § PDF Redaction](backwork.md#pdf-redaction-phase-v2) is v2 and unbuilt (nothing rasterizes, and web writes `is_redacted: false`). It used to say "Signet encourages use of redaction workflows", which implied one (#2262). When redaction ships, the page may name it.
 
 ## In-App Placement
 

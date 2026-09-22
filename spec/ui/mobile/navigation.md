@@ -36,7 +36,7 @@ Rows as drawn, top to bottom. Row anatomy: duotone icon, label, trailing status,
 | Chapter | `(auth)/chapter-picker.tsx` | — |
 | **Admin section** (role-gated, labeled with the viewer's role, e.g. "ADMIN · PRESIDENT") | | |
 | Host check-in | `host-check-in.tsx` (s22) | — |
-| Adjust points | opens s23 sheet | — |
+| Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
 
 The admin section renders only for members whose role grants the underlying permissions; ordinary members never see it.
 
@@ -45,12 +45,12 @@ Two rows above are not drawn in Canvas and exist for reachability:
 - **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
 - **Chapter** — the only entry to `(auth)/chapter-picker.tsx`. The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
 
-**Implementation status.** Every row above is routed, the admin section included — its gate landed with C4 of #937. The gate is `usePermissionList()` (a thin wrapper over `useMyPermissions()`) plus `can` / `canAny` from `@repo/validation`, never a bare `permissions.includes(…)`: an owner's grant is the wildcard `*`, so a membership test would hide these rows from exactly the people they exist for.
+**Implementation status.** Every row above except Adjust points is routed, the admin section included — its gate landed with C4 of #937. The gate is `usePermissionList()` (a thin wrapper over `useMyPermissions()`) plus `can` from `@repo/validation` (`canAny` when a gate is composite), never a bare `permissions.includes(…)`: an owner's grant is the wildcard `*`, so a membership test would hide these rows from exactly the people they exist for. Today the section's gate is `events:update` alone — see Host check-in below.
 
 Two things about that section are worth knowing before reading a device:
 
 - **It renders for nobody until a token carries a chapter claim.** `useMyPermissions` is `enabled: !!chapterId`. The hook is on in both hosted projects; production still has no memberships, so issued tokens have no `active_chapter_id` and the permission set stays empty — Presidents included — until the first onboard. It fails closed, which is the right direction. Local (`supabase/config.toml`) and staging (seeded members) already show the section.
-- **Host check-in resolves an event.** s22 reads an `eventId` param, so the row cannot be a bare link: it picks the next upcoming-or-still-checkable-in event and passes its id, and renders inert when there is none. **Adjust points renders disabled** — the s23 sheet needs a member picker plus amount/category/reason and is tracked separately.
+- **Host check-in resolves an event.** s22 reads an `eventId` param, so the row cannot be a bare link: it picks the next upcoming-or-still-checkable-in event and passes its id, and renders inert when there is none. **There is no Adjust points row.** The s23 sheet needs a member picker plus amount/category/reason and is unbuilt, and a row that renders disabled with nothing behind it is the "coming soon" shape App Review Guideline 2.1 rejects, so it was removed rather than drawn (#2300). It returns with the sheet; until then awarding and fining points is web-only. The section is gated on `events:update` alone for the same reason — gating it on `points:adjust` too would draw an empty Admin header for an officer who holds only that.
 
 The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter-config:view` and read-only; its "Join code" row is omitted because chapters have no join code (joining runs through single-use, expiring invite tokens — see [`screens.md`](screens.md)).
 

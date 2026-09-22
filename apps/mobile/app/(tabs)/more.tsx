@@ -11,7 +11,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { can, canAny } from "@repo/validation";
+import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { CountBadge, NavTile } from "@/components/nav-tile";
 import { selectEventRows } from "@/lib/events/select";
@@ -79,12 +79,10 @@ export default function MoreScreen() {
     Array.isArray(chaptersQuery.data) &&
     chaptersQuery.data.length === 0;
   const permissions = usePermissionList();
-  // `can`/`canAny` from @repo/validation, never a bare `includes` — an owner's
-  // grant is the wildcard `*`, so a membership test would hide these rows from
-  // exactly the people who need them.
+  // `can` from @repo/validation, never a bare `includes` — an owner's
+  // grant is the wildcard `*`, so a membership test would hide the Admin
+  // section from exactly the people who need it.
   const canHost = can("events:update", permissions);
-  const canAdjustPoints = can("points:adjust", permissions);
-  const showAdmin = canAny(["events:update", "points:adjust"], permissions);
 
   const notificationsQuery = useNotifications();
   const unreadCount = selectUnreadIds(notificationsQuery.data).length;
@@ -225,7 +223,7 @@ export default function MoreScreen() {
         />
       )}
 
-      {showAdmin ? (
+      {canHost ? (
         <>
           {/* TODO-DESIGN: Canvas labels this "ADMIN · PRESIDENT" — the viewer's
               role name. No role string is readable on mobile:
@@ -233,41 +231,32 @@ export default function MoreScreen() {
               roster projection carries names and avatars. Nearest pattern used:
               the section label without the role suffix. */}
           <Text style={styles.sectionHeader}>Admin</Text>
-          {canHost ? (
-            <NavTile
-              title="Host check-in"
-              description={
-                nextEvent
-                  ? "Project a rotating code for members to scan."
-                  : "No upcoming event to host right now."
-              }
-              disabled={!nextEvent}
-              trailing={
-                nextEvent ? (
-                  <Text numberOfLines={1} style={styles.trailingText}>
-                    {nextEvent.name}
-                  </Text>
-                ) : null
-              }
-              accessibilityHint="Open the host check-in display for the next event."
-              onPress={() => {
-                if (!nextEvent) return;
-                // Object form: the only navigation shape `lib/routes.spec.ts`
-                // matches when a param is involved.
-                router.push({
-                  pathname: "/host-check-in",
-                  params: { eventId: nextEvent.id },
-                });
-              }}
-            />
-          ) : null}
-          {canAdjustPoints ? (
-            <NavTile
-              title="Adjust points"
-              description="Awarding and fining members is on the web dashboard for now."
-              disabled
-            />
-          ) : null}
+          <NavTile
+            title="Host check-in"
+            description={
+              nextEvent
+                ? "Project a rotating code for members to scan."
+                : "No upcoming event to host right now."
+            }
+            disabled={!nextEvent}
+            trailing={
+              nextEvent ? (
+                <Text numberOfLines={1} style={styles.trailingText}>
+                  {nextEvent.name}
+                </Text>
+              ) : null
+            }
+            accessibilityHint="Open the host check-in display for the next event."
+            onPress={() => {
+              if (!nextEvent) return;
+              // Object form: the only navigation shape `lib/routes.spec.ts`
+              // matches when a param is involved.
+              router.push({
+                pathname: "/host-check-in",
+                params: { eventId: nextEvent.id },
+              });
+            }}
+          />
         </>
       ) : null}
     </ScreenShell>

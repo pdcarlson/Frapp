@@ -15,6 +15,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * component's own `href` at all, since it arrives as a prop
  * (`spec/ui/mobile/navigation.md`); only the literals at the call sites are
  * checked.
+ *
+ * Every row has a destination. `disabled` is for one that is temporarily
+ * unavailable, with `description` saying why (Host check-in with no event to
+ * host). There is no destination-less variant: a row that can never be
+ * enabled is the "coming soon" shape App Review Guideline 2.1 rejects (#2300).
  */
 type NavTileProps = {
   title: string;
@@ -25,11 +30,7 @@ type NavTileProps = {
 } & (
   | { href: string; onPress?: never; disabled?: boolean }
   | { href?: never; onPress: () => void; disabled?: boolean }
-  // A row with no destination at all, which is only honest when it says so:
-  // `description` carries the reason, the way C2 shipped s07's RSVP row.
-  | { href?: never; onPress?: never; disabled: true }
 );
-
 export function NavTile({
   href,
   onPress,
@@ -63,13 +64,15 @@ export function NavTile({
         // as loose text. The two precedents for wiring a reason to a blocked
         // control — `service-hours.tsx` and `components/dues/balance-card.tsx`
         // — are both `Pressable`s, which set this for free; this branch is not,
-        // which is why the one tile that has to explain itself was the one that
-        // did not. A VoiceOver user heard "Adjust points, dimmed, button" and
-        // no reason why.
+        // so without the flag a VoiceOver user hears "dimmed, button" and no
+        // reason why.
         accessible
         accessibilityRole="button"
         accessibilityLabel={title}
-        accessibilityHint={accessibilityHint ?? description}
+        // The reason, not the enabled-state hint: a caller's
+        // `accessibilityHint` describes what the row would open, which a
+        // disabled row cannot do.
+        accessibilityHint={description}
         accessibilityState={{ disabled: true }}
         style={[styles.tile, styles.tileDisabled]}
       >
