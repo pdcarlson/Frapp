@@ -191,6 +191,24 @@ function describeError(error) {
   return causeText ? `${error.message}: ${causeText}` : error.message;
 }
 
+/**
+ * Whether node's global `fetch` in this process goes through HTTPS_PROXY.
+ *
+ * By default it doesn't: it ignores the proxy env and goes direct. Only
+ * NODE_USE_ENV_PROXY=1 or --use-env-proxy (on the command line or in
+ * NODE_OPTIONS) route it through the proxy, and then only when a proxy is set.
+ * In a cloud sandbox that is the agent proxy's route, whose 403s say nothing
+ * about the token (ADR-20 amendment of 2026-09-02, (b)). This is the one part of
+ * a read failure's cause the process can observe rather than guess.
+ */
+function fetchUsesEnvProxy({ env = process.env, execArgv = process.execArgv } = {}) {
+  const switchedOn =
+    env.NODE_USE_ENV_PROXY === "1" ||
+    execArgv.includes("--use-env-proxy") ||
+    /(?:^|\s)--use-env-proxy(?:\s|$)/.test(env.NODE_OPTIONS ?? "");
+  return switchedOn && Boolean(env.HTTPS_PROXY || env.https_proxy);
+}
+
 // ── Branch protection payloads ──────────────────────────────────────────────
 
 function buildProtectionPayload(branch) {
@@ -243,14 +261,14 @@ function buildProtectionPayload(branch) {
 //
 // The read is deliberately shaped as pure functions over plain objects, with the
 // network confined to `callGitHubApi`, because the call itself is the one part
-// that cannot be relied on from an agent session. Reaching `api.github.com` from
-// a cloud sandbox is ROUTE-DEPENDENT (ADR-20 amendment of 2026-09-02, (b), and
-// AGENT_INFRA.md → Work status). Node's global `fetch`, which `ghRequest` uses,
-// ignores HTTPS_PROXY and goes direct, and that route has returned 200 with a
-// PAT. The agent proxy's route (curl, or node under NODE_USE_ENV_PROXY=1)
-// passes some repo paths and 403s others, varying by session. Keeping the
-// semantics in functions that take a response rather than fetch one is what
-// makes the diff unit-testable whichever route a given run takes.
+// that depends on the environment (route, allowlist, token). Reaching
+// `api.github.com` from a cloud sandbox is ROUTE-DEPENDENT (ADR-20 amendment of
+// 2026-09-02, (b), and AGENT_INFRA.md → Work status). Node's global `fetch`,
+// which `ghRequest` uses, ignores HTTPS_PROXY and goes direct, and that route
+// has returned 200 with a PAT. The agent proxy's route (curl, or node under
+// NODE_USE_ENV_PROXY=1) passes some repo paths and 403s others, varying by
+// session. Keeping the semantics in functions that take a response rather than
+// fetch one is what makes the diff unit-testable whichever route a run takes.
 //
 // The GET shape is NOT the PUT shape, which is the trap here. GitHub returns the
 // booleans wrapped — `enforce_admins: {enabled: true}` — where the PUT takes them
@@ -525,18 +543,26 @@ async function main() {
       console.log("  No before/after diff is available for this run.");
       console.log("");
       if (verify) {
-        // The reason above is the reason. Do NOT restate it as the sandbox
-        // proxy: a 403 through the proxy, an expired PAT, a wrong repo slug and
-        // a broken CA bundle all reach here, and naming one of them as the
-        // cause is how the other three get misdiagnosed.
+        // The reason above is the reason. Do NOT restate it from its body: a
+        // 403 through the proxy, an expired PAT, a wrong repo slug and a broken
+        // CA bundle all reach here, and naming one of them as the cause is how
+        // the other three get misdiagnosed. Even one body can come from either
+        // route: "Resource not accessible by integration" is the proxy route's
+        // 403 on this endpoint and also an Actions GITHUB_TOKEN's 403 direct.
+        // The route is what this process can observe, so that is the hint.
+        const routeHint = fetchUsesEnvProxy()
+          ? "This run sent node's fetch through HTTPS_PROXY (NODE_USE_ENV_PROXY=1 or " +
+            "--use-env-proxy). In a cloud sandbox that is the agent proxy's route, where a 403 " +
+            "says nothing about the token, whatever its body: unset the switch and re-run " +
+            "before touching the PAT."
+          : "This run went direct (node's fetch ignores HTTPS_PROXY by default), so a 403 is " +
+            "GitHub's answer to the token sent, unless it reads \"Host not in allowlist\": " +
+            "that is this environment's network allowlist, which then needs api.github.com.";
         throw new Error(
           `--verify cannot confirm ${branch}: live protection is unreadable (${readFailure}). ` +
             "An unreadable answer is not a passing one, so this fails rather than reporting a " +
-            "match. If the cause is a 403 reading \"GitHub access is not enabled for this " +
-            "session\", the request went through a cloud sandbox's agent proxy rather than " +
-            "direct. node's fetch takes that route only under NODE_USE_ENV_PROXY=1 or " +
-            "--use-env-proxy, so drop them " +
-            "(ADR-20 amendment of 2026-09-02, (b) — reachability is route-dependent).",
+            `match. ${routeHint} Route rule: ADR-20 amendment of 2026-09-02, (b), and its ` +
+            "2026-09-22 correction.",
         );
       }
     } else {
@@ -658,4 +684,4 @@ if (isDirectRun) {
 // `scripts/ci/lib/required-checks.mjs` and consumers import them from there
 // directly — a pass-through would leave exactly the coupling #1383 removed,
 // with this module still on the deploy path's import graph.
-export { assertKnownArgs, buildProtectionPayload };
+export { assertKnownArgs, buildProtectionPayload, fetchUsesEnvProxy };
