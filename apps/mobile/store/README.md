@@ -196,9 +196,8 @@ the work; the detail lives there, not here.
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | No App Review demo user exists in `frapp-prod`; the demo seed is Docker-only. The reviewer cannot sign in | hard gate |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 (restated as a blocker, not a risk): API and production DB ship report/block, **no client consumes either** | blocker |
-| [#2305](https://github.com/pdcarlson/Frapp/issues/2305) | The live privacy policy's photo-library claim was written when the binary could not upload; #2464 shipped chat photo upload, so re-check what the policy should now say rather than deleting the claim; both stores fetch that URL | 5.1.2 |
-| [#2298](https://github.com/pdcarlson/Frapp/issues/2298) / [#2300](https://github.com/pdcarlson/Frapp/issues/2300) / [#2301](https://github.com/pdcarlson/Frapp/issues/2301) | Sign-in tagline advertises Ask; two permanently inert controls; the `sheet-demo` dev route ships and is reachable via `frapp://sheet-demo` | 2.1 |
-| [#2304](https://github.com/pdcarlson/Frapp/issues/2304) | This file's § Description claims officer features the iOS binary does not ship | 2.3 |
+| [#2305](https://github.com/pdcarlson/Frapp/issues/2305) | **Fixed in the repo 2026-09-22; live only after the next Deploy production.** The policy's photo-library clause read "choose a profile photo or attach an image", and the iOS app has no profile-photo picker, so it now names chat photos only. Resend (sign-in and invite email) and the two hosts, Render and Vercel, were added to § Service Providers. Both stores fetch the live URL, so deploy the landing before submitting | 5.1.2 |
+| [#2298](https://github.com/pdcarlson/Frapp/issues/2298) / [#2301](https://github.com/pdcarlson/Frapp/issues/2301) | Sign-in tagline advertises Ask; the `sheet-demo` dev route ships and is reachable via `frapp://sheet-demo`. (The two permanently inert controls, [#2300](https://github.com/pdcarlson/Frapp/issues/2300), were removed 2026-09-22.) | 2.1 |
 | [#2334](https://github.com/pdcarlson/Frapp/issues/2334) | **Smoke-test Sign in with Apple on the TestFlight build before submitting.** At the pinned `expo-apple-authentication ~57.0.2` a nil `keyWindow` reaches an uncatchable Swift `fatalError`, i.e. a SIGTRAP abort on the sign-in screen with the browser-OAuth fallback unreachable — and no live Apple sign-in has ever been observed against `frapp-prod`. The unit suite gives **zero** signal because it never loads the native module. A crash on the first screen a reviewer touches outranks the 4.8 question it also raises | 4.8 + crash |
 
 ## Description
@@ -215,7 +214,13 @@ the work; the detail lives there, not here.
 
 Signet is the app your chapter actually runs on.
 
-Members get one place for the things that used to live in six group chats: chapter announcements and channels, upcoming events with a check-in code at the door, study hours that count toward chapter goals, points and your house rank, dues and payment history, and the member directory.
+Members get one place for the things that used to live in six group chats: chapter announcements and channels, upcoming events with a check-in code at the door, study hours tracked inside your chapter's study zones, points and your house rank, dues and payment history, and the member directory.
+
+> **Narrowed 2026-09-22 ([#2304](https://github.com/pdcarlson/Frapp/issues/2304)).** This
+> sentence read "study hours that count toward chapter goals". No study goal or requirement
+> exists anywhere in the schema (`components/study/week-summary.tsx` says so in its header),
+> so the clause now says what the Study tab does, in its own subtitle's words. Study time
+> does earn points, per zone (`minutes_per_point`), and the next item already covers points.
 
 Officers get what they need on their feet: take attendance at the door with a QR code, assign a task to any member, and post an announcement every member gets. Setting the chapter up — roles and permissions, dues and who has paid, service-hour approvals, channels and points — is on the web dashboard.
 
@@ -392,11 +397,10 @@ Advertising Data, Browsing History, Search History.
 > before the build that carries photo upload ships, or the label under-declares. Either
 > way this is a console check nothing in CI can see, which is why the line stays.
 >
-> **Note for whoever implements #2305.** Its acceptance criterion 3 asked for this row
-> to be "removed, or set to not-collected", on the premise that the binary could not
-> upload. #2464 falsified that premise. Do not action that criterion as written —
-> re-read it against the shipped capability first, and say so on #2305 rather than
-> clearing an answer that is now true.
+> **#2305 left this row in place (2026-09-22).** Its acceptance criterion 3 asked for
+> the row to be "removed, or set to not-collected", on the premise that the binary
+> could not upload. #2464 falsified that premise. So the fix narrowed the privacy
+> policy's clause to chat photos instead, and this answer stands.
 >
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The

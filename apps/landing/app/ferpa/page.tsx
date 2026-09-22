@@ -18,7 +18,7 @@ const sections = [
     heading: "3. Backwork and Uploaded Content",
     paragraphs: [
       "Backwork files are submitted voluntarily by chapter members. Uploaders must avoid sharing restricted educational records or sensitive personal information without authorization.",
-      "Signet encourages use of redaction workflows to remove identifying details before sharing academic materials.",
+      "Remove names, student ID numbers, grades and other identifying details from academic materials before you upload them.",
     ],
   },
   {

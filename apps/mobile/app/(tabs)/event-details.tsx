@@ -34,14 +34,16 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * inventing a placeholder, which is what it used to do: until C2 this file was
  * a hardcoded "Frapp Chapter Meeting" with a fabricated date.
  *
- * ## RSVP is drawn but deliberately inert
+ * ## No RSVP control until RSVP exists
  *
  * The reference draws a "Going ✓ / Can't make it" row and a "GOING · 31" count.
  * Neither has a server behind it: `spec/behavior/events.md` records that
  * "pre-event RSVP intent (going / maybe / not-going, ahead of the window) is
- * not yet modelled". So the row renders in its drawn position, disabled, with
- * one honest line — and the count is omitted entirely rather than filled with a
- * number no endpoint could produce. Tracked for a real endpoint; see the PR.
+ * not yet modelled". Both are omitted, and one plain line says what does count
+ * — checking in. The row used to render disabled in its drawn position; a
+ * control that can never be enabled is the "coming soon" shape App Review
+ * Guideline 2.1 rejects (#2300), so it comes back only with the endpoint
+ * (#1035).
  */
 
 export default function EventDetailsScreen() {
@@ -239,36 +241,10 @@ export default function EventDetailsScreen() {
         )}
       </View>
 
-      {/*
-        RSVP: drawn, disabled, and honest about why. See the file header — there
-        is no RSVP model server-side, so a working-looking control here would be
-        a lie about what tapping it does.
-      */}
-      <View style={styles.rsvpCard}>
-        <View style={styles.rsvpRow}>
-          <View
-            accessible
-            accessibilityRole="button"
-            accessibilityState={{ disabled: true }}
-            accessibilityLabel="Going. RSVP is not available yet."
-            style={[styles.rsvpButton, styles.rsvpDisabled]}
-          >
-            <Text style={styles.rsvpText}>Going</Text>
-          </View>
-          <View
-            accessible
-            accessibilityRole="button"
-            accessibilityState={{ disabled: true }}
-            accessibilityLabel="Can't make it. RSVP is not available yet."
-            style={[styles.rsvpButton, styles.rsvpDisabled]}
-          >
-            <Text style={styles.rsvpText}>Can&apos;t make it</Text>
-          </View>
-        </View>
-        <Text style={styles.rsvpNote}>
-          RSVP isn&apos;t available yet — check in at the event to be counted.
-        </Text>
-      </View>
+      {/* No RSVP control — see the file header. */}
+      <Text style={styles.attendanceNote}>
+        Check in at the event to be counted.
+      </Text>
 
       {event.hasCheckInZone ? (
         <View style={styles.zoneNote}>
@@ -404,34 +380,7 @@ function createStyles(tokens: SignetTokens, accent: string) {
       color: tokens.color.surface.background,
       ...typeRole(tokens.typography.role.label),
     },
-    rsvpCard: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.sm,
-    },
-    rsvpRow: {
-      flexDirection: "row",
-      gap: tokens.spacing.sm,
-    },
-    rsvpButton: {
-      flex: 1,
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      paddingVertical: tokens.spacing.sm,
-      alignItems: "center",
-    },
-    rsvpDisabled: {
-      opacity: 0.45,
-    },
-    rsvpText: {
-      color: tokens.color.text.mutedForeground,
-      ...typeRole(tokens.typography.role.label),
-    },
-    rsvpNote: {
+    attendanceNote: {
       color: tokens.color.text.muted,
       ...typeRole(tokens.typography.role.caption),
     },
