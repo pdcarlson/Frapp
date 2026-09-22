@@ -59,12 +59,14 @@ const ON_VALUES: readonly string[] = ["1", "true"];
  * used not to: the pill rendered and the sheet opened either way, and the sheet
  * then said "Ask isn't switched on for this build yet". A control whose only
  * function is to announce that its feature is off is a placeholder under App
- * Review Guideline 2.1, and nothing a member can do clears it — a build-time
- * switch is not a recoverable state — so it is hidden rather than disabled.
- * `spec/ui/design-system/README.md` §5 ("Disable, don't hide, for recoverable
- * states") draws that line, and `spec/ui/mobile/navigation.md` § Global entries
- * records the reversal and why the disabled Pay control in
- * `lib/payments/stripe.ts` stays disabled rather than following it.
+ * Review Guideline 2.1, and no member can switch Ask on, so the pill is hidden
+ * rather than disabled. `spec/ui/design-system/README.md` §5 rule 4 ("Disable,
+ * don't hide, for recoverable states") names the Ask pill as a case to hide,
+ * and only that pill: it is not a rule for every build-time gap, and the push
+ * primer, gated the same way, still disables (#2299).
+ * `spec/ui/mobile/navigation.md` § Global entries records the reversal and why
+ * the disabled Pay control in `lib/payments/stripe.ts` stays disabled rather
+ * than following it.
  */
 export function isAskAvailable(): boolean {
   const raw = process.env.EXPO_PUBLIC_ASK_ENABLED;

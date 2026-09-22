@@ -167,13 +167,15 @@ scaled from the larger set. `app.json` sets `ios.supportsTablet: false`, so no i
 **Not yet confirmed in the console:** #2454 asks for the sizes App Store Connect states at upload to
 be recorded here, so replace this paragraph's source with the console's wording once uploaded.
 
-The set is eight screens, chosen to match what the listing's Description claims
+The set is seven screens, chosen to match what the listing's Description claims
 ([`apps/mobile/store/README.md`](../../../../apps/mobile/store/README.md) § Description): Chat
-home, a chat thread, Events, Host check-in (the rotating QR), Tasks (points and house rank), Study
-hours, Dues (payment history) and the Directory. The list is `STORE_SCREENS` in
+home, a chat thread, Events, Host check-in (the rotating QR), Tasks (assigned tasks, points and
+house rank), Study hours and the Directory. The list is `STORE_SCREENS` in
 [`scripts/demo/capture-mobile.mjs`](../../../../scripts/demo/capture-mobile.mjs). **No Ask shot:**
 the store binary has no Ask ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and
-Guideline 2.3.3 wants the screenshots to show the app as it ships.
+Guideline 2.3.3 wants the screenshots to show the app as it ships. **No Dues shot:** a populated
+ledger shows "Payments run through your chapter's Stripe account.", and the listing is built so App
+Review never sees payment copy (the store README's § Seed the reviewer's chapter).
 
 **Procedure**, on a machine or cloud sandbox with the local stack running (API on `:3001`, local
 Supabase):
@@ -193,7 +195,7 @@ Supabase):
 4. From the repo root: `node scripts/demo/capture-mobile.mjs --app-store`
    (sandbox Chromium: prefix `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome`).
    It signs in as the demo president — Host check-in needs an officer — and writes
-   `screenshots/app-store/01-chat-home.png` … `08-directory.png`.
+   `screenshots/app-store/01-chat-home.png` … `07-directory.png`.
 
 It prints each file's measured size, and exits non-zero if a screen lands on a route other than the
 one requested (a lost session redirects to sign-in), if a screen's data never arrives, or if a file

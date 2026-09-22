@@ -13,9 +13,11 @@ accept a submission without them ([#2454](https://github.com/pdcarlson/Frapp/iss
 The owner approved renders of the real app on Expo web as the set (2026-09-22), so they
 no longer wait on a device build or on `preview` (#2415):
 `node scripts/demo/capture-mobile.mjs --app-store` signs in to the local demo chapter and
-writes eight 1320 × 2868 PNGs (the 6.9" iPhone size) to `screenshots/app-store/`, with
-no Ask screen, because this binary has none (#2259). The procedure, and where the size
-comes from, are in [`mobile.md` § 6.4](../../../docs/internal/ops/deployment/mobile.md#64-app-store-screenshots).
+writes seven 1320 × 2868 PNGs (the 6.9" iPhone size) to `screenshots/app-store/`, with
+no Ask screen, because this binary has none (#2259), and no Dues screen, because a
+populated ledger shows the Stripe footer § Review notes keeps from App Review. The
+procedure, and where the size comes from, are in
+[`mobile.md` § 6.4](../../../docs/internal/ops/deployment/mobile.md#64-app-store-screenshots).
 They are generated rather than committed (`screenshots/` is gitignored). Whether they
 have been uploaded is recorded on #2454, not here: until that issue closes, assume not.
 
@@ -182,7 +184,7 @@ record; each is a review-time or launch risk.
 | --- | --- |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 — no member-level report or block, with DMs shipping |
 | [#2258](https://github.com/pdcarlson/Frapp/issues/2258) | Guideline 5.2 — Backwork's v1 posture (**decision, not work**) |
-| ~~[#2259](https://github.com/pdcarlson/Frapp/issues/2259)~~ | Fixed in the repo 2026-09-22 (owner decision): with Ask off, Chat home and Events draw no ✦ pill, the sheet renders nothing, and `frapp://ask` redirects to Chat home, so **a reviewer is shown no Ask surface at all**. That is also why § Review notes says nothing about Ask: there is nothing on screen to explain. Live only in the next build. It holds only while `EXPO_PUBLIC_ASK_ENABLED` is unset in the EAS `production` environment, which the repo cannot see (§ Description's note) |
+| ~~[#2259](https://github.com/pdcarlson/Frapp/issues/2259)~~ | Fixed in the repo 2026-09-22 (owner decision): with Ask off, Chat home and Events draw no ✦ pill, the sheet renders nothing, and `frapp://ask` redirects to Chat home, so **a reviewer is shown no Ask surface at all**. That is also why § Review notes says nothing about Ask: there is nothing on screen to explain. Live only in the next build. It needs `EXPO_PUBLIC_ASK_ENABLED` off in the EAS `production` environment, which the repo cannot see, and since 2026-09-22 an EAS `production` build refuses to evaluate its config when the flag is on (`apps/mobile/app.config.js`), so a set value fails the build instead of shipping Ask (§ Description's note) |
 | ~~[#2260](https://github.com/pdcarlson/Frapp/issues/2260)~~ | Closed 2026-09-18 — answered ("it is not set"), superseded by #2415 |
 | [#2261](https://github.com/pdcarlson/Frapp/issues/2261) | Terms of Service carries no minimum-age clause |
 | ~~[#2262](https://github.com/pdcarlson/Frapp/issues/2262)~~ | Fixed in the repo 2026-09-22: the FERPA notice no longer points at a redaction tool. Live only after the next Deploy production |
@@ -208,9 +210,10 @@ the work; the detail lives there, not here.
 > Deliberately omits Ask. [`spec/ui/brand-identity.md`](../../../spec/ui/brand-identity.md)
 > gives the tagline as "Ask your chapter anything." and positions Signet as the
 > AI-first operating system for Greek life, but Ask is gated behind
-> `EXPO_PUBLIC_ASK_ENABLED` (default off, and set by no `eas.json` profile — but see the
-> dues note below on why that is *not* proof it is off in a build: only
-> `eas env:list --environment production` settles it) and answers
+> `EXPO_PUBLIC_ASK_ENABLED` (default off, and set by no `eas.json` profile — which alone
+> is *not* proof it is off in a build, as the dues note below explains, so an EAS
+> `production` build now refuses to evaluate its config with the flag on:
+> `apps/mobile/app.config.js`) and answers
 > from a hand-written table in `apps/mobile/lib/ask/corpus.ts`. Store metadata that
 > advertised it would be inaccurate under Guideline 2.3. **Use the tagline as the
 > subtitle once Ask genuinely ships** — the subtitle is editable on any new version.

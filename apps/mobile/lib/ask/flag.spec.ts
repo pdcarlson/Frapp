@@ -66,11 +66,15 @@ type EasBuildProfile = { env?: Record<string, unknown> };
  * profile's `env` block in `eas.json` is inlined into that build, so an on
  * value here would put the pill and the synthetic corpus in a store binary.
  *
- * **This cannot prove a build is off.** Each profile is also bound to an EAS
- * environment (`"environment": "production"` and so on), and variables set
- * there in the EAS dashboard or with `eas env:set` never reach the repo. Only
- * `eas env:list --environment <name>` settles those (`ENV_REFERENCE.md`).
- * This guards the half the repo owns.
+ * **This alone cannot prove a build is off.** Each profile is also bound to an
+ * EAS environment (`"environment": "production"` and so on), and variables set
+ * there in the EAS dashboard or with `eas env:set` never reach the repo. This
+ * guards the half the repo owns. The other half is no longer settled by hand:
+ * `app.config.js` refuses to evaluate an EAS `production` build whose
+ * environment switches Ask on (`assertProductionAskDisabled`, tested in
+ * `app.config.spec.ts` against this file's parse), so an on value there fails
+ * the build rather than shipping. Preview and development builds may still
+ * carry Ask; `eas env:list --environment <name>` is how to see whether they do.
  */
 describe("eas.json", () => {
   const easJson = JSON.parse(

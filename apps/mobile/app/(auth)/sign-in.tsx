@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -51,6 +51,7 @@ export default function SignIn() {
   const [oauthPending, setOauthPending] = useState<OAuthProvider | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [magicLinkSentTo, setMagicLinkSentTo] = useState<string | null>(null);
+  const passwordRef = useRef<TextInput>(null);
 
   if (status === "authenticated") {
     // The auth gate owns the next hop (join / welcome / tabs). Rendering the
@@ -97,6 +98,17 @@ export default function SignIn() {
     }
   }
 
+  /**
+   * The Sign in button and the keyboard's return key both submit through here,
+   * so return is held to the button's guard: while a sign-in, a magic link or
+   * an OAuth kickoff is in flight the button is disabled, and return does
+   * nothing either.
+   */
+  function submit() {
+    if (submitting) return;
+    void handleSignIn(authMode);
+  }
+
   async function handleOAuth(provider: OAuthProvider) {
     setSubmitting(true);
     setOauthPending(provider);
@@ -124,7 +136,7 @@ export default function SignIn() {
       {/*
         The column scrolls. It did not, and on a 375x667 screen (iPhone SE,
         and any iPhone-only app on an iPad, which runs at iPhone size) it is
-        ~750pt tall: `justifyContent: "center"` overflows *both* ends rather
+        ~880pt tall: `justifyContent: "center"` overflows *both* ends rather
         than clamping, so the mark went off the top and "Sign in" off the
         bottom, where nothing could reach it. That is the first screen App
         Review opens. `flexGrow: 1` keeps it centred whenever it does fit
@@ -246,6 +258,17 @@ export default function SignIn() {
             autoCorrect={false}
             keyboardType="email-address"
             textContentType="username"
+            // Password mode: return moves to the password field, keeping the
+            // keyboard up. Magic-link mode has no field after this one, so
+            // return sends the link, as the button would.
+            returnKeyType={authMode === "password" ? "next" : "send"}
+            submitBehavior={
+              authMode === "password" ? "submit" : "blurAndSubmit"
+            }
+            onSubmitEditing={() => {
+              if (authMode === "password") passwordRef.current?.focus();
+              else submit();
+            }}
             style={styles.input}
           />
 
@@ -294,6 +317,7 @@ export default function SignIn() {
             <>
               <Text style={styles.inputLabel}>Password</Text>
               <TextInput
+                ref={passwordRef}
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Your password"
@@ -302,6 +326,8 @@ export default function SignIn() {
                 autoCorrect={false}
                 secureTextEntry
                 textContentType="password"
+                returnKeyType="go"
+                onSubmitEditing={submit}
                 style={styles.input}
               />
             </>
@@ -328,9 +354,7 @@ export default function SignIn() {
             accessibilityRole="button"
             accessibilityState={{ disabled: submitting }}
             disabled={submitting}
-            onPress={() => {
-              void handleSignIn(authMode);
-            }}
+            onPress={submit}
             style={[
               styles.primaryButton,
               submitting ? styles.primaryButtonDisabled : null,

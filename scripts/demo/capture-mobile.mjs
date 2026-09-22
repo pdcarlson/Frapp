@@ -279,7 +279,9 @@ const APP_SCREENS = [
     // floors at zero in between. Hold out for ten seconds or more left on the
     // clock — merely non-zero lands "0:02" about as often as not, which reads
     // as a code caught mid-expiry rather than one an officer is projecting.
-    ready: () => /Rotates in 0:[12]\d/.test(document.body.innerText),
+    // The check asks for twelve: the shot is taken a second or so after it
+    // passes, and a check at "0:10" was saved as "0:09" (2026-09-22).
+    ready: () => /Rotates in 0:(1[2-9]|2\d)/.test(document.body.innerText),
   },
 ];
 
@@ -289,6 +291,10 @@ const APP_SCREENS = [
  * chat first, because that is the product's centre, then the officer's QR,
  * then the member's week. Every screen here ships in the store binary; there
  * is deliberately no Ask shot, because that binary has no Ask (#2259).
+ *
+ * No Dues shot either: a populated ledger footers "Payments run through your
+ * chapter's Stripe account.", and the listing is built so App Review never
+ * sees payment copy (store README § Seed the reviewer's chapter).
  *
  * Same shape as `APP_SCREENS`. `ready` gates on content that only arrives
  * once the screen's queries have landed, so no shot is of a skeleton or an
@@ -328,13 +334,18 @@ const STORE_SCREENS = [
     route: `/host-check-in?eventId=${EVENT_ID}`,
     label: "Host check-in — rotating QR at the door (officer)",
     // Same clock rule as the marketing shot: ten seconds or more left.
-    ready: () => /Rotates in 0:[12]\d/.test(document.body.innerText),
+    ready: () => /Rotates in 0:(1[2-9]|2\d)/.test(document.body.innerText),
   },
   {
     slug: "05-tasks",
     route: "/tasks",
-    label: "Tasks — semester points and house rank",
-    ready: () => /House rank\s*#\d+/.test(document.body.innerText),
+    label: "Tasks — assigned tasks, semester points and house rank",
+    // A task row as well as the points card: the card lands on its own, and
+    // without a row the shot is the "You're all clear" empty state. The demo
+    // seed assigns roster #1, the account this signs in as, two open tasks.
+    ready: () =>
+      /House rank\s*#\d+/.test(document.body.innerText) &&
+      Boolean(document.querySelector('[role="checkbox"]')),
   },
   {
     slug: "06-study",
@@ -343,18 +354,13 @@ const STORE_SCREENS = [
     ready: () => document.body.innerText.includes("RECENT SESSIONS"),
   },
   {
-    slug: "07-dues",
-    route: "/dues",
-    label: "Dues — balance and payment history",
-    ready: () =>
-      document.body.innerText.includes("HISTORY") &&
-      document.body.innerText.includes("Paid"),
-  },
-  {
-    slug: "08-directory",
+    slug: "07-directory",
     route: "/directory",
-    label: "Directory — actives and alumni",
-    ready: () => /Actives · \d+/.test(document.body.innerText),
+    // Not "actives and alumni": the Actives chip lists every member, alumni
+    // included, so the screen does not yet make the split its chips name.
+    label: "Directory — the chapter's members, searchable by name",
+    ready: () =>
+      Boolean(document.querySelector('[aria-label^="View "][role="button"]')),
   },
 ];
 

@@ -31,15 +31,21 @@ VALUES (:chapter_id, 'Beta Theta Omega', 'Westfield University', 'ifc', '#EFB63B
         now() - interval '14 months');
 
 -- ── Roles ────────────────────────────────────────────────────────────────────
+-- `system_key` is upper case, exactly as the API's `SystemRoleKeys` spells it
+-- (`apps/api/src/domain/constants/permissions.ts`) and as the role_system_key
+-- migration backfilled it. The lookups compare it with `=`, so a lower-case key
+-- is no key at all: with 'alumni' here, `GET /v1/alumni` found no Alumni role
+-- and the mobile directory read "Alumni · 0" over three seeded alumni, and none
+-- of the Alumni restrictions applied to them.
 INSERT INTO roles (id, chapter_id, name, permissions, is_system, display_order, system_key)
 VALUES
- ('c0ffee00-0000-4000-8000-0000000000a1', :chapter_id, 'President',      ARRAY['*'], true, 1, 'president'),
- ('c0ffee00-0000-4000-8000-0000000000a2', :chapter_id, 'Treasurer',      ARRAY['billing:view','billing:manage','points:adjust','points:view_all','polls:view_all','members:view','reports:export','events:create','events:update'], true, 2, 'treasurer'),
- ('c0ffee00-0000-4000-8000-0000000000a3', :chapter_id, 'Vice President', ARRAY['members:view','polls:view_all'], true, 3, 'vice_president'),
- ('c0ffee00-0000-4000-8000-0000000000a4', :chapter_id, 'Secretary',      ARRAY['members:view','polls:view_all'], true, 4, 'secretary'),
- ('c0ffee00-0000-4000-8000-0000000000a5', :chapter_id, 'Member',         ARRAY['members:view','backwork:upload','service:log','polls:create'], true, 5, 'member'),
- ('c0ffee00-0000-4000-8000-0000000000a6', :chapter_id, 'New Member',     ARRAY['members:view','backwork:upload'], true, 6, 'new_member'),
- ('c0ffee00-0000-4000-8000-0000000000a7', :chapter_id, 'Alumni',         ARRAY['members:view'], true, 7, 'alumni');
+ ('c0ffee00-0000-4000-8000-0000000000a1', :chapter_id, 'President',      ARRAY['*'], true, 1, 'PRESIDENT'),
+ ('c0ffee00-0000-4000-8000-0000000000a2', :chapter_id, 'Treasurer',      ARRAY['billing:view','billing:manage','points:adjust','points:view_all','polls:view_all','members:view','reports:export','events:create','events:update'], true, 2, 'TREASURER'),
+ ('c0ffee00-0000-4000-8000-0000000000a3', :chapter_id, 'Vice President', ARRAY['members:view','polls:view_all'], true, 3, 'VICE_PRESIDENT'),
+ ('c0ffee00-0000-4000-8000-0000000000a4', :chapter_id, 'Secretary',      ARRAY['members:view','polls:view_all'], true, 4, 'SECRETARY'),
+ ('c0ffee00-0000-4000-8000-0000000000a5', :chapter_id, 'Member',         ARRAY['members:view','backwork:upload','service:log','polls:create'], true, 5, 'MEMBER'),
+ ('c0ffee00-0000-4000-8000-0000000000a6', :chapter_id, 'New Member',     ARRAY['members:view','backwork:upload'], true, 6, 'NEW_MEMBER'),
+ ('c0ffee00-0000-4000-8000-0000000000a7', :chapter_id, 'Alumni',         ARRAY['members:view'], true, 7, 'ALUMNI');
 
 COMMIT;
 
@@ -56,32 +62,32 @@ CREATE TEMP TABLE roster (
 ) ON COMMIT DROP;
 
 INSERT INTO roster (n, name, grad, city, company, role_key, bio) VALUES
- (1,'Marcus Ellison',2026,'Westfield, OH','Ridgeline Capital','president','Chapter president. Mechanical engineering, intramural soccer captain.'),
- (2,'Devin Okafor',2026,'Columbus, OH','Northlight Analytics','treasurer','Treasurer. Finance major, runs the chapter budget and the dues ledger.'),
- (3,'Ryan Castellano',2027,'Pittsburgh, PA','—','vice_president','VP of member development.'),
- (4,'Aaron Whitfield',2027,'Cleveland, OH','—','secretary','Secretary. Keeps the minutes, hates that he likes spreadsheets.'),
- (5,'Julian Reyes',2026,'Chicago, IL','Brightpath','member',NULL),
- (6,'Cole Bennett',2027,'Ann Arbor, MI','—','member',NULL),
- (7,'Nate Sorensen',2028,'Madison, WI','—','member',NULL),
- (8,'Elias Brandt',2027,'Westfield, OH','—','member',NULL),
- (9,'Trevor Nakamura',2026,'Seattle, WA','Cascade Robotics','member',NULL),
- (10,'Owen Delacroix',2028,'New Orleans, LA','—','member',NULL),
- (11,'Sam Abernathy',2027,'Indianapolis, IN','—','member',NULL),
- (12,'Miles Guerrero',2028,'Austin, TX','—','member',NULL),
- (13,'Isaac Lindqvist',2026,'Minneapolis, MN','Halden Group','member',NULL),
- (14,'Dominic Farrell',2027,'Buffalo, NY','—','member',NULL),
- (15,'Andre Boateng',2028,'Toronto, ON','—','member',NULL),
- (16,'Grant Mackenzie',2027,'Denver, CO','—','member',NULL),
- (17,'Theo Vasquez',2028,'Phoenix, AZ','—','member',NULL),
- (18,'Wyatt Kohler',2026,'Cincinnati, OH','Vantage Health','member',NULL),
- (19,'Simon Adeyemi',2029,'Atlanta, GA','—','new_member',NULL),
- (20,'Jonah Pritchard',2029,'Louisville, KY','—','new_member',NULL),
- (21,'Rafael Moreno',2029,'San Diego, CA','—','new_member',NULL),
- (22,'Bennett Chao',2029,'Boston, MA','—','new_member',NULL),
- (23,'Luca Ferretti',2029,'Newark, NJ','—','new_member',NULL),
- (24,'Charles Whitmore III',2019,'New York, NY','Whitmore & Pace','alumni','Alumni advisor, house corporation board.'),
- (25,'Peter Osei',2018,'Washington, DC','Federal Reserve','alumni',NULL),
- (26,'Daniel Kirkpatrick',2021,'Charlotte, NC','Anchor Logistics','alumni',NULL);
+ (1,'Marcus Ellison',2026,'Westfield, OH','Ridgeline Capital','PRESIDENT','Chapter president. Mechanical engineering, intramural soccer captain.'),
+ (2,'Devin Okafor',2026,'Columbus, OH','Northlight Analytics','TREASURER','Treasurer. Finance major, runs the chapter budget and the dues ledger.'),
+ (3,'Ryan Castellano',2027,'Pittsburgh, PA','—','VICE_PRESIDENT','VP of member development.'),
+ (4,'Aaron Whitfield',2027,'Cleveland, OH','—','SECRETARY','Secretary. Keeps the minutes, hates that he likes spreadsheets.'),
+ (5,'Julian Reyes',2026,'Chicago, IL','Brightpath','MEMBER',NULL),
+ (6,'Cole Bennett',2027,'Ann Arbor, MI','—','MEMBER',NULL),
+ (7,'Nate Sorensen',2028,'Madison, WI','—','MEMBER',NULL),
+ (8,'Elias Brandt',2027,'Westfield, OH','—','MEMBER',NULL),
+ (9,'Trevor Nakamura',2026,'Seattle, WA','Cascade Robotics','MEMBER',NULL),
+ (10,'Owen Delacroix',2028,'New Orleans, LA','—','MEMBER',NULL),
+ (11,'Sam Abernathy',2027,'Indianapolis, IN','—','MEMBER',NULL),
+ (12,'Miles Guerrero',2028,'Austin, TX','—','MEMBER',NULL),
+ (13,'Isaac Lindqvist',2026,'Minneapolis, MN','Halden Group','MEMBER',NULL),
+ (14,'Dominic Farrell',2027,'Buffalo, NY','—','MEMBER',NULL),
+ (15,'Andre Boateng',2028,'Toronto, ON','—','MEMBER',NULL),
+ (16,'Grant Mackenzie',2027,'Denver, CO','—','MEMBER',NULL),
+ (17,'Theo Vasquez',2028,'Phoenix, AZ','—','MEMBER',NULL),
+ (18,'Wyatt Kohler',2026,'Cincinnati, OH','Vantage Health','MEMBER',NULL),
+ (19,'Simon Adeyemi',2029,'Atlanta, GA','—','NEW_MEMBER',NULL),
+ (20,'Jonah Pritchard',2029,'Louisville, KY','—','NEW_MEMBER',NULL),
+ (21,'Rafael Moreno',2029,'San Diego, CA','—','NEW_MEMBER',NULL),
+ (22,'Bennett Chao',2029,'Boston, MA','—','NEW_MEMBER',NULL),
+ (23,'Luca Ferretti',2029,'Newark, NJ','—','NEW_MEMBER',NULL),
+ (24,'Charles Whitmore III',2019,'New York, NY','Whitmore & Pace','ALUMNI','Alumni advisor, house corporation board.'),
+ (25,'Peter Osei',2018,'Washington, DC','Federal Reserve','ALUMNI',NULL),
+ (26,'Daniel Kirkpatrick',2021,'Charlotte, NC','Anchor Logistics','ALUMNI',NULL);
 
 UPDATE roster SET
   uid   = ('c0ffee00-0000-4000-8000-1000' || lpad(n::text, 8, '0'))::uuid,
@@ -194,6 +200,11 @@ SELECT :cid, t.title, t.descr,
        CASE WHEN t.status = 'COMPLETED' THEN now() - interval '2 days' ELSE NULL END,
        now() - interval '11 days'
 FROM (VALUES
+ -- Roster #1 is the demo login, and the mobile board (s08) shows only the
+ -- viewer's own tasks. Without these two it is the empty state in every
+ -- capture: one due this week, one later, so both sections draw.
+ ('Circulate the chapter meeting agenda','Send the draft to exec, then pin it in #announcements.',1,1,'TODO',5),
+ ('Sign off on the spring recruitment calendar','Review the rush chair draft before it goes to the Office of Greek Life.',1,9,'IN_PROGRESS',15),
  ('Book the banquet hall deposit','Confirm the Westfield Hotel contract and wire the 25% deposit.',2,3,'IN_PROGRESS',15),
  ('Submit risk management form','Fall semester social event registration, due to the Office of Greek Life.',3,1,'TODO',10),
  ('Order philanthropy 5K shirts','260 shirts, sizes S–XXL. Vendor quote already approved.',5,6,'IN_PROGRESS',15),

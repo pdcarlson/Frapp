@@ -9,7 +9,7 @@ import { FrappThemeProvider } from "@/lib/theme";
  * The `(auth)` columns must scroll.
  *
  * Sign-in was a centred `View` with no scroll container. On a 375x667 screen
- * (iPhone SE, and an iPhone-only app on an iPad) its column is ~750pt tall, and
+ * (iPhone SE, and an iPhone-only app on an iPad) its column is ~880pt tall, and
  * `justifyContent: "center"` overflows both ends rather than clamping — so the
  * "Sign in" button sat below the bottom edge with no way to reach it, on the
  * first screen App Review opens. Measured on Expo web before the fix: the

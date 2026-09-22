@@ -23,10 +23,11 @@
  * Here there is none: `isAskAvailable()` is false unless a build explicitly
  * sets `EXPO_PUBLIC_ASK_ENABLED`, nothing in this repo sets it, and with it
  * unset the ✦ pill is not drawn and the sheet renders nothing, so nothing calls
- * into this file. (Whether a store binary has it unset is an EAS-environment
- * question, not a repo one — `docs/internal/environment/ENV_REFERENCE.md`
- * § apps/mobile (Expo — EAS) says how to settle it.) So no fabricated answer
- * reaches a member, and the rule is satisfied rather than bent.
+ * into this file. A value set in an EAS environment never reaches the repo, so
+ * `app.config.js` refuses an EAS `production` build that has the flag on
+ * (`assertProductionAskDisabled`): a store binary cannot carry this corpus. So
+ * no fabricated answer reaches a member, and the rule is satisfied rather than
+ * bent.
  *
  * What the mock buys is that the *screen* is real — the layout, the citation
  * chips, the refusal path and the in-flight state are all built and reviewable

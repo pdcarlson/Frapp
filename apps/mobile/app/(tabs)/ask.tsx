@@ -19,12 +19,12 @@ import { isAskAvailable } from "@/lib/ask/flag";
  * ## Why the file still exists
  *
  * `app/(tabs)/_layout.tsx` is frozen under #937's hotspot protocol and
- * registers `<Tabs.Screen name="ask" href={null} />`. expo-router throws at
- * runtime for a registration with no backing file — the case
- * `lib/routes.spec.ts` guards with "backs every registration with a real route
- * file" — so deleting this would need the frozen layout reopened. It also keeps
- * a stale `frapp://ask` deep link landing somewhere real rather than on
- * `+not-found`.
+ * registers `<Tabs.Screen name="ask" options={{ title: "Ask", href: null }} />`.
+ * expo-router throws at runtime for a registration with no backing file — the
+ * case `lib/routes.spec.ts` guards with "backs every registration with a real
+ * route file" — so deleting this would need the frozen layout reopened. It
+ * also keeps a stale `frapp://ask` deep link landing somewhere real rather than
+ * on `+not-found`.
  *
  * ## A build without Ask redirects to Chat home
  *
