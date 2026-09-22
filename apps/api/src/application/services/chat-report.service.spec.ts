@@ -82,12 +82,17 @@ describe('ChatReportService', () => {
       findById: jest.fn().mockResolvedValue(baseReport),
       findByChapterAndStatus: jest.fn().mockResolvedValue([baseReport]),
       resolve: jest.fn().mockResolvedValue(baseReport),
+      resolveOpenForMessage: jest
+        .fn()
+        .mockResolvedValue([{ ...baseReport, status: 'actioned' }]),
     };
     channelAccess = {
       assertMessageAccess: jest.fn().mockResolvedValue(baseMessage),
     };
     chatService = {
-      deleteReportedMessage: jest.fn().mockResolvedValue(undefined),
+      deleteReportedMessage: jest
+        .fn()
+        .mockResolvedValue({ alreadyDeleted: false }),
     };
     // Nobody to notify by default, so the filing cases do not depend on it; the
     // notification block seeds the roster.
@@ -143,6 +148,26 @@ describe('ChatReportService', () => {
         }),
       ).rejects.toThrow(ForbiddenException);
       expect(reportRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a message that is already deleted, before writing or notifying', async () => {
+      // Its content is "[message deleted]" for everyone, so an officer would be
+      // paged about a report with nothing left to act on.
+      channelAccess.assertMessageAccess.mockResolvedValue({
+        ...baseMessage,
+        content: '[message deleted]',
+        is_deleted: true,
+      } satisfies ChatMessage);
+      rbac.findUserIdsWithPermissions.mockResolvedValue(['user-president']);
+
+      await expect(
+        service.fileReport(CHAPTER, REPORTER, {
+          message_id: MESSAGE_ID,
+          reason: 'harassment',
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(reportRepo.create).not.toHaveBeenCalled();
+      expect(notificationService.notifyUser).not.toHaveBeenCalled();
     });
 
     it('files as the caller, in the caller chapter', async () => {
@@ -294,6 +319,27 @@ describe('ChatReportService', () => {
       expect(notifiedUserIds()).toEqual([PRESIDENT]);
     });
 
+    it('notifies nobody, and says so in the log, when the reported sender is the only queue holder', async () => {
+      // The report is kept (it stays open for whoever next holds the queue
+      // permissions); what must not happen is the sender being paged, or the
+      // gap passing without a trace.
+      rbac.findUserIdsWithPermissions.mockResolvedValue([ABUSER]);
+      const warn = jest
+        .spyOn(
+          (service as unknown as { logger: { warn: jest.Mock } }).logger,
+          'warn',
+        )
+        .mockImplementation(() => undefined);
+
+      await expect(file()).resolves.toBe(baseReport);
+
+      expect(notificationService.notifyUser).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(
+        'A chat report was filed with nobody able to review it',
+        { reportId: baseReport.id, chapterId: CHAPTER },
+      );
+    });
+
     it('carries no message text, reporter, or reported member', async () => {
       rbac.findUserIdsWithPermissions.mockResolvedValue([PRESIDENT]);
       reportRepo.create.mockResolvedValue({
@@ -360,11 +406,17 @@ describe('ChatReportService', () => {
   // it names. The authorization itself runs end-to-end — over a real
   // ChannelAccessService and a DM the officer is not in — in
   // chat.service.spec.ts ("deleteReportedMessage"); these cases pin what this
-  // service decides before it gets there.
+  // service decides before and after it.
   describe('removeReportedMessage', () => {
-    it('reads the report in the caller chapter, removes its message, then marks it actioned', async () => {
-      const actioned = { ...baseReport, status: 'actioned' as const };
-      reportRepo.resolve.mockResolvedValue(actioned);
+    const actioned = {
+      ...baseReport,
+      status: 'actioned' as const,
+      resolved_by: OFFICER,
+      resolved_at: '2026-03-02T00:00:00.000Z',
+    };
+
+    it('reads the report as the caller may see it, removes its message, then closes it', async () => {
+      reportRepo.resolveOpenForMessage.mockResolvedValue([actioned]);
 
       const result = await service.removeReportedMessage(
         'report-1',
@@ -372,7 +424,12 @@ describe('ChatReportService', () => {
         OFFICER,
       );
 
-      expect(reportRepo.findById).toHaveBeenCalledWith('report-1', CHAPTER);
+      // Chapter-scoped, and excluding reports about the caller.
+      expect(reportRepo.findById).toHaveBeenCalledWith(
+        'report-1',
+        CHAPTER,
+        OFFICER,
+      );
       expect(chatService.deleteReportedMessage).toHaveBeenCalledTimes(1);
       const [grant, chapterId, officer] =
         chatService.deleteReportedMessage.mock.calls[0];
@@ -386,31 +443,106 @@ describe('ChatReportService', () => {
       });
       expect(chapterId).toBe(CHAPTER);
       expect(officer).toBe(OFFICER);
-      expect(reportRepo.resolve).toHaveBeenCalledWith(
-        'report-1',
+      expect(reportRepo.resolveOpenForMessage).toHaveBeenCalledWith(
         CHAPTER,
+        MESSAGE_ID,
         'actioned',
         OFFICER,
         expect.any(String),
       );
-      expect(result).toBe(actioned);
+      expect(result).toEqual({ ...actioned, message_already_deleted: false });
       // Removal before resolution, so a failed removal never leaves an
       // `actioned` report over a message that is still there.
       expect(
         chatService.deleteReportedMessage.mock.invocationCallOrder[0],
-      ).toBeLessThan(reportRepo.resolve.mock.invocationCallOrder[0]);
+      ).toBeLessThan(
+        reportRepo.resolveOpenForMessage.mock.invocationCallOrder[0],
+      );
     });
 
-    it('404s a report from another chapter without touching any message', async () => {
-      // The repository read is chapter-scoped, so another chapter's report id
-      // resolves to null here exactly as a nonexistent one does.
+    it('closes every open report on the message, not only the one clicked', async () => {
+      // Two members reported the same message. Once it is gone both reports
+      // have been acted on; leaving the sibling open would keep a report in
+      // the queue over a message that no longer exists.
+      const sibling = { ...actioned, id: 'report-2' };
+      reportRepo.resolveOpenForMessage.mockResolvedValue([sibling, actioned]);
+
+      const result = await service.removeReportedMessage(
+        'report-1',
+        CHAPTER,
+        OFFICER,
+      );
+
+      expect(reportRepo.resolveOpenForMessage).toHaveBeenCalledTimes(1);
+      // One statement closes the set; nothing resolves the named report on its
+      // own, where a sibling could be missed.
+      expect(reportRepo.resolve).not.toHaveBeenCalled();
+      expect(result.id).toBe('report-1');
+    });
+
+    it('still closes the reports when the message was already deleted, and says so', async () => {
+      // Deleted by its sender, by an ordinary officer delete, by a sibling's
+      // removal, or by an earlier attempt that failed after the delete landed.
+      chatService.deleteReportedMessage.mockResolvedValue({
+        alreadyDeleted: true,
+      });
+      reportRepo.resolveOpenForMessage.mockResolvedValue([actioned]);
+
+      const result = await service.removeReportedMessage(
+        'report-1',
+        CHAPTER,
+        OFFICER,
+      );
+
+      expect(result).toEqual({ ...actioned, message_already_deleted: true });
+      expect(reportRepo.resolveOpenForMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it("succeeds when another officer's removal closed this report first", async () => {
+      // Two officers on sibling reports at once: the first sweep closed both,
+      // so the second finds the message gone and nothing left open. The report
+      // is `actioned`, which is what was asked for.
+      chatService.deleteReportedMessage.mockResolvedValue({
+        alreadyDeleted: true,
+      });
+      reportRepo.resolveOpenForMessage.mockResolvedValue([]);
+      const byOther = { ...actioned, resolved_by: 'user-other-officer' };
+      reportRepo.findById
+        .mockResolvedValueOnce(baseReport)
+        .mockResolvedValueOnce(byOther);
+
+      const result = await service.removeReportedMessage(
+        'report-1',
+        CHAPTER,
+        OFFICER,
+      );
+
+      expect(result).toEqual({ ...byOther, message_already_deleted: true });
+    });
+
+    it('409s when the report was dismissed while the message was being removed', async () => {
+      reportRepo.resolveOpenForMessage.mockResolvedValue([]);
+      reportRepo.findById
+        .mockResolvedValueOnce(baseReport)
+        .mockResolvedValueOnce({ ...baseReport, status: 'dismissed' });
+
+      await expect(
+        service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("404s a report it cannot see — another chapter's, or one about the caller — without touching any message", async () => {
+      // The repository read is chapter-scoped and leaves out reports whose
+      // reported sender is the caller, so both resolve to null here exactly as
+      // a nonexistent one does (the predicates are proven in
+      // supabase-chat-message-report.repository.spec.ts).
       reportRepo.findById.mockResolvedValue(null);
 
       await expect(
         service.removeReportedMessage('report-elsewhere', CHAPTER, OFFICER),
       ).rejects.toThrow(NotFoundException);
       expect(chatService.deleteReportedMessage).not.toHaveBeenCalled();
-      expect(reportRepo.resolve).not.toHaveBeenCalled();
+      expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
     });
 
     it.each(['reviewed', 'actioned', 'dismissed'] as const)(
@@ -422,11 +554,14 @@ describe('ChatReportService', () => {
           service.removeReportedMessage('report-1', CHAPTER, OFFICER),
         ).rejects.toThrow(ConflictException);
         expect(chatService.deleteReportedMessage).not.toHaveBeenCalled();
-        expect(reportRepo.resolve).not.toHaveBeenCalled();
+        expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
       },
     );
 
-    it('refuses when the reported message was hard-deleted (message_id went NULL)', async () => {
+    it('409s when the reported message was hard-deleted (message_id went NULL), closing nothing', async () => {
+      // Not the idempotent success a soft-deleted message gets: with no
+      // message_id the sibling reports cannot be found, so closing this one
+      // alone would leave them open. The officer closes it explicitly.
       reportRepo.findById.mockResolvedValue({
         ...baseReport,
         message_id: null,
@@ -436,59 +571,76 @@ describe('ChatReportService', () => {
         service.removeReportedMessage('report-1', CHAPTER, OFFICER),
       ).rejects.toThrow(ConflictException);
       expect(chatService.deleteReportedMessage).not.toHaveBeenCalled();
+      expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
     });
 
-    it('leaves the report open when the removal is refused', async () => {
+    it('leaves the reports open when the removal is refused', async () => {
       chatService.deleteReportedMessage.mockRejectedValue(
-        new ConflictException('The reported message is already deleted'),
+        new NotFoundException('Message not found'),
       );
 
       await expect(
         service.removeReportedMessage('report-1', CHAPTER, OFFICER),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toThrow(NotFoundException);
+      expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
       expect(reportRepo.resolve).not.toHaveBeenCalled();
     });
   });
 
   describe('listReports', () => {
-    it('defaults to the open queue for the caller chapter', async () => {
-      await service.listReports(CHAPTER);
+    it('defaults to the open queue for the caller chapter, as the caller may see it', async () => {
+      await service.listReports(CHAPTER, OFFICER);
 
       expect(reportRepo.findByChapterAndStatus).toHaveBeenCalledWith(
         CHAPTER,
         'open',
+        OFFICER,
       );
     });
 
-    it('reads the requested status, still scoped to the caller chapter', async () => {
-      await service.listReports(CHAPTER, 'dismissed');
+    it('reads the requested status, still scoped to the caller chapter and reviewer', async () => {
+      await service.listReports(CHAPTER, OFFICER, 'dismissed');
 
       expect(reportRepo.findByChapterAndStatus).toHaveBeenCalledWith(
         CHAPTER,
         'dismissed',
+        OFFICER,
       );
     });
   });
 
   describe('resolveReport', () => {
-    it('passes the caller chapter and stamps the officer', async () => {
-      await service.resolveReport('report-1', CHAPTER, 'actioned', OFFICER);
+    it('reads the report as the caller may see it, then resolves it stamped with the officer', async () => {
+      const dismissed = { ...baseReport, status: 'dismissed' as const };
+      reportRepo.resolve.mockResolvedValue(dismissed);
 
+      const result = await service.resolveReport(
+        'report-1',
+        CHAPTER,
+        'dismissed',
+        OFFICER,
+      );
+
+      expect(reportRepo.findById).toHaveBeenCalledWith(
+        'report-1',
+        CHAPTER,
+        OFFICER,
+      );
       expect(reportRepo.resolve).toHaveBeenCalledWith(
         'report-1',
         CHAPTER,
-        'actioned',
+        'dismissed',
         OFFICER,
         expect.any(String),
       );
+      expect(result).toBe(dismissed);
     });
 
-    it('404s a report that does not resolve inside the caller chapter', async () => {
+    it("404s a report it cannot see — another chapter's, or one about the caller", async () => {
       // A `channels:manage` holder is authorized to moderate *their* chapter,
-      // and a report id is a bare UUID. The repository answers null when the
-      // chapter predicate does not match; the same 404 covers "no such report",
-      // so the endpoint does not confirm an id exists somewhere else.
-      reportRepo.resolve.mockResolvedValue(null);
+      // and a report id is a bare UUID. The same 404 covers "no such report"
+      // and "a report about you", so the endpoint confirms nothing.
+      reportRepo.findById.mockResolvedValue(null);
 
       await expect(
         service.resolveReport(
@@ -498,6 +650,31 @@ describe('ChatReportService', () => {
           OFFICER,
         ),
       ).rejects.toThrow(NotFoundException);
+      expect(reportRepo.resolve).not.toHaveBeenCalled();
+    });
+
+    it.each(['reviewed', 'actioned', 'dismissed'] as const)(
+      '409s a report already %s, and writes nothing',
+      async (status) => {
+        // A stale Mark reviewed must not overwrite an `actioned` report: the
+        // record would then say a removed message was merely reviewed.
+        reportRepo.findById.mockResolvedValue({ ...baseReport, status });
+
+        await expect(
+          service.resolveReport('report-1', CHAPTER, 'reviewed', OFFICER),
+        ).rejects.toThrow(ConflictException);
+        expect(reportRepo.resolve).not.toHaveBeenCalled();
+      },
+    );
+
+    it('409s when the report is resolved between the read and the write', async () => {
+      // The write is conditional on `status = 'open'`; a null from it after an
+      // open read means someone else got there first.
+      reportRepo.resolve.mockResolvedValue(null);
+
+      await expect(
+        service.resolveReport('report-1', CHAPTER, 'dismissed', OFFICER),
+      ).rejects.toThrow(ConflictException);
     });
   });
 });

@@ -927,7 +927,13 @@ export function validateCardPollVote(input: {
 
 // Client-side RBAC gates, shared by apps/web and apps/mobile. Moved out of
 // `apps/web/lib/auth/can.ts` with #994 so the wildcard rule has one definition.
-export { can, canAll, canAny, WILDCARD_PERMISSION } from "./permissions";
+export {
+  can,
+  canAll,
+  canAny,
+  CHAT_REPORT_QUEUE_PERMISSIONS,
+  WILDCARD_PERMISSION,
+} from "./permissions";
 
 // Client-side subscription write gate. Moved out of `apps/web/lib/subscription.ts`
 // so it sits next to `can` and `isModuleEnabled` as the third shared client gate.

@@ -5,6 +5,7 @@ import {
   CHAPTER_B,
   USER_SHARED,
   USER_A,
+  USER_B,
   createTenantHarness,
   inA,
   inB,
@@ -24,16 +25,34 @@ import {
  * *everything* except `id` and `chapter_id` — same reporter, same message, same
  * timestamps — so no predicate other than the tenant one can narrow the result.
  * Both statuses are seeded so the queue's status filter has something real to
- * exclude.
+ * exclude, and so is everything the officer paths now distinguish: a second
+ * open report on the same message (the removal sweep), a resolved one on it
+ * too (which the sweep must not touch), a report about `USER_SHARED` (left out
+ * for that reviewer), and one on an imported message with no Signet sender
+ * (never left out — `NULL <> x` is not true, which is the trap a bare `.neq()`
+ * falls into).
+ *
+ * `USER_B` is the reviewing officer wherever a test needs one who is not the
+ * reported sender of anything seeded.
  */
 
 const MESSAGE_ONE = '0c000000-0000-4000-8000-000000000201';
 const MESSAGE_TWO = '0c000000-0000-4000-8000-000000000202';
+const MESSAGE_THREE = '0c000000-0000-4000-8000-000000000205';
+const MESSAGE_FOUR = '0c000000-0000-4000-8000-000000000206';
 
 const REPORT_A_OPEN = '0a000000-0000-4000-8000-000000000210';
 const REPORT_B_OPEN = '0b000000-0000-4000-8000-000000000210';
 const REPORT_A_REVIEWED = '0a000000-0000-4000-8000-000000000211';
 const REPORT_B_REVIEWED = '0b000000-0000-4000-8000-000000000211';
+const REPORT_A_SIBLING = '0a000000-0000-4000-8000-000000000212';
+const REPORT_B_SIBLING = '0b000000-0000-4000-8000-000000000212';
+const REPORT_A_ABOUT_SHARED = '0a000000-0000-4000-8000-000000000213';
+const REPORT_B_ABOUT_SHARED = '0b000000-0000-4000-8000-000000000213';
+const REPORT_A_IMPORTED = '0a000000-0000-4000-8000-000000000214';
+const REPORT_B_IMPORTED = '0b000000-0000-4000-8000-000000000214';
+const REPORT_A_DISMISSED_SIBLING = '0a000000-0000-4000-8000-000000000215';
+const REPORT_B_DISMISSED_SIBLING = '0b000000-0000-4000-8000-000000000215';
 
 const openRow = () => ({
   reporter_user_id: USER_SHARED,
@@ -63,12 +82,56 @@ const reviewedRow = () => ({
   resolved_by: USER_SHARED,
 });
 
+/** A second member's open report on MESSAGE_ONE — the removal sweep's sibling. */
+const siblingRow = () => ({
+  ...openRow(),
+  reporter_user_id: USER_B,
+  created_at: '2026-02-02T01:00:00.000Z',
+});
+
+/** An open report whose reported sender is USER_SHARED. */
+const aboutSharedRow = () => ({
+  ...openRow(),
+  reporter_user_id: USER_A,
+  message_id: MESSAGE_THREE,
+  reported_sender_id: USER_SHARED,
+  created_at: '2026-02-02T02:00:00.000Z',
+});
+
+/** An open report on an imported archive message: no Signet sender at all. */
+const importedRow = () => ({
+  ...openRow(),
+  reporter_user_id: USER_A,
+  message_id: MESSAGE_FOUR,
+  reported_sender_id: null,
+  reported_author_name: 'imported-handle',
+  created_at: '2026-02-02T03:00:00.000Z',
+});
+
+/** An already-dismissed report on MESSAGE_ONE, which the sweep must leave alone. */
+const dismissedSiblingRow = () => ({
+  ...openRow(),
+  reporter_user_id: USER_A,
+  status: 'dismissed',
+  created_at: '2026-01-31T00:00:00.000Z',
+  resolved_at: '2026-01-31T06:00:00.000Z',
+  resolved_by: USER_SHARED,
+});
+
 const seed = () => ({
   chat_message_reports: [
     inA({ id: REPORT_A_OPEN, ...openRow() }),
     inA({ id: REPORT_A_REVIEWED, ...reviewedRow() }),
+    inA({ id: REPORT_A_SIBLING, ...siblingRow() }),
+    inA({ id: REPORT_A_ABOUT_SHARED, ...aboutSharedRow() }),
+    inA({ id: REPORT_A_IMPORTED, ...importedRow() }),
+    inA({ id: REPORT_A_DISMISSED_SIBLING, ...dismissedSiblingRow() }),
     inB({ id: REPORT_B_OPEN, ...openRow() }),
     inB({ id: REPORT_B_REVIEWED, ...reviewedRow() }),
+    inB({ id: REPORT_B_SIBLING, ...siblingRow() }),
+    inB({ id: REPORT_B_ABOUT_SHARED, ...aboutSharedRow() }),
+    inB({ id: REPORT_B_IMPORTED, ...importedRow() }),
+    inB({ id: REPORT_B_DISMISSED_SIBLING, ...dismissedSiblingRow() }),
   ],
 });
 
@@ -83,16 +146,41 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
 
   it('findByChapterAndStatus does not return the other chapter queue', async () => {
     const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.findByChapterAndStatus(CHAPTER_A, 'open'),
+      repo.findByChapterAndStatus(CHAPTER_A, 'open', USER_B),
     );
 
-    expect(rows.map((r) => r.id)).toEqual([REPORT_A_OPEN]);
+    expect(rows.map((r) => r.id)).toEqual([
+      REPORT_A_IMPORTED,
+      REPORT_A_ABOUT_SHARED,
+      REPORT_A_SIBLING,
+      REPORT_A_OPEN,
+    ]);
   });
 
   it('findByChapterAndStatus filters to the requested status', async () => {
-    const rows = await repo.findByChapterAndStatus(CHAPTER_A, 'reviewed');
+    const rows = await repo.findByChapterAndStatus(
+      CHAPTER_A,
+      'reviewed',
+      USER_B,
+    );
 
     expect(rows.map((r) => r.id)).toEqual([REPORT_A_REVIEWED]);
+  });
+
+  it('findByChapterAndStatus leaves out reports about the reviewer, and keeps the imported one', async () => {
+    // "The reporter is never disclosed to the reported member": an officer who
+    // is the reported sender must not read the report, its note, or — for a
+    // DM — deduce the reporter from it. An imported message has no Signet
+    // sender, and a bare `.neq()` would drop it too (NULL <> x is not true).
+    const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findByChapterAndStatus(CHAPTER_A, 'open', USER_SHARED),
+    );
+
+    expect(rows.map((r) => r.id)).toEqual([
+      REPORT_A_IMPORTED,
+      REPORT_A_SIBLING,
+      REPORT_A_OPEN,
+    ]);
   });
 
   it('never returns reporter_user_id to the caller', async () => {
@@ -100,7 +188,7 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
     // app serializes to the declared DTO, so the repository's strip is the only
     // thing keeping the reporter off the wire — and the officer queue is read by
     // `channels:manage` holders, who can themselves be the reported member.
-    const rows = await repo.findByChapterAndStatus(CHAPTER_A, 'open');
+    const rows = await repo.findByChapterAndStatus(CHAPTER_A, 'open', USER_B);
 
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
@@ -130,7 +218,7 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
         REPORT_A_OPEN,
         CHAPTER_A,
         'actioned',
-        USER_A,
+        USER_B,
         '2026-02-03T00:00:00.000Z',
       ),
     );
@@ -139,22 +227,117 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
       id: REPORT_A_OPEN,
       status: 'actioned',
       resolved_at: '2026-02-03T00:00:00.000Z',
-      resolved_by: USER_A,
+      resolved_by: USER_B,
     });
     expect(resolved).not.toHaveProperty('reporter_user_id');
+  });
+
+  it('resolve will not overwrite a report that is no longer open', async () => {
+    // The compare-and-set. A stale client's Dismiss must not rewrite a report
+    // another officer already closed.
+    const result = await repo.resolve(
+      REPORT_A_REVIEWED,
+      CHAPTER_A,
+      'dismissed',
+      USER_B,
+      '2026-02-03T00:00:00.000Z',
+    );
+
+    expect(result).toBeNull();
+    expect(
+      harness
+        .rows('chat_message_reports')
+        .find((r) => r.id === REPORT_A_REVIEWED),
+    ).toMatchObject({
+      status: 'reviewed',
+      resolved_at: '2026-02-01T06:00:00.000Z',
+      resolved_by: USER_SHARED,
+    });
+  });
+
+  it('resolve will not let the reported member close a report about them', async () => {
+    const result = await repo.resolve(
+      REPORT_A_ABOUT_SHARED,
+      CHAPTER_A,
+      'dismissed',
+      USER_SHARED,
+      '2026-02-03T00:00:00.000Z',
+    );
+
+    expect(result).toBeNull();
+    expect(
+      harness
+        .rows('chat_message_reports')
+        .find((r) => r.id === REPORT_A_ABOUT_SHARED)?.status,
+    ).toBe('open');
+  });
+
+  it('resolveOpenForMessage closes every open report on the message in the chapter, and nothing else', async () => {
+    const closed = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.resolveOpenForMessage(
+        CHAPTER_A,
+        MESSAGE_ONE,
+        'actioned',
+        USER_B,
+        '2026-02-03T00:00:00.000Z',
+      ),
+    );
+
+    expect(closed.map((r) => r.id).sort()).toEqual(
+      [REPORT_A_OPEN, REPORT_A_SIBLING].sort(),
+    );
+    for (const row of closed) {
+      expect(row).toMatchObject({
+        status: 'actioned',
+        resolved_at: '2026-02-03T00:00:00.000Z',
+        resolved_by: USER_B,
+      });
+      expect(row).not.toHaveProperty('reporter_user_id');
+    }
+
+    const stored = harness.rows('chat_message_reports');
+    const byId = (id: string) => stored.find((r) => r.id === id);
+    // An already-dismissed report on the same message keeps its decision.
+    expect(byId(REPORT_A_DISMISSED_SIBLING)).toMatchObject({
+      status: 'dismissed',
+      resolved_by: USER_SHARED,
+    });
+    // Other messages, and the other chapter's twins, are untouched.
+    expect(byId(REPORT_A_ABOUT_SHARED)?.status).toBe('open');
+    expect(byId(REPORT_B_OPEN)?.status).toBe('open');
+    expect(byId(REPORT_B_SIBLING)?.status).toBe('open');
   });
 
   it('findById does not reach a report in another chapter', async () => {
     // The report-scoped removal (#2311) authorizes off this row, so a foreign
     // report resolving here would hand an officer another chapter's message.
-    const result = await repo.findById(REPORT_B_OPEN, CHAPTER_A);
+    const result = await repo.findById(REPORT_B_OPEN, CHAPTER_A, USER_B);
 
     expect(result).toBeNull();
   });
 
+  it('findById does not return a report about the reviewer', async () => {
+    const result = await repo.findById(
+      REPORT_A_ABOUT_SHARED,
+      CHAPTER_A,
+      USER_SHARED,
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('findById returns a report on an imported message, which names no Signet sender', async () => {
+    const found = await repo.findById(REPORT_A_IMPORTED, CHAPTER_A, USER_B);
+
+    expect(found).toMatchObject({
+      id: REPORT_A_IMPORTED,
+      reported_sender_id: null,
+    });
+  });
+
   it('findById returns the chapter report whatever its status, without the reporter', async () => {
     const found = await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.findById(REPORT_A_REVIEWED, CHAPTER_A),
+      repo.findById(REPORT_A_REVIEWED, CHAPTER_A, USER_B),
     );
 
     expect(found).toMatchObject({

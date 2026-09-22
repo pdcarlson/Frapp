@@ -4,6 +4,7 @@ import {
   REPORT_QUEUE_PERMISSIONS,
   type ChatReportService,
 } from '../../application/services/chat-report.service';
+import { CHAT_REPORT_QUEUE_PERMISSIONS } from '@repo/validation';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 
@@ -24,11 +25,15 @@ describe('ChatReportController', () => {
   let controller: ChatReportController;
   let reportService: {
     removeReportedMessage: jest.Mock;
+    listReports: jest.Mock;
+    resolveReport: jest.Mock;
   };
 
   beforeEach(() => {
     reportService = {
       removeReportedMessage: jest.fn().mockResolvedValue({ id: 'report-1' }),
+      listReports: jest.fn().mockResolvedValue([]),
+      resolveReport: jest.fn().mockResolvedValue({ id: 'report-1' }),
     };
     controller = new ChatReportController(
       reportService as unknown as ChatReportService,
@@ -80,18 +85,60 @@ describe('ChatReportController', () => {
     });
   });
 
-  it('addresses the new-report notification to the same union the queue route requires', () => {
-    // `REPORT_QUEUE_PERMISSIONS` restates the queue's class + handler
-    // requirement to pick who gets paged. If either decorator changes, this
-    // fails until the two are brought back together.
-    const queueUnion = [
-      ...(Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        ChatReportController,
-      ) as string[]),
-      ...handlerPermissions(controller.listReports),
-    ].sort();
+  describe('the officer reads and writes act as the caller', () => {
+    // The caller is what the repository excludes reports about: an officer who
+    // is the reported sender must not see, resolve or act on that report. A
+    // route that dropped `@CurrentUser` here would have no one to exclude.
+    it('GET / passes the caller to the queue read', async () => {
+      await controller.listReports('chapter-1', 'user-officer', {
+        status: 'dismissed',
+      });
 
-    expect([...REPORT_QUEUE_PERMISSIONS].sort()).toEqual(queueUnion);
+      expect(reportService.listReports).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-officer',
+        'dismissed',
+      );
+    });
+
+    it('PATCH :id passes the caller as the resolver', async () => {
+      await controller.resolveReport('report-1', 'chapter-1', 'user-officer', {
+        status: 'reviewed',
+      });
+
+      expect(reportService.resolveReport).toHaveBeenCalledWith(
+        'report-1',
+        'chapter-1',
+        'reviewed',
+        'user-officer',
+      );
+    });
+  });
+
+  it.each([
+    ['GET /', 'listReports'],
+    ['PATCH :id', 'resolveReport'],
+    ['POST :id/remove-message', 'removeReportedMessage'],
+  ] as const)(
+    '%s requires exactly the shared queue permissions, class floor included',
+    (_route, handler) => {
+      // `CHAT_REPORT_QUEUE_PERMISSIONS` (`@repo/validation`) is the one
+      // spelling of the union: the new-report notification addresses it and
+      // the web queue gates on it. If a decorator changes, this fails until
+      // the constant is brought back into line.
+      const union = [
+        ...(Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          ChatReportController,
+        ) as string[]),
+        ...handlerPermissions(controller[handler]),
+      ].sort();
+
+      expect([...CHAT_REPORT_QUEUE_PERMISSIONS].sort()).toEqual(union);
+    },
+  );
+
+  it('addresses the new-report notification to that same shared list', () => {
+    expect(REPORT_QUEUE_PERMISSIONS).toBe(CHAT_REPORT_QUEUE_PERMISSIONS);
   });
 });

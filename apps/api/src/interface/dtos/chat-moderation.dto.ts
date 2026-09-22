@@ -133,6 +133,23 @@ export class ChatReportDto {
   resolved_by: string | null;
 }
 
+/**
+ * What the report-scoped removal answers with: the report, now `actioned`, and
+ * whether its message was already gone.
+ *
+ * The route is idempotent on the message — one its sender, an ordinary delete,
+ * a sibling report's removal or an earlier half-finished attempt already
+ * removed still closes the report — so a bare report would leave the client
+ * claiming a removal this call did not make. The flag lets it say which.
+ */
+export class ChatReportRemovalDto extends ChatReportDto {
+  @ApiProperty({
+    description:
+      'True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way.',
+  })
+  message_already_deleted: boolean;
+}
+
 export class CreateChatBlockDto {
   @ApiProperty({
     format: 'uuid',

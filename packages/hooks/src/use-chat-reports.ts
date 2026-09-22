@@ -1,10 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { QueryClient } from "@tanstack/react-query";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
+import { bookmarkKeys } from "./use-chat";
 
 // ── The officer report queue (#2257, #2311) ─────────────────────────────────
 //
@@ -20,6 +21,12 @@ export type ChatReportReason = ChatReport["reason"];
 /** What `PATCH /v1/chat/reports/{id}` accepts — never `open`. */
 export type ChatReportResolution =
   components["schemas"]["ResolveChatReportDto"]["status"];
+/**
+ * What the removal answers with: the report, now `actioned`, and
+ * `message_already_deleted` — true when the message was already gone and this
+ * call removed nothing, which the UI must say rather than claim a removal.
+ */
+export type ChatReportRemoval = components["schemas"]["ChatReportRemovalDto"];
 
 /**
  * Chapter-scoped, like every moderation read: an unscoped `["chat-reports"]`
@@ -68,14 +75,58 @@ function invalidateReportLists(
 }
 
 /**
- * Close a report as `reviewed`, `actioned` or `dismissed`. Resolving never
- * touches the message — only {@link useRemoveReportedMessage} does that.
+ * Whether a cached query can hold a message's text, and so has to be refetched
+ * once a report-scoped removal has blanked that message.
+ *
+ * The removal answers with the report and never the message (a report about a
+ * DM must not open the DM), so there is no row to merge the way an ordinary
+ * delete merges one, and the report does not name its channel. Every read that
+ * can carry message content is therefore refetched, not only the removed
+ * message's own — they are all this chapter's, because the client's cache is
+ * cleared on a chapter switch:
+ *
+ * - **the chat timeline** — `@repo/chat-core`'s `chatMessagesKey(channelId)`,
+ *   `["chat", channelId, "messages"]`. `staleTime: Infinity` and kept current
+ *   only by the realtime echo of the channel a member has open, so a timeline
+ *   cached from earlier would show the removed text again on return. Spelled
+ *   here because this package does not depend on chat-core;
+ *   `apps/web/lib/chat/reported-message-reads.spec.ts` pins it to the real key.
+ * - **pin lists** and **a message's attachment list** (`usePinnedMessages`,
+ *   `useMessageAttachments`) — `["channels", channelId, "pins"]` and
+ *   `["channels", channelId, "messages", …]`.
+ * - **bookmarks** — each row carries its message ({@link bookmarkKeys}).
+ * - **search** — message hits carry a snippet (`useSearch`,
+ *   `["search", chapterId, …]`).
+ */
+export function readsMessageContent(
+  queryKey: QueryKey,
+  chapterId: string,
+): boolean {
+  const [root, second, third] = queryKey;
+  if (root === "chat" && third === "messages") return true;
+  if (root === "channels" && (third === "pins" || third === "messages")) {
+    return true;
+  }
+  if (root === bookmarkKeys.all[0] && second === chapterId) return true;
+  return root === "search" && second === chapterId;
+}
+
+/**
+ * Close an open report as `reviewed`, `actioned` or `dismissed`. Resolving
+ * never touches the message — only {@link useRemoveReportedMessage} does that.
+ * A report that is no longer open answers 409: resolution is one-way.
  */
 export function useResolveChatReport() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    // No retry (`docs/hooks/README.md`): this is a compare-and-set on
+    // `status = 'open'`, so if the first attempt lands and only its response
+    // is lost, the web client's default `retry: 2` is answered with a
+    // guaranteed 409 and the officer is told a resolution failed that
+    // actually happened. `onSettled` reconciles instead.
+    retry: false,
     mutationFn: async ({
       id,
       status,
@@ -95,30 +146,32 @@ export function useResolveChatReport() {
 }
 
 /**
- * Remove the message an **open** report names, and mark the report `actioned`
- * (#2311, option 1).
+ * Remove the message an **open** report names, and mark it — and every other
+ * open report on that message — `actioned` (#2311, option 1).
  *
  * Takes the report id and nothing else, matching the route: the report names
  * the message, so there is no message id here to point at a sibling. The API
  * returns the resolved report, never the message — a report about a DM does
- * not open the DM.
+ * not open the DM. Idempotent on the message: one that was already deleted
+ * still closes the report, with `message_already_deleted: true`.
  *
  * Pessimistic on purpose. The removal is a soft delete the officer cannot undo,
  * so the UI waits for the server rather than rendering a state it could not
  * roll back (`spec/ui/web-dashboard/README.md` § mutation optimism).
  *
- * No chat message cache is invalidated here because this package holds none:
- * the timeline's cache lives in `@repo/chat-core` and is kept current by the
- * realtime echo of the soft delete's UPDATE. The one message-shaped read this
- * package does cache is a channel's pin list, and a removed message that was
- * pinned would otherwise keep its old text there until the next refetch.
+ * On success every cached read that can still show the removed text is
+ * refetched ({@link readsMessageContent}); on any outcome the queue is.
  */
 export function useRemoveReportedMessage() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationFn: async (reportId: string) => {
+    // No retry (`docs/hooks/README.md`): a first attempt that lands and loses
+    // its response would be retried against a report that is now `actioned`,
+    // and the 409 that earns would be reported as a failed removal.
+    retry: false,
+    mutationFn: async (reportId: string): Promise<ChatReportRemoval> => {
       const { data, error } = await client.POST(
         "/v1/chat/reports/{id}/remove-message",
         { params: { path: { id: reportId } } },
@@ -127,11 +180,9 @@ export function useRemoveReportedMessage() {
       return data;
     },
     onSuccess: () => {
-      // `["channels", channelId, "pins"]` — `usePinnedMessages`. The report
-      // does not say which channel, so every cached pin list is refreshed.
+      if (!chapterId) return;
       void queryClient.invalidateQueries({
-        predicate: (query) =>
-          query.queryKey[0] === "channels" && query.queryKey[2] === "pins",
+        predicate: (query) => readsMessageContent(query.queryKey, chapterId),
       });
     },
     onSettled: () => invalidateReportLists(queryClient, chapterId),

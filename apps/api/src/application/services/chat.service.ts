@@ -5,7 +5,6 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
-  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import {
@@ -1030,22 +1029,28 @@ export class ChatService {
    * was read in. What this adds on top:
    *
    * - **No sender check.** The report, not authorship, is the authority.
-   * - **A message already deleted is a 409.** Its content is gone already, and
-   *   succeeding would record an officer action that removed nothing. The
-   *   officer resolves the report instead (`PATCH /v1/chat/reports/:id`).
+   * - **A message already soft-deleted is not an error**, and nothing is
+   *   written: `{ alreadyDeleted: true }`. The content is gone whoever removed
+   *   it — its sender, an officer's ordinary delete, a sibling report's
+   *   removal, or an earlier attempt of this same call that failed after the
+   *   delete landed — and the report still has to close. Refusing would strand
+   *   it open with nothing left to act on, and a retry of a half-finished
+   *   removal would never succeed. The caller learns which happened, so it can
+   *   say so honestly rather than claim a removal it did not make.
    *
    * `chapterId` is the caller's active chapter, taken separately from the
    * grant's own so the predicate compares two independently sourced values
    * rather than one against itself.
    *
-   * Returns nothing: the caller must not receive the row. The only thing the
-   * officer is entitled to from a DM is the snapshot the report already holds.
+   * Returns no part of the row: the caller must not receive it. The only thing
+   * the officer is entitled to from a DM is the snapshot the report already
+   * holds.
    */
   async deleteReportedMessage(
     grant: ReportedMessageGrant,
     chapterId: string,
     officerUserId: string,
-  ): Promise<void> {
+  ): Promise<{ alreadyDeleted: boolean }> {
     const message = await this.assertMessageAccess(
       grant.messageId,
       chapterId,
@@ -1054,11 +1059,10 @@ export class ChatService {
       grant,
     );
 
-    if (message.is_deleted) {
-      throw new ConflictException('The reported message is already deleted');
-    }
+    if (message.is_deleted) return { alreadyDeleted: true };
 
     await this.softDeleteMessage(message.id, chapterId);
+    return { alreadyDeleted: false };
   }
 
   /**

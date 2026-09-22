@@ -84,13 +84,15 @@ export class ReportedMessageGrant {
 
   /**
    * Mint the grant from a report the caller has just read **within their own
-   * chapter** (`IChatMessageReportRepository.findById(id, chapterId)`).
+   * chapter**, and not about themselves
+   * (`IChatMessageReportRepository.findById(id, chapterId, reviewerUserId)`).
    *
    * 409 rather than 404 for both refusals: the report exists and the caller may
    * see it (it is in their queue); what conflicts is its state. A resolved report
    * grants nothing — the capability is an *open* report — and a report whose
    * message was hard-deleted (`message_id` SET NULL, e.g. a channel delete) has
-   * nothing left to remove.
+   * nothing left to remove. (A message that is only soft-deleted still mints a
+   * grant: the removal is idempotent on it — `ChatReportService.removeReportedMessage`.)
    */
   static fromOpenReport(report: ChatMessageReportView): ReportedMessageGrant {
     if (report.status !== 'open') {

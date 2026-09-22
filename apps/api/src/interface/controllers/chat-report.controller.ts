@@ -31,6 +31,7 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   ChatReportDto,
+  ChatReportRemovalDto,
   CreateChatReportDto,
   ListChatReportsQueryDto,
   ResolveChatReportDto,
@@ -63,9 +64,26 @@ import {
  * `@RequirePermissions` is a pure AND merged across class and handler, so the
  * three officer routes below require `members:view` **and** `channels:manage` —
  * which is what is wanted: the queue is a chapter-data read as well as a
- * moderation surface. `REPORT_QUEUE_PERMISSIONS` (`chat-report.service.ts`)
- * restates that union to address the new-report notification, so change the
- * two together.
+ * moderation surface.
+ *
+ * **That union has one spelling in code**, `CHAT_REPORT_QUEUE_PERMISSIONS` in
+ * `@repo/validation`, and this controller's decorators are pinned equal to it
+ * (`chat-report.controller.spec.ts`). Two code sites read the constant rather
+ * than restating it: the new-report notification's recipients
+ * (`REPORT_QUEUE_PERMISSIONS`, `chat-report.service.ts`) and the web queue's
+ * `<Can allOf>` gate (`apps/web/components/chat-admin/chat-reports-card.tsx`).
+ * Three restate it in words and change by hand with it: the card's
+ * permission-denied copy (`chatReportCopy.deniedDescription`, whose spec checks
+ * it names every permission in the constant), `spec/ui/design-system/writing.md`
+ * §7's Chat Admin row, and the Status line and § Report of
+ * `spec/behavior/chat/README.md`.
+ *
+ * **No officer route serves or acts on a report about its caller.** The
+ * repository leaves out rows whose `reported_sender_id` is the caller on the
+ * queue read, and the resolve and remove routes answer 404 for them — the same
+ * 404 as another chapter's report — so a reported officer cannot read the
+ * reporter's note or learn the report exists (`spec/behavior/chat/README.md`
+ * § Report).
  */
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -101,11 +119,13 @@ export class ChatReportController {
   }
 
   /**
-   * The officer queue for the caller's own chapter, newest first.
+   * The officer queue for the caller's own chapter, newest first, leaving out
+   * the reports about the caller.
    *
    * No reporter identity is served here — the repository strips
-   * `reporter_user_id` on every exit, so an officer who is themselves the
-   * reported member still cannot learn who filed it.
+   * `reporter_user_id` on every exit — and an officer who is themselves the
+   * reported member does not see the report at all, because its note, or a DM's
+   * membership, can name the reporter without any id.
    */
   @Get()
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
@@ -113,19 +133,22 @@ export class ChatReportController {
   @ApiOkResponse({ type: ChatReportDto, isArray: true })
   async listReports(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Query() query: ListChatReportsQueryDto,
   ): Promise<ChatReportDto[]> {
-    return this.reportService.listReports(chapterId, query.status);
+    return this.reportService.listReports(chapterId, userId, query.status);
   }
 
   /**
-   * Resolve a report. The update is scoped to the caller's chapter inside the
-   * repository, so a `channels:manage` holder cannot close another chapter's
-   * report by UUID; a miss is a 404 either way.
+   * Resolve an open report. The update is scoped to the caller's chapter inside
+   * the repository, so a `channels:manage` holder cannot close another
+   * chapter's report by UUID; that, a missing report and a report about the
+   * caller are one 404. A report that is no longer open is a 409: resolution is
+   * one-way, so a stale client cannot overwrite what another officer decided.
    */
   @Patch(':id')
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
-  @ApiOperation({ summary: 'Resolve a chat message report' })
+  @ApiOperation({ summary: 'Resolve an open chat message report' })
   @ApiOkResponse({ type: ChatReportDto })
   async resolveReport(
     @Param('id', ParseUUIDPipe) id: string,
@@ -155,23 +178,26 @@ export class ChatReportController {
    * holders who can read a report can act on it. Inherits the class-level
    * `@SubscriptionExempt()` — removing reported harassment is member safety.
    *
-   * 404 for a report not in the caller's chapter; 409 when the report is no
-   * longer open or its message is already gone. Returns the resolved report,
-   * never the message.
+   * Every other open report on the same message closes with it. Idempotent on
+   * the message: one already soft-deleted still closes the reports, and the
+   * response says `message_already_deleted: true`. 404 for a report not in the
+   * caller's chapter or about the caller; 409 when the report is no longer open
+   * or its message was hard-deleted. Returns the resolved report, never the
+   * message.
    */
   @Post(':id/remove-message')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({
     summary:
-      'Remove the message an open report names and mark the report actioned',
+      'Remove the message an open report names and mark its open reports actioned',
   })
-  @ApiOkResponse({ type: ChatReportDto })
+  @ApiOkResponse({ type: ChatReportRemovalDto })
   async removeReportedMessage(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-  ): Promise<ChatReportDto> {
+  ): Promise<ChatReportRemovalDto> {
     return this.reportService.removeReportedMessage(id, chapterId, userId);
   }
 }

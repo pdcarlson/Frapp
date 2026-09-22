@@ -59,3 +59,30 @@ export function canAny(
   if (permissions.includes(WILDCARD_PERMISSION)) return true;
   return required.some((perm) => permissions.includes(perm));
 }
+
+/**
+ * What it takes to open the chat report queue (#2257, #2311): `members:view`
+ * **and** `channels:manage`, or the wildcard.
+ *
+ * **The one spelling of that union**, shared because three places have to agree
+ * on it and a copy in each is how they drift:
+ *
+ * - the API routes — `ChatReportController`'s class-level `members:view` plus
+ *   the handler-level `channels:manage` on the three officer routes, which
+ *   `PermissionsGuard` ANDs. `chat-report.controller.spec.ts` pins that the
+ *   decorators' union equals this list;
+ * - who the API pages about a new report (`REPORT_QUEUE_PERMISSIONS` in
+ *   `chat-report.service.ts` is this constant), so nobody is told about a queue
+ *   that answers them 403;
+ * - the web queue's `<Can allOf>` gate (`chat-reports-card.tsx`), so an officer
+ *   holding one half is shown why rather than a Retry that can only ever 403.
+ *
+ * The prose restatements — the card's permission-denied copy
+ * (`chat-report-copy.ts`, pinned against this list by its spec), `writing.md`
+ * §7's Chat Admin row, and `spec/behavior/chat/README.md` § Report — are words,
+ * and change with it by hand.
+ */
+export const CHAT_REPORT_QUEUE_PERMISSIONS = [
+  "members:view",
+  "channels:manage",
+] as const;

@@ -55,22 +55,35 @@ export interface IChatMessageReportRepository {
   create(input: CreateChatReportInput): Promise<CreateChatReportResult>;
 
   /**
-   * One report within a chapter, whatever its status. Returns `null` when the id
-   * does not resolve **inside `chapterId`** — the same tenancy rule as
-   * {@link resolve}, for the same reason: a report id is a bare UUID and the
-   * caller's `channels:manage` says nothing about which chapter it belongs to.
+   * One report within a chapter, whatever its status, **as `reviewerUserId`
+   * may see it**. Returns `null` when the id does not resolve inside
+   * `chapterId`, or when the report is about `reviewerUserId` themselves
+   * (`reported_sender_id` is the caller).
    *
-   * Exists for the report-scoped removal (#2311), where the row is the
-   * capability: the caller needs the report's *current* `status` and
-   * `message_id`, read fresh, before it may act on the message it names.
+   * - **Chapter.** A report id is a bare UUID and the caller's
+   *   `channels:manage` says nothing about which chapter it belongs to.
+   * - **Not about the reviewer.** An officer can be reported like anybody
+   *   else, and a report about them — its reporter's note, and for a DM the
+   *   reporter by elimination — is exactly what "the reporter is never
+   *   disclosed to the reported member" keeps from them. Both misses are the
+   *   same `null`, so the route's 404 does not confirm the report exists.
+   *
+   * Exists for the officer actions (#2311), where the row is the capability:
+   * the caller needs the report's *current* `status` and `message_id`, read
+   * fresh, before it may act on the message it names.
    */
   findById(
     id: string,
     chapterId: string,
+    reviewerUserId: string,
   ): Promise<ChatMessageReportView | null>;
 
   /**
-   * The officer queue for one chapter, newest first, filtered to one status.
+   * The officer queue for one chapter as `reviewerUserId` may see it, newest
+   * first, filtered to one status. Reports whose `reported_sender_id` is the
+   * reviewer are left out, for the reason {@link findById} gives; a report on
+   * an imported archive message (`reported_sender_id` NULL) names no Signet
+   * member and is always included.
    *
    * Status is required rather than optional so the read always matches
    * `idx_chat_message_reports_chapter_status` — `(chapter_id, status,
@@ -80,12 +93,18 @@ export interface IChatMessageReportRepository {
   findByChapterAndStatus(
     chapterId: string,
     status: ChatReportStatus,
+    reviewerUserId: string,
   ): Promise<ChatMessageReportView[]>;
 
   /**
-   * Resolve one report within a chapter. Returns `null` when the id does not
-   * resolve **inside `chapterId`**, so a caller holding `channels:manage` in
-   * their own chapter cannot reach another chapter's report by UUID.
+   * Resolve one **open** report within a chapter, as a compare-and-set.
+   *
+   * Returns `null` when no row matched: the id is not in `chapterId`, the
+   * report is about `resolvedBy`, or — the case the predicate exists for — it
+   * is no longer `open`. Without the status predicate a stale client could
+   * overwrite an `actioned` report with `dismissed`, rewriting what the
+   * moderation record says happened to the message. The caller tells the
+   * three apart with its own read ({@link findById}).
    */
   resolve(
     id: string,
@@ -94,6 +113,26 @@ export interface IChatMessageReportRepository {
     resolvedBy: string,
     resolvedAt: string,
   ): Promise<ChatMessageReportView | null>;
+
+  /**
+   * Resolve **every** open report on one message within a chapter, in one
+   * statement, and return the rows it changed.
+   *
+   * For the report-scoped removal (#2311): several members can report the same
+   * message, and once it is removed every one of those reports has been acted
+   * on. Resolving only the report the officer clicked would leave its siblings
+   * open over a message that is already gone. A single conditional `UPDATE`
+   * rather than a read-then-loop, so no sibling filed or resolved in between
+   * can be missed or overwritten. Reports about `resolvedBy` are excluded like
+   * everywhere else, though every report on one message shares its sender.
+   */
+  resolveOpenForMessage(
+    chapterId: string,
+    messageId: string,
+    status: ChatReportResolutionStatus,
+    resolvedBy: string,
+    resolvedAt: string,
+  ): Promise<ChatMessageReportView[]>;
 }
 
 export interface IChatMemberBlockRepository {

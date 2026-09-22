@@ -3,7 +3,6 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
-  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import { canAccessChannel, MAX_UPLOAD_BYTES } from '@repo/validation';
@@ -2491,9 +2490,10 @@ describe('ChatService', () => {
     });
 
     it('returns nothing from the DM to the officer', async () => {
+      // Only whether it removed anything — no content, no channel, no row.
       await expect(
         service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual({ alreadyDeleted: false });
     });
 
     it('does not open the thread: the officer still cannot read the DM', async () => {
@@ -2515,7 +2515,11 @@ describe('ChatService', () => {
       expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
 
-    it('refuses a message the sender already deleted', async () => {
+    it('answers an already-deleted message as such, writing nothing', async () => {
+      // Its sender, an ordinary delete, a sibling report's removal or an
+      // earlier half-finished attempt got there first. Not an error — the
+      // report still has to close — but nothing is removed now, and the caller
+      // is told so it does not claim a removal it did not make.
       mockMessageRepo.findById.mockResolvedValue({
         ...reportedMessage,
         content: '[message deleted]',
@@ -2524,8 +2528,9 @@ describe('ChatService', () => {
 
       await expect(
         service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
-      ).rejects.toThrow(ConflictException);
+      ).resolves.toEqual({ alreadyDeleted: true });
       expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      expect(mockAttachmentRepo.findByMessage).not.toHaveBeenCalled();
     });
 
     it('404s a message that no longer exists', async () => {
