@@ -56,17 +56,26 @@ route. Measured on one host, with one `GITHUB_PAT`, inside one minute:
   read `HTTPS_PROXY` (documented in `/root/.ccr/README.md`) — returns **200 from GitHub itself**,
   carrying `server: github.com` and `x-github-request-id`.
 
-**Corrected 2026-09-22:** "every repo-scoped path" held for that session, not in general. A later
-session's proxy passed `/repos/{r}`, `/rulesets` and `/issues` (200) and 403'd only `/environments`
-and `/branches/main/protection`, with or without `Authorization`, and with a different message:
-`{"message":"Access to this GitHub API path is not permitted through this proxy."}`. The direct
-route returned 200 on all five.
+**Corrected 2026-09-22:** "every repo-scoped path" held for that session, not in general, and not
+every proxy-route 403 is the proxy's. Through the proxy in a later session:
 
-So the 403 is produced by the **proxy route**, not by GitHub and not by the token.
+- `/repos/{r}`, `/rulesets` and `/issues/1` returned **200** from GitHub.
+- `/environments` returned the proxy's own **403**, with no GitHub headers:
+  `{"message":"Access to this GitHub API path is not permitted through this proxy."}`.
+- `/branches/main/protection` returned **GitHub's** 403 (`server: github.com`,
+  `x-accepted-github-permissions: administration=read`, `"Resource not accessible by
+  integration"`). The proxy substitutes its own integration credential, which lacks
+  `administration:read`, whatever `Authorization` header you send.
+
+Sent direct with `GITHUB_PAT`, `/environments` and `/branches/main/protection` both returned 200.
+
+So which paths pass the proxy route varies by session and path, and a 403 there comes either from
+the proxy's path policy or from GitHub rejecting the proxy's credential. **Neither says anything
+about the PAT**: don't treat a proxy-route result, 200 or 403, as evidence about permissions.
 Direct egress is bounded only by the environment network allowlist, which carries `api.github.com`.
-Two rules follow: never regenerate the PAT with broader scopes to chase one of these 403s — the
+Two rules follow: never regenerate the PAT with broader scopes to chase a proxy-route 403 — the
 token was never what failed — and never set `NODE_USE_ENV_PROXY=1` for these scripts, which would
-push node onto the 403 route.
+push node onto the proxy route.
 
 What this does **not** change: the GitHub MCP stays the sanctioned **write** path for issues, PRs
 and comments, and tracker workflows still go through it. Direct REST is a **read** channel for

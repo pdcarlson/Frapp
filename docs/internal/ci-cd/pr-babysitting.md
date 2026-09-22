@@ -143,10 +143,8 @@ normal state of a healthy PR — check the checks UI, not the comment history, f
 net — it is the one layer that misses nothing — but it prompts the owner on every call, so on the
 cloud surface it is not usable unattended and is deliberately not armed (below). The coverage it
 would have added is a known, accepted gap, not an oversight.
-Reachability of `api.github.com` from a sandbox is **route-dependent, not session-dependent**: the
-2026-08-08 pair (an org-connect 403, and a 200 the same day in another session) is the proxy route
-against the direct one, not two moods of one session — the measured rule is under
-[`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status). That changes what is *readable*, not what is *polled*. An awake agent can read GitHub
+`api.github.com` is readable from a sandbox over the direct route; which route to use, and why, is
+under [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status). That changes what is *readable*, not what is *polled*. An awake agent can read GitHub
 directly for ground truth, but nothing in this sandbox runs while the session is asleep, so
 background polling of GitHub still cannot be relied on and the coverage gap argument is unchanged.
 Treat GitHub as reachable only while awake — through MCP tools for writes, direct REST for reads.

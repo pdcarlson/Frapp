@@ -45,8 +45,9 @@ context-heavy reading. Before filing a finding whose proof is more than one read
 may import inner ones, never the reverse (enforced by `scripts/dependency-cruiser.cjs`; see
 [`api-development`](../api-development/SKILL.md)). Red flags: services importing from `interface/`
 (DTOs, guards), `infrastructure/` importing `application/` or `interface/`, domain importing
-another layer or `@nestjs/*` / `@supabase/*`, and code outside `domain/` importing it by a relative
-path instead of `#domain/*`.
+another layer or `@nestjs/*` / `@supabase/*`, and code under `apps/api/src/` outside `domain/` importing
+it by a relative path instead of `#domain/*` (`apps/api/test/` uses relative `../src/domain/`
+paths by convention, and dependency-cruiser allows it).
 
 **Patterns.** Audit API code against the conventions in
 [`api-development`](../api-development/SKILL.md) (token-bound repositories, the guard chain, DTO

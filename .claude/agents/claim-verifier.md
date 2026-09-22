@@ -1,7 +1,7 @@
 ---
 name: claim-verifier
 description: Adversarially checks one claim against the repo and runtime — a review finding, an issue's "already done" or "still blocked" state, a doc statement, or a proposed close-on-proof — and returns CONFIRMED, PLAUSIBLE, or REFUTED with evidence. Use when a procedure calls for an independent verdict before acting. Read-only.
-disallowedTools: Edit, Write, NotebookEdit, mcp__github__issue_write, mcp__github__sub_issue_write, mcp__github__add_issue_comment, mcp__github__add_reply_to_pull_request_comment, mcp__github__resolve_review_thread, mcp__github__create_pull_request, mcp__github__update_pull_request, mcp__github__update_pull_request_branch, mcp__github__actions_run_trigger
+tools: Read, Grep, Glob, Bash, ToolSearch, WebFetch, mcp__github__issue_read, mcp__github__list_issues, mcp__github__search_issues, mcp__github__pull_request_read, mcp__github__list_pull_requests, mcp__github__search_pull_requests, mcp__github__get_file_contents, mcp__github__search_code, mcp__github__list_commits, mcp__github__get_commit, mcp__github__list_branches, mcp__github__actions_get, mcp__github__actions_list, mcp__github__get_job_logs, mcp__github__get_check_run, mcp__Vercel__list_deployments, mcp__Vercel__get_deployment, mcp__Vercel__list_deployment_events, mcp__Supabase__list_projects, mcp__Supabase__list_tables, mcp__Supabase__list_migrations, mcp__Render__list_services, mcp__Render__get_service, mcp__Render__list_deploys, mcp__Render__get_deploy
 model: inherit
 ---
 

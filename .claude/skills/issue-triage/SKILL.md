@@ -98,16 +98,14 @@ List every open issue labeled `triage`. For each:
    - `suggestion`-owned, or clearly well-formed and actionable: remove `triage`.
    - Human-action holds: a `[pr-followup][human]` or bare `[human]` title prefix, or a body
      opening with `**Human action required — hold in triage`. Never promote these, because
-     `/next` can't do the work. Leave them in triage, touching only priority, estimate, and the
-     `suggestion` label under the marker rule below. The
+     `/next` can't do the work. Leave them in triage, touching only priority and estimate. The
      [`pr-followups`](../pr-followups/SKILL.md) routine owns their lifecycle (`fp=pr-followup/`,
-     `fp=human/`). Adding `suggestion` hands an issue to the routines: it's what lets PR Follow-ups
-     close it and any routine re-body it. So adding it is a destructive write, never a way to pass
-     the ownership check. Authorship can't tell you who filed an issue, because agents file through
-     the MCP as the owner, so decide from the body. A `[human]` item that already carries a visible
-     `fp=human/` or `fp=pr-followup/` marker line came from the agent filing template: add the
-     missing `suggestion` label. One with no marker gets neither label nor marker; list it in the
-     report as an unowned `[human]` item for the owner to adopt or close.
+     `fp=human/`). Never add `suggestion` yourself. It hands an issue to the routines (it's what
+     lets PR Follow-ups close it and any routine re-body it), and nothing you can read tells you
+     whether the label was omitted or the owner removed it to take the item over: agents file
+     through the MCP as the owner, and label history isn't exposed. List `[human]` items that lack
+     it in the report, noting whether the body carries an agent `fp=` marker, so the owner can
+     adopt or close them.
    - Ambiguous, under-specified, or a significant human decision: leave it in triage with a short
      comment on what's needed. Don't force-promote work a human should accept.
 

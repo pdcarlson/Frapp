@@ -41,8 +41,8 @@ It holds only while every run is grounded, whole-pattern, verified, reviewed, an
 - Never merge. The human merge is what licenses unattended product-code edits.
 - One PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that exists), and one open
   Hygiene Scan PR at a time: reviewer bandwidth is scarce and stacked hygiene PRs conflict.
-- At most ~3 net-new issues per run, ~2 when more than 40 `suggestion` issues are open: the
-  Curator's net-growth budget binds here too.
+- File no more net-new issues per run than the Curator's
+  [net-growth budget](../issue-curator/SKILL.md#net-growth-budget) allows; it binds here too.
 - Never print secret values; names and presence only.
 
 **May edit:** `apps/**` and `packages/**` code and tests; in `scripts/**`, dead code and stale
@@ -160,9 +160,10 @@ lychee installed first ([`AGENTS.md` § Lint, test, build, type-check](../../../
 
 ### 0.5 If a Hygiene Scan PR is already open
 
-Service it: mergeability, CI on its head, unresolved review threads, each handled per `AGENTS.md`
-§ Autonomous PR lifecycle (merge `origin/main` in, fix real failures, answer or implement review
-asks), with every push through Phase 4's review gate and within its theme. Then run Phases 0, 1
+Service it: mergeability, CI on its head, unresolved review threads, each handled the way `AGENTS.md`
+§ Autonomous PR lifecycle steps 3–4 describe (merge `origin/main` in, re-run a job that died
+before its first repo step instead of patching it, fix real failures, answer or implement review
+asks); routines are exempt from its subscribe-and-babysit loop, not from how it handles a PR, with every push through Phase 4's review gate and within its theme. Then run Phases 0, 1
 and 5, but open no second PR; findings go to the ledger and, up to the cap, the tracker.
 
 ## Phase 1 — Scan

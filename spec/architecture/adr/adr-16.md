@@ -35,7 +35,8 @@ staggered daily cadence.
 - **Behavior contracts moved into the repo's skill layer:** `.claude/skills/linear-curator/SKILL.md`
   and `.claude/skills/linear-triage/SKILL.md`; the `.cursor/` tree is deleted and the task playbooks
   it held migrated to `.claude/skills/` as well. Runbook + paste-ready Routine prompts:
-  [`docs/internal/ci-cd/ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+  [`docs/internal/ci-cd/ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) (formerly
+  `CURSOR_AUTOMATIONS.md`; amendment 1–2 links repoint there).
 - **Amplified in the move:** a fourth curator discovery lens (live runtime signals — Sentry, Supabase
   advisors, CI — through the MCPs the environment injects); a per-issue **Agent brief**
   (`depth:` / `model:` / `ultracode:`, defaulting to `depth:deep`) that the curator writes, triage
@@ -166,10 +167,14 @@ Amendment 8 (2026-09-09) made **Cursor Cloud** the primary agent environment, wi
 fallback pending a teardown PR, and added the `.cursor/environment.json` start contract, a
 fail-closed Cursor review-gate adapter and paste-ready Cursor Automations. Amendment 9 (2026-09-10)
 reversed that ranking: Cursor Cloud and Claude Code became independent first-class environments and
-the teardown was cancelled. Amendment 10 retired Cursor and deleted the Cursor files they described
-(listed under amendment 10); the Claude Code files they also described stay (amendment 10, What
-stays). Neither touched amendment 5: GitHub Issues stays canonical and Linear stays retired. Kept,
-because it is the part nobody can reconstruct:
+the teardown was cancelled. Both review-gate adapters they described were deleted first, by #2322
+(2026-09-16), when review moved to the provider-neutral Git pre-push hook (see the 2026-09-16
+correction below): the Cursor adapter `.cursor/hooks/pre-push-review-gate.sh`, and the Claude
+adapter `.claude/hooks/pre-push-review-gate.sh` with its `.claude/settings.json` `PreToolUse`
+wiring. #2322 also emptied `.cursor/hooks.json`. Amendment 10 then retired Cursor and deleted the
+rest of the Cursor files they described (listed under amendment 10). The other Claude Code files
+they described stay (amendment 10, What stays). Neither touched amendment 5: GitHub Issues stays
+canonical and Linear stays retired. Kept, because it is the part nobody can reconstruct:
 
 - **Never run the same routine on two schedulers at once.** Amendment 9 kept Cursor Automations
   paste-ready beside Claude Code Routines only on that condition, and rejected dual-running Curator
@@ -187,7 +192,8 @@ because it is the part nobody can reconstruct:
 - **Issue trail:** epic #2017, and with it #2024 (paste the Cursor Automations), #2027 (disable
   Claude Routines once Cursor Automations were observed) and #2028 (delete `.claude/**`), closed `not_planned` on
   2026-09-10 via #2108 / PR #2110. The Cursor start contract landed in PR #2043. The Cursor egress
-  allowlist is #2025.
+  allowlist was tracked as #2025, and Cursor-only connector and token setup as #2026 and
+  #2072; all three were closed with amendment 10.
 
 #### Correction — 2026-09-16: review enforcement is no longer harness-specific
 

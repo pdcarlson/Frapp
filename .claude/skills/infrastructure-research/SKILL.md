@@ -49,28 +49,19 @@ scripts do).
 
 ### The `api.github.com` route rule
 
-From a cloud sandbox, whether a request to `api.github.com` succeeds depends on its route, not on
-the token.
+From a cloud sandbox:
 
-- **Through the proxy.** Anything that honours `HTTPS_PROXY` goes through the agent proxy, and the
-  proxy can 403 repo-scoped paths whatever `Authorization` header is sent. On 2026-09-02 (one host,
-  one PAT) it answered 403 `{"message":"GitHub access is not enabled for this session"}` on every
-  repo path. On 2026-09-22 it passed `/repos/{r}`, `/rulesets` and `/issues` (200) but 403'd
-  `/environments` and `/branches/main/protection` with `Access to this GitHub API path is not
-  permitted through this proxy.` Which paths get through varies by session. `gh` reads
-  `HTTPS_PROXY`, so it's expected to take this route (not measured). `GET /user` returns 200 on
-  this route, so a probe that never touches a repo path looks healthy.
-- **Direct.** The same request gets 200 from GitHub itself, with `x-github-request-id` set. Two
-  ways to send it direct: node's built-in `fetch`, which ignores `HTTPS_PROXY`
-  (`/root/.ccr/README.md`), or `curl --noproxy '*'`.
+- **Read GitHub through the MCP** (the table above).
+- **For a settings read the MCP has no tool for** (branch protection, environments, rulesets,
+  vulnerability alerts), use the direct route with `GITHUB_PAT`: node's built-in `fetch`, which
+  ignores `HTTPS_PROXY` (`/root/.ccr/README.md`), or `curl --noproxy '*'`. Recipes below.
+- **Don't treat a proxy-route result as evidence about permissions.** Anything that honours
+  `HTTPS_PROXY` (plain `curl`, `gh`) takes the proxy route, and what passes there varies by
+  session and path. A 403 on it says nothing about the PAT, so don't regenerate the PAT with
+  broader scopes, and don't set `NODE_USE_ENV_PROXY=1` for these scripts: it puts node back on
+  the proxy route.
 
-What follows from this:
-
-- A 403 on this route is not a credential problem. Don't regenerate the PAT with broader scopes to
-  fix it.
-- Don't set `NODE_USE_ENV_PROXY=1` for these scripts. It puts node back on the proxy route.
-
-Canonical statement:
+Measurements and the canonical statement:
 [`AGENT_INFRA.md` → Work status](../../../docs/internal/ci-cd/AGENT_INFRA.md#work-status).
 
 ### Repo settings the MCP has no tool for (direct REST read)
@@ -101,8 +92,8 @@ node -e '(async () => {
 })()'
 ```
 
-With curl, keep `--noproxy '*'`. Without it, you get the proxy's 403 and can mistake it for an auth
-failure:
+With curl, keep `--noproxy '*'`. Without it, you're on the proxy route, and its 403 can be
+mistaken for an auth failure:
 
 ```bash
 curl -sS --noproxy '*' -H "Authorization: Bearer $GITHUB_PAT" \

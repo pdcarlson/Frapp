@@ -66,9 +66,9 @@ GitHub Issues (canonical: planning, status, Triage intake)
 
 | Actor | Reaches GitHub Issues via | Notes |
 | --- | --- | --- |
-| **Claude Code** (web) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only sanctioned path for tracker work — reads and writes alike.** The MCP is auditable, and writes through it are lossless. Shell access to `api.github.com` is **route-dependent, not session-dependent** (corrected 2026-09-02; the 2026-08-08 observation of both a 403 and a success is explained by route, not by session): the proxied route 403s on every repo-scoped path, the direct one returns 200 from GitHub. **That direct route is never a substitute for the MCP.** If the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP: a verification read of an issue's raw `body` when you need to see what the MCP's read mangled, plus the provider-*settings* paths the MCP exposes no tool for. Never to create, edit, label, close or comment. Procedure and measurements: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). `gh` is not installed. No fallback tracker. |
+| **Claude Code** (web) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only sanctioned path for tracker work — reads and writes alike.** The MCP is auditable, and writes through it are lossless. Shell access to `api.github.com` depends on the route: the direct one returns 200 from GitHub, and what the proxied one passes varies (rule and measurements: [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status)). **That direct route is never a substitute for the MCP.** If the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP: a verification read of an issue's raw `body` when you need to see what the MCP's read mangled, plus the provider-*settings* paths the MCP exposes no tool for. Never to create, edit, label, close or comment. Procedure and measurements: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). `gh` is not installed. No fallback tracker. |
 | **Claude Code Routines** (scheduled, live) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep and Hygiene Scan excepted — they write a PR, not issues, and push the branch and report its name when the MCP is down). See [`ROUTINES.md`](ROUTINES.md). |
-| **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` — tracker writes inside GitHub Actions only | The PAT works in Actions and on laptops. Corrected 2026-09-02: it is not dead in a cloud sandbox either — it fails only on the proxied route (403 on repo-scoped paths) and works on the direct one. That is a read channel, not a licence to do tracker work outside the MCP. **Branch protection, from an agent session: run `npm run configure:branch-protection:verify` (read-only) and nothing else.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. *Applying* stays a human step with an admin PAT — policy, not lack of capability. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |
+| **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` — tracker writes inside GitHub Actions only | The PAT works in Actions and on laptops. Corrected 2026-09-02: it is not dead in a cloud sandbox either — it works on the direct route, and a 403 on the proxied route says nothing about it ([`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status)). That is a read channel, not a licence to do tracker work outside the MCP. **Branch protection, from an agent session: run `npm run configure:branch-protection:verify` (read-only) and nothing else.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. *Applying* stays a human step with an admin PAT — policy, not lack of capability. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |
 
 ---
 
@@ -467,12 +467,12 @@ legacy-marker audit in #697 is ever run.
 ### The direct REST read (ground truth for a raw body)
 
 **`api.github.com` REST is reachable out of band, and it is the better ground-truth read.**
-Corrected 2026-09-02: reachability is **route-dependent, not session-dependent**. Requests that
-honour `HTTPS_PROXY` — `curl` as configured in the sandbox — get `403 "GitHub access is not enabled
-for this session"` on every repo-scoped path, with or without a `GITHUB_PAT` header; that 403 is
-the agent proxy's GitHub-credential layer answering, not GitHub. Node's built-in `fetch` does not
-read `HTTPS_PROXY`, so it goes direct and returns **200 from GitHub itself** (`server: github.com`,
-`x-github-request-id`); `curl --noproxy '*'` behaves the same.
+Node's built-in `fetch` does not read `HTTPS_PROXY`, so it goes direct and returns **200 from
+GitHub itself** (`server: github.com`, `x-github-request-id`); `curl --noproxy '*'` behaves the
+same. Requests that honour `HTTPS_PROXY` — `curl` as configured in the sandbox — take the proxy
+route instead, where what passes varies by session and path and a 403 says nothing about the PAT;
+the rule and its measurements are in
+[`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status).
 
 **Scope, before the recipe.** This is a **verification read** and nothing more. It is not a tracker
 path and not an MCP fallback: **if the GitHub MCP is unavailable, tracker work stops and reports —
@@ -503,8 +503,8 @@ console.log(issue.body);
 
 Send the PAT: unauthenticated, the route is anonymous-rate-limited and fails outright on any
 authenticated path. Do **not** set `NODE_USE_ENV_PROXY=1` for these reads — that puts node back on
-the 403 route. A 403 *without* the "GitHub access is not enabled for this session" body is GitHub's
-own (rate limit or scope), not the proxy's; neither 403 is a reason to regenerate the PAT with
+the proxy route. A 403 on the direct route is GitHub's answer to the PAT (rate limit or scope); a
+403 on the proxy route is not about the PAT at all. Neither is a reason to regenerate the PAT with
 broader scopes.
 
 **Measured 2026-09-02 on this exact endpoint.** `GET /repos/pdcarlson/Frapp/issues/697` returns

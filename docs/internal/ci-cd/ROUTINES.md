@@ -80,8 +80,8 @@ path `/next` uses, with no keys to manage. Start each run by loading the GitHub 
 `issue_read` on a known issue. If the MCP is unavailable, stop and report: there is no fallback
 tracker. Routines 4 and 5 are the exception in rule 4.
 
-Direct REST to `api.github.com` is reachable from these sandboxes (the 403 a proxied `curl` gets is
-the proxy's route, not GitHub; see [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status)),
+Direct REST to `api.github.com` is reachable from these sandboxes (a 403 on a proxied `curl` says
+nothing about the PAT; see [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status)),
 and rule 4 limits it to the two reads it names.
 
 Whether an MCP read is faithful enough to rewrite a body from is a measurement that has flipped
@@ -356,7 +356,9 @@ new surface (an epic, label, spec area or MCP tool) should change its behavior. 
 - **Judgment-laden drift:** a `suggestion` issue (`area:docs`) describing the change. Docs Upkeep
   never opens `area:docs` issues (ADR-16 amendment 6), so it puts this in its run report instead.
 
-For routines 1–3 this PR is their only repo write. Docs Upkeep and Hygiene Scan fold
+The PR targets `main`. Before ending the run, read its checks once and fix any failure your change
+caused; report anything still red, since no session watches the PR afterwards (Autofix is off for
+routines 1–3). For routines 1–3 this PR is their only repo write. Docs Upkeep and Hygiene Scan fold
 self-maintenance into their sweep or fix PR rather than opening a second one.
 
 A `.claude/`-only PR needs no companion `docs/` change; the `docs-spec-sync` gate that forced one was

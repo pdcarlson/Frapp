@@ -257,8 +257,9 @@ session.
 In a PR body or issue comment, name the tier that actually ran. These are three different claims:
 
 - `verified locally` — local stack / PGlite / Jest
-- `verified against staging` — deployed staging, egress confirmed by preflight (an MCP fetch
-  never counts)
+- `verified against staging` — deployed staging, egress confirmed by preflight. Deployment
+  metadata from `get_deployment` counts for which build staging serves; a page fetched through an
+  MCP never counts
 - `blocked` — could not run, with the reason and the missing piece named
 
 Never write the second when you did the first, and never write either for a check that couldn't
