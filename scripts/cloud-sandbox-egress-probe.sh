@@ -271,7 +271,7 @@ for key in order:
             warnings.append(
                 "SECURITY: %s is REACHABLE (HTTP %s) and must not be. The allowlist has "
                 "likely regressed to a wildcard (*.frapp.live or *.supabase.co). Fix it in "
-                "this session's environment dashboard (Cursor Cloud or Claude Code web) -- see docs/internal/environment/"
+                "this session's environment dashboard (Claude Code web) -- see docs/internal/environment/"
                 "CLOUD_SANDBOX.md § Enumerate, do not wildcard." % (s["label"], r["http_code"])
             )
         else:

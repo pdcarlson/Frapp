@@ -7,12 +7,6 @@ import path from "node:path";
 const ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
 const readJson = (rel) => JSON.parse(readFileSync(path.join(ROOT, rel), "utf8"));
 
-test("Cursor has no provider-specific review interception", () => {
-  const config = readJson(".cursor/hooks.json");
-  assert.deepEqual(config.hooks, {});
-  assert.equal(existsSync(path.join(ROOT, ".cursor/hooks/pre-push-review-gate.sh")), false);
-});
-
 test("Claude has no provider-specific review interception", () => {
   const config = readJson(".claude/settings.json");
   assert.equal(config.hooks.PreToolUse, undefined);
