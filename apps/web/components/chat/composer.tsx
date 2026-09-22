@@ -44,7 +44,6 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 // `use-chat-channel` boundary before #544 added `warning`.
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 import { useToast } from "@/hooks/use-toast";
-import { readSignedUpload } from "@/lib/signed-upload";
 import {
   COLD_LOAD_MARKS,
   markColdLoad,
@@ -55,6 +54,7 @@ import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
   inspectUploadFile,
+  readSignedUpload,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
 import { QuotedMessage } from "./reply-quote";

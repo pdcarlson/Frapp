@@ -61,6 +61,13 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Signet uses your photo library so you can send photos in chapter chat.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-notifications",
         {
           "color": "#EFB63B",

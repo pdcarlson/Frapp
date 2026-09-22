@@ -150,6 +150,48 @@ those needs the introspected config in CI, filed as #2343. Re-add the
 dependency and its plugin entry in the slice that actually builds a picker surface —
 which is what #1045 should have been.
 
+**`expo-image-picker` came back (#2464), with the surface this time** — chat photo
+upload, `apps/mobile/lib/chat/attachment-upload.ts`, which is the importer #1045 never
+had. `expo-image-manipulator` came with it, and earns its place rather than riding
+along: iOS hands HEIC back from the photo library, `image/heic` is on neither the
+`document` allowlist nor the chat bucket, and the bucket gates the *declared*
+`Content-Type` and never the bytes — so declaring `image/jpeg` over HEIC would be
+accepted, stored, and then render broken. The transcode is what makes the declared
+type true. It is deliberately **conditional**: an already-allowlisted pick uploads
+untouched, because re-encoding everything would flatten a transparent PNG and reduce
+an animated GIF to one frame, and a GIF sent as a file is a feature that already works
+through the `document` kind.
+
+Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
+sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
+key at all**. Each of those three is load-bearing:
+
+- `cameraPermission` is omitted rather than declined because declining is what
+  compiled to `withBlockedPermissions(['android.permission.CAMERA'])` and broke QR
+  check-in. Omitting is safe — and *not* an instance of the omitted-option hazard
+  above — because `IOSConfig.Permissions.applyPermissions` resolves each key as
+  `permissions[key] || infoPlist[key] || default`, so an undefined option falls
+  through to whatever a plugin already wrote before it ever reaches the vendor
+  default, and `expo-camera` writes NSCameraUsageDescription explicitly in either
+  plugin order.
+- `microphonePermission` **is** declined, and must stay declined. Omitting it is not
+  inert: `withAndroidImagePickerPermissions` adds `android.permission.RECORD_AUDIO`
+  whenever the option is anything other than `false`, and the iOS half would write a
+  default microphone purpose string for a capability this app does not have — the same
+  Guideline 5.1.1(i) shape `photosPermission` used to be. Declining strips nothing
+  another plugin contributes, because `expo-camera` sets `recordAudioAndroid: false`
+  and so never adds RECORD_AUDIO either.
+- `photosPermission` is set explicitly rather than left to the plugin default, per the
+  unread-pin note above, and is now in `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME`
+  list so a future decline of it fails a test.
+
+The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
+picker is depended on **only while a non-spec source file imports one**, which is the
+check that would have caught #1045 shipping the dependency a month ahead of any
+surface. `scripts/ci/__tests__/signet-mobile-permissions.test.mjs` raised its prompt
+floor from two to three with this slice, which is exactly what that file's WHY block
+said the raise was for.
+
 **`app.json` also gained `ios.privacyManifests`** (#2294, same PR as the removal above) —
 the iOS privacy manifest, without which App Store Connect returns an automated
 ITMS-91053/91061 on the first upload. It declares `NSPrivacyTracking: false`, an empty

@@ -61,6 +61,7 @@ import {
   type RawChatMessage,
   type RawChatMessageAction,
 } from "@repo/chat-core/types";
+import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { useFrappClient } from "@repo/hooks";
 
 import { getSupabaseClient } from "@/lib/supabase";
@@ -77,6 +78,13 @@ export interface UseChatChannelResult {
   viewerId: string | null;
   /** False while `ctx` is null — the composer must disable rather than no-op silently. */
   canSend: boolean;
+  /**
+   * Sends the body *and* whatever `attachments` currently holds — the staged
+   * list is owned here, not passed in, for the same reason `draft` is: it has
+   * to survive a failed send and reset on a channel switch, and both of those
+   * are this hook's existing jobs. A photo staged in #general riding the next
+   * message in #dues is the bug that shape prevents.
+   */
   send: (content: string) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
@@ -86,6 +94,14 @@ export interface UseChatChannelResult {
     actionType: string,
     payload?: Record<string, unknown>,
   ) => Promise<void>;
+  /**
+   * Uploaded-and-waiting attachments the next send will claim. The bytes are
+   * already in the bucket (`lib/chat/attachment-upload.ts`), so dropping one
+   * drops the claim, not the object.
+   */
+  attachments: OutboxAttachment[];
+  addAttachment: (attachment: OutboxAttachment) => void;
+  removeAttachment: (storagePath: string) => void;
   draft: string;
   setDraft: (body: string) => void;
   /**
@@ -294,6 +310,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   // Draft: load once per channel, debounce writes.
   const [draftState, setDraftState] = useState("");
+  const [attachments, setAttachments] = useState<OutboxAttachment[]>([]);
   useEffect(() => {
     if (!channelId) return;
     let cancelled = false;
@@ -335,6 +352,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     if (sendError !== null) setSendError(null);
     if (reactionError !== null) setReactionError(null);
     if (actionError !== null) setActionError(null);
+    // Staged attachments are per-channel exactly as the draft is. Unlike the
+    // draft they are NOT persisted and restored per channel: the bytes are in
+    // the bucket but the claim is in memory, so switching away abandons it and
+    // the retention pass collects the object. Carrying it across the switch
+    // would be the worse failure — the photo would ride the next message in a
+    // channel it was never meant for.
+    if (attachments.length > 0) setAttachments([]);
   }
   /**
    * Always the current `channelId`, for the generation check below. Refs
@@ -449,13 +473,28 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const send = useCallback(
     async (content: string) => {
       const body = content.trim();
+      // Snapshotted before the await, and cleared by identity afterwards: a
+      // photo that finishes uploading while this send is in flight must not be
+      // cleared as though it had been claimed.
+      const staged = attachments;
       // `sendingRef`, not state: this guards re-entry within a single tick, and
       // a state flag would not be visible to a second tap landing before the
       // re-render. Without it, a send held open by a slow POST leaves the
       // composer full and the button live, and a second tap generates a *fresh*
       // `client_message_id` — which the server's dedupe index cannot collapse,
       // so the channel gets two identical messages.
-      if (!channelId || !ctx || !body || sendingRef.current) return;
+      // An attachment-only message is a real message, so `!body` alone is not
+      // an empty send — web fixed exactly this once (`composer.tsx`: "An
+      // attachment-only message is a real message"). Leaving the old guard
+      // here would return silently with the chips still on screen and no
+      // error, which is the worst of the three outcomes.
+      if (
+        !channelId ||
+        !ctx ||
+        (!body && staged.length === 0) ||
+        sendingRef.current
+      )
+        return;
       sendingRef.current = true;
       const forChannelId = channelId;
       const generation = ++sendGenerationRef.current;
@@ -465,9 +504,18 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       // Clear optimistically so the composer empties the instant the bubble
       // appears, then put the text back if the send never got anywhere.
       setDraftState("");
+      if (staged.length > 0) {
+        setAttachments((current) =>
+          current.filter((row) => !staged.includes(row)),
+        );
+      }
       setSendError(null);
       try {
-        await sendMessage(ctx, { channelId, content: body });
+        await sendMessage(ctx, {
+          channelId,
+          content: body,
+          attachments: staged.length > 0 ? staged : undefined,
+        });
         await drafts.clear(channelId);
       } catch (error) {
         // `sendMessage` awaits `outbox.enqueue` *outside* its own try/catch, so
@@ -482,6 +530,11 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           sendGenerationRef.current === generation
         ) {
           setDraftState(body);
+          // Put the claims back too, or the member loses a photo that is
+          // still sitting in the bucket with no way to reach it again.
+          if (staged.length > 0) {
+            setAttachments((current) => [...staged, ...current]);
+          }
           setSendError(
             error instanceof Error && error.message
               ? error.message
@@ -492,8 +545,18 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         sendingRef.current = false;
       }
     },
-    [cancelDraftTimer, channelId, ctx, drafts],
+    [attachments, cancelDraftTimer, channelId, ctx, drafts],
   );
+
+  const addAttachment = useCallback((attachment: OutboxAttachment) => {
+    setAttachments((current) => [...current, attachment]);
+  }, []);
+
+  const removeAttachment = useCallback((storagePath: string) => {
+    setAttachments((current) =>
+      current.filter((row) => row.storagePath !== storagePath),
+    );
+  }, []);
 
   const react = useCallback(
     async (messageId: string, emoji: string) => {
@@ -576,6 +639,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     react,
     unreact,
     act,
+    attachments,
+    addAttachment,
+    removeAttachment,
     draft,
     setDraft,
     sendError,

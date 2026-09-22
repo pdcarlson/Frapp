@@ -75,11 +75,11 @@ import {
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
-import { readSignedUpload } from "@/lib/signed-upload";
 import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
   inspectUploadFile,
+  readSignedUpload,
 } from "@repo/validation";
 
 type ChapterDocument = {

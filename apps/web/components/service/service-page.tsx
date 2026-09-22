@@ -56,13 +56,13 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
-import { readSignedUpload } from "@/lib/signed-upload";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
   inspectUploadFile,
+  readSignedUpload,
 } from "@repo/validation";
 import { formatMinutesExact as formatDuration } from "@repo/formatting";
 

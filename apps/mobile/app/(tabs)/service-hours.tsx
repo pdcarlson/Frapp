@@ -41,10 +41,12 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * ## No proof attachment
  *
  * Canvas draws a proof upload in the sheet, and the API supports it
- * (`proof_path` plus a signed-upload endpoint). Attaching one needs an image or
- * file picker, and none is a dependency of this app — `package.json` is frozen
- * under #937's hotspot protocol. The field is omitted rather than rendered
- * dead; entries submitted here are reviewed on their description. Filed.
+ * (`proof_path` plus a signed-upload endpoint). The field is still omitted
+ * rather than rendered dead, but **the dependency blocker is gone**: #2464
+ * added `expo-image-picker` for chat photo upload, so this is now ordinary
+ * screen work rather than an integrator PR. `lib/chat/attachment-upload.ts` is
+ * the working reference, though proof uploads use the `proof` kind, not
+ * `document`. Entries submitted here are reviewed on their description. Filed.
  *
  * ## Sheet mechanics
  *

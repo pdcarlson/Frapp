@@ -41,10 +41,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## No upload affordance
  *
- * Canvas draws an upload glyph in the header, opening the s21 sheet. Uploading
- * needs a file picker, and none is a dependency of this app — `package.json` is
- * frozen under #937's hotspot protocol, so adding one is an integrator PR. The
- * glyph is omitted rather than rendered dead. Filed.
+ * Canvas draws an upload glyph in the header, opening the s21 sheet. The glyph
+ * is still omitted rather than rendered dead, but **the dependency blocker is
+ * gone**: #2464 added `expo-image-picker` for chat photo upload, so this is now
+ * ordinary screen work rather than an integrator PR against the frozen
+ * `package.json`. `lib/chat/attachment-upload.ts` is the working reference for
+ * the pick → inspect → mint → PUT sequence. A non-image document type would
+ * still need `expo-document-picker`, which remains undeclared. Filed.
  *
  * ## Opening a document
  *

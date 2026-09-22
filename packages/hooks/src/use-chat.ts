@@ -403,6 +403,18 @@ export function useMarkChannelRead() {
   });
 }
 
+/**
+ * Mint a signed upload URL for a chat attachment.
+ *
+ * `size_bytes` is optional on the wire and optional here, but supply it when
+ * you know it: the API's 25 MB check only runs when it is present, so omitting
+ * it trades a readable 400 from our own DTO for whatever Supabase Storage
+ * returns when the PUT exceeds the bucket's `file_size_limit` — a raw,
+ * non-JSON body a client cannot render to a member. Read
+ * `@repo/validation`'s `upload-allowlists.ts` header before assuming the two
+ * ceilings are the same number; the hosted per-object limit is deliberately
+ * not claimed there.
+ */
 export function useRequestChatUploadUrl() {
   const client = useFrappClient();
   return useMutation({
@@ -411,7 +423,7 @@ export function useRequestChatUploadUrl() {
       body,
     }: {
       id: string;
-      body: { filename: string; content_type: string };
+      body: { filename: string; content_type: string; size_bytes?: number };
     }) => {
       const { data, error } = await client.POST(
         "/v1/channels/{id}/upload-url",

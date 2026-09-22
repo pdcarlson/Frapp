@@ -46,7 +46,6 @@ import { BackworkGlyph } from "@/components/documents/resources-glyphs";
 import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-drawer";
 import { Can } from "@/components/shared/can";
 import { PageHeader } from "@/components/layout/page-header";
-import { readSignedUpload } from "@/lib/signed-upload";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -63,6 +62,7 @@ import {
   SEMESTERS,
   acceptAttribute,
   inspectUploadFile,
+  readSignedUpload,
 } from "@repo/validation";
 
 type Department = { id: string; code: string; name: string | null };
