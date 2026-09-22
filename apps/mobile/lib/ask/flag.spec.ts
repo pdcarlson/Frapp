@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ASK_FLAG_ENV_KEY, isAskAvailable } from "./flag";
 
@@ -22,7 +25,7 @@ afterEach(() => {
 });
 
 describe("isAskAvailable", () => {
-  it("is off when nothing is configured, and no eas.json profile configures it", () => {
+  it("is off when nothing is configured", () => {
     expect(isAskAvailable()).toBe(false);
   });
 
@@ -50,5 +53,51 @@ describe("isAskAvailable", () => {
         `expected ${JSON.stringify(off)} to be off`,
       ).toBe(false);
     }
+  });
+});
+
+type EasBuildProfile = { env?: Record<string, unknown> };
+
+/**
+ * No committed build profile may switch Ask on (#2259).
+ *
+ * A build without Ask shows a reviewer no Ask surface at all, which is what
+ * the App Store listing and review notes rely on (`store/README.md`). A
+ * profile's `env` block in `eas.json` is inlined into that build, so an on
+ * value here would put the pill and the synthetic corpus in a store binary.
+ *
+ * **This cannot prove a build is off.** Each profile is also bound to an EAS
+ * environment (`"environment": "production"` and so on), and variables set
+ * there in the EAS dashboard or with `eas env:set` never reach the repo. Only
+ * `eas env:list --environment <name>` settles those (`ENV_REFERENCE.md`).
+ * This guards the half the repo owns.
+ */
+describe("eas.json", () => {
+  const easJson = JSON.parse(
+    readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "..", "eas.json"),
+      "utf8",
+    ),
+  ) as { build?: Record<string, EasBuildProfile> };
+  const profiles = Object.entries(easJson.build ?? {});
+
+  it("has build profiles to check", () => {
+    // Guards the guard: a moved file or renamed key would otherwise leave the
+    // loop below with nothing to iterate and nothing to fail.
+    expect(profiles.map(([name]) => name)).toEqual(
+      expect.arrayContaining(["development", "preview", "production"]),
+    );
+  });
+
+  it.each(profiles)("profile %s does not switch Ask on", (name, profile) => {
+    const value = profile.env?.[KEY];
+    if (value === undefined) return;
+    // Judged by the same parse the app runs, so a spelling the app reads as
+    // off (`"0"`, `"false"`) is allowed and anything it reads as on is not.
+    process.env[KEY] = String(value);
+    expect(
+      isAskAvailable(),
+      `eas.json build.${name}.env sets ${KEY}=${JSON.stringify(value)}`,
+    ).toBe(false);
   });
 });

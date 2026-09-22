@@ -94,6 +94,11 @@ function redirects(root: Node): Node[] {
   return root.findAll((node) => (node.type as unknown) === "Redirect");
 }
 
+/** Route-level option overrides (`vitest.setup.ts` renders them as hosts). */
+function screenOptions(root: Node): Node[] {
+  return root.findAll((node) => (node.type as unknown) === "Tabs.Screen");
+}
+
 beforeEach(() => {
   delete process.env[ASK_FLAG_ENV_KEY];
   present.mockClear();
@@ -149,6 +154,24 @@ describe("the ask route (frapp://ask)", () => {
     expect(askPills(tree.root)).toHaveLength(0);
     expect(sheets(tree.root)).toHaveLength(0);
     expect(present).not.toHaveBeenCalled();
+  });
+
+  it("hides the tab navigator's Ask header for the frame before the redirect lands", () => {
+    const tree = render(<AskScreen />);
+
+    // The frozen `_layout.tsx` titles this route "Ask" with the header on,
+    // and `Redirect` navigates from an effect, so without this the arrival
+    // paints an empty screen under that header first.
+    const options = screenOptions(tree.root);
+    expect(options).toHaveLength(1);
+    expect(options[0].props.options).toEqual({ headerShown: false });
+  });
+
+  it("leaves the header alone with Ask on", () => {
+    process.env[ASK_FLAG_ENV_KEY] = "1";
+    const tree = render(<AskScreen />);
+
+    expect(screenOptions(tree.root)).toHaveLength(0);
   });
 
   it("presents the sheet on arrival with Ask on", () => {

@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { Redirect, useFocusEffect } from "expo-router";
+import { Redirect, Tabs, useFocusEffect } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
@@ -33,10 +33,33 @@ import { isAskAvailable } from "@/lib/ask/flag";
  * this route's shell anyway would put an "Ask" screen with nothing in it in
  * front of whoever followed `frapp://ask`, which is the placeholder the
  * decision removed. Chat home is where `+not-found` sends a stale link too.
+ *
+ * The redirect also hides this route's header. The frozen layout gives the
+ * `ask` registration a title and leaves the tab navigator's header on, and
+ * `Redirect` navigates from an effect, so without this the arrival paints one
+ * frame of an empty screen under an "Ask" header before Chat home replaces it
+ * — the same placeholder, briefly. `Tabs.Screen` inside a route sets that
+ * route's own options from a layout effect (expo-router `views/Screen.js`),
+ * which lands before the first paint and leaves `_layout.tsx` untouched.
  */
 export default function AskScreen() {
-  return isAskAvailable() ? <AskRoute /> : <Redirect href="/" />;
+  if (isAskAvailable()) {
+    return <AskRoute />;
+  }
+  return (
+    <>
+      <Tabs.Screen options={NO_HEADER} />
+      <Redirect href="/" />
+    </>
+  );
 }
+
+/**
+ * Hoisted so the options object keeps its identity: `Tabs.Screen` re-runs
+ * `setOptions` whenever `options` changes, and an inline literal changes on
+ * every render.
+ */
+const NO_HEADER = { headerShown: false } as const;
 
 /**
  * The route with Ask switched on. Split out so its hooks run only on the path

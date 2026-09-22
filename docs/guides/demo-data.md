@@ -55,6 +55,12 @@ node scripts/demo/capture-mobile.mjs        # mobile         -> screenshots/mobi
 signed-in screens at 3x into `screenshots/mobile-app/`; `SKIP_REFERENCE=1` skips
 the design-board pass into `screenshots/mobile-reference/`.
 
+`node scripts/demo/capture-mobile.mjs --app-store` is the other mode: the App
+Store set, at the store's size, into `screenshots/app-store/`, with no Ask shot
+and a hard stop if any Ask surface is on screen. It needs the Expo server started
+**without** `EXPO_PUBLIC_ASK_ENABLED`. The procedure, and which size and why, are
+in [`mobile.md` § 6.4](../internal/ops/deployment/mobile.md#64-app-store-screenshots).
+
 Output lands in `screenshots/`, which is **gitignored**. There is no sanctioned
 home for generated marketing binaries
 ([`DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives)
@@ -141,14 +147,23 @@ first.
 EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<SUPABASE_ANON_KEY from apps/api/.env.local>
 EXPO_PUBLIC_API_URL=http://localhost:3001
-EXPO_PUBLIC_ASK_ENABLED=1
 EXPO_PUBLIC_WEB_SECURE_STORE=1
+# Marketing/demo capture only. Leave it out for the App Store set.
+EXPO_PUBLIC_ASK_ENABLED=1
 ```
 
 `EXPO_PUBLIC_ASK_ENABLED` turns on Ask (s17). Its answers come from the
 synthetic keyword table in `lib/ask/corpus.ts`, not from a model or the API —
 the screen is real, the answers are demo copy. `lib/ask/flag.ts` explains why
 that is acceptable behind a flag no shipped build sets.
+
+**The flag is for the marketing and demo capture only.** The default run shoots
+`02-ask-answer` and so needs it. The App Store set (`--app-store`) must run
+with it **unset**: the store binary has no Ask, so with the flag off the app
+draws no ✦ pill ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and
+the preset refuses to write anything if it finds one. `EXPO_PUBLIC_*` values are
+inlined when Metro transforms the bundle, so between the two modes remove the line
+and restart Expo with `--clear`.
 
 Two API-side values matter for the check-in screens:
 

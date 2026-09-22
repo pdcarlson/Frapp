@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useListChapters } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useAuthSession } from "@/lib/auth-session";
@@ -97,128 +98,153 @@ export default function ChapterPicker() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Choose your chapter</Text>
-      {/* Reachable from More by any member, so the copy cannot assert that
+    // One scroll view for the whole column, not one for the list inside a
+    // centred `View`. The inner list's height was never bounded, so it grew
+    // to fit its rows and the column overflowed both ends of the screen
+    // (`justifyContent: "center"` does not clamp): a member of enough
+    // chapters lost "Sign out" off the bottom, and "Sign out" is this
+    // screen's escape hatch. Same shape as sign-in and join.
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "right", "bottom", "left"]}
+    >
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.title}>Choose your chapter</Text>
+        {/* Reachable from More by any member, so the copy cannot assert that
           they belong to more than one chapter. */}
-      <Text style={styles.subtitle}>
-        Pick the chapter you want to open.
-      </Text>
+        <Text style={styles.subtitle}>Pick the chapter you want to open.</Text>
 
-      <View style={styles.card}>
-        {isPending ? (
-          <View style={styles.stateBlock}>
-            <ActivityIndicator color={tokens.color.gold.house} />
-            <Text style={styles.helperText}>Loading your chapters…</Text>
-          </View>
-        ) : isError ? (
-          <View style={styles.stateBlock}>
-            <Text style={styles.errorText}>
-              We could not load your chapters.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                void refetch();
-              }}
-              style={styles.primaryButton}
-            >
-              <Text style={styles.primaryButtonText}>Try again</Text>
-            </Pressable>
-          </View>
-        ) : !data || data.length === 0 ? (
-          // Not reachable through the normal hook path, but a member with no
-          // membership at all would otherwise be stranded on a blank screen
-          // with no way back to sign-in.
-          <View style={styles.stateBlock}>
-            <Text style={styles.helperText}>
-              This account is not a member of any chapter yet. Join with an
-              invite, or create a chapter if you&apos;re the first officer.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                router.push("/join");
-              }}
-              style={styles.primaryButton}
-            >
-              <Text style={styles.primaryButtonText}>Join a chapter</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                router.push("/create-chapter");
-              }}
-              style={styles.secondaryButton}
-            >
-              <Text style={styles.secondaryButtonText}>Create a chapter</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <ScrollView contentContainerStyle={styles.list}>
-            {data.map((membership) => {
-              const isPendingRow = pendingId === membership.chapter_id;
-              return (
-                <Pressable
-                  key={membership.chapter_id}
-                  accessibilityRole="button"
-                  accessibilityState={{
-                    disabled: pendingId !== null,
-                    busy: isPendingRow,
-                  }}
-                  accessibilityHint={`Open ${membership.chapter.name}.`}
-                  disabled={pendingId !== null}
-                  onPress={() => {
-                    void handleSelect(membership.chapter_id);
-                  }}
-                  style={[
-                    styles.chapterRow,
-                    pendingId !== null && !isPendingRow
-                      ? styles.chapterRowDimmed
-                      : null,
-                  ]}
-                >
-                  <View style={styles.chapterRowText}>
-                    <Text style={styles.chapterName}>
-                      {membership.chapter.name}
-                    </Text>
-                    <Text style={styles.chapterMeta}>
-                      {membership.chapter.university}
-                    </Text>
-                  </View>
-                  {isPendingRow ? (
-                    <ActivityIndicator color={tokens.color.gold.house} />
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        )}
+        <View style={styles.card}>
+          {isPending ? (
+            <View style={styles.stateBlock}>
+              <ActivityIndicator color={tokens.color.gold.house} />
+              <Text style={styles.helperText}>Loading your chapters…</Text>
+            </View>
+          ) : isError ? (
+            <View style={styles.stateBlock}>
+              <Text style={styles.errorText}>
+                We could not load your chapters.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  void refetch();
+                }}
+                style={styles.primaryButton}
+              >
+                <Text style={styles.primaryButtonText}>Try again</Text>
+              </Pressable>
+            </View>
+          ) : !data || data.length === 0 ? (
+            // Not reachable through the normal hook path, but a member with no
+            // membership at all would otherwise be stranded on a blank screen
+            // with no way back to sign-in.
+            <View style={styles.stateBlock}>
+              <Text style={styles.helperText}>
+                This account is not a member of any chapter yet. Join with an
+                invite, or create a chapter if you&apos;re the first officer.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  router.push("/join");
+                }}
+                style={styles.primaryButton}
+              >
+                <Text style={styles.primaryButtonText}>Join a chapter</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  router.push("/create-chapter");
+                }}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Create a chapter</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.list}>
+              {data.map((membership) => {
+                const isPendingRow = pendingId === membership.chapter_id;
+                return (
+                  <Pressable
+                    key={membership.chapter_id}
+                    accessibilityRole="button"
+                    accessibilityState={{
+                      disabled: pendingId !== null,
+                      busy: isPendingRow,
+                    }}
+                    accessibilityHint={`Open ${membership.chapter.name}.`}
+                    disabled={pendingId !== null}
+                    onPress={() => {
+                      void handleSelect(membership.chapter_id);
+                    }}
+                    style={[
+                      styles.chapterRow,
+                      pendingId !== null && !isPendingRow
+                        ? styles.chapterRowDimmed
+                        : null,
+                    ]}
+                  >
+                    <View style={styles.chapterRowText}>
+                      <Text style={styles.chapterName}>
+                        {membership.chapter.name}
+                      </Text>
+                      <Text style={styles.chapterMeta}>
+                        {membership.chapter.university}
+                      </Text>
+                    </View>
+                    {isPendingRow ? (
+                      <ActivityIndicator color={tokens.color.gold.house} />
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
 
-        {selectError ? <Text style={styles.errorText}>{selectError}</Text> : null}
+          {selectError ? (
+            <Text style={styles.errorText}>{selectError}</Text>
+          ) : null}
 
-        {/* Never disabled, and it navigates rather than trusting the gate to
+          {/* Never disabled, and it navigates rather than trusting the gate to
             move us. Sign-out is the escape hatch — gating it on `pendingId`
             meant any stuck selection left the member with no way off this
             screen at all. */}
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            void handleSignOut();
-          }}
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryButtonText}>Sign out</Text>
-        </Pressable>
-      </View>
-    </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              void handleSignOut();
+            }}
+            style={styles.secondaryButton}
+          >
+            <Text style={styles.secondaryButtonText}>Sign out</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    container: {
+    safeArea: {
       flex: 1,
+      backgroundColor: tokens.color.surface.background,
+    },
+    // The surface colour sits on the scroll view as well as its content: an
+    // iOS overscroll bounce shows what is behind the content (join.tsx).
+    scroll: {
+      flex: 1,
+      backgroundColor: tokens.color.surface.background,
+    },
+    container: {
+      flexGrow: 1,
       justifyContent: "center",
       padding: tokens.spacing.xl,
       backgroundColor: tokens.color.surface.background,
