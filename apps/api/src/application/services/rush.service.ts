@@ -10,7 +10,7 @@ import { RUSH_CANDIDATE_REPOSITORY } from '#domain/repositories/rush-candidate.r
 import type { IRushCandidateRepository } from '#domain/repositories/rush-candidate.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
-import { PG_UNIQUE_VIOLATION } from '#domain/repositories/chat.repository.interface';
+import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import type {
   RushCandidate,
   RushCandidateView,
@@ -91,7 +91,7 @@ export class RushService {
         created_by: input.created_by,
       });
     } catch (error) {
-      if ((error as { code?: string }).code === PG_UNIQUE_VIOLATION) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException(
           'A candidate with that name already exists in this chapter',
         );

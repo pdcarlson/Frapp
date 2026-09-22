@@ -8,7 +8,7 @@ import {
   type PointsLeaderboardRow,
   type PointsLeaderboardWindow,
 } from '#domain/repositories/point-transaction.repository.interface';
-import { PG_UNIQUE_VIOLATION } from '#domain/repositories/chat.repository.interface';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { PointTransaction } from '#domain/entities/point-transaction.entity';
 
 @Injectable()
@@ -34,7 +34,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
       // never has to know a Postgres error code — the same seam
       // `SupabaseChatMessageRepository` uses for `chat_messages`.
       if (
-        (error as { code?: string }).code === PG_UNIQUE_VIOLATION &&
+        error.code === PG_UNIQUE_VIOLATION &&
         data.chapter_id &&
         data.client_message_id
       ) {

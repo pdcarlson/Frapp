@@ -15,6 +15,7 @@ import type {
 } from '../../infrastructure/supabase/database.types';
 import type { ChapterCustomRole } from '#domain/entities/chapter-custom-role.entity';
 import { WILDCARD } from '#domain/constants/permissions';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import type { CreateCustomRole, UpdateCustomRole } from '@repo/validation';
 import {
   ChapterAuditLogService,
@@ -42,9 +43,6 @@ import {
  */
 export type CreateCustomRoleInput = CreateCustomRole;
 export type UpdateCustomRoleInput = UpdateCustomRole;
-
-// Postgres unique-violation SQLSTATE (raised when (chapter_id, key) collides).
-const UNIQUE_VIOLATION = '23505';
 
 /**
  * `chapter_audit_log.target_type` for every row this service writes. Paired
@@ -134,7 +132,7 @@ export class CustomRoleService {
       .single();
 
     if (error) {
-      if (error.code === UNIQUE_VIOLATION) {
+      if (error.code === PG_UNIQUE_VIOLATION) {
         throw new ConflictException(
           'A custom role with this key already exists in this chapter',
         );

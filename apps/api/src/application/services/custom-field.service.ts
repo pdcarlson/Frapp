@@ -17,6 +17,7 @@ import type {
   CustomFieldVisibility,
   MemberCustomFieldValue,
 } from '#domain/entities/chapter-custom-field.entity';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import type { CreateCustomField, UpdateCustomField } from '@repo/validation';
 import {
   ChapterAuditLogService,
@@ -42,9 +43,6 @@ import {
  */
 export type CreateCustomFieldInput = CreateCustomField;
 export type UpdateCustomFieldInput = UpdateCustomField;
-
-// Postgres unique-violation SQLSTATE (raised when (chapter_id, key) collides).
-const UNIQUE_VIOLATION = '23505';
 
 /**
  * `chapter_audit_log.target_type` for every row this service writes. Paired
@@ -234,7 +232,7 @@ export class CustomFieldService {
       .single();
 
     if (error) {
-      if (error.code === UNIQUE_VIOLATION) {
+      if (error.code === PG_UNIQUE_VIOLATION) {
         throw new ConflictException(
           'A custom field with this key already exists in this chapter',
         );
