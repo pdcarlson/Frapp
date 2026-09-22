@@ -108,7 +108,7 @@ search.
 > `invites`, `financial_invoices` (total and `where status = 'OPEN'`), `events`,
 > `chat_messages`, `chat_channels where type in ('DM','GROUP_DM')` and `study_geofences`.
 > **These invert as soon as § Seed the reviewer's chapter is acted on — re-run the query
-> rather than trusting the figures.** Three review notes below describe things a reviewer
+> rather than trusting the figures.** Four review notes below describe things a reviewer
 > cannot currently reach; that section is the fix.
 
 ## As submitted — App Store Connect (recorded 2026-09-14)
@@ -173,8 +173,10 @@ has only `MANUAL` (reward) and `FINE` (penalty) adjustments plus task point
 rewards — no prizes, entries or winners.
 
 **Why 13+ rather than the calculated 4+:** the app ships chapter channels and
-direct messages with no member-level report or block, and its real audience is
-college students. 18+ was rejected because Apple reads it as mature content and
+direct messages, at the time of the override (2026-09-14) with no member-level report
+or block, and its real audience is college students. Report and block exist in binaries
+built after 2026-09-22 (#2257, § Review notes); the override has not been revisited
+since. 18+ was rejected because Apple reads it as mature content and
 [`apps/landing/app/terms/page.tsx`](../../landing/app/terms/page.tsx) carries no
 minimum-age clause to back it.
 
@@ -289,9 +291,9 @@ First release.
 
 ## Seed the reviewer's chapter
 
-The review notes below promise a reviewer three things a fresh demo account cannot see.
+The review notes below promise a reviewer four things a fresh demo account cannot see.
 A reviewer who follows the notes and finds nothing files it as the app not working, so
-this is a prerequisite list, not a polish list. **Each of those three is a seeding step,
+this is a prerequisite list, not a polish list. **Each of those four is a seeding step,
 and each one inverts a count in § Identity's production reading** — re-run that query
 afterwards rather than trusting either place. The last row is the inverse: a state to
 leave alone, kept here because it is the one dues decision a submitter must not undo.
@@ -303,12 +305,14 @@ states what a reviewer will actually be shown.
 | A reviewer account that can sign in | Create the App Review demo user in `frapp-prod` (#2309), **already joined to the seeded chapter**, and give App Review its email and password. Do not plan on an invite: 24h hardcoded, single-use, no override. The seeded chapter also needs `subscription_status` `active`, or paid-ops **writes** are refused on three surfaces (#2297) — reads are exempt (`chapter.guard.ts` returns early for `GET`/`HEAD`/`OPTIONS`), so every screen still loads |
 | Location confirms "inside a chapter study zone" | Add one study zone to the reviewer's chapter. Zone creation is web-dashboard-only, so it cannot be done from the app being reviewed |
 | "direct messages your chapter has started" | Start one DM into the reviewer's account from the web dashboard; the DIRECT section is hidden entirely when the list is empty |
+| "Long-press any message from another member to report it or block them" | Post at least one ordinary text message, **from another real member of the seeded chapter**, into a channel the reviewer can read. The system actor's posts — the welcome post, the audit bridge — offer Report only, never Block (it is unblockable by design), a member the roster no longer lists offers Report only, and the reviewer's own messages offer nothing, so a chapter whose only chat is system posts cannot show Guideline 1.2's block control at all. It inverts the `chat_messages` count in § Identity |
 | *(nothing — the dues sentence was dropped 2026-09-21)* | **Leave the reviewer with no invoices at all.** Zero rows is the only state that shows them nothing about payments — no Pay control and no Stripe footer; § Review notes owns the mechanics and is the copy to keep current. **Nothing to undo:** the ledger is viewer-scoped, so the 2 OPEN invoices in § Identity's production reading belong to the two pre-existing auth users and are invisible to the reviewer. **Do not void or delete those** — they are live beta-chapter billing. If a populated ledger is wanted anyway, insert a **PAID** row directly in SQL — never through the API, where `DRAFT → OPEN` is the only route to PAID and writes a persisted "New Invoice" notification deep-linked to the Dues tab (`financial-invoice.service.ts`). That fallback surfaces the Stripe footer, leaves the balance at $0.00, and inverts § Identity's invoice count — re-run that query too |
 
 ## Review notes (App Store Connect → App Review Information)
 
 - The app is invite-only. **Give App Review an email and password for a seeded account that is already a member of a chapter — never an invite token.** Put them in the Sign-In Required fields, not prose. Invites cannot work here: `prepareInviteData` hardcodes `expiresAt.setHours(+24)` and `redeem` throws `GoneException` on `used_at` or on a past `expires_at`, with no override parameter anywhere — so a token is dead before a first review answers and certainly dead on a re-review. (Corrected 2026-09-21; this bullet used to hand over a token, and every earlier note about "minting one whose expiry outlasts review" was describing something the API cannot do.)
 - Universal links are not configured, so tapping an `https://` invite link opens the web app, not this app — do not describe any link as opening the app. If a reviewer ever does need to redeem by hand, the join screen accepts a bare token or a full `https://app.frapp.live/join?token=…` pasted link and extracts the token from either; that is a fallback, not the route to describe.
+- **Report and block (Guideline 1.2).** Tell App Review where they are: "Long-press any message from another member to report it or block them; Settings → Blocked members lists and removes blocks." A member's profile in the directory also has Block / Unblock. *Not for the note itself:* this is true only of a binary built after 2026-09-22 (#2257); it needs the message § Seed the reviewer's chapter asks for, because a system post offers Report only; and a filed report still lands in an officer queue that nothing renders yet (§ Open before submitting), so do not describe reports being reviewed in the app.
 - Camera is used only to scan a chapter's event check-in QR code. Location is used only while the app is open, to confirm the member is inside a chapter study zone or at the event being checked in to; there is no background location.
 - Sign in with Apple and Sign in with Google are offered on the sign-in screen (Guideline 4.8: Apple is required once Google is offered). Password and magic-link remain. **Tell App Review to sign in with the email and password supplied above — and smoke-test that exact route on the TestFlight build first.** No sign-in of any kind has been exercised against `frapp-prod`, which still has no demo user (#2309), and [#2334](https://github.com/pdcarlson/Frapp/issues/2334) records that the Apple button can abort the app outright on the sign-in screen. An OAuth identity joins the seeded account **only when its email matches the seeded address** (GoTrue Automatic linking, [`deployment/supabase.md`](../../../docs/internal/ops/deployment/supabase.md)); a reviewer who signs in with their own Apple or Google account — or with Hide My Email, whose relay address can never match — becomes a *new* user in no chapter. That is not a blank app: `resolveAuthGate` routes a member-less account to the **join** screen, which asks for an invite they were never given and offers *Create a chapter*, and a chapter founded there is `incomplete`, which refuses paid-ops **writes** on three surfaces (#2297) while every screen still loads. Do not plan to rescue that with an invite — the first bullet's arithmetic holds here too: a token minted mid-review is usually dead before the reply lands. (Corrected 2026-09-22; this clause used to end "a reviewer still joins with the invite token after signing in". That is a real member's route — `redeem` binds whoever is signed in rather than matching the invite email, which is why the sign-in screen's Hide My Email promise is correct — and it is simply not the reviewer's, who is handed credentials rather than an invite. Do not delete that hint on the strength of this note.)
 - No in-app purchases and no digital goods. **The app takes no payment of any kind.** `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is not set in the EAS `production` environment ([#2415](https://github.com/pdcarlson/Frapp/issues/2415)), so `isStripeAvailable()` is false and PaymentSheet never opens. Do not tell App Review the app takes dues by card, and do not argue guideline 3.1.5 from it — the beta chapter is not collecting dues by card (decided 2026-09-21). **That decision is the only thing making the two sentences above true, and reversing it needs no repo change** — `eas env:set` reaches the bundle server-side. If the key ever ships, this bullet and § Identity's Price row become false statements to App Review: change both in the same sitting as the privacy rows below. Chapter *subscriptions* to Signet itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
@@ -517,9 +521,11 @@ Google Play Data safety: data is encrypted in transit; users delete in the app o
 > contradiction, and this file asserts no cross-store consistency rule it can cite.
 > **Do not "simplify" them to one number, and in particular do not lower the Android
 > target audience.** An under-18 target audience pulls in Play's families and
-> child-safety policy set, which an app shipping chapter channels and DMs with no
-> member-level report or block (#2257, still open) does not satisfy — a harder rejection
-> than any listing untidiness.
+> child-safety policy set, which an app shipping chapter channels and DMs does not
+> satisfy on member-level report and block alone — a harder rejection than any listing
+> untidiness. The app has those controls as of binaries built after 2026-09-22 (#2257:
+> long-press report and block, Settings → Blocked members), but nothing yet acts on a
+> filed report, since no surface renders the officer queue.
 >
 > The reasoning actually on record is in § Age rating: 13+ was chosen over the calculated
 > 4+ **because** of the DMs-without-report-or-block situation and a college audience, and
