@@ -7,15 +7,24 @@
 // drop a prompt so the hardcoded list still passes, or treat Settings →
 // Signet / the store display name as out of this lock's scope. #1952.
 //
-// THE FLOOR WAS THREE UNTIL #2296. The third prompt was
-// expo-image-picker's photosPermission, a purpose string for a feature no
-// source file ever imported; its plugin entry also set
+// THE FLOOR WENT THREE -> TWO (#2296) -> THREE AGAIN (#2464). The third
+// prompt is expo-image-picker's photosPermission. #2296 removed it because
+// no source file imported the picker, so it shipped a purpose string for a
+// feature that did not exist, and its plugin entry also set
 // `cameraPermission: false`, which stripped android.permission.CAMERA from
-// the QR scanner. Both are gone. Do NOT "restore" photosPermission to
-// satisfy this lock — that reintroduces a Guideline 5.1.1(i) purpose
-// string and re-breaks Android check-in. A picker returns only with the
-// slice that actually builds a picker surface, and the floor rises with
-// it. spec/ui/mobile/navigation.md § Hotspot freeze has the account.
+// the QR scanner. The floor dropped to two and this block said a picker
+// returns only with the slice that actually builds a picker surface, and
+// that the floor rises with it. #2464 is that slice: mobile chat photo
+// upload, importing the picker from lib/chat/attachment-upload.ts.
+//
+// So the raise is the documented path, not a sweep restoring a string to
+// satisfy a lock — which is still the thing to refuse. Both #2296 defects
+// stay fixed and are pinned elsewhere: the plugin entry sets NO
+// cameraPermission key (apps/mobile/app.config.spec.ts pins the resolved
+// Android permission set, CAMERA included), and app.config.spec.ts also
+// pins that a media-picker dependency exists only while a non-spec source
+// file imports it. Drop the picker surface and those fail first.
+// spec/ui/mobile/navigation.md § Hotspot freeze has the full account.
 //
 // SCOPE. String-valued *Permission prompts under apps/mobile, the
 // stripeUnavailableReason / pushUnavailableReason definitions, and the
@@ -40,7 +49,7 @@ const PUSH = "apps/mobile/lib/notifications/push.ts";
 const DUES = "apps/mobile/app/(tabs)/dues.tsx";
 
 /** Current string-valued OS permission prompts. A deleted prompt must fail. */
-const MIN_PERMISSION_STRINGS = 2;
+const MIN_PERMISSION_STRINGS = 3;
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", "coverage"]);
 const SOURCE_EXT = /\.(?:json|js|ts|tsx)$/;
@@ -48,6 +57,7 @@ const SOURCE_EXT = /\.(?:json|js|ts|tsx)$/;
 const PERMISSIONS = [
   "Signet uses the camera to scan the check-in code at chapter events.",
   "Signet confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
+  "Signet uses your photo library so you can send photos in chapter chat.",
 ];
 
 const EXPECTED_SITES = [APP_JSON, DUES, PUSH, STRIPE].sort();
@@ -127,7 +137,9 @@ export function mobilePermissionLockProblems({ appJson, stripe, push, dues }) {
   const problems = [];
   const prompts = collectPermissionStrings(appJson);
   if (prompts.length < MIN_PERMISSION_STRINGS) {
-    problems.push("must keep at least two string-valued *Permission prompts");
+    problems.push(
+      `must keep at least ${MIN_PERMISSION_STRINGS} string-valued *Permission prompts`,
+    );
   }
   for (const key of ["cameraPermission", "locationWhenInUsePermission"]) {
     if (!prompts.some((prompt) => prompt.key === key)) {
@@ -183,8 +195,8 @@ export function mobilePermissionLockProblems({ appJson, stripe, push, dues }) {
 export function lockSelfProblems(source) {
   const problems = [];
   const floor = source.match(/^const MIN_PERMISSION_STRINGS = (\d+);?$/m);
-  if (!floor || floor[1] !== "2") {
-    problems.push("MIN_PERMISSION_STRINGS must stay 2");
+  if (!floor || floor[1] !== "3") {
+    problems.push("MIN_PERMISSION_STRINGS must stay 3");
   }
   const mobileRoot = source.match(
     /^const MOBILE_ROOT = join\(REPO_ROOT, "([^"]+)"\);?$/m,
@@ -361,11 +373,11 @@ test("dropping the unquoted JS collector fails", () => {
   );
 });
 
-test("dropping MIN_PERMISSION_STRINGS below 2 fails", () => {
+test("dropping MIN_PERMISSION_STRINGS below 3 fails", () => {
   const problems = lockSelfProblems(
     readFileSync(LOCK, "utf8").replace(
+      "const MIN_PERMISSION_STRINGS = 3",
       "const MIN_PERMISSION_STRINGS = 2",
-      "const MIN_PERMISSION_STRINGS = 1",
     ),
   );
   assert.ok(

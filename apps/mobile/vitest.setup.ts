@@ -14,9 +14,38 @@ vi.mock("expo-file-system/legacy", () => ({
   cacheDirectory: "file:///cache/",
   documentDirectory: "file:///document/",
   writeAsStringAsync: vi.fn().mockResolvedValue(undefined),
+  // Chat photo upload PUTs raw bytes from a file URI rather than a DOM File
+  // (`lib/chat/attachment-upload.ts`); a spec that exercises it overrides
+  // these per test.
+  getInfoAsync: vi.fn().mockResolvedValue({ exists: true, size: 1024 }),
+  uploadAsync: vi.fn().mockResolvedValue({ status: 200, body: "" }),
+  FileSystemUploadType: {
+    BINARY_CONTENT: 0,
+    MULTIPART: 1,
+  },
   EncodingType: {
     UTF8: "utf8",
   },
+}));
+
+// Default-denied on purpose: a spec that wants the happy path says so, and
+// nothing accidentally exercises a granted-library path it did not set up.
+vi.mock("expo-image-picker", () => ({
+  requestMediaLibraryPermissionsAsync: vi
+    .fn()
+    .mockResolvedValue({ granted: false, canAskAgain: true }),
+  launchImageLibraryAsync: vi.fn().mockResolvedValue({ canceled: true }),
+}));
+
+vi.mock("expo-image-manipulator", () => ({
+  ImageManipulator: {
+    manipulate: vi.fn(() => ({
+      renderAsync: vi.fn().mockResolvedValue({
+        saveAsync: vi.fn().mockResolvedValue({ uri: "file:///out.jpg" }),
+      }),
+    })),
+  },
+  SaveFormat: { JPEG: "jpeg", PNG: "png", WEBP: "webp" },
 }));
 
 vi.mock("expo-sharing", () => ({

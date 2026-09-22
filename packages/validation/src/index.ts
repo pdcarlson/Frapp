@@ -1032,3 +1032,4 @@ export {
   toRRuleLine,
 } from "./recurrence";
 export type { RecurrenceRule } from "./recurrence";
+export { MISSING_SIGNED_UPLOAD, readSignedUpload } from "./signed-upload";

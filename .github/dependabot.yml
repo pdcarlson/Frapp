@@ -195,6 +195,7 @@ updates:
       - dependency-name: "expo-document-picker"
       - dependency-name: "expo-file-system"
       - dependency-name: "expo-font"
+      - dependency-name: "expo-image-manipulator"
       - dependency-name: "expo-image-picker"
       - dependency-name: "expo-linking"
       - dependency-name: "expo-localization"

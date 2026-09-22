@@ -43,9 +43,10 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## No Edit action
  *
- * Canvas draws one. Editing here would mean a form plus an avatar picker, and
- * no image picker is a dependency of this app (`package.json` is frozen under
- * #937's hotspot protocol). Profile editing stays on the web dashboard for this
+ * Canvas draws one. Editing here would mean a form plus an avatar picker. The
+ * picker half is no longer a blocker — #2464 added `expo-image-picker` for chat
+ * photo upload — so what remains is the edit form and the avatar upload wiring
+ * (the `image` kind, not `document`). Profile editing stays on the web dashboard for this
  * slice. TODO-DESIGN: the Edit affordance and its sheet.
  */
 export default function ProfileScreen() {
