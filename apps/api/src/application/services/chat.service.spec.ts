@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import { canAccessChannel, MAX_UPLOAD_BYTES } from '@repo/validation';
@@ -40,7 +41,11 @@ import type {
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { RbacService } from './rbac.service';
-import { ChannelAccessService } from './channel-access.service';
+import {
+  ChannelAccessService,
+  ReportedMessageGrant,
+} from './channel-access.service';
+import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
 import { ChatBlockService } from './chat-block.service';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
 import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
@@ -2397,6 +2402,195 @@ describe('ChatService', () => {
       await expect(
         service.unpinMessage('msg-1', 'ch-1', 'user-1'),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // #2311, option 1 (owner decision 2026-09-22): an OPEN report lets a
+  // `channels:manage` holder remove exactly the message it names — including
+  // one in a DM they are not in — and nothing else. Run over the REAL
+  // ChannelAccessService wired above, so the DM predicate is the one that ships.
+  describe('deleteReportedMessage (report-scoped removal)', () => {
+    const OFFICER = 'user-officer';
+    const dmChannel: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-dm',
+      name: 'dm-user-1-user-2',
+      type: 'DM',
+      member_ids: ['user-1', 'user-2'],
+    };
+    const reportedMessage: ChatMessage = {
+      ...baseMessage,
+      id: 'msg-reported',
+      channel_id: 'ch-dm',
+      sender_id: 'user-2',
+      content: 'you are worthless',
+    };
+    const siblingMessage: ChatMessage = {
+      ...reportedMessage,
+      id: 'msg-sibling',
+      content: 'a message nobody reported',
+    };
+    const openReport: ChatMessageReportView = {
+      id: 'report-1',
+      chapter_id: 'ch-1',
+      message_id: 'msg-reported',
+      reported_content: 'you are worthless',
+      reported_sender_id: 'user-2',
+      reported_author_name: null,
+      reason: 'harassment',
+      details: null,
+      status: 'open',
+      created_at: '2026-01-01T12:05:00.000Z',
+      resolved_at: null,
+      resolved_by: null,
+    };
+    const grantFor = (report: ChatMessageReportView = openReport) =>
+      ReportedMessageGrant.fromOpenReport(report);
+
+    beforeEach(() => {
+      mockChannelRepo.findById.mockResolvedValue(dmChannel);
+      mockMessageRepo.findById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === reportedMessage.id
+            ? reportedMessage
+            : id === siblingMessage.id
+              ? siblingMessage
+              : null,
+        ),
+      );
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        ...baseMember,
+        user_id: OFFICER,
+      });
+      // The officer is a President: the wildcard is exactly the permission the
+      // DM predicate refuses to honour, which is what makes this the hard case.
+      mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+      mockMessageRepo.update.mockResolvedValue({
+        ...reportedMessage,
+        content: '[message deleted]',
+        is_deleted: true,
+      });
+    });
+
+    it('removes the reported DM message through the ordinary soft delete', async () => {
+      await service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER);
+
+      expect(mockChannelRepo.findById).toHaveBeenCalledWith('ch-dm', 'ch-1');
+      expect(mockMessageRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockMessageRepo.update).toHaveBeenCalledWith('msg-reported', {
+        content: '[message deleted]',
+        is_deleted: true,
+        metadata: {},
+      });
+      // Same tail as `deleteMessage`: the attachment purge runs, scoped to the
+      // chapter.
+      expect(mockAttachmentRepo.findByMessage).toHaveBeenCalledWith(
+        'msg-reported',
+        'ch-1',
+      );
+    });
+
+    it('returns nothing from the DM to the officer', async () => {
+      await expect(
+        service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
+      ).resolves.toBeUndefined();
+    });
+
+    it('does not open the thread: the officer still cannot read the DM', async () => {
+      // "A report about a DM does not open the DM to officers." Only the
+      // delete path accepts a grant; every read goes through the unchanged
+      // predicate.
+      await expect(
+        service.getMessages('ch-dm', 'ch-1', OFFICER),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.findByChannel).not.toHaveBeenCalled();
+    });
+
+    it('does not open the sibling messages to the ordinary delete route', async () => {
+      // `DELETE /v1/channels/messages/:id` for any other message in the DM is
+      // still the 403 it was, wildcard or not.
+      await expect(
+        service.deleteMessage('msg-sibling', 'ch-1', OFFICER, true),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a message the sender already deleted', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...reportedMessage,
+        content: '[message deleted]',
+        is_deleted: true,
+      });
+
+      await expect(
+        service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
+      ).rejects.toThrow(ConflictException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('404s a message that no longer exists', async () => {
+      mockMessageRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a grant minted in another chapter', async () => {
+      // The caller's active chapter and the report's chapter are sourced
+      // independently; a mismatch grants nothing.
+      const foreign = grantFor({ ...openReport, chapter_id: 'ch-other' });
+
+      await expect(
+        service.deleteReportedMessage(foreign, 'ch-1', OFFICER),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('404s when the message channel is not in the caller chapter', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a caller who is not a member of the chapter', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('also removes a reported message in a channel (non-DM) the officer is not in', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        id: 'ch-dm',
+        type: 'PRIVATE',
+        member_ids: ['user-1', 'user-2'],
+      });
+
+      await service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER);
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-reported',
+        expect.objectContaining({ is_deleted: true }),
+      );
+    });
+
+    it('also removes a reported message in a PUBLIC channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        id: 'ch-dm',
+      });
+
+      await service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER);
+
+      expect(mockMessageRepo.update).toHaveBeenCalledTimes(1);
     });
   });
 

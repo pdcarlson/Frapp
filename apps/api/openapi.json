@@ -3210,6 +3210,42 @@
         ]
       }
     },
+    "/v1/chat/reports/{id}/remove-message": {
+      "post": {
+        "operationId": "ChatReportController_removeReportedMessage_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove the message an open report names and mark the report actioned",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/chat/blocks": {
       "get": {
         "operationId": "ChatBlockController_listBlocks_v1",

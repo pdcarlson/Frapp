@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -59,9 +61,11 @@ import {
  *
  * `MEMBERS_VIEW` at the class is the same floor chat itself requires.
  * `@RequirePermissions` is a pure AND merged across class and handler, so the
- * two officer routes below require `members:view` **and** `channels:manage` —
+ * three officer routes below require `members:view` **and** `channels:manage` —
  * which is what is wanted: the queue is a chapter-data read as well as a
- * moderation surface.
+ * moderation surface. `REPORT_QUEUE_PERMISSIONS` (`chat-report.service.ts`)
+ * restates that union to address the new-report notification, so change the
+ * two together.
  */
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -130,5 +134,44 @@ export class ChatReportController {
     @Body() dto: ResolveChatReportDto,
   ): Promise<ChatReportDto> {
     return this.reportService.resolveReport(id, chapterId, dto.status, userId);
+  }
+
+  /**
+   * Remove the message an open report names, and mark the report `actioned`
+   * (#2311, option 1). The report is the capability: this is how an officer
+   * removes reported content from a DM they are not in — exactly that one
+   * message, and nothing else in the thread.
+   *
+   * **Shaped as a command on the report, not a `DELETE` on the message**, and
+   * deliberately so. The report id is the whole input: the route never accepts
+   * a message id, so there is no second identifier a caller could point at a
+   * sibling message, and the authority being exercised (an open report in this
+   * chapter) is the resource in the URL. It sits beside the other command
+   * routes in this API (`POST /v1/channels/:id/leave`,
+   * `POST /v1/channels/messages/:messageId/pin`) and on this controller for
+   * the reason the class docblock gives.
+   *
+   * `channels:manage` on top of the class floor, like the queue: the same
+   * holders who can read a report can act on it. Inherits the class-level
+   * `@SubscriptionExempt()` — removing reported harassment is member safety.
+   *
+   * 404 for a report not in the caller's chapter; 409 when the report is no
+   * longer open or its message is already gone. Returns the resolved report,
+   * never the message.
+   */
+  @Post(':id/remove-message')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Remove the message an open report names and mark the report actioned',
+  })
+  @ApiOkResponse({ type: ChatReportDto })
+  async removeReportedMessage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<ChatReportDto> {
+    return this.reportService.removeReportedMessage(id, chapterId, userId);
   }
 }

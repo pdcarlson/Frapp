@@ -144,20 +144,43 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
     expect(resolved).not.toHaveProperty('reporter_user_id');
   });
 
-  it('create stamps the chapter it is given and never writes into another', async () => {
-    const created = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.create({
-        chapter_id: CHAPTER_B,
-        message_id: '0c000000-0000-4000-8000-000000000203',
-        reporter_user_id: USER_A,
-        reported_content: 'something new',
-        reported_sender_id: USER_SHARED,
-        reported_author_name: null,
-        reason: 'other',
-        details: null,
-      }),
+  it('findById does not reach a report in another chapter', async () => {
+    // The report-scoped removal (#2311) authorizes off this row, so a foreign
+    // report resolving here would hand an officer another chapter's message.
+    const result = await repo.findById(REPORT_B_OPEN, CHAPTER_A);
+
+    expect(result).toBeNull();
+  });
+
+  it('findById returns the chapter report whatever its status, without the reporter', async () => {
+    const found = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findById(REPORT_A_REVIEWED, CHAPTER_A),
     );
 
+    expect(found).toMatchObject({
+      id: REPORT_A_REVIEWED,
+      status: 'reviewed',
+      message_id: MESSAGE_TWO,
+    });
+    expect(found).not.toHaveProperty('reporter_user_id');
+  });
+
+  it('create stamps the chapter it is given and never writes into another', async () => {
+    const { report: created, created: wasCreated } =
+      await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.create({
+          chapter_id: CHAPTER_B,
+          message_id: '0c000000-0000-4000-8000-000000000203',
+          reporter_user_id: USER_A,
+          reported_content: 'something new',
+          reported_sender_id: USER_SHARED,
+          reported_author_name: null,
+          reason: 'other',
+          details: null,
+        }),
+      );
+
+    expect(wasCreated).toBe(true);
     expect(created.chapter_id).toBe(CHAPTER_B);
     expect(created).not.toHaveProperty('reporter_user_id');
   });
@@ -272,11 +295,15 @@ describe('SupabaseChatMessageReportRepository — duplicate open report', () => 
     });
     const repo = new SupabaseChatMessageReportRepository(client);
 
-    const result = await repo.create(input);
+    const { report: result, created } = await repo.create(input);
 
     expect(from).toHaveBeenCalledWith('chat_message_reports');
     expect(result.id).toBe(REPORT_A_OPEN);
     expect(result).not.toHaveProperty('reporter_user_id');
+    // A replay, not a new report — `ChatReportService` keys the officer
+    // notification off this, so reporting `true` here would re-page every
+    // officer on each double-tap.
+    expect(created).toBe(false);
     // Scoped to the caller's own tuple, so the read-back cannot hand over
     // somebody else's report on the same message.
     expect(filters).toEqual([

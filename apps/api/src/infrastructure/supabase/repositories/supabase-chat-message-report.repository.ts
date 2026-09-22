@@ -8,6 +8,7 @@ import type {
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import type {
   CreateChatReportInput,
+  CreateChatReportResult,
   IChatMessageReportRepository,
 } from '#domain/repositories/chat-moderation.repository.interface';
 import type {
@@ -55,8 +56,11 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
    * to the caller's own `(chapter_id, reporter_user_id, message_id, 'open')`,
    * which is the only tuple the index could have collided on, so it cannot hand
    * back somebody else's report.
+   *
+   * `created` says which of the two happened, so the service can notify
+   * officers about a new report and stay silent on a replay.
    */
-  async create(input: CreateChatReportInput): Promise<ChatMessageReportView> {
+  async create(input: CreateChatReportInput): Promise<CreateChatReportResult> {
     const payload: TablesInsert<'chat_message_reports'> = {
       chapter_id: input.chapter_id,
       message_id: input.message_id,
@@ -85,12 +89,32 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
         // insert and this read. Surfacing the original 23505 is the honest
         // answer: the caller can retry and will then succeed, where inventing a
         // row would be a lie about what is in the queue.
-        if (existing) return existing;
+        if (existing) return { report: existing, created: false };
       }
       throw error;
     }
 
-    return stripReportRow(data);
+    return { report: stripReportRow(data), created: true };
+  }
+
+  /**
+   * Scoped by `chapter_id` as well as `id`, like {@link resolve}: the chapter
+   * predicate is what stops a `channels:manage` holder in one chapter from
+   * reaching another chapter's report — and, through it, another chapter's
+   * message — by UUID.
+   */
+  async findById(
+    id: string,
+    chapterId: string,
+  ): Promise<ChatMessageReportView | null> {
+    const { data, error } = await this.supabase
+      .from('chat_message_reports')
+      .select()
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? stripReportRow(data) : null;
   }
 
   async findByChapterAndStatus(

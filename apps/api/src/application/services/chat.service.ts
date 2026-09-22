@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import {
@@ -65,7 +66,10 @@ import {
   isSettableNotificationKind,
 } from '#domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
-import { ChannelAccessService } from './channel-access.service';
+import {
+  ChannelAccessService,
+  type ReportedMessageGrant,
+} from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
 import { ActivationService } from './activation.service';
@@ -923,18 +927,23 @@ export class ChatService {
    * messages too, and a second copy of this resolution would be free to drift
    * from the one the chat hot path uses. The body moved there; this stays as a
    * thin delegate so the call sites below read unchanged.
+   *
+   * `grant` is passed through untouched; only {@link deleteReportedMessage}
+   * supplies one.
    */
   private assertMessageAccess(
     messageId: string,
     chapterId: string,
     userId: string,
     operation: 'read' | 'post' = 'read',
+    grant?: ReportedMessageGrant,
   ): Promise<ChatMessage> {
     return this.channelAccess.assertMessageAccess(
       messageId,
       chapterId,
       userId,
       operation,
+      grant,
     );
   }
 
@@ -1002,6 +1011,65 @@ export class ChatService {
       );
     }
 
+    return this.softDeleteMessage(messageId, chapterId);
+  }
+
+  /**
+   * Remove the one message an open report names (#2311, option 1).
+   *
+   * **Not a second delete path.** Authorization goes through the same
+   * `assertMessageAccess` every message action uses, with the report as an
+   * explicit capability ({@link ReportedMessageGrant}) rather than a forked
+   * predicate; the write is the same {@link softDeleteMessage} `deleteMessage`
+   * ends in, so the tombstone, the `metadata` wipe and the attachment purge
+   * cannot drift between an author deleting their own message and an officer
+   * removing a reported one.
+   *
+   * The officer's `channels:manage` is proven by the route
+   * (`POST /v1/chat/reports/:id/remove-message`), in the same chapter the grant
+   * was read in. What this adds on top:
+   *
+   * - **No sender check.** The report, not authorship, is the authority.
+   * - **A message already deleted is a 409.** Its content is gone already, and
+   *   succeeding would record an officer action that removed nothing. The
+   *   officer resolves the report instead (`PATCH /v1/chat/reports/:id`).
+   *
+   * `chapterId` is the caller's active chapter, taken separately from the
+   * grant's own so the predicate compares two independently sourced values
+   * rather than one against itself.
+   *
+   * Returns nothing: the caller must not receive the row. The only thing the
+   * officer is entitled to from a DM is the snapshot the report already holds.
+   */
+  async deleteReportedMessage(
+    grant: ReportedMessageGrant,
+    chapterId: string,
+    officerUserId: string,
+  ): Promise<void> {
+    const message = await this.assertMessageAccess(
+      grant.messageId,
+      chapterId,
+      officerUserId,
+      'read',
+      grant,
+    );
+
+    if (message.is_deleted) {
+      throw new ConflictException('The reported message is already deleted');
+    }
+
+    await this.softDeleteMessage(message.id, chapterId);
+  }
+
+  /**
+   * The soft delete itself — shared by {@link deleteMessage} and
+   * {@link deleteReportedMessage}, which differ only in who may call them.
+   * Callers authorize first; this does not.
+   */
+  private async softDeleteMessage(
+    messageId: string,
+    chapterId: string,
+  ): Promise<ChatMessage> {
     const deleted = await this.messageRepo.update(messageId, {
       content: '[message deleted]',
       is_deleted: true,

@@ -511,6 +511,72 @@ export class RbacService {
   }
 
   /**
+   * The `users.id` of every member of `chapterId` whose effective permissions
+   * satisfy **all** of `permissions` — the wildcard satisfies any list — for
+   * addressing a notification to "whoever in this chapter can act on it"
+   * (#2257: officers are told when a chat message is reported).
+   *
+   * All-of, matching `@RequirePermissions`, so a caller can pass a route's full
+   * requirement and get exactly the members that route would admit. The report
+   * queue needs `members:view` **and** `channels:manage`, and notifying a member
+   * who holds only the second would send them to a queue that 403s.
+   *
+   * **Three reads, not one per member.** `getEffectivePermissions` costs a
+   * membership read and a role read per member; walking the roster through it
+   * would be ~2N queries on a request path. This loads the roster, the
+   * chapter's roles and its custom roles once each, and flattens in memory
+   * through the same `flattenPermissionSets` the guard and
+   * {@link resolvePermissionSet} use, so the three cannot disagree about who
+   * holds what (the wildcard only from a live role, never a custom one).
+   *
+   * **Re-scoped to the chapter twice over.** All three reads filter on
+   * `chapter_id`, and the role maps below additionally drop any row whose
+   * `chapter_id` is not this one — a member's `role_ids` array is not
+   * foreign-keyed, so a stale or cross-chapter id in it must contribute
+   * nothing, exactly as the per-member resolver's `findByIds(ids, chapterId)`
+   * guarantees.
+   */
+  async findUserIdsWithPermissions(
+    chapterId: string,
+    permissions: readonly string[],
+  ): Promise<string[]> {
+    const [members, roles, customRoles] = await Promise.all([
+      this.memberRepo.findByChapter(chapterId),
+      this.roleRepo.findByChapter(chapterId),
+      this.customRoleService.findByChapter(chapterId),
+    ]);
+
+    const rolePermissions = new Map(
+      roles
+        .filter((role) => role.chapter_id === chapterId)
+        .map((role) => [role.id, role.permissions] as const),
+    );
+    const customRoleCapabilities = new Map(
+      customRoles
+        .filter((role) => role.chapter_id === chapterId)
+        .map((role) => [role.id, role.capabilities] as const),
+    );
+
+    const holders = new Set<string>();
+    for (const member of members) {
+      if (member.chapter_id !== chapterId) continue;
+      const granted = flattenPermissionSets(
+        (member.role_ids ?? []).map((id) => rolePermissions.get(id)),
+        (member.custom_role_ids ?? []).map((id) =>
+          customRoleCapabilities.get(id),
+        ),
+      );
+      if (
+        granted.has(WILDCARD) ||
+        permissions.every((permission) => granted.has(permission))
+      ) {
+        holders.add(member.user_id);
+      }
+    }
+    return [...holders];
+  }
+
+  /**
    * Flatten a member's live-role permissions and custom-role capabilities
    * (bridge model, spec/behavior/rbac.md) into one set. Both lookups resolve
    * within `chapterId`, so stale or cross-chapter ids contribute nothing.

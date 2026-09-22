@@ -25,6 +25,22 @@ export interface CreateChatReportInput {
   details: string | null;
 }
 
+/**
+ * What filing a report produced: the report, and whether this call wrote it.
+ *
+ * `created` exists for one consumer, and it is load-bearing there: the officer
+ * notification fires only for a report this call actually inserted
+ * (`ChatReportService.fileReport`). Without it a double-tap or an offline retry
+ * — which the idempotent path below answers with the *existing* open report —
+ * would page every officer a second time for the same report, and a member
+ * could re-page the whole moderation team at will by re-filing.
+ */
+export interface CreateChatReportResult {
+  report: ChatMessageReportView;
+  /** False when the caller already had an open report on this message and this is it. */
+  created: boolean;
+}
+
 export interface IChatMessageReportRepository {
   /**
    * File a report, idempotently on the caller's *open* report for this message.
@@ -33,10 +49,25 @@ export interface IChatMessageReportRepository {
    * not use a partial unique index as an `ON CONFLICT` arbiter — the same
    * limitation `SupabaseChatMessageRepository.create` documents for the send
    * dedupe. So this cannot be an upsert: the implementation inserts, and on
-   * `23505` re-selects the open row and returns it. A double-tap or an offline
-   * retry is therefore a no-op rather than a 500.
+   * `23505` re-selects the open row and returns it with `created: false`. A
+   * double-tap or an offline retry is therefore a no-op rather than a 500.
    */
-  create(input: CreateChatReportInput): Promise<ChatMessageReportView>;
+  create(input: CreateChatReportInput): Promise<CreateChatReportResult>;
+
+  /**
+   * One report within a chapter, whatever its status. Returns `null` when the id
+   * does not resolve **inside `chapterId`** — the same tenancy rule as
+   * {@link resolve}, for the same reason: a report id is a bare UUID and the
+   * caller's `channels:manage` says nothing about which chapter it belongs to.
+   *
+   * Exists for the report-scoped removal (#2311), where the row is the
+   * capability: the caller needs the report's *current* `status` and
+   * `message_id`, read fresh, before it may act on the message it names.
+   */
+  findById(
+    id: string,
+    chapterId: string,
+  ): Promise<ChatMessageReportView | null>;
 
   /**
    * The officer queue for one chapter, newest first, filtered to one status.

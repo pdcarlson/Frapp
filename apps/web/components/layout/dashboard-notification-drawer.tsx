@@ -75,6 +75,10 @@ function deepLinkFor(notification: Notification): string {
       return "/service";
     case "profile":
       return "/profile";
+    // The officer report queue (#2257): the API's new-report notification
+    // targets it with a bare screen, and the queue lives on Chat Admin.
+    case "chat_reports":
+      return "/chat-admin";
     default:
       return "/chat";
   }
