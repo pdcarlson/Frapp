@@ -109,7 +109,15 @@ export default function SignIn() {
         importantForAccessibility="no-hide-descendants"
       />
       <Text style={styles.title}>Signet</Text>
-      <Text style={styles.subtitle}>Ask your chapter anything.</Text>
+      {/*
+        The landing's closing line (D8, `spec/ui/landing/README.md`), not the
+        brand tagline "Ask your chapter anything.": this is the first screen
+        App Review opens, and a build without Ask must not lead with it
+        (#2298). The brand tagline returns here in the slice that ships Ask.
+      */}
+      <Text style={styles.subtitle}>
+        Everything your chapter needs is already in chat.
+      </Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Sign in to your chapter</Text>
         <Text style={styles.cardBody}>

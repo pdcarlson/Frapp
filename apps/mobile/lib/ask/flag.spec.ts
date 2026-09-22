@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ASK_FLAG_ENV_KEY, askUnavailableReason, isAskAvailable } from "./flag";
+import { ASK_FLAG_ENV_KEY, isAskAvailable } from "./flag";
 
 /**
  * The flag is the only thing standing between a member and a synthetic dues
@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 describe("isAskAvailable", () => {
-  it("is off when nothing is configured, which is every shipped build today", () => {
+  it("is off when nothing is configured, and no eas.json profile configures it", () => {
     expect(isAskAvailable()).toBe(false);
   });
 
@@ -50,30 +50,5 @@ describe("isAskAvailable", () => {
         `expected ${JSON.stringify(off)} to be off`,
       ).toBe(false);
     }
-  });
-});
-
-describe("askUnavailableReason", () => {
-  it("says nobody has switched it on when the variable is absent", () => {
-    const reason = askUnavailableReason();
-    expect(reason).toContain("isn't switched on for this build");
-    // §5: a blocked control names its blocker *and* leaves somewhere to go.
-    expect(reason).toContain("Documents");
-  });
-
-  it("says somebody switched it off when the variable is set to off", () => {
-    process.env[KEY] = "0";
-    expect(askUnavailableReason()).toContain("has been switched off");
-  });
-
-  it("gives the two causes genuinely different sentences", () => {
-    const absent = askUnavailableReason();
-    process.env[KEY] = "false";
-    expect(askUnavailableReason()).not.toBe(absent);
-  });
-
-  it("is null when Ask is available, so the sheet has no excuse to show one", () => {
-    process.env[KEY] = "1";
-    expect(askUnavailableReason()).toBeNull();
   });
 });

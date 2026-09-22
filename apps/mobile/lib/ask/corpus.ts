@@ -21,10 +21,12 @@
  * would have been read as a real attendance record, so it was deleted rather
  * than stubbed. That failure needs a member on the other side of the screen.
  * Here there is none: `isAskAvailable()` is false unless a build explicitly
- * sets `EXPO_PUBLIC_ASK_ENABLED`, no shipped build sets it, and with it unset
- * the sheet renders the unavailable reason and never calls into this file. So
- * no fabricated answer reaches a member, and the rule is satisfied rather than
- * bent.
+ * sets `EXPO_PUBLIC_ASK_ENABLED`, nothing in this repo sets it, and with it
+ * unset the ✦ pill is not drawn and the sheet renders nothing, so nothing calls
+ * into this file. (Whether a store binary has it unset is an EAS-environment
+ * question, not a repo one — `docs/internal/environment/ENV_REFERENCE.md`
+ * § apps/mobile (Expo — EAS) says how to settle it.) So no fabricated answer
+ * reaches a member, and the rule is satisfied rather than bent.
  *
  * What the mock buys is that the *screen* is real — the layout, the citation
  * chips, the refusal path and the in-flight state are all built and reviewable

@@ -179,7 +179,7 @@ record; each is a review-time or launch risk.
 | --- | --- |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 — no member-level report or block, with DMs shipping |
 | [#2258](https://github.com/pdcarlson/Frapp/issues/2258) | Guideline 5.2 — Backwork's v1 posture (**decision, not work**) |
-| [#2259](https://github.com/pdcarlson/Frapp/issues/2259) | Guideline 2.1 — the ✦ Ask pill renders with Ask switched off |
+| ~~[#2259](https://github.com/pdcarlson/Frapp/issues/2259)~~ | Fixed in the repo 2026-09-22 (owner decision): with Ask off, Chat home and Events draw no ✦ pill, the sheet renders nothing, and `frapp://ask` redirects to Chat home, so **a reviewer is shown no Ask surface at all**. That is also why § Review notes says nothing about Ask: there is nothing on screen to explain. Live only in the next build. It holds only while `EXPO_PUBLIC_ASK_ENABLED` is unset in the EAS `production` environment, which the repo cannot see (§ Description's note) |
 | ~~[#2260](https://github.com/pdcarlson/Frapp/issues/2260)~~ | Closed 2026-09-18 — answered ("it is not set"), superseded by #2415 |
 | [#2261](https://github.com/pdcarlson/Frapp/issues/2261) | Terms of Service carries no minimum-age clause |
 | ~~[#2262](https://github.com/pdcarlson/Frapp/issues/2262)~~ | Fixed in the repo 2026-09-22: the FERPA notice no longer points at a redaction tool. Live only after the next Deploy production |
@@ -197,7 +197,7 @@ the work; the detail lives there, not here.
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | No App Review demo user exists in `frapp-prod`; the demo seed is Docker-only. The reviewer cannot sign in | hard gate |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 (restated as a blocker, not a risk): API and production DB ship report/block, **no client consumes either** | blocker |
 | [#2305](https://github.com/pdcarlson/Frapp/issues/2305) | **Fixed in the repo 2026-09-22; live only after the next Deploy production.** The policy's photo-library clause read "choose a profile photo or attach an image", and the iOS app has no profile-photo picker, so it now names chat photos only. Resend (sign-in and invite email) and the two hosts, Render and Vercel, were added to § Service Providers. Both stores fetch the live URL, so deploy the landing before submitting | 5.1.2 |
-| [#2298](https://github.com/pdcarlson/Frapp/issues/2298) / [#2301](https://github.com/pdcarlson/Frapp/issues/2301) | Sign-in tagline advertises Ask; the `sheet-demo` dev route ships and is reachable via `frapp://sheet-demo`. (The two permanently inert controls, [#2300](https://github.com/pdcarlson/Frapp/issues/2300), were removed 2026-09-22.) | 2.1 |
+| ~~[#2298](https://github.com/pdcarlson/Frapp/issues/2298)~~ / [#2301](https://github.com/pdcarlson/Frapp/issues/2301) | The `sheet-demo` dev route ships and is reachable via `frapp://sheet-demo`. (The sign-in tagline no longer advertises Ask, fixed in the repo 2026-09-22, and the two permanently inert controls, [#2300](https://github.com/pdcarlson/Frapp/issues/2300), were removed the same day. Both are live only in the next build.) | 2.1 |
 | [#2334](https://github.com/pdcarlson/Frapp/issues/2334) | **Smoke-test Sign in with Apple on the TestFlight build before submitting.** At the pinned `expo-apple-authentication ~57.0.2` a nil `keyWindow` reaches an uncatchable Swift `fatalError`, i.e. a SIGTRAP abort on the sign-in screen with the browser-OAuth fallback unreachable — and no live Apple sign-in has ever been observed against `frapp-prod`. The unit suite gives **zero** signal because it never loads the native module. A crash on the first screen a reviewer touches outranks the 4.8 question it also raises | 4.8 + crash |
 
 ## Description
@@ -211,6 +211,13 @@ the work; the detail lives there, not here.
 > from a hand-written table in `apps/mobile/lib/ask/corpus.ts`. Store metadata that
 > advertised it would be inaccurate under Guideline 2.3. **Use the tagline as the
 > subtitle once Ask genuinely ships** — the subtitle is editable on any new version.
+>
+> **The binary now agrees (2026-09-22).** The sign-in screen used to open on the brand
+> tagline, making in the app the claim this listing avoids. It now reads "Everything your
+> chapter needs is already in chat." ([#2298](https://github.com/pdcarlson/Frapp/issues/2298)),
+> and a build without Ask draws no ✦ pill ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).
+> The copy lives in [`spec/ui/design-system/writing.md`](../../../spec/ui/design-system/writing.md)
+> § 7, Sign in. When Ask ships, move the listing subtitle and the sign-in line together.
 
 Signet is the app your chapter actually runs on.
 
