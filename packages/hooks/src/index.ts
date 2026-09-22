@@ -9,6 +9,7 @@ export * from "./use-activity-feed";
 export * from "./use-attendance";
 export * from "./use-points";
 export * from "./use-chat";
+export * from "./use-chat-reports";
 export * from "./use-billing";
 export * from "./use-invoices";
 export * from "./use-backwork";

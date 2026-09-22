@@ -83,12 +83,17 @@ search.
 > `frapp-prod` migrations are **current** — its applied list ends at the same
 > `20260915210100` the repo does (83 files; the old "81" was stale) — and it already
 > carries `chat_reports_and_blocks`, so the Guideline 1.2 **write** path is deployed.
-> That narrows #2257 to client work but does not close it: nothing anywhere reads
-> `/v1/chat/reports`, including the web dashboard, and 1.2 requires acting on a report,
-> not only accepting it — so an officer review surface is still owed. (`mcp__Render__list_deploys`
-> on `srv-d6lqu41aae7s73f62df0`; `mcp__Supabase__list_migrations` on
-> `unttyvyfezddlyafcydh`.) **Re-check again before submitting**; a 200 on `/health` says
-> the service is up, not that it matches the app.
+> (`mcp__Render__list_deploys` on `srv-d6lqu41aae7s73f62df0`;
+> `mcp__Supabase__list_migrations` on `unttyvyfezddlyafcydh`.) **Re-check again before
+> submitting**; a 200 on `/health` says the service is up, not that it matches the app.
+>
+> That narrows #2257 to client work but does not close it. 1.2 requires acting on a
+> report, not only accepting it, and the officer half of that is built **for the web
+> dashboard only**, later than the deploy verified above, so check that it shipped: Chat
+> Admin reads `/v1/chat/reports` and can remove the one message an open report names
+> (#2311), per `spec/behavior/chat/README.md` § Report and block. The member half
+> (reporting a message and blocking a member, in this binary) is still owed, and it is
+> the half a reviewer exercises.
 >
 > **Superseded, kept as the provenance of the Resend gap (2026-09-14):** production then
 > served `0ca478e` (2026-09-08), ~160 commits behind `main`, with 76 of the repo's 81
@@ -200,7 +205,7 @@ the work; the detail lives there, not here.
 | [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` holds only `SENTRY_AUTH_TOKEN`. It no longer owns the screenshot route (#2454 shoots from Expo web), but a `preview` build still cannot sign in. Its other half, no Stripe key in `production`, stopped gating submission on 2026-09-21: this listing no longer claims card payments, so that key is a product decision rather than a blocker. Neither half now gates submission, which ships the `production` build | no longer a gate (2026-09-22) |
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | No App Review demo user exists in `frapp-prod`; the demo seed is Docker-only. The reviewer cannot sign in | hard gate |
-| [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 (restated as a blocker, not a risk): API and production DB ship report/block, **no client consumes either** | blocker |
+| [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 (restated as a blocker, not a risk): API and production DB ship report/block, and the only client of either is the web dashboard's officer queue — **this binary cannot report a message or block a member** | blocker |
 | [#2305](https://github.com/pdcarlson/Frapp/issues/2305) | **Fixed in the repo 2026-09-22; live only after the next Deploy production.** The policy's photo-library clause read "choose a profile photo or attach an image", and the iOS app has no profile-photo picker, so it now names chat photos only. Resend (sign-in and invite email) and the two hosts, Render and Vercel, were added to § Service Providers. Both stores fetch the live URL, so deploy the landing before submitting | 5.1.2 |
 | ~~[#2298](https://github.com/pdcarlson/Frapp/issues/2298)~~ / [#2301](https://github.com/pdcarlson/Frapp/issues/2301) | The `sheet-demo` dev route ships and is reachable via `frapp://sheet-demo`. (The sign-in tagline no longer advertises Ask, fixed in the repo 2026-09-22, and the two permanently inert controls, [#2300](https://github.com/pdcarlson/Frapp/issues/2300), were removed the same day. Both are live only in the next build.) | 2.1 |
 | [#2334](https://github.com/pdcarlson/Frapp/issues/2334) | **Smoke-test Sign in with Apple on the TestFlight build before submitting.** At the pinned `expo-apple-authentication ~57.0.2` a nil `keyWindow` reaches an uncatchable Swift `fatalError`, i.e. a SIGTRAP abort on the sign-in screen with the browser-OAuth fallback unreachable — and no live Apple sign-in has ever been observed against `frapp-prod`. The unit suite gives **zero** signal because it never loads the native module. A crash on the first screen a reviewer touches outranks the 4.8 question it also raises | 4.8 + crash |

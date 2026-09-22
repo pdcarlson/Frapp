@@ -442,6 +442,26 @@ that rule and the string is shared with mobile.
 
 Channel seeding happens at chapter onboarding and has no billing prerequisite; [onboarding.md](../../behavior/onboarding.md) owns the seeding flow.
 
+### Chat Admin — reported messages (dashboard)
+
+The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Report and block). One empty row per status tab, because each tab is a different claim about the chapter.
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading reports...` |
+| Empty (Open) | `No open reports` | `When a member reports a message, it lands here for officers to review.` |
+| Empty (Reviewed / Actioned / Dismissed) | `No reviewed reports` · `No actioned reports` · `No dismissed reports` | `Reports marked reviewed are kept here.` · `Reports whose message was removed are kept here.` · `Reports you dismiss are kept here.` |
+| Error | `Couldn't load reports` | `Confirm your chapter access and retry.` |
+| Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review reported messages.` |
+| Permission denied | `Reported messages` | `Reviewing reported messages needs the members:view and channels:manage permissions. Ask your chapter president to grant access.` |
+| Nothing to remove | — | `The message no longer exists, so there's nothing to remove.` (hard-deleted) · `The sender already deleted this message, so there's nothing to remove.` (after a 409) |
+| Remove confirmation | `Remove this message?` | `This removes this one message for everyone and marks the report actioned. Nothing else in the conversation changes, and a direct message stays private: officers can't open it. This cannot be undone.` · confirm `Remove message` |
+
+The confirmation says the conversation stays closed because that is the rule an officer is most likely to assume away: removing a message from a DM does not open the DM. The row has no channel name or kind to say "direct message" more specifically — the report snapshots the message, not its channel.
+
+Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
+
 ### Billing (dashboard)
 
 | State | Title | Description |
