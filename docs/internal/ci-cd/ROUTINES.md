@@ -231,12 +231,13 @@ issue if anything looks off):
   a surface `area:web` could also claim, so whether landing work should carry its own label or fold
   into `area:web` is the owner's call, not a routine's. Rostered rather than re-bucketed for the
   same reason as the five above) · `area:testing` (same story, rostered 2026-09-22 — in use on
-  #2451 for the jsdom 30.1 / Radix overlay hold; carries no label description, and its scope is
-  likewise the owner's to define. It **overlaps** rather than partitions on two axes at once: test
-  work already arrives under `area:ci` when it is about the pipeline and under a surface label when
-  it is about the code under test, and #2451 is arguably both. Whether a dedicated testing label
-  earns its place or folds back into `area:ci` is the owner's call, not a routine's. Rostered
-  rather than re-bucketed for the same reason as the six above)
+  #2451 for the jsdom 30.1 Radix-overlay hold; carries no label description, and its scope is
+  likewise the owner's to define. It **overlaps** rather than partitions, and along two axes at
+  once: test debt is already filed under `area:ci` when it is test *infrastructure* — #2450
+  (`test:cov` runs nowhere), #827 (no Supabase stack for the integration suite) — and under the
+  surface label when it is a missing *spec*, as #2456 and #2282 are (both `area:mobile`). Whether a
+  third home helps or just splits one class three ways is the owner's call, not a routine's.
+  Rostered rather than re-bucketed for the same reason as the six above)
 - **Scope:** `scope:production` — work that only becomes relevant once a production environment
   exists (owner decision 2026-08-10; see
   [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the

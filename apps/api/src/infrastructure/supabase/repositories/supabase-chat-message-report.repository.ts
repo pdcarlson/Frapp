@@ -5,7 +5,7 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { PG_UNIQUE_VIOLATION } from '#domain/repositories/chat.repository.interface';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import type {
   CreateChatReportInput,
   IChatMessageReportRepository,
@@ -75,7 +75,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .single();
 
     if (error) {
-      if ((error as { code?: string }).code === PG_UNIQUE_VIOLATION) {
+      if (error.code === PG_UNIQUE_VIOLATION) {
         const existing = await this.findOpenReport(
           input.chapter_id,
           input.reporter_user_id,
