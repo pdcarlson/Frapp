@@ -54,13 +54,19 @@ RUN npm run build --workspace=apps/api
 # second inject would mint debug IDs that never execute).
 #
 # ARG, not ENV: do not bake `SENTRY_AUTH_TOKEN` into later layers. Render
-# passes service env vars matching these ARG names at build time. Unset
-# (CI, laptops) → the script skips sentry-cli and still strips `*.map` so
-# the runner does not ship TypeScript. Set but sentry-cli fails (inject or
-# upload: non-zero exit, signal, or time bound) → the script prints one
-# `WARNING:` line, still strips `*.map`, and exits 0: the upload is best
-# effort and must not gate shipping (#2431). Only a failure to strip exits
-# non-zero. Do not add `|| true` here; that would hide a strip failure too.
+# passes service env vars matching these ARG names at build time. Unset (CI,
+# laptops, or a Render service whose Infisical environment does not carry
+# it, which may include production; spec/behavior/observability.md
+# § Release naming says which do) → the script skips sentry-cli and still
+# strips `*.map` so the runner does not ship TypeScript. Set but sentry-cli
+# fails (inject or upload: cannot be resolved or started, non-zero exit,
+# signal, or time bound) → the script prints one `WARNING:` line, still
+# strips `*.map`, and exits 0: the upload is best effort and must not gate
+# shipping (#2431). Inject rewrites dist in place, so the script copies dist
+# to `apps/api/.sentry-inject-snapshot-*` first (outside dist, which is all
+# the runner takes from here, and removed afterwards) and restores it from
+# that copy if inject fails. Only a failure to strip, or to restore dist,
+# exits non-zero. Do not add `|| true` here; that would hide those too.
 # A failed upload is cached with this layer, so a same-commit rebuild does
 # not retry it; clear the build cache to retry. No glibc shim (`gcompat`):
 # the `@sentry/cli-linux-x64` binary npm installs here is static-pie.

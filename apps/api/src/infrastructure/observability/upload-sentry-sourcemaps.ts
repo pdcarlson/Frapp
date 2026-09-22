@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { readdirSync, unlinkSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, rmSync, unlinkSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { readDeployedCommit } from './deployed-commit';
 
 /**
@@ -19,15 +19,16 @@ import { readDeployedCommit } from './deployed-commit';
  * never run. Upload belongs on the Render build of the image that serves
  * traffic.
  *
- * Best effort when the token IS set, too (#2431): if `sentry-cli` cannot run,
- * exits non-zero, is killed by a signal, or outlives its time bound, this
- * logs one `WARNING:` line naming the step and returns `'failed'`, and the
- * build still succeeds. Symbolicated stack traces are telemetry; they must
- * not gate shipping the API. Before this, a failing inject turned every
- * Render build red for days while staging and production kept serving an old
- * image. What stays a hard failure is stripping `*.map`: the runner must
- * never ship TypeScript, so every path strips, and an error while stripping
- * still exits 1.
+ * Best effort when the token IS set, too (#2431): if `sentry-cli` cannot be
+ * resolved or started, exits non-zero, is killed by a signal, or outlives its
+ * time bound, this logs one `WARNING:` line naming the step and returns
+ * `'failed'`, and the build still succeeds. Symbolicated stack traces are
+ * telemetry; they must not gate shipping the API. Before this, a failing
+ * inject turned every `frapp-api-staging` Render build red for days while
+ * staging kept serving an old image. Two things stay hard failures, because
+ * each would ship a wrong image: stripping `*.map` (the runner must never
+ * ship TypeScript, so every path strips), and restoring dist after a failed
+ * inject (see INJECT_SNAPSHOT_PREFIX). An error in either still exits 1.
  *
  * Do not `ENV` the token in the Dockerfile. ARG is enough for this RUN.
  */
@@ -48,6 +49,27 @@ export const API_SENTRY_PROJECT = 'frapp-api';
  */
 export const SENTRY_CLI_INJECT_TIMEOUT_MS = 2 * 60 * 1000;
 export const SENTRY_CLI_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Name prefix of the copy of `distDir` taken just before inject, as a fresh
+ * sibling of it (`/app/apps/api/.sentry-inject-snapshot-XXXXXX` in the image).
+ *
+ * `sentry-cli sourcemaps inject` rewrites every `*.js` and `*.js.map` in
+ * place: strace of 3.8.0 shows `open(O_WRONLY|O_CREAT|O_TRUNC)` and then a
+ * write on each one, with no temp file and rename. A step killed at its time
+ * bound or by the OOM killer, or one that hits ENOSPC mid-write, can leave a
+ * module empty or cut short, and the best-effort path would ship it. So on
+ * any inject failure dist is restored from this snapshot before stripping,
+ * and a failed restore fails the build. Upload needs no snapshot: strace
+ * shows it opens dist files read-only and writes only a bundle under the
+ * system temp dir.
+ *
+ * A sibling, never inside `distDir`: inject would rewrite a snapshot there,
+ * and the runner stage copies `apps/api/dist/` wholesale. From `apps/api/`
+ * the runner copies only `dist/` and `package.json`, so even a snapshot whose
+ * removal failed cannot ship. It is removed on every path regardless.
+ */
+export const INJECT_SNAPSHOT_PREFIX = '.sentry-inject-snapshot-';
 
 export type SentryCliStep = 'inject' | 'upload';
 
@@ -173,6 +195,29 @@ export function stripSourceMapFiles(distDir: string): string[] {
   return removed;
 }
 
+/**
+ * Puts `distDir` back exactly as `snapshotDir` holds it: everything in
+ * `distDir` is removed, then the snapshot is copied in. Throws on any error,
+ * which the caller must treat as fatal, because a half-restored dist must
+ * not ship.
+ */
+export function restoreDistFromSnapshot(
+  snapshotDir: string,
+  distDir: string,
+): void {
+  try {
+    for (const entry of readdirSync(distDir)) {
+      rmSync(join(distDir, entry), { recursive: true, force: true });
+    }
+    cpSync(snapshotDir, distDir, { recursive: true, preserveTimestamps: true });
+  } catch (error) {
+    throw new Error(
+      `restoring ${distDir} from its pre-inject snapshot ${snapshotDir} failed: ` +
+        describeError(error, []),
+    );
+  }
+}
+
 function walkAndStrip(dir: string, removed: string[]): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
@@ -256,6 +301,13 @@ function cleanLine(text: string, secrets: string[], limit = 2000): string {
   return flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
 }
 
+/** A thrown error on one line, led by its code unless the message is. */
+function describeError(error: unknown, secrets: string[]): string {
+  const { code, message } = toCliError(error);
+  const text = cleanLine(message, secrets) || '(no message)';
+  return code && !text.startsWith(code) ? `${code}: ${text}` : text;
+}
+
 /** One line: step, exit status, signal, spawn error, then CLI output. */
 export function describeCliFailure(
   step: SentryCliStep,
@@ -319,26 +371,58 @@ export function runSentrySourcemapUpload(
       return { status: null, error: toCliError(error), stdout: '', stderr: '' };
     }
   };
+  const secrets = secretVariants(env.SENTRY_AUTH_TOKEN);
   // Best effort (see the module comment): report, strip, succeed. A failed
   // upload after a good inject leaves debug IDs in the shipped JS with no
   // maps behind them, which symbolicates no worse than no inject at all.
-  const giveUp = (step: SentryCliStep, result: CliResult) => {
+  const warn = (what: string) =>
     log(
-      `WARNING: ${describeCliFailure(step, result, env.SENTRY_AUTH_TOKEN)}; ` +
-        `frapp-api source maps NOT uploaded, *.map stripped, build continues ` +
-        `(best effort, #2431); clear the Docker build cache to retry`,
+      `WARNING: ${what}; frapp-api source maps NOT uploaded, *.map stripped, ` +
+        `build continues (best effort, #2431); clear the Docker build cache to retry`,
     );
+  const giveUp = (what: string) => {
+    warn(what);
     stripSourceMapFiles(plan.distDir);
     return 'failed' as const;
   };
 
-  const injected = run('inject', plan.injectArgs);
-  if (!cliSucceeded(injected)) {
-    return giveUp('inject', injected);
+  // Inject under a snapshot of dist (see INJECT_SNAPSHOT_PREFIX).
+  let snapshotDir: string | undefined;
+  try {
+    try {
+      snapshotDir = mkdtempSync(
+        join(dirname(resolve(plan.distDir)), INJECT_SNAPSHOT_PREFIX),
+      );
+      cpSync(plan.distDir, snapshotDir, {
+        recursive: true,
+        preserveTimestamps: true,
+      });
+    } catch (error) {
+      // Nothing has touched dist yet, so skipping inject keeps it pristine.
+      return giveUp(
+        `could not snapshot ${plan.distDir} before sentry-cli sourcemaps inject, ` +
+          `so inject did not run (${describeError(error, secrets)})`,
+      );
+    }
+    const injected = run('inject', plan.injectArgs);
+    if (!cliSucceeded(injected)) {
+      warn(
+        `${describeCliFailure('inject', injected, env.SENTRY_AUTH_TOKEN)}; ` +
+          `dist restored from its pre-inject snapshot`,
+      );
+      restoreDistFromSnapshot(snapshotDir, plan.distDir);
+      stripSourceMapFiles(plan.distDir);
+      return 'failed';
+    }
+  } finally {
+    if (snapshotDir) discardSnapshot(snapshotDir, log);
   }
+
   const uploaded = run('upload', plan.uploadArgs);
   if (!cliSucceeded(uploaded)) {
-    return giveUp('upload', uploaded);
+    return giveUp(
+      describeCliFailure('upload', uploaded, env.SENTRY_AUTH_TOKEN),
+    );
   }
   stripSourceMapFiles(plan.distDir);
   log(
@@ -348,10 +432,27 @@ export function runSentrySourcemapUpload(
   return 'uploaded';
 }
 
+// Not fatal: the snapshot sits beside dist, and from apps/api/ the runner
+// stage copies only dist/ and package.json, so a leftover cannot ship.
+function discardSnapshot(
+  snapshotDir: string,
+  log: (message: string) => void,
+): void {
+  try {
+    rmSync(snapshotDir, { recursive: true, force: true });
+  } catch (error) {
+    log(
+      `WARNING: could not remove the pre-inject snapshot ${snapshotDir} ` +
+        `(${describeError(error, [])}); it is outside dist, so it does not ship`,
+    );
+  }
+}
+
 /**
  * The Docker step's entry. Returns the exit code: 0 for every outcome,
- * including `'failed'`, and 1 only for an unexpected error, such as stripping
- * `*.map` itself failing, which must fail the build.
+ * including `'failed'`, and 1 only for an error that would ship a wrong
+ * image (stripping `*.map`, or restoring dist after a failed inject), which
+ * must fail the build.
  */
 export function main(
   options: Omit<SourcemapUploadOptions, 'distDir'> & { distDir?: string } = {},
@@ -368,7 +469,8 @@ export function main(
     const env = options.env ?? process.env;
     log(
       `ERROR: ${cleanLine(toCliError(error).message, secretVariants(env.SENTRY_AUTH_TOKEN))}; ` +
-        `frapp-api source-map step failed where it must not (stripping *.map), failing the build`,
+        `frapp-api source-map step failed where it must not ` +
+        `(stripping *.map, or restoring dist after a failed inject), failing the build`,
     );
     return 1;
   }
