@@ -493,6 +493,33 @@ client cannot read (`GET /v1/invoices/overdue` is `billing:view`-only). §Status
 labels reserves the backend's own labels for states the client can actually
 confirm.
 
+### Report and block (mobile, s05 / s13 / s16)
+
+Member-safety copy (#2257). The behavior each string describes is owned by
+[`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Report and block;
+the strings live once in `apps/mobile/lib/chat/block-actions.ts`,
+`report-reasons.ts` and `blocks.ts`, so web (#2313) should reuse these words.
+
+| State | Title | Description |
+|---|---|---|
+| Block confirmation | `Block <name>?` | `Their messages in chat will be hidden from you. They won't be told, and they can still post where you both are. Poll votes still count, and they stay in the directory. You can unblock them anytime in Settings.` · confirm `Block` |
+| Unblock confirmation | `Unblock <name>?` | `Their messages will show in chat again. They won't be told.` · confirm `Unblock` |
+| Block / unblock failed | `Couldn't block <name>` / `Couldn't unblock <name>` | `Nothing changed. Check your connection and try again.` |
+| Report sent | `Report sent` | `It's in your chapter's moderation queue. Reports don't show who filed them.` |
+| Report failed | — | `Your report didn't send. Check your connection and try again.` |
+| Tombstone | — | `Message from a member you blocked` · action `Unblock` |
+| Tombstone, since unblocked | — | `Hidden while you had this member blocked` |
+| Block list unavailable | `Couldn't load your block list` | `<N new messages are> held until it loads, so nothing from a member you blocked shows by mistake.` · action `Retry` |
+| Block list loading, rows held | `Checking your block list` | `<N new messages are> held until it loads.` |
+| Blocked members, empty | `You haven't blocked anyone` | `Block someone from a message or their profile in the directory. Their messages in chat are hidden from you, and they aren't told.` |
+
+**The report confirmation promises neither a reviewer nor a response time.** The API
+files a report into a queue only `channels:manage` holders can read, and no screen
+renders that queue yet; "officers will review this" would claim a surface that does not
+exist. The block copy names what a block does *not* do (the blocked member is not told,
+can still post, still counts in polls) because silence is the feature — a member who
+assumed the other person was notified would be wrong in the one way that matters.
+
 ### Alumni (dashboard)
 
 | State | Title | Description |

@@ -1,4 +1,11 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type AccessibilityActionEvent,
+  type AccessibilityActionInfo,
+} from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
@@ -67,10 +74,53 @@ export interface MessageBubbleProps {
    * — `null` vs `undefined` is "looked up and absent" vs "not a reply".
    */
   replyParent?: ChatMessage | null;
+  /**
+   * Opens the message actions sheet (report, block — #2257). Passed only for a
+   * message that offers them (`messageActionsFor` in `lib/chat/blocks.ts`), so
+   * its absence is what keeps the long-press off the viewer's own bubble.
+   */
+  onOpenActions?: () => void;
 }
 
 /** The drawn quick reaction. A fuller picker is not in this slice. */
 export const QUICK_REACTION = "👍";
+
+/** Long-press is the gesture; this is its screen-reader twin. */
+export const MESSAGE_ACTIONS_A11Y_LABEL = "Message actions";
+
+const MESSAGE_ACTIONS: AccessibilityActionInfo[] = [
+  { name: "longpress", label: MESSAGE_ACTIONS_A11Y_LABEL },
+];
+
+type MessageActionsA11yProps =
+  | {
+      accessibilityActions: AccessibilityActionInfo[];
+      onAccessibilityAction: (event: AccessibilityActionEvent) => void;
+    }
+  | Record<string, never>;
+
+/**
+ * The accessibility half of a message's long-press, for the text elements a
+ * screen reader actually lands on.
+ *
+ * The gesture lives on a wrapping `Pressable` marked `accessible={false}` —
+ * an accessible wrapper would fold the reaction chips and attachment buttons
+ * inside it into one element and hide them from VoiceOver. So the action rides
+ * the message's own text instead: `longpress` with a label is a named custom
+ * action in the iOS actions rotor and the double-tap-and-hold on Android.
+ * Returns nothing when there are no actions to open.
+ */
+export function messageActionsA11yProps(
+  onOpenActions: (() => void) | undefined,
+): MessageActionsA11yProps {
+  if (!onOpenActions) return {};
+  return {
+    accessibilityActions: MESSAGE_ACTIONS,
+    onAccessibilityAction: (event) => {
+      if (event.nativeEvent.actionName === "longpress") onOpenActions();
+    },
+  };
+}
 
 export function formatMessageTime(createdAt: string): string {
   const at = parseInstant(createdAt);
@@ -118,6 +168,7 @@ export function MessageBubble({
   onReact,
   onUnreact,
   replyParent,
+  onOpenActions,
 }: MessageBubbleProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -183,19 +234,31 @@ export function MessageBubble({
       />
     ) : null;
 
+  const a11yActions = messageActionsA11yProps(onOpenActions);
+
   const body = message.is_deleted ? (
     <Text style={styles.deleted}>{DELETED_MESSAGE_PLACEHOLDER}</Text>
   ) : (
     <>
       {message.content.length > 0 ? (
-        <Text style={styles.bodyTheirs}>{message.content}</Text>
+        <Text style={styles.bodyTheirs} {...a11yActions}>
+          {message.content}
+        </Text>
       ) : null}
       {attachments}
     </>
   );
 
   return (
-    <View style={styles.rowTheirs}>
+    // The long-press target is the whole row, so a file-only message has one
+    // too. `accessible={false}` keeps the chips and attachments inside it
+    // individually reachable — see `messageActionsA11yProps`.
+    <Pressable
+      accessible={false}
+      onLongPress={onOpenActions}
+      disabled={!onOpenActions}
+      style={styles.rowTheirs}
+    >
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>
           {authorName
@@ -205,7 +268,9 @@ export function MessageBubble({
       </View>
 
       <View style={styles.theirsColumn}>
-        <Text style={styles.metaText}>{`${authorLabel} · ${time}`}</Text>
+        <Text style={styles.metaText} {...a11yActions}>
+          {`${authorLabel} · ${time}`}
+        </Text>
         <View style={styles.bubbleTheirs}>
           {message.reply_to_id && !message.is_deleted ? (
             <ReplyQuote
@@ -230,7 +295,7 @@ export function MessageBubble({
           align="flex-start"
         />
       </View>
-    </View>
+    </Pressable>
   );
 }
 

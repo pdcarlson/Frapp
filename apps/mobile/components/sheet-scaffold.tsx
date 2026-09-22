@@ -1,4 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+} from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -21,6 +25,27 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * `BottomSheetModal`'s ref, snap behavior and keyboard mode are per-sheet
  * decisions, and `handleComponent` is passed {@link SheetGrabber} directly.
  */
+
+/** `rgba(0,0,0,.55)` as drawn; the backdrop's own default is 0.5. */
+const SCRIM_OPACITY = 0.55;
+
+/**
+ * The drawn scrim, for `BottomSheetModal`'s `backdropComponent`
+ * (`spec/ui/mobile/patterns.md` § Bottom sheets). It belongs to the presented
+ * sheet only: it fades in at the first detent and is gone once dismissed, so
+ * nothing dims a screen that has no sheet over it. A plain function of its
+ * props, so it can be passed directly without a per-sheet `useCallback`.
+ */
+export function SheetScrim(props: BottomSheetBackdropProps) {
+  return (
+    <BottomSheetBackdrop
+      {...props}
+      appearsOnIndex={0}
+      disappearsOnIndex={-1}
+      opacity={SCRIM_OPACITY}
+    />
+  );
+}
 
 /** The drawn grabber, for `BottomSheetModal`'s `handleComponent`. */
 export function SheetGrabber() {

@@ -13,6 +13,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
+  resolveAuthorName,
+  useBlockedUserIds,
   useChannel,
   useChannelNotificationPreferences,
   useMarkChannelRead,
@@ -21,14 +23,29 @@ import {
   useSetChannelNotificationLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
-import { MessageBubble } from "@/components/chat/message-bubble";
+import {
+  MessageActionsSheet,
+  type MessageActionsSheetHandle,
+  type MessageActionsTarget,
+} from "@/components/chat/message-actions-sheet";
 import {
   NotificationLevelControl,
   selectChannelNotificationLevel,
 } from "@/components/chat/notification-level-control";
-import { PollCard } from "@/components/chat/poll-card";
+import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
+import {
+  confirmUnblockMember,
+  useBlockActions,
+} from "@/lib/chat/block-actions";
+import {
+  applyBlockList,
+  messageActionsFor,
+  type BlockState,
+  type ThreadRow,
+} from "@/lib/chat/blocks";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { selectPostCapability } from "@/lib/chat/channel-list";
 import { getKeyboardPath } from "@/lib/keyboard";
@@ -248,59 +265,106 @@ export default function ChatThreadScreen() {
     void send(draft);
   }, [send, draft]);
 
+  // The viewer's block list, applied on top of the server's mask (#2257,
+  // #2315). The server masks what it serves, but a row that arrived over the
+  // live echo was never evaluated, so the thread decides per row from
+  // provenance and this list — see `lib/chat/blocks.ts`. Held rows are not
+  // rendered; `BlockListNotice` says so.
+  const blockList = useBlockedUserIds();
+  const blockState = useMemo<BlockState>(
+    () => ({ status: blockList.status, ids: blockList.ids }),
+    [blockList.status, blockList.ids],
+  );
+  const thread = useMemo(
+    () => applyBlockList(messages, blockState, viewerId),
+    [messages, blockState, viewerId],
+  );
+
   // Inverted list wants newest first; the cache hands back oldest first.
-  const inverted = useMemo(() => [...messages].reverse(), [messages]);
+  const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);
 
   // Parent lookup for reply quotes (#1727), built once per window rather
-  // than scanned per row — same map web's timeline uses.
+  // than scanned per row — same map web's timeline uses. Built over every
+  // cached message, held and tombstoned ones included: whether a block hides a
+  // blocked member's words *quoted by someone else* is an open product
+  // decision (#2312), not something this lookup should settle by omission.
   const byId = useMemo(() => {
     const index = new Map<string, ChatMessage>();
     for (const message of messages) index.set(message.id, message);
     return index;
   }, [messages]);
 
+  const { unblock } = useBlockActions();
+  const handleUnblock = useCallback(
+    (userId: string) => {
+      confirmUnblockMember({
+        name: nameFor(userId),
+        run: () => unblock(userId),
+      });
+    },
+    [nameFor, unblock],
+  );
+
+  // One sheet for the thread, retargeted per long-press — the same shape the
+  // directory uses for its member sheet.
+  const actionsSheetRef = useRef<MessageActionsSheetHandle>(null);
+  const [actionTarget, setActionTarget] = useState<MessageActionsTarget | null>(
+    null,
+  );
+  const openActions = useCallback(
+    (message: ChatMessage) => {
+      const actions = messageActionsFor(message, viewerId);
+      if (!actions.canOpen) return;
+      setActionTarget({
+        messageId: message.id,
+        blockUserId: actions.canBlock ? message.sender_id : null,
+        senderName: resolveAuthorName(message, nameFor),
+      });
+      actionsSheetRef.current?.present();
+    },
+    [nameFor, viewerId],
+  );
+
   const renderItem = useCallback(
-    ({ item }: { item: ChatMessage }) => {
-      const replyParent = item.reply_to_id
-        ? (byId.get(item.reply_to_id) ?? null)
+    ({ item }: { item: ThreadRow }) => {
+      const replyParent = item.message.reply_to_id
+        ? (byId.get(item.message.reply_to_id) ?? null)
         : undefined;
-      // Cards render unsided, full-width — not wrapped in `MessageBubble` —
-      // matching web's `rendersAsBubble` exclusion for every card kind.
-      if (item.kind === "poll") {
-        return (
-          <PollCard
-            message={item}
-            viewerId={viewerId}
-            nameFor={nameFor}
-            replyParent={replyParent}
-            isConfirmed={item._status === "confirmed"}
-            onVote={(id, actionType, payload) =>
-              void act(id, actionType, payload)
-            }
-            onRetry={(id) => void retry(id)}
-            onDiscard={(id) => void discard(id)}
-            onReact={(id, emoji) => void react(id, emoji)}
-            onUnreact={(id, emoji) => void unreact(id, emoji)}
-          />
-        );
-      }
       return (
-        <MessageBubble
-          message={item}
+        <ThreadMessageRow
+          row={item}
           viewerId={viewerId}
           nameFor={nameFor}
           replyParent={replyParent}
+          blockState={blockState}
+          onVote={(id, actionType, payload) =>
+            void act(id, actionType, payload)
+          }
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
           onReact={(id, emoji) => void react(id, emoji)}
           onUnreact={(id, emoji) => void unreact(id, emoji)}
+          onOpenActions={openActions}
+          onUnblock={handleUnblock}
         />
       );
     },
     // `nameFor` belongs here: it changes identity when the roster resolves, and
     // omitting it leaves a stale closure rendering truncated ids until some
     // other dep happens to change.
-    [viewerId, nameFor, retry, discard, react, unreact, act, byId],
+    [
+      viewerId,
+      nameFor,
+      retry,
+      discard,
+      react,
+      unreact,
+      act,
+      byId,
+      blockState,
+      openActions,
+      handleUnblock,
+    ],
   );
 
   const isOffline = connection === "offline";
@@ -405,6 +469,28 @@ export default function ChatThreadScreen() {
           </View>
         ) : null}
 
+        {channelId ? (
+          <BlockListNotice
+            status={blockList.status}
+            heldCount={thread.heldCount}
+            onRetry={blockList.retry}
+            isRetrying={blockList.isRetrying}
+          />
+        ) : null}
+
+        {/*
+          A failed *re*-read keeps what is already on screen. Block and unblock
+          re-read every cached thread, and TanStack keeps `data` when that
+          refetch fails; replacing a loaded thread with "Couldn't load
+          messages" over a background refresh would read as the conversation
+          vanishing. The next live row's merge clears the error.
+        */}
+        {channelId && loadError && messages.length > 0 ? (
+          <Text accessibilityRole="alert" style={styles.saveError}>
+            Couldn&apos;t refresh messages. Showing what&apos;s already loaded.
+          </Text>
+        ) : null}
+
         {!channelId ? (
           <View style={styles.stateBlock}>
             <Text style={styles.stateTitle}>No channel selected</Text>
@@ -417,12 +503,15 @@ export default function ChatThreadScreen() {
             <ActivityIndicator color={tokens.color.text.muted} />
             <Text style={styles.stateBody}>Loading messages…</Text>
           </View>
-        ) : loadError ? (
+        ) : loadError && messages.length === 0 ? (
           <View style={styles.stateBlock}>
             <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
             <Text style={styles.stateBody}>{loadError.message}</Text>
           </View>
-        ) : messages.length === 0 ? (
+        ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
+          // Counted after the block list, held rows included: a channel whose
+          // only messages are being held is not an empty channel, and the
+          // notice above is what explains the gap.
           <View style={styles.stateBlock}>
             <Text style={styles.stateTitle}>No messages yet</Text>
             <Text style={styles.stateBody}>
@@ -435,7 +524,7 @@ export default function ChatThreadScreen() {
             renderItem={renderItem}
             // `client_message_id` is always present and is stable across the
             // optimistic → confirmed transition, which the server id is not.
-            keyExtractor={(item) => item.client_message_id}
+            keyExtractor={(item) => item.message.client_message_id}
             inverted
             contentContainerStyle={styles.listContent}
             style={styles.flex}
@@ -543,6 +632,7 @@ export default function ChatThreadScreen() {
           }
         />
       </KeyboardAvoidingView>
+      <MessageActionsSheet ref={actionsSheetRef} target={actionTarget} />
     </SafeAreaView>
   );
 }

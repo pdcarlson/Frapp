@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AppState,
   Linking,
@@ -10,7 +10,9 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  useBlockedUserIds,
   useCurrentChapter,
   useDeleteAccount,
   useGeofences,
@@ -26,6 +28,10 @@ import {
 } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import {
+  BLOCKED_MEMBERS_TITLE,
+  BlockedMembersSheet,
+} from "@/components/settings/blocked-members-sheet";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -72,6 +78,11 @@ import {
  *   what is true — granted, off, or unavailable in this build — and sends the
  *   member to the OS settings, which is the only place it can actually change.
  *   TODO-DESIGN: the drawn control is a switch.
+ * - **"Blocked members" is here and is not drawn.** `spec/behavior/chat/README.md`
+ *   § Block makes a Settings list the one durable place a block is undone
+ *   (#2257), and App Store Guideline 1.2 is why the control exists at all. It
+ *   sits under ACCOUNT as a row that opens a sheet, the least new chrome that
+ *   meets the rule.
  * - **"Mandatory events only" is still not built.** It has no backing field on
  *   `events` and no preference key. The per-category switches below are what the
  *   API actually enforces.
@@ -300,6 +311,18 @@ export default function PreferencesScreen() {
     };
   }, []);
 
+  // Settings is the durable place a block is undone (#2257). The count is
+  // only stated off a confirmed read: "None" from a failed one would claim
+  // nobody is blocked.
+  const blockedMembersSheetRef = useRef<BottomSheetModal>(null);
+  const blockList = useBlockedUserIds();
+  const blockedMembersValue =
+    blockList.status !== "ready"
+      ? "—"
+      : blockList.ids.size === 0
+        ? "None"
+        : String(blockList.ids.size);
+
   const pushReason = pushUnavailableReason();
   const pushStatusValue = pushReason
     ? "Unavailable"
@@ -507,6 +530,12 @@ export default function PreferencesScreen() {
         {/* Static, not a control: Signet is dark-only by design (lib/theme.tsx),
             and Canvas draws this row as a value too. */}
         <ListRow label="Appearance" value="Dark" />
+        <ListRow
+          label={BLOCKED_MEMBERS_TITLE}
+          value={blockedMembersValue}
+          accessibilityHint="Shows the members you've blocked in chat, and lets you unblock them."
+          onPress={() => blockedMembersSheetRef.current?.present()}
+        />
         {showDonationCta ? (
           <ListRow
             label="Support the Chapter"
@@ -545,6 +574,7 @@ export default function PreferencesScreen() {
           {linkFailed} couldn&apos;t be opened. Try again in a moment.
         </Text>
       ) : null}
+      <BlockedMembersSheet ref={blockedMembersSheetRef} />
     </ScreenShell>
   );
 }

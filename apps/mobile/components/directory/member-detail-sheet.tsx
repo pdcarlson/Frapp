@@ -2,8 +2,21 @@ import { forwardRef, useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
-import { useCustomRoles, useMember, usePermissionList, useRoles } from "@repo/hooks";
+import {
+  useBlockedUserIds,
+  useCustomRoles,
+  useMember,
+  usePermissionList,
+  useRoles,
+  useViewerUserId,
+} from "@repo/hooks";
 import { can } from "@repo/validation";
+import {
+  confirmBlockMember,
+  confirmUnblockMember,
+  useBlockActions,
+} from "@/lib/chat/block-actions";
+import { isBlockableSender } from "@/lib/chat/blocks";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
@@ -33,6 +46,10 @@ import {
  *
  * **No DM entry.** The issue that filed this scopes DM entry to #316
  * explicitly ("Distinct from #316 — this gap is mobile profile *viewing*").
+ *
+ * **Block / Unblock** (#2257) sits at the foot of another member's profile —
+ * the one chat control here, because the directory is where a member you have
+ * blocked is still listed and so where you would look for them.
  *
  * ## Fixed snap points, not `enableDynamicSizing`
  *
@@ -97,6 +114,24 @@ export const MemberDetailSheet = forwardRef<
   // "—" that then flips to the real value a moment later.
   const rolesStillLoading =
     rolesQuery.isPending || (canViewCustomRoles && customRolesQuery.isPending);
+
+  // Block/Unblock (#2257). The spec keeps a blocked member in the directory —
+  // blocking is a chat control, not a membership one — so this is also where
+  // someone you have blocked can be found and unblocked. Never on your own
+  // profile (the API refuses a self-block) or the system actor's.
+  const viewerUserId = useViewerUserId();
+  const blockList = useBlockedUserIds();
+  const blockActions = useBlockActions();
+  const blockTarget =
+    detail &&
+    viewerUserId !== null &&
+    detail.userId !== viewerUserId &&
+    isBlockableSender(detail.userId)
+      ? detail
+      : null;
+  // Read off the floor: an id on any list the server returned is blocked. A
+  // list that has not loaded offers Block, which the API treats idempotently.
+  const isBlocked = blockTarget ? blockList.ids.has(blockTarget.userId) : false;
 
   function dismiss() {
     if (typeof ref === "function" || !ref?.current) return;
@@ -189,6 +224,37 @@ export const MemberDetailSheet = forwardRef<
               <View style={styles.bioCard}>
                 <Text style={styles.bioText}>{detail.bio}</Text>
               </View>
+            ) : null}
+
+            {blockTarget ? (
+              <ListSection>
+                {isBlocked ? (
+                  <ListRow
+                    label={`Unblock ${blockTarget.displayName}`}
+                    description="Their messages show in chat again."
+                    disabled={blockActions.isPending}
+                    onPress={() =>
+                      confirmUnblockMember({
+                        name: blockTarget.displayName,
+                        run: () => blockActions.unblock(blockTarget.userId),
+                      })
+                    }
+                  />
+                ) : (
+                  <ListRow
+                    label={`Block ${blockTarget.displayName}`}
+                    description="Hides their messages from you in chat. They aren't told."
+                    destructive
+                    disabled={blockActions.isPending}
+                    onPress={() =>
+                      confirmBlockMember({
+                        name: blockTarget.displayName,
+                        run: () => blockActions.block(blockTarget.userId),
+                      })
+                    }
+                  />
+                )}
+              </ListSection>
             ) : null}
           </>
         ) : null}

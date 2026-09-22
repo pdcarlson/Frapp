@@ -1,0 +1,97 @@
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { SignetTokens } from "@repo/theme/signet";
+import { typeRole, useFrappTheme } from "@/lib/theme";
+
+/**
+ * What the thread draws in place of a message from a member the viewer blocked
+ * (`spec/behavior/chat/README.md` § What a block does and does not hide).
+ *
+ * **Takes no message.** Only the fact of a hidden message reaches this
+ * component — never its body, attachments, reactions or card payload — so no
+ * later edit here can start rendering what the block is meant to hide. A masked
+ * row carries no `attachment_count` anyway; an unmasked Realtime row still
+ * does, and this is what keeps its files from mounting (#2324 tracks the
+ * server-side half of that).
+ *
+ * **No "tap to expand".** The spec's table said the blocker could expand a
+ * tombstone, but a server-masked row arrives with its content already withheld,
+ * so expand could only ever work for the rows that happened to arrive over the
+ * live echo — an affordance that works on some rows and not others. The
+ * durable way back is Unblock, here and in Settings.
+ */
+export interface BlockedMessageTombstoneProps {
+  /** Shown only in the accessibility label and the confirm prompt. */
+  senderName: string | null;
+  /**
+   * `false` once the sender is off the viewer's list but this row is still the
+   * server's masked copy (older than the page the unblock re-read). There is
+   * nothing to unblock, so the control is withheld rather than left dead.
+   */
+  canUnblock: boolean;
+  onUnblock: () => void;
+}
+
+export const TOMBSTONE_TEXT = "Message from a member you blocked";
+export const TOMBSTONE_STALE_TEXT = "Hidden while you had this member blocked";
+
+export function BlockedMessageTombstone({
+  senderName,
+  canUnblock,
+  onUnblock,
+}: BlockedMessageTombstoneProps) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const text = canUnblock ? TOMBSTONE_TEXT : TOMBSTONE_STALE_TEXT;
+
+  return (
+    <View style={styles.row}>
+      <Text style={styles.text}>{text}</Text>
+      {canUnblock ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            senderName ? `Unblock ${senderName}` : "Unblock this member"
+          }
+          hitSlop={12}
+          onPress={onUnblock}
+          style={({ pressed }) => (pressed ? styles.pressed : null)}
+        >
+          <Text style={styles.action}>Unblock</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function createStyles(tokens: SignetTokens) {
+  return StyleSheet.create({
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "flex-start",
+      maxWidth: "86%",
+      gap: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      paddingHorizontal: tokens.spacing.md + 2,
+      // An outline with no fill: the same hairline an incoming bubble draws,
+      // without the card surface, so it reads as the absence of a message
+      // rather than as one.
+      borderRadius: tokens.radius.bubble,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+    },
+    text: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      fontStyle: "italic",
+      flexShrink: 1,
+    },
+    action: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.gold.askText,
+    },
+    pressed: {
+      opacity: 0.6,
+    },
+  });
+}
