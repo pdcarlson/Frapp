@@ -17,6 +17,7 @@ import {
   type ChapterDocumentFilter,
 } from '#domain/repositories/chapter-document.repository.interface';
 import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
+import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '#domain/repositories/chapter-document-folder.repository.interface';
 import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
 import type {
@@ -349,15 +350,6 @@ export class ChapterDocumentService {
  * Without the trim, `"Governance"` and `" Governance"` are different folders
  * that render identically, and the unique constraint cannot tell them apart.
  */
-/** Postgres `unique_violation` (23505), as surfaced by PostgREST. */
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === '23505'
-  );
-}
-
 function normalizeFolderName(folder: string | null | undefined): string | null {
   if (folder === null || folder === undefined) return null;
   const trimmed = folder.trim();

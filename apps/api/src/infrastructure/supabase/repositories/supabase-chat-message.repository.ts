@@ -7,10 +7,8 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
-import {
-  ChatMessageDuplicateError,
-  PG_UNIQUE_VIOLATION,
-} from '#domain/repositories/chat.repository.interface';
+import { ChatMessageDuplicateError } from '#domain/repositories/chat.repository.interface';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { ChatMessage } from '#domain/entities/chat.entity';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
@@ -253,7 +251,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       // would silently stop translating for any future null-sender writer that
       // does.
       if (
-        (error as { code?: string }).code === PG_UNIQUE_VIOLATION &&
+        error.code === PG_UNIQUE_VIOLATION &&
         data.channel_id &&
         data.sender_id !== undefined &&
         data.client_message_id
