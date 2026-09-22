@@ -94,6 +94,14 @@ for ENV in preview production; do
     --name EXPO_PUBLIC_SUPABASE_URL --value "https://<ref for this env>.supabase.co"
   eas env:set --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "<anon key for this env>"
+  # STOP before the production limb of this one. The App Store listing
+  # (`apps/mobile/store/README.md` § Identity and § Review notes) tells Apple the app
+  # takes no payment of any kind, and that is only true while `production` holds no
+  # Stripe key — the beta chapter is not collecting dues by card (decided 2026-09-21).
+  # Setting it here switches card payments on with no repo change and nothing in CI
+  # able to notice, falsifying the Price row, the App Review note and the
+  # Financial Info → Payment Info privacy answer. `pk_test_…` in `preview` is fine.
+  # See #2415 before running the production limb.
   eas env:set --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY --value "<pk_test_… for preview, pk_live_… for production>"
   eas env:set --environment $ENV --scope project --visibility plaintext \
