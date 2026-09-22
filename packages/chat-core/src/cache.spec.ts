@@ -18,7 +18,9 @@ import {
   upsertOptimistic,
 } from "./cache";
 import {
+  normalizeRow,
   optimisticMessage,
+  toRawRow,
   type RawChatMessage,
   type RawChatMessageAction,
   type ReplayRequest,
@@ -116,5 +118,124 @@ describe("markRecorded (#1789)", () => {
     expect(recorded?._replay).toBeUndefined();
     expect(recorded?._error).toMatch(/don't run this command again/i);
     expect(recorded?.kind).toBe("loading");
+  });
+});
+
+/**
+ * Block-list provenance (#2315): a row counts as server-evaluated only when it
+ * arrived carrying `sender_blocked`, i.e. through a REST read the server ran
+ * the viewer's block list over. Nothing here compares timestamps — the
+ * fixtures deliberately mix the two wire serializations of `created_at`,
+ * because uniform `.toISOString()` fixtures are how the watermark design this
+ * replaced shipped green while being a no-op.
+ */
+describe("block-list provenance through the merge (#2315)", () => {
+  /** REST/PostgREST's `timestamptz`: ISO, `T`, microseconds, `+00:00`. */
+  const REST_CREATED_AT = "2026-09-15T18:00:00.123456+00:00";
+  /** Realtime's `timestamptz`, untouched by realtime-js: space, `+00`. */
+  const REALTIME_CREATED_AT = "2026-09-15 18:05:12.4+00";
+
+  /** A row as `GET /v1/channels/{id}/messages` serves it. */
+  function restRow(overrides: Partial<RawChatMessage> = {}): RawChatMessage {
+    return row({
+      kind: "text",
+      content: "hello",
+      created_at: REST_CREATED_AT,
+      sender_blocked: false,
+      ...overrides,
+    });
+  }
+
+  /** A `postgres_changes` echo: the raw table row, no `sender_blocked` key at all. */
+  function echoRow(overrides: Partial<RawChatMessage> = {}): RawChatMessage {
+    const base = row({
+      kind: "text",
+      content: "hello",
+      created_at: REALTIME_CREATED_AT,
+      ...overrides,
+    });
+    delete base.sender_blocked;
+    return base;
+  }
+
+  test("a REST row is evaluated whatever its verdict", () => {
+    const clear = mergeServerRow(emptyCache(), restRow());
+    expect(clear.byId["m1"]).toMatchObject({
+      _blockEvaluated: true,
+      sender_blocked: false,
+    });
+
+    const masked = mergeServerRow(
+      emptyCache(),
+      restRow({ sender_blocked: true, content: "[redacted by server]" }),
+    );
+    expect(masked.byId["m1"]).toMatchObject({
+      _blockEvaluated: true,
+      sender_blocked: true,
+    });
+  });
+
+  test("a Realtime INSERT echo is unevaluated", () => {
+    const cache = mergeServerRow(emptyCache(), echoRow());
+    expect(cache.byId["m1"]).toMatchObject({
+      _blockEvaluated: false,
+      sender_blocked: false,
+    });
+  });
+
+  test("an UPDATE echo of a server-masked row clears the provenance it overwrites", () => {
+    // The reachable leak from #2315 defect 5: a pin by any `channels:manage`
+    // holder echoes the raw row over a masked one. The content is now the
+    // blocked member's real words, so the row must stop reading as vouched.
+    let cache = mergeServerRow(
+      emptyCache(),
+      restRow({ sender_blocked: true, content: "[redacted by server]" }),
+    );
+    cache = mergeServerRow(
+      cache,
+      echoRow({ is_pinned: true, content: "the real words" }),
+    );
+
+    const message = cache.byId["m1"]!;
+    expect(message.content).toBe("the real words");
+    expect(message._blockEvaluated).toBe(false);
+    expect(message.sender_blocked).toBe(false);
+  });
+
+  test("a later REST read of an echoed row vouches for it again", () => {
+    // The reconnect backfill and the polling fallback both merge REST rows
+    // through this same function, so an echoed row is re-evaluated as soon as
+    // any server read returns it — no queryFn re-run required (defect 4).
+    let cache = mergeServerRow(emptyCache(), echoRow());
+    cache = mergeServerRow(cache, restRow());
+    expect(cache.byId["m1"]!._blockEvaluated).toBe(true);
+  });
+
+  test("the viewer's optimistic row is unevaluated, and so is its confirmation", () => {
+    const optimistic = optimisticMessage({
+      clientMessageId: "cm1",
+      channelId: "c1",
+      senderId: "u1",
+      content: "hello",
+    });
+    expect(optimistic._blockEvaluated).toBe(false);
+
+    // The send response is the raw inserted row, with no `sender_blocked`.
+    let cache = upsertOptimistic(emptyCache(), optimistic);
+    cache = mergeServerRow(cache, echoRow());
+    expect(cache.byId["m1"]!._blockEvaluated).toBe(false);
+  });
+
+  test("the wire round trip keeps provenance rather than laundering it", () => {
+    const echoed = normalizeRow(echoRow());
+    const wire = toRawRow(echoed);
+    // Emitting `sender_blocked: false` here would turn an unevaluated echo into
+    // a server-vouched row on the way back in.
+    expect(wire).not.toHaveProperty("sender_blocked");
+    expect(normalizeRow(wire)).toEqual(echoed);
+
+    const vouched = normalizeRow(restRow({ sender_blocked: true }));
+    expect(toRawRow(vouched).sender_blocked).toBe(true);
+    expect(normalizeRow(toRawRow(vouched))).toEqual(vouched);
   });
 });

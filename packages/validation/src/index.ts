@@ -443,6 +443,20 @@ export function isModuleEnabled(
 // (zod only) so any future Deno consumer can still import this file
 // directly via an import map without Node.js-specific resolution. ──────
 
+/**
+ * `users.id` of the system actor behind server-originated chat messages — the
+ * chapter welcome post, the `#chapter-audit` bridge, invite-accept DMs and the
+ * poll-expiry notice. A real seeded `users` row
+ * (`supabase/migrations/20260524120000_chapter_directory_requests.sql`).
+ *
+ * Canonical here rather than in the API so clients read the same value the
+ * server enforces: `spec/behavior/chat/README.md` § Block makes the system
+ * actor unblockable (`ChatBlockService` refuses it with a 400), and a client
+ * offering "Block" on a system message would be a dead control. The API's
+ * `domain/constants/chat.ts` re-exports this rather than keeping a copy.
+ */
+export const SYSTEM_SENDER_ID = "00000000-0000-0000-0000-000000000000";
+
 export const CHAT_MESSAGE_KINDS = [
   "text",
   "event",
