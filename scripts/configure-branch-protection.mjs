@@ -243,14 +243,14 @@ function buildProtectionPayload(branch) {
 //
 // The read is deliberately shaped as pure functions over plain objects, with the
 // network confined to `callGitHubApi`, because the call itself is the one part
-// that cannot be relied on from an agent session. Reaching `api.github.com` from
-// a cloud sandbox is SESSION-DEPENDENT: ADR-20 and #1385 record 403 for
-// authenticated and unauthenticated requests alike, and the ADR-20 amendment of
-// 2026-09-01 records this same endpoint returning 200 from a sandbox with a PAT
-// loaded from `.env.local`. #680's evidence table records both on the same day.
-// Do not read either observation as the general rule. Keeping the semantics in
-// functions that take a response rather than fetch one is what makes the diff
-// unit-testable regardless of which way a given session falls.
+// that depends on the environment (route, allowlist, token). Reaching
+// `api.github.com` from a cloud sandbox is ROUTE-DEPENDENT (ADR-20 amendment of
+// 2026-09-02, (b), and AGENT_INFRA.md → Work status). Node's global `fetch`,
+// which `ghRequest` uses, ignores HTTPS_PROXY and goes direct, and that route
+// has returned 200 with a PAT. The agent proxy's route (curl, or node under
+// NODE_USE_ENV_PROXY=1) passes some repo paths and 403s others, varying by
+// session. Keeping the semantics in functions that take a response rather than
+// fetch one is what makes the diff unit-testable whichever route a run takes.
 //
 // The GET shape is NOT the PUT shape, which is the trap here. GitHub returns the
 // booleans wrapped — `enforce_admins: {enabled: true}` — where the PUT takes them
@@ -525,16 +525,26 @@ async function main() {
       console.log("  No before/after diff is available for this run.");
       console.log("");
       if (verify) {
-        // The reason above is the reason. Do NOT restate it as the sandbox
-        // proxy: a 403 through the proxy, an expired PAT, a wrong repo slug and
-        // a broken CA bundle all reach here, and naming one of them as the
-        // cause is how the other three get misdiagnosed.
+        // The reason above is the reason. Do NOT restate it from its body: a
+        // 403 through the proxy, an expired PAT, a wrong repo slug and a broken
+        // CA bundle all reach here, and naming one of them as the cause is how
+        // the other three get misdiagnosed. Even one body can come from either
+        // route: "Resource not accessible by integration" is the proxy route's
+        // 403 on this endpoint and also an Actions GITHUB_TOKEN's 403 direct.
+        // Nor does this process re-derive its own route: Node picks it at
+        // startup from env, flags, NO_PROXY and fallbacks this file would only
+        // be guessing at. So the hint is keyed on the switch, which the
+        // operator can check.
         throw new Error(
           `--verify cannot confirm ${branch}: live protection is unreadable (${readFailure}). ` +
             "An unreadable answer is not a passing one, so this fails rather than reporting a " +
-            "match. If the cause is a 403 with no GitHub response headers, that is the sandbox " +
-            "egress proxy and the read has to happen from a machine with direct network access " +
-            "(ADR-20, and its 2026-09-01 amendment — reachability is session-dependent).",
+            "match. node's fetch goes direct unless NODE_USE_ENV_PROXY=1 or --use-env-proxy " +
+            "(on the command line or in NODE_OPTIONS) routes it through a proxy. Direct, a 403 is GitHub's answer to the token sent, " +
+            "unless it reads \"Host not in allowlist\": that is this environment's network " +
+            "allowlist, which then needs api.github.com. Through a cloud sandbox's agent proxy, " +
+            "a 403 says nothing about the token, whatever its body: drop the switch and re-run " +
+            "before touching the PAT. Route rule: ADR-20 amendment of 2026-09-02, (b), and its " +
+            "2026-09-22 correction.",
         );
       }
     } else {
