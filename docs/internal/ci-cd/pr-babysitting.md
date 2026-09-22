@@ -147,7 +147,8 @@ would have added is a known, accepted gap, not an oversight.
 under [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status). That changes what is *readable*, not what is *polled*. An awake agent can read GitHub
 directly for ground truth, but nothing in this sandbox runs while the session is asleep, so
 background polling of GitHub still cannot be relied on and the coverage gap argument is unchanged.
-Treat GitHub as reachable only while awake — through MCP tools for writes, direct REST for reads.
+Treat GitHub as reachable only while awake, through the MCP tools; direct REST only for the
+settings reads the MCP has no tool for.
 
 **Do not call `send_later` on the cloud surface, and do not try to fix it from the
 repo.** Directly observed (2026-08-08): it **still prompted the owner** through every allow-list

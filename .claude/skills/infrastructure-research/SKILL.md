@@ -86,8 +86,9 @@ node -e '(async () => {
     "/repos/pdcarlson/Frapp/vulnerability-alerts",
   ]) {
     const r = await fetch(`https://api.github.com${p}`, { headers: h });
-    // x-github-request-id present => GitHub answered; absent on a 403 => the proxy did
-    console.log(r.status, r.headers.get("x-github-request-id") ? "github" : "proxy", p);
+    // node's fetch ignores HTTPS_PROXY, so this is the direct route and a 403 is GitHub's
+    // verdict on the PAT. (On the proxy route GitHub headers prove nothing about the PAT.)
+    console.log(r.status, r.headers.get("x-github-request-id") ? "github" : "no-github-headers", p);
   }
 })()'
 ```

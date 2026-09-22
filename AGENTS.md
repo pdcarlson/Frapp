@@ -134,7 +134,7 @@ Claude Code (web and CLI) is the agent harness this repo configures. Bringup is 
 
 A task is done when its PR is green and review-clean, not when the code is pushed. Wake-path facts: [`pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md).
 
-Scheduled routines are exempt and follow their own skill's PR rules ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)): they don't subscribe, because a run ends when its report is written and a human merges every routine PR. Before ending, a routine reads its PR's checks once and fixes a failure its own change caused; steps 3–4 below still describe how to handle a PR it services.
+Scheduled routines are exempt and follow their own skill's PR rules ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)): they don't subscribe, because a run ends when its report is written and a human merges every routine PR. Before ending, a routine waits for its PR's checks to finish and fixes a failure its own change caused; steps 3–4 below still describe how to handle a PR it services.
 
 1. Open a PR against `main`, the only legal base, without being asked.
 2. Subscribe with `subscribe_pr_activity`. Don't call `send_later` or add it to `permissions.allow`: it prompts the owner, so it can't run unattended. The PR-activity webhook plus the repo's `CI wake` and `PR base sync` comments cover wakes ([wake coverage](docs/internal/ci-cd/pr-babysitting.md#wake-coverage)).
