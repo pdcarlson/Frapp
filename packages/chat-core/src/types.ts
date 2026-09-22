@@ -227,7 +227,11 @@ export interface ChatMessage {
    *
    * `_`-prefixed because it is client-derived state, not a column. A consumer
    * that renders a row with this `false` must apply its own block list first
-   * and must hold the row, not render it, when that list is unavailable.
+   * and must hold the row, not render it, while that list is loading or
+   * unavailable — unless it already showed the row against a ready list, since
+   * nothing re-evaluates an echoed row: the reconnect backfill reads only after
+   * the last-seen cursor, which the echo itself advanced (mobile:
+   * `apps/mobile/lib/chat/block-clearance.ts`).
    */
   _blockEvaluated: boolean;
   reactions: ReactionState;

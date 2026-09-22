@@ -58,7 +58,13 @@ function list(
   status: BlockedUserIds["status"],
   ids: string[] = [],
 ): BlockedUserIds {
-  return { status, ids: new Set(ids), retry: vi.fn(), isRetrying: false };
+  return {
+    status,
+    ids: new Set(ids),
+    unblocked: new Set(),
+    retry: vi.fn(),
+    isRetrying: false,
+  };
 }
 
 function render(): ReactTestRenderer {

@@ -202,10 +202,17 @@ describe("block-list provenance through the merge (#2315)", () => {
     expect(message.sender_blocked).toBe(false);
   });
 
-  test("a later REST read of an echoed row vouches for it again", () => {
-    // The reconnect backfill and the polling fallback both merge REST rows
-    // through this same function, so an echoed row is re-evaluated as soon as
-    // any server read returns it — no queryFn re-run required (defect 4).
+  test("a REST read that does return an echoed row vouches for it", () => {
+    // Whatever merges a REST row goes through this function, so a server read
+    // that happens to return an echoed row re-evaluates it. That is NOT a
+    // re-evaluation path to rely on: the reconnect backfill and the polling
+    // fallback read only rows *after* the last-seen cursor, and every echo
+    // advances that cursor, so an echoed row is normally never read back over
+    // REST. It stays unevaluated for the session, which is why a client that
+    // applies its own block list must remember rows it already cleared against
+    // a ready list (mobile: `apps/mobile/lib/chat/block-clearance.ts`) rather
+    // than hold them again when the list later becomes unavailable (#2257
+    // review, finding 4).
     let cache = mergeServerRow(emptyCache(), echoRow());
     cache = mergeServerRow(cache, restRow());
     expect(cache.byId["m1"]!._blockEvaluated).toBe(true);
