@@ -57,15 +57,16 @@ RUN npm run build --workspace=apps/api
 # passes service env vars matching these ARG names at build time. Unset
 # (CI, laptops) → the script skips sentry-cli and still strips `*.map` so
 # the runner does not ship TypeScript. Set but sentry-cli fails (inject or
-# upload) → the script prints one `WARNING:` line, still strips `*.map`,
-# and exits 0: the upload is best effort and must not gate shipping
-# (#2431). Only a failure to strip exits non-zero. Do not add `|| true`
-# here; that would hide a strip failure too. `gcompat` is Alpine's glibc
-# shim for the linux-x64 CLI binary; only needed when a token is present.
+# upload: non-zero exit, signal, or time bound) → the script prints one
+# `WARNING:` line, still strips `*.map`, and exits 0: the upload is best
+# effort and must not gate shipping (#2431). Only a failure to strip exits
+# non-zero. Do not add `|| true` here; that would hide a strip failure too.
+# A failed upload is cached with this layer, so a same-commit rebuild does
+# not retry it; clear the build cache to retry. No glibc shim (`gcompat`):
+# the `@sentry/cli-linux-x64` binary npm installs here is static-pie.
 ARG SENTRY_AUTH_TOKEN
 ARG RENDER_GIT_COMMIT
-RUN if [ -n "$SENTRY_AUTH_TOKEN" ]; then apk add --no-cache gcompat; fi \
-    && node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js
+RUN node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js
 
 # Stage 3: Production-only dependencies (clean install, no dev deps)
 FROM node:24-alpine AS prod-deps
