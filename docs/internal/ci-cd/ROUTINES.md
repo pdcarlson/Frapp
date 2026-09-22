@@ -6,11 +6,15 @@ shares. The prompts are thin; the behavior contract is each routine's skill, whi
 from `main` at run time.
 
 Each routine runs as a Claude Code Routine (claude.ai/code → the Frapp environment → Routines).
-Editing a prompt block here changes nothing that runs until the live Routine is updated. An agent
-session can update a Routine that an agent created (`update_trigger`; today PR Follow-ups and Docs
-Upkeep) when the owner asks. A Routine created in the UI (Issue Curator, Issue Triage, Hygiene Scan)
-can only be edited there, so hand the owner the new text in the session, or file a `[human]` issue
-when nobody is there to take it. Decision record: ADR-16 amendments 4–10 in
+Editing a prompt block here changes nothing that runs until the live Routine is updated, and that
+update belongs after the PR changing the block merges, since the run reads its skill from `main`.
+In a session the owner is attending, an agent can update a Routine an agent created with
+`update_trigger` (as of 2026-09-22, PR Follow-ups and Docs Upkeep); `list_triggers` shows how each
+was created, and `update_trigger` refuses the rest ("Agents can only update routines they
+created"). A Routine created in the UI (as of 2026-09-22, Issue Curator, Issue Triage, Hygiene
+Scan) can only be edited there, so hand the owner the new text. Whenever the live Routine isn't
+updated in the same session, which includes every scheduled run, file a `[human]` issue carrying
+the new prompt text. Decision record: ADR-16 amendments 4–10 in
 [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md).
 
 | # | Routine | Skill (behavior contract) | When (ET) | What it does |
@@ -20,6 +24,11 @@ when nobody is there to take it. Decision record: ADR-16 amendments 4–10 in
 | 3 | **PR Follow-ups** | [`pr-followups`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:00, before #1–2 so that morning's passes see what it filed | Files what recent PRs left for a human; republishes the "PR Follow-ups — Human Action List" |
 | 4 | **Docs Upkeep** | [`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md) | weekly Wed 07:00 | Fixes a rotating fifth of the docs corpus in one docs-only PR (repairs rather than files, because filed docs debt ages) |
 | 5 | **Hygiene Scan** | [`hygiene-scan`](../../../.claude/skills/hygiene-scan/SKILL.md) | daily 23:00, the evening before, so it runs first each day | Fixes one bounded hygiene theme in one product-code PR; files the rest |
+
+The account also holds a sixth Routine, "Next steps" (created in the UI; hourly `/next`), disabled
+since 2026-09-05. It isn't one of these five: it would claim and ship backlog work, product code
+included, which is outside the ownership boundary below. Leave it disabled; deleting it is the
+owner's call, in the UI.
 
 ## Shared ownership boundary (all routines)
 
@@ -170,7 +179,7 @@ Cron values are UTC during EDT; shift +1h when ET returns to EST.
 | Autofix on PR create | Off for Curator, Triage and PR Follow-ups. On for Docs Upkeep and Hygiene Scan. | The first three open a PR only for self-maintenance; the other two open one on most runs. |
 | Session | Fresh session per run | Each run re-reads its skill from `main`. |
 | Access | GitHub MCP | Plus the repo itself for Hygiene Scan's gates. No secrets in the environment config. |
-| Connectors | Sentry, Supabase, Vercel, Render, PostHog | The Curator's runtime-signals lens and `infrastructure-research` read provider state through them; a run without them reports that source as unavailable. GitHub is the MCP and the repository attachment, not a connector. The live Routines also carry Stripe, Mermaid-Chart, visualize and Wispr-Flow, which no skill uses. |
+| Connectors | Issue Curator: Sentry, Supabase. PR Follow-ups and Docs Upkeep: Supabase, Vercel, Render. Issue Triage and Hygiene Scan: none. | The Curator's runtime-signals lens reads Sentry and Supabase; `infrastructure-research`, which PR Follow-ups and Docs Upkeep use for provider state, reads Supabase, Vercel and Render. A run missing one reports that source as unavailable. Attach nothing else: a connector is standing access for an unattended run, write tools included (the Supabase connector can run SQL against production). GitHub is the MCP and the repository attachment, not a connector. |
 | Completion notification | Push for all; PR Follow-ups also emails | Each run ends with a report meant for the owner. |
 
 ## Routine prompts (copy-paste)
