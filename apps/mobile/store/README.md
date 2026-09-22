@@ -38,7 +38,7 @@ search.
 | Bundle id / package | `live.frapp.mobile` |
 | Category | Productivity (primary); Social Networking (secondary, iOS) |
 | Age rating | **13+** (iOS) / Everyone (Android). See § Age rating below — 13+ is a deliberate override of the 4+ the questionnaire calculated. |
-| Price | Free (chapters subscribe on the web dashboard. The app has no in-app purchases. The only payment in the app is a member paying their own chapter's dues by card, a real-world service.) |
+| Price | Free (chapters subscribe on the web dashboard. The app has no in-app purchases, and no payment can be taken in the app at all — card payments are not switched on for this build. **Basis: no Stripe key in the EAS `production` environment, per #2415's `env:list` of 2026-09-18. Re-run `eas env:list --environment production` against the build you actually submit before pasting this.** See § Review notes.) |
 | Privacy policy URL | https://frapp.live/privacy |
 | Terms URL | https://frapp.live/terms |
 | Support URL | https://frapp.live/support |
@@ -185,14 +185,14 @@ record; each is a review-time or launch risk.
 | [#2262](https://github.com/pdcarlson/Frapp/issues/2262) | The FERPA notice cites a redaction feature that is not built |
 
 The rows above are what completing the console surfaced. These came from reading the
-binary and the live providers on 2026-09-21, and two are hard gates rather than risks —
+binary and the live providers on 2026-09-21, and the rows marked **hard gate** are gates rather than risks —
 App Store Connect will not take the submission at all. Each links the issue that owns
 the work; the detail lives there, not here.
 
 | # | Risk | Kind |
 | --- | --- | --- |
 | [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **No screenshots exist**, and the preview route to them is blocked by #2415 (see the note at the top of this file). Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked | hard gate |
-| [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` is empty and `production` has no Stripe key — owns both the screenshot route and the 3.1.5 argument below | hard gate |
+| [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` holds only `SENTRY_AUTH_TOKEN` — owns the screenshot route. Its other half, no Stripe key in `production`, stopped gating submission on 2026-09-21: this listing no longer claims card payments, so that key is a product decision rather than a blocker | hard gate |
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | No App Review demo user exists in `frapp-prod`; the demo seed is Docker-only. The reviewer cannot sign in | hard gate |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 (restated as a blocker, not a risk): API and production DB ship report/block, **no client consumes either** | blocker |
@@ -268,19 +268,21 @@ First release.
 
 ## Seed the reviewer's chapter
 
-The review notes below promise a reviewer four things a fresh demo account cannot see.
+The review notes below promise a reviewer three things a fresh demo account cannot see.
 A reviewer who follows the notes and finds nothing files it as the app not working, so
-this is a prerequisite list, not a polish list. **Every row is a seeding step, and each
-one inverts a count in § Identity's production reading** — re-run that query afterwards
-rather than trusting either place. The work itself is tracked on the issues named; this
-table exists because nothing else states what a reviewer will actually be shown.
+this is a prerequisite list, not a polish list. **Each of those three is a seeding step,
+and each one inverts a count in § Identity's production reading** — re-run that query
+afterwards rather than trusting either place. The last row is the inverse: a state to
+leave alone, kept here because it is the one dues decision a submitter must not undo.
+The work itself is tracked on the issues named; this table exists because nothing else
+states what a reviewer will actually be shown.
 
 | The notes say | Do before submitting |
 | --- | --- |
 | A reviewer account that can sign in | Create the App Review demo user in `frapp-prod` (#2309), **already joined to the seeded chapter**, and give App Review its email and password. Do not plan on an invite: 24h hardcoded, single-use, no override. The seeded chapter also needs `subscription_status` `active`, or two tabs 403 (#2297) |
 | Location confirms "inside a chapter study zone" | Add one study zone to the reviewer's chapter. Zone creation is web-dashboard-only, so it cannot be done from the app being reviewed |
 | "direct messages your chapter has started" | Start one DM into the reviewer's account from the web dashboard; the DIRECT section is hidden entirely when the list is empty |
-| Dues paid by Stripe PaymentSheet | Raise an OPEN invoice against the reviewer's **own** member row — the Dues CTA is viewer-scoped, so a new account sees no Pay control at all. Then either ship the key (#2415) or drop the dues sentence |
+| *(nothing — the dues sentence was dropped 2026-09-21)* | **Leave the reviewer with no invoices at all.** Zero rows is the only state that shows them nothing about payments — no Pay control and no Stripe footer; § Review notes owns the mechanics and is the copy to keep current. **Nothing to undo:** the ledger is viewer-scoped, so the 2 OPEN invoices in § Identity's production reading belong to the two pre-existing auth users and are invisible to the reviewer. **Do not void or delete those** — they are live beta-chapter billing. If a populated ledger is wanted anyway, insert a **PAID** row directly in SQL — never through the API, where `DRAFT → OPEN` is the only route to PAID and writes a persisted "New Invoice" notification deep-linked to the Dues tab (`financial-invoice.service.ts`). That fallback surfaces the Stripe footer, leaves the balance at $0.00, and inverts § Identity's invoice count — re-run that query too |
 
 ## Review notes (App Store Connect → App Review Information)
 
@@ -288,43 +290,56 @@ table exists because nothing else states what a reviewer will actually be shown.
 - Universal links are not configured, so tapping an `https://` invite link opens the web app, not this app — do not describe any link as opening the app. If a reviewer ever does need to redeem by hand, the join screen accepts a bare token or a full `https://app.frapp.live/join?token=…` pasted link and extracts the token from either; that is a fallback, not the route to describe.
 - Camera is used only to scan a chapter's event check-in QR code. Location is used only while the app is open, to confirm the member is inside a chapter study zone or at the event being checked in to; there is no background location.
 - Sign in with Apple and Sign in with Google are offered on the sign-in screen (Guideline 4.8: Apple is required once Google is offered). Password and magic-link remain. A reviewer still joins with the invite token after signing in — membership follows the signed-in user id, including Apple Hide My Email.
-- No in-app purchases and no digital goods. The app is designed to take **chapter dues** by card (Stripe PaymentSheet on the Dues tab): these are membership dues owed to the member's own real-world organization, i.e. goods and services consumed outside the app (guideline 3.1.5), not digital content. Chapter *subscriptions* to Signet itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
-  > **Do not paste the dues sentence while card payments are off.** Two corrections to
-  > what this note used to say, both made 2026-09-21 against the code:
+- No in-app purchases and no digital goods. **The app takes no payment of any kind.** `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is not set in the EAS `production` environment ([#2415](https://github.com/pdcarlson/Frapp/issues/2415)), so `isStripeAvailable()` is false and PaymentSheet never opens. Do not tell App Review the app takes dues by card, and do not argue guideline 3.1.5 from it — the beta chapter is not collecting dues by card (decided 2026-09-21). **That decision is the only thing making the two sentences above true, and reversing it needs no repo change** — `eas env:set` reaches the bundle server-side. If the key ever ships, this bullet and § Identity's Price row become false statements to App Review: change both in the same sitting as the privacy rows below. Chapter *subscriptions* to Signet itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
+  > **Seed no OPEN invoice for the reviewer and the question never arises.** Recorded
+  > 2026-09-21, when the dues sentence came out of this note. What follows is the part
+  > worth keeping: the code does not behave the way "no card payments" makes it sound.
   >
-  > **`eas.json` is not the fence — the EAS environment is.** It is true that no profile
-  > in [`apps/mobile/eas.json`](../eas.json) sets
-  > `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`, but that does not establish the key is absent
-  > from a build: every profile declares `"environment"`, so a server-side
-  > `eas env:set --environment production` reaches the bundle with no repo change, which
-  > is exactly how `EXPO_PUBLIC_SENTRY_DSN` and `EXPO_PUBLIC_POSTHOG_KEY` already arrive.
-  > The key's absence is an observation about the EAS environment, recorded in
-  > [#2415](https://github.com/pdcarlson/Frapp/issues/2415) (owner's `env:list`,
-  > 2026-09-18): `production` holds both Supabase values, the Sentry DSN, the PostHog key
-  > and `SENTRY_AUTH_TOKEN`, and **no** Stripe key. Nothing in this repo can see that, so
-  > re-read #2415 rather than `eas.json` before trusting this paragraph.
-  >
-  > **A reviewer sees a disabled Pay button, not a missing one.** This note previously
-  > said the affordance "does not render in any build"; that is wrong, and
+  > **A reviewer with an open invoice sees a *disabled* Pay button, not a missing one.**
+  > `app/(tabs)/dues.tsx` gates the control's *existence* on there being an open invoice
+  > (`payLabel={target ? "Pay now" : null}`) and only its *enablement* on the key
+  > (`disabledReason`); `components/dues/balance-card.tsx` then
+  > renders "Pay now" at half opacity, captioned "Card payments aren't switched on for
+  > this build yet. Ask your treasurer how to pay this invoice." That is the design
+  > system's §5 disable-and-name-the-reason rule. `balance-card.spec.tsx` pins the
+  > shape of it — disabled, reason as `accessibilityHint`, reason rendered as text — but
+  > with the Expo Go sentence, not this one; **no test asserts this caption, the half
+  > opacity, or the `dues.tsx` wiring above.** Re-read the code, not CI, before trusting
+  > this paragraph.
   > [`ENV_REFERENCE.md` § apps/mobile](../../../docs/internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas)
-  > had it right. `app/(tabs)/dues.tsx` gates the control's *existence* on there being an
-  > open invoice (`payLabel={target ? "Pay now" : null}`) and only its *enablement* on the
-  > key (`disabledReason`); `components/dues/balance-card.tsx` then renders "Pay now" at
-  > half opacity, inert, captioned "Card payments aren't switched on for this build yet.
-  > Ask your treasurer how to pay this invoice." That is the design system's §5
-  > disable-and-name-the-reason rule and a test pins it.
+  > states the same behaviour and is its other home — move the two together.
+  > It is inert rather than dead — the `Pressable` gets `disabled` and
+  > `accessibilityState={{ disabled, busy: isPaying }}`, so it cannot be tapped into a
+  > failure — but it
+  > is still a control a reviewer can see and ask about. That is a Guideline 2.1
+  > conversation nobody needs, and it is avoidable, which is why § Seed the reviewer's
+  > chapter says to leave them no open invoice.
   >
-  > **But whether the reviewer sees it at all depends on the reviewer's own invoice, not
-  > on the chapter's.** `dues.tsx` calls `useInvoices(viewerUserId)` and
-  > `selectInvoiceRows(..., viewerUserId)`, which keeps only rows where
-  > `row.userId === viewerUserId`; `target` comes from those, and `payLabel` is `null`
-  > without one. `frapp-prod`'s 2 OPEN invoices belong to the two pre-existing auth
-  > users, so a **freshly created demo account has no Pay control whatsoever** —
-  > `balance-card.spec.tsx` pins that case as "hides the CTA entirely when there is
-  > nothing to pay", and the card reads "You're all paid up". So there are two distinct
-  > ways the dues sentence misleads a reviewer, and seeding fixes only one: either ship
-  > the key or drop the sentence, and either way raise an OPEN invoice against the
-  > reviewer's own member row (§ Seed the reviewer's chapter).
+  > **Only an open invoice produces it.** `target` comes from `selectNextDueInvoice`,
+  > which reads open rows only, so a reviewer with none — or with PAID ones only — gets
+  > no Pay control at all and a card reading "You're all paid up". A reviewer with no
+  > invoices whatsoever gets the "No dues yet" empty state.
+  >
+  > **Where the tab is not silent about Stripe.** Once the reviewer's *own* ledger has at
+  > least one row and it has loaded, `dues.tsx` footers "Payments run through your
+  > chapter's Stripe account." That is trust copy, not a purchase path: it names no
+  > price, offers no control, and the build cannot take a payment behind it. With the
+  > empty ledger § Seed the reviewer's chapter asks for, the reviewer never sees it — so
+  > do not pre-emptively explain copy they will not be shown.
+  >
+  > **Do not re-derive any of this from `eas.json`.** No profile in
+  > [`apps/mobile/eas.json`](../eas.json) sets `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`, but
+  > that does not establish the key is absent from a build: every profile declares
+  > `"environment"`, so a server-side `eas env:set --environment production` reaches the
+  > bundle with no repo change, which is exactly how `EXPO_PUBLIC_SENTRY_DSN` and
+  > `EXPO_PUBLIC_POSTHOG_KEY` already arrive. The key's absence is an observation about
+  > the EAS environment, recorded in
+  > [#2415](https://github.com/pdcarlson/Frapp/issues/2415) (owner's `env:list`,
+  > 2026-09-18): `production` holds both Supabase values, the Sentry DSN, the PostHog
+  > key and `SENTRY_AUTH_TOKEN`, and **no** Stripe key. That `production` is otherwise
+  > provisioned is what keeps the TestFlight screenshot route (#938) open while
+  > `preview` is empty. Nothing in this repo can see any of it, so re-read #2415 rather
+  > than `eas.json` before trusting this paragraph.
 
 ## Privacy questionnaire answers
 
@@ -433,10 +448,12 @@ Where each answer comes from:
 - **Payment Info is deliberately absent**, and the basis is #2415's `env:list`, not a
   read of `eas.json`. `@stripe/stripe-react-native` is a shipped dependency and
   PaymentSheet is fully wired end to end (the API's `POST /v1/invoices/{id}/payment-intent`
-  exists and settles through webhooks); the only dark part is the key, and it can be
-  switched on from the EAS dashboard with no repo change and nothing in CI able to notice.
-  **The moment the key ships this row is false** — declare Financial Info → Payment Info
-  in the same sitting, and do not let the two steps drift apart.
+  exists and settles through webhooks); the only dark part is the key. The beta chapter
+  is not collecting dues by card (decided 2026-09-21), so this row is right for the build
+  being submitted and § Review notes no longer argues anything that depends on it. It is
+  still a conditional rather than a settled fact: the key can be switched on from the EAS
+  dashboard with no repo change and nothing in CI able to notice, and **the moment it
+  ships this row is false** — declare Financial Info → Payment Info in the same sitting.
 - **Search History is declared not collected, which turns on a retention question
   nobody has answered.** Two free-text boxes in the binary send the typed query to our
   own API — the directory (`GET /v1/members/search`) and the chapter finder
@@ -445,9 +462,12 @@ Where each answer comes from:
   only way this becomes "collected" is if the API retains query strings in access logs.
   Confirm that it does not, or declare the row.
 - **Purchases is declared not collected** although the Dues tab renders the member's
-  invoice ledger and payment history. The reasoning is the same as the 3.1.5 argument
-  above — these are real-world membership dues owed to the member's own chapter, not
-  purchases made in the app — but state it here so the question has an answer ready.
+  invoice ledger and payment history. The answer that engages Apple's definition is that
+  what the ledger records are real-world membership dues owed to the member's own
+  chapter, not purchases made in the app — the type is about purchase-history *data*, so
+  "the build takes no payment" is a weaker second point, not the lead. **This row and
+  Payment Info above turn on the same fact and change together:** if the Stripe key ever
+  ships, revisit both in the same sitting.
 - **Tracking is No on all eleven.** Apple's definition is linking app data with
   third-party data for targeted advertising or measurement, or sharing with a data
   broker. There are no ad SDKs, and PostHog and Sentry are first-party processors,
