@@ -1225,9 +1225,9 @@ containers — only rules committed to `.claude/settings.json` travel with the r
 are bounded by the ceiling rule above.
 
 The in-session trigger family (`send_later` / `create_trigger` / `list_triggers` …) is a
-**dead end for unattended use on the cloud surface — do not build an unattended flow on it.** The
-Routine-management tools do work in a session the owner is attending; see
-[`ROUTINES.md`](ROUTINES.md). Not an account-side
+**dead end for unattended use on the cloud surface — do not build an unattended flow on it.** In a
+session the owner was attending (2026-09-22), `list_triggers`, `create_trigger` and `update_trigger`
+worked within the limits below; the rest of the family wasn't tried. See [`ROUTINES.md`](ROUTINES.md). Not an account-side
 Routines gate (disproven 2026-08-08: the owner's Routines page was healthy and scheduled Routines
 fired normally) and not a permissions-file miss (three spellings were allowlisted, and the family is
 absent from the harness `--allowed-tools` snapshot — see the ceiling rule above).
@@ -1239,8 +1239,9 @@ still disqualifying for unattended runs, but for a different reason: it stops an
 `list_triggers`, `create_trigger` and `update_trigger`, 2026-09-22, in a session the owner was
 attending: all three worked, so the earlier `-32003` reports no longer hold for them. `create_trigger`
 created Docs Upkeep with no repository and no connectors attached, and `update_trigger` refuses a
-Routine created in the UI ("Agents can only update routines they created"). None of this makes the
-family usable for unattended runs.
+Routine created in the UI ("Agents can only update routines they created"). Whether any of them
+prompted the owner wasn't recorded; an agent can't observe prompts. None of this makes the family
+usable for unattended runs.
 
 ## Agent dev stack (cloud sessions)
 
