@@ -38,7 +38,27 @@ fallback.** The label roster and shared routine config live in
 > [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
 > — the canonical statement, deliberately not restated here. As of **2026-09-05** all three read
 > paths measured faithful, so backfilling an Agent brief into an existing body is permitted; re-run
-> the probe against fixture #1736 before a bulk pass. The same hazard applies to every routine that
+> the probe against fixture #1736 before a bulk pass.
+>
+> **Re-measured 2026-09-22 (triage run): still green on every leg that could be run.** Steps 1-3
+> (`issue_read get`, `list_issues`, `search_issues`) and step 5 (`get_comments`, both controls) all
+> returned #1736's three vectors intact — the HTML comment, the tag outside the fence *and* all five
+> `<Tabs.Screen …/>` lines inside the `tsx` fence, and literal `'` `"` `&` `>` plus the comment
+> control's bare `<` and `&&`. Vector 2, the discriminator, is the one that decides this, and it is
+> intact on all four paths.
+>
+> **Step 4 (the direct REST ground-truth read) could not be run** — unauthenticated
+> `api.github.com` answered `403 rate limit exceeded` for the sandbox's shared egress IP. That is a
+> missing confirmation leg, not a red probe: the four MCP legs agree with each other *and* with the
+> fixture's own in-body answer key, which describes what a sanitizing read returns (five blank
+> lines) and is therefore discriminating on its own. Treat a run that loses step 4 the same way —
+> say so rather than reporting an unqualified green.
+>
+> Note the canonical fidelity table in `GITHUB_PM.md` still carries the 2026-09-05 measurement.
+> That file is **outside** the routine self-maintenance path allowlist
+> ([`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract)),
+> so this note deliberately does not restate the table — it records that a later measurement exists
+> and agrees. Docs Upkeep or the owner refreshes the canonical copy. The same hazard applies to every routine that
 > re-bodies an issue.
 >
 > **Agent-brief backfills have been blocked and unblocked four times.** Refused 2026-08-10 and
