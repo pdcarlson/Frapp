@@ -175,6 +175,8 @@ function norm(file) {
 // one takes over the line and is verified, carrying the rest: duplicates are verified one at a time,
 // and only while each one before them fails. Once one is kept, the rest ride along unverified, and
 // the skill's Phase 3 has the orchestrator read each note and split out a different defect.
+const note = (d) => ({ source: d.source, angle: d.angle, summary: d.summary, failure_scenario: d.failure_scenario })
+
 function admit(candidates, source) {
   const fresh = []
   for (const c of candidates) {
@@ -182,7 +184,7 @@ function admit(candidates, source) {
     const rec = { ...c, file: norm(c.file), key, source, status: 'pending', alsoFlaggedBy: [], dups: [] }
     const prior = seen.get(key)
     if (prior && prior.status === 'kept') {
-      prior.alsoFlaggedBy.push(`${source}: ${c.angle} — ${c.summary}`)
+      prior.alsoFlaggedBy.push(note(rec))
       merged++
     } else if (prior && prior.status === 'pending') {
       prior.dups.push(rec)
@@ -199,7 +201,7 @@ async function settle(rec, status, extra) {
   rec.status = status
   const { dups, key, ...out } = rec
   if (status === 'kept') {
-    for (const d of dups) rec.alsoFlaggedBy.push(`${d.source}: ${d.angle} — ${d.summary}`)
+    for (const d of dups) rec.alsoFlaggedBy.push(note(d))
     kept.push({ ...out, ...extra })
     return
   }

@@ -235,10 +235,11 @@ before you report.
 
 Rank correctness and security above cleanups, and `CONFIRMED` above `PLAUSIBLE`. A docs finding that
 names a concrete broken pointer, an orphaned section reference, or a dropped dated stamp is a
-correctness finding and is not cut to fit the cap. Each `alsoFlaggedBy` note is an unverified
-candidate at a kept finding's line: read it, merge it when it shares the root cause, and treat it as
-its own finding when it names a different defect (check it yourself if you're unsure). Merge other
-findings that share a root cause. Cap at the level's limit.
+correctness finding and is not cut to fit the cap. Each `alsoFlaggedBy` entry is an unverified
+candidate at a kept finding's line, with its own summary and failure scenario. Merge it when it
+shares the root cause. When it names a different defect, give it one `claim-verifier` like any other
+candidate, and report it as its own finding unless that verifier refutes it. Merge other findings
+that share a root cause. Cap at the level's limit.
 
 Report with one `ReportFindings` call, most severe first, with `level` set to the effort used and
 `verdict` on each finding. Pass an empty array when nothing survived. Don't also restate the findings
@@ -273,4 +274,4 @@ node scripts/diff-review-scope.mjs --mark full
 The script writes `<repo-root>/.cache/diff-review/<HEAD SHA>`, the only place the hook looks, and
 the kind is what lets the next Phase 0 trust it. The marker is keyed to the commit, so committing
 fixes invalidates it by design: re-run this skill on the new HEAD. Phase 0 then finds this marker
-and re-reviews just the fix commits.
+and re-reviews just the fix commits, or the whole branch if a merge from `main` landed since.
