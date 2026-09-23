@@ -11,6 +11,8 @@
 #   6. load the chapter directory seed (non-fatal)
 #   7. verify node_modules is usable — LAST, so a broken npm never costs the database
 #      (see the comment above the call for why this is not the first step)
+#   8. build the workspace packages (`packages/*`), which the apps import through their
+#      gitignored `dist/` — needs step 7, so it is the one step after it
 #
 # Steps 4 and 5 are in that order deliberately, and this list had them backwards until
 # #1156 — see the comment above the ACL repair for why the env write has to come first.
@@ -326,7 +328,28 @@ cs_verify_node_deps "$ROOT" \
 # this sentinel, not to read /tmp/cloud-sandbox-up.log — so a warning that exists only in the
 # log is a warning the session never sees, which is precisely the failure #1631 is about. It
 # would be an odd fix that reproduced its own bug one file over.
+# Workspace packages (#2516). Every app imports `@repo/*` through the package's `dist/`,
+# which is gitignored, and nothing else in setup or bringup builds it — so on a fresh
+# checkout `npm run start:dev -w apps/api` died with 91 type errors, and
+# `check:dep-cruiser` reported every `@repo/chat-integrations` import as a NEW boundary
+# violation "this change introduced", an instruction to go and break working imports. A
+# cached filesystem holding an older `dist/` hid it. Turbo caches the build, and a cold
+# one took ~3s on 2026-09-23, so it costs nothing on the interactive path.
+#
+# Not fatal, for the reason the toolchain check above gives: the stack is up and the
+# session is usable. The failure rides in the .done body, which is what sessions read.
+cs_log "Building the workspace packages..."
+packages_build_failed=""
+if ! timeout 600 "$ROOT/node_modules/.bin/turbo" run build --filter='./packages/*' --output-logs=errors-only; then
+  packages_build_failed=1
+  cs_log "WARN: the workspace package build failed; see the output above. Re-run: npx turbo run build --filter='./packages/*'"
+fi
+
 printf '%s\n' "$(date -u +%FT%TZ)" >"$DONE_SENTINEL"
+if [ -n "$packages_build_failed" ]; then
+  printf 'WARN: the workspace package build failed, so anything importing @repo/* (the API, check:dep-cruiser) will not resolve; run `npx turbo run build --filter=./packages/*` and read its errors.\n' \
+    >>"$DONE_SENTINEL"
+fi
 if [ "${CS_NODE_DEPS_WHY:-}" = "incomplete" ]; then
   printf 'WARN: npm ls --depth=0 reports a missing declared dependency; run `npm ci` if a workspace hits "Cannot find module".\n' \
     >>"$DONE_SENTINEL"

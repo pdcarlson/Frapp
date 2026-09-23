@@ -301,6 +301,9 @@ test("every class carries a non-empty, actionable hint", () => {
   // running the command. A hint that describes work bringup does not do is worse than no hint.
   const deps = bash("cs_failure_hint dependencies").stdout;
   assert.match(deps, /npm ci/);
+  // Bringup stops at this check, before it builds the packages (#2516), so `npm ci` alone
+  // leaves every `@repo/*` import unresolvable; the remedy has to name the build as well.
+  assert.match(deps, /turbo run build --filter=\.\/packages\/\*/);
   assert.doesNotMatch(
     deps,
     /already tried|tried to repair|repair(ed)? it/i,
@@ -817,5 +820,17 @@ test("bringup never writes to node_modules, and checks it only after the stack i
   assert.ok(
     firstCheck < sentinel,
     "...but it must precede the success sentinel, so .done never lies about the toolchain",
+  );
+
+  // The package build (#2516) needs node_modules, so it follows the toolchain check, and it
+  // lands before .done so the sentinel can carry its WARN. It must never be a `fail`: the stack
+  // is up, and a failed build is a warning a session can act on, not a failed bringup.
+  const build = upCmds.search(/turbo"?\s+run build --filter='\.\/packages\/\*'/);
+  assert.ok(build !== -1, "bringup must build the workspace packages");
+  assert.ok(firstCheck < build && build < sentinel, "the build runs after the toolchain check and before .done");
+  assert.doesNotMatch(
+    upCmds.slice(build, sentinel),
+    /\bfail\b/,
+    "a failed package build must not fail bringup",
   );
 });

@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   newViolations,
+  packageNameOf,
   staleBaselineEntries,
   toRepoRelative,
+  unbuiltPackageViolations,
   violationKey,
 } from "../../check-dep-cruiser.mjs";
 
@@ -144,4 +146,36 @@ test("stale entries never fail the gate — fixing a violation must not punish y
   // The whole point: staleBaselineEntries is informational, and newViolations —
   // the thing that decides the exit code — is unaffected by it.
   assert.deepEqual(newViolations([], [BASELINED]), []);
+});
+
+// ── Unbuilt workspace packages (#2516) ──────────────────────────────────────
+//
+// Every `@repo/*` package resolves through its gitignored `dist/`, so on a checkout where
+// nothing built it, every import of it is unresolvable. Reporting those as boundary violations
+// "this change introduced" told an agent to go and change imports that were never broken.
+
+test("packageNameOf keeps the scope and drops the subpath", () => {
+  assert.equal(packageNameOf("@repo/chat-integrations"), "@repo/chat-integrations");
+  assert.equal(packageNameOf("@repo/validation/subscription"), "@repo/validation");
+  assert.equal(packageNameOf("lodash/fp"), "lodash");
+  assert.equal(packageNameOf("react"), "react");
+});
+
+test("only unresolvable imports of an UNBUILT @repo package are set apart", () => {
+  const unbuilt = new Set(["@repo/chat-integrations"]);
+  const violations = [
+    { rule: "not-to-unresolvable", from: "apps/web/a.tsx", to: "@repo/chat-integrations" },
+    { rule: "not-to-unresolvable", from: "apps/web/b.tsx", to: "@repo/chat-integrations/renderers" },
+    // Built package: an unresolvable import of it is a real problem and must stay reported.
+    { rule: "not-to-unresolvable", from: "apps/web/c.tsx", to: "@repo/validation" },
+    // Not a workspace package at all.
+    { rule: "not-to-unresolvable", from: "apps/web/d.tsx", to: "left-pad" },
+    // Another rule on the same target is a real boundary finding, whatever the build state.
+    { rule: "no-cross-app", from: "apps/web/e.tsx", to: "@repo/chat-integrations" },
+  ];
+  const picked = unbuiltPackageViolations(violations, (name) => unbuilt.has(name));
+  assert.deepEqual(
+    picked.map((v) => v.from),
+    ["apps/web/a.tsx", "apps/web/b.tsx"],
+  );
 });

@@ -248,6 +248,45 @@ export function staleBaselineEntries(violations, baseline) {
   return baseline.filter((entry) => !current.has(violationKey(entry)));
 }
 
+/** The package a bare specifier names: `@repo/x/sub` → `@repo/x`, `lodash/fp` → `lodash`. */
+export function packageNameOf(specifier) {
+  const [first, second] = specifier.split("/");
+  return first.startsWith("@") && second ? `${first}/${second}` : first;
+}
+
+/**
+ * The `not-to-unresolvable` violations that are really an unbuilt workspace package (#2516).
+ *
+ * Every `@repo/*` package resolves through its `dist/`, which is gitignored, so on a checkout
+ * where nothing has built it every import of it is unresolvable — and this gate would report
+ * each one as a new boundary violation "this change introduced", on a branch that touched
+ * none of them. That message is an instruction to go and change working imports. These are
+ * reported apart, with the build that clears them, and still fail the run: an unresolvable
+ * import cannot be passed over, whatever its cause.
+ */
+export function unbuiltPackageViolations(violations, isUnbuilt) {
+  return violations.filter(
+    (v) => v.rule === "not-to-unresolvable" && v.to.startsWith("@repo/") && isUnbuilt(packageNameOf(v.to)),
+  );
+}
+
+/** Names of workspace packages whose manifest points into `dist/` while `dist/` is absent. */
+function unbuiltWorkspacePackages() {
+  const unbuilt = new Set();
+  for (const workspace of discoverWorkspaces()) {
+    let manifest;
+    try {
+      manifest = JSON.parse(readFileSync(path.join(REPO_ROOT, workspace, "package.json"), "utf8"));
+    } catch {
+      continue;
+    }
+    if (!manifest.name) continue;
+    const pointsAtDist = JSON.stringify([manifest.main, manifest.types, manifest.exports]).includes("./dist/");
+    if (pointsAtDist && !existsSync(path.join(REPO_ROOT, workspace, "dist"))) unbuilt.add(manifest.name);
+  }
+  return unbuilt;
+}
+
 function main() {
   const updateBaseline = process.argv.includes("--update-baseline");
   const onlyIndex = process.argv.indexOf("--workspace");
@@ -276,6 +315,17 @@ function main() {
   violations.sort((a, b) => violationKey(a).localeCompare(violationKey(b)));
 
   if (updateBaseline) {
+    // Recording on an unbuilt checkout would write every `@repo/*` import into the baseline
+    // as a known violation, silently waiving the real ones they would later hide.
+    const unbuiltNames = unbuiltWorkspacePackages();
+    const unbuilt = unbuiltPackageViolations(violations, (name) => unbuiltNames.has(name));
+    if (unbuilt.length > 0) {
+      console.error(
+        `check-dep-cruiser: refusing to record the baseline — ${unbuilt.length} violation(s) come from ` +
+          `unbuilt workspace packages. Run \`npx turbo run build --filter=./packages/*\` first.`,
+      );
+      return 2;
+    }
     const entries = violations.map(({ rule, from, to }) => ({ rule, from, to }));
     writeFileSync(BASELINE_PATH, `${JSON.stringify(entries, null, 2)}\n`, "utf8");
     console.log(
@@ -310,18 +360,35 @@ function main() {
     return 0;
   }
 
-  console.error("");
-  console.error("Dependency boundary check failed — new violation(s):");
-  console.error("");
-  for (const v of introduced) {
-    console.error(`  ${v.rule}: ${v.from} → ${v.to}`);
-    if (v.cycle) console.error(`    cycle: ${v.cycle.join(" → ")}`);
+  const unbuiltNames = unbuiltWorkspacePackages();
+  const unbuilt = unbuiltPackageViolations(introduced, (name) => unbuiltNames.has(name));
+  const genuine = introduced.filter((v) => !unbuilt.includes(v));
+
+  if (unbuilt.length > 0) {
+    const packages = [...new Set(unbuilt.map((v) => packageNameOf(v.to)))].sort();
+    console.error("");
+    console.error(
+      `${unbuilt.length} unresolvable import(s) of workspace package(s) that are not built: ${packages.join(", ")}.`,
+    );
+    console.error("Each resolves through its gitignored dist/, which does not exist in this checkout, so");
+    console.error("these say nothing about your change. Build the packages and re-run:");
+    console.error("  npx turbo run build --filter=./packages/*");
   }
-  console.error("");
-  console.error("These are NOT in the baseline, so this change introduced them.");
-  console.error("Fix the import, or — if the boundary itself is wrong — change the rule in");
-  console.error("scripts/dependency-cruiser.cjs and say why. Do not re-record the baseline to grow it:");
-  console.error("it exists to shrink. See docs/internal/ci-cd/QUALITY_GATES.md.");
+
+  if (genuine.length > 0) {
+    console.error("");
+    console.error("Dependency boundary check failed — new violation(s):");
+    console.error("");
+    for (const v of genuine) {
+      console.error(`  ${v.rule}: ${v.from} → ${v.to}`);
+      if (v.cycle) console.error(`    cycle: ${v.cycle.join(" → ")}`);
+    }
+    console.error("");
+    console.error("These are NOT in the baseline, so this change introduced them.");
+    console.error("Fix the import, or — if the boundary itself is wrong — change the rule in");
+    console.error("scripts/dependency-cruiser.cjs and say why. Do not re-record the baseline to grow it:");
+    console.error("it exists to shrink. See docs/internal/ci-cd/QUALITY_GATES.md.");
+  }
   return 1;
 }
 

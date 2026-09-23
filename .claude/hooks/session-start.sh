@@ -9,6 +9,27 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo 
 # Nothing to announce unless the cloud-sandbox bringup runs below.
 msg=""
 
+# Arm the review gate before anything else (#2488). `.githooks/pre-push` is the only
+# pre-PR review gate, and git runs it only once `core.hooksPath` names that directory.
+# The one thing that set it was the root `prepare` script, so the gate was OFF in any
+# checkout that had not finished an `npm ci` -- which is exactly the state a
+# `(dependencies)` bringup sentinel leaves a cloud session in, with a push one
+# command away. The hooks need nothing npm installs: pre-push is bash plus git, and
+# pre-commit's secret scan imports only node builtins and runs `--soft-missing`.
+#
+# Every session, not only cloud ones: a laptop clone that has not run `npm install`
+# yet is unprotected the same way. A value already naming this directory (an
+# absolute path some harnesses write) is left alone; anything else is replaced with
+# what `scripts/setup-git-hooks.mjs` writes, as `npm ci` would. Never fatal: a hook
+# that aborts here would cost the session every message below it.
+if [ -f "$ROOT/.githooks/pre-push" ] && command -v git >/dev/null 2>&1; then
+  hooks_path="$(git -C "$ROOT" config --get core.hooksPath 2>/dev/null || true)"
+  case "$hooks_path" in
+    .githooks | "$ROOT/.githooks") ;;
+    *) git -C "$ROOT" config core.hooksPath .githooks 2>/dev/null || true ;;
+  esac
+fi
+
 # Render the egress capability manifest (scripts/cloud-sandbox-egress-probe.sh) as one
 # compact line, plus any warnings. Deliberately terse: the whole point of the manifest is to
 # save a session the tokens it would otherwise spend rediscovering the network policy, and a
@@ -61,18 +82,44 @@ sys.stdout.write("".join(parts))
 # it. A /tmp lock prevents relaunching on session resume.
 # See docs/internal/environment/CLOUD_SANDBOX.md.
 if { [ -f /etc/frapp-cloud-sandbox ] || [ "${FRAPP_CLOUD_SANDBOX:-}" = "1" ]; } && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
-  LOCK=/tmp/cloud-sandbox-up.lock
-  STARTING_MSG=" Cloud sandbox: a local Supabase + API stack is starting in the background. Before using the database or booting the API, wait for ${ROOT}/.cloud-sandbox-up.done (success) or .cloud-sandbox-up.failed (error); live log at /tmp/cloud-sandbox-up.log. Bringup writes apps/api/.env.local and apps/web/.env.local, so 'npm run start:dev -w apps/api' boots the API and 'npm run build -w apps/web' works without Infisical. It also writes ${ROOT}/.cloud-sandbox-capabilities.json (which deployed-staging hosts are reachable, which are correctly blocked, and any SECURITY warning); read that instead of probing hosts. If bringup fails, stop and tell the user what to change in the Claude Code web environment (network policy or a missing env var), per docs/internal/environment/CLOUD_SANDBOX.md 'When bringup fails'. That is environment config a session can't fix from inside, and a workaround hides it. The exception is a sentinel reading '(dependencies)': the stack is up and only node_modules is unusable, so run 'npm ci' yourself."
+  # Overridable only so scripts/ci/__tests__/session-start-hook.test.mjs can drive this
+  # hook against a scratch lock, log and boot id; nothing else sets them.
+  LOCK="${FRAPP_BRINGUP_LOCK:-/tmp/cloud-sandbox-up.lock}"
+  BRINGUP_LOG="${FRAPP_BRINGUP_LOG:-/tmp/cloud-sandbox-up.log}"
+  BOOT_ID_FILE="${FRAPP_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
+  STARTING_MSG=" Cloud sandbox: a local Supabase + API stack is starting in the background. Before using the database or booting the API, wait for ${ROOT}/.cloud-sandbox-up.done (success) or .cloud-sandbox-up.failed (error); live log at /tmp/cloud-sandbox-up.log. Bringup writes apps/api/.env.local and apps/web/.env.local and builds the workspace packages, so 'npm run start:dev -w apps/api' boots the API and 'npm run build -w apps/web' works without Infisical. It also writes ${ROOT}/.cloud-sandbox-capabilities.json (which deployed-staging hosts are reachable, which are correctly blocked, and any SECURITY warning); read that instead of probing hosts. If bringup fails, stop and tell the user what to change in the Claude Code web environment (network policy or a missing env var), per docs/internal/environment/CLOUD_SANDBOX.md 'When bringup fails'. That is environment config a session can't fix from inside, and a workaround hides it. The exception is a sentinel reading '(dependencies)': the stack is up and only node_modules is unusable, so run 'npm ci' yourself, then build the workspace packages with 'npx turbo run build --filter=./packages/*'."
+
+  # Which boot this machine is in. A lock, like everything in /tmp here, can outlive a
+  # restart -- /tmp is on persistent disk, not tmpfs -- and the processes it describes
+  # cannot. Empty where the kernel exposes no boot id (macOS, a stripped container):
+  # every check below then falls back to what the hook did before it knew about boots.
+  current_boot="$(cat "$BOOT_ID_FILE" 2>/dev/null || true)"
 
   launch_bringup() {
-    nohup bash "$ROOT/scripts/cloud-sandbox-up.sh" >/tmp/cloud-sandbox-up.log 2>&1 &
+    nohup bash "$ROOT/scripts/cloud-sandbox-up.sh" >"$BRINGUP_LOG" 2>&1 &
     echo "$!" >"$LOCK/pid" 2>/dev/null || true
+    [ -n "$current_boot" ] && { echo "$current_boot" >"$LOCK/boot_id" 2>/dev/null || true; }
     disown || true
   }
 
+  # A lock from an earlier boot is stale whatever sits beside it (#2515). The branches
+  # below trust a lock plus a `.done`/`.failed` sentinel as "bringup already finished",
+  # and a VM restart leaves both on disk while Docker, Supabase and every process the
+  # sentinel vouched for are gone -- one session was told the stack was up while
+  # `dockerd` was not running at all. Removing the lock routes this fire through the
+  # fresh-launch branch; bringup itself clears the old sentinels and manifest when it
+  # starts, so nothing else needs deleting here. A lock with no boot id (written before
+  # this check existed) is left to the old rules rather than guessed about.
+  restart_msg=""
+  if [ -n "$current_boot" ] && [ -f "$LOCK/boot_id" ] \
+    && [ "$(cat "$LOCK/boot_id" 2>/dev/null || true)" != "$current_boot" ]; then
+    rm -rf "$LOCK"
+    restart_msg=" Cloud sandbox: this machine restarted since the last bringup (its lock carries another boot id), so the stack it started is gone; relaunched it."
+  fi
+
   if mkdir "$LOCK" 2>/dev/null; then
     launch_bringup
-    msg="${msg}${STARTING_MSG}"
+    msg="${msg}${restart_msg}${STARTING_MSG}"
   elif [ -f "$ROOT/.cloud-sandbox-up.done" ] || [ -f "$ROOT/.cloud-sandbox-up.failed" ]; then
     msg="${msg} Cloud sandbox: stack bringup already finished this session — check ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed and /tmp/cloud-sandbox-up.log."
   else
