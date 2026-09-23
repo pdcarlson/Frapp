@@ -126,13 +126,22 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
   # (by an older copy of this hook) has none, so for that lock alone the kernel's boot time
   # (`btime` in /proc/stat) stands in: a lock last written before this boot began is from
   # an earlier one. Nothing ever writes a boot id into an old lock, so without this such a
-  # machine would keep the bug until its lock went away. The kernel derives btime from the
-  # wall clock, so a clock stepped forward since the lock was written (a sync, a resumed VM)
-  # can call a same-boot lock stale. That costs one needless re-run of an idempotent
-  # bringup, once per machine (the relaunch records a boot id); trusting a dead stack is the
-  # failure this exists to end, so the heuristic errs this way.
+  # machine would keep the bug until its lock went away.
+  #
+  # Neither test runs while the lock's own bringup is still alive: a live process cannot be
+  # from an earlier boot, and tearing its lock down would start a second bringup racing the
+  # first. That matters for the btime test, which the kernel derives from the wall clock, so a
+  # clock stepped forward since the lock was written (a sync, a resumed VM) can call a
+  # same-boot lock stale. With the live-process check, what a step can still cost is one
+  # needless re-run of the idempotent bringup behind a finished lock, once per machine (the
+  # relaunch records a boot id); trusting a dead stack is the failure this exists to end.
+  bringup_alive() {
+    [ -n "$1" ] && kill -0 "$1" 2>/dev/null \
+      && ps -p "$1" -o args= 2>/dev/null | grep -q cloud-sandbox-up
+  }
   stale_boot=""
-  if [ -n "$current_boot" ] && [ -d "$LOCK" ]; then
+  if [ -n "$current_boot" ] && [ -d "$LOCK" ] \
+    && ! bringup_alive "$(cat "$LOCK/pid" 2>/dev/null || true)"; then
     if [ -f "$LOCK/boot_id" ]; then
       if [ "$(cat "$LOCK/boot_id" 2>/dev/null || true)" != "$current_boot" ]; then
         stale_boot="its lock carries another boot id"
@@ -174,8 +183,7 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
     # forever with no sentinel for callers to wait on. Reclaim and relaunch when
     # the recorded pid is no longer a live bringup process.
     prev_pid="$(cat "$LOCK/pid" 2>/dev/null || true)"
-    if [ -n "$prev_pid" ] && kill -0 "$prev_pid" 2>/dev/null \
-      && ps -p "$prev_pid" -o args= 2>/dev/null | grep -q cloud-sandbox-up; then
+    if bringup_alive "$prev_pid"; then
       msg="${msg} Cloud sandbox: stack bringup is still running (pid ${prev_pid}). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
     else
       rm -rf "$LOCK"

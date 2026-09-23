@@ -101,8 +101,9 @@ handles that by making `check-types` and `lint` depend on `^build`:
 Depending on `^check-types` / `^lint` instead is the trap: turbo then orders the tasks correctly but
 never produces the `dist/` outputs they read, so a fresh clone fails with `TS2307: Cannot find module
 '@repo/validation'` (and friends) until you manually run `npx turbo run build --filter='./packages/*'`.
-`apps/web` masks it — `moduleResolution: "Bundler"` picks the `import` condition and resolves straight
-to source — so the breakage shows up only in `apps/api`. The CI job `clean-checkout-typecheck` guards
+`apps/web` and `apps/landing` mask it: under `moduleResolution: "Bundler"` TypeScript tries `types`
+first and, while that `dist/` file is missing, falls back to the `import` condition, which maps to
+source (once `dist/` exists it reads `dist/*.d.ts`), so the breakage shows up only in `apps/api`. The CI job `clean-checkout-typecheck` guards
 this: it installs and runs both checks with nothing prebuilt, so a regression here fails there while
 every other job (all of which prebuild the packages) stays green.
 

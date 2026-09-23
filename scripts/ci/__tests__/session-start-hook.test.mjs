@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -228,6 +228,30 @@ test("an old hook's lock (no boot id) last written before this boot is stale", a
   assert.match(context, /this machine restarted since the last bringup \(its lock predates this boot\)/);
   assert.ok(await eventually(() => existsSync(s.launched)), "bringup was not relaunched");
   assert.equal(readFileSync(path.join(s.lock, "boot_id"), "utf8").trim(), "boot-B");
+});
+
+test("a lock whose bringup is still running is never torn down, whatever btime says", async (t) => {
+  // A clock stepped forward (a sync, a resumed VM) raises btime past a same-boot lock's mtime.
+  // The live bringup proves the lock is from this boot; relaunching would race it.
+  const s = scratch(t);
+  const inflight = path.join(s.dir, "cloud-sandbox-up-inflight.sh");
+  writeFileSync(inflight, "sleep 30\n");
+  const child = spawn("bash", [inflight], { detached: true, stdio: "ignore" });
+  t.after(() => {
+    try {
+      process.kill(child.pid);
+    } catch {
+      // already gone
+    }
+  });
+  priorLock(s, { boot: undefined, sentinel: null, writtenAt: 1_700_000_000 });
+  writeFileSync(path.join(s.lock, "pid"), `${child.pid}\n`);
+  utimesSync(s.lock, 1_700_000_000, 1_700_000_000);
+  const context = runHook(s, { boot: "boot-B", btime: 1_700_000_500 });
+  assert.match(context, /stack bringup is still running \(pid \d+\)/);
+  assert.doesNotMatch(context, /restarted/);
+  assert.equal(readFileSync(path.join(s.lock, "pid"), "utf8").trim(), String(child.pid));
+  assert.equal(await eventually(() => existsSync(s.launched), 300), false, "a second bringup must not start");
 });
 
 test("an old hook's lock written during this boot keeps the old behavior", async (t) => {

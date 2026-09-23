@@ -141,15 +141,13 @@ going (it is launched with `nohup … &`), so a repair here would race the agent
 `node_modules` with no lock — and `npm ci` *deletes* the tree before installing, which would
 turn a merely incomplete tree into a destroyed one whenever the repair itself failed.
 
-**It does build the workspace packages**, first, before any Docker step, because the API
-resolves `@repo/*` through each package's gitignored `dist/`, and so does `check:dep-cruiser`,
-for every workspace including `apps/web`: it takes the first condition a manifest lists,
-`types`, which points into `dist/`, and does not fall back. Only `apps/web`'s bundler takes the
-`import` condition, which maps to source; its type-check falls back to it while `dist/` is
-missing, but reads `dist/*.d.ts` once they exist. Nothing else builds `dist/` on a fresh
-checkout ([#2516](https://github.com/pdcarlson/Frapp/issues/2516)). Without it
-`npm run start:dev -w apps/api` fails on unresolved imports, and `check:dep-cruiser` reports
-them as boundary violations. It needs only `node_modules`, so it runs ahead of the steps that can
+**It does build the workspace packages**, first, before any Docker step, because the
+packages that publish their types through a gitignored `dist/` are otherwise unbuilt on a fresh
+checkout ([#2516](https://github.com/pdcarlson/Frapp/issues/2516)); which consumers read that
+`dist/` is in [`contributing.md` § 5](../../guides/contributing.md#5-linting-types-and-tests).
+Without it `npm run start:dev -w apps/api` fails on unresolved imports, and
+`check:dep-cruiser`, which resolves the `types` condition with no fallback, reports them as
+boundary violations in every workspace that imports those packages, `apps/web` included. It needs only `node_modules`, so it runs ahead of the steps that can
 fail, and a Docker or network failure no longer leaves the packages unbuilt too; it took under
 two seconds uncached. The build writes `packages/*/dist/` and turbo's cache in `.turbo/`, never
 `node_modules`. It is over within the first seconds of bringup, but a session that runs its own
