@@ -178,8 +178,9 @@ bringup_stop() {
   fi
   if [ -z "$tree" ]; then
     rm -rf "$lock" 2>/dev/null || true
+    # Judged before the guard goes: after it, a lock a new bringup just took is not a failure.
+    if [ -e "$lock" ] || [ -L "$lock" ]; then bringup_unguard; return 2; fi
     bringup_unguard
-    if [ -e "$lock" ] || [ -L "$lock" ]; then return 2; fi
     return 0
   fi
   { echo "$self" >"$lock/stopping.tmp" && mv -f "$lock/stopping.tmp" "$lock/stopping"; } 2>/dev/null || true
@@ -208,7 +209,7 @@ bringup_stop() {
   bringup_guard "$lock"
   # What this call stopped, for the sentinel: the bringup, or on a retry what an earlier stop
   # left behind (the lock's pid is then long dead).
-  local what="bringup pid $pid" owned=""
+  local what="bringup pid $pid" leftover=""
   [ -n "$stuck" ] && what="the processes $stuck an earlier --stop left behind"
   if [ -n "$failed" ]; then
     if [ -n "$survivors" ]; then
@@ -221,13 +222,15 @@ bringup_stop() {
   fi
   # Only a lock this call marked: one another writer holds instead is theirs.
   if [ "$(cat "$lock/stopping" 2>/dev/null || true)" = "$self" ]; then
-    owned=1
     if [ -n "$survivors" ]; then
       for p in $survivors; do printf '%s %s\n' "$p" "$(bringup_started "$p")"; done >"$lock/survivors.tmp" 2>/dev/null \
         && mv -f "$lock/survivors.tmp" "$lock/survivors" 2>/dev/null
       rm -f "$lock/stopping" 2>/dev/null || true
     else
       rm -rf "$lock" 2>/dev/null || true
+      # `rm -rf` can empty the lock yet fail to unlink it, when this user may not write its
+      # parent directory. Judged before the guard goes, as above.
+      if [ -e "$lock" ] || [ -L "$lock" ]; then leftover=1; fi
     fi
   fi
   bringup_unguard
@@ -235,8 +238,7 @@ bringup_stop() {
     echo "survivors:$survivors"
     return 3
   fi
-  # `rm -rf` can empty the lock and still fail to remove it (another user's, in sticky /tmp).
-  if [ -n "$owned" ] && { [ -e "$lock" ] || [ -L "$lock" ]; }; then return 4; fi
+  if [ -n "$leftover" ]; then return 4; fi
   return 0
 }
 

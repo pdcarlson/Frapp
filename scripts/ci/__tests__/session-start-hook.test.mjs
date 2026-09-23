@@ -966,3 +966,14 @@ test("a survivor's recorded start time does not depend on the clock's rendering 
   assert.match(started("UTC"), /^\d+$/, "ticks since boot");
   assert.equal(started("UTC"), started("Asia/Tokyo"));
 });
+
+test("bringup_stop judges whether the lock went before it lets go of the guard", () => {
+  // Checked after, a lock a waiting bringup took in the gap read as a removal failure; the
+  // window is milliseconds, so the order is pinned rather than raced.
+  const lib = readFileSync(LOCK_LIB, "utf8");
+  const fn = lib.slice(lib.indexOf("bringup_stop() {"), lib.indexOf("\n}\n", lib.indexOf("bringup_stop() {")));
+  const noTree = fn.slice(fn.indexOf('if [ -z "$tree" ]; then'));
+  assert.ok(noTree.indexOf('[ -e "$lock" ]') < noTree.indexOf("bringup_unguard"), "the no-bringup path checks first");
+  const tail = fn.slice(fn.lastIndexOf('bringup_guard "$lock"'));
+  assert.ok(tail.indexOf("leftover=1") < tail.indexOf("bringup_unguard"), "the stop path checks first");
+});
