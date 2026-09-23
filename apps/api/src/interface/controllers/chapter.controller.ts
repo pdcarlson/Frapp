@@ -25,10 +25,7 @@ import { ChapterOnboardingService } from '../../application/services/chapter-onb
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import {
-  RequireAnyOfPermissions,
-  RequirePermissions,
-} from '../decorators/permissions.decorator';
+import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
@@ -50,6 +47,7 @@ import {
 } from '../dtos/chapter-response.dto';
 import { toChapterMemberView } from '../../application/services/chapter-member-view';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { CHAPTER_PROFILE_PERMISSION } from '@repo/validation';
 
 /**
  * Compile-time guard that every field `PATCH /chapters/current` can write is
@@ -146,10 +144,7 @@ export class ChapterController {
 
   @Patch('current')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-  @RequireAnyOfPermissions(
-    SystemPermissions.ROLES_MANAGE,
-    SystemPermissions.BILLING_MANAGE,
-  )
+  @RequirePermissions(CHAPTER_PROFILE_PERMISSION)
   @ApiOperation({ summary: 'Update current chapter settings' })
   @ApiOkResponse({ type: UpdateChapterResponseDto })
   async update(
@@ -158,10 +153,9 @@ export class ChapterController {
     @Body() dto: UpdateChapterDto,
   ) {
     // Projected for the same reason `getCurrent` is (#930), and not only for
-    // symmetry: this route admits `roles:manage` **or** `billing:manage`, so a
-    // custom role carrying `roles:manage` without `billing:view` would
-    // otherwise read the billing identifiers straight out of the write
-    // response.
+    // symmetry: this route admits `chapter-config:manage`, which does not imply
+    // `billing:view`, so a role carrying it alone would otherwise read the
+    // billing identifiers straight out of the write response.
     const { chapter, failedContrastChecks } = await this.chapterService.update(
       chapterId,
       dto,
@@ -176,10 +170,7 @@ export class ChapterController {
   @Post('current/logo-url')
   @ThrottleFanOutWrite()
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-  @RequireAnyOfPermissions(
-    SystemPermissions.ROLES_MANAGE,
-    SystemPermissions.BILLING_MANAGE,
-  )
+  @RequirePermissions(CHAPTER_PROFILE_PERMISSION)
   @ApiOperation({ summary: 'Generate signed upload URL for chapter logo' })
   @ApiCreatedResponse({ type: LogoUploadUrlResponseDto })
   async requestLogoUploadUrl(
@@ -210,10 +201,7 @@ export class ChapterController {
 
   @Post('current/logo')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-  @RequireAnyOfPermissions(
-    SystemPermissions.ROLES_MANAGE,
-    SystemPermissions.BILLING_MANAGE,
-  )
+  @RequirePermissions(CHAPTER_PROFILE_PERMISSION)
   @ApiOperation({ summary: 'Confirm logo upload and update chapter' })
   async confirmLogoUpload(
     @CurrentChapterId() chapterId: string,
@@ -224,10 +212,7 @@ export class ChapterController {
 
   @Delete('current/logo')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-  @RequireAnyOfPermissions(
-    SystemPermissions.ROLES_MANAGE,
-    SystemPermissions.BILLING_MANAGE,
-  )
+  @RequirePermissions(CHAPTER_PROFILE_PERMISSION)
   @ApiOperation({ summary: 'Remove chapter logo' })
   async deleteLogo(@CurrentChapterId() chapterId: string) {
     return this.chapterService.deleteLogo(chapterId);

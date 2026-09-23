@@ -8,7 +8,10 @@ import {
   getArchetype,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
-import type { PatchChapterConfig } from "@repo/validation";
+import {
+  CHAPTER_PROFILE_PERMISSION,
+  type PatchChapterConfig,
+} from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -48,6 +51,12 @@ type Props = {
   profile: { name: string; university: string; donation_url: string };
   /** Whether the caller holds `chapter-config:manage`. */
   canManage: boolean;
+  /**
+   * Whether the caller may save the chapter profile: the permission
+   * `PATCH /v1/chapters/current` guards on, `CHAPTER_PROFILE_PERMISSION`
+   * (#2575).
+   */
+  canEditProfile: boolean;
   /** Persist the core chapter profile (name/university/donation). */
   onSaveProfile: (profile: {
     name: string;
@@ -68,6 +77,7 @@ export function SettingsOrgTab({
   branding,
   profile,
   canManage,
+  canEditProfile,
   onSaveProfile,
   onPatchConfig,
   savingProfile,
@@ -163,7 +173,7 @@ export function SettingsOrgTab({
     setPendingArchetype(null);
   }
 
-  const manageHint = canManage ? null : (
+  const permissionHint = (permission: string) => (
     <p className="text-xs text-muted-foreground">
       Editing chapter settings requires the{" "}
       {/*
@@ -173,12 +183,16 @@ export function SettingsOrgTab({
         input fill inside a card, and a recess cannot invert the way a raised
         step can.
       */}
-      <code className="rounded bg-surface-1 px-1 py-0.5">
-        chapter-config:manage
-      </code>{" "}
+      <code className="rounded bg-surface-1 px-1 py-0.5">{permission}</code>{" "}
       permission.
     </p>
   );
+  const manageHint = canManage
+    ? null
+    : permissionHint("chapter-config:manage");
+  const profileHint = canEditProfile
+    ? null
+    : permissionHint(CHAPTER_PROFILE_PERMISSION);
 
   return (
     <div className="space-y-6">
@@ -238,8 +252,8 @@ export function SettingsOrgTab({
             </div>
           </CardContent>
           <CardFooter className="flex items-center justify-between gap-3">
-            {manageHint ?? <span />}
-            <Button type="submit" disabled={!canManage || savingProfile}>
+            {profileHint ?? <span />}
+            <Button type="submit" disabled={!canEditProfile || savingProfile}>
               {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Save profile
             </Button>

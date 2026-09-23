@@ -38,7 +38,7 @@ The customizable sub-resources surfaced through chapter config (full schema in [
 
 ## PATCH /chapters/current — core chapter profile
 
-Settings → Organization → "Chapter profile" does **not** go through the config PATCH above. The four core `chapters` columns — `name`, `university`, `donation_url`, `accent_color` — are written by `PATCH /v1/chapters/current`, guarded by `roles:manage` **or** `billing:manage`.
+Settings → Organization → "Chapter profile" does **not** go through the config PATCH above. The four core `chapters` columns — `name`, `university`, `donation_url`, `accent_color` — are written by `PATCH /v1/chapters/current`, guarded by `chapter-config:manage` (`CHAPTER_PROFILE_PERMISSION` in `@repo/validation`, which the Settings page's profile and accent saves also read). Until #2575 the route admitted `roles:manage` **or** `billing:manage` while the page gated on `chapter-config:manage`, so the default Treasurer could save through the API but not the page.
 
 `accent_color` sits here rather than under `branding` despite reading as branding: the accent editor posts to this route, and a save carrying a hex mirrors the value into `branding.colors.accent` (authoritative per [`spec/behavior/branding.md`](branding.md)) and recomputes `theme_palette` in the same write.
 

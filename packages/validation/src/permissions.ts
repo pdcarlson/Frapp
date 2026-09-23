@@ -91,3 +91,27 @@ export const CHAT_REPORT_QUEUE_PERMISSIONS = [
   "members:view",
   "channels:manage",
 ] as const;
+
+/**
+ * What it takes to edit the chapter's profile and accent (#2575): the name,
+ * university, donation URL and accent through `PATCH /v1/chapters/current`,
+ * and the logo through its upload and delete routes.
+ *
+ * `chapter-config:manage`, because the profile is chapter configuration
+ * (`spec/behavior/rbac.md`). Until #2575 the API admitted `roles:manage` or
+ * `billing:manage` while the Settings page gated on this permission, so the
+ * default Treasurer could save through the API but not the page, and a role
+ * holding only this permission got an enabled Save that answered 403.
+ *
+ * **The one spelling**, so the two can't drift again. Code that reads it:
+ *
+ * - the four `ChapterController` routes above, whose decorators
+ *   `chapter.controller.spec.ts` pins to it;
+ * - the Settings page's profile and accent saves (`settings-page.tsx`,
+ *   `canEditProfile`).
+ *
+ * Prose that restates it: `spec/behavior/rbac.md`'s `chapter-config:manage`
+ * row, `spec/behavior/chapter-config.md` § PATCH /chapters/current, and the
+ * `chapters/current` row of `docs/internal/security/AUTHORIZATION_MODEL.md`.
+ */
+export const CHAPTER_PROFILE_PERMISSION = "chapter-config:manage" as const;

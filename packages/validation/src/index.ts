@@ -858,6 +858,7 @@ export {
   can,
   canAll,
   canAny,
+  CHAPTER_PROFILE_PERMISSION,
   CHAT_REPORT_QUEUE_PERMISSIONS,
   WILDCARD_PERMISSION,
 } from "./permissions";

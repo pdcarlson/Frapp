@@ -32,6 +32,11 @@ import { ChapterService } from '../../application/services/chapter.service';
 import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import {
+  PERMISSIONS_ANY_KEY,
+  PERMISSIONS_KEY,
+} from '../decorators/permissions.decorator';
+import { CHAPTER_PROFILE_PERMISSION } from '@repo/validation';
+import {
   CreateChapterDto,
   UpdateChapterDto,
   LogoUploadUrlDto,
@@ -155,6 +160,27 @@ describe('ChapterController', () => {
     });
   });
 
+  describe('profile and logo write permissions (#2575)', () => {
+    // `CHAPTER_PROFILE_PERMISSION` (`@repo/validation`) is the one spelling of
+    // who may edit the chapter's profile, accent and logo; the Settings page
+    // gates its saves on the same constant. These routes used to admit
+    // `roles:manage` or `billing:manage` while the page gated on
+    // `chapter-config:manage`, so each side allowed a save the other refused.
+    it.each([
+      'update',
+      'requestLogoUploadUrl',
+      'confirmLogoUpload',
+      'deleteLogo',
+    ] as const)('%s requires exactly CHAPTER_PROFILE_PERMISSION', (handler) => {
+      const route = ChapterController.prototype[handler];
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, route)).toEqual([
+        CHAPTER_PROFILE_PERMISSION,
+      ]);
+      expect(Reflect.getMetadata(PERMISSIONS_ANY_KEY, route)).toBeUndefined();
+      expect(CHAPTER_PROFILE_PERMISSION).toBe('chapter-config:manage');
+    });
+  });
+
   describe('update', () => {
     it('should call chapterService.update with correct parameters', async () => {
       const chapterId = 'chapter-1';
@@ -180,8 +206,8 @@ describe('ChapterController', () => {
     });
 
     it('projects the write response onto the member-safe view (#930)', async () => {
-      // This route admits `roles:manage` OR `billing:manage`, so a custom role
-      // carrying `roles:manage` without `billing:view` would otherwise read the
+      // This route admits `chapter-config:manage`, which does not imply
+      // `billing:view`, so a role carrying it alone would otherwise read the
       // billing identifiers out of the *write* response — the same leak as
       // `getCurrent`, one verb over.
       const chapterId = 'chapter-1';

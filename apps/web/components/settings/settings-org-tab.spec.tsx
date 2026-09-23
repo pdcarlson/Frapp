@@ -7,6 +7,7 @@ const baseProps = {
   branding: {},
   profile: { name: "Test Chapter", university: "State U", donation_url: "" },
   canManage: true,
+  canEditProfile: true,
   onSaveProfile: () => {},
   onPatchConfig: () => {},
 };
@@ -89,9 +90,29 @@ describe("SettingsOrgTab", () => {
     });
   });
 
-  it("disables save controls when the caller cannot manage", () => {
-    render(
-      <SettingsOrgTab archetypeKey="ifc" {...baseProps} canManage={false} />,
+  it("gates Save profile on the profile permission, not on config", () => {
+    // `PATCH /v1/chapters/current` guards on `CHAPTER_PROFILE_PERMISSION`, so
+    // the profile save follows `canEditProfile`; the config saves follow
+    // `canManage` (#2575). They are the same permission today, but each save
+    // must read the one its route checks.
+    const { rerender } = render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        canManage={false}
+        canEditProfile
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /save profile/i }),
+    ).toBeEnabled();
+    rerender(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        canManage
+        canEditProfile={false}
+      />,
     );
     expect(
       screen.getByRole("button", { name: /save profile/i }),
