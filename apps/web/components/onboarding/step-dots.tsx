@@ -11,7 +11,7 @@
  * **The track is `--background`, not `--border`.**
  * `components/shared/meter.ts` measured the five candidates across all 19
  * seeded chapter colours and `bg-border` came third on the relationship that
- * carries the data (1.133:1 fill-vs-track, against `--background`'s 1.774) —
+ * carries the data (2.625:1 fill-vs-track, against `--background`'s 3.742) —
  * and the tutorial's indicator renders inside a `DialogContent`, where
  * `bg-popover` and `bg-accent-subtle` collapse to 1.000:1 and 1.001:1 outright.
  * `--background` is the bottom of the ladder, so it recedes below whatever

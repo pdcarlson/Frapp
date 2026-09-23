@@ -13,7 +13,7 @@
  *
  * Worth knowing before "simplifying" either recipe: the ring alone does not
  * carry the indicator. `--ring` (accent-8; `#796938` on the house seed) at 25%
- * composites to 1.14–1.31:1 against the step it sits on — measured across all
+ * composites to 1.18–1.31:1 against the step it sits on — measured across all
  * 19 seeded accents on all four ladder steps, and 0 of those 76 pairs clear
  * README §6's 3:1 floor for non-text UI. It is the border going solid accent
  * that makes focus visible. The ring is the halo around it, not the signal.
@@ -21,11 +21,12 @@
  * How strong that border is depends on the chapter, and the figure this comment
  * used to give ("8.7:1 and up") was the house seed's, stated as if it were
  * everyone's. Solid `--primary` against the ladder step behind it ranges
- * 1.50–18.71:1 across the 19 seeds; the house seed sits near the top at
- * 8.70–9.81. Chapters at the bottom of that range get a weak `FOCUS_RING`,
- * which is a real and separate concern from the one `FOCUS_RING_OFFSET` fixed
- * below — it is not tracked by `focus-contrast.spec.ts`, which only guards the
- * offset recipe.
+ * 3.01–18.71:1 across the 19 seeds; the house seed sits near the top at
+ * 8.70–9.81. The bottom of that range was 1.50:1 until #2541: the engine now
+ * holds accent-9 to 3:1 on every ladder step (`accent-engine.md` §8), so the
+ * border half of `FOCUS_RING` conforms on every chapter. That guarantee is
+ * pinned in `packages/chapter-theme/src/signet.spec.ts`, not in
+ * `focus-contrast.spec.ts`, which guards only the offset recipe.
  *
  * That is also why `FOCUS_RING` is wrong for a control whose border already
  * encodes something. On a `Switch` the border carries on/off, and on a
@@ -75,9 +76,14 @@ export const FOCUS_RING =
  *
  * | Role | Worst seed | Clears 3:1 |
  * | --- | --- | --- |
- * | `--primary` (accent-9) | 1.87:1 | no, fails on 4 |
- * | `--ring` (accent-8) | 2.94:1 | no, fails on 4 |
+ * | `--primary` (accent-9) | 3.74:1 | yes, but only just: 3.01:1 on `--popover` |
+ * | `--ring` (accent-8) | 2.98:1 | no, fails on 3 |
  * | `--accent-text` (accent-11) | 8.48:1 | yes, on all 19 |
+ *
+ * `--primary` failed on 4 seeds (worst 1.87:1) until #2541, when the engine
+ * began lifting a dark fill until it clears 3:1 on every ladder surface
+ * (`accent-engine.md` §8). It lifts only as far as the floor, so accent-9
+ * still has no headroom as a whole indicator.
  *
  * `--ring` was the token here until the greenfield surface ladder
  * (foundations.md §2) lifted `--background` from `#0E0D0B` to `#131211`. Its
@@ -86,7 +92,9 @@ export const FOCUS_RING =
  * seeds (`#000000`, `#C0C0C0`, `#FFFFFF`, which all derive ring `#606060`) to
  * 2.98. That is a keyboard user on four chapters with no conforming indicator,
  * which is the exact defect this recipe was created to fix, so the token moved
- * up the scale rather than the guard moving down.
+ * up the scale rather than the guard moving down. (`#4B0082` has cleared since
+ * #2541 lifted its fill and with it the whole scale; the achromatic three
+ * have not.)
  *
  * accent-11 is the accent engine's text role: `accent-engine.md` §8 gates it at
  * 4.5:1 as text, so 3:1 as non-text UI has real headroom under it. That is why

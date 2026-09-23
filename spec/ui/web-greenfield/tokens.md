@@ -379,6 +379,14 @@ touched and is not guarded by anything. Measured across the 19 seeds: its dilute
 supposed to carry the indicator ranges 1.50–18.71:1, failing 3:1 on 7 of 19 seeds over `--card` and
 9 of 19 over `--popover`.
 
+*Corrected 2026-09-23:* the border half no longer fails. Since
+[#2541](https://github.com/pdcarlson/Frapp/issues/2541) the accent engine holds `accent-9` to 3:1 on
+every ladder step by construction ([`accent-engine.md`](../design-system/accent-engine.md) §8), so
+the border measures 3.01–18.71:1 and clears on all 19 seeds, pinned in
+`packages/chapter-theme/src/signet.spec.ts`. The rest of this entry stands and stays with #2398:
+the diluted ring (now 1.18–1.31:1) and the absence of any contrast assertion on the recipes
+themselves.
+
 This predates the greenfield and the ladder made it slightly worse. `focus-contrast.spec.ts`
 asserts only that the recipe *string* contains `border-primary`; there is no contrast assertion on
 `FOCUS_RING`, `FOCUS_RING_ALWAYS` or `FOCUS_RING_WITHIN` anywhere. Fixing it means choosing a

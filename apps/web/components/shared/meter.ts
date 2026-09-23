@@ -25,18 +25,20 @@
  * collides with the dark-red chapters: **1.017:1 under `#800000`**, because a
  * white wash at 14% happens to land almost exactly where a maroon `accent-9`
  * lands. A chapter branded maroon shipped a bar whose fill was invisible
- * against its own groove — in chat, today.
+ * against its own groove — in chat, at the time. (Since #2541 the engine lifts
+ * a dark fill to 3:1 on the ladder, which ended that collision; the ordering
+ * below still holds.)
  *
  * So the track is **`--background`: a recess, not a raise.** Worst case across
- * every seed and both containers:
+ * every seed and both containers, measured after #2541:
  *
  * | Track | Fill vs track, worst | Track vs container, worst |
  * | --- | --- | --- |
- * | `bg-input` | 1.015 | 1.540 |
- * | `bg-border` | 1.133 | 1.253 |
- * | `bg-popover` | 1.444 | **1.000** (inside a dialog) |
- * | `bg-accent-subtle` | 1.512 | **1.001** (inside a dialog) |
- * | **`bg-background`** | **1.774** | 1.133 |
+ * | `bg-input` | 2.134 | 1.540 |
+ * | `bg-border` | 2.625 | 1.253 |
+ * | `bg-popover` | 3.005 | **1.000** (inside a dialog) |
+ * | `bg-accent-subtle` | 3.027 | **1.001** (inside a dialog) |
+ * | **`bg-background`** | **3.742** | 1.133 |
  *
  * It wins on the relationship that carries the data by a wide margin, and it
  * is the only candidate that cannot invert: `--background` is the *bottom* of
@@ -57,10 +59,10 @@
  * settle — full-round track and fill, accent-filled — is transcribed
  * unchanged; only the track tone is decided by measurement.
  *
- * **The bar is never the only signal.** Even at 1.774:1 the fill is under
- * README §6's 3:1 non-text floor for the darkest seeds, and at this ladder
- * nothing can clear it (`components.md` §2 concedes the same for row states).
- * So the fill carries emphasis, not information: both call sites print the
+ * **The bar is never the only signal.** Since #2541 the fill clears README
+ * §6's 3:1 non-text floor against this track for every seed (worst 3.742:1),
+ * because the engine holds `accent-9` to 3:1 on every ladder surface. A bar's
+ * length still cannot carry the exact figure, so both call sites print the
  * count and percentage as text beside the bar, and the bar itself is
  * `aria-hidden`. Do not drop that text on the grounds that the bar shows it.
  *

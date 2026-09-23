@@ -3,7 +3,8 @@
  *
  * Implements `spec/ui/design-system/accent-engine.md`: the generator call in §1
  * with its parameters fixed, the role map in §2, the house default seed in §3,
- * and the by-construction contrast guarantee in §8.
+ * and the by-construction contrast guarantees in §8 — AA on the text roles, and
+ * 3:1 for the `accent-primary` fill on every ladder surface (#2541).
  *
  * The only chapter accent engine. It superseded the legacy two-colour
  * `derivePalette` map, which the #920 slice-9 cutover deleted once every
@@ -21,6 +22,7 @@
  */
 
 import { contrastRatio, normalizeHex, parseHex } from "@repo/color";
+import Color from "colorjs.io";
 
 import type { SignetPalette } from "./accent-vars.js";
 import { generateRadixColors } from "./vendor/generate-radix-colors.js";
@@ -44,6 +46,38 @@ export const HOUSE_SEED = "#DDB844";
 
 /** WCAG AA for normal text, the floor the accent-derived text roles must clear. */
 const MIN_TEXT_CONTRAST = 4.5;
+
+/**
+ * WCAG 1.4.11 non-text contrast, the floor the `accent-primary` fill must clear
+ * (accent-engine.md §8). The fill is the only cue for a state in several
+ * consumers — the switch track, the active tab underline, the focus ring
+ * border, poll selection — so a legible label on a button is not enough.
+ */
+const MIN_FILL_CONTRAST = 3;
+
+/**
+ * The Signet neutral ladder (foundations.md §2; `signetTokens.dark` in
+ * `@repo/theme`), darkest to lightest: every surface `accent-primary` paints
+ * on. Restated here rather than imported because this package must stay
+ * dependency-light for the API; `signet.spec.ts` pins the same four values.
+ * `--background` is also the generator's `background` parameter.
+ */
+const FILL_SURFACES = {
+  "--background": "#131211",
+  "--surface-1": "#1A1A1A",
+  "--card": "#211E1A",
+  "--popover": "#2A2621",
+} as const;
+
+/**
+ * How far one lift step raises the failing fill's OKLCH lightness. Small enough that the
+ * lifted fill lands just past 3:1 rather than well beyond it, which keeps the
+ * brand shift to the minimum the floor requires.
+ */
+const LIFT_STEP = 0.002;
+
+/** Fine steps per coarse step in the lift search (see `liftAccent`). */
+const LIFT_COARSE = 10;
 
 /**
  * The role map (accent-engine.md §2). Components consume roles, never steps, so
@@ -82,6 +116,22 @@ export interface DeriveSignetPaletteResult {
    * outcome — an absent seed is normal and does not set this.
    */
   invalidSeed: boolean;
+  /**
+   * The lightened accent the generator was re-run with when the seed's own
+   * `accent-primary` fell under 3:1 on a ladder surface, or `null` when it
+   * already cleared and the seed was used as is. It is that failing fill with
+   * its OKLCH lightness raised, hue and chroma kept (accent-engine.md §8).
+   */
+  liftedAccent: string | null;
+  /**
+   * The §8 fill gate: `accent-primary` against each ladder surface at 3:1.
+   *
+   * Kept apart from `contrastChecks` on purpose: that list is the text-role
+   * gate at 4.5:1, which the API reports as `failedContrastChecks` and the
+   * Settings page describes check by check. The fill is held by construction,
+   * so a failure here, like one there, means the generator changed under us.
+   */
+  fillChecks: SignetContrastCheck[];
   /**
    * The §8 gate, evaluated at generation time rather than asserted.
    *
@@ -124,6 +174,88 @@ function onPrimaryFor(generatedContrast: string, primary: string): string {
     : "#FFFFFF";
 }
 
+type Generated = ReturnType<typeof generateRadixColors>;
+
+function generate(accent: string): Generated {
+  return generateRadixColors({ ...GENERATOR_PARAMS, accent });
+}
+
+/** The step-9 fill the generator actually produced, which is what paints. */
+function generatedFill(generated: Generated): string {
+  return normalizeHex(generated.accentScale[ROLE_STEPS["accent-primary"] - 1] ?? "");
+}
+
+function fillClears(fill: string): boolean {
+  return Object.values(FILL_SURFACES).every(
+    (surface) => ratio(fill, surface) >= MIN_FILL_CONTRAST,
+  );
+}
+
+/**
+ * `fill` with its OKLCH lightness raised by `steps` lift steps, hue and chroma
+ * kept, gamut-mapped into sRGB (CSS Color 4 mapping, which gives up chroma
+ * before lightness or hue) and returned as 6-digit hex.
+ */
+function liftedAt(fill: string, steps: number): string {
+  const [l, c, h] = new Color(fill).to("oklch").coords;
+  const lifted = new Color("oklch", [
+    Math.min(1, (l ?? 0) + steps * LIFT_STEP),
+    c ?? 0,
+    h ?? Number.NaN,
+  ]);
+  return normalizeHex(
+    lifted.toGamut({ space: "srgb" }).to("srgb").toString({ format: "hex" }),
+  );
+}
+
+/**
+ * Lifts a generated fill that falls under 3:1 on the ladder until the fill the
+ * generator produces from the lifted colour clears (accent-engine.md §8).
+ *
+ * The lift starts from the fill the seed produced, not from the seed. The two
+ * are the same colour for most seeds, since the generator returns the seed as
+ * step 9. They differ when the seed sits close to the dark step 1: then
+ * `getStep9Colors` swaps in the scale's own step 9 (`#4B0082` paints
+ * `#901FED`), and lifting the seed instead would walk it out of that swap and
+ * trade the vivid fill the chapter already sees for a duller one. Lifting the
+ * fill keeps the hue and chroma that were painting and changes only lightness.
+ *
+ * Every candidate is still judged by the **generated** step 9, not by the
+ * lifted input, because the same swap can apply to the lifted colour.
+ *
+ * The generator costs a few milliseconds a call and a deep crimson needs about
+ * eighty fine steps, so the search walks coarse steps of `LIFT_COARSE` fine
+ * steps to the first one that clears, then walks back through that last
+ * interval one fine step at a time. It returns the smallest clearing lift on
+ * the fine grid, except that a clearing window narrower than one coarse step
+ * that is followed by failures could be skipped; that costs a slightly larger
+ * lift, never a failing fill. Returns `null` if even full lightness never
+ * clears, which no sRGB seed reaches, since white clears the ladder at 15:1.
+ */
+function liftAccent(
+  fill: string,
+): { accent: string; generated: Generated } | null {
+  const maxSteps = Math.ceil(1 / LIFT_STEP);
+  let previous = 0;
+  for (let coarse = LIFT_COARSE; ; coarse += LIFT_COARSE) {
+    const steps = Math.min(coarse, maxSteps);
+    const accent = liftedAt(fill, steps);
+    const generated = generate(accent);
+    if (fillClears(generatedFill(generated))) {
+      for (let fine = previous + 1; fine < steps; fine += 1) {
+        const fineAccent = liftedAt(fill, fine);
+        const fineGenerated = generate(fineAccent);
+        if (fillClears(generatedFill(fineGenerated))) {
+          return { accent: fineAccent, generated: fineGenerated };
+        }
+      }
+      return { accent, generated };
+    }
+    if (steps >= maxSteps) return null;
+    previous = steps;
+  }
+}
+
 /**
  * Generates the Signet accent role tokens for one chapter seed.
  *
@@ -148,10 +280,24 @@ export function deriveSignetPalette(
   const invalidSeed = provided !== "" && normalized === "";
   const resolvedSeed = normalized || HOUSE_SEED;
 
-  const generated = generateRadixColors({
-    ...GENERATOR_PARAMS,
-    accent: resolvedSeed,
-  });
+  // §8 fill floor: derive as the seed asks, and only when that fill falls under
+  // 3:1 on the ladder, re-run the generator with the fill lightened as its
+  // accent, so hover, the alpha steps and on-primary all derive from the fill
+  // that actually paints.
+  let generated = generate(resolvedSeed);
+  let liftedAccent: string | null = null;
+  const seedFill = generatedFill(generated);
+  // `seedFill` is empty only if the generator returned no step 9, which it never
+  // does; the guard keeps an unparseable colour out of `liftAccent` regardless,
+  // since this function must not throw.
+  if (seedFill && !fillClears(seedFill)) {
+    const lift = liftAccent(seedFill);
+    if (lift) {
+      generated = lift.generated;
+      liftedAccent = lift.accent;
+    }
+  }
+  const generatorAccent = liftedAccent ?? resolvedSeed;
 
   // The generator returns fourteen fields — wide-gamut variants, full gray and
   // surface scales, the background it was given. Signet consumes three of them;
@@ -166,10 +312,10 @@ export function deriveSignetPalette(
   // every consumer that slices it. Alpha steps are 8-digit `#RRGGBBAA`, which
   // normalizeHex rejects by design, so those are only uppercased.
   const solidValue = (hex: string | undefined): string =>
-    normalizeHex(hex ?? "") || resolvedSeed;
+    normalizeHex(hex ?? "") || generatorAccent;
   const step = (role: SignetRole): string => solidValue(solid[ROLE_STEPS[role] - 1]);
   const alphaStep = (role: SignetRole): string =>
-    (alpha[ROLE_STEPS[role] - 1] ?? resolvedSeed).toUpperCase();
+    (alpha[ROLE_STEPS[role] - 1] ?? generatorAccent).toUpperCase();
 
   const primary = step("accent-primary");
 
@@ -193,8 +339,9 @@ export function deriveSignetPalette(
   };
 
   // §8: accent-derived TEXT roles must clear AA on the surfaces they are
-  // specified for. Only text is gated — the tinted-background and border roles
-  // are not text and are not held to 4.5:1.
+  // specified for. Only text is held to 4.5:1 here; the fill's 3:1 floor is
+  // `fillChecks` below, and the tinted-background and border roles are held to
+  // no ratio.
   const contrastChecks: SignetContrastCheck[] = [
     {
       role: "--signet-accent-text",
@@ -222,7 +369,26 @@ export function deriveSignetPalette(
     },
   ].map((check) => ({ ...check, passes: check.ratio >= MIN_TEXT_CONTRAST }));
 
-  return { palette, resolvedSeed, invalidSeed, contrastChecks };
+  const fillChecks: SignetContrastCheck[] = Object.entries(FILL_SURFACES).map(
+    ([name, surface]) => {
+      const fillRatio = ratio(primary, surface);
+      return {
+        role: "--signet-accent-primary",
+        against: name,
+        ratio: fillRatio,
+        passes: fillRatio >= MIN_FILL_CONTRAST,
+      };
+    },
+  );
+
+  return {
+    palette,
+    resolvedSeed,
+    invalidSeed,
+    liftedAccent,
+    fillChecks,
+    contrastChecks,
+  };
 }
 
 /**

@@ -93,7 +93,7 @@ Status-only, never decorative. A semantic hue states a fact ("paid", "overdue");
 
 ## 6. Accent Slot (Per Tenant)
 
-The tokens above are fixed; the accent family — `--primary`, `--primary-hover`, `--primary-foreground`, `--ring`, `--accent-subtle`, `--accent-border`, `--accent-text` — is resolved per chapter from a single seed hex by the accent engine. The raw seed never paints UI directly. Pipeline, scale-step mapping, caching, and the default house-gold seed are owned by [`accent-engine.md`](accent-engine.md).
+The tokens above are fixed; the accent family — `--primary`, `--primary-hover`, `--primary-foreground`, `--ring`, `--accent-subtle`, `--accent-border`, `--accent-text` — is resolved per chapter from a single seed hex by the accent engine. Components read these roles, never the seed hex. Pipeline, scale-step mapping, caching, and the default house-gold seed are owned by [`accent-engine.md`](accent-engine.md).
 
 ---
 
