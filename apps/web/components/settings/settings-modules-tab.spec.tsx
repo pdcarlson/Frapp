@@ -5,11 +5,7 @@ import { SettingsModulesTab } from "./settings-modules-tab";
 describe("SettingsModulesTab", () => {
   it("locks always-on (free) modules and shows a Free badge, no switch", () => {
     render(
-      <SettingsModulesTab
-        enabledModules={{}}
-        canManage
-        onToggle={() => {}}
-      />,
+      <SettingsModulesTab enabledModules={{}} canManage onToggle={() => {}} />,
     );
     // chat / members / announcements / audit-log / chapter-settings are free.
     expect(screen.getAllByText("Free").length).toBe(5);
@@ -22,11 +18,7 @@ describe("SettingsModulesTab", () => {
 
   it("renders paid modules with a Chapter Pro badge and a switch", () => {
     render(
-      <SettingsModulesTab
-        enabledModules={{}}
-        canManage
-        onToggle={() => {}}
-      />,
+      <SettingsModulesTab enabledModules={{}} canManage onToggle={() => {}} />,
     );
     expect(screen.getAllByText("Chapter Pro").length).toBeGreaterThan(0);
     expect(
@@ -69,11 +61,7 @@ describe("SettingsModulesTab", () => {
 
   it("treats a module absent from enabled_modules as enabled (!== false)", () => {
     render(
-      <SettingsModulesTab
-        enabledModules={{}}
-        canManage
-        onToggle={() => {}}
-      />,
+      <SettingsModulesTab enabledModules={{}} canManage onToggle={() => {}} />,
     );
     expect(
       screen.getByRole("switch", { name: /events enabled/i }),
@@ -148,7 +136,9 @@ describe("SettingsModulesTab", () => {
           focusModuleKey="dues"
         />,
       );
-      expect(screen.getByRole("switch", { name: /dues enabled/i })).toHaveFocus();
+      expect(
+        screen.getByRole("switch", { name: /dues enabled/i }),
+      ).toHaveFocus();
     });
 
     it("focuses nothing when no module is named", () => {
@@ -191,10 +181,26 @@ describe("SettingsModulesTab", () => {
           focusModuleKey="tasks"
         />,
       );
-      expect(screen.getByRole("switch", { name: /tasks enabled/i })).toHaveFocus();
+      expect(
+        screen.getByRole("switch", { name: /tasks enabled/i }),
+      ).toHaveFocus();
       expect(
         screen.getByRole("switch", { name: /dues enabled/i }),
       ).not.toHaveFocus();
     });
+  });
+
+  // #576 dropped per-module system channels from the spec, so the card must not
+  // promise to mute one. Pinned because the stale promise survived one sweep in
+  // this component's own docblock.
+  it("describes what disabling does without promising a system channel", () => {
+    render(
+      <SettingsModulesTab enabledModules={{}} canManage onToggle={() => {}} />,
+    );
+    const description = screen.getByText(/Disabling a module hides it/);
+    expect(description).toHaveTextContent(
+      /hides it from the sidebar and chat slash commands\. Re-enabling restores everything\. Data is never deleted\./,
+    );
+    expect(description).not.toHaveTextContent(/system channel|mute/i);
   });
 });
