@@ -7,8 +7,12 @@ import {
   IsEmail,
   ArrayMinSize,
   ArrayMaxSize,
+  Equals,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RawValue } from './raw-value.transform';
+import { LEGAL_ACCEPTANCE_LABEL } from '@repo/validation';
 
 /**
  * #422: `role` is optional on all three create routes. Omitting it falls back
@@ -61,4 +65,21 @@ export class RedeemInviteDto {
   @ApiProperty()
   @IsString()
   token: string;
+
+  /**
+   * The join screen's Terms checkbox (#2302). Required, as `true`, only when
+   * the caller hasn't accepted the current Terms; `GET
+   * /v1/users/me/legal-acceptance` says which. The server stamps the record,
+   * so this is the user's claim that they ticked it, not the record itself.
+   */
+  @ApiPropertyOptional({
+    description: `True when the user ticked "${LEGAL_ACCEPTANCE_LABEL}" Needed only if they haven't accepted the current version.`,
+  })
+  @IsOptional()
+  @RawValue()
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Terms of Service and Privacy Policy must be accepted',
+  })
+  accept_terms_privacy?: boolean;
 }

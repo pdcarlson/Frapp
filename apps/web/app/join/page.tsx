@@ -4,13 +4,18 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { useRedeemInvite } from "@repo/hooks";
+import {
+  joinErrorCopy,
+  redeemChapterId,
+  useJoinTermsCheckbox,
+  useRedeemInvite,
+} from "@repo/hooks";
 import {
   extractInviteToken,
   extractInviteTokenFromQuery,
 } from "@repo/validation";
 import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
-import { joinErrorCopy, redeemChapterId } from "@/components/auth/join-errors";
+import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +57,7 @@ import { useNetwork } from "@/lib/providers/network-provider";
  *   invite link on a dropped connection sat on "Verifying your session…"
  *   forever, with no retry and nothing announced.
  * - **Redemption.** Every failure rendered one generic toast. 410 and 409 need
- *   opposite next actions, so the copy comes from `join-errors.ts` and is
+ *   opposite next actions, so the copy comes from `joinErrorCopy` (`@repo/hooks`) and is
  *   rendered inline beside the field rather than as a toast that scrolls away.
  */
 function JoinPageContent() {
@@ -73,6 +78,9 @@ function JoinPageContent() {
   );
   const [attempt, setAttempt] = useState(0);
   const [redeemError, setRedeemError] = useState<string | null>(null);
+  // When to show the Terms checkbox, and what a refused join means for it,
+  // is shared with mobile s02 (#2302).
+  const terms = useJoinTermsCheckbox({ enabled: sessionState === "ready" });
 
   useEffect(() => {
     let isMounted = true;
@@ -122,10 +130,14 @@ function JoinPageContent() {
       );
       return;
     }
+    if (terms.blocker) {
+      setRedeemError(terms.blocker);
+      return;
+    }
     try {
-      const result = await redeemInviteMutation.mutateAsync({
-        token: extracted,
-      });
+      const result = await redeemInviteMutation.mutateAsync(
+        terms.redeemBody(extracted),
+      );
       const chapterId = redeemChapterId(result);
 
       if (chapterId) {
@@ -141,6 +153,7 @@ function JoinPageContent() {
       router.replace("/chat");
       router.refresh();
     } catch (error) {
+      terms.onJoinError(error);
       setRedeemError(joinErrorCopy(error));
     }
   }
@@ -222,6 +235,17 @@ function JoinPageContent() {
             </p>
           ) : null}
         </div>
+        {terms.needed ? (
+          <TermsAcceptance
+            id="join-accept-legal"
+            accepted={terms.accepted}
+            onAcceptedChange={(next) => {
+              terms.setAccepted(next);
+              setRedeemError(null);
+            }}
+            disabled={redeemInviteMutation.isPending}
+          />
+        ) : null}
         <Button
           type="submit"
           className="w-full"

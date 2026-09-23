@@ -11,7 +11,7 @@
 ## Individual Account Deletion
 
 - On request (`DELETE /v1/users/me`, authenticated self-service), a user's personally identifiable information (PII) is scrubbed: email, display name, bio, avatar, profile photo, graduation year, city, and company. A dedicated support-invoked path does not exist yet; until one ships, a support-received request requires an operator with service-role access to run the same `anonymize_user` RPC and Supabase Auth deletion by hand.
-- **Where it is reachable from.** Apple 5.1.1(v) requires in-app deletion wherever an account can be created in-app, and Signet creates the account implicitly on the first Sign in with Apple/Google — there is no separate sign-up step, so every signed-in state must be able to reach this. Mobile offers it in **two** places, and both are load-bearing: Settings (`apps/mobile/app/(tabs)/preferences.tsx`) for a member who has a chapter, and the **join screen** (`apps/mobile/app/(auth)/join.tsx`) for an account with **zero** chapter memberships. The second is not a convenience: `resolveAuthGate` returns `"join"` whenever memberships resolve to zero (`apps/mobile/lib/auth-gate.ts`), and `useOnboardingRedirect` — mounted app-wide by `apps/mobile/components/app-runtime.tsx` — then replaces any other path with `/join`, so Settings is *unreachable* in that state. That app-wide hook is the load-bearing guard, not `(auth)/_layout.tsx`: the `(tabs)` layout is frozen and calls `resolveAuthGate` without memberships, so it resolves to `"tabs"` and never redirects on its own. `(auth)/_layout.tsx` only re-asserts the destination within its own group, and exempts `/chapter-picker` and `/create-chapter` — without the join-screen control, a self-created account that never joined a chapter could not be deleted from the app at all (#2295). Web needs no equivalent: it has no forced `/join` redirect, so `apps/web/components/profile/profile-panel.tsx` covers it. Both mobile surfaces share one prompt (`apps/mobile/lib/account/delete-account-prompt.ts`) so the confirm and failure copy cannot drift apart.
+- **Where it is reachable from.** Apple 5.1.1(v) requires in-app deletion wherever an account can be created in-app, and Signet creates the account implicitly on the first Sign in with Apple/Google — there is no separate sign-up step, so every signed-in state must be able to reach this. Mobile offers it in **three** places, and all are load-bearing: Settings (`apps/mobile/app/(tabs)/preferences.tsx`) for a member who has a chapter, the **join screen** (`apps/mobile/app/(auth)/join.tsx`) for an account with **zero** chapter memberships, and the **Terms prompt** (`apps/mobile/app/(auth)/terms.tsx`) for a member who hasn't accepted the current Terms (#2302), whom `useOnboardingRedirect` pins to `/terms` the same way. The second is not a convenience: `resolveAuthGate` returns `"join"` whenever memberships resolve to zero (`apps/mobile/lib/auth-gate.ts`), and `useOnboardingRedirect` — mounted app-wide by `apps/mobile/components/app-runtime.tsx` — then replaces any other path with `/join`, so Settings is *unreachable* in that state. That app-wide hook is the load-bearing guard, not `(auth)/_layout.tsx`: the `(tabs)` layout is frozen and calls `resolveAuthGate` without memberships, so it resolves to `"tabs"` and never redirects on its own. `(auth)/_layout.tsx` only re-asserts the destination within its own group, and exempts `/chapter-picker` and `/create-chapter` — without the join-screen control, a self-created account that never joined a chapter could not be deleted from the app at all (#2295). Web has no forced `/join` redirect, so `apps/web/components/profile/profile-panel.tsx` covers the join case, but its Terms prompt (`apps/web/components/auth/terms-prompt.tsx`) covers every dashboard route, `/profile` included, so it offers deletion itself. The mobile surfaces share one prompt (`apps/mobile/lib/account/delete-account-prompt.ts`), and the two web ones one flow (`apps/web/components/profile/use-delete-account-flow.tsx`), so the confirm and failure copy cannot drift apart.
 - Their point transactions, attendance records, chat messages, service entries, poll votes, reactions, invoices, and **moderation reports they filed** are preserved but **anonymized** — the `users` row becomes an in-place tombstone (`display_name = "Deleted User"`, email replaced with a per-user undeliverable sentinel, all other PII nulled, `deleted_at` set), so every historical record that references the user renders as "Deleted User". The tombstone — rather than nulling each history row's user reference — is deliberate: several history tables cascade-delete on user removal and others require a non-null user reference, so an in-place scrub is the only mechanism that keeps history intact while removing identity. Two retained categories are deliberate decisions rather than
 consequences of that mechanism, and both are safety rather than history (#2257). **Reports the
 member filed are kept**, including the reporter's free-text `details` and the snapshot of the
@@ -40,25 +40,25 @@ text.
 
 ### The reservation
 
-- Frapp reserves the right to delete data for chapters that have been inactive (canceled subscription, no logins) for more than 2 years.
-- It is **not** documented in the Terms of Service — see **The shipped Terms of Service do not currently carry this reservation** below, which owns that gap (#1562).
+- Frapp reserves the right to delete the data of a chapter whose subscription has been canceled for more than 2 years **and** in which no member has signed in during that time.
+- The Terms of Service carry it, § 5 of `apps/landing/app/terms/page.tsx`, since the September 2026 version (#1562, owner-approved 2026-09-23): "If a chapter's subscription has been canceled for more than two years and no member of the chapter has signed in during that time, we may delete the chapter's data. We will email the chapter's last known admin at least 30 days before we do."
 - Before deletion, an email notification is sent to the last known admin email with a 30-day warning.
 
-**Nothing implements this, and nothing should until the questions below are answered.** No eligibility
-query, no warning mail, no visibility surface, no dry-run and no deletion path exist in the codebase.
-(That is a statement about the code, not about hosted data: a deletion performed by hand against a
-hosted project would leave no trace here.)
+**Nothing implements this, and nothing should until #1561's remaining questions are answered:**
+what cleanup deletes, who may run a cross-chapter sweep, and where its audit record lives. No
+eligibility query, no warning mail, no visibility surface, no dry-run and no deletion path exist in
+the codebase. (That is a statement about the code, not about hosted data: a deletion performed by
+hand against a hosted project would leave no trace here.)
 
-Two things in the wording above are load-bearing and **neither is settled**:
+Two things in the wording used to be open, and the September 2026 Terms settled both (2026-09-23):
 
-- **Whether the two conditions are conjunctive or alternative is genuinely ambiguous.** "inactive
-  (canceled subscription, no logins)" is a comma-separated gloss with no *and* and no *or*, and the
-  reading decides who is eligible. This section does not resolve it — tracked in #1561.
-- **The shipped Terms of Service do not currently carry this reservation.**
-  `apps/landing/app/terms/page.tsx` contains no inactivity clause, no 2-year window and no 30-day
-  warning; its only retention sentence defers to "retention terms". So the reservation above
-  describes an intent, not the deployed contract, and the terms page would need to say this before any
-  deletion could rely on it — tracked in #1562.
+- **The two conditions are conjunctive.** The reservation used to read "inactive (canceled
+  subscription, no logins)", a gloss with no *and* and no *or* (#1561, question 2). The Terms now
+  require both: canceled for more than two years, *and* no member signed in during that time. It's
+  the narrower reading. Narrowing a contract later is easy; widening it means another policy version
+  and another round of acceptances.
+- **The Terms carry the reservation** (#1562). Before that version, the terms page had no inactivity
+  clause, no 2-year window and no 30-day warning, so no deletion could have relied on it.
 
 ### Why it cannot be implemented as written
 
@@ -190,9 +190,10 @@ questions resolve:
   anything but an invite, and a delivery result that distinguishes accepted from bounced (#1560).
 
 Everything else this section calls for — a usable login signal, the retention strategy, the
-conjunctive-vs-alternative reading, the authority to run a cross-chapter sweep, a durable audit
-destination, and the terms-page correction — is named in the subsections above and is not startable
-until the questions there are answered.
+authority to run a cross-chapter sweep, and a durable audit destination — is named in the
+subsections above and is not startable until the questions there are answered. (The
+conjunctive-vs-alternative reading and the terms-page correction were settled by the September 2026
+Terms.)
 
 ## Analytics Events (Pseudonymous)
 

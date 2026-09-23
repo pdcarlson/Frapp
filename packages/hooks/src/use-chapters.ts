@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { markLegalAcceptanceRecorded } from "./legal-acceptance";
 
 export interface ChapterMembershipSummary {
   chapter_id: string;
@@ -123,6 +124,8 @@ export function useOnboardChapter() {
       return data as unknown as { id: string } & Record<string, unknown>;
     },
     onSuccess: () => {
+      // The wizard's checkbox is also the officer's own acceptance (#2302).
+      markLegalAcceptanceRecorded(queryClient);
       queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
     },
   });

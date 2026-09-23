@@ -16,6 +16,7 @@ import type {
 } from '../../infrastructure/supabase/database.types';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
+import { LegalAcceptanceService } from './legal-acceptance.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
@@ -25,12 +26,13 @@ type Branding = Record<string, unknown>;
 /**
  * What `onboard` needs from the wizard submit.
  *
- * `accept_terms_privacy` is **required here even though this service never
- * reads it**, and that is deliberate. `onboard` stamps `legal_accepted_at`,
- * `legal_policy_version` and `legal_accepted_by` unconditionally
- * (`spec/behavior/legal.md`), so the acceptance record it writes is only
- * truthful because `ChapterOnboardingDto`'s `@Equals(true)` refused the request
- * otherwise. Dropping the field from this signature would leave that gate
+ * `accept_terms_privacy` is **required here**, and that is deliberate.
+ * `onboard` stamps the chapter's `legal_accepted_at`, `legal_policy_version`
+ * and `legal_accepted_by` unconditionally (`spec/behavior/legal.md`), so the
+ * acceptance record it writes is only truthful because
+ * `ChapterOnboardingDto`'s `@Equals(true)` refused the request otherwise. It
+ * also passes the flag to `LegalAcceptanceService.requireOrAccept`, which
+ * records the officer's own acceptance on their user row (#2302). Dropping the field from this signature would leave that gate
  * enforceable by exactly one controller, and a second caller — a backfill, a
  * seed, a partner-provisioning route with its own DTO — could then compile a
  * call that writes a legal acceptance for an acceptance that never happened.
@@ -80,9 +82,19 @@ export class ChapterOnboardingService {
     private readonly chapterService: ChapterService,
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     private readonly activation: ActivationService,
+    private readonly legalAcceptance: LegalAcceptanceService,
   ) {}
 
   async onboard(userId: string, dto: ChapterOnboardingInput): Promise<Chapter> {
+    // The same checkbox is also the founding officer's own acceptance (#2302),
+    // recorded on their user row before the chapter and their membership
+    // exist, so no member is ever created without one. The chapter-level
+    // stamp below stays: it is the officer agreeing for the chapter.
+    await this.legalAcceptance.requireOrAccept(
+      userId,
+      dto.accept_terms_privacy,
+    );
+
     const archetypeKey = dto.org_archetype ?? 'ifc';
     // buildChapterConfigFromArchetype deep-clones (structuredClone) the seed,
     // so per-chapter edits never leak back into the shared catalog.

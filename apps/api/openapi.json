@@ -140,6 +140,70 @@
         ]
       }
     },
+    "/v1/users/me/legal-acceptance": {
+      "get": {
+        "description": "Whether the caller has accepted the version this server enforces (#2302). Needs no chapter: a user is asked before they join one, and a member is asked again when the version changes.",
+        "operationId": "UserController_getMyLegalAcceptance_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalAcceptanceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's Terms of Service and Privacy Policy acceptance",
+        "tags": [
+          "Users"
+        ]
+      },
+      "post": {
+        "description": "Records the caller's acceptance of the version this server enforces, from the session and the server clock. Idempotent: accepting a version already accepted keeps the first timestamp.",
+        "operationId": "UserController_acceptLegalTerms_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptLegalTermsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalAcceptanceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Accept the current Terms of Service and Privacy Policy",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
     "/v1/users/me/avatar-url": {
       "post": {
         "operationId": "UserController_requestAvatarUploadUrl_v1",
@@ -239,6 +303,7 @@
     },
     "/v1/chapters": {
       "post": {
+        "description": "Makes the caller its President. The caller must already have accepted the current Terms (`POST /v1/users/me/legal-acceptance`), or this is 403. No client uses this route; the wizard uses `POST /v1/chapters/onboard`, which records the acceptance itself.",
         "operationId": "ChapterController_create_v1",
         "parameters": [],
         "requestBody": {
@@ -7378,6 +7443,49 @@
           "permissions"
         ]
       },
+      "LegalAcceptanceDto": {
+        "type": "object",
+        "properties": {
+          "current_version": {
+            "type": "string",
+            "description": "The Terms and Privacy Policy version this server enforces.",
+            "example": "2026-09"
+          },
+          "accepted_version": {
+            "type": "string",
+            "nullable": true,
+            "description": "The version the caller last accepted. Null if they never have."
+          },
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the caller accepted `accepted_version`."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "True until the caller accepts `current_version`. While it is true, clients ask before anything else, and joining a chapter needs `accept_terms_privacy`."
+          }
+        },
+        "required": [
+          "current_version",
+          "accepted_version",
+          "accepted_at",
+          "required"
+        ]
+      },
+      "AcceptLegalTermsDto": {
+        "type": "object",
+        "properties": {
+          "accept_terms_privacy": {
+            "type": "boolean",
+            "description": "The user ticked \"I'm 18 or older and agree to the Terms of Service and Privacy Policy.\" Must be true. The timestamp and version are recorded server-side, never from this payload."
+          }
+        },
+        "required": [
+          "accept_terms_privacy"
+        ]
+      },
       "UpdateUserDto": {
         "type": "object",
         "properties": {
@@ -7558,7 +7666,7 @@
           },
           "accept_terms_privacy": {
             "type": "boolean",
-            "description": "The admin accepted the Terms of Service and Privacy Policy. Must be true (spec/behavior/legal.md). The acceptance timestamp and policy version are recorded server-side from the session — never from this payload."
+            "description": "The admin accepted the Terms of Service and Privacy Policy, for the chapter and for themselves. Must be true (spec/behavior/legal.md). The acceptance timestamp and policy version are recorded server-side from the session — never from this payload."
           }
         },
         "required": [
@@ -8678,6 +8786,10 @@
         "properties": {
           "token": {
             "type": "string"
+          },
+          "accept_terms_privacy": {
+            "type": "boolean",
+            "description": "True when the user ticked \"I'm 18 or older and agree to the Terms of Service and Privacy Policy.\" Needed only if they haven't accepted the current version."
           }
         },
         "required": [

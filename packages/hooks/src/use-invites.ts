@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { markLegalAcceptanceRecorded } from "./legal-acceptance";
 
 export function useInvites() {
   const client = useFrappClient();
@@ -73,19 +74,28 @@ export function useEmailInvites() {
   });
 }
 
+/**
+ * Join a chapter with an invite token.
+ *
+ * `accept_terms_privacy` is the join screen's Terms checkbox (#2302);
+ * `useJoinTermsCheckbox` decides when to send it. Without it, a user who hasn't
+ * accepted the current Terms is refused with a 403 (`isTermsRequiredError`),
+ * and the token stays usable.
+ */
 export function useRedeemInvite() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { token: string }) => {
+    mutationFn: async (body: { token: string; accept_terms_privacy?: true }) => {
       const { data, error } = await client.POST("/v1/invites/redeem", {
         body,
       });
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, body) => {
+      if (body.accept_terms_privacy) markLegalAcceptanceRecorded(queryClient);
       queryClient.invalidateQueries({ queryKey: ["invites", chapterId] });
       queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
       queryClient.invalidateQueries({ queryKey: ["chapters"] });

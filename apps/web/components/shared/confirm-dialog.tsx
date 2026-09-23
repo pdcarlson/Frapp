@@ -44,17 +44,19 @@ import { Textarea } from "@/components/ui/textarea";
  * `confirm-dialog.spec.tsx` pins that distinction.
  *
  * **Focus return is not Radix's default here.** These dialogs open from a plain
- * `onClick`, not a `DialogTrigger`, so Radix restores focus to whatever was
- * focused when they opened — which is the right answer only while that control
- * survives the confirmation. It often does not: a delete removes the row its
- * own button lives in, and every one of these buttons carries
- * `gate.controlProps()` and can go `disabled` mid-flight. That is the same
- * failure `useGatedDialog` documents on the revoke path, and the fix is the
- * same one — preempt `onCloseAutoFocus` rather than chase it with a
- * `requestAnimationFrame`, which Radix overwrites. When the opener is gone or
- * disabled, focus goes to the shell's `#main-content` landmark — the target the
- * "Skip to main content" link already uses — rather than to a detached node,
- * which is `<body>` and restarts keyboard navigation at the top of the page.
+ * `onClick`, not a `DialogTrigger`. Once the content unmounts, after its exit
+ * animation, Radix's modal handler cancels FocusScope's own return and focuses
+ * the trigger instead, so with none focus drops to `<body>`, even on a plain
+ * cancel (#2302). This hook handles `onCloseAutoFocus` itself and always
+ * places focus. The opener it recorded on open is the right target only while
+ * it survives the confirmation, and often it does not: a delete can remove the
+ * row its own button lives in, or the button can go `disabled` while the
+ * request runs (a gate's `controlProps()`, or a caller's own busy state). So:
+ * on the opener while it is still usable;
+ * otherwise inside a dialog still open under this one (the Terms prompt, a
+ * detail sheet), since the page behind a modal is hidden; otherwise on the
+ * shell's `#main-content` landmark, the target the "Skip to main content" link
+ * already uses.
  */
 
 export type ConfirmTone = "destructive" | "default";
@@ -136,8 +138,28 @@ export function useConfirmDialog(): {
       opener.isConnected &&
       !opener.hasAttribute("disabled") &&
       opener.getAttribute("aria-disabled") !== "true";
-    if (openerUsable) return;
+    // Always ours to place. Left alone, Radix's modal content focuses its
+    // trigger, and these dialogs have none, so focus would drop to `<body>`
+    // even on a plain cancel.
     event.preventDefault();
+    if (openerUsable) {
+      opener.focus({ preventScroll: true });
+      return;
+    }
+    // A dialog still open under this one (the Terms prompt, a detail sheet):
+    // focus goes back into it, because the page's landmark sits behind it,
+    // hidden from assistive tech. Found by what is open, not by the opener's
+    // ancestors, since the opener may be gone. The closing confirmation has
+    // already left the document (FocusScope calls this after unmount), so it
+    // can't match; the last open one is the topmost.
+    const stillOpen = document.querySelectorAll<HTMLElement>(
+      '[role="dialog"][data-state="open"]',
+    );
+    const under = stillOpen[stillOpen.length - 1];
+    if (under) {
+      under.focus({ preventScroll: true });
+      return;
+    }
     // The shell's own landmark, which the "Skip to main content" link already
     // targets. `tabindex="-1"` is the standard skip-link pattern: a landmark is
     // not focusable on its own.

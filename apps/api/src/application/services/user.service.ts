@@ -7,6 +7,7 @@ import {
   GoneException,
 } from '@nestjs/common';
 import {
+  ACCOUNT_DELETED_MESSAGE,
   isAllowedUploadExtension,
   isAllowedUploadMime,
 } from '@repo/validation';
@@ -44,7 +45,7 @@ export class UserService {
     const existing = await this.userRepo.findById(id);
     if (!existing) throw new NotFoundException('User not found');
     if (existing.deleted_at) {
-      throw new GoneException('Account has been deleted');
+      throw new GoneException(ACCOUNT_DELETED_MESSAGE);
     }
     return this.userRepo.update(id, data);
   }

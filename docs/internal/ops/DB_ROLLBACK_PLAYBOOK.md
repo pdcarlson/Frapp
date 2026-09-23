@@ -1961,3 +1961,32 @@ To roll back, re-apply the previous definition from `20260902160000_anonymize_us
 * **Migration**: `20260923170100_backfill_chapter_branding_accent_from_accent_color.sql`
 * **Action**: Not reversible to the exact prior state without the pre-apply id list (the promotion runbook's query). No information was lost: the value copied into `branding.colors.accent` is still in `accent_color`, which the migration never touches. For known ids: `update public.chapters set branding = branding #- '{colors,accent}' where id in (<ids>);`.
 * **Note**: Data only. Undoing it recreates the divergence it repaired, where every recompute, sweep and `POST /v1/chapters/:id/theme-palette` included, seeds from an empty branding accent and repaints the chapter with the default seed's palette (`#DDB844`). There is rarely a reason to roll it back.
+
+## Rollback per-user Terms acceptance (20260923190000)
+
+* **Migration**: `20260923190000_user_legal_acceptance.sql`
+
+Two nullable columns on `users` (#2302). Nothing existing is altered, and code without #2302 neither reads nor writes them, so they are harmless left in place. Roll back the code; drop the columns only if they must go.
+
+**Roll forward instead, once a store binary built after #2302 is in users' hands.** That binary sends `accept_terms_privacy` with every join it asks the checkbox for. A pre-#2302 API rejects the field (`forbidNonWhitelisted`, 400), and a binary can't be rolled back, so every join from it would fail for as long as the rollback stood.
+
+Before that, the same shape as [§ Rollback the theme palette engine stamp](#rollback-the-theme-palette-engine-stamp-20260923170000): forward reverts through Deploy production, and no hand DDL.
+
+1. **Take the API and web off the columns with a forward revert**, not a redeploy of an older commit: land a commit on `main` that reverts #2302's API and web code but **keeps `20260923190000_…`**, and ship it. A commit from before #2302 can't be deployed once this migration is on production: Deploy production rehearses migrations against production's applied ledger (`scripts/ci/check-migration-replay.mjs`), and a tree missing an applied migration fails as `foreign-migrations` before anything reaches Render or Vercel. Revert web with the API, in the same run: a #2302 web bundle against the reverted API gets a 404 on its status read, so it shows the checkbox and sends the field the old API rejects.
+2. **Only if the columns must go**, drop them with a **new** forward migration in a later run, once the reverted API is live. Take the dump below first. Not in the first run: Deploy production applies migrations before it deploys, so the columns would go while the #2302 API is still serving, and it fails every invite redemption, every chapter onboarding and every Terms acceptance without them. Not by hand: production's ledger would go on recording `20260923190000` as applied, so a later re-land would apply nothing and ship an API that reads columns production lacks. The forward migration:
+
+```sql
+alter table public.users
+  drop column if exists legal_accepted_at,
+  drop column if exists legal_policy_version;
+```
+
+Re-landing #2302 after a drop needs its own new migration that re-adds the columns, since `20260923190000` never runs again. Every user then reads as not having accepted and is asked once more, which is correct.
+
+**This is an App Store compliance regression, not only a schema rollback.** Guideline 1.2 expects everyone who posts to have agreed to terms that forbid objectionable content. Without #2302, members who join by invite agree to nothing, as before. Don't roll back on a build that is under review or live in a store without a replacement in the same deploy.
+
+**Data caveat**: dropping the columns deletes the record of who accepted which version, and when. Keep a dump before step 2:
+
+```sql
+SELECT id, legal_accepted_at, legal_policy_version FROM users WHERE legal_accepted_at IS NOT NULL;
+```

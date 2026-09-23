@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Patch,
   Post,
   UseGuards,
@@ -17,6 +19,7 @@ import {
 import { UserService } from '../../application/services/user.service';
 import { AccountDeletionService } from '../../application/services/account-deletion.service';
 import { RbacService } from '../../application/services/rbac.service';
+import { LegalAcceptanceService } from '../../application/services/legal-acceptance.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
@@ -30,6 +33,8 @@ import {
   UpdateUserDto,
   RequestAvatarUploadUrlDto,
   MyPermissionsDto,
+  LegalAcceptanceDto,
+  AcceptLegalTermsDto,
 } from '../dtos/user.dto';
 
 @ApiTags('Users')
@@ -43,6 +48,7 @@ export class UserController {
     private readonly userService: UserService,
     private readonly accountDeletionService: AccountDeletionService,
     private readonly rbacService: RbacService,
+    private readonly legalAcceptance: LegalAcceptanceService,
   ) {}
 
   @Get('me')
@@ -68,6 +74,41 @@ export class UserController {
       userId,
     );
     return { permissions };
+  }
+
+  @Get('me/legal-acceptance')
+  @ApiOperation({
+    summary: "The caller's Terms of Service and Privacy Policy acceptance",
+    description:
+      'Whether the caller has accepted the version this server enforces (#2302). Needs no chapter: a user is asked before they join one, and a member is asked again when the version changes.',
+  })
+  @ApiOkResponse({ type: LegalAcceptanceDto })
+  async getMyLegalAcceptance(
+    @CurrentUser('id') userId: string,
+  ): Promise<LegalAcceptanceDto> {
+    return this.legalAcceptance.status(userId);
+  }
+
+  @Post('me/legal-acceptance')
+  // 200, not 201: it answers with the caller's status, and a repeat creates
+  // nothing.
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Accept the current Terms of Service and Privacy Policy',
+    description:
+      "Records the caller's acceptance of the version this server enforces, from the session and the server clock. Idempotent: accepting a version already accepted keeps the first timestamp.",
+  })
+  @ApiOkResponse({ type: LegalAcceptanceDto })
+  async acceptLegalTerms(
+    @CurrentUser('id') userId: string,
+    @Body() dto: AcceptLegalTermsDto,
+  ): Promise<LegalAcceptanceDto> {
+    // `@Equals(true)` has already refused anything else. The record is stamped
+    // from the session and the server clock, never from the payload.
+    return this.legalAcceptance.requireOrAccept(
+      userId,
+      dto.accept_terms_privacy,
+    );
   }
 
   @Patch('me')

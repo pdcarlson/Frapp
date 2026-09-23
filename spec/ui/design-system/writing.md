@@ -638,11 +638,30 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 | Redeemed | `Chapter joined` | `You're in. Opening chat.` |
 | **410** — expired, used, or missing | — | `This invite has expired or already been used. Ask an officer for a new one.` |
 | **409** — already a member | — | `You're already a member of this chapter. Open it from your chapter list.` |
+| Terms checkbox (#2302) | — | `I'm 18 or older and agree to the Terms of Service and Privacy Policy.` Shown unless the server says this user already accepted the current Terms. The wording is `LEGAL_ACCEPTANCE_LABEL` in `@repo/validation`, owner-approved with the September 2026 Terms, and shared by every acceptance surface. |
+| Join without the box ticked, or a **403** Terms refusal | — | `Agree to the Terms of Service and Privacy Policy to join.` (`JOIN_TERMS_REQUIRED_COPY`). The refusal is recognised by its message, since no error `code` reaches a client (#1020); it also puts the checkbox back. |
+| **410** — the account itself was deleted, its session not yet ended | — | `This account has been deleted, so it can't join a chapter.` Told apart from the invite 410s by its message, `ACCOUNT_DELETED_MESSAGE`, since a new invite wouldn't help. It names no control because web `/join` has no sign-out. |
 | Any other failure | — | The server's message, else `Couldn't join that chapter. Check the invite and try again.` |
 
-The two status rows are the reason this table exists. Both are routine, both were rendering one generic toast, and they need **opposite** next actions — one says fetch a new invite, the other says you already have what you came for. `spec/behavior/onboarding.md` §Invite Token Rules fixes the codes; the strings are shared verbatim with [`apps/mobile/lib/onboarding/join-errors.ts`](../../../apps/mobile/lib/onboarding/join-errors.ts) and [`apps/web/components/auth/join-errors.ts`](../../../apps/web/components/auth/join-errors.ts), and this table is the one place they are written down, since neither app can import the other's module.
+The two status rows are the reason this table exists. Both are routine, both were rendering one generic toast, and they need **opposite** next actions — one says fetch a new invite, the other says you already have what you came for. `spec/behavior/onboarding.md` §Invite Token Rules fixes the codes; both apps render the failure rows (410, 409, the deleted account, the fallback, and a server's Terms refusal) through one function, `joinErrorCopy` in [`packages/hooks/src/join-errors.ts`](../../../packages/hooks/src/join-errors.ts), and this table is where the strings are specified. The rest of the Terms rows are not in it: their strings live in `@repo/validation` (`LEGAL_ACCEPTANCE_LABEL`, `JOIN_TERMS_REQUIRED_COPY`), and when to show the checkbox, and the unticked-box message before anything is sent, in `useJoinTermsCheckbox` (`@repo/hooks`), #2302.
 
 410 covers three distinct server messages (`Invite not found` / `Invite already used` / `Invite expired`). They collapse to one string on purpose: a member cannot act on the difference, and naming which one it was would tell an unauthenticated caller whether a token exists.
+
+### Terms prompt (mobile and web)
+
+A member who hasn't accepted the Terms version the server enforces (#2302): mobile's `(auth)/terms.tsx`, and web's full-screen `TermsPrompt` over the dashboard. Both render `TERMS_PROMPT_COPY` from `@repo/validation`, so the strings exist once in code; this table is where they are specified.
+
+| State | Title | Description |
+|---|---|---|
+| Idle | `Agree to the Terms to continue` | `We've updated the Terms of Service and Privacy Policy. Read them, then agree to keep using Frapp.` It says "updated" for a member who never accepted, too: the Terms did change, and the prompt doesn't have to know which member is which. |
+| Checkbox | — | `I'm 18 or older and agree to the Terms of Service and Privacy Policy.` (the Join chapter row above) |
+| Primary | — | `Agree and continue` |
+| Tapped without the box ticked | — | `Agree to the Terms of Service and Privacy Policy to continue.` |
+| **410** — the account was deleted | — | `This account has been deleted. Sign out to continue.` |
+| Any other failure | — | `Couldn't save your agreement. Check your connection and try again.` |
+| Ways out | — | `Sign out` and `Delete account` on both: the prompt keeps a member from Settings on mobile and covers `/profile` on web, where deletion otherwise lives (Apple 5.1.1(v); `spec/behavior/data-retention.md`). Web's button reads `Delete account…` and uses `/profile`'s confirmation. |
+| Deletion didn't finish (web) | — | `Deletion didn't finish. Part of it may already have gone through, and running it again is safe. Try once more in a moment.` `/profile`'s toast, from the same `DELETE_ACCOUNT_FAILED`, as one inline line because the prompt covers the page. |
+| Sign-out threw (web) | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` Rare: only a thrown failure reaches it. auth-js returns most sign-out failures as `{ error }` rather than throwing, and `signOutCurrentSession` ignores that, so those navigate to /sign-in as if they had worked, sometimes with the local session still stored ([#2610](https://github.com/pdcarlson/Frapp/issues/2610)). The controls come back so the member can retry, and stay locked while a successful sign-out navigates away. |
 
 ### No access (pre-auth)
 

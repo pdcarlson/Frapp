@@ -70,13 +70,13 @@
   5. **Landing and legal.**
      - *Code:*
        - Metadata, the generated OG image, JSON-LD, the hero and footer copy, and the lockup wordmark.
-       - The Terms, Privacy, FERPA and Support pages, with their `lastUpdated` dates.
+       - The Terms, Privacy, FERPA and Support pages, with their `lastUpdated` dates. *2026-09-23: the Terms page already says Frapp. #2302 rewrote it with the owner-approved age, conduct and inactivity clauses and the `LEGAL_POLICY_VERSION` bump, so the name moved in that same edit. Privacy, FERPA and Support remain.*
      - *Specs:*
        - `spec/ui/landing/README.md` (the header lockup word and the OG card);
        - `spec/ui/assets.md` and `packages/brand-assets/README.md` (the lockup wordmark and the landing header);
        - the Terms and FERPA summaries in `spec/behavior/legal.md`.
      - *Owner:*
-       - decide whether a name-only change bumps `LEGAL_POLICY_VERSION`;
+       - decide whether a name-only change to the Privacy Policy bumps `LEGAL_POLICY_VERSION` (the Terms no longer need the call; see above);
        - after deploy, re-scrape the social previews and request a recrawl.
   6. **Store console (owner).** After step 2 is in a build, update the App Store Connect description and review notes, then capture and upload the screenshots ([#2454](https://github.com/pdcarlson/Frapp/issues/2454)).
 

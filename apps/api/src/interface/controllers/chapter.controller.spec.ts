@@ -36,6 +36,7 @@ import { InternalServerErrorException } from '@nestjs/common';
 import { ChapterController } from './chapter.controller';
 import { ChapterService } from '../../application/services/chapter.service';
 import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
+import { LegalAcceptanceService } from '../../application/services/legal-acceptance.service';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import {
   PERMISSIONS_ANY_KEY,
@@ -53,6 +54,7 @@ describe('ChapterController', () => {
   let controller: ChapterController;
   let chapterService: jest.Mocked<ChapterService>;
   let chapterOnboardingService: { onboard: jest.Mock };
+  let legalAcceptance: { requireOrAccept: jest.Mock };
 
   beforeEach(async () => {
     chapterService = {
@@ -66,6 +68,7 @@ describe('ChapterController', () => {
       deleteLogo: jest.fn(),
     } as any;
     chapterOnboardingService = { onboard: jest.fn() };
+    legalAcceptance = { requireOrAccept: jest.fn().mockResolvedValue({}) };
 
     const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ChapterController],
@@ -75,6 +78,7 @@ describe('ChapterController', () => {
           provide: ChapterOnboardingService,
           useValue: chapterOnboardingService,
         },
+        { provide: LegalAcceptanceService, useValue: legalAcceptance },
       ],
     })
       .overrideInterceptor(AuthSyncInterceptor)
@@ -100,6 +104,33 @@ describe('ChapterController', () => {
 
       expect(chapterService.create).toHaveBeenCalledWith(userId, dto);
       expect(result).toEqual(expectedResult);
+    });
+
+    it('requires an existing Terms acceptance before creating anything (#2302)', async () => {
+      const dto: CreateChapterDto = { name: 'Test Chapter' };
+      chapterService.create.mockResolvedValue({ id: 'chapter-1' } as any);
+
+      await controller.create('user-1', dto);
+
+      // No checkbox on this DTO, so only an acceptance already on record passes.
+      expect(legalAcceptance.requireOrAccept).toHaveBeenCalledWith(
+        'user-1',
+        false,
+      );
+      expect(
+        legalAcceptance.requireOrAccept.mock.invocationCallOrder[0],
+      ).toBeLessThan(chapterService.create.mock.invocationCallOrder[0]);
+    });
+
+    it('creates no chapter when the caller has not accepted the Terms', async () => {
+      legalAcceptance.requireOrAccept.mockRejectedValueOnce(
+        new Error('legal.acceptance_required'),
+      );
+
+      await expect(
+        controller.create('user-1', { name: 'Test Chapter' }),
+      ).rejects.toThrow('legal.acceptance_required');
+      expect(chapterService.create).not.toHaveBeenCalled();
     });
   });
 

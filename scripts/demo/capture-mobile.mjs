@@ -206,11 +206,15 @@ const REPAIR_MOJIBAKE = () => {
 
 const failures = [];
 
-/** Poll `read()` until it returns truthy, or throw with `label` on timeout. */
-async function waitFor(page, label, read, timeoutMs = 30_000) {
+/**
+ * Poll `read(arg)` in the page until it returns truthy, or throw with `label`
+ * on timeout. `arg` is how a value reaches `read`, which runs in the browser
+ * and sees none of this script's variables.
+ */
+async function waitFor(page, label, read, timeoutMs = 30_000, arg) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    if (await page.evaluate(read).catch(() => false)) return;
+    if (await page.evaluate(read, arg).catch(() => false)) return;
     if (Date.now() > deadline)
       throw new Error(`timed out waiting for ${label}`);
     await page.waitForTimeout(400);
@@ -413,12 +417,47 @@ async function signIn(page) {
 
   // The chapter name in the header is the first thing that proves the whole
   // chain worked: session persisted, token mirrored, API accepted the Bearer.
+  // A seeded login has accepted no Terms (#2302), so the auth gate may ask
+  // first, on /terms; agree for it and carry on to the home the shots are of.
   await waitFor(
     page,
-    "signed-in home (is EXPO_PUBLIC_WEB_SECURE_STORE=1 set?)",
+    "signed-in home or the Terms prompt (is EXPO_PUBLIC_WEB_SECURE_STORE=1 set?)",
+    (prompt) =>
+      document.body.innerText.includes("CHANNELS") ||
+      document.body.innerText.includes(prompt),
+    60_000,
+    TERMS_PROMPT_TITLE,
+  );
+  await agreeToTermsIfAsked(page);
+  await waitFor(
+    page,
+    "signed-in home",
     () => document.body.innerText.includes("CHANNELS"),
     60_000,
   );
+}
+
+/**
+ * The Terms prompt's title and button, from `TERMS_PROMPT_COPY` in
+ * `@repo/validation` (this script imports no workspace package, so a change
+ * there must be made here too; the capture fails loudly if it isn't).
+ */
+const TERMS_PROMPT_TITLE = "Agree to the Terms to continue";
+const TERMS_PROMPT_CTA = "Agree and continue";
+
+/**
+ * Tick the Terms prompt for the demo login when the gate shows it (#2302). The
+ * login is the operator's own demo account, and a store screenshot of the
+ * prompt is not what these captures are for.
+ */
+async function agreeToTermsIfAsked(page) {
+  const asked = await page.evaluate(
+    (title) => document.body.innerText.includes(title),
+    TERMS_PROMPT_TITLE,
+  );
+  if (!asked) return;
+  await page.getByRole("checkbox").first().click();
+  await page.getByText(TERMS_PROMPT_CTA, { exact: true }).click();
 }
 
 async function captureRunningApp(

@@ -1,3 +1,5 @@
+import { useState } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
@@ -254,5 +256,150 @@ describe("the confirmation is in-product, and reads as a verb", () => {
     expect(
       screen.getByRole("button", { name: "Delete study zone" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("focus after a confirmation opened from inside another dialog", () => {
+  /**
+   * The Terms prompt's Delete account (#2302): the opener is disabled by the
+   * time the confirmation closes, and the page behind the prompt is hidden,
+   * so the landmark fallback would lose focus behind a modal.
+   */
+  function Nested() {
+    const { confirm, confirmDialog } = useConfirmDialog();
+    const [busy, setBusy] = useState(false);
+    return (
+      <DialogPrimitive.Root open>
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Content aria-describedby={undefined}>
+            <DialogPrimitive.Title>Outer</DialogPrimitive.Title>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                if ((await confirm(REQUEST)) !== null) setBusy(true);
+              }}
+            >
+              Open
+            </button>
+            {confirmDialog}
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
+    );
+  }
+
+  it("returns into that dialog when the opener has been disabled", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <main id="main-content" />
+        <Nested />
+      </>,
+    );
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Delete study zone" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Delete study zone" }),
+      ).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("dialog", { name: "Outer" }),
+      ),
+    );
+  });
+
+  it("returns to the opener on cancel, not to <body>", async () => {
+    // Radix's own fallback focuses a trigger these dialogs don't have.
+    const user = userEvent.setup();
+    render(<Harness onSettle={noop} withComment={false} />);
+    const opener = screen.getByRole("button", { name: "Open" });
+    await user.click(opener);
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it("falls back to the dialog still open when the opener is gone", async () => {
+    // A delete that removes its own row from an open sheet.
+    function Removing() {
+      const { confirm, confirmDialog } = useConfirmDialog();
+      const [gone, setGone] = useState(false);
+      return (
+        <DialogPrimitive.Root open>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Content aria-describedby={undefined}>
+              <DialogPrimitive.Title>Sheet</DialogPrimitive.Title>
+              {gone ? null : (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if ((await confirm(REQUEST)) !== null) setGone(true);
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+              {confirmDialog}
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
+      );
+    }
+    const user = userEvent.setup();
+    render(
+      <>
+        <main id="main-content" />
+        <Removing />
+      </>,
+    );
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Delete study zone" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Remove" })).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("dialog", { name: "Sheet" }),
+      ),
+    );
+  });
+
+  it("falls back to the page's landmark when no dialog is open under it", async () => {
+    // A page-level delete: its opener is disabled while the request runs.
+    function PageRow() {
+      const { confirm, confirmDialog } = useConfirmDialog();
+      const [busy, setBusy] = useState(false);
+      return (
+        <main id="main-content">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              if ((await confirm(REQUEST)) !== null) setBusy(true);
+            }}
+          >
+            Delete row
+          </button>
+          {confirmDialog}
+        </main>
+      );
+    }
+    const user = userEvent.setup();
+    render(<PageRow />);
+    await user.click(screen.getByRole("button", { name: "Delete row" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Delete study zone" }),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.getElementById("main-content"),
+      ),
+    );
   });
 });

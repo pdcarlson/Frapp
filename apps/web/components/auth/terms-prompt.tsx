@@ -1,0 +1,182 @@
+"use client";
+
+import { useState } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Loader2 } from "lucide-react";
+import {
+  termsPromptErrorCopy,
+  useAcceptLegalTerms,
+  useAccessibleChapters,
+  useLegalAcceptance,
+} from "@repo/hooks";
+import { TERMS_PROMPT_COPY } from "@repo/validation";
+import { TermsAcceptance } from "@/components/auth/terms-acceptance";
+import {
+  DELETE_ACCOUNT_FAILED,
+  useDeleteAccountFlow,
+} from "@/components/profile/use-delete-account-flow";
+import { Button } from "@/components/ui/button";
+import { signOutCurrentSession } from "@/lib/auth/session";
+import { asArray } from "@/lib/utils";
+
+/**
+ * Web only: the prompt's sign-out threw. Rare: auth-js returns most sign-out
+ * failures as `{ error }` instead of throwing, and `signOutCurrentSession`
+ * ignores that, so they navigate as if they had worked, sometimes with the
+ * local session still stored (#2610). Only a thrown failure lands here.
+ */
+export const TERMS_PROMPT_SIGN_OUT_FAILED =
+  "Couldn't sign out. Retry in a moment, or close this tab to end the session.";
+
+/**
+ * Web only: the prompt's account deletion didn't finish. `/profile`'s toast
+ * words, as one inline line, since the prompt covers the page.
+ */
+export const TERMS_PROMPT_DELETE_FAILED = `${DELETE_ACCOUNT_FAILED.title}. ${DELETE_ACCOUNT_FAILED.description}`;
+
+/**
+ * The prompt itself: a full-screen dialog over the dashboard that Escape and
+ * outside clicks can't close, the same shape as the chapter wizard. The ways
+ * out are agreeing, signing out and deleting the account, so a member who
+ * declines is never trapped. Deletion is here because the prompt covers
+ * `/profile`, where it otherwise lives (`spec/behavior/data-retention.md`),
+ * as mobile's Terms screen offers it too. Accepting updates the cached status,
+ * and the gate unmounts this.
+ */
+export function TermsPrompt() {
+  const acceptTerms = useAcceptLegalTerms();
+  const [accepted, setAccepted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const deleteFlow = useDeleteAccountFlow({
+    onFailed: () => setError(TERMS_PROMPT_DELETE_FAILED),
+  });
+
+  async function handleAccept(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accepted) {
+      setError(TERMS_PROMPT_COPY.unticked);
+      return;
+    }
+    setError(null);
+    try {
+      await acceptTerms.mutateAsync();
+    } catch (caught) {
+      setError(termsPromptErrorCopy(caught));
+    }
+  }
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    try {
+      await signOutCurrentSession();
+      // Not in a `finally`, as in `profile-panel.tsx`: on success the page is
+      // navigating away, and re-enabling the controls then would hand a
+      // signed-out member a live "Agree and continue".
+      window.location.assign("/sign-in");
+    } catch {
+      setSigningOut(false);
+      setError(TERMS_PROMPT_SIGN_OUT_FAILED);
+    }
+  }
+
+  const busy =
+    acceptTerms.isPending ||
+    acceptTerms.isSuccess ||
+    signingOut ||
+    deleteFlow.isDeleting;
+
+  return (
+    <DialogPrimitive.Root open>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Content
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+          className="fixed inset-0 z-50 overflow-y-auto bg-background focus:outline-none"
+        >
+          <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center px-4 py-8">
+            <DialogPrimitive.Title asChild>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {TERMS_PROMPT_COPY.title}
+              </h1>
+            </DialogPrimitive.Title>
+            <DialogPrimitive.Description className="mt-2 text-sm text-muted-foreground">
+              {TERMS_PROMPT_COPY.body}
+            </DialogPrimitive.Description>
+
+            <form className="mt-6 flex flex-col gap-4" onSubmit={handleAccept}>
+              <TermsAcceptance
+                id="terms-prompt-accept"
+                accepted={accepted}
+                onAcceptedChange={(next) => {
+                  setAccepted(next);
+                  setError(null);
+                }}
+                disabled={busy}
+              />
+              {error ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              ) : null}
+              <Button type="submit" className="w-full" disabled={busy}>
+                {acceptTerms.isPending ? (
+                  <Loader2 className="animate-spin" />
+                ) : null}
+                {TERMS_PROMPT_COPY.cta}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                disabled={busy}
+                onClick={() => {
+                  void handleSignOut();
+                }}
+              >
+                Sign out
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full text-destructive"
+                disabled={busy}
+                onClick={() => {
+                  setError(null);
+                  void deleteFlow.start();
+                }}
+              >
+                {deleteFlow.isDeleting ? "Deleting account…" : "Delete account…"}
+              </Button>
+            </form>
+          </div>
+          {/* Inside Content, so Radix stacks the confirmation over this
+              dialog as a nested layer rather than a sibling it traps out. */}
+          {deleteFlow.confirmDialog}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  );
+}
+
+/**
+ * Asks a member who hasn't accepted the Terms version the server enforces
+ * (#2302), on every dashboard route. Mounted in `dashboard-shell.tsx` beside
+ * `ChapterWizardGate`.
+ *
+ * Only a member is asked. A user with no chapter gets the wizard, whose
+ * checkbox records the same acceptance. The server decides through
+ * `required`, never a compiled-in version. A first read of either query that
+ * failed asks nothing, so an outage of the endpoint can't lock the dashboard;
+ * a later refetch that fails keeps the answer already cached.
+ */
+export function TermsPromptGate() {
+  const chaptersQuery = useAccessibleChapters();
+  const legalAcceptance = useLegalAcceptance();
+  // Both read from cached data, never from `isSuccess`. A failed background
+  // refetch flips a query to `isError` but keeps its data, and reading the
+  // flag would let a known member past a known `required: true`.
+  const isMember = asArray<unknown>(chaptersQuery.data).length > 0;
+  if (!isMember || legalAcceptance.data?.required !== true) return null;
+  return <TermsPrompt />;
+}

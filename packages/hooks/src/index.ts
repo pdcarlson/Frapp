@@ -30,6 +30,8 @@ export * from "./use-chapter-directory";
 export * from "./use-roles";
 export * from "./use-invites";
 export * from "./use-user";
+export * from "./legal-acceptance";
+export * from "./join-errors";
 export * from "./use-org-config";
 export * from "./use-custom-roles";
 export * from "./use-custom-fields";

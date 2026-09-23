@@ -41,6 +41,15 @@ export interface User {
    * spec/behavior/data-retention.md "Individual Account Deletion".
    */
   deleted_at: string | null;
+  /**
+   * When this user last accepted the Terms of Service and Privacy Policy, and
+   * which `LEGAL_POLICY_VERSION` they accepted. Null means never. Stamped only
+   * by `LegalAcceptanceService`, from the session and the server clock
+   * (spec/behavior/legal.md § Acceptance record). Optional, like the chapter
+   * columns it mirrors, so fixtures that predate it still type-check.
+   */
+  legal_accepted_at?: string | null;
+  legal_policy_version?: string | null;
   created_at: string;
   updated_at: string;
 }

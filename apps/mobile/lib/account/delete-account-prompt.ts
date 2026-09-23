@@ -7,7 +7,8 @@ import { Alert } from "react-native";
  * and Signet creates accounts implicitly on first sign-in — so the control has
  * to exist on more than one screen (Settings for a member with a chapter, the
  * join screen for the zero-membership state that cannot reach Settings at all,
- * #2295). Two screens offering the same destructive action is exactly how copy
+ * #2295, and the Terms prompt for a member the gate holds there, #2302).
+ * Several screens offering the same destructive action is exactly how copy
  * drifts, so the strings and the confirm/fail choreography live here once
  * rather than being written a second time.
  *

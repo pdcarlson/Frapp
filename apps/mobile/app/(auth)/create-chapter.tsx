@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Redirect, useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -28,7 +27,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { serverMessageOf } from "@repo/api-sdk";
 import { useAuthSession } from "@/lib/auth-session";
-import { LEGAL_LINKS } from "@/lib/more/legal";
+import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import {
   EMPTY_IDENTITY,
   identityIsValid,
@@ -594,32 +593,11 @@ function IdentityStep({
         swatch={normalizeHex(identity.colorAccent, identity.colorAccent)}
       />
 
-      <Pressable
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: accepted }}
-        onPress={() => onAcceptedChange(!accepted)}
-        style={styles.legalRow}
-      >
-        <View style={[styles.checkbox, accepted ? styles.checkboxOn : null]} />
-        <Text style={styles.legalText}>
-          I agree to the Terms of Service and Privacy Policy. Member-uploaded
-          Backwork is shared voluntarily — see our FERPA notice.
-        </Text>
-      </Pressable>
-      <View style={styles.legalLinks}>
-        {LEGAL_LINKS.map((link) => (
-          <Pressable
-            key={link.url}
-            accessibilityRole="link"
-            accessibilityLabel={link.label}
-            onPress={() => {
-              void WebBrowser.openBrowserAsync(link.url);
-            }}
-          >
-            <Text style={styles.linkText}>{link.label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {/*
+        The officer's acceptance for the chapter and for themselves (#2302).
+        No Backwork line: the app has no Backwork (#2258).
+      */}
+      <TermsAcceptance accepted={accepted} onAcceptedChange={onAcceptedChange} />
     </View>
   );
 }
@@ -874,35 +852,6 @@ function createStyles(tokens: SignetTokens) {
       letterSpacing: 0.3,
       textTransform: "uppercase",
       color: tokens.color.text.muted,
-    },
-    legalRow: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      gap: tokens.spacing.md,
-    },
-    checkbox: {
-      width: tokens.touch.minimum,
-      height: tokens.touch.minimum,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-    },
-    checkboxOn: {
-      backgroundColor: tokens.color.gold.house,
-      borderColor: tokens.color.gold.house,
-    },
-    legalText: {
-      flex: 1,
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    legalLinks: {
-      gap: tokens.spacing.sm,
-    },
-    linkText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.house,
     },
     footer: {
       paddingVertical: tokens.spacing.lg,

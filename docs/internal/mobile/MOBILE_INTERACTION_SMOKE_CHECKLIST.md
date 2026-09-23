@@ -1,6 +1,6 @@
 # Mobile Interaction Smoke Checklist
 
-> Last updated: 2026-08-18  
+> Last updated: 2026-09-23 (the Terms rows, #2302)  
 > Scope: `apps/mobile` Expo workflows
 
 This checklist prevents dead-end controls in mobile UX.  
@@ -16,14 +16,18 @@ and every row below is expected to fail.
 | Screen | Control | Expected outcome |
 |---|---|---|
 | Sign in (`/(auth)/sign-in`) | Password / Magic Link mode chips | Toggles selected mode styling; password field shows in Password mode only |
-| Sign in (`/(auth)/sign-in`) | Sign in (Password mode) | Authenticates against Supabase; the auth gate then routes to join (zero memberships), welcome (`has_completed_onboarding === false`), or `/(tabs)` |
+| Sign in (`/(auth)/sign-in`) | Sign in (Password mode) | Authenticates against Supabase; the auth gate then routes to join (zero memberships), the Terms prompt (a member who hasn't accepted the current Terms, which every seeded account is after a reseed), welcome (`has_completed_onboarding === false`), or `/(tabs)` |
 | Sign in (`/(auth)/sign-in`) | Sign in, wrong password | Shows the Supabase error inline; stays on the screen |
-| Sign in (`/(auth)/sign-in`) | Email me a link (Magic Link mode) | Confirms "Link sent to …"; tapping the emailed link on this device signs in and the auth gate picks join / welcome / tabs |
+| Sign in (`/(auth)/sign-in`) | Email me a link (Magic Link mode) | Confirms "Link sent to …"; tapping the emailed link on this device signs in and the auth gate picks join / Terms / welcome / tabs |
 | Sign in (`/(auth)/sign-in`) | Tap an already-used or expired magic link | Opens the app and shows the reason inline — never a silent return to a blank sign-in form |
 | Profile (`/(tabs)/profile`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
-| Join (`/(auth)/join`) | Join chapter with a valid invite | Redeems `POST /v1/invites/redeem`, selects the chapter, lands on welcome (s03) |
+| Join (`/(auth)/join`) | Join chapter with a valid invite, box unticked | For a user who hasn't accepted the current Terms, shows the checkbox and `Agree to the Terms of Service and Privacy Policy to join.`; redeems nothing |
+| Join (`/(auth)/join`) | Join chapter with a valid invite, box ticked (or already accepted, no box shown) | Redeems `POST /v1/invites/redeem`, selects the chapter, lands on welcome (s03) |
 | Join (`/(auth)/join`) | Expired / already-used invite | Shows the 410 sentence; stays on the screen |
 | Join (`/(auth)/join`) | Create a chapter | Opens `(auth)/create-chapter` |
+| Terms (`/(auth)/terms`) | Agree and continue, box unticked | Shows `Agree to the Terms of Service and Privacy Policy to continue.`; records nothing |
+| Terms (`/(auth)/terms`) | Tick the box, Agree and continue | `POST /v1/users/me/legal-acceptance`; the gate moves on to welcome or `/(tabs)` |
+| Terms (`/(auth)/terms`) | Sign out / Delete account | Sign out routes to sign-in; Delete account confirms, deletes, and signs out (Settings is unreachable from here) |
 | Welcome (`/(auth)/welcome`) | Go to chat / Skip | PATCHes `has_completed_onboarding: true` and replaces into `/(tabs)` |
 | Chapter picker (empty) | Create a chapter | Opens `(auth)/create-chapter` |
 | Create chapter (`/(auth)/create-chapter`) | Directory row / Manual entry → archetype → identity + legal → Create chapter | `POST /v1/chapters/onboard`; invite step stays on this route |

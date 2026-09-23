@@ -85,8 +85,32 @@ async function settle(page) {
     .catch(() => {});
 }
 
+/**
+ * A seeded login has accepted no Terms (#2302), so the dashboard opens under
+ * the full-screen Terms prompt, which every shot would otherwise capture. Tick
+ * it for the operator's own demo account. Found by the checkbox's id and the
+ * form's submit button, not by copy: `TERMS_PROMPT_COPY` lives in
+ * `@repo/validation`, which this script can't import, and a copy match would
+ * miss the prompt silently the day the wording changed.
+ */
+const TERMS_PROMPT_CHECKBOX = "#terms-prompt-accept";
+
+async function agreeToTermsIfAsked(page) {
+  const checkbox = page.locator(TERMS_PROMPT_CHECKBOX);
+  if (!(await checkbox.isVisible().catch(() => false))) return;
+  await checkbox.check();
+  await page
+    .locator(`form:has(${TERMS_PROMPT_CHECKBOX}) button[type="submit"]`)
+    .click();
+  await checkbox.waitFor({ state: "detached", timeout: 30_000 });
+  console.log("  agreed to the Terms for the demo login");
+}
+
 async function signIn(page) {
-  await page.goto(`${BASE_URL}/sign-in`, { waitUntil: "domcontentloaded" });
+  // `networkidle`, not `domcontentloaded`: against `next dev` the form is
+  // server-rendered well before it hydrates, and a click that lands first
+  // submits nothing, so the wait below times out on /sign-in.
+  await page.goto(`${BASE_URL}/sign-in`, { waitUntil: "networkidle" });
   await page.fill("#email", EMAIL);
   await page.fill("#password", PASSWORD);
   await Promise.all([
@@ -97,6 +121,7 @@ async function signIn(page) {
   ]);
   await settle(page);
   console.log(`  signed in -> ${new URL(page.url()).pathname}`);
+  await agreeToTermsIfAsked(page);
 
   // The session cookie alone is not enough. `activeChapterId` lives in a
   // zustand/persist store that only `useSelectChapter` writes, so a fresh
@@ -154,6 +179,9 @@ async function main() {
       const landed = new URL(page.url()).pathname;
       if (landed.startsWith("/sign-in")) {
         throw new Error("bounced to /sign-in — session lost");
+      }
+      if (await page.locator(TERMS_PROMPT_CHECKBOX).isVisible()) {
+        throw new Error("the Terms prompt is covering the page");
       }
 
       const file = path.join(OUT_DIR, `${slug}.png`);

@@ -359,8 +359,8 @@ export function DocumentsPage() {
     the row only disappears once the DELETE round-trips — so without this
     the row's button stays enabled across the whole request. That is a
     second-delete hazard, and it also defeats `confirm-dialog.tsx`'s focus
-    guard: Radix restores focus to the opener the instant the dialog closes,
-    long before the request settles, so focus landed on a control that then
+    guard: the confirmation returns focus to the opener once its ~200ms exit
+    ends, usually before the request settles, so focus landed on a control that then
     unmounted and dropped to `<body>`. Marked disabled before the await, the
     guard sees `[disabled]` and sends focus to `#main-content` instead —
     which is the fallback it exists for.

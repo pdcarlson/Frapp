@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  gateReadStatus,
   resolveAuthGate,
+  toAuthGateInput,
   type AuthGateDestination,
   type AuthGateInput,
 } from "./auth-gate";
@@ -199,6 +201,241 @@ describe("resolveAuthGate", () => {
   });
 });
 
+/**
+ * #2302. A member who hasn't accepted the Terms the server enforces is asked
+ * before anything else they can reach, and the read that decides it can never
+ * lock anyone out.
+ */
+describe("resolveAuthGate — the Terms prompt (#2302)", () => {
+  const member = {
+    status: "authenticated" as const,
+    chapterId: "chapter-a",
+    ...RESOLVED,
+  };
+
+  it("asks a member who hasn't accepted the current Terms", () => {
+    expect(
+      resolveAuthGate({
+        ...member,
+        ...complete,
+        legalAcceptanceStatus: "success",
+        legalAcceptanceRequired: true,
+      }),
+    ).toBe("terms");
+  });
+
+  it("asks before first-run, so a new member agrees before they post", () => {
+    expect(
+      resolveAuthGate({
+        ...member,
+        ...incomplete,
+        legalAcceptanceStatus: "success",
+        legalAcceptanceRequired: true,
+      }),
+    ).toBe("terms");
+  });
+
+  it("lets a member who accepted through, to first-run or the tabs", () => {
+    const accepted = {
+      legalAcceptanceStatus: "success" as const,
+      legalAcceptanceRequired: false,
+    };
+    expect(resolveAuthGate({ ...member, ...incomplete, ...accepted })).toBe(
+      "welcome",
+    );
+    expect(resolveAuthGate({ ...member, ...complete, ...accepted })).toBe(
+      "tabs",
+    );
+  });
+
+  it("leaves a user with no membership on join, which carries its own checkbox", () => {
+    expect(
+      resolveAuthGate({
+        ...member,
+        chapterId: null,
+        ...emptyMemberships,
+        legalAcceptanceStatus: "success",
+        legalAcceptanceRequired: true,
+      }),
+    ).toBe("join");
+  });
+
+  it("holds a member only for the read's first answer", () => {
+    expect(
+      resolveAuthGate({
+        ...member,
+        ...complete,
+        legalAcceptanceStatus: "pending",
+      }),
+    ).toBe("hold");
+  });
+
+  it("fails open to the tabs when the read fails", () => {
+    expect(
+      resolveAuthGate({
+        ...member,
+        ...complete,
+        legalAcceptanceStatus: "error",
+        legalAcceptanceRequired: true,
+      }),
+    ).toBe("tabs");
+  });
+
+  it("never asks when the caller can't see the read (the frozen tabs layout)", () => {
+    expect(resolveAuthGate({ ...member, ...complete })).toBe("tabs");
+  });
+});
+
+describe("the gate's reads, from query state (#2302)", () => {
+  const session = {
+    status: "authenticated" as const,
+    chapterId: "chapter-a",
+    isChapterResolving: false,
+  };
+  const member = { chapter_id: "chapter-a", has_completed_onboarding: true };
+  const newMember = { ...member, has_completed_onboarding: false };
+  type Chapters = Parameters<typeof toAuthGateInput>[0]["chapters"];
+  type Legal = Parameters<typeof toAuthGateInput>[0]["legal"];
+  // TanStack query states. A failed background refetch keeps its data and
+  // flips to error; a query with no data goes back to pending (isError false)
+  // on every refetch, even after it failed, so only errorUpdateCount says so.
+  const answered = (data: Chapters["data"]): Chapters => ({
+    data,
+    isError: false,
+    isSuccess: true,
+    errorUpdateCount: 0,
+  });
+  const failedRefetch = (data: Chapters["data"]): Chapters => ({
+    data,
+    isError: true,
+    isSuccess: false,
+    errorUpdateCount: 1,
+  });
+  const chaptersRefetchingAfterFailure: Chapters = {
+    data: undefined,
+    isError: false,
+    isSuccess: false,
+    errorUpdateCount: 1,
+  };
+  const terms = (required: boolean, isError = false): Legal => ({
+    data: { required },
+    isError,
+    errorUpdateCount: isError ? 1 : 0,
+  });
+  const termsFirstRead: Legal = {
+    data: undefined,
+    isError: false,
+    errorUpdateCount: 0,
+  };
+  const termsFirstReadFailed: Legal = {
+    data: undefined,
+    isError: true,
+    errorUpdateCount: 1,
+  };
+  const termsRefetchingAfterFailure: Legal = {
+    data: undefined,
+    isError: false,
+    errorUpdateCount: 1,
+  };
+  const gate = (chapters: Chapters, legal: Legal) =>
+    resolveAuthGate(toAuthGateInput({ session, chapters, legal }));
+
+  it("keeps a member on the prompt when the Terms refetch fails", () => {
+    expect(gate(answered([member]), terms(true, true))).toBe("terms");
+  });
+
+  it("keeps a member on the prompt when the chapters refetch fails", () => {
+    expect(gate(failedRefetch([member]), terms(true))).toBe("terms");
+  });
+
+  it("still fails open after a join whose chapters refetch failed", () => {
+    // Cached list from before the join is []; the member just ticked the box,
+    // so the Terms cache says accepted. Must not bounce back to /join.
+    expect(gate(failedRefetch([]), terms(false))).toBe("tabs");
+  });
+
+  it("still fails open after finishing first-run whose refetch failed", () => {
+    // The cached row still says not onboarded; welcome's finish() relies on
+    // the failed read failing open rather than pulling the member back.
+    expect(gate(failedRefetch([newMember]), terms(false))).toBe("tabs");
+  });
+
+  it("holds a member until the first Terms answer, whatever the chapters refetch did", () => {
+    // An (auth) route holds rather than opening the tabs to a member who may
+    // owe the Terms. One already in the tabs is walked to the prompt by
+    // AppRuntime once the answer lands; `hold` doesn't move them. A first
+    // read's retry, paused offline or not, looks exactly like termsFirstRead
+    // to the gate (errorUpdateCount stays 0 until retries are spent).
+    expect(gate(answered([member]), termsFirstRead)).toBe("hold");
+    expect(gate(failedRefetch([member]), termsFirstRead)).toBe("hold");
+  });
+
+  it("fails open when the first Terms read fails", () => {
+    expect(gate(answered([member]), termsFirstReadFailed)).toBe("tabs");
+    expect(gate(failedRefetch([member]), termsFirstReadFailed)).toBe("tabs");
+  });
+
+  it("keeps failing open while a Terms read that failed (retries spent) refetches", () => {
+    // Without errorUpdateCount this reads as a first read and holds, blanking
+    // the (auth) screens on every foreground after an outage.
+    expect(gate(answered([member]), termsRefetchingAfterFailure)).toBe("tabs");
+    expect(gate(failedRefetch([member]), termsRefetchingAfterFailure)).toBe("tabs");
+  });
+
+  it("keeps failing open while a chapters read that failed (retries spent) refetches", () => {
+    expect(gate(chaptersRefetchingAfterFailure, terms(false))).toBe("tabs");
+  });
+
+  it("holds for the first chapters read", () => {
+    expect(
+      gate(
+        { data: undefined, isError: false, isSuccess: false, errorUpdateCount: 0 },
+        termsFirstRead,
+      ),
+    ).toBe("hold");
+  });
+});
+
+describe("gateReadStatus", () => {
+  const read = (over: Partial<Parameters<typeof gateReadStatus>[0]>) =>
+    gateReadStatus({
+      authenticated: true,
+      hasAnswer: false,
+      isError: false,
+      hasFailed: false,
+      answerFirst: true,
+      ...over,
+    });
+
+  it("is idle when signed out", () => {
+    expect(read({ authenticated: false, hasAnswer: true })).toBe("idle");
+  });
+
+  it("pends only until the first answer, or until a read spends its retries", () => {
+    expect(read({})).toBe("pending");
+    expect(read({ hasFailed: true })).toBe("error");
+    expect(read({ isError: true, hasFailed: true })).toBe("error");
+  });
+
+  it("keeps a Terms answer through a failed refetch", () => {
+    expect(read({ hasAnswer: true, isError: true, hasFailed: true })).toBe(
+      "success",
+    );
+  });
+
+  it("reads the chapters list error-first", () => {
+    expect(
+      read({
+        hasAnswer: true,
+        isError: true,
+        hasFailed: true,
+        answerFirst: false,
+      }),
+    ).toBe("error");
+    expect(read({ hasAnswer: true, answerFirst: false })).toBe("success");
+  });
+});
+
 describe("the two layouts cannot loop", () => {
   const statuses = ["hydrating", "authenticated", "unauthenticated"] as const;
   const chapterIds = [null, "chapter-a"];
@@ -212,24 +449,40 @@ describe("the two layouts cannot loop", () => {
     complete,
     { membershipsStatus: "pending", memberships: [] },
     { membershipsStatus: "error", memberships: [] },
+    // A failed refetch whose cached list still shows a member (#2302).
+    { membershipsStatus: "error", memberships: complete.memberships },
+    { membershipsStatus: "error", memberships: incomplete.memberships },
+  ];
+
+  const legalCases: Array<
+    Pick<AuthGateInput, "legalAcceptanceStatus" | "legalAcceptanceRequired">
+  > = [
+    {},
+    { legalAcceptanceStatus: "pending" },
+    { legalAcceptanceStatus: "error" },
+    { legalAcceptanceStatus: "success", legalAcceptanceRequired: true },
+    { legalAcceptanceStatus: "success", legalAcceptanceRequired: false },
   ];
 
   const everyState: AuthGateInput[] = statuses.flatMap((status) =>
     chapterIds.flatMap((chapterId) =>
       resolving.flatMap((isChapterResolving) =>
-        membershipCases.map((memberships) => ({
-          status,
-          chapterId,
-          isChapterResolving,
-          ...memberships,
-        })),
+        membershipCases.flatMap((memberships) =>
+          legalCases.map((legal) => ({
+            status,
+            chapterId,
+            isChapterResolving,
+            ...memberships,
+            ...legal,
+          })),
+        ),
       ),
     ),
   );
 
   // How each layout reacts to a destination. `(auth)` redirects out of its
-  // group only for `tabs`. `(tabs)` only redirects for `sign-in`. join/welcome
-  // stay inside `(auth)`; the tabs group is walked off those destinations by
+  // group only for `tabs`. `(tabs)` only redirects for `sign-in`.
+  // join/terms/welcome stay inside `(auth)`; the tabs group is walked off those destinations by
   // `AppRuntime`, not by a second layout redirect, so the two still cannot
   // bounce each other.
   const authRedirects = (d: AuthGateDestination) => d === "tabs";
@@ -247,7 +500,7 @@ describe("the two layouts cannot loop", () => {
 
   it("resolves every reachable state to exactly one destination", () => {
     for (const state of everyState) {
-      expect(["hold", "sign-in", "join", "welcome", "tabs"]).toContain(
+      expect(["hold", "sign-in", "join", "terms", "welcome", "tabs"]).toContain(
         resolveAuthGate(state),
       );
     }

@@ -12,8 +12,15 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useDeleteAccount, useRedeemInvite } from "@repo/hooks";
+import {
+  joinErrorCopy,
+  redeemChapterId,
+  useDeleteAccount,
+  useJoinTermsCheckbox,
+  useRedeemInvite,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import {
@@ -22,7 +29,6 @@ import {
   extractInviteTokenFromQuery,
   rememberInviteToken,
 } from "@/lib/onboarding/invite-token";
-import { joinErrorCopy, redeemChapterId } from "@/lib/onboarding/join-errors";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -44,6 +50,9 @@ export default function JoinChapter() {
   const { status, signOut } = useAuthSession();
   const redeemInvite = useRedeemInvite();
   const deleteAccount = useDeleteAccount();
+  // When to show the Terms checkbox, and what a refused join means for it,
+  // is shared with web `/join` (#2302).
+  const terms = useJoinTermsCheckbox({ enabled: status === "authenticated" });
   const selectChapter = useSelectChapter();
   const params = useLocalSearchParams<{
     token?: string | string[];
@@ -131,9 +140,16 @@ export default function JoinChapter() {
       return;
     }
 
+    if (terms.blocker) {
+      setError(terms.blocker);
+      return;
+    }
+
     setError(null);
     try {
-      const result = await redeemInvite.mutateAsync({ token: extracted });
+      const result = await redeemInvite.mutateAsync(
+        terms.redeemBody(extracted),
+      );
       consumeRememberedInviteToken();
       const chapterId = redeemChapterId(result);
       if (chapterId) {
@@ -141,6 +157,7 @@ export default function JoinChapter() {
       }
       router.replace("/welcome");
     } catch (caught) {
+      terms.onJoinError(caught);
       setError(joinErrorCopy(caught));
     }
   }
@@ -220,6 +237,17 @@ export default function JoinChapter() {
             accessibilityLabel="Invite token"
             style={styles.input}
           />
+
+          {terms.needed ? (
+            <TermsAcceptance
+              accepted={terms.accepted}
+              onAcceptedChange={(next) => {
+                terms.setAccepted(next);
+                setError(null);
+              }}
+              disabled={submitting}
+            />
+          ) : null}
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 

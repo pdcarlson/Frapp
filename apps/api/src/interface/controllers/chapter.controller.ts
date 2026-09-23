@@ -22,6 +22,7 @@ import {
   AUDITED_PROFILE_FIELDS,
 } from '../../application/services/chapter.service';
 import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
+import { LegalAcceptanceService } from '../../application/services/legal-acceptance.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -76,16 +77,25 @@ export class ChapterController {
   constructor(
     private readonly chapterService: ChapterService,
     private readonly chapterOnboardingService: ChapterOnboardingService,
+    private readonly legalAcceptance: LegalAcceptanceService,
   ) {}
 
   @Post()
   @UseGuards(SupabaseAuthGuard)
   @UseInterceptors(AuthSyncInterceptor)
-  @ApiOperation({ summary: 'Create a new chapter' })
+  @ApiOperation({
+    summary: 'Create a new chapter',
+    description:
+      'Makes the caller its President. The caller must already have accepted the current Terms (`POST /v1/users/me/legal-acceptance`), or this is 403. No client uses this route; the wizard uses `POST /v1/chapters/onboard`, which records the acceptance itself.',
+  })
   async create(
     @CurrentUser('id') userId: string,
     @Body() dto: CreateChapterDto,
   ) {
+    // The third way into a chapter, after invite redemption and onboarding
+    // (#2302). This DTO carries no checkbox, so the caller must have accepted
+    // already; without this the route would create a member who never had.
+    await this.legalAcceptance.requireOrAccept(userId, false);
     return this.chapterService.create(userId, dto);
   }
 

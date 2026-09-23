@@ -26,6 +26,7 @@ import { isSubscriptionHardLocked } from '#domain/constants/subscription-grace';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
+import { LegalAcceptanceService } from './legal-acceptance.service';
 import { EMAIL_PROVIDER } from '#domain/adapters/email.interface';
 import type { IEmailProvider } from '#domain/adapters/email.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -93,6 +94,7 @@ export class InviteService {
     @Inject(EMAIL_PROVIDER) private readonly emailProvider: IEmailProvider,
     private readonly config: ConfigService,
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    private readonly legalAcceptance: LegalAcceptanceService,
   ) {}
 
   private prepareInviteData(
@@ -281,10 +283,16 @@ export class InviteService {
    * Bind the *current* user to this token. Invite email is not matched against
    * `users.email`, so Apple Hide My Email / `privaterelay.appleid.com` still
    * joins when the member opens the invite after signing in.
+   *
+   * `acceptTerms` is the join screen's Terms checkbox (#2302). A user who has
+   * not accepted the current Terms must tick it, or the join is refused with
+   * `legal.acceptance_required` and the token is left unconsumed. A user who
+   * already accepted this version joins without it.
    */
   async redeem(
     token: string,
     userId: string,
+    acceptTerms = false,
   ): Promise<{ chapterId: string; memberId: string }> {
     const invite = await this.inviteRepo.findByToken(token);
 
@@ -324,6 +332,12 @@ export class InviteService {
           "This chapter isn't accepting new members right now: its subscription is inactive. Ask a chapter officer to restore it, then use this invite again.",
       });
     }
+
+    // Every member agrees to the Terms before they can post (#2302, Guideline
+    // 1.2). After the token and lock checks, so a dead link or a locked
+    // chapter answers with what is actually wrong rather than asking for a
+    // checkbox; before the claim, so a refusal leaves the token usable.
+    await this.legalAcceptance.requireOrAccept(userId, acceptTerms);
 
     const roles = await this.roleRepo.findByChapter(invite.chapter_id);
     // `invite.role` is the display name chosen when the invite was issued, so

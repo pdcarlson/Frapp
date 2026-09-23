@@ -194,6 +194,13 @@ node scripts/demo/capture-mobile.mjs        # mobile         -> screenshots/mobi
 signed-in screens at 3x into `screenshots/mobile-app/`; `SKIP_REFERENCE=1` skips
 the design-board pass into `screenshots/mobile-reference/`.
 
+**Seeded logins have accepted no Terms** (#2302). The seed writes `users` rows
+with no acceptance and wipes it on every reseed, so the first sign-in lands on
+the Terms prompt: `/terms` on mobile, a full-screen dialog on web. Both capture
+scripts tick it for the demo login and carry on. By hand, tick the box and
+choose **Agree and continue**; the App Review reviewer does the same, which
+§ Review notes in `apps/mobile/store/README.md` tells them to expect.
+
 `node scripts/demo/capture-mobile.mjs --app-store` is the other mode: the App
 Store set, at the store's size, into `screenshots/app-store/`, with no Ask or
 Dues shot and a hard stop if any Ask surface is on screen. It needs the Expo
@@ -244,7 +251,7 @@ builds native only, [`render.yaml`](../../render.yaml) serves just the API, and
 switched on for.
 
 **And signed out, only `/sign-in` renders.** `(auth)/_layout.tsx` routes
-`/welcome`, `/join`, `/chapter-picker` and `/create-chapter` by _gate
+`/welcome`, `/join`, `/terms`, `/chapter-picker` and `/create-chapter` by _gate
 destination_, not by URL, so visiting any of them without a session redirects to
 `/sign-in`. They look capturable and are not — an earlier version of the capture
 script listed three of them and produced three byte-identical copies of the

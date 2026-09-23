@@ -38,8 +38,8 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { StepDots } from "@/components/onboarding/step-dots";
+import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { SearchGlyph } from "@/components/profile/profile-glyphs";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
@@ -48,6 +48,7 @@ import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { buildJoinUrl } from "@/lib/invite-link";
+import { FERPA_URL } from "@/lib/legal-links";
 
 /**
  * Where a brand-new founder lands when the wizard finishes.
@@ -68,11 +69,6 @@ import { buildJoinUrl } from "@/lib/invite-link";
  * gate". `/billing` already offers checkout at this exact status.
  */
 const POST_CREATE_PATH = "/billing";
-// Legal pages (Terms / Privacy / FERPA) live on the marketing site and are linked
-// from the onboarding consent step (spec/behavior/legal.md). Override per-env with
-// NEXT_PUBLIC_LANDING_URL; default to production so the links always resolve.
-const LEGAL_BASE_URL =
-  process.env.NEXT_PUBLIC_LANDING_URL ?? "https://frapp.live";
 // The house seed itself, not a copy of it. This was a bare `#F2B72E` literal
 // that had to be remembered whenever the seed moved, and the greenfield ladder
 // change is exactly the event that would have silently desynced it.
@@ -821,47 +817,21 @@ function IdentityStep({
         </div>
       </div>
 
-      <div className="flex items-start gap-3 rounded-lg border border-border p-3">
-        <input
-          type="checkbox"
+      {/*
+        The officer's acceptance, for the chapter and for themselves (#2302).
+        The web dashboard keeps Backwork (#2258), so its FERPA note stays here,
+        beside the checkbox rather than inside what the officer agrees to.
+      */}
+      <div className="space-y-2">
+        <TermsAcceptance
           id="wiz-accept-legal"
-          checked={accepted}
-          onChange={(e) => onAcceptedChange(e.target.checked)}
-          className={cn(dashboardTableCheckboxClassName, "mt-0.5")}
+          accepted={accepted}
+          onAcceptedChange={onAcceptedChange}
         />
-        {/*
-          Deliberately not wrapped in `dashboardCheckboxHitAreaClassName`.
-          That recipe is an implicit `<label>` for a row-select checkbox that
-          has no other label; this control has an explicit multi-line `<Label
-          htmlFor>` beside it, so its tappable area already far exceeds §2's
-          44px floor — and adding the wrapper would give one input two labels,
-          trading a floor it already clears for an accessibility regression.
-        */}
-        <Label
-          htmlFor="wiz-accept-legal"
-          className="text-sm font-normal leading-snug text-muted-foreground"
-        >
-          I agree to the{" "}
+        <p className="text-xs text-muted-foreground">
+          Member-uploaded Backwork is shared voluntarily. See our{" "}
           <a
-            href={`${LEGAL_BASE_URL}/terms`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-foreground underline underline-offset-2"
-          >
-            Terms of Service
-          </a>{" "}
-          and{" "}
-          <a
-            href={`${LEGAL_BASE_URL}/privacy`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-foreground underline underline-offset-2"
-          >
-            Privacy Policy
-          </a>
-          . Member-uploaded Backwork is shared voluntarily. See our{" "}
-          <a
-            href={`${LEGAL_BASE_URL}/ferpa`}
+            href={FERPA_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="font-medium text-foreground underline underline-offset-2"
@@ -869,7 +839,7 @@ function IdentityStep({
             FERPA notice
           </a>
           .
-        </Label>
+        </p>
       </div>
     </div>
   );

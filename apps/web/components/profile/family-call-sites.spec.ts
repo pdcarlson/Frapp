@@ -46,7 +46,6 @@ const FAMILY = [
   "app/(dashboard)/profile/page.tsx",
   "components/auth/auth-screen.tsx",
   "components/auth/signet-mark.tsx",
-  "components/auth/join-errors.ts",
   "components/profile/profile-panel.tsx",
   "components/profile/profile-glyphs.tsx",
   "components/onboarding/chapter-wizard.tsx",

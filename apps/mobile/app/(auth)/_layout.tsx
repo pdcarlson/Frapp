@@ -58,6 +58,15 @@ export default function AuthLayout() {
     return <Redirect href="/join" />;
   }
 
+  // A member who hasn't accepted the current Terms (#2302). The wizard is
+  // spared because it carries its own checkbox; nothing else in this group is.
+  if (destination === "terms") {
+    if (pathname === "/terms" || pathname === "/create-chapter") {
+      return <Stack screenOptions={{ headerShown: false }} />;
+    }
+    return <Redirect href="/terms" />;
+  }
+
   if (destination === "welcome") {
     if (pathname === "/welcome") {
       return <Stack screenOptions={{ headerShown: false }} />;
