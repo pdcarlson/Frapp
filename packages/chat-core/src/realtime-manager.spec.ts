@@ -677,8 +677,10 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
         ?._blockEvaluated,
     ).toBe(false);
 
-    // The reconnect: the channel resubscribes and the backfill returns the
-    // same row as the server serves it to this viewer — masked.
+    // The reconnect, simulated as the rest of this suite does it: the channel
+    // errors, then subscribes again, and the backfill returns the same row as
+    // the server serves it to this viewer — masked.
+    ch.trigger("CHANNEL_ERROR");
     backfill.mockResolvedValueOnce([
       {
         id: "msg-both",
@@ -691,7 +693,7 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
         client_message_id: "client-both",
       },
     ]);
-    ch.trigger("SUBSCRIBED");
+    current("channel-1").trigger("SUBSCRIBED");
 
     await vi.waitFor(() => {
       const row = queryClient.getQueryData<ChannelCache>(key)?.byId["msg-both"];

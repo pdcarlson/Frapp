@@ -39,20 +39,18 @@ const SERVER_SENTINEL = "[message from a blocked member]";
 interface StateExtras {
   unblocked?: string[];
   cleared?: string[];
-  reading?: boolean;
 }
 
 function state(
   status: BlockState["status"],
   ids: string[],
-  { unblocked = [], cleared = [], reading = false }: StateExtras,
+  { unblocked = [], cleared = [] }: StateExtras,
 ): BlockState {
   return {
     status,
     ids: new Set(ids),
     unblocked: new Set(unblocked),
     cleared: new Set(cleared),
-    reading,
   };
 }
 
@@ -281,12 +279,12 @@ describe("classifyMessage", () => {
       );
     });
 
-    it("a carried mask does not yield to an unblock the list cannot confirm yet", () => {
+    it("a carried mask does not yield to an unblock the list cannot confirm", () => {
       // Unblocked here, then blocked again on another device: a REST read
       // masks X's row, the contradiction re-reads the list, and a pin echoes
-      // over the masked row while that re-read is in flight — or after it
-      // failed. Nothing dates the carried verdict, so it may postdate the
-      // unblock; only a list read that has landed can say which.
+      // over the masked row after that re-read failed. Nothing dates the
+      // carried verdict, so it may postdate the unblock, and a list that is
+      // not ready cannot say which.
       let cache = mergeServerRow(
         emptyCache(),
         restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
@@ -297,11 +295,13 @@ describe("classifyMessage", () => {
       );
       const [pinned] = selectMessages(cache);
       for (const blockState of [
-        ready([], { unblocked: [BLOCKED], reading: true }),
         unavailable([], { unblocked: [BLOCKED] }),
         loading([], { unblocked: [BLOCKED] }),
       ]) {
         expect(classifyMessage(pinned!, blockState, VIEWER)).toBe("tombstone");
+        // …and offers Unblock, which re-reads the list — not a Reload that
+        // would re-read masked copies this row is not one of.
+        expect(tombstoneCanUnblock(pinned!, blockState)).toBe(true);
       }
     });
 

@@ -12,7 +12,9 @@
  * Driven through the real hook on **this app's own** `QueryClient`
  * (`lib/query-client.ts`), not a test client built from it: an interval or an
  * unbounded retry added to the hook, to the client's defaults, or as a
- * per-key default (`setQueryDefaults`) on that client fails here.
+ * per-key default registered in `lib/query-client.ts` fails here. One
+ * registered anywhere else (a provider, `app/_layout.tsx`) is not loaded by
+ * this spec — keep query defaults in `lib/query-client.ts`.
  */
 
 import React from "react";

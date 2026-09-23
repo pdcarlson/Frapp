@@ -60,15 +60,8 @@ export function useThreadBlockList(
       ids: blockList.ids,
       unblocked: blockList.unblocked,
       cleared,
-      reading: blockList.isRetrying,
     }),
-    [
-      blockList.status,
-      blockList.ids,
-      blockList.unblocked,
-      cleared,
-      blockList.isRetrying,
-    ],
+    [blockList.status, blockList.ids, blockList.unblocked, cleared],
   );
 
   const thread = useMemo(
