@@ -29,7 +29,7 @@ filed; meanwhile a wrong doc misroutes every reader until someone notices.
   doc alone and put it in the run report, which reaches the owner.
 - The one thing you may file is a proven human-only blocker (a dashboard-only toggle, a missing
   credential) per [`file-follow-up`](../file-follow-up/SKILL.md).
-- A spec-vs-code contradiction is not yours to resolve, even when `AGENTS.md` § Spec vs code would
+- A spec-vs-code contradiction is not yours to resolve, even when [`AGENTS.md` § Spec vs code](../../../AGENTS.md#spec-vs-code) would
   let an in-scope change fix the stale side. Report it.
 
 ## Write permission

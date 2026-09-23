@@ -46,7 +46,7 @@ restating it:
 
 Frapp is explicitly **spec-driven**:
 
-1. Update specs in `spec/` first:
+1. When the change alters intended behavior, update the spec in `spec/` first:
    - `spec/product/` — high-level product view (folder of topic files; start at `README.md`)
    - `spec/behavior/` — feature behavior and edge cases (folder of topic files; start at `README.md`)
    - `spec/architecture/README.md` — system/data model
@@ -152,9 +152,7 @@ In CI, we also run:
 
 ## 6. Documentation obligations
 
-- If you change **behavior** — update the appropriate topic file under `spec/behavior/`.
-- If you change **data model** — update `spec/architecture/README.md`.
-- If you change **developer workflow** — update the relevant file under **`docs/guides/`** (or another path under `docs/` if it is operator-only).
+Whether a change owes a doc edit: [`AGENTS.md` § Documentation discipline](../../AGENTS.md#documentation-discipline). Which doc owns which fact: [`DOCUMENTATION_CONVENTIONS.md` § Where things go](../internal/DOCUMENTATION_CONVENTIONS.md#where-things-go).
 
 > **Warning:** Out-of-date documentation is a real bug. When the spec and the code disagree, [`AGENTS.md` § Spec vs code](../../AGENTS.md#spec-vs-code) says what to do.
 

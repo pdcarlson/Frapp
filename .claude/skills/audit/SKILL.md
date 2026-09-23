@@ -221,7 +221,7 @@ Compare features with `spec/product/`, check that the edge cases and invariants 
 `spec/behavior/` are tested, and check stack and patterns against
 [`spec/architecture/README.md`](../../../spec/architecture/README.md) and environments against
 [`spec/environments/README.md`](../../../spec/environments/README.md). Handle a disagreement you
-find per `AGENTS.md` § Spec vs code.
+find per [`AGENTS.md` § Spec vs code](../../../AGENTS.md#spec-vs-code).
 
 ## Reporting findings
 
