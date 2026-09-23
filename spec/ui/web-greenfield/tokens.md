@@ -262,13 +262,16 @@ at onboarding, config PATCH and Settings accent save), so existing rows still ca
 against `#0E0D0B`. `useChapterTheme` applies a stored palette over the CSS defaults all-or-nothing,
 so a stale row wins over `signet.css`.
 
-**Accessibility is not at risk, and that was measured rather than assumed:** deriving all 19 seeds
+**The text roles are not at risk, and that was measured rather than assumed:** deriving all 19 seeds
 against the old background and measuring the result against the *new* one, every seed still clears
 4.5:1 (worst `#BF0A30` at 8.48, down from 8.80), and no seed flips the mobile fallback decision.
 Nothing in `supabase/` bakes in a derived palette either — the directory seed stores raw seeds, and
-grepping the old derived hexes across `supabase/` returns nothing.
+grepping the old derived hexes across `supabase/` returns nothing. *Corrected 2026-09-23:* this read
+"Accessibility is not at risk", but it measured the text roles only. The `accent-primary` fill has
+its own 3:1 floor, and a stale row can hold a fill under it;
+[`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status) owns which rows.
 
-**What is wrong is cosmetic and visible:** a chapter that never picked an accent has a row derived
+**For a chapter that never picked an accent, what is wrong is cosmetic and visible:** its row is derived
 from `#F2B72E`, so it renders `--primary: #F2B72E` beside a mark that was drawn in `#DDA220` until #2153 (L-08) and a
 Settings hex placeholder that now reads `#DDB844` — three nearly-but-not-quite matching golds on one
 screen,
@@ -279,15 +282,9 @@ A SQL backfill cannot regenerate these (the derivation is TypeScript, via the ve
 generator), so the options are a recompute pass through the API or clearing the Signet keys on rows
 that never carried a custom accent so they fall through to the CSS defaults. Precedent for the
 shape: `supabase/migrations/20260814120000_backfill_chapter_accent_color_from_branding.sql`.
-
-*Corrected 2026-09-23:* "Accessibility is not at risk" measured the text roles only. The
-`accent-primary` fill has its own 3:1 floor ([`accent-engine.md`](../design-system/accent-engine.md)
-§8), and a row derived against `#0E0D0B` can hold a fill under it: maroon `#800000` stored itself,
-1.37:1 on `--popover`, and navy `#1F4E79` 1.73:1, where today's engine paints `#F42F22` and
-`#8AC8FF`. Those chapters carried a custom accent, so the narrow option above leaves their switch
-track, focus border and poll selection under 3:1; only recomputing every row fixes them.
-[`accent-engine.md`](../design-system/accent-engine.md) §6 owns which rows, and #1165 is the
-backfill. The house-gold rows are the cosmetic case described above.
+*Corrected 2026-09-23:* only the recompute reaches a chapter that picked an accent, whose stored
+fill can be under 3:1 ([`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status)), so clearing keys can complement it but not
+replace it.
 
 ### L-03 — Danger text on `--popover`
 
