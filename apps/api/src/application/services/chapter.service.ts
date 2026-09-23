@@ -615,24 +615,38 @@ export class ChapterService {
   ): Promise<Chapter> {
     const existing = await this.chapterRepo.findById(chapterId);
     if (!existing) throw new NotFoundException('Chapter not found');
-    if (existing.logo_path) {
-      await this.storageProvider.deleteFile(
-        BRANDING_BUCKET,
-        existing.logo_path,
-      );
-    }
+    const previousPath = existing.logo_path ?? null;
+    // The column is cleared before the object is deleted, never after.
+    // `confirmLogoUpload` skips a confirm of the stored path as a no-op, and
+    // that is only sound while the stored path names an object that exists
+    // (the mint refuses an existing key). Deleting the object first let a
+    // failed update leave the column naming a free key, so a re-upload there
+    // changed the logo with no audit row.
     const chapter = await this.chapterRepo.update(chapterId, {
       logo_path: null,
     });
     // Only when there was a logo to remove: deleting nothing changes nothing,
     // and a row for it would mirror an empty event into `#chapter-audit`.
-    if (existing.logo_path) {
+    if (previousPath) {
       await this.recordLogoAudit(
         chapterId,
         actorUserId,
         'chapter_logo_removed',
-        { from: existing.logo_path, to: null },
+        { from: previousPath, to: null },
       );
+      try {
+        await this.storageProvider.deleteFile(BRANDING_BUCKET, previousPath);
+      } catch (error) {
+        // The removal has committed and been audited; what's left is an
+        // unreferenced object. Logged with its path for an operator to
+        // reconcile, like the chat attachment purge, rather than answering
+        // 500 for a removal that happened. #2592 tracks stale branding objects.
+        this.logger.warn('Failed to delete a removed chapter logo object', {
+          chapterId,
+          path: previousPath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
     return chapter;
   }

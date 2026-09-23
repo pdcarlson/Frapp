@@ -1358,6 +1358,35 @@ describe('ChapterService', () => {
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
+    it('clears the column before deleting the object, so a failed update keeps the logo whole', async () => {
+      // Object first used to leave the column naming a free key after a
+      // failed update; the mint would then re-sign it, and a confirm of the
+      // stored path writes no row, so the new logo went unaudited.
+      mockChapterRepo.findById.mockResolvedValue(withLogo);
+      mockChapterRepo.update.mockRejectedValue(new Error('db down'));
+
+      await expect(service.deleteLogo('ch-1', 'user-9')).rejects.toThrow(
+        'db down',
+      );
+
+      expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('treats a failed object delete as an orphan, not a failed removal', async () => {
+      mockChapterRepo.findById.mockResolvedValue(withLogo);
+      mockChapterRepo.update.mockResolvedValue(withoutLogo);
+      mockStorageProvider.deleteFile.mockRejectedValue(
+        new Error('storage down'),
+      );
+
+      await expect(service.deleteLogo('ch-1', 'user-9')).resolves.toEqual(
+        withoutLogo,
+      );
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'chapter_logo_removed' }),
+      );
+    });
+
     it('surfaces an audit failure rather than swallowing it', async () => {
       mockChapterRepo.findById.mockResolvedValue(withLogo);
       mockChapterRepo.update.mockResolvedValue(withoutLogo);
