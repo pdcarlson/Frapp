@@ -245,7 +245,7 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | No chapter | `Chapter settings` | `Select an active chapter to edit its branding, semester state, or billing configuration.` |
 | Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can start a new semester.` |
-| Accent label illegible | — | `Label text on this color reads at <n>:1, under the 4.5:1 minimum. Buttons and name tags using it will be hard to read — pick a lighter or darker shade.` |
+| Accent label illegible | — | `Label text on this color reads at <n>:1, under the 4.5:1 minimum. Buttons and your chat bubbles will be hard to read. Pick a lighter or darker shade.` |
 | Accent server contrast disclosure | — | `<Accent text on the app background\|Accent text on its own tinted background\|Text on the accent's solid fill> reads at <n>:1, under the 4.5:1 minimum. Try a lighter or darker shade of this hue and save again.` |
 | Rollover confirmation | `Start a new semester labelled "<label>"?` | `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.` · confirm `Start new semester` |
 | Delete field confirmation | `Delete the field "<label>"?` | `Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.` · confirm `Delete field` |

@@ -535,15 +535,12 @@ function SettingsPageContent() {
       setAccentContrastWarning(result?.failedContrastChecks ?? null);
       toast({
         title: "Accent color saved",
-        description: "Buttons, chat tags, and branded reports use it.",
+        description: "The dashboard now uses it.",
       });
     } catch (error) {
       toast({
         title: "Couldn't save accent color",
-        description: getErrorMessage(
-          error,
-          "Retry or check the accent color contrast.",
-        ),
+        description: getErrorMessage(error, "Retry, or check your connection."),
         variant: "destructive",
       });
     }
@@ -1156,8 +1153,8 @@ function SettingsPageContent() {
                     <p className="text-xs text-warning">
                       Label text on this color reads at{" "}
                       {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
-                      Buttons and name tags using it will be hard to read — pick
-                      a lighter or darker shade.
+                      Buttons and your chat bubbles will be hard to read. Pick a
+                      lighter or darker shade.
                     </p>
                   ) : null}
                   {/*

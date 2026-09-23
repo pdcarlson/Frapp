@@ -6,7 +6,7 @@ Behavior rules for the customization-heavy settings tabs (Accent, Roles, Fields,
 
 - A chapter sets **one colour**: the accent seed. Every accent role is derived from it, and the neutral ladder — backgrounds, borders, sidebar, text — is fixed rather than branded ([`../../ui/design-system/accent-engine.md`](../../ui/design-system/accent-engine.md) §1 and §5). A second **dark** colour existed until the #920 slice-9 cutover, which deleted the legacy engine it fed; #541 tracked building a picker for it and is obsolete. Accent-color rules, brand boundaries, and logo upload (the shared `image` kind in `@repo/validation`, not an Accent-tab-specific allowlist) are canon in [`../branding.md`](../branding.md).
 - Saving recomputes the chapter's `theme_palette` **server-side** and the client refetches and re-applies the accent roles immediately — no full reload.
-- **WCAG:** which accent roles are contrast-guaranteed is [`../../ui/design-system/accent-engine.md`](../../ui/design-system/accent-engine.md) §8's, and seed validation is [`../branding.md`](../branding.md) § Accent Color's. Derivation is archetype-agnostic.
+- **WCAG:** which accent roles are contrast-guaranteed is [`../../ui/design-system/accent-engine.md`](../../ui/design-system/accent-engine.md) §8's, and seed validation is [`../branding.md`](../branding.md) § Accent Color's. The tab's three contrast warnings are described in [`../branding.md` § Accent Color](../branding.md#accent-color) (the preview fallback) and [`writing.md` § Settings (dashboard)](../../ui/design-system/writing.md#settings-dashboard) (the label-ink check and the save's reported checks). Derivation is archetype-agnostic.
 
 ## Roles Tab
 
