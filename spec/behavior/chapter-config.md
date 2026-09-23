@@ -38,7 +38,7 @@ The customizable sub-resources surfaced through chapter config (full schema in [
 
 ## PATCH /chapters/current — core chapter profile
 
-Settings → Organization → "Chapter profile" does **not** go through the config PATCH above. The four core `chapters` columns — `name`, `university`, `donation_url`, `accent_color` — are written by `PATCH /v1/chapters/current`, guarded by `chapter-config:manage` (`CHAPTER_PROFILE_PERMISSION` in `@repo/validation`, which the Settings page's profile and accent saves also read). Until #2575 the route admitted `roles:manage` **or** `billing:manage` while the page gated on `chapter-config:manage`, so the default Treasurer could save through the API but not the page.
+Settings → Organization → "Chapter profile" does **not** go through the config PATCH above. The four core `chapters` columns — `name`, `university`, `donation_url`, `accent_color` — are written by `PATCH /v1/chapters/current`, guarded by `chapter-config:view` **and** `chapter-config:manage` (`CHAPTER_PROFILE_PERMISSIONS` in `@repo/validation`, which the Settings page's profile and accent saves also read; the logo routes below use the same pair). Until #2575 the route admitted `roles:manage` **or** `billing:manage` while the page gated on `chapter-config:manage`, so the default Treasurer could save through the API but not the page. Why `view` too: [`rbac.md`](rbac.md)'s `chapter-config:manage` row.
 
 `accent_color` sits here rather than under `branding` despite reading as branding: the accent editor posts to this route, and a save carrying a hex mirrors the value into `branding.colors.accent` (authoritative per [`spec/behavior/branding.md`](branding.md)) and recomputes `theme_palette` in the same write.
 
@@ -53,6 +53,12 @@ Three details specific to this writer:
 - **The row is written after the update lands**, so a failed save leaves no audit row claiming it happened, and a failed audit write surfaces as a `500` rather than being swallowed.
 
 **Known residue (#1599):** because the update and the audit insert are separate statements, an audit failure leaves a committed change the officer was told had failed, and an identical retry then produces an empty diff and writes nothing — so on this route the change stays unaudited. The config PATCH shares the non-transactional write but recovers differently; `settings/README.md` records both. Neither writer guarantees "every mutation is audited"; closing it needs both statements in one transaction.
+
+### The logo routes
+
+`POST /v1/chapters/current/logo-url` mints the signed upload, `POST /v1/chapters/current/logo` confirms it into `logo_path`, and `DELETE /v1/chapters/current/logo` removes it. Storage rules are in [`branding.md`](branding.md) § Logo. All three take the same `CHAPTER_PROFILE_PERMISSIONS` as the profile PATCH, and the two writes return the same member-safe projection (`toChapterMemberView`, #930), never the raw row.
+
+**Audit (#2575).** A confirm writes a member-visible `chapter_audit_log` row with action `chapter_logo_updated`; a delete that removed a logo writes `chapter_logo_removed`. Both use `target_type` `chapter` and a `diff` of `{ logo_path: { from, to } }`. Unlike the profile PATCH, a confirm writes its row even when `from` equals `to`: the path is `logo.{ext}`, so a new PNG over an old one keeps the path while every branded surface repaints. A delete when no logo was set writes nothing. The rows are written after the update lands, with the same #1599 residue as above.
 
 ## POST /chapters/:id/theme-palette
 

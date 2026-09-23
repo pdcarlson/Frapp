@@ -37,7 +37,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `semester:rollover`   | Trigger a new semester rollover                        |
 | `reports:export`      | Export attendance, points, and roster reports          |
 | `chapter-config:view` | Read chapter config, custom roles and custom fields; with `members:view`, the audit log |
-| `chapter-config:manage` | With `chapter-config:view`, which every one of these routes also requires: change chapter config (including the theme-palette recompute) and write custom roles and custom fields. On its own: edit the chapter profile, accent and logo (`PATCH /v1/chapters/current` and the logo routes), which the API and the Settings page both read from `CHAPTER_PROFILE_PERMISSION` in `@repo/validation` (#2575) |
+| `chapter-config:manage` | With `chapter-config:view`, which every one of these routes also requires: change chapter config (including the theme-palette recompute), write custom roles and custom fields, and edit the chapter profile, accent and logo (`PATCH /v1/chapters/current` and the logo routes, #2575). The profile routes need `view` too because the Settings screen they are edited from needs it to open, so `manage` alone would reach a save the page can't show. The API and the Settings page read that pair from `CHAPTER_PROFILE_PERMISSIONS` in `@repo/validation` |
 
 Chapters can define **custom permission strings** beyond this catalog. Custom permissions are used for:
 

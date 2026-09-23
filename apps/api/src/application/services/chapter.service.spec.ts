@@ -1158,11 +1158,16 @@ describe('ChapterService', () => {
       created_at: '2024-01-01',
       updated_at: '2024-01-02',
     };
+    mockChapterRepo.findById.mockResolvedValue({
+      ...updatedChapter,
+      logo_path: null,
+    });
     mockChapterRepo.update.mockResolvedValue(updatedChapter);
 
     const result = await service.confirmLogoUpload(
       'ch-1',
       'chapters/ch-1/branding/logo.png',
+      'user-9',
     );
 
     expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
@@ -1176,9 +1181,139 @@ describe('ChapterService', () => {
       service.confirmLogoUpload(
         'ch-1',
         'chapters/other-chapter/branding/logo.png',
+        'user-9',
       ),
     ).rejects.toThrow(BadRequestException);
     expect(mockChapterRepo.update).not.toHaveBeenCalled();
+    expect(mockAuditLog.record).not.toHaveBeenCalled();
+  });
+
+  // The logo routes share the profile edit's permissions (#2575), and every
+  // other edit behind them is audited, so a logo change is too.
+  describe('logo audit', () => {
+    const withLogo = {
+      id: 'ch-1',
+      logo_path: 'chapters/ch-1/branding/logo.png',
+    } as Chapter;
+    const withoutLogo = { id: 'ch-1', logo_path: null } as Chapter;
+
+    it('audits a confirmed upload with the path it replaced', async () => {
+      mockChapterRepo.findById.mockResolvedValue(withoutLogo);
+      mockChapterRepo.update.mockResolvedValue(withLogo);
+
+      await service.confirmLogoUpload(
+        'ch-1',
+        'chapters/ch-1/branding/logo.png',
+        'user-9',
+      );
+
+      expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
+      expect(mockAuditLog.record).toHaveBeenCalledWith({
+        chapterId: 'ch-1',
+        actorUserId: 'user-9',
+        action: 'chapter_logo_updated',
+        targetType: 'chapter',
+        targetId: 'ch-1',
+        diff: {
+          logo_path: { from: null, to: 'chapters/ch-1/branding/logo.png' },
+        },
+        memberVisible: true,
+      });
+    });
+
+    it('still audits a replacement that keeps the same path', async () => {
+      // `logo.<ext>`: a new PNG over an old one lands on the same path, and
+      // every branded surface repaints all the same.
+      mockChapterRepo.findById.mockResolvedValue(withLogo);
+      mockChapterRepo.update.mockResolvedValue(withLogo);
+
+      await service.confirmLogoUpload(
+        'ch-1',
+        'chapters/ch-1/branding/logo.png',
+        'user-9',
+      );
+
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'chapter_logo_updated',
+          diff: {
+            logo_path: {
+              from: 'chapters/ch-1/branding/logo.png',
+              to: 'chapters/ch-1/branding/logo.png',
+            },
+          },
+        }),
+      );
+    });
+
+    it('audits a removal', async () => {
+      mockChapterRepo.findById.mockResolvedValue(withLogo);
+      mockChapterRepo.update.mockResolvedValue(withoutLogo);
+
+      await service.deleteLogo('ch-1', 'user-9');
+
+      expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
+      expect(mockAuditLog.record).toHaveBeenCalledWith({
+        chapterId: 'ch-1',
+        actorUserId: 'user-9',
+        action: 'chapter_logo_removed',
+        targetType: 'chapter',
+        targetId: 'ch-1',
+        diff: {
+          logo_path: { from: 'chapters/ch-1/branding/logo.png', to: null },
+        },
+        memberVisible: true,
+      });
+    });
+
+    it('writes no row for removing a logo that was never set', async () => {
+      mockChapterRepo.findById.mockResolvedValue(withoutLogo);
+      mockChapterRepo.update.mockResolvedValue(withoutLogo);
+
+      await service.deleteLogo('ch-1', 'user-9');
+
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('writes the row only after the update lands', async () => {
+      mockChapterRepo.findById.mockResolvedValue(withLogo);
+      mockChapterRepo.update.mockRejectedValue(new Error('db down'));
+
+      await expect(service.deleteLogo('ch-1', 'user-9')).rejects.toThrow(
+        'db down',
+      );
+      await expect(
+        service.confirmLogoUpload(
+          'ch-1',
+          'chapters/ch-1/branding/logo.png',
+          'user-9',
+        ),
+      ).rejects.toThrow('db down');
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('surfaces an audit failure rather than swallowing it', async () => {
+      mockChapterRepo.findById.mockResolvedValue(withLogo);
+      mockChapterRepo.update.mockResolvedValue(withoutLogo);
+      mockAuditLog.record.mockRejectedValue(new Error('audit down'));
+
+      await expect(service.deleteLogo('ch-1', 'user-9')).rejects.toThrow(
+        'audit down',
+      );
+    });
+
+    it('rejects a confirm for a chapter that no longer exists', async () => {
+      mockChapterRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.confirmLogoUpload(
+          'ch-1',
+          'chapters/ch-1/branding/logo.png',
+          'user-9',
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+    });
   });
 
   it('should delete logo and clear logo_path', async () => {
@@ -1201,7 +1336,7 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue(chapterWithLogo);
     mockChapterRepo.update.mockResolvedValue(updatedChapter);
 
-    const result = await service.deleteLogo('ch-1');
+    const result = await service.deleteLogo('ch-1', 'user-9');
 
     expect(mockStorageProvider.deleteFile).toHaveBeenCalledWith(
       'branding',
@@ -1232,7 +1367,7 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue(chapterWithoutLogo);
     mockChapterRepo.update.mockResolvedValue(chapterWithoutLogo);
 
-    const result = await service.deleteLogo('ch-1');
+    const result = await service.deleteLogo('ch-1', 'user-9');
 
     expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
     expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
@@ -1244,7 +1379,9 @@ describe('ChapterService', () => {
   it('should throw NotFoundException when chapter to delete logo from is not found', async () => {
     mockChapterRepo.findById.mockResolvedValue(null);
 
-    await expect(service.deleteLogo('ch-1')).rejects.toThrow(NotFoundException);
+    await expect(service.deleteLogo('ch-1', 'user-9')).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   // The persisted selection is stamped into the access token as the

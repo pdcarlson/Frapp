@@ -93,25 +93,38 @@ export const CHAT_REPORT_QUEUE_PERMISSIONS = [
 ] as const;
 
 /**
- * What it takes to edit the chapter's profile and accent (#2575): the name,
- * university, donation URL and accent through `PATCH /v1/chapters/current`,
- * and the logo through its upload and delete routes.
+ * What it takes to edit the chapter's profile, accent and logo (#2575):
+ * `chapter-config:view` **and** `chapter-config:manage`, or the wildcard. That
+ * covers the name, university, donation URL and accent through
+ * `PATCH /v1/chapters/current`, and the logo through its upload and delete
+ * routes.
  *
- * `chapter-config:manage`, because the profile is chapter configuration
- * (`spec/behavior/rbac.md`). Until #2575 the API admitted `roles:manage` or
- * `billing:manage` while the Settings page gated on this permission, so the
- * default Treasurer could save through the API but not the page, and a role
- * holding only this permission got an enabled Save that answered 403.
+ * `chapter-config:manage`, because the profile is chapter configuration; and
+ * with `chapter-config:view`, like every other route that permission gates,
+ * because the Settings screen these edits live on needs `view` to open at all
+ * (its nav entry, and the `GET /chapters/:id/config` read its tabs wait on). A
+ * role holding `manage` alone could otherwise save through the API from a page
+ * it cannot reach. `spec/behavior/rbac.md` records the rule.
  *
- * **The one spelling**, so the two can't drift again. Code that reads it:
+ * Until #2575 the API admitted `roles:manage` or `billing:manage` while the
+ * Settings page gated on `chapter-config:manage`, so the default Treasurer could
+ * save through the API but not the page.
  *
- * - the four `ChapterController` routes above, whose decorators
+ * **The one spelling**, so the two sides can't drift again. Code that reads it:
+ *
+ * - `ChapterController`'s `update`, `requestLogoUploadUrl`,
+ *   `confirmLogoUpload` and `deleteLogo` routes, whose decorators
  *   `chapter.controller.spec.ts` pins to it;
  * - the Settings page's profile and accent saves (`settings-page.tsx`,
- *   `canEditProfile`).
+ *   `canEditProfile`), pinned by `settings-profile-permission.spec.tsx`.
  *
  * Prose that restates it: `spec/behavior/rbac.md`'s `chapter-config:manage`
- * row, `spec/behavior/chapter-config.md` § PATCH /chapters/current, and the
- * `chapters/current` row of `docs/internal/security/AUTHORIZATION_MODEL.md`.
+ * row, `spec/behavior/chapter-config.md` § "PATCH /chapters/current — core
+ * chapter profile", the `chapters/current` row of
+ * `docs/internal/security/AUTHORIZATION_MODEL.md`, and the #930 section of
+ * `docs/internal/security/SECURITY_FIXES.md`.
  */
-export const CHAPTER_PROFILE_PERMISSION = "chapter-config:manage" as const;
+export const CHAPTER_PROFILE_PERMISSIONS = [
+  "chapter-config:view",
+  "chapter-config:manage",
+] as const;

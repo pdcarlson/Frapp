@@ -91,10 +91,9 @@ describe("SettingsOrgTab", () => {
   });
 
   it("gates Save profile on the profile permission, not on config", () => {
-    // `PATCH /v1/chapters/current` guards on `CHAPTER_PROFILE_PERMISSION`, so
+    // `PATCH /v1/chapters/current` guards on `CHAPTER_PROFILE_PERMISSIONS`, so
     // the profile save follows `canEditProfile`; the config saves follow
-    // `canManage` (#2575). They are the same permission today, but each save
-    // must read the one its route checks.
+    // `canManage` (#2575). Each save reads the gate its own route checks.
     const { rerender } = render(
       <SettingsOrgTab
         archetypeKey="ifc"
@@ -103,9 +102,7 @@ describe("SettingsOrgTab", () => {
         canEditProfile
       />,
     );
-    expect(
-      screen.getByRole("button", { name: /save profile/i }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: /save profile/i })).toBeEnabled();
     rerender(
       <SettingsOrgTab
         archetypeKey="ifc"
@@ -117,5 +114,23 @@ describe("SettingsOrgTab", () => {
     expect(
       screen.getByRole("button", { name: /save profile/i }),
     ).toBeDisabled();
+  });
+
+  it("names both profile permissions when the caller lacks them", () => {
+    render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        canEditProfile={false}
+      />,
+    );
+    expect(
+      screen.getByText(
+        (_, node) =>
+          node?.tagName === "P" &&
+          node.textContent ===
+            "Editing chapter settings requires the chapter-config:view and chapter-config:manage permissions.",
+      ),
+    ).toBeInTheDocument();
   });
 });

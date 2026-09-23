@@ -47,7 +47,7 @@ import {
 } from '../dtos/chapter-response.dto';
 import { toChapterMemberView } from '../../application/services/chapter-member-view';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { CHAPTER_PROFILE_PERMISSION } from '@repo/validation';
+import { CHAPTER_PROFILE_PERMISSIONS } from '@repo/validation';
 
 /**
  * Compile-time guard that every field `PATCH /chapters/current` can write is
@@ -144,7 +144,7 @@ export class ChapterController {
 
   @Patch('current')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-  @RequirePermissions(CHAPTER_PROFILE_PERMISSION)
+  @RequirePermissions(...CHAPTER_PROFILE_PERMISSIONS)
   @ApiOperation({ summary: 'Update current chapter settings' })
   @ApiOkResponse({ type: UpdateChapterResponseDto })
   async update(
@@ -153,9 +153,9 @@ export class ChapterController {
     @Body() dto: UpdateChapterDto,
   ) {
     // Projected for the same reason `getCurrent` is (#930), and not only for
-    // symmetry: this route admits `chapter-config:manage`, which does not imply
-    // `billing:view`, so a role carrying it alone would otherwise read the
-    // billing identifiers straight out of the write response.
+    // symmetry: `CHAPTER_PROFILE_PERMISSIONS` does not imply `billing:view`, so
+    // a role carrying only those would otherwise read the billing identifiers
+    // straight out of the write response.
     const { chapter, failedContrastChecks } = await this.chapterService.update(
       chapterId,
       dto,
@@ -170,7 +170,7 @@ export class ChapterController {
   @Post('current/logo-url')
   @ThrottleFanOutWrite()
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-  @RequirePermissions(CHAPTER_PROFILE_PERMISSION)
+  @RequirePermissions(...CHAPTER_PROFILE_PERMISSIONS)
   @ApiOperation({ summary: 'Generate signed upload URL for chapter logo' })
   @ApiCreatedResponse({ type: LogoUploadUrlResponseDto })
   async requestLogoUploadUrl(
@@ -201,20 +201,36 @@ export class ChapterController {
 
   @Post('current/logo')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-  @RequirePermissions(CHAPTER_PROFILE_PERMISSION)
+  @RequirePermissions(...CHAPTER_PROFILE_PERMISSIONS)
   @ApiOperation({ summary: 'Confirm logo upload and update chapter' })
   async confirmLogoUpload(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: ConfirmLogoDto,
   ) {
-    return this.chapterService.confirmLogoUpload(chapterId, dto.storage_path);
+    // Projected like `update`, for the same reason (#930): these routes share
+    // its permissions, which do not imply `billing:view`, and the service
+    // returns the whole `chapters` row.
+    return toChapterMemberView(
+      await this.chapterService.confirmLogoUpload(
+        chapterId,
+        dto.storage_path,
+        userId,
+      ),
+    );
   }
 
   @Delete('current/logo')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-  @RequirePermissions(CHAPTER_PROFILE_PERMISSION)
+  @RequirePermissions(...CHAPTER_PROFILE_PERMISSIONS)
   @ApiOperation({ summary: 'Remove chapter logo' })
-  async deleteLogo(@CurrentChapterId() chapterId: string) {
-    return this.chapterService.deleteLogo(chapterId);
+  async deleteLogo(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    // Projected for the reason `confirmLogoUpload` is.
+    return toChapterMemberView(
+      await this.chapterService.deleteLogo(chapterId, userId),
+    );
   }
 }

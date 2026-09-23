@@ -59,7 +59,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   can,
-  CHAPTER_PROFILE_PERMISSION,
+  canAll,
+  CHAPTER_PROFILE_PERMISSIONS,
   isOpsNudgeModuleKey,
 } from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -226,8 +227,8 @@ function SettingsPageContent() {
   // The profile and accent saves go through `PATCH /v1/chapters/current`, which
   // guards on this constant; reading the same one keeps the page from enabling
   // a save the server refuses, or disabling one it accepts (#2575).
-  const canEditProfile = can(
-    CHAPTER_PROFILE_PERMISSION,
+  const canEditProfile = canAll(
+    CHAPTER_PROFILE_PERMISSIONS,
     permissionsPayload?.permissions,
   );
 

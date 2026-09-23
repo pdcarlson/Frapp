@@ -555,6 +555,8 @@ export class ChapterService {
   async confirmLogoUpload(
     chapterId: string,
     storagePath: string,
+    /** The member confirming the upload; the audit row's actor. */
+    actorUserId: string,
   ): Promise<Chapter> {
     if (!storagePath.startsWith(`chapters/${chapterId}/branding/`)) {
       throw new BadRequestException(
@@ -577,16 +579,79 @@ export class ChapterService {
     } catch (error) {
       throw new BadRequestException((error as Error).message);
     }
-    return this.chapterRepo.update(chapterId, { logo_path: storagePath });
+    const existing = await this.chapterRepo.findById(chapterId);
+    if (!existing) throw new NotFoundException('Chapter not found');
+    const chapter = await this.chapterRepo.update(chapterId, {
+      logo_path: storagePath,
+    });
+    // Written on every confirm, even when `from` equals `to`. The storage path
+    // is `logo.<ext>`, so replacing a PNG with another PNG keeps the path while
+    // every branded surface repaints; skipping equal paths, as the profile diff
+    // does for re-sent fields, would leave a real logo change unaudited. The
+    // server can't see whether the bytes moved, so a confirm with no upload
+    // behind it also gets a row: a spurious row is the cheaper mistake.
+    await this.recordLogoAudit(chapterId, actorUserId, 'chapter_logo_updated', {
+      from: existing.logo_path ?? null,
+      to: storagePath,
+    });
+    return chapter;
   }
 
-  async deleteLogo(chapterId: string): Promise<Chapter> {
-    const chapter = await this.chapterRepo.findById(chapterId);
-    if (!chapter) throw new NotFoundException('Chapter not found');
-    if (chapter.logo_path) {
-      await this.storageProvider.deleteFile(BRANDING_BUCKET, chapter.logo_path);
+  async deleteLogo(
+    chapterId: string,
+    /** The member removing the logo; the audit row's actor. */
+    actorUserId: string,
+  ): Promise<Chapter> {
+    const existing = await this.chapterRepo.findById(chapterId);
+    if (!existing) throw new NotFoundException('Chapter not found');
+    if (existing.logo_path) {
+      await this.storageProvider.deleteFile(
+        BRANDING_BUCKET,
+        existing.logo_path,
+      );
     }
-    return this.chapterRepo.update(chapterId, { logo_path: null });
+    const chapter = await this.chapterRepo.update(chapterId, {
+      logo_path: null,
+    });
+    // Only when there was a logo to remove: deleting nothing changes nothing,
+    // and a row for it would mirror an empty event into `#chapter-audit`.
+    if (existing.logo_path) {
+      await this.recordLogoAudit(
+        chapterId,
+        actorUserId,
+        'chapter_logo_removed',
+        { from: existing.logo_path, to: null },
+      );
+    }
+    return chapter;
+  }
+
+  /**
+   * Audit a logo change (#2575). The logo routes share the profile edit's
+   * permissions, and every other edit behind them writes a member-visible
+   * `chapter_audit_log` row, so these do too.
+   *
+   * Its own action rather than `chapter_profile_updated`, because the diff
+   * means something different: a profile row lists only fields whose value
+   * moved, while a logo row is written for a replaced image whose path did not
+   * (see `confirmLogoUpload`). Written after the update lands, like
+   * `recordProfileAudit`, with the same non-transactional residue (#1599).
+   */
+  private async recordLogoAudit(
+    chapterId: string,
+    actorUserId: string,
+    action: 'chapter_logo_updated' | 'chapter_logo_removed',
+    logoPath: { from: string | null; to: string | null },
+  ): Promise<void> {
+    await this.auditLog.record({
+      chapterId,
+      actorUserId,
+      action,
+      targetType: 'chapter',
+      targetId: chapterId,
+      diff: { logo_path: logoPath },
+      memberVisible: true,
+    });
   }
 
   private mapMembershipSummary(

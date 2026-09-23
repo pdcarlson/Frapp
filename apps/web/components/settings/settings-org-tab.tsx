@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   ARCHETYPES,
@@ -9,7 +9,7 @@ import {
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
-  CHAPTER_PROFILE_PERMISSION,
+  CHAPTER_PROFILE_PERMISSIONS,
   type PatchChapterConfig,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -52,8 +52,8 @@ type Props = {
   /** Whether the caller holds `chapter-config:manage`. */
   canManage: boolean;
   /**
-   * Whether the caller may save the chapter profile: the permission
-   * `PATCH /v1/chapters/current` guards on, `CHAPTER_PROFILE_PERMISSION`
+   * Whether the caller may save the chapter profile: the permissions
+   * `PATCH /v1/chapters/current` guards on, `CHAPTER_PROFILE_PERMISSIONS`
    * (#2575).
    */
   canEditProfile: boolean;
@@ -173,26 +173,31 @@ export function SettingsOrgTab({
     setPendingArchetype(null);
   }
 
-  const permissionHint = (permission: string) => (
+  const permissionHint = (permissions: readonly string[]) => (
     <p className="text-xs text-muted-foreground">
       Editing chapter settings requires the{" "}
-      {/*
-        `--secondary` aliases `--card` and this sits in a `CardContent`, so
-        `bg-secondary` here was 1.000:1 — a chip with no chip. `--surface-1` is
-        the step *below* the card, which is what §4 already specifies for an
-        input fill inside a card, and a recess cannot invert the way a raised
-        step can.
-      */}
-      <code className="rounded bg-surface-1 px-1 py-0.5">{permission}</code>{" "}
-      permission.
+      {permissions.map((permission, index) => (
+        <Fragment key={permission}>
+          {index > 0 ? " and " : null}
+          {/*
+            `--secondary` aliases `--card` and this sits in a `CardContent`, so
+            `bg-secondary` here was 1.000:1 — a chip with no chip. `--surface-1`
+            is the step *below* the card, which is what §4 already specifies for
+            an input fill inside a card, and a recess cannot invert the way a
+            raised step can.
+          */}
+          <code className="rounded bg-surface-1 px-1 py-0.5">{permission}</code>
+        </Fragment>
+      ))}{" "}
+      {permissions.length > 1 ? "permissions." : "permission."}
     </p>
   );
   const manageHint = canManage
     ? null
-    : permissionHint("chapter-config:manage");
+    : permissionHint(["chapter-config:manage"]);
   const profileHint = canEditProfile
     ? null
-    : permissionHint(CHAPTER_PROFILE_PERMISSION);
+    : permissionHint(CHAPTER_PROFILE_PERMISSIONS);
 
   return (
     <div className="space-y-6">
