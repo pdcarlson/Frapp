@@ -116,6 +116,14 @@ export interface BlockedUserIds {
   retry: () => void;
   /** True while any read of the list is in flight, including a retry. */
   isRetrying: boolean;
+  /**
+   * True while a read is parked waiting for the network (TanStack's `paused`
+   * fetch status: the device is offline, so the query's retry waits for
+   * reconnect). `retry` cannot run it any sooner — the read resumes on its own
+   * when the device is back online — so a retry control should say that
+   * rather than offer a tap that visibly does nothing.
+   */
+  isPaused: boolean;
 }
 
 /** One server read of the list, and which confirmed changes it could reflect. */
@@ -275,7 +283,14 @@ export function useBlockedUserIds(): BlockedUserIds {
         ? "unavailable"
         : "loading";
 
-  return { ids, unblocked, status, retry, isRetrying: isFetching };
+  return {
+    ids,
+    unblocked,
+    status,
+    retry,
+    isRetrying: isFetching,
+    isPaused: fetchStatus === "paused",
+  };
 }
 
 /**

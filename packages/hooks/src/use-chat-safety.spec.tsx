@@ -105,6 +105,7 @@ describe("useBlockedUserIds", () => {
     expect(GET).toHaveBeenCalledWith("/v1/chat/blocks");
     expect([...result.current.ids]).toEqual([ALICE]);
     expect(result.current.unblocked.size).toBe(0);
+    expect(result.current.isPaused).toBe(false);
   });
 
   it("an empty list is ready, and is not the same thing as a failed read", async () => {
@@ -187,9 +188,13 @@ describe("useBlockedUserIds", () => {
       // The default network mode parks the read without calling it at all.
       expect(GET).not.toHaveBeenCalled();
       expect(result.current.status).toBe("unavailable");
+      // …and says so, because a Retry tap cannot run it any sooner.
+      expect(result.current.isPaused).toBe(true);
+      expect(result.current.isRetrying).toBe(false);
 
       act(() => onlineManager.setOnline(true));
       await waitFor(() => expect(result.current.status).toBe("ready"));
+      expect(result.current.isPaused).toBe(false);
     });
   });
 
