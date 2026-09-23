@@ -134,9 +134,16 @@ describe("settings semester rollover subscription gating", () => {
     // only mounts once that tab is selected — and it patches `chapter`,
     // another `@FreeTier` route.
     chapter.incomplete();
+    const user = userEvent.setup();
     render(<SettingsPage />);
 
-    await userEvent.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    // A savable draft first: an empty one disables Save for its own reason
+    // (see "the accent save sends the colour the preview shows" below).
+    await user.type(
+      screen.getByLabelText(/accent color hex value/i),
+      "#8B0000",
+    );
 
     expect(
       screen.getByRole("button", { name: /save accent color/i }),
@@ -231,6 +238,68 @@ describe("the accent preview reports its own legibility", () => {
     await user.clear(hex);
     await user.type(hex, "#F2B72E");
     expect(screen.queryByText(/under the 4\.5:1 minimum/i)).toBeNull();
+  });
+});
+
+describe("the accent save sends the colour the preview shows", () => {
+  /*
+   * The preview reads the draft through `normalizeHex`, which trims it and
+   * expands 3-digit shorthand. The save used to send the raw draft, so `#08E`
+   * previewed as `#0088EE` and then failed the DTO's `^#[0-9A-Fa-f]{6}$` with a
+   * 400; an empty or blank draft sent no `accent_color`, which the API answers
+   * as a successful no-op, so the toast claimed a save that wrote nothing.
+   */
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockUpdateChapter.mockResolvedValue({
+      id: "chap-1",
+      failedContrastChecks: [],
+    });
+  });
+
+  const saveButton = () =>
+    screen.getByRole("button", { name: /save accent color/i });
+  const notHex = () => screen.queryByText(/use a hex code like #8B0000/i);
+
+  it("saves a shorthand or padded hex as the #RRGGBB it previewed", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    const hex = screen.getByLabelText(/accent color hex value/i);
+
+    for (const [draft, saved] of [
+      ["#08E", "#0088EE"],
+      [" #8b0000 ", "#8B0000"],
+    ] as const) {
+      await user.clear(hex);
+      await user.type(hex, draft);
+      await user.click(saveButton());
+      expect(mockUpdateChapter).toHaveBeenLastCalledWith({
+        accent_color: saved,
+      });
+    }
+  });
+
+  it("disables Save and says why for a draft that is not a hex code", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    const hex = screen.getByLabelText(/accent color hex value/i);
+
+    for (const draft of ["#8B00", "crimson", "   ", ""]) {
+      await user.clear(hex);
+      if (draft) await user.type(hex, draft);
+      expect(saveButton()).toBeDisabled();
+      expect(notHex()).toBeInTheDocument();
+      // The preview is the fallback gold there, which its ink clears, so the
+      // label-ink warning never promises what a save that can't happen picks.
+      expect(screen.queryByText(/saving picks a label color/i)).toBeNull();
+    }
+
+    await user.type(hex, "#8B0000");
+    expect(saveButton()).toBeEnabled();
+    expect(notHex()).toBeNull();
   });
 });
 

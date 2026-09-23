@@ -84,8 +84,8 @@ export const CI_CHECKS = [
   // command spells the guard out itself, because a reader who stops at that note
   // never reaches this one — `branch-protection-diff.test.mjs` enforces exactly
   // that rule, so deleting this paragraph fails the suite rather than silently
-  // orphaning the nine notes that delegate to it. (Eleven ROLLOUT notes in all:
-  // this one and web-production-build carry the guard; the other nine delegate.)
+  // orphaning the ten notes that delegate to it. (Twelve ROLLOUT notes in all:
+  // this one and web-production-build carry the guard; the other ten delegate.)
   "secret-scan",
   // Clean-checkout guard: runs `npm ci && npm run check-types && npm run lint` with
   // no prebuilt shared packages, so a regression in turbo.json's `^build` dependency
@@ -235,6 +235,31 @@ export const CI_CHECKS = [
   // writes nothing. See the secret-scan note above for why the bare command and
   // the missing-`--` form are both hazards.
   "web-production-build",
+  // Every migration applied from empty to an in-process Postgres (PGlite), with
+  // the database's security posture asserted on the result
+  // (`scripts/check-pglite-migrations.mjs`): every `public` table enables RLS,
+  // the chat hot-path policies keep their shape, `chapter_audit_log` stays
+  // append-only, and every `SECURITY DEFINER` function in `public` pins
+  // `pg_temp` last. No other check runs the corpus from empty:
+  // `migration-safety` and `migration-lock-safety` read the SQL without
+  // executing it, and `migration-replay` applies only a PR's pending tail.
+  //
+  // Required since #2538. It was advisory with no recorded reason, while
+  // `AUTHORIZATION_MODEL.md` and the DB rollback playbook described it as the
+  // check that stops a bad migration; a red run that blocks nothing made both
+  // untrue. What it asserts are security invariants, not style.
+  //
+  // Path-gated by a JOB-level `if:` on `changes.pglite` in `ci.yml`, whose
+  // filter must list every file the check reads: an out-of-scope PR reports the
+  // job skipped, which satisfies a required check, so a missed input merges
+  // green and first fails on `main`, where `validate-deploy-sha` then refuses
+  // the commit. Every push to `main` runs it in full. Its one `needs:` parent,
+  // `changes`, is required.
+  //
+  // ROLLOUT: same caveat as secret-scan — required only once the
+  // pglite-migrations job exists on the target branch and has run green. It
+  // already runs on every push to `main`.
+  "pglite-migrations",
   // NOT here on purpose: `duplicate-detection` (jscpd). jscpd has no clone-level
   // baseline, so the only lever is a repo-wide duplication percentage — too coarse
   // to block a merge on, since it cannot tell one bad copy-paste from ordinary

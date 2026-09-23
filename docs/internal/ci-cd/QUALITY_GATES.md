@@ -18,6 +18,7 @@ baseline story actually supports.
 | oasdiff breaking changes | `npm run check:api-breaking` | step in `api-contract-check` | **Advisory** | Every consumer is in this repo and ships with the change |
 | `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | A large undecorated-route backlog (count it, see below) and no ESLint baseline mechanism |
 | jscpd duplication | `npm run check:duplication` | `duplicate-detection` | **Advisory** | No clone-level baseline exists; a repo-wide % is too coarse to block on |
+| Migration corpus + RLS posture | `npm run check:pglite-migrations` | `pglite-migrations` | **Required** | Nothing to grandfather: it applies every migration from empty and asserts security invariants (RLS on every `public` table, `pg_temp` pinned last in `SECURITY DEFINER` functions, an append-only audit log), which either hold or do not. Advisory until #2538, with no recorded reason |
 | 375px responsive floor | `npm run test:floor -w apps/web` | `web-responsive-floor` | **Required** | No baseline at all — it reads one integer per route. Nothing to grandfather and nothing to drift |
 | Vercel-parity production build | `npm ci --omit=dev` + `turbo run build --filter=web --filter=landing` | `web-production-build` | **Required** | Nothing to grandfather: the build either succeeds on a pruned tree or it does not, and it was already succeeding when the job landed. Advisory was never on the table — the two failures it catches (#1331, #1372) both reached production precisely because nothing blocked on them |
 
@@ -314,9 +315,9 @@ That mechanism is why this gate is advisory. A repo-wide percentage cannot disti
 copy-paste from ordinary drift, which is too coarse to block a merge on.
 
 **Advisory here means the job is allowed to go red**, not that it is silenced. `duplicate-detection`
-is deliberately absent from `CI_CHECKS`, so a failure reports loudly and blocks nothing —
-`pglite-migrations` is advisory the same way. (`web-visual-regression` was a third, and was deleted
-rather than kept red.) It must **not** carry `continue-on-error`: that key rewrites the
+is deliberately absent from `CI_CHECKS`, so a failure reports loudly and blocks nothing.
+(`web-visual-regression` was advisory too, and was deleted rather than kept red; `pglite-migrations`
+was advisory until #2538 made it required.) It must **not** carry `continue-on-error`: that key rewrites the
 step's conclusion to success, so the job goes green and a breached threshold becomes invisible. An
 advisory gate nobody can see is not advisory, it is off.
 

@@ -8,8 +8,9 @@ Each module is delivered as a consistent set of surfaces:
 
 - **Slash command(s)** in chat — the primary way members create and act on the module's artifacts.
 - **Rich message renderer** — one renderer per artifact type (`kind="<module>"`), keyed off the artifact `kind`. A module may register several (e.g. dues needs both `dues_invoice` and `dues_reminder`).
-- **System channel** — `#<module>` (e.g. `#events`, `#dues`) where the module's system messages land.
 - **Optional dashboard surface** — a longer-form view (calendar, kanban, leaderboard) only when it materially adds value. The dashboard is always secondary to chat.
+
+A module gets **no system channel of its own** (decided 2026-09-23, #576). This spec used to promise a `#<module>` channel per enabled module (`#events`, `#dues`, …), created on enable and muted on disable. It was dropped before any was built: nothing posted to such a channel, every paid module would have added an empty channel to every member's list, and once seeded into every chapter, removing them again would take a destructive data migration. A module's cards land in the channel where its slash command ran, and its reminders go out as pushes or direct messages ([`notifications.md`](notifications.md)). The one system channel is `#chapter-audit` ([`chat/integrations.md`](chat/integrations.md#chapter-audit-system-channel-bridge)).
 
 Chat-side actions go through the NestJS chat routes (`POST /v1/channels/:id/messages`, `POST /v1/channels/messages/:messageId/actions`) — the Edge Functions this section once named were retired by ADR-11 and `supabase/functions/` no longer exists. Heavy compute goes through NestJS RPC; the **client** posts a cache-only `kind="loading"` placeholder, which the Realtime echo of the server's card reconciles in place by `client_message_id`.
 
@@ -17,8 +18,7 @@ Chat-side actions go through the NestJS chat routes (`POST /v1/channels/:id/mess
 
 - A module is enabled per chapter via the `enabled_modules` boolean map on chapter config. Free-tier modules are always-on in the sense the UI enforces: `alwaysOn` in `MODULE_CATALOG` locks their Settings toggle, though the config PATCH itself does not yet reject disabling one. Every other module is enabled **unless** `enabled_modules[key]` is explicitly `false` — absence is not disablement — and each archetype seed writes an explicit value for every key at chapter creation; the operations-heavy archetypes turn most paid modules on, while `honor` and `colony` deliberately do not.
 - Module state is **always read from chapter config, never from a `window.*` global**. Renderers, dashboards, and RPC payloads import their state and helpers from ES modules — no module state is hung off `window`.
-- Disabling a module immediately hides its nav item (gated on `isModuleEnabled`), removes its slash commands from the chat palette, and mutes (does not delete) its system channel, so re-enabling restores it.
-- On module enable, its system channel `#<module>` is created if not already present. Member notification preferences for the channel default per chapter policy.
+- Disabling a module immediately hides its nav item (gated on `isModuleEnabled`) and removes its slash commands from the chat palette. Its data and the messages it posted are kept, so re-enabling restores it.
 
 ## Actor Identity
 

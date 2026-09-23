@@ -176,9 +176,9 @@ Live branch protection is whatever an admin last applied and can lag the script,
 per-check whether a gate is live today; read live state per
 [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
-`pglite-migrations` is also path-gated but remains **advisory**; no doc records why yet (#2538). `duplicate-detection` is advisory too, for the reason in [`QUALITY_GATES.md` § The gates, and why each has the posture it does](../../docs/internal/ci-cd/QUALITY_GATES.md#the-gates-and-why-each-has-the-posture-it-does).
+`pglite-migrations` is also path-gated, and required since #2538. `duplicate-detection` is advisory, for the reason in [`QUALITY_GATES.md` § The gates, and why each has the posture it does](../../docs/internal/ci-cd/QUALITY_GATES.md#the-gates-and-why-each-has-the-posture-it-does).
 
-There was a third advisory job, `web-visual-regression`, and it has been **deleted**. It compared each dashboard route against a committed PNG; its exemption was specifically about pixels, since baselines pinned to CI's Chromium build drift with it. The 375px floor gate used to live in the same job and inherited that exemption by directory despite storing no baseline and comparing no pixels — #1152 split it into the required `web-responsive-floor` above, and the snapshot job was later removed along with its spec, its baselines and the `test:visual` script.
+There was a second advisory job, `web-visual-regression`, and it has been **deleted**. It compared each dashboard route against a committed PNG; its exemption was specifically about pixels, since baselines pinned to CI's Chromium build drift with it. The 375px floor gate used to live in the same job and inherited that exemption by directory despite storing no baseline and comparing no pixels — #1152 split it into the required `web-responsive-floor` above, and the snapshot job was later removed along with its spec, its baselines and the `test:visual` script.
 
 ### Environment identity
 
@@ -221,7 +221,7 @@ angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus fo
 defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
 `.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
-**Code review is a repository-managed Git pre-push gate, not a CI check.** Frapp's gate is **`/diff-review`**. The root `prepare` script installs [`.githooks/pre-push`](../../.githooks/pre-push) through `core.hooksPath`, so local Codex, cloud agents, and humans share one mechanism. Every non-deletion ref update requires evidence for its exact pushed commit at `.cache/diff-review/<PUSHED_COMMIT_SHA>`; retrying cannot satisfy it. Git guarantees that the hook's nonzero exit aborts the push when installed, but `--no-verify`, a changed hooks path, or skipped installation bypass it, so it is not an unconditional server-side gate. Details live in the [review runbook](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+**Code review is a repository-managed Git pre-push gate, not a CI check.** Frapp's gate is **`/diff-review`**. The root `prepare` script (and, in a Claude Code cloud session, the SessionStart hook) installs [`.githooks/pre-push`](../../.githooks/pre-push) through `core.hooksPath`, so local Codex, cloud agents, and humans share one mechanism. Every non-deletion ref update requires evidence for its exact pushed commit at `.cache/diff-review/<PUSHED_COMMIT_SHA>`; retrying cannot satisfy it. Git guarantees that the hook's nonzero exit aborts the push when installed, but `--no-verify`, a changed hooks path, or skipped installation bypass it, so it is not an unconditional server-side gate. Details live in the [review runbook](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 - Merge-time review requirements on `main` (approving reviews, conversation resolution), and why no branch is stricter: [`CONTRIBUTING.md` § PR review requirement policy](../../CONTRIBUTING.md#pr-review-requirement-policy).
 - Full runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).

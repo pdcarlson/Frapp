@@ -74,10 +74,11 @@ in the last row; path-gated jobs are still required.
 | `chapter-directory-seed` | `npm run check:chapter-directory-seed` |
 | `web-responsive-floor` (path-gated) | `npm run test:floor -w apps/web` (every dashboard route at 375px without horizontal scroll) |
 | `landing-fold` (path-gated) | `npm run test:fold -w apps/landing` (fold geometry at 1440x900 and 390x844) |
+| `pglite-migrations` (path-gated) | `npm run check:pglite-migrations` (every migration from empty, plus the RLS posture) |
 | `web-production-build` | The Vercel-parity build below |
 | `packages-build` | `npx turbo run build --filter='./packages/*'` |
 | `changes` | Nothing to run locally. It computes the path filter for the path-gated jobs and is required because `web-tests` needs it |
-| Run in CI but not required | `pglite-migrations` (`npm run check:pglite-migrations`), and the advisory `migration-lock-safety` (`npm run check:migration-lock-safety`) and `duplicate-detection` (`npm run check:duplication`) |
+| Run in CI but not required | The advisory `migration-lock-safety` (`npm run check:migration-lock-safety`) and `duplicate-detection` (`npm run check:duplication`) |
 
 Mobile specs that assert calendar days must build dates with local-time constructors, not ISO
 strings ending in `Z`. CI runs in UTC and again in Asia/Tokyo so a timezone bug shows up in one of
