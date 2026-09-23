@@ -558,10 +558,10 @@ const RETRY_RESOLVED_NOTE = "Points recorded.";
 /**
  * There is no row on screen to point at. Either there is no channel cache to
  * draw it in (the query was garbage-collected while the request was in flight;
- * a notice that reached disk restores the row on the next load unless it is
- * past its age bound by then, and with storage blocked or full none did), or
- * there is neither a signed-in viewer nor a placeholder row to attribute it
- * to. Pointing the officer at a Retry control that is not there is worse than
+ * whatever notice is on disk for the key — this write's, or with storage
+ * blocked or full an earlier one's, if any — restores the row on the next load
+ * unless it is past its age bound by then), or there is neither a signed-in
+ * viewer nor a placeholder row to attribute it to. Pointing the officer at a Retry control that is not there is worse than
  * saying nothing, so the copy has to stand on its own.
  */
 const UNCONFIRMED_NO_ROW_WARNING =
@@ -569,9 +569,11 @@ const UNCONFIRMED_NO_ROW_WARNING =
 
 /**
  * The row is on screen and carries the original key, so an explicit Retry is
- * the safe recovery. It does not hedge about the row disappearing: the row and
- * its replay handle are on disk, so the reconnect that follows the outage, a
- * reload, and a `gcTime` eviction all restore it (#1909).
+ * the safe recovery. It does not hedge about the row disappearing: this is
+ * `durable: true`, so the row and its replay handle are on disk with at least
+ * an hour before their age bound, and the reconnect that follows the outage
+ * restores them (as does a reload or a `gcTime` eviction within the day,
+ * #1909).
  */
 const UNCONFIRMED_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice.";

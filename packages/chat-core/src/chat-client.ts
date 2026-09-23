@@ -598,8 +598,10 @@ export interface TerminalRowOutcome {
   /**
    * `true` only when this write landed on disk and the entry has at least
    * `DURABLE_NOTICE_MARGIN_MS` left before its age bound: the one case in
-   * which copy may promise the row survives the next rebuild (the reconnect
-   * that follows the outage, a reload, a cache eviction).
+   * which copy may promise the row survives the next rebuild, which is the
+   * reconnect that follows the outage, minutes away. Like every entry it is
+   * restored only until its bound, so a reload or eviction after that prunes
+   * it.
    *
    * `false` promises nothing either way. Either the write did not land
    * (storage blocked or full, or no viewer to file it under), and a rebuild
