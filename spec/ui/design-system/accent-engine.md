@@ -31,7 +31,7 @@ role tokens (§2) → persisted on the chapter record (§4)
 
 Rules:
 
-- The raw seed **MUST NOT** paint UI directly — no component may reference the seed hex. Only the generated steps and the contrast color are paintable. (The seed may appear as data, e.g. a swatch in the admin color picker.)
+- The raw seed **MUST NOT** paint UI directly — no component may reference the seed hex. Only the generated steps and the contrast color are paintable. (The seed may appear as data, e.g. a swatch in the admin color picker.) How this applies when step 9 is the seed's own colour (§2), and to the §6 residual call sites, is open on #2541.
 - The generator call is fixed as written above: `appearance` is always `"dark"` (Signet is dark-first), `gray` and `background` are constants matching the neutral ladder in [`foundations.md`](foundations.md).
 - Generation runs **server-side** (§4). Clients read cached tokens; they never run the generator.
 
@@ -49,7 +49,7 @@ Every accent role maps to a fixed step of the generated scale. Components consum
 | `accent-text` | step 11 | Accent-colored text and icons on neutral or subtle-bg surfaces |
 | `on-primary` | contrast color | Text/icons on `accent-primary` |
 
-`accent-primary` is the seed itself unless the seed sits within ΔE_OK 0.25 of step 1 (the dark background), in which case the generator takes its own, lighter step 9 (`getStep9Colors` in `packages/chapter-theme/src/vendor/generate-radix-colors.ts`). That catches most dark seeds, not only near-black ones: `#003087` paints `#1C6CFE` and `#800000` paints `#F42F22`, while `#8B0000` and `#006400` paint as themselves.
+`accent-primary` is the seed itself unless the seed sits within ΔE_OK 0.25 of step 1 (the dark background), in which case the generator takes its own, lighter step 9 (`getStep9Colors` in `packages/chapter-theme/src/vendor/generate-radix-colors.ts`). That catches most dark seeds, not only near-black ones: `#003087` paints `#1C6CFE` and `#800000` paints `#F42F22`, while `#8B0000` and `#006400` paint as themselves. How that squares with §1's rule is open on #2541.
 
 The alpha scale backs translucent variants of the same roles (e.g. a ring glow) where a solid step would occlude content; alpha steps map 1:1 to their solid steps.
 
