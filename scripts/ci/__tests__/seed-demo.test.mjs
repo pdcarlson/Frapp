@@ -623,11 +623,11 @@ test("verify fails a seed whose zoned Chapter Meeting has started, however many 
 });
 
 test("verify fails at the zoned meeting's start, not its end", async () => {
-  // NOW is 12:00Z. Five minutes into the meeting it is still running, and the seed is stale;
-  // five minutes before it, the seed still passes.
+  // NOW is 12:00Z. Five minutes into the meeting it is still running (it ends at 13:25Z, as
+  // /v1/events says), and the seed is stale; five minutes before it, the seed still passes.
   const at = (start) => [
-    { name: "Chapter Meeting", start_time: start, check_in_zone: ZONE },
-    { name: "Recruitment Info Night", start_time: "2026-10-05T23:00:00.000Z", check_in_zone: null },
+    { name: "Chapter Meeting", start_time: start, end_time: "2026-09-23T13:25:00.000Z", check_in_zone: ZONE },
+    { name: "Recruitment Info Night", start_time: "2026-10-05T23:00:00.000Z", end_time: "2026-10-06T01:00:00.000Z", check_in_zone: null },
   ];
   const started = makeFetch(verifyRoutes({ events: at("2026-09-23T11:55:00.000Z") }));
   await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: started.fetchImpl }), /no upcoming event with a check-in zone/);
