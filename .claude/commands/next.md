@@ -63,9 +63,8 @@ in the PR.
 tracker.** The opt-in is `ultracode` in this command's arguments or a session-level ultracode
 reminder; the harness never emits that reminder on a slash-command turn, so the argument alone
 counts. When opted in, run the named fan-out points with the Workflow tool: §1.1, §1.2, and Phase 2's
-narrow exception, sized by the [`multi-agent`](../skills/multi-agent/SKILL.md) skill (explicit
-`effort` on every agent, never the `xhigh` a workflow agent would inherit). Phase 3's `/diff-review`
-runs its ultracode review. Everything else stays inline, and without the opt-in the fan-out points
+narrow exception, sized and set up by the [`multi-agent`](../skills/multi-agent/SKILL.md) skill.
+Phase 3's `/diff-review` runs its ultracode review. Everything else stays inline, and without the opt-in the fan-out points
 run inline in the same order. A Workflow launch that prompts or is refused is tool
 unavailability, not an opt-out: run that step inline instead of waiting on an approval. A subagent
 that errors or returns nothing is a check not run; redo it inline. Fan-outs are for independent,
@@ -266,8 +265,8 @@ each per its own Exits row.
 
 **1.1 — Blocked-by verification.** `Blocked by #N` lines go stale: blockers merge and nobody edits the
 body. Check each blocker (cap 6) against the repo and git history, not the tracker. Under ultracode
-hand them all to one [`claim-verifier`](../agents/claim-verifier.md) as a batch of claims "#N still
-blocks this issue", one `{blockerId, resolved, evidence, confidence}` per blocker. Otherwise run the
+hand them to [`claim-verifier`](../agents/claim-verifier.md) agents in batches of at most 5 claims "#N
+still blocks this issue", one `{blockerId, resolved, evidence, confidence}` per blocker. Otherwise run the
 same checks inline and stop at the first confirmed live blocker. A blocker is resolved only
 on evidence (a REFUTED verdict); PLAUSIBLE is still blocked. Still blocked: release
 `blocked-discovered`, remove `in-progress` (back to Backlog), take the next rank.
@@ -337,10 +336,11 @@ Write the code yourself, inline and sequentially. Parallel writers on one workin
 cheap merge step. One narrow exception, requiring all three: §1.2 found ≥3 file groups with no
 shared imports or symbols, each with its own tests, and the issue is genuinely large. Then, under
 ultracode, fan the groups out, each agent in its own git worktree (`isolation: 'worktree'`) with an
-explicit file allowlist, committing its group there and returning
+explicit file allowlist. A new worktree starts at `origin/main`, so each agent first runs
+`git checkout -q --detach <unit branch HEAD SHA>`, then commits its group there and returns
 `{group, commit, filesTouched, testsAdded, neededOutsideAllowlist}`. Cherry-pick each `commit` onto
 the unit branch yourself; worktrees share the object store, and disjoint allowlists keep the picks
-clean. A non-empty `neededOutsideAllowlist` is the collision detector: you handle it, and agents never
+clean, then `git worktree remove` each one. A non-empty `neededOutsideAllowlist` is the collision detector: you handle it, and agents never
 reach across. Every integrating edit (shared types, exports, wiring) is yours. Don't commit, reset or
 check out in the main checkout while the writers run. Codemod-shaped work passes this test; feature
 work usually doesn't.
@@ -364,16 +364,19 @@ until `.cache/diff-review/<PUSHED_COMMIT_SHA>` exists, and `/diff-review` writes
 is always refused here.
 
 Address every finding: fix it, or file a self-contained `triage` follow-up with a reason. A
-post-review commit changes HEAD and invalidates the marker, so re-run `/diff-review` after it; the
-review always covers exactly what you push. Never push around the gate (`--no-verify`), and never
+post-review commit changes HEAD and invalidates the marker, so re-run `/diff-review` after it. That
+re-review covers only the commits since the last reviewed one, and the earlier marker vouches for
+the rest, so every commit you push has been reviewed. Never push around the gate (`--no-verify`), and never
 delete, revert, stash, or gitignore a file to make it pass. If the gate objects to a file, review the
 file.
 
-A batch of 2 or more runs `/diff-review` at `xhigh`: it concentrates several issues' surface under
+A batch of 2 or more gets its full review at `xhigh` (a fix round after it is a re-review either
+way): it concentrates several issues' surface under
 one fixed findings cap, and batching must not dilute per-issue depth.
 
-Under ultracode, `/diff-review` runs its ultracode review: `xhigh`, plus a finder that checks the
-unit's acceptance criteria and test adequacy (pass the criteria as `acceptance`). No second review
+Under ultracode, run `/diff-review ultracode` and pass the unit's acceptance criteria as
+`acceptance`: its full review runs at `xhigh`, plus a finder that checks those criteria and test
+adequacy. No second review
 goes on top of it ([ADR-23](../../spec/architecture/adr/adr-23.md)): no human reads the diff before
 the PR, so the gate is where the depth goes. A `PLAUSIBLE` finding you can't settle here goes in the
 PR body under *Flagged for review*; that valve is what lets a run finish instead of stopping to ask.
@@ -432,8 +435,8 @@ for the suffixed branch. Never branch B from A.
 - Review the ref you push. The hook checks every exact pushed commit, including explicit refspecs
   and worktrees, so a marker for another branch can't authorize it. Keep the branch checked out so
   `/diff-review` scopes and records the intended HEAD.
-- Commit WIP before every branch switch, so a babysit fix on PR A never pulls B's half-built work
-  into review scope (`/diff-review` includes dirty-tree changes) or lands on the wrong branch.
+- Commit WIP before every branch switch, so a babysit fix on PR A never carries B's half-built work
+  into a dirty-tree review or lands on the wrong branch.
 - Migrations in both PRs: pick non-colliding version prefixes up front. Branch protection's
   `strict: true` re-runs the checks after the first merge, so expect an
   `update_pull_request_branch` and fresh CI on the surviving PR; the gate doesn't ask you to

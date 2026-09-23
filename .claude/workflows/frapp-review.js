@@ -3,7 +3,7 @@ export const meta = {
   description:
     "/diff-review's find and verify phases: bundled diff-finders, dedup, one claim-verifier per candidate and a second only on REFUTED",
   whenToUse:
-    'Only from the diff-review skill (Phases 1-2), which resolves the pinned SHAs and passes them as args. Not a standalone review.',
+    'Only from the diff-review skill (Phases 1-2), which passes the output of scripts/diff-review-scope.mjs as args. Not a standalone review.',
   phases: [
     { title: 'Find', detail: 'bundled diff-finders; each candidate is deduped and verified as it arrives' },
     { title: 'Verify', detail: 'one claim-verifier per new candidate; a second lens only on REFUTED' },
@@ -16,27 +16,28 @@ export const meta = {
 // angle means, how to call this workflow, and Phases 0, 3 and 4. Why the shape is this one:
 // spec/architecture/adr/adr-23.md.
 //
-// args: { base, head }             pinned commit SHAs (required)
-//       mode: 'full' | 'delta'      delta = re-review of the commits since the last reviewed one
-//       branchBase                  delta only: the SHA the branch forked from
-//       level: 'medium' | 'high' | 'xhigh'   full only, default 'high'
-//       ultracode: true             full only: forces xhigh and adds the acceptance-and-tests finder
-//       acceptance                  optional acceptance criteria for that finder
-//       changedLines                full only: under 150 merges the finders into two
-//       dirty: true                 the review also covers `git diff HEAD`
+// args: the JSON line `node scripts/diff-review-scope.mjs` prints
+//         { mode: 'full' | 'delta', base, head, branchBase, root, changedLines, dirty }
+//       plus level: 'medium' | 'high' | 'xhigh'   full only, default 'high'
+//            ultracode: true                      full only: forces xhigh, adds the acceptance-and-tests finder
+//            acceptance                           optional acceptance criteria for that finder
 
 const A = args || {}
 const SHA = /^[0-9a-f]{7,40}$/
+if (A.mode === 'none' || A.mode === 'empty') {
+  throw new Error(`frapp-review: scope mode is "${A.mode}", so there is nothing to review`)
+}
 if (!SHA.test(String(A.base || '')) || !SHA.test(String(A.head || ''))) {
-  throw new Error('frapp-review needs args.base and args.head as commit SHAs; resolve them once, never pass a ref like origin/main')
+  throw new Error('frapp-review needs base and head as commit SHAs: pass the output of scripts/diff-review-scope.mjs')
 }
 const MODE = A.mode === 'delta' ? 'delta' : 'full'
 if (MODE === 'delta' && !SHA.test(String(A.branchBase || ''))) {
-  throw new Error('frapp-review delta mode needs args.branchBase, the SHA the branch forked from')
+  throw new Error('frapp-review delta mode needs branchBase, the SHA the branch forked from')
 }
 const ULTRA = MODE === 'full' && A.ultracode === true
 const LEVEL = MODE === 'delta' ? 'delta' : ULTRA ? 'xhigh' : ['medium', 'high', 'xhigh'].includes(A.level) ? A.level : 'high'
-const SMALL = MODE === 'full' && typeof A.changedLines === 'number' && A.changedLines < 150
+// Only a measured line count can shrink a full review; a missing or zero count means "not known".
+const SMALL = MODE === 'full' && typeof A.changedLines === 'number' && A.changedLines > 0 && A.changedLines < 150
 
 const CHANGES = ['Hunk scan', 'Language pitfalls']
 const DEPENDENTS = ['Removed behavior', 'Caller/callee tracing']
@@ -71,11 +72,13 @@ const BUNDLES = bundlesFor()
 if (ULTRA) BUNDLES.push({ key: 'acceptance-tests', angles: EXTRA, cap: 6, worktree: true })
 const SWEEP_CAP = MODE === 'full' && LEVEL === 'xhigh' ? 8 : 0
 
+const DIRTY = A.dirty ? ', plus the uncommitted changes in `git diff HEAD`' : ''
 const SCOPE =
   MODE === 'full'
-    ? `the diff \`git diff ${A.base} ${A.head}\`${A.dirty ? ', plus the uncommitted changes in `git diff HEAD`' : ''}`
-    : `the changes since the last reviewed commit: \`git diff ${A.base} ${A.head} -- $(git diff --name-only ${A.branchBase} ${A.head})\`. ` +
+    ? `the diff \`git diff ${A.base} ${A.head}\`${DIRTY}`
+    : `the changes since the last reviewed commit: \`git diff ${A.base} ${A.head} -- $(git diff --name-only ${A.branchBase} ${A.head})\`${DIRTY}. ` +
       `For context only, the whole branch is \`git diff ${A.branchBase} ${A.head}\`. Report defects in those changes, or ones they create with the rest of the branch`
+const CODE_AT = A.dirty ? `the working tree (commit ${A.head} plus its uncommitted changes)` : `commit ${A.head}`
 
 // Every agent() call sets effort. Without it an agent inherits the session's effort, which
 // ultracode pins to xhigh (.claude/skills/multi-agent/SKILL.md § Effort).
@@ -101,6 +104,7 @@ const candidatesSchema = (cap) => ({
         required: ['file', 'line', 'angle', 'summary', 'failure_scenario'],
       },
     },
+    problem: { type: 'string', description: 'Set only when you could not review your angles; say what stopped you.' },
   },
   required: ['candidates'],
 })
@@ -116,9 +120,13 @@ const VERDICT = {
 }
 
 function finderPrompt(b) {
+  // A workflow worktree starts at origin/<default-branch>, not at the reviewed commit, so the
+  // finder moves it there itself; worktrees share the object store, so the commit is present.
   const tree = b.worktree
-    ? `You run in your own git worktree. Check that \`git rev-parse HEAD\` is ${A.head} and say so in a candidate-free result if it isn't. ` +
-      'You may mutate source there to prove whether a test bites, but revert every mutation before you return, and report repo-relative paths.'
+    ? `You run in your own git worktree, which starts at origin/main, not at the reviewed commit. First note \`git rev-parse HEAD\`, then run ` +
+      `\`git checkout -q --detach ${A.head}\` and confirm HEAD is ${A.head}; if you can't, set \`problem\` and return no candidates. ` +
+      'You may mutate source there to prove whether a test bites. Before you return, revert every mutation and check out the HEAD you noted, so the harness can remove the worktree. ' +
+      `Report paths relative to the repo root.${A.dirty ? ' Your worktree has only committed code; the uncommitted changes are not in it.' : ''}`
     : 'You share the working tree with other agents: never edit, stash, check out, or reset anything.'
   const criteria = b.key === 'acceptance-tests' && A.acceptance ? `\n\nAcceptance criteria to check the diff against:\n${A.acceptance}` : ''
   return (
@@ -139,66 +147,97 @@ let finders = 0
 let verifiers = 0
 let escalations = 0
 let merged = 0
+let received = 0
 
-const norm = (file) => String(file).replace(/^\.\//, '')
+// agent() returns null for a skipped or dead agent, but can also throw (an unknown agent type, a
+// denied tool pool). Either way the check didn't run, and the caller must be able to see that.
+async function safeAgent(prompt, opts) {
+  try {
+    return await agent(prompt, opts)
+  } catch (err) {
+    log(`${opts.label} threw: ${err && err.message ? err.message : err}`)
+    return null
+  }
+}
 
-// Streaming dedup: JS runs each stage callback to completion, so check-and-set on `seen` can't race.
+const ROOT = A.root ? String(A.root).replace(/\/+$/, '') + '/' : null
+function norm(file) {
+  let f = String(file).replace(/^.*\/\.claude\/worktrees\/[^/]+\//, '')
+  if (ROOT && f.startsWith(ROOT)) f = f.slice(ROOT.length)
+  return f.replace(/^\.\//, '')
+}
+
+// Streaming dedup by file:line. JS runs each stage callback to completion, so check-and-set on
+// `seen` can't race. A duplicate waits on the first candidate's verdict: if that one is kept, the
+// duplicate rides along as `alsoFlaggedBy`; if it is refuted or unverified, the duplicate may be a
+// different defect at the same line, so it gets its own verification.
 function admit(candidates, source) {
   const fresh = []
   for (const c of candidates) {
-    const key = `${norm(c.file)}:${c.line}`
+    const rec = { ...c, file: norm(c.file), source, alsoFlaggedBy: [], dups: [] }
+    const key = `${rec.file}:${rec.line}`
     const prior = seen.get(key)
-    if (prior) {
+    if (!prior) {
+      seen.set(key, rec)
+      fresh.push(rec)
+    } else if (prior.status === 'kept') {
       prior.alsoFlaggedBy.push(`${source}: ${c.angle} — ${c.summary}`)
       merged++
-      continue
+    } else if (prior.status === 'pending') {
+      prior.dups.push(rec)
+      merged++
+    } else {
+      fresh.push(rec)
     }
-    const rec = { ...c, file: norm(c.file), source, alsoFlaggedBy: [] }
-    seen.set(key, rec)
-    fresh.push(rec)
   }
   return fresh
 }
 
+async function settle(rec, status, extra) {
+  rec.status = status
+  const { dups, ...out } = rec
+  if (status === 'kept') {
+    for (const d of dups) rec.alsoFlaggedBy.push(`${d.source}: ${d.angle} — ${d.summary}`)
+    kept.push({ ...out, ...extra })
+    return
+  }
+  ;(status === 'refuted' ? refuted : unverified).push({ ...out, ...extra })
+  merged -= dups.length
+  await parallel(dups.map((d) => () => verify(d)))
+}
+
 async function verify(rec) {
+  rec.status = 'pending'
   const claim =
     `Finding: ${rec.file}:${rec.line}: ${rec.summary}\nFailure scenario: ${rec.failure_scenario}\n` +
     `Found by the "${rec.angle}" angle while reviewing ${SCOPE}. ${PINNED}`
   const label = `${rec.file.split('/').pop()}:${rec.line}`
   verifiers++
-  const first = await agent(
-    `Try to disprove this review finding.\n\n${claim}\n\nLens: reproduce. Trace the stated failure scenario through the code at ${A.head} and decide whether it actually happens.`,
+  const first = await safeAgent(
+    `Try to disprove this review finding.\n\n${claim}\n\nLens: reproduce. Trace the stated failure scenario through ${CODE_AT} and decide whether it actually happens.`,
     { agentType: 'claim-verifier', effort: EFFORT.verifier, schema: VERDICT, phase: 'Verify', label: `verify:${label}` },
   )
-  if (!first) {
-    unverified.push({ ...rec, missing: 'first verdict' })
-    return
-  }
-  if (first.verdict !== 'REFUTED') {
-    kept.push({ ...rec, ...first, escalated: false })
-    return
-  }
+  if (!first) return settle(rec, 'unverified', { missing: 'first verdict' })
+  if (first.verdict !== 'REFUTED') return settle(rec, 'kept', { ...first, escalated: false })
   escalations++
   verifiers++
-  const second = await agent(
-    `Try to disprove this review finding.\n\n${claim}\n\nLens: material. Decide whether this location has a real defect a reviewer should act on, even if the stated scenario is inexact. ` +
+  const second = await safeAgent(
+    `Try to disprove this review finding.\n\n${claim}\n\nLens: material. Looking at ${CODE_AT}, decide whether this location has a real defect a reviewer should act on, even if the stated scenario is inexact. ` +
       'Return REFUTED only when nothing here needs changing.',
     { agentType: 'claim-verifier', effort: EFFORT.escalation, schema: VERDICT, phase: 'Verify', label: `verify2:${label}` },
   )
-  if (!second) {
-    unverified.push({ ...rec, missing: 'second verdict after REFUTED', firstVerdict: first })
-    return
-  }
-  if (second.verdict !== 'REFUTED') kept.push({ ...rec, ...second, escalated: true, firstVerdict: first })
-  else refuted.push({ ...rec, escalated: true, evidence: [first.evidence, second.evidence] })
+  if (!second) return settle(rec, 'unverified', { missing: 'second verdict after REFUTED', firstVerdict: first })
+  if (second.verdict !== 'REFUTED') return settle(rec, 'kept', { ...second, escalated: true, firstVerdict: first })
+  return settle(rec, 'refuted', { escalated: true, evidence: [first.evidence, second.evidence] })
 }
 
 function onFinder(res, source, cap, angles) {
-  if (!res) {
-    finderFailures.push({ source, angles })
-    log(`${source} returned nothing: run its angles (${angles.join('; ')}) inline before reporting`)
+  if (!res || res.problem) {
+    finderFailures.push({ source, angles, problem: res ? res.problem : 'returned nothing' })
+    log(`${source} ${res ? `could not review: ${res.problem}` : 'returned nothing'}. Run its angles (${angles.join('; ')}) inline before reporting`)
     return []
   }
+  received += res.candidates.length
   if (res.candidates.length >= cap) {
     cappedFinders.push(source)
     log(`${source} hit its cap of ${cap}; it may have had more`)
@@ -209,22 +248,24 @@ function onFinder(res, source, cap, angles) {
 log(`${MODE} review at ${LEVEL}: ${BUNDLES.length} finders${SWEEP_CAP ? ' + gap sweep' : ''}${SMALL ? ' (small diff)' : ''}`)
 
 phase('Find')
+// pipeline() skips an item's later stages once a stage yields null, so the finder's result is
+// wrapped: stage 2 must run even for a dead finder, or its failure would never be recorded.
 await pipeline(
   BUNDLES,
-  (b) => {
+  async (b) => {
     finders++
     const opts = { agentType: 'diff-finder', effort: EFFORT.finder, schema: candidatesSchema(b.cap), phase: 'Find', label: `find:${b.key}` }
     if (b.worktree) opts.isolation = 'worktree'
-    return agent(finderPrompt(b), opts)
+    return { res: await safeAgent(finderPrompt(b), opts) }
   },
-  (res, b) => parallel(onFinder(res, `find:${b.key}`, b.cap, b.angles).map((rec) => () => verify(rec))),
+  (out, b) => parallel(onFinder(out.res, `find:${b.key}`, b.cap, b.angles).map((rec) => () => verify(rec))),
 )
 
 if (SWEEP_CAP) {
   phase('Sweep')
   finders++
   const survivors = kept.map((k) => `- ${k.file}:${k.line}: ${k.summary}`).join('\n') || '(none)'
-  const res = await agent(
+  const res = await safeAgent(
     `Review ${SCOPE}. ${PINNED}\n\nOther finders have covered every angle in .claude/skills/diff-review/SKILL.md, and these findings survived verification:\n${survivors}\n\n` +
       `Your angle: what the other angles missed. Don't repeat the list. Return at most ${SWEEP_CAP} new candidates, most severe first, with angle "Gap sweep". ` +
       'You share the working tree with other agents: never edit, stash, check out, or reset anything.',
@@ -233,7 +274,7 @@ if (SWEEP_CAP) {
   await parallel(onFinder(res, 'find:gap-sweep', SWEEP_CAP, ['Gap sweep']).map((rec) => () => verify(rec)))
 }
 
-const counts = { finders, candidates: seen.size, duplicatesMerged: merged, verifiers, escalations, agents: finders + verifiers }
+const counts = { finders, candidates: received, duplicatesMerged: merged, verifiers, escalations, agents: finders + verifiers }
 log(
   `${counts.agents} agents: ${finders} finders, ${verifiers} verifiers (${escalations} escalated); ` +
     `${kept.length} kept, ${refuted.length} refuted, ${unverified.length} unverified, ${merged} duplicates merged`,

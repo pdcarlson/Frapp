@@ -4,8 +4,8 @@ description: >
   Review the current working diff for correctness bugs, security holes, and cleanups before
   pushing. Use before any git push, when the pre-push review gate blocks a push, and whenever
   asked to review uncommitted or unpushed work on this branch.
-argument-hint: "[medium|high|xhigh] [<target>]"
-allowed-tools: Agent, Task, Workflow, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(git diff *), Bash(git show *), Bash(git log *), Bash(git status *), Bash(git rev-parse *), Bash(git rev-list *), Bash(git merge-base *), Bash(npm run check:*), Bash(mkdir *), Bash(touch *)
+argument-hint: "[medium|high|xhigh] [full] [ultracode] [<target>]"
+allowed-tools: Agent, Task, Workflow, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(git diff *), Bash(git show *), Bash(git log *), Bash(git status *), Bash(git rev-parse *), Bash(git merge-base *), Bash(node scripts/diff-review-scope.mjs*), Bash(npm run check:*)
 ---
 
 # Review this branch's diff
@@ -32,36 +32,39 @@ result more than you agreeing with yourself, so it runs at every effort level an
 
 ## Phase 0 — Scope
 
-Pin the scope to SHAs once, here. A background agent's `git fetch` can move `origin/main` mid-review,
-and a ref re-resolved later then names a different diff:
+Resolve the scope once, to pinned SHAs, with the scope script:
 
 ```sh
-ROOT=$(git rev-parse --show-toplevel); HEAD_SHA=$(git rev-parse HEAD)
-BRANCH_BASE=$(git merge-base origin/main HEAD)
-REVIEWED=$(git merge-base '@{upstream}' HEAD 2>/dev/null || echo "$BRANCH_BASE")
-for c in $(git rev-list "$REVIEWED..HEAD"); do
-  [ -e "$ROOT/.cache/diff-review/$c" ] && REVIEWED=$c && break
-done
+node scripts/diff-review-scope.mjs        # add --full to force a full review
 ```
 
-`REVIEWED` is the newest commit this branch has already passed the gate with: the upstream tip,
-since the pre-push hook let it through, or a newer local commit with a marker. Then:
+It prints one JSON line: `mode`, `base`, `head`, `branchBase`, `root`, `files`, `changedLines`,
+`dirty`. Use those values as they are. Don't re-resolve `origin/main` later: a background agent's
+`git fetch` can move it mid-review, and the same command would then name a different diff.
 
-- **Full review** when `REVIEWED` is `BRANCH_BASE`, the branch's first review: base
-  `BRANCH_BASE`, head `HEAD_SHA`.
-- **Re-review** when `REVIEWED` is newer, usually a fix round: base `REVIEWED`, head `HEAD_SHA`,
-  limited to the files the branch changes. Its finders still read the whole branch for context. A
-  level named in the arguments asks for a full review instead.
-- Nothing to review when `REVIEWED` is `HEAD_SHA`: the marker already exists.
+- **`full`**: the branch's first review in this checkout, from `branchBase`.
+- **`delta`**: the branch passed a review up to `base`, so this reviews only the commits since,
+  limited to the files the branch changes (the finders still read the whole branch for context).
+  This is the fix round. A level argument doesn't change it; `full` does.
+- **`none`**: HEAD already has a marker. **`empty`**: the branch has no commits of its own.
+  Say so and stop.
 
-An explicit `<target>` (path, ref, or range) overrides all of this and gets a full review of what it
-names. Commit before you review: the marker keys to a commit, and the acceptance-and-tests finder
-sees only committed code. If you must review a dirty tree, say so and pass `dirty`. State the scope
-in one line (mode, base, head, file count). If the diff is empty, say so and stop.
+"Passed a review" means a marker this skill wrote as `full` or `delta` (Phase 4) on a commit
+between `branchBase` and HEAD. Nothing else counts: not the upstream tip (a push can skip the
+hook), not a marker from before markers carried a kind, and not a review of an explicit target.
+After a rebase the old markers sit on commits outside that range, so the branch gets a full
+review again.
 
-Effort sets the findings cap below; the finders it runs, their candidate caps, and the gap sweep are
-set in [`frapp-review.js`](../../workflows/frapp-review.js). Ultracode runs a full review at `xhigh`
-with the acceptance-and-tests finder added. A re-review runs two light finders at any level.
+An explicit `<target>` (a path, ref, or range) replaces the script: review exactly what it names
+with pinned SHAs, as a full review, and mark it `target` in Phase 4. Commit before you review,
+because the marker keys to a commit. If you must review a dirty tree (`dirty: true`), say so; the
+acceptance-and-tests finder sees only committed code. State the scope in one line (mode, base,
+head, file count).
+
+Effort sets the findings cap below. The finders it runs, their candidate caps and the gap sweep
+are set in [`frapp-review.js`](../../workflows/frapp-review.js). An ultracode review is a full review
+at `xhigh` with the acceptance-and-tests finder added. A re-review runs two light finders at any
+level.
 
 | Level | Findings cap |
 |---|---|
@@ -71,24 +74,25 @@ with the acceptance-and-tests finder added. A re-review runs two light finders a
 
 ## Phase 1 — Find
 
-**When this session is opted into the Workflow tool** (ultracode, or the user invoked `/diff-review`
-themselves), run the saved workflow, which runs this phase and Phase 2 and sets every agent's effort
-itself:
+**When you are opted into the Workflow tool** (a session-level ultracode reminder, `ultracode` in
+this skill's arguments or in the command that called it, such as `/next ultracode`, or the user
+invoking `/diff-review` themselves), run the saved workflow. It runs this phase and Phase 2, and
+sets every agent's effort itself. Pass the scope script's JSON as `args`, plus:
 
 ```js
 Workflow({ name: 'frapp-review', args: {
-  mode: 'full',               // or 'delta' for a re-review, with branchBase: BRANCH_BASE
-  base: '<BRANCH_BASE or REVIEWED>', head: '<HEAD_SHA>',
-  level: 'high',              // the effort level; ultracode: true instead forces xhigh plus the extra finder
-  changedLines: 0,            // insertions + deletions from `git diff --shortstat <base> <head>`
+  ...scope,                   // the JSON line from scripts/diff-review-scope.mjs, unchanged
+  level: 'high',              // the level argument, if any
+  ultracode: true,            // whenever you are opted in through ultracode: forces xhigh plus the extra finder
   acceptance: '<the issue's acceptance criteria, when there is an issue>',
 } })
 ```
 
 **Otherwise**, run the same shape with the Agent tool. Read `frapp-review.js` for the angle bundles,
 the candidate caps and the verify rule, launch the `diff-finder` agents in one message, then the
-verifiers. Agent-tool launches can't set effort per call, so they take the effort pinned in each
-agent file.
+verifiers. The Agent tool can't set effort per call. The agent files pin theirs, but whether that
+beats a session's `xhigh` hasn't been measured ([`multi-agent`](../multi-agent/SKILL.md) § Effort),
+so prefer the workflow whenever you may use it.
 
 Either way:
 
@@ -97,8 +101,8 @@ Either way:
   reset, merge, stash or check out while finders or verifiers are live: a finder reading a moving
   tree reports lines that no longer exist, and a hook that fires on `git status` would have you
   commit someone's experiment.
-- A finder that returned nothing (`finderFailures` in the workflow's result) is a check not run:
-  cover its angles inline before you report.
+- A finder that returned nothing or reported a `problem` (`finderFailures` in the workflow's
+  result) is a check not run: cover its angles inline before you report.
 - Drop a candidate with no plausible failure scenario.
 
 ### Generic angles
@@ -200,7 +204,11 @@ These run only in an ultracode full review, as one finder in its own worktree.
   claims to meet but doesn't, and each one left silently unmet.
 - **Test adequacy.** Whether the tests that changed, or should have, would fail if the new behavior
   broke. Prove it where you can: mutate the source in your worktree, run the narrowest test, and
-  revert. A test that still passes with the guard removed is a finding.
+  revert. A test that still passes with the guard removed is a finding. A worktree has no
+  `node_modules` or `.env.local` of its own: resolution walks up to the main checkout's, whose
+  workspace links point at the main checkout's packages. So a mutation proves something only when
+  the test reaches the mutated file by a relative import inside one workspace. Where it can't be
+  proven, say what stopped you rather than reporting "doesn't bite".
 
 ## Phase 2 — Verify
 
@@ -209,9 +217,11 @@ Candidates are deduped by `file:line` first; a later duplicate is attached to th
 on the reproduce lens: does the stated failure scenario actually happen? Only if it returns
 `REFUTED` does a second `claim-verifier` look at it, on the material lens and without seeing the
 first verdict: is there a real defect here worth acting on, even if the scenario is inexact? A
-candidate is discarded only when both say `REFUTED`. That keeps every finding that two verifiers
-per candidate, keeping on either vote, would keep, at about half the cost; the reasoning is in
-[ADR-23](../../../spec/architecture/adr/adr-23.md).
+candidate is discarded only when both say `REFUTED`. With the same two verifiers, that is the
+keep-or-drop call two verifiers per candidate would make keeping on either vote, at about half the
+cost. These verifiers run at `medium` and `high` effort, not the `xhigh` the earlier two-verifier
+runs inherited, so their recall per vote isn't measured
+([ADR-23](../../../spec/architecture/adr/adr-23.md)).
 A verdict that never came back (`unverified` in the workflow's result) is a check not run: get it
 before you report.
 
@@ -243,17 +253,16 @@ the GitHub MCP is unreachable, say so and carry the unfiled finding in your summ
 
 ## Phase 4 — Record that the review ran
 
-After reporting and acting on the findings, check that `git rev-parse HEAD` is still the head you
-reviewed and that `git status` shows nothing you didn't write, then write the marker the pre-push
-hook checks:
+After reporting and acting on the findings, check that `git rev-parse HEAD` is still the `head` you
+reviewed and that `git status` shows nothing you didn't write. Then write the marker the pre-push
+hook checks, with the kind of review it records (`full`, `delta`, or `target` for an explicit
+target):
 
 ```sh
-mkdir -p "$(git rev-parse --show-toplevel)/.cache/diff-review" \
-  && touch "$(git rev-parse --show-toplevel)/.cache/diff-review/$(git rev-parse HEAD)"
+node scripts/diff-review-scope.mjs --mark full
 ```
 
-Use the absolute repo-root path, as above, not a `.cache/…` path relative to the cwd.
-`.githooks/pre-push` reads `<repo-root>/.cache/diff-review/<SHA>`, so a marker written from
-`apps/api` lands where the hook never looks and the push stays denied. The marker is keyed to the
-commit, so committing fixes invalidates it by design: re-run this skill on the new HEAD. Phase 0
-then finds this marker and runs a re-review of just the fix commits.
+The script writes `<repo-root>/.cache/diff-review/<HEAD SHA>`, the only place the hook looks, and
+the kind is what lets the next Phase 0 trust it. The marker is keyed to the commit, so committing
+fixes invalidates it by design: re-run this skill on the new HEAD. Phase 0 then finds this marker
+and re-reviews just the fix commits.

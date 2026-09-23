@@ -12,9 +12,11 @@
   checks whether the failure scenario reproduces. Only if it says `REFUTED` does a second one, on a
   materiality lens, look independently. The candidate is kept unless both say `REFUTED`.
 - **A re-review covers only what changed.** After a fix commit, the gate reviews the commits since
-  the last reviewed one, with two finders.
-- **Everything else stays under `workflowSizeGuideline: "medium"`** (under 10 agents per workflow,
-  at most 5 per fan-out step), set in `.claude/settings.json`. Verification outside the gate is one
+  the last reviewed one, with two finders. `scripts/diff-review-scope.mjs` decides, trusting only
+  markers the gate wrote with a kind (`full` or `delta`) on commits of this branch.
+- **Everything else stays small.** `workflowSizeGuideline: "medium"` in `.claude/settings.json`
+  tells the model to keep workflows under 10 agents; it is advisory text, not a cap. The repo adds
+  at most 5 agents per fan-out step, which nothing enforces. Verification outside the gate is one
   opinion per claim, with up to 5 claims batched into one `claim-verifier`. Ultracode doesn't lift
   either limit.
 - **Every workflow agent sets its effort:** `medium` by default, `high` for finders and hard
@@ -39,8 +41,11 @@ REFUTED would have lost about half of those.
 
 Escalating only on REFUTED keeps them. Under keep-if-either, the second vote can change the outcome
 only when the first is REFUTED, so running it only then makes the same keep-or-drop call on every
-candidate, provided the second verifier doesn't see the first verdict. The cost is about
-1 + (refute rate) verifiers per candidate instead of 2; on the 79-agent review, about 39 instead of 70.
+candidate, provided the same two verifiers vote and the second doesn't see the first verdict. The
+cost is about 1 + (refute rate) verifiers per candidate instead of 2; on the 79-agent review, about
+39 instead of 70. The verifiers are not quite the same: they now run at `medium` and `high` effort
+where the 2026-09-22 pair inherited `xhigh`, so per-vote recall is unmeasured. That is the first
+thing to check if the trigger below fires.
 
 Two facts about the harness (Claude Code 2.1.280, read from the CLI bundle and its docs) shaped
 the rest:

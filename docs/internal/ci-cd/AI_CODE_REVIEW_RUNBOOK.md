@@ -33,7 +33,7 @@ release: retrying a denied push can never create evidence.
 
 ### Which review skill
 
-Two skills satisfy this gate, and the difference matters:
+Only `/diff-review` satisfies this gate; `/code-review` can add coverage on top of it:
 
 | Skill | Who can run it | Notes |
 |---|---|---|
@@ -144,8 +144,8 @@ the agent agreeing with its own work — do not weaken it.
 - A new commit has a new SHA and therefore needs a new review. Retrying does not mutate the marker
   directory and never changes the verdict; the former four-attempt escape was removed.
 - The deliberate emergency bypass is Git's standard `git push --no-verify`. It is auditable in the
-  operator's command but not server-enforced. Do not use it after `/code-review`; write the marker
-  for the reviewed commit instead.
+  operator's command but not server-enforced. Never use it in place of `/diff-review`, including
+  after a `/code-review` run.
 - `npm install` and `npm ci` run the root `prepare` script, which sets
   `core.hooksPath=.githooks`. A raw checkout that never runs the installer is not protected.
 
@@ -155,7 +155,7 @@ the agent agreeing with its own work — do not weaken it.
   `node scripts/setup-git-hooks.mjs` if dependencies were not installed. Also check whether the push
   used `--no-verify`.
 - **Denied repeatedly:** retrying is intentionally inert. Run `/diff-review`; after addressing its
-  findings it writes the marker. If `/code-review` ran, create the documented marker manually.
+  findings it writes the marker.
 - **An explicit ref or tag is denied although HEAD was reviewed:** the hook checks the commit
   actually named by each ref update. Review that commit and create its marker; a HEAD marker cannot
   authorize a different object.
