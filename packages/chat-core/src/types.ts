@@ -117,9 +117,11 @@ export interface RawChatMessage {
    * viewer attached and therefore carries no such column at all.
    *
    * So an absent value means "this row arrived by a path that could not mask
-   * it", and `normalizeRow` resolves that to `false`. That default is NOT the
+   * it", and `normalizeRow` resolves that to `false` **and** records the
+   * absence as `ChatMessage._blockEvaluated: false`. The `false` is NOT the
    * masking signal — a client still applies its own list to echoed rows, which
-   * is exactly why the contract requires `GET /v1/chat/blocks` to exist.
+   * is exactly why the contract requires `GET /v1/chat/blocks` to exist — and
+   * the provenance flag is how it knows which rows need that (#2315).
    */
   sender_blocked?: boolean | null;
   created_at: string;
@@ -200,8 +202,38 @@ export interface ChatMessage {
    *
    * Required, deliberately: `normalizeRow` always sets it, and an optional flag
    * would put "is it there?" in front of every reader.
+   *
+   * Meaningful only alongside {@link ChatMessage._blockEvaluated}: on a row the
+   * server never evaluated this is `false` by default, not by verdict.
    */
   sender_blocked: boolean;
+  /**
+   * Whether this row reached the cache through a read that ran the viewer's
+   * block list over it — i.e. the raw row carried a `sender_blocked` field
+   * (#2315, `spec/behavior/chat/README.md` § The masking contract).
+   *
+   * **Provenance, not timing.** The Realtime `postgres_changes` echo (INSERT
+   * *and* UPDATE) carries no viewer and no such field, so a row it delivers is
+   * unevaluated; so is the viewer's own send/edit/delete response. REST reads
+   * (the initial page, the reconnect backfill, the polling fallback) carry it on
+   * every row. `mergeServerRow` replaces a cached row wholesale, so a later echo
+   * of an evaluated row — a pin, an edit, a duplicate INSERT — clears this back
+   * to `false`, which is right: the raw row it wrote is unmasked content.
+   *
+   * Never derive this from `created_at`. REST and Realtime serialize
+   * `timestamptz` differently (`2026-09-15T18:00:00.123456+00:00` vs
+   * `2026-09-15 18:05:12.4+00`), so a watermark compare silently misclassifies,
+   * and a timestamp says when a row was written, never how it arrived.
+   *
+   * `_`-prefixed because it is client-derived state, not a column. A consumer
+   * that renders a row with this `false` must apply its own block list first
+   * and must hold the row, not render it, while that list is loading or
+   * unavailable — unless it already showed the row against a ready list, since
+   * nothing re-evaluates an echoed row: the reconnect backfill reads only after
+   * the last-seen cursor, which the echo itself advanced (mobile:
+   * `apps/mobile/lib/chat/block-clearance.ts`).
+   */
+  _blockEvaluated: boolean;
   reactions: ReactionState;
   /**
    * Raw `chat_message_actions` rows for this message. Polls / card actions
@@ -316,6 +348,9 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     // (the Postgres Changes echo), never "the sender is fine" — see
     // `RawChatMessage.sender_blocked`.
     sender_blocked: row.sender_blocked === true,
+    // Presence of the field, not its value: a `false` the server wrote is a
+    // verdict, an absent field is no verdict at all (#2315).
+    _blockEvaluated: typeof row.sender_blocked === "boolean",
     reactions: {},
     actions: [],
     _status: "confirmed",
@@ -336,6 +371,12 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
  * Client-only state (`_status`, `_error`, `_replay`) and the separately-carried
  * `reactions` / `actions` are deliberately not represented — the wire shape has
  * nowhere to put them, and whoever owns them re-applies them after the merge.
+ *
+ * `_blockEvaluated` is the one client-only field that *is* represented, because
+ * the wire shape encodes it: `sender_blocked` is emitted only for a row the
+ * server evaluated. Emitting it unconditionally would launder an unevaluated
+ * Realtime echo into a "server-vouched" row on the way back through
+ * `normalizeRow` — failing open on the block list (#2315).
  */
 export function toRawRow(message: ChatMessage): RawChatMessage {
   return {
@@ -355,7 +396,9 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
     edited_at: message.edited_at,
     is_deleted: message.is_deleted,
     client_message_id: message.client_message_id,
-    sender_blocked: message.sender_blocked,
+    ...(message._blockEvaluated
+      ? { sender_blocked: message.sender_blocked }
+      : {}),
     created_at: message.created_at,
   };
 }
@@ -416,6 +459,9 @@ export function optimisticMessage(args: {
     // (`ChatBlockService.blockMember` refuses it), so this is false by
     // construction rather than by default.
     sender_blocked: false,
+    // No server read has seen it. Harmless for the viewer's own row, which a
+    // block list can never hide, and honest for anything that reads provenance.
+    _blockEvaluated: false,
     reactions: {},
     actions: [],
     _status: "pending",

@@ -44,6 +44,13 @@ export interface MessageAttachmentsProps {
    * by the incoming-message caller, which never reads chapter branding.
    */
   accentOnPrimary?: string;
+  /**
+   * The message's own long-press (report, block — #2257), forwarded to each
+   * file. A file row is a `Pressable` that claims the touch, so without it a
+   * long press on a photo would end as a tap that opens the photo, and a
+   * photo-only message would have no way to reach its actions at all.
+   */
+  onLongPress?: () => void;
 }
 
 /** Content types rendered as an inline preview rather than a download row. */
@@ -57,6 +64,7 @@ export function MessageAttachments({
   count,
   isMine,
   accentOnPrimary,
+  onLongPress,
 }: MessageAttachmentsProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -113,6 +121,7 @@ export function MessageAttachments({
           // the only way to reach the file, so it says so.
           accessibilityLabel={`Open ${attachment.filename}`}
           onPress={() => void open(attachment.id, attachment.download_url)}
+          onLongPress={onLongPress}
           style={styles.row}
         >
           {isPreviewable(attachment.content_type) ? (

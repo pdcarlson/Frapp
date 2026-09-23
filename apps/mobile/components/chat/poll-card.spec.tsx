@@ -27,6 +27,7 @@ function poll(overrides: Partial<ChatMessage> = {}): ChatMessage {
     id: "msg-1",
     channel_id: "chan-1",
     sender_blocked: false,
+    _blockEvaluated: true,
     sender_id: VIEWER,
     author_name: null,
     author_avatar_path: null,

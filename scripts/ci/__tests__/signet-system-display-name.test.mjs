@@ -13,6 +13,13 @@
 // stay Frapp (system@frapp.local, SYSTEM_SENDER_ID). Walk apps/ and
 // packages/ so a live `Frapp System` string cannot sneak in. Export
 // filenames stay on leftover 1937. Calendar ICS stays on leftover 1929.
+//
+// SYSTEM_SENDER_ID has one home: `@repo/validation` owns the literal so the
+// mobile and web clients can hide Block on a system message, and the API's
+// `domain/constants/chat.ts` re-exports it (packages cannot import apps, so
+// the value cannot live in the API and be shared). The lock pins the literal
+// where it lives and pins the API re-export, so neither a changed value nor a
+// second, drifting copy in the API passes.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -26,6 +33,7 @@ const MIGRATION = "supabase/migrations/20260909120000_rename_system_user_display
 const SEED = "supabase/migrations/20260524120000_chapter_directory_requests.sql";
 const LANDMARK = "scripts/check-pglite-migrations.mjs";
 const ROLLBACK = "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md";
+const VALIDATION = "packages/validation/src/index.ts";
 const CHAT = "apps/api/src/domain/constants/chat.ts";
 
 export const SYSTEM_EMAIL = "system@frapp.local";
@@ -56,7 +64,11 @@ export function walkProductSources(root = REPO_ROOT) {
   return files.sort();
 }
 
-export function systemIdentityProblems({ seed, chatConstant }) {
+export function systemIdentityProblems({
+  seed,
+  validationSource,
+  chatConstant,
+}) {
   const problems = [];
   if (!/system@frapp\.local/.test(seed)) {
     problems.push(`seed email must stay ${SYSTEM_EMAIL}`);
@@ -64,8 +76,26 @@ export function systemIdentityProblems({ seed, chatConstant }) {
   if (/system@signet\.local/.test(seed)) {
     problems.push("seed email must not become system@signet.local");
   }
-  if (!new RegExp(`SYSTEM_SENDER_ID = '${SYSTEM_SENDER_ID}'`).test(chatConstant)) {
-    problems.push("SYSTEM_SENDER_ID must stay the all-zeros id");
+  if (
+    !new RegExp(
+      `export const SYSTEM_SENDER_ID = ["']${SYSTEM_SENDER_ID}["']`,
+    ).test(validationSource)
+  ) {
+    problems.push(
+      `SYSTEM_SENDER_ID must stay the all-zeros id in ${VALIDATION}`,
+    );
+  }
+  if (
+    !/export \{ SYSTEM_SENDER_ID \} from ['"]@repo\/validation['"]/.test(
+      chatConstant,
+    )
+  ) {
+    problems.push(
+      `${CHAT} must re-export SYSTEM_SENDER_ID from @repo/validation`,
+    );
+  }
+  if (/SYSTEM_SENDER_ID\s*=/.test(chatConstant)) {
+    problems.push(`${CHAT} must not keep its own SYSTEM_SENDER_ID copy`);
   }
   return problems;
 }
@@ -106,9 +136,39 @@ test("system actor email and sender id stay Frapp identifiers", () => {
   assert.deepEqual(
     systemIdentityProblems({
       seed: readRepo(SEED),
+      validationSource: readRepo(VALIDATION),
       chatConstant: readRepo(CHAT),
     }),
     [],
+  );
+});
+
+test("a changed sender id, or a second copy in the API, fails", () => {
+  const changed = systemIdentityProblems({
+    seed: readRepo(SEED),
+    validationSource: readRepo(VALIDATION).replace(
+      SYSTEM_SENDER_ID,
+      "00000000-0000-0000-0000-000000000001",
+    ),
+    chatConstant: readRepo(CHAT),
+  });
+  assert.ok(
+    changed.some((problem) => problem.includes("all-zeros id")),
+    changed.join("; "),
+  );
+
+  const forked = systemIdentityProblems({
+    seed: readRepo(SEED),
+    validationSource: readRepo(VALIDATION),
+    chatConstant: `export const SYSTEM_SENDER_ID = '${SYSTEM_SENDER_ID}';\n`,
+  });
+  assert.ok(
+    forked.some((problem) => problem.includes("re-export")),
+    forked.join("; "),
+  );
+  assert.ok(
+    forked.some((problem) => problem.includes("own SYSTEM_SENDER_ID copy")),
+    forked.join("; "),
   );
 });
 
@@ -116,6 +176,7 @@ test("renaming the system email to system@signet.local fails", () => {
   const seed = readRepo(SEED).replaceAll(SYSTEM_EMAIL, "system@signet.local");
   const problems = systemIdentityProblems({
     seed,
+    validationSource: readRepo(VALIDATION),
     chatConstant: readRepo(CHAT),
   });
   assert.ok(

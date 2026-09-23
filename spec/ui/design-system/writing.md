@@ -493,6 +493,50 @@ client cannot read (`GET /v1/invoices/overdue` is `billing:view`-only). §Status
 labels reserves the backend's own labels for states the client can actually
 confirm.
 
+### Report and block (mobile, s05 / s13 / s16)
+
+Member-safety copy (#2257). The behavior each string describes is owned by
+[`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Report and block.
+Each string lives once, in the file named in its row's last column, so web (#2313)
+should reuse these words from there. Paths are under `apps/mobile/`.
+
+| State | Title | Description | Home |
+|---|---|---|---|
+| Block confirmation | `Block <name>?` | `Their messages in this chapter's chat will be hidden from you. They won't be told, and they can still post where you both are. Poll votes still count, and they stay in the directory. You can unblock them anytime in Settings.` · confirm `Block`. The directory clause appears only when the loaded roster lists them | `lib/chat/block-actions.ts` (`blockConfirmBody`) |
+| Unblock confirmation | `Unblock <name>?` | `Their messages in this chapter's chat will show again. They won't be told.` · confirm `Unblock` | `lib/chat/block-actions.ts` |
+| Block / unblock failed | `Couldn't block <name>` / `Couldn't unblock <name>` | `Nothing changed. Check your connection and try again.` Also any 404 other than the one below | `lib/chat/block-actions.ts` |
+| Block refused, not a member | `Couldn't block <name>` | `This member is no longer in your chapter, so there's nothing to block.` Only for a 404 whose message is `Member not found` (`isMemberNotFound`) | `lib/chat/block-actions.ts` |
+| Actions sheet, Report row | — | `Report message` · `Your chapter's officers will be able to see it.` | `components/chat/message-actions-sheet.tsx` |
+| Block / Unblock rows (message actions sheet and the directory's member sheet) | — | `Block <name>` · `Hides their messages from you in this chapter's chat. They aren't told.`; `Unblock <name>` · `Their messages in this chapter's chat show again.` (directory only) | `lib/chat/block-actions.ts` (`BLOCK_ROW_DESCRIPTION`, `UNBLOCK_ROW_DESCRIPTION`) |
+| Report sent | `Report sent` | `Your chapter's officers can see this report. The member you reported isn't told.` | `lib/chat/report-reasons.ts` |
+| Already reported | `Already reported` | `You already reported this message, and that report is still open. Your chapter's officers can see it.` | `lib/chat/report-reasons.ts` |
+| Report failed, form open | — | `Your report didn't send. Check your connection and try again.` — no response, a 5xx, or any status but the two below | `lib/chat/report-reasons.ts` (`reportFailureBody`) |
+| Report refused (403 / 404), form open | — | `This message can't be reported anymore. It may have been deleted, or you may no longer have access to where it was posted.` | `lib/chat/report-reasons.ts` (`reportFailureBody`) |
+| Report failed after the form was dismissed | `Couldn't send your report` | Whichever of the two bodies above applies (an alert) | `lib/chat/report-reasons.ts` |
+| Tombstone | — | `Message from a member you blocked` · action `Unblock` | `components/chat/blocked-message-tombstone.tsx` |
+| Tombstone, unblocked since | — | `Hidden while you had this member blocked` · action `Reload` only while the post-unblock re-read has failed (a spinner while it runs) | `components/chat/blocked-message-tombstone.tsx` |
+| Tombstone Reload failed again | `Couldn't reload these messages` | `Check your connection and try again.` (an alert) | `lib/chat/block-actions.ts` |
+| Reply quoting a blocked member | — | The tombstone's own words, in place of the quote's author and preview | `components/chat/blocked-message-tombstone.tsx` |
+| Reply quoting a held message | — | `Message hidden` | `components/chat/reply-quote.tsx` |
+| Block list unavailable | `Couldn't load your block list` | `<N new messages are> held until it loads, so nothing from a member you blocked shows by mistake.` · action `Retry`, or `Retries when you're back online` in its place while the read waits for the network | `lib/chat/blocks.ts` (`blockListNotice`, `BLOCK_LIST_WAITING_FOR_NETWORK`) |
+| Block list loading, rows held | `Checking your block list` | `<N new messages are> held until it loads.` | `lib/chat/blocks.ts` |
+| Blocked members, list | `Blocked members` | `Blocks apply in this chapter only.` above the rows, each with `Unblock` | `components/settings/blocked-members-sheet.tsx` |
+| Blocked members, empty | `You haven't blocked anyone in this chapter` | `Block someone from a message or their profile in the directory. Their messages in this chapter's chat are hidden from you, and they aren't told.` | `components/settings/blocked-members-sheet.tsx` |
+| Blocked members, first read failed | `Couldn't load your blocked members` | `Check your connection and try again. Your blocks haven't changed.` · action `Retry` | `components/settings/blocked-members-sheet.tsx` |
+| Blocked members, first read waiting for the network | `Couldn't load your blocked members` | `You're offline. This list loads when you're back online. Your blocks haven't changed.` · no action | `components/settings/blocked-members-sheet.tsx` |
+| Blocked members, refresh failed over a cached list | — | `Couldn't refresh this list. It may be missing a recent change.` above the cached rows · action `Retry`, or `Retries when you're back online` while the read waits for the network | `components/settings/blocked-members-sheet.tsx` |
+
+**The report confirmation promises neither a reviewer nor a response time.** The API
+files a report into a queue only `channels:manage` holders — the chapter's officers —
+can read, and no screen renders that queue yet; "officers will review this" would
+promise an action nobody is set up to take. "Can see" is the capability, which is true
+in every channel type, DMs included. It does not say reports are anonymous: nothing on
+this client can promise what an officer surface will show. The block copy names what a
+block does *not* do (the blocked member is not told, can still post, still counts in
+polls) because silence is the feature — a member who assumed the other person was
+notified would be wrong in the one way that matters — and says "this chapter" because a
+block is scoped to one chapter and a member can belong to several.
+
 ### Alumni (dashboard)
 
 | State | Title | Description |
