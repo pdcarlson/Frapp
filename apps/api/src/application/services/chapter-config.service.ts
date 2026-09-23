@@ -532,17 +532,16 @@ export class ChapterConfigService {
       >;
       diff['branding'] = { from: existing.branding, to: mergedBranding };
       update['branding'] = mergedBranding;
-      // Clear the engine stamp in the same write as the branding, so the
-      // stale-palette sweep re-derives the palette from the seed this write
-      // stores (#1165, accent-engine.md §4). Every branding PATCH needs it,
-      // not only one that carries colors: this write stores the whole merged
-      // object, accent included, as `getConfig` read it. A Settings accent
-      // save landing between that read and this write stores a new seed and
-      // stamps its palette current; this write then puts the old seed back
-      // under that palette, and without the cleared stamp the sweep would
-      // never look at the row. When colors are present, the recompute below
-      // also re-derives it at once, and a failure there, which is only
-      // logged, leaves the row for the sweep instead of stamped current.
+      // Every branding write re-derives the palette (below) and clears the
+      // engine stamp here, atomically with the seed, with or without colors
+      // in the PATCH (#1165, accent-engine.md §4). This write stores the whole
+      // merged object as `getConfig` read it, accent included, so a Settings
+      // accent save landing between that read and this write gets its seed
+      // replaced under the palette it just stamped current. The recompute
+      // re-derives from the seed stored here; if it fails, which is only
+      // logged, the cleared stamp leaves the row for the stale-palette sweep
+      // instead of stamped current over a palette from another seed. (The
+      // accent save itself is still lost in that race: #2607.)
       update['theme_palette_engine_version'] = null;
 
       const readAccent = (branding: unknown): string | undefined =>
@@ -811,18 +810,18 @@ export class ChapterConfigService {
       );
     }
 
-    // Recompute the theme palette whenever the PATCH carries `branding.colors` —
-    // presence, not change. Use the merged
-    // branding colors so a partial color patch keeps the untouched channel.
-    // Capture the derived map so a trailing `getConfig` failure can still
-    // return the tokens we just persisted (#1670 fallback).
+    // Recompute the theme palette whenever the PATCH wrote `branding`, with or
+    // without colors and changed or not: the seed guard needs the palette
+    // re-derived from whatever seed that write stored (see the stamp above).
+    // Use the merged branding colors so a partial color patch keeps the
+    // untouched channel. Capture the derived map so a trailing `getConfig`
+    // failure can still return the tokens we just persisted (#1670 fallback).
     let committedThemePalette:
       | Awaited<ReturnType<ChapterConfigService['getConfig']>>['theme_palette']
       | undefined;
-    if (dto.branding?.colors) {
+    if (mergedBranding) {
       const mergedColors =
-        (mergedBranding as { colors?: { accent?: string } })?.colors ??
-        dto.branding.colors;
+        (mergedBranding as { colors?: { accent?: string } }).colors ?? {};
       try {
         const { build, written } = await this.recomputePalette(
           chapterId,
