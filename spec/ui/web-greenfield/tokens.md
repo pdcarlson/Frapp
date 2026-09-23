@@ -383,9 +383,9 @@ supposed to carry the indicator ranges 1.50–18.71:1, failing 3:1 on 7 of 19 se
 [#2541](https://github.com/pdcarlson/Frapp/issues/2541) the accent engine holds `accent-9` to 3:1 on
 every ladder step by construction ([`accent-engine.md`](../design-system/accent-engine.md) §8), so
 the border measures 3.01–18.71:1 and clears on all 19 seeds, pinned in
-`packages/chapter-theme/src/signet.spec.ts`. A chapter whose stored palette predates that keeps the
-old, failing border until the palette is recomputed; that backfill is
-[#1165](https://github.com/pdcarlson/Frapp/issues/1165). The rest of this entry stands and stays with #2398:
+`packages/chapter-theme/src/signet.spec.ts`. A chapter whose stored palette predated that kept the
+old, failing border until the hourly stale-palette sweep recomputed it
+([#1165](https://github.com/pdcarlson/Frapp/issues/1165), `accent-engine.md` §4). The rest of this entry stands and stays with #2398:
 the diluted ring (now 1.18–1.31:1) and the absence of any contrast assertion on the recipes
 themselves.
 

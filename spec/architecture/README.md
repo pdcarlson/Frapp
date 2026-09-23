@@ -548,7 +548,7 @@ The **neutral ladder is not derived**. Backgrounds, borders, the sidebar and the
 
 ### Computation and caching
 
-`buildChapterPalette` (`apps/api/src/application/services/chapter-palette.ts`) is the single writer behind all three doors: onboarding, the config PATCH / `POST /chapters/:id/theme-palette` recompute endpoint, and the Settings accent save (`PATCH /v1/chapters/current`, the only path the UI actually uses). It is rebuilt **server-side** and cached in `chapters.theme_palette` — never recomputed on read, never client-side. A colour problem is logged, never thrown: it must not fail a save an officer asked for.
+`buildChapterPalette` (`apps/api/src/application/services/chapter-palette.ts`) is the single writer behind all three doors: onboarding, the config PATCH / `POST /chapters/:id/theme-palette` recompute endpoint, and the Settings accent save (`PATCH /v1/chapters/current`, the only path the UI actually uses). It is rebuilt **server-side** and cached in `chapters.theme_palette` — never recomputed on read, never client-side. A colour problem is logged, never thrown: it must not fail a save an officer asked for. Each write also records which engine produced the map (`theme_palette_engine_version`), and an hourly sweep in `ScheduledJobsService` re-runs the same builder over every row an older engine wrote, so an engine change reaches stored chapters without waiting for each to save. The mechanism, and the compare-and-set that keeps the sweep off a racing officer save, is canon in [`accent-engine.md` § 4](../ui/design-system/accent-engine.md#4-caching-and-persistence).
 
 Delivery differs per surface, and neither client applies the column blindly:
 
@@ -559,9 +559,9 @@ Delivery differs per surface, and neither client applies the column blindly:
 
 `derivePalette({ dark, accent })` produced a separate eight-token map (`--side-bg`, `--side-accent`, `--brand-band`, `--mention-*`, `--chat-self-bubble`, `--reaction-active`, `--ring`) merged into the same column. Six of the eight were composited over or validated against the **bone** background, so they could not survive the move to a `#0E0D0B` surface. The other two were dark-context and died with the concept instead: `--side-bg` was `mixHex(dark, ink, 0.3)` and never contrast-tested at all, and `--side-accent` was validated against *it* — both belonged to the branded sidebar the Signet shell replaced with a fixed neutral surface. The #920 shell slice stopped applying all eight; the slice-9 cutover deleted the engine.
 
-Nothing migrated the stored data, because nothing needed to — the column is unconstrained jsonb and both clients read by allow-list. Rows written before the cutover therefore still **hold** the eight dead keys, and the guards that keep them off `:root` are load-bearing rather than historical.
+The cutover migrated no stored data, because nothing needed to: the column is unconstrained jsonb and both clients read by allow-list. Rows written before it kept holding the eight dead keys until the #1165 sweep recomputed them, and since every writer replaces the whole map, that recompute dropped the keys. The allow-list guards stay, because they are what keeps any non-role key in the column off `:root`.
 
-The general hazard is worth naming: `theme_palette` has no version stamp, so a stored row cannot be distinguished from a current one by inspection, and each engine change silently applies only to chapters saved after it. The backfill is tracked in #1165.
+The general hazard was that `theme_palette` carried no version stamp, so a stored row could not be told from a current one by inspection, and each engine change silently applied only to chapters saved after it. That is how the #2541 fill floor shipped to no existing chapter. #1165 added the stamp and the sweep that acts on it.
 
 ### Why the sidebar is not branded
 

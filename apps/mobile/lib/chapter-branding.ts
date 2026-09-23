@@ -91,8 +91,9 @@ function readString(
  * whose `theme_palette` predates the Signet map and has not been recomputed. It
  * outlived `derivePalette`, which the #920 slice-9 cutover deleted: the two
  * were independent all along, since this path re-validates `accent_color` and
- * never read that engine's token map. It retires when every chapter has been
- * through one save or recompute (§6).
+ * never read that engine's token map. The API's stale-palette sweep recomputes
+ * every such row (#1165), so this branch is dead once production has run it;
+ * deleting it is #2595.
  *
  * `accentPrimary`/`accentOnPrimary` are gated **together**, both-or-neither —
  * not chained off `generatedAccent`'s own presence check, and not defaulted

@@ -33,10 +33,12 @@ import {
  *    guaranteed by the engine at generation time
  *    (`spec/ui/design-system/accent-engine.md` §8) — there is no per-token
  *    client-side fallback to run.
- *  - A row persisted before the Signet map existed simply lacks those keys;
- *    the house-gold defaults baked into `signet.css` stand until a save or
- *    recompute refreshes the row (accent-engine.md §3, staleness tracked in
- *    #1165). Nothing here assumes the keys exist.
+ *  - A row missing any of those keys leaves the house-gold defaults baked
+ *    into `signet.css` standing. Rows persisted before the Signet map existed
+ *    were that case until the API's stale-palette sweep recomputed them
+ *    (accent-engine.md §4, #1165); the gate stays, so a malformed row degrades
+ *    to house gold rather than half a palette. Nothing here assumes the keys
+ *    exist.
  *  - **No legacy token is applied at all**, which is why this is an allow-list
  *    rather than the blind key iteration it used to be. `derivePalette` was
  *    deleted at the slice-9 cutover so nothing writes its map any more, but
@@ -97,8 +99,9 @@ export function useChapterTheme() {
    * The semantic tokens for the current chapter, or `null`.
    *
    * All-or-nothing, which is the rule this hook has always applied and which
-   * the cache inherits: a row persisted before the Signet keys existed (#1165)
-   * simply lacks them, and half a map is worse than none — the stylesheet's
+   * the cache inherits: a row missing the Signet keys (as rows persisted
+   * before them did, until the #1165 sweep) applies none, and half a map is
+   * worse than none — the stylesheet's
    * house defaults are internally consistent, one chapter's primary beside the
    * house ring is not.
    */

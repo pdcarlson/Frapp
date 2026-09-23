@@ -177,8 +177,8 @@ it flattens the on/off cue this whole carve-out exists to protect, dropping
 checked-vs-unchecked below 3:1 on **sixteen** accents where none sits undimmed
 — the same erasure, at a larger magnitude, that disqualified the real `disabled`
 attribute. (Nine sat under 3:1 undimmed until the accent engine's fill floor,
-#2541, which holds for palettes written since; a stored one keeps its old fill
-until it is recomputed, #1165.) `button.tsx` and `label.tsx` already record the
+#2541, which reaches palettes stored before it through the stale-palette
+sweep, #1165.) `button.tsx` and `label.tsx` already record the
 system's ban on that idiom. So the visual signal here is the cursor, and the
 *explanation* is carried by `aria-describedby` and the note, not by dimming.
 

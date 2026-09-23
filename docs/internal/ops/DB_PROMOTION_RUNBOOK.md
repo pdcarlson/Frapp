@@ -518,6 +518,37 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-23: Stamp every chapter palette with its engine, and sweep the stale ones (#1165)
+
+Two migrations, plus a data rewrite that the **API** performs, not SQL. The migrations make it safe; the rewrite is the point. Why it exists: the accent engine's output is cached in `chapters.theme_palette` and nothing regenerated it, so the #2541 fill floor reached no existing chapter, and a dark-accent chapter kept painting a sub-3:1 `accent-primary` (crimson at 1.50:1). Canon: [`accent-engine.md` § 4](../../../spec/ui/design-system/accent-engine.md#4-caching-and-persistence).
+
+### 20260923170000_chapter_theme_palette_engine_version.sql
+
+- **Purpose**: Additive nullable column `chapters.theme_palette_engine_version integer`, no default, no constraint. It records the `SIGNET_ENGINE_VERSION` that wrote each palette; `NULL` or lower than the running engine means stale. Every existing row starts `NULL` on purpose, so the first sweep recomputes every chapter rather than only the ones missing a key.
+- **Checks**: After `db push`,
+  `select data_type, is_nullable, column_default from information_schema.columns where table_schema = 'public' and table_name = 'chapters' and column_name = 'theme_palette_engine_version';` returns `integer | YES | NULL`.
+- **Promoter notes**: Additive; the API currently deployed ignores it. The API carrying #1165 writes it on every palette write, so the column must exist first, which both `migrate-staging` and a `full` production run guarantee by migrating before deploying.
+
+### 20260923170100_backfill_chapter_branding_accent_from_accent_color.sql
+
+- **Purpose**: Data-only, idempotent repair of the #795 mirror in the direction `20260814120000` did not cover. A Settings accent save from before that path mirrored the column back into `branding` left `branding.colors.accent` empty and the chosen colour only in `accent_color`. Every recompute path, the sweep included, seeds from `branding.colors.accent`, so without this those chapters would be repainted house gold. The migration copies `accent_color` into `branding.colors.accent` where branding has no accent and the column holds a well-formed `#RRGGBB` other than the never-written schema default `#2563EB`. The migration header covers the one case it can't recover.
+- **Checks**: The rows it will repair, **before** applying (staging had one on 2026-09-23):
+  `select id, accent_color from public.chapters where jsonb_typeof(branding) = 'object' and (branding -> 'colors' is null or jsonb_typeof(branding -> 'colors') = 'object') and branding -> 'colors' ->> 'accent' is null and accent_color ~ '^#[0-9A-Fa-f]{6}$' and lower(accent_color) <> '#2563eb';`
+  After applying, the same query returns **0 rows**. Keep the pre-apply ids if you may want the rollback recipe.
+- **Promoter notes**: Must land **before** the API carrying the sweep, which the pipeline's ordering already guarantees. Re-applying updates nothing.
+
+### After the API deploy: the sweep rewrites every palette
+
+Nothing to run. Within an hour of the API carrying #1165 going live (the top of the next hour), `ScheduledJobsService.sweepStalePalettes` recomputes every chapter whose stamp is `NULL` or behind, through `buildChapterPalette`. That is every chapter, the first time. It replaces each whole map, so the dead pre-cutover legacy keys go too. The same happens automatically after any later deploy that bumps `SIGNET_ENGINE_VERSION`.
+
+- **Verify, staging first, then production** (read-only), after the first top-of-hour tick following the deploy:
+  `select count(*) as chapters, count(*) filter (where theme_palette_engine_version is null or theme_palette_engine_version < 1) as stale from public.chapters;` shows `stale = 0`. Replace `1` with the current `SIGNET_ENGINE_VERSION` after a bump.
+  Spot-check a dark accent: `select branding -> 'colors' ->> 'accent' as seed, theme_palette ->> '--signet-accent-primary' as fill from public.chapters where theme_palette_engine_version is not null limit 20;`. A dark seed such as `#8B0000` now paints a lifted fill (`#C34437`), not the seed itself.
+  The API's Render logs carry `palette sweep: recomputed X/N stale palettes to engine v1` for the tick that did the work.
+- **If `stale` stays above 0**: the log line's `failed` count names rows whose write errored, and those are retried every hour. Don't stamp rows by hand in SQL. That marks a stale fill as current and hides it from the sweep for good. To fix one chapter immediately, use `POST /v1/chapters/:id/theme-palette`.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-the-theme-palette-engine-stamp-20260923170000) § Rollback the theme palette engine stamp, and § Rollback the branding accent mirror repair.
+
 ## 2026-09-15: Chat report and block (#2257)
 
 ### 20260915210000_chat_reports_and_blocks.sql

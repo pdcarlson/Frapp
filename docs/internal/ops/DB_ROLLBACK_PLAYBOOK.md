@@ -1945,3 +1945,15 @@ To roll back, re-apply the previous definition from `20260902160000_anonymize_us
 **Rolling this back is a data-retention regression, not a feature rollback.** Without these lines, a deleted member's own block list and their rush ballots both survive account deletion. The FKs' `on delete cascade` do **not** cover either: `anonymize_user` tombstones the `users` row rather than deleting it, so nothing ever cascades. What each table retains and why is owned by [`spec/behavior/data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion) § Individual Account Deletion. Only roll back alongside dropping `chat_member_blocks` itself — and in that order, per the note above.
 
 **Re-applying is safe** and idempotent; each delete is a no-op for a user with no such rows, and re-running the whole function on an already-tombstoned user is the documented retry path.
+
+## Rollback the theme palette engine stamp (20260923170000)
+
+* **Migration**: `20260923170000_chapter_theme_palette_engine_version.sql`
+* **Action**: Roll the API back to a revision before #1165 **first**, then `alter table public.chapters drop column if exists theme_palette_engine_version;`.
+* **Note**: Order matters. The #1165 API names the column in every palette write: onboarding's insert, the Settings accent save, the config recompute and the sweep. With the column gone, PostgREST rejects each of those writes, so onboarding and accent saves fail outright. Rolling back only the API is safe on its own: the older code neither reads nor writes the column, and its engine is the same `SIGNET_ENGINE_VERSION` 1. Dropping the column loses only the stamps. Palettes the sweep already recomputed stay recomputed, and they are correct: they are the current engine's output. The pre-sweep palettes (the stale fills) exist nowhere but a backup, and there is no reason to restore them. Re-adding the column later sets every row back to `NULL`, and the sweep recomputes them all once more, which is harmless.
+
+## Rollback the branding accent mirror repair (20260923170100)
+
+* **Migration**: `20260923170100_backfill_chapter_branding_accent_from_accent_color.sql`
+* **Action**: Not reversible to the exact prior state without the pre-apply id list (the promotion runbook's query). No information was lost: the value copied into `branding.colors.accent` is still in `accent_color`, which the migration never touches. For known ids: `update public.chapters set branding = branding #- '{colors,accent}' where id in (<ids>);`.
+* **Note**: Data only. Undoing it recreates the divergence it repaired, where every recompute, sweep and `POST /v1/chapters/:id/theme-palette` included, seeds from an empty branding accent and repaints the chapter house gold. There is rarely a reason to roll it back.

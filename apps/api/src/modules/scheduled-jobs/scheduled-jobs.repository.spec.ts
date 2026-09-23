@@ -547,6 +547,26 @@ const POLL_A = '0a000000-0000-4000-8000-000000000226';
 const POLL_B = '0b000000-0000-4000-8000-000000000226';
 
 const tenantSeed = () => ({
+  // The tenant table itself, keyed on its own `id` (`tenantColumns` below):
+  // colliding twins for the stale-palette sweep.
+  chapters: [
+    {
+      id: CHAPTER_A,
+      name: 'Alpha',
+      university: 'State U',
+      branding: { colors: { accent: '#8B0000' } },
+      theme_palette: { '--signet-accent-primary': '#8B0000' },
+      theme_palette_engine_version: null,
+    },
+    {
+      id: CHAPTER_B,
+      name: 'Alpha',
+      university: 'State U',
+      branding: { colors: { accent: '#8B0000' } },
+      theme_palette: { '--signet-accent-primary': '#8B0000' },
+      theme_palette_engine_version: null,
+    },
+  ],
   events: [
     inA({
       id: EVENT_A,
@@ -697,6 +717,7 @@ describe('ScheduledJobsRepository — tenant scope', () => {
   beforeEach(() => {
     harness = createTenantHarness({
       tables: tenantSeed(),
+      tenantColumns: { chapters: 'id' },
       // `chat_messages` has no `chapter_id`; resolved through `chat_channels`
       // the same way `SupabaseChatMessageRepository`'s tenant-scope spec does.
       untenantedTables: ['chat_messages'],
@@ -749,6 +770,34 @@ describe('ScheduledJobsRepository — tenant scope', () => {
     expect(rows.map((r) => r.id).sort()).toEqual([POLL_A, POLL_B].sort());
     const [op] = harness.ops;
     expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
+  });
+
+  it('findChaptersWithStalePalette is a cross-chapter sweep (characterised)', async () => {
+    const rows = await repo.findChaptersWithStalePalette(1);
+
+    expect(rows.map((r) => r.id).sort()).toEqual([CHAPTER_A, CHAPTER_B].sort());
+    const [op] = harness.ops;
+    expect(op.filters.some((f) => f.column === 'id')).toBe(false);
+  });
+
+  it('writeRecomputedPalette writes only the chapter the sweep row names', async () => {
+    const written = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.writeRecomputedPalette(
+        { id: CHAPTER_B, seed: '#8B0000' },
+        {
+          theme_palette: { '--signet-accent-primary': '#C34437' },
+          theme_palette_engine_version: 1,
+        },
+      ),
+    );
+
+    expect(written).toBe(true);
+    const byId = new Map(harness.rows('chapters').map((r) => [r.id, r]));
+    expect(byId.get(CHAPTER_B)?.theme_palette_engine_version).toBe(1);
+    expect(byId.get(CHAPTER_A)?.theme_palette_engine_version).toBeNull();
+    expect(byId.get(CHAPTER_A)?.theme_palette).toEqual({
+      '--signet-accent-primary': '#8B0000',
+    });
   });
 
   it('claimDispatch writes the dispatch row under the given chapter', async () => {

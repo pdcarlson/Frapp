@@ -68,8 +68,8 @@ const Switch = React.forwardRef<
        *   - It flattens the very cue this variant exists to protect: checked
        *     `--primary` against the unchecked `bg-accent` track clears 3:1 on
        *     all 19 seeds undimmed (the §8 fill floor holds it against
-       *     `--popover`, the same `#2A2621`, in palettes written since; a
-       *     stored one keeps its old fill until recomputed, #1165), and a 50%
+       *     `--popover`, the same `#2A2621`, and the stale-palette sweep
+       *     carries it to palettes stored before it, #1165), and a 50%
        *     dim composited over `--background` drops 16 of them under it
        *     (`#8B0000` 3.01 → 1.61, `#CC0000` 3.01 → 1.56; measured
        *     2026-09-23, #2541). That is the same erasure that made the real
