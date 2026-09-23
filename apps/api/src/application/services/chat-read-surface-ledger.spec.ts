@@ -635,6 +635,16 @@ function chainNames(node: ts.Expression): string[] {
   return names;
 }
 
+/** What can follow a test function on a chain: `fit.each`, `it.concurrent.only`. */
+const JEST_MODIFIERS = new Set([
+  'each',
+  'concurrent',
+  'failing',
+  'only',
+  'skip',
+  'todo',
+]);
+
 const SKIPPING_IDENTIFIERS = new Set([
   'xdescribe',
   'xit',
@@ -661,13 +671,15 @@ function skipsOrFocuses(file: ts.SourceFile): boolean {
       (ts.isIdentifier(node) &&
         SKIPPING_IDENTIFIERS.has(node.text) &&
         !isNameOnly(node)) ||
-      // `j.fit(…)` or `j.fit.each(…)` through a namespace import. A property
-      // named `fit` that is only read (`expect(o.fit)`) is not a focus.
+      // `j.fit(…)`, or `j.fit.each(…)` and the like, through a namespace
+      // import. A property named `fit` that is only read (`expect(o.fit)`,
+      // `layout.fit.width`) is not a focus.
       (ts.isPropertyAccessExpression(node) &&
         SKIPPING_IDENTIFIERS.has(node.name.text) &&
         ((ts.isCallExpression(node.parent) &&
           node.parent.expression === node) ||
-          ts.isPropertyAccessExpression(node.parent))) ||
+          (ts.isPropertyAccessExpression(node.parent) &&
+            JEST_MODIFIERS.has(node.parent.name.text)))) ||
       // `.skip` / `.only` / `.todo` anywhere on a chain that names describe,
       // it or test: `it.concurrent.only`, `j.it.only`, `describe.skip.each`.
       (ts.isPropertyAccessExpression(node) &&
@@ -900,9 +912,11 @@ describe('chat read-surface ledger (#2324)', () => {
     // about the echo inside a longer string is not the literal and does not
     // count. A reaction subscription would be a reaction push.
     // The event in any spelling the code can hold it: the string literal, the
-    // enum member read as a property or an element, or a destructured binding
-    // referenced by name. Declarations (`const { POSTGRES_CHANGES } = …`) are
-    // not references, and are skipped.
+    // enum member read as a property or an element, or the bare name. Pulling
+    // the member out by destructuring or import (`const { POSTGRES_CHANGES:
+    // ev } = …`, `import { POSTGRES_CHANGES as ev }`) is itself a mention
+    // outside an `.on(…)` call: the local name it binds could be anything, so
+    // it is a problem to resolve by hand.
     const isEvent = (node: ts.Node | undefined): boolean =>
       literalText(node) === 'postgres_changes' ||
       (!!node &&
@@ -912,9 +926,7 @@ describe('chat read-surface ledger (#2324)', () => {
             literalText(node.argumentExpression) === 'POSTGRES_CHANGES') ||
           (ts.isIdentifier(node) &&
             node.text === 'POSTGRES_CHANGES' &&
-            !isNameOnly(node) &&
-            !ts.isBindingElement(node.parent) &&
-            !ts.isImportSpecifier(node.parent))));
+            !isNameOnly(node))));
     const subscribed = new Set<string>();
     const problems = sources.flatMap(({ rel, file }) =>
       everyNode(file)
