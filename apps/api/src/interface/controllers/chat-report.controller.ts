@@ -68,15 +68,19 @@ import {
  *
  * **That union has one spelling in code**, `CHAT_REPORT_QUEUE_PERMISSIONS` in
  * `@repo/validation`, and this controller's decorators are pinned equal to it
- * (`chat-report.controller.spec.ts`). Two code sites read the constant rather
- * than restating it: the new-report notification's recipients
- * (`REPORT_QUEUE_PERMISSIONS`, `chat-report.service.ts`) and the web queue's
- * `<Can allOf>` gate (`apps/web/components/chat-admin/chat-reports-card.tsx`).
- * Three restate it in words and change by hand with it: the card's
- * permission-denied copy (`chatReportCopy.deniedDescription`, whose spec checks
- * it names every permission in the constant), `spec/ui/design-system/writing.md`
- * §7's Chat Admin row, and the Status line and § Report of
- * `spec/behavior/chat/README.md`.
+ * (`chat-report.controller.spec.ts`). The constant's docblock
+ * (`packages/validation/src/permissions.ts`) keeps the list of everything that
+ * has to agree with it; the same list, so the two cannot disagree:
+ *
+ * - code that reads the constant: the new-report notification's recipients
+ *   (`REPORT_QUEUE_PERMISSIONS`, `chat-report.service.ts`) and the web queue's
+ *   `<Can allOf>` gate (`apps/web/components/chat-admin/chat-reports-card.tsx`);
+ * - prose that restates it and changes by hand with it: the card's
+ *   permission-denied copy (`chatReportCopy.deniedDescription`, whose spec
+ *   checks it names every permission in the constant),
+ *   `spec/ui/design-system/writing.md` §7's Chat Admin row, the Status line,
+ *   § Report and § Officer action of `spec/behavior/chat/README.md`, and the
+ *   `chat/reports` row of `docs/internal/security/AUTHORIZATION_MODEL.md`.
  *
  * **No officer route serves or acts on a report about its caller.** The
  * repository leaves out rows whose `reported_sender_id` is the caller on the
@@ -178,12 +182,16 @@ export class ChatReportController {
    * holders who can read a report can act on it. Inherits the class-level
    * `@SubscriptionExempt()` — removing reported harassment is member safety.
    *
-   * Every other open report on the same message closes with it. Idempotent on
-   * the message: one already soft-deleted still closes the reports, and the
-   * response says `message_already_deleted: true`. 404 for a report not in the
-   * caller's chapter or about the caller; 409 when the report is no longer open
-   * or its message was hard-deleted. Returns the resolved report, never the
-   * message.
+   * The report is claimed (`open` → `actioned`, conditionally) before the
+   * message is touched, so a Dismiss that lands first is a 409 with nothing
+   * removed. Every other open report on the same message closes with it.
+   * Idempotent on the message — one already soft-deleted still closes the
+   * reports, and the response says `message_already_deleted: true` — and on
+   * the report: one already `actioned` over a message that is gone answers the
+   * same 200. 404 for a report not in the caller's chapter or about the caller;
+   * 409 when the report was reviewed or dismissed, is `actioned` over a message
+   * still in place, or is open over a hard-deleted message. Returns the
+   * resolved report and the message's `channel_id`, never the message.
    */
   @Post(':id/remove-message')
   @HttpCode(HttpStatus.OK)

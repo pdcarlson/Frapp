@@ -87,7 +87,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
 
     if (error) {
       if (error.code === PG_UNIQUE_VIOLATION) {
-        const existing = await this.findOpenReport(
+        const existing = await this.findOwnOpenReport(
           input.chapter_id,
           input.reporter_user_id,
           input.message_id,
@@ -203,16 +203,69 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
   }
 
   /**
-   * The caller's own open report on one message, read back after a unique
-   * violation.
-   *
-   * Private, and deliberately not on the repository interface. The interface is
-   * the list of questions this table can be asked, and "which of my reports is
-   * open on this message" is only safe because `reporter_user_id` is bound to
-   * the authenticated caller at the one call site above. Exposing it would make
-   * "who reported this message" one argument away.
+   * Undo a removal's claim, matching its whole stamp (see the interface for
+   * why this is not a reopen). `actioned` + `resolved_by` + `resolved_at` in
+   * the predicate means it can only withdraw the write the same request made:
+   * a report some other decision closed does not match, and stays closed.
    */
-  private async findOpenReport(
+  async releaseClaim(
+    id: string,
+    chapterId: string,
+    resolvedBy: string,
+    resolvedAt: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('chat_message_reports')
+      .update({ status: 'open', resolved_at: null, resolved_by: null })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('status', 'actioned')
+      .eq('resolved_by', resolvedBy)
+      .eq('resolved_at', resolvedAt)
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    return data !== null;
+  }
+
+  /**
+   * `actioned` with `resolved_by` NULL: no officer decided it, the message was
+   * already gone. Conditional on `status = 'open'`, so a removal's sweep that
+   * reached the row first keeps its own stamp.
+   */
+  async closeForDeletedMessage(
+    id: string,
+    chapterId: string,
+    resolvedAt: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('chat_message_reports')
+      .update({
+        status: 'actioned',
+        resolved_at: resolvedAt,
+        resolved_by: null,
+      })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('status', 'open')
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    return data !== null;
+  }
+
+  /**
+   * The caller's own open report on one message: read back after a unique
+   * violation, and asked directly when the message is already deleted
+   * (`ChatReportService.fileReport` checks the replay before refusing).
+   *
+   * Scoped to `(chapter_id, reporter_user_id, message_id, 'open')`, which is
+   * the tuple the partial unique index covers, so it cannot hand back
+   * somebody else's report. `reporterUserId` is the authenticated caller at
+   * every call site; the interface says why that, rather than keeping this
+   * method private, is the boundary.
+   */
+  async findOwnOpenReport(
     chapterId: string,
     reporterUserId: string,
     messageId: string,

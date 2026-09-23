@@ -3696,6 +3696,11 @@ export interface components {
             resolved_by: string | null;
             /** @description True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way. */
             message_already_deleted: boolean;
+            /**
+             * Format: uuid
+             * @description The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists.
+             */
+            channel_id: string | null;
         };
         ChatBlockListDto: {
             /** @description users.id values the caller has blocked in the active chapter. An empty array means nobody is blocked — a failed request is NOT an empty list, and a client must hold unmaskable messages rather than render them when the read fails. */

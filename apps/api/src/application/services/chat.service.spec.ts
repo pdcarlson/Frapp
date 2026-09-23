@@ -2489,11 +2489,13 @@ describe('ChatService', () => {
       );
     });
 
-    it('returns nothing from the DM to the officer', async () => {
-      // Only whether it removed anything — no content, no channel, no row.
+    it('returns nothing from the DM to the officer but the channel id', async () => {
+      // Whether it removed anything, and the channel's id so the client can
+      // blank that one cached timeline — no content, no channel row, no
+      // message row.
       await expect(
         service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
-      ).resolves.toEqual({ alreadyDeleted: false });
+      ).resolves.toEqual({ alreadyDeleted: false, channelId: 'ch-dm' });
     });
 
     it('does not open the thread: the officer still cannot read the DM', async () => {
@@ -2528,7 +2530,7 @@ describe('ChatService', () => {
 
       await expect(
         service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
-      ).resolves.toEqual({ alreadyDeleted: true });
+      ).resolves.toEqual({ alreadyDeleted: true, channelId: 'ch-dm' });
       expect(mockMessageRepo.update).not.toHaveBeenCalled();
       expect(mockAttachmentRepo.findByMessage).not.toHaveBeenCalled();
     });
@@ -2596,6 +2598,49 @@ describe('ChatService', () => {
       await service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER);
 
       expect(mockMessageRepo.update).toHaveBeenCalledTimes(1);
+    });
+
+    describe('reportedMessageState', () => {
+      it('says whether the message is still there, and its channel, with no content', async () => {
+        await expect(
+          service.reportedMessageState('msg-reported', 'ch-1'),
+        ).resolves.toEqual({ channelId: 'ch-dm', isDeleted: false });
+        // Chapter-scoped like every message path: the channel must resolve in
+        // the chapter asked about.
+        expect(mockChannelRepo.findById).toHaveBeenCalledWith('ch-dm', 'ch-1');
+      });
+
+      it('reports a soft-deleted message as deleted', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...reportedMessage,
+          is_deleted: true,
+        });
+
+        await expect(
+          service.reportedMessageState('msg-reported', 'ch-1'),
+        ).resolves.toEqual({ channelId: 'ch-dm', isDeleted: true });
+      });
+
+      it('is null for a message that no longer exists', async () => {
+        mockMessageRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.reportedMessageState('msg-reported', 'ch-1'),
+        ).resolves.toBeNull();
+      });
+
+      it('is null for a message whose channel is not in the chapter', async () => {
+        mockChannelRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.reportedMessageState('msg-reported', 'ch-other'),
+        ).resolves.toBeNull();
+      });
+
+      it('writes nothing', async () => {
+        await service.reportedMessageState('msg-reported', 'ch-1');
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      });
     });
   });
 

@@ -134,13 +134,16 @@ export class ChatReportDto {
 }
 
 /**
- * What the report-scoped removal answers with: the report, now `actioned`, and
- * whether its message was already gone.
+ * What the report-scoped removal answers with: the report, now `actioned`,
+ * whether its message was already gone, and which channel it was in.
  *
  * The route is idempotent on the message — one its sender, an ordinary delete,
  * a sibling report's removal or an earlier half-finished attempt already
  * removed still closes the report — so a bare report would leave the client
  * claiming a removal this call did not make. The flag lets it say which.
+ *
+ * `channel_id` is there for the client's cache, not for the officer: the
+ * response still carries no part of the message, and the id opens nothing.
  */
 export class ChatReportRemovalDto extends ChatReportDto {
   @ApiProperty({
@@ -148,6 +151,15 @@ export class ChatReportRemovalDto extends ChatReportDto {
       'True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way.',
   })
   message_already_deleted: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists.",
+  })
+  channel_id: string | null;
 }
 
 export class CreateChatBlockDto {

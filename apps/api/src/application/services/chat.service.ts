@@ -245,6 +245,20 @@ export interface CreateCategoryInput {
   display_order?: number;
 }
 
+/** What {@link ChatService.deleteReportedMessage} did, and where. */
+export interface ReportedMessageRemoval {
+  /** True when the message was already soft-deleted and nothing was written. */
+  alreadyDeleted: boolean;
+  /** The message's channel — an id only; it opens nothing. */
+  channelId: string;
+}
+
+/** What {@link ChatService.reportedMessageState} knows about a reported message. */
+export interface ReportedMessageState {
+  channelId: string;
+  isDeleted: boolean;
+}
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -1042,15 +1056,18 @@ export class ChatService {
    * grant's own so the predicate compares two independently sourced values
    * rather than one against itself.
    *
-   * Returns no part of the row: the caller must not receive it. The only thing
-   * the officer is entitled to from a DM is the snapshot the report already
-   * holds.
+   * Returns no part of the row but its `channel_id`: the caller must not
+   * receive the message. The only thing the officer is entitled to from a DM
+   * is the snapshot the report already holds. The channel id is an id, not a
+   * read — every channel route still refuses it — and it is what lets the
+   * client blank that one timeline's cached copy rather than refetch them all
+   * (`ChatReportRemovalDto.channel_id`).
    */
   async deleteReportedMessage(
     grant: ReportedMessageGrant,
     chapterId: string,
     officerUserId: string,
-  ): Promise<{ alreadyDeleted: boolean }> {
+  ): Promise<ReportedMessageRemoval> {
     const message = await this.assertMessageAccess(
       grant.messageId,
       chapterId,
@@ -1059,10 +1076,39 @@ export class ChatService {
       grant,
     );
 
-    if (message.is_deleted) return { alreadyDeleted: true };
+    if (message.is_deleted) {
+      return { alreadyDeleted: true, channelId: message.channel_id };
+    }
 
     await this.softDeleteMessage(message.id, chapterId);
-    return { alreadyDeleted: false };
+    return { alreadyDeleted: false, channelId: message.channel_id };
+  }
+
+  /**
+   * Whether a reported message is still there, and which channel it is in —
+   * or `null` when there is no such message in this chapter (hard-deleted by a
+   * channel delete or the import purge).
+   *
+   * **A state read, not an authorization.** It returns no content and grants
+   * nothing, and it has exactly two callers in `ChatReportService`, each
+   * passing a message id it already holds by right: a message the reporter
+   * was just authorized to read (the re-check after a report is written), and
+   * the message a chapter-scoped, reviewer-visible report names (the removal
+   * route's answer for a report that is already `actioned`). The channel must
+   * still resolve inside `chapterId`, as every message path here requires.
+   */
+  async reportedMessageState(
+    messageId: string,
+    chapterId: string,
+  ): Promise<ReportedMessageState | null> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) return null;
+    const channel = await this.channelRepo.findById(
+      message.channel_id,
+      chapterId,
+    );
+    if (!channel) return null;
+    return { channelId: message.channel_id, isDeleted: message.is_deleted };
   }
 
   /**

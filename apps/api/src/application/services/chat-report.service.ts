@@ -20,6 +20,10 @@ import {
   ReportedMessageGrant,
 } from './channel-access.service';
 import { ChatService } from './chat.service';
+import type {
+  ReportedMessageRemoval,
+  ReportedMessageState,
+} from './chat.service';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { RbacService } from './rbac.service';
@@ -52,16 +56,23 @@ export const REPORT_QUEUE_PERMISSIONS = CHAT_REPORT_QUEUE_PERMISSIONS;
 
 /**
  * What `POST /v1/chat/reports/{id}/remove-message` answers with: the report as
- * it now stands (`actioned`), plus whether the message was already gone.
+ * it now stands (`actioned`), whether the message was already gone, and the
+ * channel it was in.
  *
  * `message_already_deleted` exists so the officer is told the truth. The route
  * is idempotent — a message its sender, an ordinary delete, a sibling report or
  * an earlier half-finished attempt already removed still closes the report —
  * and without the flag the client could only say "Message removed" for a
  * removal this call did not make.
+ *
+ * `channel_id` is an id, never a read: it lets the client blank the one cached
+ * timeline that can still show the removed text, where without it every
+ * timeline would have to be refetched. Null only when the message row no
+ * longer exists (hard-deleted), where there is nothing cached to blank.
  */
 export type ChatReportRemoval = ChatMessageReportView & {
   message_already_deleted: boolean;
+  channel_id: string | null;
 };
 
 /**
@@ -149,12 +160,24 @@ export class ChatReportService {
    * {@link notifyOfficers}. A replay returns the existing report silently, so a
    * double-tap or an offline retry cannot page the moderation team twice.
    *
-   * **A message that is already deleted cannot be reported** (409, before
-   * anything is written). Its content is `[message deleted]` for everyone, so
-   * there is nothing left for an officer to act on, and filing anyway would
-   * page every officer about a report whose only possible outcome is being
-   * closed. The member saw a live message and the sender deleted it before the
-   * report landed; the answer is that it is gone, which is what they wanted.
+   * **A message that is already deleted cannot be reported** (409). Its content
+   * is `[message deleted]` for everyone, so there is nothing left for an
+   * officer to act on, and filing anyway would page every officer about a
+   * report whose only possible outcome is being closed. The member saw a live
+   * message and it was deleted before the report landed; the answer is that it
+   * is gone, which is what they wanted. Two orderings keep that answer honest:
+   *
+   * - **The replay wins over the refusal.** A member re-sending a report they
+   *   filed while the message was live gets that open report back, as any
+   *   replay does, rather than a 409 that says their report was never taken.
+   *   The replay is looked up only when the message is deleted; on a live one
+   *   the insert's unique violation answers it.
+   * - **A removal can land between the check and the insert** (the removal's
+   *   own sibling sweep ran before this row existed). So the message is read
+   *   again once a new row is written ({@link closeIfMessageGone}); if it is
+   *   gone by then, the new report is closed as `actioned` on the spot, nobody
+   *   is notified, and the answer is the same 409 as the up-front check. The
+   *   row stays, closed, because reports are history and nothing deletes one.
    */
   async fileReport(
     chapterId: string,
@@ -167,9 +190,13 @@ export class ChatReportService {
       reporterUserId,
     );
     if (message.is_deleted) {
-      throw new ConflictException(
-        'This message has been deleted and can no longer be reported',
+      const replay = await this.reportRepo.findOwnOpenReport(
+        chapterId,
+        reporterUserId,
+        input.message_id,
       );
+      if (replay) return replay;
+      throw messageDeletedConflict();
     }
 
     const { report, created } = await this.reportRepo.create({
@@ -182,12 +209,68 @@ export class ChatReportService {
       reason: input.reason,
       details: input.details ?? null,
     });
+    if (!created) return report;
 
-    if (created) {
-      await this.notifyOfficers(chapterId, report, reporterUserId);
+    if (await this.closeIfMessageGone(report.id, input.message_id, chapterId)) {
+      throw messageDeletedConflict();
     }
 
+    await this.notifyOfficers(chapterId, report, reporterUserId);
     return report;
+  }
+
+  /**
+   * The re-check after a new report is written: if its message was removed in
+   * the meantime, close the report as `actioned` (no reviewer — nobody decided
+   * it) and answer `true`.
+   *
+   * **Never fails the report.** The row is committed, and a 500 here would
+   * invite a retry that the idempotent path answers silently — so if the read
+   * itself fails, the message is taken to be live and the officers are told,
+   * which is the ordinary outcome. A close that fails is logged; the report
+   * then sits `open` over a deleted message until an officer's Remove closes
+   * it (idempotently), and nobody was paged about it.
+   *
+   * One window stays open by construction: a removal that has claimed its
+   * report but not yet deleted the message. A report written then reads the
+   * message live and notifies; the removal's sweep, which runs after its
+   * delete, then closes it. The officers were paged about a report that is
+   * already `actioned` when they open the queue — noise, not a lost report.
+   */
+  private async closeIfMessageGone(
+    reportId: string,
+    messageId: string,
+    chapterId: string,
+  ): Promise<boolean> {
+    let state: ReportedMessageState | null;
+    try {
+      state = await this.chatService.reportedMessageState(messageId, chapterId);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not re-check the message of new chat report ${reportId}`,
+        error,
+      );
+      return false;
+    }
+    if (state && !state.isDeleted) return false;
+
+    try {
+      await this.reportRepo.closeForDeletedMessage(
+        reportId,
+        chapterId,
+        new Date().toISOString(),
+      );
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not close chat report ${reportId}, filed on a message deleted as it landed`,
+        error,
+      );
+    }
+    return true;
   }
 
   /**
@@ -206,12 +289,14 @@ export class ChatReportService {
    *   holders review it. Null for an imported archive row.
    * - **The reporter.** They know; a push about their own action is noise.
    *
-   * **Nobody left to tell is logged, not dropped.** When the reported sender is
-   * the chapter's only queue holder (a president with `*` and no moderators,
-   * say), the exclusions leave no recipient and no one can see the report yet.
-   * It is not lost — it stays `open` and appears to whoever next holds the
-   * queue permissions — but the chapter has no reviewer until then, so it is
-   * logged as a warning rather than passing silently.
+   * **No reviewer is logged, not dropped.** When the reported sender is the
+   * chapter's only queue holder (a president with `*` and no moderators, say),
+   * no one can see the report yet: the queue leaves it out for them. It is not
+   * lost — it stays `open` and appears to whoever next holds the queue
+   * permissions — but the chapter has no reviewer until then, so it is logged
+   * as a warning rather than passing silently. That is the only case logged:
+   * a reporter who is the only *other* holder has nobody to notify but is
+   * themselves the reviewer, and that is not a gap.
    *
    * **Never fails the report.** The row is committed before this runs, and the
    * member who filed it must get their success whether or not the roster read
@@ -226,20 +311,24 @@ export class ChatReportService {
     reporterUserId: string,
   ): Promise<void> {
     try {
-      const officerIds = await this.rbac.findUserIdsWithPermissions(
+      const holders = await this.rbac.findUserIdsWithPermissions(
         chapterId,
         REPORT_QUEUE_PERMISSIONS,
       );
-      const excluded = new Set<string>([reporterUserId]);
-      if (report.reported_sender_id) excluded.add(report.reported_sender_id);
-      const recipients = officerIds.filter((id) => !excluded.has(id));
-      if (recipients.length === 0) {
+      // Who can review it: every holder but the reported sender, whom the
+      // queue leaves the report out for. Null for an imported archive row.
+      const reviewers = holders.filter(
+        (id) => id !== report.reported_sender_id,
+      );
+      if (reviewers.length === 0) {
         this.logger.warn(
           'A chat report was filed with nobody able to review it',
           { reportId: report.id, chapterId },
         );
         return;
       }
+      const recipients = reviewers.filter((id) => id !== reporterUserId);
+      if (recipients.length === 0) return;
 
       const results = await Promise.allSettled(
         recipients.map((officerId) =>
@@ -278,41 +367,56 @@ export class ChatReportService {
    * caller's chapter and excluding reports about the caller
    * ({@link findReviewableReport}), so another chapter's report, a report about
    * the officer themselves and no report at all are the same 404;
-   * {@link ReportedMessageGrant.fromOpenReport} then refuses a resolved report
-   * or a hard-deleted message with a 409; and the grant it mints names exactly
-   * the `message_id` this read returned. The route takes a report id and
-   * nothing else — the client never names the message, so there is no second
-   * id to point at a sibling.
+   * an `actioned` one is answered as a replay ({@link confirmEarlierRemoval});
+   * {@link ReportedMessageGrant.fromOpenReport} then refuses a reviewed or
+   * dismissed report, or a hard-deleted message, with a 409; and the grant it
+   * mints names exactly the `message_id` this read returned. The route takes a
+   * report id and nothing else — the client never names the message, so there
+   * is no second id to point at a sibling.
+   *
+   * **Claim, then remove, then sweep** — so the capability is checked at write
+   * time, not only at read time:
+   *
+   * 1. **Claim.** The named report moves `open` → `actioned` in one
+   *    conditional `UPDATE` (`resolve`, a compare-and-set on `status =
+   *    'open'`). Only if that lands is the message touched. A Dismiss or Mark
+   *    reviewed that got there first leaves nothing to claim, and the answer is
+   *    409 with nothing deleted; one that arrives after the claim is refused by
+   *    its own compare-and-set. A status read alone could not do this: the
+   *    report could be dismissed between the read and the delete, and the
+   *    message would be removed on a capability that no longer existed.
+   * 2. **Remove.** The ordinary soft delete, through the grant. If it fails,
+   *    the claim is withdrawn ({@link releaseClaim}) before the error is
+   *    rethrown: an `actioned` report over a message still in place is a false
+   *    statement in the moderation record, and the report must be open for a
+   *    retry to use.
+   * 3. **Sweep.** Every other open report on the message closes, in one
+   *    conditional `UPDATE` stamped with this officer and the claim's
+   *    timestamp. It runs *after* the delete so it also catches a report filed
+   *    while the removal was in flight. If it fails, the removal stands and the
+   *    route answers 500; a retry takes the replay path below, which sweeps
+   *    again.
    *
    * **Idempotent on the message.** A message that is already soft-deleted —
    * by its sender, an officer's ordinary delete, a sibling report's removal, or
    * an earlier attempt that failed after the delete landed — is not an error:
    * nothing is written to it, the reports still close as `actioned`, and
-   * `message_already_deleted` says so. The content is gone either way and the
-   * report must not be stranded open over nothing.
+   * `message_already_deleted` says so.
    *
-   * **A hard-deleted message (`message_id` NULL) stays a 409**, deliberately
-   * not the same idempotent success. The sibling sweep keys on `message_id`,
-   * and once it is NULL the other reports on that message can no longer be
-   * found, so closing this one alone would leave its siblings open — the very
-   * gap the sweep closes. There is also no removal to record: the row went with
-   * its channel (or the import purge), not with an officer's judgement. The
-   * officer closes each such report explicitly (`PATCH` to `actioned`, which
-   * the web queue offers as Mark actioned).
+   * **Idempotent on the report**, too ({@link confirmEarlierRemoval}). A report
+   * that is already `actioned` over a message that is gone — a sibling's
+   * removal swept it, or this is a retry after a lost response — answers the
+   * same 200 with `message_already_deleted: true` rather than a 409 whose
+   * appearance would depend on which request got there first.
    *
-   * **Order: remove, then resolve.** Resolving first would leave an `actioned`
-   * report over a message still in place whenever the delete then failed — a
-   * false statement in the moderation record. Removing first makes the worst
-   * case the reverse, message gone and report still open, which a retry of
-   * this same route now closes.
-   *
-   * **Every open report on the message closes with it**, in one conditional
-   * `UPDATE` (`resolveOpenForMessage`), stamped with this officer and one
-   * timestamp. If the report named here is not among the rows it closed,
-   * something resolved it in between: another officer's removal (it is
-   * `actioned`, which is what was asked for, so it is returned as success) or a
-   * Mark reviewed / Dismiss that landed first (409 — the removal happened, and
-   * the message says so, but the record keeps the other officer's decision).
+   * **A hard-deleted message on an open report (`message_id` NULL) stays a
+   * 409**, deliberately not the idempotent success. The sibling sweep keys on
+   * `message_id`, and once it is NULL the other reports on that message can no
+   * longer be found, so closing this one alone would leave its siblings open.
+   * There is also no removal to record: the row went with its channel (or the
+   * import purge), not with an officer's judgement. The officer closes each
+   * such report explicitly (`PATCH` to `actioned`, which the web queue offers
+   * as Mark actioned).
    */
   async removeReportedMessage(
     reportId: string,
@@ -324,31 +428,142 @@ export class ChatReportService {
       chapterId,
       officerUserId,
     );
-
+    if (report.status === 'actioned') {
+      return this.confirmEarlierRemoval(report, chapterId, officerUserId);
+    }
     const grant = ReportedMessageGrant.fromOpenReport(report);
-    const { alreadyDeleted } = await this.chatService.deleteReportedMessage(
-      grant,
-      chapterId,
-      officerUserId,
-    );
 
-    const closed = await this.reportRepo.resolveOpenForMessage(
+    const resolvedAt = new Date().toISOString();
+    const claimed = await this.reportRepo.resolve(
+      report.id,
+      chapterId,
+      'actioned',
+      officerUserId,
+      resolvedAt,
+    );
+    if (!claimed) {
+      // Resolved between the read and the claim. Another officer's removal
+      // swept it (`actioned`) — the replay path answers that — or a Mark
+      // reviewed / Dismiss landed first, and that decision stands.
+      const current = await this.findReviewableReport(
+        report.id,
+        chapterId,
+        officerUserId,
+      );
+      if (current.status === 'actioned') {
+        return this.confirmEarlierRemoval(current, chapterId, officerUserId);
+      }
+      throw reportNoLongerOpen();
+    }
+
+    let removal: ReportedMessageRemoval;
+    try {
+      removal = await this.chatService.deleteReportedMessage(
+        grant,
+        chapterId,
+        officerUserId,
+      );
+    } catch (error) {
+      await this.releaseClaim(report.id, chapterId, officerUserId, resolvedAt);
+      throw error;
+    }
+
+    await this.reportRepo.resolveOpenForMessage(
       chapterId,
       grant.messageId,
       'actioned',
       officerUserId,
+      resolvedAt,
+    );
+
+    return {
+      ...claimed,
+      message_already_deleted: removal.alreadyDeleted,
+      channel_id: removal.channelId,
+    };
+  }
+
+  /**
+   * The removal route's answer for a report that is already `actioned`.
+   *
+   * - **Its message is gone** (soft-deleted, or the row itself hard-deleted):
+   *   the state the officer asked for already holds, so this is the same 200
+   *   a first removal gives, with `message_already_deleted: true`. The sibling
+   *   sweep runs again, which is what finishes an earlier attempt whose sweep
+   *   failed after its delete landed. Nothing is written to the message.
+   * - **Its message is still there**: 409. The report was closed without a
+   *   removal — Mark actioned, which the web queue offers only for a message
+   *   that no longer exists but the API accepts for any — or another
+   *   officer's removal has claimed it and not yet deleted. Either way a
+   *   resolved report grants nothing, so this call does not delete.
+   *
+   * Reads the message's state through {@link ChatService.reportedMessageState},
+   * which returns no content: an actioned report is not a grant.
+   */
+  private async confirmEarlierRemoval(
+    report: ChatMessageReportView,
+    chapterId: string,
+    officerUserId: string,
+  ): Promise<ChatReportRemoval> {
+    const gone = { ...report, message_already_deleted: true };
+    if (!report.message_id) return { ...gone, channel_id: null };
+
+    const state = await this.chatService.reportedMessageState(
+      report.message_id,
+      chapterId,
+    );
+    if (!state) return { ...gone, channel_id: null };
+    if (!state.isDeleted) throw reportNoLongerOpen();
+
+    await this.reportRepo.resolveOpenForMessage(
+      chapterId,
+      report.message_id,
+      'actioned',
+      officerUserId,
       new Date().toISOString(),
     );
-    const named =
-      closed.find((row) => row.id === report.id) ??
-      (await this.reportRepo.findById(report.id, chapterId, officerUserId));
-    if (named?.status !== 'actioned') {
-      throw new ConflictException(
-        'The message was removed, but this report was resolved differently in the meantime',
+    return { ...gone, channel_id: state.channelId };
+  }
+
+  /**
+   * Withdraw a removal's claim after the delete failed, so the report is
+   * `open` again for a retry and the record does not say `actioned` over a
+   * message still in place.
+   *
+   * Best-effort, and it never replaces the delete's own error: that is what
+   * the caller rethrows. A release that does not land — the store is down, or
+   * the same reporter filed a new report on the message while the claim stood
+   * and the partial unique index refuses a second open one — is logged at
+   * `error`, because the record now says `actioned` over a message that may
+   * still be there, and a person has to look.
+   */
+  private async releaseClaim(
+    reportId: string,
+    chapterId: string,
+    officerUserId: string,
+    resolvedAt: string,
+  ): Promise<void> {
+    try {
+      const released = await this.reportRepo.releaseClaim(
+        reportId,
+        chapterId,
+        officerUserId,
+        resolvedAt,
+      );
+      if (!released) {
+        this.logger.error(
+          'A failed chat report removal left its claim in place',
+          { reportId, chapterId },
+        );
+      }
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'error',
+        `Could not release the claim on chat report ${reportId} after a failed removal`,
+        error,
       );
     }
-
-    return { ...named, message_already_deleted: alreadyDeleted };
   }
 
   /**
@@ -439,4 +654,10 @@ export class ChatReportService {
 
 function reportNoLongerOpen(): ConflictException {
   return new ConflictException('This report is no longer open');
+}
+
+function messageDeletedConflict(): ConflictException {
+  return new ConflictException(
+    'This message has been deleted and can no longer be reported',
+  );
 }

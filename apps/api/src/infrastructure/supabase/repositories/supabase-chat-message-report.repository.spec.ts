@@ -348,6 +348,118 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
     expect(found).not.toHaveProperty('reporter_user_id');
   });
 
+  it("findOwnOpenReport returns the caller's own open report in the chapter, and nobody else's", async () => {
+    const found = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findOwnOpenReport(CHAPTER_A, USER_SHARED, MESSAGE_ONE),
+    );
+
+    expect(found?.id).toBe(REPORT_A_OPEN);
+    expect(found).not.toHaveProperty('reporter_user_id');
+    // USER_B's open report on the same message is not USER_SHARED's.
+    expect(
+      await repo.findOwnOpenReport(CHAPTER_A, USER_A, MESSAGE_ONE),
+    ).toBeNull();
+    // A resolved report is not a replay.
+    expect(
+      await repo.findOwnOpenReport(CHAPTER_A, USER_SHARED, MESSAGE_TWO),
+    ).toBeNull();
+  });
+
+  it('releaseClaim puts back a claim carrying exactly its stamp, inside the chapter', async () => {
+    const at = '2026-02-03T00:00:00.000Z';
+    await repo.resolve(REPORT_A_OPEN, CHAPTER_A, 'actioned', USER_B, at);
+
+    const released = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.releaseClaim(REPORT_A_OPEN, CHAPTER_A, USER_B, at),
+    );
+
+    expect(released).toBe(true);
+    expect(
+      harness.rows('chat_message_reports').find((r) => r.id === REPORT_A_OPEN),
+    ).toMatchObject({ status: 'open', resolved_at: null, resolved_by: null });
+  });
+
+  it('releaseClaim leaves alone a report some other decision closed', async () => {
+    // Another officer's stamp, another timestamp, another status, another
+    // chapter: none of them is this request's claim, and none may reopen.
+    const at = '2026-02-03T00:00:00.000Z';
+    await repo.resolve(REPORT_A_OPEN, CHAPTER_A, 'actioned', USER_B, at);
+    await repo.resolve(REPORT_B_OPEN, CHAPTER_B, 'actioned', USER_B, at);
+
+    expect(
+      await repo.releaseClaim(REPORT_A_OPEN, CHAPTER_A, USER_SHARED, at),
+    ).toBe(false);
+    expect(
+      await repo.releaseClaim(
+        REPORT_A_OPEN,
+        CHAPTER_A,
+        USER_B,
+        '2026-02-03T00:00:01.000Z',
+      ),
+    ).toBe(false);
+    expect(
+      await repo.releaseClaim(
+        REPORT_A_REVIEWED,
+        CHAPTER_A,
+        USER_SHARED,
+        '2026-02-01T06:00:00.000Z',
+      ),
+    ).toBe(false);
+    expect(await repo.releaseClaim(REPORT_B_OPEN, CHAPTER_A, USER_B, at)).toBe(
+      false,
+    );
+
+    const byId = (id: string) =>
+      harness.rows('chat_message_reports').find((r) => r.id === id);
+    expect(byId(REPORT_A_OPEN)?.status).toBe('actioned');
+    expect(byId(REPORT_A_REVIEWED)?.status).toBe('reviewed');
+    expect(byId(REPORT_B_OPEN)?.status).toBe('actioned');
+  });
+
+  it('closeForDeletedMessage closes an open report as actioned with no reviewer', async () => {
+    const closed = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.closeForDeletedMessage(
+        REPORT_A_OPEN,
+        CHAPTER_A,
+        '2026-02-03T00:00:00.000Z',
+      ),
+    );
+
+    expect(closed).toBe(true);
+    expect(
+      harness.rows('chat_message_reports').find((r) => r.id === REPORT_A_OPEN),
+    ).toMatchObject({
+      status: 'actioned',
+      resolved_at: '2026-02-03T00:00:00.000Z',
+      resolved_by: null,
+    });
+  });
+
+  it("closeForDeletedMessage touches neither a resolved report nor another chapter's", async () => {
+    expect(
+      await repo.closeForDeletedMessage(
+        REPORT_A_REVIEWED,
+        CHAPTER_A,
+        '2026-02-03T00:00:00.000Z',
+      ),
+    ).toBe(false);
+    expect(
+      await repo.closeForDeletedMessage(
+        REPORT_B_OPEN,
+        CHAPTER_A,
+        '2026-02-03T00:00:00.000Z',
+      ),
+    ).toBe(false);
+
+    const byId = (id: string) =>
+      harness.rows('chat_message_reports').find((r) => r.id === id);
+    expect(byId(REPORT_A_REVIEWED)).toMatchObject({
+      status: 'reviewed',
+      resolved_by: USER_SHARED,
+    });
+    expect(byId(REPORT_B_OPEN)?.status).toBe('open');
+  });
+
   it('create stamps the chapter it is given and never writes into another', async () => {
     const { report: created, created: wasCreated } =
       await harness.expectTenantScoped(CHAPTER_B, () =>
