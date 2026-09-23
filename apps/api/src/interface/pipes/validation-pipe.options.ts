@@ -9,10 +9,14 @@ import { ValidationPipeOptions } from '@nestjs/common';
  * `role`, `points`, or `chapter_id` into a write it does not own (#849).
  *
  * This lives in its own module rather than inline in `configureApp()`
- * (`bootstrap.ts`) for the same reason `buildSentryOptions` does: a test that rebuilds these flags locally is
- * testing its own copy, and stays green when production's copy is loosened.
- * `test/mass-assignment.e2e-spec.ts` imports this object so that loosening a
- * flag here fails that suite.
+ * (`bootstrap.ts`) for the same reason `buildSentryOptions` does: a test that
+ * rebuilds these flags locally is testing its own copy, and stays green when
+ * production's copy is loosened. `test/mass-assignment.e2e-spec.ts` boots
+ * through `configureApp()`, so it is the suite that fails when `whitelist` or
+ * `forbidNonWhitelisted` is loosened. The DTO specs that run a pipe build it
+ * from this object too, so they validate as production does, but they send no
+ * undeclared property, so they pin neither `whitelist` nor
+ * `forbidNonWhitelisted`.
  */
 export const VALIDATION_PIPE_OPTIONS: ValidationPipeOptions = {
   whitelist: true,
