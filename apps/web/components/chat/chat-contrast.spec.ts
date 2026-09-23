@@ -236,12 +236,15 @@ describe("the in-bubble mention chip", () => {
     // own text's contrast becomes a per-tenant accident. This is what an "it's
     // just the §5 tint recipe" simplification would ship — and the spread is
     // the argument, so both ends are pinned. `components.md` §11 quotes them.
+    // The best case was 4.32:1 on crimson's `#8B0000` bubble until #2541 held
+    // the fill to 3:1 on the ladder; lighter bubbles cost the tint contrast,
+    // so the best case is now `#4B0082`'s `#9B32FA` at 2.40:1.
     const ratios = SEEDS.map((seed) => {
       const bubble = accentRolesFor(seed)["--primary"]!;
       return ratio(MENTION_CHIP.text, tint(MENTION_CHIP.text, bubble));
     });
 
-    expect(Math.max(...ratios)).toBeCloseTo(4.32, 2);
+    expect(Math.max(...ratios)).toBeCloseTo(2.4, 2);
     expect(Math.min(...ratios)).toBeCloseTo(1.03, 2);
     // Not one seed in the corpus reaches AA. The opaque pair clears it on all
     // of them, which is the whole trade.

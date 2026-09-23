@@ -20,6 +20,7 @@ jest.mock('@repo/chapter-theme', () => ({
     palette: {},
     resolvedSeed: '#F2B72E',
     invalidSeed: false,
+    fillChecks: [],
     contrastChecks: [],
   })),
 }));

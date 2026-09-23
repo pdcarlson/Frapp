@@ -804,6 +804,7 @@ describe('ChapterService', () => {
         palette: { '--signet-accent-text': '#222222' } as any,
         resolvedSeed: '#222222',
         invalidSeed: false,
+        fillChecks: [],
         contrastChecks: [
           {
             role: '--signet-accent-text',
@@ -831,6 +832,50 @@ describe('ChapterService', () => {
         ),
       );
       // The save still succeeds — §8 forbids a runtime substitution here.
+      expect(mockChapterRepo.update).toHaveBeenCalled();
+    } finally {
+      deriveSpy.mockRestore();
+    }
+  });
+
+  it('logs a failed fill floor without disclosing it to the client (#2541)', async () => {
+    // The engine lifts the fill until it clears 3:1, so a failure means the
+    // lift broke (a generator resync, say). Nothing the officer chose caused
+    // it, so it is logged, not returned as `failedContrastChecks`.
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    const loggerWarnSpy = jest
+      .spyOn((service as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+    const deriveSpy = jest.spyOn(chapterTheme, 'deriveSignetPalette');
+    try {
+      deriveSpy.mockReturnValueOnce({
+        palette: { '--signet-accent-primary': '#8B0000' } as any,
+        resolvedSeed: '#8B0000',
+        invalidSeed: false,
+        fillChecks: [
+          {
+            role: '--signet-accent-primary',
+            against: '--popover',
+            ratio: 1.5,
+            passes: false,
+          },
+        ],
+        contrastChecks: [],
+      });
+
+      const result = await service.update(
+        'ch-1',
+        { accent_color: '#8B0000' },
+        'user-1',
+      );
+
+      expect(result.failedContrastChecks).toEqual([]);
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Signet accent fill below 3:1 for chapter ch-1: --signet-accent-primary on --popover = 1.50:1',
+        ),
+      );
       expect(mockChapterRepo.update).toHaveBeenCalled();
     } finally {
       deriveSpy.mockRestore();

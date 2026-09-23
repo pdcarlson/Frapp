@@ -136,9 +136,13 @@ describe("the step indicator's track", () => {
         ratio(fill, SURFACE.background),
       );
     }
+    // Both worst cases are `#CC0000`'s fill, lifted to `#DA2017` by the
+    // engine's 3:1 fill floor (#2541). Before that floor they were crimson's
+    // `#8B0000` at 1.528 and 1.869; the ranking is the same either way, and
+    // on `--background` the fill now also clears the 3:1 non-text floor.
     expect(worstOnBackground).toBeGreaterThan(worstOnBorder);
-    expect(worstOnBorder).toBeCloseTo(1.528, 2);
-    expect(worstOnBackground).toBeCloseTo(1.869, 2);
+    expect(worstOnBorder).toBeCloseTo(3.06, 2);
+    expect(worstOnBackground).toBeCloseTo(3.742, 2);
   });
 });
 

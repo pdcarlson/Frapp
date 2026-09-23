@@ -1075,6 +1075,12 @@ function SettingsPageContent() {
                   the accent-painted self bubble. See the rule's own comment in
                   `packages/theme/src/signet.css`.
 
+                  "Lightened if it is too dark to stand out" is the engine's
+                  fill floor (accent-engine.md §8, #2541): a dark accent paints
+                  a lighter fill (`#8B0000` paints `#C34437`), so without the
+                  clause this card would promise a colour the save does not
+                  paint. Mobile's Preferences row says the same.
+
                   The closing sentence is board `2e`'s own preview caption
                   ("The Signet mark and ✦ Ask never change"), moved into the
                   product. It is the one place an admin is choosing a colour, so
@@ -1083,10 +1089,10 @@ function SettingsPageContent() {
                 */}
                 <CardDescription>
                   Paints primary buttons, your own chat bubbles and the
-                  nav&apos;s active item. Saving derives the rest of the palette
-                  from it, and contrast is checked against the dark surfaces it
-                  lands on. The Signet mark, the Ask pill and the scrollbars
-                  never change.
+                  nav&apos;s active item, lightened if it is too dark to stand
+                  out. Saving derives the rest of the palette from it, and
+                  contrast is checked against the dark surfaces it lands on. The
+                  Signet mark, the Ask pill and the scrollbars never change.
                 </CardDescription>
               </CardHeader>
               <form onSubmit={saveAccent}>
