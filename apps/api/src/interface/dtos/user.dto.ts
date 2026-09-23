@@ -59,7 +59,7 @@ export class LegalAcceptanceDto {
 export class AcceptLegalTermsDto {
   @ApiProperty({
     description:
-      "The user ticked \"I'm 18 or older and agree to the Terms of Service and Privacy Policy\". Must be true. The timestamp and version are recorded server-side, never from this payload.",
+      'The user ticked "I\'m 18 or older and agree to the Terms of Service and Privacy Policy". Must be true. The timestamp and version are recorded server-side, never from this payload.',
   })
   @IsBoolean()
   @Equals(true, {

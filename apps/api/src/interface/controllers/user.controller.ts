@@ -101,11 +101,14 @@ export class UserController {
   @ApiOkResponse({ type: LegalAcceptanceDto })
   async acceptLegalTerms(
     @CurrentUser('id') userId: string,
-    // Validated only: `@Equals(true)` is the gate, and the record is stamped
-    // from the session, never from the payload.
-    @Body() _dto: AcceptLegalTermsDto,
+    @Body() dto: AcceptLegalTermsDto,
   ): Promise<LegalAcceptanceDto> {
-    return this.legalAcceptance.accept(userId);
+    // `@Equals(true)` has already refused anything else. The record is stamped
+    // from the session and the server clock, never from the payload.
+    return this.legalAcceptance.requireOrAccept(
+      userId,
+      dto.accept_terms_privacy,
+    );
   }
 
   @Patch('me')

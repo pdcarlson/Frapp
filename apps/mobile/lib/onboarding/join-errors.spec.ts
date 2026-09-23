@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { joinErrorCopy, redeemChapterId } from "./join-errors";
+import {
+  isTermsRequiredError,
+  JOIN_TERMS_REQUIRED_COPY,
+  joinErrorCopy,
+  redeemChapterId,
+} from "./join-errors";
 
 describe("joinErrorCopy", () => {
   it("names expired or used invites", () => {
@@ -10,6 +15,26 @@ describe("joinErrorCopy", () => {
 
   it("names an already-member conflict", () => {
     expect(joinErrorCopy({ status: 409 })).toContain("already a member");
+  });
+
+  it("asks for the Terms checkbox when the server refused for want of it (#2302)", () => {
+    const refusal = {
+      code: "legal.acceptance_required",
+      message:
+        "Agree to the Terms of Service and Privacy Policy to join this chapter.",
+    };
+    expect(isTermsRequiredError(refusal)).toBe(true);
+    expect(joinErrorCopy(refusal)).toBe(JOIN_TERMS_REQUIRED_COPY);
+  });
+
+  it("does not read another 403 as a Terms refusal", () => {
+    const locked = {
+      statusCode: 403,
+      code: "chapter.subscription.canceled",
+      message: "This chapter isn't accepting new members right now.",
+    };
+    expect(isTermsRequiredError(locked)).toBe(false);
+    expect(joinErrorCopy(locked)).toBe(locked.message);
   });
 
   it("falls back to the server message, then generic copy", () => {

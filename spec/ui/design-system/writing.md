@@ -638,11 +638,27 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 | Redeemed | `Chapter joined` | `You're in. Opening chat.` |
 | **410** — expired, used, or missing | — | `This invite has expired or already been used. Ask an officer for a new one.` |
 | **409** — already a member | — | `You're already a member of this chapter. Open it from your chapter list.` |
+| Terms checkbox (#2302) | — | `I'm 18 or older and agree to the Terms of Service and Privacy Policy.` Shown unless the server says this user already accepted the current Terms. The wording is `LEGAL_ACCEPTANCE_LABEL` in `@repo/validation`, owner-approved with the September 2026 Terms, and shared by every acceptance surface. |
+| Join without the box ticked, or **403** `legal.acceptance_required` | — | `Agree to the Terms of Service and Privacy Policy to join.` |
 | Any other failure | — | The server's message, else `Couldn't join that chapter. Check the invite and try again.` |
 
 The two status rows are the reason this table exists. Both are routine, both were rendering one generic toast, and they need **opposite** next actions — one says fetch a new invite, the other says you already have what you came for. `spec/behavior/onboarding.md` §Invite Token Rules fixes the codes; the strings are shared verbatim with [`apps/mobile/lib/onboarding/join-errors.ts`](../../../apps/mobile/lib/onboarding/join-errors.ts) and [`apps/web/components/auth/join-errors.ts`](../../../apps/web/components/auth/join-errors.ts), and this table is the one place they are written down, since neither app can import the other's module.
 
 410 covers three distinct server messages (`Invite not found` / `Invite already used` / `Invite expired`). They collapse to one string on purpose: a member cannot act on the difference, and naming which one it was would tell an unauthenticated caller whether a token exists.
+
+### Terms prompt (mobile and web)
+
+A member who hasn't accepted the Terms version the server enforces (#2302): mobile's `(auth)/terms.tsx`, and web's full-screen `TermsPrompt` over the dashboard. The strings are shared verbatim with [`apps/mobile/lib/onboarding/terms-prompt.ts`](../../../apps/mobile/lib/onboarding/terms-prompt.ts) and [`apps/web/components/auth/terms-prompt.tsx`](../../../apps/web/components/auth/terms-prompt.tsx), and this table is the one place they are written down.
+
+| State | Title | Description |
+|---|---|---|
+| Idle | `Agree to the Terms to continue` | `We've updated the Terms of Service and Privacy Policy. Read them, then agree to keep using Frapp.` It says "updated" for a member who never accepted, too: the Terms did change, and the prompt doesn't have to know which member is which. |
+| Checkbox | — | `I'm 18 or older and agree to the Terms of Service and Privacy Policy.` (the Join chapter row above) |
+| Primary | — | `Agree and continue` |
+| Tapped without the box ticked | — | `Agree to the Terms of Service and Privacy Policy to continue.` |
+| **410** — the account was deleted | — | `This account has been deleted. Sign out to continue.` |
+| Any other failure | — | `Couldn't save your agreement. Check your connection and try again.` |
+| Ways out | — | `Sign out` on both. Mobile also offers `Delete account`, because Settings is unreachable while the gate holds a member here (Apple 5.1.1(v)). |
 
 ### No access (pre-auth)
 

@@ -152,6 +152,14 @@ Those are third-party copyrighted works. The rights attestation rests on
 [`spec/behavior/legal.md`](../../../spec/behavior/legal.md), which places the
 obligation on the uploader.
 
+> **That basis is gone (2026-09-23).** The owner decided Backwork stays off mobile for
+> the beta, while the web dashboard keeps it ([#2258](https://github.com/pdcarlson/Frapp/issues/2258),
+> option 1). The app had no Backwork screen, and its one mention, a sentence on the
+> create-chapter checkbox, was removed with #2302. Whether the answer should stay Yes now
+> turns on what members share in chat, photos included. Re-check it at submission
+> ([#2478](https://github.com/pdcarlson/Frapp/issues/2478) § C) rather than flipping it
+> from here. Either way, the review notes need no Backwork paragraph.
+
 ### Age rating
 
 The questionnaire **calculated 4+**; it was **overridden to 13+**. Answers given:
@@ -188,6 +196,12 @@ mature content and
 [`apps/landing/app/terms/page.tsx`](../../landing/app/terms/page.tsx) carries no
 minimum-age clause to back it.
 
+> **Corrected 2026-09-23.** The Terms now set a minimum age of 18, and every user
+> confirms it when they accept ([#2261](https://github.com/pdcarlson/Frapp/issues/2261),
+> [#2302](https://github.com/pdcarlson/Frapp/issues/2302)). The rating stays 13+ by
+> owner decision: it rates the app's content, not who may sign up, and the first reason
+> above still holds. Only the second reason is gone.
+
 ### Open before submitting
 
 Found while completing the console on 2026-09-14. None blocked creating the
@@ -196,10 +210,10 @@ record; each is a review-time or launch risk.
 | # | Risk |
 | --- | --- |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 — member-level report and block ship on mobile only in a binary built from `main` after the #2257 member-side change merged; the officer queue that reads reports is on the web dashboard only (#2311) |
-| [#2258](https://github.com/pdcarlson/Frapp/issues/2258) | Guideline 5.2 — Backwork's v1 posture (**decision, not work**) |
+| ~~[#2258](https://github.com/pdcarlson/Frapp/issues/2258)~~ | Decided 2026-09-23 (owner): Backwork stays off mobile for the beta; the web dashboard keeps it. See § Content Rights for what that changes in the console |
 | ~~[#2259](https://github.com/pdcarlson/Frapp/issues/2259)~~ | Fixed in the repo 2026-09-22 (owner decision): with Ask off, Chat home and Events draw no ✦ pill, the sheet renders nothing, and `frapp://ask` redirects to Chat home, so **a reviewer is shown no Ask surface at all**. That is also why § Review notes says nothing about Ask: there is nothing on screen to explain. Live only in the next build. It needs `EXPO_PUBLIC_ASK_ENABLED` off in the EAS `production` environment, which the repo cannot see, and since 2026-09-22 an EAS `production` build refuses to evaluate its config when the flag is on (`apps/mobile/app.config.js`), so a set value fails the build instead of shipping Ask (§ Description's note) |
 | ~~[#2260](https://github.com/pdcarlson/Frapp/issues/2260)~~ | Closed 2026-09-18 — answered ("it is not set"), superseded by #2415 |
-| [#2261](https://github.com/pdcarlson/Frapp/issues/2261) | Terms of Service carries no minimum-age clause |
+| ~~[#2261](https://github.com/pdcarlson/Frapp/issues/2261)~~ | Fixed in the repo 2026-09-23 with #2302: the Terms say 18 or older, carry the zero-tolerance clause Guideline 1.2 expects, and every member accepts them before they can post. Live only after the next Deploy production (landing, API and web) and in a binary built after it merged |
 | ~~[#2262](https://github.com/pdcarlson/Frapp/issues/2262)~~ | Fixed in the repo 2026-09-22: the FERPA notice no longer points at a redaction tool. Live only after the next Deploy production |
 
 The rows above are what completing the console surfaced. These came from reading the
@@ -554,7 +568,7 @@ Google Play Data safety: data is encrypted in transit; users delete in the app o
 >
 > The reasoning actually on record is in § Age rating: 13+ was chosen over the calculated
 > 4+ **because** of the DMs-without-report-or-block situation and a college audience, and
-> 18+ was rejected for two reasons, one of them Apple-specific. The live item is #2261 —
-> the Terms carry no minimum-age clause — and it is a blocker on *raising* the floor, not
-> an input to be traded off. Settle #2261; leave the three declarations as they are
-> unless it changes the answer.
+> 18+ was rejected for two reasons, one of them Apple-specific. #2261 was settled on
+> 2026-09-23: the Terms say 18 or older, which agrees with this target audience, and the
+> owner kept the iOS rating at 13+ (§ Age rating). Leave the three declarations as they
+> are.

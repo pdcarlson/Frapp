@@ -21,8 +21,26 @@ export interface LegalLink {
   url: string;
 }
 
+const TERMS_LINK: LegalLink = {
+  label: "Terms of Service",
+  url: `${LEGAL_BASE_URL}/terms`,
+};
+const PRIVACY_LINK: LegalLink = {
+  label: "Privacy Policy",
+  url: `${LEGAL_BASE_URL}/privacy`,
+};
+
 export const LEGAL_LINKS: readonly LegalLink[] = [
-  { label: "Terms of Service", url: `${LEGAL_BASE_URL}/terms` },
-  { label: "Privacy Policy", url: `${LEGAL_BASE_URL}/privacy` },
+  TERMS_LINK,
+  PRIVACY_LINK,
   { label: "FERPA Notice", url: `${LEGAL_BASE_URL}/ferpa` },
+];
+
+/**
+ * The two documents the Terms checkbox agrees to (#2302). The FERPA notice is
+ * about Backwork, which the app doesn't have (#2258), and nobody accepts it.
+ */
+export const ACCEPTANCE_LINKS: readonly LegalLink[] = [
+  TERMS_LINK,
+  PRIVACY_LINK,
 ];

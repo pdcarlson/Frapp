@@ -84,10 +84,14 @@ The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter
 | --- | --- |
 | Chapters list still loading | `hold` |
 | Zero memberships | `join` (s02) |
+| A member, the Terms read still loading | `hold` |
+| A member who hasn't accepted the current Terms (#2302) | `terms` (`(auth)/terms.tsx`) |
 | Active membership has `has_completed_onboarding === false` | `welcome` (s03) |
-| Otherwise (or the chapters read failed) | `tabs` |
+| Otherwise (or the chapters or Terms read failed) | `tabs` |
 
-A missing `active_chapter_id` claim is still not a destination — see `lib/auth-gate.ts`. `(tabs)/_layout.tsx` is frozen and still only redirects to sign-in; walking a member *out* of the tabs onto s02/s03 is `AppRuntime` (`lib/onboarding/use-onboarding-redirect.ts`) so that file does not have to thaw.
+`terms` comes before `welcome` so a new member agrees before they can post. The server decides it (`GET /v1/users/me/legal-acceptance`), never a version compiled into the binary ([`../../behavior/legal.md`](../../behavior/legal.md#acceptance-record) § Acceptance record). While the gate reads `terms`, `/create-chapter` is also permitted, since the wizard carries the same checkbox.
+
+A missing `active_chapter_id` claim is still not a destination — see `lib/auth-gate.ts`. `(tabs)/_layout.tsx` is frozen and still only redirects to sign-in; walking a member *out* of the tabs onto s02/s03 or the Terms prompt is `AppRuntime` (`lib/onboarding/use-onboarding-redirect.ts`) so that file does not have to thaw.
 
 ## Typed routes
 

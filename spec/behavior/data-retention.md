@@ -40,25 +40,25 @@ text.
 
 ### The reservation
 
-- Frapp reserves the right to delete data for chapters that have been inactive (canceled subscription, no logins) for more than 2 years.
-- It is **not** documented in the Terms of Service — see **The shipped Terms of Service do not currently carry this reservation** below, which owns that gap (#1562).
+- Frapp reserves the right to delete the data of a chapter whose subscription has been canceled for more than 2 years **and** in which no member has signed in during that time.
+- The Terms of Service carry it, § 5 of `apps/landing/app/terms/page.tsx`, since the September 2026 version (#1562, owner-approved 2026-09-23): "If a chapter's subscription has been canceled for more than two years and no member of the chapter has signed in during that time, we may delete the chapter's data. We will email the chapter's last known admin at least 30 days before we do."
 - Before deletion, an email notification is sent to the last known admin email with a 30-day warning.
 
-**Nothing implements this, and nothing should until the questions below are answered.** No eligibility
-query, no warning mail, no visibility surface, no dry-run and no deletion path exist in the codebase.
-(That is a statement about the code, not about hosted data: a deletion performed by hand against a
-hosted project would leave no trace here.)
+**Nothing implements this, and nothing should until #1561's remaining questions are answered:**
+what cleanup deletes, who may run a cross-chapter sweep, and where its audit record lives. No
+eligibility query, no warning mail, no visibility surface, no dry-run and no deletion path exist in
+the codebase. (That is a statement about the code, not about hosted data: a deletion performed by
+hand against a hosted project would leave no trace here.)
 
-Two things in the wording above are load-bearing and **neither is settled**:
+Two things in the wording used to be open, and the September 2026 Terms settled both (2026-09-23):
 
-- **Whether the two conditions are conjunctive or alternative is genuinely ambiguous.** "inactive
-  (canceled subscription, no logins)" is a comma-separated gloss with no *and* and no *or*, and the
-  reading decides who is eligible. This section does not resolve it — tracked in #1561.
-- **The shipped Terms of Service do not currently carry this reservation.**
-  `apps/landing/app/terms/page.tsx` contains no inactivity clause, no 2-year window and no 30-day
-  warning; its only retention sentence defers to "retention terms". So the reservation above
-  describes an intent, not the deployed contract, and the terms page would need to say this before any
-  deletion could rely on it — tracked in #1562.
+- **The two conditions are conjunctive.** The reservation used to read "inactive (canceled
+  subscription, no logins)", a gloss with no *and* and no *or* (#1561, question 2). The Terms now
+  require both: canceled for more than two years, *and* no member signed in during that time. It's
+  the narrower reading. Narrowing a contract later is easy; widening it means another policy version
+  and another round of acceptances.
+- **The Terms carry the reservation** (#1562). Before that version, the terms page had no inactivity
+  clause, no 2-year window and no 30-day warning, so no deletion could have relied on it.
 
 ### Why it cannot be implemented as written
 
@@ -190,9 +190,10 @@ questions resolve:
   anything but an invite, and a delivery result that distinguishes accepted from bounced (#1560).
 
 Everything else this section calls for — a usable login signal, the retention strategy, the
-conjunctive-vs-alternative reading, the authority to run a cross-chapter sweep, a durable audit
-destination, and the terms-page correction — is named in the subsections above and is not startable
-until the questions there are answered.
+authority to run a cross-chapter sweep, and a durable audit destination — is named in the
+subsections above and is not startable until the questions there are answered. (The
+conjunctive-vs-alternative reading and the terms-page correction were settled by the September 2026
+Terms.)
 
 ## Analytics Events (Pseudonymous)
 

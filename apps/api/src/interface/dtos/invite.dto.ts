@@ -72,7 +72,7 @@ export class RedeemInviteDto {
    */
   @ApiPropertyOptional({
     description:
-      "True when the user ticked \"I'm 18 or older and agree to the Terms of Service and Privacy Policy\". Needed only if they haven't accepted the current version.",
+      'True when the user ticked "I\'m 18 or older and agree to the Terms of Service and Privacy Policy". Needed only if they haven\'t accepted the current version.',
   })
   @IsOptional()
   @IsBoolean()

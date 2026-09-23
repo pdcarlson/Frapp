@@ -199,6 +199,91 @@ describe("resolveAuthGate", () => {
   });
 });
 
+/**
+ * #2302. A member who hasn't accepted the Terms the server enforces is asked
+ * before anything else they can reach, and the read that decides it can never
+ * lock anyone out.
+ */
+describe("resolveAuthGate — the Terms prompt (#2302)", () => {
+  const member = {
+    status: "authenticated" as const,
+    chapterId: "chapter-a",
+    ...RESOLVED,
+  };
+
+  it("asks a member who hasn't accepted the current Terms", () => {
+    expect(
+      resolveAuthGate({
+        ...member,
+        ...complete,
+        legalAcceptanceStatus: "success",
+        legalAcceptanceRequired: true,
+      }),
+    ).toBe("terms");
+  });
+
+  it("asks before first-run, so a new member agrees before they post", () => {
+    expect(
+      resolveAuthGate({
+        ...member,
+        ...incomplete,
+        legalAcceptanceStatus: "success",
+        legalAcceptanceRequired: true,
+      }),
+    ).toBe("terms");
+  });
+
+  it("lets a member who accepted through, to first-run or the tabs", () => {
+    const accepted = {
+      legalAcceptanceStatus: "success" as const,
+      legalAcceptanceRequired: false,
+    };
+    expect(resolveAuthGate({ ...member, ...incomplete, ...accepted })).toBe(
+      "welcome",
+    );
+    expect(resolveAuthGate({ ...member, ...complete, ...accepted })).toBe(
+      "tabs",
+    );
+  });
+
+  it("leaves a user with no membership on join, which carries its own checkbox", () => {
+    expect(
+      resolveAuthGate({
+        ...member,
+        chapterId: null,
+        ...emptyMemberships,
+        legalAcceptanceStatus: "success",
+        legalAcceptanceRequired: true,
+      }),
+    ).toBe("join");
+  });
+
+  it("holds a member only for the read's first answer", () => {
+    expect(
+      resolveAuthGate({
+        ...member,
+        ...complete,
+        legalAcceptanceStatus: "pending",
+      }),
+    ).toBe("hold");
+  });
+
+  it("fails open to the tabs when the read fails", () => {
+    expect(
+      resolveAuthGate({
+        ...member,
+        ...complete,
+        legalAcceptanceStatus: "error",
+        legalAcceptanceRequired: true,
+      }),
+    ).toBe("tabs");
+  });
+
+  it("never asks when the caller can't see the read (the frozen tabs layout)", () => {
+    expect(resolveAuthGate({ ...member, ...complete })).toBe("tabs");
+  });
+});
+
 describe("the two layouts cannot loop", () => {
   const statuses = ["hydrating", "authenticated", "unauthenticated"] as const;
   const chapterIds = [null, "chapter-a"];
@@ -214,22 +299,35 @@ describe("the two layouts cannot loop", () => {
     { membershipsStatus: "error", memberships: [] },
   ];
 
+  const legalCases: Array<
+    Pick<AuthGateInput, "legalAcceptanceStatus" | "legalAcceptanceRequired">
+  > = [
+    {},
+    { legalAcceptanceStatus: "pending" },
+    { legalAcceptanceStatus: "error" },
+    { legalAcceptanceStatus: "success", legalAcceptanceRequired: true },
+    { legalAcceptanceStatus: "success", legalAcceptanceRequired: false },
+  ];
+
   const everyState: AuthGateInput[] = statuses.flatMap((status) =>
     chapterIds.flatMap((chapterId) =>
       resolving.flatMap((isChapterResolving) =>
-        membershipCases.map((memberships) => ({
-          status,
-          chapterId,
-          isChapterResolving,
-          ...memberships,
-        })),
+        membershipCases.flatMap((memberships) =>
+          legalCases.map((legal) => ({
+            status,
+            chapterId,
+            isChapterResolving,
+            ...memberships,
+            ...legal,
+          })),
+        ),
       ),
     ),
   );
 
   // How each layout reacts to a destination. `(auth)` redirects out of its
-  // group only for `tabs`. `(tabs)` only redirects for `sign-in`. join/welcome
-  // stay inside `(auth)`; the tabs group is walked off those destinations by
+  // group only for `tabs`. `(tabs)` only redirects for `sign-in`.
+  // join/terms/welcome stay inside `(auth)`; the tabs group is walked off those destinations by
   // `AppRuntime`, not by a second layout redirect, so the two still cannot
   // bounce each other.
   const authRedirects = (d: AuthGateDestination) => d === "tabs";
@@ -247,7 +345,7 @@ describe("the two layouts cannot loop", () => {
 
   it("resolves every reachable state to exactly one destination", () => {
     for (const state of everyState) {
-      expect(["hold", "sign-in", "join", "welcome", "tabs"]).toContain(
+      expect(["hold", "sign-in", "join", "terms", "welcome", "tabs"]).toContain(
         resolveAuthGate(state),
       );
     }

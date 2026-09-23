@@ -1,4 +1,4 @@
-import { useListChapters } from "@repo/hooks";
+import { useLegalAcceptance, useListChapters } from "@repo/hooks";
 import { resolveAuthGate, type AuthGateDestination } from "@/lib/auth-gate";
 import { useAuthSession } from "@/lib/auth-session";
 
@@ -13,6 +13,9 @@ import { useAuthSession } from "@/lib/auth-session";
 export function useAuthGateDestination(): AuthGateDestination {
   const { status, chapterId, isChapterResolving } = useAuthSession();
   const chapters = useListChapters({ enabled: status === "authenticated" });
+  const legalAcceptance = useLegalAcceptance({
+    enabled: status === "authenticated",
+  });
 
   // Authenticated + not yet success/error is pending, not idle. Idle is the
   // frozen tabs layout's "I cannot see memberships" fail-open; here we *can*
@@ -34,11 +37,24 @@ export function useAuthGateDestination(): AuthGateDestination {
       }))
     : [];
 
+  // Same shape as memberships: once a first answer is in, `isSuccess` holds
+  // through a background refetch, so a refresh never reads as pending.
+  const legalAcceptanceStatus =
+    status !== "authenticated"
+      ? "idle"
+      : legalAcceptance.isError
+        ? "error"
+        : legalAcceptance.isSuccess
+          ? "success"
+          : "pending";
+
   return resolveAuthGate({
     status,
     chapterId,
     isChapterResolving,
     membershipsStatus,
     memberships,
+    legalAcceptanceStatus,
+    legalAcceptanceRequired: legalAcceptance.data?.required === true,
   });
 }

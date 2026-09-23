@@ -3,9 +3,16 @@
 ## Terms of Service
 
 - Displayed on the landing site (frapp.live/terms) and linked from the app footer.
-- Accepted during chapter creation (onboarding step): the admin must check a "I agree to the Terms of Service and Privacy Policy" checkbox before the **Create chapter** submit — there is no payment step in the wizard, whose steps are `find → archetype → identity → invite`.
-- Covers: acceptable use policy, data ownership (chapters own their data; Signet has a license to host and process it), limitation of liability, subscription terms and auto-renewal, account termination conditions.
-- **Known gap:** [`data-retention.md` § Inactive Chapter Cleanup](data-retention.md#inactive-chapter-cleanup) reserves the right to delete data from chapters inactive for more than 2 years, and now flags itself that the Terms do not yet carry it. The shipped terms page carries no such clause — no inactivity reservation, no 2-year window, no 30-day warning. Nothing implements the cleanup, so there is no live exposure, but the two must be reconciled before anything does (#1562). Do not describe the ToS as covering inactivity deletion until the page itself does.
+- **Every user accepts them before they can reach a chapter** (#2302). One checkbox, "I'm 18 or older and agree to the Terms of Service and Privacy Policy." (`LEGAL_ACCEPTANCE_LABEL` in `@repo/validation`), appears in three places:
+  - **Chapter creation**, where the officer must tick it before **Create chapter**. There is no payment step in the wizard, whose steps are `find → archetype → identity → invite`. This one tick is the officer's acceptance for the chapter and for themselves.
+  - **Joining by invite**, where a user who hasn't accepted the current version must tick it before **Join chapter**. A user who already has isn't asked again.
+  - **The Terms prompt**, which asks a member who hasn't accepted the current version before they reach anything else, on mobile and web. A version change asks every member once.
+- Covers:
+  - **Eligibility.** Users must be 18 or older, and accepting confirms it. Owner decision 2026-09-23 (#2261): 18 is the one authoritative age. The iOS age rating stays 13+, because it rates content, not who may sign up ([`apps/mobile/store/README.md`](../../apps/mobile/store/README.md) § Age rating).
+  - **Acceptable use**, including zero tolerance for objectionable content and abusive users, which App Review Guideline 1.2 expects. Members can report and block in the app, and chapter officers act on reports ([`chat/README.md`](chat/README.md#report-and-block) § Report and block).
+  - **Data ownership:** chapters own their data, and Frapp has a license to host and process it.
+  - **Limitation of liability, subscription terms and auto-renewal, and account termination.**
+  - **The inactive-chapter reservation** (#1562): a chapter whose subscription has been canceled for more than two years, and in which no member has signed in during that time, may be deleted after a 30-day email warning to its last known admin. [`data-retention.md` § Inactive Chapter Cleanup](data-retention.md#inactive-chapter-cleanup) owns what that does and doesn't mean in practice.
 
 ## Privacy Policy
 
@@ -24,14 +31,15 @@
 - All three legal pages are linked from:
   - The landing site footer.
   - The web app and mobile app settings/about screen.
-  - The chapter creation onboarding flow (ToS and Privacy Policy acceptance).
+- The Terms and Privacy Policy are also linked from the acceptance checkbox, wherever it appears (above). The web chapter wizard adds the FERPA notice beside it, because Backwork is on the web dashboard. Mobile doesn't, because the app has no Backwork (#2258).
 
-## Acceptance record (implementation)
+## Acceptance record
 
-Acceptance captured during chapter creation is persisted on the `chapters` row —
-`legal_accepted_at` (timestamp), `legal_policy_version` (the `LEGAL_POLICY_VERSION`
-constant from `@repo/validation`), and `legal_accepted_by` (the accepting admin) —
-stamped server-side by `ChapterOnboardingService` from the authenticated session,
-never from the client payload. The onboarding wizard blocks "Create chapter" until
-the required checkbox is ticked, and the API enforces the same rule server-side
-(`accept_terms_privacy` must be `true`).
+There are two records, and they make different claims.
+
+- **Per user** (#2302). `users.legal_accepted_at` and `users.legal_policy_version` record what this user agreed to for themselves. `LegalAcceptanceService` (apps/api) stamps both from the authenticated session and the server clock, never from the client. A request's `accept_terms_privacy: true` (`@Equals(true)` on the DTO) is only the user's claim that they ticked the box. Invite redemption and chapter onboarding both call `requireOrAccept` before the membership exists, so no member exists without an acceptance. A join from a user who hasn't accepted the current version and didn't tick the box is refused with 403 `legal.acceptance_required` (`LEGAL_ACCEPTANCE_REQUIRED_CODE`), and the invite stays usable. Accepting a version already accepted keeps the first timestamp.
+- **Per chapter.** `chapters.legal_accepted_at`, `legal_policy_version` and `legal_accepted_by` record the founding officer agreeing on the chapter's behalf. `ChapterOnboardingService` stamps them at creation.
+
+**The server decides whether a user must accept.** A user's acceptance is current when their `legal_policy_version` equals the API's `LEGAL_POLICY_VERSION`. Clients read `GET /v1/users/me/legal-acceptance` (`required`) and record it with `POST /v1/users/me/legal-acceptance`; they never compare versions themselves. A store binary can't be updated over the air, so one compiled with an older constant would otherwise disagree with the server for as long as it's installed. Bump `LEGAL_POLICY_VERSION` whenever the Terms or Privacy Policy change materially, to the `YYYY-MM` of the Terms page's "Last updated". Everyone is asked again once.
+
+**Where a member is asked, and what it can't block.** On mobile, `resolveAuthGate` returns `terms` for a member whose acceptance isn't current, ahead of first-run ([`../ui/mobile/navigation.md`](../ui/mobile/navigation.md)). On web, `TermsPromptGate` covers every dashboard route. Both fail open on a failed read, so an outage of the endpoint can't lock members out. Writes by a member who joined before this shipped are not refused server-side while they haven't accepted. The prompt is the only thing in their way, and a client that skipped it could keep posting. That's a deliberate limit: refusing every chapter write on it would need a user read in `ChapterGuard` on every request.

@@ -40,6 +40,17 @@
  * `GET /v1/chapters`. A missing claim must still not be fatal, but an
  * *authenticated* session with zero memberships is join, and a membership whose
  * onboarding flag is false is welcome. See `lib/onboarding/membership.ts`.
+ *
+ * ## Terms (#2302)
+ *
+ * A member who hasn't accepted the Terms version the server enforces is asked
+ * before anything else a member can reach, first-run included, because Apple
+ * 1.2 expects the person posting to have agreed first. The server decides
+ * (`GET /v1/users/me/legal-acceptance`), never a compiled-in version, so an
+ * old binary can't disagree with it. A user with no membership isn't sent
+ * here: the join screen and the create-chapter wizard carry the checkbox
+ * themselves. Like memberships, a failed read fails open to tabs, so an
+ * outage of that endpoint can't lock every member out of the app.
  */
 import { needsFirstRun } from "./onboarding/membership";
 
@@ -47,6 +58,7 @@ export type AuthGateDestination =
   | "hold"
   | "sign-in"
   | "join"
+  | "terms"
   | "welcome"
   | "tabs";
 
@@ -71,6 +83,13 @@ export type AuthGateInput = {
    */
   membershipsStatus?: "idle" | "pending" | "success" | "error";
   memberships?: AuthGateMembership[];
+  /**
+   * The `GET /v1/users/me/legal-acceptance` read, with the same fail-open
+   * contract as `membershipsStatus`: missing is `idle`, which never asks.
+   */
+  legalAcceptanceStatus?: "idle" | "pending" | "success" | "error";
+  /** The server's `required`. Read only when the status is `success`. */
+  legalAcceptanceRequired?: boolean;
 };
 
 export function resolveAuthGate({
@@ -79,6 +98,8 @@ export function resolveAuthGate({
   isChapterResolving,
   membershipsStatus = "idle",
   memberships = [],
+  legalAcceptanceStatus = "idle",
+  legalAcceptanceRequired = false,
 }: AuthGateInput): AuthGateDestination {
   if (status === "hydrating") {
     return "hold";
@@ -106,6 +127,15 @@ export function resolveAuthGate({
   if (membershipsStatus === "success") {
     if (memberships.length === 0) {
       return "join";
+    }
+    // Only a member is held for the Terms read, and only for its first
+    // answer. Join and the wizard don't need it, and a later refetch keeps
+    // its last answer, so the hourly token refresh can't blank the app.
+    if (legalAcceptanceStatus === "pending") {
+      return "hold";
+    }
+    if (legalAcceptanceStatus === "success" && legalAcceptanceRequired) {
+      return "terms";
     }
     if (needsFirstRun(memberships, chapterId)) {
       return "welcome";

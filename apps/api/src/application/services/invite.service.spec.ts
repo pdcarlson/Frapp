@@ -800,7 +800,7 @@ describe('InviteService', () => {
     it('answers an existing member with 409, not a request for the checkbox', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'member-existing',
-      } as Member);
+      });
 
       await expect(
         service.redeem('terms-token', 'user-2'),
@@ -814,7 +814,7 @@ describe('InviteService', () => {
         default_invite_role_id: null,
         subscription_status: 'canceled',
         past_due_since: null,
-      } as Chapter);
+      });
 
       await expect(
         service.redeem('terms-token', 'user-2'),

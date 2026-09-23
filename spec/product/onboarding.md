@@ -5,7 +5,7 @@
 1. Prospect visits frapp.live, clicks "Get Started."
 2. Redirected to app.frapp.live sign-up (Supabase Auth).
 3. After authentication, enters chapter details (name, university).
-4. **Accepts Terms of Service and Privacy Policy** (required checkbox).
+4. **Accepts Terms of Service and Privacy Policy** (required checkbox), which records the chapter's acceptance and the founder's own ([`legal.md`](../behavior/legal.md#acceptance-record) § Acceptance record).
 5. API creates chapter with `subscription_status: incomplete`.
 6. Default system roles and default channels are seeded. Full seeded definitions: [`spec/behavior/rbac.md` § Role Lifecycle](../behavior/rbac.md#role-lifecycle) (roles) and [`spec/behavior/chat/README.md` § Channels](../behavior/chat/README.md#channels) (channels).
 

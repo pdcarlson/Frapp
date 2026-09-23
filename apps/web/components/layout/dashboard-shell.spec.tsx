@@ -38,10 +38,13 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector: (s: { activeChapterId: string | null }) => unknown,
   ) => selector({ activeChapterId: "chap-1" }),
 }));
-// Onboarding gates render their own dialogs off their own queries; neither is
-// part of the shell's chrome contract.
+// Onboarding and Terms gates render their own dialogs off their own queries;
+// none is part of the shell's chrome contract.
 vi.mock("@/components/onboarding/chapter-wizard-gate", () => ({
   ChapterWizardGate: () => null,
+}));
+vi.mock("@/components/auth/terms-prompt", () => ({
+  TermsPromptGate: () => null,
 }));
 vi.mock("@/components/onboarding/onboarding-tutorial", () => ({
   OnboardingTutorial: () => null,

@@ -1,13 +1,11 @@
 import { GoneException, NotFoundException } from '@nestjs/common';
-import {
-  LEGAL_ACCEPTANCE_REQUIRED_CODE,
-  LegalAcceptanceService,
-} from './legal-acceptance.service';
+import { LegalAcceptanceService } from './legal-acceptance.service';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import type { User } from '#domain/entities/user.entity';
 
 jest.mock('@repo/validation', () => ({
   LEGAL_POLICY_VERSION: 'current-version',
+  LEGAL_ACCEPTANCE_REQUIRED_CODE: 'legal.acceptance_required',
 }));
 
 const baseUser = (overrides: Partial<User> = {}): User => ({
@@ -40,9 +38,7 @@ describe('LegalAcceptanceService (#2302)', () => {
         Promise.resolve(baseUser({ id, ...data })),
       ),
     };
-    service = new LegalAcceptanceService(
-      userRepo as unknown as IUserRepository,
-    );
+    service = new LegalAcceptanceService(userRepo);
   });
 
   describe('status', () => {
@@ -114,7 +110,7 @@ describe('LegalAcceptanceService (#2302)', () => {
         'legal_policy_version',
       ]);
       expect(written.legal_policy_version).toBe('current-version');
-      const stamped = new Date(written.legal_accepted_at!).getTime();
+      const stamped = new Date(String(written.legal_accepted_at)).getTime();
       expect(stamped).toBeGreaterThanOrEqual(before);
       expect(stamped).toBeLessThanOrEqual(Date.now());
       expect(status.required).toBe(false);
@@ -171,7 +167,9 @@ describe('LegalAcceptanceService (#2302)', () => {
     it('records the acceptance when the checkbox was ticked', async () => {
       userRepo.findById.mockResolvedValue(baseUser());
 
-      await service.requireOrAccept('user-1', true);
+      await expect(
+        service.requireOrAccept('user-1', true),
+      ).resolves.toMatchObject({ required: false });
 
       expect(userRepo.update).toHaveBeenCalledWith(
         'user-1',
@@ -187,7 +185,7 @@ describe('LegalAcceptanceService (#2302)', () => {
       ).rejects.toMatchObject({
         status: 403,
         response: expect.objectContaining({
-          code: LEGAL_ACCEPTANCE_REQUIRED_CODE,
+          code: 'legal.acceptance_required',
         }),
       });
       expect(userRepo.update).not.toHaveBeenCalled();
@@ -210,7 +208,7 @@ describe('LegalAcceptanceService (#2302)', () => {
 
       await expect(
         service.requireOrAccept('user-1', false),
-      ).resolves.toBeUndefined();
+      ).resolves.toMatchObject({ required: false });
       expect(userRepo.update).not.toHaveBeenCalled();
     });
   });

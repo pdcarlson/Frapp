@@ -12,8 +12,13 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useDeleteAccount, useRedeemInvite } from "@repo/hooks";
+import {
+  useDeleteAccount,
+  useLegalAcceptance,
+  useRedeemInvite,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import {
@@ -22,7 +27,12 @@ import {
   extractInviteTokenFromQuery,
   rememberInviteToken,
 } from "@/lib/onboarding/invite-token";
-import { joinErrorCopy, redeemChapterId } from "@/lib/onboarding/join-errors";
+import {
+  isTermsRequiredError,
+  JOIN_TERMS_REQUIRED_COPY,
+  joinErrorCopy,
+  redeemChapterId,
+} from "@/lib/onboarding/join-errors";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -44,6 +54,9 @@ export default function JoinChapter() {
   const { status, signOut } = useAuthSession();
   const redeemInvite = useRedeemInvite();
   const deleteAccount = useDeleteAccount();
+  const legalAcceptance = useLegalAcceptance({
+    enabled: status === "authenticated",
+  });
   const selectChapter = useSelectChapter();
   const params = useLocalSearchParams<{
     token?: string | string[];
@@ -54,6 +67,16 @@ export default function JoinChapter() {
 
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Set when the server refuses the join for want of the checkbox, which can
+  // happen if its answer changed after this screen read the status.
+  const [termsDemanded, setTermsDemanded] = useState(false);
+  // Ask unless the server has said this user already accepted the current
+  // Terms (#2302). A status still loading, or one that failed, shows the
+  // checkbox: ticking it is harmless for someone who had accepted, and
+  // leaving it off would only earn a refusal.
+  const termsNeeded =
+    termsDemanded || legalAcceptance.data?.required !== false;
 
   useEffect(() => {
     const paramValue = (
@@ -131,9 +154,18 @@ export default function JoinChapter() {
       return;
     }
 
+    if (termsNeeded && !acceptedTerms) {
+      setError(JOIN_TERMS_REQUIRED_COPY);
+      return;
+    }
+
     setError(null);
     try {
-      const result = await redeemInvite.mutateAsync({ token: extracted });
+      const result = await redeemInvite.mutateAsync(
+        termsNeeded
+          ? { token: extracted, accept_terms_privacy: true }
+          : { token: extracted },
+      );
       consumeRememberedInviteToken();
       const chapterId = redeemChapterId(result);
       if (chapterId) {
@@ -141,6 +173,10 @@ export default function JoinChapter() {
       }
       router.replace("/welcome");
     } catch (caught) {
+      if (isTermsRequiredError(caught)) {
+        setTermsDemanded(true);
+        setAcceptedTerms(false);
+      }
       setError(joinErrorCopy(caught));
     }
   }
@@ -220,6 +256,17 @@ export default function JoinChapter() {
             accessibilityLabel="Invite token"
             style={styles.input}
           />
+
+          {termsNeeded ? (
+            <TermsAcceptance
+              accepted={acceptedTerms}
+              onAcceptedChange={(next) => {
+                setAcceptedTerms(next);
+                setError(null);
+              }}
+              disabled={submitting}
+            />
+          ) : null}
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 

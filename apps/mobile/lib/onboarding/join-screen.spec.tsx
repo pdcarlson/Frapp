@@ -45,10 +45,23 @@ vi.mock("@/lib/select-chapter", () => ({
   useSelectChapter: () => vi.fn().mockResolvedValue(true),
 }));
 
+const redeemMutateAsync = vi.fn();
+let legalRequired: boolean | undefined = false;
+
 vi.mock("@repo/hooks", () => ({
-  useRedeemInvite: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useRedeemInvite: () => ({
+    isPending: false,
+    isSuccess: false,
+    mutateAsync: redeemMutateAsync,
+  }),
   useDeleteAccount: () => ({ isPending, isSuccess, mutateAsync }),
+  useLegalAcceptance: () => ({
+    data:
+      legalRequired === undefined ? undefined : { required: legalRequired },
+  }),
 }));
+
+vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
 
 import JoinChapter from "@/app/(auth)/join";
 
@@ -97,6 +110,7 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     vi.clearAllMocks();
     isPending = false;
     isSuccess = false;
+    legalRequired = false;
   });
 
   it("offers account deletion on the screen a zero-membership account is pinned to", () => {
@@ -216,5 +230,102 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     for (const label of ["Deleting account", "Sign out", "Create a chapter"]) {
       expect(control(tree.root, label)?.props.disabled).toBe(true);
     }
+  });
+});
+
+/**
+ * #2302. A user who hasn't accepted the current Terms can't join without
+ * ticking the box, and one who has isn't asked again.
+ */
+describe("join screen — the Terms checkbox (#2302)", () => {
+  const checkbox = (root: Node) =>
+    root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((pressable) => pressable.props.accessibilityRole === "checkbox");
+  const typeToken = (root: Node, value: string) => {
+    act(() => {
+      root.findByType("TextInput" as never).props.onChangeText(value);
+    });
+  };
+  const texts = (root: Node) =>
+    root
+      .findAllByType("Text" as never, { deep: true })
+      .map((text) => JSON.stringify(text.props.children ?? ""));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isPending = false;
+    isSuccess = false;
+    redeemMutateAsync.mockResolvedValue({ chapterId: "ch-1", memberId: "m-1" });
+  });
+
+  it("doesn't ask a user who already accepted the current Terms", async () => {
+    legalRequired = false;
+    const tree = render();
+    expect(checkbox(tree.root)).toBeUndefined();
+
+    typeToken(tree.root, "invite-token-1");
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+
+    expect(redeemMutateAsync).toHaveBeenCalledWith({ token: "invite-token-1" });
+  });
+
+  it("asks, and won't join until the box is ticked", async () => {
+    legalRequired = true;
+    const tree = render();
+    expect(checkbox(tree.root)).toBeDefined();
+
+    typeToken(tree.root, "invite-token-1");
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+
+    expect(redeemMutateAsync).not.toHaveBeenCalled();
+    expect(texts(tree.root).some((t) => t.includes("Agree to the Terms"))).toBe(
+      true,
+    );
+  });
+
+  it("sends the checkbox once it is ticked", async () => {
+    legalRequired = true;
+    const tree = render();
+
+    typeToken(tree.root, "invite-token-1");
+    act(() => {
+      checkbox(tree.root)?.props.onPress();
+    });
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+
+    expect(redeemMutateAsync).toHaveBeenCalledWith({
+      token: "invite-token-1",
+      accept_terms_privacy: true,
+    });
+  });
+
+  it("asks while the status is still unknown, rather than earn a refusal", () => {
+    legalRequired = undefined;
+    const tree = render();
+    expect(checkbox(tree.root)).toBeDefined();
+  });
+
+  it("shows the checkbox when the server refuses a join for want of it", async () => {
+    legalRequired = false;
+    redeemMutateAsync.mockRejectedValueOnce({
+      code: "legal.acceptance_required",
+      message:
+        "Agree to the Terms of Service and Privacy Policy to join this chapter.",
+    });
+    const tree = render();
+
+    typeToken(tree.root, "invite-token-1");
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+
+    expect(checkbox(tree.root)).toBeDefined();
   });
 });

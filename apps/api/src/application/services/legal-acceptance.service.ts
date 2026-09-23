@@ -5,7 +5,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { LEGAL_POLICY_VERSION } from '@repo/validation';
+import {
+  LEGAL_ACCEPTANCE_REQUIRED_CODE,
+  LEGAL_POLICY_VERSION,
+} from '@repo/validation';
 import {
   USER_REPOSITORY,
   type IUserRepository,
@@ -22,12 +25,6 @@ export interface LegalAcceptanceStatus {
   /** True until the user accepts `current_version`. */
   required: boolean;
 }
-
-/**
- * The 403 code a join path answers with when the caller hasn't accepted the
- * current Terms and didn't tick the box. Clients key their checkbox error on it.
- */
-export const LEGAL_ACCEPTANCE_REQUIRED_CODE = 'legal.acceptance_required';
 
 function toStatus(user: User): LegalAcceptanceStatus {
   const acceptedVersion = user.legal_policy_version ?? null;
@@ -88,19 +85,26 @@ export class LegalAcceptanceService {
    * accepted the current version, or the request is refused with
    * {@link LEGAL_ACCEPTANCE_REQUIRED_CODE}. Callers run this before they
    * create the membership, so no member can exist without an acceptance.
+   *
+   * Every caller passes its validated checkbox rather than calling
+   * {@link accept} directly, so a new caller has to state the claim it is
+   * recording (the reasoning `ChapterOnboardingInput` gives for keeping
+   * `accept_terms_privacy` in its signature).
    */
-  async requireOrAccept(userId: string, accepting: boolean): Promise<void> {
-    if (accepting) {
-      await this.accept(userId);
-      return;
-    }
-    if (toStatus(await this.load(userId)).required) {
+  async requireOrAccept(
+    userId: string,
+    accepting: boolean,
+  ): Promise<LegalAcceptanceStatus> {
+    if (accepting) return this.accept(userId);
+    const status = toStatus(await this.load(userId));
+    if (status.required) {
       throw new ForbiddenException({
         code: LEGAL_ACCEPTANCE_REQUIRED_CODE,
         message:
           'Agree to the Terms of Service and Privacy Policy to join this chapter.',
       });
     }
+    return status;
   }
 
   private async load(userId: string): Promise<User> {

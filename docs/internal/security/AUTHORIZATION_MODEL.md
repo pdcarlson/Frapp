@@ -105,6 +105,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | `POST /chapters/:id/activate` | A | Client-supplied `:id`, but `setActiveChapter` requires a membership row and throws `403` otherwise (`chapter.service.ts:81-87`) |
 | `POST /invites/redeem` | A | Redeems by opaque invite code; the code *is* the capability. Chapter comes from the invite row, not the caller — which is also why the subscription hard lock is evaluated in `InviteService.redeem` against `invite.chapter_id` (#1546) rather than by `ChapterGuard`, which never sees that chapter |
 | `GET/PATCH /users/me`, `DELETE /users/me` | A | **D** |
+| `GET/POST /users/me/legal-acceptance` | A | **D** — reads and stamps the caller's own row only; no chapter context, because a user accepts before they join one (#2302) |
 | `GET /users/me/permissions`, `POST /users/me/avatar-url` | A+C | Chapter context needed; guard supplies it |
 | `POST /push-tokens`, `DELETE /push-tokens/:id` | A | **D** — `removePushToken` checks `existing.user_id !== userId → 404` (`notification.service.ts:299`) |
 | `GET /notifications`, `PATCH /notifications/:id/read` | A | **D** — `markNotificationRead` checks `existing.user_id !== userId → 404` (`:271`) |

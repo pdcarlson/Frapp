@@ -19,6 +19,7 @@ import { persistNavCollapsed } from "@/components/layout/nav-collapse";
 import { isFullBleedRoute } from "@/components/layout/full-bleed-routes";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
+import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { cn } from "@/lib/utils";
@@ -118,6 +119,8 @@ export function DashboardShell({
     */
     <div className="flex h-[calc(100vh_-_var(--offline-banner-height,0px))] overflow-hidden bg-background">
       <ChapterWizardGate />
+      {/* A member who hasn't accepted the current Terms (#2302). */}
+      <TermsPromptGate />
       <OnboardingTutorial />
       <DashboardNotificationDrawer
         open={notificationDrawerOpen}

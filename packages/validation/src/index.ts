@@ -12,14 +12,34 @@ import {
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
 /**
- * Version stamp recorded when a chapter admin accepts the Terms of Service and
- * Privacy Policy during onboarding (FRA-17, spec/behavior/legal.md). Bump this
- * whenever the Terms/Privacy materially change; it mirrors the landing pages'
- * "last updated" (frapp.live/terms, /privacy — currently "March 2026"). The
- * onboarding service stamps it onto the chapter row server-side; the web wizard
- * imports it so client and server agree on a single value.
+ * The Terms of Service and Privacy Policy version the API enforces
+ * (spec/behavior/legal.md § Acceptance record). Bump it whenever the Terms or
+ * Privacy Policy change materially, to the `YYYY-MM` of the Terms page's "Last
+ * updated" (frapp.live/terms, currently "September 2026").
+ *
+ * Only the API reads it. It stamps it onto a chapter at onboarding and onto a
+ * user when they accept, and a user whose stored version differs is asked
+ * again, so a bump re-prompts everyone once. Clients never compare against it:
+ * they ask `GET /v1/users/me/legal-acceptance`, because a store binary compiled
+ * with an older value would otherwise disagree with the server.
  */
-export const LEGAL_POLICY_VERSION = "2026-03";
+export const LEGAL_POLICY_VERSION = "2026-09";
+
+/**
+ * The checkbox every acceptance surface shows: the create-chapter wizard, the
+ * join screens and the Terms prompt, on web and mobile. The owner approved this
+ * wording with the Terms of 2026-09 (#2261), so change it only with them, and
+ * with the Terms.
+ */
+export const LEGAL_ACCEPTANCE_LABEL =
+  "I'm 18 or older and agree to the Terms of Service and Privacy Policy.";
+
+/**
+ * The 403 `code` a join answers with when the caller hasn't accepted the
+ * current Terms and didn't send the checkbox (#2302). The API throws it and
+ * both join screens key their copy on it.
+ */
+export const LEGAL_ACCEPTANCE_REQUIRED_CODE = "legal.acceptance_required";
 
 const subscriptionStatusEnum = z.enum([
   "incomplete",
