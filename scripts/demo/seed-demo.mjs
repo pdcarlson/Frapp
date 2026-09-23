@@ -18,7 +18,8 @@
 //
 // Order: `auth`, then `sql`, then `storage`, then `verify`. The seed links its
 // login to the auth user with the same email, and only to one `auth` created for
-// this namespace, so `auth` runs first. Undo in the reverse order with `--remove`.
+// this namespace, so `auth` runs first. Undo with `--remove`: `sql` first, the one
+// step that can refuse, then `storage`, which cannot be undone, then `auth`.
 //
 // Environment (`infisical run --env=<slug> --` supplies the Supabase three):
 //   SUPABASE_URL               the project's API URL           auth, storage, verify
@@ -172,16 +173,32 @@ export function renderSeedSql({ template, namespace, loginEmail, reviewer = fals
 }
 
 /**
+ * The foreign keys onto `users` that deleting an account would act on: those that cascade
+ * (taking the referencing rows with it) or that do not (failing the delete). `set null` ones
+ * only lose the reference, so they are left out, and so are the tables a user owns outright,
+ * `push_tokens` and `user_settings`, which go with the account. Read from the catalog, so a
+ * table added later is covered with no edit. demo-seed.sql uses this query twice (the reset
+ * guard and the login adoption), and a test holds its copies to this one.
+ */
+export const USER_REF_FKS_SQL =
+  `    SELECT c.conrelid::regclass AS tbl, a.attname AS col\n` +
+  `      FROM pg_constraint c\n` +
+  `      JOIN pg_class t ON t.oid = c.conrelid\n` +
+  `      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]\n` +
+  `     WHERE c.contype = 'f' AND c.confrelid = 'public.users'::regclass\n` +
+  `       AND array_length(c.conkey, 1) = 1\n` +
+  `       AND c.confdeltype IN ('c', 'a', 'r')\n` +
+  `       AND t.relname NOT IN ('users', 'push_tokens', 'user_settings')\n`;
+
+/**
  * The check that runs between the demo chapter's delete and its people's (#2308).
  *
  * The chapter cascade removes everything a seeded account did inside the chapter. Any row
- * that still references one of them afterwards is therefore in another chapter: the App
- * Review login founding or joining one, say, or rows it wrote there before leaving. Deleting
- * the account would cascade through those rows or fail on a foreign key that does not, so
- * this refuses instead. Every foreign key onto `users` is read from the catalog, so a table
- * added later is covered with no edit here; only the tables a user owns outright,
- * `push_tokens` and `user_settings`, go with the account. demo-seed.sql carries the same
- * block for its own namespace, and a test pins the two together.
+ * that still references one of them through USER_REF_FKS_SQL afterwards is therefore in
+ * another chapter: the App Review login founding or joining one, say, or rows it wrote there
+ * before leaving. Deleting the account would cascade through those rows or fail on them, so
+ * this refuses instead. demo-seed.sql carries the same block for its own namespace, and a
+ * test pins the two together.
  */
 export function accountGuardSql(userIdLike) {
   return (
@@ -191,13 +208,7 @@ export function accountGuardSql(userIdLike) {
     `  hit boolean;\n` +
     `BEGIN\n` +
     `  FOR r IN\n` +
-    `    SELECT c.conrelid::regclass AS tbl, a.attname AS col\n` +
-    `      FROM pg_constraint c\n` +
-    `      JOIN pg_class t ON t.oid = c.conrelid\n` +
-    `      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]\n` +
-    `     WHERE c.contype = 'f' AND c.confrelid = 'public.users'::regclass\n` +
-    `       AND array_length(c.conkey, 1) = 1\n` +
-    `       AND t.relname NOT IN ('users', 'push_tokens', 'user_settings')\n` +
+    USER_REF_FKS_SQL +
     `  LOOP\n` +
     `    EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I::text LIKE %L)', r.tbl, r.col, '${userIdLike}') INTO hit;\n` +
     `    IF hit THEN\n` +

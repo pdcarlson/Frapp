@@ -110,13 +110,14 @@ for production is `prod`.
 - `auth` and `storage` refuse production unless `DEMO_ALLOW_PRODUCTION=true`,
   the same fence `DB_RESTORE_ALLOW_PRODUCTION` puts on a restore. The production
   ref comes from [`.github/environments.json`](../../.github/environments.json).
-- The seed refuses to link a login whose `users` row is a member of any chapter,
-  and `--reviewer` refuses to run at all until a marked login exists. The seed and
-  `sql --remove` also refuse while any seeded account still has rows once the demo
-  chapter is gone, that is, a membership in or anything written to another
-  chapter (the App Review login founding one, say), since deleting that account
-  would cascade through those rows or fail on them. Either way
-  the whole seed is one transaction, so a failed re-seed leaves the chapter it
+- The seed refuses to link a login whose earlier `users` row anything still
+  references (a membership, rows in a chapter it has left), and `--reviewer`
+  refuses to run at all until a marked login exists. The seed and `sql --remove`
+  also refuse while any seeded account has rows that deleting it would cascade
+  through or fail on once the demo chapter is gone: a membership in, or anything
+  written to, another chapter (the App Review login founding one, say). A
+  reference that would only be nulled, such as a directory request, does not
+  count. Either way the whole seed is one transaction, so a failed re-seed leaves the chapter it
   was replacing exactly as it was.
 
 ### Production (App Review)

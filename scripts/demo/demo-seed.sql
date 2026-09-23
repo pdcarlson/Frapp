@@ -57,6 +57,7 @@ BEGIN
       JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
      WHERE c.contype = 'f' AND c.confrelid = 'public.users'::regclass
        AND array_length(c.conkey, 1) = 1
+       AND c.confdeltype IN ('c', 'a', 'r')
        AND t.relname NOT IN ('users', 'push_tokens', 'user_settings')
   LOOP
     EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I::text LIKE %L)', r.tbl, r.col, 'c0ffee00-0000-4000-8000-1000%') INTO hit;
@@ -178,6 +179,8 @@ DECLARE
   v_auth uuid := (SELECT auth_id FROM demo_login);
   v_ours boolean := (SELECT ours FROM demo_login);
   v_owner uuid;
+  r record;
+  hit boolean;
 BEGIN
   IF v_auth IS NULL OR NOT v_ours THEN
     DELETE FROM demo_login;
@@ -194,13 +197,26 @@ BEGIN
   -- login — `verify` run early, or the app opened on TestFlight — makes exactly
   -- one: the API's first-sign-in sync inserts a chapterless row. That shell is
   -- this login's and holds nothing, so it is adopted: deleted, and the roster
-  -- row below takes the auth id. A row with a membership anywhere is an account
-  -- in use, and is refused rather than destroyed.
+  -- row below takes the auth id. A row anything references (through the same
+  -- foreign keys the reset guard reads: a membership, points in a chapter it has
+  -- since left) is an account in use, and is refused rather than destroyed.
   SELECT id INTO v_owner FROM users WHERE supabase_auth_id = v_auth;
   IF v_owner IS NOT NULL THEN
-    IF EXISTS (SELECT 1 FROM members WHERE user_id = v_owner) THEN
-      RAISE EXCEPTION 'the login''s auth user already belongs to users.id %, which is a member of a chapter; refusing to take it over', v_owner;
-    END IF;
+    FOR r IN
+    SELECT c.conrelid::regclass AS tbl, a.attname AS col
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+     WHERE c.contype = 'f' AND c.confrelid = 'public.users'::regclass
+       AND array_length(c.conkey, 1) = 1
+       AND c.confdeltype IN ('c', 'a', 'r')
+       AND t.relname NOT IN ('users', 'push_tokens', 'user_settings')
+    LOOP
+      EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I = %L)', r.tbl, r.col, v_owner) INTO hit;
+      IF hit THEN
+        RAISE EXCEPTION 'the login''s auth user already belongs to users.id %, which has rows in %.%: an account in use; refusing to take it over', v_owner, r.tbl, r.col;
+      END IF;
+    END LOOP;
     DELETE FROM users WHERE id = v_owner;
     RAISE NOTICE 'adopted the login: removed the chapterless users row % a sign-in created before this seed', v_owner;
   END IF;

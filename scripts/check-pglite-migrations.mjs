@@ -2513,6 +2513,18 @@ console.log("\n=== demo seed load (#2308) ===");
     );
     await db.exec(`delete from point_transactions where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}';`);
 
+    // A reference deleting the account would only null out is no reason to refuse either: a
+    // directory request the login filed for a chapter since deleted keeps its row, with
+    // requested_by set null, and the re-seed goes ahead.
+    await db.exec(
+      `insert into chapter_directory_requests (requested_by, university) values ('${reviewerLogin}', 'Demo University');`,
+    );
+    await db.exec(reviewerSql);
+    const orphanRequest = await n(
+      `select count(*)::int as n from chapter_directory_requests where university = 'Demo University' and requested_by is null`,
+    );
+    await db.exec(`delete from chapter_directory_requests where university = 'Demo University';`);
+
     // What the account owns outright goes with it: a push token or settings row is no reason to refuse.
     await db.exec(`insert into push_tokens (user_id, token) values ('${reviewerLogin}', 'demo-token');`);
     await db.exec(`insert into user_settings (user_id) values ('${reviewerLogin}');`);
@@ -2544,7 +2556,14 @@ console.log("\n=== demo seed load (#2308) ===");
     await db.exec(`insert into members (user_id, chapter_id) values ('${inUse}', '${marketingChapter}');`);
     const refusedInUse = await refuses(reviewerSql);
     const inUseKept = await n(`select count(*)::int as n from members where user_id = '${inUse}'`);
-    await db.exec(`delete from members where user_id = '${inUse}'; delete from users where id = '${inUse}';`);
+    await db.exec(`delete from members where user_id = '${inUse}';`);
+    // ...and so is one with no membership left but points in a chapter it has left.
+    await db.exec(
+      `insert into point_transactions (chapter_id, user_id, amount, category) values ('${marketingChapter}', '${inUse}', 5, 'MANUAL');`,
+    );
+    const refusedLeftOwner = await refuses(reviewerSql);
+    const leftOwnerKept = await n(`select count(*)::int as n from point_transactions where user_id = '${inUse}'`);
+    await db.exec(`delete from point_transactions where user_id = '${inUse}'; delete from users where id = '${inUse}';`);
 
     for (const namespace of namespaces) await db.exec(seedDemo.renderRemoveSql({ namespace }));
     const removed = await Promise.all(namespaces.map(snapshot));
@@ -2569,8 +2588,10 @@ console.log("\n=== demo seed load (#2308) ===");
       [refusedCrossReseed && refusedCrossRemove && crossKept === 1 && same(afterCross, reviewer), "a seeded account in another chapter makes the re-seed and sql --remove refuse, and that membership survives"],
       [refusedLeftRows && leftRowsKept === 1, "rows a seeded account left in another chapter, with no membership there, also make the re-seed refuse"],
       [Number(ownedLeft) === 0, "a push token and a settings row go with the account, without a refusal"],
+      [orphanRequest === 1, "a set-null reference (a directory request for a deleted chapter) does not refuse; it is nulled"],
       [adopted.loginAuthId === REVIEWER_AUTH_ID && shells === 1, `a chapterless row from an early sign-in is adopted (linked ${adopted.loginAuthId}, ${shells} row on the auth id)`],
       [refusedInUse && inUseKept === 1, "a row on the login's auth id that is a member of a chapter is refused, not taken over"],
+      [refusedLeftOwner && leftOwnerKept === 1, "so is one with no membership but points in a chapter it has left"],
       [removed.every((r) => r.chapters === 0 && r.members === 0 && r.users === 0 && r.documents === 0), "sql --remove clears both chapters and their people"],
     ];
     for (const [ok, name] of checks) {

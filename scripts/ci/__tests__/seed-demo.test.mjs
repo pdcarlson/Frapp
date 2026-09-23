@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import {
   AUTH_MARKER_KEY,
+  USER_REF_FKS_SQL,
   accountGuardSql,
   LOCAL_DEMO_EMAIL,
   LOCAL_DEMO_PASSWORD,
@@ -165,6 +166,8 @@ test("sql --remove is the seed's own opening deletes, and nothing more", () => {
   // pglite-migrations check exercises it. The template's copy is pinned to the function.
   const guard = accountGuardSql("a9900000-0000-4000-8000-1000%");
   assert.ok(seed.includes(guard), "demo-seed.sql's guard drifted from accountGuardSql");
+  // The login adoption reads the same foreign keys.
+  assert.equal(seed.split(USER_REF_FKS_SQL).length - 1, 2, "demo-seed.sql's two FK queries drifted from USER_REF_FKS_SQL");
   assert.ok(remove.includes(guard));
   for (const sql of [seed, remove]) {
     assert.ok(sql.indexOf("DELETE FROM chapters") < sql.indexOf(guard), "the guard runs after the chapter cascade");
