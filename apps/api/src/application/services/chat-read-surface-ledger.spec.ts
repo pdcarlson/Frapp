@@ -911,22 +911,35 @@ describe('chat read-surface ledger (#2324)', () => {
     // held in a constant is a problem to resolve by hand, never a pass. Prose
     // about the echo inside a longer string is not the literal and does not
     // count. A reaction subscription would be a reaction push.
-    // The event in any spelling the code can hold it: the string literal, the
-    // enum member read as a property or an element, or the bare name. Pulling
-    // the member out by destructuring or import (`const { POSTGRES_CHANGES:
-    // ev } = …`, `import { POSTGRES_CHANGES as ev }`) is itself a mention
-    // outside an `.on(…)` call: the local name it binds could be anything, so
-    // it is a problem to resolve by hand.
-    const isEvent = (node: ts.Node | undefined): boolean =>
-      literalText(node) === 'postgres_changes' ||
-      (!!node &&
-        ((ts.isPropertyAccessExpression(node) &&
-          node.name.text === 'POSTGRES_CHANGES') ||
-          (ts.isElementAccessExpression(node) &&
-            literalText(node.argumentExpression) === 'POSTGRES_CHANGES') ||
-          (ts.isIdentifier(node) &&
-            node.text === 'POSTGRES_CHANGES' &&
-            !isNameOnly(node))));
+    // The event in any spelling the code can hold it, in any position: either
+    // string (`'postgres_changes'`, or `'POSTGRES_CHANGES'` as a quoted or
+    // computed key), the enum member read as a property or an element, or the
+    // bare name, whether referenced, destructured (renamed or not, as a
+    // declaration or an assignment) or imported. Anything but the event
+    // argument of an `.on(…)` call is a problem to resolve by hand: the local
+    // name a destructure binds could be anything. The one position skipped is
+    // the name half of `X.POSTGRES_CHANGES`, where the access itself counts.
+    const isEvent = (node: ts.Node | undefined): boolean => {
+      if (!node) return false;
+      const text = literalText(node);
+      if (text === 'postgres_changes' || text === 'POSTGRES_CHANGES') {
+        return true;
+      }
+      if (ts.isPropertyAccessExpression(node)) {
+        return node.name.text === 'POSTGRES_CHANGES';
+      }
+      if (ts.isElementAccessExpression(node)) {
+        return isEvent(node.argumentExpression);
+      }
+      return (
+        ts.isIdentifier(node) &&
+        node.text === 'POSTGRES_CHANGES' &&
+        !(
+          ts.isPropertyAccessExpression(node.parent) &&
+          node.parent.name === node
+        )
+      );
+    };
     const subscribed = new Set<string>();
     const problems = sources.flatMap(({ rel, file }) =>
       everyNode(file)
