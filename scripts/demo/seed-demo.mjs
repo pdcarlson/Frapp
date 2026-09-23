@@ -587,7 +587,7 @@ export const STORAGE_DELETE_BATCH = 1000;
  * The walk is storage-backup.mjs's (listBuckets, listBucketObjects), started at the chapter's
  * folder, with every request sent through fetchWithRetry as the rest of this script's are.
  */
-export async function removePlaceholders({ supabaseUrl, serviceKey, namespace, fetchImpl = fetch }) {
+export async function removePlaceholders({ supabaseUrl, serviceKey, namespace, fetchImpl = fetch, sleep }) {
   const { chapterId } = demoIds(namespace);
   const prefix = `chapters/${chapterId}/`;
   const chapters = await request(
@@ -604,7 +604,7 @@ export async function removePlaceholders({ supabaseUrl, serviceKey, namespace, f
   }
   // A listing or bulk delete repeats harmlessly, so each may be retried like a GET.
   const retryMethods = new Set([...IDEMPOTENT_METHODS, "POST", "DELETE"]);
-  const retrying = (url, init) => fetchWithRetry(url, init, { fetchImpl, retryMethods });
+  const retrying = (url, init) => fetchWithRetry(url, init, { fetchImpl, retryMethods, sleep });
   const names = [...(await listBuckets({ supabaseUrl, serviceKey, fetchImpl: retrying }))].filter(Boolean).sort();
   // An empty answer is a key without Storage rights, not a project with nothing to remove.
   if (names.length === 0) throw new Error("the project listed no Storage buckets; check SUPABASE_SERVICE_ROLE_KEY");

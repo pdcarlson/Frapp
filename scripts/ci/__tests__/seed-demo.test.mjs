@@ -454,8 +454,11 @@ test("storage --remove retries a listing that hits a transient 503", async () =>
     [on("GET", "/storage/v1/bucket"), () => ({ json: [{ id: "documents", name: "documents" }] })],
     [on("POST", "/storage/v1/object/list/documents"), () => (++listings === 1 ? { status: 503, json: {} } : { json: [] })],
   ]);
-  const result = await removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: "a9900000", fetchImpl });
+  const waits = [];
+  const sleep = async (ms) => void waits.push(ms);
+  const result = await removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: "a9900000", fetchImpl, sleep });
   assert.equal(listings, 2);
+  assert.equal(waits.length, 1, "one backoff, taken through the injected sleep");
   assert.deepEqual(result, [{ bucket: "documents", count: 0 }]);
 });
 
