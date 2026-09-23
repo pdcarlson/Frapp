@@ -91,6 +91,15 @@ export function mask(src) {
   // Indices of each `)` that closes an `if`/`while`/`for`/`with` condition,
   // after which a `/` starts a regex rather than a division.
   const closesControl = new Set();
+  // Whether the `(` at `i` opens an `if`/`while`/`for`/`with` condition: the
+  // keyword itself, not a method named like one (`Symbol.for(k)`), and
+  // `for await (` too.
+  const opensControl = (i) => {
+    const { token, at } = previous(i);
+    if (out[at - 1] === ".") return false;
+    if (token === "await") return previous(at).token === "for";
+    return ["if", "while", "for", "with"].includes(token);
+  };
   const regexCanStart = (i) => {
     const { token, at } = previous(i);
     if (token === "") return true;
@@ -152,9 +161,7 @@ export function mask(src) {
         blank(i, end, "_");
         i = end;
       } else {
-        if (c === "(") {
-          parens.push(["if", "while", "for", "with"].includes(previous(i).token));
-        }
+        if (c === "(") parens.push(opensControl(i));
         if (c === ")" && parens.pop()) closesControl.add(i);
         if (inTemplate && c === "{") depth += 1;
         if (inTemplate && c === "}") {
@@ -252,6 +259,7 @@ export function scan(src, file) {
     "write it with literal arguments, or add it to STRUCTURAL";
   // Every form routes through here: follow a JavaScript module, record the rest.
   const route = (path, call) => {
+    assert.ok(path !== "", `${file}: \`${call}\` names the repo root itself`);
     assert.ok(path !== ".." && !path.startsWith("../"), `${file}: \`${call}\` names a path outside the repo`);
     (/\.[cm]?js$/.test(path) ? follow : found).push(path);
   };
@@ -261,12 +269,12 @@ export function scan(src, file) {
     if (root !== "REPO_ROOT" && root !== "process.cwd()") continue;
     const parts = rest.map(literal);
     assert.ok(parts.length > 0 && parts.every((p) => p !== null), unresolved(call));
-    // `resolve` restarts at an absolute segment, which here would leave the repo.
-    assert.ok(
-      !call.startsWith("resolve") || parts.every((p) => !p.startsWith("/")),
-      `${file}: \`${call}\` names a path outside the repo`,
-    );
-    route(posix.join(...parts), call);
+    // Evaluated against a stand-in root with Node's own semantics, so `join`
+    // keeps a leading `/` segment inside it, `resolve` restarts at one, and a
+    // `..` that climbs past it comes back as `../…` for `route` to reject.
+    const standIn = "/repo-root";
+    const target = (call.startsWith("resolve") ? posix.resolve : posix.join)(standIn, ...parts);
+    route(posix.relative(standIn, target), call);
   }
 
   for (const { call, args } of callArgs(src, masked, /\bnew\s+URL\s*\(/g)) {
@@ -477,9 +485,10 @@ describe("the scanner reads each form as what it is", () => {
       'spawn(fileURLToPath(new URL("./run.mjs", import.meta.url)));',
       'readFileSync(resolve(REPO_ROOT, "apps", "y.ts"));',
       'readFileSync(join(REPO_ROOT, "scripts", "demo", "..", "..", "apps", "z.ts"));',
+      'readFileSync(join(REPO_ROOT, "/supabase/w.sql"));',
     ].join("\n");
     assert.deepEqual(scan(src, at), {
-      found: ["supabase/seed.sql", "apps/y.ts", "apps/z.ts"],
+      found: ["supabase/seed.sql", "apps/y.ts", "apps/z.ts", "supabase/w.sql"],
       follow: ["scripts/ci/lib/run.mjs"],
     });
   });
@@ -488,10 +497,14 @@ describe("the scanner reads each form as what it is", () => {
     for (const src of [
       'join(REPO_ROOT, "..", "x");',
       'resolve(REPO_ROOT, "/etc/passwd");',
+      'join(REPO_ROOT, "/..", "supabase", "migrations");',
+      'join(REPO_ROOT, "/a/../../b");',
       'import "../../../../x.mjs";',
     ]) {
       assert.throws(() => scan(src, at), /outside the repo/, src);
     }
+    // The root itself is no file to cover.
+    assert.throws(() => scan('join(REPO_ROOT, "a", "..");', at), /repo root itself/);
   });
 
   it("tells a division from a regex after `++`, a property and a condition", () => {
@@ -500,6 +513,9 @@ describe("the scanner reads each form as what it is", () => {
       ['const n = i++ / 2; join(REPO_ROOT, "b.sql"); const q = n / 3;', "b.sql"],
       ['const h = o.return / 2; join(REPO_ROOT, "c.sql"); const k = h / 4;', "c.sql"],
       ['if (ok) /\\/\\//.test(u); join(REPO_ROOT, "d.sql");', "d.sql"],
+      ['for await (const x of y) /a"b/.test(x); join(REPO_ROOT, "e.sql");', "e.sql"],
+      ['const r = a.if(b) / 2; join(REPO_ROOT, "f.sql"); const q = 1 / 2;', "f.sql"],
+      ['const s = Symbol.for(k) / 2; join(REPO_ROOT, "g.sql"); const t = 1 / 2;', "g.sql"],
     ]) {
       assert.deepEqual(scan(src, at).found, [path], src);
     }
@@ -509,7 +525,7 @@ describe("the scanner reads each form as what it is", () => {
     for (const [src, error] of [
       ['const s = "unterminated;\nimport("./x.mjs");', /unterminated string/],
       ["const t = `unterminated;", /unterminated template literal/],
-      ["const t = `${a;", /unterminated template/],
+      ["const t = `${a;", /unterminated template expression/],
       ["const r = /unterminated;\nx;", /unterminated regex/],
       ["/* unterminated", /unterminated block comment/],
     ]) {
