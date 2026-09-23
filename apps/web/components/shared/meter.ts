@@ -63,9 +63,9 @@
  *
  * **The bar is never the only signal.** Since #2541 the fill clears README
  * §6's 3:1 non-text floor against this track for every seed (worst 3.742:1),
- * because the engine holds `accent-9` to 3:1 on every ladder surface, and the
- * API's hourly stale-palette sweep recomputes any palette stored before that
- * (#1165). A bar's length still cannot carry the exact figure, so both call sites print the
+ * because the engine holds `accent-9` to 3:1 on every ladder surface, for a
+ * palette written since (`accent-engine.md` §4 covers stored ones). A bar's
+ * length still cannot carry the exact figure, so both call sites print the
  * count and percentage as text beside the bar, and the bar itself is
  * `aria-hidden`. Do not drop that text on the grounds that the bar shows it.
  *

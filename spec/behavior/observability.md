@@ -2,7 +2,7 @@
 
 This file is the **product-behavior contract** for observability: which provider owns which signal, how identifiers correlate, what may leave the process, how releases are named, and how sampling is bounded. The **decision and rejected alternatives** live in [ADR-22](../architecture/adr/adr-22.md). Pseudonymous identity, chapter opt-out, and account-deletion forget live in [`data-retention.md`](data-retention.md#analytics-events-pseudonymous). Operational routing lives in [`ALERT_ROUTING.md`](../../docs/internal/ops/ALERT_ROUTING.md). Env-var names live in [`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md).
 
-**Spec is intended behavior. Code and provider dashboards are current behavior.** A disagreement is a tracked bug, not a reason to rewrite this file to match a leak or a dashboard default.
+**Provider dashboards count as current behavior here, alongside code.** A dashboard default or a leak that disagrees with this file is handled like any spec-vs-code disagreement ([`AGENTS.md` § Spec vs code](../../AGENTS.md#spec-vs-code)), not by rewriting the file to match it.
 
 ## Provider ownership
 

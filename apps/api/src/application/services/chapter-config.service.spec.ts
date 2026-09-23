@@ -34,7 +34,8 @@ jest.mock('@repo/org-archetypes', () => ({
 jest.mock('@repo/chapter-theme', () => ({
   // Mirrors the real DeriveSignetPaletteResult shape — see the note in
   // chapter-onboarding.service.spec.ts for why a partial double is a trap
-  // here: the service reads `invalidSeed` and iterates `contrastChecks`.
+  // here: `buildChapterPalette` (chapter-palette.ts, not mocked) reads
+  // `invalidSeed` and iterates `contrastChecks` and `fillChecks`.
   deriveSignetPalette: jest.fn(() => ({
     palette: { '--signet-accent-primary': '#C49A3A' },
     resolvedSeed: '#F2B72E',
@@ -669,6 +670,101 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       });
       expect(warn).toHaveBeenCalledWith(
         `Signet accent fill below 3:1 for chapter ${CHAPTER_ID}: --signet-accent-primary on --popover = 1.50:1`,
+      );
+    });
+
+    it('logs only the fill checks that failed, and nothing when all pass', async () => {
+      // The engine reports a check for every ladder surface, passing or not;
+      // only the failures belong in the log, or every save would log a fill
+      // warning naming all four surfaces and bury the one a broken lift raises.
+      const { deriveSignetPalette } = jest.requireMock(
+        '@repo/chapter-theme',
+      ) as { deriveSignetPalette: jest.Mock };
+      const fillCheck = (against: string, ratio: number) => ({
+        role: '--signet-accent-primary',
+        against,
+        ratio,
+        passes: ratio >= 3,
+      });
+      const base = {
+        palette: { '--signet-accent-primary': '#C34437' },
+        resolvedSeed: '#8B0000',
+        invalidSeed: false,
+        contrastChecks: [],
+      };
+      deriveSignetPalette
+        .mockReturnValueOnce({
+          ...base,
+          fillChecks: [
+            fillCheck('--background', 4.1),
+            fillCheck('--popover', 2.9),
+          ],
+        })
+        .mockReturnValueOnce({
+          ...base,
+          fillChecks: [
+            fillCheck('--background', 4.1),
+            fillCheck('--popover', 3.01),
+          ],
+        });
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+      const warn = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
+
+      await service.recomputeAndPersistPalette(CHAPTER_ID);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        `Signet accent fill below 3:1 for chapter ${CHAPTER_ID}: --signet-accent-primary on --popover = 2.90:1`,
+      );
+
+      warn.mockClear();
+      await service.recomputeAndPersistPalette(CHAPTER_ID);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('never logs a failing ratio as its floor', async () => {
+      // The engine fails a check on the unrounded ratio; `toFixed(2)` logged a
+      // 4.4954 as "4.50:1" under "below AA", and would log a 2.996 fill as
+      // "3.00:1" under "below 3:1". Both lines truncate.
+      const { deriveSignetPalette } = jest.requireMock(
+        '@repo/chapter-theme',
+      ) as { deriveSignetPalette: jest.Mock };
+      deriveSignetPalette.mockReturnValueOnce({
+        palette: { '--signet-accent-primary': '#0086FE' },
+        resolvedSeed: '#0086FE',
+        invalidSeed: false,
+        fillChecks: [
+          {
+            role: '--signet-accent-primary',
+            against: '--popover',
+            ratio: 2.996,
+            passes: false,
+          },
+        ],
+        contrastChecks: [
+          {
+            role: '--signet-accent-text',
+            against: '#131211',
+            ratio: 4.4954,
+            passes: false,
+          },
+        ],
+      });
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+      const warn = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
+
+      await service.recomputeAndPersistPalette(CHAPTER_ID);
+
+      expect(warn).toHaveBeenCalledWith(
+        `Signet accent contrast below AA for chapter ${CHAPTER_ID}: --signet-accent-text on #131211 = 4.49:1`,
+      );
+      expect(warn).toHaveBeenCalledWith(
+        `Signet accent fill below 3:1 for chapter ${CHAPTER_ID}: --signet-accent-primary on --popover = 2.99:1`,
       );
     });
 

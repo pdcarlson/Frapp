@@ -59,7 +59,8 @@ function readString(
  * ## The accent comes from the generated scale, not the raw seed
  *
  * `accent-engine.md` §1 and `spec/ui/mobile/README.md` both say it outright:
- * no component references the seed hex; only generated, gated roles paint.
+ * no component references the seed hex; only generated roles paint (§8 gates
+ * the text roles and the solid fill, not the rest).
  * This used to paint `chapters.accent_color` — the seed itself — through a
  * runtime contrast check. That check existed because the API only validates an accent
  * against a *light* background, so a legal stored accent could still be
@@ -74,12 +75,13 @@ function readString(
  *
  * `accent-primary` (step 9) is the *solid fill* role, and §8 holds it only to
  * the 3:1 non-text floor, not the 4.5:1 text floor. Painting it as a
- * foreground would miss AA: on `--card` a crimson chapter's step 9 measures
- * **3.32:1** and a forest-green one **3.34:1**, and those are after #2541
- * lightened both (on the old `#1E1B17` card they were 1.71:1 and 2.13:1).
- * Step 11 measures
- * 7.8–9.8:1 for every colour in the chapter directory seed, and reads equally
- * well as a chip fill under the fixed `gold.onHouse` label (7.3:1+).
+ * foreground would miss AA: on `--card`, in a palette written since #2541
+ * lightened both fills, a crimson chapter's step 9 measures **3.32:1** and a
+ * forest-green one **3.34:1** (a palette stored before then paints its older,
+ * darker fill until the stale-palette sweep recomputes it; `accent-engine.md`
+ * §4). Step 11 measures 7.5–8.6:1 on `--card` for every
+ * colour in the chapter directory seed, and reads equally well as a chip fill
+ * under the fixed `gold.onHouse` label (7.2:1+).
  *
  * So the generated scale removes the problem rather than compensating for it —
  * but only via the role that was specified for this job. A surface that wants a

@@ -16,7 +16,7 @@ Principles:
 
 1. **Warm dark, not black.** The base is a warm charcoal ladder, lifted off the pure-black floor. Values: [`foundations.md`](foundations.md).
 2. **Elevation is a lighter surface.** Depth comes from stepping up the surface ladder and low-opacity white hairlines — never drop shadows.
-3. **One accent engine.** Chapters personalize through a generated 12-step scale seeded from one hex; house gold is Signet's own accent and the default seed. No component references the seed hex; only the generated, contrast-gated roles paint. Mechanics: [`accent-engine.md`](accent-engine.md).
+3. **One accent engine.** Chapters personalize through a generated 12-step scale seeded from one hex; house gold is Signet's own accent and the default seed. No component references the seed hex; only the generated roles paint, and the engine contrast-gates the ones carrying text and the solid fill. Mechanics: [`accent-engine.md`](accent-engine.md).
 4. **Consumer ergonomics.** Body text never below 16px, touch targets ≥ 44px, friendly plain-language copy ([`writing.md`](writing.md)).
 5. **Chat is home.** The mobile app opens into chat; the global "Ask" entry is the signature AI affordance.
 6. **Every surface ships its states.** Skeleton, empty, and error are designed variants, not afterthoughts (§4).

@@ -2,7 +2,7 @@
 
 This folder defines the rules, invariants, edge cases, and error behavior the system is **intended** to uphold.
 
-**`spec/` is the source of truth for intended behavior. Code is the source of truth for current behavior.** Implementation should conform to these behaviors; when shipped code disagrees, that is a tracked bug to file — not a license to silently treat either side as automatically winning. See [`AGENTS.md`](../../AGENTS.md) § Spec vs code.
+When shipped code disagrees with a file here, [`AGENTS.md` § Spec vs code](../../AGENTS.md#spec-vs-code) says what to do.
 
 Each topic lives in its own file. Cross-cutting concerns (visual themeing, error shape, security invariants) live in this README.
 

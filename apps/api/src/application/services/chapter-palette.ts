@@ -37,7 +37,11 @@ export type ChapterBrandColors = { accent?: string };
  */
 export type ChapterBrandingInput = NonNullable<ChapterBranding>;
 
-/** One Signet §8 text-contrast check that came back below the 4.5:1 AA floor. */
+/**
+ * One Signet §8 check that came back below its floor: 4.5:1 for a text role
+ * (`failedContrastChecks`), 3:1 for the `accent-primary` fill
+ * (`failedFillChecks`).
+ */
 export type FailedContrastCheck = {
   role: string;
   against: string;
@@ -91,8 +95,10 @@ export type ChapterPaletteBuild = {
  * Onboarding is the worst of the three — its call runs *before*
  * `ChapterService.create`, so a throw here fails chapter creation outright
  * rather than degrading the palette. (This paragraph used to claim onboarding
- * wrapped the call in a try/catch returning `null`; it never has — corrected
- * 2026-09-07. The rule is unchanged, only the consequence it names.)
+ * wrapped the call in a try/catch returning `null`; it has not since #1147
+ * replaced the wrapped legacy call with this one — corrected 2026-09-07, and
+ * the history 2026-09-23. The rule is unchanged, only the consequence it
+ * names.)
  */
 export function buildChapterPalette(
   colors: ChapterBrandColors,
@@ -138,6 +144,18 @@ export function chapterPaletteColumns(build: ChapterPaletteBuild): {
 }
 
 /**
+ * A failing ratio to two decimals, truncated rather than rounded: the line says
+ * the check fell below its floor, and rounding would log a 4.4954 as "4.50:1"
+ * under "below AA". The epsilon keeps a float a hair under a hundredth from
+ * losing it. The Settings page truncates the text-check ratios a save returns
+ * for the same reason, to one decimal (`formatFailingRatio` in
+ * `apps/web/components/settings/accent-preview-ink.ts`).
+ */
+function belowFloor(ratio: number): string {
+  return (Math.floor(ratio * 100 + 1e-9) / 100).toFixed(2);
+}
+
+/**
  * Logs the by-construction problems a build can report — never throws,
  * since the palette written is still valid either way (#840, §8).
  *
@@ -167,7 +185,7 @@ export function logChapterPaletteWarnings(
   if (build.failedContrastChecks.length > 0) {
     logger.warn(
       `Signet accent contrast below AA ${where}: ${build.failedContrastChecks
-        .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
+        .map((c) => `${c.role} on ${c.against} = ${belowFloor(c.ratio)}:1`)
         .join(', ')}`,
     );
   }
@@ -176,7 +194,7 @@ export function logChapterPaletteWarnings(
   if (build.failedFillChecks.length > 0) {
     logger.warn(
       `Signet accent fill below 3:1 ${where}: ${build.failedFillChecks
-        .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
+        .map((c) => `${c.role} on ${c.against} = ${belowFloor(c.ratio)}:1`)
         .join(', ')}`,
     );
   }

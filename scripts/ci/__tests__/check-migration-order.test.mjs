@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   buildOrderSummary,
@@ -13,6 +15,7 @@ import {
   runOrderGate,
   suggestVersion,
 } from "../check-migration-order.mjs";
+import { buildSnapshot } from "../lib/migration-snapshot.mjs";
 import { makeFetchMock } from "./helpers.mjs";
 
 const m = (version, name) => ({ version, name, file: `${version}_${name}.sql` });
@@ -512,21 +515,73 @@ test("introducing migrations while checking NO environment is a failure", () => 
   assert.equal(outcome.code, "no-environment-checked");
 });
 
-test("local-only mode passes on the base-branch rule alone, and says so", async () => {
-  // A fork PR gets no secrets. Reporting Success having skipped the whole job
-  // is what a job-level fork guard does; running the rule that needs nothing
-  // and naming what was not checked is strictly more than that.
+// ── The published snapshot (#2518) ─────────────────────────────────────────
+//
+// In CI this gate holds no credential: it reads the snapshot a `main`-only job
+// published. These pin that the snapshot path reaches the same verdicts as a
+// live read, and that it fails closed.
+
+const NOW = Date.parse("2026-09-23T12:00:00Z");
+
+function writeSnapshot({ staging, production, capturedAt = "2026-09-23T10:00:00Z" }) {
+  const dir = mkdtempSync(join(tmpdir(), "order-snapshot-"));
+  const path = join(dir, "migration-snapshot.json");
+  const environments = [];
+  if (staging) environments.push({ name: "staging", supabaseProjectRef: ENVIRONMENTS.staging.supabaseProjectRef, migrations: staging });
+  if (production) environments.push({ name: "production", supabaseProjectRef: ENVIRONMENTS.production.supabaseProjectRef, migrations: production });
+  writeFileSync(path, JSON.stringify(buildSnapshot({ capturedAt, environments })));
+  return path;
+}
+
+const noNetwork = async (url) => {
+  throw new Error(`the snapshot path must make no network call (asked for ${url})`);
+};
+
+test("a published snapshot blocks a migration back-dated against production", async () => {
+  // Acceptance criterion 3 of #2518: the gate still blocks an out-of-order
+  // production migration on a PR, with no credential in the job. Production
+  // has applied a version this repo's base does not carry yet (hand-applied, or
+  // a hotfix), so only the database read can catch the introduced file.
   const base = [m("20260101000000", "a")];
+  const snapshotPath = writeSnapshot({
+    staging: [{ version: "20260101000000", name: "a" }],
+    production: [
+      { version: "20260101000000", name: "a" },
+      { version: "20260901120000", name: "hotfix" },
+    ],
+  });
   let summary = "";
-  const { fetchImpl, calls } = makeFetchMock(appliedRoute([]));
   const code = await runOrderGate({
-    accessToken: undefined,
+    accessToken: "",
+    snapshotPath,
+    nowMs: NOW,
     baseRef: "origin/main",
-    localOnly: true,
+    environments: ENVIRONMENTS,
+    readHead: () => [...base, m("20260901090000", "earlier")],
+    readBase: () => base,
+    fetchImpl: noNetwork,
+    log: () => {},
+    error: () => {},
+    writeSummary: (text) => {
+      summary = text;
+    },
+  });
+  assert.equal(code, 1);
+  assert.match(summary, /`production` has already applied `20260901120000`/);
+});
+
+test("a published snapshot passes a forward migration, and the summary dates the state", async () => {
+  const base = [m("20260101000000", "a")];
+  const applied = [{ version: "20260101000000", name: "a" }];
+  let summary = "";
+  const code = await runOrderGate({
+    snapshotPath: writeSnapshot({ staging: applied, production: applied }),
+    nowMs: NOW,
+    baseRef: "origin/main",
     environments: ENVIRONMENTS,
     readHead: () => [...base, m("20260901000000", "new")],
     readBase: () => base,
-    fetchImpl,
+    fetchImpl: noNetwork,
     log: () => {},
     error: () => {},
     writeSummary: (text) => {
@@ -534,21 +589,84 @@ test("local-only mode passes on the base-branch rule alone, and says so", async 
     },
   });
   assert.equal(code, 0);
-  assert.deepEqual(calls, [], "local-only must make no network calls");
-  assert.match(summary, /not.*checked/is);
+  // A manual ledger change triggers no publish, so the reader must be told how
+  // old the state is and how to refresh it.
+  assert.match(summary, /captured 2026-09-23T10:00:00Z/);
+  assert.match(summary, /migration-snapshot\.yml/);
 });
 
-test("local-only mode still fails the base-branch rule", async () => {
-  const base = [m("20260101000000", "a"), m("20260901120000", "later")];
+test("a stale snapshot fails a change that needs it and names the publisher", async () => {
+  const base = [m("20260101000000", "a")];
+  const applied = [{ version: "20260101000000", name: "a" }];
+  let summary = "";
   const code = await runOrderGate({
-    accessToken: undefined,
+    snapshotPath: writeSnapshot({ staging: applied, production: applied, capturedAt: "2026-09-20T00:00:00Z" }),
+    nowMs: NOW,
     baseRef: "origin/main",
-    localOnly: true,
     environments: ENVIRONMENTS,
-    readHead: () => [...base, m("20260901090000", "earlier")],
+    readHead: () => [...base, m("20260901000000", "new")],
     readBase: () => base,
-    fetchImpl: makeFetchMock(appliedRoute([])).fetchImpl,
-    ...quiet,
+    fetchImpl: noNetwork,
+    log: () => {},
+    error: () => {},
+    writeSummary: (text) => {
+      summary = text;
+    },
   });
   assert.equal(code, 1);
+  assert.match(summary, /migration-snapshot\.yml/);
+});
+
+test("a stale or missing snapshot cannot redden a change that introduces nothing", async () => {
+  // The property that makes this safe to require: the snapshot is loaded past
+  // the zero-network fast path, exactly where the credential used to be read.
+  const base = [m("20260101000000", "a")];
+  const code = await runOrderGate({
+    snapshotPath: "/nonexistent/migration-snapshot.json",
+    nowMs: NOW,
+    baseRef: "origin/main",
+    environments: ENVIRONMENTS,
+    readHead: () => base,
+    readBase: () => base,
+    fetchImpl: noNetwork,
+    ...quiet,
+  });
+  assert.equal(code, 0);
+});
+
+test("a snapshot missing an environment fails closed", async () => {
+  const base = [m("20260101000000", "a")];
+  let summary = "";
+  const code = await runOrderGate({
+    snapshotPath: writeSnapshot({ staging: [{ version: "20260101000000", name: "a" }] }),
+    nowMs: NOW,
+    baseRef: "origin/main",
+    environments: ENVIRONMENTS,
+    readHead: () => [...base, m("20260901000000", "new")],
+    readBase: () => base,
+    fetchImpl: noNetwork,
+    log: () => {},
+    error: () => {},
+    writeSummary: (text) => {
+      summary = text;
+    },
+  });
+  assert.equal(code, 1);
+  assert.match(summary, new RegExp(ENVIRONMENTS.production.supabaseProjectRef));
+});
+
+test("no snapshot and no token is an invocation error once a read is needed", async () => {
+  const base = [m("20260101000000", "a")];
+  const code = await runOrderGate({
+    // "" rather than undefined: undefined takes the parameter default, which
+    // reads this process's SUPABASE_ACCESS_TOKEN (set in agent sandboxes).
+    accessToken: "",
+    baseRef: "origin/main",
+    environments: ENVIRONMENTS,
+    readHead: () => [...base, m("20260901000000", "new")],
+    readBase: () => base,
+    fetchImpl: noNetwork,
+    ...quiet,
+  });
+  assert.equal(code, 2);
 });

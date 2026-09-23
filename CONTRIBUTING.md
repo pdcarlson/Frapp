@@ -128,7 +128,7 @@ divergent lists until #1635.
   - This runs the gitleaks scan, then the CI parity checks (lint, type-check, API tests, contract freshness, migration safety, npm audit). It previews what CI will run and nothing more — never add a local-only check to it.
 - If a check needs a different base branch, use: `npm run ci:local-gate -- --base-ref <ref>`
 - Fill out the PR template completely.
-- Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
+- Check the "Docs / Spec impact" section. Whether your change owes a doc edit, and which doc: [`docs/internal/DOCUMENTATION_CONVENTIONS.md` § Where a fact lives](docs/internal/DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives).
 - CI checks will run automatically.
 - Code review runs **locally before you push**, not on the PR: the pre-push review-gate hook requires a
   `/diff-review` pass, which writes the evidence marker itself. `git push --no-verify` is for
@@ -172,10 +172,10 @@ When you change the database schema:
 2. Write the SQL in the generated file under `supabase/migrations/`.
 3. Apply locally: `npx supabase db push --local`
 4. Test locally.
-5. Update `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md` with the rollback strategy.
-6. Commit the migration file and docs update together.
+5. Add its rollback recipe and its promotion-log entry, each in the entry shape its ledger states: [`DB_ROLLBACK_PLAYBOOK.md` § Every migration owes a recipe here](docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md#every-migration-owes-a-recipe-here) and [`DB_PROMOTION_RUNBOOK.md` § Promotion log](docs/internal/ops/DB_PROMOTION_RUNBOOK.md#promotion-log).
+6. Commit the migration file and both entries together.
 
-CI validates migration filenames and requires promotion docs to be updated. Migrations are applied automatically in the deploy pipeline.
+CI validates migration filenames, and `check:migration-safety` fails a new migration missing either entry. Migrations are applied automatically in the deploy pipeline.
 
 ---
 

@@ -106,8 +106,10 @@ const LADDER = {
 /**
  * The step 9 the generator paints for `seed` before any lift: the §1 call with
  * the seed itself as its accent. Test-only, to tell which seeds the engine
- * lifted. `gray` is restated from the engine's `GENERATOR_PARAMS`; if it drifts,
- * the "lifts exactly" test below sees every seed as lifted and fails.
+ * lifted. `gray` is restated from the engine's `GENERATOR_PARAMS`, and the
+ * generator reads it only for a pure black or white accent. A chromatic drift
+ * moves `#000000`'s fill, which "pins every lifted fill" below catches; an
+ * achromatic one (`#303030`, tried) changes no fill this suite checks.
  */
 const unliftedFill = (seed: string) =>
   // normalizeHex: the generator can return shorthand (`#fff`), as the engine
@@ -269,6 +271,57 @@ describe("deriveSignetPalette", () => {
       expect(normalizeHex(real!.generated.accentScale[8]!)).toBe("#C34437");
     });
 
+    it("judges fine-step candidates by the fill the generator paints, too", () => {
+      // The coarse walk finds a clearing step, then the fine walk looks for a
+      // smaller one. This generator paints truly until a candidate clears and
+      // crimson for every call after, so each fine candidate fails as painted
+      // even where its lifted input would clear on its own. The only right
+      // answer is the coarse step, as it painted.
+      const clears = (fill: string) =>
+        signetFillChecks(normalizeHex(fill)).every((check) => check.passes);
+      let cleared = false;
+      const failsAfterFirstClear = (accent: string) => {
+        const generated = generateRadixColors({
+          appearance: "dark",
+          gray: "#191919",
+          background: LADDER.background,
+          accent,
+        });
+        if (cleared) generated.accentScale[8] = "#8B0000";
+        else if (clears(generated.accentScale[8]!)) cleared = true;
+        return generated;
+      };
+      const lift = liftAccent("#8B0000", failsAfterFirstClear);
+      expect(clears(lift!.generated.accentScale[8]!)).toBe(true);
+    });
+
+    it("derives hover and the alpha steps from the lifted fill, not the seed", () => {
+      // accent-engine.md §8: the lift re-runs the generator so hover, the alpha
+      // steps and on-primary all come from the fill that paints. A refactor
+      // that swapped in only the lifted step 9 would leave crimson's hover
+      // derived from `#8B0000`.
+      const lifted = liftAccent("#8B0000")!.generated;
+      const seeded = generateRadixColors({
+        appearance: "dark",
+        gray: "#191919",
+        background: LADDER.background,
+        accent: "#8B0000",
+      });
+      const { palette } = deriveSignetPalette("#8B0000");
+      expect(palette["--signet-accent-hover"]).toBe(
+        normalizeHex(lifted.accentScale[9]!),
+      );
+      expect(palette["--signet-accent-hover"]).not.toBe(
+        normalizeHex(seeded.accentScale[9]!),
+      );
+      expect(palette["--signet-accent-primary-alpha"]).toBe(
+        lifted.accentScaleAlpha[8]!.toUpperCase(),
+      );
+      expect(palette["--signet-accent-primary-alpha"]).not.toBe(
+        seeded.accentScaleAlpha[8]!.toUpperCase(),
+      );
+    });
+
     it("lifts exactly the seeds whose own fill failed, and no others", () => {
       // The house seed and `#C9A56F` (45 of the 50 seeded chapters) must come
       // through untouched: the lift is a floor, not a restyle.
@@ -393,9 +446,9 @@ describe("deriveSignetPalette", () => {
     });
 
     it("never throws", () => {
-      // Load-bearing: every writer calls `buildChapterPalette` bare, and
-      // onboarding does it before the chapter row exists, so a throw here
-      // would fail chapter creation outright.
+      // Load-bearing: every API writer calls it bare, and onboarding calls it
+      // before the chapter row exists, so a throw here fails chapter creation
+      // outright (`deriveSignetPalette`'s docstring says why).
       for (const input of [undefined, null, "", "☃", "#".repeat(64)]) {
         expect(() => deriveSignetPalette(input)).not.toThrow();
       }

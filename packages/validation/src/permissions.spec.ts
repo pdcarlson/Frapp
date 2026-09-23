@@ -10,6 +10,7 @@ import {
   can,
   canAll,
   canAny,
+  CHAPTER_PROFILE_PERMISSIONS,
   CHAT_REPORT_QUEUE_PERMISSIONS,
   WILDCARD_PERMISSION,
 } from "./permissions";
@@ -99,5 +100,38 @@ describe("CHAT_REPORT_QUEUE_PERMISSIONS", () => {
     expect(canAll(CHAT_REPORT_QUEUE_PERMISSIONS, [WILDCARD_PERMISSION])).toBe(true);
     expect(canAll(CHAT_REPORT_QUEUE_PERMISSIONS, ["channels:manage"])).toBe(false);
     expect(canAll(CHAT_REPORT_QUEUE_PERMISSIONS, ["members:view"])).toBe(false);
+  });
+});
+
+describe("CHAPTER_PROFILE_PERMISSIONS", () => {
+  // The API side is pinned in chapter.controller.spec.ts, against the route
+  // decorators themselves; the Settings page's side in
+  // settings-profile-permission.spec.tsx.
+  test("admits a holder of both halves, or the wildcard, and nobody holding one", () => {
+    expect(
+      canAll(CHAPTER_PROFILE_PERMISSIONS, [
+        "chapter-config:view",
+        "chapter-config:manage",
+      ]),
+    ).toBe(true);
+    expect(canAll(CHAPTER_PROFILE_PERMISSIONS, [WILDCARD_PERMISSION])).toBe(
+      true,
+    );
+    expect(canAll(CHAPTER_PROFILE_PERMISSIONS, ["chapter-config:manage"])).toBe(
+      false,
+    );
+    expect(canAll(CHAPTER_PROFILE_PERMISSIONS, ["chapter-config:view"])).toBe(
+      false,
+    );
+  });
+
+  test("no longer admits the permissions the API accepted before #2575", () => {
+    expect(
+      canAll(CHAPTER_PROFILE_PERMISSIONS, [
+        "chapter-config:view",
+        "roles:manage",
+        "billing:manage",
+      ]),
+    ).toBe(false);
   });
 });

@@ -452,8 +452,9 @@ export class ChapterService {
    * produces an empty diff and writes nothing. The change stays unaudited.
    * Closing it needs the row and the update in one transaction, which is not
    * reachable through PostgREST from here. `chapter-config.service.ts` has the
-   * same hole — it early-returns before its insert when nothing changed
-   * (`chapter-config.service.ts:400-407`) — so no writer in this codebase
+   * same hole for a retry whose update payload comes out empty (the
+   * `return existing` in `ChapterConfigService.patchConfig`; a re-sent jsonb
+   * field doesn't take it, see below) — so no writer in this codebase
    * actually guarantees "never silently unaudited", and the specs should not
    * be read as promising it.
    *
@@ -509,10 +510,10 @@ export class ChapterService {
     // Stated about this writer only, deliberately. Two earlier attempts at this
     // comment characterised `chapter-config.service.ts` and got it wrong both
     // times — it is neither "unconditional" nor the same rule. Its early return
-    // (`chapter-config.service.ts:400-406`) is gated on an empty *update
-    // payload*, not an empty diff, so it still writes a `from`-equals-`to` row
-    // for any jsonb field a client re-sends unchanged (#1605). Do not
-    // re-describe it here without reading it.
+    // (the empty-update `return existing` in `ChapterConfigService.patchConfig`)
+    // is gated on an empty *update payload*, not an empty diff, so it still
+    // writes a `from`-equals-`to` row for any jsonb field a client re-sends
+    // unchanged (#1605). Do not re-describe it here without reading it.
     if (Object.keys(diff).length === 0) return;
 
     await this.auditLog.record({
@@ -561,6 +562,8 @@ export class ChapterService {
   async confirmLogoUpload(
     chapterId: string,
     storagePath: string,
+    /** The member confirming the upload; the audit row's actor. */
+    actorUserId: string,
   ): Promise<Chapter> {
     if (!storagePath.startsWith(`chapters/${chapterId}/branding/`)) {
       throw new BadRequestException(
@@ -583,16 +586,89 @@ export class ChapterService {
     } catch (error) {
       throw new BadRequestException((error as Error).message);
     }
-    return this.chapterRepo.update(chapterId, { logo_path: storagePath });
+    const existing = await this.chapterRepo.findById(chapterId);
+    if (!existing) throw new NotFoundException('Chapter not found');
+    const chapter = await this.chapterRepo.update(chapterId, {
+      logo_path: storagePath,
+    });
+    // Written on every confirm, `from` equal to `to` included. The server
+    // can't see whether the object at a path changed: confirm doesn't check
+    // that an upload happened, so a stored path can name a missing object, and
+    // a later upload to that free key followed by a confirm of the same path
+    // changes the logo without moving the column. Skipping equal paths, as the
+    // profile diff does, would leave that change unaudited. A confirm that
+    // changed nothing costs a redundant row instead, and in an audit log that
+    // is the cheaper mistake. (Replacing a logo with one of the same extension
+    // is refused at the mint today, since the key exists; #2592.)
+    await this.recordLogoAudit(chapterId, actorUserId, 'chapter_logo_updated', {
+      from: existing.logo_path ?? null,
+      to: storagePath,
+    });
+    return chapter;
   }
 
-  async deleteLogo(chapterId: string): Promise<Chapter> {
-    const chapter = await this.chapterRepo.findById(chapterId);
-    if (!chapter) throw new NotFoundException('Chapter not found');
-    if (chapter.logo_path) {
-      await this.storageProvider.deleteFile(BRANDING_BUCKET, chapter.logo_path);
+  async deleteLogo(
+    chapterId: string,
+    /** The member removing the logo; the audit row's actor. */
+    actorUserId: string,
+  ): Promise<Chapter> {
+    const existing = await this.chapterRepo.findById(chapterId);
+    if (!existing) throw new NotFoundException('Chapter not found');
+    // Object first, then the column: the order `backwork` and chapter
+    // documents use. A failure between the two leaves the column naming a
+    // deleted object, which a retried DELETE repairs, since the column still
+    // points at it. The reverse order strands the object instead, and with a
+    // fixed key per extension that blocks every later upload of that
+    // extension (#2592).
+    if (existing.logo_path) {
+      await this.storageProvider.deleteFile(
+        BRANDING_BUCKET,
+        existing.logo_path,
+      );
     }
-    return this.chapterRepo.update(chapterId, { logo_path: null });
+    const chapter = await this.chapterRepo.update(chapterId, {
+      logo_path: null,
+    });
+    // Only when there was a logo to remove: deleting nothing changes nothing,
+    // and a row for it would mirror an empty event into `#chapter-audit`.
+    if (existing.logo_path) {
+      await this.recordLogoAudit(
+        chapterId,
+        actorUserId,
+        'chapter_logo_removed',
+        { from: existing.logo_path, to: null },
+      );
+    }
+    return chapter;
+  }
+
+  /**
+   * Audit a logo change (#2575). The logo routes share the profile edit's
+   * permissions, and every other edit behind them writes a member-visible
+   * `chapter_audit_log` row, so these do too.
+   *
+   * Its own actions rather than `chapter_profile_updated`, so the audit log can
+   * be filtered to logo changes, and so a removal reads as one. Written after
+   * the update lands, like `recordProfileAudit`, and not transactional with it
+   * (#1599). The two callers recover differently from a failed insert: a
+   * retried confirm writes a row (with `from` equal to `to`), while a retried
+   * removal finds no logo and writes none.
+   */
+  private async recordLogoAudit(
+    chapterId: string,
+    actorUserId: string,
+    action: 'chapter_logo_updated' | 'chapter_logo_removed',
+    logoPath: { from: string | null; to: string | null },
+  ): Promise<void> {
+    await this.auditLog.record({
+      chapterId,
+      actorUserId,
+      action,
+      targetType: 'chapter',
+      targetId: chapterId,
+      diff: { logo_path: logoPath },
+      memberVisible: true,
+    });
   }
 
   private mapMembershipSummary(
