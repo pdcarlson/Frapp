@@ -452,6 +452,14 @@ test("storage --remove refuses any listed path not plainly under the chapter's f
   }
 });
 
+test("the SQL sql --remove prints names its follow-up commands runnably, with the namespace", () => {
+  // Every command takes --namespace; one printed without it is refused as written.
+  const header = renderRemoveSql({ namespace: "a9900000" }).split("BEGIN;")[0];
+  assert.match(header, /`seed-demo\.mjs storage --namespace a9900000 --remove`/);
+  assert.match(header, /`auth --namespace a9900000 --remove` only to delete the login for good/);
+  assert.doesNotMatch(header, /`(?:seed-demo\.mjs )?(?:storage|auth) --remove`/, "no command printed without its namespace");
+});
+
 test("storage --remove checks every bucket's listing before it deletes from any", async () => {
   // A stray path in the last bucket must stop the run with the earlier buckets untouched.
   const ns = "a9900000";

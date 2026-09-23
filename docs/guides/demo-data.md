@@ -157,19 +157,25 @@ read -rs DEMO_PASSWORD && export DEMO_PASSWORD
 the day the seed runs, and the one with a check-in zone, the Chapter Meeting, is at
 19:00 UTC two days later, so `verify` fails 43 to 67 hours after a seed. App Review
 can take longer than that; the seed's last event is 12 days out. First tear the
-last one down with `sql --remove` and then `storage --remove`, as below but without
-`auth --remove`, then re-run steps 2 to 4. Re-seeding over it would clear the
+last one down with steps 1 and 2 of **To remove a demo chapter** below, then re-run
+steps 2 to 4. Re-seeding over it would clear the
 reviewer's rows but not their uploads: a chat photo or avatar under
 `chapters/<chapter id>/` would stay in production Storage with nothing pointing at
 it, and only `storage --remove` clears that folder. The login and its password
 persist, and step 2 links the same login again.
 
-**To remove a demo chapter**, apply `sql --remove` first: it prints the chapter
-and user deletes, and it is the step that can refuse (anything outside the demo
-chapter still referencing a seeded account), so stop there if it does. Then `storage --remove` (every object
-under `chapters/<chapter id>/` in every bucket, which includes anything the reviewer
-uploaded, such as a chat photo; it cannot be undone, so it refuses while the chapter
-row still exists), then `auth --remove` (only a login this script created).
+**To remove a demo chapter**, in this order (for a re-seed, stop after step 2):
+
+1. `node scripts/demo/seed-demo.mjs sql --namespace a9900000 --remove > "${TMPDIR:-/tmp}/remove.sql"`,
+   applied the way step 2 above applies the seed. It prints the chapter and user
+   deletes, and it is the step that can refuse (anything outside the demo chapter
+   still referencing a seeded account), so stop there if it does.
+2. `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs storage --namespace a9900000 --remove`.
+   It deletes every object under `chapters/<chapter id>/` in every bucket, which
+   includes anything the reviewer uploaded, such as a chat photo. It cannot be
+   undone, so it refuses while the chapter row still exists.
+3. Only to delete the login for good: `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs auth --namespace a9900000 --remove`.
+   It deletes only a login this script created.
 
 ## Capture screenshots
 
