@@ -196,7 +196,7 @@ Script implementations and unit tests live under [`scripts/ci/`](../../../../scr
 
 **CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed.
 
-**CD (deploy workflows)** uses Infisical-injected runtime secrets in `deploy-api.yml` (staging) and `deploy-production.yml` (production). Variable names are **unified** — no `_STAGING` / `_PRODUCTION` suffixes. Each workflow resolves secrets at runtime from Infisical using the environment slug for its target (`staging` for `main`, `prod` for a production deploy):
+**CD (deploy workflows)** uses Infisical-injected runtime secrets in `deploy-api.yml` (staging) and `deploy-production.yml` (production). Variable names are **unified** across environments ([`SECRETS_MANAGEMENT.md` § Key Design Principles](../../environment/SECRETS_MANAGEMENT.md#key-design-principles)). Each workflow resolves secrets at runtime from Infisical using the environment slug for its target (`staging` for `main`, `prod` for a production deploy):
 
 | Variable                 | Purpose                                                  |
 | ------------------------ | -------------------------------------------------------- |
