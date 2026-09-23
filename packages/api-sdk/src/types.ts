@@ -80,6 +80,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/users/me/legal-acceptance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's Terms of Service and Privacy Policy acceptance
+         * @description Whether the caller has accepted the version this server enforces (#2302). Needs no chapter: a user is asked before they join one, and a member is asked again when the version changes.
+         */
+        get: operations["UserController_getMyLegalAcceptance_v1"];
+        put?: never;
+        /**
+         * Accept the current Terms of Service and Privacy Policy
+         * @description Records the caller's acceptance of the version this server enforces, from the session and the server clock. Idempotent: accepting a version already accepted keeps the first timestamp.
+         */
+        post: operations["UserController_acceptLegalTerms_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/users/me/avatar-url": {
         parameters: {
             query?: never;
@@ -2949,6 +2973,26 @@ export interface components {
              */
             permissions: string[];
         };
+        LegalAcceptanceDto: {
+            /**
+             * @description The Terms and Privacy Policy version this server enforces.
+             * @example 2026-09
+             */
+            current_version: string;
+            /** @description The version the caller last accepted. Null if they never have. */
+            accepted_version: string | null;
+            /**
+             * Format: date-time
+             * @description When the caller accepted `accepted_version`.
+             */
+            accepted_at: string | null;
+            /** @description True until the caller accepts `current_version`. While it is true, clients ask before anything else, and joining a chapter needs `accept_terms_privacy`. */
+            required: boolean;
+        };
+        AcceptLegalTermsDto: {
+            /** @description The user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy". Must be true. The timestamp and version are recorded server-side, never from this payload. */
+            accept_terms_privacy: boolean;
+        };
         UpdateUserDto: {
             display_name?: string;
             bio?: string;
@@ -3012,7 +3056,7 @@ export interface components {
             /** @description chapter_directory row id when the chapter was matched */
             directory_id?: string;
             branding?: components["schemas"]["BrandingDto"];
-            /** @description The admin accepted the Terms of Service and Privacy Policy. Must be true (spec/behavior/legal.md). The acceptance timestamp and policy version are recorded server-side from the session — never from this payload. */
+            /** @description The admin accepted the Terms of Service and Privacy Policy, for the chapter and for themselves. Must be true (spec/behavior/legal.md). The acceptance timestamp and policy version are recorded server-side from the session — never from this payload. */
             accept_terms_privacy: boolean;
         };
         CurrentChapterResponseDto: {
@@ -3379,6 +3423,8 @@ export interface components {
         };
         RedeemInviteDto: {
             token: string;
+            /** @description True when the user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy". Needed only if they haven't accepted the current version. */
+            accept_terms_privacy?: boolean;
         };
         RegisterPushTokenDto: {
             /** @description Expo push token */
@@ -4559,6 +4605,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MyPermissionsDto"];
+                };
+            };
+        };
+    };
+    UserController_getMyLegalAcceptance_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalAcceptanceDto"];
+                };
+            };
+        };
+    };
+    UserController_acceptLegalTerms_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptLegalTermsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalAcceptanceDto"];
                 };
             };
         };

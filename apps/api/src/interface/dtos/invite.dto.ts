@@ -7,6 +7,8 @@ import {
   IsEmail,
   ArrayMinSize,
   ArrayMaxSize,
+  Equals,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -61,4 +63,21 @@ export class RedeemInviteDto {
   @ApiProperty()
   @IsString()
   token: string;
+
+  /**
+   * The join screen's Terms checkbox (#2302). Required, as `true`, only when
+   * the caller hasn't accepted the current Terms; `GET
+   * /v1/users/me/legal-acceptance` says which. The server stamps the record,
+   * so this is the user's claim that they ticked it, not the record itself.
+   */
+  @ApiPropertyOptional({
+    description:
+      "True when the user ticked \"I'm 18 or older and agree to the Terms of Service and Privacy Policy\". Needed only if they haven't accepted the current version.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Terms of Service and Privacy Policy must be accepted',
+  })
+  accept_terms_privacy?: boolean;
 }

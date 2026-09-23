@@ -1947,3 +1947,25 @@ To roll back, re-apply the previous definition from `20260902160000_anonymize_us
 **Rolling this back is a data-retention regression, not a feature rollback.** Without these lines, a deleted member's own block list and their rush ballots both survive account deletion. The FKs' `on delete cascade` do **not** cover either: `anonymize_user` tombstones the `users` row rather than deleting it, so nothing ever cascades. What each table retains and why is owned by [`spec/behavior/data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion) § Individual Account Deletion. Only roll back alongside dropping `chat_member_blocks` itself — and in that order, per the note above.
 
 **Re-applying is safe** and idempotent; each delete is a no-op for a user with no such rows, and re-running the whole function on an already-tombstoned user is the documented retry path.
+
+## Rollback per-user Terms acceptance (20260923190000)
+
+* **Migration**: `20260923190000_user_legal_acceptance.sql`
+
+Two nullable columns on `users` (#2302). Nothing existing is altered.
+
+**Redeploy the API first**, to a build from before #2302. A build that reads these columns fails every invite redemption, every chapter onboarding and every Terms acceptance once they're gone, and the members it asks to accept can't. Then:
+
+```sql
+ALTER TABLE users
+  DROP COLUMN IF EXISTS legal_accepted_at,
+  DROP COLUMN IF EXISTS legal_policy_version;
+```
+
+**This is an App Store compliance regression, not only a schema rollback.** Guideline 1.2 expects everyone who posts to have agreed to terms that forbid objectionable content. Without these columns, members who join by invite agree to nothing, as before #2302. Don't roll back on a build that is under review or live in a store without a replacement in the same deploy.
+
+**Data caveat**: rolling back deletes the record of who accepted which version, and when. Keep a dump:
+
+```sql
+SELECT id, legal_accepted_at, legal_policy_version FROM users WHERE legal_accepted_at IS NOT NULL;
+```

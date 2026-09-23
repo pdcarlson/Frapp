@@ -19,6 +19,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   GoneException,
   NotFoundException,
 } from '@nestjs/common';
@@ -41,6 +42,7 @@ import { SystemRoleKeys } from '#domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
+import { LegalAcceptanceService } from './legal-acceptance.service';
 import { ConfigService } from '@nestjs/config';
 import { EMAIL_PROVIDER } from '#domain/adapters/email.interface';
 import type { IEmailProvider } from '#domain/adapters/email.interface';
@@ -61,6 +63,9 @@ describe('InviteService', () => {
   let mockChatService: jest.Mocked<Pick<ChatService, 'getOrCreateDm'>>;
   let mockSupabase: { from: jest.Mock };
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
+  let mockLegalAcceptance: jest.Mocked<
+    Pick<LegalAcceptanceService, 'requireOrAccept'>
+  >;
   let messageInsert: jest.Mock;
   /** Backs `chapters.default_invite_role_id` for the mock above (#422). */
   let chapterDefaultRoleId: string | null;
@@ -152,6 +157,12 @@ describe('InviteService', () => {
       }),
     };
 
+    // Passes by default: the Terms gate has its own describe block below, and
+    // its logic is LegalAcceptanceService's (legal-acceptance.service.spec.ts).
+    mockLegalAcceptance = {
+      requireOrAccept: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InviteService,
@@ -166,6 +177,7 @@ describe('InviteService', () => {
         { provide: EMAIL_PROVIDER, useValue: mockEmailProvider },
         { provide: ConfigService, useValue: mockConfig },
         { provide: SUPABASE_CLIENT, useValue: mockSupabase },
+        { provide: LegalAcceptanceService, useValue: mockLegalAcceptance },
       ],
     }).compile();
 
@@ -693,6 +705,125 @@ describe('InviteService', () => {
         status: 410,
       });
       expect(mockChapterRepo.findById).not.toHaveBeenCalled();
+    });
+  });
+
+  // #2302: every member accepts the Terms before they can post. The rule lives
+  // in LegalAcceptanceService; what redeem owns is when it runs, and that a
+  // refusal leaves the token usable.
+  describe('redeem requires the current Terms (#2302)', () => {
+    const liveInvite = (): Invite => ({
+      id: 'inv-terms',
+      token: 'terms-token',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    });
+    const refusal = () =>
+      new ForbiddenException({
+        code: 'legal.acceptance_required',
+        message:
+          'Agree to the Terms of Service and Privacy Policy to join this chapter.',
+      });
+
+    beforeEach(() => {
+      mockInviteRepo.findByToken.mockResolvedValue(liveInvite());
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+      mockInviteRepo.markUsedAtomically.mockResolvedValue(
+        '2026-01-01T00:00:00.000Z',
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue([]);
+      mockMemberRepo.create.mockResolvedValue({
+        id: 'member-t',
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        role_ids: [],
+        custom_role_ids: [],
+        has_completed_onboarding: false,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+    });
+
+    it('asks the gate without acceptance when the checkbox is not sent', async () => {
+      await service.redeem('terms-token', 'user-2');
+
+      expect(mockLegalAcceptance.requireOrAccept).toHaveBeenCalledWith(
+        'user-2',
+        false,
+      );
+    });
+
+    it('passes a ticked checkbox to the gate, before the membership exists', async () => {
+      await service.redeem('terms-token', 'user-2', true);
+
+      expect(mockLegalAcceptance.requireOrAccept).toHaveBeenCalledWith(
+        'user-2',
+        true,
+      );
+      expect(
+        mockLegalAcceptance.requireOrAccept.mock.invocationCallOrder[0],
+      ).toBeLessThan(mockMemberRepo.create.mock.invocationCallOrder[0]);
+    });
+
+    it('refuses the join with legal.acceptance_required and leaves the token unconsumed', async () => {
+      mockLegalAcceptance.requireOrAccept.mockRejectedValueOnce(refusal());
+
+      await expect(
+        service.redeem('terms-token', 'user-2'),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: expect.objectContaining({
+          code: 'legal.acceptance_required',
+        }),
+      });
+      // The same link works once they tick the box.
+      expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+      expect(mockMemberRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('answers a dead token with 410, not a request for the checkbox', async () => {
+      mockInviteRepo.findByToken.mockResolvedValue({
+        ...liveInvite(),
+        used_at: '2026-01-01T00:00:00.000Z',
+      });
+
+      await expect(
+        service.redeem('terms-token', 'user-2'),
+      ).rejects.toBeInstanceOf(GoneException);
+      expect(mockLegalAcceptance.requireOrAccept).not.toHaveBeenCalled();
+    });
+
+    it('answers an existing member with 409, not a request for the checkbox', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        id: 'member-existing',
+      } as Member);
+
+      await expect(
+        service.redeem('terms-token', 'user-2'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mockLegalAcceptance.requireOrAccept).not.toHaveBeenCalled();
+    });
+
+    it('answers a locked chapter with its lock, not a request for the checkbox', async () => {
+      mockChapterRepo.findById.mockResolvedValue({
+        id: 'ch-1',
+        default_invite_role_id: null,
+        subscription_status: 'canceled',
+        past_due_since: null,
+      } as Chapter);
+
+      await expect(
+        service.redeem('terms-token', 'user-2'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'chapter.subscription.canceled',
+        }),
+      });
+      expect(mockLegalAcceptance.requireOrAccept).not.toHaveBeenCalled();
     });
   });
 

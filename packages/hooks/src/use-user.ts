@@ -1,6 +1,12 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useCurrentUser() {
@@ -126,4 +132,86 @@ export function useMyPermissions(options?: { enabled?: boolean }) {
 export function usePermissionList(): readonly string[] {
   const { data } = useMyPermissions();
   return Array.isArray(data?.permissions) ? data.permissions : [];
+}
+
+/** Where the viewer stands against the Terms the server enforces now (#2302). */
+export type LegalAcceptance = components["schemas"]["LegalAcceptanceDto"];
+
+/**
+ * Query key for {@link useLegalAcceptance}. Under `["user", "me"]`, so
+ * `useUpdateUser`'s invalidation refreshes it too.
+ */
+export const legalAcceptanceQueryKey = () =>
+  ["user", "me", "legal-acceptance"] as const;
+
+/**
+ * Whether the viewer has accepted the Terms of Service and Privacy Policy
+ * version the server enforces (#2302).
+ *
+ * Show the prompt on `data.required`, never by comparing versions: a store
+ * binary can't be updated over the air, so one compiled against an older
+ * `LEGAL_POLICY_VERSION` would disagree with the server forever. Needs no
+ * chapter, because a user is asked before they join one.
+ */
+export function useLegalAcceptance(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: legalAcceptanceQueryKey(),
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/users/me/legal-acceptance",
+      );
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 300_000,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/**
+ * Mark the cached status accepted after a request that recorded the
+ * acceptance server-side: the Terms prompt, a join with the box ticked, or
+ * the create-chapter wizard.
+ *
+ * Written straight into the cache rather than only invalidated. Those
+ * requests also refresh the viewer's memberships, and a gate that saw the new
+ * membership before the refetched status would flash the Terms prompt at
+ * someone who ticked the box a moment ago. The invalidation that follows
+ * still reads the server's answer.
+ */
+export function markLegalAcceptanceRecorded(queryClient: QueryClient): void {
+  queryClient.setQueryData<LegalAcceptance>(legalAcceptanceQueryKey(), (old) =>
+    old
+      ? {
+          ...old,
+          accepted_version: old.current_version,
+          accepted_at: old.accepted_at ?? new Date().toISOString(),
+          required: false,
+        }
+      : old,
+  );
+  void queryClient.invalidateQueries({ queryKey: legalAcceptanceQueryKey() });
+}
+
+/**
+ * Accept the current Terms of Service and Privacy Policy (#2302). The server
+ * records the version and time; the body only says the box was ticked.
+ */
+export function useAcceptLegalTerms() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await client.POST(
+        "/v1/users/me/legal-acceptance",
+        { body: { accept_terms_privacy: true } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(legalAcceptanceQueryKey(), data);
+    },
+  });
 }

@@ -137,8 +137,31 @@ describe('InviteController', () => {
 
       const result = await controller.redeem(userId, dto);
 
-      expect(inviteService.redeem).toHaveBeenCalledWith(dto.token, userId);
+      // No checkbox sent: the service checks for an existing acceptance.
+      expect(inviteService.redeem).toHaveBeenCalledWith(
+        dto.token,
+        userId,
+        false,
+      );
       expect(result).toEqual(expectedResult);
+    });
+
+    it('passes the Terms checkbox through to the service (#2302)', async () => {
+      const dto: RedeemInviteDto = {
+        token: 'invite-token-1',
+        accept_terms_privacy: true,
+      };
+      jest
+        .spyOn(inviteService, 'redeem')
+        .mockResolvedValue({ chapterId: 'chapter-1', memberId: 'member-1' });
+
+      await controller.redeem('user-1', dto);
+
+      expect(inviteService.redeem).toHaveBeenCalledWith(
+        'invite-token-1',
+        'user-1',
+        true,
+      );
     });
   });
 

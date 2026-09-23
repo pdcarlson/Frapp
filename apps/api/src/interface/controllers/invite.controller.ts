@@ -101,7 +101,11 @@ export class InviteController {
     @CurrentUser('id') userId: string,
     @Body() dto: RedeemInviteDto,
   ) {
-    return this.inviteService.redeem(dto.token, userId);
+    return this.inviteService.redeem(
+      dto.token,
+      userId,
+      dto.accept_terms_privacy === true,
+    );
   }
 
   @Get()

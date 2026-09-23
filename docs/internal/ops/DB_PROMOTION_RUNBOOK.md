@@ -560,6 +560,17 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-23: Per-user Terms acceptance (#2302)
+
+### 20260923190000_user_legal_acceptance.sql
+
+- **Purpose**: Adds `users.legal_accepted_at timestamptz` and `users.legal_policy_version text` (both nullable), each user's own Terms of Service and Privacy Policy acceptance. It mirrors the chapter columns from `20260604130000_chapter_legal_acceptance.sql`, minus `legal_accepted_by`, since the user is the row. `LegalAcceptanceService` stamps both from the session and the server's `LEGAL_POLICY_VERSION`. The rule is in [`spec/behavior/legal.md`](../../../spec/behavior/legal.md#acceptance-record) § Acceptance record.
+- **Safety**: `ADD COLUMN IF NOT EXISTS`, nullable with no default, so it's backward-compatible and not lock-heavy. No backfill: null means "never accepted", and the API release that reads these columns also bumps the policy version, so every existing user is asked once anyway. `anonymize_user` leaves both columns alone on purpose. They aren't PII, and they record what a deleted account agreed to.
+- **Checks**: After `db push`, `select column_name from information_schema.columns where table_name='users' and column_name like 'legal_%';` returns 2 rows (`legal_accepted_at`, `legal_policy_version`).
+- **Promoter notes**: Apply **before** the API release that reads these columns. Until the migration lands, that release fails every join and every acceptance: `select *` succeeds, but the update names columns that don't exist. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-per-user-terms-acceptance-20260923190000) § Rollback per-user Terms acceptance.
+
 ## 2026-09-15: Chat report and block (#2257)
 
 ### 20260915210000_chat_reports_and_blocks.sql

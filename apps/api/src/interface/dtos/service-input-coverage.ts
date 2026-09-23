@@ -64,10 +64,10 @@ import type { CreateChatReportDto } from './chat-moderation.dto';
 type Covers<Dto, Input> = keyof Dto extends keyof Input ? true : never;
 
 /**
- * `accept_terms_privacy` is the one deliberate exemption, and it is exempt
- * because `ChapterOnboardingInput` **does** carry it — see that type's
- * docstring for why a legal gate stays in the signature of a method that stamps
- * the acceptance.
+ * `ChapterOnboardingInput` carries `accept_terms_privacy` on purpose — see
+ * that type's docstring for why a legal gate stays in the signature of a
+ * method that stamps the acceptance. `onboard` passes it on to
+ * `LegalAcceptanceService.requireOrAccept` (#2302).
  */
 export const dtoKeysAreCoveredByServiceInputs: {
   patchChapterConfig: Covers<PatchChapterConfigDto, PatchChapterConfigInput>;

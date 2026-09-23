@@ -60,6 +60,7 @@ import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import { ChapterOnboardingService } from './chapter-onboarding.service';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
+import { LegalAcceptanceService } from './legal-acceptance.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import type { ChapterOnboardingInput } from './chapter-onboarding.service';
@@ -93,6 +94,9 @@ describe('ChapterOnboardingService', () => {
     maybeSingle: jest.Mock;
   };
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
+  let mockLegalAcceptance: jest.Mocked<
+    Pick<LegalAcceptanceService, 'requireOrAccept'>
+  >;
   let messageInsert: jest.Mock;
   let requestInsert: jest.Mock;
   let fieldsUpsert: jest.Mock;
@@ -101,6 +105,9 @@ describe('ChapterOnboardingService', () => {
   beforeEach(async () => {
     chapterService = { create: jest.fn().mockResolvedValue(makeChapter()) };
     mockActivation = { record: jest.fn().mockResolvedValue(true) };
+    mockLegalAcceptance = {
+      requireOrAccept: jest.fn().mockResolvedValue(undefined),
+    };
 
     channelQuery = {
       select: jest.fn().mockReturnThis(),
@@ -127,6 +134,7 @@ describe('ChapterOnboardingService', () => {
         { provide: ChapterService, useValue: chapterService },
         { provide: SUPABASE_CLIENT, useValue: { from } },
         { provide: ActivationService, useValue: mockActivation },
+        { provide: LegalAcceptanceService, useValue: mockLegalAcceptance },
       ],
     }).compile();
 
@@ -329,6 +337,29 @@ describe('ChapterOnboardingService', () => {
     const acceptedAt = new Date(payload.config.legal_accepted_at).getTime();
     expect(acceptedAt).toBeGreaterThanOrEqual(before);
     expect(acceptedAt).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("records the officer's own acceptance before the chapter or their membership exists (#2302)", async () => {
+    await service.onboard('user-1', directoryDto);
+
+    expect(mockLegalAcceptance.requireOrAccept).toHaveBeenCalledWith(
+      'user-1',
+      true,
+    );
+    expect(
+      mockLegalAcceptance.requireOrAccept.mock.invocationCallOrder[0],
+    ).toBeLessThan(chapterService.create.mock.invocationCallOrder[0]);
+  });
+
+  it('creates no chapter when the acceptance cannot be recorded (#2302)', async () => {
+    mockLegalAcceptance.requireOrAccept.mockRejectedValueOnce(
+      new Error('write failed'),
+    );
+
+    await expect(service.onboard('user-1', directoryDto)).rejects.toThrow(
+      'write failed',
+    );
+    expect(chapterService.create).not.toHaveBeenCalled();
   });
 
   it('posts a welcome system_audit message into #general', async () => {

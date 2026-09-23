@@ -1,4 +1,6 @@
 import {
+  Equals,
+  IsBoolean,
   IsOptional,
   IsString,
   IsInt,
@@ -17,6 +19,53 @@ export class MyPermissionsDto {
     example: ['members:view', 'events:create'],
   })
   permissions: string[];
+}
+
+/**
+ * Where the caller stands against the Terms the server enforces now (#2302).
+ * Clients show the acceptance prompt when `required` is true and never compare
+ * versions themselves; `LegalAcceptanceService` explains why.
+ */
+export class LegalAcceptanceDto {
+  @ApiProperty({
+    description: 'The Terms and Privacy Policy version this server enforces.',
+    example: '2026-09',
+  })
+  current_version: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The version the caller last accepted. Null if they never have.',
+  })
+  accepted_version: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'When the caller accepted `accepted_version`.',
+  })
+  accepted_at: string | null;
+
+  @ApiProperty({
+    description:
+      'True until the caller accepts `current_version`. While it is true, clients ask before anything else, and joining a chapter needs `accept_terms_privacy`.',
+  })
+  required: boolean;
+}
+
+export class AcceptLegalTermsDto {
+  @ApiProperty({
+    description:
+      "The user ticked \"I'm 18 or older and agree to the Terms of Service and Privacy Policy\". Must be true. The timestamp and version are recorded server-side, never from this payload.",
+  })
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Terms of Service and Privacy Policy must be accepted',
+  })
+  accept_terms_privacy: boolean;
 }
 
 export class RequestAvatarUploadUrlDto {
