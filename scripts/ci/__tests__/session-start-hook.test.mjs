@@ -972,8 +972,14 @@ test("bringup_stop judges whether the lock went before it lets go of the guard",
   // window is milliseconds, so the order is pinned rather than raced.
   const lib = readFileSync(LOCK_LIB, "utf8");
   const fn = lib.slice(lib.indexOf("bringup_stop() {"), lib.indexOf("\n}\n", lib.indexOf("bringup_stop() {")));
-  const noTree = fn.slice(fn.indexOf('if [ -z "$tree" ]; then'));
-  assert.ok(noTree.indexOf('[ -e "$lock" ]') < noTree.indexOf("bringup_unguard"), "the no-bringup path checks first");
+  // Every token must be found: a missing one reads as -1 and would pass any `<`.
+  const at = (text, token) => {
+    const i = text.indexOf(token);
+    assert.ok(i >= 0, `bringup_stop no longer contains ${JSON.stringify(token)}`);
+    return i;
+  };
+  const noTree = fn.slice(at(fn, 'if [ -z "$tree" ]; then'));
+  assert.ok(at(noTree, '[ -e "$lock" ]') < at(noTree, "bringup_unguard"), "the no-bringup path checks first");
   const tail = fn.slice(fn.lastIndexOf('bringup_guard "$lock"'));
-  assert.ok(tail.indexOf("leftover=1") < tail.indexOf("bringup_unguard"), "the stop path checks first");
+  assert.ok(at(tail, "leftover=1") < at(tail, "bringup_unguard"), "the stop path checks first");
 });
