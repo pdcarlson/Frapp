@@ -577,16 +577,11 @@ export function MemberDetailSheet({
           Inside `SheetContent` so the confirmation renders above the sheet that
           opened it rather than behind its overlay.
 
-          Not a claim about focus returning. `useConfirmDialog`'s dialog opens
-          from a plain `onClick` with no `DialogTrigger`, so on the ordinary
-          cancel path — where the opener is still connected and enabled —
-          `handleCloseAutoFocus` returns early and Radix focuses its absent
-          trigger, which lands focus on `<body>` while this sheet is still open
-          and modal. That is a pre-existing property of the shared control,
-          shared with every other caller, and widening its `openerUsable` test
-          is a change to that control rather than to this route. Recorded here
-          so the next reader does not take the old wording ("hands focus to the
-          dialog and back") as a property they can rely on.
+          Focus on close is `useConfirmDialog`'s: back to the opener while it
+          is usable, else into this sheet while it is still open
+          (`handleCloseAutoFocus`, #2302). Before #2302 the ordinary cancel
+          path let Radix focus an absent trigger, which dropped focus to
+          `<body>` behind this modal sheet.
         */}
         {confirmDialog}
       </SheetContent>

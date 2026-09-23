@@ -312,4 +312,61 @@ describe("focus after a confirmation opened from inside another dialog", () => {
       ),
     );
   });
+
+  it("returns to the opener on cancel, not to <body>", async () => {
+    // Radix's own fallback focuses a trigger these dialogs don't have.
+    const user = userEvent.setup();
+    render(<Harness onSettle={noop} withComment={false} />);
+    const opener = screen.getByRole("button", { name: "Open" });
+    await user.click(opener);
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it("falls back to the dialog still open when the opener is gone", async () => {
+    // A delete that removes its own row from an open sheet.
+    function Removing() {
+      const { confirm, confirmDialog } = useConfirmDialog();
+      const [gone, setGone] = useState(false);
+      return (
+        <DialogPrimitive.Root open>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Content aria-describedby={undefined}>
+              <DialogPrimitive.Title>Sheet</DialogPrimitive.Title>
+              {gone ? null : (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if ((await confirm(REQUEST)) !== null) setGone(true);
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+              {confirmDialog}
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
+      );
+    }
+    const user = userEvent.setup();
+    render(
+      <>
+        <main id="main-content" />
+        <Removing />
+      </>,
+    );
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Delete study zone" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Remove" })).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("dialog", { name: "Sheet" }),
+      ),
+    );
+  });
 });

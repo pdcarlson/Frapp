@@ -51,10 +51,13 @@ import { Textarea } from "@/components/ui/textarea";
  * `gate.controlProps()` and can go `disabled` mid-flight. That is the same
  * failure `useGatedDialog` documents on the revoke path, and the fix is the
  * same one — preempt `onCloseAutoFocus` rather than chase it with a
- * `requestAnimationFrame`, which Radix overwrites. When the opener is gone or
- * disabled, focus goes to the shell's `#main-content` landmark — the target the
- * "Skip to main content" link already uses — rather than to a detached node,
- * which is `<body>` and restarts keyboard navigation at the top of the page.
+ * `requestAnimationFrame`, which Radix overwrites. It always places focus
+ * itself, because Radix's own fallback focuses a trigger these dialogs don't
+ * have, which drops focus to `<body>`: on the opener while it is still usable;
+ * otherwise inside a dialog still open under this one (the Terms prompt, a
+ * detail sheet), since the page behind a modal is hidden; otherwise on the
+ * shell's `#main-content` landmark, the target the "Skip to main content" link
+ * already uses.
  */
 
 export type ConfirmTone = "destructive" | "default";
@@ -136,17 +139,25 @@ export function useConfirmDialog(): {
       opener.isConnected &&
       !opener.hasAttribute("disabled") &&
       opener.getAttribute("aria-disabled") !== "true";
-    if (openerUsable) return;
+    // Always ours to place. Left alone, Radix's modal content focuses its
+    // trigger, and these dialogs have none, so focus would drop to `<body>`
+    // even on a plain cancel.
     event.preventDefault();
-    // Opened from inside another dialog (the Terms prompt's Delete account):
-    // return focus into that dialog. The page's landmark sits behind it,
-    // hidden from assistive tech, so focus there would be lost.
-    const enclosing =
-      opener instanceof HTMLElement
-        ? opener.closest<HTMLElement>('[role="dialog"]')
-        : null;
-    if (enclosing?.isConnected) {
-      enclosing.focus({ preventScroll: true });
+    if (openerUsable) {
+      opener.focus({ preventScroll: true });
+      return;
+    }
+    // A dialog still open under this one (the Terms prompt, a detail sheet):
+    // focus goes back into it, because the page's landmark sits behind it,
+    // hidden from assistive tech. Found by what is open, not by the opener's
+    // ancestors, since the opener may be gone. The closing confirmation reads
+    // `data-state="closed"` by now; the last open one is the topmost.
+    const stillOpen = document.querySelectorAll<HTMLElement>(
+      '[role="dialog"][data-state="open"]',
+    );
+    const under = stillOpen[stillOpen.length - 1];
+    if (under) {
+      under.focus({ preventScroll: true });
       return;
     }
     // The shell's own landmark, which the "Skip to main content" link already
