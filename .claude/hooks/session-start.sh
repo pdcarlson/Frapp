@@ -190,9 +190,23 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
     # paused/reclaimed) and left a STALE lock that would otherwise block bringup
     # forever with no sentinel for callers to wait on. Reclaim and relaunch when
     # the recorded pid is no longer a live bringup process.
+    #
+    # Except for a lock only seconds old. `mkdir` takes the lock before
+    # launch_bringup has written a pid, and for a moment after that the pid is a
+    # fork that has not yet exec'd cloud-sandbox-up.sh. A concurrent fire in that
+    # window would see no live bringup and start a second one racing the first.
+    # A bringup that really died that young is reclaimed by the next fire.
     prev_pid="$(cat "$LOCK/pid" 2>/dev/null || true)"
+    lock_age=""
+    lock_mtime="$(stat -c %Y "$LOCK" 2>/dev/null || true)"
+    case "$lock_mtime" in
+      '' | *[!0-9]*) ;;
+      *) lock_age=$(($(date +%s) - lock_mtime)) ;;
+    esac
     if bringup_alive "$prev_pid"; then
       msg="${msg} Cloud sandbox: stack bringup is still running (pid ${prev_pid}). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
+    elif [ -n "$lock_age" ] && [ "$lock_age" -lt 30 ]; then
+      msg="${msg} Cloud sandbox: stack bringup is starting (another session start took the lock ${lock_age}s ago). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
     else
       rm -rf "$LOCK"
       if mkdir "$LOCK" 2>/dev/null; then

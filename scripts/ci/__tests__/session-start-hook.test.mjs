@@ -284,6 +284,27 @@ test("an empty boot id file is no evidence: a live bringup behind it is left alo
   assert.equal(await eventually(() => existsSync(s.launched), 300), false, "a second bringup must not start");
 });
 
+test("a lock seconds old with no pid yet is a bringup starting, not a stale lock", async (t) => {
+  // Between launch_bringup's mkdir and its pid write, a concurrent fire used to reclaim
+  // the lock and start a second bringup racing the first.
+  const s = scratch(t);
+  mkdirSync(s.lock);
+  const context = runHook(s, { boot: "boot-B" });
+  assert.match(context, /stack bringup is starting \(another session start took the lock \d+s ago\)/);
+  assert.ok(existsSync(s.lock), "the lock must be left in place");
+  assert.equal(await eventually(() => existsSync(s.launched), 300), false, "a second bringup must not start");
+});
+
+test("the same lock, minutes old with no live bringup, is reclaimed", async (t) => {
+  const s = scratch(t);
+  mkdirSync(s.lock);
+  const old = Math.floor(Date.now() / 1000) - 600;
+  utimesSync(s.lock, old, old);
+  const context = runHook(s, { boot: "boot-B" });
+  assert.match(context, /cleared a stale bringup lock/);
+  assert.ok(await eventually(() => existsSync(s.launched)), "bringup was not relaunched");
+});
+
 test("the boot id test never consults the pid: after a restart it may name another process", async (t) => {
   const s = scratch(t);
   const pid = liveBringup(t, s);
@@ -300,7 +321,7 @@ test("a process that only names the log is not a live bringup", async (t) => {
   const s = scratch(t);
   const pid = liveProcess(t, process.execPath, ["-e", "setTimeout(() => {}, 30000)", "/tmp/cloud-sandbox-up.log"]);
   priorLock(s, { boot: "boot-B", sentinel: null });
-  lockPid(s, pid);
+  lockPid(s, pid, Math.floor(Date.now() / 1000) - 3600);
   const context = runHook(s, { boot: "boot-B" });
   assert.match(context, /cleared a stale bringup lock/);
   assert.ok(await eventually(() => existsSync(s.launched)), "bringup was not relaunched");

@@ -277,7 +277,8 @@ the `/etc/frapp-cloud-sandbox` marker exists **or** `FRAPP_CLOUD_SANDBOX=1`. A `
 lock prevents a relaunch while a bringup is in flight, but the hook **reclaims a stale
 lock and relaunches** when a prior run was killed (e.g. the session was paused/reclaimed)
 and left the lock with no `.done`/`.failed` sentinel — so a resumed session never waits
-forever on a sentinel that can't arrive. It also relaunches when the lock carries a
+forever on a sentinel that can't arrive. A lock under 30 seconds old counts as a bringup
+still starting, since another session start may have taken it a moment ago. It also relaunches when the lock carries a
 **different boot id** from `/proc/sys/kernel/random/boot_id`: `/tmp` here survives a VM
 restart and the processes do not, so a lock and sentinel from before a restart describe a
 stack that is gone ([#2515](https://github.com/pdcarlson/Frapp/issues/2515)). A lock written
