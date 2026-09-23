@@ -92,14 +92,11 @@ export function isBlockableSender(senderId: string | null): senderId is string {
  *    So is an echo that overwrote such a row — `mergeServerRow` carries the
  *    server's `sender_blocked` onto it — because its body is exactly what the
  *    mask withheld and a list that reads ready may predate a block made on
- *    another device. It yields to an unblock this client confirmed only
- *    against a ready list: nothing dates the carried verdict, so it may
- *    postdate that unblock (the member blocked again elsewhere), and a list
- *    that failed or has not loaded cannot say which. One window stays open by
- *    choice — the member re-blocked elsewhere, the re-read that masked row
- *    triggers still in flight, and an echo of that very row landing in it —
- *    because closing it would flash every settled carried row to a tombstone
- *    on each routine list read.
+ *    another device. It yields only to an unblock this client confirmed,
+ *    which applies in every list state like any confirmed change. Nothing
+ *    dates the verdict against that unblock, so a member re-blocked elsewhere
+ *    whose masked row is echoed before the list re-read lands still shows
+ *    (#2499).
  * 3. A sender nobody can block (imported, system) cannot be hidden by a list.
  * 4. A sender on the list is a tombstone on **every** path — including a row
  *    the server cleared before the block was made, and a row cleared earlier
@@ -123,11 +120,7 @@ export function classifyMessage(
   if (viewerId !== null && sender === viewerId) return "visible";
   if (message.sender_blocked) {
     if (message._blockEvaluated) return "tombstone";
-    const unblockSettled =
-      blockState.status === "ready" &&
-      sender !== null &&
-      blockState.unblocked.has(sender);
-    if (!unblockSettled) return "tombstone";
+    if (sender === null || !blockState.unblocked.has(sender)) return "tombstone";
   }
   if (!isBlockableSender(sender)) return "visible";
   if (blockState.ids.has(sender)) return "tombstone";
@@ -147,22 +140,14 @@ export function classifyMessage(
  * what a block made on another device looks like until the list is re-read
  * (`contradictingRows`), so the control stays — unblocking is idempotent and
  * harmless if the block had in fact ended.
- *
- * An echo carrying the mask (`classifyMessage` step 2) is not a masked copy
- * either, so it keeps the control even after a confirmed unblock: it is a
- * tombstone only because the list is not ready, and Unblock re-reads the list,
- * which is what settles it. Reload would re-read masked copies, which skip it.
+
  */
 export function tombstoneCanUnblock(
-  message: Pick<ChatMessage, "sender_id"> &
-    Partial<Pick<ChatMessage, "sender_blocked" | "_blockEvaluated">>,
+  message: Pick<ChatMessage, "sender_id">,
   blockState: BlockState,
 ): boolean {
   if (!isBlockableSender(message.sender_id)) return false;
   if (blockState.ids.has(message.sender_id)) return true;
-  if (message.sender_blocked === true && message._blockEvaluated === false) {
-    return true;
-  }
   return !blockState.unblocked.has(message.sender_id);
 }
 

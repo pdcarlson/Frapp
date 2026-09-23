@@ -260,7 +260,11 @@ describe("classifyMessage", () => {
       }
     });
 
-    it("an echo that carried a mask shows once a confirmed unblock is settled against a ready list", () => {
+    it("an echo that carried a mask shows once this client confirmed the unblock, in every list state", () => {
+      // A confirmed unblock applies whatever the list is doing, like any
+      // confirmed change — and a pinned or edited message from a member the
+      // viewer unblocked must not stay hidden. (It cannot tell a mask that
+      // postdates the unblock, from a re-block elsewhere: #2499.)
       let cache = mergeServerRow(
         emptyCache(),
         restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
@@ -270,39 +274,17 @@ describe("classifyMessage", () => {
         echoRow("m1", BLOCKED, { content: "edited after the unblock" }),
       );
       const [edited] = selectMessages(cache);
-      expect(
-        classifyMessage(edited!, ready([], { unblocked: [BLOCKED] }), VIEWER),
-      ).toBe("visible");
-      // …unless a block made since outranks it.
+      for (const blockState of [
+        ready([], { unblocked: [BLOCKED] }),
+        loading([], { unblocked: [BLOCKED] }),
+        unavailable([], { unblocked: [BLOCKED] }),
+      ]) {
+        expect(classifyMessage(edited!, blockState, VIEWER)).toBe("visible");
+      }
+      // …unless a block read since outranks it.
       expect(classifyMessage(edited!, ready([BLOCKED]), VIEWER)).toBe(
         "tombstone",
       );
-    });
-
-    it("a carried mask does not yield to an unblock the list cannot confirm", () => {
-      // Unblocked here, then blocked again on another device: a REST read
-      // masks X's row, the contradiction re-reads the list, and a pin echoes
-      // over the masked row after that re-read failed. Nothing dates the
-      // carried verdict, so it may postdate the unblock, and a list that is
-      // not ready cannot say which.
-      let cache = mergeServerRow(
-        emptyCache(),
-        restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
-      );
-      cache = mergeServerRow(
-        cache,
-        echoRow("m1", BLOCKED, { is_pinned: true, content: "the real words" }),
-      );
-      const [pinned] = selectMessages(cache);
-      for (const blockState of [
-        unavailable([], { unblocked: [BLOCKED] }),
-        loading([], { unblocked: [BLOCKED] }),
-      ]) {
-        expect(classifyMessage(pinned!, blockState, VIEWER)).toBe("tombstone");
-        // …and offers Unblock, which re-reads the list — not a Reload that
-        // would re-read masked copies this row is not one of.
-        expect(tombstoneCanUnblock(pinned!, blockState)).toBe(true);
-      }
     });
 
     it("a carried mask is never remembered as seen, so a later outage cannot surface it", () => {
