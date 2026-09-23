@@ -3,7 +3,8 @@ description: >
   Download the newest migration snapshot published from `main` by
   `migration-snapshot.yml`, with the job's own GITHUB_TOKEN and no secret, and
   export its path as MIGRATION_SNAPSHOT to every later step of the job, with
-  MIGRATION_SNAPSHOT_DEPLOYED_SINCE saying whether a deploy has overtaken it.
+  MIGRATION_SNAPSHOT_STAGING_DEPLOY saying whether a staging deploy has
+  overtaken it.
   The calling job needs `permissions: actions: read`. Validation (schema, age,
   refs) is the reading script's job: `scripts/ci/lib/migration-snapshot.mjs`.
 
@@ -60,26 +61,23 @@ description: >
 # group open, so that a queued run behind it gets replaced and its required
 # checks end `cancelled`. The drift job reports and does not gate. It
 # still catches a stuck publisher without waiting, from the export below: a
-# migration past its grace window, read from a snapshot that a deploy has
+# migration past its grace window, read from a snapshot a staging deploy has
 # overtaken, turns it red as `stale`, naming the publisher (`classifyGateDrift`).
 #
 # ── What it exports ─────────────────────────────────────────────────────────
 # `MIGRATION_SNAPSHOT`: the snapshot file's path.
-# `MIGRATION_SNAPSHOT_DEPLOYED_SINCE`, in every mode: `none` when no deploy run
-# on `main` has finished since the snapshot's run started, that deploy's finish
-# time when one has, or `unknown` when `use` could not read the deploy runs.
-# (`wait` fails instead, so it only ever exports `none`.) The drift gate reads
-# it to tell a failed apply from a snapshot too old to show one: a deploy that
-# finished after the capture may have applied what the snapshot lacks. The
-# capture time alone cannot tell them apart. A publish taken minutes before a
-# migration's own deploy finished is overtaken, while one taken right after a
-# failed apply is current.
-#
-# What `wait` does not close: a `Deploy production` run still in flight. It is
-# not waited for, because its one job ships for minutes after it migrates and
-# would outlast the budget. The staging row of the same snapshot usually
-# already shows the migration, since staging applied it at merge time. A live
-# read had the same point-in-time race, which was open until the apply.
+# `MIGRATION_SNAPSHOT_STAGING_DEPLOY`, in every mode: what `Deploy API`, the
+# only workflow that migrates staging, has done since the snapshot's run
+# started. `none` (no run finished, none in progress), the finish time of a run
+# that finished, `running`, or `unknown` when `use` could not read the runs.
+# `wait` fails rather than export `unknown`, and waits until it can export
+# `none`. The staging-only drift gate reads it to tell a failed apply from a
+# snapshot too old to show one: a staging deploy after the capture may have
+# applied what the snapshot lacks. The capture time alone cannot tell them
+# apart. A publish taken minutes before a migration's own deploy finished is
+# overtaken, while one taken right after a failed apply is current.
+# `Deploy production` is not counted in this export, because it never touches
+# staging; `wait` counts it, because the gates it serves also judge production.
 
 inputs:
   on-stale:
@@ -109,9 +107,10 @@ runs:
         DEPLOYS="${RUNNER_TEMP}/migration-snapshot-deploys.json"
         DEADLINE=$(( $(date +%s) + 900 ))
 
-        # Which completed deploy run finished after the snapshot's run started?
-        # Sets LATEST_DEPLOY to its finish time, or to "" when none has. Returns
-        # 1, with the reason in LOOKUP_ERROR, when that cannot be read.
+        # Which of the named workflows' completed runs on main finished after
+        # the snapshot's run started? Sets LATEST_DEPLOY to its finish time, or
+        # to "" when none has. Returns 1, with the reason in LOOKUP_ERROR, when
+        # that cannot be read.
         #
         # Looks at the last 100 runs, not only the newest: the list is ordered
         # by creation, and a re-run of an older run can finish last (Deploy API
@@ -125,7 +124,7 @@ runs:
           LATEST_DEPLOY=""
           LOOKUP_ERROR=""
           local wf newer run finished
-          for wf in deploy-api.yml deploy-production.yml; do
+          for wf in "$@"; do
             if ! gh api "repos/${REPO}/actions/workflows/${wf}/runs?branch=main&status=completed&per_page=100" > "$DEPLOYS"; then
               LOOKUP_ERROR="Could not read the recent ${wf} runs."
               return 1
@@ -154,6 +153,21 @@ runs:
               fi
             done
           done
+        }
+
+        # How many Deploy API runs of this repository are in progress on main?
+        # Sets STAGING_RUNNING. Returns 1, with the reason in LOOKUP_ERROR, when
+        # that cannot be read.
+        count_staging_running() {
+          LOOKUP_ERROR=""
+          if ! gh api "repos/${REPO}/actions/workflows/deploy-api.yml/runs?branch=main&status=in_progress&per_page=100" > "$DEPLOYS"; then
+            LOOKUP_ERROR="Could not read in-progress Deploy API runs."
+            return 1
+          fi
+          if ! STAGING_RUNNING="$(jq -r --arg repo "$REPO" '[.workflow_runs[] | select(.head_repository.full_name == $repo)] | length' "$DEPLOYS")"; then
+            LOOKUP_ERROR="Could not parse in-progress Deploy API runs."
+            return 1
+          fi
         }
 
         while :; do
@@ -192,36 +206,48 @@ runs:
             echo "::error::No successful Migration snapshot run from main. Run it: Actions → Migration snapshot → Run workflow (branch: main). If it fails, its log names the cause."
             exit 1
           fi
-          # Every mode asks, because the drift job reads the answer: a snapshot
-          # a deploy has overtaken cannot show that deploy's applies.
-          if deployed_since; then
-            SINCE="${LATEST_DEPLOY:-none}"
-          elif [ "$ON_STALE" = "use" ]; then
-            echo "::warning::${LOOKUP_ERROR} Whether a deploy finished after this snapshot is unknown."
-            SINCE="unknown"
+          if [ "$ON_STALE" = "use" ]; then
+            # No waiting, but the drift job reads what staging's deploy has done
+            # since this snapshot ("What it exports" above). Only Deploy API
+            # migrates staging, so only it counts. A lookup failure here must
+            # not fail the step: the required gates on main use this mode too.
+            if ! deployed_since deploy-api.yml; then
+              echo "::warning::${LOOKUP_ERROR} What Deploy API has done since this snapshot is unknown."
+              STAGING_DEPLOY="unknown"
+            elif [ -n "$LATEST_DEPLOY" ]; then
+              STAGING_DEPLOY="$LATEST_DEPLOY"
+            elif ! count_staging_running; then
+              echo "::warning::${LOOKUP_ERROR} What Deploy API has done since this snapshot is unknown."
+              STAGING_DEPLOY="unknown"
+            elif [ "$STAGING_RUNNING" != "0" ]; then
+              STAGING_DEPLOY="running"
+            else
+              STAGING_DEPLOY="none"
+            fi
             break
-          else
+          fi
+
+          # `wait`: the gates it serves judge staging and production, so both
+          # deploy workflows count.
+          if ! deployed_since deploy-api.yml deploy-production.yml; then
             echo "::error::${LOOKUP_ERROR} So the snapshot cannot be shown to postdate the latest deploy."
             exit 1
           fi
-          if [ "$ON_STALE" = "use" ]; then break; fi
-
-          if ! gh api "repos/${REPO}/actions/workflows/deploy-api.yml/runs?branch=main&status=in_progress&per_page=100" > "$DEPLOYS"; then
-            echo "::error::Could not read in-progress Deploy API runs."
-            exit 1
-          fi
-          if ! staging_running="$(jq -r --arg repo "$REPO" '[.workflow_runs[] | select(.head_repository.full_name == $repo)] | length' "$DEPLOYS")"; then
-            echo "::error::Could not parse in-progress Deploy API runs."
+          if ! count_staging_running; then
+            echo "::error::${LOOKUP_ERROR}"
             exit 1
           fi
 
           WAIT_FOR=""
-          if [ "$staging_running" != "0" ]; then
+          if [ "$STAGING_RUNNING" != "0" ]; then
             WAIT_FOR="a Deploy API run is in progress on main and may be applying migrations"
           elif [ -n "$LATEST_DEPLOY" ]; then
             WAIT_FOR="the newest Migration snapshot (run ${RUN_ID}, started ${RUN_STARTED}) predates a deploy on main that finished at ${LATEST_DEPLOY}, and the publish that deploy triggers has not succeeded yet"
           fi
-          if [ -z "$WAIT_FOR" ]; then break; fi
+          if [ -z "$WAIT_FOR" ]; then
+            STAGING_DEPLOY="none"
+            break
+          fi
           if (( $(date +%s) >= DEADLINE )); then
             echo "::error::Waited 15 minutes: ${WAIT_FOR}. Re-run this check once Migration snapshot has published; if it is failing, its log names the cause: ${GITHUB_SERVER_URL}/${REPO}/actions/workflows/migration-snapshot.yml"
             exit 1
@@ -231,12 +257,17 @@ runs:
         done
 
         echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
-        echo "MIGRATION_SNAPSHOT_DEPLOYED_SINCE=$SINCE" >> "$GITHUB_ENV"
-        case "$SINCE" in
-          none) SINCE_TEXT="no deploy on main has finished since" ;;
-          unknown) SINCE_TEXT="whether a deploy on main has finished since is unknown" ;;
-          *) SINCE_TEXT="a deploy on main finished since, at ${SINCE}; on-stale: use, so taken as it is" ;;
-        esac
+        echo "MIGRATION_SNAPSHOT_STAGING_DEPLOY=$STAGING_DEPLOY" >> "$GITHUB_ENV"
+        if [ "$ON_STALE" != "use" ]; then
+          SINCE_TEXT="no deploy on main has finished since, and no Deploy API run is in progress"
+        else
+          case "$STAGING_DEPLOY" in
+            none) SINCE_TEXT="on-stale: use; no Deploy API run on main has finished since, and none is in progress" ;;
+            running) SINCE_TEXT="on-stale: use; a Deploy API run on main is in progress" ;;
+            unknown) SINCE_TEXT="on-stale: use; what Deploy API has done since is unknown" ;;
+            *) SINCE_TEXT="on-stale: use; a Deploy API run on main finished since, at ${STAGING_DEPLOY}" ;;
+          esac
+        fi
         echo "Using the snapshot published by ${GITHUB_SERVER_URL}/${REPO}/actions/runs/${RUN_ID} (started ${RUN_STARTED}; ${SINCE_TEXT})"
 
     - name: Download the snapshot

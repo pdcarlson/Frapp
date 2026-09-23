@@ -192,7 +192,7 @@ dispatch on a branch), when the snapshot predates the latest deploy,
 publish, then fail and name the publisher
 ([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../internal/ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets)).
 `migration-drift` never waits: it judges the newest snapshot as it is, and says
-when a deploy has overtaken that snapshot (below).
+when a `Deploy API` run has overtaken that snapshot (below).
 
 **After you change a migration ledger by hand, re-publish before you re-run a PR.**
 A `migration repair`, an `--include-all` apply or a hand-applied file triggers no
@@ -263,12 +263,18 @@ job summary's first line, because red has two meanings:
   Since #1363 that reading is reliable; before it, a red here in the half hour
   after a merge was as likely to be the gate mis-dating its own grace window as
   a real drift.
-- **Cannot verify** (the `stale` verdict, #2518). A deploy on `main` finished
-  after the newest snapshot was taken, and the publish it triggers has not
-  landed, while a migration is past its grace window. That deploy may have
-  applied it, so the check cannot tell. The publisher is behind, not staging:
-  if **Migration snapshot** is still running, re-run the check when it
-  finishes; if it failed, fix it, re-run it on `main`, then re-run the check.
+- **Cannot verify** (the `stale` verdict, #2518). A migration on `main` is past
+  its grace window, and the newest snapshot cannot show whether staging has
+  it. The summary names which of three reasons applies:
+  - A `Deploy API` run finished after the snapshot was taken, and the publish
+    it triggers has not landed. The publisher is behind, not staging. If
+    **Migration snapshot** is still running, re-run the check when it
+    finishes. If it failed, fix it, re-run it on `main`, then re-run the check.
+  - A `Deploy API` run is still in progress. Re-run the check once it and its
+    publish have finished.
+  - The download step could not read what `Deploy API` did (an Actions API
+    error, named in that step's log). Re-run the check.
+
   If a migration is still missing after a fresh publish, that run reports
   drift.
 

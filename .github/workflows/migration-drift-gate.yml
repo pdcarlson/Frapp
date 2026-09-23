@@ -127,10 +127,10 @@ jobs:
           node-version: 24
 
       # Exports MIGRATION_SNAPSHOT, the downloaded file's path, and
-      # MIGRATION_SNAPSHOT_DEPLOYED_SINCE. `use`: this job reports and does not
-      # gate, so it never waits on a publish. It still notices a stuck one: a
-      # migration past grace, read from a snapshot a deploy has overtaken, turns
-      # it red as `stale`, naming the publisher.
+      # MIGRATION_SNAPSHOT_STAGING_DEPLOY. `use`: this job reports and does not
+      # gate, so it never waits on a publish. It still notices a lagging one: a
+      # migration past grace, read from a snapshot a Deploy API run has
+      # overtaken, turns it red as `stale`, saying why.
       - name: Download the migration snapshot
         uses: ./.github/actions/download-migration-snapshot
         with:

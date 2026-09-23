@@ -474,7 +474,7 @@ test("against a snapshot, grace runs from now, and a deploy since the capture ma
   assert.equal(failed.status, "drift");
   assert.equal(failed.overdue.length, 1);
 
-  // Past grace, and a deploy has finished since the snapshot whose publish
+  // Past grace, and a Deploy API run has finished since the snapshot whose publish
   // has not landed: that deploy may have applied it. Stale, naming the
   // publisher, never green and never blamed on staging.
   const stale = classify(late, true);
@@ -528,7 +528,7 @@ test("drift beside unverifiable migrations reports both, so one run names the st
   ]);
   const { code, summary, errors } = await runAgainstSnapshot(snapshot, {
     snapshotBehind: true,
-    deployedSince: new Date(NOW - 2 * HOUR).toISOString(),
+    stagingDeploy: new Date(NOW - 2 * HOUR).toISOString(),
   });
   assert.equal(code, 1);
   assert.match(summary, /Drift detected/);
@@ -538,34 +538,47 @@ test("drift beside unverifiable migrations reports both, so one run names the st
   assert.ok(errors.some((line) => /do not exist on/.test(line)));
 });
 
-test("a snapshot a deploy has overtaken fails the gate, and the summary names the publisher, not staging", async () => {
-  const deployedSince = new Date(NOW - 2 * HOUR).toISOString();
+test("a snapshot a Deploy API run has overtaken fails the gate, and the summary says why, not blaming staging", async () => {
+  const stagingDeploy = new Date(NOW - 2 * HOUR).toISOString();
   const { code, summary, errors } = await runAgainstSnapshot(snapshotOf(NOW - 3 * HOUR, applied(MAIN.slice(0, 2))), {
     snapshotBehind: true,
-    deployedSince,
+    stagingDeploy,
   });
   assert.equal(code, 1);
   assert.match(summary, /Cannot verify/);
-  assert.ok(summary.includes(`finished at ${deployedSince}`));
+  assert.ok(summary.includes(`finished at ${stagingDeploy}`));
   assert.match(summary, /migration-snapshot\.yml/);
   assert.doesNotMatch(summary, /Drift detected/);
   assert.equal(errors.length, 1);
 
-  // Unknown (the lookup failed): the same verdict, worded as unknown.
+  // A Deploy API run still in flight: the same verdict, and the advice is to
+  // wait for it, not to fix anything.
+  const running = await runAgainstSnapshot(snapshotOf(NOW - 3 * HOUR, applied(MAIN.slice(0, 2))), {
+    snapshotBehind: true,
+    stagingDeploy: "running",
+  });
+  assert.equal(running.code, 1);
+  assert.match(running.summary, /still in progress/);
+  assert.match(running.summary, /once that run/);
+
+  // Unknown (the Actions API lookup failed): the same verdict, and the advice
+  // does not send anyone to a publisher that may be fine.
   const unknown = await runAgainstSnapshot(snapshotOf(NOW - 3 * HOUR, applied(MAIN.slice(0, 2))), {
     snapshotBehind: true,
-    deployedSince: "unknown",
+    stagingDeploy: "unknown",
   });
   assert.equal(unknown.code, 1);
   assert.match(unknown.summary, /could not be read/);
+  assert.match(unknown.summary, /not a verdict on staging or on the publisher/);
+  assert.doesNotMatch(unknown.summary, /If it failed, fix it/);
 });
 
-test("a snapshot no deploy has overtaken reports a missing migration as drift", async () => {
+test("a snapshot no Deploy API run has overtaken reports a missing migration as drift", async () => {
   // The same data as above, but current: the publish after the failed apply
   // succeeded, so staging really lacks the migration.
   const { code, summary } = await runAgainstSnapshot(snapshotOf(NOW - 3 * HOUR, applied(MAIN.slice(0, 2))), {
     snapshotBehind: false,
-    deployedSince: "none",
+    stagingDeploy: "none",
   });
   assert.equal(code, 1);
   assert.match(summary, /Drift detected/);
@@ -588,7 +601,7 @@ test("the CLI wires a snapshot's deploy-since state to the classifier, and its c
       path,
       JSON.stringify(buildSnapshot({ capturedAt, environments: [{ name: "staging", supabaseProjectRef: ref, migrations: [] }] })),
     );
-    const current = driftGateOptions(resolveSource(path, { MIGRATION_SNAPSHOT_DEPLOYED_SINCE: "none" }), {});
+    const current = driftGateOptions(resolveSource(path, { MIGRATION_SNAPSHOT_STAGING_DEPLOY: "none" }), {});
     assert.equal(current.capturedMs, Date.parse(capturedAt));
     assert.equal(current.projectRef, ref);
     assert.equal(current.snapshotBehind, false);
@@ -596,9 +609,13 @@ test("the CLI wires a snapshot's deploy-since state to the classifier, and its c
     assert.equal(current.graceMinutes, DEFAULT_GRACE_MINUTES);
 
     const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    const overtaken = driftGateOptions(resolveSource(path, { MIGRATION_SNAPSHOT_DEPLOYED_SINCE: since }), {});
+    const overtaken = driftGateOptions(resolveSource(path, { MIGRATION_SNAPSHOT_STAGING_DEPLOY: since }), {});
     assert.equal(overtaken.snapshotBehind, true);
-    assert.equal(overtaken.deployedSince, since);
+    assert.equal(overtaken.stagingDeploy, since);
+    assert.equal(
+      driftGateOptions(resolveSource(path, { MIGRATION_SNAPSHOT_STAGING_DEPLOY: "running" }), {}).snapshotBehind,
+      true,
+    );
 
     // Unset is not evidence that nothing deployed.
     assert.equal(driftGateOptions(resolveSource(path, {}), {}).snapshotBehind, true);

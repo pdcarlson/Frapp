@@ -1,0 +1,277 @@
+// Behaviour tests for the find step of
+// .github/actions/download-migration-snapshot/action.yml (#2518).
+//
+// The step is inline shell in a composite action, so it has no unit-test seam
+// of its own. These tests extract its script straight out of the YAML (the
+// same text-based way deploy-api-check-changes.test.mjs does) and run it
+// against a stubbed `gh` that answers from fixtures. What they pin:
+//
+//   - the MIGRATION_SNAPSHOT_STAGING_DEPLOY export the drift gate reads, in
+//     every mode. The gate treats an unset value as "overtaken", so an edit that
+//     dropped or reordered the export would turn every real failed apply into
+//     `stale` while the gate's own tests stayed green;
+//   - that `use` counts only Deploy API (the only workflow that migrates
+//     staging) and reports one still in flight;
+//   - that a failed lookup is a warning in `use` (the required gates on main
+//     use it) and an error in `wait`.
+//
+// The `wait` branch that sleeps is not exercised: it polls for 15 minutes.
+
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const ACTION = join(REPO_ROOT, ".github", "actions", "download-migration-snapshot", "action.yml");
+const REPO = "example/repo";
+const RUN_STARTED = "2026-09-23T12:00:00Z";
+
+// The step needs bash and jq, as the runner provides. Off CI a missing jq
+// skips the suite; on CI it fails, so the check can't quietly stop running.
+const hasJq = spawnSync("jq", ["--version"]).status === 0;
+const skip = !hasJq && !process.env.CI ? "jq is not installed" : false;
+
+/** The `Find the newest snapshot published from main` step's `run: |` block. */
+function extractFindScript() {
+  const lines = readFileSync(ACTION, "utf8").split("\n");
+  const stepIndex = lines.findIndex((line) => /^\s*- name: Find the newest snapshot published from main\s*$/.test(line));
+  assert.notEqual(stepIndex, -1, "find step not found in download-migration-snapshot/action.yml");
+  const runIndex = lines.findIndex((line, i) => i > stepIndex && /^\s*run: \|\s*$/.test(line));
+  assert.notEqual(runIndex, -1, "find step has no `run: |` block");
+
+  const runIndent = lines[runIndex].match(/^\s*/)[0].length;
+  const body = [];
+  for (let i = runIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (line.trim() === "") {
+      body.push("");
+      continue;
+    }
+    if (line.match(/^\s*/)[0].length <= runIndent) break;
+    body.push(line.slice(runIndent + 2));
+  }
+  const script = body.join("\n");
+  assert.doesNotMatch(script, /\$\{\{/, "the find script should take its inputs from env, not expressions");
+  return script;
+}
+
+// `gh api PATH [--jq EXPR]`, answered from ROUTES: one `<regex>\t<file>` per
+// line, first match wins. No match, or a route to a missing file, fails like
+// an unreachable API. Every requested path is logged to GH_CALLS.
+const FAKE_GH = `#!/usr/bin/env bash
+[ "$1" = api ] || exit 2
+shift; path="$1"; shift
+expr=""
+if [ "\${1:-}" = "--jq" ]; then expr="$2"; fi
+echo "$path" >> "$GH_CALLS"
+while IFS=$'\\t' read -r pattern file; do
+  [ -n "$pattern" ] || continue
+  if [[ "$path" =~ $pattern ]]; then
+    [ -f "$FIXTURES/$file" ] || exit 1
+    if [ -n "$expr" ]; then jq -r "$expr" "$FIXTURES/$file"; else cat "$FIXTURES/$file"; fi
+    exit $?
+  fi
+done < "$ROUTES"
+exit 1
+`;
+
+let workspace;
+let scriptPath;
+let binDir;
+
+function run({ onStale, fixtures, routes }) {
+  const dir = mkdtempSync(join(workspace, "case-"));
+  for (const [name, body] of Object.entries(fixtures)) {
+    writeFileSync(join(dir, name), JSON.stringify(body));
+  }
+  writeFileSync(join(dir, "routes.tsv"), routes.map(([pattern, file]) => `${pattern}\t${file}`).join("\n") + "\n");
+  for (const f of ["env", "output", "calls"]) writeFileSync(join(dir, f), "");
+
+  const result = spawnSync("bash", [scriptPath], {
+    encoding: "utf8",
+    env: {
+      PATH: `${binDir}:${process.env.PATH}`,
+      HOME: process.env.HOME ?? "",
+      RUNNER_TEMP: dir,
+      GITHUB_ENV: join(dir, "env"),
+      GITHUB_OUTPUT: join(dir, "output"),
+      GITHUB_SERVER_URL: "https://github.example",
+      GH_TOKEN: "unused",
+      REPO,
+      ON_STALE: onStale,
+      FIXTURES: dir,
+      ROUTES: join(dir, "routes.tsv"),
+      GH_CALLS: join(dir, "calls"),
+    },
+  });
+  const env = Object.fromEntries(
+    readFileSync(join(dir, "env"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => line.split(/=(.*)/s).slice(0, 2)),
+  );
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    env,
+    output: readFileSync(join(dir, "output"), "utf8"),
+    calls: readFileSync(join(dir, "calls"), "utf8").split("\n").filter(Boolean),
+  };
+}
+
+// One trusted publisher run whose commit is on main.
+const PUBLISHER = {
+  "publisher.json": {
+    workflow_runs: [
+      {
+        id: 7001,
+        head_sha: "pubsha",
+        head_branch: "main",
+        event: "workflow_run",
+        run_started_at: RUN_STARTED,
+        head_repository: { full_name: REPO },
+      },
+    ],
+  },
+  "main-ref.json": { object: { sha: "mainsha" } },
+  "compare.json": { status: "ahead" },
+  "none.json": { workflow_runs: [] },
+};
+const PUBLISHER_ROUTES = [
+  ["/git/ref/heads/main$", "main-ref.json"],
+  ["/actions/workflows/migration-snapshot\\.yml/runs", "publisher.json"],
+  ["/compare/pubsha\\.\\.\\.mainsha$", "compare.json"],
+];
+
+const deployRun = (id, updatedAt) => ({ id, updated_at: updatedAt, head_repository: { full_name: REPO } });
+const jobs = (...completed) => ({ jobs: completed.map((completed_at) => ({ completed_at })) });
+
+describe("download-migration-snapshot find step", { skip }, () => {
+  before(() => {
+    workspace = mkdtempSync(join(tmpdir(), "download-snapshot-"));
+    binDir = join(workspace, "bin");
+    spawnSync("mkdir", ["-p", binDir]);
+    writeFileSync(join(binDir, "gh"), FAKE_GH);
+    chmodSync(join(binDir, "gh"), 0o755);
+    scriptPath = join(workspace, "find.sh");
+    writeFileSync(scriptPath, extractFindScript());
+  });
+  after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  it("use: exports the finish time of a Deploy API run that finished after the snapshot", () => {
+    const r = run({
+      onStale: "use",
+      fixtures: {
+        ...PUBLISHER,
+        "api-completed.json": { workflow_runs: [deployRun(11, "2026-09-23T12:10:00Z")] },
+        "jobs-11.json": jobs("2026-09-23T12:05:00Z", "2026-09-23T12:08:00Z"),
+      },
+      routes: [
+        ...PUBLISHER_ROUTES,
+        ["/deploy-api\\.yml/runs.*status=completed", "api-completed.json"],
+        ["/runs/11/jobs", "jobs-11.json"],
+      ],
+    });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "2026-09-23T12:08:00Z");
+    assert.match(r.output, /run-id=7001/);
+  });
+
+  it("use: exports `running` while a Deploy API run is in flight", () => {
+    const r = run({
+      onStale: "use",
+      fixtures: { ...PUBLISHER, "api-running.json": { workflow_runs: [deployRun(12, "2026-09-23T12:20:00Z")] } },
+      routes: [
+        ...PUBLISHER_ROUTES,
+        ["/deploy-api\\.yml/runs.*status=completed", "none.json"],
+        ["/deploy-api\\.yml/runs.*status=in_progress", "api-running.json"],
+      ],
+    });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "running");
+  });
+
+  it("use: exports `none`, and never counts Deploy production, which does not touch staging", () => {
+    const r = run({
+      onStale: "use",
+      fixtures: {
+        ...PUBLISHER,
+        "prod-completed.json": { workflow_runs: [deployRun(13, "2026-09-23T12:30:00Z")] },
+        "jobs-13.json": jobs("2026-09-23T12:29:00Z"),
+      },
+      routes: [
+        ...PUBLISHER_ROUTES,
+        ["/deploy-api\\.yml/runs", "none.json"],
+        ["/deploy-production\\.yml/runs", "prod-completed.json"],
+        ["/runs/13/jobs", "jobs-13.json"],
+      ],
+    });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "none");
+    assert.equal(r.calls.some((path) => path.includes("deploy-production")), false);
+  });
+
+  it("use: a failed lookup exports `unknown` with a warning, and does not fail the step", () => {
+    const r = run({ onStale: "use", fixtures: PUBLISHER, routes: PUBLISHER_ROUTES });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "unknown");
+    assert.match(r.stdout, /::warning::Could not read the recent deploy-api\.yml runs/);
+  });
+
+  it("use: a Deploy API run from another repository (a fork's `main`) is not counted", () => {
+    const r = run({
+      onStale: "use",
+      fixtures: {
+        ...PUBLISHER,
+        "api-completed.json": {
+          workflow_runs: [{ ...deployRun(14, "2026-09-23T12:10:00Z"), head_repository: { full_name: "fork/repo" } }],
+        },
+      },
+      routes: [...PUBLISHER_ROUTES, ["/deploy-api\\.yml/runs", "api-completed.json"]],
+    });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "none");
+  });
+
+  it("wait: exports `none` once no deploy has finished since and none is running", () => {
+    const r = run({
+      onStale: "wait",
+      fixtures: {
+        ...PUBLISHER,
+        // Finished before the snapshot's run started: not newer.
+        "api-completed.json": { workflow_runs: [deployRun(15, "2026-09-23T11:50:00Z")] },
+      },
+      routes: [
+        ...PUBLISHER_ROUTES,
+        ["/deploy-api\\.yml/runs.*status=completed", "api-completed.json"],
+        ["/deploy-api\\.yml/runs.*status=in_progress", "none.json"],
+        ["/deploy-production\\.yml/runs", "none.json"],
+      ],
+    });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "none");
+    assert.ok(r.calls.some((path) => path.includes("deploy-production")), "wait must count Deploy production");
+  });
+
+  it("wait: a failed lookup fails the step instead of passing an unproven snapshot", () => {
+    const r = run({ onStale: "wait", fixtures: PUBLISHER, routes: PUBLISHER_ROUTES });
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /::error::Could not read the recent deploy-api\.yml runs/);
+    assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, undefined);
+  });
+
+  it("fails when no publisher run on main exists at all", () => {
+    const r = run({
+      onStale: "use",
+      fixtures: { ...PUBLISHER, "publisher.json": { workflow_runs: [] } },
+      routes: PUBLISHER_ROUTES,
+    });
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /No successful Migration snapshot run from main/);
+  });
+});
