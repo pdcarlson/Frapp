@@ -29,10 +29,10 @@ name: Nightly Backup
 # branch policy of `main` only (Settings → Environments → production-backup →
 # Deployment branches → Selected → main; still unset, tracked on #1827): without one, anyone with
 # write access can dispatch a modified copy of this workflow from a branch and
-# run it under this environment. (The Infisical machine identity is a repo-level
-# secret, so the policy narrows the environment rather than the secret; the same
-# exposure already exists for `check-migration-drift.yml`, which reads `prod` with
-# no environment at all.) The deploy gate on `production` is untouched.
+# run it under this environment. (Until the owner moves the Infisical machine
+# identity from repository scope into this environment's secrets, the policy
+# narrows the environment rather than the secret: #2518.) The deploy gate on
+# `production` is untouched.
 #
 # ── Why the production jobs inject TWO Infisical environments ────────────────
 # The source credentials (SUPABASE_PROJECT_REF, SUPABASE_DB_PASSWORD, SUPABASE_URL,

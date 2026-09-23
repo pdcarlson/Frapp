@@ -1,0 +1,74 @@
+name: Download migration snapshot
+description: >
+  Download the newest migration snapshot published from `main` by
+  `migration-snapshot.yml`, with the job's own GITHUB_TOKEN and no secret, and
+  export its path as MIGRATION_SNAPSHOT to every later step of the job. The
+  calling job needs `permissions: actions: read`. Validation (schema, age,
+  refs) is the reading script's job: `scripts/ci/lib/migration-snapshot.mjs`.
+
+# Why this exists (#2518): the migration gates run on `pull_request`, and a
+# same-repository PR runs its own branch's workflow definitions, so any secret a
+# PR job can read, any branch can read. The gates used to inject Infisical for
+# one Management API read. `migration-snapshot.yml` now makes that read from
+# `main` only, and PR jobs fetch the result here.
+#
+# ── Which run is trusted ────────────────────────────────────────────────────
+# Only a successful run of THIS repository's publisher, on `main`, triggered by
+# `workflow_run`, `schedule` or `workflow_dispatch`. Each of those runs `main`'s
+# copy of the workflow file. The filter matters because a branch can edit its
+# own copy of `migration-snapshot.yml` and make it run on `pull_request` or on a
+# push to that branch. Such a run is listed under the same workflow and can
+# upload an artifact with the same name, but its `event` or `head_branch` gives
+# it away. A fork PR whose own branch is called `main` fails the event and
+# head-repository checks.
+
+runs:
+  using: composite
+  steps:
+    - name: Find the newest snapshot published from main
+      id: find
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        RUNS="${RUNNER_TEMP}/migration-snapshot-runs.json"
+        if ! gh api "repos/${REPO}/actions/workflows/migration-snapshot.yml/runs?branch=main&status=success&per_page=30" > "$RUNS"; then
+          echo "::error::Could not list Migration snapshot runs. Does the job grant 'actions: read', and is .github/workflows/migration-snapshot.yml on main?"
+          exit 1
+        fi
+        RUN_ID="$(jq -r --arg repo "$REPO" '
+          [.workflow_runs[]
+            | select(.head_branch == "main")
+            | select(.head_repository.full_name == $repo)
+            | select(.event == "workflow_run" or .event == "schedule" or .event == "workflow_dispatch")
+          ][0].id // empty' "$RUNS")"
+        if [ -z "$RUN_ID" ]; then
+          echo "::error::No successful Migration snapshot run on main. Run it: Actions → Migration snapshot → Run workflow (branch: main). If it fails, its log names the cause."
+          exit 1
+        fi
+        echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+        echo "Using the snapshot published by ${GITHUB_SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
+
+    - name: Download the snapshot
+      uses: actions/download-artifact@v4
+      with:
+        name: migration-snapshot
+        run-id: ${{ steps.find.outputs.run-id }}
+        github-token: ${{ github.token }}
+        path: ${{ runner.temp }}/migration-snapshot
+
+    # An env var rather than an action output: an output's `value:` is a
+    # template expression above `runs:`, which this repo's manifest guard
+    # (scripts/ci/__tests__/infisical-secrets-action.test.mjs) refuses.
+    - name: Export the snapshot path
+      shell: bash
+      run: |
+        set -euo pipefail
+        FILE="${RUNNER_TEMP}/migration-snapshot/migration-snapshot.json"
+        if [ ! -f "$FILE" ]; then
+          echo "::error::The migration-snapshot artifact has no migration-snapshot.json."
+          exit 1
+        fi
+        echo "MIGRATION_SNAPSHOT=$FILE" >> "$GITHUB_ENV"

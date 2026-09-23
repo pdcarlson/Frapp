@@ -9,24 +9,24 @@ import { dirname, join } from "node:path";
 import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 
 // Pins the second and third cutover of stage 4's composite-action work (#1382):
-// the Infisical preamble+injection (16 call sites across 7 workflows) and the
+// the Infisical preamble+injection (14 call sites across 8 workflows) and the
 // Supabase CLI version pin (4 sites).
 //
-// Why this file has teeth beyond "the copies stayed gone": most of the eleven original (sixteen since production Auth conformance)
-// Infisical call sites never run on a pull request.
+// Why this file has teeth beyond "the copies stayed gone": NONE of the
+// Infisical call sites runs on a pull request, and none may (#2518). A
+// same-repository PR runs its own branch's workflow, so a credential a PR job
+// could read is one every branch could read. The three that used to run on
+// PRs, in migration-drift-gate.yml, now read a published snapshot instead, and
+// `workflow-secrets-scope.test.mjs` keeps every `secrets.*` out of PR jobs.
 //
-//   * ONE runs on every same-repo PR -- `migration-drift` in
-//     migration-drift-gate.yml, the only injection with no step-level `if:`.
-//     That is what proves the MECHANISM per PR: a composite-nested
+//   * TWO are `workflow_run`, firing after merge (deploy-api.yml), and so is
+//     the snapshot publisher (migration-snapshot.yml), which proves the
+//     MECHANISM after every staging deploy: a composite-nested
 //     `secrets-action` still exports to the calling job.
-//   * TWO more, in that same workflow (`migration-replay`, `migration-order`),
-//     are step-gated on `steps.touched.outputs.run == 'true'`, so they run only
-//     on a PR that touches `supabase/migrations/`.
-//   * TWO are `workflow_run`, firing after merge (deploy-api.yml).
 //   * The rest are scheduled or dispatch-only, two of them on the
-//     production deploy path, which no PR ever exercises.
+//     production deploy path.
 //
-// So CI can prove the mechanism but not the TRANSCRIPTION, and this file has to:
+// So no PR can prove the mechanism or the TRANSCRIPTION, and this file has to:
 // that all eleven original were converted, that none was left hand-written, that each
 // still passes what it used to pass, and that each still asks for the
 // environment its job actually needs.
@@ -36,7 +36,7 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 // in `.github/workflows` and `.github/actions`. Inside the action the value is
 // `${{ inputs.env-slug }}`, which that scan cannot match -- by design, because
 // the real literals survive as the `with:` values at the call sites. Rename the
-// action's input and all sixteen literals leave the gate's reach at once: it
+// action's input and all fourteen literals leave the gate's reach at once: it
 // then scans zero bytes and passes. That is the vacuous green its own section 0
 // exists to refuse, and nothing else in the repo would notice.
 
@@ -102,14 +102,15 @@ describe("infisical-secrets composite action", () => {
       /^ {2}env-slug:$/m,
       "the input must be named `env-slug`: check-env-slugs.mjs matches the literal " +
         "`env-slug: \"<slug>\"` at the call sites, and renaming this input moves all " +
-        "sixteen slugs out of that gate's reach while it keeps exiting 0.",
+        "fourteen slugs out of that gate's reach while it keeps exiting 0.",
     );
   });
 
   it("passes every input the hand-written call sites used to pass", () => {
     // The extraction is only lossless if the constants the call sites carried
     // are still carried. `include-imports: true` in particular was written at
-    // all sixteen sites and is NOT the action's default.
+    // every site (sixteen at the time; fourteen since #2518) and is NOT the
+    // action's default.
     for (const [key, value] of [
       ["method", '"universal"'],
       ["project-slug", '"frapp-live-ej-ls"'],
@@ -154,7 +155,7 @@ describe("infisical-secrets composite action", () => {
   });
 
   it("defaults `on-missing-credentials` to `error`", () => {
-    // Fourteen of the sixteen call sites pass nothing and rely entirely on this
+    // Twelve of the fourteen call sites pass nothing and rely entirely on this
     // default. Nothing asserted it, so flipping it to `warn` made every site —
     // deploy-production's `prod` injection included — continue past absent
     // credentials into `supabase db push`, with the suite green. The shell
@@ -304,9 +305,9 @@ describe("Infisical call sites", () => {
       ["deploy-api.yml", "migrate-staging", "staging"],
       ["deploy-api.yml", "deploy-staging", "staging"],
       ["deploy-production.yml", "deploy", "prod"],
-      ["migration-drift-gate.yml", "migration-drift", "staging"],
-      ["migration-drift-gate.yml", "migration-replay", "prod"],
-      ["migration-drift-gate.yml", "migration-order", "prod"],
+      // The migration gates on pull_request read the published snapshot and
+      // inject nothing (#2518). This is the main-only read that publishes it.
+      ["migration-snapshot.yml", "publish", "prod"],
       ["staging-conformance.yml", "conformance", "staging"],
       ["production-auth-conformance.yml", "auth-conformance", "prod"],
     ];
@@ -333,7 +334,7 @@ describe("Infisical call sites", () => {
       "the Infisical call-site roster changed. Each entry is file / job / slug; " +
         "update this list deliberately if a site legitimately moved.",
     );
-    assert.equal(actual.length, 16);
+    assert.equal(actual.length, 14);
   });
 
   it("leaves no hand-written injection or preflight anywhere", () => {
