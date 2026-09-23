@@ -93,8 +93,8 @@ description: >
 # and one transient 5xx must not leave a red required check on a `main` commit,
 # which `validate-deploy-sha.mjs` then refuses to deploy. Of the Management API
 # reads this action replaced, the drift and order gates' made three attempts,
-# 1s then 5s (`fetchAppliedWithRetry` over plain `fetch`, which retried a 4xx
-# too). The replay gate's CLI passed plain `fetch` and made one.
+# 1s then 5s, through `fetchAppliedWithRetry`, which retried a 4xx too. The
+# replay gate's CLI passed plain `fetch` and made one.
 
 inputs:
   on-stale:

@@ -373,7 +373,9 @@ jobs:
       # The #1332 gate, run here against LIVE production state rather than at PR
       # time: rebuild production's applied set on the disposable stack, then
       # apply exactly the pending tail through the same CLI path the real apply
-      # uses. Read-only against production (one GET to the Management API).
+      # uses. Read-only against production: one GET to the Management API,
+      # through `resilientFetch` (scripts/ci/lib/http.mjs), so a 429, a 5xx, a
+      # network error or a 15s timeout is retried, up to three attempts.
       #
       # REPLAY_SUPABASE_CLI is not optional. Without it the script falls back to
       # `npx --yes supabase` and fetches whatever is latest, while the apply

@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   decideOutcome,
@@ -375,4 +376,15 @@ test("the CLI's live read uses resilientFetch, so one transient error doesn't fa
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the CLI block hands runReplayGate replaySource's answer untouched", () => {
+  // The test above pins replaySource. This pins that the CLI uses it and adds
+  // no fetch of its own after the spread, which is how the live read lost
+  // resilientFetch before: the CLI passed plain `fetch`, overriding the default.
+  const script = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "check-migration-replay.mjs"), "utf8");
+  const cli = script.slice(script.indexOf("if (isDirectRun) {"));
+  assert.match(cli, /const source = replaySource\(\{ appliedFrom, snapshotPath \}\);/);
+  assert.match(cli, /runReplayGate\(\{\s*\.\.\.source,/);
+  assert.doesNotMatch(cli, /fetchImpl|\bfetch\b/, "the CLI must not choose a fetch itself");
 });
