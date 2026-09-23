@@ -99,7 +99,7 @@ These watchdogs alert through GitHub Issues rather than a provider channel — n
 token, and the issue thread doubles as the incident log. Each upserts **one** tracking issue (created
 if absent, reopened if closed, otherwise commented). All of them carry `routine-state`, which
 `/next` §0.2 treats as never-claimable — they track live state, not a unit of work, so do not pick
-them up as backlog. #2505 relabels them `incident` and assigns them to the owner (ADR-24 decision 2). The label is part of each alert's lookup key. Every watchdog script declares its own `ALERT_ISSUE_LOOKUP_LABEL` (`git grep -n 'ALERT_ISSUE_LOOKUP_LABEL =' scripts/ci`), and `check-migration-drift.mjs` runs its own lookup instead of `scripts/ci/lib/alert-issue.mjs`. So that change moves every one of those keys, and the skip rules, in one step and migrates alerts already open; otherwise it orphans them the way a title rename does.
+them up as backlog. #2505 relabels them `incident` and assigns them to the owner (ADR-24 decision 2). The label is also part of each alert's lookup key, and it's set in several places. So that change moves every key and the skip rules in one step, and migrates alerts already open. Otherwise it orphans them the way a title rename does. #2505 lists the places.
 
 The table below is the roster. It carries no count on purpose: it previously said "four" while the
 tree held five, because a count is a second copy of a fact the rows already state
