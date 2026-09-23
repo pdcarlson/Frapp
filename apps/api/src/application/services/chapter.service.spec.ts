@@ -1266,11 +1266,12 @@ describe('ChapterService', () => {
       });
     });
 
-    it('writes no row for a confirm of the path already stored', async () => {
-      // The mint refuses to re-sign an existing key (no upsert), so a confirm
-      // of the stored path can't follow new bytes. A row for it would announce
-      // a logo change that never happened (#2592 tracks real same-extension
-      // replacement).
+    it('audits a confirm of the stored path too', async () => {
+      // The server can't see whether the object at a path changed: a stored
+      // path can name a missing object (confirm doesn't check for an upload),
+      // and an upload to that free key then a confirm of the same path changes
+      // the logo without moving the column. A redundant row is the cheaper
+      // mistake than a missed change.
       mockChapterRepo.findById.mockResolvedValue(withLogo);
       mockChapterRepo.update.mockResolvedValue(withLogo);
 
@@ -1280,7 +1281,17 @@ describe('ChapterService', () => {
         'user-9',
       );
 
-      expect(mockAuditLog.record).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'chapter_logo_updated',
+          diff: {
+            logo_path: {
+              from: 'chapters/ch-1/branding/logo.png',
+              to: 'chapters/ch-1/branding/logo.png',
+            },
+          },
+        }),
+      );
     });
 
     it('audits a replacement under a different extension', async () => {
@@ -1358,10 +1369,11 @@ describe('ChapterService', () => {
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
-    it('clears the column before deleting the object, so a failed update keeps the logo whole', async () => {
-      // Object first used to leave the column naming a free key after a
-      // failed update; the mint would then re-sign it, and a confirm of the
-      // stored path writes no row, so the new logo went unaudited.
+    it('deletes the object before clearing the column, so a retried removal can finish', async () => {
+      // Column first would strand the object on any later failure, and with
+      // a fixed key per extension that blocks every later upload of that
+      // extension. Object first leaves the column pointing at it, so a retry
+      // finds the logo still set and completes (#2592).
       mockChapterRepo.findById.mockResolvedValue(withLogo);
       mockChapterRepo.update.mockRejectedValue(new Error('db down'));
 
@@ -1369,21 +1381,9 @@ describe('ChapterService', () => {
         'db down',
       );
 
-      expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
-    });
-
-    it('treats a failed object delete as an orphan, not a failed removal', async () => {
-      mockChapterRepo.findById.mockResolvedValue(withLogo);
-      mockChapterRepo.update.mockResolvedValue(withoutLogo);
-      mockStorageProvider.deleteFile.mockRejectedValue(
-        new Error('storage down'),
-      );
-
-      await expect(service.deleteLogo('ch-1', 'user-9')).resolves.toEqual(
-        withoutLogo,
-      );
-      expect(mockAuditLog.record).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'chapter_logo_removed' }),
+      expect(mockStorageProvider.deleteFile).toHaveBeenCalledWith(
+        'branding',
+        'chapters/ch-1/branding/logo.png',
       );
     });
 

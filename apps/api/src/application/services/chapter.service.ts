@@ -589,22 +589,19 @@ export class ChapterService {
     const chapter = await this.chapterRepo.update(chapterId, {
       logo_path: storagePath,
     });
-    // Only when the path moved, like the profile diff. A confirm of the path
-    // already stored can't be a replacement: the mint above refuses to re-sign
-    // an existing key (no upsert, so storage answers 409), and the bytes at
-    // that path can't have changed. Writing a row for it would announce a logo
-    // change that never happened in `#chapter-audit`. #2592 makes same-
-    // extension replacement work with a fresh key per upload, which keeps
-    // every real replacement a path change.
-    const previousPath = existing.logo_path ?? null;
-    if (previousPath !== storagePath) {
-      await this.recordLogoAudit(
-        chapterId,
-        actorUserId,
-        'chapter_logo_updated',
-        { from: previousPath, to: storagePath },
-      );
-    }
+    // Written on every confirm, `from` equal to `to` included. The server
+    // can't see whether the object at a path changed: confirm doesn't check
+    // that an upload happened, so a stored path can name a missing object, and
+    // a later upload to that free key followed by a confirm of the same path
+    // changes the logo without moving the column. Skipping equal paths, as the
+    // profile diff does, would leave that change unaudited. A confirm that
+    // changed nothing costs a redundant row instead, and in an audit log that
+    // is the cheaper mistake. (Replacing a logo with one of the same extension
+    // is refused at the mint today, since the key exists; #2592.)
+    await this.recordLogoAudit(chapterId, actorUserId, 'chapter_logo_updated', {
+      from: existing.logo_path ?? null,
+      to: storagePath,
+    });
     return chapter;
   }
 
@@ -615,38 +612,30 @@ export class ChapterService {
   ): Promise<Chapter> {
     const existing = await this.chapterRepo.findById(chapterId);
     if (!existing) throw new NotFoundException('Chapter not found');
-    const previousPath = existing.logo_path ?? null;
-    // The column is cleared before the object is deleted, never after.
-    // `confirmLogoUpload` skips a confirm of the stored path as a no-op, and
-    // that is only sound while the stored path names an object that exists
-    // (the mint refuses an existing key). Deleting the object first let a
-    // failed update leave the column naming a free key, so a re-upload there
-    // changed the logo with no audit row.
+    // Object first, then the column: the order `backwork` and chapter
+    // documents use. A failure between the two leaves the column naming a
+    // deleted object, which a retried DELETE repairs, since the column still
+    // points at it. The reverse order strands the object instead, and with a
+    // fixed key per extension that blocks every later upload of that
+    // extension (#2592).
+    if (existing.logo_path) {
+      await this.storageProvider.deleteFile(
+        BRANDING_BUCKET,
+        existing.logo_path,
+      );
+    }
     const chapter = await this.chapterRepo.update(chapterId, {
       logo_path: null,
     });
     // Only when there was a logo to remove: deleting nothing changes nothing,
     // and a row for it would mirror an empty event into `#chapter-audit`.
-    if (previousPath) {
+    if (existing.logo_path) {
       await this.recordLogoAudit(
         chapterId,
         actorUserId,
         'chapter_logo_removed',
-        { from: previousPath, to: null },
+        { from: existing.logo_path, to: null },
       );
-      try {
-        await this.storageProvider.deleteFile(BRANDING_BUCKET, previousPath);
-      } catch (error) {
-        // The removal has committed and been audited; what's left is an
-        // unreferenced object. Logged with its path for an operator to
-        // reconcile, like the chat attachment purge, rather than answering
-        // 500 for a removal that happened. #2592 tracks stale branding objects.
-        this.logger.warn('Failed to delete a removed chapter logo object', {
-          chapterId,
-          path: previousPath,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
     }
     return chapter;
   }
@@ -657,11 +646,11 @@ export class ChapterService {
    * `chapter_audit_log` row, so these do too.
    *
    * Its own actions rather than `chapter_profile_updated`, so the audit log can
-   * be filtered to logo changes, and so a removal reads as one. Like
-   * `recordProfileAudit`, a caller writes a row only for an effective change,
-   * after the update lands, with the same non-transactional residue (#1599):
-   * a failed insert leaves a committed change whose identical retry changes
-   * nothing, so it writes no row.
+   * be filtered to logo changes, and so a removal reads as one. Written after
+   * the update lands, like `recordProfileAudit`, and not transactional with it
+   * (#1599). The two callers recover differently from a failed insert: a
+   * retried confirm writes a row (with `from` equal to `to`), while a retried
+   * removal finds no logo and writes none.
    */
   private async recordLogoAudit(
     chapterId: string,
