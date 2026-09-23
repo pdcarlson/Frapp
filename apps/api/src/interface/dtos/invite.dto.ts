@@ -11,6 +11,7 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { LEGAL_ACCEPTANCE_LABEL } from '@repo/validation';
 
 /**
  * #422: `role` is optional on all three create routes. Omitting it falls back
@@ -71,8 +72,7 @@ export class RedeemInviteDto {
    * so this is the user's claim that they ticked it, not the record itself.
    */
   @ApiPropertyOptional({
-    description:
-      'True when the user ticked "I\'m 18 or older and agree to the Terms of Service and Privacy Policy". Needed only if they haven\'t accepted the current version.',
+    description: `True when the user ticked "${LEGAL_ACCEPTANCE_LABEL}" Needed only if they haven't accepted the current version.`,
   })
   @IsOptional()
   @IsBoolean()

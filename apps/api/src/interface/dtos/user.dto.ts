@@ -10,6 +10,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { LEGAL_ACCEPTANCE_LABEL } from '@repo/validation';
 
 export class MyPermissionsDto {
   @ApiProperty({
@@ -58,8 +59,7 @@ export class LegalAcceptanceDto {
 
 export class AcceptLegalTermsDto {
   @ApiProperty({
-    description:
-      'The user ticked "I\'m 18 or older and agree to the Terms of Service and Privacy Policy". Must be true. The timestamp and version are recorded server-side, never from this payload.',
+    description: `The user ticked "${LEGAL_ACCEPTANCE_LABEL}" Must be true. The timestamp and version are recorded server-side, never from this payload.`,
   })
   @IsBoolean()
   @Equals(true, {

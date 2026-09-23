@@ -333,11 +333,17 @@ describe("the gate's reads, from query state (#2302)", () => {
     ).toBe("tabs");
   });
 
-  it("fails open when the chapters refetch fails before the first Terms answer", () => {
-    // Nothing known says the Terms are owed yet, so this fails open like any
-    // other failed chapters read; the Terms answer, once in, decides.
+  it("holds a known member for the first Terms answer when the chapters refetch fails", () => {
+    // Same as a successful chapters read: tabs here would let a member who
+    // owes the Terms post until the answer lands and walks them back.
     expect(
       gate(failedRefetch([member]), { data: undefined, isError: false }),
+    ).toBe("hold");
+  });
+
+  it("fails open on a failed chapters refetch once the first Terms read fails", () => {
+    expect(
+      gate(failedRefetch([member]), { data: undefined, isError: true }),
     ).toBe("tabs");
   });
 

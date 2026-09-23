@@ -2993,7 +2993,7 @@ export interface components {
             required: boolean;
         };
         AcceptLegalTermsDto: {
-            /** @description The user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy". Must be true. The timestamp and version are recorded server-side, never from this payload. */
+            /** @description The user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Must be true. The timestamp and version are recorded server-side, never from this payload. */
             accept_terms_privacy: boolean;
         };
         UpdateUserDto: {
@@ -3426,7 +3426,7 @@ export interface components {
         };
         RedeemInviteDto: {
             token: string;
-            /** @description True when the user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy". Needed only if they haven't accepted the current version. */
+            /** @description True when the user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Needed only if they haven't accepted the current version. */
             accept_terms_privacy?: boolean;
         };
         RegisterPushTokenDto: {

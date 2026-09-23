@@ -49,11 +49,12 @@
  * (`GET /v1/users/me/legal-acceptance`), never a compiled-in version, so an
  * old binary can't disagree with it. A user with no membership isn't sent
  * here: the join screen and the create-chapter wizard carry the checkbox
- * themselves. Like memberships, a failed *first* read fails open to tabs, so
- * an outage of that endpoint can't lock every member out of the app. A failed
- * refetch keeps its last answer (`legalReadStatus`), and a member the last
- * chapters list showed who still owes the Terms stays on the prompt even when
- * the chapters read fails (`resolveAuthGate`).
+ * themselves. A failed first read fails open to tabs, so an outage of that
+ * endpoint can't lock every member out of the app. Unlike the chapters read,
+ * which fails open on any failure, a failed Terms refetch keeps its last
+ * answer (`legalReadStatus`). A member the last chapters list showed is held
+ * for the first Terms answer and kept on the prompt while they owe it, even
+ * when a chapters refetch has since failed (`resolveAuthGate`).
  */
 import { needsFirstRun } from "./onboarding/membership";
 
@@ -82,7 +83,8 @@ export type AuthGateInput = {
    *
    * `pending` is only for the first authenticated chapters read. A failed read
    * fails open to tabs so an outage of `/v1/chapters` cannot trap every member
-   * on join, except a known member who still owes the Terms (`resolveAuthGate`).
+   * on join, except that a known member is still held for the first Terms
+   * answer and kept on the prompt while they owe it (`resolveAuthGate`).
    */
   membershipsStatus?: "idle" | "pending" | "success" | "error";
   memberships?: AuthGateMembership[];
@@ -219,17 +221,17 @@ export function resolveAuthGate({
   }
 
   // A failed chapters read fails open, below. The one exception is a member
-  // the last list we saw showed, whom the Terms read says still owes the
-  // Terms: they stay on the prompt, or a failed refetch would let them past
-  // it (#2302). Everyone else still fails open, so a refetch that fails
-  // after a join or a finished first-run doesn't pull anyone back.
-  if (
-    membershipsStatus === "error" &&
-    memberships.length > 0 &&
-    legalAcceptanceStatus === "success" &&
-    legalAcceptanceRequired
-  ) {
-    return "terms";
+  // the last list we saw showed: the Terms rules above still apply to them,
+  // or a failed refetch would let them past the prompt (#2302). Everyone else
+  // still fails open, so a refetch that fails after a join (cached list `[]`)
+  // or a finished first-run (Terms already answered) doesn't pull anyone back.
+  if (membershipsStatus === "error" && memberships.length > 0) {
+    if (legalAcceptanceStatus === "pending") {
+      return "hold";
+    }
+    if (legalAcceptanceStatus === "success" && legalAcceptanceRequired) {
+      return "terms";
+    }
   }
 
   // Resolved, and either there is a membership that has finished onboarding,

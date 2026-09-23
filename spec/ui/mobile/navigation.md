@@ -84,12 +84,12 @@ The first matching row wins.
 
 | Authenticated state | Destination |
 | --- | --- |
+| No chapter yet, and the `active_chapter_id` claim is still being read | `hold` |
 | Chapters list still loading (first read) | `hold` |
 | **Chapters read succeeded:** zero memberships | `join` (s02) |
-| **Chapters read succeeded:** a member, the first Terms read still loading | `hold` |
-| **Chapters read succeeded:** a member who hasn't accepted the current Terms (#2302) | `terms` (`(auth)/terms.tsx`) |
+| A member (in the last chapters list, even if a refetch since failed), the first Terms read still loading | `hold` |
+| A member (likewise) who hasn't accepted the current Terms (#2302) | `terms` (`(auth)/terms.tsx`) |
 | **Chapters read succeeded:** active membership has `has_completed_onboarding === false` | `welcome` (s03) |
-| **Chapters read failed:** the last list showed a membership, and the Terms read says it's still owed | `terms` |
 | Otherwise: onboarded, or the chapters read failed in any other case (fail open), or the first Terms read failed. A failed Terms refetch keeps its cached answer | `tabs` |
 
 `terms` comes before `welcome` so a new member agrees before they can post. The server decides it (`GET /v1/users/me/legal-acceptance`), never a version compiled into the binary ([`../../behavior/legal.md`](../../behavior/legal.md#acceptance-record) § Acceptance record). While the gate reads `terms`, `/create-chapter` is also permitted, since the wizard carries the same checkbox.
