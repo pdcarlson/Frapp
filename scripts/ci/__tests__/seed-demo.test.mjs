@@ -455,7 +455,13 @@ test("storage --remove refuses any listed path not plainly under the chapter's f
 test("every command seed-demo.mjs prints for the reader carries --namespace, which parseArgs requires", () => {
   // Messages kept naming commands bare (`storage`, `sql --remove`), each refused as printed.
   const source = readFileSync(new URL("../../demo/seed-demo.mjs", import.meta.url), "utf8");
-  const printed = [...source.matchAll(/\\`((?:seed-demo\.mjs )?(?:sql|auth|storage|verify)\b[^`\\]*)\\`/g)].map((m) => m[1]);
+  const command = /`((?:seed-demo\.mjs )?(?:sql|auth|storage|verify)\b[^`\\]*)\\?`/g;
+  // Escaped backticks in template literals, and plain ones in '...' and "..." strings.
+  const inTemplates = [...source.matchAll(/\\`((?:seed-demo\.mjs )?(?:sql|auth|storage|verify)\b[^`\\]*)\\`/g)].map((m) => m[1]);
+  const inQuoted = [...source.matchAll(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g)].flatMap((q) =>
+    [...q[0].matchAll(command)].map((m) => m[1]),
+  );
+  const printed = [...inTemplates, ...inQuoted];
   assert.ok(printed.length >= 8, `found only ${printed.length} printed commands; the scan has gone stale`);
   assert.deepEqual(printed.filter((cmd) => !cmd.includes("--namespace")), []);
   // The seed SQL `sql` prints raises its own: every command a RAISE names carries it too.

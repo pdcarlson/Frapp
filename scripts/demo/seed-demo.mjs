@@ -771,7 +771,7 @@ export async function verifyLogin({
       `no upcoming event with a check-in zone (${upcoming.length} upcoming in all): the seed is stale. ` +
         `Re-seed it: apply \`sql --namespace ${namespace} --remove\`, run \`storage --namespace ${namespace} --remove\`, ` +
         `apply ${reseed}, run \`storage --namespace ${namespace}\`, then verify again. Against a hosted project ` +
-        "`storage` also needs its Supabase keys, and against production `DEMO_ALLOW_PRODUCTION=true`; " +
+        "the storage steps also need its Supabase keys, and against production `DEMO_ALLOW_PRODUCTION=true`; " +
         "docs/guides/demo-data.md, Production (App Review), gives each command in full",
     );
   }
