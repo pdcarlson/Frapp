@@ -19,9 +19,9 @@
   2. **The mobile binary.** This step is first because it is the beta's critical path, and each binary stays as shipped until its user updates.
      - `expo.name`, the three iOS permission strings, and the in-app copy. That includes the `Settings → Frapp → …` recovery paths, which must match `expo.name` in the same build.
      - The local study-pause notification, the Stripe PaymentSheet merchant fallback, the calendar-export filename and PRODID, and the listing paste in `apps/mobile/store/README.md`.
-     - The specs that prescribe these strings: `spec/behavior/study-sessions.md` (the study-pause notification), `spec/ui/design-system/writing.md` (the study, payment and s01 copy) and `spec/ui/design-system/components.md` (the Ask sheet header).
+     - Its specs: `spec/behavior/study-sessions.md` (the study-pause notification), `spec/ui/design-system/writing.md` (the study, payment and s01 copy), `spec/ui/design-system/components.md` and `spec/ui/mobile/patterns.md` (the "Ask Signet" sheet header), and `spec/ui/mobile/screens.md` (the s01 wordmark).
   3. **Server.**
-     - API user-visible text: error messages other than the Discord ones (those go in step 4), the PDF report footer and producer, report filenames and the ICS PRODID.
+     - API user-visible text: error messages other than the Discord ones (those go in step 4), the PDF report footer and producer, report filenames and the ICS PRODID. Its specs: the PDF footer in `spec/behavior/reports.md` and `spec/product/modules.md`.
      - The invite email's From name, subject and body.
      - The OpenAPI title and descriptions, with the regenerated contract.
      - A new forward migration renaming the system actor `Signet System` → `Frapp System`. The PGlite landmark in `scripts/check-pglite-migrations.mjs` and the target state in `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md` change with it.
@@ -34,8 +34,8 @@
      - Everything that names the Discord application or bot, on both sides: the web import copy, and the API's Discord error messages (`discord-import.service.ts`, `discord-bot-gateway.service.ts`, `discord-api-message.ts`).
      - The owner renames the Discord application and bot in the Developer Portal on the day it merges, so a recovery instruction never names something the admin can't find.
   5. **Landing and legal.**
-     - Metadata, the generated OG image, JSON-LD, the hero and footer copy, and the lockup wordmark, with the landing title in `spec/ui/landing/README.md`.
-     - The Terms, Privacy, FERPA and Support pages, with their `lastUpdated` dates.
+     - Metadata, the generated OG image, JSON-LD, the hero and footer copy, and the lockup wordmark. Its specs: `spec/ui/landing/README.md` (the header lockup word and the OG card) and `spec/ui/assets.md` (the lockup wordmark).
+     - The Terms, Privacy, FERPA and Support pages, with their `lastUpdated` dates. Its spec: the Terms and FERPA summaries in `spec/behavior/legal.md`.
      - The owner decides whether a name-only change bumps `LEGAL_POLICY_VERSION`.
      - After deploy, re-scrape the social previews and request a recrawl.
   6. **Store console (owner).** After step 2 is in a build, update the App Store Connect description and review notes, then capture and upload the screenshots ([#2454](https://github.com/pdcarlson/Frapp/issues/2454)).
@@ -48,10 +48,12 @@
 
   An unflipped check fails CI. A lock that spans surfaces (calendar PRODID, export filenames, the auth wordmark and the ops-nudge copy) is split per surface by the first step that touches it.
 
+  **This is the one list of specs each step moves.** `spec/ui/brand-identity.md` § 1 links here rather than keeping its own copy. It was found at `ee9dd538` by reading every line of `git grep -n Signet -- spec`, leaving out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and design-system uses of the name. Specs change between now and each step, so re-run that grep when a step starts, and treat a new hit as part of that step.
+
 **Rationale:**
 
 - **SIGNET collides on the federal register where the product lives.** The owner searched tmsearch.uspto.gov on 2026-09-23 (#1901).
-  - SN 99945230 is SIGNET for downloadable mobile-app software and SaaS, classes 9 and 42, pending. It was filed 2026-07-16. That is four weeks before "Signet" first appears anywhere in this repo's history (commit `977527f`, 2026-08-13, per `git log -S Signet` over all 1,186 commits of `main`), and six weeks before production went live on 2026-08-30. Once it registers, it would likely block a SIGNET application from us in those classes, and its owner's priority dates from the filing.
+  - SN 99945230 is SIGNET for downloadable mobile-app software and SaaS, classes 9 and 42, pending. It was filed 2026-07-16. That is four weeks before "Signet" first appears anywhere in this repo's history (commit `977527f`, 2026-08-13, per `git log -S Signet ee9dd538` over all 1,185 commits of `main` at that commit), and six weeks before production went live on 2026-08-30. Once it registers, it would likely block a SIGNET application from us in those classes, and its owner's priority dates from the filing.
   - SN 98639778 is a registered SIGNET mark for class 42 software.
   - RN 4186843 is SIGNET for Phi Sigma Kappa's magazine for fraternity members. That is the product's own audience.
 - **FRAPP is clear on the register in the same classes.** The same search found no live mark containing FRAPP in classes 9 or 42. The only live near-match is FRAPP-WRAP (SN 90580395, class 21, drink holders).

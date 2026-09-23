@@ -18,13 +18,7 @@
 - **Everything a user can see says Frapp.** That covers UI copy, email, notifications, OS permission prompts, store listings, the landing and legal pages, and marketing. The store listing is `Frapp: Chapter Hub`, because plain "Frapp" is taken.
 - **"Signet" is the design system's internal name** until the post-beta internals rename (ADR-25). That covers the `--signet-*` tokens, identifiers, file names, and design-system prose in specs and skills. It never appears in user-visible text. New or edited product prose in specs says Frapp; existing spec prose is swept with the internals rename.
 - **"Legacy Frapp" means the retired pre-Signet visuals and code** (bone, bronze, Geist, `#2563EB`), not the product name.
-- **Transition.** Until ADR-25's rename series lands, some specs still prescribe user-visible strings that say Signet. Those are the specs that pin exact copy:
-  - `spec/behavior/study-sessions.md` (the study-pause notification);
-  - [`design-system/writing.md`](design-system/writing.md) (study, payment and s01 copy);
-  - [`design-system/components.md`](design-system/components.md) (the Ask sheet header);
-  - [`landing/README.md`](landing/README.md) (the landing title).
-
-  Each of these changes to Frapp in the same series step as the code that renders it, and the step list in ADR-25 names which. This rule sets the target. Until its step lands, a prescribed Signet string there is what ships, not a license to add new Signet strings.
+- **Transition.** Until ADR-25's rename series lands, some specs still prescribe user-visible strings that say Signet: copy tables, screen and footer descriptions, and legal-page summaries. Each one changes to Frapp in the same series step as the code that renders it. The one list of those specs, per step, is in [ADR-25](../architecture/adr/adr-25.md), with the command that regenerates it. This rule sets the target. Until its step lands, a prescribed Signet string is what ships, not a license to add new Signet strings.
 - **Code identifiers are frapp permanently:** package names (`@repo/*`), domains (`frapp.live`, `app.frapp.live`), the `frapp://` scheme and the bundle id `live.frapp.mobile`. When citing code, cite the real current names.
 
 ---
