@@ -532,10 +532,10 @@ false, and both are worth naming so they are not reintroduced here:
   secret path `/` and pushes the entire source environment** — Infisical has no per-key filter. The
   frontend Vercel projects therefore receive backend credentials they never use. Narrowing this is
   tracked in **#834**.
-- It listed a GitHub Actions sync. There is none — `deploy-api.yml` _pulls_ from Infisical at job
-  time. See "GitHub Actions is not a sync" in `SECRETS_MANAGEMENT.md`.
+- It listed a GitHub Actions sync. There is none — see
+  [`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](./SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync).
 
-There are **6 live syncs**. Do not restate their configuration here; link instead. A second copy of
+Do not restate their count or configuration here; link instead. A second copy of
 provider state in a second file has no mechanism to stay true.
 
 ---
@@ -624,7 +624,7 @@ failure rather than a missing-env one.
 ## Adding a New Variable
 
 1. Add to code (`process.env.YOUR_VAR` or `ConfigService`).
-2. Add canonical value to Infisical in all 3 environments.
+2. Add its row to the grid above, then set the value in each Infisical environment whose cell gives one. A cell marked _(leave empty)_ or _not yet set_ gets no value — never a placeholder to make the row look complete.
 3. If it needs a framework prefix → add an Infisical reference (`NEXT_PUBLIC_YOUR_VAR = ${YOUR_VAR}`).
 4. Update this document.
 

@@ -17,7 +17,7 @@ Related: [`SECURITY_FIXES.md`](SECURITY_FIXES.md) (history of applied fixes) ·
 ## 1. The model in short
 
 Frapp is multi-tenant **by chapter**. Every request carries a bearer token, and the active chapter
-comes from the JWT `active_chapter_id` claim (an `x-chapter-id` header is a legacy fallback). Three
+comes from the JWT `active_chapter_id` claim, with an `x-chapter-id` header fallback whose precedence [`multi-tenancy.md`](../../../spec/behavior/multi-tenancy.md) owns. Three
 guards compose, in this order:
 
 | Guard | Proves | Source |

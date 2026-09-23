@@ -63,7 +63,7 @@ Frapp/
 - **Database access:** Supabase JS client (`@supabase/supabase-js`) for Postgres queries, storage operations, and auth admin operations. No ORM; raw SQL or query builder via Supabase.
 - **Security:**
   - `SupabaseAuthGuard`: Validates JWT from Supabase Auth on every request.
-  - `ChapterGuard`: Resolves the active chapter from the JWT `active_chapter_id` claim and verifies membership. `x-chapter-id` is a fallback for clients that have not refreshed their token and never overrides the claim; precedence and the mismatch response are owned by [`../behavior/multi-tenancy.md`](../behavior/multi-tenancy.md), item 1 of its Enforcement layers list.
+  - `ChapterGuard`: Resolves the active chapter and verifies membership. How the chapter is resolved — claim, header fallback, precedence and the mismatch response — is owned by [`../behavior/multi-tenancy.md`](../behavior/multi-tenancy.md), item 1 of its Enforcement layers list.
   - `PermissionsGuard`: Checks `@RequirePermissions()` metadata against the user's flattened permission set.
 - **Validation:** Global `ValidationPipe` using `class-validator` and `class-transformer`.
 - **Documentation:** Swagger UI at `/docs` via `@nestjs/swagger`.
@@ -295,7 +295,7 @@ The `InviteService.redeem` flow performs deterministic validation checks (invite
 
 ### Authorization Flow
 
-Owned by [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../docs/internal/security/AUTHORIZATION_MODEL.md) § "1. The model in short": the `SupabaseAuthGuard` → `ChapterGuard` → `PermissionsGuard` chain and what each guard proves; that the active chapter comes from the JWT `active_chapter_id` claim, with `x-chapter-id` a legacy fallback that never overrides it (a disagreement is a hard `403 chapter.context.mismatch`); and the four tenancy-proof idioms every route uses. `ChapterGuard`'s subscription and module write-gating: [`docs/guides/api-architecture.md`](../../docs/guides/api-architecture.md) § "Subscription enforcement (ChapterGuard)".
+Owned by [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../docs/internal/security/AUTHORIZATION_MODEL.md) § "1. The model in short": the `SupabaseAuthGuard` → `ChapterGuard` → `PermissionsGuard` chain and what each guard proves; and the four tenancy-proof idioms every route uses. How the active chapter is resolved (claim, header fallback, mismatch response) is owned by [`behavior/multi-tenancy.md`](../behavior/multi-tenancy.md). `ChapterGuard`'s subscription and module write-gating: [`docs/guides/api-architecture.md`](../../docs/guides/api-architecture.md) § "Subscription enforcement (ChapterGuard)".
 
 ---
 
@@ -370,7 +370,7 @@ Health-check response bodies remain owned by
 
 **Implementation status (Phase 2):** Events (CRUD), Event Attendance (check-in, list, update status), Points (me, leaderboard, per-member summary, adjust, **chapter-wide transaction list**), and Polls (create in channel, get, vote / remove vote, **chapter-wide list**) are implemented and included in the OpenAPI spec.
 
-**Dashboard list surfaces (permissions):** `GET /v1/points/transactions` is gated by `points:view_all` (same permission as `GET /v1/points/members/:userId` for another member’s summary). `GET /v1/polls` requires `members:view` (controller baseline) plus `polls:view_all` on the list route; it is **not** part of the default Member role seed. Treasurer includes `points:view_all` and `polls:view_all` alongside billing and points tools. Vice President and Secretary system roles include `members:view` and `polls:view_all` so the polls dashboard matches `PollController` guards (see seeded role matrix in [`behavior/rbac.md`](../behavior/rbac.md)). Full query parameters, pagination, and invariants: [`behavior/points.md`](../behavior/points.md) and [`behavior/polls.md`](../behavior/polls.md).
+**Dashboard list surfaces (permissions):** `GET /v1/points/transactions` is gated by `points:view_all` (same permission as `GET /v1/points/members/:userId` for another member’s summary). `GET /v1/polls` requires `members:view` (controller baseline) plus `polls:view_all` on the list route; it is **not** part of the default Member role seed. Which seeded roles carry those permissions: the seeded role matrix in [`behavior/rbac.md` § Role Lifecycle](../behavior/rbac.md#role-lifecycle). Full query parameters, pagination, and invariants: [`behavior/points.md`](../behavior/points.md) and [`behavior/polls.md`](../behavior/polls.md).
 
 ---
 

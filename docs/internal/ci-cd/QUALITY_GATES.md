@@ -148,8 +148,9 @@ the runner did.
 
 So before bumping this major, compare its `engines` against `node-version:` in
 [`ci.yml`](../../../.github/workflows/ci.yml) and against `FROM node:` in
-[`apps/api/Dockerfile`](../../../apps/api/Dockerfile). Those three move together; all are on 24
-today, with `engines.node` at `>=24` in the root `package.json`.
+[`apps/api/Dockerfile`](../../../apps/api/Dockerfile). Those move together with the root
+`package.json` `engines.node`; the current floor is stated once, in
+[`spec/environments/README.md` § Prerequisites](../../../spec/environments/README.md#prerequisites).
 
 `expo-server-sdk` 7.x was the same class of engines mismatch with a different symptom, and the Node
 move cleared it too. 6.0.0 went ESM-only; 7.0.0 raised `engines.node` to `>=22.12.0` (stable

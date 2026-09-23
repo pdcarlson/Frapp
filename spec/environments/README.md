@@ -204,17 +204,11 @@ Two consequences worth holding together:
 
 ### Additional checks outside `ci.yml`
 
-`.github/workflows/docs.yml` has exactly one job, `env-slugs`, running
-[`scripts/check-env-slugs.mjs`](../../scripts/check-env-slugs.mjs) — it asserts that every Infisical
-environment slug it reads names a slug that exists, over the files and directories the script's own
-`SCAN_ROOTS` lists and nowhere else. `.github/workflows/links.yml` has exactly one job,
-`link-check` — lychee, offline, internal markdown links and heading anchors.
-`migration-order`, `migration-drift` and `migration-replay` run in
-`.github/workflows/migration-drift-gate.yml`. Which of them are required, what each validates, and
-why `migration-drift` was demoted out of `DRIFT_CHECKS` are in
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
-**§ Required Status Checks**; what each surviving job does is in
-[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md).
+The docs workflows (`docs.yml`, `links.yml`) and what each of their jobs checks:
+[`DOCS_CI.md` § What runs](../../docs/internal/ci-cd/DOCS_CI.md#what-runs). The migration checks —
+which workflow runs them, which are required, what each validates, and why `migration-drift` was
+demoted out of `DRIFT_CHECKS` — are in
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Required Status Checks](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks).
 
 Four docs gates used to run here — `docs-structure`, `doc-paths`, `doc-refs` and `doc-tables` — and
 all four are **deleted**, with their scripts, their allowlists and their `check:doc-*` npm scripts.
@@ -364,7 +358,7 @@ Secrets are centrally managed in **Infisical** (free tier) with automatic syncs 
 | ---------------- | ------------------------------------------------------ |
 | **Project**      | Frapp                                                  |
 | **Environments** | `dev`, `staging`, `prod` — slugs, not display names. Owned by [`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) § Infisical Environments |
-| **Syncs**        | Not restated here — the live inventory is [`SECRETS_MANAGEMENT.md`](../../docs/internal/environment/SECRETS_MANAGEMENT.md) § 5. **There is no GitHub Actions sync**; CI pulls at job time via Universal Auth |
+| **Syncs**        | Not restated here — the live inventory, and why GitHub Actions is not a sync, is [`SECRETS_MANAGEMENT.md` § 5](../../docs/internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs) |
 
 ### How It Works
 

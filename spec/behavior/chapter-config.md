@@ -6,7 +6,7 @@ Chapter configuration is the merge of **archetype defaults** with **per-chapter 
 
 Returns the merged chapter configuration: archetype defaults overlaid with per-chapter overrides.
 
-**Auth:** Bearer JWT, with chapter context resolved per [`multi-tenancy.md`](multi-tenancy.md) — the `active_chapter_id` claim is authoritative and `x-chapter-id` a legacy fallback — and membership required. Permission: `chapter-config:view`.
+**Auth:** Bearer JWT, with chapter context resolved per [`multi-tenancy.md`](multi-tenancy.md), and membership required. Permission: `chapter-config:view`.
 
 **Response shape:**
 

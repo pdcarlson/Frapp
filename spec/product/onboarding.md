@@ -7,7 +7,7 @@
 3. After authentication, enters chapter details (name, university).
 4. **Accepts Terms of Service and Privacy Policy** (required checkbox).
 5. API creates chapter with `subscription_status: incomplete`.
-6. Default system roles and default channels (#general, #announcements, #chapter-audit, #alumni) are seeded. Full seeded definitions: [`spec/behavior/onboarding.md`](../behavior/onboarding.md).
+6. Default system roles and default channels are seeded. Full seeded definitions: [`spec/behavior/rbac.md` § Role Lifecycle](../behavior/rbac.md#role-lifecycle) (roles) and [`spec/behavior/chat/README.md` § Channels](../behavior/chat/README.md#channels) (channels).
 
 Payment is **not** part of chapter *creation*: nothing in steps 1-6 touches Stripe, and the chapter lands at `incomplete`. Since [#2297](https://github.com/pdcarlson/Frapp/issues/2297) the **web** wizard then routes the founder to `/billing` so checkout is on the path rather than after it — a landing, not a gate, and #913's 14-day trial means it costs nothing on day zero. Mobile's wizard still ends on the tabs. Destination and rationale are owned by [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § First-Officer Onboarding Wizard; what follows is the checkout flow itself, wherever it is entered from:
 

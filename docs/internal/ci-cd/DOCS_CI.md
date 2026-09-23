@@ -6,7 +6,7 @@ Two workflows, one job each.
 
 - **Docs checks** (`.github/workflows/docs.yml`) — the `env-slugs` job, below.
 - **Links** (`.github/workflows/links.yml`) — lychee, offline, over `docs/`, `spec/`, `.claude/`,
-  `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `apps/web/AGENTS.md` and
+  `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `apps/web/AGENTS.md`, `apps/landing/AGENTS.md` and
   `.github/pull_request_template.md`: markdown links and heading anchors resolve. External URLs are
   never fetched.
 

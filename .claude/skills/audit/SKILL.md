@@ -176,8 +176,8 @@ Workflows with specific audit concerns (the full set is `.github/workflows/`):
 | Deploy (production) | `deploy-production.yml` | SHA must be an ancestor of `main` and CI-green, the migration replay and working-tree fence, the provider guardrail preflight, deploy-by-commit, `CANCELED` treated as failure |
 | Production guardrails | `production-guardrails.yml` | Render `frapp-api-prod` auto-deploy off, tracking `main`, health check path `/health`; Vercel `frapp-web` and `frapp-landing` not linked to Git |
 | Release | `release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
-| Docs | `docs.yml` | One job, `env-slugs`: Infisical environment slugs resolve, over the `SCAN_ROOTS` in `scripts/check-env-slugs.mjs`. Not a documentation gate. |
-| Links | `links.yml` | One job, `link-check`: offline lychee over markdown links and heading anchors; external URLs are never fetched |
+| Docs | `docs.yml` | Not a documentation gate — what its job checks: [`DOCS_CI.md` § What runs](../../../docs/internal/ci-cd/DOCS_CI.md#what-runs) |
+| Links | `links.yml` | Markdown links and heading anchors, offline — [`DOCS_CI.md` § What runs](../../../docs/internal/ci-cd/DOCS_CI.md#what-runs) |
 
 The guardrail settings live only in provider dashboards and fail open: if one drifts, merges to
 `main` can reach production ungated. Both Vercel projects are deliberately unlinked from Git

@@ -5,7 +5,7 @@
 **Auth provider:** Supabase Auth (email/password, magic link, Google, Apple).
 
 - **Multi-tenancy:** Every user belongs to one or more chapters (tenants). All data access is strictly scoped by `chapter_id`.
-- **RBAC:** Permissions are open-ended strings. Frapp publishes a system permissions catalog that the API enforces; chapters can define additional custom permission strings for channel gating and organizational use. **Custom permission strings are chapter-scoped — they cannot grant system-level or cross-chapter capabilities.** A chapter's custom `admin:all` (or any other string) applies only inside that chapter; the API never consults a chapter's custom permissions when authorizing platform or cross-chapter operations. Roles are chapter-scoped and fully customizable. Seven system roles are seeded on chapter creation with sensible defaults; [`spec/behavior/rbac.md`](../behavior/rbac.md) § Role Lifecycle names them and their exact seeded permission sets. Full permission catalog and check algorithm: [`spec/behavior/rbac.md`](../behavior/rbac.md).
+- **RBAC:** Permissions are open-ended strings. Frapp publishes a system permissions catalog that the API enforces; chapters can define additional custom permission strings for channel gating and organizational use. **Custom permission strings are chapter-scoped — they cannot grant system-level or cross-chapter capabilities.** A chapter's custom `admin:all` (or any other string) applies only inside that chapter; the API never consults a chapter's custom permissions when authorizing platform or cross-chapter operations. Roles are chapter-scoped and fully customizable. System roles are seeded on chapter creation with sensible defaults; [`spec/behavior/rbac.md` § Role Lifecycle](../behavior/rbac.md#role-lifecycle) names them and their exact seeded permission sets. Full permission catalog and check algorithm: [`spec/behavior/rbac.md`](../behavior/rbac.md).
 - **Permissions guard:** API middleware fetches the user's roles for the active chapter, flattens permissions, and checks against the `@RequirePermissions()` decorator on each endpoint.
 - **Fail-safe:** A user with no roles has zero permissions. The President system role holds the wildcard (`*`) granting all permissions.
 - **Presidency transfer:** Atomic operation — current President assigns the role to another member and removes it from themselves in a single transaction.
@@ -45,7 +45,7 @@
 
 - Every point change is recorded as a transaction in `point_transactions`. The web dashboard **Audit** tab loads a chapter-wide, cursor-paginated slice of those rows for officers with `points:view_all` (API: `GET /v1/points/transactions`; full rules in [`spec/behavior/points.md`](../behavior/points.md)).
 - Positive amount = reward; negative amount = fine/correction.
-- Categories: ATTENDANCE, ACADEMIC, SERVICE, FINE, MANUAL, STUDY.
+- Every transaction carries a category; the allowed set is the `category` column in [`spec/architecture/README.md` § Points & Events](../architecture/README.md#points--events).
 - A member's balance is the sum of their transactions.
 - Admins can manually adjust points with a required reason. Audit trail tracks which admin made the adjustment.
 - Anti-fraud: rate limiting on adjustments, anomaly flagging for large transactions, no self-award (enforced on `points:adjust`, task confirmation and service-hour approval — see [`points.md`](../behavior/points.md) § Anti-Fraud).
@@ -67,7 +67,7 @@
 - Realtime delivery via Supabase Realtime (Postgres changes subscription).
 - **Channels:** PUBLIC, PRIVATE, ROLE_GATED (gated by any permission string, including custom), DM (1-on-1), GROUP_DM (up to 10 members).
 - **Channel categories:** Named groups for organizing channels (display-only, like Discord).
-- **Default channels:** #general (public), #announcements (admin-post, all-read), #chapter-audit (public, read-only — the system-write audit feed), #alumni (role-gated to Alumni + active members). Full seeded definitions: [`spec/behavior/chat/README.md`](../behavior/chat/README.md) § Channels.
+- **Default channels:** seeded on every chapter at creation; the set, and each channel's type and gating, are defined in [`spec/behavior/chat/README.md` § Channels](../behavior/chat/README.md#channels).
 - **Messages support:** Markdown formatting, emoji reactions, file/image uploads (size-capped per [`content-validation.md` § 3](../../docs/internal/security/content-validation.md#3-size)), reply threads (reply-with-quote), edit, delete (soft), pinned messages (up to 50 per channel).
 - **Typing indicators** and **online/offline presence** via Supabase Realtime.
 - **Read receipts:** Last-read timestamp per channel per user.
@@ -121,7 +121,7 @@
 - Polls have a question, 2-10 options, optional expiration time, and single-choice or multi-choice mode.
 - Members in the channel vote; results visible in real-time.
 - Polls are a special message type within chat.
-- Chapter-wide poll **listing** with aggregate results (web dashboard) is a separate surface from channel voting: it requires `polls:view_all` in addition to baseline chapter read permissions. Default seeds place that permission on Treasurer, Vice President, and Secretary (President has `*`); it is not on the default Member role. See [`spec/behavior/polls.md`](../behavior/polls.md) and [`spec/ui/web-dashboard/README.md`](../ui/web-dashboard/README.md).
+- Chapter-wide poll **listing** with aggregate results (web dashboard) is a separate surface from channel voting: it requires `polls:view_all` in addition to baseline chapter read permissions. It is not on the default Member role; which seeded roles carry it: [`spec/behavior/rbac.md` § Role Lifecycle](../behavior/rbac.md#role-lifecycle). See [`spec/behavior/polls.md`](../behavior/polls.md) and [`spec/ui/web-dashboard/README.md`](../ui/web-dashboard/README.md).
 
 ## Member Directory
 

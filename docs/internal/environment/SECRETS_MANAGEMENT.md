@@ -157,9 +157,11 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. The workflows
 that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` with
 `method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
-`INFISICAL_CLIENT_SECRET` repository secrets. This is universal auth, not OIDC. Six workflows do
-this — `deploy-api.yml`, `deploy-production.yml`, `db-backup.yml`, `check-migration-drift.yml`,
-`migration-drift-gate.yml` and `staging-conformance.yml` — not `deploy-api.yml` alone.
+`INFISICAL_CLIENT_SECRET` repository secrets. This is universal auth, not OIDC. Every workflow that
+calls the composite action below does this — today `deploy-api.yml`, `deploy-production.yml`,
+`db-backup.yml`, `check-migration-drift.yml`, `migration-drift-gate.yml`, `staging-conformance.yml`
+and `production-auth-conformance.yml` (re-derive with
+`git grep -l 'actions/infisical-secrets' .github/workflows`) — not `deploy-api.yml` alone.
 
 That call is written once, in the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml)
 composite action, which every workflow needing secrets calls; no workflow spells out
@@ -290,7 +292,7 @@ much.
 
 > ⚠️ **`INFISICAL_MACHINE_IDENTITY_ID` wants the Client ID, not the identity ID.** An Infisical machine identity has an **ID** on its Details page and a separate **Client ID** inside its Universal Auth panel. Only the Client ID authenticates. The secret's name points at the wrong one, and pasting the Details-page ID yields `401 Invalid credentials` — indistinguishable at a glance from a revoked credential. This cost 71 days of dead deploys (#696).
 
-**Transitional (until Infisical GitHub Action injection is wired):**
+**Not GitHub secrets — injected from Infisical at job time:**
 
 The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
 
@@ -300,8 +302,6 @@ The deploy workflows inject these from Infisical at runtime through [`infisical-
 | `SUPABASE_PROJECT_REF`   | Staging project ref                     | Production project ref          |
 | `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL                 | Production deploy hook URL      |
 | `API_HEALTHCHECK_URL`    | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |
-
-Once the `@infisical/secrets-action` is integrated into the deploy workflow, these transitional secrets can be removed from GitHub and injected from Infisical at runtime.
 
 #### Troubleshooting: `Deploy API` fails with `401 Invalid credentials`
 
