@@ -264,9 +264,11 @@ set search_path = public, pg_temp
 resolution order instead of its implicit position at the front. `search_path = pg_temp, public` is
 not a partial fix — it is the original defect spelled out.
 
-This is enforced, not conventional: `scripts/check-pglite-migrations.mjs` applies every migration and
-fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `public` does not pin
-`pg_temp` last. Fixed repo-wide in #985 (#983 fixed the first instance).
+This is checked, not just conventional: `scripts/check-pglite-migrations.mjs` applies every migration
+and fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `public` does not pin
+`pg_temp` last. Whether that job blocks a merge is set in
+[the branch protection runbook § Required Status Checks](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
+(#2538); treat a red run as blocking in review. Fixed repo-wide in #985 (#983 fixed the first instance).
 
 ### The `chat_messages` read surface — accepted, with the bound named
 

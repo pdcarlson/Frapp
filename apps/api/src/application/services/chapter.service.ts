@@ -349,9 +349,8 @@ export class ChapterService {
     // they had never picked. One value cannot have two different validities
     // depending on which door it came through.
     //
-    // Legibility is still guaranteed where it matters: `resolveChapterAccentColor`
-    // re-validates per surface at render time and substitutes an accessible
-    // fallback, so an illegible stored accent is never actually painted.
+    // Legibility is handled where the accent is painted, not on save:
+    // `spec/behavior/branding.md` § Accent Color owns how.
 
     // `branding.colors.accent` is the authoritative accent (#795) and this
     // column mirrors it, so a Settings edit — the one path that writes the

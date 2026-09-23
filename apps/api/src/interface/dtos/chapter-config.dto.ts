@@ -29,8 +29,9 @@ const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
  * (backgrounds, borders, sidebar) is fixed rather than branded:
  * `spec/ui/design-system/accent-engine.md` §1 and §5.
  *
- * Format-validated but NOT contrast-gated — the raw seed never paints UI.
- * Reasoning and the measured impact of gating it: `spec/behavior/branding.md`.
+ * Format-validated but NOT contrast-gated. Reasoning, the measured impact of
+ * gating it, and what legibility is and isn't guaranteed:
+ * `spec/behavior/branding.md` § Accent Color.
  *
  * The format check is not cosmetic. This was a bare `@IsString()`, so a value
  * like `"crimson"` reached the engine, which silently substituted a fallback —

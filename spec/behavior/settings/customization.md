@@ -6,7 +6,7 @@ Behavior rules for the customization-heavy settings tabs (Accent, Roles, Fields,
 
 - A chapter sets **one colour**: the accent seed. Every accent role is derived from it, and the neutral ladder — backgrounds, borders, sidebar, text — is fixed rather than branded ([`../../ui/design-system/accent-engine.md`](../../ui/design-system/accent-engine.md) §1 and §5). A second **dark** colour existed until the #920 slice-9 cutover, which deleted the legacy engine it fed; #541 tracked building a picker for it and is obsolete. Accent-color rules, brand boundaries, and logo upload (the shared `image` kind in `@repo/validation`, not an Accent-tab-specific allowlist) are canon in [`../branding.md`](../branding.md).
 - Saving recomputes the chapter's `theme_palette` **server-side** and the client refetches and re-applies the accent roles immediately — no full reload.
-- **WCAG:** the accent roles that paint text are contrast-guaranteed at generation time rather than checked here, so there is no per-token save-time gate and no inline fallback warning ([`../../ui/design-system/accent-engine.md`](../../ui/design-system/accent-engine.md) §8). The seed itself is format-validated, not contrast-gated ([`../branding.md`](../branding.md)). Derivation is archetype-agnostic.
+- **WCAG:** a save is never blocked on contrast. Which accent roles are contrast-guaranteed is [`../../ui/design-system/accent-engine.md`](../../ui/design-system/accent-engine.md) §8's; what the tab discloses instead (the draft preview, and any sub-AA check the save reports) is in §6's Persistence row and [`../branding.md`](../branding.md) § Accent Color, which also owns seed validation. Derivation is archetype-agnostic.
 
 ## Roles Tab
 

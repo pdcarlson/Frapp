@@ -441,7 +441,7 @@ is why it was P2 and not P1. This is also what Supabase's advisor reports as "Fu
 Mutable".
 
 ### Prevention
-The standing rule this fix left behind, and the CI check that enforces it:
+The standing rule this fix left behind, and the CI check for it:
 [`AUTHORIZATION_MODEL.md` § `SECURITY DEFINER` predicates must pin `pg_temp` last](AUTHORIZATION_MODEL.md#security-definer-predicates-must-pin-pg_temp-last).
 That check reads the applied catalog rather
 than scanning migration SQL, because migrations are immutable — the three files that introduced the

@@ -49,6 +49,8 @@ Every accent role maps to a fixed step of the generated scale. Components consum
 | `accent-text` | step 11 | Accent-colored text and icons on neutral or subtle-bg surfaces |
 | `on-primary` | contrast color | Text/icons on `accent-primary` |
 
+`accent-primary` is the seed's own colour in almost every case: the generator returns the seed as step 9 unless it sits within ΔE_OK 0.25 of step 1 (a near-background seed, such as near-black), and then takes its own generated step 9 instead (`getStep9Colors` in `packages/chapter-theme/src/vendor/generate-radix-colors.ts`). §1's rule is about references, so it still holds: no component names the seed hex.
+
 The alpha scale backs translucent variants of the same roles (e.g. a ring glow) where a solid step would occlude content; alpha steps map 1:1 to their solid steps.
 
 ## 3. Default seed
@@ -165,7 +167,7 @@ today.
 
 ## 8. Validation
 
-- The engine guarantees contrast **by construction** for its mapped roles: the Radix generator produces step 11 as legible text on steps 1–3 surfaces. No runtime per-token fallback (the legacy bronze-substitution pattern) applies to engine output.
+- The engine guarantees contrast **by construction** for its **text** roles: the Radix generator produces step 11 as legible text on steps 1–3 surfaces, and `on-primary` is corrected below. The solid `accent-primary` fill is held to no ratio against its surface (#2541). No runtime per-token fallback (the legacy bronze-substitution pattern) applies to engine output.
 - **`on-primary` needs one correction to make that true.** The generator's own contrast color is *not* reliably legible on step 9 for light seeds in dark appearance — it returns white for `#C9A56F` (2.31:1) and `#FF69B4` (2.65:1), where black would score 9.10:1 and 7.93:1. This is not a corner case: `#C9A56F` is the accent of 45 of the 50 chapters in `supabase/seed/chapter_directory.csv`. So `deriveSignetPalette` keeps the generator's choice when it clears AA — which it does for the house seed, `#292109` at 8.37:1 — and otherwise substitutes whichever of black or white scores higher. That substitution cannot itself fail: the two curves cross at luminance ≈0.179 where both score ≈4.58:1, so the better of the pair is always ≥4.5:1 for any color.
 - Gate: accent-derived **text** roles MUST meet WCAG AA 4.5:1 on the surfaces they are specified for — `accent-text` (step 11) on the neutral backgrounds and on `accent-subtle-bg`, and `on-primary` on `accent-primary`. This is asserted at generation time and reported on `contrastChecks`, and pinned by `packages/chapter-theme/src/signet.spec.ts` across the 18 distinct colors the seed directory has carried, plus the house seed. That corpus is **frozen in the spec, not read from the CSV** — #1225 dropped the dead `default_colors.dark` half, which is where 13 of the 18 came from, so a list derived from the file today would cover 5. A generator upgrade is the realistic way it breaks, which is why the generator is vendored rather than floated.
-- Save-time validation of the seed itself (format, and legacy light-mode contrast checks) is behavior canon in [`../../behavior/branding.md`](../../behavior/branding.md).
+- Save-time validation of the seed itself (format only; there is no contrast gate on save) is behavior canon in [`../../behavior/branding.md`](../../behavior/branding.md).
