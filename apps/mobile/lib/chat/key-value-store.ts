@@ -10,12 +10,16 @@
  * - `set` / `remove` update the mirror synchronously, then fire the AsyncStorage
  *   write without awaiting it.
  *
- * That is safe **for this port's only consumer**. `chat-core` uses it for one
- * thing: the `chat:lastSeen:<channelId>` backfill cursor
- * (`realtime-manager.ts`). A missed read widens the backfill window — the
- * manager refetches from further back and dedupes — rather than losing a
- * message, so a cold mirror costs bandwidth, not data. Do not add a consumer
- * with stricter durability needs without revisiting this.
+ * That is safe **only for reads that may miss**, and only the
+ * `chat:lastSeen:<channelId>` backfill cursor (`realtime-manager.ts`) is
+ * hydrated. A missed cursor read widens the backfill window — the manager
+ * refetches from further back and dedupes — rather than losing a message, so a
+ * cold mirror costs bandwidth, not data. `chat-core` also reads heavy-command
+ * notices through this port (`heavy-command-notices.ts`), which mobile never
+ * writes because it has no slash dispatch, so those reads always miss
+ * harmlessly. Do not add a consumer with stricter durability needs, or start
+ * writing notices here, without revisiting this (`spec/ui/mobile/patterns.md`
+ * § Chat).
  *
  * MMKV would give a genuinely synchronous store and remove the seam, but it
  * needs a native build and mobile currently runs in Expo Go
@@ -29,9 +33,9 @@ import type { KeyValueStore } from "@repo/chat-core/adapters";
 /**
  * Narrowed from `"chat:"` in #2228.
  *
- * The mirror's whole soundness argument is that its only consumer is the
- * `chat:lastSeen:` backfill cursor, where a stale read widens a backfill
- * instead of losing data. A `"chat:"` sweep was harmless while that was the
+ * The mirror's whole soundness argument is that the only key it must serve
+ * across a restart is the `chat:lastSeen:` backfill cursor, where a stale read
+ * widens a backfill instead of losing data. A `"chat:"` sweep was harmless while that was the
  * only `chat:`-prefixed key — but #2228 put member-scoped drafts and queued
  * message bodies in the same namespace, and this hydrate would have copied
  * every member's unsent text into a process-wide `Map` with no scope, no

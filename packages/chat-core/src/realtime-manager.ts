@@ -3,8 +3,10 @@
  *
  * Responsibilities:
  *   - Per visible channel: Postgres Changes on `chat_messages` (filtered by
- *     channel_id) → `mergeServerRow` into the normalized cache. Also a
- *     Broadcast endpoint per channel for typing + presence.
+ *     channel_id) → `mergeServerRow` into the normalized cache. A merged row
+ *     (live or backfilled) also evicts the persisted heavy-command notice its
+ *     sender filed under its `client_message_id` (`heavy-command-notices.ts`,
+ *     #1909). Also a Broadcast endpoint per channel for typing + presence.
  *   - One global Postgres Changes subscription on `chat_message_actions` (no
  *     `channel_id` column on that table to filter by) — events are dispatched
  *     to whichever subscribed channel cache holds the message. Reactions on
@@ -72,6 +74,7 @@ import {
   isTopicOccupied as isRealtimeTopicOccupied,
   releaseTopic as releaseRealtimeTopic,
 } from "./topic-registry";
+import { dropNotices } from "./heavy-command-notices";
 
 export type ConnectionStatus = "live" | "polling" | "reconnecting" | "offline";
 
@@ -111,6 +114,26 @@ export interface ManagerContext {
    */
   kv?: KeyValueStore;
   net?: NetworkState;
+}
+
+/**
+ * A `postgres_changes` row, stripped of anything that would let it read as
+ * server-evaluated for the viewer (#2315).
+ *
+ * `sender_blocked` is how a REST row says the server ran the viewer's block
+ * list over it, and its presence is what `normalizeRow` turns into
+ * `ChatMessage._blockEvaluated`. An echo is the raw table row, delivered with
+ * no viewer attached, so it can vouch for nothing. It carries no such key
+ * today — `chat_messages` has no such column — which is exactly why this is
+ * enforced here rather than assumed: the one path that knows a row arrived by
+ * echo is the one that must say so, and an echo that read as evaluated would
+ * render in the clear while the block list is loading or unavailable.
+ */
+function asEcho(row: RawChatMessage): RawChatMessage {
+  if (!("sender_blocked" in row)) return row;
+  const echo = { ...row };
+  delete echo.sender_blocked;
+  return echo;
 }
 
 interface PerChannelState {
@@ -452,10 +475,14 @@ class ChatRealtimeManager {
         // time. History arrives through the ordinary channel read, in order.
         if (next?.kind === "imported") return;
         if (next && next.id) {
-          // INSERT / UPDATE — full row is present and authoritative.
+          // INSERT / UPDATE — full row is present and authoritative about its
+          // content, and says nothing about the viewer's block list: this path
+          // has no viewer. `asEcho` makes that explicit (#2315).
+          const echo = asEcho(next);
           this.patchCache(state.channelId, (cache) =>
-            mergeServerRow(cache, next),
+            mergeServerRow(cache, echo),
           );
+          this.settleNotices(state.channelId, [next]);
           this.writeLastSeen(state.channelId, next.id);
           return;
         }
@@ -737,6 +764,8 @@ class ChatRealtimeManager {
         }
         return next;
       });
+      // A card that arrived while Realtime was down lands here instead.
+      this.settleNotices(channelId, rows);
       // Advance the cursor to the newest row we just merged.
       let newest = since;
       let newestTs = "";
@@ -749,6 +778,38 @@ class ChatRealtimeManager {
       if (newest) this.writeLastSeen(channelId, newest);
     } catch {
       // A backfill failure is non-fatal; live subscription will catch up.
+    }
+  }
+
+  /**
+   * Evict any persisted heavy-command notice these rows confirm (#1909): the
+   * card a heavy command (`/points`, `/task`, `/event`, `/hours`,
+   * `/<vocab> add`) was waiting on. Now, not at the next load: by then the card
+   * may be outside the loaded window, and the stored entry would come back as
+   * a stale Retry.
+   *
+   * Addressed by each row's sender. A notice is filed under the member who
+   * dispatched it, and the server posts that command's card as them.
+   *
+   * Guarded for the same reason as `readLastSeen`/`writeLastSeen`: this runs
+   * inside the frame dispatch, after the cache merge, and an injected store is
+   * not trusted to be no-throw.
+   */
+  private settleNotices(channelId: string, rows: RawChatMessage[]): void {
+    try {
+      const bySender = new Map<string, string[]>();
+      for (const row of rows) {
+        if (!row.sender_id || !row.client_message_id) continue;
+        const ids = bySender.get(row.sender_id) ?? [];
+        ids.push(row.client_message_id);
+        bySender.set(row.sender_id, ids);
+      }
+      for (const [senderId, ids] of bySender) {
+        dropNotices(channelId, senderId, ids, this.kvStore());
+      }
+    } catch {
+      // A missed eviction leaves an entry the next load prunes if the card is
+      // in its window; losing the cursor write after it would cost more.
     }
   }
 

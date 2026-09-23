@@ -6,9 +6,12 @@ import {
   discardOutboxRow,
   editMessage,
   hydrateOutboxIntoCache,
+  insertLocalPlaceholder,
   markLocalRecorded,
+  markLocalUnconfirmed,
   POSTED_OUTBOX_WARNING,
   react,
+  removeLocalPlaceholder,
   retryOutboxRow,
   sendMessage,
   unreact,
@@ -17,13 +20,23 @@ import {
   type ToastFn,
 } from "./chat-client";
 import type { OutboxRow, OutboxStore } from "./adapters";
-import { persistRecordedNotice, readRecordedNotices } from "./recorded-notices";
+import {
+  DURABLE_NOTICE_MARGIN_MS,
+  persistNotice,
+  readNotices,
+  UNCONFIRMED_NOTICE_TTL_MS,
+} from "./heavy-command-notices";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import { assertContentFreeProperties } from "@repo/validation";
 import { chatMessagesKey, type ChannelCache } from "./types";
 import { emptyCache, mergeServerRows, selectMessages } from "./cache";
 import { memoryStore } from "./test/memory-store";
 import { stubOutbox } from "./test/outbox-stub";
+import {
+  pointsReplay,
+  recordedNotice,
+  unconfirmedNotice,
+} from "./test/notices";
 
 /**
  * Covers #999: a rejected react/unreact must reach `ctx.onError`, the
@@ -848,17 +861,7 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
 
   it("restores a recorded row when the outbox is empty", async () => {
     const kv = memoryStore();
-    persistRecordedNotice(
-      {
-        clientMessageId: "cm-1",
-        channelId: "chan-1",
-        senderId: "user-1",
-        content: "Granting 5 points…",
-        note: "Points recorded — the chat card didn't post. Don't run this command again.",
-        createdAt: "2026-09-09T00:00:00.000Z",
-      },
-      kv,
-    );
+    persistNotice(recordedNotice(), kv);
     const queryClient = new QueryClient();
     await hydrateOutboxIntoCache(
       buildCtx({ queryClient, outbox: stubOutbox(), kv }),
@@ -911,10 +914,51 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
   });
 });
 
+describe("hydrateOutboxIntoCache — unconfirmed notices (#1909)", () => {
+  it("restores the viewer's unconfirmed row with its Retry", async () => {
+    const kv = memoryStore();
+    persistNotice(unconfirmedNotice(), kv);
+    const queryClient = new QueryClient();
+
+    await hydrateOutboxIntoCache(
+      buildCtx({ queryClient, outbox: stubOutbox(), kv }),
+      "chan-1",
+    );
+
+    const row = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    )?.byId["cm-1"];
+    expect(row?._status).toBe("unconfirmed");
+    expect(row?._replay).toEqual(pointsReplay());
+  });
+
+  it("does not restore another member's unconfirmed row", async () => {
+    const kv = memoryStore();
+    persistNotice(unconfirmedNotice({ senderId: "user-9" }), kv);
+    const queryClient = new QueryClient();
+
+    await hydrateOutboxIntoCache(
+      buildCtx({ queryClient, outbox: stubOutbox(), kv }),
+      "chan-1",
+    );
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    expect(cache?.byId["cm-1"]).toBeUndefined();
+  });
+});
+
+/** A channel cache as a REST rebuild leaves it: present, placeholder gone. */
+function rebuiltChannel(ctx: ChatActionContext): void {
+  ctx.queryClient.setQueryData(chatMessagesKey("chan-1"), emptyCache());
+}
+
 describe("markLocalRecorded (#1789)", () => {
   it("upserts and persists when the placeholder was clobbered", () => {
     const kv = memoryStore();
     const ctx = buildCtx({ kv });
+    rebuiltChannel(ctx);
     markLocalRecorded(ctx, {
       channelId: "chan-1",
       clientMessageId: "cm-1",
@@ -928,12 +972,268 @@ describe("markLocalRecorded (#1789)", () => {
     expect(row?._status).toBe("recorded");
     expect(row?._replay).toBeUndefined();
     expect(row?.content).toBe("Granting 5 points…");
-    expect(readRecordedNotices("chan-1", kv)).toEqual([
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([
       expect.objectContaining({
+        status: "recorded",
         clientMessageId: "cm-1",
         content: "Granting 5 points…",
       }),
     ]);
+  });
+
+  // With no channel query at all (garbage-collected mid-request), seeding one
+  // would hand the channel a one-row cache that `staleTime: Infinity` never
+  // refetches. The notice on disk restores the row on the next load.
+  it("persists without seeding a cache for a channel that has none", () => {
+    const kv = memoryStore();
+    const ctx = buildCtx({ kv });
+    markLocalRecorded(ctx, {
+      channelId: "chan-1",
+      clientMessageId: "cm-1",
+      note: "Points recorded — the chat card didn't post. Don't run this command again.",
+      content: "Granting 5 points…",
+    });
+    expect(
+      ctx.queryClient.getQueryData(chatMessagesKey("chan-1")),
+    ).toBeUndefined();
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
+  });
+
+  // A replay's card re-post can fail after the ORIGINAL card already landed
+  // (a reconnect refetch while the replay was in flight). The card is the
+  // record; a "card missing" row beside it would contradict it.
+  it("draws nothing beside a card that is already confirmed", () => {
+    const kv = memoryStore();
+    persistNotice(unconfirmedNotice(), kv);
+    const ctx = buildCtx({ kv });
+    ctx.queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "server-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "+5 points",
+          kind: "points",
+          client_message_id: "cm-1",
+          created_at: "2026-09-09T00:00:01.000Z",
+        },
+      ]),
+    );
+
+    markLocalRecorded(ctx, {
+      channelId: "chan-1",
+      clientMessageId: "cm-1",
+      note: "Points recorded — the chat card didn't post. Don't run this command again.",
+      content: "Granting 5 points…",
+    });
+
+    const rows = selectMessages(
+      ctx.queryClient.getQueryData(chatMessagesKey("chan-1")),
+    );
+    expect(rows.map((row) => row._status)).toEqual(["confirmed"]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
+  });
+
+  // A slow replay can land after the channel's cache was garbage-collected.
+  // The stored notice still knows which grant it was and where it sat.
+  it("keeps the stored content and timestamp when there is no live row", () => {
+    const kv = memoryStore();
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    persistNotice(unconfirmedNotice({ createdAt }), kv);
+    const ctx = buildCtx({ kv });
+
+    markLocalRecorded(ctx, {
+      channelId: "chan-1",
+      clientMessageId: "cm-1",
+      note: "Points recorded — the chat card didn't post. Don't run this command again.",
+    });
+
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([
+      expect.objectContaining({
+        status: "recorded",
+        content: "Granting 5 points…",
+        createdAt,
+      }),
+    ]);
+  });
+});
+
+describe("markLocalUnconfirmed (#1909)", () => {
+  const NOTE = "Not confirmed — these points may or may not have been recorded.";
+
+  function placeholder(ctx: ChatActionContext): void {
+    insertLocalPlaceholder(ctx, {
+      channelId: "chan-1",
+      clientMessageId: "cm-1",
+      content: "Granting 5 points…",
+    });
+  }
+
+  it("persists the row with the replay a Retry sends", () => {
+    const kv = memoryStore();
+    const ctx = buildCtx({ kv });
+    placeholder(ctx);
+
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
+      placement: "optimistic",
+      durable: true,
+    });
+
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([
+      expect.objectContaining({
+        status: "unconfirmed",
+        clientMessageId: "cm-1",
+        senderId: "user-1",
+        content: "Granting 5 points…",
+        note: NOTE,
+        replay: pointsReplay(),
+      }),
+    ]);
+  });
+
+  // A reconnect refetch that raced the request already dropped the
+  // placeholder. Reporting "no row" there left the officer nothing to press.
+  it("redraws a placeholder a REST rebuild already dropped", () => {
+    const kv = memoryStore();
+    const ctx = buildCtx({ kv });
+    placeholder(ctx);
+    rebuiltChannel(ctx);
+
+    const outcome = markLocalUnconfirmed(
+      ctx,
+      pointsReplay(),
+      NOTE,
+      "Granting 5 points…",
+    );
+
+    expect(outcome).toEqual({ placement: "optimistic", durable: true });
+    const row = ctx.queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    )?.byId["cm-1"];
+    expect(row?._status).toBe("unconfirmed");
+    expect(row?._replay).toEqual(pointsReplay());
+    expect(row?.content).toBe("Granting 5 points…");
+  });
+
+  it("reports absent, and persists, when the channel has no cache to draw in", () => {
+    const kv = memoryStore();
+    const ctx = buildCtx({ kv });
+
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
+      placement: "absent",
+      durable: true,
+    });
+    expect(
+      ctx.queryClient.getQueryData(chatMessagesKey("chan-1")),
+    ).toBeUndefined();
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
+  });
+
+  it("persists nothing without a viewer to attribute it to", () => {
+    const kv = memoryStore();
+    const ctx = buildCtx({ kv, userId: null });
+    rebuiltChannel(ctx);
+
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
+      placement: "absent",
+      durable: false,
+    });
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
+  });
+
+  // The echo re-keyed the row: the write committed and carded. A replay's
+  // stored handle is settled and must not come back on the next load.
+  it("drops a stored handle when the card already confirmed the row", () => {
+    const kv = memoryStore();
+    persistNotice(unconfirmedNotice(), kv);
+    const ctx = buildCtx({ kv });
+    ctx.queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "server-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "+5 points",
+          kind: "points",
+          client_message_id: "cm-1",
+          created_at: "2026-09-09T00:00:01.000Z",
+        },
+      ]),
+    );
+
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE).placement).toBe(
+      "confirmed",
+    );
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
+  });
+
+  // A Retry pressed more than a day after the dispatch keeps the dispatch's
+  // timestamp, so the next rebuild prunes the entry rather than restoring it.
+  // Reporting it durable would promise a Retry that is about to vanish.
+  // The reconnect that follows the outage comes within minutes, so an entry
+  // that close to its bound is as good as pruned by it.
+  it.each([
+    ["past the age bound", UNCONFIRMED_NOTICE_TTL_MS + 60_000, false],
+    [
+      "inside the durability margin",
+      UNCONFIRMED_NOTICE_TTL_MS - DURABLE_NOTICE_MARGIN_MS / 2,
+      false,
+    ],
+    [
+      "clear of the margin",
+      UNCONFIRMED_NOTICE_TTL_MS - DURABLE_NOTICE_MARGIN_MS * 2,
+      true,
+    ],
+  ])("reports a row %s as durable: %s", (_label, ageMs, durable) => {
+    const kv = memoryStore();
+    const ctx = buildCtx({ kv });
+    placeholder(ctx);
+    const key = chatMessagesKey("chan-1");
+    const cache = ctx.queryClient.getQueryData<ChannelCache>(key)!;
+    ctx.queryClient.setQueryData<ChannelCache>(key, {
+      ...cache,
+      byId: {
+        ...cache.byId,
+        "cm-1": {
+          ...cache.byId["cm-1"]!,
+          created_at: new Date(Date.now() - ageMs).toISOString(),
+        },
+      },
+    });
+
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
+      placement: "optimistic",
+      durable,
+    });
+  });
+
+  // Blocked or full storage: the row is on screen but only as durable as this
+  // session's cache, and the caller must not promise it survives a reload.
+  it("reports a row it could not persist as not durable", () => {
+    const kv = memoryStore();
+    const ctx = buildCtx({ kv: { ...kv, set: () => {} } });
+    placeholder(ctx);
+
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
+      placement: "optimistic",
+      durable: false,
+    });
+  });
+});
+
+describe("removeLocalPlaceholder (#1909)", () => {
+  // A resolved or spent retry clears its row through here; its handle has to
+  // go with it, or the next rebuild restores a Retry for a settled request.
+  it("drops the row's stored notice with it", () => {
+    const kv = memoryStore();
+    persistNotice(unconfirmedNotice(), kv);
+    const ctx = buildCtx({ kv });
+
+    removeLocalPlaceholder(ctx, "chan-1", "cm-1");
+
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
   });
 });
 
