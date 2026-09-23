@@ -95,7 +95,26 @@ export function mergeServerRow(
   // carried from `prior`. A pin/edit UPDATE echo of a server-masked row writes
   // the raw, unmasked content; keeping the prior row's "the server evaluated
   // this" would vouch for content the server never saw (#2315 defect 5).
-  byId[serverKey] = { ...incoming, actions, reactions };
+  //
+  // One thing is carried: the server's *verdict* that it masked this message
+  // for the viewer. The echo's row lands as usual — unevaluated, with its own
+  // content and pin/edit/delete state — but keeps `sender_blocked: true`, so
+  // the client still knows the server withheld this sender's words here.
+  // Dropping it left the client's own list as the only guard, and a list that
+  // read `ready` but predated a block made on another device showed a pinned
+  // or edited message from a blocked member in full. A later REST read of the
+  // row is the server's answer again and replaces it outright.
+  const overwritten = cache.byId[serverKey];
+  const carriesMask =
+    overwritten?.sender_blocked === true &&
+    !incoming._blockEvaluated &&
+    overwritten.sender_id === incoming.sender_id;
+  byId[serverKey] = {
+    ...incoming,
+    ...(carriesMask ? { sender_blocked: true } : {}),
+    actions,
+    reactions,
+  };
   const next: ChannelCache = { ...cache, byId, order };
   return { ...next, order: withOrderedKey(next, serverKey) };
 }

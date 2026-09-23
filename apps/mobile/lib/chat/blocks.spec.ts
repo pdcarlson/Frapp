@@ -99,9 +99,11 @@ function echoRow(
     author_name: senderId === null ? "Discord Dan" : null,
     content: `body ${id}`,
     kind: "text",
-    // Realtime's untouched `timestamptz` shape — space, `+00`. Sorts *below*
-    // every REST timestamp above as a string, which is exactly what made a
-    // watermark compare vouch for it. Nothing here may care.
+    // Postgres's text `timestamptz` shape — space, `+00` — which realtime-js
+    // would pass through untouched. (Local Realtime v2.113.4 actually sends the
+    // REST shape; see the spec's 2026-09-23 correction.) It sorts *below*
+    // every REST timestamp above as a string, so a watermark compare would
+    // vouch for it. Nothing here may care.
     created_at: "2026-09-15 18:05:12.4+00",
     ...overrides,
   };
@@ -232,9 +234,12 @@ describe("classifyMessage", () => {
       ).toBe("tombstone");
     });
 
-    it("an UPDATE echo over a masked row is not vouched for by the masked copy", () => {
+    it("an UPDATE echo over a masked row never shows the words the mask withheld", () => {
       // A pin by any `channels:manage` holder writes the raw row back over the
-      // server-masked one (#2315 defect 5).
+      // server-masked one (#2315 defect 5). `mergeServerRow` carries the
+      // server's verdict onto it, so it stays a tombstone in every list state —
+      // including a ready list that predates a block made on another device,
+      // which showed it in full before the carry.
       let cache = mergeServerRow(
         emptyCache(),
         restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
@@ -244,10 +249,50 @@ describe("classifyMessage", () => {
         echoRow("m1", BLOCKED, { is_pinned: true, content: "the real words" }),
       );
       const [pinned] = selectMessages(cache);
-      expect(classifyMessage(pinned!, ready([BLOCKED]), VIEWER)).toBe(
-        "tombstone",
+      for (const blockState of [
+        ready([BLOCKED]),
+        ready(),
+        loading(),
+        unavailable(),
+        unavailable([], { cleared: ["m1"] }),
+      ]) {
+        expect(classifyMessage(pinned!, blockState, VIEWER)).toBe("tombstone");
+      }
+    });
+
+    it("an echo that carried a mask shows once this client confirmed the unblock", () => {
+      let cache = mergeServerRow(
+        emptyCache(),
+        restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
       );
-      expect(classifyMessage(pinned!, unavailable(), VIEWER)).toBe("held");
+      cache = mergeServerRow(
+        cache,
+        echoRow("m1", BLOCKED, { content: "edited after the unblock" }),
+      );
+      const [edited] = selectMessages(cache);
+      for (const blockState of [
+        ready([], { unblocked: [BLOCKED] }),
+        unavailable([], { unblocked: [BLOCKED] }),
+      ]) {
+        expect(classifyMessage(edited!, blockState, VIEWER)).toBe("visible");
+      }
+      // …unless a block made since outranks it.
+      expect(
+        classifyMessage(edited!, ready([BLOCKED], { unblocked: [] }), VIEWER),
+      ).toBe("tombstone");
+    });
+
+    it("a carried mask is never remembered as seen, so a later outage cannot surface it", () => {
+      let cache = mergeServerRow(
+        emptyCache(),
+        restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
+      );
+      cache = mergeServerRow(
+        cache,
+        echoRow("m1", BLOCKED, { is_pinned: true, content: "the real words" }),
+      );
+      const { rows } = applyBlockList(selectMessages(cache), ready(), VIEWER);
+      expect(rowsToRemember(rows, VIEWER, true)).toEqual([]);
     });
   });
 

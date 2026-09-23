@@ -204,7 +204,10 @@ export interface ChatMessage {
    * would put "is it there?" in front of every reader.
    *
    * Meaningful only alongside {@link ChatMessage._blockEvaluated}: on a row the
-   * server never evaluated this is `false` by default, not by verdict.
+   * server never evaluated, `false` is a default, not a verdict. `true` on such
+   * a row is a verdict carried over: `mergeServerRow` keeps it when an echo
+   * overwrites a copy the server masked, so the echo's raw body still reads as
+   * one the server withheld from this viewer.
    */
   sender_blocked: boolean;
   /**
@@ -218,12 +221,14 @@ export interface ChatMessage {
    * (the initial page, the reconnect backfill, the polling fallback) carry it on
    * every row. `mergeServerRow` replaces a cached row wholesale, so a later echo
    * of an evaluated row — a pin, an edit, a duplicate INSERT — clears this back
-   * to `false`, which is right: the raw row it wrote is unmasked content.
+   * to `false`, which is right: the raw row it wrote is unmasked content. If
+   * the overwritten row was server-*masked*, `mergeServerRow` carries its
+   * `sender_blocked: true` onto the echo (still unevaluated), because the
+   * echo's body is exactly what the mask withheld.
    *
-   * Never derive this from `created_at`. REST and Realtime serialize
-   * `timestamptz` differently (`2026-09-15T18:00:00.123456+00:00` vs
-   * `2026-09-15 18:05:12.4+00`), so a watermark compare silently misclassifies,
-   * and a timestamp says when a row was written, never how it arrived.
+   * Never derive this from `created_at`: a timestamp says when a row was
+   * written, never how it arrived, and an UPDATE echo re-delivers a row under
+   * the same `created_at` it was read with.
    *
    * `_`-prefixed because it is client-derived state, not a column. A consumer
    * that renders a row with this `false` must apply its own block list first
@@ -377,6 +382,11 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
  * server evaluated. Emitting it unconditionally would launder an unevaluated
  * Realtime echo into a "server-vouched" row on the way back through
  * `normalizeRow` — failing open on the block list (#2315).
+ *
+ * A verdict `mergeServerRow` carried onto an echo (unevaluated, with
+ * `sender_blocked: true`) has no wire form: emitting the flag would claim the
+ * server evaluated a raw body. So a persisted copy of one rehydrates as a plain
+ * unevaluated echo, and a client restoring rows cannot rely on the carry.
  */
 export function toRawRow(message: ChatMessage): RawChatMessage {
   return {

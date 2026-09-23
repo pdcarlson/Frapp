@@ -23,9 +23,9 @@
  * silently stops masking the day it changes. `blocks.spec.ts` pins that.
  *
  * **Nothing here reads `created_at` either.** A timestamp says when a row was
- * written, not how it reached the cache, and REST and Realtime serialize
- * `timestamptz` differently — the watermark design this replaced was a no-op
- * for exactly that reason (#2315).
+ * written, not how it reached the cache — an UPDATE echo re-delivers a row
+ * under the `created_at` it was read with — so a watermark can only proxy for
+ * provenance, and the design this replaced failed on that proxy (#2315).
  */
 
 import { mergeServerRow } from "@repo/chat-core/cache";
@@ -87,6 +87,11 @@ export function isBlockableSender(senderId: string | null): senderId is string {
  * 1. The viewer's own message is always visible — you cannot block yourself.
  * 2. A row the server evaluated and masked is a tombstone whatever the list
  *    now says: its content was withheld, so there is nothing else to draw.
+ *    So is an echo that overwrote such a row — `mergeServerRow` carries the
+ *    server's `sender_blocked` onto it — unless this client has since
+ *    confirmed unblocking the sender. Its body is exactly what the mask
+ *    withheld, and a list that reads ready may predate a block made on
+ *    another device.
  * 3. A sender nobody can block (imported, system) cannot be hidden by a list.
  * 4. A sender on the list is a tombstone on **every** path — including a row
  *    the server cleared before the block was made, and a row cleared earlier
@@ -108,7 +113,10 @@ export function classifyMessage(
 ): MessageVisibility {
   const sender = message.sender_id;
   if (viewerId !== null && sender === viewerId) return "visible";
-  if (message._blockEvaluated && message.sender_blocked) return "tombstone";
+  if (message.sender_blocked) {
+    if (message._blockEvaluated) return "tombstone";
+    if (sender === null || !blockState.unblocked.has(sender)) return "tombstone";
+  }
   if (!isBlockableSender(sender)) return "visible";
   if (blockState.ids.has(sender)) return "tombstone";
   if (message._blockEvaluated) return "visible";
