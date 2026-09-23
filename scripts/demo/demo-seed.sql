@@ -34,16 +34,24 @@ BEGIN;
 -- @settings
 
 -- ── Reset ────────────────────────────────────────────────────────────────────
+-- Refuse first when a seeded account belongs to another chapter too: the App
+-- Review login founding a second chapter, say. `members.user_id` cascades, so
+-- the users delete below would silently empty that chapter's membership. The
+-- whole seed is one transaction, so it stops with nothing changed.
+DO $reset_guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM members
+              WHERE user_id::text LIKE 'c0ffee00-0000-4000-8000-1000%'
+                AND chapter_id <> 'c0ffee00-0000-4000-8000-000000000001') THEN
+    RAISE EXCEPTION 'a seeded account is also a member of another chapter; refusing to delete it, which would cascade through that membership';
+  END IF;
+END $reset_guard$;
+
 DELETE FROM chapters WHERE id = 'c0ffee00-0000-4000-8000-000000000001';
 -- chapters -> users is ON DELETE SET NULL, so the demo people outlive the
 -- cascade and collide on re-run. Remove them explicitly by their id prefix.
---
--- Every other foreign key onto `users` that does not cascade sits on a
--- chapter-scoped table, so the chapter cascade above has already removed the
--- rows that would block this — unless a seeded account wrote somewhere outside
--- its own chapter (a reviewer who founded a second chapter, say). Then this
--- DELETE fails, and because the whole seed is one transaction, it fails with
--- nothing changed rather than half-seeded.
+-- Every other foreign key onto `users` either cascades or sits on a
+-- chapter-scoped table the chapter cascade above has already emptied.
 DELETE FROM users WHERE id::text LIKE 'c0ffee00-0000-4000-8000-1000%';
 
 -- ── Chapter ──────────────────────────────────────────────────────────────────

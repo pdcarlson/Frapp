@@ -2396,6 +2396,9 @@ console.log("\n=== demo seed load (#2308) ===");
   const REVIEWER_AUTH_ID = "0a0a0a0a-0000-4000-8000-00000000a001";
   const STRANGER_EMAIL = "stranger@example.test";
   const STRANGER_AUTH_ID = "0a0a0a0a-0000-4000-8000-00000000a002";
+  // Marked by `auth`, but for the marketing namespace: the marker must name THIS chapter.
+  const OTHER_NS_EMAIL = "other-namespace@example.test";
+  const OTHER_NS_AUTH_ID = "0a0a0a0a-0000-4000-8000-00000000a003";
   const namespaces = [seedDemo.TEMPLATE_NAMESPACE, seedDemo.REVIEWER_NAMESPACE];
   const render = (namespace, loginEmail, reviewer) =>
     seedDemo.renderSeedSql({ template, namespace, loginEmail, reviewer });
@@ -2462,7 +2465,8 @@ console.log("\n=== demo seed load (#2308) ===");
     await db.exec(`
       insert into auth.users (id, email, raw_app_meta_data) values
         ('${REVIEWER_AUTH_ID}', '${REVIEWER_EMAIL}', '{"frapp_demo_namespace": "${seedDemo.REVIEWER_NAMESPACE}"}'),
-        ('${STRANGER_AUTH_ID}', '${STRANGER_EMAIL}', '{}');
+        ('${STRANGER_AUTH_ID}', '${STRANGER_EMAIL}', '{}'),
+        ('${OTHER_NS_AUTH_ID}', '${OTHER_NS_EMAIL}', '{"frapp_demo_namespace": "${seedDemo.TEMPLATE_NAMESPACE}"}');
     `);
 
     await db.exec(marketingSql);
@@ -2480,6 +2484,23 @@ console.log("\n=== demo seed load (#2308) ===");
     const afterMissing = await snapshot(seedDemo.REVIEWER_NAMESPACE);
     const refusedStranger = await refuses(render(seedDemo.REVIEWER_NAMESPACE, STRANGER_EMAIL, true));
     const afterStranger = await snapshot(seedDemo.REVIEWER_NAMESPACE);
+    const refusedOtherNs = await refuses(render(seedDemo.REVIEWER_NAMESPACE, OTHER_NS_EMAIL, true));
+    const afterOtherNs = await snapshot(seedDemo.REVIEWER_NAMESPACE);
+
+    // A seeded account that is also a member of another chapter (the App Review login
+    // founding one, say): deleting it would cascade through that membership, so both the
+    // re-seed and `sql --remove` refuse, and the membership survives. The marketing chapter
+    // stands in for the other chapter.
+    const { loginUserId: reviewerLogin } = seedDemo.demoIds(seedDemo.REVIEWER_NAMESPACE);
+    const { chapterId: marketingChapter } = seedDemo.demoIds(seedDemo.TEMPLATE_NAMESPACE);
+    await db.exec(`insert into members (user_id, chapter_id) values ('${reviewerLogin}', '${marketingChapter}');`);
+    const refusedCrossReseed = await refuses(reviewerSql);
+    const refusedCrossRemove = await refuses(seedDemo.renderRemoveSql({ namespace: seedDemo.REVIEWER_NAMESPACE }));
+    const crossKept = await n(
+      `select count(*)::int as n from members where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}'`,
+    );
+    const afterCross = await snapshot(seedDemo.REVIEWER_NAMESPACE);
+    await db.exec(`delete from members where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}';`);
 
     // The marketing variant seeds an unmarked account's email unlinked.
     await db.exec(render(seedDemo.TEMPLATE_NAMESPACE, STRANGER_EMAIL, false));
@@ -2492,6 +2513,19 @@ console.log("\n=== demo seed load (#2308) ===");
     await db.exec(reviewerSql);
     const adopted = await snapshot(seedDemo.REVIEWER_NAMESPACE);
     const shells = await n(`select count(*)::int as n from users where supabase_auth_id = '${REVIEWER_AUTH_ID}'`);
+
+    // ...but a row on the login's auth id that is a member of a chapter is an account in
+    // use: the seed refuses instead of deleting it.
+    await db.exec(seedDemo.renderRemoveSql({ namespace: seedDemo.REVIEWER_NAMESPACE }));
+    const inUse = (
+      await db.query(
+        `insert into users (supabase_auth_id, email) values ('${REVIEWER_AUTH_ID}', '${REVIEWER_EMAIL}') returning id::text as id`,
+      )
+    ).rows[0].id;
+    await db.exec(`insert into members (user_id, chapter_id) values ('${inUse}', '${marketingChapter}');`);
+    const refusedInUse = await refuses(reviewerSql);
+    const inUseKept = await n(`select count(*)::int as n from members where user_id = '${inUse}'`);
+    await db.exec(`delete from members where user_id = '${inUse}'; delete from users where id = '${inUse}';`);
 
     for (const namespace of namespaces) await db.exec(seedDemo.renderRemoveSql({ namespace }));
     const removed = await Promise.all(namespaces.map(snapshot));
@@ -2512,7 +2546,10 @@ console.log("\n=== demo seed load (#2308) ===");
       [same(first, second), "re-running both variants is idempotent"],
       [refusedMissing && same(afterMissing, reviewer), "a reviewer re-seed with no auth user raises and leaves the existing chapter untouched"],
       [refusedStranger && same(afterStranger, reviewer), "a reviewer re-seed naming an unmarked account raises and leaves the existing chapter untouched"],
+      [refusedOtherNs && same(afterOtherNs, reviewer), "a login marked for another namespace is never linked: the reviewer re-seed raises"],
+      [refusedCrossReseed && refusedCrossRemove && crossKept === 1 && same(afterCross, reviewer), "a seeded account in another chapter makes the re-seed and sql --remove refuse, and that membership survives"],
       [adopted.loginAuthId === REVIEWER_AUTH_ID && shells === 1, `a chapterless row from an early sign-in is adopted (linked ${adopted.loginAuthId}, ${shells} row on the auth id)`],
+      [refusedInUse && inUseKept === 1, "a row on the login's auth id that is a member of a chapter is refused, not taken over"],
       [removed.every((r) => r.chapters === 0 && r.members === 0 && r.users === 0 && r.documents === 0), "sql --remove clears both chapters and their people"],
     ];
     for (const [ok, name] of checks) {
@@ -2530,7 +2567,7 @@ console.log("\n=== demo seed load (#2308) ===");
   } finally {
     // Leave the schema as the migrations produced it, as every block here does.
     for (const namespace of namespaces) await db.exec(seedDemo.renderRemoveSql({ namespace })).catch(() => {});
-    await db.exec(`delete from users where supabase_auth_id in ('${REVIEWER_AUTH_ID}', '${STRANGER_AUTH_ID}');`).catch(() => {});
+    await db.exec(`delete from users where supabase_auth_id in ('${REVIEWER_AUTH_ID}', '${STRANGER_AUTH_ID}', '${OTHER_NS_AUTH_ID}');`).catch(() => {});
     await db.exec("drop table if exists auth.users;");
   }
 }

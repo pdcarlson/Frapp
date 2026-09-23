@@ -156,11 +156,13 @@ test("a template without exactly one settings marker is refused", () => {
 
 test("sql --remove is the seed's own opening deletes, and nothing more", () => {
   const seed = renderSeedSql({ template: TEMPLATE, namespace: "a9900000", loginEmail: "r@frapp.live", reviewer: true });
-  const statements = renderRemoveSql({ namespace: "a9900000" })
-    .split("\n")
-    .filter((l) => l.startsWith("DELETE"));
+  const remove = renderRemoveSql({ namespace: "a9900000" });
+  const statements = remove.split("\n").filter((l) => l.startsWith("DELETE"));
   assert.equal(statements.length, 2);
   for (const statement of statements) assert.ok(seed.includes(statement), `seed lacks: ${statement}`);
+  // Both refuse while a demo account belongs to another chapter; the PGlite gate runs them.
+  assert.match(remove, /IF EXISTS \(SELECT 1 FROM members WHERE user_id::text LIKE 'a9900000-0000-4000-8000-1000%' AND chapter_id <> 'a9900000-0000-4000-8000-000000000001'\)/);
+  assert.ok(remove.indexOf("RAISE EXCEPTION") < remove.indexOf("DELETE FROM chapters"), "the guard runs before the deletes");
 });
 
 // ── Guards ──────────────────────────────────────────────────────────────────
@@ -257,7 +259,9 @@ test("auth updates its own login in place", async () => {
   ]);
   const result = await ensureAuthUser({ supabaseUrl: HOSTED, serviceKey: KEY, email: "r@frapp.live", password: "p", namespace: "a9900000", fetchImpl });
   assert.deepEqual(result, { action: "updated", id: "u1" });
-  assert.equal(calls.filter((c) => c.method === "PUT").length, 1);
+  const puts = calls.filter((c) => c.method === "PUT");
+  assert.equal(puts.length, 1);
+  assert.deepEqual(JSON.parse(puts[0].body).app_metadata, { [AUTH_MARKER_KEY]: "a9900000" });
 });
 
 test("auth never resets the password of a hosted account it did not create", async () => {
@@ -277,7 +281,10 @@ test("on the local stack, auth adopts an earlier unmarked login", async () => {
     [on("PUT", "/auth/v1/admin/users/old"), () => ({ json: {} })],
   ]);
   await ensureAuthUser({ supabaseUrl: LOCAL, serviceKey: KEY, email: "m@example.com", password: "p", namespace: "c0ffee00", fetchImpl });
-  assert.equal(calls.filter((c) => c.method === "PUT").length, 1);
+  const puts = calls.filter((c) => c.method === "PUT");
+  assert.equal(puts.length, 1);
+  // Adoption IS the marker: without it the seed leaves roster #1 unlinked.
+  assert.deepEqual(JSON.parse(puts[0].body).app_metadata, { [AUTH_MARKER_KEY]: "c0ffee00" });
 });
 
 test("auth pages through the user list", async () => {
@@ -369,28 +376,54 @@ test("storage names the missing step when the seed has not run", async () => {
   assert.equal(noChapter.calls.some((c) => c.method === "POST"), false);
 });
 
-test("storage --remove walks the demo folders and deletes only what is under them", async () => {
+test("storage --remove clears the chapter's prefix in every bucket, reviewer uploads included", async () => {
+  // A reviewer's chat photo lands under chapters/<id>/chat/<channel>/<message>/ in the chat
+  // bucket; walking only the placeholder folders left it behind with no row pointing at it.
   const ns = "a9900000";
   const { chapterId } = demoIds(ns);
+  const root = `chapters/${chapterId}/`;
+  const tree = {
+    documents: { [root]: [{ name: "documents", id: null }], [`${root}documents/`]: [{ name: "row-1", id: null }], [`${root}documents/row-1/`]: [{ name: "a.pdf", id: "o1" }] },
+    chat: {
+      [root]: [{ name: "chat", id: null }],
+      [`${root}chat/`]: [{ name: "ch1", id: null }],
+      [`${root}chat/ch1/`]: [{ name: "m1", id: null }],
+      [`${root}chat/ch1/m1/`]: [{ name: "photo.jpg", id: "o2" }],
+    },
+    backwork: {},
+  };
   const listed = [];
   const { fetchImpl, calls } = makeFetch([
+    [on("GET", "/storage/v1/bucket"), () => ({ json: Object.keys(tree).map((id) => ({ id, name: id })) })],
     [
       on("POST", "/storage/v1/object/list/"),
-      (_url, init) => {
+      (url, init) => {
+        const bucket = url.split("/object/list/")[1];
         const { prefix } = JSON.parse(init.body);
         listed.push(prefix);
-        if (prefix.endsWith("/documents/")) return { json: [{ name: "row-1", id: null }] };
-        if (prefix.endsWith("/documents/row-1/")) return { json: [{ name: "a.pdf", id: "obj" }] };
-        return { json: [] };
+        return { json: tree[bucket][prefix] ?? [] };
       },
     ],
-    [on("DELETE", "/storage/v1/object/documents"), () => ({ json: [] })],
+    [on("DELETE", "/storage/v1/object/"), () => ({ json: [] })],
   ]);
   const result = await removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: ns, fetchImpl });
-  assert.deepEqual(result, [{ bucket: "documents", count: 1 }, { bucket: "backwork", count: 0 }]);
-  const del = calls.find((c) => c.method === "DELETE");
-  assert.deepEqual(JSON.parse(del.body), { prefixes: [`chapters/${chapterId}/documents/row-1/a.pdf`] });
-  assert.ok(listed.every((p) => p.startsWith(`chapters/${chapterId}/`)));
+  assert.deepEqual(result, [
+    { bucket: "backwork", count: 0 },
+    { bucket: "chat", count: 1 },
+    { bucket: "documents", count: 1 },
+  ]);
+  const deletes = calls.filter((c) => c.method === "DELETE").map((c) => [c.url.split("/object/")[1], JSON.parse(c.body).prefixes]);
+  assert.deepEqual(deletes, [
+    ["chat", [`${root}chat/ch1/m1/photo.jpg`]],
+    ["documents", [`${root}documents/row-1/a.pdf`]],
+  ]);
+  assert.ok(listed.every((prefix) => prefix.startsWith(root)), "nothing outside the chapter's prefix is listed");
+});
+
+test("storage --remove refuses a project that lists no buckets, rather than reporting nothing removed", async () => {
+  const { fetchImpl, calls } = makeFetch([[on("GET", "/storage/v1/bucket"), () => ({ json: [] })]]);
+  await assert.rejects(removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: "a9900000", fetchImpl }), /listed no Storage buckets/);
+  assert.equal(calls.some((c) => c.method === "DELETE"), false);
 });
 
 test("storage --remove pages a folder that holds more than one listing's worth", async () => {
@@ -398,7 +431,7 @@ test("storage --remove pages a folder that holds more than one listing's worth",
   // would stay in the bucket while --remove reported success.
   const ns = "a9900000";
   const { chapterId } = demoIds(ns);
-  const folder = `chapters/${chapterId}/documents/`;
+  const folder = `chapters/${chapterId}/`;
   const total = STORAGE_LIST_PAGE + 2;
   const offsets = [];
   const { fetchImpl, calls } = makeFetch([
@@ -412,7 +445,7 @@ test("storage --remove pages a folder that holds more than one listing's worth",
         return { json: names.slice(offset, offset + limit) };
       },
     ],
-    [on("POST", "/storage/v1/object/list/backwork"), () => ({ json: [] })],
+    [on("GET", "/storage/v1/bucket"), () => ({ json: [{ id: "documents" }] })],
     [on("DELETE", "/storage/v1/object/documents"), () => ({ json: [] })],
   ]);
   const result = await removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: ns, fetchImpl });
@@ -565,6 +598,23 @@ test("main refuses production storage writes without the flag, before sending an
   const { fetchImpl, calls } = makeFetch([]);
   const env = { SUPABASE_URL: `https://${supabaseProjectRef}.supabase.co`, SUPABASE_SERVICE_ROLE_KEY: KEY };
   for (const args of [["storage", "--namespace", "a9900000"], ["storage", "--namespace", "a9900000", "--remove"]]) {
+    await assert.rejects(main(args, env, { out: sink(), err: sink() }, fetchImpl), /DEMO_ALLOW_PRODUCTION=true/);
+  }
+  assert.deepEqual(calls, []);
+});
+
+test("main refuses a production auth write without the flag, before sending anything", async () => {
+  // A strong password passes assertPasswordAllowed, so only the production fence stands
+  // between this and creating, confirming and marking a login in frapp-prod.
+  const { supabaseProjectRef } = JSON.parse(readFileSync(new URL("../../../.github/environments.json", import.meta.url), "utf8")).environments.production;
+  const { fetchImpl, calls } = makeFetch([]);
+  const env = {
+    SUPABASE_URL: `https://${supabaseProjectRef}.supabase.co`,
+    SUPABASE_SERVICE_ROLE_KEY: KEY,
+    DEMO_EMAIL: "app-review@example.test",
+    DEMO_PASSWORD: "a-long-enough-password",
+  };
+  for (const args of [["auth", "--namespace", "a9900000"], ["auth", "--namespace", "a9900000", "--remove"]]) {
     await assert.rejects(main(args, env, { out: sink(), err: sink() }, fetchImpl), /DEMO_ALLOW_PRODUCTION=true/);
   }
   assert.deepEqual(calls, []);

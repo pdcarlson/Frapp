@@ -5,7 +5,8 @@ demos, design review and marketing stills, and a hosted project, for the account
 App Review signs in to.
 
 Everything here is invented. The seed contains no real chapter and no real member
-data, and its addresses are all on `example.com`
+data. Every address is on `example.com` except the login's, which is whatever
+`DEMO_EMAIL` names: the App Review login's own, for `--reviewer`
 ([`spec/engineering.md`](../../spec/engineering.md): no real identifiers in seed
 data). The chapter name and roster live at the top of the seed file.
 
@@ -54,7 +55,10 @@ the delete-by-id-prefix remove the old rows, and the rebuild links the new one.
 It links only a login that `seed-demo.mjs auth` created for the same chapter,
 which it marks in the account's `app_metadata`. An account with the right email
 but no marker (a real person's, or one added by hand in the Supabase dashboard)
-is left alone: the local seed goes ahead unlinked, and `--reviewer` refuses. If
+is left alone on a hosted project: `auth` refuses to touch it, and `--reviewer`
+refuses to seed. On the local stack `auth` adopts it instead, resetting its
+password to the local one and marking it, since a local account with the
+roster's email is an earlier demo login; `sql` run on its own leaves it unlinked. If
 the login signed in before the seed linked it (`verify` run early, or the app
 opened), the API created a `users` row with no chapter for it; the next seed
 removes that row and links the login properly.
@@ -107,7 +111,10 @@ for production is `prod`.
   the same fence `DB_RESTORE_ALLOW_PRODUCTION` puts on a restore. The production
   ref comes from [`.github/environments.json`](../../.github/environments.json).
 - The seed refuses to link a login whose `users` row is a member of any chapter,
-  and `--reviewer` refuses to run at all until a marked login exists. Either way
+  and `--reviewer` refuses to run at all until a marked login exists. The seed and
+  `sql --remove` also refuse while any seeded account is a member of another
+  chapter (the App Review login founding one, say), since deleting that account
+  would cascade through its membership there. Either way
   the whole seed is one transaction, so a failed re-seed leaves the chapter it
   was replacing exactly as it was.
 
@@ -128,9 +135,11 @@ read -rs DEMO_PASSWORD && export DEMO_PASSWORD
 1. **Create the login.** `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs auth --namespace a9900000`.
    Use this, not the Supabase dashboard: the seed links only a login this
    command created.
-2. **Seed.** `node scripts/demo/seed-demo.mjs sql --namespace a9900000 --reviewer > reviewer.sql`,
-   then paste `reviewer.sql` into the `frapp-prod` SQL editor, or run
-   `psql "<frapp-prod connection string>" -v ON_ERROR_STOP=1 -f reviewer.sql`.
+2. **Seed.** `node scripts/demo/seed-demo.mjs sql --namespace a9900000 --reviewer > "${TMPDIR:-/tmp}/reviewer.sql"`,
+   then paste that file into the `frapp-prod` SQL editor, or run
+   `psql "<frapp-prod connection string>" -v ON_ERROR_STOP=1 -f "${TMPDIR:-/tmp}/reviewer.sql"`.
+   Write it outside the repo and delete it afterwards: it carries the login's
+   email, and nothing ignores a `.sql` file at the repo root.
    An agent can apply it through Supabase MCP `execute_sql` once you approve.
 3. **Upload the files.** `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs storage --namespace a9900000`.
 4. **Check it.** `npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs verify --namespace a9900000 --reviewer --api-url https://api.frapp.live`.
@@ -145,8 +154,9 @@ steps 2 to 4. The login and its password persist, and `storage` overwrites the
 same objects in place: document ids are fixed, so each run names the same files.
 
 **To remove a demo chapter**, run the steps backwards with `--remove`:
-`storage --remove` (every object under the chapter's documents and backwork
-folders), `sql --remove` (prints the chapter and user deletes), then
+`storage --remove` (every object under `chapters/<chapter id>/` in every bucket,
+which includes anything the reviewer uploaded, such as a chat photo), `sql --remove`
+(prints the chapter and user deletes), then
 `auth --remove` (only a login this script created).
 
 ## Capture screenshots
