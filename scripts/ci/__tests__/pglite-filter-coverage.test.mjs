@@ -1,10 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative, resolve } from "node:path";
 
 import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
+import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 
 // `pglite-migrations` is a REQUIRED check (#2538) that is path-gated on PRs by a
 // job-level `if:` on `changes.pglite`. A job skipped that way reports Success,
@@ -17,24 +18,48 @@ import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 // `package.json` and `ci.yml` itself were all unlisted.
 //
 // So the filter's coverage is derived here from the script, not restated: every
-// repo path the check reads by a literal `join(REPO_ROOT, "...")`, every
-// relative module it imports (followed transitively), every script it runs via
+// repo path the check reads by `join(REPO_ROOT, ...)`, every relative module it
+// imports (followed transitively), every script it runs via
 // `join(process.cwd(), ...)`, and every `new URL("...", import.meta.url)` file
-// those modules read. A new input written in one of those forms fails this test
-// until the filter lists it. An input read some other way (a computed path) is
-// invisible here, so keep to these forms or extend the patterns below.
+// those modules read. Any number of arguments and any quote style count as long
+// as each argument is a literal. A `join(REPO_ROOT, ...)` with a computed
+// argument fails the test rather than being skipped, because this derivation
+// cannot resolve it. A path read through some other computed form (a module
+// constant joined onto a local root, say) is invisible here; the one such input
+// today, the chapter directory seed, is imported from its module below rather
+// than restated.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const ENTRY = "scripts/check-pglite-migrations.mjs";
 
 // Inputs the job depends on that no source line names: the job's own definition,
-// the npm script it runs, the lockfile, and the migrations directory it globs.
+// the npm script it runs, the lockfile, the migrations directory it globs, and
+// the seed CSV `chapter-directory-seed.mjs` reads through its own constant.
 const STRUCTURAL = [
   ".github/workflows/ci.yml",
   "package.json",
   "package-lock.json",
   "supabase/migrations/0000_example.sql",
+  SEED_RELATIVE_PATH.split("\\").join("/"),
 ];
+
+/** A single `"..."`, `'...'` or interpolation-free template literal. */
+const LITERAL = /^\s*(?:"([^"]*)"|'([^']*)'|`([^`$]*)`)\s*$/;
+
+/**
+ * The string values of a comma-separated argument list, or `null` when any
+ * argument is not a literal. No argument in these files contains a comma.
+ */
+function literalArgs(list) {
+  const values = [];
+  for (const arg of list.split(",")) {
+    if (arg.trim() === "") continue;
+    const m = arg.match(LITERAL);
+    if (!m) return null;
+    values.push(m[1] ?? m[2] ?? m[3]);
+  }
+  return values;
+}
 
 /** The `changes.pglite` filter's patterns, in order. */
 function pgliteFilter() {
@@ -53,10 +78,16 @@ function pgliteFilter() {
   return patterns;
 }
 
-/** dorny/paths-filter semantics for the two forms the filter uses. */
+/**
+ * dorny/paths-filter semantics for the two forms the filter uses. A directory
+ * input (`join(REPO_ROOT, "supabase", "migrations")`) is covered when a file
+ * inside it would be.
+ */
 function covered(path, patterns) {
+  const abs = join(REPO, path);
+  const probe = existsSync(abs) && statSync(abs).isDirectory() ? `${path}/x` : path;
   return patterns.some((p) =>
-    p.endsWith("/**") ? path.startsWith(p.slice(0, -2)) : path === p,
+    p.endsWith("/**") ? probe.startsWith(p.slice(0, -2)) : probe === p,
   );
 }
 
@@ -76,18 +107,29 @@ function inputs() {
     const here = dirname(abs);
     const rel = (p) => relative(REPO, p).split("\\").join("/");
 
-    for (const [, p] of src.matchAll(/join\(\s*REPO_ROOT\s*,\s*"([^"]+)"\s*\)/g)) {
-      found.add(p);
+    for (const [call, list] of src.matchAll(/join\(\s*REPO_ROOT\s*,([^)]*)\)/g)) {
+      const parts = literalArgs(list);
+      assert.ok(
+        parts,
+        `${file}: \`${call}\` builds a path this test cannot resolve — ` +
+          "write it with literal arguments, or add it to STRUCTURAL",
+      );
+      found.add(parts.join("/"));
     }
-    for (const [, args] of src.matchAll(/join\(\s*process\.cwd\(\)\s*,\s*((?:"[^"]+"\s*,?\s*)+)\)/g)) {
-      const parts = [...args.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    for (const [call, list] of src.matchAll(/join\(\s*process\.cwd\(\)\s*,([^)]*)\)/g)) {
+      const parts = literalArgs(list);
+      assert.ok(parts, `${file}: \`${call}\` runs a script this test cannot resolve`);
       queue.push(parts.join("/"));
     }
-    for (const [, p] of src.matchAll(/new URL\(\s*"(\.{1,2}\/[^"]+)"\s*,\s*import\.meta\.url\s*\)/g)) {
-      found.add(rel(resolve(here, p)));
+    for (const [, q1, q2] of src.matchAll(
+      /new URL\(\s*(?:"(\.{1,2}\/[^"]+)"|'(\.{1,2}\/[^']+)')\s*,\s*import\.meta\.url\s*\)/g,
+    )) {
+      found.add(rel(resolve(here, q1 ?? q2)));
     }
-    for (const [, p] of src.matchAll(/(?:from\s+|import\(\s*)"(\.{1,2}\/[^"]+\.m?js)"/g)) {
-      queue.push(rel(resolve(here, p)));
+    for (const [, q1, q2] of src.matchAll(
+      /(?:from\s+|import\(\s*)(?:"(\.{1,2}\/[^"]+\.m?js)"|'(\.{1,2}\/[^']+\.m?js)')/g,
+    )) {
+      queue.push(rel(resolve(here, q1 ?? q2)));
     }
   }
   return [...found];
@@ -107,6 +149,8 @@ describe("pglite-migrations: required, and its path filter covers what it reads"
     const found = inputs();
     for (const expected of [
       "apps/api/src/application/services/search.service.ts",
+      "supabase/migrations",
+      "supabase/seed/chapter_directory.csv",
       "scripts/demo/seed-demo.mjs",
       "scripts/ci/lib/environments.mjs",
       ".github/environments.json",
