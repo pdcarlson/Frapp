@@ -23,10 +23,11 @@ export const metadata = {
  *    bg-background` circle: 40px against §10's drawn 44, and `--background`
  *    inside a `--card` is a hole rather than a tile. It takes the shared
  *    `StateTile` recipe now.
- * 3. `title: "No access — Frapp"` → Signet. Prose says Signet; only code
- *    identifiers, package names, domains and bundle ids stay `frapp`. Lane 7
- *    then took the suffix off entirely: the product name comes from the root
- *    layout's title template now, so this route names only itself.
+ * 3. `title: "No access — Frapp"` → Signet, under the naming rule of the time
+ *    (since ADR-25 the product is Frapp again; the rule is brand-identity.md
+ *    § 1). Lane 7 then took the suffix off entirely: the product name comes
+ *    from the root layout's title template now, so this route names only
+ *    itself.
  */
 export default function NoAccessPage() {
   return (

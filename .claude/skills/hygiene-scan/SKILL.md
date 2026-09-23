@@ -67,7 +67,7 @@ a PR and the fix is one line the new test covers.
    `AGENTS.md`, `spec/engineering.md`, a skill, a gate), and every fix names the rule it restores.
    Taste isn't a rule, and an "established idiom" isn't one until grep finds it. An ungrounded fix is
    an opinion applied to product code with nobody watching.
-2. **Question the shape, not just the diff.** The repo is mid-rebuild (Frapp → Signet): treat
+2. **Question the shape, not just the diff.** The repo is mid-rebuild (legacy Frapp → the Signet design system; the product is still named Frapp, ADR-25): treat
    existing code as possibly dead until checked, not as precedent. Read the slice whole, the oldest
    file as hard as yesterday's PR. When a legacy shape is wrong, the finding is "this should not
    exist in this form". Phase 2 bounds that judgment; it never switches it off.

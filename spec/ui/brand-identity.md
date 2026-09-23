@@ -18,6 +18,13 @@
 - **Everything a user can see says Frapp.** That covers UI copy, email, notifications, OS permission prompts, store listings, the landing and legal pages, and marketing. The store listing is `Frapp: Chapter Hub`, because plain "Frapp" is taken.
 - **"Signet" is the design system's internal name** until the post-beta internals rename (ADR-25). That covers the `--signet-*` tokens, identifiers, file names, and design-system prose in specs and skills. It never appears in user-visible text. New or edited product prose in specs says Frapp; existing spec prose is swept with the internals rename.
 - **"Legacy Frapp" means the retired pre-Signet visuals and code** (bone, bronze, Geist, `#2563EB`), not the product name.
+- **Transition.** Until ADR-25's rename series lands, some specs still prescribe user-visible strings that say Signet. Those are the specs that pin exact copy:
+  - `spec/behavior/study-sessions.md` (the study-pause notification);
+  - [`design-system/writing.md`](design-system/writing.md) (study, payment and s01 copy);
+  - [`design-system/components.md`](design-system/components.md) (the Ask sheet header);
+  - [`landing/README.md`](landing/README.md) (the landing title).
+
+  Each of these changes to Frapp in the same series step as the code that renders it, and the step list in ADR-25 names which. This rule sets the target. Until its step lands, a prescribed Signet string there is what ships, not a license to add new Signet strings.
 - **Code identifiers are frapp permanently:** package names (`@repo/*`), domains (`frapp.live`, `app.frapp.live`), the `frapp://` scheme and the bundle id `live.frapp.mobile`. When citing code, cite the real current names.
 
 ---
@@ -63,7 +70,7 @@ Binding constraints (research-derived) for any future mark exploration:
 
 ### The mascot
 
-Signet's mascot is a **seal (the animal)**. It is not a wax seal, a signet ring, or a stamp — those are banned mark vocabulary above. It is **not commissioned** and MUST NOT ship until the USPTO search that blocks the final mark clears. Do not generate or restyle assets toward this mascot piecemeal; the shipping crest is not the mascot ([assets.md](assets.md) §1).
+Signet's mascot is a **seal (the animal)**. It is not a wax seal, a signet ring, or a stamp — those are banned mark vocabulary above. It is **not commissioned** and MUST NOT ship until the USPTO search that blocks the final mark clears. *(2026-09-23: the searches are done, #1901, and the product is now named Frapp, ADR-25. Whether a seal survives the rename is a new owner decision, and until it is made nothing is commissioned. This section is rewritten with the post-beta internals rename.)* Do not generate or restyle assets toward this mascot piecemeal; the shipping crest is not the mascot ([assets.md](assets.md) §1).
 
 ### Platform requirements when the real mark lands
 
