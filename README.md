@@ -1,6 +1,6 @@
-# Signet
+# Frapp
 
-**Chat is the spine.** Signet is a multi-tenant chat app for Greek-letter organizations in which
+**Chat is the spine.** Frapp is a multi-tenant chat app for Greek-letter organizations in which
 every other capability — events, tasks, dues, points, polls — is a *chat integration*, surfaced
 inline in the conversation rather than parked behind its own nav tab. Chat itself is free,
 unlimited, and non-optional: it is the default landing route on web and mobile.
@@ -31,7 +31,7 @@ the spec as the pattern.
 
 ## AI
 
-Signet's AI surface (Q&A, summarization, drafting) is built on **authoritative sources only**, and
+Frapp's AI surface (Q&A, summarization, drafting) is built on **authoritative sources only**, and
 that is the product decision rather than an implementation detail — a smaller AI that is reliably
 right instead of a bigger one that is frequently embarrassing.
 

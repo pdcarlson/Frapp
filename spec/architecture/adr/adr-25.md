@@ -35,17 +35,22 @@
        - The invite email's From name, subject and body.
        - The OpenAPI title and descriptions, with the regenerated contract.
        - A new forward migration renaming the system actor `Signet System` → `Frapp System`.
-       - The conformance constants `AUTH_SMTP_SENDER_NAME` and `AUTH_MAGIC_LINK_SUBJECT`.
+       - The conformance naming checks in `scripts/ci/staging-conformance.mjs`, which `production-auth-conformance.mjs` reuses:
+         - the constants `AUTH_SMTP_SENDER_NAME` and `AUTH_MAGIC_LINK_SUBJECT`;
+         - the `auth-smtp` check labels that say "the sender is Signet";
+         - the `leftoverFrappMailerSubjectKeys` guard. It fails any `mailer_subjects_*` containing "Frapp" before the subject is compared, so it inverts to catch leftover Signet, with its lock `signet-mailer-subjects.test.mjs`.
+
+         Flipping only the constants leaves staging conformance red for good once the subjects say Frapp.
        - The App Review demo seed's placeholder PDF text in `scripts/demo/seed-demo.mjs`. If the production seed (#2309) runs before this step, re-run its `storage` command after it.
      - *Specs and docs:*
        - the PDF footer in `spec/behavior/reports.md` and `spec/product/modules.md`;
        - a new dated entry for the system actor in `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md`, which record the 2026-09-09 `Signet System` rename;
        - every email string in `docs/internal/ops/deployment/supabase.md`: the SMTP table, the From addresses, the conformance description, and the Magic Link template's subject and body;
        - the conformance assertions restated in `AGENT_INFRA.md` (the staging and production conformance rows) and `ALERT_ROUTING.md` (the production Auth row);
-       - the `RESEND_FROM_EMAIL` default in `ENV_REFERENCE.md`.
+       - the `RESEND_FROM_EMAIL` default and staging value in `ENV_REFERENCE.md`.
      - *Consoles (owner):*
-       - on `frapp-staging` and `frapp-prod`, in Supabase Auth: the SMTP sender name, the mailer subjects, and the **Magic Link template body**, whose heading and link both read "Sign in to Signet". Conformance checks the subject but not the body, so a missed body stays silent.
-       - `RESEND_FROM_EMAIL` in Infisical, if it carries a display name.
+       - on `frapp-staging` and `frapp-prod`, in Supabase Auth: the SMTP sender name, the mailer subjects, and the **Magic Link template body**, whose heading and link both read "Sign in to Signet". Conformance checks the subject and the body's link shape (TokenHash and `type=magiclink`, no ConfirmationURL), but never the body's brand text, so a missed heading stays silent. Keep the link shape when retyping it.
+       - `RESEND_FROM_EMAIL` in Infisical `staging`, documented as `Signet <invites@mail.staging.frapp.live>`, and in `prod` if it is set there.
   4. **Web dashboard and third-party sign-in and billing.**
      - *Code:*
        - Tab titles, the auth headings, onboarding, settings and roles copy, the invite share text and the CSV and ICS filenames, plus the `packages/validation` and `packages/hooks` strings the dashboard renders.
@@ -68,7 +73,7 @@
        - The Terms, Privacy, FERPA and Support pages, with their `lastUpdated` dates.
      - *Specs:*
        - `spec/ui/landing/README.md` (the header lockup word and the OG card);
-       - `spec/ui/assets.md` (the lockup wordmark);
+       - `spec/ui/assets.md` and `packages/brand-assets/README.md` (the lockup wordmark and the landing header);
        - the Terms and FERPA summaries in `spec/behavior/legal.md`.
      - *Owner:*
        - decide whether a name-only change bumps `LEGAL_POLICY_VERSION`;
@@ -84,8 +89,8 @@
   An unflipped check fails CI. A lock that spans surfaces (calendar PRODID, export filenames, the auth wordmark and the ops-nudge copy) is split per surface by the first step that touches it.
 
   **This is the one list of specs, docs and consoles each step moves.** `spec/ui/brand-identity.md` § 1 links here rather than keeping its own copy.
-  - It was found by reading every line of `git grep -n Signet -- spec docs`, leaving out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and uses of the name that mean the design system or the product in general prose. The spec lines were read at `ee9dd538`, and the 57 docs lines at this ADR's branch.
-  - A list like this is a starting point, not a proof. Specs and docs change before each step lands, so re-run `git grep -n Signet -- spec docs` when a step starts, and treat every hit that describes a string the step changes as part of that step, whether it is new or not.
+  - It was found by reading every Markdown line that says Signet: `spec/` at `ee9dd538`, and `docs/`, the root and package READMEs and `.claude/` at this ADR's branch. The read left out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and uses of the name that mean the design system or the product in general prose.
+  - A list like this is a starting point, not a proof. Specs and docs change before each step lands, so re-run `git grep -n Signet -- '*.md'` when a step starts, and treat every hit that describes a string the step changes as part of that step, whether it is new or not. Code, tests and scripts are found by the step's own grep over its surface, as the inventory behind this ADR was.
 
 **Rationale:**
 
