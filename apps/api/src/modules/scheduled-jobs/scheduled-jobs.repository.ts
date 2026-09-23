@@ -96,6 +96,35 @@ export interface SweepPollRow {
 }
 
 /**
+ * A chapter whose stored `theme_palette` an older engine wrote (#1165), with
+ * the seed to re-derive it from.
+ */
+export interface StalePaletteRow {
+  id: string;
+  /**
+   * `branding.colors.accent` as text, read with `->>` in the query itself.
+   * The seed every palette writer uses (accent-engine.md §7), and also the
+   * compare-and-set key for the write, so the two must be read the same way.
+   * `null` when the chapter never picked an accent: the house seed.
+   */
+  seed: string | null;
+}
+
+/**
+ * The PostgREST filter matching a palette the running engine did not write:
+ * no stamp (every row from before `20260923170000`), or an older one. Shared by
+ * the read and the guarded write, so "stale" means one thing in both.
+ */
+function stalePaletteFilter(engineVersion: number): string {
+  // An integer by construction (`SIGNET_ENGINE_VERSION`); asserted anyway,
+  // because it is interpolated into a filter string.
+  if (!Number.isInteger(engineVersion)) {
+    throw new Error(`engine version must be an integer, got ${engineVersion}`);
+  }
+  return `theme_palette_engine_version.is.null,theme_palette_engine_version.lt.${engineVersion}`;
+}
+
+/**
  * Data access for the scheduled sweeps.
  *
  * Module-local and service-role scoped, following the `chat-push-worker`
@@ -309,6 +338,75 @@ export class ScheduledJobsRepository {
         };
       })
       .filter((row): row is SweepPollRow => row !== null);
+  }
+
+  /**
+   * Every chapter whose palette the running engine did not write (#1165).
+   *
+   * Right after `20260923170000` that is every chapter: the column starts NULL,
+   * which is the point, because staleness is judged by which engine wrote the
+   * row and never by which keys it holds. A row written between #1147 and #2541
+   * holds every key and still paints a sub-3:1 fill.
+   *
+   * Read in full before any write, so the sweep's own writes (which drop rows
+   * out of this filter) cannot shift the offset window under a later page. A
+   * row another replica stamps mid-read can still shift it, which costs at
+   * most a skipped row until the next tick.
+   *
+   * Returns `[]` on a read failure, like every sweep query here.
+   */
+  async findChaptersWithStalePalette(
+    engineVersion: number,
+  ): Promise<StalePaletteRow[]> {
+    return this.fetchAllPages<StalePaletteRow>(
+      'palette sweep: chapter lookup failed',
+      (from, to) =>
+        this.supabase
+          .from('chapters')
+          .select('id, seed:branding->colors->>accent')
+          .or(stalePaletteFilter(engineVersion))
+          .order('id', { ascending: true })
+          .range(from, to),
+    );
+  }
+
+  /**
+   * Write a recomputed palette and its stamp, compare-and-set: only if the row
+   * is still stale **and** its seed is still the one the palette was derived
+   * from. Returns whether the row was written.
+   *
+   * `false` is a lost race, not a failure. Either another writer stamped it
+   * first (an officer's save, or another replica's sweep), or the accent moved
+   * after the read. The second guard is the one that matters: an officer who
+   * changed crimson to navy between this sweep's read and its write would
+   * otherwise get crimson back, stamped current, so no later tick would ever
+   * notice. A write from an API instance that predates the stamp column, as
+   * during a rolling deploy, changes the seed without touching the stamp, and
+   * this guard is all that catches it.
+   *
+   * Throws on a database error; the caller logs it per row.
+   */
+  async writeRecomputedPalette(
+    row: StalePaletteRow,
+    columns: {
+      theme_palette: Record<string, string>;
+      theme_palette_engine_version: number;
+    },
+  ): Promise<boolean> {
+    const update = this.supabase
+      .from('chapters')
+      .update(columns)
+      .eq('id', row.id)
+      .or(stalePaletteFilter(columns.theme_palette_engine_version));
+    const guarded =
+      row.seed === null
+        ? update.is('branding->colors->>accent', null)
+        : update.eq('branding->colors->>accent', row.seed);
+    const { data, error } = await guarded.select('id');
+    // Rethrown verbatim for the same reason `fetchAllPages` does: the log
+    // needs the PostgREST error's own `code`/`details`.
+    if (error) throw error;
+    return (data?.length ?? 0) > 0;
   }
 
   /**

@@ -23,6 +23,12 @@ import {
   type SweepUpcomingEventRow,
 } from './scheduled-jobs.repository';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
+import {
+  buildChapterPalette,
+  chapterPaletteColumns,
+  logChapterPaletteWarnings,
+} from '../../application/services/chapter-palette';
 
 /**
  * How far back the hourly auto-absent sweep reaches. Comfortably longer than
@@ -112,7 +118,9 @@ function formatUsd(cents: number): string {
 /**
  * Scheduled workers for the time-based behavior the spec requires but that no
  * user action triggers: attendance auto-absent, invoice due/overdue reminders,
- * and task due/overdue reminders.
+ * and task due/overdue reminders. Also the stale-palette sweep, which no user
+ * action triggers either: it carries an accent-engine change to the chapters
+ * already stored (#1165).
  *
  * Every sweep takes an explicit `now` so tests drive a fixed clock; the
  * `@Cron` handlers are thin wrappers that pass the real one.
@@ -122,7 +130,8 @@ function formatUsd(cents: number): string {
  * is a no-op. The reminder sweeps claim a row in
  * `scheduled_notification_dispatches` before sending — see `claimAndNotify`.
  * That claim is what makes these safe on more than one replica: a plain
- * `@Cron` fires on every instance.
+ * `@Cron` fires on every instance. The palette sweep takes no claim; its write
+ * is compare-and-set instead (`sweepStalePalettes`).
  *
  * **Failure isolation.** One chapter's bad data must not stop the sweep, so
  * every per-entity step is caught and logged individually.
@@ -188,6 +197,20 @@ export class ScheduledJobsService {
    * takes the API process down, hourly. A sweep that cannot start must skip
    * this tick loudly, not restart the service.
    */
+  /**
+   * Hourly: an engine change reaches every stored chapter within an hour of the
+   * deploy that ships it. Nothing else is time-sensitive here, and once every
+   * row is current each tick is one query that returns nothing.
+   *
+   * Needs no catch of its own, by the test in the report-retention docblock
+   * below: the candidate read goes through `fetchAllPages`, and every per-row
+   * step sits inside a `try`.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleStalePaletteSweep(): Promise<void> {
+    await this.sweepStalePalettes();
+  }
+
   @Cron(CronExpression.EVERY_HOUR)
   async handleReportRetentionSweep(): Promise<void> {
     try {
@@ -220,6 +243,85 @@ export class ScheduledJobsService {
    */
   async sweepExpiredReports(now: Date): Promise<ReportSweepResult> {
     return this.reportRetention.sweepExpiredReports(now);
+  }
+
+  /**
+   * Recompute every stored `theme_palette` the running accent engine did not
+   * write (#1165, accent-engine.md §4).
+   *
+   * The palette is cached on the chapter and never regenerated on read, so
+   * before this an engine change reached only the chapters that saved after it
+   * shipped. The #2541 fill floor made that an accessibility gap: a dark-accent
+   * row written before it paints a sub-3:1 `accent-primary`. Each palette now
+   * carries the version that wrote it, and bumping `SIGNET_ENGINE_VERSION` puts
+   * every older row back in this sweep's candidate set.
+   *
+   * Derivation is `buildChapterPalette`, the same builder every writer uses,
+   * seeded from `branding.colors.accent`, the same seed the recompute endpoint
+   * reads. The whole map is replaced, as every writer does, so a row still
+   * holding the dead legacy keys loses them here.
+   *
+   * **No dispatch claim.** Two replicas firing together both recompute, and
+   * the write is compare-and-set (`writeRecomputedPalette`), so the second finds
+   * the row current and writes nothing. The claim table exists to stop a
+   * duplicate side effect, and a palette written twice with the same value is
+   * not one. The guard's other half, the seed, is what stops this sweep from
+   * overwriting an officer's accent save that landed after the read.
+   *
+   * Converges: an invalid seed still produces a palette (house gold, logged
+   * once), which stamps the row, so no row is retried forever over bad data.
+   * Only a row whose write fails outright stays stale, and it is logged every
+   * tick until it succeeds.
+   */
+  async sweepStalePalettes(): Promise<{
+    recomputed: number;
+    superseded: number;
+    failed: number;
+  }> {
+    const chapters = await this.repository.findChaptersWithStalePalette(
+      SIGNET_ENGINE_VERSION,
+    );
+
+    let recomputed = 0;
+    let superseded = 0;
+    let failed = 0;
+    for (const chapter of chapters) {
+      try {
+        const seed = chapter.seed ?? undefined;
+        const build = buildChapterPalette({ accent: seed });
+        logChapterPaletteWarnings(
+          this.logger,
+          `for chapter ${chapter.id}`,
+          seed,
+          build,
+        );
+        const written = await this.repository.writeRecomputedPalette(
+          chapter,
+          chapterPaletteColumns(build),
+        );
+        if (written) recomputed += 1;
+        else superseded += 1;
+      } catch (error) {
+        failed += 1;
+        logThrowable(
+          this.logger,
+          'error',
+          `palette sweep: chapter ${chapter.id} could not be recomputed; it stays stale until a later tick succeeds`,
+          error,
+        );
+      }
+    }
+
+    if (chapters.length > 0) {
+      this.logger.log(
+        `palette sweep: recomputed ${recomputed}/${chapters.length} stale palettes to engine v${SIGNET_ENGINE_VERSION}` +
+          (superseded > 0
+            ? `; ${superseded} changed during the sweep and were left to their newer write`
+            : '') +
+          (failed > 0 ? `; ${failed} failed` : ''),
+      );
+    }
+    return { recomputed, superseded, failed };
   }
 
   /**

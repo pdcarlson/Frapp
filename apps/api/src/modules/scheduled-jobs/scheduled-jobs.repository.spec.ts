@@ -25,6 +25,7 @@ function makeSupabase(pages: Page[]) {
   const ranges: Array<[number, number]> = [];
   let pageIndex = 0;
   let insertPayload: Record<string, unknown> | null = null;
+  let updatePayload: Record<string, unknown> | null = null;
   const deleteFilters: Record<string, unknown> = {};
   let deleting = false;
 
@@ -53,6 +54,13 @@ function makeSupabase(pages: Page[]) {
     return builder;
   });
 
+  // Like delete, the update path resolves at the end of its chain (here a
+  // trailing `.select('id')`), through `then` below.
+  builder.update = jest.fn((payload: Record<string, unknown>) => {
+    updatePayload = payload;
+    return builder;
+  });
+
   // The delete path awaits the end of the `.eq()` chain rather than a
   // terminal method, so the builder itself has to be thenable.
   builder.then = (resolve: (value: Page) => unknown) =>
@@ -62,7 +70,9 @@ function makeSupabase(pages: Page[]) {
     client: { from: jest.fn(() => builder) },
     ranges,
     getInsertPayload: () => insertPayload,
+    getUpdatePayload: () => updatePayload,
     deleteFilters,
+    builder: builder as Record<string, jest.Mock>,
   };
 }
 
@@ -329,6 +339,115 @@ describe('ScheduledJobsRepository', () => {
       );
 
       expect(result.map((r) => r.id)).toEqual(['poll-ok']);
+    });
+  });
+
+  describe('findChaptersWithStalePalette', () => {
+    it('asks for unstamped or older rows, with the seed read as text, in id order', async () => {
+      const { repo, supabase } = await buildRepo([
+        { data: [{ id: 'ch-1', seed: '#8B0000' }], error: null },
+      ]);
+
+      const result = await repo.findChaptersWithStalePalette(3);
+
+      expect(result).toEqual([{ id: 'ch-1', seed: '#8B0000' }]);
+      expect(supabase.client.from).toHaveBeenCalledWith('chapters');
+      // `->>`, not `->`: the seed is compared as text by the guarded write, so
+      // it has to be read as text too.
+      expect(supabase.builder.select).toHaveBeenCalledWith(
+        'id, seed:branding->colors->>accent',
+      );
+      expect(supabase.builder.or).toHaveBeenCalledWith(
+        'theme_palette_engine_version.is.null,theme_palette_engine_version.lt.3',
+      );
+      expect(supabase.builder.order).toHaveBeenCalledWith('id', {
+        ascending: true,
+      });
+    });
+
+    it('returns nothing on a read failure, so the sweep writes nothing', async () => {
+      const { repo } = await buildRepo([
+        { data: null, error: { message: 'boom' } },
+      ]);
+
+      await expect(repo.findChaptersWithStalePalette(1)).resolves.toEqual([]);
+    });
+  });
+
+  describe('writeRecomputedPalette', () => {
+    const columns = {
+      theme_palette: { '--signet-accent-primary': '#C34437' },
+      theme_palette_engine_version: 2,
+    };
+
+    it('writes only while the row is still stale and its seed unchanged', async () => {
+      const { repo, supabase } = await buildRepo([
+        { data: [{ id: 'ch-1' }], error: null },
+      ]);
+
+      const written = await repo.writeRecomputedPalette(
+        { id: 'ch-1', seed: '#8B0000' },
+        columns,
+      );
+
+      expect(written).toBe(true);
+      expect(supabase.getUpdatePayload()).toEqual(columns);
+      expect(supabase.builder.eq).toHaveBeenCalledWith('id', 'ch-1');
+      expect(supabase.builder.or).toHaveBeenCalledWith(
+        'theme_palette_engine_version.is.null,theme_palette_engine_version.lt.2',
+      );
+      expect(supabase.builder.eq).toHaveBeenCalledWith(
+        'branding->colors->>accent',
+        '#8B0000',
+      );
+      // Returns the matched rows, which is how a lost race is told apart.
+      expect(supabase.builder.select).toHaveBeenCalledWith('id');
+    });
+
+    it('guards a chapter with no accent on the accent still being absent', async () => {
+      const { repo, supabase } = await buildRepo([
+        { data: [{ id: 'ch-1' }], error: null },
+      ]);
+
+      await repo.writeRecomputedPalette({ id: 'ch-1', seed: null }, columns);
+
+      // `eq(null)` would compile to `= null`, which matches nothing.
+      expect(supabase.builder.is).toHaveBeenCalledWith(
+        'branding->colors->>accent',
+        null,
+      );
+      expect(supabase.builder.eq).not.toHaveBeenCalledWith(
+        'branding->colors->>accent',
+        expect.anything(),
+      );
+    });
+
+    it('reports a lost race as not written, without throwing', async () => {
+      const { repo } = await buildRepo([{ data: [], error: null }]);
+
+      await expect(
+        repo.writeRecomputedPalette({ id: 'ch-1', seed: '#8B0000' }, columns),
+      ).resolves.toBe(false);
+    });
+
+    it('throws a database error for the sweep to log against the row', async () => {
+      const failure = { message: 'boom', code: '57014' };
+      const { repo } = await buildRepo([{ data: null, error: failure }]);
+
+      await expect(
+        repo.writeRecomputedPalette({ id: 'ch-1', seed: '#8B0000' }, columns),
+      ).rejects.toBe(failure);
+    });
+
+    it('refuses a non-integer engine version rather than interpolate it into a filter', async () => {
+      const { repo } = await buildRepo([]);
+
+      await expect(
+        repo.writeRecomputedPalette(
+          { id: 'ch-1', seed: '#8B0000' },
+          { ...columns, theme_palette_engine_version: 1.5 },
+        ),
+      ).rejects.toThrow('engine version must be an integer');
     });
   });
 

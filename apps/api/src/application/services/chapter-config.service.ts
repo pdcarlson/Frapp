@@ -20,6 +20,7 @@ import {
 import { isModuleEnabled } from '@repo/validation';
 import {
   buildChapterPalette,
+  chapterPaletteColumns,
   logChapterPaletteWarnings,
   type ChapterBrandingInput,
 } from './chapter-palette';
@@ -1000,7 +1001,7 @@ export class ChapterConfigService {
       colors.accent,
       build,
     );
-    const patch: TablesUpdate<'chapters'> = { theme_palette: build.palette };
+    const patch: TablesUpdate<'chapters'> = chapterPaletteColumns(build);
     const { error } = await this.supabase
       .from('chapters')
       .update(patch)

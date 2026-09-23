@@ -14,9 +14,10 @@
  * (`apps/api/src/application/services/chapter-palette.ts`) and produced for
  * **every** chapter, including one that supplied no colours — §3 defines the
  * no-accent case as the house seed run through this same pipeline, not as an
- * absent palette. Rows written before this map existed carry none of these keys
- * and render the house defaults until a save or recompute refreshes them
- * (the backfill is tracked separately).
+ * absent palette. The API stamps each palette with `SIGNET_ENGINE_VERSION` and
+ * recomputes any stored row written by an older engine (accent-engine.md §4),
+ * so what a chapter paints tracks this function rather than whichever engine
+ * last saw a save.
  *
  * DOM-free and CommonJS-safe, because the NestJS API calls it.
  */
@@ -59,6 +60,24 @@ const GENERATOR_PARAMS = {
 
 /** The house default seed (accent-engine.md §3). Not a separate palette — it runs the same pipeline. */
 export const HOUSE_SEED = "#DDB844";
+
+/**
+ * Which engine produced a palette. Bump it in the same change as anything that
+ * alters `deriveSignetPalette`'s output for any seed: a role, a step, the lift,
+ * a generator resync, a `colorjs.io` upgrade.
+ *
+ * The API persists it beside every palette it writes
+ * (`chapters.theme_palette_engine_version`), and an hourly sweep recomputes each
+ * stored row that is behind it (accent-engine.md §4). So bumping this is how an
+ * engine change reaches every chapter already stored, not only the ones that
+ * save after it ships. Before #1165 nothing recorded which engine wrote a row,
+ * and each change silently reached only the chapters that saved afterwards.
+ *
+ * Forgetting the bump is caught: `signet.spec.ts` pins a fingerprint of the
+ * engine's output over the pinned seed corpus to this number, and a change in
+ * the output fails there until a new version and its fingerprint are recorded.
+ */
+export const SIGNET_ENGINE_VERSION = 1;
 
 /** WCAG AA for normal text, the floor the accent-derived text roles must clear. */
 const MIN_TEXT_CONTRAST = 4.5;
@@ -275,11 +294,13 @@ export function liftAccent(
 /**
  * Generates the Signet accent role tokens for one chapter seed.
  *
- * **Never throws.** That is load-bearing rather than stylistic:
- * `ChapterOnboardingService.buildPalette` wraps its palette call in a
- * try/catch that returns `null`, so a throw here would not surface as an error —
- * it would silently onboard a chapter with no palette at all. An unusable seed
- * therefore falls back to the house seed and says so on `invalidSeed`.
+ * **Never throws.** That is load-bearing rather than stylistic: every writer
+ * calls `buildChapterPalette` bare, and onboarding does it before the chapter
+ * row exists, so a throw here would fail chapter creation outright rather than
+ * degrade the palette. (This used to say onboarding wrapped the call in a
+ * try/catch returning `null`. It never has; corrected 2026-09-23, matching the
+ * correction in `chapter-palette.ts`.) An unusable seed therefore falls back to
+ * the house seed and says so on `invalidSeed`.
  *
  * @example
  * deriveSignetPalette("#8B0000")   // crimson chapter

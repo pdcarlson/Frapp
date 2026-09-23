@@ -15,6 +15,7 @@ import {
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import {
   buildChapterPalette,
+  chapterPaletteColumns,
   logChapterPaletteWarnings,
   type FailedContrastCheck,
 } from './chapter-palette';
@@ -392,7 +393,7 @@ export class ChapterService {
     const chapter = await this.chapterRepo.update(id, {
       ...data,
       branding: { ...branding, colors },
-      theme_palette: build.palette,
+      ...chapterPaletteColumns(build),
     });
 
     // The branding mirror is a second, independent change this same request

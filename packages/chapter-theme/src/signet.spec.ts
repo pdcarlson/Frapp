@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import { contrastRatio, normalizeHex, parseHex } from "@repo/color";
@@ -7,6 +9,7 @@ import {
   deriveSignetPalette,
   HOUSE_SEED,
   liftAccent,
+  SIGNET_ENGINE_VERSION,
   SIGNET_FILL_SURFACES,
   signetAccentSemanticVars,
   signetFillChecks,
@@ -390,13 +393,68 @@ describe("deriveSignetPalette", () => {
     });
 
     it("never throws", () => {
-      // Load-bearing: ChapterOnboardingService wraps its palette call in a
-      // try/catch returning null, so a throw here would not surface as an error
-      // — it would silently onboard a chapter with no palette at all.
+      // Load-bearing: every writer calls `buildChapterPalette` bare, and
+      // onboarding does it before the chapter row exists, so a throw here
+      // would fail chapter creation outright.
       for (const input of [undefined, null, "", "☃", "#".repeat(64)]) {
         expect(() => deriveSignetPalette(input)).not.toThrow();
       }
     });
+  });
+});
+
+/**
+ * What each engine version persists for the pinned corpus: one fingerprint per
+ * `SIGNET_ENGINE_VERSION`, oldest first, never edited once merged.
+ *
+ * The API recomputes a stored palette only when its stamp is behind
+ * `SIGNET_ENGINE_VERSION` (accent-engine.md §4), so an output change shipped
+ * without a bump reaches no stored chapter: exactly the silent staleness #1165
+ * existed to end. This pin turns "remember to bump" into a failing test.
+ *
+ * When it fails because you changed the engine on purpose: bump
+ * `SIGNET_ENGINE_VERSION` in `signet.ts` and add its fingerprint here as a new
+ * entry. Don't overwrite the old entry to make the test pass: that ships the
+ * new output under the old number, and the sweep leaves every stored row as it
+ * was. When it fails and you meant no output change, the diff changed what the
+ * engine paints, and that is the bug.
+ */
+const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
+  1: "c43cfaeabae84253f05378ecdc360da9656d60328361c881a9f8bebc27fe6438",
+};
+
+/**
+ * sha256 over what the engine persists for every corpus seed. Keys are sorted
+ * because `jsonb` does not keep insertion order, so the order is not output.
+ */
+const persistedOutputFingerprint = (): string => {
+  const corpus = ALL_SEEDS.map((seed) => {
+    const { palette } = deriveSignetPalette(seed);
+    return [
+      seed,
+      Object.entries(palette).sort(([a], [b]) => a.localeCompare(b)),
+    ];
+  });
+  return createHash("sha256").update(JSON.stringify(corpus)).digest("hex");
+};
+
+describe("SIGNET_ENGINE_VERSION", () => {
+  it("names the engine whose output this is", () => {
+    expect(
+      persistedOutputFingerprint(),
+      "deriveSignetPalette's output changed. Bump SIGNET_ENGINE_VERSION and " +
+        "record the new fingerprint as a new ENGINE_FINGERPRINTS entry, or " +
+        "stored palettes will never be recomputed (see the docblock above).",
+    ).toBe(ENGINE_FINGERPRINTS[SIGNET_ENGINE_VERSION]);
+  });
+
+  it("has one fingerprint per version, 1 through the current one, all distinct", () => {
+    const versions = Object.keys(ENGINE_FINGERPRINTS).map(Number);
+    expect(versions).toEqual(
+      Array.from({ length: SIGNET_ENGINE_VERSION }, (_, i) => i + 1),
+    );
+    const fingerprints = Object.values(ENGINE_FINGERPRINTS);
+    expect(new Set(fingerprints).size).toBe(fingerprints.length);
   });
 });
 

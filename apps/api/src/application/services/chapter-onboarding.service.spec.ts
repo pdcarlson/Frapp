@@ -43,6 +43,11 @@ jest.mock('@repo/chapter-theme', () => ({
       },
     ],
   })),
+  // The real constant, not a stand-in: a writer that dropped the stamp would
+  // otherwise persist `undefined` here and still pass (#1165).
+  SIGNET_ENGINE_VERSION: jest.requireActual<{ SIGNET_ENGINE_VERSION: number }>(
+    '@repo/chapter-theme',
+  ).SIGNET_ENGINE_VERSION,
 }));
 // Only the policy version is stubbed. The rest must stay real: the seeding path
 // validates every candidate row with the actual `CreateCustomFieldSchema`, so a
@@ -60,6 +65,12 @@ import { ActivationService } from './activation.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import type { ChapterOnboardingInput } from './chapter-onboarding.service';
+
+// Read from the real package, not the mock above: compared against the mocked
+// value, a mock that dropped the constant would make both sides `undefined`.
+const { SIGNET_ENGINE_VERSION } = jest.requireActual<{
+  SIGNET_ENGINE_VERSION: number;
+}>('@repo/chapter-theme');
 
 const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -186,6 +197,17 @@ describe('ChapterOnboardingService', () => {
       );
       expect(written.length).toBeGreaterThan(0);
       expect(written.every((key) => key.startsWith('--signet-'))).toBe(true);
+    });
+
+    it('stamps the palette with the engine that wrote it (#1165)', async () => {
+      await service.onboard('user-1', directoryDto);
+
+      // A new chapter must read as current to the stale-palette sweep, not as
+      // one of the pre-stamp rows it exists to recompute.
+      const [, payload] = chapterService.create.mock.calls[0];
+      expect(payload.config.theme_palette_engine_version).toBe(
+        SIGNET_ENGINE_VERSION,
+      );
     });
 
     it('writes the Signet map even when the chapter picked no colors', async () => {

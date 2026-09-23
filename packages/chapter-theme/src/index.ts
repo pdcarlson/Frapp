@@ -24,6 +24,7 @@ export {
   deriveSignetPalette,
   signetAccentSemanticVars,
   HOUSE_SEED,
+  SIGNET_ENGINE_VERSION,
   SIGNET_FILL_SURFACES,
   type DeriveSignetPaletteResult,
   type SignetContrastCheck,

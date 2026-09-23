@@ -1,4 +1,7 @@
-import { deriveSignetPalette } from '@repo/chapter-theme';
+import {
+  deriveSignetPalette,
+  SIGNET_ENGINE_VERSION,
+} from '@repo/chapter-theme';
 import type { ChapterBranding } from '@repo/validation';
 
 /**
@@ -44,6 +47,11 @@ export type FailedContrastCheck = {
 export type ChapterPaletteBuild = {
   /** The Signet accent role map, keyed `--signet-*`. */
   palette: Record<string, string>;
+  /**
+   * `SIGNET_ENGINE_VERSION` of the engine that produced `palette`. Persisted
+   * beside it, never without it: see `chapterPaletteColumns`.
+   */
+  engineVersion: number;
   /** True when the accent seed failed to parse and house gold was substituted. */
   invalidSeed: boolean;
   /** Signet contrast checks that came back below AA. Empty in the normal case. */
@@ -62,10 +70,12 @@ export type ChapterPaletteBuild = {
  * Builds a chapter's complete `theme_palette` from its brand colors.
  *
  * One implementation for all three writers — onboarding, the config PATCH /
- * recompute endpoint, and the Settings accent save. They had drifted into
- * three shapes with three different notions of when a palette gets written,
- * which is how `theme_palette` ended up frozen at its onboarding value for
- * every chapter that later edited its accent from Settings.
+ * recompute endpoint, and the Settings accent save — and for the stale-palette
+ * sweep that re-runs it over stored rows when the engine changes (#1165). The
+ * writers had drifted into three shapes with three different notions of when a
+ * palette gets written, which is how `theme_palette` ended up frozen at its
+ * onboarding value for every chapter that later edited its accent from
+ * Settings.
  *
  * **The map is always produced.** `accent-engine.md` §3 defines the no-accent
  * case as the house seed run through the same pipeline, not as an absent
@@ -74,9 +84,10 @@ export type ChapterPaletteBuild = {
  * the legacy map was produced only when a brand colour was supplied, so a
  * palette could hold one map or both.
  *
- * **Never throws, and nothing catches it if it did.** All three writers call it
- * bare: `ChapterOnboardingService.buildPalette`,
+ * **Never throws, and no writer catches it if it did.** All three writers call
+ * it bare: `ChapterOnboardingService.buildPalette`,
  * `ChapterConfigService.recomputePalette`, and `ChapterService`'s accent save.
+ * (The sweep does catch, per row, only so one bad row cannot end a tick.)
  * Onboarding is the worst of the three — its call runs *before*
  * `ChapterService.create`, so a throw here fails chapter creation outright
  * rather than degrading the palette. (This paragraph used to claim onboarding
@@ -90,6 +101,7 @@ export function buildChapterPalette(
 
   return {
     palette: { ...signet.palette },
+    engineVersion: SIGNET_ENGINE_VERSION,
     invalidSeed: signet.invalidSeed,
     failedContrastChecks: signet.contrastChecks
       .filter((check) => !check.passes)
@@ -97,6 +109,31 @@ export function buildChapterPalette(
     failedFillChecks: signet.fillChecks
       .filter((check) => !check.passes)
       .map(({ role, against, ratio }) => ({ role, against, ratio })),
+  };
+}
+
+/**
+ * The columns a palette write sets, always together (#1165).
+ *
+ * `theme_palette_engine_version` is how a stored palette says which engine
+ * wrote it, and the hourly sweep (`ScheduledJobsService.sweepStalePalettes`)
+ * recomputes any row that is behind the running engine. A palette written
+ * without its stamp therefore reads as stale and gets recomputed on the next
+ * tick, which is harmless. A stamp written without its palette would mark a
+ * stale fill current and hide it from the sweep for good. Spreading this
+ * object, rather than naming the columns at each call site, is what keeps the
+ * two from ever parting.
+ *
+ * Every writer uses it: onboarding, the config recompute, the Settings accent
+ * save, and the sweep itself.
+ */
+export function chapterPaletteColumns(build: ChapterPaletteBuild): {
+  theme_palette: Record<string, string>;
+  theme_palette_engine_version: number;
+} {
+  return {
+    theme_palette: build.palette,
+    theme_palette_engine_version: build.engineVersion,
   };
 }
 
