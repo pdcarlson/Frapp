@@ -38,12 +38,34 @@ DELETE FROM chapters WHERE id = 'c0ffee00-0000-4000-8000-000000000001';
 -- chapters -> users is ON DELETE SET NULL, so the demo people outlive the
 -- cascade and collide on re-run. Remove them explicitly by their id prefix.
 --
--- Every other foreign key onto `users` that does not cascade sits on a
--- chapter-scoped table, so the chapter cascade above has already removed the
--- rows that would block this — unless a seeded account wrote somewhere outside
--- its own chapter (a reviewer who founded a second chapter, say). Then this
--- DELETE fails, and because the whole seed is one transaction, it fails with
--- nothing changed rather than half-seeded.
+-- But only once the cascade has taken everything they did: a row that still
+-- references a seeded account now lies outside the demo chapter (in another
+-- chapter the App Review login founded or joined, or in none, like a directory
+-- request), and deleting the account would delete it, fail on it, or null its
+-- reference. The block below refuses in that case, reading every
+-- foreign key onto users from the catalog (seed-demo.mjs accountGuardSql, which
+-- a test holds this copy to). The whole seed is one transaction, so a refusal
+-- changes nothing.
+DO $guard$
+DECLARE
+  r record;
+  hit boolean;
+BEGIN
+  FOR r IN
+    SELECT c.conrelid::regclass AS tbl, a.attname AS col
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+     WHERE c.contype = 'f' AND c.confrelid = 'public.users'::regclass
+       AND array_length(c.conkey, 1) = 1
+       AND t.relname NOT IN ('users', 'push_tokens', 'user_settings')
+  LOOP
+    EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I::text LIKE %L)', r.tbl, r.col, 'c0ffee00-0000-4000-8000-1000%') INTO hit;
+    IF hit THEN
+      RAISE EXCEPTION 'a demo account is still referenced from %.% once its chapter is gone; refusing to delete the account, which would delete, block on or rewrite that row outside the demo chapter', r.tbl, r.col;
+    END IF;
+  END LOOP;
+END $guard$;
 DELETE FROM users WHERE id::text LIKE 'c0ffee00-0000-4000-8000-1000%';
 
 -- ── Chapter ──────────────────────────────────────────────────────────────────
@@ -154,18 +176,21 @@ CREATE TEMP TABLE demo_login ON COMMIT DROP AS
 DO $$
 DECLARE
   v_email text := (SELECT email FROM roster WHERE n = 1);
+  v_ns text := split_part('c0ffee00-0000-4000-8000-000000000001', '-', 1);
   v_auth uuid := (SELECT auth_id FROM demo_login);
   v_ours boolean := (SELECT ours FROM demo_login);
   v_owner uuid;
+  r record;
+  hit boolean;
 BEGIN
   IF v_auth IS NULL OR NOT v_ours THEN
     DELETE FROM demo_login;
     IF current_setting('frapp_demo.variant', true) = 'reviewer' THEN
       RAISE EXCEPTION '%', CASE WHEN v_auth IS NULL
-        THEN format('no auth user has the login email %s; create it with `seed-demo.mjs auth` first, then re-run', v_email)
-        ELSE format('the auth user with %s was not created by `seed-demo.mjs auth` for this chapter; refusing to link an account this script does not own', v_email) END;
+        THEN format('no auth user has the login email %s; create it with `seed-demo.mjs auth --namespace %s` first, then re-run', v_email, v_ns)
+        ELSE format('the auth user with %s was not created by `seed-demo.mjs auth --namespace %s`; refusing to link an account this script does not own', v_email, v_ns) END;
     END IF;
-    RAISE NOTICE 'login % is not a `seed-demo.mjs auth` login for this chapter: roster #1 is seeded unlinked', v_email;
+    RAISE NOTICE 'login % is not a `seed-demo.mjs auth --namespace %` login: roster #1 is seeded unlinked', v_email, v_ns;
     RETURN;
   END IF;
   -- The namespace's own rows are gone (Reset), so any `users` row still holding
@@ -173,13 +198,25 @@ BEGIN
   -- login — `verify` run early, or the app opened on TestFlight — makes exactly
   -- one: the API's first-sign-in sync inserts a chapterless row. That shell is
   -- this login's and holds nothing, so it is adopted: deleted, and the roster
-  -- row below takes the auth id. A row with a membership anywhere is an account
-  -- in use, and is refused rather than destroyed.
+  -- row below takes the auth id. A row anything references (through the same
+  -- foreign keys the reset guard reads: a membership, points in a chapter it has
+  -- since left) is an account in use, and is refused rather than destroyed.
   SELECT id INTO v_owner FROM users WHERE supabase_auth_id = v_auth;
   IF v_owner IS NOT NULL THEN
-    IF EXISTS (SELECT 1 FROM members WHERE user_id = v_owner) THEN
-      RAISE EXCEPTION 'the login''s auth user already belongs to users.id %, which is a member of a chapter; refusing to take it over', v_owner;
-    END IF;
+    FOR r IN
+    SELECT c.conrelid::regclass AS tbl, a.attname AS col
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+     WHERE c.contype = 'f' AND c.confrelid = 'public.users'::regclass
+       AND array_length(c.conkey, 1) = 1
+       AND t.relname NOT IN ('users', 'push_tokens', 'user_settings')
+    LOOP
+      EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I = %L)', r.tbl, r.col, v_owner) INTO hit;
+      IF hit THEN
+        RAISE EXCEPTION 'the login''s auth user already belongs to users.id %, which has rows in %.%: an account in use; refusing to take it over', v_owner, r.tbl, r.col;
+      END IF;
+    END LOOP;
     DELETE FROM users WHERE id = v_owner;
     RAISE NOTICE 'adopted the login: removed the chapterless users row % a sign-in created before this seed', v_owner;
   END IF;

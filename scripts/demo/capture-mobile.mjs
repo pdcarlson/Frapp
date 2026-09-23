@@ -42,6 +42,8 @@ import { mkdir, rm, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { LOCAL_DEMO_EMAIL, LOCAL_DEMO_PASSWORD, TEMPLATE_NAMESPACE, demoIds } from "./seed-demo.mjs";
+
 const MOBILE_URL = process.env.MOBILE_URL ?? "http://localhost:3002";
 const OUT_ROOT = process.env.OUT_ROOT ?? "screenshots";
 const APP_DIR = path.join(OUT_ROOT, "mobile-app");
@@ -51,11 +53,12 @@ const STORE_DIR = path.join(OUT_ROOT, "app-store");
 const APP_STORE =
   process.argv.includes("--app-store") || process.env.APP_STORE === "1";
 
-const EMAIL = process.env.DEMO_EMAIL ?? "marcus.ellison@example.com";
-const PASSWORD = process.env.DEMO_PASSWORD ?? "DemoShowcase!2026";
+// The local login setup-demo.sh creates; seed-demo.mjs owns the values.
+const EMAIL = process.env.DEMO_EMAIL ?? LOCAL_DEMO_EMAIL;
+const PASSWORD = process.env.DEMO_PASSWORD ?? LOCAL_DEMO_PASSWORD;
 
 /** The zoned Chapter Meeting the demo seed marks up for check-in. */
-const EVENT_ID = process.env.EVENT_ID ?? "c0ffee00-0000-4000-8000-3000000000e1";
+const EVENT_ID = process.env.EVENT_ID ?? `${demoIds(TEMPLATE_NAMESPACE).prefix}3000000000e1`;
 
 const BOARD = "spec/ui/design-system/reference/canvas-screens.dc.html";
 const FONT = "packages/theme/fonts/FigtreeVF.woff2";

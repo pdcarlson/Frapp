@@ -99,12 +99,14 @@ jobs:
               - 'scripts/load-chapter-directory.mjs'
               - 'scripts/lib/chapter-directory-seed.mjs'
               # ...and the demo seed App Review signs in to (#2308), with the
-              # scripts/ci/lib modules it imports and the environments file one
-              # of them reads.
+              # scripts/ci/lib modules it imports, the Storage lister it reuses
+              # from the backup script, and the environments file one of them
+              # reads.
               - 'scripts/demo/**'
               - 'scripts/ci/lib/env.mjs'
               - 'scripts/ci/lib/environments.mjs'
               - 'scripts/ci/lib/http.mjs'
+              - 'scripts/storage-backup.mjs'
               - '.github/environments.json'
               # The search-column landmark reads the API's search source.
               - 'apps/api/src/application/services/search.service.ts'
