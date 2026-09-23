@@ -91,12 +91,15 @@ function readString(
  * that pairing.
  *
  * The legacy resolver stays as the fallback for exactly one case — a chapter
- * whose `theme_palette` predates the Signet map and has not been recomputed. It
+ * whose `theme_palette` lacks the Signet map and has not been recomputed. It
  * outlived `derivePalette`, which the #920 slice-9 cutover deleted: the two
  * were independent all along, since this path re-validates `accent_color` and
  * never read that engine's token map. The API's stale-palette sweep recomputes
- * every such row (#1165), so this branch is dead once production has run it;
- * deleting it is #2595.
+ * every such row within the hour (#1165), so once production has run it, the
+ * branch serves only a row inserted without a palette since the last tick: a
+ * demo seed (`scripts/demo/demo-seed.sql`) or `POST /v1/chapters`. Deleting
+ * it, and letting those rows show the default accent for that hour as web's
+ * stylesheet defaults already do, is #2595.
  *
  * `accentPrimary`/`accentOnPrimary` are gated **together**, both-or-neither —
  * not chained off `generatedAccent`'s own presence check, and not defaulted

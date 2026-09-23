@@ -380,9 +380,15 @@ export class ScheduledJobsRepository {
    * after the read. The second guard is the one that matters: an officer who
    * changed crimson to navy between this sweep's read and its write would
    * otherwise get crimson back, stamped current, so no later tick would ever
-   * notice. A write from an API instance that predates the stamp column, as
-   * during a rolling deploy, changes the seed without touching the stamp, and
-   * this guard is all that catches it.
+   * notice. The same guard catches a write from an API instance that
+   * predates the stamp column, as during the deploy that first ships it, when
+   * that write lands between this sweep's read and its own: it changes the
+   * seed without touching the stamp. One that lands after this write is not
+   * caught anywhere. The row keeps that instance's palette under a current
+   * stamp until the next accent save, so `DB_PROMOTION_RUNBOOK.md` (#1165)
+   * says when to re-queue every row after that deploy. Later engine bumps
+   * have no such gap: an older instance stamps its own, lower version, and
+   * the sweep picks the row up again.
    *
    * Throws on a database error; the caller logs it per row.
    */

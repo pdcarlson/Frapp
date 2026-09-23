@@ -148,11 +148,12 @@ today.
 
 ### Not yet implemented
 
-- Mobile's `resolveChapterAccentColor` fallback (the Residual row) is still in the tree. It became
-  dead code with the §4 stale-palette sweep, which recomputes every row that predates the Signet
-  map, but it can only go once production has run that sweep, since a mobile build without it
-  would paint house gold for any chapter still unstamped. Deleting it is
-  [#2595](https://github.com/pdcarlson/Frapp/issues/2595).
+- Mobile's `resolveChapterAccentColor` fallback (the Residual row) is still in the tree. The §4
+  stale-palette sweep recomputes every row that lacks the Signet map, but it can only go once
+  production has run that sweep, since a mobile build without it would paint house gold for any
+  chapter still unstamped. After that it serves only a row inserted without a palette since the
+  last tick (a demo seed, or `POST /v1/chapters`), for under an hour, during which web already
+  shows the `signet.css` defaults. Deleting it is [#2595](https://github.com/pdcarlson/Frapp/issues/2595).
 
 What the sweep settled, so the next reader does not re-derive it ([#1165](https://github.com/pdcarlson/Frapp/issues/1165)):
 before it, a stored row could lack every `--signet-*` key (written before #1147, 2026-08-20),

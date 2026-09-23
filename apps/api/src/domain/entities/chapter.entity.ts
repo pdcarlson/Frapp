@@ -32,7 +32,9 @@ export interface Chapter {
   // #1165: `SIGNET_ENGINE_VERSION` of the engine that wrote `theme_palette`.
   // NULL (every row written before 20260923170000) or lower than the running
   // engine means stale; `ScheduledJobsService.sweepStalePalettes` recomputes
-  // it. Written only beside the palette, via `chapterPaletteColumns`.
+  // it. A version is written only beside the palette, via
+  // `chapterPaletteColumns`; the config PATCH also clears it to NULL in its
+  // branding write, which only re-queues the row (chapter-config.service.ts).
   theme_palette_engine_version?: number | null;
   directory_id?: string | null;
   beta_config?: Record<string, unknown>;

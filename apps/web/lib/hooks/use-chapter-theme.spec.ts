@@ -199,10 +199,13 @@ describe("useChapterTheme", () => {
     // the bone background, so any of them landing on the Signet surface paints
     // a near-white fill or an unvalidated ring on #0E0D0B.
     //
-    // Deleting the writer did not retire this guard — it is what makes the
+    // Deleting the writer did not retire this guard — it is what made the
     // deletion safe to ship without a data migration. `chapters.theme_palette`
-    // is unconstrained jsonb and no backfill prunes it, so these keys outlive
-    // the engine indefinitely and the hook stays an allow-list.
+    // is unconstrained jsonb: the #1165 stale-palette sweep replaces each
+    // stored map whole, but a row keeps these keys until that sweep reaches
+    // it, and nothing stops a non-role key being written to the column
+    // afterwards (accent-engine.md §4 Storage), so the hook stays an
+    // allow-list.
     setPalette({ ...LEGACY_KEYS, ...SIGNET_KEYS });
     renderHook(() => useChapterTheme());
 
