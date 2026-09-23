@@ -626,8 +626,9 @@ export async function removePlaceholders({
   );
   if (!Array.isArray(chapters) || chapters.length !== 0) {
     throw new Error(
-      `chapter ${chapterId} still exists: apply \`sql --remove\` for this namespace first, and run ` +
-        "`storage --remove` only once it has committed. It is the step that can refuse, and this one cannot be undone.",
+      `chapter ${chapterId} still exists: apply \`sql --namespace ${namespace} --remove\` first, and run ` +
+        `\`storage --namespace ${namespace} --remove\` only once it has committed. It is the step that can refuse, ` +
+        "and this one cannot be undone.",
     );
   }
   // A listing or bulk delete repeats harmlessly, so each may be retried like a GET.
@@ -768,9 +769,8 @@ export async function verifyLogin({
   if (!zoned) {
     fail(
       `no upcoming event with a check-in zone (${upcoming.length} upcoming in all): the seed is stale. ` +
-        `Tear it down with \`sql --remove --namespace ${namespace}\` and \`storage --remove --namespace ${namespace}\`, ` +
-        `re-run ${reseed} and \`storage --namespace ${namespace}\`, then verify again ` +
-        "(the full commands, with the production fence: docs/guides/demo-data.md, To remove a demo chapter)",
+        `Re-seed it the way docs/guides/demo-data.md, "Re-seed before every submission", lays out: tear it down, ` +
+        `then run ${reseed} and \`storage\` again, then verify again`,
     );
   }
   pass(

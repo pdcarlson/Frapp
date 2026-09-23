@@ -158,13 +158,14 @@ the day the seed runs, and the one with a check-in zone, the Chapter Meeting, is
 19:00 UTC two days later, so `verify` fails 43 to 67 hours after a seed. App Review
 can take longer than that; the seed's last event is 12 days out. First tear the
 last one down with steps 1 and 2 of **To remove a demo chapter** below, then re-run
-steps 2 to 4. Re-seeding over it would clear the
+steps 2 to 4 of the list above (seed, upload, check). Re-seeding over it would clear the
 reviewer's rows but not their uploads: a chat photo or avatar under
 `chapters/<chapter id>/` would stay in production Storage with nothing pointing at
 it, and only `storage --remove` clears that folder. The login and its password
 persist, and step 2 links the same login again.
 
-**To remove a demo chapter**, in this order (for a re-seed, stop after step 2):
+**To remove a demo chapter**, in this order. For a re-seed, stop after step 2 here
+and go on with step 2 of the list above.
 
 1. `node scripts/demo/seed-demo.mjs sql --namespace a9900000 --remove > "${TMPDIR:-/tmp}/remove.sql"`,
    applied the way step 2 above applies the seed. It prints the chapter and user

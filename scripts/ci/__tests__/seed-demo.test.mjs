@@ -488,7 +488,7 @@ test("storage --remove refuses while the chapter row exists, before it lists or 
   const { fetchImpl, calls } = makeFetch([[on("GET", "/rest/v1/chapters?"), () => ({ json: [{ id: demoIds(ns).chapterId }] })]]);
   await assert.rejects(
     removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: ns, fetchImpl }),
-    /still exists: apply `sql --remove` for this namespace first/,
+    /still exists: apply `sql --namespace a9900000 --remove` first, and run `storage --namespace a9900000 --remove`/,
   );
   assert.equal(calls.length, 1);
   assert.match(calls[0].url, new RegExp(`/rest/v1/chapters\\?select=id&id=eq\\.${demoIds(ns).chapterId}$`));
@@ -687,11 +687,11 @@ test("verify's re-seed advice keeps --reviewer when it checked the reviewer vari
   // `sql` without it would rebuild the marketing chapter over the reviewer's.
   const stale = [{ name: "Old", start_time: "2026-09-01T12:00:00.000Z", check_in_zone: ZONE }];
   const reviewer = makeFetch(verifyRoutes({ events: stale }));
-  await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: reviewer.fetchImpl }), /`sql --remove --namespace a9900000` and `storage --remove --namespace a9900000`, re-run `sql --namespace a9900000 --reviewer`/);
+  await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: reviewer.fetchImpl }), /"Re-seed before every submission", lays out: tear it down, then run `sql --namespace a9900000 --reviewer` and `storage` again/);
   const unlinked = makeFetch(verifyRoutes({ meId: "some-new-user" }));
   await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: unlinked.fetchImpl }), /Run `sql --namespace a9900000 --reviewer` \(after `auth`\)/);
   const marketing = makeFetch(verifyRoutes({ events: stale }));
-  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: marketing.fetchImpl }), /re-run `sql --namespace a9900000` and/);
+  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: marketing.fetchImpl }), /then run `sql --namespace a9900000` and `storage` again/);
 });
 
 // ── setup-demo.sh ───────────────────────────────────────────────────────────
