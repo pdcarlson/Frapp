@@ -1095,8 +1095,8 @@ describe('ChapterService', () => {
     // config PATCH both write the column without checking, so a chapter could
     // hold an accent this route then refused, leaving the officer unable to
     // save anything in Settings (the form resends the stored value). Legibility
-    // is handled where the accent is painted, not on save:
-    // `spec/behavior/branding.md` § Accent Color owns how.
+    // is not gated here; why, and what is and isn't guaranteed instead:
+    // `spec/behavior/branding.md` § Accent Color.
     mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
     mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
 

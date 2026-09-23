@@ -349,8 +349,8 @@ export class ChapterService {
     // they had never picked. One value cannot have two different validities
     // depending on which door it came through.
     //
-    // Legibility is handled where the accent is painted, not on save:
-    // `spec/behavior/branding.md` § Accent Color owns how.
+    // Why there is no contrast gate on save, and what legibility is and isn't
+    // guaranteed: `spec/behavior/branding.md` § Accent Color.
 
     // `branding.colors.accent` is the authoritative accent (#795) and this
     // column mirrors it, so a Settings edit — the one path that writes the
