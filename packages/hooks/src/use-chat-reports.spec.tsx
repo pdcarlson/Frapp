@@ -4,10 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import {
   chatReportKeys,
-  readsMessageContent,
+  readsRemovedMessage,
+  removalOutcomeUnknown,
   useChatReports,
+  useInvalidateChatReports,
   useRemoveReportedMessage,
   useResolveChatReport,
+  type ReportedMessageTimeline,
 } from "./use-chat-reports";
 import { bookmarkKeys } from "./use-chat";
 import { FrappClientProvider } from "./use-frapp-client";
@@ -179,23 +182,80 @@ describe("useResolveChatReport", () => {
   });
 });
 
+describe("useInvalidateChatReports", () => {
+  it("marks every slice of this chapter's queue stale, and no other chapter's", async () => {
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(
+      chatReportKeys.list(CHAPTER, { status: "open" }),
+      [],
+    );
+    queryClient.setQueryData(
+      chatReportKeys.list(CHAPTER, { status: "actioned" }),
+      [],
+    );
+    queryClient.setQueryData(
+      chatReportKeys.list("chap-2", { status: "open" }),
+      [],
+    );
+    const { result } = renderHook(() => useInvalidateChatReports(), {
+      wrapper: createWrapper(queryClient, {}),
+    });
+
+    await result.current();
+
+    const stale = (key: readonly unknown[]) =>
+      queryClient.getQueryState(key)?.isInvalidated;
+    expect(stale(chatReportKeys.list(CHAPTER, { status: "open" }))).toBe(true);
+    expect(stale(chatReportKeys.list(CHAPTER, { status: "actioned" }))).toBe(
+      true,
+    );
+    expect(stale(chatReportKeys.list("chap-2", { status: "open" }))).toBe(
+      false,
+    );
+  });
+
+  it("does nothing without an active chapter", async () => {
+    const queryClient = createTestQueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useInvalidateChatReports(), {
+      wrapper: createWrapper(queryClient, {}, null),
+    });
+
+    await result.current();
+
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+});
+
 describe("useRemoveReportedMessage", () => {
   let queryClient: QueryClient;
+  let timeline: {
+    markRemoved: ReturnType<typeof vi.fn>;
+    refetchHolding: ReturnType<typeof vi.fn>;
+  };
+
+  const REPORT = { id: "r-1", message_id: "m-1" } as const;
 
   beforeEach(() => {
     queryClient = createTestQueryClient();
+    timeline = { markRemoved: vi.fn(), refetchHolding: vi.fn() };
   });
+
+  function renderRemove(mockClient: unknown, client = queryClient) {
+    return renderHook(
+      () => useRemoveReportedMessage(timeline as ReportedMessageTimeline),
+      { wrapper: createWrapper(client, mockClient) },
+    );
+  }
 
   it("posts the report id alone — never a message id — to the report's command route", async () => {
     const mockPost = vi.fn().mockResolvedValue({
       data: { id: "r-1", status: "actioned" },
       error: null,
     });
-    const { result } = renderHook(() => useRemoveReportedMessage(), {
-      wrapper: createWrapper(queryClient, { POST: mockPost }),
-    });
+    const { result } = renderRemove({ POST: mockPost });
 
-    await result.current.mutateAsync("r-1");
+    await result.current.mutateAsync(REPORT);
 
     expect(mockPost).toHaveBeenCalledTimes(1);
     expect(mockPost).toHaveBeenCalledWith(
@@ -204,19 +264,22 @@ describe("useRemoveReportedMessage", () => {
     );
   });
 
-  /** Every key this suite seeds, and whether a removal should refetch it. */
+  /** Every non-timeline key a removal of m-1 in chan-1 should refetch. */
   const MESSAGE_READS = [
-    // `@repo/chat-core`'s timeline (`chatMessagesKey`), for any channel.
-    ["chat", "chan-1", "messages"],
-    ["chat", "chan-2", "messages"],
     ["channels", "chan-1", "pins"],
-    ["channels", "chan-2", "pins"],
     ["channels", "chan-1", "messages", "m-1", "attachments"],
     bookmarkKeys.list(CHAPTER),
     ["search", CHAPTER, "harassment", null],
     ["search", CHAPTER, "harassment", "chan-1"],
   ] as const;
+  /** Reads a removal of m-1 in chan-1 must leave alone. */
   const UNRELATED = [
+    // Timelines belong to the timeline adapter: refetching one drops the
+    // member's unsent outbox rows from view, so none is invalidated here.
+    ["chat", "chan-1", "messages"],
+    ["chat", "chan-2", "messages"],
+    ["channels", "chan-2", "pins"],
+    ["channels", "chan-1", "messages", "m-other", "attachments"],
     ["channels"],
     ["channels", "categories"],
     ["channels", "unread"],
@@ -244,28 +307,36 @@ describe("useRemoveReportedMessage", () => {
   const invalidated = (key: readonly unknown[]) =>
     queryClient.getQueryState(key)?.isInvalidated;
 
-  it("refreshes the queue and every cached read that can still show the removed text", async () => {
-    // The response is the report, never the message, and the report does not
-    // name its channel — so there is no row to merge and no single key to
-    // target. A timeline cached from an earlier visit is `staleTime: Infinity`
-    // and only a subscribed channel hears the realtime echo, so without this
-    // the removed text comes back when the officer returns to it.
-    seedCaches();
-    const mockPost = vi.fn().mockResolvedValue({
-      data: { id: "r-1", status: "actioned", message_already_deleted: false },
-      error: null,
-    });
-    const { result } = renderHook(() => useRemoveReportedMessage(), {
-      wrapper: createWrapper(queryClient, { POST: mockPost }),
-    });
-
-    await result.current.mutateAsync("r-1");
-
-    await waitFor(() =>
+  const openQueueRefreshed = () =>
+    waitFor(() =>
       expect(
         invalidated(chatReportKeys.list(CHAPTER, { status: "open" })),
       ).toBe(true),
     );
+
+  it("patches the removed message in its own channel's timeline, and refetches only that channel's other reads", async () => {
+    seedCaches();
+    const mockPost = vi.fn().mockResolvedValue({
+      data: {
+        id: "r-1",
+        message_id: "m-1",
+        status: "actioned",
+        message_already_deleted: false,
+        channel_id: "chan-1",
+      },
+      error: null,
+    });
+    const { result } = renderRemove({ POST: mockPost });
+
+    await result.current.mutateAsync(REPORT);
+
+    await openQueueRefreshed();
+    expect(timeline.markRemoved).toHaveBeenCalledWith(
+      queryClient,
+      "chan-1",
+      "m-1",
+    );
+    expect(timeline.refetchHolding).not.toHaveBeenCalled();
     for (const key of MESSAGE_READS) {
       expect(invalidated(key), JSON.stringify(key)).toBe(true);
     }
@@ -278,27 +349,111 @@ describe("useRemoveReportedMessage", () => {
     );
   });
 
-  it("refreshes the message reads when the message was already deleted too", async () => {
+  it("patches the timeline when the message was already deleted too", async () => {
     // Nothing was removed by this call, but the caches may predate whoever did
     // remove it, and the report is now closed either way.
     seedCaches();
     const mockPost = vi.fn().mockResolvedValue({
-      data: { id: "r-1", status: "actioned", message_already_deleted: true },
+      data: {
+        id: "r-1",
+        message_id: "m-1",
+        status: "actioned",
+        message_already_deleted: true,
+        channel_id: "chan-1",
+      },
       error: null,
     });
-    const { result } = renderHook(() => useRemoveReportedMessage(), {
-      wrapper: createWrapper(queryClient, { POST: mockPost }),
-    });
+    const { result } = renderRemove({ POST: mockPost });
 
-    await expect(result.current.mutateAsync("r-1")).resolves.toMatchObject({
+    await expect(result.current.mutateAsync(REPORT)).resolves.toMatchObject({
       message_already_deleted: true,
     });
-    await waitFor(() =>
-      expect(invalidated(["chat", "chan-1", "messages"])).toBe(true),
+    await openQueueRefreshed();
+    expect(timeline.markRemoved).toHaveBeenCalledWith(
+      queryClient,
+      "chan-1",
+      "m-1",
     );
+    expect(invalidated(["channels", "chan-1", "pins"])).toBe(true);
   });
 
-  it("refreshes the queue on a 409 but leaves every message read alone, since nothing was removed", async () => {
+  it("refetches the timelines holding the message when a success names no channel (the row is gone)", async () => {
+    seedCaches();
+    const mockPost = vi.fn().mockResolvedValue({
+      data: {
+        id: "r-1",
+        message_id: "m-1",
+        status: "actioned",
+        message_already_deleted: true,
+        channel_id: null,
+      },
+      error: null,
+    });
+    const { result } = renderRemove({ POST: mockPost });
+
+    await result.current.mutateAsync(REPORT);
+
+    await openQueueRefreshed();
+    expect(timeline.markRemoved).not.toHaveBeenCalled();
+    expect(timeline.refetchHolding).toHaveBeenCalledWith(queryClient, "m-1");
+  });
+
+  it.each([
+    [
+      "a 500 with a message body",
+      {
+        data: undefined,
+        error: { statusCode: 500, message: "Internal server error" },
+      },
+    ],
+    [
+      "a 503 from the gateway",
+      { data: undefined, error: { statusCode: 503, message: "Unavailable" } },
+    ],
+  ])(
+    "refreshes the reads that may still show the message after %s, since the removal may have landed",
+    async (_label, response) => {
+      seedCaches();
+      const mockPost = vi.fn().mockResolvedValue(response);
+      const { result } = renderRemove({ POST: mockPost });
+
+      await expect(result.current.mutateAsync(REPORT)).rejects.toBe(
+        response.error,
+      );
+
+      await openQueueRefreshed();
+      // No response named the channel: only the cached timelines that hold
+      // the message are refetched, and every channel's pin list.
+      expect(timeline.refetchHolding).toHaveBeenCalledWith(queryClient, "m-1");
+      expect(timeline.markRemoved).not.toHaveBeenCalled();
+      expect(invalidated(["channels", "chan-1", "pins"])).toBe(true);
+      expect(invalidated(["channels", "chan-2", "pins"])).toBe(true);
+      expect(
+        invalidated(["channels", "chan-1", "messages", "m-1", "attachments"]),
+      ).toBe(true);
+      expect(invalidated(bookmarkKeys.list(CHAPTER))).toBe(true);
+      expect(invalidated(["chat", "chan-1", "messages"])).toBe(false);
+    },
+  );
+
+  it("does the same after a transport failure, which may have landed too", async () => {
+    seedCaches();
+    const mockPost = vi
+      .fn()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+    const { result } = renderRemove({ POST: mockPost });
+
+    await expect(result.current.mutateAsync(REPORT)).rejects.toThrow(
+      "Failed to fetch",
+    );
+
+    await openQueueRefreshed();
+    expect(timeline.refetchHolding).toHaveBeenCalledWith(queryClient, "m-1");
+  });
+
+  it("refreshes the queue on a 409 but leaves every message read alone, since the route refuses before touching the message", async () => {
+    // The report is claimed before the message is removed, so every 4xx is
+    // decided with nothing removed — there is no post-removal 409.
     seedCaches();
     const refusal = {
       statusCode: 409,
@@ -307,47 +462,88 @@ describe("useRemoveReportedMessage", () => {
     const mockPost = vi
       .fn()
       .mockResolvedValue({ data: undefined, error: refusal });
-    const { result } = renderHook(() => useRemoveReportedMessage(), {
-      wrapper: createWrapper(queryClient, { POST: mockPost }),
-    });
+    const { result } = renderRemove({ POST: mockPost });
 
-    await expect(result.current.mutateAsync("r-1")).rejects.toBe(refusal);
+    await expect(result.current.mutateAsync(REPORT)).rejects.toBe(refusal);
 
-    await waitFor(() =>
-      expect(
-        invalidated(chatReportKeys.list(CHAPTER, { status: "open" })),
-      ).toBe(true),
-    );
+    await openQueueRefreshed();
+    expect(timeline.markRemoved).not.toHaveBeenCalled();
+    expect(timeline.refetchHolding).not.toHaveBeenCalled();
     for (const key of MESSAGE_READS) {
       expect(invalidated(key), JSON.stringify(key)).toBe(false);
     }
   });
 
   it("does not retry, even where the client retries mutations by default", async () => {
-    // A retry after a lost response finds the report `actioned` and is
-    // answered 409 — a removal that happened, reported as one that failed.
+    // Idempotent, so safe — but a retry after a lost response would answer
+    // "already removed" for the removal this officer just made.
     const retrying = createRetryingQueryClient();
     const mockPost = vi.fn().mockRejectedValue(new Error("network"));
-    const { result } = renderHook(() => useRemoveReportedMessage(), {
-      wrapper: createWrapper(retrying, { POST: mockPost }),
-    });
+    const { result } = renderRemove({ POST: mockPost }, retrying);
 
-    await expect(result.current.mutateAsync("r-1")).rejects.toThrow("network");
+    await expect(result.current.mutateAsync(REPORT)).rejects.toThrow("network");
     expect(mockPost).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("readsMessageContent", () => {
-  it("matches a timeline for any channel, and nothing chapter-scoped from another chapter", () => {
+describe("readsRemovedMessage", () => {
+  const target = { chapterId: CHAPTER, messageId: "m-1", channelId: "chan-1" };
+
+  it("never matches a timeline — those are the adapter's — whatever the channel", () => {
+    expect(readsRemovedMessage(["chat", "chan-1", "messages"], target)).toBe(
+      false,
+    );
     expect(
-      readsMessageContent(["chat", "any-channel", "messages"], CHAPTER),
+      readsRemovedMessage(["chat", "chan-1", "messages"], {
+        ...target,
+        channelId: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("matches every channel's pins only when the channel is unknown", () => {
+    const unknown = { ...target, channelId: null };
+    expect(readsRemovedMessage(["channels", "chan-2", "pins"], target)).toBe(
+      false,
+    );
+    expect(readsRemovedMessage(["channels", "chan-2", "pins"], unknown)).toBe(
+      true,
+    );
+    expect(
+      readsRemovedMessage(
+        ["channels", "chan-2", "messages", "m-1", "attachments"],
+        unknown,
+      ),
     ).toBe(true);
-    expect(readsMessageContent(["chat", "none"], CHAPTER)).toBe(false);
-    expect(readsMessageContent(bookmarkKeys.list("chap-2"), CHAPTER)).toBe(
+  });
+
+  it("matches nothing chapter-scoped from another chapter", () => {
+    expect(readsRemovedMessage(bookmarkKeys.list("chap-2"), target)).toBe(
       false,
     );
-    expect(readsMessageContent(["search", "chap-2", "q", null], CHAPTER)).toBe(
+    expect(readsRemovedMessage(["search", "chap-2", "q", null], target)).toBe(
       false,
     );
+  });
+});
+
+describe("removalOutcomeUnknown", () => {
+  it("is true for a 5xx, even one carrying a message, and for a failure with no status", () => {
+    expect(
+      removalOutcomeUnknown({
+        statusCode: 500,
+        message: "Internal server error",
+      }),
+    ).toBe(true);
+    expect(removalOutcomeUnknown({ statusCode: 502 })).toBe(true);
+    expect(removalOutcomeUnknown(new TypeError("Failed to fetch"))).toBe(true);
+  });
+
+  it("is false for a 4xx, which the route answers before touching the message", () => {
+    expect(removalOutcomeUnknown({ statusCode: 409, message: "x" })).toBe(
+      false,
+    );
+    expect(removalOutcomeUnknown({ statusCode: 404 })).toBe(false);
+    expect(removalOutcomeUnknown({ statusCode: 403 })).toBe(false);
   });
 });

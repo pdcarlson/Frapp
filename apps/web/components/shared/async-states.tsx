@@ -411,12 +411,14 @@ export function OfflineState({
  * The same statement at **surface** scale, for a gate standing in for a whole
  * screen or a whole card.
  *
- * A thin wrapper over `OfflineState`, and it exists for the title. Eight gates
- * render this, and the title is the half of the copy that does not vary — it
- * is `writing.md` §7's "(global)" row, where the descriptions are per-surface.
- * Retyped eight times it is one tone pass away from forking, and jscpd cannot
- * see it: each occurrence is ~30 tokens against a 50-token floor, so the
- * duplication gate this repo runs is structurally blind to exactly this shape.
+ * A thin wrapper over `OfflineState`, and it exists for the title. Every
+ * screen- and card-level `<Can offlineFallback>` gate renders this (grep for
+ * the name to list them), and the title is the half of the copy that does not
+ * vary — it is `writing.md` §7's "(global)" row, where the descriptions are
+ * per-surface. Retyped at each gate it is one tone pass away from forking, and
+ * jscpd cannot see it: each occurrence is ~30 tokens against a 50-token floor,
+ * so the duplication gate this repo runs is structurally blind to exactly this
+ * shape.
  * That is the same argument `ui/typography.ts` makes for `EYEBROW` — "twelve
  * copies of a four-part class string is how the eleventh and the twelfth
  * quietly become different".

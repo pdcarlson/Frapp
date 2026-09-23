@@ -7,6 +7,7 @@ import {
   chatReportCopy,
   messageExcerpt,
   reportAge,
+  reportDistinction,
   reportedMessageSubject,
 } from "./chat-report-copy";
 
@@ -82,21 +83,66 @@ describe("messageExcerpt", () => {
 });
 
 describe("row accessible names", () => {
-  it("starts with the visible label and names the message it acts on", () => {
-    const subject = reportedMessageSubject("Harper Lane", "go away");
-    expect(chatReportActionLabel.dismissed(subject)).toBe(
-      "Dismiss report on message from Harper Lane, “go away”",
-    );
-    expect(chatReportActionLabel.remove(subject)).toBe(
-      "Remove message from Harper Lane, “go away”",
-    );
-    expect(chatReportActionLabel.reviewed(subject)).toMatch(/^Mark reviewed/);
-    expect(chatReportActionLabel.actioned(subject)).toMatch(/^Mark actioned/);
+  const report = reportDistinction({
+    reason: "harassment",
+    age: "5 minutes ago",
+    hasNote: true,
   });
 
-  it("names the author alone when the message had no text", () => {
+  it("starts with the visible label and names the message and the report it acts on", () => {
+    const subject = reportedMessageSubject("Harper Lane", "go away");
+    expect(chatReportActionLabel.dismissed(subject, report)).toBe(
+      "Dismiss report on message from Harper Lane, “go away” (Harassment, reported 5 minutes ago, with a reporter's note)",
+    );
+    expect(chatReportActionLabel.remove(subject, report)).toBe(
+      "Remove message from Harper Lane, “go away” (Harassment, reported 5 minutes ago, with a reporter's note)",
+    );
+    expect(chatReportActionLabel.reviewed(subject, report)).toMatch(
+      /^Mark reviewed/,
+    );
+    expect(chatReportActionLabel.actioned(subject, report)).toMatch(
+      /^Mark actioned/,
+    );
+  });
+
+  it("says the message had no text, rather than naming the author alone", () => {
     expect(reportedMessageSubject("old_handle", null)).toBe(
-      "message from old_handle",
+      "message from old_handle with no text",
+    );
+  });
+
+  it("tells two reports on one message apart by reason, age and note", () => {
+    // Two members reported the same message: author and excerpt match, so
+    // the subject does too. The report's own details are what differ.
+    const subject = reportedMessageSubject("Harper Lane", "go away");
+    const names = [
+      reportDistinction({
+        reason: "harassment",
+        age: "5 minutes ago",
+        hasNote: false,
+      }),
+      reportDistinction({
+        reason: "spam",
+        age: "5 minutes ago",
+        hasNote: false,
+      }),
+      reportDistinction({
+        reason: "harassment",
+        age: "2 hours ago",
+        hasNote: false,
+      }),
+      reportDistinction({
+        reason: "harassment",
+        age: "5 minutes ago",
+        hasNote: true,
+      }),
+    ].map((details) => chatReportActionLabel.dismissed(subject, details));
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("leaves the age out when the timestamp could not be read", () => {
+    expect(reportDistinction({ reason: "spam", age: "", hasNote: false })).toBe(
+      "Spam",
     );
   });
 });
@@ -115,5 +161,18 @@ describe("the removal confirmation", () => {
     expect(chatReportCopy.removeConfirm.description(null)).toMatch(
       /^This removes this one message for everyone/,
     );
+  });
+
+  it("tells the officer the sender will notice, and may identify the reporter in a DM", () => {
+    // The trade-off accepted with report-scoped removal (#2311, option 1):
+    // a 1:1 DM has one other reader, so removing a message there can reveal
+    // who reported it. Said before the officer commits, not after.
+    for (const content of ["go away", null]) {
+      const description = chatReportCopy.removeConfirm.description(content);
+      expect(description).toContain(
+        "The sender will see this message was removed. In a direct message they may be able to tell who reported it.",
+      );
+      expect(description).toMatch(/This cannot be undone\.$/);
+    }
   });
 });

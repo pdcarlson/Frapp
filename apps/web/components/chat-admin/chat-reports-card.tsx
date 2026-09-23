@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   memberFallbackLabel,
+  removalOutcomeUnknown,
   resolveAuthorLabel,
   useChatReports,
   useMemberDisplayNames,
@@ -12,7 +13,7 @@ import {
   useResolveChatReport,
 } from "@repo/hooks";
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
-import { serverMessageOf } from "@repo/api-sdk";
+import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { formatLocaleDateTime } from "@repo/formatting";
 import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
 import { Can } from "@/components/shared/can";
@@ -39,12 +40,14 @@ import {
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
+import { reportedMessageTimeline } from "@/lib/chat/reported-message-reads";
 import {
   CHAT_REPORT_REASON_LABEL,
   CHAT_REPORT_TABS,
   chatReportActionLabel,
   chatReportCopy as copy,
   reportAge,
+  reportDistinction,
   reportedMessageSubject,
 } from "./chat-report-copy";
 import type { ChatReportTab } from "./chat-report-copy";
@@ -66,7 +69,15 @@ import type { ChatReportTab } from "./chat-report-copy";
  *   whose message is still there; a row whose message is gone offers Mark
  *   actioned instead. The server is idempotent on the message, so "already
  *   removed" is a success the card reports as such, never an error that blames
- *   anyone for it.
+ *   anyone for it. The confirmation says what the sender will see, and that in
+ *   a DM they may deduce the reporter — the trade-off the owner accepted with
+ *   this removal (`spec/behavior/chat/README.md` § Officer action).
+ * - **A failure is described by what the server could have done.** Only a
+ *   404 or 409 carries a refusal worth quoting — the API's own authored words,
+ *   decided before anything changed. A 5xx or a transport failure is shown in
+ *   this card's words, never as "Internal server error" or "Failed to fetch";
+ *   on a removal it says the outcome is unknown, because it is
+ *   ({@link removalFailureMessage}).
  *
  * The gate is `CHAT_REPORT_QUEUE_PERMISSIONS` (`@repo/validation`) —
  * `members:view` **and** `channels:manage`, the route's full requirement
@@ -111,12 +122,39 @@ const FAILED_TOAST: Record<Resolution, string> = {
   actioned: copy.toast.actionedFailed,
 };
 
+/**
+ * The server's own message, but only for the refusals the report routes
+ * author: 404 (the report is not one this officer can see) and 409 (it is no
+ * longer open, or its message no longer exists). Those are business answers
+ * written to be read. Anything else — a 5xx body ("Internal server error"), a
+ * guard's 403, a transport `TypeError` ("Failed to fetch") — is not copy, and
+ * the caller's own words stand in for it.
+ */
+function refusalMessage(error: unknown): string | null {
+  const status = statusOf(error);
+  if (status !== 404 && status !== 409) return null;
+  return serverMessageOf(error);
+}
+
+/**
+ * What a failed removal tells the officer. A refusal in the server's words; an
+ * unknown outcome (5xx, or no response at all) as exactly that, since the
+ * removal may have landed; anything else as a plain failure.
+ */
+function removalFailureMessage(error: unknown): string {
+  const refusal = refusalMessage(error);
+  if (refusal) return refusal;
+  return removalOutcomeUnknown(error)
+    ? copy.toast.removeUnconfirmed
+    : copy.toast.removeFailed;
+}
+
 function ChatReportsQueue() {
   const [status, setStatus] = useState<ChatReportStatus>("open");
   const { confirm, confirmDialog } = useConfirmDialog();
   const { toast } = useToast();
   const resolve = useResolveChatReport();
-  const remove = useRemoveReportedMessage();
+  const remove = useRemoveReportedMessage(reportedMessageTimeline);
 
   // Per row, so acting on one report leaves the others live; the shared
   // mutation's own `isPending` / `variables` describe only the latest call.
@@ -144,7 +182,7 @@ function ChatReportsQueue() {
     } catch (error) {
       toast({
         variant: "destructive",
-        description: serverMessageOf(error) ?? FAILED_TOAST[next],
+        description: refusalMessage(error) ?? FAILED_TOAST[next],
       });
     } finally {
       markBusy(report.id, null);
@@ -160,20 +198,20 @@ function ChatReportsQueue() {
     if (!confirmed) return;
     markBusy(report.id, "remove");
     try {
-      const result = await remove.mutateAsync(report.id);
+      const result = await remove.mutateAsync(report);
       toast({
         description: result.message_already_deleted
           ? copy.toast.alreadyRemoved
           : copy.toast.removed,
       });
     } catch (error) {
-      // Whatever the server says, in its words — a 409 here means the report
-      // changed since it loaded (another officer resolved it, or its message
-      // was hard-deleted), and the queue refetches either way. No status is
-      // translated into a claim about who did what.
+      // A 409 means the report changed since it loaded (another officer
+      // resolved it, or its message was hard-deleted), in the server's words;
+      // the queue refetches either way. No status is translated into a claim
+      // about who did what.
       toast({
         variant: "destructive",
-        description: serverMessageOf(error) ?? copy.toast.removeFailed,
+        description: removalFailureMessage(error),
       });
     } finally {
       markBusy(report.id, null);
@@ -341,7 +379,15 @@ function ReportRow({
   const disabled = busy !== null || offline;
   const disabledTitle = offline ? copy.offlineWrite : undefined;
   const content = report.reported_content?.trim();
+  const note = report.details?.trim();
+  const age = reportAge(report.created_at, now);
   const subject = reportedMessageSubject(author, report.reported_content);
+  // What tells this report from a sibling on the same message, for the names.
+  const details = reportDistinction({
+    reason: report.reason,
+    age,
+    hasNote: Boolean(note),
+  });
 
   return (
     <li
@@ -360,7 +406,7 @@ function ReportRow({
           dateTime={report.created_at}
           title={formatLocaleDateTime(report.created_at)}
         >
-          Reported {reportAge(report.created_at, now)}
+          Reported {age}
         </time>
       </div>
 
@@ -372,12 +418,12 @@ function ReportRow({
         )}
       </blockquote>
 
-      {report.details?.trim() ? (
+      {note ? (
         <p className="break-words text-xs text-muted-foreground">
           <span className="font-semibold text-foreground">
             {copy.detailsLabel}:
           </span>{" "}
-          {report.details.trim()}
+          {note}
         </p>
       ) : null}
 
@@ -404,7 +450,7 @@ function ReportRow({
           <div className="flex flex-wrap justify-end gap-2">
             <RowButton
               label="Mark reviewed"
-              accessibleName={chatReportActionLabel.reviewed(subject)}
+              accessibleName={chatReportActionLabel.reviewed(subject, details)}
               pending={busy === "reviewed"}
               disabled={disabled}
               title={disabledTitle}
@@ -412,7 +458,7 @@ function ReportRow({
             />
             <RowButton
               label="Dismiss"
-              accessibleName={chatReportActionLabel.dismissed(subject)}
+              accessibleName={chatReportActionLabel.dismissed(subject, details)}
               pending={busy === "dismissed"}
               disabled={disabled}
               title={disabledTitle}
@@ -421,7 +467,10 @@ function ReportRow({
             {messageGone ? (
               <RowButton
                 label="Mark actioned"
-                accessibleName={chatReportActionLabel.actioned(subject)}
+                accessibleName={chatReportActionLabel.actioned(
+                  subject,
+                  details,
+                )}
                 pending={busy === "actioned"}
                 disabled={disabled}
                 title={disabledTitle}
@@ -430,7 +479,7 @@ function ReportRow({
             ) : (
               <RowButton
                 label="Remove message"
-                accessibleName={chatReportActionLabel.remove(subject)}
+                accessibleName={chatReportActionLabel.remove(subject, details)}
                 variant="destructive"
                 pending={busy === "remove"}
                 disabled={disabled}
@@ -455,7 +504,10 @@ function RowButton({
   onClick,
 }: {
   label: string;
-  /** Starts with `label` (label in name) and says which report it acts on. */
+  /**
+   * Starts with `label` (label in name), then names the message and the
+   * report — reason, age, note — so sibling reports on one message differ.
+   */
   accessibleName: string;
   variant?: "secondary" | "destructive";
   pending: boolean;

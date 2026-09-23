@@ -70,9 +70,19 @@ export const CHAT_REPORT_TABS: readonly ChatReportTab[] = [
   },
 ];
 
-/** The removal's confirmation, which names the message it removes. */
+/**
+ * The removal's confirmation, which names the message it removes.
+ *
+ * The two sentences about the sender are the trade-off the owner accepted with
+ * report-scoped removal (#2311, option 1, 2026-09-22), said before the officer
+ * commits rather than discovered after: the sender sees their message replaced,
+ * and in a 1:1 DM the only other reader is who must have reported it
+ * (`spec/behavior/chat/README.md` § Officer action). The dialog cannot say
+ * whether this message is in a DM — the report snapshots the message, not its
+ * channel — so the second sentence is conditional.
+ */
 const REMOVE_CONFIRM_BODY =
-  "This removes this one message for everyone and marks the report actioned. Nothing else in the conversation changes, and a direct message stays private: officers can't open it. This cannot be undone.";
+  "This removes this one message for everyone and marks the report actioned. Nothing else in the conversation changes, and a direct message stays private: officers can't open it. The sender will see this message was removed. In a direct message they may be able to tell who reported it. This cannot be undone.";
 
 export const chatReportCopy = {
   title: "Reported messages",
@@ -131,6 +141,15 @@ export const chatReportCopy = {
     dismissedFailed: "Couldn't dismiss the report.",
     actionedFailed: "Couldn't mark the report actioned.",
     removeFailed: "Couldn't remove the message.",
+    /**
+     * A 5xx or a transport failure on the removal: the outcome is unknown, and
+     * the removal may have landed (a response lost after the delete, or a
+     * failure closing the other reports on the message after it). So it says
+     * so, and how to find out, rather than "couldn't remove". A retry is safe
+     * either way — the route is idempotent, and answers "already removed".
+     */
+    removeUnconfirmed:
+      "Couldn't confirm the removal. The message may have been removed anyway. Refresh to check, and retry if the report is still open.",
   },
 } as const;
 
@@ -152,9 +171,9 @@ export function messageExcerpt(
 
 /**
  * "message from Harper Lane, “You should quit the chapter…”" — what a row's
- * controls act on, so each control's accessible name says which report it is
- * for. Every row carries the same four verbs; without this a screen reader's
- * button list is a column of identical "Dismiss"es.
+ * controls act on, so each control's accessible name says which message it
+ * is for. Every row carries the same four verbs; without this a screen
+ * reader's button list is a column of identical "Dismiss"es.
  */
 export function reportedMessageSubject(
   author: string,
@@ -163,20 +182,46 @@ export function reportedMessageSubject(
   const excerpt = messageExcerpt(content);
   return excerpt
     ? `message from ${author}, “${excerpt}”`
-    : `message from ${author}`;
+    : `message from ${author} with no text`;
+}
+
+/**
+ * "Harassment, reported 5 minutes ago, with a reporter's note" — what tells
+ * one **report** apart from another on the same message.
+ *
+ * The subject alone names the message, and two members can report one message:
+ * two rows then share an author and an excerpt, and two messages with no text
+ * from one author share a subject outright. The reason, the age and whether
+ * the reporter left a note are what the rows visibly differ by, so the names
+ * carry them too. The age is the row's own visible "Reported …" text; an
+ * unparseable timestamp leaves it out rather than reading "reported ".
+ */
+export function reportDistinction(report: {
+  reason: ChatReportReason;
+  age: string;
+  hasNote: boolean;
+}): string {
+  const parts: string[] = [CHAT_REPORT_REASON_LABEL[report.reason]];
+  if (report.age) parts.push(`reported ${report.age}`);
+  if (report.hasNote) parts.push("with a reporter's note");
+  return parts.join(", ");
 }
 
 /**
  * Accessible names for a row's controls. Each starts with the visible label so
  * speech input ("click Dismiss") still finds it (WCAG 2.5.3, label in name),
- * and ends with the {@link reportedMessageSubject} that tells rows apart — the
- * `Delete ${role.label}` convention the roles table uses.
+ * then names the message ({@link reportedMessageSubject}) and the report
+ * ({@link reportDistinction}) — the `Delete ${role.label}` convention the
+ * roles table uses, with the report's own details in parentheses.
  */
 export const chatReportActionLabel = {
-  reviewed: (subject: string) => `Mark reviewed: report on ${subject}`,
-  dismissed: (subject: string) => `Dismiss report on ${subject}`,
-  actioned: (subject: string) => `Mark actioned: report on ${subject}`,
-  remove: (subject: string) => `Remove ${subject}`,
+  reviewed: (subject: string, report: string) =>
+    `Mark reviewed: report on ${subject} (${report})`,
+  dismissed: (subject: string, report: string) =>
+    `Dismiss report on ${subject} (${report})`,
+  actioned: (subject: string, report: string) =>
+    `Mark actioned: report on ${subject} (${report})`,
+  remove: (subject: string, report: string) => `Remove ${subject} (${report})`,
 } as const;
 
 const SECOND = 1_000;

@@ -26,6 +26,7 @@ const {
   mockRemove,
   mockRefetch,
   requestedStatuses,
+  removeTimeline,
 } = vi.hoisted(() => ({
   mockOffline: { value: false },
   mockToast: vi.fn(),
@@ -37,6 +38,7 @@ const {
   mockRemove: vi.fn(),
   mockRefetch: vi.fn(),
   requestedStatuses: [] as string[],
+  removeTimeline: { value: undefined as unknown },
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
@@ -46,6 +48,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     // one chat renders, not a stub's idea of it.
     resolveAuthorLabel: actual.resolveAuthorLabel,
     memberFallbackLabel: actual.memberFallbackLabel,
+    // Real, so the toast is decided by the same classification the hook uses
+    // to decide what to refresh.
+    removalOutcomeUnknown: actual.removalOutcomeUnknown,
     useMyPermissions: () => ({
       data: { permissions: permissions.value },
       isPending: false,
@@ -66,7 +71,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       };
     },
     useResolveChatReport: () => ({ mutateAsync: mockResolve }),
-    useRemoveReportedMessage: () => ({ mutateAsync: mockRemove }),
+    useRemoveReportedMessage: (timeline: unknown) => {
+      removeTimeline.value = timeline;
+      return { mutateAsync: mockRemove };
+    },
     useMemberDisplayNames: () => ({
       nameFor: (id: string) =>
         ({ "u-sender": "Harper Lane", "u-officer": "Alex Chen" })[id] ?? null,
@@ -86,6 +94,8 @@ vi.mock("@/hooks/use-toast", () => ({
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 const { ChatReportsCard } = await import("./chat-reports-card");
+const { reportedMessageTimeline } =
+  await import("@/lib/chat/reported-message-reads");
 
 function report(overrides: Partial<ChatReport> = {}): ChatReport {
   return {
@@ -282,7 +292,7 @@ describe("ChatReportsCard — async states", () => {
 });
 
 describe("ChatReportsCard — accessible names", () => {
-  it("names every control after the report it acts on, so rows cannot be confused", () => {
+  it("names every control after the message and the report it acts on, so rows cannot be confused", () => {
     reportsByStatus.value = {
       open: settled([
         report(),
@@ -291,6 +301,7 @@ describe("ChatReportsCard — accessible names", () => {
           reported_sender_id: null,
           reported_author_name: "old_handle",
           reported_content: "second report",
+          details: null,
         }),
       ]),
     };
@@ -298,12 +309,12 @@ describe("ChatReportsCard — accessible names", () => {
 
     expect(
       screen.getByRole("button", {
-        name: "Remove message from Harper Lane, “You should quit the chapter, nobody wan…”",
+        name: "Remove message from Harper Lane, “You should quit the chapter, nobody wan…” (Harassment, reported 5 minutes ago, with a reporter's note)",
       }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: "Dismiss report on message from old_handle, “second report”",
+        name: "Dismiss report on message from old_handle, “second report” (Harassment, reported 5 minutes ago)",
       }),
     ).toBeInTheDocument();
     // One of each verb per row, and no two share a name.
@@ -312,6 +323,54 @@ describe("ChatReportsCard — accessible names", () => {
       .map((button) => button.getAttribute("aria-label"));
     expect(names).toHaveLength(6);
     expect(new Set(names).size).toBe(6);
+  });
+
+  it("tells apart two reports on the same message, which share an author and an excerpt", () => {
+    // Two members reported one message. The subject is identical; the
+    // reason, age and note are what the rows visibly differ by.
+    reportsByStatus.value = {
+      open: settled([
+        report(),
+        report({
+          id: "r-2",
+          reason: "spam",
+          details: null,
+          created_at: "2026-09-22T10:00:00Z",
+        }),
+      ]),
+    };
+    render(<ChatReportsCard />);
+
+    const dismissals = screen
+      .getAllByRole("button", { name: /^Dismiss/ })
+      .map((button) => button.getAttribute("aria-label"));
+    expect(dismissals).toEqual([
+      "Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Harassment, reported 5 minutes ago, with a reporter's note)",
+      "Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Spam, reported 2 hours ago)",
+    ]);
+  });
+
+  it("tells apart two text-less messages from one author", () => {
+    reportsByStatus.value = {
+      open: settled([
+        report({ reported_content: null, details: null }),
+        report({
+          id: "r-2",
+          reported_content: null,
+          reason: "sexual",
+          details: "an image",
+        }),
+      ]),
+    };
+    render(<ChatReportsCard />);
+
+    const removals = screen
+      .getAllByRole("button", { name: /^Remove/ })
+      .map((button) => button.getAttribute("aria-label"));
+    expect(removals).toEqual([
+      "Remove message from Harper Lane with no text (Harassment, reported 5 minutes ago)",
+      "Remove message from Harper Lane with no text (Sexual content, reported 5 minutes ago, with a reporter's note)",
+    ]);
   });
 });
 
@@ -428,6 +487,32 @@ describe("ChatReportsCard — resolving", () => {
     });
   });
 
+  it.each([
+    [
+      "a 500 that carries a message body",
+      { statusCode: 500, message: "Internal server error" },
+    ],
+    ["a transport failure", new TypeError("Failed to fetch")],
+    [
+      "a 403 from a guard",
+      { statusCode: 403, message: "Insufficient permissions" },
+    ],
+  ])(
+    "toasts its own words, never the raw text, for %s",
+    async (_label, failure) => {
+      const user = userEvent.setup();
+      mockResolve.mockRejectedValue(failure);
+      render(<ChatReportsCard />);
+
+      await user.click(screen.getByRole("button", { name: /^Dismiss/ }));
+
+      expect(mockToast).toHaveBeenCalledWith({
+        variant: "destructive",
+        description: "Couldn't dismiss the report.",
+      });
+    },
+  );
+
   it("disables every write offline and says why, rather than failing on click", () => {
     mockOffline.value = true;
     render(<ChatReportsCard />);
@@ -469,6 +554,24 @@ describe("ChatReportsCard — removing the reported message", () => {
     expect(mockRemove).not.toHaveBeenCalled();
   });
 
+  it("warns before removing that the sender will notice, and may identify the reporter in a DM", async () => {
+    // The trade-off accepted with report-scoped removal (#2311, option 1).
+    const user = userEvent.setup();
+    render(<ChatReportsCard />);
+
+    await user.click(screen.getByRole("button", { name: /^Remove message/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/this one message/)).toHaveTextContent(
+      "The sender will see this message was removed. In a direct message they may be able to tell who reported it.",
+    );
+  });
+
+  it("hands the removal the web timeline, so the removed text is patched out of the cached chat", () => {
+    render(<ChatReportsCard />);
+    expect(removeTimeline.value).toBe(reportedMessageTimeline);
+  });
+
   it("does nothing when the officer cancels", async () => {
     const user = userEvent.setup();
     render(<ChatReportsCard />);
@@ -483,18 +586,21 @@ describe("ChatReportsCard — removing the reported message", () => {
     expect(mockRemove).not.toHaveBeenCalled();
   });
 
-  it("sends the report id alone once confirmed", async () => {
+  it("hands the report to the removal once confirmed — the hook sends its id alone", async () => {
     const user = userEvent.setup();
     mockRemove.mockResolvedValue({
       ...report({ status: "actioned" }),
       message_already_deleted: false,
+      channel_id: "chan-1",
     });
     render(<ChatReportsCard />);
 
     await confirmRemove(user);
 
     await waitFor(() => expect(mockRemove).toHaveBeenCalledTimes(1));
-    expect(mockRemove).toHaveBeenCalledWith("r-1");
+    expect(mockRemove).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "r-1", message_id: "m-1" }),
+    );
     expect(mockResolve).not.toHaveBeenCalled();
     expect(mockToast).toHaveBeenCalledWith({
       description: "Message removed. The report is marked actioned.",
@@ -566,9 +672,44 @@ describe("ChatReportsCard — removing the reported message", () => {
     expect(screen.queryByText(/sender already deleted/i)).toBeNull();
   });
 
-  it("keeps Remove after a failure, for a retry", async () => {
+  it.each([
+    [
+      "a 500 that carries a message body",
+      { statusCode: 500, message: "Internal server error" },
+    ],
+    ["a 502 from the gateway", { statusCode: 502 }],
+    ["a transport failure", new TypeError("Failed to fetch")],
+  ])(
+    "says the removal may have landed, in its own words, after %s — and keeps Remove for a retry",
+    async (_label, failure) => {
+      // The report is claimed before the message is touched, so a 4xx
+      // removed nothing; a 5xx or a lost response may have. The officer is
+      // told which it could be and how to find out, never the raw body.
+      const user = userEvent.setup();
+      mockRemove.mockRejectedValue(failure);
+      render(<ChatReportsCard />);
+
+      await confirmRemove(user);
+
+      await waitFor(() =>
+        expect(mockToast).toHaveBeenCalledWith({
+          variant: "destructive",
+          description:
+            "Couldn't confirm the removal. The message may have been removed anyway. Refresh to check, and retry if the report is still open.",
+        }),
+      );
+      expect(
+        screen.getByRole("button", { name: /^Remove message/ }),
+      ).toBeEnabled();
+    },
+  );
+
+  it("says plainly it couldn't remove, for a 4xx that is not one of the route's refusals", async () => {
     const user = userEvent.setup();
-    mockRemove.mockRejectedValue({ statusCode: 500 });
+    mockRemove.mockRejectedValue({
+      statusCode: 403,
+      message: "Insufficient permissions",
+    });
     render(<ChatReportsCard />);
 
     await confirmRemove(user);
@@ -579,9 +720,6 @@ describe("ChatReportsCard — removing the reported message", () => {
         description: "Couldn't remove the message.",
       }),
     );
-    expect(
-      screen.getByRole("button", { name: /^Remove message/ }),
-    ).toBeEnabled();
   });
 });
 
