@@ -33,7 +33,7 @@ const INSTALLER = path.join(REPO_ROOT, "scripts/setup-git-hooks.mjs");
 const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
 const git = (...args) => spawnSync("git", args, { env: GIT_ENV, encoding: "utf8" });
 
-function scratch(t, { prePush = true, bringup = true, installer = true } = {}) {
+function scratch(t, { prePush = true, bringup = true, installer = true, bringupBody = "" } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), "session-start-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const root = path.join(dir, "repo");
@@ -48,7 +48,10 @@ function scratch(t, { prePush = true, bringup = true, installer = true } = {}) {
   }
   if (installer) copyFileSync(INSTALLER, path.join(root, "scripts", "setup-git-hooks.mjs"));
   const launched = path.join(dir, "launched");
-  if (bringup) writeFileSync(path.join(root, "scripts", "cloud-sandbox-up.sh"), `touch ${JSON.stringify(launched)}\n`);
+  // Appends rather than touches, so a test can count how many bringups started.
+  if (bringup) {
+    writeFileSync(path.join(root, "scripts", "cloud-sandbox-up.sh"), `echo x >> ${JSON.stringify(launched)}\n${bringupBody}`);
+  }
   return {
     dir,
     root,
@@ -64,7 +67,7 @@ function scratch(t, { prePush = true, bringup = true, installer = true } = {}) {
  * Run the hook. `boot` is the current boot id, or null for a host that exposes none;
  * `btime` is the kernel boot time, in epoch seconds, the fake /proc/stat reports.
  */
-function runHook(s, { boot = "boot-B", btime = 1000, cloud = true } = {}) {
+function hookEnv(s, { boot = "boot-B", btime = 1000, cloud = true } = {}) {
   if (boot !== null) writeFileSync(s.bootFile, `${boot}\n`);
   writeFileSync(s.procStat, `cpu  1 2 3 4\nbtime ${btime}\nprocesses 1\n`);
   const env = {
@@ -79,7 +82,11 @@ function runHook(s, { boot = "boot-B", btime = 1000, cloud = true } = {}) {
   };
   if (cloud) env.FRAPP_CLOUD_SANDBOX = "1";
   else delete env.FRAPP_CLOUD_SANDBOX;
-  const run = spawnSync("bash", [HOOK], { env, encoding: "utf8" });
+  return env;
+}
+
+function runHook(s, options) {
+  const run = spawnSync("bash", [HOOK], { env: hookEnv(s, options), encoding: "utf8" });
   assert.equal(run.status, 0, `hook exited ${run.status}: ${run.stderr}`);
   return run.stdout.trim() ? JSON.parse(run.stdout).hookSpecificOutput.additionalContext : "";
 }
@@ -303,6 +310,67 @@ test("the same lock, minutes old with no live bringup, is reclaimed", async (t) 
   const context = runHook(s, { boot: "boot-B" });
   assert.match(context, /cleared a stale bringup lock/);
   assert.ok(await eventually(() => existsSync(s.launched)), "bringup was not relaunched");
+});
+
+test("a lock dated in the future (a clock stepped back) is not 'starting'; it is reclaimed", async (t) => {
+  const s = scratch(t);
+  mkdirSync(s.lock);
+  const ahead = Math.floor(Date.now() / 1000) + 3600;
+  utimesSync(s.lock, ahead, ahead);
+  const context = runHook(s, { boot: "boot-B" });
+  assert.match(context, /cleared a stale bringup lock/);
+  assert.ok(await eventually(() => existsSync(s.launched)), "bringup was not relaunched");
+});
+
+test("two session starts at once on a stale lock start exactly one bringup", async (t) => {
+  // Each read the lock, then acted on it; interleaved, both reclaimed and both relaunched.
+  // The flock serializes the decision, so the second finds the first's fresh lock. The
+  // window is milliseconds, so this is the outcome, not proof of the flock; the next test
+  // pins that.
+  const s = scratch(t);
+  mkdirSync(s.lock);
+  const old = Math.floor(Date.now() / 1000) - 600;
+  utimesSync(s.lock, old, old);
+  const env = hookEnv(s, { boot: "boot-B" });
+  const fire = () =>
+    new Promise((resolve) => {
+      const child = spawn("bash", [HOOK], { env, stdio: ["ignore", "pipe", "pipe"] });
+      let out = "";
+      child.stdout.on("data", (d) => (out += d));
+      child.on("close", (code) => resolve({ code, out }));
+    });
+  const runs = await Promise.all([fire(), fire(), fire()]);
+  assert.deepEqual(runs.map((r) => r.code), [0, 0, 0]);
+  await eventually(() => existsSync(s.launched));
+  // Let any second bringup that was going to start get there.
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(readFileSync(s.launched, "utf8").trim().split("\n").length, 1, "exactly one bringup");
+});
+
+test("the lock decision waits for the guard another session start holds", async (t) => {
+  // The concurrent-fire test above passes with or without the flock whenever the fires
+  // happen not to interleave, which is most runs. This pins the flock itself: hold the
+  // guard from outside and the hook must wait for it before deciding.
+  const s = scratch(t);
+  const holder = spawn("flock", [`${s.lock}.guard`, "sleep", "1.5"], { stdio: "ignore" });
+  t.after(() => holder.kill());
+  assert.ok(
+    await eventually(() => spawnSync("flock", ["-n", `${s.lock}.guard`, "true"]).status !== 0, 3000),
+    "precondition: the guard is held",
+  );
+  const started = Date.now();
+  runHook(s, { boot: "boot-B" });
+  assert.ok(Date.now() - started >= 1000, `the hook decided without waiting (${Date.now() - started}ms)`);
+});
+
+test("a running bringup does not hold the decision guard", async (t) => {
+  // It would, had it inherited the descriptor: every later session start would then wait
+  // out the flock timeout for as long as the stack took to come up.
+  const s = scratch(t, { bringupBody: "sleep 5\n" });
+  runHook(s, { boot: "boot-B" });
+  assert.ok(await eventually(() => existsSync(s.launched)), "bringup did not start");
+  const probe = spawnSync("flock", ["-n", `${s.lock}.guard`, "true"]);
+  assert.equal(probe.status, 0, "the guard is still held after the hook returned");
 });
 
 test("the boot id test never consults the pid: after a restart it may name another process", async (t) => {

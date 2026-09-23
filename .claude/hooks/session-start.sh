@@ -110,7 +110,9 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
   current_boot="$(cat "$BOOT_ID_FILE" 2>/dev/null || true)"
 
   launch_bringup() {
-    nohup bash "$ROOT/scripts/cloud-sandbox-up.sh" >"$BRINGUP_LOG" 2>&1 &
+    # `9>&-`: the bringup must not inherit the decision guard below, or it would hold it
+    # for its whole run and every other session start would wait it out.
+    nohup bash "$ROOT/scripts/cloud-sandbox-up.sh" >"$BRINGUP_LOG" 2>&1 9>&- &
     echo "$!" >"$LOCK/pid" 2>/dev/null || true
     # Written aside and renamed in, so a concurrent fire never reads a created-but-empty file.
     if [ -n "$current_boot" ]; then
@@ -118,6 +120,18 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
     fi
     disown || true
   }
+
+  # One session start decides at a time. Every branch below reads the lock and then acts on
+  # it (removes it, takes it, relaunches), and two fires interleaving between those steps
+  # could each find a lock worth reclaiming and each start a bringup. An flock on a file
+  # beside the lock serializes the whole decision, released before the manifest summary. The
+  # wait is bounded, so a wedged holder cannot stall session start, and where flock is
+  # missing the hook decides unserialized, as it always did.
+  guard_open=""
+  if command -v flock >/dev/null 2>&1 && { exec 9>>"${LOCK}.guard"; } 2>/dev/null; then
+    guard_open=1
+    flock -w 10 9 2>/dev/null || true
+  fi
 
   # A lock from an earlier boot is stale whatever sits beside it (#2515). The branches
   # below trust a lock plus a `.done`/`.failed` sentinel as "bringup already finished",
@@ -191,7 +205,8 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
     # forever with no sentinel for callers to wait on. Reclaim and relaunch when
     # the recorded pid is no longer a live bringup process.
     #
-    # Except for a lock only seconds old. `mkdir` takes the lock before
+    # Except for a lock only seconds old (a negative age, from a clock stepped back,
+    # does not count). `mkdir` takes the lock before
     # launch_bringup has written a pid, and for a moment after that the pid is a
     # fork that has not yet exec'd cloud-sandbox-up.sh. A concurrent fire in that
     # window would see no live bringup and start a second one racing the first.
@@ -205,7 +220,7 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
     esac
     if bringup_alive "$prev_pid"; then
       msg="${msg} Cloud sandbox: stack bringup is still running (pid ${prev_pid}). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
-    elif [ -n "$lock_age" ] && [ "$lock_age" -lt 30 ]; then
+    elif [ -n "$lock_age" ] && [ "$lock_age" -ge 0 ] && [ "$lock_age" -lt 30 ]; then
       msg="${msg} Cloud sandbox: stack bringup is starting (another session start took the lock ${lock_age}s ago). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
     else
       rm -rf "$LOCK"
@@ -216,6 +231,9 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
         msg="${msg} Cloud sandbox: a concurrent session reclaimed the bringup lock; wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
       fi
     fi
+  fi
+  if [ -n "$guard_open" ]; then
+    exec 9>&-
   fi
 
   # Summarise the manifest, but ONLY when it belongs to the bringup that owns the current
