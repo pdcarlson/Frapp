@@ -11,7 +11,10 @@ import {
 } from "@repo/hooks";
 import { TERMS_PROMPT_COPY } from "@repo/validation";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
-import { useDeleteAccountFlow } from "@/components/profile/use-delete-account-flow";
+import {
+  DELETE_ACCOUNT_FAILED,
+  useDeleteAccountFlow,
+} from "@/components/profile/use-delete-account-flow";
 import { Button } from "@/components/ui/button";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { asArray } from "@/lib/utils";
@@ -25,9 +28,11 @@ import { asArray } from "@/lib/utils";
 export const TERMS_PROMPT_SIGN_OUT_FAILED =
   "Couldn't sign out. Retry in a moment, or close this tab to end the session.";
 
-/** Web only: the prompt's account deletion didn't finish. */
-export const TERMS_PROMPT_DELETE_FAILED =
-  "Deletion didn't finish. Part of it may already have gone through, and running it again is safe. Try once more in a moment.";
+/**
+ * Web only: the prompt's account deletion didn't finish. `/profile`'s toast
+ * words, as one inline line, since the prompt covers the page.
+ */
+export const TERMS_PROMPT_DELETE_FAILED = `${DELETE_ACCOUNT_FAILED.title}. ${DELETE_ACCOUNT_FAILED.description}`;
 
 /**
  * The prompt itself: a full-screen dialog over the dashboard that Escape and

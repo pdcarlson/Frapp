@@ -138,6 +138,17 @@ export function useConfirmDialog(): {
       opener.getAttribute("aria-disabled") !== "true";
     if (openerUsable) return;
     event.preventDefault();
+    // Opened from inside another dialog (the Terms prompt's Delete account):
+    // return focus into that dialog. The page's landmark sits behind it,
+    // hidden from assistive tech, so focus there would be lost.
+    const enclosing =
+      opener instanceof HTMLElement
+        ? opener.closest<HTMLElement>('[role="dialog"]')
+        : null;
+    if (enclosing?.isConnected) {
+      enclosing.focus({ preventScroll: true });
+      return;
+    }
     // The shell's own landmark, which the "Skip to main content" link already
     // targets. `tabindex="-1"` is the standard skip-link pattern: a landmark is
     // not focusable on its own.

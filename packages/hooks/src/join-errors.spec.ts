@@ -3,7 +3,6 @@ import {
   ACCOUNT_DELETED_MESSAGE,
   JOIN_TERMS_REQUIRED_COPY,
   LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
-  TERMS_PROMPT_COPY,
 } from "@repo/validation";
 import * as joinErrors from "./join-errors";
 import { joinErrorCopy, redeemChapterId } from "./join-errors";
@@ -33,10 +32,11 @@ describe("joinErrorCopy", () => {
 
   it("doesn't blame the invite when the account itself was deleted", () => {
     // Also a 410, from the Terms check, for a session that outlived its
-    // account. A new invite wouldn't help.
+    // account. A new invite wouldn't help, and web `/join` has no sign-out
+    // to point at, so the copy names no control.
     expect(
       joinErrorCopy({ statusCode: 410, message: ACCOUNT_DELETED_MESSAGE }),
-    ).toBe(TERMS_PROMPT_COPY.deleted);
+    ).toBe("This account has been deleted, so it can't join a chapter.");
   });
 
   it("tells a member who is already in that they are already in", () => {

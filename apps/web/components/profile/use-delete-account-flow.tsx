@@ -5,16 +5,25 @@ import { useDeleteAccount } from "@repo/hooks";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { signOutCurrentSession } from "@/lib/auth/session";
 
+/** What both callers say when a deletion didn't finish. */
+export const DELETE_ACCOUNT_FAILED = {
+  title: "Deletion didn't finish",
+  description:
+    "Part of it may already have gone through, and running it again is safe. Try once more in a moment.",
+} as const;
+
 /**
  * Account deletion on web: confirm, delete, sign out, leave. Shared by
  * `/profile` (`profile-panel.tsx`) and the Terms prompt (`terms-prompt.tsx`),
  * which covers the dashboard and so has to offer it itself
  * (`spec/behavior/data-retention.md` § Individual Account Deletion). One flow,
- * so the confirm copy and the post-delete navigation can't drift apart, as
- * mobile's `lib/account/delete-account-prompt.ts` does for its two screens.
+ * so the confirm and failure copy and the post-delete navigation can't drift
+ * apart, as mobile's `lib/account/delete-account-prompt.ts` does for its three
+ * screens.
  *
- * `onFailed` reports a deletion that didn't finish; each caller says so in its
- * own surface. Render `confirmDialog` wherever the caller renders.
+ * `onFailed` reports a deletion that didn't finish; each caller shows
+ * `DELETE_ACCOUNT_FAILED` in its own surface. Render `confirmDialog` wherever
+ * the caller renders.
  */
 export function useDeleteAccountFlow({ onFailed }: { onFailed: () => void }) {
   const deleteAccount = useDeleteAccount();

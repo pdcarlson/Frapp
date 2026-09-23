@@ -2,7 +2,6 @@ import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import {
   ACCOUNT_DELETED_MESSAGE,
   JOIN_TERMS_REQUIRED_COPY,
-  TERMS_PROMPT_COPY,
 } from "@repo/validation";
 import { isTermsRequiredError } from "./legal-acceptance";
 
@@ -31,7 +30,8 @@ export function joinErrorCopy(error: unknown): string {
   if (isTermsRequiredError(error)) return JOIN_TERMS_REQUIRED_COPY;
   const status = statusOf(error);
   if (status === 410 && serverMessageOf(error) === ACCOUNT_DELETED_MESSAGE) {
-    return TERMS_PROMPT_COPY.deleted;
+    // Names no control: web `/join` has no sign-out, unlike mobile s02.
+    return "This account has been deleted, so it can't join a chapter.";
   }
   if (status === 410) {
     return "This invite has expired or already been used. Ask an officer for a new one.";

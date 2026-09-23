@@ -32,7 +32,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { useDeleteAccountFlow } from "@/components/profile/use-delete-account-flow";
+import {
+  DELETE_ACCOUNT_FAILED,
+  useDeleteAccountFlow,
+} from "@/components/profile/use-delete-account-flow";
 import {
   ErrorState,
   anyReadUncached,
@@ -90,12 +93,7 @@ export function ProfilePanel() {
   const updateOnboarding = useUpdateOnboarding();
   const deleteFlow = useDeleteAccountFlow({
     onFailed: () =>
-      toast({
-        title: "Deletion didn't finish",
-        description:
-          "Part of it may already have gone through, and running it again is safe. Try once more in a moment.",
-        variant: "destructive",
-      }),
+      toast({ ...DELETE_ACCOUNT_FAILED, variant: "destructive" }),
   });
   const isDeletingAccount = deleteFlow.isDeleting;
   // The notification categories are per-chapter — `notification_preferences` is
