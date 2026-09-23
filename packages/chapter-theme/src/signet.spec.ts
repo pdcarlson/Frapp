@@ -7,6 +7,7 @@ import {
   deriveSignetPalette,
   HOUSE_SEED,
   liftAccent,
+  scaleClears,
   SIGNET_FILL_SURFACES,
   signetAccentSemanticVars,
   signetFillChecks,
@@ -101,24 +102,30 @@ const LADDER = {
 } as const;
 
 /**
- * The step 9 the generator paints for `seed` before any lift: the §1 call with
- * the seed itself as its accent. Test-only, to tell which seeds the engine
- * lifted. `gray` is restated from the engine's `GENERATOR_PARAMS`, and the
- * generator reads it only for a pure black or white accent. A chromatic drift
- * moves `#000000`'s fill, which "pins every lifted fill" below catches; an
- * achromatic one (`#303030`, tried) changes no fill this suite checks.
+ * The step 9 fill and step 10 hover the generator paints for `seed` before any
+ * lift: the §1 call with the seed itself as its accent. Test-only, to tell
+ * which seeds the engine lifted. `gray` is restated from the engine's
+ * `GENERATOR_PARAMS`, and the generator reads it only for a pure black or white
+ * accent. A chromatic drift moves `#000000`'s fill, which "pins every lifted
+ * fill and hover" below catches; an achromatic one (`#303030`, tried) changes
+ * no fill this suite checks.
  */
-const unliftedFill = (seed: string) =>
+const unlifted = (seed: string) => {
+  const { accentScale } = generateRadixColors({
+    appearance: "dark",
+    gray: "#191919",
+    background: LADDER.background,
+    accent: seed,
+  });
   // normalizeHex: the generator can return shorthand (`#fff`), as the engine
-  // handles in `generatedFill`.
-  normalizeHex(
-    generateRadixColors({
-      appearance: "dark",
-      gray: "#191919",
-      background: LADDER.background,
-      accent: seed,
-    }).accentScale[8]!,
-  );
+  // handles in `generatedFills`.
+  return {
+    fill: normalizeHex(accentScale[8]!),
+    hover: normalizeHex(accentScale[9]!),
+  };
+};
+
+const unliftedFill = (seed: string) => unlifted(seed).fill;
 
 const oklch = (hex: string) => {
   const [l, c, h] = new Color(hex).to("oklch").coords;
@@ -126,23 +133,32 @@ const oklch = (hex: string) => {
 };
 
 /**
- * The corpus seeds whose own fill fell under 3:1 on `--popover` before #2541,
- * with the fill each paints now. Measured on the engine, not derived: the
- * point of pinning them is that a generator or colour-library upgrade that
- * moves any of them shows up here first. `#000000`, `#472B62`, `#4B0082` and
- * `#4B1A7E` are the generator's own step 9 (`getStep9Colors` swaps it in for a
- * seed near the dark step 1), so what was lifted is that fill, not the seed.
+ * The corpus seeds whose own scale failed §8 before the lift, with the fill
+ * and hover each paints now. Measured on the engine, not derived: the point of
+ * pinning them is that a generator or colour-library upgrade that moves any of
+ * them shows up here first.
+ *
+ * `before` is the fill the seed painted unlifted. For nine of the ten it fell
+ * under 3:1 on `--popover` (#2541); `#003087`'s `#1C6CFE` cleared at 3.31:1,
+ * and it is here for its hover alone, `#1F63DE` at 2.79:1 (#2586). `#000000`,
+ * `#003087`, `#472B62`, `#4B0082` and `#4B1A7E` paint the generator's own step
+ * 9 (`getStep9Colors` swaps it in for a seed near the dark step 1), so what was
+ * lifted is that fill, not the seed.
  */
-const LIFTED_FILLS: Record<string, { before: string; after: string }> = {
-  "#000000": { before: "#6E6E6E", after: "#707070" },
-  "#006400": { before: "#006400", after: "#2C8028" },
-  "#472B62": { before: "#8758B4", after: "#895AB6" },
-  "#4B0082": { before: "#901FED", after: "#9B32FA" },
-  "#4B1A7E": { before: "#8939DE", after: "#9244E8" },
-  "#8B0000": { before: "#8B0000", after: "#C34437" },
-  "#8B4513": { before: "#8B4513", after: "#A55D2F" },
-  "#BF0A30": { before: "#BF0A30", after: "#D42C41" },
-  "#CC0000": { before: "#CC0000", after: "#DA2017" },
+const LIFTED_FILLS: Record<
+  string,
+  { before: string; after: string; hover: string }
+> = {
+  "#000000": { before: "#6E6E6E", after: "#828282", hover: "#767676" },
+  "#003087": { before: "#1C6CFE", after: "#2D7BFF", hover: "#1E6DF0" },
+  "#006400": { before: "#006400", after: "#41943C", hover: "#33872E" },
+  "#472B62": { before: "#8758B4", after: "#9B6CCA", hover: "#8E5FBC" },
+  "#4B0082": { before: "#901FED", after: "#AD51FF", hover: "#A042F1" },
+  "#4B1A7E": { before: "#8939DE", after: "#A358FC", hover: "#974AEE" },
+  "#8B0000": { before: "#8B0000", after: "#D75748", hover: "#C84A3C" },
+  "#8B4513": { before: "#8B4513", after: "#B96F41", hover: "#AB6234" },
+  "#BF0A30": { before: "#BF0A30", after: "#E94351", hover: "#DA3345" },
+  "#CC0000": { before: "#CC0000", after: "#EF3B2D", hover: "#E0291D" },
 };
 
 describe("deriveSignetPalette", () => {
@@ -175,7 +191,9 @@ describe("deriveSignetPalette", () => {
     for (const seed of ALL_SEEDS) {
       const { contrastChecks } = deriveSignetPalette(seed);
 
-      expect(contrastChecks).toHaveLength(3);
+      // accent-text on the background and on its tint, and on-primary on the
+      // fill and on the hover shade (#2586).
+      expect(contrastChecks).toHaveLength(4);
       for (const check of contrastChecks) {
         expect(
           check.passes,
@@ -186,23 +204,29 @@ describe("deriveSignetPalette", () => {
   });
 
   /**
-   * accent-engine.md §8's fill floor (#2541). `accent-primary` is the only cue
-   * for a state in several consumers (switch track, active tab underline, the
-   * focus ring border, poll selection), so WCAG 1.4.11 holds it to 3:1 on every
-   * surface it paints on, not just under a label.
+   * accent-engine.md §8's fill floor (#2541, #2586). `accent-primary` is the
+   * only cue for a state in several consumers (switch track, active tab
+   * underline, the focus ring border, poll selection), so WCAG 1.4.11 holds it
+   * to 3:1 on every surface it paints on, not just under a label. Its hover
+   * shade is held too: the voted poll option is a primary button, and pointing
+   * at it swaps the fill that carries the vote for `accent-hover`.
    */
-  describe("the accent-primary fill clears 3:1 on every ladder surface", () => {
+  describe("the accent-primary fill and its hover clear 3:1 on every ladder surface", () => {
     it("for every seed, as measured and as the engine reports it", () => {
       for (const seed of ALL_SEEDS) {
         const { palette, fillChecks } = deriveSignetPalette(seed);
-        const primary = palette["--signet-accent-primary"];
-        for (const [name, surface] of Object.entries(LADDER)) {
-          expect(
-            ratio(primary, surface),
-            `${seed} → ${primary} on ${name}`,
-          ).toBeGreaterThanOrEqual(3);
+        for (const role of [
+          "--signet-accent-primary",
+          "--signet-accent-hover",
+        ] as const) {
+          for (const [name, surface] of Object.entries(LADDER)) {
+            expect(
+              ratio(palette[role], surface),
+              `${seed} → ${role} ${palette[role]} on ${name}`,
+            ).toBeGreaterThanOrEqual(3);
+          }
         }
-        expect(fillChecks, seed).toHaveLength(4);
+        expect(fillChecks, seed).toHaveLength(8);
         for (const check of fillChecks) {
           expect(
             check.passes,
@@ -219,33 +243,58 @@ describe("deriveSignetPalette", () => {
       // still cleared.
       const surfaceOf = (against: string) =>
         SIGNET_FILL_SURFACES[against as keyof typeof SIGNET_FILL_SURFACES];
+      const roles = [
+        "--signet-accent-primary",
+        "--signet-accent-hover",
+      ] as const;
+      const expectedOrder = roles.flatMap((role) =>
+        Object.keys(SIGNET_FILL_SURFACES).map(
+          (surface) => `${role} ${surface}`,
+        ),
+      );
       for (const seed of ALL_SEEDS) {
         const { palette, fillChecks } = deriveSignetPalette(seed);
-        const primary = palette["--signet-accent-primary"];
-        expect(fillChecks.map((check) => check.against)).toEqual(
-          Object.keys(SIGNET_FILL_SURFACES),
-        );
+        expect(
+          fillChecks.map((check) => `${check.role} ${check.against}`),
+        ).toEqual(expectedOrder);
         for (const check of fillChecks) {
-          expect(check.ratio, `${seed} on ${check.against}`).toBeCloseTo(
-            ratio(primary, surfaceOf(check.against)),
-            6,
-          );
+          const role = check.role as (typeof roles)[number];
+          expect(
+            check.ratio,
+            `${seed} ${role} on ${check.against}`,
+          ).toBeCloseTo(ratio(palette[role], surfaceOf(check.against)), 6);
         }
       }
-      // Crimson's own fill, before the lift, fails on every surface.
-      const unlifted = signetFillChecks("#8B0000");
-      expect(unlifted.map((check) => check.passes)).toEqual([
-        false,
-        false,
-        false,
-        false,
-      ]);
-      for (const check of unlifted) {
+      // Crimson's own scale, before the lift, fails on every surface: fill
+      // `#8B0000` and hover `#A4130C`.
+      const crimson = unlifted("#8B0000");
+      const failing = signetFillChecks({
+        "--signet-accent-primary": crimson.fill,
+        "--signet-accent-hover": crimson.hover,
+      });
+      expect(failing.map((check) => check.passes)).toEqual(
+        Array<boolean>(8).fill(false),
+      );
+      for (const check of failing) {
+        const hex =
+          check.role === "--signet-accent-hover" ? crimson.hover : crimson.fill;
         expect(check.ratio).toBeCloseTo(
-          ratio("#8B0000", surfaceOf(check.against)),
+          ratio(hex, surfaceOf(check.against)),
           6,
         );
       }
+      // And a hover under the floor fails on its own, beside a fill that
+      // clears: `#003087`'s unlifted scale, the case #2586 added.
+      const navy = unlifted("#003087");
+      const navyChecks = signetFillChecks({
+        "--signet-accent-primary": navy.fill,
+        "--signet-accent-hover": navy.hover,
+      });
+      expect(
+        navyChecks
+          .filter((check) => !check.passes)
+          .map((check) => `${check.role} ${check.against}`),
+      ).toEqual(["--signet-accent-hover --popover"]);
     });
 
     it("judges each lift candidate by the fill the generator paints", () => {
@@ -265,17 +314,15 @@ describe("deriveSignetPalette", () => {
       };
       expect(liftAccent("#8B0000", paintsCrimson)).toBeNull();
       const real = liftAccent("#8B0000");
-      expect(normalizeHex(real!.generated.accentScale[8]!)).toBe("#C34437");
+      expect(normalizeHex(real!.generated.accentScale[8]!)).toBe("#D75748");
     });
 
-    it("judges fine-step candidates by the fill the generator paints, too", () => {
+    it("judges fine-step candidates by the scale the generator paints, too", () => {
       // The coarse walk finds a clearing step, then the fine walk looks for a
       // smaller one. This generator paints truly until a candidate clears and
       // crimson for every call after, so each fine candidate fails as painted
       // even where its lifted input would clear on its own. The only right
       // answer is the coarse step, as it painted.
-      const clears = (fill: string) =>
-        signetFillChecks(normalizeHex(fill)).every((check) => check.passes);
       let cleared = false;
       const failsAfterFirstClear = (accent: string) => {
         const generated = generateRadixColors({
@@ -285,11 +332,33 @@ describe("deriveSignetPalette", () => {
           accent,
         });
         if (cleared) generated.accentScale[8] = "#8B0000";
-        else if (clears(generated.accentScale[8]!)) cleared = true;
+        else if (scaleClears(generated)) cleared = true;
         return generated;
       };
       const lift = liftAccent("#8B0000", failsAfterFirstClear);
-      expect(clears(lift!.generated.accentScale[8]!)).toBe(true);
+      expect(scaleClears(lift!.generated)).toBe(true);
+      expect(normalizeHex(lift!.generated.accentScale[8]!)).not.toBe("#8B0000");
+    });
+
+    it("judges each candidate's hover by what the generator paints, too", () => {
+      // This generator paints a dark grey hover on every scale. It fails 3:1 on
+      // every surface, but a white label reads on it at over 6:1, so a lift
+      // that checked only the fill and the label would stop at the first fill
+      // that clears under a white label and ship this hover. Hover is judged
+      // on its own, so no lift clears.
+      const paintsDarkHover = (accent: string) => {
+        const generated = generateRadixColors({
+          appearance: "dark",
+          gray: "#191919",
+          background: LADDER.background,
+          accent,
+        });
+        generated.accentScale[9] = "#5A5A5A";
+        return generated;
+      };
+      expect(ratio("#5A5A5A", LADDER.popover)).toBeLessThan(3);
+      expect(ratio("#FFFFFF", "#5A5A5A")).toBeGreaterThan(6);
+      expect(liftAccent("#8B0000", paintsDarkHover)).toBeNull();
     });
 
     it("derives hover and the alpha steps from the lifted fill, not the seed", () => {
@@ -319,7 +388,7 @@ describe("deriveSignetPalette", () => {
       );
     });
 
-    it("lifts exactly the seeds whose own fill failed, and no others", () => {
+    it("lifts exactly the seeds whose own scale failed, and no others", () => {
       // The house seed and `#C9A56F` (45 of the 50 seeded chapters) must come
       // through untouched: the lift is a floor, not a restyle.
       const primaryOf = (seed: string) =>
@@ -332,47 +401,88 @@ describe("deriveSignetPalette", () => {
       expect(primaryOf("#C9A56F")).toBe(unliftedFill("#C9A56F"));
     });
 
-    it("lifts a crimson chapter to brick red, the worked example", () => {
-      // #8B0000 painted 1.50:1 on `--popover` (1.87:1 on the background). It is
-      // the largest shift in the corpus.
+    it("lifts a crimson chapter to a light brick red, the worked example", () => {
+      // #8B0000 painted 1.50:1 on `--popover` (1.87:1 on the background), and
+      // its hover `#A4130C` 1.91:1. It is the largest shift in the corpus.
       const { palette, resolvedSeed } = deriveSignetPalette("#8B0000");
       expect(resolvedSeed).toBe("#8B0000");
       expect(unliftedFill("#8B0000")).toBe("#8B0000");
-      expect(palette["--signet-accent-primary"]).toBe("#C34437");
-      expect(ratio("#C34437", LADDER.popover)).toBeGreaterThanOrEqual(3);
-      // on-primary stays white, and still clears AA on the lifted fill.
-      expect(palette["--signet-accent-on-primary"]).toBe("#FFFFFF");
+      expect(palette["--signet-accent-primary"]).toBe("#D75748");
+      expect(palette["--signet-accent-hover"]).toBe("#C84A3C");
+      expect(ratio("#C84A3C", LADDER.popover)).toBeGreaterThanOrEqual(3);
+      // The label turns black. White cleared AA on #2541's `#C34437` (4.95:1),
+      // but no label reads at 4.5:1 on both a fill and a hover this far apart
+      // once the hover clears 3:1 (accent-engine.md §8), so the lift runs on
+      // until black clears the hover.
+      expect(palette["--signet-accent-on-primary"]).toBe("#000000");
+      expect(ratio("#000000", "#C84A3C")).toBeGreaterThanOrEqual(4.5);
+      expect(ratio("#FFFFFF", "#D75748")).toBeLessThan(4.5);
     });
 
-    it("pins every lifted fill, and changes only its lightness", () => {
-      for (const [seed, { before, after }] of Object.entries(LIFTED_FILLS)) {
+    it("pins every lifted fill and hover, and changes only the lightness", () => {
+      for (const [seed, { before, after, hover }] of Object.entries(
+        LIFTED_FILLS,
+      )) {
         const { palette } = deriveSignetPalette(seed);
         const primary = palette["--signet-accent-primary"];
         expect(primary, seed).toBe(after);
-        expect(ratio(before, LADDER.popover), seed).toBeLessThan(3);
+        expect(palette["--signet-accent-hover"], seed).toBe(hover);
+        // `before` is what the seed painted unlifted, and that scale failed:
+        // its fill, or (for `#003087`) only its hover.
+        const unliftedScale = unlifted(seed);
+        expect(unliftedScale.fill, seed).toBe(before);
+        expect(
+          Math.min(
+            ratio(unliftedScale.fill, LADDER.popover),
+            ratio(unliftedScale.hover, LADDER.popover),
+          ),
+          seed,
+        ).toBeLessThan(3);
 
         const was = oklch(before);
         const now = oklch(primary);
         expect(now.l, seed).toBeGreaterThan(was.l);
         // Hex rounding moves chroma and hue a hair; a real change of colour
-        // would move them far more than this.
-        expect(Math.abs(now.c - was.c), `${seed} chroma`).toBeLessThan(0.003);
-        if (was.c > 0.01) {
-          expect(Math.abs(now.h - was.h), `${seed} hue`).toBeLessThan(0.5);
+        // would move them far more than this. The exception is chroma the sRGB
+        // gamut cannot hold at the new lightness, which the CSS Color 4 gamut
+        // mapping gives up rather than lightness: `#003087`'s blue and
+        // `#4B0082`'s violet, both at the gamut's edge, are the corpus cases.
+        const keptChromaFits = new Color("oklch", [
+          now.l,
+          was.c,
+          was.h,
+        ]).inGamut("srgb");
+        if (keptChromaFits) {
+          expect(Math.abs(now.c - was.c), `${seed} chroma`).toBeLessThan(0.003);
+          if (was.c > 0.01) {
+            expect(Math.abs(now.h - was.h), `${seed} hue`).toBeLessThan(0.5);
+          }
+        } else {
+          expect(now.c, `${seed} chroma`).toBeLessThan(was.c);
+          // That mapping ends by clipping to sRGB, which it accepts within
+          // 0.02 ΔE_OK, so the hue can turn a little (`#4B0082`: 2.6°) but
+          // never further than that from the original hue.
+          const sameHue = new Color("oklch", [now.l, now.c, was.h]);
+          expect(
+            sameHue.deltaEOK(new Color(primary)),
+            `${seed} hue`,
+          ).toBeLessThan(0.02);
         }
       }
     });
 
-    it("keeps on-primary legible on every lifted fill", () => {
+    it("keeps on-primary legible on every lifted fill and its hover", () => {
       for (const seed of Object.keys(LIFTED_FILLS)) {
         const { palette } = deriveSignetPalette(seed);
-        expect(
-          ratio(
-            palette["--signet-accent-on-primary"],
-            palette["--signet-accent-primary"],
-          ),
-          seed,
-        ).toBeGreaterThanOrEqual(4.5);
+        for (const role of [
+          "--signet-accent-primary",
+          "--signet-accent-hover",
+        ] as const) {
+          expect(
+            ratio(palette["--signet-accent-on-primary"], palette[role]),
+            `${seed} on ${role}`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
       }
     });
   });
