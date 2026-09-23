@@ -14,8 +14,8 @@
 //     staging) and reports one still in flight;
 //   - that a failed deploy lookup is a warning in `use` (the required gates on
 //     main use it) and an error in `wait`;
-//   - that every Actions API read retries, so one transient error does not
-//     fail the step.
+//   - that every Actions API read retries a transient error, so one blip does
+//     not fail the step, and does not retry a 4xx.
 //
 // `sleep` is stubbed to return at once, so retries cost nothing. The `wait`
 // branch that polls is still not exercised: its deadline is wall-clock.
@@ -99,8 +99,16 @@ while IFS=$'\\t' read -r pattern file fail_first; do
       if [ "$count" -lt "$fail_first" ]; then
         echo $((count + 1)) > "$count_file"
         echo '{"message":"Server Error"}'
+        echo 'gh: Server Error (HTTP 502)' >&2
         exit 1
       fi
+    fi
+    # A 4xx, in gh's own words (gh 2.63.0 prints the body on stdout, the status
+    # on stderr).
+    if [ "$file" = HTTP404 ]; then
+      echo '{"message":"Not Found","status":"404"}'
+      echo 'gh: Not Found (HTTP 404)' >&2
+      exit 1
     fi
     [ -f "$FIXTURES/$file" ] || exit 1
     if [ -n "$expr" ]; then jq -r "$expr" "$FIXTURES/$file"; else cat "$FIXTURES/$file"; fi
@@ -274,20 +282,51 @@ describe("download-migration-snapshot find step", { skip }, () => {
 
   it("retries a transient error on every read instead of failing the step", () => {
     // Each route fails twice, then answers: the third attempt must succeed.
-    const r = run({
+    // Two cases, because the jobs read runs only when a newer deploy exists,
+    // and the in-progress read only when none does.
+    const newer = run({
       onStale: "use",
-      fixtures: PUBLISHER,
+      fixtures: {
+        ...PUBLISHER,
+        "api-completed.json": { workflow_runs: [deployRun(16, "2026-09-23T12:10:00Z")] },
+        "jobs-16.json": jobs("2026-09-23T12:08:00Z"),
+      },
       routes: [
         ["/git/ref/heads/main$", "main-ref.json", "2"],
         ["/actions/workflows/migration-snapshot\\.yml/runs", "publisher.json", "2"],
         ["/compare/pubsha\\.\\.\\.mainsha$", "compare.json", "2"],
-        ["/deploy-api\\.yml/runs.*status=completed", "none.json", "2"],
+        ["/deploy-api\\.yml/runs.*status=completed", "api-completed.json", "2"],
+        ["/runs/16/jobs", "jobs-16.json", "2"],
+      ],
+    });
+    assert.equal(newer.status, 0, newer.stderr + newer.stdout);
+    assert.equal(newer.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "2026-09-23T12:08:00Z");
+    assert.equal(newer.calls.filter((path) => path.includes("/runs/16/jobs")).length, 3);
+
+    const current = run({
+      onStale: "use",
+      fixtures: PUBLISHER,
+      routes: [
+        ...PUBLISHER_ROUTES,
+        ["/deploy-api\\.yml/runs.*status=completed", "none.json"],
         ["/deploy-api\\.yml/runs.*status=in_progress", "none.json", "2"],
       ],
     });
-    assert.equal(r.status, 0, r.stderr + r.stdout);
-    assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "none");
-    assert.match(r.output, /run-id=7001/);
+    assert.equal(current.status, 0, current.stderr + current.stdout);
+    assert.equal(current.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "none");
+    assert.match(current.output, /run-id=7001/);
+  });
+
+  it("does not retry a 4xx other than 429: sending the same request again cannot fix it", () => {
+    const r = run({
+      onStale: "use",
+      fixtures: PUBLISHER,
+      routes: [["/actions/workflows/migration-snapshot\\.yml/runs", "HTTP404"], ...PUBLISHER_ROUTES],
+    });
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /Does the job grant 'actions: read'/);
+    assert.match(r.stderr, /HTTP 404/);
+    assert.equal(r.calls.filter((path) => path.includes("migration-snapshot.yml/runs")).length, 1);
   });
 
   it("gives up after three attempts on a read that keeps failing", () => {

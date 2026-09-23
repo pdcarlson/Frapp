@@ -87,11 +87,13 @@ description: >
 # race, which was open until the apply.
 #
 # ── Retries ─────────────────────────────────────────────────────────────────
-# Every Actions API read goes through `gh_api`, three attempts with backoff,
-# because `use` serves the required gates on pushes to `main`: one transient
-# 5xx must not leave a red required check on a `main` commit, which
-# `validate-deploy-sha.mjs` then refuses to deploy. The credentialed reads this
-# action replaced retried the same way (`scripts/ci/lib/http.mjs`).
+# Every Actions API read goes through `gh_api`, which follows
+# `scripts/ci/lib/http.mjs`'s policy (three attempts, 1s then 5s, a 4xx other
+# than 429 not retried). `use` serves the required gates on pushes to `main`,
+# and one transient 5xx must not leave a red required check on a `main` commit,
+# which `validate-deploy-sha.mjs` then refuses to deploy. The Management API
+# reads this action replaced also made three attempts, 1s then 5s
+# (`fetchAppliedWithRetry`, which retried a 4xx too, and `resilientFetch`).
 
 inputs:
   on-stale:
@@ -121,18 +123,28 @@ runs:
         DEPLOYS="${RUNNER_TEMP}/migration-snapshot-deploys.json"
         DEADLINE=$(( $(date +%s) + 900 ))
 
-        # `gh api` with three attempts, backing off 5s then 20s. The body is
-        # printed only on success, so a failed attempt's error body never
-        # reaches the caller's file or variable.
+        # `gh api` under scripts/ci/lib/http.mjs's retry policy: three attempts,
+        # backing off 1s then 5s, and no retry of a 4xx other than 429, which
+        # says the request is wrong (a missing `actions: read`, a workflow not
+        # on main) and fails the same way every time. gh names the status on
+        # stderr as `gh: Not Found (HTTP 404)` (checked against gh 2.63.0). If
+        # that ever reads differently, every failure is retried, which is only
+        # slower. On an HTTP error gh writes the error body to stdout, even
+        # with --jq, so the output is printed only on success.
+        GH_ERR="${RUNNER_TEMP}/migration-snapshot-gh-stderr.txt"
         gh_api() {
           local attempt out
           for attempt in 1 2 3; do
-            if out="$(gh api "$@")"; then
+            if out="$(gh api "$@" 2>"$GH_ERR")"; then
               printf '%s\n' "$out"
               return 0
             fi
+            cat "$GH_ERR" >&2
+            if grep -Eq '\(HTTP 4[0-9][0-9]\)' "$GH_ERR" && ! grep -q '(HTTP 429)' "$GH_ERR"; then
+              return 1
+            fi
             if [ "$attempt" -lt 3 ]; then
-              sleep $(( attempt * attempt * 5 ))
+              sleep $(( attempt == 1 ? 1 : 5 ))
             fi
           done
           return 1
