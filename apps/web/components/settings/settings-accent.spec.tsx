@@ -133,8 +133,9 @@ const writing = readFileSync(
 
 /** The body cell of a `writing.md` Settings row, placeholders as written there. */
 const writingRow = (label: string) => {
+  // `\r?\n`: a Windows checkout with core.autocrlf gives this file CRLF endings.
   const row = writing
-    .split("\n")
+    .split(/\r?\n/)
     .find((line) => line.startsWith(`| ${label} |`));
   if (!row) throw new Error(`writing.md has no "${label}" row`);
   const body = row.match(/`([^`]*)`[^`|]*\|$/);
@@ -148,7 +149,7 @@ const warning = (condition: string) => {
   if (at === -1) throw new Error(`no warning is gated on ${condition}`);
   const block = settingsPage
     .slice(at)
-    .match(/<p\s+className=(?:"[^"]*"|\{[\s\S]*?\})\s*>([\s\S]*?)<\/p>/);
+    .match(/<p\b(?:\s+[\w-]+=(?:"[^"]*"|\{[^{}]*\}))*\s*>([\s\S]*?)<\/p>/);
   if (!block?.[1]) throw new Error(`the ${condition} warning has no paragraph`);
   return collapse(
     block[1]
@@ -175,7 +176,7 @@ describe("the preview warnings say what the preview does", () => {
   it("renders the hex-needed hint its writing.md row states", () => {
     // The row's body cell carries a styling note after the copy.
     expect(writingRow("Accent hex needed")).toBe(
-      "Enter a hex code like #8B0000 to save an accent color.",
+      "Enter a hex code like #5AA9E6 to save an accent color.",
     );
     expect(warning("accentDraftUnsavable")).toBe(
       writingRow("Accent hex needed"),

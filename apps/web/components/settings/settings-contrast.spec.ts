@@ -128,8 +128,12 @@ describe("the accent preview's label tone, computed from the draft", () => {
    * the card*. The preview swatch needs the other one: whether text is legible
    * *on the accent* — which is what a primary button is, and what this card's
    * description promises the colour will be used for. They diverge, and the
-   * review found the band where: `#0080FD` passes the first (`reason: "ok"`,
-   * no warning) and fails the second at 4.191:1.
+   * review found the band where: `#0080FD` passed the first (`reason: "ok"`,
+   * no warning) and failed the second at 4.191:1. It no longer reaches the
+   * second: the greenfield ladder lifted `--card`, and it now scores 4.35:1
+   * there, so the resolver substitutes it. `#0086FE` (4.62:1 on the card, ink
+   * 4.45:1) is the band's example now; the ink-only assertions below still
+   * hold for `#0080FD`, since they measure text on the fill, not the card.
    *
    * The first fix here made it worse in a quiet way — `pickAccessibleColor(...)
    * ?? gold.onHouse` reasserted the very tone the picker had just rejected, so

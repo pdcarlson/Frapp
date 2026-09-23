@@ -262,7 +262,7 @@ describe("the accent save sends the colour the preview shows", () => {
     screen.getByRole("button", { name: /save accent color/i });
   const hexNeeded = () =>
     screen.queryByText(
-      /enter a hex code like #8B0000 to save an accent color/i,
+      /enter a hex code like #5AA9E6 to save an accent color/i,
     );
 
   it("saves a shorthand or padded hex as the #RRGGBB it previewed", async () => {
@@ -295,15 +295,23 @@ describe("the accent save sends the colour the preview shows", () => {
       await user.type(hex, draft);
       expect(saveButton()).toBeDisabled();
       expect(hexNeeded()).toHaveClass("text-warning");
+      // The reason reaches a screen reader on the control itself.
+      expect(saveButton()).toHaveAccessibleDescription(
+        /enter a hex code like #5AA9E6/i,
+      );
       // The preview is the fallback gold there, which its ink clears, so the
       // label-ink warning never promises what a save that can't happen picks.
       expect(screen.queryByText(/saving picks a label color/i)).toBeNull();
     }
 
     await user.clear(hex);
-    await user.type(hex, "#8B0000");
+    // The hint's own example: following it raises no other warning either.
+    await user.type(hex, "#5AA9E6");
     expect(saveButton()).toBeEnabled();
+    expect(saveButton()).not.toHaveAccessibleDescription();
     expect(hexNeeded()).toBeNull();
+    expect(screen.queryByText(/hard to read on the card/i)).toBeNull();
+    expect(screen.queryByText(/under the 4\.5:1 minimum/i)).toBeNull();
   });
 
   it("disables Save on an empty field and says what to enter, unstyled as a warning", async () => {
