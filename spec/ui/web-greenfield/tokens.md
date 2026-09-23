@@ -256,7 +256,7 @@ a colour — so it neither confirms nor contradicts the shipped `#796938`, and i
 `FOCUS_RING` (L-07). Its grid is stated as "4px grid" in geometry terms only, so it takes no position
 on §1's decision to bind no `--space-*` utilities.
 
-### L-02 — Chapter palettes need recomputing
+### L-02 — CLOSED 2026-09-23. Chapter palettes need recomputing
 
 **Closed 2026-09-23 by [#1165](https://github.com/pdcarlson/Frapp/issues/1165), with the first
 option below.** Every palette now carries the engine version that wrote it, and the API's hourly

@@ -551,7 +551,7 @@ The **neutral ladder is not derived**. Backgrounds, borders, the sidebar and the
 
 Delivery differs per surface, and neither client applies the column blindly:
 
-- **Web** — `apps/web/lib/hooks/use-chapter-theme.ts`, mounted once by `DashboardShell`. It reads a fixed allow-list of `--signet-*` roles and re-keys them onto the semantic names `signet.css` defines, all-or-nothing. A row missing those keys leaves the house-gold defaults standing.
+- **Web** — `apps/web/lib/hooks/use-chapter-theme.ts`, mounted once by `DashboardShell`. It reads a fixed allow-list of `--signet-*` roles and re-keys them onto the semantic names `signet.css` defines, all-or-nothing. A row missing those keys applies nothing, so what already paints stands: the browser's cached palette for the chapter if it holds one, otherwise the `signet.css` default-seed palette ([`accent-engine.md` § 6](../ui/design-system/accent-engine.md#6-implementation-status), the Delivery (web) row).
 - **Native** — `apps/mobile/lib/chapter-branding.ts`; which role it reads, and the legacy fallback it keeps for a row that predates the Signet map, are in [`accent-engine.md` § 6](../ui/design-system/accent-engine.md#6-implementation-status).
 
 ### The legacy engine, and why the stored map is not self-describing

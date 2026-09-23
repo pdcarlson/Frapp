@@ -62,7 +62,7 @@ Three details specific to this writer:
 
 ## POST /chapters/:id/theme-palette
 
-Recomputes the derived palette from `branding.colors.accent` via `buildChapterPalette`, persists it to `chapters.theme_palette` together with the engine version that wrote it (`theme_palette_engine_version`, which is not returned), and returns the build — the token map under `palette`, plus `invalidSeed` and `failedContrastChecks`. Triggered automatically by a PATCH that carries `branding.colors`, changed or not. The derivation and role map are canon in [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md); where the palette lives and who writes it is in [`spec/architecture/README.md`](../architecture/README.md).
+Recomputes the derived palette from `branding.colors.accent` via `buildChapterPalette`, persists it to `chapters.theme_palette` together with the engine version that wrote it (`theme_palette_engine_version`, which is not returned), and returns the build. The write is compare-and-set on the accent it read: if an accent save lands in between, this write is skipped and the newer palette stands, and the response still carries the build for the accent as read — the token map under `palette`, plus `invalidSeed` and `failedContrastChecks`. Triggered automatically by a PATCH that carries `branding.colors`, changed or not. The derivation and role map are canon in [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md); where the palette lives and who writes it is in [`spec/architecture/README.md`](../architecture/README.md).
 
 ## Dues configuration
 

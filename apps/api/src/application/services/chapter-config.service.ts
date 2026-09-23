@@ -23,6 +23,7 @@ import {
   chapterPaletteColumns,
   logChapterPaletteWarnings,
   type ChapterBrandingInput,
+  type ChapterPaletteBuild,
 } from './chapter-palette';
 import {
   SERVICE_CONFIG_DEFAULTS,
@@ -531,6 +532,16 @@ export class ChapterConfigService {
       >;
       diff['branding'] = { from: existing.branding, to: mergedBranding };
       update['branding'] = mergedBranding;
+      // The palette is recomputed below, in a second write that can fail on
+      // its own and is only logged. Clearing the engine stamp in this write,
+      // atomically with the new seed, means a failed recompute leaves the row
+      // stale rather than current: the stale-palette sweep then derives it
+      // from this seed within the hour (#1165, accent-engine.md §4). Without
+      // it, a row stamped by an earlier write would keep the old seed's
+      // palette under a current stamp, where the sweep never looks.
+      if (dto.branding.colors) {
+        update['theme_palette_engine_version'] = null;
+      }
 
       const readAccent = (branding: unknown): string | undefined =>
         (branding as { colors?: { accent?: string } } | undefined)?.colors
@@ -811,8 +822,11 @@ export class ChapterConfigService {
         (mergedBranding as { colors?: { accent?: string } })?.colors ??
         dto.branding.colors;
       try {
-        const build = await this.recomputePalette(chapterId, mergedColors);
-        committedThemePalette = build.palette;
+        const { build, written } = await this.recomputePalette(
+          chapterId,
+          mergedColors,
+        );
+        if (written) committedThemePalette = build.palette;
       } catch (err) {
         logThrowable(this.logger, 'warn', 'Failed to recompute palette', err);
       }
@@ -975,7 +989,11 @@ export class ChapterConfigService {
       colors?: { accent?: string };
     };
     const colors = branding.colors ?? {};
-    const build = await this.recomputePalette(chapterId, colors);
+    // A lost race (`written: false`) still returns the build: it is what this
+    // chapter's seed, as read, derives to, and the newer write that beat it
+    // holds a palette derived from its own seed. The web client refetches the
+    // config after this call either way.
+    const { build } = await this.recomputePalette(chapterId, colors);
     // Picked, not spread: `failedFillChecks` is logged and never disclosed
     // (chapter-palette.ts), and a field added to the build later should not
     // reach the response by default.
@@ -986,10 +1004,23 @@ export class ChapterConfigService {
     };
   }
 
+  /**
+   * Derive and persist the palette for the seed the caller read, and report
+   * whether the write landed.
+   *
+   * Compare-and-set on the seed, the same guard the stale-palette sweep uses
+   * (`ScheduledJobsRepository.writeRecomputedPalette`): the write lands only
+   * while `branding.colors.accent` is still the seed this palette was derived
+   * from. Both callers read that seed in an earlier statement, so a Settings
+   * accent save can land in between; without the guard this write would put
+   * the old seed's palette back under a current stamp, where neither the next
+   * read nor the sweep would notice. `written: false` is that lost race, not
+   * an error: the write that won carries a palette derived from its own seed.
+   */
   private async recomputePalette(
     chapterId: string,
     colors: { accent?: string },
-  ) {
+  ): Promise<{ build: ChapterPaletteBuild; written: boolean }> {
     const build = buildChapterPalette(colors);
 
     // Colour problems are logged, never thrown: the palette written is still
@@ -1002,10 +1033,15 @@ export class ChapterConfigService {
       build,
     );
     const patch: TablesUpdate<'chapters'> = chapterPaletteColumns(build);
-    const { error } = await this.supabase
+    const update = this.supabase
       .from('chapters')
       .update(patch)
       .eq('id', chapterId);
+    const guarded =
+      typeof colors.accent === 'string'
+        ? update.eq('branding->colors->>accent', colors.accent)
+        : update.is('branding->colors->>accent', null);
+    const { data, error } = await guarded.select('id');
 
     if (error) {
       logThrowable(
@@ -1017,6 +1053,12 @@ export class ChapterConfigService {
       throw error;
     }
 
-    return build;
+    const written = (data?.length ?? 0) > 0;
+    if (!written) {
+      this.logger.warn(
+        `Theme palette for chapter ${chapterId} not written: its accent changed after it was read, and the newer write stands`,
+      );
+    }
+    return { build, written };
   }
 }
