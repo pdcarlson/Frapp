@@ -2,7 +2,7 @@
 
 > **Governing spec for the web UI rebuild** tracked by
 > [#2140](https://github.com/pdcarlson/Frapp/issues/2140). This directory is the committed home of
-> the Claude Design web framework. While the epic is open, this directory outranks
+> the Claude Design web framework. The epic has closed; until the fold-back below happens, this directory outranks
 > [`../web-dashboard/`](../web-dashboard/README.md) on anything visual or structural that the two
 > disagree about.
 
@@ -21,7 +21,7 @@ Highest wins. This is the whole point of the directory, so it is stated first.
 | 2 | The rest of this directory | The written lane record: tokens, deletions, open locks. |
 | 3 | [`../mobile/`](../mobile/README.md) | The shipped Signet consumer surface. Where the web framework is silent, mobile is the precedent, because the two are meant to read as one product. |
 | 4 | [`../design-system/`](../design-system/README.md), [`../brand-identity.md`](../brand-identity.md), [`../assets.md`](../assets.md) | Tokens, components, accent engine, brand. Still canonical for everything the framework does not overrule. |
-| 5 | [`../web-dashboard/`](../web-dashboard/README.md) | **Distrust while #2140 is open.** See below. |
+| 5 | [`../web-dashboard/`](../web-dashboard/README.md) | **Distrust until the fold-back below.** See below. |
 
 ### Why `web-dashboard/` is distrusted, and what that does not mean
 
@@ -37,9 +37,10 @@ Three things this does **not** license:
   *chrome*, not the *contracts*.
 - **It is not a licence to skip reading it.** A lane that changes a surface still has to know what
   that surface currently does before replacing it.
-- **Drift is not filed against it during the epic.** A gap between `web-dashboard/` prose and
-  greenfield code is expected while lanes land. When #2140 closes, the surviving truth folds back
-  into `web-dashboard/` and this directory is archived or retired in that same change.
+- **Drift is still not filed against its visual prose.** A gap between `web-dashboard/` prose and
+  greenfield code was expected while lanes landed, and the fix for it is the fold-back, not a drift
+  issue per gap. #2140 has closed, so the surviving truth is due to fold back into `web-dashboard/`
+  and this directory to be archived or retired in that same change; that has not happened yet.
 
 ### Precedence that still binds
 
@@ -99,7 +100,7 @@ No CI check enforces this lock today. It is a review rule.
 | 3 | [#2142](https://github.com/pdcarlson/Frapp/issues/2142) | Chat: channels, kill the Details rail, bottom composer | Landed, with four board items deliberately left — see below. Adds the **full-bleed route contract** |
 | 4 | [#2144](https://github.com/pdcarlson/Frapp/issues/2144) | Resources, Backwork, Documents | Landed. Flattens both routes onto the shell, deletes their narration and wrapper cards, and takes the upload dialogs to board `1j`. The board draws **no** Documents or Backwork page body, so the list grammar is derived — see [`deletion-checklist.md`](deletion-checklist.md) §8 |
 | 5 | [#2146](https://github.com/pdcarlson/Frapp/issues/2146) | Directory, Finance, Admin | **All three landed.** The issue says "can split PRs" and this lane took it, one PR per third. **Directory:** `/members` (actives + alumni) is flush on the shell, its three-plus-N wrapper cards, its table, its checkbox column and its card-grid view are gone, and its empty states are split three ways — the board draws **no** Directory page body, so the grammar is derived exactly as lane 4's was, in [`deletion-checklist.md`](deletion-checklist.md) §9. **Finance:** `/billing` is flush on the shell with plan status on the page, `4d`'s plan panel and plan matrix, `4b`'s PRO chip and the past-due banner — the board *does* draw this one, so §10 records the two places it describes a product this codebase does not have, and the merge of the route's two duplicate invoice lists that flattening forced. **Admin:** `/settings` is the board's `4d` rail (200px, Danger zone pinned last, Organization split into Chapter / Semester / Danger zone), Roles is one live `4e` matrix where four sub-tabs used to sit, and `/geofences` and `/reports` are flush. It adds the first `4c` per-page settings drawer, on Study Zones. §11 records the two board tabs not built (Join code, which this product has no surface for, and Subscription, which §10 already refused), the two `4c` sections Study Zones has no API for, and two defects fixed on the way through |
-| 6 | [#2145](https://github.com/pdcarlson/Frapp/issues/2145) | Chat cold load and performance | |
+| 6 | [#2145](https://github.com/pdcarlson/Frapp/issues/2145) | Chat cold load and performance | **Landed** ([#2178](https://github.com/pdcarlson/Frapp/pull/2178)): cold-load measurement, bundle splits, first-paint CLS |
 | 7 | [#2147](https://github.com/pdcarlson/Frapp/issues/2147) | Chapter accent, 404 and error polish | **Landed.** The only lane that *adds* a surface. The accent chain needed no repair — the seven roles the stylesheet declares are exactly the seven `useChapterTheme()` writes — so the lane's accent work is `::selection`, which had no Signet value at all, plus the Accent tab's card description, **every clause of which was false**. `1k`'s 404 and error pages did not exist: an unmatched URL rendered Next's built-in fallback, black-on-white, on a dark-only product. The no-retint lock is a test now rather than four docstrings. See [`deletion-checklist.md`](deletion-checklist.md) §12 for what it deliberately did not do, including board `2e`'s mini-shell preview |
 
 [`deletion-checklist.md`](deletion-checklist.md) is the shared acceptance list across lanes 2 to 7.

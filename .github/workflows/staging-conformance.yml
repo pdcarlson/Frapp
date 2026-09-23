@@ -16,7 +16,7 @@ name: Staging conformance
 # Empty production SMTP is SKIPPED there (hosted 2/hour cap) so the
 # sibling stays green until #1824; SMTP on with the burned apex From fails,
 # and SMTP on without token_hash in the Magic Link template fails. Infisical /
-# smoke stay production-unwatched. Remaining parity on #1384.
+# smoke stay production-unwatched. Remaining parity moved from #1384 to #2505.
 # Render `frapp-api-staging` `healthCheckPath` `/health` and auto-deploy on
 # tracking `main` are asserted here (empty path is TCP-only; auto-deploy off
 # freezes staging while this job stays green on a stale host). Production's

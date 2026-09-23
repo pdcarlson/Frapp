@@ -460,7 +460,7 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
   });
 
   // The rule, not a phrase: any comment naming the apply command must also say
-  // who runs it. Stated this way it covers all eleven ROLLOUT notes and any note
+  // who runs it. Stated this way it covers all twelve ROLLOUT notes and any note
   // added later, instead of the one wrapping that existed when it was written.
   it("no comment names the bare apply without saying who runs it", () => {
     const runs = commentRuns(read("../lib/required-checks.mjs"));
@@ -479,9 +479,9 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
   });
 
   // Pinned by entry name so that deleting the canonical guard is caught. Of the
-  // eleven ROLLOUT notes, these two carry the guard and the other nine delegate
+  // twelve ROLLOUT notes, these two carry the guard and the other ten delegate
   // to secret-scan's by "same caveat as secret-scan" — so if that paragraph goes,
-  // nine inherit a clause that no longer exists, which a file-wide phrase match
+  // ten inherit a clause that no longer exists, which a file-wide phrase match
   // cannot see because the other guarded note would satisfy it.
   it("the two notes that carry the instruction each hold the guard themselves", () => {
     const src = read("../lib/required-checks.mjs");

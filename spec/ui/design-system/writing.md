@@ -45,8 +45,8 @@ Title Case controls ship on the web dashboard today — `New Event`
 (`apps/web/components/events/events-page.tsx`) and `Open Documents`
 (`apps/web/components/layout/ask-pill.tsx`) — and
 [`../web-greenfield/reference/web-framework.dc.html`](../web-greenfield/reference/web-framework.dc.html),
-which outranks written docs on the web surface while
-[#2140](https://github.com/pdcarlson/Frapp/issues/2140) is open, draws Title Case on some of its
+which outranks written docs on the web surface until the
+[#2140](https://github.com/pdcarlson/Frapp/issues/2140) fold-back, draws Title Case on some of its
 controls. That is real drift against this rule rather than an exception to it, it is tracked as
 [#2386](https://github.com/pdcarlson/Frapp/issues/2386), and that issue carries the question the
 drift actually turns on: whether a board outranks this document on a control's *words* as well as on
@@ -495,7 +495,7 @@ and its pair in §6 above went with the page-wide preview banner. **Offline
 you can manage chapter invoices.`) went with the officer invoice card: the
 invoice surface is no longer behind a screen-level `<Can>`, so the one gate
 left on it wraps a single control and takes §10's control-slot state
-(`Offline, can't check your access.`) rather than a card-shaped one. The
+(`Offline — can't check your access.`) rather than a card-shaped one. The
 **No billing rights** row is board `4b`'s "Ask an officer", which replaced a
 sentence that quoted the `billing:manage` permission key at the one person who
 cannot act on it.
