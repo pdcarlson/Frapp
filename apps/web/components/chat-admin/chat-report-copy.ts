@@ -183,9 +183,19 @@ export function messageExcerpt(
 ): string | null {
   const text = content?.replace(/\s+/g, " ").trim();
   if (!text) return null;
-  // Counted in code points, not UTF-16 units, so the cut never splits an
-  // emoji's surrogate pair and leaves half a character in an accessible name.
-  const chars = Array.from(text);
+  // Counted in user-perceived characters (grapheme clusters), so the cut never
+  // splits an emoji — a surrogate pair, a flag, a ZWJ family — and leaves half
+  // of one in an accessible name. Code points are the fallback where
+  // `Intl.Segmenter` is missing.
+  const chars =
+    typeof Intl.Segmenter === "function"
+      ? Array.from(
+          new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
+            text,
+          ),
+          (part) => part.segment,
+        )
+      : Array.from(text);
   if (chars.length <= EXCERPT_LENGTH) return text;
   return `${chars
     .slice(0, EXCERPT_LENGTH - 1)

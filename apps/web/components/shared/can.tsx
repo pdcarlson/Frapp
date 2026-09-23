@@ -27,7 +27,7 @@ type BaseProps = {
    * Unlike the other two, this defaults to something rather than to `null`.
    * The default is the control-slot member of the §10 offline family, which is
    * the right shape for a call site that gates a single button; one that
-   * stands in for a screen or a card passes `OfflineState` / `NestedOffline`
+   * stands in for a screen or a card passes `PermissionsOfflineSurface`
    * itself (`SURFACE_GATES` in `can-fallback.spec.tsx` lists those).
    * Defaulting it non-null is the point: #1211 was
    * twelve surfaces rendering nothing at all, and every one of them reached
