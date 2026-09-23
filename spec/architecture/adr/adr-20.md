@@ -246,9 +246,10 @@ the ones a later reader would otherwise re-litigate.
   the same way the previous one did — read `ALL_REQUIRED_CHECKS` rather than either number.
 
 - **Amendment (2026-09-23) — succeeded by ADR-24.** ADR-24 sets the next delivery program (epic
-  #2504) and supersedes decision 3's trade-off, where each environment builds its own frontends.
-  Under ADR-24 an artifact is built once and promoted, with its environment injected at runtime.
-  #1381's two open stages move into #2504's first phase, #2505. The alert-routing item of #1383
+  #2504, under the v1.0 GA umbrella #2523). Its rule I1 (build once, promote what staging verified)
+  supersedes decision 3 for the API: CI builds the image once, and Render deploys it by digest. Web
+  and landing keep per-environment builds, which ADR-24 records as an explicit I1 exception, until
+  runtime config lands (#2528). #1381's two open stages move into #2504's first phase, #2505. The alert-routing item of #1383
   was waiting on the owner's choice of channel, which is now made (the Sentry mobile app).
   #1384's production-parity items go with it, and so do #1383's other open items. #1381 closes
   when #1383 and #1384 do. That makes this ADR's trigger to revisit ("the program completes or is

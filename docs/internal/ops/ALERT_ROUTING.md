@@ -2,8 +2,8 @@
 
 ## Primary channels
 
-- **Critical production alerts:** on-call paging channel
-- **Non-critical staging alerts:** engineering notifications channel
+- **Critical production alerts:** Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, with email as the second path. Alert issues are assigned to the owner (ADR-24 decision 2, 2026-09-23). This is being wired in [#2505](https://github.com/pdcarlson/Frapp/issues/2505). **Until it lands, the only live path is Sentry email to issue owners,** and GitHub alert issues are unassigned.
+- **Non-critical staging alerts:** a daily Sentry digest (planned in #2505). None exists today.
 - **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API), `frapp-web` (Next dashboard) and `frapp-mobile` (Expo app)
 
 > **`frapp-web` exists but is not receiving events yet.** The project was created during #865
@@ -70,6 +70,12 @@
 > `find_alert_rules` / `get_alert_rule`, not create). Every *intended* rule below still has
 > to be created by a human in the Sentry UI, and its existence cannot be asserted in CI.
 > Re-check by reading live rules, not by assuming this paragraph.
+>
+> **Update 2026-09-23** (Sentry MCP, for the delivery-plan research on #2504):
+> - `find_alert_rules(kind=metric)` now answers `[]` instead of 410, so the org has no metric rules.
+> - The MCP exposes `create_uptime_monitor`, so an agent session can create uptime monitors. It
+>   still can't create alert rules.
+> - `find_uptime_monitors` and `find_monitors` both returned `[]`: no uptime or cron monitors exist.
 >
 > **Render paging rules were not verified this session** (Render MCP `list_workspaces`
 > unauthorized). **PostHog alerts** (org Signet, project `569878`, same date): no insight
