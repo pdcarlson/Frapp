@@ -39,11 +39,12 @@ import {
  *  - A row missing any of those keys applies nothing, so whatever already
  *    paints stands: the palette the `(dashboard)` layout emitted from this
  *    browser's accent cache, if it holds one for the chapter, otherwise the
- *    default-seed (`#DDB844`) palette baked into `signet.css`. Rows persisted
- *    before the Signet map existed were that case until the API's stale-palette
- *    sweep recomputed them (accent-engine.md §4, #1165); the gate stays, so a
- *    malformed row never applies half a palette. Nothing here assumes the keys
- *    exist.
+ *    default-seed (`#DDB844`) palette baked into `signet.css`. A row persisted
+ *    before the Signet map existed is that case until the API's stale-palette
+ *    sweep recomputes it (accent-engine.md §4, #1165), and so is a row
+ *    inserted without a palette since the sweep's last tick; the gate also
+ *    keeps a malformed row from applying half a palette. Nothing here assumes
+ *    the keys exist.
  *  - **No legacy token is applied at all**, which is why this is an allow-list
  *    rather than the blind key iteration it used to be. `derivePalette` was
  *    deleted at the slice-9 cutover so nothing writes its map any more, but
@@ -104,8 +105,8 @@ export function useChapterTheme() {
    * The semantic tokens for the current chapter, or `null`.
    *
    * All-or-nothing, which is the rule this hook has always applied and which
-   * the cache inherits: a row missing the Signet keys (as rows persisted
-   * before them did, until the #1165 sweep) applies none, and half a map is
+   * the cache inherits: a row missing the Signet keys (as a row persisted
+   * before them does, until the #1165 sweep reaches it) applies none, and half a map is
    * worse than none — the stylesheet's
    * house defaults are internally consistent, one chapter's primary beside the
    * house ring is not.

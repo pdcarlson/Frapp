@@ -98,8 +98,8 @@ function readString(
  * every such row within the hour (#1165), so once production has run it, the
  * branch serves only a row inserted without a palette since the last tick: a
  * demo seed (`scripts/demo/demo-seed.sql`) or `POST /v1/chapters`. Deleting
- * it, and letting those rows show the default accent for that hour as web's
- * stylesheet defaults already do, is #2595.
+ * it, and letting those rows show the default accent for that hour, is
+ * #2595.
  *
  * `accentPrimary`/`accentOnPrimary` are gated **together**, both-or-neither —
  * not chained off `generatedAccent`'s own presence check, and not defaulted
