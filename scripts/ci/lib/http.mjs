@@ -14,6 +14,11 @@
 // failure and ECONNRESET rather than returning a response), plus our own
 // timeout. Each of those is a statement about the transport, not the request.
 //
+// The retry ends once a response with a non-retriable status arrives, but the
+// timeout's signal also covers that response's body. So a body that stalls
+// after the headers rejects later, in the caller's `text()` or `json()`,
+// outside this loop, and is not retried (#2601).
+//
 // NOT retriable: every other 4xx. A 401, 403 or 404 on a deploy path means a
 // dead token or a wrong id, and re-sending it three times converts a clear
 // failure into a slow one. The caller sees the response and decides.

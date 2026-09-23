@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import {
   decideOutcome,
@@ -11,6 +10,7 @@ import {
   guessFailedFile,
   partitionMigrations,
   replaySource,
+  runCli,
   runReplayGate,
 } from "../check-migration-replay.mjs";
 import { readLocalMigrations } from "../check-migration-drift.mjs";
@@ -378,19 +378,32 @@ test("the CLI's live read uses resilientFetch, so one transient error doesn't fa
   }
 });
 
-test("the CLI block hands runReplayGate replaySource's answer untouched", () => {
-  // The test above pins replaySource. This pins that the CLI uses it and adds
-  // no fetch of its own after the spread, which is how the live read lost
-  // resilientFetch before: the CLI passed plain `fetch`, overriding the default.
-  const script = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "check-migration-replay.mjs"), "utf8");
-  const start = script.indexOf("if (isDirectRun) {");
-  assert.notEqual(start, -1, "the CLI block moved; update this test");
-  // The block only, up to its closing brace at column 0, with line comments
-  // dropped, so a comment that mentions fetch or code after the block can't
-  // fail it.
-  const end = script.indexOf("\n}\n", start);
-  const cli = script.slice(start, end === -1 ? undefined : end).replace(/\/\/.*$/gm, "");
-  assert.match(cli, /const source = replaySource\(\{ appliedFrom, snapshotPath \}\);/);
-  assert.match(cli, /runReplayGate\(\{\s*\.\.\.source,/);
-  assert.doesNotMatch(cli, /fetchImpl|\bfetch\b/, "the CLI must not choose a fetch itself");
+test("the CLI hands runReplayGate the live source untouched: resilientFetch and the env's credentials", async () => {
+  // Behavioural, not a read of the source text: whatever the CLI passes is
+  // what Deploy production's read uses.
+  let seen;
+  const runGate = async (options) => {
+    seen = options;
+    return 0;
+  };
+  const code = await runCli({
+    argv: ["node", "check-migration-replay.mjs"],
+    env: { SUPABASE_ACCESS_TOKEN: "token", SUPABASE_PROJECT_REF: "ref" },
+    runGate,
+  });
+  assert.equal(code, 0);
+  assert.equal(seen.fetchImpl, resilientFetch);
+  assert.equal(seen.accessToken, "token");
+  assert.equal(seen.projectRef, "ref");
+  assert.equal(seen.label, "production");
+
+  // Two sources for one answer is a usage error, and the gate never runs.
+  seen = undefined;
+  const conflict = await runCli({
+    argv: ["node", "check-migration-replay.mjs", "--applied-from", "a.json", "--snapshot", "b.json"],
+    env: {},
+    runGate,
+  });
+  assert.equal(conflict, 2);
+  assert.equal(seen, undefined);
 });

@@ -494,10 +494,10 @@ export async function runReplayGate({
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
-function getArg(name) {
-  const i = process.argv.indexOf(name);
+function getArg(name, argv = process.argv) {
+  const i = argv.indexOf(name);
   if (i === -1) return undefined;
-  const v = process.argv[i + 1];
+  const v = argv[i + 1];
   if (v === undefined || v.startsWith("--")) {
     console.error(`Error: ${name} requires a value.`);
     process.exit(2);
@@ -547,11 +547,9 @@ function snapshotSource(path) {
  * so the wiring is tested.
  *
  * The live read, which `deploy-production.yml` runs at deploy time, uses
- * `resilientFetch`, as `runReplayGate`'s own default does: a timeout, and up to
- * three attempts until the response headers arrive, so one transient
- * Management API error doesn't fail a production deploy. A body that stalls
- * after the headers is not retried (#2601). It used to pass plain `fetch`,
- * which overrode that default.
+ * `resilientFetch`, as `runReplayGate`'s own default does, so one transient
+ * Management API error doesn't fail a production deploy. `lib/http.mjs` states
+ * what it retries. It used to pass plain `fetch`, which overrode that default.
  */
 export function replaySource({ appliedFrom, snapshotPath, env = process.env } = {}) {
   if (snapshotPath) return snapshotSource(snapshotPath);
@@ -562,19 +560,26 @@ export function replaySource({ appliedFrom, snapshotPath, env = process.env } = 
   return { fetchImpl: resilientFetch, accessToken: env.SUPABASE_ACCESS_TOKEN, projectRef: env.SUPABASE_PROJECT_REF };
 }
 
-const isDirectRun = process.argv[1] && process.argv[1].endsWith("check-migration-replay.mjs");
-if (isDirectRun) {
-  const appliedFrom = getArg("--applied-from");
-  const snapshotPath = getArg("--snapshot");
+/**
+ * The CLI, returning its exit code. The gate is injectable so a test sees
+ * exactly what reaches `runReplayGate`: a fetch chosen here would override
+ * `resilientFetch` on the live read Deploy production depends on, as plain
+ * `fetch` once did.
+ */
+export async function runCli({ argv = process.argv, env = process.env, runGate = runReplayGate } = {}) {
+  const appliedFrom = getArg("--applied-from", argv);
+  const snapshotPath = getArg("--snapshot", argv);
   if (appliedFrom && snapshotPath) {
     console.error("Error: --applied-from and --snapshot are two sources for one answer; pass one.");
-    process.exit(2);
+    return 2;
   }
-  const source = replaySource({ appliedFrom, snapshotPath });
-  process.exit(
-    await runReplayGate({
-      ...source,
-      label: getArg("--label") ?? (appliedFrom ? `recorded state (${appliedFrom})` : "production"),
-    }),
-  );
+  return runGate({
+    ...replaySource({ appliedFrom, snapshotPath, env }),
+    label: getArg("--label", argv) ?? (appliedFrom ? `recorded state (${appliedFrom})` : "production"),
+  });
+}
+
+const isDirectRun = process.argv[1] && process.argv[1].endsWith("check-migration-replay.mjs");
+if (isDirectRun) {
+  process.exit(await runCli());
 }
