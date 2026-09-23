@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, posix, relative } from "node:path";
 
 import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
@@ -18,22 +18,27 @@ import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 // `package.json` and `ci.yml` itself were all unlisted.
 //
 // So the filter's coverage is derived here from the script, not restated: every
-// repo path the check reads by `join(REPO_ROOT, ...)` or `resolve(REPO_ROOT,
-// ...)`, every script it runs via `join(process.cwd(), ...)`, every file its
-// modules read by `new URL(..., import.meta.url)`, and every relative module
-// they import (followed transitively when it is JavaScript). Each path argument
-// must be a literal, in any quote style; a computed one fails the test rather
-// than being skipped, because this derivation cannot resolve it.
+// path its modules name by `join(...)` or `resolve(...)` on `REPO_ROOT` or
+// `process.cwd()` (the same directory in the entry), by `new URL(...,
+// import.meta.url)`, or by a relative `import`/`export ... from`/`import()`.
+// Each path is normalized and routed the same way whatever named it: a
+// JavaScript module is followed and scanned in turn, anything else is recorded
+// as an input. Each path argument must be a literal, in any quote style; a
+// computed one, or a path outside the repo, fails the test rather than being
+// skipped, because this derivation cannot resolve it.
 //
 // The modules are read by a small lexer, not by regexes over raw text, because
 // every regex version of this test was fooled by something ordinary: a nested
 // call inside an argument, import attributes, a form mentioned in a comment. The
 // lexer masks comments and the bodies of strings, template text and regex
 // literals (`mask`), so a call's name, brackets and commas are found only in
-// code. It is not a parser: a source it cannot read to the end (an
-// unterminated string, a regex it took for a division) fails the test instead
-// of being derived from a misreading. This job runs with no `npm ci` (see
-// ci.yml), which is why it doesn't import a real parser.
+// code. A source it cannot read to the end (an unterminated string, template,
+// regex or comment) fails the test. It is still not a parser: whether a `/`
+// starts a regex is decided by the token before it, the usual heuristic, which
+// handles postfix `i++ /`, a property named like a keyword and `if (x) /re/`,
+// but a misread that closes on the same line would hide the rest of that line
+// without failing. This job runs with no `npm ci` (see ci.yml), which is why it
+// doesn't import a real parser.
 //
 // A path read through any other form (a module constant joined onto a local
 // root, say) is invisible here. The one such input today, the chapter directory
@@ -72,19 +77,29 @@ export function mask(src) {
   };
   const len = src.length;
 
-  // The previous token in the masked output: a word, or one punctuator.
+  // The previous token in the masked output (a word, or one punctuator) and the
+  // index it starts at.
   const previous = (i) => {
     let k = i - 1;
     while (k >= 0 && /\s/.test(out[k])) k -= 1;
-    if (k < 0) return "";
-    if (!/[\w$]/.test(out[k])) return out[k];
+    if (k < 0) return { token: "", at: -1 };
+    if (!/[\w$]/.test(out[k])) return { token: out[k], at: k };
     let from = k;
     while (from > 0 && /[\w$]/.test(out[from - 1])) from -= 1;
-    return out.slice(from, k + 1).join("");
+    return { token: out.slice(from, k + 1).join(""), at: from };
   };
+  // Indices of each `)` that closes an `if`/`while`/`for`/`with` condition,
+  // after which a `/` starts a regex rather than a division.
+  const closesControl = new Set();
   const regexCanStart = (i) => {
-    const token = previous(i);
-    return token === "" || /^[(,=:[!&|?{};+\-*%<>~^]$/.test(token) || REGEX_AFTER_WORD.has(token);
+    const { token, at } = previous(i);
+    if (token === "") return true;
+    if (token === ")") return closesControl.has(at);
+    // `i++ / 2` and `n-- / 2` divide.
+    if ((token === "+" || token === "-") && out[at - 1] === token) return false;
+    if (/^[(,=:[!&|?{};+\-*%<>~^]$/.test(token)) return true;
+    // A keyword, unless it is a property name (`stats.in / n`).
+    return REGEX_AFTER_WORD.has(token) && out[at - 1] !== ".";
   };
 
   const quoted = (i) => {
@@ -113,6 +128,7 @@ export function mask(src) {
   // Returns the index of the matching `}` when `inTemplate`, else `len`.
   const code = (i, inTemplate) => {
     let depth = 0;
+    const parens = [];
     while (i < len) {
       const c = src[i];
       const next = src[i + 1];
@@ -136,6 +152,10 @@ export function mask(src) {
         blank(i, end, "_");
         i = end;
       } else {
+        if (c === "(") {
+          parens.push(["if", "while", "for", "with"].includes(previous(i).token));
+        }
+        if (c === ")" && parens.pop()) closesControl.add(i);
         if (inTemplate && c === "{") depth += 1;
         if (inTemplate && c === "}") {
           if (depth === 0) return i;
@@ -230,13 +250,23 @@ export function scan(src, file) {
   const unresolved = (call) =>
     `${file}: \`${call}\` names a path this test cannot resolve — ` +
     "write it with literal arguments, or add it to STRUCTURAL";
+  // Every form routes through here: follow a JavaScript module, record the rest.
+  const route = (path, call) => {
+    assert.ok(path !== ".." && !path.startsWith("../"), `${file}: \`${call}\` names a path outside the repo`);
+    (/\.[cm]?js$/.test(path) ? follow : found).push(path);
+  };
 
   for (const { call, args } of callArgs(src, masked, /\b(?:join|resolve)\s*\(/g)) {
     const [root, ...rest] = args;
     if (root !== "REPO_ROOT" && root !== "process.cwd()") continue;
     const parts = rest.map(literal);
     assert.ok(parts.length > 0 && parts.every((p) => p !== null), unresolved(call));
-    (root === "REPO_ROOT" ? found : follow).push(parts.join("/"));
+    // `resolve` restarts at an absolute segment, which here would leave the repo.
+    assert.ok(
+      !call.startsWith("resolve") || parts.every((p) => !p.startsWith("/")),
+      `${file}: \`${call}\` names a path outside the repo`,
+    );
+    route(posix.join(...parts), call);
   }
 
   for (const { call, args } of callArgs(src, masked, /\bnew\s+URL\s*\(/g)) {
@@ -246,14 +276,15 @@ export function scan(src, file) {
     // WHATWG resolution, so `"x.csv"` is the module's sibling just as
     // `"./x.csv"` is.
     const url = new URL(target, moduleUrl);
-    if (url.protocol === "file:") found.push(rel(url));
+    if (url.protocol === "file:") route(rel(url), call);
   }
 
-  // Static forms take only a string literal: find them in the masked code and
-  // read the specifier from the source at the same offsets.
+  // Static forms take only a string literal: find them in the masked code, where
+  // a string can't be mistaken for one, and read the specifier from the source
+  // at the same offsets. Unanchored, so two on one line both count.
   const staticForms = [
-    /^\s*(?:import|export)\s[^;]*?\bfrom\s*["'](_*)["']/dgm,
-    /^\s*import\s*["'](_*)["']/dgm,
+    /\b(?:import|export)\b[^;]*?\bfrom\s*["'](_*)["']/dg,
+    /\bimport\s*["'](_*)["']/dg,
   ];
   const specifiers = [
     ...staticForms.flatMap((form) =>
@@ -268,9 +299,7 @@ export function scan(src, file) {
   ];
   for (const specifier of specifiers) {
     // ESM resolves only `./`, `../` and `/` as paths; anything else is a package.
-    if (!/^\.{0,2}\//.test(specifier)) continue;
-    const target = rel(new URL(specifier, moduleUrl));
-    (/\.[cm]?js$/.test(target) ? follow : found).push(target);
+    if (/^\.{0,2}\//.test(specifier)) route(rel(new URL(specifier, moduleUrl)), specifier);
   }
 
   return { found, follow };
@@ -420,7 +449,71 @@ describe("the scanner reads each form as what it is", () => {
     assert.deepEqual(scan(src, at), { found: [], follow: ["scripts/ci/lib/y.mjs"] });
   });
 
+  it("finds every static form, two to a line included", () => {
+    const src = [
+      'import a from "./a.mjs"; import b from "./b.mjs";',
+      'foo(); export { d } from "./d.mjs"; export * from "./e.mjs";',
+      'import{ c } from "./c.mjs"; import "./f.mjs";',
+      'import cfg from "./cfg.json" with { type: "json" };',
+    ].join("\n");
+    assert.deepEqual(scan(src, at), {
+      found: ["scripts/ci/lib/cfg.json"],
+      follow: ["a", "b", "d", "e", "c", "f"].map((n) => `scripts/ci/lib/${n}.mjs`),
+    });
+  });
+
+  it("masks template text and regex bodies, so a call there is not a call", () => {
+    // Unmasked, each would be a computed `import`/`join` and throw.
+    const src = [
+      "const s = `see join(REPO_ROOT, dir) and import(x)`;",
+      "const re = /import(x)/;",
+    ].join("\n");
+    assert.deepEqual(scan(src, at), { found: [], follow: [] });
+  });
+
+  it("routes every form by what the path is, not by what named it", () => {
+    const src = [
+      'readFileSync(join(process.cwd(), "supabase", "seed.sql"));',
+      'spawn(fileURLToPath(new URL("./run.mjs", import.meta.url)));',
+      'readFileSync(resolve(REPO_ROOT, "apps", "y.ts"));',
+      'readFileSync(join(REPO_ROOT, "scripts", "demo", "..", "..", "apps", "z.ts"));',
+    ].join("\n");
+    assert.deepEqual(scan(src, at), {
+      found: ["supabase/seed.sql", "apps/y.ts", "apps/z.ts"],
+      follow: ["scripts/ci/lib/run.mjs"],
+    });
+  });
+
+  it("fails on a path outside the repo", () => {
+    for (const src of [
+      'join(REPO_ROOT, "..", "x");',
+      'resolve(REPO_ROOT, "/etc/passwd");',
+      'import "../../../../x.mjs";',
+    ]) {
+      assert.throws(() => scan(src, at), /outside the repo/, src);
+    }
+  });
+
+  it("tells a division from a regex after `++`, a property and a condition", () => {
+    // Each misread would blank the `join` between the two slashes.
+    for (const [src, path] of [
+      ['const n = i++ / 2; join(REPO_ROOT, "b.sql"); const q = n / 3;', "b.sql"],
+      ['const h = o.return / 2; join(REPO_ROOT, "c.sql"); const k = h / 4;', "c.sql"],
+      ['if (ok) /\\/\\//.test(u); join(REPO_ROOT, "d.sql");', "d.sql"],
+    ]) {
+      assert.deepEqual(scan(src, at).found, [path], src);
+    }
+  });
+
   it("fails rather than derive from a source it cannot read to the end", () => {
-    assert.throws(() => scan('const s = "unterminated;\nimport("./x.mjs");', at));
+    for (const [src, error] of [
+      ['const s = "unterminated;\nimport("./x.mjs");', /unterminated string/],
+      ["const t = `unterminated;", /unterminated template literal/],
+      ["const t = `${a;", /unterminated template/],
+      ["const r = /unterminated;\nx;", /unterminated regex/],
+      ["/* unterminated", /unterminated block comment/],
+    ]) {
+      assert.throws(() => scan(src, at), error, src);
+    }
   });
 });
