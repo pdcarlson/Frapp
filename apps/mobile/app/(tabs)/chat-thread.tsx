@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   KeyboardAvoidingView,
@@ -13,6 +14,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
+  resolveAuthorName,
+  useActiveChapterId,
   useChannel,
   useChannelNotificationPreferences,
   useMarkChannelRead,
@@ -21,19 +24,40 @@ import {
   useSetChannelNotificationLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
-import { MessageBubble } from "@/components/chat/message-bubble";
+import {
+  MessageActionsSheet,
+  type MessageActionsSheetHandle,
+  type MessageActionsTarget,
+} from "@/components/chat/message-actions-sheet";
 import {
   NotificationLevelControl,
   selectChannelNotificationLevel,
 } from "@/components/chat/notification-level-control";
-import { PollCard } from "@/components/chat/poll-card";
+import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
+import {
+  confirmUnblockMember,
+  MASKED_RELOAD_FAILED_BODY,
+  MASKED_RELOAD_FAILED_TITLE,
+  useBlockActions,
+} from "@/lib/chat/block-actions";
+import {
+  isBlockableSender,
+  messageActionsFor,
+  rosterMembership,
+  type ThreadRow,
+} from "@/lib/chat/blocks";
+import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import { selectPostCapability } from "@/lib/chat/channel-list";
 import { getKeyboardPath } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+
+const NO_DEPARTED: ReadonlySet<string> = new Set();
 
 /**
  * s05 — Chat thread.
@@ -115,7 +139,48 @@ export default function ChatThreadScreen() {
   // Resolving by `sender_id` is what makes it work for a message that arrived
   // over the live `postgres_changes` echo as well as one from the REST page — a
   // join on the message payload could only ever have covered the latter.
-  const { nameFor } = useMemberDisplayNames();
+  const roster = useMemberDisplayNames();
+  const { nameFor, refetch: refetchRoster } = roster;
+
+  // Members a block attempt proved are not in this chapter (the API's 404
+  // `Member not found`), kept per chapter because membership and blocks are.
+  // That answer is the only positive evidence a sender left: a roster that
+  // merely does not list someone may be stale, and the likeliest sender it
+  // does not list yet is a brand-new member — exactly who Block is for.
+  const chapterId = useActiveChapterId();
+  const [departed, setDeparted] = useState<{
+    chapterId: string | null;
+    ids: ReadonlySet<string>;
+  }>(() => ({ chapterId, ids: new Set() }));
+  const departedIds =
+    departed.chapterId === chapterId ? departed.ids : NO_DEPARTED;
+  const markDeparted = useCallback(
+    (userId: string) => {
+      setDeparted((previous) => {
+        const ids = new Set(
+          previous.chapterId === chapterId ? previous.ids : [],
+        );
+        ids.add(userId);
+        return { chapterId, ids };
+      });
+    },
+    [chapterId],
+  );
+
+  // Whether a sender is a member: listed by the roster, known departed, or
+  // unknown (`rosterMembership`). Only "known departed" withholds Block.
+  const isMember = useMemo(
+    () =>
+      rosterMembership(
+        {
+          byId: roster.byId,
+          isPending: roster.isPending,
+          isError: roster.isError,
+        },
+        departedIds,
+      ),
+    [roster.byId, roster.isPending, roster.isError, departedIds],
+  );
 
   // Opening a channel stamps the read cursor to server `now()`; there is no
   // mark-read-to-a-message API. Its invalidation of `["channels"]` refreshes the
@@ -248,59 +313,134 @@ export default function ChatThreadScreen() {
     void send(draft);
   }, [send, draft]);
 
+  // The viewer's block list, applied on top of the server's mask (#2257,
+  // #2315). The server masks what it serves, but a row that arrived over the
+  // live echo was never evaluated, so the thread decides per row from
+  // provenance, this list and this session's clearances — see
+  // `lib/chat/use-thread-block-list.ts`. Held rows are not rendered;
+  // `BlockListNotice` says so.
+  const { blockList, blockState, thread } = useThreadBlockList(
+    messages,
+    viewerId,
+  );
+
   // Inverted list wants newest first; the cache hands back oldest first.
-  const inverted = useMemo(() => [...messages].reverse(), [messages]);
+  const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);
 
   // Parent lookup for reply quotes (#1727), built once per window rather
-  // than scanned per row — same map web's timeline uses.
+  // than scanned per row — same map web's timeline uses. Built over every
+  // cached message, held and tombstoned ones included, so a reply can tell
+  // "hidden by your block list" from "not loaded": `ThreadMessageRow`
+  // classifies the parent and never hands a hidden one's words to the quote
+  // (#2312 §1).
   const byId = useMemo(() => {
     const index = new Map<string, ChatMessage>();
     for (const message of messages) index.set(message.id, message);
     return index;
   }, [messages]);
 
-  const renderItem = useCallback(
-    ({ item }: { item: ChatMessage }) => {
-      const replyParent = item.reply_to_id
-        ? (byId.get(item.reply_to_id) ?? null)
-        : undefined;
-      // Cards render unsided, full-width — not wrapped in `MessageBubble` —
-      // matching web's `rendersAsBubble` exclusion for every card kind.
-      if (item.kind === "poll") {
-        return (
-          <PollCard
-            message={item}
-            viewerId={viewerId}
-            nameFor={nameFor}
-            replyParent={replyParent}
-            isConfirmed={item._status === "confirmed"}
-            onVote={(id, actionType, payload) =>
-              void act(id, actionType, payload)
-            }
-            onRetry={(id) => void retry(id)}
-            onDiscard={(id) => void discard(id)}
-            onReact={(id, emoji) => void react(id, emoji)}
-            onUnreact={(id, emoji) => void unreact(id, emoji)}
-          />
-        );
+  const { unblock, reloadMaskedCopies } = useBlockActions();
+  const handleUnblock = useCallback(
+    (userId: string) => {
+      confirmUnblockMember({
+        name: nameFor(userId),
+        run: () => unblock(userId),
+      });
+    },
+    [nameFor, unblock],
+  );
+
+  // A stale tombstone's Reload (`lib/chat/masked-refresh.ts`). The tombstone
+  // keeps offering it while the re-read keeps failing; the alert says a tap
+  // that came back empty did not just do nothing.
+  const maskedRefresh = useMaskedRefresh();
+  const handleReload = useCallback(
+    (userId: string) => {
+      void reloadMaskedCopies(userId).then((landed) => {
+        if (!landed) {
+          Alert.alert(MASKED_RELOAD_FAILED_TITLE, MASKED_RELOAD_FAILED_BODY);
+        }
+      });
+    },
+    [reloadMaskedCopies],
+  );
+
+  // One sheet for the thread, retargeted per long-press — the same shape the
+  // directory uses for its member sheet.
+  const actionsSheetRef = useRef<MessageActionsSheetHandle>(null);
+  const [actionTarget, setActionTarget] = useState<MessageActionsTarget | null>(
+    null,
+  );
+  const openActions = useCallback(
+    (message: ChatMessage) => {
+      const actions = messageActionsFor(message, viewerId, isMember);
+      if (!actions.canOpen) return;
+      // A sender the roster cannot vouch for most likely joined after it was
+      // read. Block is offered regardless; re-reading the roster is what lets
+      // the next long-press name them and say they stay in the directory.
+      // TanStack dedupes onto a read already in flight.
+      if (
+        isBlockableSender(message.sender_id) &&
+        isMember(message.sender_id) === null
+      ) {
+        refetchRoster();
       }
+      setActionTarget({
+        messageId: message.id,
+        blockUserId: actions.canBlock ? message.sender_id : null,
+        senderName: resolveAuthorName(message, nameFor),
+        senderInDirectory:
+          message.sender_id !== null && isMember(message.sender_id) === true,
+      });
+      actionsSheetRef.current?.present();
+    },
+    [isMember, nameFor, refetchRoster, viewerId],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: ThreadRow }) => {
+      const replyParent = item.message.reply_to_id
+        ? (byId.get(item.message.reply_to_id) ?? null)
+        : undefined;
       return (
-        <MessageBubble
-          message={item}
+        <ThreadMessageRow
+          row={item}
           viewerId={viewerId}
           nameFor={nameFor}
           replyParent={replyParent}
+          blockState={blockState}
+          onVote={(id, actionType, payload) =>
+            void act(id, actionType, payload)
+          }
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
           onReact={(id, emoji) => void react(id, emoji)}
           onUnreact={(id, emoji) => void unreact(id, emoji)}
+          onOpenActions={openActions}
+          onUnblock={handleUnblock}
+          maskedRefresh={maskedRefresh}
+          onReload={handleReload}
         />
       );
     },
     // `nameFor` belongs here: it changes identity when the roster resolves, and
     // omitting it leaves a stale closure rendering truncated ids until some
     // other dep happens to change.
-    [viewerId, nameFor, retry, discard, react, unreact, act, byId],
+    [
+      viewerId,
+      nameFor,
+      retry,
+      discard,
+      react,
+      unreact,
+      act,
+      byId,
+      blockState,
+      openActions,
+      handleUnblock,
+      maskedRefresh,
+      handleReload,
+    ],
   );
 
   const isOffline = connection === "offline";
@@ -405,6 +545,16 @@ export default function ChatThreadScreen() {
           </View>
         ) : null}
 
+        {channelId ? (
+          <BlockListNotice
+            status={blockList.status}
+            heldCount={thread.heldCount}
+            onRetry={blockList.retry}
+            isRetrying={blockList.isRetrying}
+            isPaused={blockList.isPaused}
+          />
+        ) : null}
+
         {!channelId ? (
           <View style={styles.stateBlock}>
             <Text style={styles.stateTitle}>No channel selected</Text>
@@ -422,7 +572,10 @@ export default function ChatThreadScreen() {
             <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
             <Text style={styles.stateBody}>{loadError.message}</Text>
           </View>
-        ) : messages.length === 0 ? (
+        ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
+          // Counted after the block list, held rows included: a channel whose
+          // only messages are being held is not an empty channel, and the
+          // notice above is what explains the gap.
           <View style={styles.stateBlock}>
             <Text style={styles.stateTitle}>No messages yet</Text>
             <Text style={styles.stateBody}>
@@ -435,7 +588,7 @@ export default function ChatThreadScreen() {
             renderItem={renderItem}
             // `client_message_id` is always present and is stable across the
             // optimistic → confirmed transition, which the server id is not.
-            keyExtractor={(item) => item.client_message_id}
+            keyExtractor={(item) => item.message.client_message_id}
             inverted
             contentContainerStyle={styles.listContent}
             style={styles.flex}
@@ -543,6 +696,11 @@ export default function ChatThreadScreen() {
           }
         />
       </KeyboardAvoidingView>
+      <MessageActionsSheet
+        ref={actionsSheetRef}
+        target={actionTarget}
+        onSenderDeparted={markDeparted}
+      />
     </SafeAreaView>
   );
 }

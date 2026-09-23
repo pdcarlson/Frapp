@@ -16,7 +16,11 @@ import {
 } from "@/lib/chat/delivery-status";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useNow } from "@repo/hooks";
-import { groupReactions, ReactionRow } from "./message-bubble";
+import {
+  groupReactions,
+  messageActionsA11yProps,
+  ReactionRow,
+} from "./message-bubble";
 import { ReplyQuote } from "./reply-quote";
 
 /**
@@ -74,6 +78,8 @@ export interface PollCardProps {
    */
   nameFor: (userId: string) => string | null;
   replyParent?: ChatMessage | null;
+  /** The placeholder when the block list hides the parent — see `MessageBubbleProps`. */
+  replyParentHidden?: string;
   onVote: (
     messageId: string,
     actionType: string,
@@ -83,6 +89,13 @@ export interface PollCardProps {
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
+  /**
+   * Opens the message actions sheet — the same one `MessageBubble` uses. A
+   * poll's question and options are member-authored text, so a poll from
+   * someone else is reportable like any message (#2312 §2). Absent on the
+   * viewer's own poll.
+   */
+  onOpenActions?: () => void;
 }
 
 export function PollCard({
@@ -91,11 +104,13 @@ export function PollCard({
   isConfirmed,
   nameFor,
   replyParent,
+  replyParentHidden,
   onVote,
   onRetry,
   onDiscard,
   onReact,
   onUnreact,
+  onOpenActions,
 }: PollCardProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -136,6 +151,7 @@ export function PollCard({
       disabled={!isConfirmed}
       onReact={onReact}
       onUnreact={onUnreact}
+      onLongPress={onOpenActions}
       styles={styles}
       align="flex-start"
     />
@@ -145,6 +161,7 @@ export function PollCard({
       <ReplyQuote
         message={message}
         replyParent={replyParent}
+        hiddenText={replyParentHidden}
         nameFor={nameFor}
         viewerId={viewerId}
         borderColor={tokens.color.border.hairline}
@@ -152,14 +169,31 @@ export function PollCard({
       />
     ) : null;
 
+  // Same shape as `MessageBubble`'s incoming row: the gesture on a wrapper that
+  // is not itself an accessibility element (so the option buttons stay
+  // reachable), and the screen-reader action on an accessible `View` around
+  // the card's own text — never on a bare `Text` (see
+  // `messageActionsA11yProps`).
+  const a11yActions = messageActionsA11yProps(onOpenActions);
+  const hasActions = !!onOpenActions;
+
   if (!payload) {
     return (
-      <View style={styles.card}>
-        {replyQuote}
-        <Text style={styles.malformed}>Malformed poll · {message.content}</Text>
+      <Pressable
+        accessible={false}
+        onLongPress={onOpenActions}
+        disabled={!onOpenActions}
+        style={styles.card}
+      >
+        <View accessible={hasActions} {...a11yActions}>
+          {replyQuote}
+          <Text style={styles.malformed}>
+            Malformed poll · {message.content}
+          </Text>
+        </View>
         {statusAndActions}
         {reactionRow}
-      </View>
+      </Pressable>
     );
   }
 
@@ -173,10 +207,17 @@ export function PollCard({
   };
 
   return (
-    <View style={styles.card}>
-      {replyQuote}
-      <Text style={styles.eyebrow}>Poll{isClosed ? " · Closed" : ""}</Text>
-      <Text style={styles.question}>{payload.question}</Text>
+    <Pressable
+      accessible={false}
+      onLongPress={onOpenActions}
+      disabled={!onOpenActions}
+      style={styles.card}
+    >
+      <View accessible={hasActions} {...a11yActions}>
+        {replyQuote}
+        <Text style={styles.eyebrow}>Poll{isClosed ? " · Closed" : ""}</Text>
+        <Text style={styles.question}>{payload.question}</Text>
+      </View>
       <View style={styles.options}>
         {payload.options.map((option) => {
           const count = byOption[option.id] ?? 0;
@@ -190,6 +231,10 @@ export function PollCard({
                 accessibilityState={{ selected: isMyVote, disabled: !canVote }}
                 disabled={!canVote}
                 onPress={() => cast(option)}
+                // An option is most of the card's area. Without this a long
+                // press on one would end as a plain press — a vote — instead of
+                // opening the actions the rest of the card opens.
+                onLongPress={onOpenActions}
                 style={[
                   styles.optionRow,
                   isMyVote
@@ -234,7 +279,7 @@ export function PollCard({
       </Text>
       {statusAndActions}
       {reactionRow}
-    </View>
+    </Pressable>
   );
 }
 

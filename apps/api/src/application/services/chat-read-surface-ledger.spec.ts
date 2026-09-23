@@ -221,6 +221,7 @@ const HTTP_LEDGER: Record<string, Entry> = {
     why: 'The officer queue. "A `channels:manage` holder reviewing a report sees the content as filed."',
   },
   ChatReportController_resolveReport_v1: OFFICER_MODERATION,
+  ChatReportController_removeReportedMessage_v1: OFFICER_MODERATION,
 
   // ── Blocks ─────────────────────────────────────────────────────────
   ChatBlockController_listBlocks_v1: {
@@ -318,8 +319,8 @@ const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
   'public.chat_messages chat_messages_select': {
     creates: 2,
     status: 'open',
-    issues: [2315, 2313],
-    why: 'The Realtime echo carries no viewer and cannot be masked by the server; § The masking contract makes each client apply its own list. Neither client has one yet.',
+    issues: [2313],
+    why: 'The Realtime echo carries no viewer and cannot be masked by the server; § The masking contract makes each client apply its own list. Mobile does (#2493, #2315); web does not yet.',
   },
   'public.chat_message_actions chat_message_actions_select': {
     creates: 2,
@@ -439,6 +440,15 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
       // The hand-off to `FinancialInvoiceService.notifyStripePaymentFailure`,
       // whose body quotes the invoice title.
       MEMBER_TEXT,
+    ],
+  },
+  'application/services/chat-report.service.ts': {
+    calls: 2,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: 'Fixed text (`REPORT_FILED_NOTIFICATION`) to the officers the report queue admits: no message text, no reporter, no reported member.',
+      },
     ],
   },
   'application/services/invite.service.ts': {

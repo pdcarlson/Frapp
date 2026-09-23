@@ -15,7 +15,9 @@ import {
   type RawChatMessageAction,
   type ReplayRequest,
   normalizeRow,
+  toRawRow,
 } from "./types";
+import { DELETED_MESSAGE_PLACEHOLDER } from "./reply-preview";
 
 export function emptyCache(): ChannelCache {
   return { byId: {}, order: [], actionIndex: {} };
@@ -91,7 +93,30 @@ export function mergeServerRow(
     order = order.filter((k) => k !== clientKey);
   }
 
-  byId[serverKey] = { ...incoming, actions, reactions };
+  // Everything else — `_blockEvaluated` included — is the incoming row's, never
+  // carried from `prior`. A pin/edit UPDATE echo of a server-masked row writes
+  // the raw, unmasked content; keeping the prior row's "the server evaluated
+  // this" would vouch for content the server never saw (#2315 defect 5).
+  //
+  // One thing is carried: the server's *verdict* that it masked this message
+  // for the viewer. The echo's row lands as usual — unevaluated, with its own
+  // content and pin/edit/delete state — but keeps `sender_blocked: true`, so
+  // the client still knows the server withheld this sender's words here.
+  // Dropping it left the client's own list as the only guard, and a list that
+  // read `ready` but predated a block made on another device showed a pinned
+  // or edited message from a blocked member in full. A later REST read of the
+  // row is the server's answer again and replaces it outright.
+  const overwritten = cache.byId[serverKey];
+  const carriesMask =
+    overwritten?.sender_blocked === true &&
+    !incoming._blockEvaluated &&
+    overwritten.sender_id === incoming.sender_id;
+  byId[serverKey] = {
+    ...incoming,
+    ...(carriesMask ? { sender_blocked: true } : {}),
+    actions,
+    reactions,
+  };
   const next: ChannelCache = { ...cache, byId, order };
   return { ...next, order: withOrderedKey(next, serverKey) };
 }
@@ -219,6 +244,35 @@ export function removeMessage(cache: ChannelCache, key: string): ChannelCache {
   const byId = { ...cache.byId };
   delete byId[key];
   return { ...cache, byId, order: cache.order.filter((k) => k !== key) };
+}
+
+/**
+ * Apply a soft delete the client learned of **without the deleted row** — the
+ * officer's report-scoped removal (#2311), whose response is the report and
+ * never the message.
+ *
+ * The same tombstone the server writes (`ChatService` soft delete: the
+ * placeholder body, `is_deleted`, `metadata` wiped — so no attachment count),
+ * merged through {@link mergeServerRow} so reactions and action rows carry
+ * over exactly as they do for a delete echo. A no-op when the message is not
+ * cached or is already deleted.
+ *
+ * A patch rather than a refetch on purpose: the timeline's `queryFn` rebuilds
+ * the cache from the server page alone, so refetching a channel drops this
+ * member's unsent outbox rows from view until the next hydrate.
+ */
+export function markMessageDeleted(
+  cache: ChannelCache,
+  messageId: string,
+): ChannelCache {
+  const existing = cache.byId[messageId];
+  if (!existing || existing.is_deleted) return cache;
+  return mergeServerRow(cache, {
+    ...toRawRow(existing),
+    content: DELETED_MESSAGE_PLACEHOLDER,
+    is_deleted: true,
+    metadata: {},
+  });
 }
 
 function dedupePush(list: string[] | undefined, userId: string): string[] {

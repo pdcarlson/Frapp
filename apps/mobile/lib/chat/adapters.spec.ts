@@ -644,9 +644,9 @@ describe("getOutboxStore", () => {
 describe("the key-value mirror does not reach scoped chat rows (#2228)", () => {
   it("hydrates only the lastSeen cursor, not drafts or queued bodies", async () => {
     // The mirror is a process-wide `Map` with a public `get`, no scope, and no
-    // clear on sign-out. Its soundness argument is that its only consumer is
-    // the backfill cursor, where a stale read widens a backfill instead of
-    // losing data. #2228 put member-scoped drafts and unsent message bodies
+    // clear on sign-out. Its soundness argument is that the only key it must
+    // serve across a restart is the backfill cursor, where a stale read widens
+    // a backfill instead of losing data (`spec/ui/mobile/patterns.md` § Chat). #2228 put member-scoped drafts and unsent message bodies
     // under `chat:` too, so a `"chat:"` sweep would have copied every member's
     // unsent text into it — a wildcard reader over the very keys that are the
     // tenant boundary.
