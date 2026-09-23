@@ -61,7 +61,11 @@
 // not from a credential. This job runs on `pull_request`, and a same-repository
 // PR runs its own branch's workflow, so a credential here is a credential every
 // branch holds (#2518). The staging ref then comes from
-// `.github/environments.json`. See `lib/migration-snapshot.mjs`.
+// `.github/environments.json`. See `lib/migration-snapshot.mjs`. A snapshot can
+// be older than staging's real state: a deploy may have finished after it and
+// its publish not landed yet. The download action says whether one has
+// (`MIGRATION_SNAPSHOT_DEPLOYED_SINCE`), and `classifyGateDrift` then reports a
+// missing migration as `stale`, not drift.
 //
 // ── Availability trade ──────────────────────────────────────────────────────
 // A required check that calls a third-party API makes repo-wide merge
@@ -76,18 +80,27 @@
 //
 // Flags:
 //   --snapshot <file>          — read staging's applied state from a published
-//                                snapshot; the two env inputs below are then unused
+//                                snapshot; the two live-read env inputs below are
+//                                then unused
 //
 // Env inputs:
 //   SUPABASE_ACCESS_TOKEN      — live read only: Supabase Management API token
 //   SUPABASE_PROJECT_REF       — live read only: the STAGING project ref
+//   MIGRATION_SNAPSHOT_DEPLOYED_SINCE — snapshot only, set by
+//                                `.github/actions/download-migration-snapshot`:
+//                                `none` when no deploy has finished since the
+//                                snapshot, else that deploy's finish time or
+//                                `unknown`. Anything but `none`, unset included,
+//                                counts as overtaken.
 //   DRIFT_GATE_MAIN_REF        — optional, default "origin/main"
 //   DRIFT_GATE_GRACE_MINUTES   — optional, default 30
 //   GITHUB_STEP_SUMMARY        — optional, written when present
 //
 // Exit codes:
 //   0 — staging holds every migration on main (or the stragglers are in grace)
-//   1 — drift, or staging could not be read
+//   1 — drift; or `stale` (a migration is past grace, and a deploy has
+//       finished since the snapshot, so it cannot say whether that deploy
+//       applied it); or staging could not be read
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
@@ -189,19 +202,26 @@ export function readMigrationsAtRef({ ref, runGit = defaultRunGit }) {
  *   pending — on main, not applied to staging (split overdue / withinGrace)
  *   foreign — applied to staging, absent from main
  *
- * `capturedMs`, when the applied list is a published snapshot, is when that
- * list was read. Grace always runs from now, exactly as it does for a live read,
- * and a pending migration past it is one of two things:
+ * Grace always runs from now, exactly as it does for a live read. A pending
+ * migration past it is one of two things:
  *
- *   overdue      — it landed before the capture, so the snapshot should show it
- *                  and doesn't. That is a failed apply, however soon after the
- *                  merge the snapshot was taken.
- *   unverifiable — it landed after the capture, so the snapshot cannot show it,
- *                  and no newer snapshot has appeared within the grace window.
- *                  The publisher is the problem, not staging, and the verdict is
- *                  `stale`, which names it. Left in grace instead, it would read
- *                  green until the snapshot's 24-hour age limit, hiding exactly
- *                  the failed apply this gate exists for.
+ *   overdue      — the applied list is current: a live read, or a snapshot no
+ *                  deploy has finished since. Its absence is staging's real
+ *                  state, a failed or missing apply.
+ *   unverifiable — `snapshotBehind`: a deploy finished after the snapshot was
+ *                  taken (or whether one did is unknown), and the publish it
+ *                  triggers has not landed. That deploy may have applied it, so
+ *                  the snapshot cannot say. The verdict is `stale`, which is red
+ *                  and names the publisher. Called drift, it would blame staging
+ *                  for a stuck publisher. Left in grace, it would read green for
+ *                  a day. Once a newer snapshot lands, a real failed apply shows
+ *                  as overdue.
+ *
+ * Deploys are the only workflows that apply migrations, and each triggers a
+ * publish when it finishes, so "no deploy since" is what makes a snapshot's
+ * absence current. The capture time cannot: a snapshot taken minutes before a
+ * migration's own deploy finished is overtaken, while one taken right after a
+ * failed apply is current, and both may predate the migration's grace window.
  *
  * `foreign` is never graced and is always drift. A version staging holds that
  * main does not is not just untidy: `supabase db push` refuses to run at all in
@@ -209,7 +229,7 @@ export function readMigrationsAtRef({ ref, runGit = defaultRunGit }) {
  * is a live outage of the promotion path, and it is exactly the shape of the
  * February row still sitting on production (#832).
  */
-export function classifyGateDrift({ main, applied, nowMs, graceMs, capturedMs = null }) {
+export function classifyGateDrift({ main, applied, nowMs, graceMs, snapshotBehind = false }) {
   const appliedVersions = new Set(applied.map((m) => m.version));
   const mainVersions = new Set(main.map((m) => m.version));
 
@@ -221,9 +241,8 @@ export function classifyGateDrift({ main, applied, nowMs, graceMs, capturedMs = 
   const unverifiable = [];
   for (const migration of pending) {
     const late = migration.landedMs === null || nowMs - migration.landedMs >= graceMs;
-    const unseen = capturedMs !== null && migration.landedMs !== null && migration.landedMs > capturedMs;
     if (!late) withinGrace.push(migration);
-    else if (unseen) unverifiable.push(migration);
+    else if (snapshotBehind) unverifiable.push(migration);
     else overdue.push(migration);
   }
 
@@ -238,7 +257,40 @@ function bullets(migrations, describe) {
   return migrations.map((m) => `- ${describe(m)}`).join("\n");
 }
 
-export function buildGateSummary({ result, graceMinutes, projectRef, mainRef, capturedMs = null }) {
+function describeLanded(m) {
+  return `\`${m.version}_${m.name}\`${
+    m.landedMs === null ? " (merge time unknown)" : ` (merged ${new Date(m.landedMs).toISOString()})`
+  }`;
+}
+
+function isTimestamp(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+/**
+ * Why the snapshot cannot vouch for a missing migration, as one clause.
+ * `deployedSince` is the download action's export: a deploy's finish time, or
+ * anything else when that could not be read.
+ */
+function overtakenBecause({ capturedMs, deployedSince }) {
+  const snapshot = `the migration snapshot${
+    capturedMs === null ? "" : ` (captured ${new Date(capturedMs).toISOString()})`
+  }`;
+  return isTimestamp(deployedSince)
+    ? `a deploy on main finished at ${deployedSince}, after ${snapshot} was taken, and the publish it triggers has not succeeded yet`
+    : `whether a deploy on main has finished since ${snapshot} was taken could not be read`;
+}
+
+const sentence = (clause) => `${clause[0].toUpperCase()}${clause.slice(1)}.`;
+
+export function buildGateSummary({
+  result,
+  graceMinutes,
+  projectRef,
+  mainRef,
+  capturedMs = null,
+  deployedSince = null,
+}) {
   const ref = projectRef ? `\`${projectRef.slice(0, 8)}…\`` : "(unknown)";
   const lines = [`## Migration drift gate — staging ${ref}`, ""];
 
@@ -257,16 +309,21 @@ export function buildGateSummary({ result, graceMinutes, projectRef, mainRef, ca
   }
 
   const unverifiable = result.unverifiable ?? [];
+  const republish = [
+    "If Migration snapshot (`.github/workflows/migration-snapshot.yml`) is still running, re-run this",
+    "check when it finishes. If it failed, fix it and re-run it on `main`. If a migration is still",
+    "missing after a fresh publish, that run reports it as drift.",
+  ];
   if (result.status === "stale") {
+    const because = overtakenBecause({ capturedMs, deployedSince });
     lines.push(
-      `**Cannot verify.** The migration snapshot${
-        capturedMs === null ? "" : ` (captured ${new Date(capturedMs).toISOString()})`
-      } predates ${unverifiable.length} migration(s) that reached \`${mainRef}\` more than ${graceMinutes}m ago,`,
-      "and no newer snapshot has been published since. This says nothing about staging yet: the publisher",
-      "(`.github/workflows/migration-snapshot.yml`) has not run, or has failed, since those merges. Read its latest",
-      "run, fix it, then re-run it on `main`.",
+      `**Cannot verify.** ${sentence(because)} A deploy since then may have applied`,
+      `${unverifiable.length} migration(s) now past the ${graceMinutes}m grace window, so the snapshot cannot say whether`,
+      "staging has them. This says nothing against staging yet.",
       "",
-      bullets(unverifiable, (m) => `\`${m.version}_${m.name}\` (merged ${new Date(m.landedMs).toISOString()})`),
+      ...republish,
+      "",
+      bullets(unverifiable, describeLanded),
     );
     return lines.join("\n");
   }
@@ -280,19 +337,24 @@ export function buildGateSummary({ result, graceMinutes, projectRef, mainRef, ca
     lines.push(
       `### ${result.overdue.length} migration(s) on \`${mainRef}\` never reached staging`,
       "",
-      bullets(
-        result.overdue,
-        (m) =>
-          `\`${m.version}_${m.name}\`${
-            m.landedMs === null
-              ? " (merge time unknown)"
-              : ` (merged ${new Date(m.landedMs).toISOString()})`
-          }`,
-      ),
+      bullets(result.overdue, describeLanded),
       "",
       "Fix: re-run the `Deploy API` workflow against the latest commit on main —",
       "`migrate-staging` applies whatever is pending. See",
       "`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.",
+      "",
+    );
+  }
+
+  if (unverifiable.length > 0) {
+    const because = overtakenBecause({ capturedMs, deployedSince });
+    lines.push(
+      `### ${unverifiable.length} migration(s) the snapshot cannot vouch for`,
+      "",
+      bullets(unverifiable, describeLanded),
+      "",
+      `${sentence(because)} A deploy since then may have applied these.`,
+      ...republish,
       "",
     );
   }
@@ -357,6 +419,8 @@ export async function runDriftGate({
   graceMinutes = DEFAULT_GRACE_MINUTES,
   nowMs = Date.now(),
   capturedMs = null,
+  snapshotBehind = false,
+  deployedSince = null,
   runGit = defaultRunGit,
   fetchImpl = fetch,
   sleepImpl = sleep,
@@ -426,11 +490,21 @@ export async function runDriftGate({
     applied: applied.migrations,
     nowMs,
     graceMs: graceMinutes * 60 * 1000,
-    capturedMs,
+    snapshotBehind,
   });
 
-  onSummary(buildGateSummary({ result, graceMinutes, projectRef, mainRef, capturedMs }));
+  onSummary(
+    buildGateSummary({ result, graceMinutes, projectRef, mainRef, capturedMs, deployedSince }),
+  );
 
+  if (result.unverifiable.length > 0) {
+    // Reported beside drift too, so a stuck publisher is not hidden behind it.
+    error(
+      `::error::Cannot verify ${result.unverifiable.length} migration(s) on ${mainRef} past grace (${result.unverifiable
+        .map((m) => `${m.version}_${m.name}`)
+        .join(", ")}): ${overtakenBecause({ capturedMs, deployedSince })}. Once Migration snapshot (.github/workflows/migration-snapshot.yml) has published, re-run this check; if it failed, fix it and re-run it on main.`,
+    );
+  }
   if (result.status === "drift") {
     if (result.overdue.length > 0) {
       error(
@@ -448,15 +522,7 @@ export async function runDriftGate({
     }
     return 1;
   }
-
-  if (result.status === "stale") {
-    error(
-      `::error::The migration snapshot predates ${result.unverifiable.length} migration(s) that reached ${mainRef} more than ${graceMinutes}m ago (${result.unverifiable
-        .map((m) => `${m.version}_${m.name}`)
-        .join(", ")}), and nothing newer has been published. Migration snapshot (.github/workflows/migration-snapshot.yml) has not run or has failed since: fix it, then re-run it on main.`,
-    );
-    return 1;
-  }
+  if (result.status === "stale") return 1;
 
   log(
     `  Staging matches ${mainRef}. ${result.withinGrace.length} pending within the ${graceMinutes}m grace window.`,
@@ -479,29 +545,43 @@ function getArg(name) {
  * Where staging's applied state comes from: the published snapshot when
  * `--snapshot` is given (CI), else a live read with a token (a laptop).
  *
- * `capturedMs` is the moment a snapshot's state describes (null for a live
- * read). `classifyGateDrift` keeps a migration that landed after it in grace,
- * since the snapshot cannot know about it. Grace is otherwise measured from now,
- * so a failed apply still turns red 30 minutes after the merge.
+ * For a snapshot, `snapshotBehind` says whether a deploy may have changed
+ * staging since it was taken, from `MIGRATION_SNAPSHOT_DEPLOYED_SINCE`, which
+ * the download action exports. Only `none` counts as current: an unset value
+ * (a run outside that action) is not evidence that nothing deployed.
+ * `capturedMs` and `deployedSince` only word the report. Grace runs from now
+ * either way.
  */
-export function resolveSource(snapshotPath) {
+export function resolveSource(snapshotPath, env = process.env) {
   if (!snapshotPath) {
     return {
       accessToken: requireEnv("SUPABASE_ACCESS_TOKEN", { hint: SECRETS_RUNBOOK }),
       projectRef: requireEnv("SUPABASE_PROJECT_REF", { hint: SECRETS_RUNBOOK }),
       fetchImpl: fetch,
       capturedMs: null,
+      snapshotBehind: false,
+      deployedSince: null,
       description: "live Management API read",
     };
   }
   try {
     const opened = openSnapshot(snapshotPath, ["staging"]);
+    const deployedSince = env.MIGRATION_SNAPSHOT_DEPLOYED_SINCE ?? null;
+    const snapshotBehind = deployedSince !== "none";
     return {
       accessToken: "snapshot",
       projectRef: opened.refs.staging,
       fetchImpl: opened.fetchImpl,
       capturedMs: opened.capturedMs,
-      description: `${opened.description}; migrations that landed after it stay in grace`,
+      snapshotBehind,
+      deployedSince,
+      description: !snapshotBehind
+        ? `${opened.description}; no deploy has finished since`
+        : `${opened.description}; ${
+            isTimestamp(deployedSince)
+              ? `a deploy finished since, at ${deployedSince}`
+              : "whether a deploy has finished since is unknown"
+          }, so a migration past grace reads as stale, not drift`,
     };
   } catch (thrown) {
     // Unreadable is not clean, the same posture as a failed live read below.
@@ -519,8 +599,9 @@ export function resolveSource(snapshotPath) {
 
 /**
  * What `main()` hands `runDriftGate`, from a resolved source and the env.
- * Exported so the wiring is tested: a snapshot's capture time must arrive as
- * `capturedMs` and must never become `nowMs`, the gate's clock (#2518).
+ * Exported so the wiring is tested: a snapshot's capture time must never
+ * become `nowMs`, the gate's clock, and whether a deploy has overtaken it must
+ * reach the classifier (#2518).
  */
 export function driftGateOptions(source, env = process.env) {
   return {
@@ -528,6 +609,8 @@ export function driftGateOptions(source, env = process.env) {
     projectRef: source.projectRef,
     fetchImpl: source.fetchImpl,
     capturedMs: source.capturedMs,
+    snapshotBehind: source.snapshotBehind,
+    deployedSince: source.deployedSince,
     mainRef: env.DRIFT_GATE_MAIN_REF || DEFAULT_MAIN_REF,
     graceMinutes: Number(env.DRIFT_GATE_GRACE_MINUTES || DEFAULT_GRACE_MINUTES),
   };

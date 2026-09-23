@@ -49,10 +49,10 @@ export const SNAPSHOT_WORKFLOW = ".github/workflows/migration-snapshot.yml";
  * Each of them triggers a publish. Off `main` the download action waits up to
  * 15 minutes for a lagging one, then fails the gates, naming the publisher. Runs
  * on `main` take the newest snapshot as it is. The drift job's `stale` verdict
- * catches a stuck publisher once a migration outlives its grace window. This
- * limit covers
- * the rest: an apply made outside those workflows, when nothing deploys for a
- * day and the 4-hourly schedule is also failing. Scheduled runs here start hours
+ * catches a stuck publisher once a deploy has overtaken the snapshot and a
+ * migration outlives its grace window. This limit covers the rest: an apply
+ * made outside those workflows, when nothing deploys for a day and the 4-hourly
+ * schedule is also failing. Scheduled runs here start hours
  * late (the 06:30 `db-backup.yml` cron started at 11:52Z on 2026-09-23), so 24
  * hours spans a missed day of schedule.
  */
@@ -219,11 +219,9 @@ export function loadSnapshot(
 /**
  * `loadSnapshot` for the named environments of `.github/environments.json`,
  * which is what every gate wants: their refs, the snapshot's fetch stand-in, a
- * log line, and `capturedMs`, the moment the state was read. The snapshot
- * cannot know about anything after `capturedMs`, so the drift gate keeps a
- * migration that landed after it in grace. Its grace clock itself still runs
- * from now: measured from `capturedMs`, a failed apply captured within 30
- * minutes of its merge would never turn red.
+ * log line, and `capturedMs`, the moment the state was read. The drift gate's
+ * grace clock runs from now, and `capturedMs` only words its report: whether a
+ * deploy has overtaken the snapshot comes from the download action.
  */
 export function openSnapshot(path, names, { nowMs = Date.now(), environments, readFile } = {}) {
   const refs = {};
