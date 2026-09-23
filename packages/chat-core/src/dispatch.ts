@@ -577,14 +577,13 @@ const UNCONFIRMED_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice.";
 
 /**
- * The row is on screen, but it may not outlive the next rebuild — likely the
- * reconnect that follows this very outage. Either it could not be persisted
- * (storage blocked or full, or no viewer to file it under), so any rebuild
- * takes it and its Retry; or it is within an hour of its age bound or past it
- * (a Retry pressed about a day after the dispatch keeps the dispatch's
- * timestamp), so a rebuild after the bound prunes it rather than restoring it.
- * This is `durable: false` from `markLocalUnconfirmed`. The copy keeps the
- * fallback rather than promising a Retry that may be gone.
+ * The row is on screen, but nothing guarantees it outlives the next rebuild —
+ * likely the reconnect that follows this very outage. This is `durable: false`
+ * from `markLocalUnconfirmed`: the write did not land (storage blocked or
+ * full, or no viewer to file it under), or the entry is within an hour of its
+ * age bound or past it (a Retry pressed about a day after the dispatch keeps
+ * the dispatch's timestamp). The copy keeps the fallback rather than promising
+ * a Retry that may be gone.
  */
 const UNCONFIRMED_VOLATILE_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice. If the message is gone, check the points ledger before re-running.";

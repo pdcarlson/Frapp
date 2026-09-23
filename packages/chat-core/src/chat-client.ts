@@ -590,20 +590,23 @@ export interface TerminalRowOutcome {
   /**
    * Where the row is afterwards. `"optimistic"`: on screen, keyed by its
    * client id. `"confirmed"`: the card's echo got there first, so the write is
-   * not unknown at all. `"absent"`: nothing on screen to point at — no viewer
-   * to attribute the row to, or no channel cache to draw it in.
+   * not unknown at all. `"absent"`: nothing on screen to point at — no
+   * channel cache to draw it in, or neither a viewer nor a placeholder row to
+   * attribute it to.
    */
   placement: RowPlacement;
   /**
-   * Whether copy may promise the row survives the next rebuild — the
-   * reconnect that follows the outage, a reload, a cache eviction. `false`
-   * when it certainly won't (storage blocked or full, or no viewer to file it
-   * under: nothing reached disk) and when it may not (the entry is within
-   * `DURABLE_NOTICE_MARGIN_MS` of its age bound, or past it, because a Retry
-   * pressed about a day after the dispatch keeps the dispatch's timestamp: a
-   * rebuild after the bound prunes it instead of restoring it). `false` never
-   * means the entry was withheld from disk; it is still restored while young
-   * enough.
+   * `true` only when this write landed on disk and the entry has at least
+   * `DURABLE_NOTICE_MARGIN_MS` left before its age bound: the one case in
+   * which copy may promise the row survives the next rebuild (the reconnect
+   * that follows the outage, a reload, a cache eviction).
+   *
+   * `false` promises nothing either way. Either the write did not land
+   * (storage blocked or full, or no viewer to file it under), and a rebuild
+   * restores at most what an earlier write left; or it landed but the entry is
+   * near or past its bound (a Retry pressed about a day after the dispatch
+   * keeps the dispatch's timestamp), and a rebuild restores it only until the
+   * bound.
    */
   durable: boolean;
 }
@@ -665,8 +668,9 @@ function settleConfirmed(
  * A placeholder that a REST rebuild already dropped (a reconnect refetch that
  * raced the request) is drawn again from `content`.
  *
- * Returns where the row is afterwards and whether it is on disk, because the
- * caller's copy depends on both — see {@link TerminalRowOutcome}. Treating a
+ * Returns where the row is afterwards and whether copy may promise it survives
+ * the next rebuild, because the caller's copy depends on both — see
+ * {@link TerminalRowOutcome}. Treating a
  * `"confirmed"` row as "no row" once produced a never-dismissing "we couldn't
  * confirm" notice above a visibly successful card.
  */
