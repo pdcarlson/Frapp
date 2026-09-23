@@ -1,0 +1,103 @@
+name: Migration snapshot
+
+# Publishes what each deployed Supabase project has applied, so the migration
+# gates on pull requests can read it without holding a credential (#2518).
+#
+# ── Why the gates cannot read it themselves ─────────────────────────────────
+# `migration-drift-gate.yml` runs on `pull_request`. For a same-repository PR,
+# GitHub runs the workflow definitions from the PR's own branch, so whatever a
+# PR job can read, anyone who can push a branch can read, by editing that
+# workflow or adding one. Its three jobs used to inject Infisical `prod` for a
+# single read, `GET /v1/projects/{ref}/database/migrations`, and the
+# account-level `SUPABASE_ACCESS_TOKEN` that answered it also drives
+# production. Now this workflow makes the read, and the PR jobs download what
+# it uploads (`.github/actions/download-migration-snapshot`) with GITHUB_TOKEN.
+#
+# ── Why the credential is meant to be safe here ─────────────────────────────
+# `workflow_run` and `schedule` always run the default branch's copy of this
+# file. A dispatch can target any branch, and it runs that branch's copy.
+# What stops that copy reaching the secret is the `automation` environment the
+# job names, whose deployment-branch rule is to admit `main` only. A branch can
+# edit this file but not that rule, and an environment releases its secrets
+# only to a job that passed it. That rule is the owner's #2583 and is not set
+# yet. Until it is, the secrets are repository-level, and a branch dispatch of
+# an edited copy can read them. Whatever such a run uploads, the download
+# action trusts only a run whose commit is on `main`.
+#
+# ── When it runs ────────────────────────────────────────────────────────────
+# After every `Deploy API` and `Deploy production` run, the only workflows that
+# apply migrations. That is what keeps the snapshot current, because a
+# scheduled run here starts hours late. The 4-hourly schedule is a backstop
+# for applies made outside those workflows (DB_PROMOTION_RUNBOOK repairs).
+# Off `main`, the required gates wait up to 15 minutes for a snapshot newer than
+# the latest finished deploy, then refuse the stale one
+# (`.github/actions/download-migration-snapshot`, `on-stale`), with an age limit of
+# `DEFAULT_MAX_AGE_HOURS` (`scripts/ci/lib/migration-snapshot.mjs`) as backstop.
+# A manual ledger change triggers nothing, so dispatch this after one
+# (DB_PROMOTION_RUNBOOK.md § What catches drift, and what catches bad ordering).
+#
+# Semantics: scripts/ci/publish-migration-snapshot.mjs. Unit tests:
+# scripts/ci/__tests__/migration-snapshot.test.mjs (`npm run test:ci-scripts`).
+#
+# Not a required PR check. It never runs on a pull request.
+
+on:
+  workflow_run:
+    workflows: ["Deploy API", "Deploy production"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "23 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer run reads a newer state, so a queued run can replace a pending
+  # one. The running one finishes: it writes nothing outside its own artifact,
+  # and consumers take the newest successful run.
+  group: migration-snapshot
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: automation
+      # A read, not a deployment: no deployment record per run.
+      deployment: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # `prod`, the same slug the replaced PR-side read used. Only
+      # SUPABASE_ACCESS_TOKEN is read; project refs come from
+      # .github/environments.json.
+      - name: Inject production secrets from Infisical
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "prod"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Read both projects' applied migrations
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/publish-migration-snapshot.mjs --out "$RUNNER_TEMP/migration-snapshot/migration-snapshot.json"
+
+      - name: Upload the snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-snapshot
+          path: ${{ runner.temp }}/migration-snapshot/migration-snapshot.json
+          if-no-files-found: error
+          # Only the newest successful run is ever read, and it is at most
+          # hours old. Seven days keeps a few for comparison after an incident.
+          retention-days: 7

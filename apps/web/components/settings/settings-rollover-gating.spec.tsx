@@ -10,6 +10,9 @@ const { mockCurrentChapter, mockUpdateChapter } = vi.hoisted(() => ({
 }));
 
 const PERMISSIONS = [
+  // Both halves of `CHAPTER_PROFILE_PERMISSIONS`: the profile and accent saves
+  // asserted below need `view` as well as `manage` (#2575).
+  "chapter-config:view",
   "chapter-config:manage",
   "semester:rollover",
   "billing:view",

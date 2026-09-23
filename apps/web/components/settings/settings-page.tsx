@@ -57,7 +57,12 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
-import { can, isOpsNudgeModuleKey } from "@repo/validation";
+import {
+  can,
+  canAll,
+  CHAPTER_PROFILE_PERMISSIONS,
+  isOpsNudgeModuleKey,
+} from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
@@ -227,6 +232,13 @@ function SettingsPageContent() {
 
   const canManage = can(
     "chapter-config:manage",
+    permissionsPayload?.permissions,
+  );
+  // The profile and accent saves go through `PATCH /v1/chapters/current`, which
+  // guards on this constant; reading the same one keeps the page from enabling
+  // a save the server refuses, or disabling one it accepts (#2575).
+  const canEditProfile = canAll(
+    CHAPTER_PROFILE_PERMISSIONS,
     permissionsPayload?.permissions,
   );
 
@@ -721,6 +733,7 @@ function SettingsPageContent() {
                 branding={branding}
                 profile={profile}
                 canManage={canManage}
+                canEditProfile={canEditProfile}
                 onSaveProfile={saveProfile}
                 onPatchConfig={(diff) =>
                   patchConfig(diff, "Organization settings saved")
@@ -1225,7 +1238,7 @@ function SettingsPageContent() {
                   <Button
                     type="submit"
                     disabled={
-                      !canManage ||
+                      !canEditProfile ||
                       updateChapter.isPending ||
                       accentDraftUnsavable
                     }

@@ -202,9 +202,18 @@ export async function fetchAppliedMigrations({
     };
   }
 
+  // Reading the body and parsing it fail for different reasons, and the error
+  // names which: a body that stalls or resets mid-read (with `resilientFetch`,
+  // its timeout also covers the body) is not a malformed answer.
+  let text;
+  try {
+    text = await response.text();
+  } catch (error) {
+    return { ok: false, migrations: [], error: `reading the response failed: ${error.message}` };
+  }
   let payload;
   try {
-    payload = JSON.parse(await response.text());
+    payload = JSON.parse(text);
   } catch {
     return { ok: false, migrations: [], error: "response was not valid JSON" };
   }

@@ -52,6 +52,15 @@
 // to production, ever. Every apply in this file targets the disposable local
 // database.
 //
+// Where that GET happens depends on the caller. `deploy-production.yml` makes it
+// live, with a token, inside the reviewed `production` environment. The PR gate
+// (`migration-drift-gate.yml`) holds no credential, because a same-repository
+// PR runs its own branch's workflow and so hands whatever that job can read to
+// every branch (#2518). It passes `--snapshot <file>` instead: the published
+// migration snapshot, a `main`-only job's copy of the same GET
+// (`lib/migration-snapshot.mjs`). The production ref then comes from
+// `.github/environments.json`.
+//
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/check-migration-replay.test.mjs`.
 
@@ -69,6 +78,7 @@ import { join } from "node:path";
 
 import { fetchAppliedMigrations, readLocalMigrations } from "./check-migration-drift.mjs";
 import { resilientFetch } from "./lib/http.mjs";
+import { openSnapshot } from "./lib/migration-snapshot.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 // Files are moved here, not copied and deleted: a rename inside one filesystem
@@ -484,10 +494,10 @@ export async function runReplayGate({
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
-function getArg(name) {
-  const i = process.argv.indexOf(name);
+function getArg(name, argv = process.argv) {
+  const i = argv.indexOf(name);
   if (i === -1) return undefined;
-  const v = process.argv[i + 1];
+  const v = argv[i + 1];
   if (v === undefined || v.startsWith("--")) {
     console.error(`Error: ${name} requires a value.`);
     process.exit(2);
@@ -515,16 +525,64 @@ function fetchFromFile(path) {
   });
 }
 
+/**
+ * `--snapshot <file>` reads production's applied state from the published
+ * migration snapshot, keyed by the production ref in `.github/environments.json`.
+ * A snapshot that is unreadable, stale or has no production entry is fatal: an
+ * unreadable production state means this gate verified nothing.
+ */
+function snapshotSource(path) {
+  try {
+    const opened = openSnapshot(path, ["production"]);
+    console.log(`Production's applied state: ${opened.description}.`);
+    return { fetchImpl: opened.fetchImpl, accessToken: "snapshot", projectRef: opened.refs.production };
+  } catch (thrown) {
+    console.error(`::error::Could not read production's applied migrations: ${thrown.message}.`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Where production's applied state comes from, from the CLI's flags. Exported
+ * so the wiring is tested.
+ *
+ * The live read, which `deploy-production.yml` runs at deploy time, uses
+ * `resilientFetch`, as `runReplayGate`'s own default does, so one transient
+ * Management API error doesn't fail a production deploy. `lib/http.mjs` states
+ * what it retries. It used to pass plain `fetch`, which overrode that default.
+ */
+export function replaySource({ appliedFrom, snapshotPath, env = process.env } = {}) {
+  if (snapshotPath) return snapshotSource(snapshotPath);
+  if (appliedFrom) {
+    // A recorded state needs no credentials; the fetch is stubbed out.
+    return { fetchImpl: fetchFromFile(appliedFrom), accessToken: "offline", projectRef: "offline" };
+  }
+  return { fetchImpl: resilientFetch, accessToken: env.SUPABASE_ACCESS_TOKEN, projectRef: env.SUPABASE_PROJECT_REF };
+}
+
+/**
+ * The CLI, returning its exit code. The gate is injectable so a test sees
+ * exactly what reaches `runReplayGate`: a fetch chosen here would override
+ * `resilientFetch` on the live read Deploy production depends on, as plain
+ * `fetch` once did. Not every error comes back as a code: a flag with no value
+ * exits 2 on the spot (`getArg`), an unreadable `--snapshot` exits 1
+ * (`snapshotSource`), and an unreadable `--applied-from` file throws
+ * (`fetchFromFile`).
+ */
+export async function runCli({ argv = process.argv, env = process.env, runGate = runReplayGate } = {}) {
+  const appliedFrom = getArg("--applied-from", argv);
+  const snapshotPath = getArg("--snapshot", argv);
+  if (appliedFrom && snapshotPath) {
+    console.error("Error: --applied-from and --snapshot are two sources for one answer; pass one.");
+    return 2;
+  }
+  return runGate({
+    ...replaySource({ appliedFrom, snapshotPath, env }),
+    label: getArg("--label", argv) ?? (appliedFrom ? `recorded state (${appliedFrom})` : "production"),
+  });
+}
+
 const isDirectRun = process.argv[1] && process.argv[1].endsWith("check-migration-replay.mjs");
 if (isDirectRun) {
-  const appliedFrom = getArg("--applied-from");
-  process.exit(
-    await runReplayGate({
-      fetchImpl: appliedFrom ? fetchFromFile(appliedFrom) : fetch,
-      label: getArg("--label") ?? (appliedFrom ? `recorded state (${appliedFrom})` : "production"),
-      // A recorded state needs no credentials; the fetch is stubbed out.
-      accessToken: appliedFrom ? "offline" : process.env.SUPABASE_ACCESS_TOKEN,
-      projectRef: appliedFrom ? "offline" : process.env.SUPABASE_PROJECT_REF,
-    }),
-  );
+  process.exit(await runCli());
 }

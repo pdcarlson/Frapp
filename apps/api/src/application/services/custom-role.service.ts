@@ -65,8 +65,8 @@ type MutateResponse = { error: PostgrestError | null };
 /**
  * CRUD over `chapter_custom_roles`, scoped to the active chapter. Part of the
  * settings family: every mutation appends a `chapter_audit_log` row (mirrored to
- * `#chapter-audit` by the ChatBridgeWorker, ADR-08) like every other settings
- * save. Custom roles are enforced (bridge model, spec/behavior/rbac.md):
+ * `#chapter-audit` by the ChatBridgeWorker, ADR-08) like the other audited
+ * settings saves. Custom roles are enforced (bridge model, spec/behavior/rbac.md):
  * members are assigned via `members.custom_role_ids` and the permission
  * resolver flattens `capabilities` into the effective set, so writes here take
  * effect on the next request. The wildcard `*` is rejected on write — only the

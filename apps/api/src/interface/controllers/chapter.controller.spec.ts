@@ -33,6 +33,11 @@ import { ChapterService } from '../../application/services/chapter.service';
 import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import {
+  PERMISSIONS_ANY_KEY,
+  PERMISSIONS_KEY,
+} from '../decorators/permissions.decorator';
+import { CHAPTER_PROFILE_PERMISSIONS } from '@repo/validation';
+import {
   CreateChapterDto,
   UpdateChapterDto,
   LogoUploadUrlDto,
@@ -156,6 +161,44 @@ describe('ChapterController', () => {
     });
   });
 
+  describe('profile and logo write permissions (#2575)', () => {
+    // `CHAPTER_PROFILE_PERMISSIONS` (`@repo/validation`) is the one spelling of
+    // who may edit the chapter's profile, accent and logo; the Settings page
+    // gates its saves on the same constant. These routes used to admit
+    // `roles:manage` or `billing:manage` while the page gated on
+    // `chapter-config:manage`, so each side allowed a save the other refused.
+    it.each([
+      'update',
+      'requestLogoUploadUrl',
+      'confirmLogoUpload',
+      'deleteLogo',
+    ] as const)(
+      '%s requires exactly CHAPTER_PROFILE_PERMISSIONS',
+      (handler) => {
+        const route = ChapterController.prototype[handler];
+        // `PermissionsGuard` ANDs this list, so equality is the whole rule.
+        expect(Reflect.getMetadata(PERMISSIONS_KEY, route)).toEqual([
+          ...CHAPTER_PROFILE_PERMISSIONS,
+        ]);
+        expect(Reflect.getMetadata(PERMISSIONS_ANY_KEY, route)).toBeUndefined();
+        // No class-level gate adds to or loosens it.
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, ChapterController),
+        ).toBeUndefined();
+        expect(
+          Reflect.getMetadata(PERMISSIONS_ANY_KEY, ChapterController),
+        ).toBeUndefined();
+      },
+    );
+
+    it('is chapter-config:view and chapter-config:manage', () => {
+      expect([...CHAPTER_PROFILE_PERMISSIONS].sort()).toEqual([
+        'chapter-config:manage',
+        'chapter-config:view',
+      ]);
+    });
+  });
+
   describe('update', () => {
     it('should call chapterService.update with correct parameters', async () => {
       const chapterId = 'chapter-1';
@@ -181,10 +224,9 @@ describe('ChapterController', () => {
     });
 
     it('projects the write response onto the member-safe view (#930)', async () => {
-      // This route admits `roles:manage` OR `billing:manage`, so a custom role
-      // carrying `roles:manage` without `billing:view` would otherwise read the
-      // billing identifiers out of the *write* response — the same leak as
-      // `getCurrent`, one verb over.
+      // `CHAPTER_PROFILE_PERMISSIONS` does not imply `billing:view`, so a role
+      // carrying only those would otherwise read the billing identifiers out
+      // of the *write* response — the same leak as `getCurrent`, one verb over.
       const chapterId = 'chapter-1';
       const dto: UpdateChapterDto = { name: 'Updated Chapter' };
       chapterService.update.mockResolvedValue({
@@ -302,38 +344,95 @@ describe('ChapterController', () => {
     });
   });
 
+  /**
+   * The raw `chapters` row the logo writes return, billing identifiers
+   * included. The logo routes share `update`'s permissions, which do not imply
+   * `billing:view`, so their responses are projected the same way (#930).
+   */
+  const rawChapterRow = (logoPath: string | null) =>
+    ({
+      id: 'chapter-1',
+      name: 'Alpha',
+      university: 'State U',
+      subscription_status: 'active',
+      past_due_since: null,
+      stripe_customer_id: 'cus_SENSITIVE',
+      subscription_id: 'sub_SENSITIVE',
+      last_stripe_webhook_at: '2026-08-02T00:00:00.000Z',
+      legal_accepted_by: 'user-legal-signer',
+      accent_color: null,
+      logo_path: logoPath,
+      donation_url: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    }) as any;
+
+  const expectMemberSafe = (result: object) => {
+    expect(result).not.toHaveProperty('stripe_customer_id');
+    expect(result).not.toHaveProperty('subscription_id');
+    expect(result).not.toHaveProperty('last_stripe_webhook_at');
+    expect(result).not.toHaveProperty('legal_accepted_by');
+  };
+
   describe('confirmLogoUpload', () => {
-    it('should call chapterService.confirmLogoUpload with correct parameters', async () => {
-      const chapterId = 'chapter-1';
-      const dto: ConfirmLogoDto = { storage_path: 'branding/logo.png' };
-      const expectedResult = {
-        id: chapterId,
-        branding: { logo_url: 'http://example.com/logo.png' },
-      } as any;
+    it('passes the chapter, path and actor to the service', async () => {
+      const dto: ConfirmLogoDto = {
+        storage_path: 'chapters/chapter-1/branding/logo.png',
+      };
+      chapterService.confirmLogoUpload.mockResolvedValue(
+        rawChapterRow(dto.storage_path),
+      );
 
-      chapterService.confirmLogoUpload.mockResolvedValue(expectedResult);
-
-      const result = await controller.confirmLogoUpload(chapterId, dto);
+      await controller.confirmLogoUpload('chapter-1', 'user-1', dto);
 
       expect(chapterService.confirmLogoUpload).toHaveBeenCalledWith(
-        chapterId,
+        'chapter-1',
         dto.storage_path,
+        'user-1',
       );
-      expect(result).toEqual(expectedResult);
+    });
+
+    it('projects the response onto the member-safe view (#930)', async () => {
+      const dto: ConfirmLogoDto = {
+        storage_path: 'chapters/chapter-1/branding/logo.png',
+      };
+      chapterService.confirmLogoUpload.mockResolvedValue(
+        rawChapterRow(dto.storage_path),
+      );
+
+      const result = await controller.confirmLogoUpload(
+        'chapter-1',
+        'user-1',
+        dto,
+      );
+
+      expectMemberSafe(result);
+      expect(result).toMatchObject({
+        id: 'chapter-1',
+        logo_path: dto.storage_path,
+      });
     });
   });
 
   describe('deleteLogo', () => {
-    it('should call chapterService.deleteLogo with correct parameters', async () => {
-      const chapterId = 'chapter-1';
-      const expectedResult = { id: chapterId, branding: {} } as any;
+    it('passes the chapter and actor to the service', async () => {
+      chapterService.deleteLogo.mockResolvedValue(rawChapterRow(null));
 
-      chapterService.deleteLogo.mockResolvedValue(expectedResult);
+      await controller.deleteLogo('chapter-1', 'user-1');
 
-      const result = await controller.deleteLogo(chapterId);
+      expect(chapterService.deleteLogo).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+      );
+    });
 
-      expect(chapterService.deleteLogo).toHaveBeenCalledWith(chapterId);
-      expect(result).toEqual(expectedResult);
+    it('projects the response onto the member-safe view (#930)', async () => {
+      chapterService.deleteLogo.mockResolvedValue(rawChapterRow(null));
+
+      const result = await controller.deleteLogo('chapter-1', 'user-1');
+
+      expectMemberSafe(result);
+      expect(result).toMatchObject({ id: 'chapter-1', logo_path: null });
     });
   });
 });

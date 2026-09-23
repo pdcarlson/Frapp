@@ -22,19 +22,27 @@ name: Migration drift gate
 # visible without anyone opening anything, though since the demotion above it
 # no longer blocks the merge.
 #
-# ── Why this is not a job in ci.yml ─────────────────────────────────────────
-# ci.yml consumes NO secrets — not one job in it touches `secrets.*`. That is a
-# property worth keeping: it means a CI run on a pull_request has nothing to
-# leak. This check needs Infisical credentials to learn the staging project ref,
-# so it lives in its own workflow rather than making ci.yml the first secret
-# consumer in the repo.
+# ── No secrets, like ci.yml (#2518) ─────────────────────────────────────────
+# Nothing in this workflow touches `secrets.*`, and nothing may. For a
+# same-repository pull request GitHub runs the workflow definitions from the
+# PR's own branch, so a secret any job here can read is a secret every branch
+# can read, by editing this file or adding a new one. All three jobs once
+# injected Infisical (`prod` for two of them) for a single Management API read,
+# and the account-level token behind it also drives production.
+#
+# They now read the migration snapshot that `migration-snapshot.yml` publishes
+# from `main`, downloaded by `.github/actions/download-migration-snapshot` with
+# this run's GITHUB_TOKEN (`actions: read`). A fork PR can read it too, so the
+# fork guards these jobs used to need are gone. Pinned by
+# `scripts/ci/__tests__/workflow-secrets-scope.test.mjs`.
 #
 # ── Why there is no `paths:` filter ─────────────────────────────────────────
 # Deliberate, and the opposite of an oversight. A required check on a workflow
 # skipped by a workflow-level `paths:` filter never reports at all and sits
 # "Pending" forever, blocking every PR that does not touch those paths. (A
 # JOB-level `if:` is the safe form — a skipped job reports Success. The
-# fork guard below uses that form for exactly this reason.)
+# fork guards these jobs carried until #2518 used that form for exactly this
+# reason; a job-level condition added later must too.)
 # https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks
 #
 # It is also correct on the merits: drift is a property of main and staging, not
@@ -60,9 +68,10 @@ on:
     inputs:
       replay_fixture:
         description: >-
-          Recorded applied-state file to replay against instead of live
-          production. Leave blank to use production. Use a fixture to exercise
-          the two-phase apply when production has nothing pending.
+          Recorded applied-state file to replay against instead of
+          production's published snapshot. Leave blank to use the snapshot. Use
+          a fixture to exercise the two-phase apply when production has nothing
+          pending.
         required: false
         default: ""
         type: string
@@ -97,21 +106,10 @@ concurrency:
 jobs:
   migration-drift:
     runs-on: ubuntu-latest
-    # Fork PRs receive no secrets, so the Infisical step below cannot succeed.
-    # A job-level `if:` reports Success when skipped, which satisfies the
-    # required check rather than deadlocking the PR. This repo takes no fork PRs
-    # today; the guard is here so that fact stopping being true does not
-    # silently wedge every PR.
-    #
-    # `workflow_dispatch` is listed explicitly: it carries no pull_request
-    # context, so the comparison below is `null == 'owner/repo'` — false — and
-    # without this clause a manual run would skip the job and report Success
-    # having done nothing. Only users with write access can dispatch, so there
-    # is no fork-secret concern in that path.
-    if: |
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      # Reads the published migration snapshot (the download step below).
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -128,25 +126,23 @@ jobs:
         with:
           node-version: 24
 
-      - name: Inject staging secrets from Infisical
-        uses: ./.github/actions/infisical-secrets
+      # Exports MIGRATION_SNAPSHOT, the downloaded file's path, and
+      # MIGRATION_SNAPSHOT_STAGING_DEPLOY. `use`: this job reports and does not
+      # gate, so it never waits on a publish. It still notices a lagging one: a
+      # migration past grace, read from a snapshot a Deploy API run has
+      # overtaken, turns it red as `stale`, saying why.
+      - name: Download the migration snapshot
+        uses: ./.github/actions/download-migration-snapshot
         with:
-          env-slug: "staging"
-          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          on-stale: use
 
       - name: Check migration drift against staging
         env:
-          # Both injected above. SUPABASE_PROJECT_REF is the staging ref because
-          # the injection above used the `staging` env-slug.
+          # Staging's ref comes from .github/environments.json; its applied
+          # state from the snapshot.
           DRIFT_GATE_MAIN_REF: refs/remotes/origin/main
           DRIFT_GATE_GRACE_MINUTES: "30"
-        run: |
-          if [ -z "$SUPABASE_PROJECT_REF" ]; then
-            echo "::error::SUPABASE_PROJECT_REF is not set in the Infisical 'staging' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-          node scripts/ci/check-migration-drift-gate.mjs
+        run: node scripts/ci/check-migration-drift-gate.mjs --snapshot "$MIGRATION_SNAPSHOT"
 
   # ── Production migration replay ─────────────────────────────────────────
   # REQUIRED check: do the migrations this PR adds actually apply to the
@@ -162,10 +158,11 @@ jobs:
   #
   # This job rebuilds production's currently-applied state on a disposable local
   # Supabase stack, then applies exactly the pending set through the same CLI
-  # path `run-migration.mjs` uses against the real project. Read-only against
-  # production: one GET to the Management API's migration-history endpoint, no
-  # SQL, ever. Semantics live in scripts/ci/check-migration-replay.mjs; unit
-  # tests in scripts/ci/__tests__/ (`npm run test:ci-scripts`).
+  # path `run-migration.mjs` uses against the real project. It never contacts
+  # production: production's applied state comes from the published migration
+  # snapshot (see the header). Semantics live in
+  # scripts/ci/check-migration-replay.mjs; unit tests in scripts/ci/__tests__/
+  # (`npm run test:ci-scripts`).
   #
   # ── Why the migrations filter is a STEP and not a `paths:` ──────────────
   # Same trap the header of this file documents: a required check on a workflow
@@ -175,14 +172,10 @@ jobs:
   # seconds without starting Docker.
   migration-replay:
     runs-on: ubuntu-latest
-    # Fork PRs receive no secrets — same guard, same reason, and the same
-    # `workflow_dispatch` clause as migration-drift above. A job-level `if:`
-    # reports Success when skipped, which satisfies the required check instead
-    # of deadlocking the PR.
-    if: |
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      # Reads the published migration snapshot.
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -246,15 +239,18 @@ jobs:
         with:
           node-version: 24
 
-      # The `prod` slug, not `staging`: this gate is about the database the
-      # migrations are heading for. NOTE the slug for production is `prod`.
-      - name: Inject production secrets from Infisical
-        if: steps.touched.outputs.run == 'true'
-        uses: ./.github/actions/infisical-secrets
+      # Production's applied state, because this gate is about the database
+      # the migrations are heading for. Not needed for a fixture run, which
+      # replays a recorded state instead.
+      # `wait` on anything but main (a pull request, or a dispatch on a PR's
+      # branch, whose checks land on the PR's head too), where the snapshot gates
+      # a merge. A push to main has already merged: waiting there would only
+      # risk a red required check on a main commit (see the action's header).
+      - name: Download the migration snapshot
+        if: steps.touched.outputs.run == 'true' && !inputs.replay_fixture
+        uses: ./.github/actions/download-migration-snapshot
         with:
-          env-slug: "prod"
-          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          on-stale: ${{ github.ref != 'refs/heads/main' && 'wait' || 'use' }}
 
       - name: Setup Supabase CLI
         if: steps.touched.outputs.run == 'true'
@@ -275,8 +271,8 @@ jobs:
       - name: Replay pending migrations against production's applied state
         if: steps.touched.outputs.run == 'true'
         env:
-          # SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF are both injected
-          # above; the ref is production's because the slug was `prod`.
+          # Production's ref comes from .github/environments.json; its applied
+          # state from the snapshot downloaded above.
           REPLAY_SUPABASE_CLI: supabase
           REPLAY_FIXTURE: ${{ inputs.replay_fixture }}
         run: |
@@ -287,16 +283,12 @@ jobs:
               echo "::error::replay_fixture '$REPLAY_FIXTURE' does not exist in this checkout."
               exit 1
             fi
-            echo "Replaying against recorded state '$REPLAY_FIXTURE' (production is NOT read)."
+            echo "Replaying against recorded state '$REPLAY_FIXTURE' (the snapshot is NOT read)."
             node scripts/ci/check-migration-replay.mjs --applied-from "$REPLAY_FIXTURE"
             exit $?
           fi
 
-          if [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
-            echo "::error::SUPABASE_PROJECT_REF is not set in the Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-          node scripts/ci/check-migration-replay.mjs
+          node scripts/ci/check-migration-replay.mjs --snapshot "$MIGRATION_SNAPSHOT"
 
       - name: No migrations touched
         if: steps.touched.outputs.run != 'true'
@@ -329,22 +321,17 @@ jobs:
   # not: it compared `origin/main` against staging on every run, so the PR
   # fixing the drift was blocked by the drift it was fixing.
   #
-  # No Supabase CLI, no Docker, no disposable stack: one read-only GET per
-  # environment to the Management API's migration-history endpoint.
+  # No Supabase CLI, no Docker, no disposable stack, and no credential: both
+  # environments' applied state comes from the published migration snapshot.
   #
   # Semantics: scripts/ci/check-migration-order.mjs. Unit tests (including the
   # #1373 replay from a recorded state): scripts/ci/__tests__/.
   migration-order:
     runs-on: ubuntu-latest
-    # NO job-level fork guard, unlike the two jobs above, and that is the
-    # difference worth understanding. Those two can do nothing at all without
-    # secrets, so skipping (which reports Success) is the only option a fork
-    # leaves them. This job's FIRST rule — no introduced migration may sort
-    # before one already on the base branch — needs no credentials, no network
-    # and no database. Skipping the whole job on a fork would throw away the
-    # only clause that catches the #1373 race deterministically, in exchange for
-    # nothing. So the job always runs, and only the half that reads a deployed
-    # database is guarded, below.
+    permissions:
+      contents: read
+      # Reads the published migration snapshot.
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -424,31 +411,15 @@ jobs:
           echo "Measuring introduced migrations against: $BASE"
           git --no-pager log -1 --format='  (%h %s)' "$BASE" || true
 
-      - name: Can this context read the deployed databases?
-        id: creds
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          THIS_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$HEAD_REPO" = "$THIS_REPO" ]; then
-            echo "remote=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "remote=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Fork PR — no secrets. The base-branch ordering rule still runs; the deployed databases are not read."
-          fi
-
       # Does this change touch migrations at all?
       #
-      # Without this, the credential steps below run on EVERY same-repo PR,
-      # because `steps.creds` answers "can this context reach secrets", not
-      # "does this change need them". A rotated or expired Infisical identity
-      # (#696, which this repo has already hit) would then redden a required
-      # check on every open PR — a docs-only one included — which is precisely
-      # the repo-wide freeze `migration-drift`'s demotion was meant to end,
-      # rebuilt in the check that replaced it. The script's zero-network fast
-      # path is real; only this wrapper could defeat it.
+      # Without this, the snapshot download below runs on EVERY PR. A broken
+      # publisher (an expired credential, #696, which this repo has already hit)
+      # would then redden a required check on every open PR, a docs-only one
+      # included. That is precisely the repo-wide freeze `migration-drift`'s
+      # demotion was meant to end, rebuilt in the check that replaced it. The
+      # script's zero-network fast path is real; only this wrapper could defeat
+      # it.
       #
       # Safe by construction: if nothing under `supabase/migrations/` changed,
       # `introduced` and `removed` are both empty and the script returns green
@@ -472,11 +443,17 @@ jobs:
           # deploy in #1330.
           CHANGED="${RUNNER_TEMP:-/tmp}/order-changed-paths.txt"
 
-          # A dispatch exists to exercise the credential path (the probe), so it
-          # always takes it.
+          # A dispatch always downloads the snapshot, which exercises the
+          # download action's trust check (commit on main). Only a dispatch on a
+          # branch also exercises the newer-than-the-last-deploy wait: on main
+          # this step passes `on-stale: use`. It does NOT exercise this gate's
+          # reading of the snapshot: head and base are both `main` on a dispatch
+          # from main, so the script returns through its fast path before
+          # loading the file. The migration-drift job on the same dispatch
+          # does read and validate it.
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Manual dispatch — taking the credential path regardless of the diff."
+            echo "Manual dispatch — downloading the snapshot regardless of the diff."
             exit 0
           fi
 
@@ -491,63 +468,36 @@ jobs:
           else
             DIFF_OK=0
             : > "$CHANGED"
-            echo "::warning::Could not diff $RANGE. Taking the credential path rather than skipping the database read."
+            echo "::warning::Could not diff $RANGE. Reading the snapshot rather than skipping the database check."
           fi
 
           if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Migrations touched (or the diff was unreadable) — the deployed databases will be read."
+            echo "Migrations touched (or the diff was unreadable) — the deployed databases' applied state will be read from the snapshot."
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "No files under supabase/migrations/ changed — the base-branch rule still runs, no database is read."
           fi
 
-      # ONE injection, and the `prod` slug rather than `staging`.
-      #
-      # Only `SUPABASE_ACCESS_TOKEN` is wanted — the project REFS come from
-      # `.github/environments.json`, which is what lets this job skip the
-      # capture-between-injections dance check-migration-drift.yml needs (a
-      # second `secrets-action` step clobbers `SUPABASE_PROJECT_REF` from the
-      # first).
-      #
-      # `prod`, because this job reads BOTH projects and `prod` is the copy
-      # already proven to do that: check-migration-drift.yml injects staging
-      # then prod and reads both refs with whichever survives — the prod one —
-      # and `migration-replay` above already uses this slug on PR triggers, so
-      # the credential path and the fork guard both exist for it. The token is
-      # account-level, so this is belt and braces rather than a fix; taking the
-      # copy with the widest proven reach costs nothing.
-      - name: Inject production secrets from Infisical
-        if: steps.creds.outputs.remote == 'true' && steps.touched.outputs.run == 'true'
-        uses: ./.github/actions/infisical-secrets
+      # Exports MIGRATION_SNAPSHOT when it runs; unset otherwise. `wait` on
+      # anything but main, as in migration-replay above.
+      - name: Download the migration snapshot
+        if: steps.touched.outputs.run == 'true'
+        uses: ./.github/actions/download-migration-snapshot
         with:
-          env-slug: "prod"
-          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          on-stale: ${{ github.ref != 'refs/heads/main' && 'wait' || 'use' }}
 
-      # A manual dispatch runs the PROBE, not the gate.
-      #
-      # On a dispatch, head and base are both `main`, so the gate introduces
-      # nothing and returns green through its zero-network fast path — it proves
-      # the job starts and nothing else. That is the wrong evidence to promote a
-      # required check on, and it is exactly the evidence a naive "just dispatch
-      # it and see it go green" would produce. The probe reads both projects and
-      # prints what they hold, so a project-scoped token or a wrong ref surfaces
-      # here rather than as a hard block on the first migration PR after this
-      # check starts blocking.
+      # The script loads the snapshot past its own zero-network fast path, so a
+      # change that introduces nothing never depends on it. That is also why
+      # there is no shell guard here: one would run before `node` does, and fire
+      # on changes that were never going to read anything.
       - name: Check migration ordering
         env:
           ORDER_GATE_BASE_REF: ${{ steps.base.outputs.ref }}
-          ORDER_GATE_LOCAL_ONLY: ${{ steps.creds.outputs.remote != 'true' }}
-          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          # No token assertion here on purpose. A shell guard runs before `node`
-          # does, so it would fire on changes that were never going to read a
-          # database — the freeze this job is built to avoid. The script asserts
-          # the token past its own fast path, where it knows whether the read is
-          # actually needed.
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$ORDER_GATE_LOCAL_ONLY" != "true" ]; then
-            node scripts/ci/check-migration-order.mjs --probe
+          if [ -n "${MIGRATION_SNAPSHOT:-}" ]; then
+            node scripts/ci/check-migration-order.mjs --snapshot "$MIGRATION_SNAPSHOT"
+          else
+            node scripts/ci/check-migration-order.mjs
           fi
-          node scripts/ci/check-migration-order.mjs

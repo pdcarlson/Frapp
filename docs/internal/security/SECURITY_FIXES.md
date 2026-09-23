@@ -387,10 +387,12 @@ Any chapter-wide list endpoint over a per-user-visible resource must go through 
 
 This is over-exposure **inside** a tenant, not a cross-tenant leak. `ChapterGuard.resolveChapterContext` still hard-403s a JWT/header mismatch (`chapter.context.mismatch`), so no caller could read another chapter's row through either route.
 
-A third surface leaked the same columns through the *write* path. `PATCH /v1/chapters/current` admits `roles:manage` **or** `billing:manage`, and returned the updated row verbatim — so a custom role carrying `roles:manage` without `billing:view` read the identifiers straight out of the write response. Custom roles take arbitrary permission sets (`chapter_custom_roles`), so that combination is constructible, not hypothetical. Found while verifying the two read routes against a running instance.
+A third surface leaked the same columns through the *write* path. `PATCH /v1/chapters/current` admitted `roles:manage` **or** `billing:manage` at the time, and returned the updated row verbatim — so a custom role carrying `roles:manage` without `billing:view` read the identifiers straight out of the write response. Custom roles take arbitrary permission sets (`chapter_custom_roles`), so that combination is constructible, not hypothetical. Found while verifying the two read routes against a running instance. (#2575 since moved that route to `chapter-config:view` **and** `chapter-config:manage`, `CHAPTER_PROFILE_PERMISSIONS` in `@repo/validation`. Neither implies `billing:view`, so the projection is still load-bearing.)
+
+The logo writes, `POST` and `DELETE /v1/chapters/current/logo`, were a fourth exit this fix missed: they share the route's permissions and returned `chapterRepo.update`'s raw row. #2575 found them and projects them the same way.
 
 ### Details
-All three exits now go through `toChapterMemberView` (`apps/api/src/application/services/chapter-member-view.ts`), a single allowlist projection.
+All three exits, and since #2575 the two logo writes, now go through `toChapterMemberView` (`apps/api/src/application/services/chapter-member-view.ts`), a single allowlist projection.
 
 The projection **iterates the allowlist** rather than spreading the row and deleting sensitive keys. That distinction is the fix, not a style choice: the delete-based form fails open, so the next migration that adds a private column publishes it by default and nothing reports it. Iterating means a new column is withheld until someone adds it to the allowlist deliberately.
 

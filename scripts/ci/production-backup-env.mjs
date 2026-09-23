@@ -35,7 +35,11 @@ export const ALERT_ISSUE_TITLE =
 export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
-/** Prefer the PAT: GET /environments needs Administration; GITHUB_TOKEN often 403s. */
+/**
+ * Prefer a PAT when one is in the environment, which means a local run: the
+ * workflow passes none (#2518), and its GITHUB_TOKEN has read this environment
+ * on every scheduled run.
+ */
 export function resolveEnvReadToken(env = process.env) {
   return env.GITHUB_PAT || env.GITHUB_TOKEN || "";
 }

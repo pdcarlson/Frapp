@@ -153,11 +153,14 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. The workflows
 that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` with
 `method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
-`INFISICAL_CLIENT_SECRET` repository secrets. This is universal auth, not OIDC. Every workflow that
-calls the composite action below does this — today `deploy-api.yml`, `deploy-production.yml`,
-`db-backup.yml`, `check-migration-drift.yml`, `migration-drift-gate.yml`, `staging-conformance.yml`
-and `production-auth-conformance.yml` (re-derive with
-`git grep -l 'actions/infisical-secrets' .github/workflows`) — not `deploy-api.yml` alone.
+`INFISICAL_CLIENT_SECRET` secrets, read through the GitHub environment each job names (§6; until #2583
+moves them they are still repository secrets, which such a job also sees). This is universal
+auth, not OIDC. Every workflow that calls the composite action below does this — today
+`deploy-api.yml`, `deploy-production.yml`, `db-backup.yml`, `check-migration-drift.yml`,
+`migration-snapshot.yml`, `staging-conformance.yml` and `production-auth-conformance.yml`
+(re-derive with `git grep -l 'actions/infisical-secrets' .github/workflows`) — not `deploy-api.yml`
+alone. No pull-request job is among them: `migration-drift-gate.yml` reads the snapshot
+`migration-snapshot.yml` publishes instead (#2518).
 
 That call is written once, in the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml)
 composite action, which every workflow needing secrets calls; no workflow spells out
@@ -247,19 +250,33 @@ value. Real rotation is provider first, then Infisical — never Vercel.
 
 ### 6. Configure GitHub
 
-Add these secrets to GitHub repository settings (Settings → Secrets → Actions):
+Add these as **environment** secrets (Settings → Environments → the environment → Environment
+secrets), never as repository secrets. Which environment holds which secret, and the `main`-only
+branch rule each environment needs first, is the roster in
+[`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
 
-**Infisical bootstrap (permanent) — repository scope:**
+**Infisical bootstrap (permanent), one copy per environment that injects:**
 
-These three are **repository secrets**, not environment secrets. One machine identity serves both `staging` and `production` (the workflow selects the environment via `env-slug`, not via credentials), so a single repository-scoped pair is correct and environment-scoped copies would only create two places to get it wrong. Confirmed by the repository owner on 2026-08-10: neither the `staging` nor the `production` GitHub environment holds any secrets of its own.
+> **Corrected 2026-09-23 (#2518).** This section used to say these were **repository secrets**:
+> one machine identity serves every environment, the workflow selects the environment with
+> `env-slug` rather than with credentials, so one repository-scoped pair seemed correct and
+> environment copies seemed like "two places to get it wrong" (owner-confirmed 2026-08-10). The
+> premise that missed: a repository secret is readable by **any branch**. A same-repository pull
+> request, or a push to any branch, runs that branch's own workflow definitions, so anyone who
+> can push a branch could read `prod` through this identity. The copies are the price of an
+> environment's `main`-only branch rule, which is the only thing a branch cannot edit. One
+> identity still serves every environment until the per-environment split
+> ([ADR-24](../../../spec/architecture/adr/adr-24.md), rule I6).
 
 | Secret                          | Value                                                                       |
 | ------------------------------- | --------------------------------------------------------------------------- |
 | `INFISICAL_MACHINE_IDENTITY_ID` | The identity's **Universal Auth → Client ID** — see the warning below        |
 | `INFISICAL_CLIENT_SECRET`       | From the same Universal Auth panel → **Add Client Secret** (shown once)      |
-| `INFISICAL_PROJECT_ID`          | From Infisical → Project Settings → Project ID                              |
 
-**Optional — staging conformance smoke user (repository scope):**
+`INFISICAL_PROJECT_ID` is no longer needed: no workflow reads it (the action pins `project-slug`),
+and deleting the repository copy is #1587.
+
+**Optional — staging conformance smoke user (`staging` environment):**
 
 Consumed only by `.github/workflows/staging-conformance.yml`. When absent, the workflow's
 end-to-end sign-in assertion reports **SKIPPED** rather than passing — it never fakes a pass.
@@ -290,7 +307,7 @@ much.
 
 **Not GitHub secrets — injected from Infisical at job time:**
 
-The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
+The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies of these values. That is still wrong, because Infisical serves them (#772). The only GitHub secrets are the credentials in the roster [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets) lists.)
 
 | Secret                   | Staging value                           | Production value                |
 | ------------------------ | --------------------------------------- | ------------------------------- |
@@ -307,7 +324,7 @@ The table below describes the sites that **fail** on a missing credential: every
 
 | Preflight result                       | Meaning                                                                                          | Fix                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| **Fails**, naming the secret           | `INFISICAL_MACHINE_IDENTITY_ID` and/or `INFISICAL_CLIENT_SECRET` is unset or empty in this scope | Add it as a repository secret, or as an environment secret on `staging` / `production`    |
+| **Fails**, naming the secret           | `INFISICAL_MACHINE_IDENTITY_ID` and/or `INFISICAL_CLIENT_SECRET` is unset or empty in this scope | Add it as an environment secret on the environment the job names (`AGENT_INFRA.md` roster), never as a repository secret |
 | **Passes with a whitespace warning**, then 401 | A value carries a stray leading or trailing character — usually a newline picked up when pasting | Re-paste both secrets in GitHub *before* rotating anything in Infisical                    |
 | **Passes** cleanly, then injection 401s | The credentials exist and are well-formed, but Infisical rejected them | **Check whether they ever worked before rotating** — see below |
 

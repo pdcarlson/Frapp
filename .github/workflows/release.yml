@@ -46,8 +46,9 @@ name: Release
 #      same App restriction (run 34254679932: object `bca315f9` exists,
 #      `refs/tags/v1.0.0` does not, 403 Resource not accessible by
 #      integration). Do not widen the GitHub App token to cover workflow
-#      files. Mint the ref with repo secret RELEASE_GITHUB_TOKEN (a *user*
-#      PAT, contents:write) or from a laptop.
+#      files. Mint the ref with RELEASE_GITHUB_TOKEN (a *user* PAT,
+#      contents:write; an `automation` environment secret, #2518) or from a
+#      laptop.
 #
 # Bump semantics (including why the PR number is parsed from the SUBJECT line
 # only) live in `scripts/ci/resolve-release-bump.mjs`. Unit tests:
@@ -89,6 +90,12 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Secrets belong to the `automation` environment: `main` only once the owner's
+    # #2583 sets that rule and moves them there, no required reviewers (#2518).
+    # See docs/internal/ci-cd/AGENT_INFRA.md § GitHub environments and bootstrap secrets.
+    environment:
+      name: automation
+      deployment: false
     permissions:
       # A `permissions:` block is exhaustive — every scope not named here is set
       # to `none`. `contents: write` alone is what the tag and Release need, and
@@ -227,7 +234,7 @@ jobs:
               echo "$REF_OUT"
               echo "::error::Failed to create refs/tags/${TAG} pointing at ${TAG_OBJ} on ${SHA}."
               if printf '%s' "$REF_OUT" | grep -q 'Resource not accessible by integration'; then
-                echo "::error::The GitHub App cannot create that tag ref when ${SHA}'s workflow tree differs from default-branch HEAD (run 34254679932). Set repository secret RELEASE_GITHUB_TOKEN to a user PAT with contents:write (not an environment secret) and re-run the Release workflow, not Deploy production. Or mint the ref and the GitHub Release from a laptop against this TAG_OBJ. Do not widen the Actions App to cover workflow files."
+                echo "::error::The GitHub App cannot create that tag ref when ${SHA}'s workflow tree differs from default-branch HEAD (run 34254679932). Set RELEASE_GITHUB_TOKEN, a secret of the automation environment (never a repository secret, #2518), to a user PAT with contents:write and re-run the Release workflow, not Deploy production. Or mint the ref and the GitHub Release from a laptop against this TAG_OBJ. Do not widen the Actions App to cover workflow files."
               fi
               exit 1
             fi

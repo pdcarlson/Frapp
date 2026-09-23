@@ -64,8 +64,10 @@ jobs:
       # matching production-guardrails.yml's deliberately minimal action surface.
       - name: Assert the nightly production dump is fresh
         env:
+          # GITHUB_TOKEN only. No GITHUB_PAT: this job names no environment,
+          # so a PAT would have to be a repository secret, readable from any
+          # branch (#2518).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/ci/production-backup-freshness.mjs

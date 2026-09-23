@@ -103,7 +103,7 @@ runs:
         [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
         [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
         if [ -n "$MISSING" ]; then
-          DETAIL="Infisical credentials are not configured for the $ENV_SLUG environment. Missing or empty:$MISSING. Set them as repository secrets — see docs/internal/environment/SECRETS_MANAGEMENT.md."
+          DETAIL="Infisical credentials are not configured for the $ENV_SLUG environment. Missing or empty:$MISSING. Set them as secrets of the GitHub environment this job names (never repository secrets, #2518) — see docs/internal/environment/SECRETS_MANAGEMENT.md."
           # Any value other than the literal `warn` fails closed. A typo in the
           # input must not silently downgrade a hard gate to a warning.
           if [ "$ON_MISSING" = "warn" ]; then
@@ -136,9 +136,10 @@ runs:
     # every LATER step in the calling job, not only to the rest of this action --
     # so the injected secrets are visible to the workflow exactly as they were
     # when this step was written inline. That is the one property the whole
-    # extraction rests on, and it is exercised on every same-repo pull request by
-    # `migration-drift-gate.yml`'s `migration-drift` job, whose injection carries
-    # no step-level `if:` and whose very next step reads `SUPABASE_PROJECT_REF`.
+    # extraction rests on. No pull request exercises it any more: since #2518 no
+    # PR-triggered job holds a credential, and every call site sits in a job only
+    # `main` is meant to run (the environment rule, #2583). `migration-snapshot.yml` exercises it after every staging deploy,
+    # and its very next step reads SUPABASE_ACCESS_TOKEN from the job env.
     #
     # `include-imports: true` is not a default -- it was written at every original
     # call site and is kept here for all of them.

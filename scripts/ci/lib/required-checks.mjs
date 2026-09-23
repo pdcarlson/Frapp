@@ -361,20 +361,20 @@ export const DRIFT_CHECKS = [
   // not that either project can be read.
   //
   // Nor does dispatching the workflow fix that on its own — a dispatch on
-  // `main` has head == base, which is that same vacuous case. So the job runs
-  // `check-migration-order.mjs --probe` on a dispatch: it reads both projects
-  // and prints what each holds, asserting nothing about any change. Promote
-  // only after a dispatch whose step summary shows a real `newestApplied` for
-  // BOTH staging and production. If the Infisical token turns out to be
-  // project-scoped rather than account-level, that is where it surfaces —
-  // instead of as a hard block on the first migration PR after this starts
-  // blocking.
+  // `main` has head == base, which is that same vacuous case. Since #2518 the
+  // job holds no credential: it reads the snapshot `migration-snapshot.yml`
+  // publishes from `main`, and every publish reads BOTH projects and fails
+  // unless each answers with a real history. That publisher's step summary is
+  // the evidence (it replaced `check-migration-order.mjs --probe`). A token
+  // scoped to one project surfaces there, not as a hard block on the first
+  // migration PR.
   "migration-order",
   // Do the migrations a PR adds actually APPLY to the database they are heading
   // for? Rebuilds production's currently-applied state on a disposable Supabase
   // stack and runs the pending set against it, through the same CLI path
-  // `run-migration.mjs` uses for real. Read-only against production (one GET to
-  // the Management API); every apply lands on the throwaway stack.
+  // `run-migration.mjs` uses for real. It never contacts production: the
+  // applied state comes from the published migration snapshot (#2518), and
+  // every apply lands on the throwaway stack.
   //
   // The gap it closes: `pglite-migrations` applies the corpus from ZERO, which
   // is a different question from applying the tail to a database that is
