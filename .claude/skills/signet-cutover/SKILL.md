@@ -27,7 +27,9 @@ Canonical docs (link to them; don't restate their values):
 ## Visual truth
 
 1. Committed HTML references beat written docs. When a doc disagrees with its reference, the doc is
-   wrong; fix it.
+   wrong; fix it. The product name is the exception. The boards draw "Signet", and shipped copy
+   follows [`brand-identity.md` § 1](../../../spec/ui/brand-identity.md#1-identity), so Frapp copy
+   is never drift from a board.
 2. Where the two design-system references disagree,
    [`canvas-screens.dc.html`](../../../spec/ui/design-system/reference/canvas-screens.dc.html) wins
    over [`signet-design-system.dc.html`](../../../spec/ui/design-system/reference/signet-design-system.dc.html)
@@ -84,9 +86,11 @@ restyle them piecemeal.
 
 ## Naming
 
-Prose (specs, UI copy, marketing) says **Signet**. Code identifiers, package names (`@repo/*`),
-domains (`frapp.live`), and bundle ids stay **frapp** until the deferred rename. When citing code,
-cite the real current names.
+The product is **Frapp**, and everything a user sees says Frapp
+([ADR-25](../../../spec/architecture/adr/adr-25.md)). "Signet" is this design system's internal
+name until the post-beta internals rename. "Legacy Frapp" in this skill means the retired visuals
+in the table above, not the product name: a cutover deletes legacy Frapp visuals, never Frapp copy.
+The one canonical rule is [`brand-identity.md` § 1](../../../spec/ui/brand-identity.md#1-identity).
 
 ## Cutover deletes what it replaces
 

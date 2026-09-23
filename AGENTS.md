@@ -10,7 +10,7 @@ Operating guide for agents and developers in this repo. Machines, Infisical and 
 - A question for Paul goes last, after any status and after the "debt spotted" note. Ask it with AskUserQuestion, your recommended option first; an unattended run carries it to its end-of-run report instead of blocking.
 - Delegate sizeable, independent, reading-heavy work (a broad search, a separate research thread, a self-contained chunk) to parallel subagents, which keeps it out of your context. Do small lookups, and checks of your own work, yourself. The exception is an independent role from `.claude/agents/` where a procedure calls for one (see [Skills and subagents](#skills-and-subagents)).
 - Size every fan-out and set every subagent's effort by the [`multi-agent`](.claude/skills/multi-agent/SKILL.md) skill, ultracode included: `/diff-review` is the only review allowed to be big, and nothing else is allowed to inherit ultracode's effort.
-- If the cloud-sandbox stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, a Docker Hub rate limit, a missing env var), stop and tell the user exactly what to change in this session's Claude Code web environment settings. That config can't be fixed from inside the session, and a workaround hides it. Trust the sentinel over the log; symptom-to-fix map: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails"). The exception: a sentinel reading `(dependencies)` means only `node_modules` is unusable and the stack is up, so run `npm ci` yourself, and report only if it can't reach the registry.
+- If the cloud-sandbox stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, a Docker Hub rate limit, a missing env var), stop and tell the user exactly what to change in this session's Claude Code web environment settings. That config can't be fixed from inside the session, and a workaround hides it. Trust the sentinel over the log; symptom-to-fix map: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails"). The exception: a sentinel reading `(dependencies)` means only `node_modules` is unusable and the stack is up, so run `npm ci` yourself, then `npx turbo run build --filter='./packages/*'` (bringup skips the package build when turbo does not run), and report only if `npm ci` can't reach the registry.
 
 ## Credentials and secrets
 
@@ -48,7 +48,7 @@ Work lives in GitHub Issues on this repo, never in a scratch file. Linear is ret
 
 ## Tech debt protocol
 
-The repo is mid-rebuild (Frapp → Signet), so treat existing code as possibly dead until checked, not as precedent. Standard: [`spec/engineering.md` § Changing existing code](spec/engineering.md#changing-existing-code).
+The repo is mid-rebuild (legacy Frapp → the Signet design system; the product itself is named Frapp, ADR-25), so treat existing code as possibly dead until checked, not as precedent. Standard: [`spec/engineering.md` § Changing existing code](spec/engineering.md#changing-existing-code).
 
 - Before extending code, confirm it has real consumers. A definition or an `index.ts` re-export is not a caller, and building on an orphan doubles the debt.
 - Never silently work around orphaned, superseded, or contradictory code. Fix it inline when it's inside your change's blast radius, otherwise file it per `file-follow-up`; either way, flag it in the response and PR body. Blast radius decides, not diff radius: "out of scope" and "pre-existing" are not verdicts on a defect.
@@ -67,7 +67,7 @@ Turborepo + npm workspaces: 4 apps, 14 shared packages. Product and architecture
 
 ## Starting the dev environment
 
-- **Cloud (Claude Code web):** `.claude/hooks/session-start.sh` launches `scripts/cloud-sandbox-up.sh` in the background at session start, gated on `/etc/frapp-cloud-sandbox` or `FRAPP_CLOUD_SANDBOX=1`. It starts Docker and local Supabase and writes `apps/api/.env.local` and `apps/web/.env.local`, so the API boots and `npm run build -w apps/web` works without Infisical. Before using the database or API, wait for `.cloud-sandbox-up.done`, or stop on `.cloud-sandbox-up.failed` (log: `/tmp/cloud-sandbox-up.log`); then boot the API with `npm run start:dev -w apps/api`. Troubleshooting: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md).
+- **Cloud (Claude Code web):** `.claude/hooks/session-start.sh` launches `scripts/cloud-sandbox-up.sh` in the background at session start, gated on `/etc/frapp-cloud-sandbox` or `FRAPP_CLOUD_SANDBOX=1`. It starts Docker and local Supabase, writes `apps/api/.env.local` and `apps/web/.env.local`, and builds the workspace packages, so the API boots and `npm run build -w apps/web` works without Infisical. Before using the database or API, wait for `.cloud-sandbox-up.done`, or stop on `.cloud-sandbox-up.failed` (log: `/tmp/cloud-sandbox-up.log`); then boot the API with `npm run start:dev -w apps/api`. Troubleshooting: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md).
 - **Laptop / WSL / Linux:** with Docker reachable, `bash scripts/local-dev-setup.sh`, then `npx infisical login` once and `npm run dev:stack` (API + web + landing). Ports and per-app `dev:*` commands: [`LOCAL_DEV.md` § Ports and URLs](docs/internal/environment/LOCAL_DEV.md#ports-and-urls).
 
 ## Lint, test, build, type-check

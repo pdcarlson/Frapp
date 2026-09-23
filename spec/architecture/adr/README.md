@@ -27,3 +27,4 @@ One file per ADR. [`spec/architecture/README.md`](../README.md) is the system ma
 | ADR-22: Sentry is the system of record for exceptions and traces; PostHog for product analytics | [adr-22.md](adr-22.md) |
 | ADR-23: Multi-agent budget — one big review, everything else small, explicit effort (2026-09-23) | [adr-23.md](adr-23.md) |
 | ADR-24: Delivery platform — outcome-verified delivery on the current hosts; Cloud Run only on triggers (2026-09-23) | [adr-24.md](adr-24.md) |
+| ADR-25: The product is named Frapp; "Signet" stays the design system's internal name until after the beta (2026-09-23) | [adr-25.md](adr-25.md) |

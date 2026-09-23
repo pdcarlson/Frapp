@@ -6,12 +6,16 @@
 > are the rank-1 visual truth for the landing surface ([`../../README.md`](../../README.md)
 > § Precedence, rule 1). Drift between them and
 > [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) is a filable bug now rather
-> than an expected gap, with three standing exceptions, none of them drift: the two decisions below
-> that supersede what the boards draw (D8 and D9), the signature moment, which is **cut** from the
-> shipped page until brand sign-off clears
-> ([#2378](https://github.com/pdcarlson/Frapp/issues/2378)), and anything
-> [`spec/behavior/`](../../../behavior/README.md) contradicts, which wins over a board on what the
-> product does.
+> than an expected gap, with four standing exceptions, none of them drift:
+>
+> - the two decisions below that supersede what the boards draw (D8 and D9);
+> - the signature moment, which is **cut** from the shipped page until brand sign-off clears
+>   ([#2378](https://github.com/pdcarlson/Frapp/issues/2378));
+> - anything [`spec/behavior/`](../../../behavior/README.md) contradicts, which wins over a board on
+>   what the product does;
+> - the product name. The boards draw "Signet", and the shipped page says whatever
+>   [`brand-identity.md` § 1](../../brand-identity.md#1-identity) says, which is Frapp from
+>   [ADR-25](../../../architecture/adr/adr-25.md) step 5.
 
 ## What this is
 

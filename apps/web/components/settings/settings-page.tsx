@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useId, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import {
@@ -23,7 +23,7 @@ import {
   type PatchChapterConfig,
 } from "@repo/validation";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
-import { AA_NORMAL, contrastRatio, parseHex } from "@repo/color";
+import { AA_NORMAL, contrastRatio, normalizeHex, parseHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { titleCase, vocab } from "@/lib/vocabulary";
 import { Button } from "@/components/ui/button";
@@ -279,6 +279,9 @@ function SettingsPageContent() {
   );
 
   const [accentDraft, setAccentDraft] = useState("");
+  // Ties the disabled Save to the hint that says why (design-system README:
+  // a disabled control is paired with its reason).
+  const accentHexHintId = useId();
   // The server's own §8 disclosure from the last successful save — distinct
   // from `previewInkFailsAA` below, which is a client-side check of the
   // unsaved draft. Cleared on the next edit so a stale warning never survives
@@ -429,6 +432,24 @@ function SettingsPageContent() {
     background: signetDarkTokens.color.surface.card,
     fallbackAccent: signetDarkTokens.color.gold.house,
   });
+  // What Save sends: the draft as the `#RRGGBB` the API's DTO requires. The
+  // resolver above already reads a 3-digit shorthand or a padded hex as that
+  // colour, so saving the same normalization keeps the preview, the warnings
+  // and the save describing one colour. Sending the raw draft let `#08E`
+  // preview cleanly and then fail the save with a 400.
+  const accentDraftHex = normalizeHex(accentDraft);
+  // Empty, blank or not a hex colour: Save is disabled and the tab says what to
+  // enter. An empty draft counts: it sends no `accent_color`, which the API
+  // treats as "no change" and answers with success, so the toast would claim a
+  // save that wrote nothing. The copy is an instruction rather than a complaint
+  // about "this color" because an empty field (a chapter with no stored
+  // accent, or a cleared input) holds no colour to complain about, and it
+  // takes warning styling only once something unsavable has been typed.
+  const accentDraftUnsavable = !accentDraftHex;
+  // A well-formed colour that fails contrast on the card. `fallbackApplied`
+  // alone is also true for an empty or malformed draft, where "saving keeps the
+  // color you entered" would be false.
+  const accentPreviewFallsBack = accent.reason === "insufficient_contrast";
 
   /*
     The on-accent tone for the *draft* colour, and whether it is legible.
@@ -528,22 +549,19 @@ function SettingsPageContent() {
 
   async function saveAccent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!accentDraftHex) return;
     try {
       const result = await updateChapter.mutateAsync({
-        accent_color: accentDraft || undefined,
+        accent_color: accentDraftHex,
       });
       setAccentContrastWarning(result?.failedContrastChecks ?? null);
       toast({
         title: "Accent color saved",
-        description: "Buttons, chat tags, and branded reports use it.",
       });
     } catch (error) {
       toast({
         title: "Couldn't save accent color",
-        description: getErrorMessage(
-          error,
-          "Retry or check the accent color contrast.",
-        ),
+        description: getErrorMessage(error, "Retry, or check your connection."),
         variant: "destructive",
       });
     }
@@ -1051,8 +1069,8 @@ function SettingsPageContent() {
                   - **"invalid colors fall back to the Signet default"** —
                     conflates two different outcomes. A hex the engine cannot
                     parse falls back to `HOUSE_SEED`; a parseable colour that
-                    fails §8 contrast is **saved anyway** and disclosed in the
-                    three warnings below, because `chapter.service.ts` removed
+                    fails §8 contrast is **saved anyway** and disclosed by the
+                    server contrast warning below, because `chapter.service.ts` removed
                     that gate deliberately ("gating it would reject 49 of the 50
                     real chapters in the directory seed").
                   - **"arrives in Chunk 07"** — this is chunk 07
@@ -1085,7 +1103,7 @@ function SettingsPageContent() {
                     <Input
                       type="color"
                       aria-label="Accent color picker"
-                      value={accentDraft || accent.resolvedAccent}
+                      value={accentDraftHex || accent.resolvedAccent}
                       onChange={(event) =>
                         updateAccentDraft(event.target.value)
                       }
@@ -1135,11 +1153,23 @@ function SettingsPageContent() {
                       Preview
                     </div>
                   </div>
-                  {accent.fallbackApplied ? (
+                  {accentDraftUnsavable ? (
+                    <p
+                      id={accentHexHintId}
+                      className={
+                        accentDraft === ""
+                          ? "text-xs text-muted-foreground"
+                          : "text-xs text-warning"
+                      }
+                    >
+                      Enter a hex code like #5AA9E6 to save an accent color.
+                    </p>
+                  ) : null}
+                  {accentPreviewFallsBack ? (
                     <p className="text-xs text-warning">
-                      The color you entered didn&apos;t meet contrast
-                      requirements. Using the safe fallback{" "}
-                      {accent.resolvedAccent}.
+                      This color is hard to read on the card, so the preview
+                      shows {accent.resolvedAccent} instead. Saving stores the
+                      color you entered, and the palette is derived from it.
                     </p>
                   ) : null}
                   {/*
@@ -1148,22 +1178,24 @@ function SettingsPageContent() {
                     card*; this one when text is illegible *on the accent* —
                     which is what a primary button actually is, and what this
                     card's own description promises the accent will be used
-                    for. `#0080FD` passes the first and fails this one, so
-                    without it an admin ships unreadable button labels having
-                    been told the colour was fine.
+                    for. `#0086FE` passes the first (4.62:1) and fails this one
+                    (4.45:1). Both check the draft preview only, and each says
+                    what a save does instead, because saving differs from the
+                    preview: the entered colour is stored, not the substitute,
+                    and the saved label (`on-primary`) always clears 4.5:1
+                    (accent-engine.md §8, #2543).
                   */}
                   {previewInkFailsAA ? (
                     <p className="text-xs text-warning">
-                      Label text on this color reads at{" "}
+                      Label text on this preview reads at{" "}
                       {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
-                      Buttons and name tags using it will be hard to read — pick
-                      a lighter or darker shade.
+                      Saving picks a label color that clears it.
                     </p>
                   ) : null}
                   {/*
-                    A third, independent question from the two above — those
-                    are client-side checks of the unsaved draft against a
-                    single fixed backdrop each. This is the server's own §8
+                    Independent of the draft checks above, which run client-side
+                    on the unsaved draft (the two contrast ones against a single
+                    fixed backdrop each). This is the server's own §8
                     verdict on the colour actually saved, generated through
                     the real Signet pipeline. §8 forbids a runtime
                     substitution here, so a failing save still succeeds — this
@@ -1181,7 +1213,14 @@ function SettingsPageContent() {
                 <CardFooter className="flex justify-end">
                   <Button
                     type="submit"
-                    disabled={!canManage || updateChapter.isPending}
+                    disabled={
+                      !canManage ||
+                      updateChapter.isPending ||
+                      accentDraftUnsavable
+                    }
+                    aria-describedby={
+                      accentDraftUnsavable ? accentHexHintId : undefined
+                    }
                   >
                     {updateChapter.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />

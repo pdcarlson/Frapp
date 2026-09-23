@@ -196,7 +196,7 @@ and break every existing client. That is the gap `oasdiff breaking` fills.
 
 Every consumer of this API — `apps/web`, `apps/mobile` — lives in this repo and regenerates from the
 same commit, so a breaking change ships atomically with the clients that adapt to it. The project is
-also mid-rebuild (Frapp → Signet), where removing endpoints is the intended work rather than an
+also mid-rebuild (legacy Frapp → the Signet design system), where removing endpoints is the intended work rather than an
 accident. A hard gate would fire constantly on correct changes and need an escape hatch immediately.
 
 It annotates the run (`::warning::`) so a finding is visible in the Checks UI rather than buried in a

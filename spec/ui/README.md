@@ -1,23 +1,23 @@
 # UI specs
 
-Map of the canonical UI specification for Signet surfaces. This tree governs what the product looks like and how it is laid out; rules about what the product *does* live in [`../behavior/`](../behavior/README.md).
+Map of the canonical UI specification for Frapp's surfaces, built on the Signet design system. This tree governs what the product looks like and how it is laid out; rules about what the product *does* live in [`../behavior/`](../behavior/README.md).
 
 ## Signet
 
-Signet is the rebrand of Frapp. Its dark-first, warm, consumer design system was adopted 2026-08 and is specified under [`design-system/`](design-system/README.md). The visual sources of truth are two committed HTML references:
+Signet is the design system behind the Frapp product. It began as the rebrand of legacy Frapp, and since 2026-09-23 it names only the design system ([ADR-25](../architecture/adr/adr-25.md)). The dark-first, warm, consumer system was adopted 2026-08 and is specified under [`design-system/`](design-system/README.md). The visual sources of truth are two committed HTML references:
 
 | Reference | Contents |
 | --------- | -------- |
 | [`design-system/reference/signet-design-system.dc.html`](design-system/reference/signet-design-system.dc.html) | Design-system panels: foundations, components, iconography, states |
 | [`design-system/reference/canvas-screens.dc.html`](design-system/reference/canvas-screens.dc.html) | The 23 mobile screens (Canvas) |
 
-A third set of boards, the landing reskin under [`landing/reference/`](landing/reference/README.md), **ranks with those two under rule 1** for the landing surface. It was committed as target state and stopped being that when the cutover merged in two parts, tokens in [#2366](https://github.com/pdcarlson/Frapp/issues/2366) and the composition in [#2367](https://github.com/pdcarlson/Frapp/issues/2367). Its README owns the boards' status, including the three standing exceptions that are not drift.
+A third set of boards, the landing reskin under [`landing/reference/`](landing/reference/README.md), **ranks with those two under rule 1** for the landing surface. It was committed as target state and stopped being that when the cutover merged in two parts, tokens in [#2366](https://github.com/pdcarlson/Frapp/issues/2366) and the composition in [#2367](https://github.com/pdcarlson/Frapp/issues/2367). Its README owns the boards' status, including the standing exceptions that are not drift.
 
-Naming: spec prose says **Signet**. Code identifiers, package names, domains, and bundle ids remain `frapp` / `@repo/*` / `frapp.live` for now — the repo rename is deferred. When citing code, cite real current names.
+Naming: the product is **Frapp**, and "Signet" is the design system's internal name. The binding rule is [`brand-identity.md` § 1](brand-identity.md#1-identity) (ADR-25).
 
 ## Precedence
 
-1. **Visuals:** the reference HTML files win over any written doc in this tree. If a doc disagrees with the reference, the doc is wrong and MUST be fixed.
+1. **Visuals:** the reference HTML files win over any written doc in this tree. If a doc disagrees with the reference, the doc is wrong and MUST be fixed. **The product name is the exception.** The boards draw "Signet" as the product name, but a shipped string's name follows [`brand-identity.md` § 1](brand-identity.md#1-identity). Frapp copy that differs from a board is therefore not drift, and never grounds for reverting it to Signet (ADR-25).
 2. **Logic:** [`../behavior/`](../behavior/README.md) wins over anything in this tree. UI specs describe presentation; they never override behavior rules.
 3. Where the two reference files disagree with each other, `canvas-screens.dc.html` wins. Known stale spots in the references are flagged in the owning doc under `design-system/` or `mobile/`.
 4. **Until the [#2140](https://github.com/pdcarlson/Frapp/issues/2140) fold-back,** [`web-greenfield/`](web-greenfield/README.md) outranks [`web-dashboard/`](web-dashboard/README.md) on anything visual or structural the two disagree about, and its own [`reference/`](web-greenfield/reference/README.md) ranks with the boards in rule 1. This is scoped to the web surface and to that fold-back: it changes nothing for `mobile/`, and rules 1 to 3 still bind everything else. `web-greenfield/README.md` §1 carries the full order and what the distrust does **not** license — `web-dashboard/`'s navigation map, gating semantics, routing rules and data contracts are still truth.

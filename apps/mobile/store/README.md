@@ -21,24 +21,27 @@ procedure, and where the size comes from, are in
 They are generated rather than committed (`screenshots/` is gitignored). Whether they
 have been uploaded is recorded on #2454, not here: until that issue closes, assume not.
 
-**Display name vs listing name — they differ, deliberately.** Chrome (home
-screen, iOS Settings) is **Signet**, which comes from `expo.name` in
-[`apps/mobile/app.json`](../app.json) and is what the icon reads on a phone. The
-App Store **listing** name is **`Signet: Chapter Hub`**. That is a separate field
-and it had to differ: `Signet` alone is already on the App Store (app id
-`1483581287`, live in US/GB/BE/JP, alongside Signet Signing, Signet App and
-Signet SIMS), and listing names are globally unique and claimed at record
-creation — typing `Signet` is rejected. Bundle id (`live.frapp.mobile`), slug,
-scheme, and every public URL stay **frapp** until the deferred rename. USPTO
-remains on #1829 / #1901 — this file is the listing paste, not the trademark
-search.
+**The product is Frapp** ([ADR-25](../../../spec/architecture/adr/adr-25.md),
+2026-09-23). The App Store **listing** name is **`Frapp: Chapter Hub`**. The
+owner claimed it in App Store Connect on 2026-09-23, replacing `Signet: Chapter
+Hub`. The listing needs a suffix because listing names are globally unique, and
+plain `Frapp` is already taken (app id `1540087188`), as plain `Signet` was (app
+id `1483581287`).
+
+**The home screen still says Signet.** Chrome (home screen, iOS Settings) comes
+from `expo.name` in [`apps/mobile/app.json`](../app.json), and that string, the
+iOS permission prompts and the in-app copy say **Signet** until ADR-25's step 2
+lands. That step must land before the first production build. The listing text
+below (description, review notes) is also still the Signet paste until then.
+Bundle id (`live.frapp.mobile`), slug, scheme, and every public URL are **frapp**
+permanently. The trademark record is on #1901; this file is the listing paste.
 
 ## Identity
 
 | Field | Value |
 | --- | --- |
-| Name (App Store listing, 30 chars) | Signet: Chapter Hub |
-| Display name (home screen, from `expo.name`) | Signet |
+| Name (App Store listing, 30 chars) | Frapp: Chapter Hub (claimed 2026-09-23; was Signet: Chapter Hub) |
+| Display name (home screen, from `expo.name`) | Signet until ADR-25 step 2, then Frapp |
 | Subtitle (iOS, 30 chars) / Short description (Android, 80 chars) | Your chapter, in one place |
 | Bundle id / package | `live.frapp.mobile` |
 | Category | Productivity (primary); Social Networking (secondary, iOS) |
