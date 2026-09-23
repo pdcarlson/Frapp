@@ -10,7 +10,7 @@ Tiers, audience, vocabulary, and the rest of the positioning live in
 
 ## Modules are chat integrations
 
-An ops module ships as the same four surfaces rather than as a bespoke feature:
+An ops module ships as the same three surfaces rather than as a bespoke feature:
 
 - a **slash command** in the composer — the primary way members create and act on artifacts;
 - one or more **rich message renderers**, keyed off the artifact `kind`;
