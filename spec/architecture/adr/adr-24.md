@@ -85,10 +85,13 @@ digest 07).
 - **Render can't verify a revision before it takes traffic.** The mitigations are a staging soak,
   the promotion gate and rollback by digest. A repeat of bad revisions reaching users is one of
   #2524's triggers.
-- **Staging's deploy path changes** (#2505). Render auto-deploy goes off. `deploy-api.yml` deploys
-  a named commit through the Render API after `migrate-staging` and polls that deploy, as production
-  already does. That fixes the tip build, the double build and the migrations-first ordering that
-  `spec/environments/README.md` § Deploy Ordering requires.
+- **Staging's deploy path changes in two steps.**
+  - **First (#2505).** Render auto-deploy goes off. `deploy-api.yml` deploys the CI-verified commit
+    through the Render API after `migrate-staging` and polls that deploy, as production already
+    does. That fixes the tip build, the double build and the migrations-first ordering that
+    `spec/environments/README.md` § Deploy Ordering requires.
+  - **Then (#2506).** Staging and production both switch to deploying the CI-built image by
+    digest (decision 1). The commit-based path is the interim step.
 - **The API isn't replica-safe yet.** The push and audit-bridge Realtime subscribers double-send
   with two instances, and deploys already overlap briefly. The `@Cron` sweeps are safe, because
   their dispatch-claim rows prevent duplicates (`docs/internal/ops/deployment/render.md` §5.6). The
@@ -110,8 +113,8 @@ digest 07).
   publishable key (#2526), and web and the API move before 2026-12-31 (#2532).
 - **Docs change with the code, not before.** `spec/environments/README.md` describes the current
   pipeline. Each phase corrects it in the same PR as its code.
-- **Other programs.** #1381 closes when #2505 lands (ADR-20, amendment of 2026-09-23). #2351 is
-  dissolved into #2526, #2511 and #2478. ADR-21 stands until #2510 retires Vercel, if it ever does.
+- **Other programs.** #1381 closes when #1383 and #1384 do; their open items are finished inside
+  #2505 (ADR-20, amendment of 2026-09-23). #2351 is dissolved into #2526, #2511 and #2478. ADR-21 stands until #2510 retires Vercel, if it ever does.
 
 **Trigger to revisit:**
 - the v1.0 GA checkpoint, which reviews #2524's triggers;

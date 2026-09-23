@@ -245,18 +245,22 @@ the ones a later reader would otherwise re-litigate.
   `doc-paths` takes it to 19. That is the last count either amendment states, and it will go stale
   the same way the previous one did — read `ALL_REQUIRED_CHECKS` rather than either number.
 
-- **Amendment (2026-09-23) — succeeded by ADR-24.** ADR-24 sets the next delivery program (epic
-  #2504, under the v1.0 GA umbrella #2523). Its rule I1 (build once, promote what staging verified)
-  supersedes decision 3 for the API: CI builds the image once, and Render deploys it by digest. Web
-  and landing keep per-environment builds, which ADR-24 records as an explicit I1 exception, until
-  runtime config lands (#2528). #1381's two open stages move into #2504's first phase, #2505. The alert-routing item of #1383
-  was waiting on the owner's choice of channel, which is now made (the Sentry mobile app).
-  #1384's production-parity items go with it, and so do #1383's other open items. #1381 closes
-  when #1383 and #1384 do. That makes this ADR's trigger to revisit ("the program completes or is
-  abandoned") effectively fired. **Decision 4** (the staged program) and **decision 8** (the
-  master plan lives in #1381) are superseded: the live program is #2504, sequenced by ADR-24.
-  Decisions 1, 2 and 5–7 still stand as written, as do this ADR's earlier amendments as records
-  of their dates.
+- **Amendment (2026-09-23) — succeeded by ADR-24.** ADR-24 sets the next delivery program: epic
+  #2504, under the v1.0 GA umbrella #2523.
+  - **Decision 3 stands.** It is about the web and landing build shape, and ADR-24 keeps
+    per-environment builds for those two apps as a recorded exception to its rule I1 (build once,
+    promote what staging verified) until runtime config lands (#2528). ADR-24 applies I1 to the
+    API, which decision 3 never covered: CI builds the image once, and Render deploys it by
+    digest (#2506).
+  - **#1381's open stages move into #2505.** That covers #1383's alert routing and its other
+    open items, and #1384's production-parity items. The alert channel #1383 was waiting on is
+    now decided: Sentry's Discord integration to a private channel, plus email, plus alert issues
+    assigned to the owner (ADR-24 decision 2).
+  - **#1381 closes when #1383 and #1384 do.** That makes this ADR's trigger to revisit ("the
+    program completes or is abandoned") effectively fired.
+  - **Decisions 4 and 8 are superseded.** Decision 4 (the staged program) and decision 8 (the
+    master plan lives in #1381) give way to #2504, sequenced by ADR-24. Decisions 1–3 and 5–7
+    still stand as written, and this ADR's earlier amendments stand as records of their dates.
 
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an

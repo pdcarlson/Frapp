@@ -2,7 +2,7 @@
 
 ## Primary channels
 
-- **Critical production alerts:** Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, with email as the second path. Alert issues are assigned to the owner (ADR-24 decision 2, 2026-09-23). This is being wired in [#2505](https://github.com/pdcarlson/Frapp/issues/2505). **Until it lands, the only live path is Sentry email to issue owners,** and GitHub alert issues are unassigned.
+- **Critical production alerts:** Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, with email as the second path. Alert issues are assigned to the owner (ADR-24 decision 2, 2026-09-23). This is being wired in [#2505](https://github.com/pdcarlson/Frapp/issues/2505). **Until it lands, the only path seen live is Sentry's default email rule to issue owners** (read 2026-09-09; Render paging was never verified), and GitHub alert issues are unassigned.
 - **Non-critical staging alerts:** a daily Sentry digest (planned in #2505). None exists today.
 - **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API), `frapp-web` (Next dashboard) and `frapp-mobile` (Expo app)
 
@@ -49,7 +49,7 @@
 > (`development` / `staging` / `production`), not a dashboard value — an EAS profile exposes no
 > `VERCEL_ENV` equivalent to the bundle.
 
-> **Sentry *issue-alert* read works; *metric-alert* read still 410s; *create* is human-only.**
+> **As of 2026-09-09: Sentry *issue-alert* read works; *metric-alert* read 410s; *create* is human-only.** The 2026-09-23 update below supersedes part of this.
 > Observed **2026-09-09** via Sentry MCP `find_alert_rules` / `get_alert_rule` (org
 > `frapp-live`, region `https://us.sentry.io`):
 >
@@ -71,17 +71,17 @@
 > to be created by a human in the Sentry UI, and its existence cannot be asserted in CI.
 > Re-check by reading live rules, not by assuming this paragraph.
 >
-> **Update 2026-09-23** (Sentry MCP, for the delivery-plan research on #2504):
-> - `find_alert_rules(kind=metric)` now answers `[]` instead of 410, so the org has no metric rules.
-> - The MCP exposes `create_uptime_monitor`, so an agent session can create uptime monitors. It
->   still can't create alert rules.
-> - `find_uptime_monitors` and `find_monitors` both returned `[]`: no uptime or cron monitors exist.
->
 > **Render paging rules were not verified this session** (Render MCP `list_workspaces`
 > unauthorized). **PostHog alerts** (org Signet, project `569878`, same date): no insight
 > alerts, no error-tracking alerts, no workflows — which is also the live proof that #709
 > is still missing. GitHub-issue watchdogs in the table below are not evidence of
 > provider-side Render or PostHog paging.
+>
+> **Update 2026-09-23** (Sentry MCP, for the delivery-plan research on #2504):
+> - `find_alert_rules(kind=metric)` now answers `[]` instead of 410, so the org has no metric rules.
+> - The MCP exposes `create_uptime_monitor`, so an agent session can create uptime monitors. It
+>   still can't create alert rules.
+> - `find_uptime_monitors` and `find_monitors` both returned `[]`: no uptime or cron monitors exist.
 >
 > **PostHog project settings** (org Signet, project `569878`), live-verified **2026-09-09
 > ~21:32Z** via PostHog MCP `project-get` (`updated_at` 2026-09-09T21:32:34Z):
@@ -116,13 +116,13 @@ tree held five, because a count is a second copy of a fact the rows already stat
 | *Database schema drift — a deployed database no longer matches supabase/migrations/* | `check-migration-drift.yml` (daily 07:00 UTC) | a deployed database's `schema_migrations` does not match `supabase/migrations/` — behind, or carrying a version that exists nowhere in the repo | every environment is back in sync |
 | *PR base sync cannot auto-update PR branches* | `pr-base-sync.yml` (every push to `main`) | at least one open PR was behind `main` and none could be updated automatically — no App token minted, the token rejected, or the update-branch API failing. **P2, not P1:** PRs still merge, they just need `Update branch` by hand, so this is degraded rather than down | a later sweep updates a branch, or runs with a working token and blocks on nothing |
 | *Production deploy guardrails have drifted — auto-deploy or production branch is wrong* | `production-guardrails.yml` (daily 07:15 UTC) | a provider-side production setting no longer matches what the guardrails assert — auto-deploy on, wrong branch, empty or non-`/health` `healthCheckPath`, or a Vercel Git link. **P1.** The title is the lookup key and was not renamed when `healthCheckPath` was added. Listed here as of #1674 — it has raised alerts since it shipped, but the roster above it said "four" and never included it, which is the drift the removed count caused | a later guardrail run finds nothing drifted |
-| *Production /health/ready is failing* | `production-uptime.yml` (every 15 minutes) | live `GET https://api.frapp.live/health/ready` was not HTTP 200 with JSON `status: "ok"`. **P1.** Watches `/health/ready`, not `/health` — `/health` always 2xxes while the process is up. Does not name `environment: production` (#1435). Not a Sentry 60s monitor | a later probe returns 200 `status: "ok"` |
+| *Production /health/ready is failing* | `production-uptime.yml` (scheduled every 15 minutes; GitHub actually runs it about every 3 hours, see ADR-24) | live `GET https://api.frapp.live/health/ready` was not HTTP 200 with JSON `status: "ok"`. **P1.** Watches `/health/ready`, not `/health` — `/health` always 2xxes while the process is up. Does not name `environment: production` (#1435). Not a Sentry 60s monitor | a later probe returns 200 `status: "ok"` |
 | *Production hosts are not on the same tagged commit* | `production-release-pin.yml` (daily 08:00 UTC) | live Render `frapp-api-prod` commit, Vercel `frapp-web` / `frapp-landing` READY production `githubCommitSha`, and a peeled `vX.Y.Z` tag do not name the same SHA — split-brain, or a named-SHA Deploy that skipped Release. Matching `main` is not required. `/health` `commit` is corroboration only. **P1.** Does not name `environment: production` (#1435) | a later run finds the three hosts on one `vX.Y.Z` |
 | *production-backup has required reviewers — nightly dumps will expire* | `production-backup-env.yml` (daily 06:15 UTC) | GitHub environment `production-backup` gained `required_reviewers` or a `wait_timer`, or the GET was unreadable / the env is missing. **P1.** A `schedule:` job that hits that gate suspends and expires, so nightly dumps look covered and write nothing (#1435). Does not name `environment: production` or `environment: production-backup`. `deployment_branch_policy: null` is not this alert | a later run finds empty `protection_rules` |
 | *Nightly production dump is stale or failed — recoverability is unproven* | `production-backup-freshness.yml` (daily 13:15 UTC) | the latest `db-backup.yml` `backup-production` job is missing, not success, hung more than 3h, or last success older than 36h, or the Actions GET was unreadable. **P1.** In-flight under 3h is not this alert and does not close an open one. Does not name `environment: production` or `environment: production-backup` (#1435). The hosted restore leftover stays on its own issue (1861); the reviewer watch stays on its own issue (1956) | a later run finds `backup-production` succeeded within 36h |
 | *Nightly production Storage mirror is stale or failed — recoverability is unproven* | `production-backup-storage-freshness.yml` (daily 14:00 UTC) | the latest `db-backup.yml` `backup-production-storage` job is missing, not success, hung more than 3h, or last success older than 36h, or the Actions GET was unreadable. **P1.** In-flight under 3h is not this alert and does not close an open one. Does not name `environment: production` or `environment: production-backup` (#1435). The Postgres dump watch stays on its own issue (1963); the hosted restore leftover stays on its own issue (1861) | a later run finds `backup-production-storage` succeeded within 36h |
 
-Unlike the others, two alerts comment only on a state *change*, not on every run: the base-sync alert (per-merge) and the production `/health/ready` probe (every 15 minutes). An already-open one is never re-commented. An
+Unlike the others, two alerts comment only on a state *change*, not on every run: the base-sync alert (per-merge) and the production `/health/ready` probe (scheduled every 15 minutes). An already-open one is never re-commented. An
 open one that has gone quiet is still live, not stale. Setup for the App the base-sync alert depends on is human-only
 and tracked in [#689](https://github.com/pdcarlson/Frapp/issues/689).
 
@@ -248,6 +248,8 @@ unread. Treat a missing threshold as a gap, not as a pointer to follow in a dash
 
 ## Escalation
 
-1. On-call acknowledges within 5 minutes.
-2. If unresolved in 15 minutes, escalate to backend lead.
-3. If customer-impacting for 30+ minutes, involve product leadership and status communications.
+Signet has one on-call human: the owner. There is no second responder or rota yet.
+
+1. The owner acknowledges the page on the assigned incident issue. Once #2505 lands, the page arrives in the Discord `#alerts` channel.
+2. Agent sessions may triage an incident issue and report what they find. They never change provider state because an alert suggested it (ADR-24 decision 2).
+3. If a production incident affects chapters for 30 minutes or more, the owner posts a status update to them.

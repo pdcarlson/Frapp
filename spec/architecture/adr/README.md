@@ -26,4 +26,4 @@ One file per ADR. [`spec/architecture/README.md`](../README.md) is the system ma
 | ADR-21: Retire the Vercel Git integration — deploys move into CI (landing 2026-09-01, web 2026-09-02) | [adr-21.md](adr-21.md) |
 | ADR-22: Sentry is the system of record for exceptions and traces; PostHog for product analytics | [adr-22.md](adr-22.md) |
 | ADR-23: Multi-agent budget — one big review, everything else small, explicit effort (2026-09-23) | [adr-23.md](adr-23.md) |
-| ADR-24: Delivery platform — one control plane, build once and promote, Cloud Run for the server surfaces (2026-09-23) | [adr-24.md](adr-24.md) |
+| ADR-24: Delivery platform — outcome-verified delivery on the current hosts; Cloud Run only on triggers (2026-09-23) | [adr-24.md](adr-24.md) |
