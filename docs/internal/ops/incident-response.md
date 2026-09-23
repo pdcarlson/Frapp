@@ -12,7 +12,7 @@ Database rollback and restore are their own procedures:
 
 ### Detection signals
 
-- Uptime monitor fails `/health/ready` — **not `/health`**, which is Render's own `healthCheckPath` and is specified to always return 2xx while the process is up, so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency — or read the body, not the status. In-repo monitor: `.github/workflows/production-uptime.yml` (scheduled every 15 minutes, but GitHub actually runs it about every 3 hours; see ADR-24. Alert title *Production /health/ready is failing*). A Sentry 60 s uptime monitor replaces it under #2505; an agent can create one through the Sentry MCP
+- Uptime monitor fails `/health/ready` — **not `/health`**, which is Render's own `healthCheckPath` and is specified to always return 2xx while the process is up, so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency — or read the body, not the status. In-repo monitor: `.github/workflows/production-uptime.yml` (scheduled every 15 minutes, but GitHub runs it far less often than that; see ADR-24. Alert title *Production /health/ready is failing*). A Sentry 60 s uptime monitor replaces it under #2505; the Sentry MCP exposes `create_uptime_monitor`, not yet exercised
 - Render service marked unhealthy
 - Elevated 5xx alerts
 
@@ -37,7 +37,7 @@ Database rollback and restore are their own procedures:
 - [ ] Validate required env vars are present
 - [ ] Verify DB connectivity from API
 - [ ] Re-run post-deploy smoke checks
-- [ ] Confirm `GET /health/ready` returns HTTP 200 with JSON `status: "ok"` (curl, or the next **Production uptime** run). Green on `/health` alone does not clear a degraded dependency. The in-repo monitor is scheduled every 15 minutes but runs about every 3 hours in practice, so don't treat that job as a green window
+- [ ] Confirm `GET /health/ready` returns HTTP 200 with JSON `status: "ok"` with curl rather than waiting on the next **Production uptime** run. Green on `/health` alone does not clear a degraded dependency. The in-repo monitor is scheduled every 15 minutes but runs far less often than that (see ADR-24), so its next run can be hours away
 
 ### Communication
 

@@ -35,7 +35,7 @@
 
 - [x] Store the staging Render deploy hook in Infisical `staging`. Production uses no deploy hook; see [`render.md` §5.7](render.md#57-deploy-hooks-for-github-actions).
 - [ ] Verify CI workflow runs on PRs
-- [x] In-repo uptime: `.github/workflows/production-uptime.yml` (see [`AGENT_INFRA.md`](../../ci-cd/AGENT_INFRA.md) § Scheduled conformance). A Sentry 60 s monitor replaces it under #2505. An agent can create one through the Sentry MCP, and the free plan allows one. GitHub cron starts after this file is on `main`
+- [x] In-repo uptime: `.github/workflows/production-uptime.yml` (see [`AGENT_INFRA.md`](../../ci-cd/AGENT_INFRA.md) § Scheduled conformance). A Sentry 60 s monitor replaces it under #2505. The Sentry MCP exposes `create_uptime_monitor` (not yet exercised), and the free plan allows one monitor. GitHub cron starts after this file is on `main`
 
 ---
 

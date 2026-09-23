@@ -205,7 +205,7 @@ Script implementations and unit tests live under [`scripts/ci/`](../../../../scr
 | `SUPABASE_ACCESS_TOKEN`  | Supabase CLI auth for migrations                         |
 | `SUPABASE_PROJECT_REF`   | Target DB for migrations (value differs per environment) |
 
-3 permanent GitHub repository secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, and `INFISICAL_PROJECT_ID`. The provider API tokens that the deploy and observer workflows call Render and Vercel with, `RENDER_API_KEY` and `VERCEL_API_KEY`, are repository secrets too. Scoping all of these per environment is [#2518](https://github.com/pdcarlson/Frapp/issues/2518).
+3 permanent GitHub repository secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, and `INFISICAL_PROJECT_ID`. The provider API tokens the deploy and observer workflows use are listed in [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets). Scoping these secrets per environment is [#2518](https://github.com/pdcarlson/Frapp/issues/2518).
 
 See `docs/internal/environment/ENV_REFERENCE.md` for the complete variable mapping.
 
