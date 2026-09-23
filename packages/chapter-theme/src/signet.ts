@@ -21,7 +21,13 @@
  * DOM-free and CommonJS-safe, because the NestJS API calls it.
  */
 
-import { contrastRatio, normalizeHex, parseHex } from "@repo/color";
+import {
+  AA_LARGE,
+  AA_NORMAL,
+  contrastRatio,
+  normalizeHex,
+  parseHex,
+} from "@repo/color";
 import Color from "colorjs.io";
 
 import type { SignetPalette } from "./accent-vars.js";
@@ -61,7 +67,7 @@ const GENERATOR_PARAMS = {
 export const HOUSE_SEED = "#DDB844";
 
 /** WCAG AA for normal text, the floor the accent-derived text roles must clear. */
-const MIN_TEXT_CONTRAST = 4.5;
+const MIN_TEXT_CONTRAST = AA_NORMAL;
 
 /**
  * WCAG 1.4.11 non-text contrast, the floor the `accent-primary` fill must clear
@@ -69,7 +75,7 @@ const MIN_TEXT_CONTRAST = 4.5;
  * consumers — the switch track, the active tab underline, the focus ring
  * border, poll selection — so a legible label on a button is not enough.
  */
-const MIN_FILL_CONTRAST = 3;
+const MIN_FILL_CONTRAST = AA_LARGE;
 
 /**
  * How far one lift step raises the failing fill's OKLCH lightness. Small enough that the
@@ -275,11 +281,12 @@ export function liftAccent(
 /**
  * Generates the Signet accent role tokens for one chapter seed.
  *
- * **Never throws.** That is load-bearing rather than stylistic:
- * `ChapterOnboardingService.buildPalette` wraps its palette call in a
- * try/catch that returns `null`, so a throw here would not surface as an error —
- * it would silently onboard a chapter with no palette at all. An unusable seed
- * therefore falls back to the house seed and says so on `invalidSeed`.
+ * **Never throws.** That is load-bearing rather than stylistic: every API
+ * writer calls it bare, and onboarding calls it before the chapter row exists,
+ * so a throw here fails chapter creation outright
+ * (`apps/api/src/application/services/chapter-palette.ts` records the call
+ * sites). An unusable seed therefore falls back to the house seed and says so
+ * on `invalidSeed`, and the fill lift only ever converts a normalized hex.
  *
  * @example
  * deriveSignetPalette("#8B0000")   // crimson chapter

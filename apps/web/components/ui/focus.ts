@@ -21,15 +21,13 @@
  * How strong that border is depends on the chapter, and the figure this comment
  * used to give ("8.7:1 and up") was the house seed's, stated as if it were
  * everyone's. Solid `--primary` against the ladder step behind it ranges
- * 3.01–18.71:1 across the 19 seeds; the house seed sits near the top at
- * 8.70–9.81. The bottom of that range was 1.50:1 until #2541: the engine now
- * holds accent-9 to 3:1 on every ladder step (`accent-engine.md` §8), so the
- * border half of `FOCUS_RING` conforms for every palette written since. A
- * chapter's stored palette keeps its old fill until it is next saved or
- * recomputed, so an existing dark-accent chapter still paints the old border
- * until then; the backfill is #1165. The guarantee is pinned in
- * `packages/chapter-theme/src/signet.spec.ts`, not in `focus-contrast.spec.ts`,
- * which guards only the offset recipe.
+ * 3.01–18.71:1 across the 19 seeds (the house seed's is 7.88–9.81: 7.88 on
+ * `--popover`, 8.70 on `--card`). The bottom of that range was 1.50:1 until
+ * #2541: the engine now holds accent-9 to 3:1 on every ladder step
+ * (`accent-engine.md` §8), so the border half of `FOCUS_RING` conforms for
+ * every palette written since (`accent-engine.md` §4 covers stored ones). The
+ * guarantee is pinned in `packages/chapter-theme/src/signet.spec.ts`, not in
+ * `focus-contrast.spec.ts`, which guards only the offset recipe.
  *
  * That is also why `FOCUS_RING` is wrong for a control whose border already
  * encodes something. On a `Switch` the border carries on/off, and on a

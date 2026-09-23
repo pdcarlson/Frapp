@@ -540,7 +540,7 @@ Chapter theming runs deeper than an accent chip — it themes the chrome, messag
 
 ### What produces it
 
-`deriveSignetPalette(seed?)` (`packages/chapter-theme/src/signet.ts`) wraps a vendored Radix generator and emits the `--signet-*` role tokens. It never throws: an absent or unparseable seed resolves to house gold and reports `invalidSeed`. Contrast is guaranteed **by construction** for the roles that paint text, asserted at generation time rather than re-checked per surface (`accent-engine.md` §8).
+`deriveSignetPalette(seed?)` (`packages/chapter-theme/src/signet.ts`) wraps a vendored Radix generator and emits the `--signet-*` role tokens. It never throws: an absent or unparseable seed resolves to house gold and reports `invalidSeed`. Contrast is guaranteed **by construction**, asserted at generation time rather than re-checked per surface: 4.5:1 for the roles that paint text, and 3:1 for the `accent-primary` fill on every ladder surface (`accent-engine.md` §8, which also says what the fill floor leaves out).
 
 The **neutral ladder is not derived**. Backgrounds, borders, the sidebar and the text ladder are fixed constants; chapter identity reaches a surface only through engine accent roles. That is a deliberate reversal — see *Why the sidebar is not branded* below.
 
