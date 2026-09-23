@@ -142,9 +142,9 @@ Do not collapse these into the verdict: `allowed` folds in `isPending` and `isOf
 
 **Use the shared primitive, not the raw hook.** `useSubscriptionGate` / `useGatedDialog` / `SubscriptionNotice` (`apps/web/components/shared/subscription-gate.tsx`) package the six things a correct gated control needs: the pending fold-in, the offline fold-in, the mid-flight revoke, the refusal to open, the `aria-describedby` / `title` wiring, and the notice. `useSubscriptionWriteState` remains the predicate underneath, for callers that need the verdict without a control. Pass your own busy flags to `controlProps(alsoDisabled)` rather than OR-ing them in afterwards — spreading the props and then writing your own `disabled` silently drops the gate.
 
-Every paid-ops write **affordance** in `apps/web` is mirrored except the rows the table below marks **not mirrored**: the backwork taxonomy drawer, the chat rush card and the Discord import wizard. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
+Every paid-ops write **affordance** in `apps/web` is mirrored except the rows the table below marks **not mirrored**: the chat slash commands, the backwork taxonomy drawer, the chat rush card and the Discord import wizard. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
 
-Beyond those rows, two gaps are known and tracked, not overlooked:
+Two gaps are known and tracked, not overlooked (the first is the slash-command entries the table marks **not mirrored**):
 
 - **The chat slash commands.** `/event`, `/task`, `/points`, `/hours` and `/rush` dispatch straight to `POST /v1/events`, `/v1/tasks`, `/v1/points/adjust`, `/v1/service-entries` and `/v1/rush/candidates` (plus its vote and bid routes) from `packages/chat-core/src/dispatch.ts`. The palette filters on module state only, and a *typed* command bypasses the palette entirely — so the gate has to sit on the dispatcher, not on a control, which is a different shape from everything above.
 - **Residual `chapter.subscription.*` errors.** Nothing yet reads the guard's structured codes off a rejected response to render the remedy alongside the message. That is the backstop for exactly the paths a client-side mirror cannot cover, the typed slash command among them.
@@ -162,19 +162,19 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | `attendance` | 3 | `components/events/attendance-panel.tsx` · `components/chat/renderers/event-card.tsx` (check-in) |
 | `backwork` | 9 | `components/backwork/backwork-page.tsx` · `components/backwork/backwork-taxonomy-drawer.tsx` (department/professor edit, delete, merge; **not mirrored**) |
 | `chapter-document` | 6 | `components/documents/documents-page.tsx` |
-| `event` | 3 | `components/events/events-page.tsx` (both create triggers) · `components/events/event-editor-dialog.tsx` · `components/events/event-detail-sheet.tsx` (edit + delete) · the `/event` slash command (`packages/chat-core/src/dispatch.ts`; see the slash-command gap above) |
+| `event` | 3 | `components/events/events-page.tsx` (both create triggers) · `components/events/event-editor-dialog.tsx` · `components/events/event-detail-sheet.tsx` (edit + delete) · the `/event` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `financial-invoice` | 3 (+1 exempt) | `components/billing/invoice-list.tsx` |
-| `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points/points-adjustment-dialog.tsx` · the `/points` slash command (`packages/chat-core/src/dispatch.ts`; see the slash-command gap above) |
+| `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points/points-adjustment-dialog.tsx` · the `/points` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `poll` | 4 | `components/polls/polls-page.tsx` |
 | `discord-connection` | 3 | `components/discord-import/connect-step.tsx` · `components/discord-import/import-wizard.tsx` (**not mirrored**) |
 | `discord-import` | 10 | `components/discord-import/*` (**not mirrored**) |
 | `report` | 4 | `components/reports/reports-page.tsx` |
-| `rush` | 3 | `components/chat/renderers/rush-card.tsx` (vote, bid; **not mirrored**) · the `/rush` slash command (`packages/chat-core/src/dispatch.ts`; see the slash-command gap above) |
+| `rush` | 3 | `components/chat/renderers/rush-card.tsx` (vote, bid; **not mirrored**) · the `/rush` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `semester-rollover` | 1 | `components/settings/settings-page.tsx` (rollover only) |
-| `service-entry` | 4 | `components/service/service-page.tsx` · the `/hours` slash command (`packages/chat-core/src/dispatch.ts`; see the slash-command gap above) |
+| `service-entry` | 4 | `components/service/service-page.tsx` · the `/hours` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `study` → `StudyGeofenceController` | 3 | `components/geofences/geofences-admin-page.tsx` |
 | `study` → `StudySessionController` | 5 | `components/study/study-page.tsx` |
-| `task` | 5 | `components/tasks/tasks-board.tsx` · `components/chat/renderers/task-card.tsx` · the `/task` slash command (`packages/chat-core/src/dispatch.ts`; see the slash-command gap above) |
+| `task` | 5 | `components/tasks/tasks-board.tsx` · `components/chat/renderers/task-card.tsx` · the `/task` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 
 Where a dialog's `open` state lives in a parent, the **parent** carries the gate — rule 1 is about the control that starts the flow, and a dialog cannot refuse to open on its own behalf. `useGatedDialog` returns `contentProps` as well as `dialogProps`; a parent that owns `open` but not the `DialogContent` has to forward `onCloseAutoFocus` through, or the revoke path drops focus to `<body>`.
 

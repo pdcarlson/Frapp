@@ -61,7 +61,7 @@ class RealtimeManager {
 
 ## Channel Subscriptions
 
-For each open chat channel, subscribe to Postgres changes. The two sketches in this section show the pattern only and are not code to copy: the implementation is `RealtimeManager` (`packages/chat-core/src/realtime-manager.ts`), which owns the `chat:channel:<id>` topic as a private channel and writes a normalized `ChannelCache` under `chatMessagesKey(channelId)`, not an array.
+For each open chat channel, subscribe to Postgres changes. This sketch and the one under Cleanup below show the pattern only and are not code to copy: the implementation is `RealtimeManager` (`packages/chat-core/src/realtime-manager.ts`), which owns the `chat:channel:<id>` topic as a private channel and writes a normalized `ChannelCache` under `chatMessagesKey(channelId)`, not an array.
 
 ```typescript
 supabase
