@@ -33,12 +33,12 @@ import {
  *    guaranteed by the engine at generation time
  *    (`spec/ui/design-system/accent-engine.md` §8) — there is no per-token
  *    client-side fallback to run.
- *  - A row missing any of those keys leaves the house-gold defaults baked
- *    into `signet.css` standing. Rows persisted before the Signet map existed
- *    were that case until the API's stale-palette sweep recomputed them
- *    (accent-engine.md §4, #1165); the gate stays, so a malformed row degrades
- *    to house gold rather than half a palette. Nothing here assumes the keys
- *    exist.
+ *  - A row missing any of those keys leaves the default-seed (`#DDB844`)
+ *    palette baked into `signet.css` standing. Rows persisted before the Signet
+ *    map existed were that case until the API's stale-palette sweep recomputed
+ *    them (accent-engine.md §4, #1165); the gate stays, so a malformed row
+ *    degrades to that default rather than half a palette. Nothing here assumes
+ *    the keys exist.
  *  - **No legacy token is applied at all**, which is why this is an allow-list
  *    rather than the blind key iteration it used to be. `derivePalette` was
  *    deleted at the slice-9 cutover so nothing writes its map any more, but

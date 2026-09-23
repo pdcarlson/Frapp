@@ -432,10 +432,10 @@ const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
 };
 
 /**
- * What the fingerprint derives, beyond the directory corpus. The directory's 19
- * seeds exercise the lift and the on-primary substitution, but the generator
- * snaps each seed to its nearest Radix scales, and 15 of its 29 scales are no
- * directory seed's nearest: slate, sage, olive, ruby, crimson, plum, iris,
+ * What the fingerprint derives, beyond `ALL_SEEDS`. The 18 directory colours and
+ * the house seed exercise the lift and the on-primary substitution, but the
+ * generator snaps each seed to its nearest Radix scales, and 15 of its 29
+ * scales are the nearest for none of those 19 seeds: slate, sage, olive, ruby, crimson, plum, iris,
  * blue, cyan, teal, jade, green, mint, lime and yellow (measured 2026-09-23 by
  * instrumenting `getScaleFromColor`). A change confined to one of those scales
  * moved at most a secondary mix of a directory seed, and for most of them

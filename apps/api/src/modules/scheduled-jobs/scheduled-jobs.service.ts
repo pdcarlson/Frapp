@@ -271,8 +271,8 @@ export class ScheduledJobsService {
    * not one. The guard's other half, the seed, is what stops this sweep from
    * overwriting an officer's accent save that landed after the read.
    *
-   * Converges: an invalid seed still produces a palette (house gold, logged
-   * once), which stamps the row, so no row is retried forever over bad data.
+   * Converges: an invalid seed still produces a palette (the default seed's,
+   * logged once), which stamps the row, so no row is retried forever over bad data.
    * Only a row whose write fails outright stays stale, and it is logged every
    * tick until it succeeds.
    */

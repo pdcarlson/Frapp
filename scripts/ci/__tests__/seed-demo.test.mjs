@@ -161,7 +161,8 @@ test("a template without exactly one settings marker is refused", () => {
 test("the demo chapter's accent is mirrored into branding, the seed every palette write reads (#1165)", () => {
   // `branding.colors.accent` is authoritative and `accent_color` mirrors it. The
   // API's stale-palette sweep derives the palette from branding alone, so a seed
-  // that sets only the column paints house gold while Settings shows its accent.
+  // that sets only the column paints the default seed (#DDB844) while Settings
+  // shows its accent.
   const insert = TEMPLATE.slice(TEMPLATE.indexOf("INSERT INTO chapters"));
   const statement = insert.slice(0, insert.indexOf(";"));
   const pair = statement.match(/'(#[0-9A-Fa-f]{6})',\s*'\{"colors":\{"accent":"(#[0-9A-Fa-f]{6})"\}\}'::jsonb/);

@@ -264,7 +264,7 @@ stale-palette sweep recomputes every row that is behind, which includes every ro
 stamp existed ([`../design-system/accent-engine.md`](../design-system/accent-engine.md) §4). In each
 environment the fix lands on the first hourly tick after the API carrying #1165 deploys. Don't take
 the second option, clearing the Signet keys: a row whose stamp is current is never selected again, so
-cleared keys would stay cleared and paint the default-seed (`#DDB844`) palette for good. The entry below is kept as the
+cleared keys would stay cleared for good: web would paint its default-seed (`#DDB844`) palette, and mobile its legacy fallback until [#2595](https://github.com/pdcarlson/Frapp/issues/2595) removes it. The entry below is kept as the
 measurement that scoped it.
 
 `deriveSignetPalette` generates from `GENERATOR_PARAMS.background`, which moved with the ladder.
