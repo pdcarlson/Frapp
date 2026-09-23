@@ -57,12 +57,11 @@ BEGIN
       JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
      WHERE c.contype = 'f' AND c.confrelid = 'public.users'::regclass
        AND array_length(c.conkey, 1) = 1
-       AND c.confdeltype IN ('c', 'a', 'r')
        AND t.relname NOT IN ('users', 'push_tokens', 'user_settings')
   LOOP
     EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I::text LIKE %L)', r.tbl, r.col, 'c0ffee00-0000-4000-8000-1000%') INTO hit;
     IF hit THEN
-      RAISE EXCEPTION 'a demo account still has rows in %.% once its chapter is gone, so they belong to another chapter; refusing to delete the account, which would cascade through or fail on them', r.tbl, r.col;
+      RAISE EXCEPTION 'a demo account is still referenced from %.% once its chapter is gone; refusing to delete the account, which would delete, block on or rewrite that row outside the demo chapter', r.tbl, r.col;
     END IF;
   END LOOP;
 END $guard$;
@@ -209,7 +208,6 @@ BEGIN
       JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
      WHERE c.contype = 'f' AND c.confrelid = 'public.users'::regclass
        AND array_length(c.conkey, 1) = 1
-       AND c.confdeltype IN ('c', 'a', 'r')
        AND t.relname NOT IN ('users', 'push_tokens', 'user_settings')
     LOOP
       EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I = %L)', r.tbl, r.col, v_owner) INTO hit;

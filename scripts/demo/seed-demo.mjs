@@ -175,12 +175,13 @@ export function renderSeedSql({ template, namespace, loginEmail, reviewer = fals
 }
 
 /**
- * The foreign keys onto `users` that deleting an account would act on: those that cascade
- * (taking the referencing rows with it) or that do not (failing the delete). `set null` ones
- * only lose the reference, so they are left out, and so are the tables a user owns outright,
- * `push_tokens` and `user_settings`, which go with the account. Read from the catalog, so a
- * table added later is covered with no edit. demo-seed.sql uses this query twice (the reset
- * guard and the login adoption), and a test holds its copies to this one.
+ * The foreign keys onto `users` that deleting an account would act on, whatever the action:
+ * cascade takes the referencing rows with it, restrict fails the delete, and set null rewrites
+ * the row, which in another chapter means its audit log losing the actor or its legal
+ * acceptance losing who accepted, with no error. So every one counts, except the tables a
+ * user owns outright, `push_tokens` and `user_settings`, which go with the account. Read from
+ * the catalog, so a table added later is covered with no edit. demo-seed.sql uses this query
+ * twice (the reset guard and the login adoption), and a test holds its copies to this one.
  */
 export const USER_REF_FKS_SQL =
   `    SELECT c.conrelid::regclass AS tbl, a.attname AS col\n` +
@@ -189,7 +190,6 @@ export const USER_REF_FKS_SQL =
   `      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]\n` +
   `     WHERE c.contype = 'f' AND c.confrelid = 'public.users'::regclass\n` +
   `       AND array_length(c.conkey, 1) = 1\n` +
-  `       AND c.confdeltype IN ('c', 'a', 'r')\n` +
   `       AND t.relname NOT IN ('users', 'push_tokens', 'user_settings')\n`;
 
 /**
@@ -214,7 +214,7 @@ export function accountGuardSql(userIdLike) {
     `  LOOP\n` +
     `    EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I::text LIKE %L)', r.tbl, r.col, '${userIdLike}') INTO hit;\n` +
     `    IF hit THEN\n` +
-    `      RAISE EXCEPTION 'a demo account still has rows in %.% once its chapter is gone, so they belong to another chapter; refusing to delete the account, which would cascade through or fail on them', r.tbl, r.col;\n` +
+    `      RAISE EXCEPTION 'a demo account is still referenced from %.% once its chapter is gone; refusing to delete the account, which would delete, block on or rewrite that row outside the demo chapter', r.tbl, r.col;\n` +
     `    END IF;\n` +
     `  END LOOP;\n` +
     `END $guard$;\n`
@@ -572,6 +572,22 @@ export async function uploadPlaceholders({ supabaseUrl, serviceKey, namespace, f
   return results;
 }
 
+/**
+ * Refuse, before anything is deleted, any listed path that is not plainly under `prefix`
+ * (`chapters/<chapterId>/`): outside it, or reaching back out of it through a `.`, `..` or
+ * empty segment. The lister builds each path from the folder it started in, so this cannot
+ * fire today; it is what stops a later change to that walk from deleting another chapter's
+ * files in every bucket of a production project.
+ */
+export function assertUnderPrefix(bucket, paths, prefix) {
+  for (const path of paths) {
+    const rest = path.startsWith(prefix) ? path.slice(prefix.length) : null;
+    if (rest === null || rest.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+      throw new Error(`refusing to delete ${bucket}/${path}: not a file under ${prefix}`);
+    }
+  }
+}
+
 /** The most objects one bulk delete names: Storage can cap a bulk delete at 1000 per request. */
 export const STORAGE_DELETE_BATCH = 1000;
 
@@ -618,9 +634,7 @@ export async function removePlaceholders({ supabaseUrl, serviceKey, namespace, f
       fetchImpl: retrying,
     });
     const paths = objects.map((o) => o.path);
-    for (const path of paths) {
-      if (!path.startsWith(prefix)) throw new Error(`refusing to delete ${bucket}/${path}: outside ${prefix}`);
-    }
+    assertUnderPrefix(bucket, paths, prefix);
     for (let start = 0; start < paths.length; start += STORAGE_DELETE_BATCH) {
       const batch = paths.slice(start, start + STORAGE_DELETE_BATCH);
       await request(
@@ -738,7 +752,8 @@ export async function verifyLogin({
   if (!zoned) {
     fail(
       `no upcoming event with a check-in zone (${upcoming.length} upcoming in all): the seed is stale. ` +
-        `Re-run ${reseed} and \`storage --namespace ${namespace}\`, then verify again`,
+        `Tear it down with \`sql --remove\` and \`storage --remove\`, re-run ${reseed} and \`storage --namespace ${namespace}\`, ` +
+        "then verify again (docs/guides/demo-data.md, Re-seed before every submission)",
     );
   }
   pass(

@@ -12,6 +12,7 @@ import {
   TEMPLATE_NAMESPACE,
   TEMPLATE_PATH,
   assertDemoObjectPath,
+  assertUnderPrefix,
   assertPasswordAllowed,
   assertProductionAllowed,
   demoIds,
@@ -434,6 +435,23 @@ test("storage --remove clears the chapter's prefix in every bucket, reviewer upl
   assert.ok(listed.every((prefix) => prefix === dir || prefix.startsWith(root)), "nothing outside the chapter's prefix is listed");
 });
 
+test("storage --remove refuses any listed path not plainly under the chapter's folder", () => {
+  // The lister builds paths from the folder it starts in, so removePlaceholders cannot feed this
+  // a stray path today; the check is what a later change to that walk would hit.
+  const prefix = `chapters/${demoIds("a9900000").chapterId}/`;
+  assert.doesNotThrow(() => assertUnderPrefix("chat", [`${prefix}chat/c1/m1/photo.jpg`, `${prefix}documents/d1/a.pdf`], prefix));
+  for (const stray of [
+    `chapters/${demoIds("b0000000").chapterId}/documents/d1/a.pdf`,
+    `${prefix}../other/documents/a.pdf`,
+    `${prefix}documents/./a.pdf`,
+    `${prefix}documents//a.pdf`,
+    `${prefix}`,
+    "documents/a.pdf",
+  ]) {
+    assert.throws(() => assertUnderPrefix("documents", [stray], prefix), /refusing to delete documents\/.*: not a file under chapters\//, stray);
+  }
+});
+
 test("storage --remove refuses while the chapter row exists, before it lists or deletes anything", async () => {
   // `sql --remove` can refuse; objects deleted ahead of it would leave rows pointing at nothing.
   const ns = "a9900000";
@@ -639,11 +657,11 @@ test("verify's re-seed advice keeps --reviewer when it checked the reviewer vari
   // `sql` without it would rebuild the marketing chapter over the reviewer's.
   const stale = [{ name: "Old", start_time: "2026-09-01T12:00:00.000Z", check_in_zone: ZONE }];
   const reviewer = makeFetch(verifyRoutes({ events: stale }));
-  await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: reviewer.fetchImpl }), /Re-run `sql --namespace a9900000 --reviewer`/);
+  await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: reviewer.fetchImpl }), /sql --remove` and `storage --remove`, re-run `sql --namespace a9900000 --reviewer`/);
   const unlinked = makeFetch(verifyRoutes({ meId: "some-new-user" }));
   await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: unlinked.fetchImpl }), /Run `sql --namespace a9900000 --reviewer` \(after `auth`\)/);
   const marketing = makeFetch(verifyRoutes({ events: stale }));
-  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: marketing.fetchImpl }), /Re-run `sql --namespace a9900000` and/);
+  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: marketing.fetchImpl }), /re-run `sql --namespace a9900000` and/);
 });
 
 // ── setup-demo.sh ───────────────────────────────────────────────────────────

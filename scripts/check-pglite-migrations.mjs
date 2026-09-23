@@ -2513,15 +2513,15 @@ console.log("\n=== demo seed load (#2308) ===");
     );
     await db.exec(`delete from point_transactions where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}';`);
 
-    // A reference deleting the account would only null out is no reason to refuse either: a
-    // directory request the login filed for a chapter since deleted keeps its row, with
-    // requested_by set null, and the re-seed goes ahead.
+    // A reference deleting the account would only null out refuses too: in another chapter
+    // that null is its audit log losing the actor, rewritten with no error. A directory
+    // request the login filed stands in for it here, and is left as it was.
     await db.exec(
       `insert into chapter_directory_requests (requested_by, university) values ('${reviewerLogin}', 'Demo University');`,
     );
-    await db.exec(reviewerSql);
-    const orphanRequest = await n(
-      `select count(*)::int as n from chapter_directory_requests where university = 'Demo University' and requested_by is null`,
+    const refusedNullable = await refuses(reviewerSql);
+    const requestKept = await n(
+      `select count(*)::int as n from chapter_directory_requests where university = 'Demo University' and requested_by = '${reviewerLogin}'`,
     );
     await db.exec(`delete from chapter_directory_requests where university = 'Demo University';`);
 
@@ -2588,7 +2588,7 @@ console.log("\n=== demo seed load (#2308) ===");
       [refusedCrossReseed && refusedCrossRemove && crossKept === 1 && same(afterCross, reviewer), "a seeded account in another chapter makes the re-seed and sql --remove refuse, and that membership survives"],
       [refusedLeftRows && leftRowsKept === 1, "rows a seeded account left in another chapter, with no membership there, also make the re-seed refuse"],
       [Number(ownedLeft) === 0, "a push token and a settings row go with the account, without a refusal"],
-      [orphanRequest === 1, "a set-null reference (a directory request for a deleted chapter) does not refuse; it is nulled"],
+      [refusedNullable && requestKept === 1, "a reference the delete would only null (a directory request) refuses too, and is left intact"],
       [adopted.loginAuthId === REVIEWER_AUTH_ID && shells === 1, `a chapterless row from an early sign-in is adopted (linked ${adopted.loginAuthId}, ${shells} row on the auth id)`],
       [refusedInUse && inUseKept === 1, "a row on the login's auth id that is a member of a chapter is refused, not taken over"],
       [refusedLeftOwner && leftOwnerKept === 1, "so is one with no membership but points in a chapter it has left"],

@@ -113,11 +113,13 @@ for production is `prod`.
 - The seed refuses to link a login whose earlier `users` row anything still
   references (a membership, rows in a chapter it has left), and `--reviewer`
   refuses to run at all until a marked login exists. The seed and `sql --remove`
-  also refuse while any seeded account has rows that deleting it would cascade
-  through or fail on once the demo chapter is gone: a membership in, or anything
-  written to, another chapter (the App Review login founding one, say). A
-  reference that would only be nulled, such as a directory request, does not
-  count. Either way the whole seed is one transaction, so a failed re-seed leaves the chapter it
+  also refuse while anything outside the demo chapter still references a seeded
+  account once that chapter is gone: a membership in, or anything written to,
+  another chapter (the App Review login founding one, say), whether deleting the
+  account would delete that row, fail on it, or null its reference, which would
+  strip another chapter's audit log of its actor. A directory request the login
+  filed counts too; clear it by hand. Only what the account owns outright (its
+  push tokens and settings) goes with it. Either way the whole seed is one transaction, so a failed re-seed leaves the chapter it
   was replacing exactly as it was.
 
 ### Production (App Review)
@@ -154,8 +156,13 @@ read -rs DEMO_PASSWORD && export DEMO_PASSWORD
 **Re-seed before every submission, the same day.** Events are dated relative to
 the day the seed runs, and the one with a check-in zone, the Chapter Meeting, is at
 19:00 UTC two days later, so `verify` fails 43 to 67 hours after a seed. App Review
-can take longer than that; the seed's last event is 12 days out. Re-run steps 2 to 4. The login and its password persist, and `storage` overwrites the
-same objects in place: document ids are fixed, so each run names the same files.
+can take longer than that; the seed's last event is 12 days out. First tear the
+last one down with `sql --remove` and then `storage --remove`, as below but without
+`auth --remove`, then re-run steps 2 to 4. Re-seeding over it would clear the
+reviewer's rows but not their uploads: a chat photo or avatar under
+`chapters/<chapter id>/` would stay in production Storage with nothing pointing at
+it, and only `storage --remove` clears that folder. The login and its password
+persist, and step 2 links the same login again.
 
 **To remove a demo chapter**, apply `sql --remove` first: it prints the chapter
 and user deletes, and it is the step that can refuse (a seeded account with rows in
