@@ -1090,12 +1090,15 @@ export class ChatService {
    * channel delete or the import purge).
    *
    * **A state read, not an authorization.** It returns no content and grants
-   * nothing, and it has exactly two callers in `ChatReportService`, each
+   * nothing, and it has exactly three callers in `ChatReportService`, each
    * passing a message id it already holds by right: a message the reporter
-   * was just authorized to read (the re-check after a report is written), and
-   * the message a chapter-scoped, reviewer-visible report names (the removal
-   * route's answer for a report that is already `actioned`). The channel must
-   * still resolve inside `chapterId`, as every message path here requires.
+   * was just authorized to read (the re-check after a report is written); the
+   * message a chapter-scoped, reviewer-visible report names, for the removal
+   * route's answer to a report that is already `actioned`; and the same
+   * message after a removal of it failed on a 5xx or a lost response
+   * (`messageStateAfterFailedRemoval`), from a report that call had just
+   * claimed. The channel must still resolve inside `chapterId`, as every
+   * message path here requires.
    */
   async reportedMessageState(
     messageId: string,
@@ -1109,6 +1112,23 @@ export class ChatService {
     );
     if (!channel) return null;
     return { channelId: message.channel_id, isDeleted: message.is_deleted };
+  }
+
+  /**
+   * Finish a reported message's removal whose soft delete committed but whose
+   * answer was lost: the tombstone landed, and the Storage purge that follows
+   * it in {@link softDeleteMessage} never ran. Best effort like that purge, and
+   * a no-op for objects already gone or still referenced by another message.
+   *
+   * Callers confirm the message is deleted first ({@link reportedMessageState})
+   * — this neither authorizes nor checks, and on a message still in place it
+   * would delete files that message still shows.
+   */
+  async purgeRemovedMessageAttachments(
+    messageId: string,
+    chapterId: string,
+  ): Promise<void> {
+    await this.purgeAttachmentObjects(messageId, chapterId);
   }
 
   /**

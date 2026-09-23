@@ -387,23 +387,25 @@ export class ChatReportService {
    *    report could be dismissed between the read and the delete, and the
    *    message would be removed on a capability that no longer existed.
    * 2. **Remove.** The ordinary soft delete, through the grant. If it fails,
-   *    the message is read again first
-   *    ({@link messageStateAfterFailedRemoval}): a failure is not proof that
-   *    nothing was written, because Postgres can commit the tombstone and the
-   *    answer still be lost on the way back.
-   *    - **Still there** (or unreadable): the claim is withdrawn
-   *      ({@link releaseClaim}) before the error is rethrown. An `actioned`
-   *      report over a message still in place is a false statement in the
-   *      moderation record, and the report must be open for a retry to use.
-   *    - **Gone:** the claim stands and the sweep below runs, because
-   *      reopening would put an `open` report over a removed message, for a
-   *      Dismiss to record as "left up". Then the answer is what the route's
-   *      idempotency rules give. A 4xx was decided before this call wrote
-   *      anything ({@link decidedBeforeWrite}), so someone else removed the
-   *      message, and this is the same 200 with `message_already_deleted:
-   *      true`. Otherwise this call's own write may be what landed, and the
-   *      original error is rethrown: the client says the outcome is unknown
-   *      and refetches, and a retry gets the report-level replay's 200.
+   *    the error is always rethrown, after {@link settleFailedRemoval} decides
+   *    what the report says:
+   *    - **A 4xx** was decided before anything was written — the access check
+   *      refused this caller ({@link decidedBeforeWrite}) — so the claim is
+   *      withdrawn ({@link releaseClaim}) whatever state the message is in. A
+   *      refusal is never an answer about the message: an officer removed
+   *      from the chapter mid-request must get the 403, not "already removed".
+   *    - **Anything else** is not proof that nothing was written, because
+   *      Postgres can commit the tombstone and the answer still be lost on the
+   *      way back, so the message is read again
+   *      ({@link messageStateAfterFailedRemoval}). **Still there** (or
+   *      unreadable): the claim is withdrawn — an `actioned` report over a
+   *      message still in place is a false statement in the moderation record,
+   *      and the report must be open for a retry to use. **Gone:** the claim
+   *      stands, the attachment purge the failed call never reached runs, and
+   *      the sweep below runs, because reopening would put an `open` report
+   *      over a removed message for a Dismiss to record as "left up". The
+   *      client says the outcome is unknown and refetches, and a retry gets
+   *      the report-level replay's 200.
    * 3. **Sweep.** Every other open report on the message closes, in one
    *    conditional `UPDATE` stamped with this officer and the claim's
    *    timestamp. It runs *after* the delete so it also catches a report filed
@@ -471,9 +473,6 @@ export class ChatReportService {
     }
 
     let removal: ReportedMessageRemoval;
-    // Set when the delete failed but the message is gone anyway, and this
-    // call's own write may be what removed it: rethrown after the sweep.
-    let unconfirmed: { error: unknown } | null = null;
     try {
       removal = await this.chatService.deleteReportedMessage(
         grant,
@@ -481,22 +480,15 @@ export class ChatReportService {
         officerUserId,
       );
     } catch (error) {
-      const state = await this.messageStateAfterFailedRemoval(
+      await this.settleFailedRemoval(
         report.id,
         grant.messageId,
         chapterId,
+        officerUserId,
+        resolvedAt,
+        error,
       );
-      if (!state?.isDeleted) {
-        await this.releaseClaim(
-          report.id,
-          chapterId,
-          officerUserId,
-          resolvedAt,
-        );
-        throw error;
-      }
-      removal = { alreadyDeleted: true, channelId: state.channelId };
-      if (!decidedBeforeWrite(error)) unconfirmed = { error };
+      throw error;
     }
 
     await this.reportRepo.resolveOpenForMessage(
@@ -506,7 +498,6 @@ export class ChatReportService {
       officerUserId,
       resolvedAt,
     );
-    if (unconfirmed) throw unconfirmed.error;
 
     return {
       ...claimed,
@@ -555,6 +546,40 @@ export class ChatReportService {
       new Date().toISOString(),
     );
     return { ...gone, channel_id: state.channelId };
+  }
+
+  /**
+   * What the report says after its removal threw — step 2 of
+   * {@link removeReportedMessage}. The caller rethrows the removal's error
+   * whatever this does.
+   */
+  private async settleFailedRemoval(
+    reportId: string,
+    messageId: string,
+    chapterId: string,
+    officerUserId: string,
+    claimedAt: string,
+    error: unknown,
+  ): Promise<void> {
+    const state = decidedBeforeWrite(error)
+      ? null
+      : await this.messageStateAfterFailedRemoval(
+          reportId,
+          messageId,
+          chapterId,
+        );
+    if (!state?.isDeleted) {
+      await this.releaseClaim(reportId, chapterId, officerUserId, claimedAt);
+      return;
+    }
+    await this.chatService.purgeRemovedMessageAttachments(messageId, chapterId);
+    await this.reportRepo.resolveOpenForMessage(
+      chapterId,
+      messageId,
+      'actioned',
+      officerUserId,
+      claimedAt,
+    );
   }
 
   /**
@@ -715,8 +740,11 @@ export class ChatReportService {
 /**
  * Whether a failed removal was refused before anything was written: a 4xx from
  * `deleteReportedMessage` comes from its access check, which runs before the
- * soft delete. A 5xx or a non-HTTP error (a store fault, a lost response) may
- * have come after the write.
+ * soft delete — and, for a message that is still readable, only as the
+ * membership refusal, since a missing message or channel reads back as gone
+ * too. A 5xx or a non-HTTP error (a store fault, a lost response) may have come
+ * after the write: the repositories throw raw PostgREST errors, never an
+ * `HttpException`.
  */
 function decidedBeforeWrite(error: unknown): boolean {
   return error instanceof HttpException && error.getStatus() < 500;
