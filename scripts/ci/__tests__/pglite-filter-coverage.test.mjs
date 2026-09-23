@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, join, posix, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
@@ -88,17 +88,25 @@ export function mask(src) {
     while (from > 0 && /[\w$]/.test(out[from - 1])) from -= 1;
     return { token: out.slice(from, k + 1).join(""), at: from };
   };
-  // Indices of each `)` that closes an `if`/`while`/`for`/`with` condition,
+  // Indices of each `)` that closes an `if`/`while`/`for` condition,
   // after which a `/` starts a regex rather than a division.
   const closesControl = new Set();
-  // Whether the `(` at `i` opens an `if`/`while`/`for`/`with` condition: the
+  // Whether the token starting at `at` is a member name (`o.for`, `o. for`,
+  // `this.#for`) rather than a keyword.
+  const isProperty = (at) => {
+    let k = at - 1;
+    while (k >= 0 && /\s/.test(out[k])) k -= 1;
+    return out[k] === "." || out[k] === "#";
+  };
+  // Whether the `(` at `i` opens an `if`/`while`/`for` condition: the
   // keyword itself, not a method named like one (`Symbol.for(k)`), and
   // `for await (` too.
   const opensControl = (i) => {
     const { token, at } = previous(i);
-    if (out[at - 1] === ".") return false;
+    if (isProperty(at)) return false;
     if (token === "await") return previous(at).token === "for";
-    return ["if", "while", "for", "with"].includes(token);
+    // No `with`: it is a syntax error in a module.
+    return ["if", "while", "for"].includes(token);
   };
   const regexCanStart = (i) => {
     const { token, at } = previous(i);
@@ -108,7 +116,7 @@ export function mask(src) {
     if ((token === "+" || token === "-") && out[at - 1] === token) return false;
     if (/^[(,=:[!&|?{};+\-*%<>~^]$/.test(token)) return true;
     // A keyword, unless it is a property name (`stats.in / n`).
-    return REGEX_AFTER_WORD.has(token) && out[at - 1] !== ".";
+    return REGEX_AFTER_WORD.has(token) && !isProperty(at);
   };
 
   const quoted = (i) => {
@@ -269,12 +277,25 @@ export function scan(src, file) {
     if (root !== "REPO_ROOT" && root !== "process.cwd()") continue;
     const parts = rest.map(literal);
     assert.ok(parts.length > 0 && parts.every((p) => p !== null), unresolved(call));
-    // Evaluated against a stand-in root with Node's own semantics, so `join`
-    // keeps a leading `/` segment inside it, `resolve` restarts at one, and a
-    // `..` that climbs past it comes back as `../…` for `route` to reject.
-    const standIn = "/repo-root";
-    const target = (call.startsWith("resolve") ? posix.resolve : posix.join)(standIn, ...parts);
-    route(posix.relative(standIn, target), call);
+    // Normalized segment by segment, not against a stand-in root: a stand-in
+    // can collide with a real segment (`"..", "repo-root"` would climb out and
+    // land back "inside" a root named that). As in Node, `join` treats a
+    // leading `/` as a separator; `resolve` restarts at an absolute segment,
+    // which here leaves the repo. A `..` past the root leaves it too; that
+    // also rejects the rare climb that re-enters by name, which is fine.
+    const outside = `${file}: \`${call}\` names a path outside the repo`;
+    const segments = [];
+    for (const part of parts) {
+      assert.ok(!(call.startsWith("resolve") && part.startsWith("/")), outside);
+      for (const segment of part.split("/")) {
+        if (segment === "" || segment === ".") continue;
+        if (segment === "..") {
+          assert.ok(segments.length > 0, outside);
+          segments.pop();
+        } else segments.push(segment);
+      }
+    }
+    route(segments.join("/"), call);
   }
 
   for (const { call, args } of callArgs(src, masked, /\bnew\s+URL\s*\(/g)) {
@@ -486,9 +507,18 @@ describe("the scanner reads each form as what it is", () => {
       'readFileSync(resolve(REPO_ROOT, "apps", "y.ts"));',
       'readFileSync(join(REPO_ROOT, "scripts", "demo", "..", "..", "apps", "z.ts"));',
       'readFileSync(join(REPO_ROOT, "/supabase/w.sql"));',
+      'readFileSync(join(REPO_ROOT, "./supabase", "v.sql"));',
+      'readFileSync(join(REPO_ROOT, "a", ".", "..", "u.sql"));',
     ].join("\n");
     assert.deepEqual(scan(src, at), {
-      found: ["supabase/seed.sql", "apps/y.ts", "apps/z.ts", "supabase/w.sql"],
+      found: [
+        "supabase/seed.sql",
+        "apps/y.ts",
+        "apps/z.ts",
+        "supabase/w.sql",
+        "supabase/v.sql",
+        "u.sql",
+      ],
       follow: ["scripts/ci/lib/run.mjs"],
     });
   });
@@ -499,6 +529,10 @@ describe("the scanner reads each form as what it is", () => {
       'resolve(REPO_ROOT, "/etc/passwd");',
       'join(REPO_ROOT, "/..", "supabase", "migrations");',
       'join(REPO_ROOT, "/a/../../b");',
+      'join(REPO_ROOT, "..", "repo-root", "supabase", "migrations");',
+      // `at` sits three deep, so four `..` land exactly one above the root.
+      'new URL("../../../..", import.meta.url);',
+      'resolve(REPO_ROOT, "/repo-root/x.sql");',
       'import "../../../../x.mjs";',
     ]) {
       assert.throws(() => scan(src, at), /outside the repo/, src);
@@ -512,10 +546,17 @@ describe("the scanner reads each form as what it is", () => {
     for (const [src, path] of [
       ['const n = i++ / 2; join(REPO_ROOT, "b.sql"); const q = n / 3;', "b.sql"],
       ['const h = o.return / 2; join(REPO_ROOT, "c.sql"); const k = h / 4;', "c.sql"],
+      ['const h = o. return / 2; join(REPO_ROOT, "m.sql"); const k = h / 4;', "m.sql"],
+      ['const h = this.#in / 2; join(REPO_ROOT, "n.sql"); const k = h / 4;', "n.sql"],
       ['if (ok) /\\/\\//.test(u); join(REPO_ROOT, "d.sql");', "d.sql"],
       ['for await (const x of y) /a"b/.test(x); join(REPO_ROOT, "e.sql");', "e.sql"],
       ['const r = a.if(b) / 2; join(REPO_ROOT, "f.sql"); const q = 1 / 2;', "f.sql"],
       ['const s = Symbol.for(k) / 2; join(REPO_ROOT, "g.sql"); const t = 1 / 2;', "g.sql"],
+      ['const s = this.#for(k) / 2; join(REPO_ROOT, "h.sql"); const t = 1 / 2;', "h.sql"],
+      ['const s = o. for(k) / 2; join(REPO_ROOT, "i.sql"); const t = 1 / 2;', "i.sql"],
+      ['const v = await (p) / 2; join(REPO_ROOT, "j.sql"); const w = 1 / 2;', "j.sql"],
+      ['while (ok) /a"b/.test(u); join(REPO_ROOT, "k.sql");', "k.sql"],
+      ['for (const x of y) /a"b/.test(x); join(REPO_ROOT, "l.sql");', "l.sql"],
     ]) {
       assert.deepEqual(scan(src, at).found, [path], src);
     }
