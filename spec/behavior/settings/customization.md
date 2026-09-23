@@ -1,6 +1,6 @@
 # Settings: Customization Tabs
 
-Behavior rules for the customization-heavy settings tabs (Accent, Roles, Fields, Workflows, Dues). The settings rail, Org/Modules tabs, and cross-cutting audit rules live in [`README.md`](README.md). Saves in these tabs write `chapter_audit_log` rows mirrored to `#chapter-audit`, except the Roles tab's built-in role writes: creating, renaming or deleting a role, toggling the permission matrix, and transferring the presidency (`/v1/roles`), which write none ([#2599](https://github.com/pdcarlson/Frapp/issues/2599)). The same tab's custom-role writes, default invite role and presidency claim are audited. Which writes skip a save that changes nothing is in the README's [audit rules](README.md#audit-rules).
+Behavior rules for the customization-heavy settings tabs (Accent, Roles, Fields, Workflows, Dues). The settings rail, Org/Modules tabs, and cross-cutting audit rules live in [`README.md`](README.md). Saves in these tabs write `chapter_audit_log` rows mirrored to `#chapter-audit`, except the Roles tab's built-in role writes, which write none ([#2599](https://github.com/pdcarlson/Frapp/issues/2599)): `POST`/`PATCH`/`DELETE /v1/roles` (so creating, editing, recolouring, reordering or deleting a role, and every permission-matrix toggle) and `POST /v1/roles/transfer-presidency`. The same tab's custom-role writes, default invite role and presidency claim are audited. Which writes skip a save that changes nothing is in the README's [audit rules](README.md#audit-rules).
 
 ## Accent Tab (`?tab=theme`)
 

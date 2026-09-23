@@ -70,7 +70,7 @@ type MutateResponse = { error: PostgrestError | null };
  * CRUD over `chapter_custom_fields`, scoped to the active chapter (Settings →
  * Fields). Part of the settings family: every mutation appends a
  * `chapter_audit_log` row (mirrored to `#chapter-audit` by the ChatBridgeWorker,
- * ADR-08) like every other settings save. The configured `visibility` /
+ * ADR-08) like the other audited settings saves. The configured `visibility` /
  * `sensitive` flags are stored here and enforced server-side by
  * `findVisibleValuesForMember` when the member directory renders values.
  */
