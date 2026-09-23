@@ -2,21 +2,20 @@
 // Resolves /diff-review's scope to pinned SHAs, and writes its gate marker.
 //
 //   node scripts/diff-review-scope.mjs [--full]          print the scope as one JSON line
-//   node scripts/diff-review-scope.mjs --mark <kind>     write the marker for HEAD (kind: full | delta | target)
+//   node scripts/diff-review-scope.mjs --mark <kind>     write the marker for HEAD (kind: full | delta)
 //
 // The rules live in .claude/skills/diff-review/SKILL.md (Phase 0 and Phase 4); this script only
 // applies them. A branch counts as reviewed up to the newest commit in <merge-base>..HEAD whose
 // marker says `full` or `delta`. Nothing else is trusted: not the upstream tip (a push can skip the
-// hook), not an empty marker from an older review, and not a `target` marker, which covered only
-// the path or range someone named.
+// hook), and not an empty marker from an older review. A delta covers only the branch's own commits
+// since then (`head ^base ^branchBase`), so what a merge from main brought in stays out of scope.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const BRANCH_KINDS = new Set(["full", "delta"]);
-const MARK_KINDS = new Set(["full", "delta", "target"]);
+const MARK_KINDS = new Set(["full", "delta"]);
 
 function git(cwd, ...args) {
   return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
@@ -35,15 +34,16 @@ function markerKind(root, sha) {
   return existsSync(file) ? readFileSync(file, "utf8").trim() : null;
 }
 
-// Insertions plus deletions between two commits, optionally limited to a set of paths.
-function changedLines(cwd, base, head, only) {
-  let total = 0;
-  for (const row of lines(git(cwd, "diff", "--numstat", "--no-renames", base, head))) {
+// Files and insertions plus deletions in `git diff --numstat` or `git log --numstat` output.
+function tally(numstat) {
+  const files = new Set();
+  let changed = 0;
+  for (const row of lines(numstat)) {
     const [added, deleted, file] = row.split("\t");
-    if (only && !only.has(file)) continue;
-    total += (Number(added) || 0) + (Number(deleted) || 0); // binary files report "-"
+    files.add(file);
+    changed += (Number(added) || 0) + (Number(deleted) || 0); // binary files report "-"
   }
-  return total;
+  return { files: files.size, changedLines: changed };
 }
 
 export function resolveScope({ cwd = process.cwd(), full = false, baseRef = "origin/main" } = {}) {
@@ -54,13 +54,12 @@ export function resolveScope({ cwd = process.cwd(), full = false, baseRef = "ori
 
   let reviewed = null;
   for (const sha of lines(git(root, "rev-list", `${branchBase}..HEAD`))) {
-    if (BRANCH_KINDS.has(markerKind(root, sha))) {
+    if (MARK_KINDS.has(markerKind(root, sha))) {
       reviewed = sha;
       break;
     }
   }
 
-  const branchFiles = new Set(lines(git(root, "diff", "--name-only", "--no-renames", branchBase, head)));
   let mode;
   let base;
   if (head === branchBase) {
@@ -77,15 +76,17 @@ export function resolveScope({ cwd = process.cwd(), full = false, baseRef = "ori
     base = reviewed;
   }
 
-  const files =
-    mode === "delta"
-      ? lines(git(root, "diff", "--name-only", "--no-renames", base, head)).filter((f) => branchFiles.has(f)).length
-      : mode === "full"
-        ? branchFiles.size
-        : 0;
-  const lineCount = mode === "full" ? changedLines(root, base, head) : mode === "delta" ? changedLines(root, base, head, branchFiles) : 0;
+  let size = { files: 0, changedLines: 0 };
+  let merges = 0;
+  if (mode === "full") {
+    size = tally(git(root, "diff", "--numstat", "--no-renames", base, head));
+  } else if (mode === "delta") {
+    const own = [head, `^${base}`, `^${branchBase}`];
+    size = tally(git(root, "log", "--numstat", "--format=", "--no-merges", "--no-renames", ...own));
+    merges = Number(git(root, "rev-list", "--count", "--merges", ...own));
+  }
 
-  return { mode, base, head, branchBase, root, files, changedLines: lineCount, dirty };
+  return { mode, base, head, branchBase, root, ...size, merges, dirty };
 }
 
 export function writeMarker({ cwd = process.cwd(), kind }) {

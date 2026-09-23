@@ -39,24 +39,26 @@ node scripts/diff-review-scope.mjs        # add --full to force a full review
 ```
 
 It prints one JSON line: `mode`, `base`, `head`, `branchBase`, `root`, `files`, `changedLines`,
-`dirty`. Use those values as they are. Don't re-resolve `origin/main` later: a background agent's
+`merges`, `dirty`. Use those values as they are. Don't re-resolve `origin/main` later: a background agent's
 `git fetch` can move it mid-review, and the same command would then name a different diff.
 
 - **`full`**: the branch's first review in this checkout, from `branchBase`.
-- **`delta`**: the branch passed a review up to `base`, so this reviews only the commits since,
-  limited to the files the branch changes (the finders still read the whole branch for context).
-  This is the fix round. A level argument doesn't change it; `full` does.
+- **`delta`**: the branch passed a review up to `base`, so this reviews only the branch's own
+  commits since. What a merge from main brought in stays out; the merge's conflict resolutions stay
+  in. The finders still read the whole branch for context. This is the fix round. A level argument
+  doesn't change it; `full` does.
 - **`none`**: HEAD already has a marker. **`empty`**: the branch has no commits of its own.
   Say so and stop.
 
 "Passed a review" means a marker this skill wrote as `full` or `delta` (Phase 4) on a commit
 between `branchBase` and HEAD. Nothing else counts: not the upstream tip (a push can skip the
-hook), not a marker from before markers carried a kind, and not a review of an explicit target.
+hook), and not a marker from before markers carried a kind.
 After a rebase the old markers sit on commits outside that range, so the branch gets a full
 review again.
 
 An explicit `<target>` (a path, ref, or range) replaces the script: review exactly what it names
-with pinned SHAs, as a full review, and mark it `target` in Phase 4. Commit before you review,
+with pinned SHAs, as a full review. It writes no marker, because it didn't review the commit a push
+would publish. To push another ref, check it out and run this skill there. Commit before you review,
 because the marker keys to a commit. If you must review a dirty tree (`dirty: true`), say so; the
 acceptance-and-tests finder sees only committed code. State the scope in one line (mode, base,
 head, file count).
@@ -101,8 +103,8 @@ Either way:
   reset, merge, stash or check out while finders or verifiers are live: a finder reading a moving
   tree reports lines that no longer exist, and a hook that fires on `git status` would have you
   commit someone's experiment.
-- A finder that returned nothing or reported a `problem` (`finderFailures` in the workflow's
-  result) is a check not run: cover its angles inline before you report.
+- A finder that returned nothing, or reported a `problem` (`finderFailures` in the workflow's
+  result), left angles unchecked: cover them inline before you report.
 - Drop a candidate with no plausible failure scenario.
 
 ### Generic angles
@@ -212,8 +214,9 @@ These run only in an ultracode full review, as one finder in its own worktree.
 
 ## Phase 2 — Verify
 
-Candidates are deduped by `file:line` first; a later duplicate is attached to the first as
-`alsoFlaggedBy` instead of being verified again. Each remaining candidate gets one `claim-verifier`
+Candidates are deduped by `file:line` first. A later duplicate of a kept candidate rides along as
+`alsoFlaggedBy`; a duplicate of one that is refuted or unverified may be a different defect at the
+same line, so it gets its own verdict (the exact rule is `admit()` in `frapp-review.js`). Each remaining candidate gets one `claim-verifier`
 on the reproduce lens: does the stated failure scenario actually happen? Only if it returns
 `REFUTED` does a second `claim-verifier` look at it, on the material lens and without seeing the
 first verdict: is there a real defect here worth acting on, even if the scenario is inexact? A
@@ -255,8 +258,8 @@ the GitHub MCP is unreachable, say so and carry the unfiled finding in your summ
 
 After reporting and acting on the findings, check that `git rev-parse HEAD` is still the `head` you
 reviewed and that `git status` shows nothing you didn't write. Then write the marker the pre-push
-hook checks, with the kind of review it records (`full`, `delta`, or `target` for an explicit
-target):
+hook checks, with the kind of review it records (`full` or `delta`; an explicit-target review
+writes none):
 
 ```sh
 node scripts/diff-review-scope.mjs --mark full

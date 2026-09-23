@@ -17,7 +17,7 @@ export const meta = {
 // spec/architecture/adr/adr-23.md.
 //
 // args: the JSON line `node scripts/diff-review-scope.mjs` prints
-//         { mode: 'full' | 'delta', base, head, branchBase, root, changedLines, dirty }
+//         { mode: 'full' | 'delta', base, head, branchBase, root, changedLines, merges, dirty }
 //       plus level: 'medium' | 'high' | 'xhigh'   full only, default 'high'
 //            ultracode: true                      full only: forces xhigh, adds the acceptance-and-tests finder
 //            acceptance                           optional acceptance criteria for that finder
@@ -73,11 +73,19 @@ if (ULTRA) BUNDLES.push({ key: 'acceptance-tests', angles: EXTRA, cap: 6, worktr
 const SWEEP_CAP = MODE === 'full' && LEVEL === 'xhigh' ? 8 : 0
 
 const DIRTY = A.dirty ? ', plus the uncommitted changes in `git diff HEAD`' : ''
+// A delta covers the branch's own commits since the last review. When a merge from main is among
+// them, a plain diff would also show main's changes, so the scope becomes the non-merge commits
+// plus each merge's conflict resolutions (`--cc` shows only hunks that differ from every parent).
+const OWN = `${A.head} ^${A.base} ^${A.branchBase}`
+const DELTA =
+  A.merges > 0
+    ? `the branch's own commits since the last reviewed one, \`git log -p --no-merges ${OWN}\`, plus the conflict resolutions in its merges, \`git log -p --cc --merges ${OWN}\``
+    : `the changes since the last reviewed commit, \`git diff ${A.base} ${A.head}\``
 const SCOPE =
   MODE === 'full'
     ? `the diff \`git diff ${A.base} ${A.head}\`${DIRTY}`
-    : `the changes since the last reviewed commit: \`git diff ${A.base} ${A.head} -- $(git diff --name-only ${A.branchBase} ${A.head})\`${DIRTY}. ` +
-      `For context only, the whole branch is \`git diff ${A.branchBase} ${A.head}\`. Report defects in those changes, or ones they create with the rest of the branch`
+    : `${DELTA}${DIRTY}. For context only, the whole branch is \`git diff ${A.branchBase} ${A.head}\`. ` +
+      'Report defects in those changes, or ones they create with the rest of the branch'
 const CODE_AT = A.dirty ? `the working tree (commit ${A.head} plus its uncommitted changes)` : `commit ${A.head}`
 
 // Every agent() call sets effort. Without it an agent inherits the session's effort, which
@@ -104,7 +112,7 @@ const candidatesSchema = (cap) => ({
         required: ['file', 'line', 'angle', 'summary', 'failure_scenario'],
       },
     },
-    problem: { type: 'string', description: 'Set only when you could not review your angles; say what stopped you.' },
+    problem: { type: 'string', description: 'Set when you could not review some or all of your angles; say what stopped you. Still return the candidates you found.' },
   },
   required: ['candidates'],
 })
@@ -174,7 +182,7 @@ function norm(file) {
 function admit(candidates, source) {
   const fresh = []
   for (const c of candidates) {
-    const rec = { ...c, file: norm(c.file), source, alsoFlaggedBy: [], dups: [] }
+    const rec = { ...c, file: norm(c.file), source, status: 'pending', alsoFlaggedBy: [], dups: [] }
     const key = `${rec.file}:${rec.line}`
     const prior = seen.get(key)
     if (!prior) {
@@ -207,7 +215,6 @@ async function settle(rec, status, extra) {
 }
 
 async function verify(rec) {
-  rec.status = 'pending'
   const claim =
     `Finding: ${rec.file}:${rec.line}: ${rec.summary}\nFailure scenario: ${rec.failure_scenario}\n` +
     `Found by the "${rec.angle}" angle while reviewing ${SCOPE}. ${PINNED}`
@@ -234,8 +241,8 @@ async function verify(rec) {
 function onFinder(res, source, cap, angles) {
   if (!res || res.problem) {
     finderFailures.push({ source, angles, problem: res ? res.problem : 'returned nothing' })
-    log(`${source} ${res ? `could not review: ${res.problem}` : 'returned nothing'}. Run its angles (${angles.join('; ')}) inline before reporting`)
-    return []
+    log(`${source} ${res ? `could not review all of it: ${res.problem}` : 'returned nothing'}. Cover its angles (${angles.join('; ')}) inline before reporting`)
+    if (!res) return []
   }
   received += res.candidates.length
   if (res.candidates.length >= cap) {

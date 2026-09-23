@@ -68,7 +68,7 @@ test("commits after a full or delta marker get a delta review of just those comm
   assert.equal(resolveScope({ cwd: r.dir }).base, fixed, "a delta marker chains");
 });
 
-test("only full and delta markers count; target and legacy empty markers don't", (t) => {
+test("only full and delta markers count; other kinds and legacy empty markers don't", (t) => {
   const r = repo();
   t.after(r.cleanup);
   const first = r.commit("a.txt", "1\n");
@@ -122,4 +122,27 @@ test("writeMarker records the kind for HEAD and rejects anything else", (t) => {
   assert.equal(readFileSync(file, "utf8"), "delta\n");
   assert.throws(() => writeMarker({ cwd: r.dir, kind: "" }), /marker kind/);
   assert.throws(() => writeMarker({ cwd: r.dir, kind: "skip" }), /marker kind/);
+  assert.throws(() => writeMarker({ cwd: r.dir, kind: "target" }), /marker kind/, "a partial review is never push evidence");
+});
+
+test("a delta after merging main counts only the branch's own commits, and reports the merge", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.commit("shared.txt", "1\nbranch\n3\n4\n5\n");
+  const reviewed = r.git("rev-parse", "HEAD");
+  mark(r.dir, reviewed, "full\n");
+  r.git("checkout", "-q", "main");
+  r.commit("shared-main.txt", "main only\n");
+  const newMain = r.commit("README.md", "base\nmain edit\n");
+  r.git("update-ref", "refs/remotes/origin/main", newMain);
+  r.git("checkout", "-q", "feature");
+  r.git("merge", "-q", "--no-edit", "main");
+  r.commit("fix.txt", "fix\n");
+  const scope = resolveScope({ cwd: r.dir });
+  assert.equal(scope.mode, "delta");
+  assert.equal(scope.base, reviewed);
+  assert.equal(scope.branchBase, newMain);
+  assert.equal(scope.merges, 1);
+  assert.equal(scope.files, 1, "main's files stay out of the fix round");
+  assert.equal(scope.changedLines, 1);
 });

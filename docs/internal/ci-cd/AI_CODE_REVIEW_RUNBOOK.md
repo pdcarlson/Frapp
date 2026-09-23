@@ -157,8 +157,8 @@ the agent agreeing with its own work — do not weaken it.
 - **Denied repeatedly:** retrying is intentionally inert. Run `/diff-review`; after addressing its
   findings it writes the marker.
 - **An explicit ref or tag is denied although HEAD was reviewed:** the hook checks the commit
-  actually named by each ref update. Review that commit and create its marker; a HEAD marker cannot
-  authorize a different object.
+  actually named by each ref update, and a HEAD marker can't authorize a different object. Check out
+  that commit and run `/diff-review` there; it marks the commit it reviewed.
 - **`/diff-review` is unavailable:** its frontmatter must not contain `disable-model-invocation`.
   Skills load at session start, so start a fresh session after fixing it.
 - **`Skill(skill: "code-review")` returns `disable-model-invocation`:** expected unless the current
