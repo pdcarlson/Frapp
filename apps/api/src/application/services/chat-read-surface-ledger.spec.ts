@@ -27,12 +27,13 @@ import { join } from 'node:path';
  *   and every Realtime subscription the API opens, since that is how a new
  *   push gets built.
  *
- * What it cannot see, so nobody reads a green run as more than it is: a chat
- * read added to a controller outside `CHAT_CONTROLLERS`; an existing
- * notification call edited to carry chat content (the per-file count does not
- * move); and a subscription or policy written through an indirection no
- * pattern here reads (an event name built at runtime, dynamic SQL assembled
- * from parts).
+ * What it cannot see, so nobody reads a green run as more than it is:
+ * - a chat read added to a controller outside `CHAT_CONTROLLERS`;
+ * - an existing notification edited to carry another member's words, since
+ *   the per-file count does not move;
+ * - member text re-posted under the system actor, which cannot be blocked. The
+ *   poll-expiry notice quotes the poll's question this way (#2495);
+ * - a policy or table written through dynamic SQL assembled from parts.
  *
  * A `masked` entry names the test that proves it, and that test must be live:
  * present, not commented out, in a spec that skips and focuses nothing. That
@@ -384,62 +385,98 @@ const PUSH_LEDGER: Record<string, Entry> = {
 };
 
 /**
- * A non-chat notification whose body carries text the acting member wrote (a
- * fine reason, a task title, a review comment, an event or invoice name). The
- * spec hides that same text in chat, and does not say whether a block reaches
- * the notification. Open until #2498 decides it.
+ * A non-chat notification whose body carries text some member wrote (a fine
+ * reason, a task title, a review comment, an event or invoice name), whoever
+ * or whatever triggers it: an officer's action, a webhook, a reminder sweep.
+ * The spec hides that same text in chat, and does not say whether a block
+ * reaches the notification. Open until #2498 decides it; the person a filter
+ * would key on is the text's author, not the trigger.
  */
-const ACTOR_TEXT: Entry = {
+const MEMBER_TEXT: Entry = {
   status: 'open',
   issues: [2498],
-  why: 'Not chat, but delivers text the acting member wrote to the target, so a member who blocked the actor still receives it. Whether a chat block reaches these is undecided.',
+  why: 'Not chat, but delivers text a member wrote, so someone who blocked that member still receives it. Whether a chat block reaches these is undecided.',
 };
 
 /**
- * Every file under `apps/api/src` that calls `notifyUser` or `notifyChapter`,
- * with how many calls it makes and what they carry. The count is the point: a
- * new call in any file, including one already listed, changes it and fails
- * until someone decides whether the new notification carries another member's
- * words. What it cannot catch is an existing call edited to carry them.
+ * Every file under `apps/api/src` that mentions a notify-named call
+ * (`notifyUser`, `notifyChapter`, and every wrapper around them, such as
+ * `safeNotifyUser`, `claimAndNotify` or `notifyEligibleMembers`), with how many
+ * times and what the notifications carry. Counting every such token rather than
+ * the two primitives is the point: a notification added through a wrapper, or
+ * a new wrapper, still moves the count and fails until someone decides whether
+ * it carries another member's words. Definitions count too, so the numbers are
+ * token counts, not notification counts.
  */
-const NOTIFY_EMITTERS: Record<string, { calls: number; entry: Entry }> = {
+const NOTIFY_EMITTERS: Record<string, { tokens: number; entries: Entry[] }> = {
+  'application/services/notification.service.ts': {
+    tokens: 2,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: 'Defines `notifyUser` and `notifyChapter`; every caller is listed here.',
+      },
+    ],
+  },
   'application/services/chat.service.ts': {
-    calls: 2,
-    entry: PUSH_LEDGER['ChatService.sendMessageNotification (DM and group DM)'],
+    tokens: 2,
+    entries: [
+      PUSH_LEDGER['ChatService.sendMessageNotification (DM and group DM)'],
+      PUSH_LEDGER['ChatService.sendMessageNotification (announcements)'],
+    ],
   },
   'modules/chat-push-worker/chat-push-worker.service.ts': {
-    calls: 1,
-    entry: PUSH_LEDGER['chat-push-worker (chat_messages INSERT)'],
+    tokens: 1,
+    entries: [PUSH_LEDGER['chat-push-worker (chat_messages INSERT)']],
   },
   'application/services/billing.service.ts': {
-    calls: 1,
-    entry: {
-      status: 'no-foreign-content',
-      why: 'Subscription status, to the president. No member-written text.',
-    },
+    tokens: 5,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: 'Subscription status to the president, and a hand-off to the invoice payment-failure notice. No member-written text.',
+      },
+    ],
   },
   'application/services/invite.service.ts': {
-    calls: 1,
-    entry: {
-      status: 'no-foreign-content',
-      why: '"A new member has joined the chapter": fixed text.',
-    },
+    tokens: 3,
+    entries: [
+      {
+        status: 'not-hidden',
+        why: 'Fixed text, and a system DM naming the member who accepted. A system message that merely names a member is not hidden.',
+      },
+    ],
   },
-  'application/services/event.service.ts': { calls: 2, entry: ACTOR_TEXT },
+  'application/services/event.service.ts': {
+    tokens: 9,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/financial-invoice.service.ts': {
-    calls: 3,
-    entry: ACTOR_TEXT,
+    tokens: 4,
+    entries: [MEMBER_TEXT],
   },
-  'application/services/points.service.ts': { calls: 1, entry: ACTOR_TEXT },
+  'application/services/points.service.ts': {
+    tokens: 1,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/service-entry.service.ts': {
-    calls: 2,
-    entry: ACTOR_TEXT,
+    tokens: 2,
+    entries: [MEMBER_TEXT],
   },
-  'application/services/task.service.ts': { calls: 1, entry: ACTOR_TEXT },
+  'application/services/task.service.ts': { tokens: 8, entries: [MEMBER_TEXT] },
   'modules/scheduled-jobs/scheduled-jobs.service.ts': {
-    calls: 1,
-    entry: ACTOR_TEXT,
+    tokens: 19,
+    entries: [MEMBER_TEXT],
   },
+};
+
+/**
+ * Files that mention `postgres_changes` without subscribing, each read by a
+ * person. Everything else that mentions it is treated as a subscription.
+ */
+const POSTGRES_CHANGES_PROSE: Record<string, string> = {
+  'interface/dtos/chat.dto.ts':
+    'An `@ApiProperty` description of the Realtime echo. It subscribes to nothing.',
 };
 
 /**
@@ -564,13 +601,27 @@ function stripJsComments(source: string): string {
 }
 
 /**
+ * String and template literals emptied, so an identifier test sees code only:
+ * the English word "fit" in a test title is not `fit`. Template `${…}` parts go
+ * with the literal, which errs toward seeing less code, never more words.
+ */
+function stripJsStrings(source: string): string {
+  return source.replace(
+    /'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g,
+    "''",
+  );
+}
+
+/**
  * Anything that makes Jest skip a test in this file: `.skip`, `.only` and
  * `.todo` on `describe`, `it` or `test`, with or without `.concurrent`, and
- * the `x`/`f` prefixes. A focused test anywhere skips the proof; a skipped
- * block around it leaves the title in place with nothing running.
+ * the `x`/`f` prefixes, in any position (a call, or a value such as
+ * `cond ? describe : xdescribe`). Tested against code with strings removed. A
+ * focused test anywhere skips the proof; a skipped block around it leaves the
+ * title in place with nothing running.
  */
 const SKIPS_OR_FOCUSES =
-  /\b(?:describe|it|test)(?:\.concurrent)?\.(?:skip|only|todo)\b|\b[xf](?:describe|it|test)\s*[.(]/;
+  /\b(?:describe|it|test)(?:\.concurrent)?\.(?:skip|only|todo)\b|\b[xf](?:describe|it|test)\b/;
 
 /**
  * The proof's title appears as a live `it(` in its spec, and that spec neither
@@ -582,7 +633,7 @@ function proofProblem(proof: Proof): string | null {
   const source = stripJsComments(
     readFileSync(join(API_SRC, proof.spec), 'utf8'),
   );
-  if (SKIPS_OR_FOCUSES.test(source)) {
+  if (SKIPS_OR_FOCUSES.test(stripJsStrings(source))) {
     return `${proof.spec} skips or focuses a test`;
   }
   const escaped = proof.test.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -704,7 +755,7 @@ describe('chat read-surface ledger (#2324)', () => {
     const rls = new Map<string, 'on' | 'off'>();
     const disabled: string[] = [];
     const statement =
-      /create\s+table\s+(if\s+not\s+exists\s+)?([\w."]+)|drop\s+table\s+(?:if\s+exists\s+)?([\w.",\s]+?)\s*(?:cascade|restrict)?\s*;|alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([\w."]+)\s+(enable|disable)\s+row\s+level\s+security/gi;
+      /create\s+(?:unlogged\s+)?table\s+(if\s+not\s+exists\s+)?([\w."]+)|drop\s+table\s+(?:if\s+exists\s+)?([\w.",\s]+?)\s*(?:cascade|restrict)?\s*;|alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([\w."]+)\s+(enable|disable)\s+row\s+level\s+security/gi;
     for (const { name: migration, sql } of allMigrations) {
       for (const match of sql.matchAll(statement)) {
         if (match[2]) {
@@ -769,18 +820,25 @@ describe('chat read-surface ledger (#2324)', () => {
   });
 
   it('opens Realtime subscriptions only on ledgered tables', () => {
-    // A file counts as subscribing when it names the `postgres_changes` event
-    // as a bare string literal or through the enum, however the call around it
-    // is written (`.on(…)`, `.on<Row>(…)`, or an event held in a variable).
-    // Prose that mentions the echo inside a longer string does not count. Every
-    // such file has to name its tables as literals, so this can read them, and
-    // each table has to be in API_SUBSCRIPTIONS. A subscription on a reaction
-    // table would be a reaction push; one with no table filter would be every
-    // table at once.
-    const subscribes =
-      /[(,=]\s*(['"`])postgres_changes\1|REALTIME_LISTEN_TYPES\.POSTGRES_CHANGES/;
+    // Any file whose code mentions the event at all counts as subscribing,
+    // however the mention is written, unless a person has read it and listed
+    // it in POSTGRES_CHANGES_PROSE. Matching a particular call shape lost a
+    // form every time it was tightened; mentioning is what cannot be dodged.
+    // Every subscribing file has to name its tables as literals, so this can
+    // read them, and each table has to be in API_SUBSCRIPTIONS. A subscription
+    // on a reaction table would be a reaction push; one with no table filter
+    // would be every table at once.
+    const mentions = /postgres_changes|POSTGRES_CHANGES/;
+    expect(
+      Object.keys(POSTGRES_CHANGES_PROSE).filter(
+        (rel) => !sources.some((s) => s.rel === rel && mentions.test(s.code)),
+      ),
+    ).toEqual([]);
     const problems = sources
-      .filter(({ code }) => subscribes.test(code))
+      .filter(
+        ({ rel, code }) =>
+          mentions.test(code) && !(rel in POSTGRES_CHANGES_PROSE),
+      )
       .flatMap(({ rel, code }) => {
         const tables = [...code.matchAll(/\btable:\s*(['"`])([\w.]+)\1/g)].map(
           (match) => match[2],
@@ -795,27 +853,42 @@ describe('chat read-surface ledger (#2324)', () => {
     expect(problems).toEqual([]);
   });
 
-  it('knows every notification emitter, and how many calls each makes', () => {
+  it('knows every notification emitter, and every notify-named call in it', () => {
     const found: Record<string, number> = {};
     for (const { rel, code } of sources) {
-      const calls = code.match(/\.notify(?:User|Chapter)\s*\(/g)?.length ?? 0;
-      if (calls > 0) found[rel] = calls;
+      const tokens = code.match(/\b\w*[Nn]otify\w*\s*\(/g)?.length ?? 0;
+      if (tokens > 0) found[rel] = tokens;
     }
     const expected = Object.fromEntries(
-      Object.entries(NOTIFY_EMITTERS).map(([rel, { calls }]) => [rel, calls]),
+      Object.entries(NOTIFY_EMITTERS).map(([rel, { tokens }]) => [rel, tokens]),
     );
     // A new or moved notification lands here. If it carries another member's
     // words, it has to drop blockers and name the proof, or be open against an
     // issue that decides whether it must.
     expect(found).toEqual(expected);
+
+    // Every emitter in PUSH_LEDGER is claimed by the file that emits it, so
+    // deleting one (and its proof) cannot leave that file vouched for by
+    // another. An entry that names a PUSH_LEDGER key that no longer exists is
+    // undefined here, and fails the same way.
+    const claimed = Object.values(NOTIFY_EMITTERS).flatMap(
+      ({ entries }) => entries,
+    );
+    expect(claimed.filter((entry) => entry === undefined)).toEqual([]);
+    expect(
+      Object.entries(PUSH_LEDGER)
+        .filter(([key]) => key !== 'reactions (no push exists)')
+        .filter(([, entry]) => !claimed.includes(entry))
+        .map(([key]) => key),
+    ).toEqual([]);
   });
 
   const allEntries: [string, Entry][] = [
     ...Object.entries(HTTP_LEDGER),
     ...Object.entries(DIRECT_READ_LEDGER),
     ...Object.entries(PUSH_LEDGER),
-    ...Object.entries(NOTIFY_EMITTERS).map(
-      ([rel, { entry }]) => [rel, entry] as [string, Entry],
+    ...Object.entries(NOTIFY_EMITTERS).flatMap(([rel, { entries }]) =>
+      entries.map((entry, i) => [`${rel} #${i + 1}`, entry] as [string, Entry]),
     ),
   ];
 
