@@ -573,13 +573,24 @@ export class ChatReportService {
       return;
     }
     await this.chatService.purgeRemovedMessageAttachments(messageId, chapterId);
-    await this.reportRepo.resolveOpenForMessage(
-      chapterId,
-      messageId,
-      'actioned',
-      officerUserId,
-      claimedAt,
-    );
+    try {
+      await this.reportRepo.resolveOpenForMessage(
+        chapterId,
+        messageId,
+        'actioned',
+        officerUserId,
+        claimedAt,
+      );
+    } catch (sweepError) {
+      // Logged, not thrown: the caller rethrows the removal's own error, which
+      // is the one worth seeing, and a retry's replay path sweeps again.
+      logThrowable(
+        this.logger,
+        'error',
+        `Sibling sweep after a failed removal for chat report ${reportId} failed; a retry sweeps again`,
+        sweepError,
+      );
+    }
   }
 
   /**

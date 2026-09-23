@@ -743,6 +743,8 @@ describe('ChatReportService', () => {
         claimedAt,
       );
       expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
+      // A message still in place keeps its files.
+      expect(chatService.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
     });
 
     it('still withdraws the claim when the message cannot be read again either', async () => {
@@ -761,6 +763,7 @@ describe('ChatReportService', () => {
       ).rejects.toBe(failure);
       expect(reportRepo.releaseClaim).toHaveBeenCalledTimes(1);
       expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
+      expect(chatService.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
     });
 
     it('withdraws the claim and rethrows a 4xx refusal even when the message is gone', async () => {
