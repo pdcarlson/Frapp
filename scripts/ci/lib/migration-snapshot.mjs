@@ -46,8 +46,8 @@ export const SNAPSHOT_WORKFLOW = ".github/workflows/migration-snapshot.yml";
  * The main rule lives in `.github/actions/download-migration-snapshot`: the
  * snapshot must have been read after the latest completed `Deploy API` or
  * `Deploy production` run on `main`, the only workflows that apply migrations.
- * Each of them triggers a publish, so a failed or lagging post-deploy publish
- * turns the gates red within minutes, naming the publisher. This limit covers
+ * Each of them triggers a publish. The download action waits up to 15 minutes
+ * for a lagging one, then fails the gates, naming the publisher. This limit covers
  * the rest: an apply made outside those workflows, when nothing deploys for a
  * day and the 4-hourly schedule is also failing. Scheduled runs here start hours
  * late (the 06:30 `db-backup.yml` cron started at 11:52Z on 2026-09-23), so 24
@@ -216,9 +216,11 @@ export function loadSnapshot(
 /**
  * `loadSnapshot` for the named environments of `.github/environments.json`,
  * which is what every gate wants: their refs, the snapshot's fetch stand-in, a
- * log line, and `capturedMs`, the moment the state was read. A consumer that
- * measures time (the drift gate's grace window) measures it from `capturedMs`,
- * not from now: the snapshot cannot know about anything after it.
+ * log line, and `capturedMs`, the moment the state was read. The snapshot
+ * cannot know about anything after `capturedMs`, so the drift gate keeps a
+ * migration that landed after it in grace. Its grace clock itself still runs
+ * from now: measured from `capturedMs`, a failed apply captured within 30
+ * minutes of its merge would never turn red.
  */
 export function openSnapshot(path, names, { nowMs = Date.now(), environments, readFile } = {}) {
   const refs = {};

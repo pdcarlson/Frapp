@@ -14,8 +14,9 @@ import { fileURLToPath } from "node:url";
 // untrusted issue text. The boundary that holds is a GitHub ENVIRONMENT whose
 // deployment-branch policy admits `main` only. GitHub matches that policy
 // against the run's ref and releases the environment's secrets only to a job
-// that passed it. So the secrets live there, and every consumer names one of
-// those environments.
+// that passed it. So the secrets belong there, and every consumer names one of
+// those environments. Moving them and setting the policies is the owner's #2583;
+// until then they are repository secrets and this boundary does not exist yet.
 //
 // This file cannot check the live settings (the policies, and whether the
 // repository-level copies are gone). They are an owner step, and the doc

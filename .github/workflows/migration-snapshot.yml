@@ -13,23 +13,24 @@ name: Migration snapshot
 # production. Now this workflow makes the read, and the PR jobs download what
 # it uploads (`.github/actions/download-migration-snapshot`) with GITHUB_TOKEN.
 #
-# ── Why it is safe to hold the credential here ──────────────────────────────
-# Every trigger below runs `main`'s copy of this file: `workflow_run` and
-# `schedule` always run the default branch, and a dispatch from another branch
-# is refused by the environment. The job names the `automation` environment,
-# whose deployment-branch policy admits `main` only (set by the owner in #2583;
-# until then the secrets are repository-level and this boundary does not
-# exist). That policy, not this file, is the boundary. A branch can edit this
-# file, but not the policy, and the environment's secrets are released only to
-# a job that passed it. The download action accepts only runs on `main` from
-# these three events.
+# ── Why the credential is meant to be safe here ─────────────────────────────
+# `workflow_run` and `schedule` always run the default branch's copy of this
+# file. A dispatch can target any branch, and it runs that branch's copy.
+# What stops that copy reaching the secret is the `automation` environment the
+# job names, whose deployment-branch rule is to admit `main` only. A branch can
+# edit this file but not that rule, and an environment releases its secrets
+# only to a job that passed it. That rule is the owner's #2583 and is not set
+# yet. Until it is, the secrets are repository-level, and a branch dispatch of
+# an edited copy can read them. Whatever such a run uploads, the download
+# action trusts only a run whose commit is on `main`.
 #
 # ── When it runs ────────────────────────────────────────────────────────────
 # After every `Deploy API` and `Deploy production` run, the only workflows that
 # apply migrations. That is what keeps the snapshot current, because a
 # scheduled run here starts hours late. The 4-hourly schedule is a backstop
 # for applies made outside those workflows (DB_PROMOTION_RUNBOOK repairs).
-# Consumers refuse a snapshot read before the latest completed deploy
+# Consumers wait up to 15 minutes for a snapshot newer than the latest
+# completed deploy, then refuse the stale one
 # (`.github/actions/download-migration-snapshot`), with an age limit of
 # `DEFAULT_MAX_AGE_HOURS` (`scripts/ci/lib/migration-snapshot.mjs`) as backstop.
 # A manual ledger change triggers nothing, so dispatch this after one

@@ -453,7 +453,7 @@ function getArg(name) {
  * since the snapshot cannot know about it. Grace is otherwise measured from now,
  * so a failed apply still turns red 30 minutes after the merge.
  */
-function resolveSource(snapshotPath) {
+export function resolveSource(snapshotPath) {
   if (!snapshotPath) {
     return {
       accessToken: requireEnv("SUPABASE_ACCESS_TOKEN", { hint: SECRETS_RUNBOOK }),

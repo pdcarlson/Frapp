@@ -7,8 +7,14 @@ import {
   classifyGateDrift,
   fetchAppliedWithRetry,
   readMigrationsAtRef,
+  resolveSource,
   runDriftGate,
 } from "../check-migration-drift-gate.mjs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { getEnvironment } from "../lib/environments.mjs";
 import { buildSnapshot, snapshotFetch } from "../lib/migration-snapshot.mjs";
 import { makeFetchMock } from "./helpers.mjs";
 
@@ -470,4 +476,22 @@ test("a snapshot keeps a migration that landed after its capture in grace, and s
   const after = MAIN[2].landedMs + 10 * 60 * 1000;
   const late = { fetchImpl: snapshotFetch(snapshotOf(MAIN.slice(0, 2), after)), accessToken: "snapshot" };
   assert.equal(await runDriftGate(gateArgs({ ...late, capturedMs: after })), 1);
+});
+
+test("the CLI hands a snapshot's capture time to the gate as capturedMs, never as the clock", () => {
+  // The wiring the test above relies on. resolveSource is what main() calls;
+  // if it passed the capture time as nowMs instead (the bug #2518's review
+  // caught), a failed apply captured soon after its merge would never go red.
+  const capturedAt = new Date(Date.now() - HOUR).toISOString();
+  const dir = mkdtempSync(join(tmpdir(), "drift-source-"));
+  const path = join(dir, "migration-snapshot.json");
+  const ref = getEnvironment("staging").supabaseProjectRef;
+  writeFileSync(
+    path,
+    JSON.stringify(buildSnapshot({ capturedAt, environments: [{ name: "staging", supabaseProjectRef: ref, migrations: [] }] })),
+  );
+  const source = resolveSource(path);
+  assert.equal(source.capturedMs, Date.parse(capturedAt));
+  assert.equal(source.projectRef, ref);
+  assert.equal("nowMs" in source, false, "the snapshot must not become the gate's clock");
 });

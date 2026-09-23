@@ -306,7 +306,8 @@ describe("Infisical call sites", () => {
       ["deploy-api.yml", "deploy-staging", "staging"],
       ["deploy-production.yml", "deploy", "prod"],
       // The migration gates on pull_request read the published snapshot and
-      // inject nothing (#2518). This is the main-only read that publishes it.
+      // inject nothing (#2518). This is the read that publishes it, in the
+      // `automation` environment (main-only once #2583 lands).
       ["migration-snapshot.yml", "publish", "prod"],
       ["staging-conformance.yml", "conformance", "staging"],
       ["production-auth-conformance.yml", "auth-conformance", "prod"],
