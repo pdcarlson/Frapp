@@ -11,7 +11,7 @@
  * draft behind and the composer refills with text already sent.
  *
  * Why not the `KeyValueStore` port: its mirror is documented as sound *only*
- * because its sole consumer is the `chat:lastSeen:` backfill cursor, where a
+ * for reads that may miss, like the `chat:lastSeen:` backfill cursor, where a
  * stale read widens a backfill instead of losing data
  * (`spec/ui/mobile/patterns.md` § Chat). A draft read that misses loses typing,
  * so it goes straight to AsyncStorage and awaits, rather than borrowing a

@@ -276,7 +276,7 @@ async function dispatchPoints(
     },
   };
 
-  const placeholderContent = `${parsed.value.action === "grant" ? "Granting" : "Deducting"} ${parsed.value.amount} points…`;
+  const placeholderContent = pointsPlaceholderContent(replay);
 
   insertLocalPlaceholder(ctx, {
     channelId,
@@ -284,7 +284,17 @@ async function dispatchPoints(
     content: placeholderContent,
   });
 
-  return submitPointsAdjustment(ctx, replay, false, placeholderContent);
+  return submitPointsAdjustment(ctx, replay, false);
+}
+
+/**
+ * The placeholder's copy, derived from the request rather than the command
+ * text, so a row redrawn after a REST rebuild (from nothing but its replay
+ * handle) reads exactly like the one the officer saw.
+ */
+function pointsPlaceholderContent(replay: ReplayRequest): string {
+  const { amount } = replay.body;
+  return `${amount < 0 ? "Deducting" : "Granting"} ${Math.abs(amount)} points…`;
 }
 
 /**
@@ -353,7 +363,6 @@ async function submitPointsAdjustment(
   ctx: ChatActionContext,
   replay: ReplayRequest,
   isReplay: boolean,
-  placeholderContent?: string,
 ): Promise<DispatchResult> {
   const { channelId, clientMessageId } = replay;
 
@@ -435,7 +444,9 @@ async function submitPointsAdjustment(
       channelId,
       clientMessageId,
       note: POINTS_RECORDED_ROW_NOTE,
-      content: placeholderContent,
+      // From the request, not a parameter: a replay has no placeholder text of
+      // its own, and a row redrawn without it would lose which grant it was.
+      content: pointsPlaceholderContent(replay),
     });
     return { ok: true, warning: CARD_LOST_WARNING };
   }
@@ -545,30 +556,45 @@ const REPLAY_ACCEPTED_WARNING =
 const RETRY_RESOLVED_NOTE = "Points recorded.";
 
 /**
- * The row is gone — the card's Realtime echo reconciled it while the request
- * was still in flight, or the channel query was rebuilt underneath us. Pointing
- * the officer at a Retry control that no longer exists is worse than saying
- * nothing, so the copy has to stand on its own.
+ * There is no row on screen to point at. Either there is no channel cache to
+ * draw it in (the query was garbage-collected while the request was in flight;
+ * whatever notice is on disk for the key — this write's, or with storage
+ * blocked or full an earlier one's, if any — restores the row on the next load
+ * unless it is past its age bound by then), or there is neither a signed-in
+ * viewer nor a placeholder row to attribute it to. Pointing the officer at a Retry control that is not there is worse than
+ * saying nothing, so the copy has to stand on its own.
  */
 const UNCONFIRMED_NO_ROW_WARNING =
   "We couldn't confirm whether these points were recorded. Check the points ledger before running the command again — running it again would record them twice.";
 
 /**
- * The row is still there and carries the original key, so an explicit Retry is
- * the safe recovery. The second sentence is not padding: the row lives only in
- * the in-memory cache today, and a reconnect or reload rebuilds the channel
- * from the server and takes it with it (#1909), so the copy must not promise a
- * Retry that may be gone by the time the officer looks.
+ * The row is on screen and carries the original key, so an explicit Retry is
+ * the safe recovery. It does not hedge about the row disappearing: this is
+ * `durable: true`, so the row and its replay handle are on disk with at least
+ * an hour before their age bound, and the reconnect that follows the outage
+ * restores them (#1909).
  */
 const UNCONFIRMED_WARNING =
+  "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice.";
+
+/**
+ * The row is on screen, but nothing guarantees it outlives the next rebuild —
+ * likely the reconnect that follows this very outage. This is `durable: false`
+ * from `markLocalUnconfirmed`: the write did not land (storage blocked or
+ * full, or no viewer to file it under), or the entry is within an hour of its
+ * age bound or past it (a Retry pressed about a day after the dispatch keeps
+ * the dispatch's timestamp). The copy keeps the fallback rather than promising
+ * a Retry that may be gone.
+ */
+const UNCONFIRMED_VOLATILE_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice. If the message is gone, check the points ledger before re-running.";
 
 /**
  * What the timeline row itself says. Short on purpose: it sits directly above
- * its own Retry button, so the toast's "use Retry on the message … if the
- * message is gone" guidance is nonsense in that position — and printing the
- * toast's three sentences on the row duplicates them verbatim on screen and,
- * under `aria-atomic`, in the announcement.
+ * its own Retry button, so the toast's "use Retry on the message" guidance is
+ * nonsense in that position — and printing the toast's sentences on the row
+ * duplicates them verbatim on screen and, under `aria-atomic`, in the
+ * announcement.
  */
 const UNCONFIRMED_ROW_NOTE =
   "Not confirmed — these points may or may not have been recorded.";
@@ -598,7 +624,12 @@ function unconfirmed(
   replay: ReplayRequest,
   isReplay = false,
 ): DispatchResult {
-  const placement = markLocalUnconfirmed(ctx, replay, UNCONFIRMED_ROW_NOTE);
+  const { placement, durable } = markLocalUnconfirmed(
+    ctx,
+    replay,
+    UNCONFIRMED_ROW_NOTE,
+    pointsPlaceholderContent(replay),
+  );
 
   // The echo already re-keyed the row under its server id. That is not a
   // missing row — it is proof the server posted the card, which it only does
@@ -621,9 +652,11 @@ function unconfirmed(
     ok: true,
     unconfirmed: true,
     warning:
-      placement === "optimistic"
-        ? UNCONFIRMED_WARNING
-        : UNCONFIRMED_NO_ROW_WARNING,
+      placement !== "optimistic"
+        ? UNCONFIRMED_NO_ROW_WARNING
+        : durable
+          ? UNCONFIRMED_WARNING
+          : UNCONFIRMED_VOLATILE_WARNING,
   };
 }
 
