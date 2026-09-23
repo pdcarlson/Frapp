@@ -123,7 +123,7 @@ Examples:
 - Chat: `chat_channel_categories`, `chat_channels`, `chat_messages`, `message_reactions`
 - Others: `study_sessions`, `service_entries`, `tasks`, `chapter_documents`, `semester_archives`
 
-> **Note:** The canonical description of the data model is in `spec/architecture/README.md` Section 5. Always update the spec before changing the schema.
+> **Note:** The canonical description of the data model is [`spec/architecture/README.md` § Data Model](../../spec/architecture/README.md#5-data-model-supabase-postgres). A schema change that alters a table or relationship it describes updates it in the same change.
 
 ## 4. Adding a new table
 

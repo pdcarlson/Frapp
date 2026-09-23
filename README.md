@@ -100,7 +100,7 @@ All product decisions, behavior rules, and architecture are documented in the `s
 - **[spec/architecture/README.md](spec/architecture/README.md)** — Stack, data model, auth, storage, API contracts.
 - **[spec/environments/README.md](spec/environments/README.md)** — Local, staging, production setup; CI/CD.
 
-**`spec/` is the source of truth for intended behavior. Code is the source of truth for current behavior.** Disagreement between them is a tracked bug to file, not something an agent silently resolves by picking whichever loaded first. See [`AGENTS.md`](AGENTS.md) § Spec vs code.
+How `spec/` relates to code, and what to do when they disagree: [`AGENTS.md` § Spec vs code](AGENTS.md#spec-vs-code).
 
 **Documentation map (guides + runbooks + how they relate to spec):** [docs/README.md](docs/README.md).
 
