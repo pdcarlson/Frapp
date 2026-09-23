@@ -10,6 +10,7 @@ import {
   SURFACE,
   TEXT,
 } from "@/tests/signet-contrast";
+import { resolveChapterAccentColor } from "@repo/theme/accent";
 
 /**
  * The defect this file exists for.
@@ -185,5 +186,21 @@ describe("the accent preview's label tone, computed from the draft", () => {
     const ink = bestInk("#0080FD");
     expect(ratio(ink, "#0080FD")).toBeLessThan(AA_TEXT);
     expect(ratio(ink, "#0080FD")).toBeCloseTo(4.191, 2);
+  });
+
+  it("uses #0086FE as the band's example: kept on the card, ink under AA", () => {
+    // The example writing.md and the Accent card's comments cite. Kept by the
+    // resolver on `--card` (so no fallback warning), yet its best label ink
+    // misses AA (so the label warning fires). Pinned here so the figures
+    // quoted elsewhere have one place that fails when they move.
+    const card = resolveChapterAccentColor("#0086FE", {
+      background: SURFACE.card,
+      fallbackAccent: signetDarkTokens.color.gold.house,
+    });
+    expect(card.reason).toBe("ok");
+    expect(ratio("#0086FE", SURFACE.card)).toBeCloseTo(4.62, 2);
+    const ink = bestInk("#0086FE");
+    expect(ratio(ink, "#0086FE")).toBeLessThan(AA_TEXT);
+    expect(ratio(ink, "#0086FE")).toBeCloseTo(4.45, 2);
   });
 });

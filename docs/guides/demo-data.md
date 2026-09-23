@@ -5,7 +5,8 @@ demos, design review and marketing stills, and a hosted project, for the account
 App Review signs in to.
 
 Everything here is invented. The seed contains no real chapter and no real member
-data, and its addresses are all on `example.com`
+data. Every address is on `example.com` except the login's, which is whatever
+`DEMO_EMAIL` names: the App Review login's own, for `--reviewer`
 ([`spec/engineering.md`](../../spec/engineering.md): no real identifiers in seed
 data). The chapter name and roster live at the top of the seed file.
 
@@ -54,7 +55,10 @@ the delete-by-id-prefix remove the old rows, and the rebuild links the new one.
 It links only a login that `seed-demo.mjs auth` created for the same chapter,
 which it marks in the account's `app_metadata`. An account with the right email
 but no marker (a real person's, or one added by hand in the Supabase dashboard)
-is left alone: the local seed goes ahead unlinked, and `--reviewer` refuses. If
+is left alone on a hosted project: `auth` refuses to touch it, and `--reviewer`
+refuses to seed. On the local stack `auth` adopts it instead, resetting its
+password to the local one and marking it, since a local account with the
+roster's email is an earlier demo login; `sql` run on its own leaves it unlinked. If
 the login signed in before the seed linked it (`verify` run early, or the app
 opened), the API created a `users` row with no chapter for it; the next seed
 removes that row and links the login properly.
@@ -96,15 +100,26 @@ for production is `prod`.
   characters and must not be the local stack's committed one.
 - `auth` changes an existing hosted account only if this script created it for
   the same namespace (a marker in its `app_metadata`), and the seed links only a
-  marked login. Anything else could be a real person's account.
+  marked login. Anything else could be a real person's account. The marker cannot
+  catch a typo in an address that has **no** account yet: `auth` creates, confirms
+  and marks that one like the intended one, and the seed then makes whoever owns
+  that inbox the demo chapter's president. Check the address `auth` prints before
+  you seed.
 - `verify` refuses the committed local password on a hosted project too, so a
   login that accepts it cannot pass.
 - `auth` and `storage` refuse production unless `DEMO_ALLOW_PRODUCTION=true`,
   the same fence `DB_RESTORE_ALLOW_PRODUCTION` puts on a restore. The production
   ref comes from [`.github/environments.json`](../../.github/environments.json).
-- The seed refuses to link a login whose `users` row is a member of any chapter,
-  and `--reviewer` refuses to run at all until a marked login exists. Either way
-  the whole seed is one transaction, so a failed re-seed leaves the chapter it
+- The seed refuses to link a login whose earlier `users` row anything still
+  references (a membership, rows in a chapter it has left), and `--reviewer`
+  refuses to run at all until a marked login exists. The seed and `sql --remove`
+  also refuse while anything outside the demo chapter still references a seeded
+  account once that chapter is gone: a membership in, or anything written to,
+  another chapter (the App Review login founding one, say), whether deleting the
+  account would delete that row, fail on it, or null its reference, which would
+  strip another chapter's audit log of its actor. A directory request the login
+  filed counts too; clear it by hand. Only what the account owns outright (its
+  push tokens and settings) goes with it. Either way the whole seed is one transaction, so a failed re-seed leaves the chapter it
   was replacing exactly as it was.
 
 ### Production (App Review)
@@ -112,7 +127,9 @@ for production is `prod`.
 Writing this fictional chapter to `frapp-prod` is the owner's decision, and the
 steps below need production access that agent sessions do not have
 ([#2309](https://github.com/pdcarlson/Frapp/issues/2309)). Set the login's two
-values first, keeping the password out of shell history:
+values first, keeping the password out of shell history, in a terminal you close
+when you are done: `setup-demo.sh` and the capture scripts read the same two
+variables, so a later local run in that shell would pick up the production login.
 
 ```bash
 export DEMO_EMAIL=<the App Review login's email>
@@ -122,25 +139,44 @@ read -rs DEMO_PASSWORD && export DEMO_PASSWORD
 1. **Create the login.** `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs auth --namespace a9900000`.
    Use this, not the Supabase dashboard: the seed links only a login this
    command created.
-2. **Seed.** `node scripts/demo/seed-demo.mjs sql --namespace a9900000 --reviewer > reviewer.sql`,
-   then paste `reviewer.sql` into the `frapp-prod` SQL editor, or run
-   `psql "<frapp-prod connection string>" -v ON_ERROR_STOP=1 -f reviewer.sql`.
+2. **Seed.** `node scripts/demo/seed-demo.mjs sql --namespace a9900000 --reviewer > "${TMPDIR:-/tmp}/reviewer.sql"`,
+   then paste that file into the `frapp-prod` SQL editor, or run
+   `psql "<frapp-prod connection string>" -v ON_ERROR_STOP=1 -f "${TMPDIR:-/tmp}/reviewer.sql"`.
+   Write it outside the repo and delete it afterwards: it carries the login's
+   email, and nothing ignores a `.sql` file at the repo root.
    An agent can apply it through Supabase MCP `execute_sql` once you approve.
 3. **Upload the files.** `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs storage --namespace a9900000`.
 4. **Check it.** `npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs verify --namespace a9900000 --reviewer --api-url https://api.frapp.live`.
-   Every line reads `OK`, ending `verify: every check passed`.
+   Every line reads `OK`, ending `verify: every check passed`. It fails a stale
+   chapter too: once the Chapter Meeting two days after the seed, its one event
+   with a check-in zone, has started, it says to re-seed.
 5. **Hand it over.** App Store Connect → App Review Information → Sign-In
    Required: the login's email and password.
 
-**Re-seed before every submission.** Events are dated relative to the day the
-seed runs, so a chapter seeded weeks earlier shows no upcoming events. Re-run
-steps 2 to 4. The login and its password persist, and `storage` overwrites the
-same objects in place: document ids are fixed, so each run names the same files.
+**Re-seed before every submission, the same day.** Events are dated relative to
+the day the seed runs, and the one with a check-in zone, the Chapter Meeting, is at
+19:00 UTC two days later, so `verify` fails 43 to 67 hours after a seed. App Review
+can take longer than that; the seed's last event is 12 days out. First tear the
+last one down with steps 1 and 2 of **To remove a demo chapter** below, then re-run
+steps 2 to 4 of the list above (seed, upload, check). Re-seeding over it would clear the
+reviewer's rows but not their uploads: a chat photo or avatar under
+`chapters/<chapter id>/` would stay in production Storage with nothing pointing at
+it, and only `storage --remove` clears that folder. The login and its password
+persist, and step 2 links the same login again.
 
-**To remove a demo chapter**, run the steps backwards with `--remove`:
-`storage --remove` (every object under the chapter's documents and backwork
-folders), `sql --remove` (prints the chapter and user deletes), then
-`auth --remove` (only a login this script created).
+**To remove a demo chapter**, in this order. For a re-seed, stop after step 2 here
+and go on with step 2 of the list above.
+
+1. `node scripts/demo/seed-demo.mjs sql --namespace a9900000 --remove > "${TMPDIR:-/tmp}/remove.sql"`,
+   applied the way step 2 above applies the seed. It prints the chapter and user
+   deletes, and it is the step that can refuse (anything outside the demo chapter
+   still referencing a seeded account), so stop there if it does.
+2. `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs storage --namespace a9900000 --remove`.
+   It deletes every object under `chapters/<chapter id>/` in every bucket, which
+   includes anything the reviewer uploaded, such as a chat photo. It cannot be
+   undone, so it refuses while the chapter row still exists.
+3. Only to delete the login for good: `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs auth --namespace a9900000 --remove`.
+   It deletes only a login this script created.
 
 ## Capture screenshots
 

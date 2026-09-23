@@ -185,7 +185,7 @@ describe("the preview warnings say what the preview does", () => {
 
   it("gates the fallback warning on contrast, not on fallbackApplied", () => {
     // `fallbackApplied` is also true for an empty or malformed draft, where
-    // "saving keeps the color you entered" would be false.
+    // "saving stores the color you entered" would be false.
     expect(
       settingsPage.match(/const accentPreviewFallsBack =([\s\S]*?);/)?.[1],
     ).toMatch(/^\s*accent\.reason === "insufficient_contrast"\s*$/);
