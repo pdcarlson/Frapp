@@ -161,7 +161,7 @@ const warning = (condition: string) => {
 
 describe("the preview warnings say what the preview does", () => {
   it("renders the fallback warning its writing.md row states", () => {
-    expect(warning("accent.fallbackApplied")).toBe(
+    expect(warning("accentPreviewFallsBack")).toBe(
       writingRow("Accent preview fallback"),
     );
   });
@@ -172,8 +172,21 @@ describe("the preview warnings say what the preview does", () => {
     );
   });
 
+  it("shows the fallback warning only for a colour the save would accept", () => {
+    // "Saving keeps the color you entered" is false for an empty, partial or
+    // 3-digit draft: `fallbackApplied` is true there too, and the API's
+    // `^#[0-9A-Fa-f]{6}$` rejects it. So the gate is the contrast reason on a
+    // well-formed draft, not `fallbackApplied`.
+    const gate = settingsPage.match(
+      /const accentPreviewFallsBack =([\s\S]*?);/,
+    )?.[1];
+    expect(gate).toBeDefined();
+    expect(gate).toMatch(/accent\.reason === "insufficient_contrast"/);
+    expect(gate).toContain("/^#[0-9A-Fa-f]{6}$/.test(accentDraft)");
+  });
+
   it("neither reads as a rejection, which no save makes", () => {
-    for (const condition of ["accent.fallbackApplied", "previewInkFailsAA"]) {
+    for (const condition of ["accentPreviewFallsBack", "previewInkFailsAA"]) {
       expect(warning(condition)).not.toMatch(/contrast requirements|rejected/);
     }
   });

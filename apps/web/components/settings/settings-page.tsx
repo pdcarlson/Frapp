@@ -429,6 +429,14 @@ function SettingsPageContent() {
     background: signetDarkTokens.color.surface.card,
     fallbackAccent: signetDarkTokens.color.gold.house,
   });
+  // The fallback warning speaks only to a colour the save would accept and that
+  // failed contrast. `fallbackApplied` is also true for an empty, partial or
+  // 3-digit draft (`reason: "invalid_format"`, or a shorthand the resolver
+  // expands), which the API's `^#[0-9A-Fa-f]{6}$` rejects, so "saving keeps the
+  // color you entered" would be false there.
+  const accentPreviewFallsBack =
+    accent.reason === "insufficient_contrast" &&
+    /^#[0-9A-Fa-f]{6}$/.test(accentDraft);
 
   /*
     The on-accent tone for the *draft* colour, and whether it is legible.
@@ -1131,7 +1139,7 @@ function SettingsPageContent() {
                       Preview
                     </div>
                   </div>
-                  {accent.fallbackApplied ? (
+                  {accentPreviewFallsBack ? (
                     <p className="text-xs text-warning">
                       This color is hard to read on the card, so the preview
                       shows {accent.resolvedAccent} instead. Saving keeps the
@@ -1146,15 +1154,14 @@ function SettingsPageContent() {
                     card's own description promises the accent will be used
                     for. `#0080FD` passes the first and fails this one. Both
                     check the draft preview only: the saved palette's label
-                    (`on-primary`) is corrected by the engine to black or white
-                    at 4.5:1 or better (accent-engine.md §8), so neither
-                    predicts what saving paints (#2543).
+                    (`on-primary`) always clears 4.5:1 (accent-engine.md §8), so
+                    neither predicts what saving paints (#2543).
                   */}
                   {previewInkFailsAA ? (
                     <p className="text-xs text-warning">
                       Label text on this preview reads at{" "}
                       {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
-                      Saving picks a black or white label that clears it.
+                      Saving picks a label color that clears it.
                     </p>
                   ) : null}
                   {/*
