@@ -764,7 +764,7 @@ export class ChatService {
     await this.persistAttachments(message.id, input.channel_id, attachments);
 
     try {
-      await this.sendMessageNotification(input, channel);
+      await this.notifyMessageRecipients(input, channel);
     } catch (error) {
       this.logger.warn('Failed to send message notification', {
         messageId: message.id,
@@ -839,7 +839,7 @@ export class ChatService {
     }
   }
 
-  private async sendMessageNotification(
+  private async notifyMessageRecipients(
     input: SendMessageInput,
     channel: ChatChannel,
   ): Promise<void> {

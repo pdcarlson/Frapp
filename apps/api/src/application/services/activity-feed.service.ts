@@ -296,7 +296,7 @@ export class ActivityFeedService {
     // channel list — never a direct `chat_messages` scan keyed on a channel
     // name, which would bypass `assertChannelAccess` entirely. The
     // name+flags heuristic itself mirrors `ChatService`'s own
-    // `sendMessageNotification` (chat.service.ts) — an officer renaming the
+    // `notifyMessageRecipients` (chat.service.ts) — an officer renaming the
     // seeded channel silently drops this domain from the feed, the same
     // accepted risk that heuristic already carries elsewhere in the app.
     const channels = await this.chatService.getChannels(chapterId, userId);

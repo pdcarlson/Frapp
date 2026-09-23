@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as ts from 'typescript';
 
 /**
  * The chat read-surface ledger (#2257, #2324): every surface that can put one
@@ -30,7 +31,10 @@ import { join } from 'node:path';
  * What it cannot see, so nobody reads a green run as more than it is:
  * - a chat read added to a controller outside `CHAT_CONTROLLERS`;
  * - an existing notification edited to carry another member's words, since
- *   the per-file count does not move;
+ *   the per-file count does not move, and a notification sent through a
+ *   wrapper whose name does not contain `notify`;
+ * - a Realtime subscription whose event name is built at runtime, or opened by
+ *   a helper outside `apps/api/src`;
  * - member text re-posted under the system actor, which cannot be blocked. The
  *   poll-expiry notice quotes the poll's question this way (#2495);
  * - a policy or table written through dynamic SQL assembled from parts.
@@ -271,7 +275,7 @@ const HTTP_LEDGER: Record<string, Entry> = {
     },
   },
   NotificationController_listNotifications_v1: {
-    // Serves the in-app rows `ChatService.sendMessageNotification` writes for
+    // Serves the in-app rows `ChatService.notifyMessageRecipients` writes for
     // DMs and announcements, so its guarantee is made at write time: no row is
     // written for a member who had blocked the sender. A row written before the
     // block stays, as notification history.
@@ -361,14 +365,14 @@ const PUSH_LEDGER: Record<string, Entry> = {
       test: 'does not notify a recipient who has blocked the sender',
     },
   },
-  'ChatService.sendMessageNotification (DM and group DM)': {
+  'ChatService.notifyMessageRecipients (DM and group DM)': {
     status: 'masked',
     proof: {
       spec: CHAT_SERVICE_SPEC,
       test: 'does not notify a DM recipient who has blocked the sender',
     },
   },
-  'ChatService.sendMessageNotification (announcements)': {
+  'ChatService.notifyMessageRecipients (announcements)': {
     status: 'masked',
     proof: {
       spec: CHAT_SERVICE_SPEC,
@@ -399,47 +403,41 @@ const MEMBER_TEXT: Entry = {
 };
 
 /**
- * Every file under `apps/api/src` that mentions a notify-named call
- * (`notifyUser`, `notifyChapter`, and every wrapper around them, such as
+ * Every file under `apps/api/src` that makes a notify-named call
+ * (`notifyUser`, `notifyChapter`, and every wrapper named for them, such as
  * `safeNotifyUser`, `claimAndNotify` or `notifyEligibleMembers`), with how many
- * times and what the notifications carry. Counting every such token rather than
- * the two primitives is the point: a notification added through a wrapper, or
- * a new wrapper, still moves the count and fails until someone decides whether
- * it carries another member's words. Definitions count too, so the numbers are
- * token counts, not notification counts.
+ * such calls it makes and what the notifications carry. Counting calls to the
+ * wrappers as well as the primitives is the point: a notification added through
+ * a notify-named wrapper still moves the count, and fails until someone decides
+ * whether it carries another member's words. Calls are read from the syntax
+ * tree, so a mention in a comment or a string does not count.
  */
-const NOTIFY_EMITTERS: Record<string, { tokens: number; entries: Entry[] }> = {
-  'application/services/notification.service.ts': {
-    tokens: 2,
-    entries: [
-      {
-        status: 'no-foreign-content',
-        why: 'Defines `notifyUser` and `notifyChapter`; every caller is listed here.',
-      },
-    ],
-  },
+const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
   'application/services/chat.service.ts': {
-    tokens: 2,
+    calls: 3,
     entries: [
-      PUSH_LEDGER['ChatService.sendMessageNotification (DM and group DM)'],
-      PUSH_LEDGER['ChatService.sendMessageNotification (announcements)'],
+      PUSH_LEDGER['ChatService.notifyMessageRecipients (DM and group DM)'],
+      PUSH_LEDGER['ChatService.notifyMessageRecipients (announcements)'],
     ],
   },
   'modules/chat-push-worker/chat-push-worker.service.ts': {
-    tokens: 1,
+    calls: 1,
     entries: [PUSH_LEDGER['chat-push-worker (chat_messages INSERT)']],
   },
   'application/services/billing.service.ts': {
-    tokens: 5,
+    calls: 4,
     entries: [
       {
         status: 'no-foreign-content',
-        why: 'Subscription status to the president, and a hand-off to the invoice payment-failure notice. No member-written text.',
+        why: 'Subscription status to the president. No member-written text.',
       },
+      // The hand-off to `FinancialInvoiceService.notifyStripePaymentFailure`,
+      // whose body quotes the invoice title.
+      MEMBER_TEXT,
     ],
   },
   'application/services/invite.service.ts': {
-    tokens: 3,
+    calls: 2,
     entries: [
       {
         status: 'not-hidden',
@@ -448,35 +446,26 @@ const NOTIFY_EMITTERS: Record<string, { tokens: number; entries: Entry[] }> = {
     ],
   },
   'application/services/event.service.ts': {
-    tokens: 9,
+    calls: 7,
     entries: [MEMBER_TEXT],
   },
   'application/services/financial-invoice.service.ts': {
-    tokens: 4,
+    calls: 3,
     entries: [MEMBER_TEXT],
   },
   'application/services/points.service.ts': {
-    tokens: 1,
+    calls: 1,
     entries: [MEMBER_TEXT],
   },
   'application/services/service-entry.service.ts': {
-    tokens: 2,
+    calls: 2,
     entries: [MEMBER_TEXT],
   },
-  'application/services/task.service.ts': { tokens: 8, entries: [MEMBER_TEXT] },
+  'application/services/task.service.ts': { calls: 6, entries: [MEMBER_TEXT] },
   'modules/scheduled-jobs/scheduled-jobs.service.ts': {
-    tokens: 19,
+    calls: 12,
     entries: [MEMBER_TEXT],
   },
-};
-
-/**
- * Files that mention `postgres_changes` without subscribing, each read by a
- * person. Everything else that mentions it is treated as a subscription.
- */
-const POSTGRES_CHANGES_PROSE: Record<string, string> = {
-  'interface/dtos/chat.dto.ts':
-    'An `@ApiProperty` description of the Realtime echo. It subscribes to nothing.',
 };
 
 /**
@@ -595,66 +584,119 @@ function policyStatements(all: Migration[]): PolicyStatement[] {
   );
 }
 
-/** JS comments out, so a commented-out proof is not a proof. */
-function stripJsComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\/|(^|[^:\\])\/\/[^\n]*/g, '$1');
+/** Parsed once per file. Comments and string contents are not code here. */
+function parse(file: string): ts.SourceFile {
+  return ts.createSourceFile(
+    file,
+    readFileSync(file, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
 }
 
+function everyNode(root: ts.Node): ts.Node[] {
+  const out: ts.Node[] = [];
+  const visit = (node: ts.Node): void => {
+    out.push(node);
+    node.forEachChild(visit);
+  };
+  visit(root);
+  return out;
+}
+
+/** `'x'` or a template with no substitutions: the only literals read as names. */
+function literalText(node: ts.Node | undefined): string | undefined {
+  return node &&
+    (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
+    ? node.text
+    : undefined;
+}
+
+/** The leftmost identifier of `a.b.c`, or of `a` itself. */
+function rootIdentifier(node: ts.Expression): string | undefined {
+  let current: ts.Expression = node;
+  while (ts.isPropertyAccessExpression(current)) current = current.expression;
+  return ts.isIdentifier(current) ? current.text : undefined;
+}
+
+const SKIPPING_IDENTIFIERS = new Set([
+  'xdescribe',
+  'xit',
+  'xtest',
+  'fdescribe',
+  'fit',
+  'ftest',
+]);
+
 /**
- * String and template literals emptied, so an identifier test sees code only:
- * the English word "fit" in a test title is not `fit`. Template `${…}` parts go
- * with the literal, which errs toward seeing less code, never more words.
+ * What makes Jest skip a test in this file, read from the syntax tree: `.skip`,
+ * `.only` or `.todo` anywhere on a `describe` / `it` / `test` chain (so
+ * `it.concurrent.only` too), and the `x`/`f` identifiers in any position,
+ * called or used as a value (`cond ? describe : xdescribe`). A focused test
+ * anywhere skips the proof, and a skipped block around it leaves the title in
+ * place with nothing running. Comments and strings are not in the tree, so the
+ * word "fit" in a title is not the identifier.
  */
-function stripJsStrings(source: string): string {
-  return source.replace(
-    /'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g,
-    "''",
+function skipsOrFocuses(file: ts.SourceFile): boolean {
+  return everyNode(file).some(
+    (node) =>
+      (ts.isIdentifier(node) &&
+        SKIPPING_IDENTIFIERS.has(node.text) &&
+        !isNameOnly(node)) ||
+      (ts.isPropertyAccessExpression(node) &&
+        ['skip', 'only', 'todo'].includes(node.name.text) &&
+        ['describe', 'it', 'test'].includes(rootIdentifier(node) ?? '')),
   );
 }
 
 /**
- * Anything that makes Jest skip a test in this file: `.skip`, `.only` and
- * `.todo` on `describe`, `it` or `test`, with or without `.concurrent`, and
- * the `x`/`f` prefixes, in any position (a call, or a value such as
- * `cond ? describe : xdescribe`). Tested against code with strings removed. A
- * focused test anywhere skips the proof; a skipped block around it leaves the
- * title in place with nothing running.
+ * An identifier that only names something (`o.fit`, `{ fit: 1 }`, a method
+ * called `fit`) rather than referring to a binding. Only a reference can be
+ * Jest's `fit`.
  */
-const SKIPS_OR_FOCUSES =
-  /\b(?:describe|it|test)(?:\.concurrent)?\.(?:skip|only|todo)\b|\b[xf](?:describe|it|test)\b/;
+function isNameOnly(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  return (
+    (ts.isPropertyAccessExpression(parent) ||
+      ts.isPropertyAssignment(parent) ||
+      ts.isMethodDeclaration(parent) ||
+      ts.isPropertyDeclaration(parent) ||
+      ts.isPropertySignature(parent) ||
+      ts.isMethodSignature(parent)) &&
+    parent.name === node
+  );
+}
 
 /**
- * The proof's title appears as a live `it(` in its spec, and that spec neither
- * skips nor focuses anything. Matching on title rather than on the test body
- * cannot prove the test asserts the right thing; it stops a renamed, deleted,
- * commented-out or skipped proof leaving the ledger vouching for nothing.
+ * The proof's title is the first argument of a real `it(…)` / `test(…)` call in
+ * its spec, and that spec neither skips nor focuses anything. Matching on title
+ * rather than on the test body cannot prove the test asserts the right thing;
+ * it stops a renamed, deleted, commented-out or skipped proof leaving the
+ * ledger vouching for nothing.
  */
 function proofProblem(proof: Proof): string | null {
-  const source = stripJsComments(
-    readFileSync(join(API_SRC, proof.spec), 'utf8'),
+  const file = parse(join(API_SRC, proof.spec));
+  if (skipsOrFocuses(file)) return `${proof.spec} skips or focuses a test`;
+  const live = everyNode(file).some(
+    (node) =>
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      ['it', 'test'].includes(node.expression.text) &&
+      literalText(node.arguments[0]) === proof.test,
   );
-  if (SKIPS_OR_FOCUSES.test(stripJsStrings(source))) {
-    return `${proof.spec} skips or focuses a test`;
-  }
-  const escaped = proof.test.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  if (!new RegExp(`\\bit\\(\\s*(['"\`])${escaped}\\1`).test(source)) {
-    return `${proof.spec} has no live it('${proof.test}')`;
-  }
-  return null;
+  return live ? null : `${proof.spec} has no live it('${proof.test}')`;
 }
 
-/** Every non-spec `.ts` under apps/api/src. */
-function apiSources(): { rel: string; code: string }[] {
-  const out: { rel: string; code: string }[] = [];
+/** Every non-spec `.ts` under apps/api/src, parsed. */
+function apiSources(): { rel: string; file: ts.SourceFile }[] {
+  const out: { rel: string; file: ts.SourceFile }[] = [];
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.spec.ts')) {
-        out.push({
-          rel: full.slice(API_SRC.length + 1),
-          code: stripJsComments(readFileSync(full, 'utf8')),
-        });
+        out.push({ rel: full.slice(API_SRC.length + 1), file: parse(full) });
       }
     }
   };
@@ -685,6 +727,7 @@ describe('chat read-surface ledger (#2324)', () => {
       'public.chat_message_actions chat_message_actions_select',
     );
     expect(sources.length).toBeGreaterThan(100);
+    expect(typeof ts.createSourceFile).toBe('function');
   });
 
   it('classifies every operation of a chat-owning controller', () => {
@@ -820,47 +863,82 @@ describe('chat read-surface ledger (#2324)', () => {
   });
 
   it('opens Realtime subscriptions only on ledgered tables', () => {
-    // Any file whose code mentions the event at all counts as subscribing,
-    // however the mention is written, unless a person has read it and listed
-    // it in POSTGRES_CHANGES_PROSE. Matching a particular call shape lost a
-    // form every time it was tightened; mentioning is what cannot be dodged.
-    // Every subscribing file has to name its tables as literals, so this can
-    // read them, and each table has to be in API_SUBSCRIPTIONS. A subscription
-    // on a reaction table would be a reaction push; one with no table filter
-    // would be every table at once.
-    const mentions = /postgres_changes|POSTGRES_CHANGES/;
-    expect(
-      Object.keys(POSTGRES_CHANGES_PROSE).filter(
-        (rel) => !sources.some((s) => s.rel === rel && mentions.test(s.code)),
-      ),
-    ).toEqual([]);
-    const problems = sources
-      .filter(
-        ({ rel, code }) =>
-          mentions.test(code) && !(rel in POSTGRES_CHANGES_PROSE),
-      )
-      .flatMap(({ rel, code }) => {
-        const tables = [...code.matchAll(/\btable:\s*(['"`])([\w.]+)\1/g)].map(
-          (match) => match[2],
-        );
-        if (tables.length === 0) {
-          return [`${rel}: postgres_changes with no literal table`];
-        }
-        return tables
-          .filter((table) => !(table in API_SUBSCRIPTIONS))
-          .map((table) => `${rel}: ${table}`);
-      });
+    // Read from the syntax tree, one subscription at a time. Every literal
+    // `'postgres_changes'` (or `REALTIME_LISTEN_TYPES.POSTGRES_CHANGES`) in
+    // API code has to be the event argument of an `.on(…)` call whose filter
+    // is an object literal naming a `table` in API_SUBSCRIPTIONS. The event held
+    // in a variable, a filter with no table (every table at once), or a table
+    // held in a constant is a problem to resolve by hand, never a pass. Prose
+    // about the echo inside a longer string is not the literal and does not
+    // count. A reaction subscription would be a reaction push.
+    const isEvent = (node: ts.Node | undefined): boolean =>
+      literalText(node) === 'postgres_changes' ||
+      (!!node &&
+        ts.isPropertyAccessExpression(node) &&
+        node.name.text === 'POSTGRES_CHANGES');
+    const problems = sources.flatMap(({ rel, file }) =>
+      everyNode(file)
+        .filter(
+          (node) =>
+            isEvent(node) &&
+            !(
+              ts.isPropertyAccessExpression(node.parent) && isEvent(node.parent)
+            ),
+        )
+        .flatMap((event) => {
+          const call = event.parent;
+          const where = `${rel}:${file.getLineAndCharacterOfPosition(event.getStart()).line + 1}`;
+          if (
+            !ts.isCallExpression(call) ||
+            call.arguments[0] !== event ||
+            !ts.isPropertyAccessExpression(call.expression) ||
+            call.expression.name.text !== 'on'
+          ) {
+            return [`${where}: postgres_changes outside an .on(…) call`];
+          }
+          const filter = call.arguments[1];
+          const table =
+            filter && ts.isObjectLiteralExpression(filter)
+              ? filter.properties.find(
+                  (property): property is ts.PropertyAssignment =>
+                    ts.isPropertyAssignment(property) &&
+                    property.name.getText() === 'table',
+                )
+              : undefined;
+          const name = literalText(table?.initializer);
+          if (name === undefined) {
+            return [`${where}: subscription with no literal table`];
+          }
+          return name in API_SUBSCRIPTIONS ? [] : [`${where}: ${name}`];
+        }),
+    );
     expect(problems).toEqual([]);
   });
 
   it('knows every notification emitter, and every notify-named call in it', () => {
+    // A call counts when any name on its callee chain contains "notify", so
+    // `this.notifyUser.call(…)`, `notifyUser?.(…)` and `svc.notifyUser<T>(…)`
+    // all count. Declarations do not: these are call sites.
     const found: Record<string, number> = {};
-    for (const { rel, code } of sources) {
-      const tokens = code.match(/\b\w*[Nn]otify\w*\s*\(/g)?.length ?? 0;
-      if (tokens > 0) found[rel] = tokens;
+    for (const { rel, file } of sources) {
+      const calls = everyNode(file).filter((node) => {
+        if (!ts.isCallExpression(node)) return false;
+        let callee: ts.Expression = node.expression;
+        for (;;) {
+          const name = ts.isIdentifier(callee)
+            ? callee.text
+            : ts.isPropertyAccessExpression(callee)
+              ? callee.name.text
+              : '';
+          if (/notify/i.test(name)) return true;
+          if (!ts.isPropertyAccessExpression(callee)) return false;
+          callee = callee.expression;
+        }
+      }).length;
+      if (calls > 0) found[rel] = calls;
     }
     const expected = Object.fromEntries(
-      Object.entries(NOTIFY_EMITTERS).map(([rel, { tokens }]) => [rel, tokens]),
+      Object.entries(NOTIFY_EMITTERS).map(([rel, { calls }]) => [rel, calls]),
     );
     // A new or moved notification lands here. If it carries another member's
     // words, it has to drop blockers and name the proof, or be open against an
