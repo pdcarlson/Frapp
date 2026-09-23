@@ -205,8 +205,9 @@ const rolesBySeed = new Map<string, Record<string, string>>();
 
 /**
  * Memoized: since #2541 a seed whose fill falls under 3:1 runs the fill lift,
- * which calls the generator once per candidate (13 calls in all for this
- * corpus's worst seeds), and the contrast specs walk the whole corpus many times.
+ * which calls the generator once per candidate (12 candidates for this
+ * corpus's worst seeds, on top of the seed's own generation), and the contrast
+ * specs walk the whole corpus many times.
  * The result is a pure function of the seed. Callers must not mutate it.
  */
 export function accentRolesFor(seed: string) {

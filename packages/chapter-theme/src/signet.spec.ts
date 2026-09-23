@@ -103,8 +103,10 @@ const LADDER = {
 /**
  * The step 9 the generator paints for `seed` before any lift: the §1 call with
  * the seed itself as its accent. Test-only, to tell which seeds the engine
- * lifted. `gray` is restated from the engine's `GENERATOR_PARAMS`; if it drifts,
- * the "lifts exactly" test below sees every seed as lifted and fails.
+ * lifted. `gray` is restated from the engine's `GENERATOR_PARAMS`, and the
+ * generator reads it only for a pure black or white accent. A chromatic drift
+ * moves `#000000`'s fill, which "pins every lifted fill" below catches; an
+ * achromatic one (`#303030`, tried) changes no fill this suite checks.
  */
 const unliftedFill = (seed: string) =>
   // normalizeHex: the generator can return shorthand (`#fff`), as the engine

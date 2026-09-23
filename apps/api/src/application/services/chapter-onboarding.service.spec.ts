@@ -26,10 +26,12 @@ jest.mock('@repo/org-archetypes', () => ({
 jest.mock('@repo/chapter-theme', () => ({
   // Mirrors the real DeriveSignetPaletteResult shape. Returning a partial
   // object here hid a live defect once: the service read a result field
-  // unguarded, threw, and the surrounding try/catch turned that into a silently
-  // missing theme_palette. The service reads `invalidSeed` and iterates
-  // `contrastChecks` and `fillChecks`. Keep this in step with
-  // packages/chapter-theme.
+  // unguarded, threw, and the try/catch onboarding then had turned that into a
+  // silently missing theme_palette. #1147 removed that try/catch, so a throw
+  // now fails onboarding outright. `buildChapterPalette` and
+  // `logChapterPaletteWarnings` (chapter-palette.ts, not mocked) read
+  // `invalidSeed` and iterate `contrastChecks` and `fillChecks`. Keep this in
+  // step with packages/chapter-theme.
   deriveSignetPalette: jest.fn(() => ({
     palette: { '--signet-accent-primary': '#C49A3A' },
     resolvedSeed: '#F2B72E',

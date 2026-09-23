@@ -84,8 +84,10 @@ export type ChapterPaletteBuild = {
  * Onboarding is the worst of the three — its call runs *before*
  * `ChapterService.create`, so a throw here fails chapter creation outright
  * rather than degrading the palette. (This paragraph used to claim onboarding
- * wrapped the call in a try/catch returning `null`; it never has — corrected
- * 2026-09-07. The rule is unchanged, only the consequence it names.)
+ * wrapped the call in a try/catch returning `null`; it has not since #1147
+ * replaced the wrapped legacy call with this one — corrected 2026-09-07, and
+ * the history 2026-09-23. The rule is unchanged, only the consequence it
+ * names.)
  */
 export function buildChapterPalette(
   colors: ChapterBrandColors,

@@ -78,9 +78,9 @@ function readString(
  * foreground would miss AA: on `--card`, in a palette written since #2541
  * lightened both fills, a crimson chapter's step 9 measures **3.32:1** and a
  * forest-green one **3.34:1** (a stored palette paints its older, darker fill;
- * `accent-engine.md` §4). Step 11 measures 7.8–9.8:1 for every colour in the
- * chapter directory seed, and reads equally well as a chip fill under the fixed
- * `gold.onHouse` label (7.3:1+).
+ * `accent-engine.md` §4). Step 11 measures 7.5–8.6:1 on `--card` for every
+ * colour in the chapter directory seed, and reads equally well as a chip fill
+ * under the fixed `gold.onHouse` label (7.2:1+).
  *
  * So the generated scale removes the problem rather than compensating for it —
  * but only via the role that was specified for this job. A surface that wants a
