@@ -35,7 +35,7 @@
 //   0 — every project was read and the snapshot was written
 //   1 — a project could not be read, or answered with an empty history;
 //       nothing is written. Consumers keep using the last good snapshot until
-//       a deploy outdates it for a pull request's gates (the download
+//       a deploy outdates it for the gates off main (the download
 //       action waits, then refuses one read before the latest deploy on
 //       main) or it ages out
 //   2 — the invocation itself is wrong (no token, no --out, unreadable config)

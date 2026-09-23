@@ -186,7 +186,7 @@ and sends no SQL. The two PR checks hold no credential at all (#2518). They read
 the snapshot of that same endpoint that
 [`migration-snapshot.yml`](../../../.github/workflows/migration-snapshot.yml)
 publishes from `main` after every deploy. On a pull request, when the snapshot
-predates the latest deploy, they wait up to 5 minutes for the next publish,
+predates the latest deploy, they wait up to 15 minutes for the next publish,
 then fail and name the publisher
 ([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../internal/ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets)).
 

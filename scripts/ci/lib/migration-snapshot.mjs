@@ -46,10 +46,11 @@ export const SNAPSHOT_WORKFLOW = ".github/workflows/migration-snapshot.yml";
  * The main rule lives in `.github/actions/download-migration-snapshot`: the
  * snapshot must have been read after the latest completed `Deploy API` or
  * `Deploy production` run on `main`, the only workflows that apply migrations.
- * Each of them triggers a publish. On a pull request the download action waits
- * up to 5 minutes for a lagging one, then fails the gates, naming the
- * publisher. Push runs and the report-only drift job take the newest snapshot as
- * it is, so for them this limit is the only freshness rule. This limit covers
+ * Each of them triggers a publish. Off `main` the download action waits up to
+ * 15 minutes for a lagging one, then fails the gates, naming the publisher. Runs
+ * on `main` take the newest snapshot as it is. The drift job's `stale` verdict
+ * catches a stuck publisher once a migration outlives its grace window. This
+ * limit covers
  * the rest: an apply made outside those workflows, when nothing deploys for a
  * day and the 4-hourly schedule is also failing. Scheduled runs here start hours
  * late (the 06:30 `db-backup.yml` cron started at 11:52Z on 2026-09-23), so 24

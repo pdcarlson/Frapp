@@ -190,12 +190,18 @@ export function readMigrationsAtRef({ ref, runGit = defaultRunGit }) {
  *   foreign — applied to staging, absent from main
  *
  * `capturedMs`, when the applied list is a published snapshot, is when that
- * list was read. A migration that landed on main after it cannot be in it, so
- * it stays in grace whatever the clock says: the snapshot knows nothing about
- * it yet. Everything else is graced from now, exactly as a live read is. A
- * migration that landed before the capture and is still missing more than the
- * grace window after it landed is overdue, which is how a failed apply shows,
- * however soon after the merge the snapshot was taken.
+ * list was read. Grace always runs from now, exactly as it does for a live read,
+ * and a pending migration past it is one of two things:
+ *
+ *   overdue      — it landed before the capture, so the snapshot should show it
+ *                  and doesn't. That is a failed apply, however soon after the
+ *                  merge the snapshot was taken.
+ *   unverifiable — it landed after the capture, so the snapshot cannot show it,
+ *                  and no newer snapshot has appeared within the grace window.
+ *                  The publisher is the problem, not staging, and the verdict is
+ *                  `stale`, which names it. Left in grace instead, it would read
+ *                  green until the snapshot's 24-hour age limit, hiding exactly
+ *                  the failed apply this gate exists for.
  *
  * `foreign` is never graced and is always drift. A version staging holds that
  * main does not is not just untidy: `supabase db push` refuses to run at all in
@@ -212,17 +218,18 @@ export function classifyGateDrift({ main, applied, nowMs, graceMs, capturedMs = 
 
   const overdue = [];
   const withinGrace = [];
+  const unverifiable = [];
   for (const migration of pending) {
+    const late = migration.landedMs === null || nowMs - migration.landedMs >= graceMs;
     const unseen = capturedMs !== null && migration.landedMs !== null && migration.landedMs > capturedMs;
-    if (!unseen && (migration.landedMs === null || nowMs - migration.landedMs >= graceMs)) {
-      overdue.push(migration);
-    } else {
-      withinGrace.push(migration);
-    }
+    if (!late) withinGrace.push(migration);
+    else if (unseen) unverifiable.push(migration);
+    else overdue.push(migration);
   }
 
-  const status = foreign.length > 0 || overdue.length > 0 ? "drift" : "clean";
-  return { pending, overdue, withinGrace, foreign, status };
+  const status =
+    foreign.length > 0 || overdue.length > 0 ? "drift" : unverifiable.length > 0 ? "stale" : "clean";
+  return { pending, overdue, withinGrace, unverifiable, foreign, status };
 }
 
 // ── Reporting ───────────────────────────────────────────────────────────────
@@ -231,7 +238,7 @@ function bullets(migrations, describe) {
   return migrations.map((m) => `- ${describe(m)}`).join("\n");
 }
 
-export function buildGateSummary({ result, graceMinutes, projectRef, mainRef }) {
+export function buildGateSummary({ result, graceMinutes, projectRef, mainRef, capturedMs = null }) {
   const ref = projectRef ? `\`${projectRef.slice(0, 8)}…\`` : "(unknown)";
   const lines = [`## Migration drift gate — staging ${ref}`, ""];
 
@@ -246,6 +253,21 @@ export function buildGateSummary({ result, graceMinutes, projectRef, mainRef }) 
         bullets(result.withinGrace, (m) => `\`${m.version}_${m.name}\``),
       );
     }
+    return lines.join("\n");
+  }
+
+  const unverifiable = result.unverifiable ?? [];
+  if (result.status === "stale") {
+    lines.push(
+      `**Cannot verify.** The migration snapshot${
+        capturedMs === null ? "" : ` (captured ${new Date(capturedMs).toISOString()})`
+      } predates ${unverifiable.length} migration(s) that reached \`${mainRef}\` more than ${graceMinutes}m ago,`,
+      "and no newer snapshot has been published since. This says nothing about staging yet: the publisher",
+      "(`.github/workflows/migration-snapshot.yml`) has not run, or has failed, since those merges. Read its latest",
+      "run, fix it, then re-run it on `main`.",
+      "",
+      bullets(unverifiable, (m) => `\`${m.version}_${m.name}\` (merged ${new Date(m.landedMs).toISOString()})`),
+    );
     return lines.join("\n");
   }
 
@@ -407,7 +429,7 @@ export async function runDriftGate({
     capturedMs,
   });
 
-  onSummary(buildGateSummary({ result, graceMinutes, projectRef, mainRef }));
+  onSummary(buildGateSummary({ result, graceMinutes, projectRef, mainRef, capturedMs }));
 
   if (result.status === "drift") {
     if (result.overdue.length > 0) {
@@ -424,6 +446,15 @@ export async function runDriftGate({
           .join(", ")}. This blocks all further db push runs.`,
       );
     }
+    return 1;
+  }
+
+  if (result.status === "stale") {
+    error(
+      `::error::The migration snapshot predates ${result.unverifiable.length} migration(s) that reached ${mainRef} more than ${graceMinutes}m ago (${result.unverifiable
+        .map((m) => `${m.version}_${m.name}`)
+        .join(", ")}), and nothing newer has been published. Migration snapshot (.github/workflows/migration-snapshot.yml) has not run or has failed since: fix it, then re-run it on main.`,
+    );
     return 1;
   }
 

@@ -454,29 +454,55 @@ test("the summary explains a foreign migration blocks db push", () => {
   assert.match(summary, /20260228000000/);
 });
 
-test("a snapshot keeps a migration that landed after its capture in grace, and still reds a failed apply", async () => {
-  // #2518: in CI the applied state is a published snapshot, and the CLI passes
-  // its capture time as capturedMs. A migration that reached main after the
-  // capture cannot be in it, so it must not read as overdue however long ago
-  // it landed by the wall clock. One that landed BEFORE the capture and is
-  // still missing is a failed apply: that must go red on the usual 30-minute
-  // clock, even when the snapshot was taken minutes after the merge.
-  const snapshotOf = (migrations, capturedMs) =>
-    buildSnapshot({
-      capturedAt: new Date(capturedMs).toISOString(),
-      environments: [{ name: "staging", supabaseProjectRef: "examplestagingref01", migrations: applied(migrations) }],
-    });
+test("against a snapshot, grace runs from now and a late migration is overdue or unverifiable", () => {
+  // #2518: in CI the applied state is a published snapshot, captured at
+  // capturedMs. Three cases for a pending migration.
+  const at = (landedMs) => migration("20260901000000", "late", landedMs);
+  const classify = (m, capturedMs) =>
+    classifyGateDrift({ main: [m], applied: [], nowMs: NOW, graceMs, capturedMs });
 
-  // MAIN[2] landed 2h ago. Captured 3h ago: the snapshot could not have seen it.
-  const before = NOW - 3 * HOUR;
-  const early = { fetchImpl: snapshotFetch(snapshotOf(MAIN.slice(0, 2), before)), accessToken: "snapshot" };
-  assert.equal(await runDriftGate(gateArgs({ ...early, capturedMs: before })), 0);
-  assert.equal(await runDriftGate(gateArgs(early)), 1, "without capturedMs it would read as drift");
+  // Landed after the capture, still inside the grace window: ordinary lag.
+  const lag = classify(at(NOW - 10 * 60 * 1000), NOW - HOUR);
+  assert.equal(lag.status, "clean");
+  assert.equal(lag.withinGrace.length, 1);
 
-  // Captured 10 minutes after MAIN[2] landed, still without it: a failed apply.
-  const after = MAIN[2].landedMs + 10 * 60 * 1000;
-  const late = { fetchImpl: snapshotFetch(snapshotOf(MAIN.slice(0, 2), after)), accessToken: "snapshot" };
-  assert.equal(await runDriftGate(gateArgs({ ...late, capturedMs: after })), 1);
+  // Landed after the capture and past grace: the snapshot cannot show it and
+  // none newer exists. Stale, naming the publisher, never green.
+  const stale = classify(at(NOW - 2 * HOUR), NOW - 3 * HOUR);
+  assert.equal(stale.status, "stale");
+  assert.equal(stale.unverifiable.length, 1);
+
+  // Landed before the capture and still missing past grace: a failed apply,
+  // even though the snapshot was taken only 10 minutes after the merge.
+  const landed = NOW - 2 * HOUR;
+  const failed = classify(at(landed), landed + 10 * 60 * 1000);
+  assert.equal(failed.status, "drift");
+  assert.equal(failed.overdue.length, 1);
+});
+
+test("a stale snapshot fails the gate and the summary names the publisher, not staging", async () => {
+  const capturedMs = NOW - 3 * HOUR;
+  const snapshot = buildSnapshot({
+    capturedAt: new Date(capturedMs).toISOString(),
+    environments: [
+      { name: "staging", supabaseProjectRef: "examplestagingref01", migrations: applied(MAIN.slice(0, 2)) },
+    ],
+  });
+  let summary = "";
+  const code = await runDriftGate(
+    gateArgs({
+      fetchImpl: snapshotFetch(snapshot),
+      accessToken: "snapshot",
+      capturedMs,
+      onSummary: (text) => {
+        summary = text;
+      },
+    }),
+  );
+  assert.equal(code, 1);
+  assert.match(summary, /Cannot verify/);
+  assert.match(summary, /migration-snapshot\.yml/);
+  assert.doesNotMatch(summary, /Drift detected/);
 });
 
 test("the CLI hands a snapshot's capture time to the gate as capturedMs, never as the clock", () => {

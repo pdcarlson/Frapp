@@ -282,7 +282,7 @@ test("openSnapshot refuses an environment name it cannot resolve", () => {
 
 // ── Who waits on a stale snapshot ───────────────────────────────────────────
 
-test("only a pull request's required gates wait on a stale snapshot", () => {
+test("only the required gates off main wait on a stale snapshot", () => {
   // The download action's `on-stale: wait` polls for a post-deploy publish and
   // fails when its budget runs out. On a push to main that failure would be a
   // red REQUIRED check on a main commit, one validate-deploy-sha.mjs refuses
@@ -296,10 +296,12 @@ test("only a pull request's required gates wait on a stale snapshot", () => {
   const settings = [...workflow.matchAll(/uses: \.\/\.github\/actions\/download-migration-snapshot\n\s+with:\n\s+on-stale: (.+)\n/g)].map(
     (m) => m[1].trim(),
   );
+  // Keyed on the ref, not the event: a dispatch on a PR's branch reports check
+  // runs on the PR's head too, so it must wait like the pull_request run.
   assert.deepEqual(settings, [
     "use",
-    "${{ github.event_name == 'pull_request' && 'wait' || 'use' }}",
-    "${{ github.event_name == 'pull_request' && 'wait' || 'use' }}",
+    "${{ github.ref != 'refs/heads/main' && 'wait' || 'use' }}",
+    "${{ github.ref != 'refs/heads/main' && 'wait' || 'use' }}",
   ]);
   const calls = workflow.match(/uses: \.\/\.github\/actions\/download-migration-snapshot/g) ?? [];
   assert.equal(calls.length, settings.length, "every call site sets on-stale explicitly");

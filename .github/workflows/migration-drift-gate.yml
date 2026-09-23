@@ -127,8 +127,9 @@ jobs:
           node-version: 24
 
       # Exports MIGRATION_SNAPSHOT, the downloaded file's path. `use`: this job
-      # reports and does not gate, so it never waits on a publish (see the
-      # action's header).
+      # reports and does not gate, so it never waits on a publish. It still
+      # notices a stuck one: a migration past grace that the snapshot is too old
+      # to show turns it red as `stale`, naming the publisher.
       - name: Download the migration snapshot
         uses: ./.github/actions/download-migration-snapshot
         with:
@@ -240,14 +241,15 @@ jobs:
       # Production's applied state, because this gate is about the database
       # the migrations are heading for. Not needed for a fixture run, which
       # replays a recorded state instead.
-      # `wait` only on a pull request, where the snapshot gates the merge. A push
-      # to main has already merged: waiting there would only risk a red
-      # required check on a main commit (see the action's header).
+      # `wait` on anything but main (a pull request, or a dispatch on a PR's
+      # branch, whose checks land on the PR's head too), where the snapshot gates
+      # a merge. A push to main has already merged: waiting there would only
+      # risk a red required check on a main commit (see the action's header).
       - name: Download the migration snapshot
         if: steps.touched.outputs.run == 'true' && !inputs.replay_fixture
         uses: ./.github/actions/download-migration-snapshot
         with:
-          on-stale: ${{ github.event_name == 'pull_request' && 'wait' || 'use' }}
+          on-stale: ${{ github.ref != 'refs/heads/main' && 'wait' || 'use' }}
 
       - name: Setup Supabase CLI
         if: steps.touched.outputs.run == 'true'
@@ -441,11 +443,13 @@ jobs:
           CHANGED="${RUNNER_TEMP:-/tmp}/order-changed-paths.txt"
 
           # A dispatch always downloads the snapshot, which exercises the
-          # download action's checks (commit on main, newer than the last
-          # deploy). It does NOT exercise this gate's reading of it: head and
-          # base are both `main` on a dispatch, so the script returns through
-          # its fast path before loading the file. The migration-drift job on
-          # the same dispatch does read and validate it.
+          # download action's trust check (commit on main). Only a dispatch on a
+          # branch also exercises the newer-than-the-last-deploy wait: on main
+          # this step passes `on-stale: use`. It does NOT exercise this gate's
+          # reading of the snapshot: head and base are both `main` on a dispatch
+          # from main, so the script returns through its fast path before
+          # loading the file. The migration-drift job on the same dispatch
+          # does read and validate it.
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             echo "Manual dispatch — downloading the snapshot regardless of the diff."
@@ -474,13 +478,13 @@ jobs:
             echo "No files under supabase/migrations/ changed — the base-branch rule still runs, no database is read."
           fi
 
-      # Exports MIGRATION_SNAPSHOT when it runs; unset otherwise. `wait` only on
-      # a pull request, as in migration-replay above.
+      # Exports MIGRATION_SNAPSHOT when it runs; unset otherwise. `wait` on
+      # anything but main, as in migration-replay above.
       - name: Download the migration snapshot
         if: steps.touched.outputs.run == 'true'
         uses: ./.github/actions/download-migration-snapshot
         with:
-          on-stale: ${{ github.event_name == 'pull_request' && 'wait' || 'use' }}
+          on-stale: ${{ github.ref != 'refs/heads/main' && 'wait' || 'use' }}
 
       # The script loads the snapshot past its own zero-network fast path, so a
       # change that introduces nothing never depends on it. That is also why

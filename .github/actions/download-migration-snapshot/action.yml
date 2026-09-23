@@ -29,14 +29,19 @@ description: >
 # bare name is ambiguous, and git resolves it to the tag.
 #
 # ── Newer than the last deploy (`on-stale`) ─────────────────────────────────
-# Freshness matters only where the snapshot gates a merge: a pull request's
-# runs of the required `migration-order` and `migration-replay`. Those callers
-# pass `on-stale: wait`. The step then requires the snapshot to have been read
+# Freshness matters only where the snapshot gates a merge: runs of the required
+# `migration-order` and `migration-replay` on any ref but `main`. That means a
+# pull request, and also a dispatch on a PR's branch, whose check runs land on
+# the PR's head too. Those callers pass `on-stale: wait`. The step then requires the snapshot to have been read
 # after the latest finished `Deploy API` or `Deploy production` run on `main`,
 # with no `Deploy API` run in flight. Those are the only workflows that apply
 # migrations, and each triggers a publish when it finishes. While that is not
-# yet true, the step waits, polling every 30 seconds for up to 5 minutes (a
-# post-deploy publish takes a minute or two). If the snapshot is still stale
+# yet true, the step waits, polling every 45 seconds for up to 15 minutes. The
+# budget has to cover the rest of an in-flight Deploy API run, the time GitHub
+# takes to mark that run complete (which is what fires the chained publish: run
+# 35876748928's `updated_at` trailed its last job by over five minutes), and the
+# publish itself. None of those has been measured end to end, because the
+# publisher has not yet run on `main`. If the snapshot is still stale
 # after that, the step fails and names the publisher. Without this, a failed
 # post-deploy publish would leave the gates judging a PR against the
 # pre-deploy state until the 24-hour age limit ran out. The worst case is a PR
@@ -44,7 +49,7 @@ description: >
 # next `db push` meets a foreign row.
 #
 # Everything else passes `on-stale: use` and takes the newest trusted
-# snapshot as it is. That covers push-to-main and dispatch runs and the
+# snapshot as it is. That covers push-to-main and dispatch-on-main runs and the
 # report-only `migration-drift`. On a push the migration has already merged,
 # so a snapshot a few minutes older decides nothing, and `deploy-production.yml`
 # re-reads production live at deploy time. Waiting there would cost more than
@@ -52,9 +57,10 @@ description: >
 # ran out, a commit `validate-deploy-sha.mjs` then refuses to deploy, and
 # nothing re-runs it. It would also hold main's non-cancellable concurrency
 # group open, so that a queued run behind it gets replaced and its required
-# checks end `cancelled`. The drift job reports, it does not gate, and its
-# grace rule already treats a migration that landed after the capture as in
-# grace.
+# checks end `cancelled`. The drift job reports and does not gate. It
+# still catches a stuck publisher without waiting: a migration past its grace
+# window that the snapshot is too old to show turns it red as `stale`, naming
+# the publisher (`classifyGateDrift`).
 #
 # What `wait` does not close: a `Deploy production` run still in flight. It is
 # not waited for, because its one job ships for minutes after it migrates and
@@ -67,7 +73,7 @@ inputs:
     description: >
       `wait` (the default) or `use`. What to do while the newest trusted snapshot
       predates a finished deploy on main, or a Deploy API run is in flight: wait
-      up to 5 minutes and then fail, or take it as it is. Pass `wait` only where
+      up to 15 minutes and then fail, or take it as it is. Pass `wait` only where
       the snapshot gates a pull request's merge; see the header comment. Any
       value but `use` waits, so a typo errs toward the stricter check.
     required: false
@@ -87,7 +93,7 @@ runs:
         set -euo pipefail
         RUNS="${RUNNER_TEMP}/migration-snapshot-runs.json"
         CANDIDATES="${RUNNER_TEMP}/migration-snapshot-candidates.txt"
-        DEADLINE=$(( $(date +%s) + 300 ))
+        DEADLINE=$(( $(date +%s) + 900 ))
 
         while :; do
           # main's SHA, not the bare name: a tag called `main` would make the
@@ -181,11 +187,11 @@ runs:
           fi
           if [ -z "$WAIT_FOR" ]; then break; fi
           if (( $(date +%s) >= DEADLINE )); then
-            echo "::error::Waited 5 minutes: ${WAIT_FOR}. Re-run this check once Migration snapshot has published; if it is failing, its log names the cause: ${GITHUB_SERVER_URL}/${REPO}/actions/workflows/migration-snapshot.yml"
+            echo "::error::Waited 15 minutes: ${WAIT_FOR}. Re-run this check once Migration snapshot has published; if it is failing, its log names the cause: ${GITHUB_SERVER_URL}/${REPO}/actions/workflows/migration-snapshot.yml"
             exit 1
           fi
-          echo "Waiting 30s: ${WAIT_FOR}."
-          sleep 30
+          echo "Waiting 45s: ${WAIT_FOR}."
+          sleep 45
         done
 
         echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
