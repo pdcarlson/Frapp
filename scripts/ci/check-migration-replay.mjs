@@ -547,9 +547,11 @@ function snapshotSource(path) {
  * so the wiring is tested.
  *
  * The live read, which `deploy-production.yml` runs at deploy time, uses
- * `resilientFetch`, as `runReplayGate`'s own default does: a timeout and three
- * attempts, so one transient Management API error doesn't fail a production
- * deploy. It used to pass plain `fetch`, which overrode that default.
+ * `resilientFetch`, as `runReplayGate`'s own default does: a timeout, and up to
+ * three attempts until the response headers arrive, so one transient
+ * Management API error doesn't fail a production deploy. A body that stalls
+ * after the headers is not retried (#2601). It used to pass plain `fetch`,
+ * which overrode that default.
  */
 export function replaySource({ appliedFrom, snapshotPath, env = process.env } = {}) {
   if (snapshotPath) return snapshotSource(snapshotPath);
