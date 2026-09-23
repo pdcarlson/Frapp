@@ -19,7 +19,8 @@
 // Order: `auth`, then `sql`, then `storage`, then `verify`. The seed links its
 // login to the auth user with the same email, and only to one `auth` created for
 // this namespace, so `auth` runs first. Undo with `--remove`: `sql` first, the one
-// step that can refuse, then `storage`, which cannot be undone, then `auth`.
+// step that can refuse, then `storage`, which cannot be undone and refuses while the
+// chapter still exists, then `auth`.
 //
 // Environment (`infisical run --env=<slug> --` supplies the Supabase three):
 //   SUPABASE_URL               the project's API URL           auth, storage, verify
@@ -42,6 +43,7 @@ import { fileURLToPath } from "node:url";
 import { requireEnv } from "../ci/lib/env.mjs";
 import { getEnvironment } from "../ci/lib/environments.mjs";
 import { IDEMPOTENT_METHODS, fetchWithRetry } from "../ci/lib/http.mjs";
+import { listBucketObjects, listBuckets } from "../storage-backup.mjs";
 
 export const TEMPLATE_PATH = fileURLToPath(new URL("./demo-seed.sql", import.meta.url));
 
@@ -570,90 +572,57 @@ export async function uploadPlaceholders({ supabaseUrl, serviceKey, namespace, f
   return results;
 }
 
-/** Storage's page size for one listing call, and the batch size for one bulk delete. */
-export const STORAGE_LIST_PAGE = 1000;
-
-/**
- * Every object under a folder, walking sub-folders (Storage lists one level) and
- * paging each level: one call returns at most STORAGE_LIST_PAGE entries, so a
- * single call would silently leave the rest behind (storage-backup.mjs pages for
- * the same reason; its lister walks a whole bucket, so it does not fit here).
- */
-async function listObjects({ supabaseUrl, serviceKey, bucket, prefix, fetchImpl, depth = 0 }) {
-  // The deepest layout the API writes is chat's chapters/<id>/chat/<channel>/<message>/<file>.
-  if (depth > 6) throw new Error(`storage listing under ${bucket}/${prefix} is deeper than any chapter layout`);
-  const entries = [];
-  for (let offset = 0; ; offset += STORAGE_LIST_PAGE) {
-    const page = await request(
-      fetchImpl,
-      `${supabaseUrl}/storage/v1/object/list/${bucket}`,
-      {
-        method: "POST",
-        headers: serviceHeaders(serviceKey, { "Content-Type": "application/json" }),
-        body: JSON.stringify({ prefix, limit: STORAGE_LIST_PAGE, offset }),
-      },
-      `listing ${bucket}/${prefix}`,
-      { idempotent: true },
-    );
-    const rows = Array.isArray(page) ? page : [];
-    entries.push(...rows);
-    if (rows.length < STORAGE_LIST_PAGE) break;
-  }
-  const paths = [];
-  for (const entry of entries) {
-    // Storage reports a folder as an entry with no id.
-    if (entry.id === null || entry.id === undefined) {
-      paths.push(
-        ...(await listObjects({
-          supabaseUrl,
-          serviceKey,
-          bucket,
-          prefix: `${prefix}${entry.name}/`,
-          fetchImpl,
-          depth: depth + 1,
-        })),
-      );
-    } else {
-      paths.push(`${prefix}${entry.name}`);
-    }
-  }
-  return paths;
-}
+/** The most objects one bulk delete names: Storage can cap a bulk delete at 1000 per request. */
+export const STORAGE_DELETE_BATCH = 1000;
 
 /**
  * Delete every object under the demo chapter's prefix, `chapters/<chapterId>/`, in every
  * bucket. That covers the placeholders `storage` uploaded and whatever the app stored there
  * while the chapter was in use: a reviewer's chat photo, a service-hours proof, a logo, all
- * of which the API keys under the same prefix in buckets of their own. Reads Storage, not
- * the database. Run it after `sql --remove` has been applied: that is the step that can
- * refuse, and a refusal after this one would leave rows pointing at deleted files.
+ * of which the API keys under the same prefix in buckets of their own. Refuses while the
+ * chapter row still exists: `sql --remove` goes first because it is the step that can refuse,
+ * and a refusal after this one would leave rows pointing at deleted files, some of them a
+ * reviewer's uploads that nothing can restore.
+ *
+ * The walk is storage-backup.mjs's (listBuckets, listBucketObjects), started at the chapter's
+ * folder, with every request sent through fetchWithRetry as the rest of this script's are.
  */
 export async function removePlaceholders({ supabaseUrl, serviceKey, namespace, fetchImpl = fetch }) {
   const { chapterId } = demoIds(namespace);
   const prefix = `chapters/${chapterId}/`;
-  const buckets = await request(
+  const chapters = await request(
     fetchImpl,
-    `${supabaseUrl}/storage/v1/bucket`,
+    `${supabaseUrl}/rest/v1/chapters?select=id&id=eq.${chapterId}`,
     { headers: serviceHeaders(serviceKey) },
-    "listing Storage buckets",
+    "checking that the demo chapter is gone",
   );
-  const names = (Array.isArray(buckets) ? buckets : [])
-    .map((b) => b.id ?? b.name)
-    .filter(Boolean)
-    .sort();
+  if (!Array.isArray(chapters) || chapters.length !== 0) {
+    throw new Error(
+      `chapter ${chapterId} still exists: apply \`sql --remove\` for this namespace first, and run ` +
+        "`storage --remove` only once it has committed. It is the step that can refuse, and this one cannot be undone.",
+    );
+  }
+  // A listing or bulk delete repeats harmlessly, so each may be retried like a GET.
+  const retryMethods = new Set([...IDEMPOTENT_METHODS, "POST", "DELETE"]);
+  const retrying = (url, init) => fetchWithRetry(url, init, { fetchImpl, retryMethods });
+  const names = [...(await listBuckets({ supabaseUrl, serviceKey, fetchImpl: retrying }))].filter(Boolean).sort();
   // An empty answer is a key without Storage rights, not a project with nothing to remove.
   if (names.length === 0) throw new Error("the project listed no Storage buckets; check SUPABASE_SERVICE_ROLE_KEY");
   const results = [];
   for (const bucket of names) {
-    const paths = await listObjects({ supabaseUrl, serviceKey, bucket, prefix, fetchImpl });
+    const objects = await listBucketObjects({
+      supabaseUrl,
+      serviceKey,
+      bucket,
+      prefix: prefix.slice(0, -1),
+      fetchImpl: retrying,
+    });
+    const paths = objects.map((o) => o.path);
     for (const path of paths) {
       if (!path.startsWith(prefix)) throw new Error(`refusing to delete ${bucket}/${path}: outside ${prefix}`);
     }
-    // In batches of a listing page: Storage can cap a bulk delete at 1000 objects
-    // per request (its per-tenant request limits), and paging the listing is
-    // exactly what lets more than that arrive here.
-    for (let start = 0; start < paths.length; start += STORAGE_LIST_PAGE) {
-      const batch = paths.slice(start, start + STORAGE_LIST_PAGE);
+    for (let start = 0; start < paths.length; start += STORAGE_DELETE_BATCH) {
+      const batch = paths.slice(start, start + STORAGE_DELETE_BATCH);
       await request(
         fetchImpl,
         `${supabaseUrl}/storage/v1/object/${bucket}`,
@@ -695,6 +664,9 @@ export async function verifyLogin({
   now = () => Date.now(),
 }) {
   const { chapterId, loginUserId } = demoIds(namespace);
+  // The re-seed a failure asks for, with the variant this run checks: `sql` without
+  // `--reviewer` would rebuild the marketing chapter over the reviewer's.
+  const reseed = `\`sql --namespace ${namespace}${reviewer ? " --reviewer" : ""}\``;
   const checks = [];
   const pass = (name) => {
     checks.push(name);
@@ -729,7 +701,7 @@ export async function verifyLogin({
   if (me?.id !== loginUserId) {
     fail(
       `signed in as users.id ${me?.id}, not the seeded login ${loginUserId} — the seed did not link this auth user. ` +
-        "Run `sql` for this namespace (after `auth`), then verify again.",
+        `Run ${reseed} (after \`auth\`), then verify again.`,
     );
   }
   pass(`linked to the seeded login (users.id ${loginUserId})`);
@@ -754,15 +726,24 @@ export async function verifyLogin({
   pass(`${documents.length} documents; "${documents[0].title}" opens as a ${bytes.length}-byte PDF`);
 
   // The seed dates events from the day it ran, so an old seed signs in and opens
-  // documents like a fresh one while its Events tab shows nothing ahead.
+  // documents like a fresh one while its Events tab thins out day by day. The
+  // Chapter Meeting two days after the seed is its one event with a check-in zone
+  // (demo-seed.sql § Events), so once it has started the scanner's zoned branch is
+  // gone and the seed is stale, however many later events remain.
   const events = await api("/v1/events");
   const upcoming = (Array.isArray(events) ? events : [])
     .filter((e) => Date.parse(e.start_time) > now())
     .sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time));
-  if (upcoming.length === 0) {
-    fail("no upcoming events: the seed is stale. Re-run `sql` and `storage` for this namespace, then verify again");
+  const zoned = upcoming.find((e) => Array.isArray(e.check_in_zone) && e.check_in_zone.length > 0);
+  if (!zoned) {
+    fail(
+      `no upcoming event with a check-in zone (${upcoming.length} upcoming in all): the seed is stale. ` +
+        `Re-run ${reseed} and \`storage --namespace ${namespace}\`, then verify again`,
+    );
   }
-  pass(`${upcoming.length} upcoming event(s); the next is "${upcoming[0].name}" on ${upcoming[0].start_time.slice(0, 10)}`);
+  pass(
+    `${upcoming.length} upcoming event(s); "${zoned.name}" on ${zoned.start_time.slice(0, 10)} still has its check-in zone ahead`,
+  );
 
   if (reviewer) {
     const invoices = await api(`/v1/invoices?user_id=${loginUserId}`);

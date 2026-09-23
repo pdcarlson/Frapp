@@ -146,7 +146,8 @@ read -rs DEMO_PASSWORD && export DEMO_PASSWORD
 3. **Upload the files.** `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs storage --namespace a9900000`.
 4. **Check it.** `npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs verify --namespace a9900000 --reviewer --api-url https://api.frapp.live`.
    Every line reads `OK`, ending `verify: every check passed`. It fails a stale
-   chapter too: with no upcoming event it says to re-seed.
+   chapter too: once the Chapter Meeting two days after the seed, its one event
+   with a check-in zone, has started, it says to re-seed.
 5. **Hand it over.** App Store Connect → App Review Information → Sign-In
    Required: the login's email and password.
 
@@ -159,8 +160,8 @@ same objects in place: document ids are fixed, so each run names the same files.
 and user deletes, and it is the step that can refuse (a seeded account with rows in
 another chapter), so stop there if it does. Then `storage --remove` (every object
 under `chapters/<chapter id>/` in every bucket, which includes anything the reviewer
-uploaded, such as a chat photo; it cannot be undone), then `auth --remove` (only a
-login this script created).
+uploaded, such as a chat photo; it cannot be undone, so it refuses while the chapter
+row still exists), then `auth --remove` (only a login this script created).
 
 ## Capture screenshots
 

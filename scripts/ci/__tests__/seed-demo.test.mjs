@@ -23,12 +23,13 @@ import {
   removePlaceholders,
   renderRemoveSql,
   renderSeedSql,
-  STORAGE_LIST_PAGE,
+  STORAGE_DELETE_BATCH,
   uploadPlaceholders,
   validateEmail,
   validateNamespace,
   verifyLogin,
 } from "../../demo/seed-demo.mjs";
+import { LIST_PAGE_SIZE } from "../../storage-backup.mjs";
 
 const TEMPLATE = readFileSync(TEMPLATE_PATH, "utf8");
 const HOSTED = "https://stagingrefaaaaaaa.supabase.co";
@@ -392,18 +393,21 @@ test("storage --remove clears the chapter's prefix in every bucket, reviewer upl
   const ns = "a9900000";
   const { chapterId } = demoIds(ns);
   const root = `chapters/${chapterId}/`;
+  // Keyed by the prefix each listing sends: a folder path, with no trailing slash.
+  const dir = `chapters/${chapterId}`;
   const tree = {
-    documents: { [root]: [{ name: "documents", id: null }], [`${root}documents/`]: [{ name: "row-1", id: null }], [`${root}documents/row-1/`]: [{ name: "a.pdf", id: "o1" }] },
+    documents: { [dir]: [{ name: "documents", id: null }], [`${dir}/documents`]: [{ name: "row-1", id: null }], [`${dir}/documents/row-1`]: [{ name: "a.pdf", id: "o1" }] },
     chat: {
-      [root]: [{ name: "chat", id: null }],
-      [`${root}chat/`]: [{ name: "ch1", id: null }],
-      [`${root}chat/ch1/`]: [{ name: "m1", id: null }],
-      [`${root}chat/ch1/m1/`]: [{ name: "photo.jpg", id: "o2" }],
+      [dir]: [{ name: "chat", id: null }],
+      [`${dir}/chat`]: [{ name: "ch1", id: null }],
+      [`${dir}/chat/ch1`]: [{ name: "m1", id: null }],
+      [`${dir}/chat/ch1/m1`]: [{ name: "photo.jpg", id: "o2" }],
     },
     backwork: {},
   };
   const listed = [];
   const { fetchImpl, calls } = makeFetch([
+    [on("GET", "/rest/v1/chapters?"), () => ({ json: [] })],
     [on("GET", "/storage/v1/bucket"), () => ({ json: Object.keys(tree).map((id) => ({ id, name: id })) })],
     [
       on("POST", "/storage/v1/object/list/"),
@@ -427,22 +431,50 @@ test("storage --remove clears the chapter's prefix in every bucket, reviewer upl
     ["chat", [`${root}chat/ch1/m1/photo.jpg`]],
     ["documents", [`${root}documents/row-1/a.pdf`]],
   ]);
-  assert.ok(listed.every((prefix) => prefix.startsWith(root)), "nothing outside the chapter's prefix is listed");
+  assert.ok(listed.every((prefix) => prefix === dir || prefix.startsWith(root)), "nothing outside the chapter's prefix is listed");
+});
+
+test("storage --remove refuses while the chapter row exists, before it lists or deletes anything", async () => {
+  // `sql --remove` can refuse; objects deleted ahead of it would leave rows pointing at nothing.
+  const ns = "a9900000";
+  const { fetchImpl, calls } = makeFetch([[on("GET", "/rest/v1/chapters?"), () => ({ json: [{ id: demoIds(ns).chapterId }] })]]);
+  await assert.rejects(
+    removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: ns, fetchImpl }),
+    /still exists: apply `sql --remove` for this namespace first/,
+  );
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, new RegExp(`/rest/v1/chapters\\?select=id&id=eq\\.${demoIds(ns).chapterId}$`));
+});
+
+test("storage --remove retries a listing that hits a transient 503", async () => {
+  // The walk is storage-backup.mjs's, which sends bare fetches; seed-demo wraps them in fetchWithRetry.
+  let listings = 0;
+  const { fetchImpl } = makeFetch([
+    [on("GET", "/rest/v1/chapters?"), () => ({ json: [] })],
+    [on("GET", "/storage/v1/bucket"), () => ({ json: [{ id: "documents", name: "documents" }] })],
+    [on("POST", "/storage/v1/object/list/documents"), () => (++listings === 1 ? { status: 503, json: {} } : { json: [] })],
+  ]);
+  const result = await removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: "a9900000", fetchImpl });
+  assert.equal(listings, 2);
+  assert.deepEqual(result, [{ bucket: "documents", count: 0 }]);
 });
 
 test("storage --remove refuses a project that lists no buckets, rather than reporting nothing removed", async () => {
-  const { fetchImpl, calls } = makeFetch([[on("GET", "/storage/v1/bucket"), () => ({ json: [] })]]);
+  const { fetchImpl, calls } = makeFetch([
+    [on("GET", "/rest/v1/chapters?"), () => ({ json: [] })],
+    [on("GET", "/storage/v1/bucket"), () => ({ json: [] })],
+  ]);
   await assert.rejects(removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: "a9900000", fetchImpl }), /listed no Storage buckets/);
   assert.equal(calls.some((c) => c.method === "DELETE"), false);
 });
 
 test("storage --remove pages a folder that holds more than one listing's worth", async () => {
-  // One call returns at most STORAGE_LIST_PAGE entries; without paging, the rest
+  // One call returns at most LIST_PAGE_SIZE entries; without paging, the rest
   // would stay in the bucket while --remove reported success.
   const ns = "a9900000";
   const { chapterId } = demoIds(ns);
-  const folder = `chapters/${chapterId}/`;
-  const total = STORAGE_LIST_PAGE + 2;
+  const folder = `chapters/${chapterId}`;
+  const total = STORAGE_DELETE_BATCH + 2;
   const offsets = [];
   const { fetchImpl, calls } = makeFetch([
     [
@@ -455,18 +487,28 @@ test("storage --remove pages a folder that holds more than one listing's worth",
         return { json: names.slice(offset, offset + limit) };
       },
     ],
+    [on("GET", "/rest/v1/chapters?"), () => ({ json: [] })],
     [on("GET", "/storage/v1/bucket"), () => ({ json: [{ id: "documents" }] })],
     [on("DELETE", "/storage/v1/object/documents"), () => ({ json: [] })],
   ]);
   const result = await removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: ns, fetchImpl });
-  assert.deepEqual(offsets, [0, STORAGE_LIST_PAGE]);
+  assert.deepEqual(offsets, Array.from({ length: Math.ceil((total + 1) / LIST_PAGE_SIZE) }, (_, i) => i * LIST_PAGE_SIZE));
   assert.deepEqual(result[0], { bucket: "documents", count: total });
-  // Deleted in batches no larger than a page: Storage can cap a bulk delete at 1000.
+  assert.ok(
+    calls.filter((c) => c.method === "DELETE").every((c) => JSON.parse(c.body).prefixes.every((p) => p.startsWith(`${folder}/`))),
+  );
+  // Deleted in batches: Storage can cap a bulk delete at 1000.
   const batches = calls.filter((c) => c.method === "DELETE").map((c) => JSON.parse(c.body).prefixes.length);
-  assert.deepEqual(batches, [STORAGE_LIST_PAGE, 2]);
+  assert.deepEqual(batches, [STORAGE_DELETE_BATCH, 2]);
 });
 
 // ── verify ──────────────────────────────────────────────────────────────────
+
+const ZONE = [
+  { lat: 41.0788, lng: -81.5232 },
+  { lat: 41.0794, lng: -81.5232 },
+  { lat: 41.0794, lng: -81.5226 },
+];
 
 function verifyRoutes({
   meId,
@@ -476,9 +518,10 @@ function verifyRoutes({
   ns = "a9900000",
   chapter = {},
   events = [
-    { name: "Chapter Meeting", start_time: "2026-09-20T23:00:00.000Z" },
-    { name: "Philanthropy 5K", start_time: "2026-10-01T13:00:00.000Z" },
-    { name: "Formal", start_time: "2026-09-28T23:00:00.000Z" },
+    { name: "Chapter Meeting", start_time: "2026-09-20T23:00:00.000Z", check_in_zone: null },
+    { name: "Philanthropy 5K", start_time: "2026-10-01T13:00:00.000Z", check_in_zone: null },
+    { name: "Formal", start_time: "2026-09-24T23:00:00.000Z", check_in_zone: null },
+    { name: "Chapter Meeting", start_time: "2026-09-25T23:00:00.000Z", check_in_zone: ZONE },
   ],
 } = {}) {
   const { chapterId, loginUserId } = demoIds(ns);
@@ -513,8 +556,11 @@ test("verify passes a correctly seeded reviewer, sending the chapter header", as
   const { fetchImpl, calls } = makeFetch(verifyRoutes());
   const checks = await verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl });
   assert.equal(checks.length, 7);
-  // The soonest future event, not the first listed or a past one.
-  assert.ok(checks.includes('2 upcoming event(s); the next is "Formal" on 2026-09-28'), checks.join("\n"));
+  // The zoned event, not the soonest upcoming one or a past one.
+  assert.ok(
+    checks.includes('3 upcoming event(s); "Chapter Meeting" on 2026-09-25 still has its check-in zone ahead'),
+    checks.join("\n"),
+  );
   const me = calls.find((c) => c.url.endsWith("/v1/users/me"));
   assert.equal(me.headers["x-chapter-id"], demoIds("a9900000").chapterId);
   assert.equal(me.headers.Authorization, "Bearer t");
@@ -556,8 +602,32 @@ test("verify --reviewer catches an invoice on the reviewer, and a missing DM", a
 test("verify fails a stale seed: every event already past", async () => {
   // The seed dates events from the day it ran; weeks later sign-in and documents
   // still pass while the Events tab shows nothing ahead.
-  const { fetchImpl } = makeFetch(verifyRoutes({ events: [{ name: "Old", start_time: "2026-09-01T12:00:00.000Z" }] }));
-  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl }), /no upcoming events: the seed is stale/);
+  const { fetchImpl } = makeFetch(
+    verifyRoutes({ events: [{ name: "Old", start_time: "2026-09-01T12:00:00.000Z", check_in_zone: ZONE }] }),
+  );
+  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl }), /no upcoming event with a check-in zone \(0 upcoming in all\): the seed is stale/);
+});
+
+test("verify fails a seed whose zoned Chapter Meeting has passed, however many events remain", async () => {
+  // Days after the seed its later events are still ahead, but the scanner's zoned branch is gone.
+  const events = [
+    { name: "Chapter Meeting", start_time: "2026-09-22T23:00:00.000Z", check_in_zone: ZONE },
+    { name: "Philanthropy 5K", start_time: "2026-09-26T13:00:00.000Z", check_in_zone: null },
+    { name: "Recruitment Info Night", start_time: "2026-09-30T23:00:00.000Z", check_in_zone: [] },
+  ];
+  const { fetchImpl } = makeFetch(verifyRoutes({ events }));
+  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl }), /no upcoming event with a check-in zone \(2 upcoming in all\)/);
+});
+
+test("verify's re-seed advice keeps --reviewer when it checked the reviewer variant", async () => {
+  // `sql` without it would rebuild the marketing chapter over the reviewer's.
+  const stale = [{ name: "Old", start_time: "2026-09-01T12:00:00.000Z", check_in_zone: ZONE }];
+  const reviewer = makeFetch(verifyRoutes({ events: stale }));
+  await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: reviewer.fetchImpl }), /Re-run `sql --namespace a9900000 --reviewer`/);
+  const unlinked = makeFetch(verifyRoutes({ meId: "some-new-user" }));
+  await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: unlinked.fetchImpl }), /Run `sql --namespace a9900000 --reviewer` \(after `auth`\)/);
+  const marketing = makeFetch(verifyRoutes({ events: stale }));
+  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: marketing.fetchImpl }), /Re-run `sql --namespace a9900000` and/);
 });
 
 // ── setup-demo.sh ───────────────────────────────────────────────────────────
