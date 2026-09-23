@@ -2,7 +2,7 @@
 
 ## Primary channels
 
-- **Critical production alerts:** Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, with email as the second path. Alert issues are assigned to the owner and labelled `incident` instead of `routine-state` (ADR-24 decision 2, 2026-09-23). This is being wired in [#2505](https://github.com/pdcarlson/Frapp/issues/2505). **Until it lands, a page reaches the owner two ways:** Sentry's default email rule to issue owners, the only provider path seen live (read 2026-09-09; Render paging was never verified), and the unassigned `routine-state` issues the [watchdogs](#automated-github-issue-alerts) open, including the production `/health/ready` alert.
+- **Critical production alerts:** Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, with email as the second path. Alert issues are assigned to the owner and labelled `incident` instead of `routine-state` (ADR-24 decision 2, 2026-09-23). This is being wired in [#2505](https://github.com/pdcarlson/Frapp/issues/2505). **Until it lands, the only path seen live that notifies anyone is Sentry's default email rule to issue owners** (read 2026-09-09; Render paging was never verified). The [watchdogs](#automated-github-issue-alerts), including the production `/health/ready` alert, open `routine-state` issues that notify no one: they are unassigned, and `/next` and the routines skip them (ADR-24 cause 1).
 - **Non-critical staging alerts:** a daily Sentry digest (planned in #2505). None exists today.
 - **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API), `frapp-web` (Next dashboard) and `frapp-mobile` (Expo app)
 
@@ -99,7 +99,7 @@ These watchdogs alert through GitHub Issues rather than a provider channel — n
 token, and the issue thread doubles as the incident log. Each upserts **one** tracking issue (created
 if absent, reopened if closed, otherwise commented). All of them carry `routine-state`, which
 `/next` §0.2 treats as never-claimable — they track live state, not a unit of work, so do not pick
-them up as backlog. #2505 relabels them `incident` and assigns them to the owner (ADR-24 decision 2).
+them up as backlog. #2505 relabels them `incident` and assigns them to the owner (ADR-24 decision 2). The label is part of each alert's lookup key (`DEFAULT_LOOKUP_LABEL` in `scripts/ci/lib/alert-issue.mjs`), so that change moves the key and the skip rules with it and migrates alerts already open; otherwise it orphans them the way a title rename does.
 
 The table below is the roster. It carries no count on purpose: it previously said "four" while the
 tree held five, because a count is a second copy of a fact the rows already state
