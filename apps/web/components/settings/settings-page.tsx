@@ -23,7 +23,7 @@ import {
   type PatchChapterConfig,
 } from "@repo/validation";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
-import { AA_NORMAL, contrastRatio, normalizeHex, parseHex } from "@repo/color";
+import { AA_NORMAL, normalizeHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { titleCase, vocab } from "@/lib/vocabulary";
 import { Button } from "@/components/ui/button";
@@ -67,6 +67,10 @@ import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
+import {
+  formatFailingRatio,
+  previewInkFor,
+} from "@/components/settings/accent-preview-ink";
 
 type Branding = {
   greek_letters?: string;
@@ -160,7 +164,7 @@ function describeFailedContrastCheck(check: {
   against: string;
   ratio: number;
 }): string {
-  const ratio = check.ratio.toFixed(1);
+  const ratio = formatFailingRatio(check.ratio);
   if (
     check.role === "--signet-accent-text" &&
     check.against === "--signet-accent-subtle-bg"
@@ -461,9 +465,10 @@ function SettingsPageContent() {
     ordinary blue — nothing exotic — and got "Preview" at a sub-AA ratio with
     no warning, which is the same defect one layer down from the one this
     swatch was being fixed for. (`#0086FE` on the current ladder: kept by the
-    resolver at 4.62:1 on `--card`, ink at 4.446:1. The original `#0080FD`
-    stopped reaching this branch when the greenfield ladder lightened `--card`
-    and the resolver began substituting it.)
+    resolver on `--card`, ink under AA; the figures are pinned in
+    `settings-contrast.spec.ts`. The original `#0080FD` stopped reaching this
+    branch when the greenfield ladder lightened `--card` and the resolver
+    began substituting it.)
 
     The docstring's excuse was wrong too: `resolveChapterAccentColor` does not
     reject that accent. It asks whether the accent is legible **as text on the
@@ -475,23 +480,10 @@ function SettingsPageContent() {
     screen says so instead of drawing an illegible label and calling it a
     preview. `writing.md` §7 carries the string.
   */
-  const accentRgb = parseHex(accent.resolvedAccent);
-  const inkCandidates = [
-    signetDarkTokens.color.gold.onHouse,
-    signetDarkTokens.color.text.foreground,
-  ] as const;
-  const previewInk = accentRgb
-    ? (inkCandidates.reduce((best, candidate) =>
-        contrastRatio(parseHex(candidate)!, accentRgb) >
-        contrastRatio(parseHex(best)!, accentRgb)
-          ? candidate
-          : best,
-      ) as string)
-    : signetDarkTokens.color.gold.onHouse;
-  const previewInkRatio = accentRgb
-    ? contrastRatio(parseHex(previewInk)!, accentRgb)
-    : 0;
-  const previewInkFailsAA = accentRgb !== null && previewInkRatio < AA_NORMAL;
+  const preview = previewInkFor(accent.resolvedAccent);
+  const previewInk = preview?.ink ?? signetDarkTokens.color.gold.onHouse;
+  const previewInkRatio = preview?.ratio ?? 0;
+  const previewInkFailsAA = preview !== null && previewInkRatio < AA_NORMAL;
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
   const permissionsCatalog = asArray<{ key: string; permission: string }>(
     catalogQuery.data,
@@ -1179,7 +1171,8 @@ function SettingsPageContent() {
                     which is what a primary button actually is, and what this
                     card's own description promises the accent will be used
                     for. `#0086FE` passes the first and fails this one (pinned
-                    in `settings-contrast.spec.ts`). Both check the draft preview only, and each says
+                    in `settings-contrast.spec.ts`). Both check the draft
+                    preview only, and each says
                     what a save does instead, because saving differs from the
                     preview: the entered colour is stored, not the substitute,
                     and the saved label (`on-primary`) always clears 4.5:1
@@ -1188,8 +1181,8 @@ function SettingsPageContent() {
                   {previewInkFailsAA ? (
                     <p className="text-xs text-warning">
                       Label text on this preview reads at{" "}
-                      {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
-                      Saving picks a label color that clears it.
+                      {formatFailingRatio(previewInkRatio)}:1, under the 4.5:1
+                      minimum. Saving picks a label color that clears it.
                     </p>
                   ) : null}
                   {/*
