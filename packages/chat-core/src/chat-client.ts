@@ -53,6 +53,7 @@ import {
 import {
   applyNotice,
   dropNotices,
+  DURABLE_NOTICE_MARGIN_MS,
   findNotice,
   isNoticeExpired,
   mergePersistedNotices,
@@ -594,12 +595,13 @@ export interface TerminalRowOutcome {
    */
   placement: RowPlacement;
   /**
-   * Whether the row will survive a reconnect, a reload and a cache eviction.
-   * `false` when storage is blocked or full, when there is no viewer to file it
-   * under, or when the entry is already past its age bound (a Retry pressed
-   * more than a day after the dispatch keeps the dispatch's timestamp, and the
-   * next rebuild prunes it). The row then lasts only until that rebuild, and
-   * copy must not promise otherwise.
+   * Whether the row will survive the next rebuild — the reconnect that follows
+   * the outage, a reload, a cache eviction. `false` when storage is blocked or
+   * full, when there is no viewer to file it under, or when the entry is within
+   * `DURABLE_NOTICE_MARGIN_MS` of its age bound (a Retry pressed about a day
+   * after the dispatch keeps the dispatch's timestamp, and the rebuild prunes
+   * it). The row then lasts only until that rebuild, and copy must not promise
+   * otherwise.
    */
   durable: boolean;
 }
@@ -622,7 +624,8 @@ function keepTerminalRow(
   notice: HeavyCommandNotice,
 ): TerminalRowOutcome {
   const durable = ctx.userId
-    ? persistNotice(notice, ctx.kv) && !isNoticeExpired(notice, Date.now())
+    ? persistNotice(notice, ctx.kv) &&
+      !isNoticeExpired(notice, Date.now() + DURABLE_NOTICE_MARGIN_MS)
     : false;
   if (!existing) return { placement: "absent", durable };
   patchCache(ctx.queryClient, notice.channelId, (cache) =>

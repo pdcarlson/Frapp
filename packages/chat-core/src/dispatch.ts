@@ -559,8 +559,9 @@ const RETRY_RESOLVED_NOTE = "Points recorded.";
  * There is no row on screen to point at: no signed-in viewer to attribute it
  * to, or no channel cache to draw it in (the query was garbage-collected while
  * the request was in flight — the notice on disk restores the row on the next
- * load). Pointing the officer at a Retry control that is not there is worse
- * than saying nothing, so the copy has to stand on its own.
+ * load, unless it is past its age bound by then). Pointing the officer at a
+ * Retry control that is not there is worse than saying nothing, so the copy
+ * has to stand on its own.
  */
 const UNCONFIRMED_NO_ROW_WARNING =
   "We couldn't confirm whether these points were recorded. Check the points ledger before running the command again — running it again would record them twice.";
@@ -575,11 +576,13 @@ const UNCONFIRMED_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice.";
 
 /**
- * The row is on screen but could not be persisted (storage blocked or full),
- * so it is only as durable as this session's cache and the next rebuild —
- * likely the reconnect that follows this very outage — takes it and its Retry
- * with it. The copy keeps the fallback for that case rather than promising a
- * Retry that may be gone.
+ * The row is on screen but will not outlive the next rebuild — likely the
+ * reconnect that follows this very outage — which takes it and its Retry with
+ * it. Either it could not be persisted (storage blocked or full, no viewer), or
+ * it is at or near its age bound, so the rebuild prunes it rather than
+ * restoring it (a Retry pressed about a day after the dispatch keeps the
+ * dispatch's timestamp). This is `durable: false` from `markLocalUnconfirmed`.
+ * The copy keeps the fallback rather than promising a Retry that may be gone.
  */
 const UNCONFIRMED_VOLATILE_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice. If the message is gone, check the points ledger before re-running.";

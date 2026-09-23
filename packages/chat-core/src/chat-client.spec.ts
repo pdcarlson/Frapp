@@ -21,6 +21,7 @@ import {
 } from "./chat-client";
 import type { OutboxRow, OutboxStore } from "./adapters";
 import {
+  DURABLE_NOTICE_MARGIN_MS,
   persistNotice,
   readNotices,
   UNCONFIRMED_NOTICE_TTL_MS,
@@ -1171,7 +1172,21 @@ describe("markLocalUnconfirmed (#1909)", () => {
   // A Retry pressed more than a day after the dispatch keeps the dispatch's
   // timestamp, so the next rebuild prunes the entry rather than restoring it.
   // Reporting it durable would promise a Retry that is about to vanish.
-  it("reports a row already past the age bound as not durable", () => {
+  // The reconnect that follows the outage comes within minutes, so an entry
+  // that close to its bound is as good as pruned by it.
+  it.each([
+    ["past the age bound", UNCONFIRMED_NOTICE_TTL_MS + 60_000, false],
+    [
+      "inside the durability margin",
+      UNCONFIRMED_NOTICE_TTL_MS - DURABLE_NOTICE_MARGIN_MS / 2,
+      false,
+    ],
+    [
+      "clear of the margin",
+      UNCONFIRMED_NOTICE_TTL_MS - DURABLE_NOTICE_MARGIN_MS * 2,
+      true,
+    ],
+  ])("reports a row %s as durable: %s", (_label, ageMs, durable) => {
     const kv = memoryStore();
     const ctx = buildCtx({ kv });
     placeholder(ctx);
@@ -1183,16 +1198,14 @@ describe("markLocalUnconfirmed (#1909)", () => {
         ...cache.byId,
         "cm-1": {
           ...cache.byId["cm-1"]!,
-          created_at: new Date(
-            Date.now() - UNCONFIRMED_NOTICE_TTL_MS - 60_000,
-          ).toISOString(),
+          created_at: new Date(Date.now() - ageMs).toISOString(),
         },
       },
     });
 
     expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
       placement: "optimistic",
-      durable: false,
+      durable,
     });
   });
 

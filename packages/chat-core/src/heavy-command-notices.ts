@@ -89,6 +89,15 @@ export type HeavyCommandNotice = RecordedNotice | UnconfirmedNotice;
  */
 export const UNCONFIRMED_NOTICE_TTL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * How long an entry must still have left before a caller may promise it
+ * survives the next rebuild: an hour. The rebuild that matters is the
+ * reconnect that follows the outage that lost the response, which comes within
+ * minutes; an entry closer than this to {@link UNCONFIRMED_NOTICE_TTL_MS} may
+ * be pruned by it instead of restored.
+ */
+export const DURABLE_NOTICE_MARGIN_MS = 60 * 60 * 1000;
+
 function storageKey(ownerId: string, channelId: string): string {
   return `chat:heavy:v1:${ownerId}:${channelId}`;
 }
