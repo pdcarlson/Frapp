@@ -374,7 +374,7 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
    * that option needs Node >= 20.1, and `package.json` declared `>=20` when
    * this was written. On an older runtime the option is ignored rather than
    * rejected, so the scan would quietly flatten to one directory level — a
-   * silent under-scan, not an error. `engines` is now `>=24`, so the floor is
+   * silent under-scan, not an error. `engines` now requires at least Node 24, so the floor is
    * clear of it; the hand-rolled walk stays because a failure mode that
    * degrades quietly is not worth re-introducing for one line.
    */

@@ -391,7 +391,7 @@ Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal
 
 - **Never** commit secrets. **Never** log secrets. Rotate keys immediately if exposed.
 - **No placeholder secrets in CI.** CI does not build apps that require runtime secrets.
-- **No environment suffixes.** `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment — no `_STAGING` / `_PRODUCTION` suffixes.
+- **No environment suffixes.** `API_HEALTHCHECK_URL` has different values per Infisical environment — no `_STAGING` / `_PRODUCTION` suffixes.
 
 ---
 

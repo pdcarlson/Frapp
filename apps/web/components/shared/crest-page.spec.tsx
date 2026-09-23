@@ -39,7 +39,7 @@ const CREST = /signet-emblem-B\.png/;
  * discovery; it was not reading the note in
  * `scripts/measure-web-route-bundles.mjs`, which had already hit the same trap.
  *
- * That floor is now `>=24` and CI pins 24, so `globSync` would link fine here.
+ * The `engines` floor is now at least Node 24 and CI pins 24, so `globSync` would link fine here.
  * The walk stays: it is shared with the two sibling walkers below, and the
  * value is one collection strategy across them, not the four lines.
  *

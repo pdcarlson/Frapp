@@ -46,16 +46,18 @@ inputs:
       What a MISSING credential does: `error` (default) fails the step, `warn`
       logs and carries on.
 
-      Only `staging-conformance.yml` wants `warn`, and the reason is worth
-      stating because it looks like laziness and is the opposite. That workflow
-      exists to DETECT and report credential drift -- the #696/#763 incident --
-      by letting `staging-conformance.mjs` run, observe the rejection and file
+      Only the two conformance watchdogs (`staging-conformance.yml`,
+      `production-auth-conformance.yml`) want `warn`, and the reason is worth
+      stating because it looks like laziness and is the opposite. Those
+      workflows exist to DETECT and report credential drift -- the #696/#763
+      incident -- by letting their script (e.g. `staging-conformance.mjs`) run,
+      observe the rejection and file
       the alert. Failing here would kill the run before the script could report
       anything, so the single most likely drift class would produce a red run
       and no issue.
 
-      This input exists so that call site can go through this action at all.
-      Its own `continue-on-error: true` covers the INJECTION failing, but it
+      This input exists so those call sites can go through this action at all.
+      Their own `continue-on-error: true` covers the INJECTION failing, but it
       cannot rescue this preflight: a failed step inside a composite action
       skips the action's remaining steps, so a hard-failing check here would
       mean the injection never runs -- staging secrets silently absent, and a
