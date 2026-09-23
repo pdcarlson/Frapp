@@ -570,12 +570,13 @@ After any rollback event:
   resolving, and no API revision can observe the difference. There is no window in which
   a running API sees a shape it does not expect, in either direction.
 * **Data caveat**: none. Nothing is written, dropped, or backfilled.
-* **CI flags it.** `scripts/check-pglite-migrations.mjs` asserts every
+* **CI will stop you.** `scripts/check-pglite-migrations.mjs` asserts every
   `security definer` function in `public` pins `pg_temp` **last** (the
   `=== security definer search_path ===` tier), so a rollback committed as a *migration*
-  fails the `pglite-migrations` job by design (whether that blocks a merge:
-  [branch protection runbook § Required Status Checks](GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)). An emergency `ALTER` applied directly to a
-  hosted database is not caught by CI — if you do that, file the follow-up immediately,
+  fails the `pglite-migrations` job by design. That job is a required check (#2538), so
+  the PR cannot merge and the commit cannot deploy. This rollback is an emergency
+  `ALTER` applied directly to the hosted database, never a migration. CI does not catch a
+  direct `ALTER` — so file the follow-up immediately,
   because the next `db reset` silently re-applies the fix and the two environments drift.
 * **Note on order within the pin**: `pg_temp` must be **last**. `search_path = pg_temp,
   public` is not a partial fix, it is the original bug spelled explicitly — the guard
@@ -1204,11 +1205,13 @@ After any rollback event:
   difference either way.
 * **Data caveat**: none. Nothing is written, dropped, or backfilled; `raise warning` does not
   affect the surrounding transaction.
-* **CI flags it.** `scripts/check-pglite-migrations.mjs`'s "Functional smoke" tier asserts
+* **CI will stop you.** `scripts/check-pglite-migrations.mjs`'s "Functional smoke" tier asserts
   each of the three ping tables raises an observable `WARNING` when `realtime.send` fails (PGlite
   has no `realtime` schema, so every write there already exercises the swallow) — a rollback
-  committed as a *migration* fails the `pglite-migrations` job by design (whether that blocks a
-  merge: [branch protection runbook § Required Status Checks](GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)).
+  committed as a *migration* fails the `pglite-migrations` job by design, and that job is a
+  required check (#2538), so the PR cannot merge. Apply this rollback as a direct `ALTER` on the
+  hosted database and file the follow-up, or relax the smoke tier in the same PR if the
+  rollback is meant to be permanent.
 
 ## Rollback the chat unread/mention slice
 
