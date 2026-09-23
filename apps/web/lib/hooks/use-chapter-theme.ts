@@ -34,7 +34,7 @@ import {
  *    (`spec/ui/design-system/accent-engine.md` §8) — there is no per-token
  *    client-side fallback to run. A row written before an engine change
  *    carries what that engine produced, keys and all, so this applies it:
- *    its fill can sit under the §8 floor until a save or recompute
+ *    its fill or hover can sit under the §8 floor until a save or recompute
  *    (accent-engine.md §4).
  *  - A row persisted before the Signet map existed simply lacks those keys;
  *    the house-gold defaults baked into `signet.css` stand until a save or

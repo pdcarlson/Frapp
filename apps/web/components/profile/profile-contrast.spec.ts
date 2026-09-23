@@ -136,13 +136,16 @@ describe("the step indicator's track", () => {
         ratio(fill, SURFACE.background),
       );
     }
-    // Both worst cases are `#CC0000`'s fill, lifted to `#DA2017` by the
-    // engine's 3:1 fill floor (#2541). Before that floor they were crimson's
-    // `#8B0000` at 1.528 and 1.869; the ranking is the same either way, and
-    // on `--background` the fill now also clears the 3:1 non-text floor.
+    // Both worst cases are `#800000`'s `#F42F22`, the generator's own step 9,
+    // which the engine's fill floor leaves as it is. Before that floor they
+    // were crimson's `#8B0000` at 1.528 and 1.869 (#2541), then `#CC0000`'s
+    // lifted `#DA2017` at 3.060 and 3.742 until the floor took in hover too
+    // (#2586) and lifted the dark fills further. The ranking is the same
+    // throughout, and on `--background` the fill now clears the 3:1 non-text
+    // floor.
     expect(worstOnBackground).toBeGreaterThan(worstOnBorder);
-    expect(worstOnBorder).toBeCloseTo(3.06, 2);
-    expect(worstOnBackground).toBeCloseTo(3.742, 2);
+    expect(worstOnBorder).toBeCloseTo(3.844, 2);
+    expect(worstOnBackground).toBeCloseTo(4.701, 2);
   });
 });
 

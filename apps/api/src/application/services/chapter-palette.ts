@@ -36,8 +36,8 @@ export type ChapterBrandingInput = NonNullable<ChapterBranding>;
 
 /**
  * One Signet §8 check that came back below its floor: 4.5:1 for a text role
- * (`failedContrastChecks`), 3:1 for the `accent-primary` fill
- * (`failedFillChecks`).
+ * (`failedContrastChecks`), 3:1 for the `accent-primary` fill or its
+ * `accent-hover` shade (`failedFillChecks`).
  */
 export type FailedContrastCheck = {
   role: string;
@@ -53,7 +53,8 @@ export type ChapterPaletteBuild = {
   /** Signet contrast checks that came back below AA. Empty in the normal case. */
   failedContrastChecks: FailedContrastCheck[];
   /**
-   * `accent-primary` fill checks that came back below the §8 3:1 floor (#2541).
+   * `accent-primary` and `accent-hover` fill checks that came back below the
+   * §8 3:1 floor (#2541, #2586).
    * Always empty unless the generator changed under the engine, so it is logged
    * and never sent to a client: nothing the officer chose caused it. Every
    * route that returns a build picks the fields it discloses, as
@@ -151,8 +152,9 @@ export function logChapterPaletteWarnings(
         .join(', ')}`,
     );
   }
-  // Same reasoning for the fill floor (#2541): the engine lifts the fill until
-  // it clears, so a failure here means the lift itself stopped working.
+  // Same reasoning for the fill floor (#2541, #2586): the engine lifts the fill
+  // until it and its hover clear, so a failure here means the lift itself
+  // stopped working.
   if (build.failedFillChecks.length > 0) {
     logger.warn(
       `Signet accent fill below 3:1 ${where}: ${build.failedFillChecks

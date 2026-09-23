@@ -267,8 +267,8 @@ against the old background and measuring the result against the *new* one, every
 4.5:1 (worst `#BF0A30` at 8.48, down from 8.80), and no seed flips the mobile fallback decision.
 Nothing in `supabase/` bakes in a derived palette either — the directory seed stores raw seeds, and
 grepping the old derived hexes across `supabase/` returns nothing. *Corrected 2026-09-23:* this read
-"Accessibility is not at risk", but it measured the text roles only. The `accent-primary` fill has
-its own floor ([`accent-engine.md` § 8](../design-system/accent-engine.md#8-validation)), and a stale row can hold a fill under it;
+"Accessibility is not at risk", but it measured the text roles only. The `accent-primary` fill and
+its hover have their own floor ([`accent-engine.md` § 8](../design-system/accent-engine.md#8-validation)), and a stale row can hold either under it;
 [`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status) owns which rows.
 
 **For a chapter that never picked an accent, what is wrong is cosmetic and visible:** its row is derived
@@ -278,7 +278,8 @@ screen,
 indefinitely, until something rewrites the row. A backfill was already outstanding for rows written
 before the map existed; this widens it. *Corrected 2026-09-23:* this read "What is wrong is
 cosmetic and visible", unqualified. That holds for these house-gold rows, and for any stale row whose
-stored fill still clears its floor; a row whose fill does not is the accessibility case
+stored fill and hover still clear their floor and whose label still reads on that hover; a row that
+fails any of those is the accessibility case
 [`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status) describes.
 
 A SQL backfill cannot regenerate these (the derivation is TypeScript, via the vendored Radix
@@ -286,8 +287,8 @@ generator), so the options are a recompute pass through the API or clearing the 
 that never carried a custom accent so they fall through to the CSS defaults. Precedent for the
 shape: `supabase/migrations/20260814120000_backfill_chapter_accent_color_from_branding.sql`.
 *Corrected 2026-09-23:* this offered the two as alternatives ("a recompute pass ... or clearing the
-Signet keys"), but only the recompute reaches a chapter that picked an accent, whose stored fill can
-be under its floor ([`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status)), so clearing keys can complement it but not
+Signet keys"), but only the recompute reaches a chapter that picked an accent, whose stored fill or
+hover can be under its floor ([`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status)), so clearing keys can complement it but not
 replace it.
 
 ### L-03 — Danger text on `--popover`
@@ -392,9 +393,11 @@ supposed to carry the indicator ranges 1.50–18.71:1, failing 3:1 on 7 of 19 se
 *Corrected 2026-09-23:* the border half no longer fails for a palette the engine derives. Since
 [#2541](https://github.com/pdcarlson/Frapp/issues/2541) the accent engine holds `accent-9` to 3:1 on
 every ladder step by construction ([`accent-engine.md`](../design-system/accent-engine.md) §8), so
-the border measures 3.01–18.71:1 and clears on all 19 seeds, pinned in
-`packages/chapter-theme/src/signet.spec.ts`, for a palette written since ([`accent-engine.md`](../design-system/accent-engine.md) §4
-covers stored ones). The rest of this entry stands and stays with #2398:
+the border measures 3.78–18.71:1 and clears on all 19 seeds (3.01–18.71:1 until
+[#2586](https://github.com/pdcarlson/Frapp/issues/2586) held the hover shade to the same floor, which
+lifts a dark fill further), pinned in `packages/chapter-theme/src/signet.spec.ts`, for a palette
+written since ([`accent-engine.md`](../design-system/accent-engine.md) §4 covers stored ones). The
+rest of this entry stands and stays with #2398:
 the diluted ring (now 1.18–1.31:1) and the absence of any contrast assertion on the recipes
 themselves.
 
