@@ -3,6 +3,7 @@ import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import type { CustomFieldEntry } from '@repo/org-archetypes';
 import {
   buildChapterPalette,
+  logChapterPaletteWarnings,
   type ChapterBrandingInput,
 } from './chapter-palette';
 import { buildCustomFieldRows } from './custom-field-provisioning';
@@ -206,12 +207,14 @@ export class ChapterOnboardingService {
 
     // A substituted colour is always an upstream data or plumbing bug, and
     // without a log the chapter is simply onboarded with a plausible-looking
-    // wrong brand colour and nothing anywhere records it (#840).
-    if (build.invalidSeed) {
-      this.logger.warn(
-        `Invalid chapter accent seed during onboarding: accent="${colors.accent}" — substituted house gold. Expected #RRGGBB.`,
-      );
-    }
+    // wrong brand colour and nothing anywhere records it (#840). The same goes
+    // for a failed contrast or fill check, which only a generator change causes.
+    logChapterPaletteWarnings(
+      this.logger,
+      'during onboarding',
+      colors.accent,
+      build,
+    );
 
     return build.palette;
   }

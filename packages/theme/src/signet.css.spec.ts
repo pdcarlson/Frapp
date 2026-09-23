@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   deriveSignetPalette,
+  SIGNET_FILL_SURFACES,
   signetAccentSemanticVars,
 } from "@repo/chapter-theme";
 import { describe, expect, it } from "vitest";
@@ -135,6 +136,30 @@ describe("the fixed foundations match signet.ts (and through it, foundations.md)
         `getSignetCssVars() (pinned to foundations.md) says "${value}"`,
     ).toBe(value);
   });
+});
+
+describe("the engine's fill floor is measured against the ladder that ships", () => {
+  // `@repo/chapter-theme` restates the ladder (it cannot import this package,
+  // which depends on it) and lifts every chapter's fill until it clears 3:1 on
+  // it (accent-engine.md §8, #2541). A ladder retune that skipped it would
+  // leave fills clearing 3:1 only on surfaces that no longer ship.
+  const { surface } = signetDarkTokens.color;
+
+  it("matches signetDarkTokens", () => {
+    expect(SIGNET_FILL_SURFACES).toEqual({
+      "--background": surface.background,
+      "--surface-1": surface.surface1,
+      "--card": surface.card,
+      "--popover": surface.popover,
+    });
+  });
+
+  it.each(Object.entries(SIGNET_FILL_SURFACES))(
+    "matches signet.css's %s",
+    (token, value) => {
+      expect(root.get(token)?.toUpperCase()).toBe(value);
+    },
+  );
 });
 
 describe("the accent-slot defaults are the house seed through the real engine", () => {

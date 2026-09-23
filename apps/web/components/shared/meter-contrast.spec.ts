@@ -89,16 +89,25 @@ describe("the invisible track", () => {
 });
 
 describe("the fix that would itself have been a defect", () => {
-  it("would have caught bg-input colliding with a maroon chapter's fill", () => {
+  it("keeps bg-input the weaker track, now that it no longer collides with a maroon fill", () => {
     // Adopting chat's already-shipped spelling looked like the safe move: a
     // white wash at 14% is a real 1.540:1 groove against `--card`. But a
     // meter has two relationships and this is the one nobody measured — a
-    // maroon `accent-9` lands almost exactly on that wash.
+    // maroon `accent-9` landed almost exactly on that wash (under 1.1:1).
+    //
+    // Since #2541 the engine lifts a dark fill until it clears 3:1 on every
+    // ladder surface, so no seed's fill sits at the wash's luminance any more:
+    // the worst case is `#CC0000`'s lifted `#DA2017` at 2.13:1. The collision
+    // is gone, but `bg-input` is still a worse track than the chosen one, and
+    // that ordering, not the collision, is what kept it out.
     const inputTrack = applyAlpha(WHITE, INPUT_ALPHA, SURFACE.card);
     const worst = Math.min(
       ...SEEDS.map((seed) => ratio(fillFor(seed), inputTrack)),
     );
-    expect(worst).toBeLessThan(1.1);
+    expect(worst).toBeCloseTo(2.134, 2);
+    expect(worst).toBeLessThan(
+      Math.min(...SEEDS.map((seed) => ratio(fillFor(seed), TRACK))),
+    );
   });
 
   it("beats every other candidate on fill-against-track", () => {
@@ -165,23 +174,24 @@ describe("why the track recedes instead of rising", () => {
 
 describe("the accent fill, across every seeded chapter", () => {
   it("separates from its own track for all 19 seeds", () => {
-    // Worst is 1.774:1 under `#800000`. The threshold is set just below the
-    // measured worst case rather than at a round number, so a change that
-    // erodes it fails here instead of shipping.
+    // Worst is 3.742:1 under `#CC0000` (lifted to `#DA2017`). The threshold is
+    // set just below the measured worst case rather than at a round number, so
+    // a change that erodes it fails here instead of shipping.
     for (const seed of SEEDS) {
-      expect(ratio(fillFor(seed), TRACK), `seed ${seed}`).toBeGreaterThan(1.75);
+      expect(ratio(fillFor(seed), TRACK), `seed ${seed}`).toBeGreaterThan(3.7);
     }
   });
 
-  it("records that no seed's fill clears the non-text floor against the track", () => {
-    // Deliberately recorded rather than enforced, the same way
-    // `table-contrast.spec.ts` records it for row states: at this ladder a
-    // proportion fill cannot reach 3:1 for every seed, which is exactly why
-    // both call sites print the count and percentage as text beside the bar
-    // and mark the bar `aria-hidden`. If a later change makes the bar the only
-    // signal, this is the number that says it cannot be.
+  it("clears the non-text floor against the track for every seed", () => {
+    // This used to record the opposite: the darkest fills fell to 1.87:1
+    // against `--background`, so no track could carry the bar alone. Since
+    // #2541 the engine holds `accent-9` to 3:1 on every ladder surface
+    // (accent-engine.md §8), and `--background` is one of them, so the bar
+    // now conforms as a graphic on its own. The count and percentage still
+    // print as text beside it, and the bar stays `aria-hidden`: a length
+    // cannot carry the exact figure, which is what the text is for.
     const worst = Math.min(...SEEDS.map((seed) => ratio(fillFor(seed), TRACK)));
-    expect(worst).toBeLessThan(AA_NON_TEXT);
+    expect(worst).toBeGreaterThanOrEqual(AA_NON_TEXT);
   });
 });
 

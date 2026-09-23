@@ -35,7 +35,8 @@ const settingsPage = readFileSync(`${__dirname}/settings-page.tsx`, "utf8");
  * is loosening the regex rather than reading it.
  */
 const DESCRIPTION =
-  "Paints primary buttons, your own chat bubbles and the nav&apos;s active item. " +
+  "Paints primary buttons, your own chat bubbles and the nav&apos;s active item, " +
+  "lightened if it is too dark to stand out. " +
   "Saving derives the rest of the palette from it, and contrast is checked " +
   "against the dark surfaces it lands on. The Signet mark, the Ask pill and " +
   "the scrollbars never change.";
@@ -155,7 +156,7 @@ const warning = (condition: string) => {
     block[1]
       .replace(/\{" "\}/g, " ")
       .replace(/\{accent\.resolvedAccent\}/g, "<hex>")
-      .replace(/\{previewInkRatio\.toFixed\(1\)\}/g, "<n>")
+      .replace(/\{formatFailingRatio\(previewInkRatio\)\}/g, "<n>")
       .replace(/&apos;/g, "'"),
   );
 };

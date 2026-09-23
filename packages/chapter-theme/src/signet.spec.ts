@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { contrastRatio, parseHex } from "@repo/color";
+import { contrastRatio, normalizeHex, parseHex } from "@repo/color";
+import Color from "colorjs.io";
 
 import {
   deriveSignetPalette,
   HOUSE_SEED,
+  liftAccent,
+  SIGNET_FILL_SURFACES,
   signetAccentSemanticVars,
+  signetFillChecks,
   type SignetPalette,
 } from "./signet.js";
+import { generateRadixColors } from "./vendor/generate-radix-colors.js";
 
 /**
  * Every distinct color `supabase/seed/chapter_directory.csv` has carried — 50
@@ -83,6 +88,61 @@ const ALPHA_TOKENS = [
 const ratio = (a: string, b: string) =>
   contrastRatio(parseHex(a)!, parseHex(b)!);
 
+/**
+ * The Signet neutral ladder, as the engine measures its fill floor against it.
+ * The engine's own constant, not a copy: `packages/theme/src/signet.css.spec.ts`
+ * pins it to `signetDarkTokens` and `signet.css`, the ladder that ships.
+ */
+const LADDER = {
+  background: SIGNET_FILL_SURFACES["--background"],
+  surface1: SIGNET_FILL_SURFACES["--surface-1"],
+  card: SIGNET_FILL_SURFACES["--card"],
+  popover: SIGNET_FILL_SURFACES["--popover"],
+} as const;
+
+/**
+ * The step 9 the generator paints for `seed` before any lift: the §1 call with
+ * the seed itself as its accent. Test-only, to tell which seeds the engine
+ * lifted. `gray` is restated from the engine's `GENERATOR_PARAMS`; if it drifts,
+ * the "lifts exactly" test below sees every seed as lifted and fails.
+ */
+const unliftedFill = (seed: string) =>
+  // normalizeHex: the generator can return shorthand (`#fff`), as the engine
+  // handles in `generatedFill`.
+  normalizeHex(
+    generateRadixColors({
+      appearance: "dark",
+      gray: "#191919",
+      background: LADDER.background,
+      accent: seed,
+    }).accentScale[8]!,
+  );
+
+const oklch = (hex: string) => {
+  const [l, c, h] = new Color(hex).to("oklch").coords;
+  return { l: l ?? 0, c: c ?? 0, h: h ?? Number.NaN };
+};
+
+/**
+ * The corpus seeds whose own fill fell under 3:1 on `--popover` before #2541,
+ * with the fill each paints now. Measured on the engine, not derived: the
+ * point of pinning them is that a generator or colour-library upgrade that
+ * moves any of them shows up here first. `#000000`, `#472B62`, `#4B0082` and
+ * `#4B1A7E` are the generator's own step 9 (`getStep9Colors` swaps it in for a
+ * seed near the dark step 1), so what was lifted is that fill, not the seed.
+ */
+const LIFTED_FILLS: Record<string, { before: string; after: string }> = {
+  "#000000": { before: "#6E6E6E", after: "#707070" },
+  "#006400": { before: "#006400", after: "#2C8028" },
+  "#472B62": { before: "#8758B4", after: "#895AB6" },
+  "#4B0082": { before: "#901FED", after: "#9B32FA" },
+  "#4B1A7E": { before: "#8939DE", after: "#9244E8" },
+  "#8B0000": { before: "#8B0000", after: "#C34437" },
+  "#8B4513": { before: "#8B4513", after: "#A55D2F" },
+  "#BF0A30": { before: "#BF0A30", after: "#D42C41" },
+  "#CC0000": { before: "#CC0000", after: "#DA2017" },
+};
+
 describe("deriveSignetPalette", () => {
   it("emits every token for every real chapter color", () => {
     for (const seed of ALL_SEEDS) {
@@ -121,6 +181,147 @@ describe("deriveSignetPalette", () => {
         ).toBe(true);
       }
     }
+  });
+
+  /**
+   * accent-engine.md §8's fill floor (#2541). `accent-primary` is the only cue
+   * for a state in several consumers (switch track, active tab underline, the
+   * focus ring border, poll selection), so WCAG 1.4.11 holds it to 3:1 on every
+   * surface it paints on, not just under a label.
+   */
+  describe("the accent-primary fill clears 3:1 on every ladder surface", () => {
+    it("for every seed, as measured and as the engine reports it", () => {
+      for (const seed of ALL_SEEDS) {
+        const { palette, fillChecks } = deriveSignetPalette(seed);
+        const primary = palette["--signet-accent-primary"];
+        for (const [name, surface] of Object.entries(LADDER)) {
+          expect(
+            ratio(primary, surface),
+            `${seed} → ${primary} on ${name}`,
+          ).toBeGreaterThanOrEqual(3);
+        }
+        expect(fillChecks, seed).toHaveLength(4);
+        for (const check of fillChecks) {
+          expect(
+            check.passes,
+            `${seed}: ${check.role} on ${check.against} = ${check.ratio.toFixed(2)}:1`,
+          ).toBe(true);
+        }
+      }
+    });
+
+    it("reports each fill check as measured, and fails one under 3:1", () => {
+      // `fillChecks` is what the API logs as `failedFillChecks`, the one
+      // detector for a lift that stops working. A check that always passed, or
+      // measured some other colour, would silence it while every seed above
+      // still cleared.
+      const surfaceOf = (against: string) =>
+        SIGNET_FILL_SURFACES[against as keyof typeof SIGNET_FILL_SURFACES];
+      for (const seed of ALL_SEEDS) {
+        const { palette, fillChecks } = deriveSignetPalette(seed);
+        const primary = palette["--signet-accent-primary"];
+        expect(fillChecks.map((check) => check.against)).toEqual(
+          Object.keys(SIGNET_FILL_SURFACES),
+        );
+        for (const check of fillChecks) {
+          expect(check.ratio, `${seed} on ${check.against}`).toBeCloseTo(
+            ratio(primary, surfaceOf(check.against)),
+            6,
+          );
+        }
+      }
+      // Crimson's own fill, before the lift, fails on every surface.
+      const unlifted = signetFillChecks("#8B0000");
+      expect(unlifted.map((check) => check.passes)).toEqual([
+        false,
+        false,
+        false,
+        false,
+      ]);
+      for (const check of unlifted) {
+        expect(check.ratio).toBeCloseTo(
+          ratio("#8B0000", surfaceOf(check.against)),
+          6,
+        );
+      }
+    });
+
+    it("judges each lift candidate by the fill the generator paints", () => {
+      // The generator can swap in its own step 9, so a lifted colour is not
+      // necessarily what paints. This one always paints crimson back: every
+      // lifted input clears on its own and nothing it paints does, so the only
+      // right answer is that no lift clears.
+      const paintsCrimson = (accent: string) => {
+        const generated = generateRadixColors({
+          appearance: "dark",
+          gray: "#191919",
+          background: LADDER.background,
+          accent,
+        });
+        generated.accentScale[8] = "#8B0000";
+        return generated;
+      };
+      expect(liftAccent("#8B0000", paintsCrimson)).toBeNull();
+      const real = liftAccent("#8B0000");
+      expect(normalizeHex(real!.generated.accentScale[8]!)).toBe("#C34437");
+    });
+
+    it("lifts exactly the seeds whose own fill failed, and no others", () => {
+      // The house seed and `#C9A56F` (45 of the 50 seeded chapters) must come
+      // through untouched: the lift is a floor, not a restyle.
+      const primaryOf = (seed: string) =>
+        deriveSignetPalette(seed).palette["--signet-accent-primary"];
+      const lifted = ALL_SEEDS.filter(
+        (seed) => primaryOf(seed) !== unliftedFill(seed),
+      );
+      expect(lifted.sort()).toEqual(Object.keys(LIFTED_FILLS).sort());
+      expect(primaryOf(HOUSE_SEED)).toBe(unliftedFill(HOUSE_SEED));
+      expect(primaryOf("#C9A56F")).toBe(unliftedFill("#C9A56F"));
+    });
+
+    it("lifts a crimson chapter to brick red, the worked example", () => {
+      // #8B0000 painted 1.50:1 on `--popover` (1.87:1 on the background). It is
+      // the largest shift in the corpus.
+      const { palette, resolvedSeed } = deriveSignetPalette("#8B0000");
+      expect(resolvedSeed).toBe("#8B0000");
+      expect(unliftedFill("#8B0000")).toBe("#8B0000");
+      expect(palette["--signet-accent-primary"]).toBe("#C34437");
+      expect(ratio("#C34437", LADDER.popover)).toBeGreaterThanOrEqual(3);
+      // on-primary stays white, and still clears AA on the lifted fill.
+      expect(palette["--signet-accent-on-primary"]).toBe("#FFFFFF");
+    });
+
+    it("pins every lifted fill, and changes only its lightness", () => {
+      for (const [seed, { before, after }] of Object.entries(LIFTED_FILLS)) {
+        const { palette } = deriveSignetPalette(seed);
+        const primary = palette["--signet-accent-primary"];
+        expect(primary, seed).toBe(after);
+        expect(ratio(before, LADDER.popover), seed).toBeLessThan(3);
+
+        const was = oklch(before);
+        const now = oklch(primary);
+        expect(now.l, seed).toBeGreaterThan(was.l);
+        // Hex rounding moves chroma and hue a hair; a real change of colour
+        // would move them far more than this.
+        expect(Math.abs(now.c - was.c), `${seed} chroma`).toBeLessThan(0.003);
+        if (was.c > 0.01) {
+          expect(Math.abs(now.h - was.h), `${seed} hue`).toBeLessThan(0.5);
+        }
+      }
+    });
+
+    it("keeps on-primary legible on every lifted fill", () => {
+      for (const seed of Object.keys(LIFTED_FILLS)) {
+        const { palette } = deriveSignetPalette(seed);
+        expect(
+          ratio(
+            palette["--signet-accent-on-primary"],
+            palette["--signet-accent-primary"],
+          ),
+          seed,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    });
   });
 
   it("keeps the generator's contrast color when it is already legible", () => {
@@ -251,21 +452,15 @@ describe("signetAccentSemanticVars", () => {
 /**
  * Which role a consumer may paint as a foreground.
  *
- * §8 gates the accent-derived *text* roles and deliberately does not gate
- * `accent-primary`, which is the solid fill. That distinction is easy to lose
- * — `accent-primary` reads like "the chapter's colour" — and losing it ships
- * an invisible UI rather than a merely off-brand one. `apps/mobile`'s
+ * §8 holds the accent-derived *text* roles to 4.5:1 and `accent-primary`, the
+ * solid fill, only to 3:1. That distinction is easy to lose — `accent-primary`
+ * reads like "the chapter's colour" — and losing it ships illegible text
+ * rather than a merely off-brand UI. `apps/mobile`'s
  * `useChapterBranding` hands one value to tab tints, glyphs and chip labels,
  * so it reads step 11; these are the numbers that decided that.
  */
 describe("accent-text is the foreground-safe role", () => {
-  /** The Signet neutral ladder (foundations.md §2), which consumers draw on. */
-  const SURFACES = {
-    background: "#131211",
-    surface1: "#1A1A1A",
-    card: "#211E1A",
-    popover: "#2A2621",
-  };
+  const SURFACES = LADDER;
   /** Drawn on an accent fill — `gold.onHouse` in `@repo/theme`'s Signet tokens. */
   const ON_ACCENT_LABEL = "#2C2000";
 
@@ -299,8 +494,9 @@ describe("accent-text is the foreground-safe role", () => {
 
   it("shows why accent-primary is not interchangeable with it", () => {
     // Not a defect in the engine — step 9 is doing its specified job as a fill,
-    // paired with `on-primary`. This pins the reason a consumer must not reach
-    // for it when it needs a foreground.
+    // paired with `on-primary`, and clears the 3:1 fill floor. The lifted fills
+    // sit just past 3:1 by design, so this pins the reason a consumer must not
+    // reach for it when it needs a text foreground.
     const illegible = REAL_CHAPTER_COLORS.filter((seed) => {
       const primary =
         deriveSignetPalette(seed).palette["--signet-accent-primary"];

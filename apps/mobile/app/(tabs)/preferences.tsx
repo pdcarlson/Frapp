@@ -500,7 +500,7 @@ export default function PreferencesScreen() {
           <ListSection>
             <ListRow
               label="Chapter accent"
-              description="One hex → a full safe scale. The raw color never paints."
+              description="One hex → a full accent scale, lightened where it needs to stand out."
               trailing={
                 <View
                   accessibilityLabel="Current chapter accent"
