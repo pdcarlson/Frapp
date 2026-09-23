@@ -38,6 +38,10 @@ FRAPP_SEED_LOG_PREFIX='[cloud-sandbox]'
 # shellcheck source=scripts/lib/local-seed-data.sh
 . "$ROOT/scripts/lib/local-seed-data.sh"
 
+DONE_SENTINEL="$ROOT/.cloud-sandbox-up.done"
+FAILED_SENTINEL="$ROOT/.cloud-sandbox-up.failed"
+EGRESS_MANIFEST="$ROOT/.cloud-sandbox-capabilities.json"
+
 # The bringup lock (#2547). The SessionStart hook takes it before launching this script and
 # says so through FRAPP_BRINGUP_LOCK_HELD. Run by hand, this script takes it itself, under the
 # same guard flock the hook decides under, so a session start during a manual run finds a live
@@ -49,21 +53,40 @@ FRAPP_SEED_LOG_PREFIX='[cloud-sandbox]'
 . "$ROOT/scripts/lib/bringup-lock.sh"
 if [ -z "${FRAPP_BRINGUP_LOCK_HELD:-}" ]; then
   BRINGUP_LOCK="${FRAPP_BRINGUP_LOCK:-/tmp/cloud-sandbox-up.lock}"
+  BRINGUP_LOG="${FRAPP_BRINGUP_LOG:-/tmp/cloud-sandbox-up.log}"
   boot_now="$(cat "${FRAPP_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null || true)"
   if command -v flock >/dev/null 2>&1 && { exec 9>>"${BRINGUP_LOCK}.guard"; } 2>/dev/null; then
     flock -w 10 9 2>/dev/null || true
   fi
-  if ! running="$(bringup_take_lock "$BRINGUP_LOCK" "$boot_now" "$$")"; then
-    exec 9>&-
-    cs_log "ERROR: another bringup is already running${running:+ (pid ${running})}. Wait for its .cloud-sandbox-up.done / .cloud-sandbox-up.failed instead of starting a second one."
-    exit 1
-  fi
-  exec 9>&-
+  take_status=0
+  running="$(bringup_take_lock "$BRINGUP_LOCK" "$boot_now" "$$")" || take_status=$?
+  case "$take_status" in
+    0)
+      # Still under the guard: the last run's sentinels go before a session start can read
+      # them beside the new lock and report this run as already finished.
+      rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL"
+      exec 9>&-
+      # Session starts point at this log for a running bringup, so a hand run writes it too,
+      # as well as the terminal.
+      exec > >(tee "$BRINGUP_LOG") 2>&1
+      ;;
+    1)
+      exec 9>&-
+      if [ "$running" = "starting" ]; then
+        cs_log "ERROR: another bringup is starting (its lock was taken seconds ago). Wait for its .cloud-sandbox-up.done / .cloud-sandbox-up.failed instead of starting a second one."
+      else
+        cs_log "ERROR: another bringup is already running (pid ${running}). Wait for its .cloud-sandbox-up.done / .cloud-sandbox-up.failed instead of starting a second one. If it is hung (${BRINGUP_LOG} has stopped advancing), stop it with 'kill ${running}' and run this again."
+      fi
+      exit 1
+      ;;
+    *)
+      exec 9>&-
+      cs_log "ERROR: could not take the bringup lock ${BRINGUP_LOCK}: it could not be removed or created. Check its owner and the permissions of $(dirname "$BRINGUP_LOCK")."
+      exit 1
+      ;;
+  esac
 fi
 
-DONE_SENTINEL="$ROOT/.cloud-sandbox-up.done"
-FAILED_SENTINEL="$ROOT/.cloud-sandbox-up.failed"
-EGRESS_MANIFEST="$ROOT/.cloud-sandbox-capabilities.json"
 # The manifest is cleared with the sentinels for the same reason they are: all three answer
 # "what happened in THIS run", and the sandbox filesystem is cached for ~7 days, so a
 # container can start with a week-old one already on disk. Without this, a probe that dies

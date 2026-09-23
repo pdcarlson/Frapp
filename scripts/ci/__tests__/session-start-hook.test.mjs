@@ -304,7 +304,7 @@ test("a lock seconds old with no pid yet is a bringup starting, not a stale lock
   const s = scratch(t);
   mkdirSync(s.lock);
   const context = runHook(s, { boot: "boot-B" });
-  assert.match(context, /stack bringup is starting \(another session start took the lock \d+s ago\)/);
+  assert.match(context, /stack bringup is starting \(its lock was taken \d+s ago\)/);
   assert.ok(existsSync(s.lock), "the lock must be left in place");
   assert.equal(await eventually(() => existsSync(s.launched), 300), false, "a second bringup must not start");
 });
@@ -474,9 +474,29 @@ test("a hand run refuses while another bringup from this boot is running, and to
   assert.equal(readFileSync(path.join(s.lock, "pid"), "utf8").trim(), String(pid));
 });
 
+test("a hand run judges a young lock by the hook's rule: starting, not dead", (t) => {
+  // The hook's taker writes the pid only after launching bringup; a hand run that reclaimed
+  // the lock in that window would start a second bringup racing the first.
+  const s = scratch(t);
+  mkdirSync(s.lock);
+  const { status, out } = takeLock(s.lock, "boot-B", 4242);
+  assert.equal(status, 1);
+  assert.equal(out, "starting");
+  assert.equal(existsSync(path.join(s.lock, "pid")), false, "the young lock is left as it was");
+});
+
+test("a hand run reports a lock it cannot create apart from a running bringup", (t) => {
+  const s = scratch(t);
+  writeFileSync(s.lock, "not a directory\n");
+  const { status, out } = takeLock(s.lock, "boot-B", 4242);
+  assert.equal(status, 2);
+  assert.equal(out, "");
+});
+
 test("a hand run replaces a lock whose bringup is dead, or that another boot left", (t) => {
+  const old = Math.floor(Date.now() / 1000) - 600;
   const dead = scratch(t);
-  priorLock(dead, { boot: "boot-B", sentinel: null });
+  priorLock(dead, { boot: "boot-B", sentinel: null, writtenAt: old });
   assert.equal(takeLock(dead.lock, "boot-B", 4242).status, 0);
   assert.equal(readFileSync(path.join(dead.lock, "pid"), "utf8").trim(), "4242");
 
@@ -513,19 +533,44 @@ test("the real cloud-sandbox-up.sh, run by hand while a bringup runs, refuses an
   // On stderr, where cs_log writes: an `exec 9>&- 2>/dev/null` once sent it, and every later
   // line of the bringup log, to /dev/null.
   assert.match(run.stderr, new RegExp(`another bringup is already running \\(pid ${pid}\\)`));
+  // A hung bringup is alive too: the refusal names the way past it.
+  assert.match(run.stderr, new RegExp(`stop it with 'kill ${pid}' and run this again`));
   assert.equal(readFileSync(path.join(s.root, ".cloud-sandbox-up.done"), "utf8"), "the running bringup's\n");
   assert.equal(readFileSync(path.join(s.lock, "pid"), "utf8").trim(), String(pid));
+});
+
+test("the real cloud-sandbox-up.sh says when it cannot take the lock at all, not that one is running", (t) => {
+  const s = scratch(t, { bringup: false });
+  for (const lib of ["cloud-sandbox-common.sh", "local-postgres-acl.sh", "local-seed-data.sh"]) {
+    copyFileSync(path.join(REPO_ROOT, "scripts", "lib", lib), path.join(s.root, "scripts", "lib", lib));
+  }
+  copyFileSync(BRINGUP, path.join(s.root, "scripts", "cloud-sandbox-up.sh"));
+  writeFileSync(s.lock, "not a directory\n");
+  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOCK: s.lock };
+  delete env.FRAPP_BRINGUP_LOCK_HELD;
+  const run = spawnSync("bash", [path.join(s.root, "scripts", "cloud-sandbox-up.sh")], { env, encoding: "utf8", timeout: 15000 });
+  assert.equal(run.status, 1, `expected a refusal, got ${run.status}: ${run.stderr}`);
+  assert.match(run.stderr, /could not take the bringup lock/);
+  assert.doesNotMatch(run.stderr, /already running/);
 });
 
 test("cloud-sandbox-up.sh takes the lock itself unless the hook holds it, before clearing sentinels", () => {
   const up = readFileSync(BRINGUP, "utf8");
   const commands = up.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
   const take = commands.indexOf('bringup_take_lock "$BRINGUP_LOCK"');
-  const clear = commands.indexOf('rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL"');
+  const clear = commands.indexOf('rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL" "$EGRESS_MANIFEST"');
   assert.ok(take > 0, "a hand run must take the lock");
   assert.ok(clear > take, "a refused run must not erase the running bringup's sentinels");
   const gate = commands.lastIndexOf('if [ -z "${FRAPP_BRINGUP_LOCK_HELD:-}" ]; then', take);
   assert.ok(gate > 0 && gate < take, "the take is skipped when the hook already holds the lock");
   assert.match(commands.slice(gate, take), /flock -w 10 9/, "it takes the lock under the hook's guard");
   assert.match(commands.slice(take, clear), /exit 1/, "a refused run stops");
+  // Once taken: the old sentinels go while the guard is still held, then the guard is
+  // released, then the run's output goes to the log session starts point at.
+  const taken = commands.indexOf("    0)", take);
+  const clearHeld = commands.indexOf('rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL"', taken);
+  const release = commands.indexOf("exec 9>&-", taken);
+  const tee = commands.indexOf('exec > >(tee "$BRINGUP_LOG") 2>&1', taken);
+  assert.ok(taken > take && clearHeld > taken && clearHeld < release, "sentinels are cleared under the guard");
+  assert.ok(tee > release && tee < clear, "a hand run writes the bringup log");
 });
