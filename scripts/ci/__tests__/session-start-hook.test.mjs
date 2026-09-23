@@ -309,6 +309,15 @@ test("a lock seconds old with no pid yet is a bringup starting, not a stale lock
   assert.equal(await eventually(() => existsSync(s.launched), 300), false, "a second bringup must not start");
 });
 
+test("a lock seconds old whose recorded bringup is dead is reclaimed at once", async (t) => {
+  // It finished or was stopped; the young-lock grace covers only a pid not yet written or exec'd.
+  const s = scratch(t);
+  priorLock(s, { boot: "boot-B", sentinel: null });
+  const context = runHook(s, { boot: "boot-B" });
+  assert.match(context, /cleared a stale bringup lock/);
+  assert.ok(await eventually(() => existsSync(s.launched)), "bringup was not relaunched");
+});
+
 test("the same lock, minutes old with no live bringup, is reclaimed", async (t) => {
   const s = scratch(t);
   mkdirSync(s.lock);
@@ -333,8 +342,9 @@ test("two session starts at once on a stale lock start exactly one bringup", asy
   // Each read the lock, then acted on it; interleaved, both reclaimed and both relaunched.
   // The flock serializes the decision, so the second finds the first's fresh lock. The
   // window is milliseconds, so this is the outcome, not proof of the flock; the next test
-  // pins that.
-  const s = scratch(t);
+  // pins that. The stand-in bringup stays up, as a real one does for a minute or more: one
+  // that exits at once with no sentinel is a dead bringup, and the next fire rightly reclaims it.
+  const s = scratch(t, { bringupBody: "sleep 3\n" });
   mkdirSync(s.lock);
   const old = Math.floor(Date.now() / 1000) - 600;
   utimesSync(s.lock, old, old);
@@ -485,10 +495,38 @@ test("a hand run judges a young lock by the hook's rule: starting, not dead", (t
   assert.equal(existsSync(path.join(s.lock, "pid")), false, "the young lock is left as it was");
 });
 
-test("a hand run reports a lock it cannot create apart from a running bringup", (t) => {
+test("a hand run judges a young lock with a dead pid as finished, and replaces it at once", (t) => {
+  // A bringup that exited or was stopped seconds ago is not one starting: refusing it sent a
+  // re-run to wait out the grace for a sentinel that may never come.
+  const s = scratch(t);
+  priorLock(s, { boot: "boot-B", sentinel: null });
+  assert.equal(takeLock(s.lock, "boot-B", 4242).status, 0);
+  assert.equal(readFileSync(path.join(s.lock, "pid"), "utf8").trim(), "4242");
+});
+
+test("a young lock whose pid is live but not yet a bringup is starting, for both writers", async (t) => {
+  // The taker records `$!` at once, and for a moment that pid is still a fork of the taker.
+  const s = scratch(t);
+  const pid = liveProcess(t, "sleep", ["30"]);
+  priorLock(s, { boot: "boot-B", sentinel: null });
+  lockPid(s, pid);
+  assert.deepEqual(takeLock(s.lock, "boot-B", 4242), { status: 1, out: "starting" });
+  const context = runHook(s, { boot: "boot-B" });
+  assert.match(context, /stack bringup is starting/);
+  assert.equal(await eventually(() => existsSync(s.launched), 300), false, "a second bringup must not start");
+});
+
+test("a hand run replaces a stray file at the lock path, as the hook does", (t) => {
   const s = scratch(t);
   writeFileSync(s.lock, "not a directory\n");
-  const { status, out } = takeLock(s.lock, "boot-B", 4242);
+  utimesSync(s.lock, 1_700_000_000, 1_700_000_000);
+  assert.equal(takeLock(s.lock, "boot-B", 4242).status, 0);
+  assert.equal(readFileSync(path.join(s.lock, "pid"), "utf8").trim(), "4242");
+});
+
+test("a hand run reports a lock it cannot create apart from a running bringup", (t) => {
+  const s = scratch(t);
+  const { status, out } = takeLock(path.join(s.dir, "no-such-dir", "cloud-sandbox-up.lock"), "boot-B", 4242);
   assert.equal(status, 2);
   assert.equal(out, "");
 });
@@ -513,18 +551,15 @@ test("the real cloud-sandbox-up.sh, run by hand while a bringup runs, refuses an
   // Run from a scratch copy of the repo's scripts, so nothing it could reach is the real
   // checkout. The refusal comes before the sentinels are cleared and before any Docker step.
   const s = scratch(t, { bringup: false });
-  for (const lib of ["cloud-sandbox-common.sh", "local-postgres-acl.sh", "local-seed-data.sh"]) {
-    copyFileSync(path.join(REPO_ROOT, "scripts", "lib", lib), path.join(s.root, "scripts", "lib", lib));
-  }
-  copyFileSync(BRINGUP, path.join(s.root, "scripts", "cloud-sandbox-up.sh"));
+  const script = realBringup(s);
   writeFileSync(path.join(s.root, ".cloud-sandbox-up.done"), "the running bringup's\n");
   const pid = liveBringup(t, s);
   priorLock(s, { boot: "boot-B", sentinel: null });
   lockPid(s, pid);
   writeFileSync(s.bootFile, "boot-B\n");
-  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOCK: s.lock, FRAPP_BOOT_ID_FILE: s.bootFile };
+  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOG: s.log, FRAPP_BRINGUP_LOCK: s.lock, FRAPP_BOOT_ID_FILE: s.bootFile };
   delete env.FRAPP_BRINGUP_LOCK_HELD;
-  const run = spawnSync("bash", [path.join(s.root, "scripts", "cloud-sandbox-up.sh")], {
+  const run = spawnSync("bash", [script], {
     env,
     encoding: "utf8",
     timeout: 15000,
@@ -534,21 +569,17 @@ test("the real cloud-sandbox-up.sh, run by hand while a bringup runs, refuses an
   // line of the bringup log, to /dev/null.
   assert.match(run.stderr, new RegExp(`another bringup is already running \\(pid ${pid}\\)`));
   // A hung bringup is alive too: the refusal names the way past it.
-  assert.match(run.stderr, new RegExp(`stop it with 'kill ${pid}' and run this again`));
+  assert.match(run.stderr, /stop it with 'bash scripts\/cloud-sandbox-up\.sh --stop' and run this again/);
   assert.equal(readFileSync(path.join(s.root, ".cloud-sandbox-up.done"), "utf8"), "the running bringup's\n");
   assert.equal(readFileSync(path.join(s.lock, "pid"), "utf8").trim(), String(pid));
 });
 
 test("the real cloud-sandbox-up.sh says when it cannot take the lock at all, not that one is running", (t) => {
   const s = scratch(t, { bringup: false });
-  for (const lib of ["cloud-sandbox-common.sh", "local-postgres-acl.sh", "local-seed-data.sh"]) {
-    copyFileSync(path.join(REPO_ROOT, "scripts", "lib", lib), path.join(s.root, "scripts", "lib", lib));
-  }
-  copyFileSync(BRINGUP, path.join(s.root, "scripts", "cloud-sandbox-up.sh"));
-  writeFileSync(s.lock, "not a directory\n");
-  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOCK: s.lock };
+  const script = realBringup(s);
+  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOG: s.log, FRAPP_BRINGUP_LOCK: path.join(s.dir, "no-such-dir", "lock") };
   delete env.FRAPP_BRINGUP_LOCK_HELD;
-  const run = spawnSync("bash", [path.join(s.root, "scripts", "cloud-sandbox-up.sh")], { env, encoding: "utf8", timeout: 15000 });
+  const run = spawnSync("bash", [script], { env, encoding: "utf8", timeout: 15000 });
   assert.equal(run.status, 1, `expected a refusal, got ${run.status}: ${run.stderr}`);
   assert.match(run.stderr, /could not take the bringup lock/);
   assert.doesNotMatch(run.stderr, /already running/);
@@ -563,7 +594,10 @@ test("cloud-sandbox-up.sh takes the lock itself unless the hook holds it, before
   assert.ok(clear > take, "a refused run must not erase the running bringup's sentinels");
   const gate = commands.lastIndexOf('if [ -z "${FRAPP_BRINGUP_LOCK_HELD:-}" ]; then', take);
   assert.ok(gate > 0 && gate < take, "the take is skipped when the hook already holds the lock");
-  assert.match(commands.slice(gate, take), /flock -w 10 9/, "it takes the lock under the hook's guard");
+  assert.match(commands.slice(gate, take), /\btake_guard\b/, "it takes the lock under the hook's guard");
+  const guardFn = commands.slice(commands.indexOf("take_guard() {"), commands.indexOf("\n}", commands.indexOf("take_guard() {")));
+  assert.match(guardFn, /exec 9>>"\$\{BRINGUP_LOCK\}\.guard"/);
+  assert.match(guardFn, /flock -w 10 9/);
   assert.match(commands.slice(take, clear), /exit 1/, "a refused run stops");
   // Once taken: the old sentinels go while the guard is still held, then the guard is
   // released, then the run's output goes to the log session starts point at.
@@ -573,4 +607,112 @@ test("cloud-sandbox-up.sh takes the lock itself unless the hook holds it, before
   const tee = commands.indexOf('exec > >(tee "$BRINGUP_LOG") 2>&1', taken);
   assert.ok(taken > take && clearHeld > taken && clearHeld < release, "sentinels are cleared under the guard");
   assert.ok(tee > release && tee < clear, "a hand run writes the bringup log");
+});
+
+// ── A hung bringup: --stop ──────────────────────────────────────────────────
+// `kill <pid>` ended only the script and orphaned the command it was blocked in, so the next
+// bringup started beside that command. --stop ends the whole tree but the Docker daemon.
+
+/** A bringup blocked in a foreground step, with a `dockerd` stand-in started in the background. */
+function hungBringup(t, s) {
+  const bin = path.join(s.dir, "hung");
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, "dockerd"), "sleep 60\n");
+  const script = path.join(bin, "cloud-sandbox-up.sh");
+  writeFileSync(script, `bash ${JSON.stringify(path.join(bin, "dockerd"))} &\nsleep 30\n`);
+  const child = spawn("bash", [script], { detached: true, stdio: "ignore" });
+  t.after(() => {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {
+      // already gone
+    }
+  });
+  return child.pid;
+}
+
+const childrenOf = (pid) =>
+  spawnSync("ps", ["-o", "pid=,args=", "--ppid", String(pid)], { encoding: "utf8" })
+    .stdout.split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => ({ pid: Number(line.split(/\s+/)[0]), args: line.replace(/^\d+\s+/, "") }));
+
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A scratch copy of the real cloud-sandbox-up.sh and the libraries it sources. Every run of it
+ * sets FRAPP_BRINGUP_LOG: a regression that let it past the lock would otherwise overwrite the
+ * machine's real bringup log.
+ */
+function realBringup(s) {
+  for (const lib of ["cloud-sandbox-common.sh", "local-postgres-acl.sh", "local-seed-data.sh"]) {
+    copyFileSync(path.join(REPO_ROOT, "scripts", "lib", lib), path.join(s.root, "scripts", "lib", lib));
+  }
+  copyFileSync(BRINGUP, path.join(s.root, "scripts", "cloud-sandbox-up.sh"));
+  return path.join(s.root, "scripts", "cloud-sandbox-up.sh");
+}
+
+test("bringup_stop ends a hung bringup and everything under it, but not the Docker daemon", async (t) => {
+  const s = scratch(t);
+  const pid = hungBringup(t, s);
+  assert.ok(await eventually(() => childrenOf(pid).length === 2), "the stand-in bringup did not start its children");
+  const kids = childrenOf(pid);
+  const daemon = kids.find((k) => /dockerd/.test(k.args)).pid;
+  const hung = kids.find((k) => /^sleep 30/.test(k.args)).pid;
+  const daemonChild = await (async () => {
+    await eventually(() => childrenOf(daemon).length === 1);
+    return childrenOf(daemon)[0]?.pid;
+  })();
+  priorLock(s, { boot: "boot-B", sentinel: null });
+  lockPid(s, pid);
+  const run = spawnSync("bash", ["-c", `. ${JSON.stringify(LOCK_LIB)}; bringup_stop "$1"`, "_", s.lock], {
+    encoding: "utf8",
+    timeout: 20000,
+  });
+  assert.equal(run.status, 0);
+  assert.equal(run.stdout.trim(), String(pid), "it names what it stopped");
+  assert.ok(await eventually(() => !alive(pid) && !alive(hung)), "the script and its blocked step must both be gone");
+  assert.ok(alive(daemon) && alive(daemonChild), "the Docker daemon and what runs under it are left running");
+  assert.equal(existsSync(s.lock), false, "the lock goes with the bringup");
+});
+
+test("cloud-sandbox-up.sh --stop stops a hung bringup, and says so when none was running", async (t) => {
+  const s = scratch(t, { bringup: false });
+  const script = realBringup(s);
+  const pid = hungBringup(t, s);
+  assert.ok(await eventually(() => childrenOf(pid).length === 2));
+  priorLock(s, { boot: "boot-B", sentinel: null });
+  lockPid(s, pid);
+  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOG: s.log, FRAPP_BRINGUP_LOCK: s.lock };
+  delete env.FRAPP_BRINGUP_LOCK_HELD;
+  const stop = spawnSync("bash", [script, "--stop"], { env, encoding: "utf8", timeout: 20000 });
+  assert.equal(stop.status, 0, stop.stderr);
+  assert.match(stop.stderr, new RegExp(`Stopped bringup pid ${pid}`));
+  assert.ok(await eventually(() => !alive(pid)));
+  assert.equal(existsSync(s.lock), false);
+
+  const again = spawnSync("bash", [script, "--stop"], { env, encoding: "utf8", timeout: 20000 });
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stderr, /No bringup was running/);
+});
+
+test("--stop leaves a starting bringup's lock alone", (t) => {
+  // Removing it would let a second bringup start beside the one about to exec.
+  const s = scratch(t, { bringup: false });
+  const script = realBringup(s);
+  mkdirSync(s.lock);
+  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOG: s.log, FRAPP_BRINGUP_LOCK: s.lock };
+  delete env.FRAPP_BRINGUP_LOCK_HELD;
+  const stop = spawnSync("bash", [script, "--stop"], { env, encoding: "utf8", timeout: 20000 });
+  assert.equal(stop.status, 1);
+  assert.match(stop.stderr, /a bringup is starting/);
+  assert.ok(existsSync(s.lock));
 });

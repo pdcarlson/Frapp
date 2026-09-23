@@ -5,9 +5,11 @@
 #
 # The lock is a directory, `/tmp/cloud-sandbox-up.lock` unless FRAPP_BRINGUP_LOCK says
 # otherwise, holding `pid` (the running cloud-sandbox-up.sh) and `boot_id` (the kernel boot it
-# ran in). Both writers take it under an flock on `<lock>.guard` and judge it by the same rule,
-# bringup_lock_live, so a session start and a hand-run bringup cannot interleave their
-# read-then-act steps or disagree about whether a bringup is running (#2547).
+# ran in). Both writers take it under an flock on `<lock>.guard` and ask whether a bringup is
+# running by the same rule, bringup_lock_live, so a session start and a hand-run bringup cannot
+# interleave their read-then-act steps or disagree about that (#2547). The hook also trusts a
+# `.done`/`.failed` sentinel from this boot before it asks; a hand run replaces a finished
+# bringup's lock, whose pid is dead. `cloud-sandbox-up.sh --stop` ends a hung one (bringup_stop).
 
 # Whether $1 is the pid of a running cloud-sandbox-up.sh. Matches the script's name, not any
 # command naming its log or sentinels: a `tail -f /tmp/cloud-sandbox-up.log` is not a bringup.
@@ -26,21 +28,68 @@ bringup_lock_age() {
   esac
 }
 
-# Whether lock $1 was taken under 30 seconds ago. Its taker writes the pid only after
-# launching bringup, and for a moment after that the pid is a fork that has not exec'd
-# cloud-sandbox-up.sh yet, so a lock that young counts as a bringup starting. A negative age
-# (a clock stepped back) does not count. A bringup that really died that young is reclaimed
-# on the next attempt.
+# Whether lock $1 was taken under 30 seconds ago. A negative age (a clock stepped back) does
+# not count.
 bringup_lock_young() {
   local age
   age="$(bringup_lock_age "$1")"
   [ -n "$age" ] && [ "$age" -ge 0 ] && [ "$age" -lt 30 ]
 }
 
-# Whether lock $1 belongs to a bringup that is running or starting: its pid is a live
-# cloud-sandbox-up.sh, or it is young enough that the pid may not be one yet.
+# Whether lock $1 belongs to a bringup that is running or starting. Running: its pid is a
+# live cloud-sandbox-up.sh. Starting: the lock is young and its pid is not written yet, or is
+# a live process that has not exec'd the script yet; the taker writes the pid only after
+# launching bringup, and for a moment the launched pid is still a fork of the taker. A
+# recorded pid that is dead is neither, however young the lock: that bringup finished or was
+# stopped, and its lock is replaced at once.
 bringup_lock_live() {
-  bringup_alive "$(cat "$1/pid" 2>/dev/null || true)" || bringup_lock_young "$1"
+  local pid
+  pid="$(cat "$1/pid" 2>/dev/null || true)"
+  bringup_alive "$pid" && return 0
+  bringup_lock_young "$1" && { [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null; }
+}
+
+# The pids of every process under $1, deepest first, except the Docker daemon and what runs
+# under it: bringup starts `dockerd` as its own background child (cs_ensure_docker_daemon), and
+# the daemon is meant to outlive it. Killing it would stop every container on the machine.
+bringup_descendants() {
+  local child
+  for child in $(ps -o pid= --ppid "$1" 2>/dev/null); do
+    ps -p "$child" -o args= 2>/dev/null | grep -Eq '(^|[ /])dockerd( |$)' && continue
+    bringup_descendants "$child"
+    echo "$child"
+  done
+}
+
+# Stop the bringup holding lock $1, with every process under it, and remove the lock. Call
+# under the guard flock.
+#   0  stopped (its pid is printed) or none was running (nothing is printed); the lock is gone.
+#   1  a bringup is starting (bringup_lock_live, but its pid is not yet a bringup to stop); the
+#      lock is kept, since removing it would let a second bringup start beside that one.
+# Killing only the script would orphan the command it is blocked in (a hung `supabase start`,
+# say): bash runs no trap while it waits on a foreground child, and the next bringup would
+# then start beside the orphan. The tree is read before anything is signalled, since children
+# re-parent once their parent dies.
+bringup_stop() {
+  local lock="$1" pid tree p alive i
+  pid="$(cat "$lock/pid" 2>/dev/null || true)"
+  if bringup_alive "$pid"; then
+    tree="$(bringup_descendants "$pid") $pid"
+    # shellcheck disable=SC2086 # one pid per word
+    kill -TERM $tree 2>/dev/null || true
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      alive=""
+      for p in $tree; do kill -0 "$p" 2>/dev/null && alive=1; done
+      [ -z "$alive" ] && break
+      sleep 1
+    done
+    # shellcheck disable=SC2086
+    [ -n "$alive" ] && kill -KILL $tree 2>/dev/null
+    echo "$pid"
+  elif [ -d "$lock" ] && bringup_lock_live "$lock"; then
+    return 1
+  fi
+  rm -rf "$lock" 2>/dev/null || true
 }
 
 # Record the bringup holding lock $1: pid $2 and boot id $3 (skipped when empty). Each file is
@@ -69,6 +118,9 @@ bringup_take_lock() {
       if bringup_alive "$holder"; then echo "$holder"; else echo "starting"; fi
       return 1
     fi
+  fi
+  # Anything else at the path goes: a dead lock, one from another boot, or a stray file.
+  if [ -e "$lock" ] || [ -L "$lock" ]; then
     rm -rf "$lock" 2>/dev/null || true
   fi
   mkdir "$lock" 2>/dev/null || return 2

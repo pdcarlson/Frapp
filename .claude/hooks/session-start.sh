@@ -94,7 +94,8 @@ sys.stdout.write("".join(parts))
 # /tmp lock prevents relaunching on session resume.
 # See docs/internal/environment/CLOUD_SANDBOX.md.
 if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ] && [ -f "$ROOT/scripts/lib/bringup-lock.sh" ]; then
-  # bringup_alive, bringup_record: the lock's format, shared with a bringup run by hand.
+  # bringup_lock_live, bringup_record: the lock's rule and format, shared with a bringup run
+  # by hand.
   # shellcheck source=scripts/lib/bringup-lock.sh
   . "$ROOT/scripts/lib/bringup-lock.sh"
 
@@ -200,18 +201,18 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ] && [ -f "$RO
     # The lock exists but no .done/.failed sentinel has been written. Either a
     # prior bringup is still running, or it was killed (e.g. the session was
     # paused/reclaimed) and left a STALE lock that would otherwise block bringup
-    # forever with no sentinel for callers to wait on. Reclaim and relaunch when
-    # the recorded pid is no longer a live bringup process.
-    #
-    #
-    # Except for a lock only seconds old, which bringup_lock_young (the rule a hand
-    # run applies too) counts as a bringup starting: its pid may not be written, or
-    # not yet exec'd, and reclaiming it would start a second bringup racing the first.
+    # forever with no sentinel for callers to wait on. Reclaim and relaunch unless
+    # bringup_lock_live, the rule a hand run takes the lock by, says a bringup is
+    # running or starting: a lock seconds old whose pid is not written yet, or not
+    # yet exec'd, belongs to a bringup starting, and reclaiming it would start a
+    # second one racing the first.
     prev_pid="$(cat "$LOCK/pid" 2>/dev/null || true)"
-    if bringup_alive "$prev_pid"; then
-      msg="${msg} Cloud sandbox: stack bringup is still running (pid ${prev_pid}). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
-    elif bringup_lock_young "$LOCK"; then
-      msg="${msg} Cloud sandbox: stack bringup is starting (its lock was taken $(bringup_lock_age "$LOCK")s ago). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
+    if bringup_lock_live "$LOCK"; then
+      if bringup_alive "$prev_pid"; then
+        msg="${msg} Cloud sandbox: stack bringup is still running (pid ${prev_pid}). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
+      else
+        msg="${msg} Cloud sandbox: stack bringup is starting (its lock was taken $(bringup_lock_age "$LOCK")s ago). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
+      fi
     else
       rm -rf "$LOCK"
       if mkdir "$LOCK" 2>/dev/null; then
