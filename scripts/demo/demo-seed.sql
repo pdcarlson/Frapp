@@ -581,7 +581,7 @@ INSERT INTO chat_messages (channel_id, sender_id, content, type, created_at)
 SELECT 'c0ffee00-0000-4000-8000-4000000000d1', (SELECT id FROM u WHERE n = m.who), m.body, 'TEXT',
        now() - (interval '1 minute' * m.mins_ago)
 FROM (VALUES
- (2, 'hey, can you look over the spring budget draft before exec? it''s in Documents under Finance', 2880),
+ (2, 'hey, can you look over the operating budget before exec? it''s in Documents under Finance', 2880),
  (1, 'yep, reading it tonight', 2860),
  (2, 'thanks. the banquet hall deposit went through this morning too', 55)
 ) AS m(who, body, mins_ago)
