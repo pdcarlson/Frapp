@@ -542,6 +542,7 @@ describe("the scanner reads each form as what it is", () => {
       // A line continuation, which `mask` leaves as a newline in the body.
       'import d from "../../../supabase/x\\\n.json" with { type: "json" };',
       'export * from "./y\\\n.mjs";',
+      'import "./z\\\n.mjs";',
     ]) {
       assert.throws(() => scan(src, at), /cannot resolve/, src);
     }
