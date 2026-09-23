@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * Messages this session has already shown against a `ready` block list
- * (#2257 review, finding 4).
+ * Messages this session has already shown against a `ready` block list, or
+ * that the server cleared (#2257 review, finding 4).
  *
  * A row that arrived over the Realtime echo is never server-evaluated, and it
  * never will be: the reconnect backfill and the polling fallback read only rows
@@ -11,8 +11,9 @@ import { useSyncExternalStore } from "react";
  * a pin, an edit, a soft delete — is merged over it. So without a memory, a
  * later block-list outage would flip messages the viewer had already read back
  * to held — a conversation vanishing mid-read. Recording every row a ready list
- * showed (`rowsClearedByReadyList`) keeps what was legitimately seen on screen,
- * while a row that first arrives *during* an outage is still held
+ * showed, and every server-cleared row shown while it was not
+ * (`rowsToRemember`), keeps what was legitimately seen on screen, while an
+ * unevaluated row that first arrives *during* an outage is still held
  * (`classifyMessage` in `blocks.ts`).
  *
  * What it does not do: override a block. The list is consulted before this, so
@@ -53,7 +54,7 @@ export const blockClearance = {
   },
 
   /**
-   * Remember message ids a ready list cleared for this viewer. A different
+   * Remember message ids this viewer has been shown (`rowsToRemember`). A different
    * viewer than the last one recorded for starts a fresh set. Notifies only
    * when something new was added.
    */

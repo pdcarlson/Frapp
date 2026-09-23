@@ -22,7 +22,7 @@ import {
   messageActionsFor,
   replaceMaskedCopies,
   rosterMembership,
-  rowsClearedByReadyList,
+  rowsToRemember,
   tombstoneCanUnblock,
   visibleReactions,
   type BlockState,
@@ -213,7 +213,11 @@ describe("classifyMessage", () => {
       }
       // Nobody else's rows are released by it.
       expect(
-        classifyMessage(one(echoRow("m2", FRIEND)), unavailable([], unblocked), VIEWER),
+        classifyMessage(
+          one(echoRow("m2", FRIEND)),
+          unavailable([], unblocked),
+          VIEWER,
+        ),
       ).toBe("held");
     });
 
@@ -332,7 +336,7 @@ describe("applyBlockList", () => {
   });
 });
 
-describe("rowsClearedByReadyList", () => {
+describe("rowsToRemember", () => {
   it("names every row a ready list shows from someone the viewer could block", () => {
     const messages = selectMessages(
       [
@@ -346,7 +350,7 @@ describe("rowsClearedByReadyList", () => {
     const thread = applyBlockList(messages, ready([BLOCKED]), VIEWER);
     // c is the viewer's, d is unblockable and e is a tombstone: none of them
     // needs remembering. a does, although the server evaluated it — see below.
-    expect(rowsClearedByReadyList(thread.rows, VIEWER).sort()).toEqual([
+    expect(rowsToRemember(thread.rows, VIEWER, true).sort()).toEqual([
       "a",
       "b",
     ]);
@@ -356,7 +360,7 @@ describe("rowsClearedByReadyList", () => {
     // Read over REST and shown against a ready list…
     let cache = mergeServerRow(emptyCache(), restRow("m1", FRIEND));
     const shown = applyBlockList(selectMessages(cache), ready(), VIEWER);
-    const cleared = rowsClearedByReadyList(shown.rows, VIEWER);
+    const cleared = rowsToRemember(shown.rows, VIEWER, true);
     expect(cleared).toEqual(["m1"]);
 
     // …then pinned by an officer while the list is down. The echo replaces the
@@ -368,6 +372,34 @@ describe("rowsClearedByReadyList", () => {
       "visible",
     );
     expect(classifyMessage(pinned!, unavailable(), VIEWER)).toBe("held");
+  });
+
+  it("names only server-cleared rows when the list is not ready", () => {
+    const UNBLOCKED = "55555555-5555-4555-8555-555555555555";
+    const messages = selectMessages(
+      [
+        restRow("a", FRIEND),
+        restRow("b", FRIEND, { sender_blocked: true }),
+        echoRow("c", UNBLOCKED),
+        echoRow("d", FRIEND),
+        echoRow("e", FRIEND),
+      ].reduce((cache, row) => mergeServerRow(cache, row), emptyCache()),
+    );
+    const thread = applyBlockList(
+      messages,
+      unavailable([], { unblocked: [UNBLOCKED], cleared: ["e"] }),
+      VIEWER,
+    );
+    // b is a tombstone and d is held. c is shown on a confirmed unblock, which
+    // applies in every list state, and e on a clearance already recorded:
+    // neither needs remembering. a is new, and only the server vouched for it.
+    expect(thread.rows.map((row) => row.message.id).sort()).toEqual([
+      "a",
+      "b",
+      "c",
+      "e",
+    ]);
+    expect(rowsToRemember(thread.rows, VIEWER, false)).toEqual(["a"]);
   });
 });
 
@@ -693,9 +725,10 @@ describe("rosterMembership", () => {
       )(BLOCKED),
     ).toBe(false);
     expect(
-      rosterMembership({ byId: {}, isPending: true, isError: false }, departed)(
-        BLOCKED,
-      ),
+      rosterMembership(
+        { byId: {}, isPending: true, isError: false },
+        departed,
+      )(BLOCKED),
     ).toBe(false);
     // Rejoined: the roster's word wins.
     expect(

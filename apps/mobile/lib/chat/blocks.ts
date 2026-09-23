@@ -163,26 +163,37 @@ export function applyBlockList(
 }
 
 /**
- * Every row a `ready` list is showing from a blockable sender who is not the
- * viewer, for `block-clearance.ts` to remember so a later outage cannot take it
- * back.
+ * The rows `block-clearance.ts` should remember, so a later outage cannot take
+ * back a message the viewer has already been shown.
  *
- * **Server-evaluated rows included.** Their provenance does not last: a
- * Realtime UPDATE echo of the row — a pin, an edit, a soft delete — replaces
- * it through `mergeServerRow` as an unevaluated row, and without a clearance a
- * message read over REST and then pinned during a list outage would vanish
- * mid-read (#2257 review). Tombstones are never recorded, and nothing recorded
- * outranks a block: the classifier reads the list first.
+ * - **Against a ready list:** every row it shows from a blockable sender who is
+ *   not the viewer.
+ * - **Against a list that is loading or unavailable:** only the rows the server
+ *   evaluated and cleared. Nothing else shown then is new: a row visible
+ *   because this client confirmed an unblock needs no memory (that change
+ *   applies in every list state), and one visible on an earlier clearance is
+ *   already remembered.
+ *
+ * **Server-evaluated rows included, in both states.** Their provenance does not
+ * last: a Realtime UPDATE echo of the row — a pin, an edit, a soft delete —
+ * replaces it through `mergeServerRow` as an unevaluated row, and without a
+ * clearance a message read over REST and then pinned during a list outage would
+ * vanish mid-read — including when the list had never been ready at all, as on
+ * a cold start whose block-list read failed (#2257 review). Tombstones are
+ * never recorded, and nothing recorded outranks a block: the classifier reads
+ * the list first.
  */
-export function rowsClearedByReadyList(
+export function rowsToRemember(
   rows: readonly ThreadRow[],
   viewerId: string | null,
+  listIsReady: boolean,
 ): string[] {
   const cleared: string[] = [];
   for (const { message, visibility } of rows) {
     if (visibility !== "visible") continue;
     if (!isBlockableSender(message.sender_id)) continue;
     if (message.sender_id === viewerId) continue;
+    if (!listIsReady && !message._blockEvaluated) continue;
     cleared.push(message.id);
   }
   return cleared;

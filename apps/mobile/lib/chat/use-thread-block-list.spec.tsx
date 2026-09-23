@@ -121,15 +121,43 @@ describe("useThreadBlockList — clearances (finding 4)", () => {
     // the message the viewer already read on screen.
     setList("unavailable");
     const pinned = selectMessages(
-      mergeServerRow(
-        mergeServerRow(emptyCache(), restRow("m1", FRIEND)),
-        { ...echoRow("m1", FRIEND), is_pinned: true },
-      ),
+      mergeServerRow(mergeServerRow(emptyCache(), restRow("m1", FRIEND)), {
+        ...echoRow("m1", FRIEND),
+        is_pinned: true,
+      }),
     );
     expect(pinned[0]!._blockEvaluated).toBe(false);
     rerender({ messages: pinned });
     expect(shownIds(result)).toEqual(["m1"]);
     expect(result.current.thread.heldCount).toBe(0);
+  });
+
+  it("keeps a REST row readable through a pin echo when the list was never ready", () => {
+    // A cold start whose block-list read failed: the REST rows still render,
+    // because the server evaluated them.
+    setList("unavailable");
+    const read = messagesOf([restRow("m1", FRIEND)]);
+    const { result, rerender } = renderHook(
+      ({ messages }) => useThreadBlockList(messages, VIEWER),
+      { initialProps: { messages: read } },
+    );
+    expect(shownIds(result)).toEqual(["m1"]);
+
+    // An officer pins m1 during the outage; the echo strips its evaluation.
+    const pinned = selectMessages(
+      mergeServerRow(mergeServerRow(emptyCache(), restRow("m1", FRIEND)), {
+        ...echoRow("m1", FRIEND),
+        is_pinned: true,
+      }),
+    );
+    rerender({ messages: pinned });
+    expect(shownIds(result)).toEqual(["m1"]);
+    expect(result.current.thread.heldCount).toBe(0);
+
+    // A block still outranks it.
+    setList("unavailable", [FRIEND]);
+    rerender({ messages: pinned });
+    expect(result.current.thread.rows[0]?.visibility).toBe("tombstone");
   });
 
   it("holds everything unevaluated when the list was never ready", () => {

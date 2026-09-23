@@ -5,7 +5,7 @@ import { blockClearance, useBlockClearance } from "./block-clearance";
 import {
   applyBlockList,
   contradictingRows,
-  rowsClearedByReadyList,
+  rowsToRemember,
   type BlockedThread,
   type BlockState,
 } from "./blocks";
@@ -27,8 +27,9 @@ export interface ThreadBlockList {
  *
  * 1. Classifies every cached row (`applyBlockList`) against the list, this
  *    client's confirmed changes, and this session's clearances.
- * 2. Records every row a `ready` list shows (`block-clearance.ts`), so a later
- *    outage holds only what arrives during it (finding 4).
+ * 2. Records every row a `ready` list shows, and every server-cleared row
+ *    shown while it is not ready (`rowsToRemember`, `block-clearance.ts`), so
+ *    an outage holds only what first arrives during it (finding 4).
  * 3. Re-reads the list once per distinct set of masked REST rows a ready list
  *    is contradicted by — a masked row for someone off the list, which is what
  *    a block made on another device looks like (finding 6). Once per set, not
@@ -40,6 +41,9 @@ export interface ThreadBlockList {
  * Clearances are passed to the classifier only while the list is not ready.
  * A ready list never consults them, and holding them out keeps `blockState`
  * stable while new rows are recorded, so recording costs no re-classification.
+ * While the list is not ready a recording does re-classify once, and changes
+ * nothing: the rows it adds were already visible, and `record` stays silent
+ * when nothing is new, so the effect settles after one pass.
  */
 export function useThreadBlockList(
   messages: readonly ChatMessage[],
@@ -66,10 +70,10 @@ export function useThreadBlockList(
   );
 
   useEffect(() => {
-    if (!isReady || viewerId === null) return;
+    if (viewerId === null) return;
     blockClearance.record(
       viewerId,
-      rowsClearedByReadyList(thread.rows, viewerId),
+      rowsToRemember(thread.rows, viewerId, isReady),
     );
   }, [isReady, thread.rows, viewerId]);
 
