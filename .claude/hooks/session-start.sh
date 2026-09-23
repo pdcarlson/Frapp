@@ -94,8 +94,8 @@ sys.stdout.write("".join(parts))
 # /tmp lock prevents relaunching on session resume.
 # See docs/internal/environment/CLOUD_SANDBOX.md.
 if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ] && [ -f "$ROOT/scripts/lib/bringup-lock.sh" ]; then
-  # bringup_lock_live, bringup_record: the lock's rule and format, shared with a bringup run
-  # by hand.
+  # bringup_guard, bringup_lock_live, bringup_record: the lock's guard, rule and format,
+  # shared with a bringup run by hand.
   # shellcheck source=scripts/lib/bringup-lock.sh
   . "$ROOT/scripts/lib/bringup-lock.sh"
 
@@ -131,11 +131,7 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ] && [ -f "$RO
   # bringup run by hand takes the same guard to take the lock. The wait is bounded, so a
   # wedged holder cannot stall session start, and where flock is missing the hook decides
   # unserialized, as it always did.
-  guard_open=""
-  if command -v flock >/dev/null 2>&1 && { exec 9>>"${LOCK}.guard"; } 2>/dev/null; then
-    guard_open=1
-    flock -w 10 9 2>/dev/null || true
-  fi
+  bringup_guard "$LOCK"
 
   # A lock from an earlier boot is stale whatever sits beside it (#2515). The branches
   # below trust a lock plus a `.done`/`.failed` sentinel as "bringup already finished",
@@ -193,6 +189,10 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ] && [ -f "$RO
   fi
 
   if mkdir "$LOCK" 2>/dev/null; then
+    # No lock, so no bringup: a sentinel beside the new one is an older run's (one `--stop`
+    # ended, say), and a second fire before the new bringup clears it would report it as this
+    # run's. Cleared here, under the guard, as the restart branch above does.
+    rm -f "$ROOT/.cloud-sandbox-up.done" "$ROOT/.cloud-sandbox-up.failed"
     launch_bringup
     msg="${msg}${restart_msg}${STARTING_MSG}"
   elif [ -f "$ROOT/.cloud-sandbox-up.done" ] || [ -f "$ROOT/.cloud-sandbox-up.failed" ]; then
@@ -208,7 +208,9 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ] && [ -f "$RO
     # second one racing the first.
     prev_pid="$(cat "$LOCK/pid" 2>/dev/null || true)"
     if bringup_lock_live "$LOCK"; then
-      if bringup_alive "$prev_pid"; then
+      if stopper="$(bringup_stopping "$LOCK")"; then
+        msg="${msg} Cloud sandbox: a hung stack bringup is being stopped (cloud-sandbox-up.sh --stop, pid ${stopper}). It writes ${ROOT}/.cloud-sandbox-up.failed when done; then run 'bash scripts/cloud-sandbox-up.sh' to start the stack again."
+      elif bringup_alive "$prev_pid"; then
         msg="${msg} Cloud sandbox: stack bringup is still running (pid ${prev_pid}). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
       else
         msg="${msg} Cloud sandbox: stack bringup is starting (its lock was taken $(bringup_lock_age "$LOCK")s ago). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
@@ -223,9 +225,7 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ] && [ -f "$RO
       fi
     fi
   fi
-  if [ -n "$guard_open" ]; then
-    exec 9>&-
-  fi
+  bringup_unguard
 
   # Summarise the manifest, but ONLY when it belongs to the bringup that owns the current
   # lock. It used to hang off the `.done`/`.failed` branch alone, which tied it to the wrong

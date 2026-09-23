@@ -293,11 +293,13 @@ terminal, so the log a session start points at is always the running bringup's. 
 names a bringup that is alive but hung (its log has stopped advancing), run
 `bash scripts/cloud-sandbox-up.sh --stop`, then bringup again. `--stop` ends the script and every
 process under it except the Docker daemon, which bringup starts and which must outlive it, then
-removes the lock; while the old processes die, the lock names `--stop` itself, so no session start
-launches a bringup beside them. It says so if any outlive `SIGKILL` or the lock cannot be removed.
-A plain `kill` of the pid is not enough: it orphans the command the script is blocked in, and the
-next bringup starts beside it. Containers the bringup already started run under the daemon, so
-they stay up; if the next bringup then fails on a port, the port-conflict row below applies. The hook also relaunches when the lock carries a
+writes a `.cloud-sandbox-up.failed` saying so and removes the lock. While the old processes die,
+the lock carries a `stopping` mark that both writers count as a bringup in progress, so nothing
+starts beside them and a second `--stop` refuses; a session start in that window is told to
+wait for the `.failed`. If any process outlives `SIGKILL`, the lock is kept and the `.failed`
+names them, so no session start launches beside them either. A plain `kill` of the pid is not
+enough: it orphans the command the script is blocked in, and the next bringup starts beside it.
+What `--stop` leaves running, its containers, is in the port-conflict row below. The hook also relaunches when the lock carries a
 **different boot id** from `/proc/sys/kernel/random/boot_id`: `/tmp` here survives a VM
 restart and the processes do not, so a lock and sentinel from before a restart describe a
 stack that is gone ([#2515](https://github.com/pdcarlson/Frapp/issues/2515)). A lock written

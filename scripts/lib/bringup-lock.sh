@@ -9,16 +9,35 @@
 # running by the same rule, bringup_lock_live, so a session start and a hand-run bringup cannot
 # interleave their read-then-act steps or disagree about that (#2547). The hook also trusts a
 # `.done`/`.failed` sentinel from this boot before it asks; a hand run replaces a finished
-# bringup's lock, whose pid is dead. `cloud-sandbox-up.sh --stop` ends a hung one (bringup_stop).
+# bringup's lock, whose pid is dead. `cloud-sandbox-up.sh --stop` ends a hung one (bringup_stop),
+# marking the lock with a `stopping` file while it does.
 
-# Whether $1 is the pid of a running cloud-sandbox-up.sh: bash (or sh) executing the script, as
-# the hook and a hand run start it. The whole command line is matched, not a substring, since
-# bringup_stop kills what this accepts: `vim scripts/cloud-sandbox-up.sh`, `bash -c '...'` or a
-# `tail -f /tmp/cloud-sandbox-up.log` is not a bringup. `ps`, not `kill -0`, so another user's
-# bringup counts too, and a zombie (listed as `[bash] <defunct>`) does not.
+# Whether $1 is the pid of a running cloud-sandbox-up.sh: bash (or sh) whose first operand is
+# the script, as the hook and a hand run start it. Its argv is read whole, from
+# /proc/<pid>/cmdline where there is one, so a path with a space still matches; a substring
+# test would not do, since bringup_stop kills what this accepts, and `vim
+# scripts/cloud-sandbox-up.sh`, `bash -c '...'` or a `tail -f` of the log is not a bringup.
+# Another user's bringup counts, and a zombie (whose cmdline is empty) does not.
 bringup_alive() {
-  [ -n "$1" ] && ps -p "$1" -o args= 2>/dev/null \
-    | grep -Eq '^([^ ]*/)?(ba)?sh( -[^ c]+)* ([^ ]*/)?cloud-sandbox-up\.sh( |$)'
+  [ -n "$1" ] || return 1
+  local argv
+  if [ -r "/proc/$1/cmdline" ]; then
+    argv="$(tr '\0' '\n' <"/proc/$1/cmdline" 2>/dev/null)"
+  else
+    argv="$(ps -p "$1" -o args= 2>/dev/null | tr ' ' '\n')"
+  fi
+  printf '%s\n' "$argv" | awk '
+    NR == 1 { n = split($0, p, "/"); if (p[n] != "bash" && p[n] != "sh") { r = 1; exit } next }
+    /^-/ { if ($0 ~ /^-[^-]*c/) { r = 1; exit } next }
+    { n = split($0, p, "/"); r = (p[n] == "cloud-sandbox-up.sh") ? 0 : 1; exit }
+    END { exit (r == "" ? 1 : r) }'
+}
+
+# The pid of the `--stop` still stopping the bringup behind lock $1, if one is.
+bringup_stopping() {
+  local stopper
+  stopper="$(cat "$1/stopping" 2>/dev/null || true)"
+  bringup_alive "$stopper" && echo "$stopper"
 }
 
 # Whether pid $1 is a process that has not exited: listed, and not a zombie.
@@ -46,16 +65,18 @@ bringup_lock_young() {
   [ -n "$age" ] && [ "$age" -ge 0 ] && [ "$age" -lt 30 ]
 }
 
-# Whether lock $1 belongs to a bringup that is running or starting. Running: its pid is a
-# live cloud-sandbox-up.sh. Starting: the lock is young and its pid is not written yet, or is
-# a live process that has not exec'd the script yet; the taker writes the pid only after
+# Whether lock $1 belongs to a bringup that is running, being stopped, or starting. Running:
+# its pid is a live cloud-sandbox-up.sh. Being stopped: a live `--stop` marked it, and the old
+# tree may still be dying. Starting: the lock is young and its pid is not written yet, or is a
+# live process that has not exec'd the script yet; the taker writes the pid only after
 # launching bringup, and for a moment the launched pid is still a fork of the taker. A
-# recorded pid that is dead is neither, however young the lock: that bringup finished or was
-# stopped, and its lock is replaced at once.
+# recorded pid that is dead is none of these, however young the lock: that bringup finished or
+# was stopped, and its lock is replaced at once.
 bringup_lock_live() {
   local pid
   pid="$(cat "$1/pid" 2>/dev/null || true)"
   bringup_alive "$pid" && return 0
+  bringup_stopping "$1" >/dev/null && return 0
   bringup_lock_young "$1" && { [ -z "$pid" ] || bringup_pid_running "$pid"; }
 }
 
@@ -83,33 +104,42 @@ bringup_descendants() {
   done
 }
 
-# Stop the bringup holding lock $1, with every process under it, and remove the lock. $2 is the
-# caller's pid, $3 the current boot id (may be empty). Takes the guard itself.
+# Stop the bringup holding lock $1, with every process under it. $2 is the caller's pid, $3 the
+# current boot id (may be empty), $4 the `.failed` sentinel to write. Takes the guard itself.
 #   0  stopped (its pid is printed) or none was running (nothing printed); the lock is gone.
 #   1  a bringup is starting (bringup_lock_live, but its pid is not yet a bringup to stop);
 #      nothing is done, since removing its lock would let a second bringup start beside it.
-#   2  the lock could not be written or removed (another user's, or /tmp's permissions);
+#   2  the lock could not be marked or removed (another user's, or /tmp's permissions);
 #      nothing was signalled.
 #   3  stopped, but processes outlived SIGKILL (stuck in the kernel, or another user's); the
-#      stopped pid is printed, then a line naming them. The lock is gone.
+#      stopped pid is printed, then a line naming them. The lock is KEPT, beside a `.failed`
+#      saying so, so no session start launches a bringup beside them.
 #   4  stopped (its pid is printed), but the lock could not be removed afterwards.
+#   5  another `--stop` is already stopping it; its pid is printed, and nothing is done.
 # Killing only the script would orphan the command it is blocked in (a hung `supabase start`,
 # say): bash runs no trap while it waits on a foreground child, and the next bringup would then
 # start beside the orphan. The tree is read before anything is signalled, since children
-# re-parent once their parent dies. Only the guard's decision is serialized, not the wait: the
-# lock is first re-recorded under the caller's pid, a live cloud-sandbox-up.sh, so for as long as
-# the old tree takes to die every other writer finds a bringup running and starts none. A lock
-# from another boot names a pid that may since belong to anything, so nothing is killed for it.
+# re-parent once their parent dies. Only the decision is made under the guard, not the wait:
+# the lock is first marked `stopping` with the caller's pid, which bringup_lock_live counts as
+# live, so for as long as the old tree takes to die every writer starts nothing, and a second
+# `--stop` refuses rather than killing this one. Before the lock goes, `.failed` records the
+# stop, so a session told to wait for a sentinel gets one. A lock from another boot names a pid
+# that may since belong to anything, so nothing is killed for it.
 bringup_stop() {
-  local lock="$1" self="$2" boot="${3:-}" pid lock_boot tree p alive i survivors=""
+  local lock="$1" self="$2" boot="${3:-}" failed="${4:-}" pid lock_boot stopper tree p alive i survivors=""
   bringup_guard "$lock"
   pid="$(cat "$lock/pid" 2>/dev/null || true)"
   lock_boot="$(cat "$lock/boot_id" 2>/dev/null || true)"
+  if stopper="$(bringup_stopping "$lock")"; then
+    bringup_unguard
+    echo "$stopper"
+    return 5
+  fi
   if [ -n "$lock_boot" ] && [ -n "$boot" ] && [ "$lock_boot" != "$boot" ]; then
     pid=""
   elif bringup_alive "$pid"; then
-    bringup_record "$lock" "$self"
-    if [ "$(cat "$lock/pid" 2>/dev/null || true)" != "$self" ]; then
+    { echo "$self" >"$lock/stopping.tmp" && mv -f "$lock/stopping.tmp" "$lock/stopping"; } 2>/dev/null || true
+    if [ "$(cat "$lock/stopping" 2>/dev/null || true)" != "$self" ]; then
       bringup_unguard
       return 2
     fi
@@ -143,16 +173,29 @@ bringup_stop() {
   for p in $tree; do bringup_pid_running "$p" && survivors="$survivors $p"; done
 
   bringup_guard "$lock"
-  # Only the lock this call claimed: one another writer holds instead is theirs.
-  if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$self" ]; then
-    rm -rf "$lock" 2>/dev/null || true
+  if [ -n "$failed" ]; then
+    if [ -n "$survivors" ]; then
+      printf '%s — bringup pid %s was stopped by cloud-sandbox-up.sh --stop, but processes%s outlived SIGKILL. Its lock is kept so nothing starts beside them; once they are gone, run bash scripts/cloud-sandbox-up.sh.\n' \
+        "$(date -u +%FT%TZ)" "$pid" "$survivors" >"$failed" 2>/dev/null || true
+    else
+      printf '%s — bringup pid %s was stopped by cloud-sandbox-up.sh --stop. Run bash scripts/cloud-sandbox-up.sh to start it again.\n' \
+        "$(date -u +%FT%TZ)" "$pid" >"$failed" 2>/dev/null || true
+    fi
+  fi
+  # Only a lock this call marked: one another writer holds instead is theirs.
+  if [ "$(cat "$lock/stopping" 2>/dev/null || true)" = "$self" ]; then
+    if [ -n "$survivors" ]; then
+      rm -f "$lock/stopping" 2>/dev/null || true
+    else
+      rm -rf "$lock" 2>/dev/null || true
+    fi
   fi
   bringup_unguard
   if [ -n "$survivors" ]; then
     echo "survivors:$survivors"
     return 3
   fi
-  if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$self" ]; then return 4; fi
+  if [ "$(cat "$lock/stopping" 2>/dev/null || true)" = "$self" ]; then return 4; fi
   return 0
 }
 
@@ -168,18 +211,25 @@ bringup_record() {
 
 # Take lock $1 for a bringup started by hand, as pid $3 in boot $2. Call under the guard flock.
 #   0  taken.
-#   1  another bringup from this boot is running or starting; its pid, or "starting", is printed.
+#   1  another bringup from this boot is running, being stopped or starting; its pid,
+#      "stopping:<the --stop's pid>", or "starting" is printed.
 #   2  the lock could not be removed or created (its owner, or /tmp's permissions).
 # A lock that another boot left behind is replaced whatever its pid says: after a restart that
 # pid may belong to some unrelated process.
 bringup_take_lock() {
-  local lock="$1" boot="$2" self="$3" holder lock_boot
+  local lock="$1" boot="$2" self="$3" holder lock_boot stopper
   if [ -d "$lock" ]; then
     holder="$(cat "$lock/pid" 2>/dev/null || true)"
     lock_boot="$(cat "$lock/boot_id" 2>/dev/null || true)"
     if [ "$holder" != "$self" ] && { [ -z "$lock_boot" ] || [ -z "$boot" ] || [ "$lock_boot" = "$boot" ]; } \
       && bringup_lock_live "$lock"; then
-      if bringup_alive "$holder"; then echo "$holder"; else echo "starting"; fi
+      if stopper="$(bringup_stopping "$lock")"; then
+        echo "stopping:$stopper"
+      elif bringup_alive "$holder"; then
+        echo "$holder"
+      else
+        echo "starting"
+      fi
       return 1
     fi
   fi

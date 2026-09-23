@@ -597,8 +597,13 @@ test("cloud-sandbox-up.sh takes the lock itself unless the hook holds it, before
   assert.match(commands.slice(gate, take), /bringup_guard "\$BRINGUP_LOCK"/, "it takes the lock under the hook's guard");
   const lib = readFileSync(LOCK_LIB, "utf8");
   const guardFn = lib.slice(lib.indexOf("bringup_guard() {"), lib.indexOf("\n}", lib.indexOf("bringup_guard() {")));
-  assert.match(guardFn, /exec 9>>"\$1\.guard"/, "the same guard file the hook takes");
+  assert.match(guardFn, /exec 9>>"\$1\.guard"/);
   assert.match(guardFn, /flock -w 10 9/);
+  // The hook decides under the same helper, so the two cannot drift onto different guards.
+  const hook = readFileSync(HOOK, "utf8");
+  assert.match(hook, /^\s*bringup_guard "\$LOCK"$/m);
+  assert.match(hook, /^\s*bringup_unguard$/m);
+  assert.doesNotMatch(hook, /flock -w/, "the hook takes the guard only through the lib");
   assert.match(commands.slice(take, clear), /exit 1/, "a refused run stops");
   // Once taken: the old sentinels go while the guard is still held, then the guard is
   // released, then the run's output goes to the log session starts point at.
@@ -729,10 +734,15 @@ test("a command line that only mentions the script is not a bringup, so --stop n
   // holding scripts/cloud-sandbox-up.sh is not a bringup, whatever its args contain.
   const s = scratch(t);
   for (const [command, args] of [
-    ["bash", ["-c", "sleep 30", "cloud-sandbox-up.sh"]],
+    // Two commands, so bash stays the process rather than exec'ing `sleep`.
+    ["bash", ["-c", "sleep 30; true", "cloud-sandbox-up.sh"]],
     ["node", ["-e", "setTimeout(() => {}, 30000)", "scripts/cloud-sandbox-up.sh"]],
   ]) {
     const pid = liveProcess(t, command, args);
+    assert.ok(
+      await eventually(() => /cloud-sandbox-up\.sh/.test(spawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" }).stdout)),
+      `precondition: ${command}'s command line names the script`,
+    );
     rmSync(s.lock, { recursive: true, force: true });
     priorLock(s, { boot: "boot-B", sentinel: null, writtenAt: Math.floor(Date.now() / 1000) - 600 });
     lockPid(s, pid, Math.floor(Date.now() / 1000) - 600);
@@ -785,19 +795,26 @@ test("while --stop waits for a stubborn tree, the lock names it, so no second br
   let stderr = "";
   stopper.stderr.on("data", (d) => (stderr += d));
   const exited = new Promise((resolve) => stopper.on("close", resolve));
+  const stoppingFile = path.join(s.lock, "stopping");
   assert.ok(
-    await eventually(() => readFileSync(path.join(s.lock, "pid"), "utf8").trim() === String(stopper.pid)),
-    "the stopper claims the lock",
+    await eventually(() => existsSync(stoppingFile) && readFileSync(stoppingFile, "utf8").trim() === String(stopper.pid)),
+    "the stopper marks the lock",
   );
-  // A hand run and a session start both find a bringup running: the stopper.
-  assert.deepEqual(takeLock(s.lock, "boot-B", 4242), { status: 1, out: String(stopper.pid) });
+  // A hand run, a session start and a second --stop all find a stop in progress.
+  assert.deepEqual(takeLock(s.lock, "boot-B", 4242), { status: 1, out: `stopping:${stopper.pid}` });
   const context = runHook(s, { boot: "boot-B" });
-  assert.match(context, new RegExp(`stack bringup is still running \\(pid ${stopper.pid}\\)`));
+  assert.match(context, new RegExp(`a hung stack bringup is being stopped \\(cloud-sandbox-up\\.sh --stop, pid ${stopper.pid}\\)`));
   assert.equal(existsSync(s.launched), false);
+  const second = spawnSync("bash", [script, "--stop"], { env, encoding: "utf8", timeout: 20000 });
+  assert.equal(second.status, 1);
+  assert.match(second.stderr, new RegExp(`another --stop \\(pid ${stopper.pid}\\) is already stopping`));
+  assert.ok(alive(stopper.pid), "the second --stop leaves the first alone");
   assert.equal(await exited, 0, stderr);
   assert.match(stderr, new RegExp(`Stopped bringup pid ${child.pid}`));
   assert.ok(await eventually(() => !alive(blocked)), "the TERM-proof step is killed");
   assert.equal(existsSync(s.lock), false);
+  // What a session told to wait is watching for.
+  assert.match(readFileSync(path.join(s.root, ".cloud-sandbox-up.failed"), "utf8"), /was stopped by cloud-sandbox-up\.sh --stop/);
 });
 
 test("--stop says it could not remove a lock rather than claiming it did", { skip: process.getuid?.() === 0 && "root ignores directory permissions" }, (t) => {
@@ -823,4 +840,51 @@ test("--stop says it could not remove a lock rather than claiming it did", { ski
   assert.match(stop.stderr, /could not write or remove the bringup lock/);
   assert.doesNotMatch(stop.stderr, /removed any lock/);
   assert.ok(existsSync(lock));
+});
+
+test("a bringup at a path with a space, or run with a long option, is still a bringup", async (t) => {
+  // `ps` prints argv joined by spaces; a regex over that rejected both.
+  const s = scratch(t);
+  const dir = path.join(s.dir, "with space");
+  mkdirSync(dir);
+  const script = path.join(dir, "cloud-sandbox-up.sh");
+  writeFileSync(script, "sleep 30\n");
+  for (const args of [[script], ["--norc", script]]) {
+    const pid = liveProcess(t, "bash", args);
+    const run = spawnSync("bash", ["-c", `. ${JSON.stringify(LOCK_LIB)}; bringup_alive "$1"`, "_", String(pid)]);
+    assert.equal(run.status, 0, `bash ${args.join(" ")} is alive`);
+  }
+});
+
+test("processes that outlive SIGKILL keep the lock, and the hook does not launch beside them", async (t) => {
+  // Faked by making `kill` and `sleep` no-ops, so the tree survives every signal at once.
+  const s = scratch(t);
+  const pid = liveBringup(t, s);
+  priorLock(s, { boot: "boot-B", sentinel: null });
+  lockPid(s, pid);
+  const failed = path.join(s.root, ".cloud-sandbox-up.failed");
+  const run = spawnSync(
+    "bash",
+    ["-c", `. ${JSON.stringify(LOCK_LIB)}; kill() { :; }; sleep() { :; }; bringup_stop "$1" "$$" boot-B "$2"`, "_", s.lock, failed],
+    { encoding: "utf8", timeout: 30000 },
+  );
+  assert.equal(run.status, 3, run.stderr);
+  assert.match(run.stdout, new RegExp(`^${pid}\nsurvivors: .*\\b${pid}\\b`));
+  assert.ok(existsSync(path.join(s.lock, "pid")), "the lock is kept");
+  assert.equal(existsSync(path.join(s.lock, "stopping")), false, "and no longer marked as being stopped");
+  assert.match(readFileSync(failed, "utf8"), /outlived SIGKILL\. Its lock is kept/);
+  process.kill(pid);
+  const context = runHook(s, { boot: "boot-B" });
+  assert.match(context, /already finished/);
+  assert.equal(await eventually(() => existsSync(s.launched), 300), false, "nothing launches beside the survivors");
+});
+
+test("a fresh launch clears an older run's sentinel under the guard", async (t) => {
+  // With no lock there is no bringup, so a .failed from a stopped run is stale; a second fire
+  // before the new bringup cleared it would report it as the new run's.
+  const s = scratch(t, { bringupBody: "sleep 3\n" });
+  writeFileSync(path.join(s.root, ".cloud-sandbox-up.failed"), "stopped by --stop\n");
+  runHook(s, { boot: "boot-B" });
+  assert.equal(existsSync(path.join(s.root, ".cloud-sandbox-up.failed")), false);
+  assert.match(runHook(s, { boot: "boot-B" }), /stack bringup is still running/);
 });

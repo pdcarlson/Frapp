@@ -53,8 +53,8 @@ EGRESS_MANIFEST="$ROOT/.cloud-sandbox-capabilities.json"
 # log. A taken run clears the last run's sentinels while still under the guard; see below.
 #
 # `--stop` ends a hung bringup instead (bringup_stop): the script and everything under it but
-# the Docker daemon, then the lock, so the next run or session start begins clean. Containers
-# the bringup started run under the daemon, so they stay up.
+# the Docker daemon, then the lock, so the next run or session start begins clean. It records
+# the stop in `.failed`, which is what a session waiting on this bringup is watching for.
 # shellcheck source=scripts/lib/bringup-lock.sh
 . "$ROOT/scripts/lib/bringup-lock.sh"
 BRINGUP_LOCK="${FRAPP_BRINGUP_LOCK:-/tmp/cloud-sandbox-up.lock}"
@@ -62,7 +62,7 @@ BRINGUP_LOG="${FRAPP_BRINGUP_LOG:-/tmp/cloud-sandbox-up.log}"
 boot_now="$(cat "${FRAPP_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null || true)"
 if [ "${1:-}" = "--stop" ]; then
   stop_status=0
-  stopped="$(bringup_stop "$BRINGUP_LOCK" "$$" "$boot_now")" || stop_status=$?
+  stopped="$(bringup_stop "$BRINGUP_LOCK" "$$" "$boot_now" "$FAILED_SENTINEL")" || stop_status=$?
   stopped_pid="$(printf '%s\n' "$stopped" | head -n 1)"
   case "$stop_status" in
     0)
@@ -80,7 +80,10 @@ if [ "${1:-}" = "--stop" ]; then
       cs_log "ERROR: could not write or remove the bringup lock ${BRINGUP_LOCK}, so nothing was stopped. Check its owner (a bringup run as another user) and the permissions of $(dirname "$BRINGUP_LOCK")."
       ;;
     3)
-      cs_log "ERROR: stopped bringup pid ${stopped_pid}, but some of its processes outlived SIGKILL (${stopped#*survivors: }); they are stuck in the kernel or belong to another user. Do not start bringup again until they are gone."
+      cs_log "ERROR: stopped bringup pid ${stopped_pid}, but some of its processes outlived SIGKILL (${stopped#*survivors: }); they are stuck in the kernel or belong to another user. Its lock is kept, and .cloud-sandbox-up.failed says why, so no session start launches a bringup beside them; once they are gone, run 'bash scripts/cloud-sandbox-up.sh'."
+      ;;
+    5)
+      cs_log "ERROR: another --stop (pid ${stopped_pid}) is already stopping this bringup. Wait for it to finish; it writes .cloud-sandbox-up.failed when it does."
       ;;
     *)
       cs_log "ERROR: stopped bringup pid ${stopped_pid}, but could not remove its lock ${BRINGUP_LOCK}. Check its owner and the permissions of $(dirname "$BRINGUP_LOCK")."
@@ -108,6 +111,8 @@ if [ -z "${FRAPP_BRINGUP_LOCK_HELD:-}" ]; then
       bringup_unguard
       if [ "$running" = "starting" ]; then
         cs_log "ERROR: another bringup is starting (its lock was taken seconds ago). Wait for its .cloud-sandbox-up.done / .cloud-sandbox-up.failed instead of starting a second one."
+      elif [ "${running#stopping:}" != "$running" ]; then
+        cs_log "ERROR: a hung bringup is being stopped (--stop, pid ${running#stopping:}). Run this again once it has finished; it writes .cloud-sandbox-up.failed when it does."
       else
         cs_log "ERROR: another bringup is already running (pid ${running}). Wait for its .cloud-sandbox-up.done / .cloud-sandbox-up.failed instead of starting a second one. If it is hung (${BRINGUP_LOG} has stopped advancing), stop it with 'bash scripts/cloud-sandbox-up.sh --stop' and run this again."
       fi
