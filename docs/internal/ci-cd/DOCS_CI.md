@@ -19,8 +19,8 @@ site where the temptation is acted on: `DOCS_CHECKS` in
 
 ## Env slugs (`check-env-slugs.mjs`)
 
-Asserts that every Infisical environment slug named in the files it scans is one that exists: `dev`,
-`staging`, `prod`. It reads the tree, not the diff — a reference and the slug list it must match sit
+Asserts that every Infisical environment slug named in the files it scans is one that exists — one of
+`INFISICAL_ENV_SLUGS`, below. It reads the tree, not the diff — a reference and the slug list it must match sit
 in different files.
 
 **It scans a fixed list, not the repo, and matches fixed syntaxes rather than any mention of a

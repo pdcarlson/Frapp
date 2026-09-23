@@ -15,7 +15,7 @@ For list query parameters named `limit` (or similar caps), keep `@IsInt()` on th
 
 ### Never trust the client
 
-The global `ValidationPipe` runs `whitelist: true` + `forbidNonWhitelisted: true`, registered in `configureApp()` (`apps/api/src/bootstrap.ts`) rather than in `main.ts` — see [`testing.md`](testing.md#6-e2e-scaffolding) § 6, "Boot through `configureApp()`, never by hand" — so an unexpected property is rejected with a 400 rather than silently dropped. Two conventions keep that baseline honest:
+The global `ValidationPipe` runs `whitelist: true` + `forbidNonWhitelisted: true` (where it is registered, and why nothing may set it up by hand: [`testing.md` § 6](testing.md#6-e2e-scaffolding), "Boot through `configureApp()`, never by hand"), so an unexpected property is rejected with a 400 rather than silently dropped. Two conventions keep that baseline honest:
 
 **Every request-DTO property needs a real constraint, not just a gate.** A property with no decorators at all is safe — whitelisting strips it before a service ever sees it. The dangerous shape is a property carrying only `@IsOptional()` / `@ValidateIf()` / `@Allow()`: the gate is enough to survive whitelisting, and then nothing checks the value. Put a type check behind every gate, and a range/length/enum bound wherever the column has a real domain — money and point amounts get bounds on **both** sides, and ids that reach a uuid column get `@IsUUID()` so a malformed value is a 400 at the edge instead of a 500 from Postgres. `apps/api/src/interface/dtos/dto-constraint-coverage.spec.ts` enforces **the gate rule** automatically across every DTO — it walks the directory, so a new `*.dto.ts` is covered the moment it lands, and it fails in CI naming the offending property. The other two rules on this line (bounds on both sides, `@IsUUID()` for uuid-backed ids) are **not** derived: the same file pins them with a hand-maintained table of specific properties, so adding a uuid-backed `@IsString()` id or an unbounded amount elsewhere passes CI. Add a row when you add such a field — and when you find one that is missing, that is a real bug, not a test-maintenance chore.
 
@@ -197,7 +197,7 @@ When adding new modules:
 The API surface is instrumented for observability:
 
 - Structured logging with request ID, user ID, chapter ID, method, path, status, latency. Nest `Logger` records from services include the request id via `RequestContextLogger` + ALS (`spec/behavior/observability.md` § Structured Logging / Request Tracing).
-- `/health` endpoint used by load balancers and uptime checks.
+- Health routes, what each returns, and which one Render and the deploy smoke checks poll: [`spec/behavior/observability.md` § Health Check](../../spec/behavior/observability.md#health-check).
 - Sentry init in `apps/api/src/instrument.ts` (first import from `main.ts`); 5xx via `AllExceptionsFilter` + `toReportableError`. Sentry owns the Node OpenTelemetry tracer (`skipOpenTelemetrySetup: false`). Do not add `SentryGlobalFilter`.
 
 When you add new modules:

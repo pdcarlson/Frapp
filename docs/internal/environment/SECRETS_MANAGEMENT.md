@@ -45,7 +45,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | ------------ | ----- | ------------------------------ |
 | Identities   | 5     | 1 (admin)                      |
 | Projects     | 3     | 1 (Frapp)                      |
-| Environments | 3     | 3 (dev, staging, prod)         |
+| Environments | 3     | 3 — [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#infisical-environments) |
 | Integrations | 10    | 6 secret syncs — see §5        |
 
 The integration count is derived from the sync inventory in §5, not tracked independently — this row
@@ -62,14 +62,10 @@ billing/usage view is authoritative if you need the number for a plan decision.
 
 ### 2. Create Environments
 
-| UI name     | Slug        | Maps to                               |
-| ----------- | ----------- | ------------------------------------- |
-| Development | `dev`       | Local development via `infisical run` |
-| Staging     | `staging`   | `main` branch deploys                 |
-| Production  | `prod`      | Production deploys — a dispatched commit, not a branch (#1340) |
-
-The **slug** is what every tool takes — `infisical run --env=`, the workflows' `env-slug:`, and
-`.infisical.json`. Two of the three differ from the UI name. Verify against
+Create one environment per row of
+[`ENV_REFERENCE.md` § Infisical Environments](./ENV_REFERENCE.md#infisical-environments), giving each
+the **slug** that table lists, not just its UI name: the slug is what every tool takes —
+`infisical run --env=`, the workflows' `env-slug:`, and `.infisical.json` — and the two differ. Verify against
 **Project Settings → Environments**, which lists Name and Slug side by side.
 
 ### 3. Add Canonical Values
@@ -83,7 +79,7 @@ value. Start with `staging`, then repeat for `prod` and `dev`.
 
 ### 4. Add References
 
-In **all three environments**, add the reference rows from
+In **every environment**, add the reference rows from
 [`ENV_REFERENCE.md` § "References — Framework-Specific Names"](./ENV_REFERENCE.md#references--framework-specific-names)
 — the value string you type is identical in every environment; only the canonical value it resolves to
 changes. That table also flags the one `NEXT_PUBLIC_*` name that is a **literal**, not a `${…}` reference

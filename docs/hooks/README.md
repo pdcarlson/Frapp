@@ -149,7 +149,7 @@ filter. Which other workspaces share that job is owned by
 because the copy that used to live here had already gone stale.
 
 `web-tests` **is a required status check** (ADR-15 2026-08-19 amendment — see
-[`spec/architecture/README.md`](../../spec/architecture/README.md)). The
+[`spec/architecture/adr/adr-15.md`](../../spec/architecture/adr/adr-15.md)). The
 required-check list lives in
 [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
 

@@ -282,7 +282,7 @@ The **`lint-and-typecheck`** job in `.github/workflows/ci.yml` runs ESLint, Type
 
 The four docs gates that covered structure, citations, references and rosters are **gone** — scripts, `check:doc-*` npm scripts and jobs alike. What still runs over the docs outside `ci.yml`, and what it checks: [`DOCS_CI.md` § What runs](../internal/ci-cd/DOCS_CI.md#what-runs). None of it is a required check, and none of it requires a doc edit.
 
-`lint` also surfaces the `nestjs-typed` response-schema rule as **warnings** (142 today). Warnings do not fail ESLint, so this job stays green while the backlog stays visible; it flips to `error` once the route-DTO backfill lands. See [`docs/internal/ci-cd/QUALITY_GATES.md`](../internal/ci-cd/QUALITY_GATES.md).
+`lint` also surfaces the `nestjs-typed` response-schema rule as **warnings**, which do not fail ESLint, so this job stays green while the backlog stays visible. How to measure that backlog rather than copy a number, and when the rule flips to `error`: [`QUALITY_GATES.md` § nestjs-typed](../internal/ci-cd/QUALITY_GATES.md#nestjs-typed--the-response-schema-rule).
 
 ## 5a. Coverage
 

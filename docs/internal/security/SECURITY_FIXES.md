@@ -441,10 +441,9 @@ is why it was P2 and not P1. This is also what Supabase's advisor reports as "Fu
 Mutable".
 
 ### Prevention
-Declare every `SECURITY DEFINER` function `set search_path = public, pg_temp`, with `pg_temp` **last**
-— listing it first reinstates the defect. `scripts/check-pglite-migrations.mjs` enforces this against
-the applied catalog (the `security definer search_path` tier) and fails the `pglite-migrations` job on
-any function that does not, so the eighth one cannot land silently. The check reads the catalog rather
+The standing rule this fix left behind, and the CI check that enforces it:
+[`AUTHORIZATION_MODEL.md` § `SECURITY DEFINER` predicates must pin `pg_temp` last](AUTHORIZATION_MODEL.md#security-definer-predicates-must-pin-pg_temp-last).
+That check reads the applied catalog rather
 than scanning migration SQL, because migrations are immutable — the three files that introduced the
 bare setting keep it in their text permanently, and only the end state is meaningful.
 

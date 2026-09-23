@@ -103,7 +103,7 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | `POST /v1/invites/redeem` | 10/min | Token-guessing surface. |
 | `POST /v1/events`, `PATCH /v1/events/:id` | 10/min | Each one pushes a notification to every member of the chapter. |
 | The signed-upload-URL routes — `POST /v1/documents/upload-url`, `/v1/backwork/upload-url`, `/v1/channels/:id/upload-url`, `/v1/chapters/current/logo-url`, `/v1/service-entries/proof-upload-url`, `/v1/users/me/avatar-url` | 10/min | Mints signed object-storage URLs. The rule is per-mechanism rather than per-module, but it is a convention applied by hand at each handler — nothing inherits it, and `POST /v1/discord-imports/:id/upload-urls` currently mints signed URLs on the default ([#1709](https://github.com/pdcarlson/Frapp/issues/1709)). |
-| `GET /v1/search` | 20/min | Four full-text (`websearch_to_tsquery`) scans per call. |
+| `GET /v1/search` | 20/min | One full-text scan per search source, per call ([`search.md`](search.md#global-search)). |
 
 `POST /v1/points/adjust` is deliberately absent: its abuse control is the adjustments-per-hour anti-fraud rule in the points service, not the throttler. [`points.md`](points.md) § Anti-Fraud owns the limit and its scoping. `POST /v1/channels/:id/messages` also fans out push notifications but keeps the 30/min default — it is the chat send path, and a lower ceiling would degrade normal use.
 - Passwords are never stored by Frapp. Authentication is delegated entirely to Supabase Auth.

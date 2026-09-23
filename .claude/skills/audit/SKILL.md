@@ -95,8 +95,9 @@ Docker. What it can't judge is whether a new policy's predicate is right; that i
 ### Input validation
 
 DTOs use `class-validator` decorators (`@IsString`, `@MaxLength`, `@IsUUID`, …). The global
-`ValidationPipe` is set in `configureApp()` (`apps/api/src/bootstrap.ts`), not `main.ts`, with
-`whitelist: true` and `forbidNonWhitelisted: true`.
+`ValidationPipe`'s flags, and the file that defines them:
+[`api-architecture.md` § Never trust the client](../../../docs/guides/api-architecture.md#never-trust-the-client).
+Where it is registered (not `main.ts`): [`testing.md` § 6](../../../docs/guides/testing.md#6-e2e-scaffolding).
 
 ### Secret exposure
 

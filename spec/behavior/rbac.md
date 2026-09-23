@@ -36,6 +36,8 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `service:approve`     | Approve or reject service hour entries                 |
 | `semester:rollover`   | Trigger a new semester rollover                        |
 | `reports:export`      | Export attendance, points, and roster reports          |
+| `chapter-config:view` | Read chapter config, custom roles and custom fields; with `members:view`, the audit log |
+| `chapter-config:manage` | Change chapter config (including the theme-palette recompute) and write custom roles and custom fields |
 
 Chapters can define **custom permission strings** beyond this catalog. Custom permissions are used for:
 

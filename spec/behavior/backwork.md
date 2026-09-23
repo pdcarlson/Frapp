@@ -51,7 +51,7 @@ The file-type allowlist is the `document` kind in `@repo/validation`, shared wit
 ## Browsing and Search
 
 - Resources are browsable by department, course, professor, semester/year, assignment type, and tags.
-- Full-text search across title, tags, course name, and professor name.
+- Full-text search across title, tags, course name, and professor name. **Built, it matches `title` and `course_number` only**: the library (`GET /v1/backwork?search=`) still runs a case-insensitive substring match (#1357), and global search's Backwork vector indexes the same two columns ([`search.md` § Global search](search.md#global-search) records why). Widening it to tags, department and professor is #585.
 - Results are always scoped to the user's active chapter.
 - **Dashboard `/backwork`:** `useBackworkResources` is `enabled: !!chapterId`. With no chapter selected the page shows "No chapter selected", never a spinner. The resource list gates its spinner on `isLoading` or `fetchStatus === "paused"` (offline, no data); a disabled TanStack Query v5 stays `isPending` with `fetchStatus: "idle"` and must not be treated as in-flight or as an empty library.
 
