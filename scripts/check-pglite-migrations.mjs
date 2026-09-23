@@ -2370,12 +2370,17 @@ try {
 //   - the login is linked to its auth user, since sign-in matches on
 //     `users.supabase_auth_id` alone and an unlinked login signs in chapterless;
 //   - only a login `seed-demo.mjs auth` marked for this namespace is linked, so
-//     a mistyped DEMO_EMAIL can never hand a real account the presidency;
+//     an existing account the script did not create (a real person's, or one
+//     made by hand in the dashboard) is never handed the presidency. The marker
+//     cannot catch a mistyped address with no account yet; `auth` would create
+//     and mark that one (see ensureAuthUser);
 //   - a chapterless row that a sign-in made before the seed is adopted, not a
 //     permanent refusal;
 //   - the reviewer variant carries what `apps/mobile/store/README.md` § Seed the
 //     reviewer's chapter asks for — no invoice on the reviewer, one DM into them,
-//     and a service entry of their own;
+//     a study zone with past sessions of their own, a message from another
+//     member in a channel they can read (the one that offers Block), and a
+//     service entry of their own;
 //   - re-running is idempotent, which also proves the delete-then-rebuild clears
 //     every foreign key onto `users` before it removes them;
 //   - a re-seed that fails leaves the chapter it was replacing exactly as it was,
@@ -2421,6 +2426,20 @@ console.log("\n=== demo seed load (#2308) ===");
       dmMessages: await n(
         `select count(*)::int as n from chat_messages m join chat_channels c on c.id = m.channel_id
           where c.chapter_id = '${chapterId}' and c.type = 'DM'`,
+      ),
+      studyZones: await n(`select count(*)::int as n from study_geofences where chapter_id = '${chapterId}' and is_active`),
+      loginPastSessions: await n(
+        `select count(*)::int as n from study_sessions where user_id = '${loginUserId}' and status = 'COMPLETED'`,
+      ),
+      // A text message in a public channel from a member other than the login:
+      // what the README's Block row needs. The system actor is no member, so the
+      // join leaves its posts out, as the app's Block control does.
+      blockable: await n(
+        `select count(*)::int as n from chat_messages m
+           join chat_channels c on c.id = m.channel_id
+           join members mb on mb.user_id = m.sender_id and mb.chapter_id = c.chapter_id
+          where c.chapter_id = '${chapterId}' and c.type = 'PUBLIC' and m.type = 'TEXT'
+            and m.sender_id <> '${loginUserId}'`,
       ),
       loginAuthId: (await db.query(`select supabase_auth_id::text as a from users where id = '${loginUserId}'`)).rows[0]?.a ?? null,
     };
@@ -2488,6 +2507,8 @@ console.log("\n=== demo seed load (#2308) ===");
       [reviewer.loginInvoices === 0 && marketing.loginInvoices > 0, `no invoices on the reviewer (reviewer ${reviewer.loginInvoices}, marketing ${marketing.loginInvoices})`],
       [reviewer.loginServiceEntries > 0, `the reviewer has a service entry of their own (${reviewer.loginServiceEntries})`],
       [reviewer.dms === 1 && reviewer.dmMessages === 3 && marketing.dms === 0, `one DM into the reviewer, none in marketing (${reviewer.dms} with ${reviewer.dmMessages} messages / ${marketing.dms})`],
+      [reviewer.studyZones > 0 && reviewer.loginPastSessions > 0, `the reviewer has study zones and past sessions of their own (${reviewer.studyZones} zones, ${reviewer.loginPastSessions} sessions)`],
+      [reviewer.blockable > 0, `a public channel holds text from another member, so Block is offered (${reviewer.blockable} messages)`],
       [same(first, second), "re-running both variants is idempotent"],
       [refusedMissing && same(afterMissing, reviewer), "a reviewer re-seed with no auth user raises and leaves the existing chapter untouched"],
       [refusedStranger && same(afterStranger, reviewer), "a reviewer re-seed naming an unmarked account raises and leaves the existing chapter untouched"],

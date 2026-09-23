@@ -96,7 +96,11 @@ for production is `prod`.
   characters and must not be the local stack's committed one.
 - `auth` changes an existing hosted account only if this script created it for
   the same namespace (a marker in its `app_metadata`), and the seed links only a
-  marked login. Anything else could be a real person's account.
+  marked login. Anything else could be a real person's account. The marker cannot
+  catch a typo in an address that has **no** account yet: `auth` creates, confirms
+  and marks that one like the intended one, and the seed then makes whoever owns
+  that inbox the demo chapter's president. Check the address `auth` prints before
+  you seed.
 - `verify` refuses the committed local password on a hosted project too, so a
   login that accepts it cannot pass.
 - `auth` and `storage` refuse production unless `DEMO_ALLOW_PRODUCTION=true`,
@@ -112,7 +116,9 @@ for production is `prod`.
 Writing this fictional chapter to `frapp-prod` is the owner's decision, and the
 steps below need production access that agent sessions do not have
 ([#2309](https://github.com/pdcarlson/Frapp/issues/2309)). Set the login's two
-values first, keeping the password out of shell history:
+values first, keeping the password out of shell history, in a terminal you close
+when you are done: `setup-demo.sh` and the capture scripts read the same two
+variables, so a later local run in that shell would pick up the production login.
 
 ```bash
 export DEMO_EMAIL=<the App Review login's email>
@@ -128,7 +134,8 @@ read -rs DEMO_PASSWORD && export DEMO_PASSWORD
    An agent can apply it through Supabase MCP `execute_sql` once you approve.
 3. **Upload the files.** `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs storage --namespace a9900000`.
 4. **Check it.** `npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs verify --namespace a9900000 --reviewer --api-url https://api.frapp.live`.
-   Every line reads `OK`, ending `verify: every check passed`.
+   Every line reads `OK`, ending `verify: every check passed`. It fails a stale
+   chapter too: with no upcoming event it says to re-seed.
 5. **Hand it over.** App Store Connect → App Review Information → Sign-In
    Required: the login's email and password.
 

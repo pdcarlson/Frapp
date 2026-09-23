@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import {
   AUTH_MARKER_KEY,
+  LOCAL_DEMO_EMAIL,
   LOCAL_DEMO_PASSWORD,
   REVIEWER_NAMESPACE,
   TEMPLATE_NAMESPACE,
@@ -20,6 +21,7 @@ import {
   removePlaceholders,
   renderRemoveSql,
   renderSeedSql,
+  STORAGE_LIST_PAGE,
   uploadPlaceholders,
   validateEmail,
   validateNamespace,
@@ -207,7 +209,7 @@ test("assertDemoObjectPath allows only <chapter>/<kind>/<row id>/<one pdf>", () 
 // ── Placeholder PDF ─────────────────────────────────────────────────────────
 
 test("placeholderPdf is a structurally valid PDF: every xref offset lands on its object", () => {
-  const pdf = placeholderPdf("Chapter Meeting Minutes — Week 9 (draft)");
+  const pdf = placeholderPdf("Chapter Meeting Minutes — Week 9 (draft)", "Beta Theta Omega  ·  Westfield University");
   const text = pdf.toString("latin1");
   assert.ok(text.startsWith("%PDF-1.4\n"));
   assert.ok(text.endsWith("%%EOF\n"));
@@ -227,7 +229,7 @@ test("placeholderPdf is a structurally valid PDF: every xref offset lands on its
 });
 
 test("placeholderPdf encodes the seed's dashes and escapes PDF string delimiters", () => {
-  const bytes = placeholderPdf("A — B (c) \\ d");
+  const bytes = placeholderPdf("A — B (c) \\ d", "Chapter");
   // WinAnsiEncoding puts the em dash at 0x97; `(`, `)` and `\` are escaped.
   assert.ok(bytes.includes(Buffer.from([0x41, 0x20, 0x97, 0x20, 0x42])));
   assert.ok(bytes.includes(Buffer.from("\\(c\\) \\\\ d", "latin1")));
@@ -317,9 +319,15 @@ function rowsFor(ns, kind, n) {
   });
 }
 
+const chapterRow = (name = "Gamma Delta", university = "Northfield College") => [
+  on("GET", "/rest/v1/chapters?"),
+  () => ({ json: [{ name, university }] }),
+];
+
 test("storage uploads a PDF, upserting, for every row the database names", async () => {
   const ns = "a9900000";
   const { fetchImpl, calls } = makeFetch([
+    chapterRow(),
     [on("GET", "/rest/v1/chapter_documents"), () => ({ json: rowsFor(ns, "documents", 3) })],
     [on("GET", "/rest/v1/backwork_resources"), () => ({ json: rowsFor(ns, "backwork", 2) })],
     [on("POST", "/storage/v1/object/"), () => ({ json: { Key: "k" } })],
@@ -332,6 +340,8 @@ test("storage uploads a PDF, upserting, for every row the database names", async
     assert.equal(upload.headers["x-upsert"], "true");
     assert.equal(upload.headers["Content-Type"], "application/pdf");
     assert.equal(upload.body.subarray(0, 5).toString(), "%PDF-");
+    // The chapter the seed wrote, read back, not a literal that could drift from it.
+    assert.ok(upload.body.toString("latin1").includes("(Gamma Delta  \xb7  Northfield College)"));
   }
   assert.ok(uploads[0].url.includes(`/storage/v1/object/documents/chapters/${demoIds(ns).chapterId}/documents/`));
 });
@@ -340,14 +350,23 @@ test("storage refuses to upload anything when a row's path leaves the demo folde
   const ns = "a9900000";
   const rows = rowsFor(ns, "documents", 2);
   rows[1].storage_path = "chapters/some-real-chapter/documents/x/y.pdf";
-  const { fetchImpl, calls } = makeFetch([[on("GET", "/rest/v1/chapter_documents"), () => ({ json: rows })]]);
+  const { fetchImpl, calls } = makeFetch([chapterRow(), [on("GET", "/rest/v1/chapter_documents"), () => ({ json: rows })]]);
   await assert.rejects(uploadPlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: ns, fetchImpl }), /refusing documents path/);
   assert.equal(calls.some((c) => c.method === "POST"), false);
 });
 
 test("storage names the missing step when the seed has not run", async () => {
-  const { fetchImpl } = makeFetch([[on("GET", "/rest/v1/chapter_documents"), () => ({ json: [] })]]);
-  await assert.rejects(uploadPlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: "a9900000", fetchImpl }), /run `seed-demo\.mjs sql`/);
+  const noRows = makeFetch([chapterRow(), [on("GET", "/rest/v1/chapter_documents"), () => ({ json: [] })]]);
+  await assert.rejects(
+    uploadPlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: "a9900000", fetchImpl: noRows.fetchImpl }),
+    /run `seed-demo\.mjs sql`/,
+  );
+  const noChapter = makeFetch([[on("GET", "/rest/v1/chapters?"), () => ({ json: [] })]]);
+  await assert.rejects(
+    uploadPlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: "a9900000", fetchImpl: noChapter.fetchImpl }),
+    /no chapter a9900000-.* run `seed-demo\.mjs sql`/,
+  );
+  assert.equal(noChapter.calls.some((c) => c.method === "POST"), false);
 });
 
 test("storage --remove walks the demo folders and deletes only what is under them", async () => {
@@ -374,15 +393,48 @@ test("storage --remove walks the demo folders and deletes only what is under the
   assert.ok(listed.every((p) => p.startsWith(`chapters/${chapterId}/`)));
 });
 
+test("storage --remove pages a folder that holds more than one listing's worth", async () => {
+  // One call returns at most STORAGE_LIST_PAGE entries; without paging, the rest
+  // would stay in the bucket while --remove reported success.
+  const ns = "a9900000";
+  const { chapterId } = demoIds(ns);
+  const folder = `chapters/${chapterId}/documents/`;
+  const total = STORAGE_LIST_PAGE + 2;
+  const offsets = [];
+  const { fetchImpl, calls } = makeFetch([
+    [
+      on("POST", "/storage/v1/object/list/documents"),
+      (_url, init) => {
+        const { prefix, limit, offset } = JSON.parse(init.body);
+        if (prefix !== folder) return { json: [] };
+        offsets.push(offset);
+        const names = Array.from({ length: total }, (_, i) => ({ name: `f${i}.pdf`, id: `o${i}` }));
+        return { json: names.slice(offset, offset + limit) };
+      },
+    ],
+    [on("POST", "/storage/v1/object/list/backwork"), () => ({ json: [] })],
+    [on("DELETE", "/storage/v1/object/documents"), () => ({ json: [] })],
+  ]);
+  const result = await removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: ns, fetchImpl });
+  assert.deepEqual(offsets, [0, STORAGE_LIST_PAGE]);
+  assert.deepEqual(result[0], { bucket: "documents", count: total });
+  assert.equal(JSON.parse(calls.find((c) => c.method === "DELETE").body).prefixes.length, total);
+});
+
 // ── verify ──────────────────────────────────────────────────────────────────
 
 function verifyRoutes({
   meId,
   invoices = [],
   channels = [{ type: "DM" }],
-  pdf = placeholderPdf("x"),
+  pdf = placeholderPdf("x", "Chapter"),
   ns = "a9900000",
   chapter = {},
+  events = [
+    { name: "Chapter Meeting", start_time: "2026-09-20T23:00:00.000Z" },
+    { name: "Philanthropy 5K", start_time: "2026-10-01T13:00:00.000Z" },
+    { name: "Formal", start_time: "2026-09-28T23:00:00.000Z" },
+  ],
 } = {}) {
   const { chapterId, loginUserId } = demoIds(ns);
   return [
@@ -397,15 +449,27 @@ function verifyRoutes({
     [on("GET", "signed.example"), () => ({ bytes: pdf })],
     [on("GET", "/v1/invoices"), () => ({ json: invoices })],
     [on("GET", "/v1/channels"), () => ({ json: channels })],
+    [on("GET", "/v1/events"), () => ({ json: events })],
   ];
 }
 
-const verifyArgs = { supabaseUrl: HOSTED, anonKey: "anon", apiUrl: "https://api.example", email: "r@frapp.live", password: "p", namespace: "a9900000" };
+const NOW = () => Date.parse("2026-09-23T12:00:00.000Z");
+const verifyArgs = {
+  supabaseUrl: HOSTED,
+  anonKey: "anon",
+  apiUrl: "https://api.example",
+  email: "r@frapp.live",
+  password: "p",
+  namespace: "a9900000",
+  now: NOW,
+};
 
 test("verify passes a correctly seeded reviewer, sending the chapter header", async () => {
   const { fetchImpl, calls } = makeFetch(verifyRoutes());
   const checks = await verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl });
-  assert.equal(checks.length, 6);
+  assert.equal(checks.length, 7);
+  // The soonest future event, not the first listed or a past one.
+  assert.ok(checks.includes('2 upcoming event(s); the next is "Formal" on 2026-09-28'), checks.join("\n"));
   const me = calls.find((c) => c.url.endsWith("/v1/users/me"));
   assert.equal(me.headers["x-chapter-id"], demoIds("a9900000").chapterId);
   assert.equal(me.headers.Authorization, "Bearer t");
@@ -442,6 +506,25 @@ test("verify --reviewer catches an invoice on the reviewer, and a missing DM", a
   await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: withInvoice.fetchImpl }), /1 invoice/);
   const noDm = makeFetch(verifyRoutes({ channels: [{ type: "PUBLIC" }] }));
   await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: noDm.fetchImpl }), /no direct message/);
+});
+
+test("verify fails a stale seed: every event already past", async () => {
+  // The seed dates events from the day it ran; weeks later sign-in and documents
+  // still pass while the Events tab shows nothing ahead.
+  const { fetchImpl } = makeFetch(verifyRoutes({ events: [{ name: "Old", start_time: "2026-09-01T12:00:00.000Z" }] }));
+  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl }), /no upcoming events: the seed is stale/);
+});
+
+// ── setup-demo.sh ───────────────────────────────────────────────────────────
+
+test("setup-demo.sh restates the local login seed-demo.mjs owns, and prints only that password", () => {
+  const sh = readFileSync(new URL("../../demo/setup-demo.sh", import.meta.url), "utf8");
+  assert.ok(sh.includes(`LOCAL_PASSWORD='${LOCAL_DEMO_PASSWORD}'`), "setup-demo.sh's local password drifted");
+  assert.ok(sh.includes(`DEMO_EMAIL="\${DEMO_EMAIL:-${LOCAL_DEMO_EMAIL}}"`), "setup-demo.sh's local email drifted");
+  // DEMO_PASSWORD can be inherited from a shell that ran the production steps.
+  const echoes = sh.split("\n").filter((line) => /^\s*echo .*\$DEMO_PASSWORD/.test(line));
+  assert.equal(echoes.length, 1);
+  assert.match(sh, /if \[ "\$DEMO_PASSWORD" = "\$LOCAL_PASSWORD" \]; then\n\s*echo "[^"]*\$DEMO_PASSWORD/);
 });
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
