@@ -413,7 +413,8 @@ describe("deriveSignetPalette", () => {
  * existed to end. This pin turns "remember to bump" into a failing test.
  *
  * It proves as much as its corpus covers: the directory seeds, a hue sweep
- * reaching every Radix scale family, and the input forms a stored seed takes
+ * plus one seed per remaining scale, so every scale the generator snaps to is
+ * some seed's nearest, and the input forms a stored seed takes
  * (`FINGERPRINT_EXTRA_SEEDS`). A change that moves only a seed outside that set
  * passes unbumped, so widen the corpus when you touch hue-specific or
  * input-handling code.
@@ -426,7 +427,7 @@ describe("deriveSignetPalette", () => {
  * engine paints, and that is the bug.
  */
 const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
-  1: "b28ec5c9fc7519b9d6abf4445d9ac2d820ff550e59c4e3d15d9cfd066818635a",
+  1: "5ec87f75f4da51c5324533b54c7673850479aba4c0731eabe69c4f57dfabc6cc",
 };
 
 /**
@@ -434,9 +435,10 @@ const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
  * seeds exercise the lift and the on-primary substitution, but no hue family
  * near cyan, teal, jade, mint, sky, lime or yellow, and the generator snaps
  * each seed to the nearest Radix scales, so a change to one of those scales
- * alone moved no directory seed (#1165 review). Frozen hex, not computed here,
- * so a `colorjs.io` upgrade cannot quietly move the inputs along with the
- * outputs.
+ * alone moved no directory seed (#1165 review). The sweep alone still missed
+ * three scales entirely, hence the per-scale seeds after it. Frozen hex, not
+ * computed here, so a `colorjs.io` upgrade cannot quietly move the inputs along
+ * with the outputs.
  */
 const FINGERPRINT_EXTRA_SEEDS = [
   // OKLCH hue sweep, every 30°, at L 0.55 C 0.15 and at L 0.82 C 0.12,
@@ -465,6 +467,18 @@ const FINGERPRINT_EXTRA_SEEDS = [
   "#A8C1FF",
   "#D0B2FF",
   "#F0A7E9",
+  // One seed for each scale the sweep never lands on first (jade, sage,
+  // olive, teal, green, ruby, iris). With these, every one of the generator's
+  // 29 scales is the nearest scale for some seed in this corpus, measured
+  // 2026-09-23 by instrumenting the vendored `getScaleFromColor`. A scale the
+  // generator gains needs a seed here too.
+  "#29A383",
+  "#6B7B6E",
+  "#71796A",
+  "#0D9B8A",
+  "#30A46C",
+  "#E54666",
+  "#5B5BD6",
   // Input forms a stored seed can take: shorthand, lower case, no `#`, not a
   // colour, and absent. A change in how any of them resolves changes what that
   // chapter paints.

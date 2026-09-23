@@ -75,8 +75,9 @@ export const HOUSE_SEED = "#DDB844";
  *
  * Forgetting the bump is caught for any seed in the fingerprint's corpus:
  * `signet.spec.ts` pins a hash of the engine's output to this number, over the
- * directory seeds, a hue sweep reaching every Radix scale family the generator
- * snaps to, and the input forms a stored seed can take. A change there fails
+ * directory seeds, enough extra seeds that each of the generator's 29 Radix
+ * scales is some seed's nearest (measured 2026-09-23), and the input forms a
+ * stored seed can take. A change there fails
  * until a new version and its fingerprint are recorded. A change that moves
  * only a seed outside the corpus is not caught, so widen the corpus when you
  * touch hue-specific or input-handling code.

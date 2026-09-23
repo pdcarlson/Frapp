@@ -69,14 +69,14 @@ END $guard$;
 DELETE FROM users WHERE id::text LIKE 'c0ffee00-0000-4000-8000-1000%';
 
 -- ── Chapter ──────────────────────────────────────────────────────────────────
--- Signet house gold as the chapter's accent, not the legacy royal-blue column
--- default. Written to `branding.colors.accent` as well as `accent_color`,
--- because branding is the authoritative accent and the column only mirrors it
--- (accent-engine.md §7): the API's stale-palette sweep derives this chapter's
--- palette from branding, so with the column alone it painted house gold on
--- every client while Settings showed #EFB63B (#1165). `seed-demo.test.mjs`
--- pins the two to the same value. `theme_palette` is left for the sweep to
--- write within the hour.
+-- House gold (`#EFB63B`, the brand colour) as the chapter's accent, not the
+-- legacy royal-blue column default. Written to `branding.colors.accent` as well
+-- as `accent_color`, because branding is the authoritative accent and the
+-- column only mirrors it (accent-engine.md §7). The API's stale-palette sweep
+-- derives the palette from branding alone, so with the column alone the sweep
+-- would paint the engine's default seed (`#DDB844`) on every client while
+-- Settings showed #EFB63B (#1165). `seed-demo.test.mjs` pins the two to the
+-- same value. `theme_palette` is left for the sweep to write within the hour.
 --
 -- `subscription_status 'active'` is load-bearing for the reviewer: an
 -- `incomplete` chapter refuses paid-ops writes on three surfaces (#2297).
