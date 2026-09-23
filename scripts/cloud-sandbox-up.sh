@@ -12,6 +12,9 @@
 #   7. verify node_modules is usable — LAST, so a broken npm never costs the database
 #      (see the comment above the call for why this is not the first step)
 #
+# Before step 1 it probes egress and builds the workspace packages (`packages/*`). Neither
+# needs Docker, and each comment says why it comes first.
+#
 # Steps 4 and 5 are in that order deliberately, and this list had them backwards until
 # #1156 — see the comment above the ACL repair for why the env write has to come first.
 #
@@ -38,6 +41,100 @@ FRAPP_SEED_LOG_PREFIX='[cloud-sandbox]'
 DONE_SENTINEL="$ROOT/.cloud-sandbox-up.done"
 FAILED_SENTINEL="$ROOT/.cloud-sandbox-up.failed"
 EGRESS_MANIFEST="$ROOT/.cloud-sandbox-capabilities.json"
+
+# The bringup lock (#2547). The SessionStart hook takes it before launching this script and
+# says so through FRAPP_BRINGUP_LOCK_HELD. Run by hand, this script takes it itself, under the
+# same guard flock the hook decides under and by the same rule (bringup_lock_live), so a
+# session start during a manual run finds a live bringup instead of launching a second one;
+# before this a hand run held no lock at all. It refuses while another bringup from this boot
+# is running, being stopped, stuck (processes a stop could not kill) or starting (a lock
+# seconds old whose pid is not yet a bringup), and replaces any other lock: a dead one, one
+# from another boot, or a stray file at the path. This happens
+# before anything else writes: a refused run must not touch the running bringup's sentinels or
+# log. A taken run clears the last run's sentinels while still under the guard; see below.
+#
+# `--stop` ends a hung bringup instead (bringup_stop): the script and everything under it but
+# the Docker daemon, then the lock, so the next run or session start begins clean. It records
+# the stop in `.failed`, which is what a session waiting on this bringup is watching for.
+# shellcheck source=scripts/lib/bringup-lock.sh
+. "$ROOT/scripts/lib/bringup-lock.sh"
+BRINGUP_LOCK="${FRAPP_BRINGUP_LOCK:-/tmp/cloud-sandbox-up.lock}"
+BRINGUP_LOG="${FRAPP_BRINGUP_LOG:-/tmp/cloud-sandbox-up.log}"
+boot_now="$(cat "${FRAPP_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null || true)"
+if [ "${1:-}" = "--stop" ]; then
+  stop_status=0
+  stopped="$(bringup_stop "$BRINGUP_LOCK" "$$" "$boot_now" "$FAILED_SENTINEL")" || stop_status=$?
+  stopped_pid="$(printf '%s\n' "$stopped" | head -n 1)"
+  # A retry stops what an earlier --stop left behind; the lock's own pid is long dead by then.
+  if [ "${stopped_pid#retried:}" != "$stopped_pid" ]; then
+    stopped_what="the processes an earlier --stop left behind (pids ${stopped_pid#retried:})"
+  else
+    stopped_what="bringup pid ${stopped_pid} and the commands under it"
+  fi
+  case "$stop_status" in
+    0)
+      if [ -n "$stopped_pid" ]; then
+        cs_log "Stopped ${stopped_what}, and removed the lock. Containers a bringup started run under the Docker daemon and are still up. Run 'bash scripts/cloud-sandbox-up.sh' to start again."
+      else
+        cs_log "No bringup was running; removed any lock left at ${BRINGUP_LOCK}."
+      fi
+      exit 0
+      ;;
+    1)
+      cs_log "ERROR: a bringup is starting (its lock was taken seconds ago); nothing to stop yet. Run --stop again in a few seconds if it hangs."
+      ;;
+    2)
+      cs_log "ERROR: could not write or remove the bringup lock ${BRINGUP_LOCK}, so nothing was stopped. Check its owner (a bringup run as another user) and the permissions of $(dirname "$BRINGUP_LOCK")."
+      ;;
+    3)
+      cs_log "ERROR: processes outlived SIGKILL (${stopped#*survivors: }); they are stuck in the kernel or belong to another user. The lock is kept and records them, so nothing starts beside them until they exit, and .cloud-sandbox-up.failed says why. Run 'bash scripts/cloud-sandbox-up.sh --stop' again to retry them; once they are gone, 'bash scripts/cloud-sandbox-up.sh' starts the stack."
+      ;;
+    5)
+      cs_log "ERROR: another --stop (pid ${stopped_pid}) is already stopping this bringup. Wait for it to finish; it writes .cloud-sandbox-up.failed when it does."
+      ;;
+    *)
+      cs_log "ERROR: stopped ${stopped_what}, but could not remove the lock ${BRINGUP_LOCK}. Check its owner and the permissions of $(dirname "$BRINGUP_LOCK")."
+      ;;
+  esac
+  exit 1
+fi
+if [ -z "${FRAPP_BRINGUP_LOCK_HELD:-}" ]; then
+  bringup_guard "$BRINGUP_LOCK"
+  take_status=0
+  running="$(bringup_take_lock "$BRINGUP_LOCK" "$boot_now" "$$")" || take_status=$?
+  case "$take_status" in
+    0)
+      # Still under the guard: the last run's sentinels go before a session start can read
+      # them beside the new lock and report this run as already finished. The hook clears
+      # them itself, under the same guard, whenever it takes the lock; the `rm -f` after this
+      # block then finds nothing left on either path, and is kept for the manifest it clears.
+      rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL"
+      bringup_unguard
+      # Session starts point at this log for a running bringup, so a hand run writes it too,
+      # as well as the terminal.
+      exec > >(tee "$BRINGUP_LOG") 2>&1
+      ;;
+    1)
+      bringup_unguard
+      if [ "$running" = "starting" ]; then
+        cs_log "ERROR: another bringup is starting (its lock was taken seconds ago). Wait for its .cloud-sandbox-up.done / .cloud-sandbox-up.failed instead of starting a second one."
+      elif [ "${running#stopping:}" != "$running" ]; then
+        cs_log "ERROR: a hung bringup is being stopped (--stop, pid ${running#stopping:}). Run this again once it has finished; it writes .cloud-sandbox-up.failed when it does."
+      elif [ "${running#survivors:}" != "$running" ]; then
+        cs_log "ERROR: processes a stopped bringup left behind are still running (pids ${running#survivors:}), and would collide with a new one. Stop them with 'bash scripts/cloud-sandbox-up.sh --stop', or wait for them to exit, then run this again."
+      else
+        cs_log "ERROR: another bringup is already running (pid ${running}). Wait for its .cloud-sandbox-up.done / .cloud-sandbox-up.failed instead of starting a second one. If it is hung (${BRINGUP_LOG} has stopped advancing), stop it with 'bash scripts/cloud-sandbox-up.sh --stop' and run this again."
+      fi
+      exit 1
+      ;;
+    *)
+      bringup_unguard
+      cs_log "ERROR: could not take the bringup lock ${BRINGUP_LOCK}: it could not be removed or created. Check its owner and the permissions of $(dirname "$BRINGUP_LOCK")."
+      exit 1
+      ;;
+  esac
+fi
+
 # The manifest is cleared with the sentinels for the same reason they are: all three answer
 # "what happened in THIS run", and the sandbox filesystem is cached for ~7 days, so a
 # container can start with a week-old one already on disk. Without this, a probe that dies
@@ -47,9 +144,15 @@ EGRESS_MANIFEST="$ROOT/.cloud-sandbox-capabilities.json"
 # the one reading that must never outlive the run that earned it.
 rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL" "$EGRESS_MANIFEST"
 
+# Set by the package build below, and read by both sentinel writers: it runs before any step
+# that can fail, so its result belongs in whichever sentinel this run ends with.
+packages_build_failed=""
+PACKAGES_BUILD_WARN='WARN: the workspace package build failed, so anything that resolves @repo/* through dist/ (the API, check:dep-cruiser) will not resolve; run `npx turbo run build --filter='"'"'./packages/*'"'"'` and read its errors.'
+
 fail() {
   cs_log "ERROR: $1"
   printf '%s — %s\n' "$(date -u +%FT%TZ)" "$1" >"$FAILED_SENTINEL"
+  [ -n "$packages_build_failed" ] && printf '%s\n' "$PACKAGES_BUILD_WARN" >>"$FAILED_SENTINEL"
   exit 1
 }
 
@@ -93,6 +196,34 @@ fi
 if [ ! -s "$EGRESS_MANIFEST" ]; then
   cs_log "WARN: no egress capability manifest at $EGRESS_MANIFEST."
   cs_log "WARN: the probe writes an UNKNOWN manifest even when it cannot probe, so an ABSENT one means it never got that far — a parse error or a kill, not a network result. Sessions are told to read that file instead of probing hosts by hand; until it exists, treat deployed-staging reachability as UNKNOWN (not as blocked). Re-run: bash scripts/cloud-sandbox-egress-probe.sh"
+fi
+
+# Workspace packages (#2516) — the second step that needs no Docker, so it runs before any.
+# The API, and the `require`/`types` side of every package whose manifest points into
+# `dist/`, resolve `@repo/*` through that gitignored `dist/`, and nothing else in setup or
+# bringup builds it. So on a fresh checkout `npm run start:dev -w apps/api` died with 91
+# type errors, and `check:dep-cruiser` reported every `@repo/chat-integrations` import as a
+# NEW boundary violation "this change introduced", an instruction to go and break working
+# imports. A cached filesystem holding an older `dist/` hid it.
+#
+# Why here and not after the toolchain check, where it first went: it needs node_modules
+# and nothing else, and every step between here and there can `fail()`. After them, a
+# Docker Hub rate limit or a blocked host exited before the build, and the session was left
+# with the same unresolvable imports as before. It costs ~2s (an uncached build of all
+# eight packages took 1.7s on 2026-09-23), so the database barely waits for it.
+#
+# Not fatal: the packages are not the stack. Skipped when turbo does not run, because then
+# the toolchain check at the end fails with `(dependencies)`, and that remedy includes the
+# build. A failed build is reported in whichever sentinel this run writes (see fail()),
+# since the sentinel body is what sessions read.
+if "$ROOT/node_modules/.bin/turbo" --version >/dev/null 2>&1; then
+  cs_log "Building the workspace packages..."
+  if ! timeout 300 "$ROOT/node_modules/.bin/turbo" run build --filter='./packages/*' --output-logs=errors-only; then
+    packages_build_failed=1
+    cs_log "WARN: the workspace package build failed; see the output above."
+  fi
+else
+  cs_log "Skipping the workspace package build: node_modules/.bin/turbo does not run (the toolchain check at the end says what to do)."
 fi
 
 # Write apps/api/.env.local and apps/web/.env.local from the live local Supabase status
@@ -327,6 +458,9 @@ cs_verify_node_deps "$ROOT" \
 # log is a warning the session never sees, which is precisely the failure #1631 is about. It
 # would be an odd fix that reproduced its own bug one file over.
 printf '%s\n' "$(date -u +%FT%TZ)" >"$DONE_SENTINEL"
+if [ -n "$packages_build_failed" ]; then
+  printf '%s\n' "$PACKAGES_BUILD_WARN" >>"$DONE_SENTINEL"
+fi
 if [ "${CS_NODE_DEPS_WHY:-}" = "incomplete" ]; then
   printf 'WARN: npm ls --depth=0 reports a missing declared dependency; run `npm ci` if a workspace hits "Cannot find module".\n' \
     >>"$DONE_SENTINEL"
