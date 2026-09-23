@@ -194,4 +194,4 @@ selects `json`.
 
 ## Chat Integration
 
-Chat integration (slash commands, rich renderers, system channel): see [`integrations.md`](integrations.md).
+Chat integration (slash commands, rich renderers): see [`integrations.md`](integrations.md).
