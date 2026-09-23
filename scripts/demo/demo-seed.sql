@@ -176,6 +176,7 @@ CREATE TEMP TABLE demo_login ON COMMIT DROP AS
 DO $$
 DECLARE
   v_email text := (SELECT email FROM roster WHERE n = 1);
+  v_ns text := split_part('c0ffee00-0000-4000-8000-000000000001', '-', 1);
   v_auth uuid := (SELECT auth_id FROM demo_login);
   v_ours boolean := (SELECT ours FROM demo_login);
   v_owner uuid;
@@ -186,10 +187,10 @@ BEGIN
     DELETE FROM demo_login;
     IF current_setting('frapp_demo.variant', true) = 'reviewer' THEN
       RAISE EXCEPTION '%', CASE WHEN v_auth IS NULL
-        THEN format('no auth user has the login email %s; create it with `seed-demo.mjs auth` first, then re-run', v_email)
-        ELSE format('the auth user with %s was not created by `seed-demo.mjs auth` for this chapter; refusing to link an account this script does not own', v_email) END;
+        THEN format('no auth user has the login email %s; create it with `seed-demo.mjs auth --namespace %s` first, then re-run', v_email, v_ns)
+        ELSE format('the auth user with %s was not created by `seed-demo.mjs auth --namespace %s`; refusing to link an account this script does not own', v_email, v_ns) END;
     END IF;
-    RAISE NOTICE 'login % is not a `seed-demo.mjs auth` login for this chapter: roster #1 is seeded unlinked', v_email;
+    RAISE NOTICE 'login % is not a `seed-demo.mjs auth --namespace %` login: roster #1 is seeded unlinked', v_email, v_ns;
     RETURN;
   END IF;
   -- The namespace's own rows are gone (Reset), so any `users` row still holding

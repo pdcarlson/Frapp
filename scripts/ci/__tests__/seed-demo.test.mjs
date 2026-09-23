@@ -458,6 +458,12 @@ test("every command seed-demo.mjs prints for the reader carries --namespace, whi
   const printed = [...source.matchAll(/\\`((?:seed-demo\.mjs )?(?:sql|auth|storage|verify)\b[^`\\]*)\\`/g)].map((m) => m[1]);
   assert.ok(printed.length >= 8, `found only ${printed.length} printed commands; the scan has gone stale`);
   assert.deepEqual(printed.filter((cmd) => !cmd.includes("--namespace")), []);
+  // The seed SQL `sql` prints raises its own: every command a RAISE names carries it too.
+  const raised = TEMPLATE.split("\n")
+    .filter((line) => /RAISE|format\(/.test(line))
+    .flatMap((line) => [...line.matchAll(/`((?:seed-demo\.mjs )?(?:sql|auth|storage|verify)\b[^`]*)`/g)].map((m) => m[1]));
+  assert.ok(raised.length >= 3, `found only ${raised.length} commands in the seed's RAISEs; the scan has gone stale`);
+  assert.deepEqual(raised.filter((cmd) => !cmd.includes("--namespace")), []);
 });
 
 test("the SQL sql --remove prints names its follow-up commands runnably, with the namespace", () => {
