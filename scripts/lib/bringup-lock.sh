@@ -11,11 +11,21 @@
 # `.done`/`.failed` sentinel from this boot before it asks; a hand run replaces a finished
 # bringup's lock, whose pid is dead. `cloud-sandbox-up.sh --stop` ends a hung one (bringup_stop).
 
-# Whether $1 is the pid of a running cloud-sandbox-up.sh. Matches the script's name, not any
-# command naming its log or sentinels: a `tail -f /tmp/cloud-sandbox-up.log` is not a bringup.
+# Whether $1 is the pid of a running cloud-sandbox-up.sh: bash (or sh) executing the script, as
+# the hook and a hand run start it. The whole command line is matched, not a substring, since
+# bringup_stop kills what this accepts: `vim scripts/cloud-sandbox-up.sh`, `bash -c '...'` or a
+# `tail -f /tmp/cloud-sandbox-up.log` is not a bringup. `ps`, not `kill -0`, so another user's
+# bringup counts too, and a zombie (listed as `[bash] <defunct>`) does not.
 bringup_alive() {
-  [ -n "$1" ] && kill -0 "$1" 2>/dev/null \
-    && ps -p "$1" -o args= 2>/dev/null | grep -q 'cloud-sandbox-up\.sh'
+  [ -n "$1" ] && ps -p "$1" -o args= 2>/dev/null \
+    | grep -Eq '^([^ ]*/)?(ba)?sh( -[^ c]+)* ([^ ]*/)?cloud-sandbox-up\.sh( |$)'
+}
+
+# Whether pid $1 is a process that has not exited: listed, and not a zombie.
+bringup_pid_running() {
+  local stat
+  stat="$(ps -p "$1" -o stat= 2>/dev/null | tr -d ' ')"
+  [ -n "$stat" ] && [ "${stat#Z}" = "$stat" ]
 }
 
 # Seconds since lock $1 was last written, or nothing when that cannot be read.
@@ -46,7 +56,19 @@ bringup_lock_live() {
   local pid
   pid="$(cat "$1/pid" 2>/dev/null || true)"
   bringup_alive "$pid" && return 0
-  bringup_lock_young "$1" && { [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null; }
+  bringup_lock_young "$1" && { [ -z "$pid" ] || bringup_pid_running "$pid"; }
+}
+
+# Take the guard flock on `<lock $1>.guard`, on fd 9, waiting at most 10 seconds; bringup_unguard
+# releases it. Where flock is missing, nothing is serialized, as before the guard existed.
+bringup_guard() {
+  if command -v flock >/dev/null 2>&1 && { exec 9>>"$1.guard"; } 2>/dev/null; then
+    flock -w 10 9 2>/dev/null || true
+  fi
+}
+
+bringup_unguard() {
+  exec 9>&-
 }
 
 # The pids of every process under $1, deepest first, except the Docker daemon and what runs
@@ -61,41 +83,83 @@ bringup_descendants() {
   done
 }
 
-# Stop the bringup holding lock $1, with every process under it, and remove the lock. Call
-# under the guard flock.
-#   0  stopped (its pid is printed) or none was running (nothing is printed); the lock is gone.
-#   1  a bringup is starting (bringup_lock_live, but its pid is not yet a bringup to stop); the
-#      lock is kept, since removing it would let a second bringup start beside that one.
+# Stop the bringup holding lock $1, with every process under it, and remove the lock. $2 is the
+# caller's pid, $3 the current boot id (may be empty). Takes the guard itself.
+#   0  stopped (its pid is printed) or none was running (nothing printed); the lock is gone.
+#   1  a bringup is starting (bringup_lock_live, but its pid is not yet a bringup to stop);
+#      nothing is done, since removing its lock would let a second bringup start beside it.
+#   2  the lock could not be written or removed (another user's, or /tmp's permissions);
+#      nothing was signalled.
+#   3  stopped, but processes outlived SIGKILL (stuck in the kernel, or another user's); the
+#      stopped pid is printed, then a line naming them. The lock is gone.
+#   4  stopped (its pid is printed), but the lock could not be removed afterwards.
 # Killing only the script would orphan the command it is blocked in (a hung `supabase start`,
-# say): bash runs no trap while it waits on a foreground child, and the next bringup would
-# then start beside the orphan. The tree is read before anything is signalled, since children
-# re-parent once their parent dies.
+# say): bash runs no trap while it waits on a foreground child, and the next bringup would then
+# start beside the orphan. The tree is read before anything is signalled, since children
+# re-parent once their parent dies. Only the guard's decision is serialized, not the wait: the
+# lock is first re-recorded under the caller's pid, a live cloud-sandbox-up.sh, so for as long as
+# the old tree takes to die every other writer finds a bringup running and starts none. A lock
+# from another boot names a pid that may since belong to anything, so nothing is killed for it.
 bringup_stop() {
-  local lock="$1" pid tree p alive i
+  local lock="$1" self="$2" boot="${3:-}" pid lock_boot tree p alive i survivors=""
+  bringup_guard "$lock"
   pid="$(cat "$lock/pid" 2>/dev/null || true)"
-  if bringup_alive "$pid"; then
-    tree="$(bringup_descendants "$pid") $pid"
-    # shellcheck disable=SC2086 # one pid per word
-    kill -TERM $tree 2>/dev/null || true
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-      alive=""
-      for p in $tree; do kill -0 "$p" 2>/dev/null && alive=1; done
-      [ -z "$alive" ] && break
-      sleep 1
-    done
-    # shellcheck disable=SC2086
-    [ -n "$alive" ] && kill -KILL $tree 2>/dev/null
-    echo "$pid"
+  lock_boot="$(cat "$lock/boot_id" 2>/dev/null || true)"
+  if [ -n "$lock_boot" ] && [ -n "$boot" ] && [ "$lock_boot" != "$boot" ]; then
+    pid=""
+  elif bringup_alive "$pid"; then
+    bringup_record "$lock" "$self"
+    if [ "$(cat "$lock/pid" 2>/dev/null || true)" != "$self" ]; then
+      bringup_unguard
+      return 2
+    fi
   elif [ -d "$lock" ] && bringup_lock_live "$lock"; then
+    bringup_unguard
     return 1
+  else
+    pid=""
   fi
-  rm -rf "$lock" 2>/dev/null || true
+  if [ -z "$pid" ]; then
+    rm -rf "$lock" 2>/dev/null || true
+    bringup_unguard
+    if [ -e "$lock" ] || [ -L "$lock" ]; then return 2; fi
+    return 0
+  fi
+  bringup_unguard
+
+  echo "$pid"
+  tree="$(bringup_descendants "$pid") $pid"
+  # shellcheck disable=SC2086 # one pid per word
+  kill -TERM $tree 2>/dev/null || true
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    alive=""
+    for p in $tree; do bringup_pid_running "$p" && alive=1; done
+    [ -z "$alive" ] && break
+    # Ten seconds for TERM, then KILL, then five more for it to land.
+    # shellcheck disable=SC2086
+    [ "$i" -eq 10 ] && kill -KILL $tree 2>/dev/null
+    sleep 1
+  done
+  for p in $tree; do bringup_pid_running "$p" && survivors="$survivors $p"; done
+
+  bringup_guard "$lock"
+  # Only the lock this call claimed: one another writer holds instead is theirs.
+  if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$self" ]; then
+    rm -rf "$lock" 2>/dev/null || true
+  fi
+  bringup_unguard
+  if [ -n "$survivors" ]; then
+    echo "survivors:$survivors"
+    return 3
+  fi
+  if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$self" ]; then return 4; fi
+  return 0
 }
 
 # Record the bringup holding lock $1: pid $2 and boot id $3 (skipped when empty). Each file is
 # written aside and renamed in, so a concurrent reader never sees one created but empty.
 bringup_record() {
-  local lock="$1" pid="$2" boot="$3"
+  local lock="$1" pid="$2" boot="${3:-}"
   { echo "$pid" >"$lock/pid.tmp" && mv -f "$lock/pid.tmp" "$lock/pid"; } 2>/dev/null || true
   if [ -n "$boot" ]; then
     { echo "$boot" >"$lock/boot_id.tmp" && mv -f "$lock/boot_id.tmp" "$lock/boot_id"; } 2>/dev/null || true

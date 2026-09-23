@@ -594,16 +594,17 @@ test("cloud-sandbox-up.sh takes the lock itself unless the hook holds it, before
   assert.ok(clear > take, "a refused run must not erase the running bringup's sentinels");
   const gate = commands.lastIndexOf('if [ -z "${FRAPP_BRINGUP_LOCK_HELD:-}" ]; then', take);
   assert.ok(gate > 0 && gate < take, "the take is skipped when the hook already holds the lock");
-  assert.match(commands.slice(gate, take), /\btake_guard\b/, "it takes the lock under the hook's guard");
-  const guardFn = commands.slice(commands.indexOf("take_guard() {"), commands.indexOf("\n}", commands.indexOf("take_guard() {")));
-  assert.match(guardFn, /exec 9>>"\$\{BRINGUP_LOCK\}\.guard"/);
+  assert.match(commands.slice(gate, take), /bringup_guard "\$BRINGUP_LOCK"/, "it takes the lock under the hook's guard");
+  const lib = readFileSync(LOCK_LIB, "utf8");
+  const guardFn = lib.slice(lib.indexOf("bringup_guard() {"), lib.indexOf("\n}", lib.indexOf("bringup_guard() {")));
+  assert.match(guardFn, /exec 9>>"\$1\.guard"/, "the same guard file the hook takes");
   assert.match(guardFn, /flock -w 10 9/);
   assert.match(commands.slice(take, clear), /exit 1/, "a refused run stops");
   // Once taken: the old sentinels go while the guard is still held, then the guard is
   // released, then the run's output goes to the log session starts point at.
   const taken = commands.indexOf("    0)", take);
   const clearHeld = commands.indexOf('rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL"', taken);
-  const release = commands.indexOf("exec 9>&-", taken);
+  const release = commands.indexOf("bringup_unguard", taken);
   const tee = commands.indexOf('exec > >(tee "$BRINGUP_LOG") 2>&1', taken);
   assert.ok(taken > take && clearHeld > taken && clearHeld < release, "sentinels are cleared under the guard");
   assert.ok(tee > release && tee < clear, "a hand run writes the bringup log");
@@ -660,6 +661,14 @@ function realBringup(s) {
   return path.join(s.root, "scripts", "cloud-sandbox-up.sh");
 }
 
+/** Run bringup_stop from the real library, as the caller's own pid, in boot `boot`. */
+function stopLock(lock, boot) {
+  return spawnSync("bash", ["-c", `. ${JSON.stringify(LOCK_LIB)}; bringup_stop "$1" "$$" "$2"`, "_", lock, boot], {
+    encoding: "utf8",
+    timeout: 30000,
+  });
+}
+
 test("bringup_stop ends a hung bringup and everything under it, but not the Docker daemon", async (t) => {
   const s = scratch(t);
   const pid = hungBringup(t, s);
@@ -673,10 +682,7 @@ test("bringup_stop ends a hung bringup and everything under it, but not the Dock
   })();
   priorLock(s, { boot: "boot-B", sentinel: null });
   lockPid(s, pid);
-  const run = spawnSync("bash", ["-c", `. ${JSON.stringify(LOCK_LIB)}; bringup_stop "$1"`, "_", s.lock], {
-    encoding: "utf8",
-    timeout: 20000,
-  });
+  const run = stopLock(s.lock, "boot-B");
   assert.equal(run.status, 0);
   assert.equal(run.stdout.trim(), String(pid), "it names what it stopped");
   assert.ok(await eventually(() => !alive(pid) && !alive(hung)), "the script and its blocked step must both be gone");
@@ -691,7 +697,8 @@ test("cloud-sandbox-up.sh --stop stops a hung bringup, and says so when none was
   assert.ok(await eventually(() => childrenOf(pid).length === 2));
   priorLock(s, { boot: "boot-B", sentinel: null });
   lockPid(s, pid);
-  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOG: s.log, FRAPP_BRINGUP_LOCK: s.lock };
+  writeFileSync(s.bootFile, "boot-B\n");
+  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOG: s.log, FRAPP_BRINGUP_LOCK: s.lock, FRAPP_BOOT_ID_FILE: s.bootFile };
   delete env.FRAPP_BRINGUP_LOCK_HELD;
   const stop = spawnSync("bash", [script, "--stop"], { env, encoding: "utf8", timeout: 20000 });
   assert.equal(stop.status, 0, stop.stderr);
@@ -715,4 +722,105 @@ test("--stop leaves a starting bringup's lock alone", (t) => {
   assert.equal(stop.status, 1);
   assert.match(stop.stderr, /a bringup is starting/);
   assert.ok(existsSync(s.lock));
+});
+
+test("a command line that only mentions the script is not a bringup, so --stop never kills it", async (t) => {
+  // bringup_alive decides what bringup_stop signals: an agent's `bash -c` wrapper or an editor
+  // holding scripts/cloud-sandbox-up.sh is not a bringup, whatever its args contain.
+  const s = scratch(t);
+  for (const [command, args] of [
+    ["bash", ["-c", "sleep 30", "cloud-sandbox-up.sh"]],
+    ["node", ["-e", "setTimeout(() => {}, 30000)", "scripts/cloud-sandbox-up.sh"]],
+  ]) {
+    const pid = liveProcess(t, command, args);
+    rmSync(s.lock, { recursive: true, force: true });
+    priorLock(s, { boot: "boot-B", sentinel: null, writtenAt: Math.floor(Date.now() / 1000) - 600 });
+    lockPid(s, pid, Math.floor(Date.now() / 1000) - 600);
+    const run = stopLock(s.lock, "boot-B");
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout.trim(), "", `${command} is not reported as a stopped bringup`);
+    assert.ok(alive(pid), `${command} must not be signalled`);
+    assert.equal(existsSync(s.lock), false, "its dead lock is still removed");
+  }
+});
+
+test("bringup_stop kills nothing for a lock another boot left, whatever its pid now names", async (t) => {
+  const s = scratch(t);
+  const pid = liveBringup(t, s);
+  priorLock(s, { boot: "boot-A", sentinel: null });
+  lockPid(s, pid);
+  const run = stopLock(s.lock, "boot-B");
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout.trim(), "");
+  assert.ok(alive(pid), "a pid recorded in another boot may belong to anything by now");
+  assert.equal(existsSync(s.lock), false);
+});
+
+test("while --stop waits for a stubborn tree, the lock names it, so no second bringup starts", async (t) => {
+  // It lets go of the guard while the old tree dies. Holding it for ten seconds or more let a
+  // session start's `flock -w 10` time out and launch beside the dying tree, and a final
+  // unconditional `rm -rf` then deleted that new bringup's lock.
+  const s = scratch(t, { bringup: false });
+  const script = realBringup(s);
+  const bin = path.join(s.dir, "stubborn");
+  mkdirSync(bin);
+  const hung = path.join(bin, "cloud-sandbox-up.sh");
+  writeFileSync(hung, `bash -c 'trap "" TERM; while :; do sleep 1; done'\n`);
+  const child = spawn("bash", [hung], { detached: true, stdio: "ignore" });
+  t.after(() => {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {
+      // already gone
+    }
+  });
+  assert.ok(await eventually(() => childrenOf(child.pid).length === 1));
+  const blocked = childrenOf(child.pid)[0].pid;
+  priorLock(s, { boot: "boot-B", sentinel: null });
+  lockPid(s, child.pid);
+  writeFileSync(s.bootFile, "boot-B\n");
+  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOG: s.log, FRAPP_BRINGUP_LOCK: s.lock, FRAPP_BOOT_ID_FILE: s.bootFile };
+  delete env.FRAPP_BRINGUP_LOCK_HELD;
+  const stopper = spawn("bash", [script, "--stop"], { env, stdio: ["ignore", "pipe", "pipe"] });
+  let stderr = "";
+  stopper.stderr.on("data", (d) => (stderr += d));
+  const exited = new Promise((resolve) => stopper.on("close", resolve));
+  assert.ok(
+    await eventually(() => readFileSync(path.join(s.lock, "pid"), "utf8").trim() === String(stopper.pid)),
+    "the stopper claims the lock",
+  );
+  // A hand run and a session start both find a bringup running: the stopper.
+  assert.deepEqual(takeLock(s.lock, "boot-B", 4242), { status: 1, out: String(stopper.pid) });
+  const context = runHook(s, { boot: "boot-B" });
+  assert.match(context, new RegExp(`stack bringup is still running \\(pid ${stopper.pid}\\)`));
+  assert.equal(existsSync(s.launched), false);
+  assert.equal(await exited, 0, stderr);
+  assert.match(stderr, new RegExp(`Stopped bringup pid ${child.pid}`));
+  assert.ok(await eventually(() => !alive(blocked)), "the TERM-proof step is killed");
+  assert.equal(existsSync(s.lock), false);
+});
+
+test("--stop says it could not remove a lock rather than claiming it did", { skip: process.getuid?.() === 0 && "root ignores directory permissions" }, (t) => {
+  const s = scratch(t, { bringup: false });
+  const script = realBringup(s);
+  const parent = path.join(s.dir, "locked");
+  mkdirSync(parent);
+  const lock = path.join(parent, "cloud-sandbox-up.lock");
+  mkdirSync(lock);
+  const old = Math.floor(Date.now() / 1000) - 600;
+  utimesSync(lock, old, old);
+  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOG: s.log, FRAPP_BRINGUP_LOCK: lock };
+  delete env.FRAPP_BRINGUP_LOCK_HELD;
+  chmodSync(parent, 0o555);
+  let stop;
+  try {
+    stop = spawnSync("bash", [script, "--stop"], { env, encoding: "utf8", timeout: 20000 });
+  } finally {
+    // Before the scratch cleanup, which cannot remove the lock otherwise.
+    chmodSync(parent, 0o755);
+  }
+  assert.equal(stop.status, 1);
+  assert.match(stop.stderr, /could not write or remove the bringup lock/);
+  assert.doesNotMatch(stop.stderr, /removed any lock/);
+  assert.ok(existsSync(lock));
 });
