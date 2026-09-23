@@ -279,8 +279,10 @@ runs on the updated head, and a failure there reaches the watching session throu
 ### The token
 
 `PR_BASE_SYNC_TOKEN` is a **GitHub App installation token**, minted per run by
-`actions/create-github-app-token@v3` in `pr-base-sync.yml` from two repository secrets:
-`PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY`. An App was chosen over the
+`actions/create-github-app-token@v3` in `pr-base-sync.yml` from two secrets of the `automation`
+environment: `PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY`. They were repository
+secrets until #2518; moving them is the owner's #2583
+([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](AGENT_INFRA.md#github-environments-and-bootstrap-secrets)). An App was chosen over the
 fine-grained PAT this originally specified for two reasons: an installation token has no expiry
 for a human to renew on a calendar reminder (it is minted fresh each run and expires in an hour),
 and it is not tied to one person's account, so it survives that person's PAT policy, their token
@@ -382,9 +384,11 @@ this compares against a design, not against something that ran.) What makes it s
   here rules that out. Treat "the App cannot reach `main`" as resting on the bullet above, which is
   a property of the code.
 
-The residual risk is the private key. One protection is GitHub not passing repository secrets to
-fork-triggered `pull_request` runs; the other, weaker one is that adding a workflow that simply
-echoes the key requires write access — which, per the paragraph below, requires no approval. **Four
+The residual risk is the private key. One protection is GitHub not passing secrets to
+fork-triggered `pull_request` runs. The other, once #2583 lands, is the `automation`
+environment's `main`-only branch rule. Until then the key is a repository secret, so adding a
+workflow that simply echoes it needs only write access, which, per the paragraph below, needs no
+approval. **Four
 changes would break the first, and none should ever be made:**
 
 1. Adding a `pull_request_target` workflow that checks out PR-head code.

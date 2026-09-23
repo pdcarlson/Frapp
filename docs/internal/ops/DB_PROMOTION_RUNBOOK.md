@@ -180,8 +180,14 @@ Three checks, deliberately different shapes:
 | `migration-drift` (same workflow)                                                                     | Every PR and every push to `main` — **reports only**   | Staging only               | Reports; does not block        |
 | [`check-migration-drift.yml`](../../../.github/workflows/check-migration-drift.yml)                   | Daily, 07:00 UTC                                       | Staging **and** production | Files/updates a tracking issue |
 
-All three are read-only: they call the Supabase Management API's
-migration-history endpoint and send no SQL. None of them ever repairs anything.
+All three are read-only, and none of them ever repairs anything. The daily
+watchdog calls the Supabase Management API's migration-history endpoint itself
+and sends no SQL. The two PR checks hold no credential at all (#2518). They read
+the snapshot of that same endpoint that
+[`migration-snapshot.yml`](../../../.github/workflows/migration-snapshot.yml)
+publishes from `main` after every deploy. When that snapshot is stale, they fail
+and name the publisher
+([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../internal/ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets)).
 
 ### `migration-order` — the required one
 

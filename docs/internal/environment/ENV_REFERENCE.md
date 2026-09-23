@@ -542,24 +542,26 @@ provider state in a second file has no mechanism to stay true.
 
 ## GitHub Secrets
 
+Every GitHub secret is an **environment** secret on an environment restricted to `main`. None is a
+repository secret, because a repository secret is readable from any branch (#2518). Which
+environment holds which secret, what each one is for, and the state today (the move is the owner's
+#2583):
+[`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
+
 **Permanent (Infisical bootstrap):**
 
 | Secret                          | Where to get it                                                                                                                                                                                                                                                                                                                                                                |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `INFISICAL_MACHINE_IDENTITY_ID` | Infisical → Access Control → Machine Identities → open the identity → **Universal Auth** panel → **Client ID**. ⚠️ **Not** the identity's own **ID** shown on its Details page — those are two different UUIDs on two different screens, and this secret's name points at the wrong one. Pasting the Details-page ID produces `401 Invalid credentials` with no other symptom. |
 | `INFISICAL_CLIENT_SECRET`       | Same **Universal Auth** panel → **Add Client Secret**. The value is shown once, at creation — if it was not saved, issue a new one rather than hunting for the old.                                                                                                                                                                                                            |
-| `INFISICAL_PROJECT_ID`          | Infisical → Project Settings → Project ID. Not read by `deploy-api.yml`, which hardcodes `project-slug: frapp-live-ej-ls`.                                                                                                                                                                                                                                                     |
 
-**Current deploy workflow state:**
+`INFISICAL_PROJECT_ID` used to be listed here. No workflow reads it (the `infisical-secrets` action
+pins `project-slug: frapp-live-ej-ls`), and deleting the repository copy is #1587.
 
-`deploy-api.yml` injects deploy-time secrets directly from Infisical, through the shared [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml) action that every secret-needing workflow now calls. That means GitHub **environment-scoped** copies of:
-
-- `SUPABASE_ACCESS_TOKEN`
-- `SUPABASE_PROJECT_REF`
-- `RENDER_DEPLOY_HOOK_URL`
-- `API_HEALTHCHECK_URL`
-
-are **no longer required** for the workflow to run, as long as the three bootstrap repository secrets above remain valid and the referenced Infisical project/environment slugs exist.
+**Everything else is injected from Infisical at job time.** Every workflow that needs deploy-time
+secrets (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `API_HEALTHCHECK_URL` and the rest) pulls
+them through the shared [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml)
+action, so none of them needs a GitHub copy.
 
 ---
 

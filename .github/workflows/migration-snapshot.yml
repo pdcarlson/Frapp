@@ -17,10 +17,12 @@ name: Migration snapshot
 # Every trigger below runs `main`'s copy of this file: `workflow_run` and
 # `schedule` always run the default branch, and a dispatch from another branch
 # is refused by the environment. The job names the `automation` environment,
-# whose deployment-branch policy admits `main` only. That policy, not this
-# file, is the boundary. A branch can edit this file, but not the policy, and
-# the environment's secrets are released only to a job that passed it. The
-# download action accepts only runs on `main` from these three events.
+# whose deployment-branch policy admits `main` only (set by the owner in #2583;
+# until then the secrets are repository-level and this boundary does not
+# exist). That policy, not this file, is the boundary. A branch can edit this
+# file, but not the policy, and the environment's secrets are released only to
+# a job that passed it. The download action accepts only runs on `main` from
+# these three events.
 #
 # ── When it runs ────────────────────────────────────────────────────────────
 # After every `Deploy API` and `Deploy production` run, the only workflows that
