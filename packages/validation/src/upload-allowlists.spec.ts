@@ -46,6 +46,13 @@ describe("upload kinds", () => {
       expect(isAllowedUploadExtension(kind, "payload.svg")).toBe(false);
     }
   });
+
+  it("never allows an executable, even as the widest (document) kind", () => {
+    expect(isAllowedUploadExtension("document", "payload.exe")).toBe(false);
+    expect(isAllowedUploadMime("document", "application/octet-stream")).toBe(
+      false,
+    );
+  });
 });
 
 describe("GIF drift regression", () => {

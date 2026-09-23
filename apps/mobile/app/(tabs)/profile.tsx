@@ -38,7 +38,7 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Canvas draws Email, Phone, Pledge class and Big brother. Only Email exists —
  * the `users` table has no phone, pledge class, or big-brother column, and
- * `UpdateUserSchema` names the complete set of editable fields. The rows below
+ * the API's `UpdateUserDto` names the complete set of editable fields. The rows below
  * are that set. Filed.
  *
  * ## No Edit action
