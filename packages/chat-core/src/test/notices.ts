@@ -56,7 +56,9 @@ export function unconfirmedNotice(
     senderId: "user-1",
     content: "Granting 5 points…",
     note: "Not confirmed — these points may or may not have been recorded.",
-    createdAt: "2026-09-09T00:00:00.000Z",
+    // Fresh by default: an `unconfirmed` entry past a day is pruned, not
+    // restored (`UNCONFIRMED_NOTICE_TTL_MS`).
+    createdAt: new Date().toISOString(),
     replay: pointsReplay(clientMessageId, channelId),
     ...overrides,
   };

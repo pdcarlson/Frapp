@@ -459,14 +459,7 @@ class ChatRealtimeManager {
           this.patchCache(state.channelId, (cache) =>
             mergeServerRow(cache, next),
           );
-          // The card a heavy command was waiting on. Evicted now, not at the
-          // next load: by then the card may be outside the loaded window, and
-          // the stored entry would come back as a stale Retry (#1909).
-          dropNotices(
-            state.channelId,
-            [next.client_message_id],
-            this.kvStore(),
-          );
+          this.settleNotices(state.channelId, [next]);
           this.writeLastSeen(state.channelId, next.id);
           return;
         }
@@ -748,13 +741,8 @@ class ChatRealtimeManager {
         }
         return next;
       });
-      // Same eviction as the live echo: a card that arrived while Realtime
-      // was down lands here instead.
-      dropNotices(
-        channelId,
-        rows.map((row) => row.client_message_id),
-        this.kvStore(),
-      );
+      // A card that arrived while Realtime was down lands here instead.
+      this.settleNotices(channelId, rows);
       // Advance the cursor to the newest row we just merged.
       let newest = since;
       let newestTs = "";
@@ -767,6 +755,37 @@ class ChatRealtimeManager {
       if (newest) this.writeLastSeen(channelId, newest);
     } catch {
       // A backfill failure is non-fatal; live subscription will catch up.
+    }
+  }
+
+  /**
+   * Evict any persisted heavy-command notice these rows confirm (#1909): the
+   * card a `/points`, `/task` or `/event` command was waiting on. Now, not at
+   * the next load: by then the card may be outside the loaded window, and the
+   * stored entry would come back as a stale Retry.
+   *
+   * Addressed by each row's sender. A notice is filed under the member who
+   * dispatched it, and the server posts that command's card as them.
+   *
+   * Guarded for the same reason as `readLastSeen`/`writeLastSeen`: this runs
+   * inside the frame dispatch, after the cache merge, and an injected store is
+   * not trusted to be no-throw.
+   */
+  private settleNotices(channelId: string, rows: RawChatMessage[]): void {
+    try {
+      const bySender = new Map<string, string[]>();
+      for (const row of rows) {
+        if (!row.sender_id || !row.client_message_id) continue;
+        const ids = bySender.get(row.sender_id) ?? [];
+        ids.push(row.client_message_id);
+        bySender.set(row.sender_id, ids);
+      }
+      for (const [senderId, ids] of bySender) {
+        dropNotices(channelId, senderId, ids, this.kvStore());
+      }
+    } catch {
+      // A missed eviction leaves an entry the next load prunes if the card is
+      // in its window; losing the cursor write after it would cost more.
     }
   }
 

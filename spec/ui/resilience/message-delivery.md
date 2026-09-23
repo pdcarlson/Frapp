@@ -48,9 +48,9 @@ dispatch, #1733):
   `client_message_id` — not a fresh send.
 - **The row survives a rebuild.** The reconnect that follows the outage
   refetches the channel from REST (`refetchOnReconnect: "always"`), and the
-  server never wrote this row. So the row and its replay handle are persisted
-  per channel on the dispatching browser, restored only for the member who
-  dispatched it, and evicted once the card arrives or a retry settles (#1909).
+  server never wrote this row, so it and its replay handle are persisted on
+  the dispatching browser (#1909). What keeps and evicts them:
+  [`chat/integrations.md` § Slash command dispatch](../../behavior/chat/integrations.md#slash-command-dispatch).
 
 `RECORDED` is reached on an explicit `card_posted: false`: the write **did**
 commit and the chat card did not
@@ -62,7 +62,7 @@ the row is the trace that survives the next toast and a reload.
 
 **Web ships Retry on `unconfirmed`; mobile presents both states read-only.**
 Both statuses are set only by the heavy-command dispatcher, they are local to
-the client that dispatched (persisted in its per-channel notice store, never on
+the client that dispatched (persisted in its per-member notice store, never on
 the server), and `apps/mobile` deliberately has no
 slash dispatch — so no mobile row can currently *reach* `unconfirmed` or
 `recorded`. The type still permits them. A fall-through to the delivered

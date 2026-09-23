@@ -120,7 +120,7 @@ describe("dispatchPoints — card_posted (#544)", () => {
     expect(row._replay).toBeUndefined();
     expect(result.warning).toMatch(/don't run the command again/i);
     expect(row._error).toMatch(/don't run this command again/i);
-    expect(readNotices(CHANNEL_ID, kv)).toEqual([
+    expect(readNotices(CHANNEL_ID, "user-1", kv)).toEqual([
       expect.objectContaining({
         clientMessageId: row.client_message_id,
         note: row._error,
@@ -657,7 +657,7 @@ describe("dispatchPoints — the unconfirmed row survives a rebuild (#1909)", ()
     const result = await retryPointsDispatch(ctx, onlyRow(ctx)._replay!);
     expect(result.resolved).toBeTruthy();
 
-    expect(readNotices(CHANNEL_ID, ctx.kv)).toEqual([]);
+    expect(readNotices(CHANNEL_ID, "user-1", ctx.kv)).toEqual([]);
     rebuild(ctx);
     expect(placeholderCount(ctx)).toBe(0);
   });
@@ -673,7 +673,7 @@ describe("dispatchPoints — the unconfirmed row survives a rebuild (#1909)", ()
     });
     await retryPointsDispatch(ctx, onlyRow(ctx)._replay!);
 
-    expect(readNotices(CHANNEL_ID, ctx.kv)).toEqual([]);
+    expect(readNotices(CHANNEL_ID, "user-1", ctx.kv)).toEqual([]);
   });
 
   // The write turned out to have committed without its card: one `recorded`
@@ -689,7 +689,7 @@ describe("dispatchPoints — the unconfirmed row survives a rebuild (#1909)", ()
     });
     await retryPointsDispatch(ctx, onlyRow(ctx)._replay!);
 
-    const stored = readNotices(CHANNEL_ID, ctx.kv);
+    const stored = readNotices(CHANNEL_ID, "user-1", ctx.kv);
     expect(stored).toHaveLength(1);
     expect(stored[0]?.status).toBe("recorded");
     rebuild(ctx);
@@ -704,7 +704,7 @@ describe("dispatchPoints — the unconfirmed row survives a rebuild (#1909)", ()
     post.mockResolvedValue(LOST_RESPONSE);
     await retryPointsDispatch(ctx, onlyRow(ctx)._replay!);
 
-    expect(readNotices(CHANNEL_ID, ctx.kv)).toHaveLength(1);
+    expect(readNotices(CHANNEL_ID, "user-1", ctx.kv)).toHaveLength(1);
     rebuild(ctx);
     expect(onlyRow(ctx)._status).toBe("unconfirmed");
   });
@@ -740,6 +740,42 @@ describe("dispatchPoints — the unconfirmed row survives a rebuild (#1909)", ()
 
     expect(result.warning).toMatch(/use retry on the message/i);
     expect(result.warning).not.toMatch(/message is gone/i);
+  });
+
+  // Unless it can: with storage blocked or full the row is only as durable as
+  // this session's cache, and the reconnect that follows takes it. The copy
+  // keeps the fallback rather than promising a Retry that may be gone.
+  it("keeps the ledger fallback when the row could not be persisted", async () => {
+    const post = vi.fn().mockResolvedValue(LOST_RESPONSE);
+    const inert: KeyValueStore = { ...memoryStore(), set: () => {} };
+    const result = await dispatchGrant(buildCtx(post, inert));
+
+    expect(result.unconfirmed).toBe(true);
+    expect(result.warning).toMatch(/use retry on the message/i);
+    expect(result.warning).toMatch(/if the message is gone/i);
+  });
+
+  // A slow replay can land after the channel's cache was garbage-collected.
+  // Its `recorded` row must still say which grant it was.
+  it("keeps the grant's copy when a replay reports the card missing after an eviction", async () => {
+    const post = vi.fn();
+    const { ctx } = await parkAndRebuild(post);
+    const replay = onlyRow(ctx)._replay!;
+    ctx.queryClient.removeQueries({ queryKey: chatMessagesKey(CHANNEL_ID) });
+
+    post.mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 200 },
+    });
+    await retryPointsDispatch(ctx, replay);
+
+    expect(readNotices(CHANNEL_ID, "user-1", ctx.kv)).toEqual([
+      expect.objectContaining({
+        status: "recorded",
+        content: "Granting 5 points…",
+      }),
+    ]);
   });
 });
 

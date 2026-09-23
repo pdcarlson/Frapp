@@ -10,7 +10,9 @@ import {
   mergePersistedNotices,
   persistNotice,
   readNotices,
+  UNCONFIRMED_NOTICE_TTL_MS,
 } from "./heavy-command-notices";
+import type { KeyValueStore } from "./adapters";
 import { optimisticMessage } from "./types";
 import { memoryStore } from "./test/memory-store";
 import {
@@ -19,7 +21,10 @@ import {
   unconfirmedNotice,
 } from "./test/notices";
 
-const KEY = "chat:recorded:chan-1";
+/** Where user-1's entries for chan-1 are filed. */
+const KEY = "chat:heavy:v1:user-1:chan-1";
+/** Where #1789 filed every member's `recorded` entries for chan-1. */
+const LEGACY_KEY = "chat:recorded:chan-1";
 
 function cardEcho(clientMessageId = "cm-1") {
   return {
@@ -33,32 +38,25 @@ function cardEcho(clientMessageId = "cm-1") {
   };
 }
 
+function restore(kv: KeyValueStore, viewerId: string | null = "user-1") {
+  return mergePersistedNotices(emptyCache(), {
+    channelId: "chan-1",
+    viewerId,
+    kv,
+  });
+}
+
 describe("heavy-command notices — recorded (#1789)", () => {
   test("round-trips a notice through the store", () => {
     const kv = memoryStore();
-    persistNotice(recordedNotice(), kv);
-    expect(readNotices("chan-1", kv)).toEqual([recordedNotice()]);
-  });
-
-  // #1789 shipped these entries without `status`, and they are still on disk.
-  test("reads a pre-status entry as recorded rather than dropping it", () => {
-    const kv = memoryStore();
-    const legacy: Partial<ReturnType<typeof recordedNotice>> = recordedNotice();
-    delete legacy.status;
-    kv.set(KEY, JSON.stringify([legacy]));
-    expect(readNotices("chan-1", kv)).toEqual([recordedNotice()]);
+    expect(persistNotice(recordedNotice(), kv)).toBe(true);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([recordedNotice()]);
   });
 
   test("rehydrates an absent row as recorded, without a replay handle", () => {
     const kv = memoryStore();
     persistNotice(recordedNotice(), kv);
-    const cache = mergePersistedNotices(emptyCache(), {
-      channelId: "chan-1",
-      viewerId: "user-1",
-      kv,
-    });
-    const row = cache.byId["cm-1"];
-    expect(row).toBeDefined();
+    const row = restore(kv).byId["cm-1"];
     expect(row?._status).toBe("recorded");
     expect(row?._replay).toBeUndefined();
     expect(row?._error).toMatch(/don't run this command again/i);
@@ -81,16 +79,80 @@ describe("heavy-command notices — recorded (#1789)", () => {
     cache = mergeServerRow(cache, cardEcho());
     expect(locateRow(cache, "cm-1")).toBe("confirmed");
     mergePersistedNotices(cache, { channelId: "chan-1", viewerId: "user-1", kv });
-    expect(readNotices("chan-1", kv)).toEqual([]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
   });
 
   test("drops a corrupt store value so a later persist can write", () => {
     const kv = memoryStore();
     kv.set(KEY, "{not-json");
-    expect(readNotices("chan-1", kv)).toEqual([]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
     expect(kv.get(KEY)).toBeNull();
     persistNotice(recordedNotice(), kv);
-    expect(readNotices("chan-1", kv)).toEqual([recordedNotice()]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([recordedNotice()]);
+  });
+
+  // Display-only, so no age bound: it is the trace that says not to re-run.
+  test("restores a recorded row however old it is", () => {
+    const kv = memoryStore();
+    persistNotice(recordedNotice({ createdAt: "2020-01-01T00:00:00.000Z" }), kv);
+    expect(restore(kv).byId["cm-1"]?._status).toBe("recorded");
+  });
+});
+
+/**
+ * The store is per browser, and an `unconfirmed` entry carries a replay body
+ * (target, amount, reason). Keying by the member who dispatched is what keeps
+ * one member's entries unreachable from another member's session — the
+ * outbox's rule (`spec/ui/resilience/caching.md`, #2226).
+ */
+describe("heavy-command notices — keyed by the dispatching member", () => {
+  test("files an entry under its sender, not under the channel alone", () => {
+    const kv = memoryStore();
+    persistNotice(unconfirmedNotice(), kv);
+    expect(kv.get(KEY)).not.toBeNull();
+    expect(kv.get(LEGACY_KEY)).toBeNull();
+  });
+
+  test("another member reads nothing, and the owner's entries stay put", () => {
+    const kv = memoryStore();
+    persistNotice(unconfirmedNotice(), kv);
+    persistNotice(recordedNotice({ clientMessageId: "cm-2" }), kv);
+
+    expect(readNotices("chan-1", "user-9", kv)).toEqual([]);
+    expect(restore(kv, "user-9").order).toEqual([]);
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(2);
+  });
+
+  test("restores nothing before the viewer is known", () => {
+    const kv = memoryStore();
+    persistNotice(unconfirmedNotice(), kv);
+    expect(restore(kv, null).order).toEqual([]);
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
+  });
+
+  // A record in one member's list claiming another sender is not theirs to
+  // replay, whatever put it there.
+  test("drops an entry whose sender is not the list's owner", () => {
+    const kv = memoryStore();
+    kv.set(KEY, JSON.stringify([unconfirmedNotice({ senderId: "user-9" })]));
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
+  });
+
+  // #1789 filed every member's `recorded` entries under one per-channel key.
+  // Each carries its sender, so each is handed to exactly one member.
+  test("adopts the reader's #1789 entries and leaves other members' behind", () => {
+    const kv = memoryStore();
+    const mine: Partial<ReturnType<typeof recordedNotice>> = recordedNotice();
+    delete mine.status;
+    const theirs = { ...mine, clientMessageId: "cm-9", senderId: "user-9" };
+    kv.set(LEGACY_KEY, JSON.stringify([mine, theirs]));
+
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([recordedNotice()]);
+    expect(JSON.parse(kv.get(KEY)!)).toEqual([recordedNotice()]);
+    expect(JSON.parse(kv.get(LEGACY_KEY)!)).toEqual([theirs]);
+
+    readNotices("chan-1", "user-9", kv);
+    expect(kv.get(LEGACY_KEY)).toBeNull();
   });
 });
 
@@ -99,13 +161,7 @@ describe("heavy-command notices — unconfirmed (#1909)", () => {
     const kv = memoryStore();
     persistNotice(unconfirmedNotice(), kv);
 
-    const cache = mergePersistedNotices(emptyCache(), {
-      channelId: "chan-1",
-      viewerId: "user-1",
-      kv,
-    });
-
-    const row = cache.byId["cm-1"];
+    const row = restore(kv).byId["cm-1"];
     expect(row?._status).toBe("unconfirmed");
     expect(row?.kind).toBe("loading");
     expect(row?.content).toBe("Granting 5 points…");
@@ -119,19 +175,18 @@ describe("heavy-command notices — unconfirmed (#1909)", () => {
     const kv = memoryStore();
     persistNotice(unconfirmedNotice(), kv);
     persistNotice(recordedNotice(), kv);
-    expect(readNotices("chan-1", kv)).toEqual([recordedNotice()]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([recordedNotice()]);
   });
 
   test("drops an unconfirmed entry once its card is confirmed", () => {
     const kv = memoryStore();
     persistNotice(unconfirmedNotice(), kv);
-    const cache = mergeServerRow(emptyCache(), cardEcho());
-    const merged = mergePersistedNotices(cache, {
+    const merged = mergePersistedNotices(mergeServerRow(emptyCache(), cardEcho()), {
       channelId: "chan-1",
       viewerId: "user-1",
       kv,
     });
-    expect(readNotices("chan-1", kv)).toEqual([]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
     expect(merged.byId["cm-1"]).toBeUndefined();
   });
 
@@ -158,49 +213,46 @@ describe("heavy-command notices — unconfirmed (#1909)", () => {
     expect(merged.byId["cm-1"]?._status).toBe("pending");
   });
 
-  // A member on a shared browser must never be handed another member's Retry:
-  // if the original never committed, pressing it writes a fresh grant under
-  // THEIR name (`idx_point_transactions_dedupe` is `(chapter_id,
-  // client_message_id)` and `resolveReplay` only 409s a committed original).
-  test("restores nothing for another member, and keeps their entry on disk", () => {
+  // A day on, a Retry is likelier to write a grant the officer already
+  // re-typed than to recover a lost one: a never-committed key replays as a
+  // first write.
+  test("prunes an unconfirmed entry past the age bound instead of restoring it", () => {
     const kv = memoryStore();
-    persistNotice(unconfirmedNotice(), kv);
-    persistNotice(recordedNotice({ clientMessageId: "cm-2" }), kv);
+    const createdAt = "2026-09-09T00:00:00.000Z";
+    persistNotice(unconfirmedNotice({ createdAt }), kv);
+    const justInside = Date.parse(createdAt) + UNCONFIRMED_NOTICE_TTL_MS;
 
-    const cache = mergePersistedNotices(emptyCache(), {
+    const kept = mergePersistedNotices(emptyCache(), {
       channelId: "chan-1",
-      viewerId: "user-9",
+      viewerId: "user-1",
       kv,
+      now: justInside,
     });
+    expect(kept.byId["cm-1"]?._status).toBe("unconfirmed");
 
-    expect(cache.order).toEqual([]);
-    expect(readNotices("chan-1", kv)).toHaveLength(2);
+    const pruned = mergePersistedNotices(emptyCache(), {
+      channelId: "chan-1",
+      viewerId: "user-1",
+      kv,
+      now: justInside + 1,
+    });
+    expect(pruned.byId["cm-1"]).toBeUndefined();
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
   });
 
-  test("restores nothing before the viewer is known", () => {
+  test("prunes an unconfirmed entry whose timestamp cannot be read", () => {
     const kv = memoryStore();
-    persistNotice(unconfirmedNotice(), kv);
-    const cache = mergePersistedNotices(emptyCache(), {
-      channelId: "chan-1",
-      viewerId: null,
-      kv,
-    });
-    expect(cache.order).toEqual([]);
-    expect(readNotices("chan-1", kv)).toHaveLength(1);
+    persistNotice(unconfirmedNotice({ createdAt: "not a date" }), kv);
+    expect(restore(kv).order).toEqual([]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
   });
 
   // A replay rebuilt from a partial record would send a DIFFERENT request under
   // the original key.
   test.each([
     ["no replay", { replay: undefined }],
-    [
-      "a replay under another key",
-      { replay: pointsReplay("cm-other") },
-    ],
-    [
-      "a replay for another channel",
-      { replay: pointsReplay("cm-1", "chan-2") },
-    ],
+    ["a replay under another key", { replay: pointsReplay("cm-other") }],
+    ["a replay for another channel", { replay: pointsReplay("cm-1", "chan-2") }],
     [
       "a body missing its reason",
       {
@@ -222,13 +274,23 @@ describe("heavy-command notices — unconfirmed (#1909)", () => {
   ])("drops an unconfirmed entry with %s", (_label, override) => {
     const kv = memoryStore();
     kv.set(KEY, JSON.stringify([{ ...unconfirmedNotice(), ...override }]));
-    expect(readNotices("chan-1", kv)).toEqual([]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
   });
 
   test("drops an entry filed under another channel's key", () => {
     const kv = memoryStore();
     kv.set(KEY, JSON.stringify([unconfirmedNotice({ channelId: "chan-2" })]));
-    expect(readNotices("chan-1", kv)).toEqual([]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
+  });
+});
+
+describe("persistNotice", () => {
+  // `KeyValueStore.set` may degrade silently (storage blocked, quota full). A
+  // caller about to promise the row survives a reload has to know.
+  test("reports a write the store silently dropped", () => {
+    const kv = memoryStore();
+    const inert: KeyValueStore = { ...kv, set: () => {} };
+    expect(persistNotice(unconfirmedNotice(), inert)).toBe(false);
   });
 });
 
@@ -238,12 +300,12 @@ describe("dropNotices", () => {
     persistNotice(unconfirmedNotice(), kv);
     persistNotice(unconfirmedNotice({ clientMessageId: "cm-2" }), kv);
 
-    dropNotices("chan-1", ["cm-1", null, undefined], kv);
-    expect(readNotices("chan-1", kv).map((n) => n.clientMessageId)).toEqual([
-      "cm-2",
-    ]);
+    dropNotices("chan-1", "user-1", ["cm-1", null, undefined], kv);
+    expect(
+      readNotices("chan-1", "user-1", kv).map((n) => n.clientMessageId),
+    ).toEqual(["cm-2"]);
 
-    dropNotices("chan-1", ["cm-2"], kv);
+    dropNotices("chan-1", "user-1", ["cm-2"], kv);
     expect(kv.get(KEY)).toBeNull();
   });
 
@@ -254,11 +316,12 @@ describe("dropNotices", () => {
     const set = vi.spyOn(kv, "set");
     const remove = vi.spyOn(kv, "remove");
 
-    dropNotices("chan-1", ["cm-unrelated"], kv);
-    dropNotices("chan-2", ["cm-1"], kv);
+    dropNotices("chan-1", "user-1", ["cm-unrelated"], kv);
+    dropNotices("chan-2", "user-1", ["cm-1"], kv);
+    dropNotices("chan-1", "user-9", ["cm-1"], kv);
 
     expect(set).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
-    expect(readNotices("chan-1", kv)).toHaveLength(1);
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
   });
 });

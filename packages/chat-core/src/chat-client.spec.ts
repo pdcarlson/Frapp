@@ -967,7 +967,7 @@ describe("markLocalRecorded (#1789)", () => {
     expect(row?._status).toBe("recorded");
     expect(row?._replay).toBeUndefined();
     expect(row?.content).toBe("Granting 5 points…");
-    expect(readNotices("chan-1", kv)).toEqual([
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([
       expect.objectContaining({
         status: "recorded",
         clientMessageId: "cm-1",
@@ -991,7 +991,66 @@ describe("markLocalRecorded (#1789)", () => {
     expect(
       ctx.queryClient.getQueryData(chatMessagesKey("chan-1")),
     ).toBeUndefined();
-    expect(readNotices("chan-1", kv)).toHaveLength(1);
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
+  });
+
+  // A replay's card re-post can fail after the ORIGINAL card already landed
+  // (a reconnect refetch while the replay was in flight). The card is the
+  // record; a "card missing" row beside it would contradict it.
+  it("draws nothing beside a card that is already confirmed", () => {
+    const kv = memoryStore();
+    persistNotice(unconfirmedNotice(), kv);
+    const ctx = buildCtx({ kv });
+    ctx.queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "server-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "+5 points",
+          kind: "points",
+          client_message_id: "cm-1",
+          created_at: "2026-09-09T00:00:01.000Z",
+        },
+      ]),
+    );
+
+    markLocalRecorded(ctx, {
+      channelId: "chan-1",
+      clientMessageId: "cm-1",
+      note: "Points recorded — the chat card didn't post. Don't run this command again.",
+      content: "Granting 5 points…",
+    });
+
+    const rows = selectMessages(
+      ctx.queryClient.getQueryData(chatMessagesKey("chan-1")),
+    );
+    expect(rows.map((row) => row._status)).toEqual(["confirmed"]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
+  });
+
+  // A slow replay can land after the channel's cache was garbage-collected.
+  // The stored notice still knows which grant it was and where it sat.
+  it("keeps the stored content and timestamp when there is no live row", () => {
+    const kv = memoryStore();
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    persistNotice(unconfirmedNotice({ createdAt }), kv);
+    const ctx = buildCtx({ kv });
+
+    markLocalRecorded(ctx, {
+      channelId: "chan-1",
+      clientMessageId: "cm-1",
+      note: "Points recorded — the chat card didn't post. Don't run this command again.",
+    });
+
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([
+      expect.objectContaining({
+        status: "recorded",
+        content: "Granting 5 points…",
+        createdAt,
+      }),
+    ]);
   });
 });
 
@@ -1011,9 +1070,12 @@ describe("markLocalUnconfirmed (#1909)", () => {
     const ctx = buildCtx({ kv });
     placeholder(ctx);
 
-    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toBe("optimistic");
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
+      placement: "optimistic",
+      durable: true,
+    });
 
-    expect(readNotices("chan-1", kv)).toEqual([
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([
       expect.objectContaining({
         status: "unconfirmed",
         clientMessageId: "cm-1",
@@ -1033,14 +1095,14 @@ describe("markLocalUnconfirmed (#1909)", () => {
     placeholder(ctx);
     rebuiltChannel(ctx);
 
-    const placement = markLocalUnconfirmed(
+    const outcome = markLocalUnconfirmed(
       ctx,
       pointsReplay(),
       NOTE,
       "Granting 5 points…",
     );
 
-    expect(placement).toBe("optimistic");
+    expect(outcome).toEqual({ placement: "optimistic", durable: true });
     const row = ctx.queryClient.getQueryData<ChannelCache>(
       chatMessagesKey("chan-1"),
     )?.byId["cm-1"];
@@ -1053,11 +1115,14 @@ describe("markLocalUnconfirmed (#1909)", () => {
     const kv = memoryStore();
     const ctx = buildCtx({ kv });
 
-    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toBe("absent");
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
+      placement: "absent",
+      durable: true,
+    });
     expect(
       ctx.queryClient.getQueryData(chatMessagesKey("chan-1")),
     ).toBeUndefined();
-    expect(readNotices("chan-1", kv)).toHaveLength(1);
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
   });
 
   it("persists nothing without a viewer to attribute it to", () => {
@@ -1065,8 +1130,11 @@ describe("markLocalUnconfirmed (#1909)", () => {
     const ctx = buildCtx({ kv, userId: null });
     rebuiltChannel(ctx);
 
-    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toBe("absent");
-    expect(readNotices("chan-1", kv)).toEqual([]);
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
+      placement: "absent",
+      durable: false,
+    });
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
   });
 
   // The echo re-keyed the row: the write committed and carded. A replay's
@@ -1090,8 +1158,23 @@ describe("markLocalUnconfirmed (#1909)", () => {
       ]),
     );
 
-    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toBe("confirmed");
-    expect(readNotices("chan-1", kv)).toEqual([]);
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE).placement).toBe(
+      "confirmed",
+    );
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
+  });
+
+  // Blocked or full storage: the row is on screen but only as durable as this
+  // session's cache, and the caller must not promise it survives a reload.
+  it("reports a row it could not persist as not durable", () => {
+    const kv = memoryStore();
+    const ctx = buildCtx({ kv: { ...kv, set: () => {} } });
+    placeholder(ctx);
+
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
+      placement: "optimistic",
+      durable: false,
+    });
   });
 });
 
@@ -1105,7 +1188,7 @@ describe("removeLocalPlaceholder (#1909)", () => {
 
     removeLocalPlaceholder(ctx, "chan-1", "cm-1");
 
-    expect(readNotices("chan-1", kv)).toEqual([]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
   });
 });
 

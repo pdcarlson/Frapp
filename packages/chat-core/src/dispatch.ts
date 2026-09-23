@@ -284,7 +284,7 @@ async function dispatchPoints(
     content: placeholderContent,
   });
 
-  return submitPointsAdjustment(ctx, replay, false, placeholderContent);
+  return submitPointsAdjustment(ctx, replay, false);
 }
 
 /**
@@ -363,7 +363,6 @@ async function submitPointsAdjustment(
   ctx: ChatActionContext,
   replay: ReplayRequest,
   isReplay: boolean,
-  placeholderContent?: string,
 ): Promise<DispatchResult> {
   const { channelId, clientMessageId } = replay;
 
@@ -445,7 +444,9 @@ async function submitPointsAdjustment(
       channelId,
       clientMessageId,
       note: POINTS_RECORDED_ROW_NOTE,
-      content: placeholderContent,
+      // From the request, not a parameter: a replay has no placeholder text of
+      // its own, and a row redrawn without it would lose which grant it was.
+      content: pointsPlaceholderContent(replay),
     });
     return { ok: true, warning: CARD_LOST_WARNING };
   }
@@ -566,12 +567,22 @@ const UNCONFIRMED_NO_ROW_WARNING =
 
 /**
  * The row is on screen and carries the original key, so an explicit Retry is
- * the safe recovery. It no longer hedges about the row disappearing: the row
- * and its replay handle are persisted, so the reconnect that follows the
- * outage, a reload, and a `gcTime` eviction all restore it (#1909).
+ * the safe recovery. It does not hedge about the row disappearing: the row and
+ * its replay handle are on disk, so the reconnect that follows the outage, a
+ * reload, and a `gcTime` eviction all restore it (#1909).
  */
 const UNCONFIRMED_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice.";
+
+/**
+ * The row is on screen but could not be persisted (storage blocked or full),
+ * so it is only as durable as this session's cache and the next rebuild —
+ * likely the reconnect that follows this very outage — takes it and its Retry
+ * with it. The copy keeps the fallback for that case rather than promising a
+ * Retry that may be gone.
+ */
+const UNCONFIRMED_VOLATILE_WARNING =
+  "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice. If the message is gone, check the points ledger before re-running.";
 
 /**
  * What the timeline row itself says. Short on purpose: it sits directly above
@@ -608,7 +619,7 @@ function unconfirmed(
   replay: ReplayRequest,
   isReplay = false,
 ): DispatchResult {
-  const placement = markLocalUnconfirmed(
+  const { placement, durable } = markLocalUnconfirmed(
     ctx,
     replay,
     UNCONFIRMED_ROW_NOTE,
@@ -636,9 +647,11 @@ function unconfirmed(
     ok: true,
     unconfirmed: true,
     warning:
-      placement === "optimistic"
-        ? UNCONFIRMED_WARNING
-        : UNCONFIRMED_NO_ROW_WARNING,
+      placement !== "optimistic"
+        ? UNCONFIRMED_NO_ROW_WARNING
+        : durable
+          ? UNCONFIRMED_WARNING
+          : UNCONFIRMED_VOLATILE_WARNING,
   };
 }
 

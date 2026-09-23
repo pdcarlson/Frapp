@@ -678,14 +678,52 @@ describe("ChatRealtimeManager — heavy-command notice eviction (#1909)", () => 
 
     ch.emitPostgresChange({ new: card });
 
-    expect(readNotices("chan-1", kv)).toEqual([]);
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
   });
 
   test("a card that arrives by backfill evicts it too", async () => {
     backfill.mockResolvedValueOnce([card]);
     joined();
 
-    await vi.waitFor(() => expect(readNotices("chan-1", kv)).toEqual([]));
+    await vi.waitFor(() => expect(readNotices("chan-1", "user-1", kv)).toEqual([]));
+  });
+
+  // A notice is filed under the member who dispatched, and the server posts
+  // that command's card as them — so the card's sender addresses the entry.
+  test("an echo from another sender leaves the entry alone", async () => {
+    const ch = joined();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalled());
+
+    ch.emitPostgresChange({ new: { ...card, sender_id: "user-9" } });
+
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
+  });
+
+  // Same guard as `readLastSeen`/`writeLastSeen`: an injected store is not
+  // trusted to be no-throw, and a throw here would abort the frame after the
+  // merge and stop the cursor advancing.
+  test("a store that throws on the notice key cannot break the echo", async () => {
+    const throwing: KeyValueStore = {
+      ...kv,
+      get: (key) => {
+        if (key.startsWith("chat:heavy:")) throw new Error("storage exploded");
+        return kv.get(key);
+      },
+    };
+    chatRealtime.destroy();
+    let supabase: SupabaseClient;
+    ({ supabase, channels } = makeFakeSupabase());
+    chatRealtime.configure({ queryClient, supabase, backfill, kv: throwing });
+    const ch = joined();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalled());
+
+    expect(() => ch.emitPostgresChange({ new: card })).not.toThrow();
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    expect(cache?.order).toContain("server-1");
+    expect(kv.get("chat:lastSeen:chan-1")).toBe("server-1");
   });
 
   test("an unrelated message leaves the entry alone", async () => {
@@ -696,6 +734,6 @@ describe("ChatRealtimeManager — heavy-command notice eviction (#1909)", () => 
       new: { ...card, id: "server-2", client_message_id: "cm-other" },
     });
 
-    expect(readNotices("chan-1", kv)).toHaveLength(1);
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
   });
 });
