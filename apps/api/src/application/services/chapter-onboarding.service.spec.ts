@@ -33,6 +33,7 @@ jest.mock('@repo/chapter-theme', () => ({
     palette: { '--signet-accent-primary': '#C49A3A' },
     resolvedSeed: '#F2B72E',
     invalidSeed: false,
+    fillChecks: [],
     contrastChecks: [
       {
         role: '--signet-accent-text',

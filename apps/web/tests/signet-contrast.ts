@@ -201,8 +201,20 @@ export const ratio = (fg: string, bg: string) =>
 export const tint = (hue: string, over: string, alpha = 0.13) =>
   applyAlpha(hue, alpha, over);
 
+const rolesBySeed = new Map<string, Record<string, string>>();
+
+/**
+ * Memoized: since #2541 a dark seed runs the fill lift, up to seventeen
+ * generator calls, and the contrast specs walk the whole corpus many times.
+ * The result is a pure function of the seed. Callers must not mutate it.
+ */
 export function accentRolesFor(seed: string) {
-  return signetAccentSemanticVars(deriveSignetPalette(seed).palette);
+  let roles = rolesBySeed.get(seed);
+  if (!roles) {
+    roles = signetAccentSemanticVars(deriveSignetPalette(seed).palette);
+    rolesBySeed.set(seed, roles);
+  }
+  return roles;
 }
 
 /**

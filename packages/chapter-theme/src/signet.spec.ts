@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { contrastRatio, parseHex } from "@repo/color";
+import { contrastRatio, normalizeHex, parseHex } from "@repo/color";
 import Color from "colorjs.io";
 
 import {
   deriveSignetPalette,
   HOUSE_SEED,
+  SIGNET_FILL_SURFACES,
   signetAccentSemanticVars,
   type SignetPalette,
 } from "./signet.js";
+import { generateRadixColors } from "./vendor/generate-radix-colors.js";
 
 /**
  * Every distinct color `supabase/seed/chapter_directory.csv` has carried — 50
@@ -85,16 +87,34 @@ const ratio = (a: string, b: string) =>
   contrastRatio(parseHex(a)!, parseHex(b)!);
 
 /**
- * The Signet neutral ladder (foundations.md §2; `signetTokens.dark` in
- * `@repo/theme`, and `--background` … `--popover` in `signet.css`), darkest to
- * lightest. Every surface an accent role paints on.
+ * The Signet neutral ladder, as the engine measures its fill floor against it.
+ * The engine's own constant, not a copy: `packages/theme/src/signet.css.spec.ts`
+ * pins it to `signetDarkTokens` and `signet.css`, the ladder that ships.
  */
 const LADDER = {
-  background: "#131211",
-  surface1: "#1A1A1A",
-  card: "#211E1A",
-  popover: "#2A2621",
+  background: SIGNET_FILL_SURFACES["--background"],
+  surface1: SIGNET_FILL_SURFACES["--surface-1"],
+  card: SIGNET_FILL_SURFACES["--card"],
+  popover: SIGNET_FILL_SURFACES["--popover"],
 } as const;
+
+/**
+ * The step 9 the generator paints for `seed` before any lift: the §1 call with
+ * the seed itself as its accent. Test-only, to tell which seeds the engine
+ * lifted. `gray` is restated from the engine's `GENERATOR_PARAMS`; if it drifts,
+ * the "lifts exactly" test below sees every seed as lifted and fails.
+ */
+const unliftedFill = (seed: string) =>
+  // normalizeHex: the generator can return shorthand (`#fff`), as the engine
+  // handles in `generatedFill`.
+  normalizeHex(
+    generateRadixColors({
+      appearance: "dark",
+      gray: "#191919",
+      background: LADDER.background,
+      accent: seed,
+    }).accentScale[8]!,
+  );
 
 const oklch = (hex: string) => {
   const [l, c, h] = new Color(hex).to("oklch").coords;
@@ -191,21 +211,22 @@ describe("deriveSignetPalette", () => {
     it("lifts exactly the seeds whose own fill failed, and no others", () => {
       // The house seed and `#C9A56F` (45 of the 50 seeded chapters) must come
       // through untouched: the lift is a floor, not a restyle.
+      const primaryOf = (seed: string) =>
+        deriveSignetPalette(seed).palette["--signet-accent-primary"];
       const lifted = ALL_SEEDS.filter(
-        (seed) => deriveSignetPalette(seed).liftedAccent !== null,
+        (seed) => primaryOf(seed) !== unliftedFill(seed),
       );
       expect(lifted.sort()).toEqual(Object.keys(LIFTED_FILLS).sort());
-      expect(deriveSignetPalette(HOUSE_SEED).liftedAccent).toBeNull();
-      expect(deriveSignetPalette("#C9A56F").liftedAccent).toBeNull();
+      expect(primaryOf(HOUSE_SEED)).toBe(unliftedFill(HOUSE_SEED));
+      expect(primaryOf("#C9A56F")).toBe(unliftedFill("#C9A56F"));
     });
 
     it("lifts a crimson chapter to brick red, the worked example", () => {
       // #8B0000 painted 1.50:1 on `--popover` (1.87:1 on the background). It is
       // the largest shift in the corpus.
-      const { palette, liftedAccent, resolvedSeed } =
-        deriveSignetPalette("#8B0000");
+      const { palette, resolvedSeed } = deriveSignetPalette("#8B0000");
       expect(resolvedSeed).toBe("#8B0000");
-      expect(liftedAccent).toBe("#C34437");
+      expect(unliftedFill("#8B0000")).toBe("#8B0000");
       expect(palette["--signet-accent-primary"]).toBe("#C34437");
       expect(ratio("#C34437", LADDER.popover)).toBeGreaterThanOrEqual(3);
       // on-primary stays white, and still clears AA on the lifted fill.

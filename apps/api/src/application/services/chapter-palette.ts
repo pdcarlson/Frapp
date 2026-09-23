@@ -48,6 +48,12 @@ export type ChapterPaletteBuild = {
   invalidSeed: boolean;
   /** Signet contrast checks that came back below AA. Empty in the normal case. */
   failedContrastChecks: FailedContrastCheck[];
+  /**
+   * `accent-primary` fill checks that came back below the §8 3:1 floor (#2541).
+   * Always empty unless the generator changed under the engine, so it is logged
+   * but not returned to the client: nothing the officer chose caused it.
+   */
+  failedFillChecks: FailedContrastCheck[];
 };
 
 /**
@@ -86,11 +92,14 @@ export function buildChapterPalette(
     failedContrastChecks: signet.contrastChecks
       .filter((check) => !check.passes)
       .map(({ role, against, ratio }) => ({ role, against, ratio })),
+    failedFillChecks: signet.fillChecks
+      .filter((check) => !check.passes)
+      .map(({ role, against, ratio }) => ({ role, against, ratio })),
   };
 }
 
 /**
- * Logs the two by-construction problems a build can report — never throws,
+ * Logs the by-construction problems a build can report — never throws,
  * since the palette written is still valid either way (#840, §8).
  *
  * Shared by every writer that already has a `chapterId` (the config PATCH /
@@ -117,6 +126,15 @@ export function logChapterPaletteWarnings(
   if (build.failedContrastChecks.length > 0) {
     logger.warn(
       `Signet accent contrast below AA for chapter ${chapterId}: ${build.failedContrastChecks
+        .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
+        .join(', ')}`,
+    );
+  }
+  // Same reasoning for the fill floor (#2541): the engine lifts the fill until
+  // it clears, so a failure here means the lift itself stopped working.
+  if (build.failedFillChecks.length > 0) {
+    logger.warn(
+      `Signet accent fill below 3:1 for chapter ${chapterId}: ${build.failedFillChecks
         .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
         .join(', ')}`,
     );

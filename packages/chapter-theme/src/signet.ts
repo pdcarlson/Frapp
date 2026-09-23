@@ -31,6 +31,22 @@ import { generateRadixColors } from "./vendor/generate-radix-colors.js";
 export type { SignetPalette };
 
 /**
+ * The Signet neutral ladder (foundations.md §2), darkest to lightest: every
+ * surface `accent-primary` paints on, and so what the §8 fill floor is measured
+ * against. Restated here rather than imported from `@repo/theme`, which depends
+ * on this package, not the reverse; `packages/theme/src/signet.css.spec.ts`
+ * fails if it stops matching `signetDarkTokens` and `signet.css`, since a lift
+ * measured against a stale ladder would clear 3:1 on surfaces that no longer
+ * ship. `--background` is also the generator's `background` parameter.
+ */
+export const SIGNET_FILL_SURFACES = {
+  "--background": "#131211",
+  "--surface-1": "#1A1A1A",
+  "--card": "#211E1A",
+  "--popover": "#2A2621",
+} as const;
+
+/**
  * Fixed for every chapter — only `accent` varies. `gray` and `background` are
  * the neutral-ladder constants from `spec/ui/design-system/foundations.md`;
  * `appearance` is always dark because Signet is dark-first.
@@ -38,7 +54,7 @@ export type { SignetPalette };
 const GENERATOR_PARAMS = {
   appearance: "dark",
   gray: "#191919",
-  background: "#131211",
+  background: SIGNET_FILL_SURFACES["--background"],
 } as const;
 
 /** The house default seed (accent-engine.md §3). Not a separate palette — it runs the same pipeline. */
@@ -54,20 +70,6 @@ const MIN_TEXT_CONTRAST = 4.5;
  * border, poll selection — so a legible label on a button is not enough.
  */
 const MIN_FILL_CONTRAST = 3;
-
-/**
- * The Signet neutral ladder (foundations.md §2; `signetTokens.dark` in
- * `@repo/theme`), darkest to lightest: every surface `accent-primary` paints
- * on. Restated here rather than imported because this package must stay
- * dependency-light for the API; `signet.spec.ts` pins the same four values.
- * `--background` is also the generator's `background` parameter.
- */
-const FILL_SURFACES = {
-  "--background": "#131211",
-  "--surface-1": "#1A1A1A",
-  "--card": "#211E1A",
-  "--popover": "#2A2621",
-} as const;
 
 /**
  * How far one lift step raises the failing fill's OKLCH lightness. Small enough that the
@@ -96,7 +98,6 @@ const ROLE_STEPS = {
 
 type SignetRole = keyof typeof ROLE_STEPS;
 
-
 export interface SignetContrastCheck {
   /** The role whose contrast was measured. */
   role: string;
@@ -117,19 +118,13 @@ export interface DeriveSignetPaletteResult {
    */
   invalidSeed: boolean;
   /**
-   * The lightened accent the generator was re-run with when the seed's own
-   * `accent-primary` fell under 3:1 on a ladder surface, or `null` when it
-   * already cleared and the seed was used as is. It is that failing fill with
-   * its OKLCH lightness raised, hue and chroma kept (accent-engine.md §8).
-   */
-  liftedAccent: string | null;
-  /**
    * The §8 fill gate: `accent-primary` against each ladder surface at 3:1.
    *
    * Kept apart from `contrastChecks` on purpose: that list is the text-role
    * gate at 4.5:1, which the API reports as `failedContrastChecks` and the
    * Settings page describes check by check. The fill is held by construction,
-   * so a failure here, like one there, means the generator changed under us.
+   * so a failure here, like one there, means the generator changed under us,
+   * and the API logs it the same way (`logChapterPaletteWarnings`).
    */
   fillChecks: SignetContrastCheck[];
   /**
@@ -182,11 +177,13 @@ function generate(accent: string): Generated {
 
 /** The step-9 fill the generator actually produced, which is what paints. */
 function generatedFill(generated: Generated): string {
-  return normalizeHex(generated.accentScale[ROLE_STEPS["accent-primary"] - 1] ?? "");
+  return normalizeHex(
+    generated.accentScale[ROLE_STEPS["accent-primary"] - 1] ?? "",
+  );
 }
 
 function fillClears(fill: string): boolean {
-  return Object.values(FILL_SURFACES).every(
+  return Object.values(SIGNET_FILL_SURFACES).every(
     (surface) => ratio(fill, surface) >= MIN_FILL_CONTRAST,
   );
 }
@@ -285,7 +282,7 @@ export function deriveSignetPalette(
   // accent, so hover, the alpha steps and on-primary all derive from the fill
   // that actually paints.
   let generated = generate(resolvedSeed);
-  let liftedAccent: string | null = null;
+  let generatorAccent = resolvedSeed;
   const seedFill = generatedFill(generated);
   // `seedFill` is empty only if the generator returned no step 9, which it never
   // does; the guard keeps an unparseable colour out of `liftAccent` regardless,
@@ -294,10 +291,9 @@ export function deriveSignetPalette(
     const lift = liftAccent(seedFill);
     if (lift) {
       generated = lift.generated;
-      liftedAccent = lift.accent;
+      generatorAccent = lift.accent;
     }
   }
-  const generatorAccent = liftedAccent ?? resolvedSeed;
 
   // The generator returns fourteen fields — wide-gamut variants, full gray and
   // surface scales, the background it was given. Signet consumes three of them;
@@ -313,7 +309,8 @@ export function deriveSignetPalette(
   // normalizeHex rejects by design, so those are only uppercased.
   const solidValue = (hex: string | undefined): string =>
     normalizeHex(hex ?? "") || generatorAccent;
-  const step = (role: SignetRole): string => solidValue(solid[ROLE_STEPS[role] - 1]);
+  const step = (role: SignetRole): string =>
+    solidValue(solid[ROLE_STEPS[role] - 1]);
   const alphaStep = (role: SignetRole): string =>
     (alpha[ROLE_STEPS[role] - 1] ?? generatorAccent).toUpperCase();
 
@@ -346,7 +343,10 @@ export function deriveSignetPalette(
     {
       role: "--signet-accent-text",
       against: GENERATOR_PARAMS.background,
-      ratio: ratio(palette["--signet-accent-text"], GENERATOR_PARAMS.background),
+      ratio: ratio(
+        palette["--signet-accent-text"],
+        GENERATOR_PARAMS.background,
+      ),
       passes: false,
     },
     {
@@ -369,23 +369,22 @@ export function deriveSignetPalette(
     },
   ].map((check) => ({ ...check, passes: check.ratio >= MIN_TEXT_CONTRAST }));
 
-  const fillChecks: SignetContrastCheck[] = Object.entries(FILL_SURFACES).map(
-    ([name, surface]) => {
-      const fillRatio = ratio(primary, surface);
-      return {
-        role: "--signet-accent-primary",
-        against: name,
-        ratio: fillRatio,
-        passes: fillRatio >= MIN_FILL_CONTRAST,
-      };
-    },
-  );
+  const fillChecks: SignetContrastCheck[] = Object.entries(
+    SIGNET_FILL_SURFACES,
+  ).map(([name, surface]) => {
+    const fillRatio = ratio(primary, surface);
+    return {
+      role: "--signet-accent-primary",
+      against: name,
+      ratio: fillRatio,
+      passes: fillRatio >= MIN_FILL_CONTRAST,
+    };
+  });
 
   return {
     palette,
     resolvedSeed,
     invalidSeed,
-    liftedAccent,
     fillChecks,
     contrastChecks,
   };
