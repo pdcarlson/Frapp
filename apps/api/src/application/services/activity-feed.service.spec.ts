@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ActivityFeedService } from './activity-feed.service';
 import { EventService } from './event.service';
@@ -266,6 +267,38 @@ describe('ActivityFeedService', () => {
     expect(announcementIds).toEqual(['announcement:msg-live']);
   });
 
+  it('leaves out an announcement whose author the caller has blocked, reading as the caller', async () => {
+    // The feed keeps no block list of its own (#2324): it drops the rows
+    // `ChatService.getMessages` flagged `sender_blocked` for the viewer it was
+    // asked about. So the guarantee is "it asks as the caller, and drops what
+    // that caller's list flags". Asking as anyone else, or reading
+    // `chat_messages` directly, would apply someone else's block list, or none.
+    // Dropping rather than showing the masked row matters: it keeps the blocked
+    // member's `sender_id`, so the item would name them over the sentinel.
+    mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
+    mockChatService.getMessages.mockResolvedValue([
+      messageFixture({
+        id: 'msg-masked',
+        content: '[message from a blocked member]',
+        sender_blocked: true,
+      }),
+      messageFixture({ id: 'msg-clear', sender_blocked: false }),
+    ]);
+
+    const result = await service.getFeed(CHAPTER_ID, USER_ID);
+
+    expect(mockChatService.getMessages).toHaveBeenCalledWith(
+      announcementsChannel.id,
+      CHAPTER_ID,
+      USER_ID,
+      expect.any(Object),
+    );
+    const announcementIds = result
+      .filter((item) => item.type === 'announcement')
+      .map((item) => item.id);
+    expect(announcementIds).toEqual(['announcement:msg-clear']);
+  });
+
   it('over-fetches announcements so soft-deleted rows do not crowd out live ones within the cap', async () => {
     mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
     // 5 deleted, then 15 live — more live messages than PER_DOMAIN_LIMIT
@@ -295,6 +328,118 @@ describe('ActivityFeedService', () => {
     expect(announcementCount).toBe(10);
     const [, , , requestedOptions] = mockChatService.getMessages.mock.calls[0];
     expect(requestedOptions?.limit).toBeGreaterThan(10);
+  });
+
+  describe('announcements past a page of filtered rows', () => {
+    // Newest first, one minute apart, like the thread the feed reads.
+    const at = (minutesAgo: number) =>
+      new Date(Date.UTC(2026, 2, 3) - minutesAgo * 60_000).toISOString();
+
+    /** A channel read that honors `limit` and `before`, as the repository does. */
+    function channelOf(rows: MaskedChatMessage[]) {
+      mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
+      mockChatService.getMessages.mockImplementation(
+        async (_channelId, _chapterId, _userId, options) =>
+          rows
+            .filter(
+              (row) => !options?.before || row.created_at < options.before,
+            )
+            .slice(0, options?.limit ?? rows.length),
+      );
+    }
+
+    it('reads older pages when every row of the first is by a blocked author', async () => {
+      // One officer the caller blocked wrote the 40 newest announcements; the
+      // clear ones sit past the first buffered page.
+      const blocked = Array.from({ length: 40 }, (_, i) =>
+        messageFixture({
+          id: `msg-blocked-${i}`,
+          sender_blocked: true,
+          created_at: at(i),
+        }),
+      );
+      const clear = Array.from({ length: 12 }, (_, i) =>
+        messageFixture({ id: `msg-clear-${i}`, created_at: at(40 + i) }),
+      );
+      channelOf([...blocked, ...clear]);
+
+      const result = await service.getFeed(CHAPTER_ID, USER_ID, 50);
+      const announcementIds = result
+        .filter((item) => item.type === 'announcement')
+        .map((item) => item.id);
+
+      expect(announcementIds).toHaveLength(10);
+      expect(announcementIds.every((id) => id.includes('msg-clear-'))).toBe(
+        true,
+      );
+      const firstPage = mockChatService.getMessages.mock.calls[0][3];
+      const secondPage = mockChatService.getMessages.mock.calls[1][3];
+      expect(firstPage?.before).toBeUndefined();
+      expect(secondPage?.before).toBe(at((firstPage?.limit ?? 0) - 1));
+    });
+
+    it('keeps the earlier pages when a later one fails', async () => {
+      channelOf([
+        ...Array.from({ length: 29 }, (_, i) =>
+          messageFixture({
+            id: `msg-blocked-${i}`,
+            sender_blocked: true,
+            created_at: at(i),
+          }),
+        ),
+        messageFixture({ id: 'msg-clear', created_at: at(29) }),
+      ]);
+      const firstPage = mockChatService.getMessages.getMockImplementation();
+      mockChatService.getMessages
+        .mockImplementationOnce(firstPage)
+        .mockRejectedValueOnce(new Error('connection reset'));
+
+      const result = await service.getFeed(CHAPTER_ID, USER_ID, 50);
+
+      expect(
+        result
+          .filter((item) => item.type === 'announcement')
+          .map((item) => item.id),
+      ).toEqual(['announcement:msg-clear']);
+      expect(mockChatService.getMessages).toHaveBeenCalledTimes(2);
+    });
+
+    it('fails the domain when the first page fails', async () => {
+      // Nothing was read, so nothing is kept: getFeed records the domain as
+      // failed, rather than the loop settling quietly for an empty page.
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
+      mockChatService.getMessages.mockRejectedValue(
+        new Error('block list unavailable'),
+      );
+
+      const result = await service.getFeed(CHAPTER_ID, USER_ID, 50);
+
+      expect(result.filter((item) => item.type === 'announcement')).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("domain 'announcements' failed"),
+      );
+      warn.mockRestore();
+    });
+
+    it('stops after a bounded number of pages rather than scan the channel', async () => {
+      channelOf(
+        Array.from({ length: 500 }, (_, i) =>
+          messageFixture({
+            id: `msg-blocked-${i}`,
+            sender_blocked: true,
+            created_at: at(i),
+          }),
+        ),
+      );
+
+      const result = await service.getFeed(CHAPTER_ID, USER_ID, 50);
+
+      expect(result.filter((item) => item.type === 'announcement')).toEqual([]);
+      expect(mockChatService.getMessages).toHaveBeenCalledTimes(3);
+    });
   });
 
   it('gives a departed member an empty-name actor rather than dropping or nulling it', async () => {
