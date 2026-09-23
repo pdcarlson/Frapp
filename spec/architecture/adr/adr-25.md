@@ -16,28 +16,60 @@
 - **The mark is unchanged.** Emblem B is an abstract crest with no letterform, so it works under either name.
 - **The rename runs as an ordered series.** Every step lands before the first `eas build --profile production` ([#2478](https://github.com/pdcarlson/Frapp/issues/2478) § C):
   1. **This ADR and the naming rule.** The naming rule in [`spec/ui/brand-identity.md`](../../ui/brand-identity.md) § 1 is its one canonical statement, and the specs and the skill that restated it now link to it.
-  2. **The mobile binary.** This step is first because it is the beta's critical path, and each binary stays as shipped until its user updates.
-     - `expo.name`, the three iOS permission strings, and the in-app copy. That includes the `Settings → Frapp → …` recovery paths, which must match `expo.name` in the same build.
-     - The local study-pause notification, the Stripe PaymentSheet merchant fallback, the calendar-export filename and PRODID, and the listing paste in `apps/mobile/store/README.md`.
-     - Its specs: `spec/behavior/study-sessions.md` (the study-pause notification), `spec/ui/design-system/writing.md` (the study, payment and s01 copy), `spec/ui/design-system/components.md` and `spec/ui/mobile/patterns.md` (the "Ask Signet" sheet header), and `spec/ui/mobile/screens.md` (the s01 wordmark).
-  3. **Server.**
-     - API user-visible text: error messages other than the Discord ones (those go in step 4), the PDF report footer and producer, report filenames and the ICS PRODID. Its specs: the PDF footer in `spec/behavior/reports.md` and `spec/product/modules.md`.
-     - The invite email's From name, subject and body.
-     - The OpenAPI title and descriptions, with the regenerated contract.
-     - A new forward migration renaming the system actor `Signet System` → `Frapp System`. The PGlite landmark in `scripts/check-pglite-migrations.mjs` and the target state in `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md` change with it.
-     - The conformance constants `AUTH_SMTP_SENDER_NAME` and `AUTH_MAGIC_LINK_SUBJECT`.
-     - The App Review demo seed's placeholder PDF text in `scripts/demo/seed-demo.mjs`. If the production seed (#2309) runs before this step, re-run its `storage` command after it.
+  Each step lists three things: the code it changes; the specs and docs that pin those strings, which change in the same PR; and the consoles the owner changes by hand on the day it merges.
 
-     On the day it merges, the owner changes the Supabase Auth SMTP sender name and the mailer subjects on `frapp-staging` and `frapp-prod`, and `RESEND_FROM_EMAIL` in Infisical if it carries a display name. Staging conformance fails until the dashboard matches.
-  4. **Web dashboard and Discord.**
-     - Tab titles, the auth headings, onboarding, settings and roles copy, the invite share text and the CSV and ICS filenames, plus the `packages/validation` and `packages/hooks` strings the dashboard renders.
-     - Everything that names the Discord application or bot, on both sides: the web import copy, and the API's Discord error messages (`discord-import.service.ts`, `discord-bot-gateway.service.ts`, `discord-api-message.ts`).
-     - The owner renames the Discord application and bot in the Developer Portal on the day it merges, so a recovery instruction never names something the admin can't find.
+  2. **The mobile binary.** This step is first because it is the beta's critical path, and each binary stays as shipped until its user updates.
+     - *Code:*
+       - `expo.name`, the three iOS permission strings, and the in-app copy. That includes the `Settings → Frapp → …` recovery paths, which must match `expo.name` in the same build.
+       - The local study-pause notification, the Stripe PaymentSheet merchant fallback, the calendar-export filename and PRODID, and the listing paste in `apps/mobile/store/README.md`.
+     - *Specs:*
+       - `spec/behavior/study-sessions.md` (the study-pause notification).
+       - `spec/ui/design-system/writing.md` (the study and payment copy). Its § 7 Sign in title is shared by mobile s01 and web `/sign-in`, so this step splits that row per surface, and step 4 moves the web half.
+       - `spec/ui/design-system/components.md` and `spec/ui/mobile/patterns.md` (the "Ask Signet" sheet header).
+       - `spec/ui/mobile/screens.md` (the s01 wordmark).
+  3. **Server.**
+     - *Code:*
+       - API user-visible text: error messages other than the Discord ones (those go in step 4), the PDF report footer and producer, report filenames and the ICS PRODID.
+       - The invite email's From name, subject and body.
+       - The OpenAPI title and descriptions, with the regenerated contract.
+       - A new forward migration renaming the system actor `Signet System` → `Frapp System`.
+       - The conformance constants `AUTH_SMTP_SENDER_NAME` and `AUTH_MAGIC_LINK_SUBJECT`.
+       - The App Review demo seed's placeholder PDF text in `scripts/demo/seed-demo.mjs`. If the production seed (#2309) runs before this step, re-run its `storage` command after it.
+     - *Specs and docs:*
+       - the PDF footer in `spec/behavior/reports.md` and `spec/product/modules.md`;
+       - the system actor's target state in `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md`;
+       - the SMTP From and sender name in `docs/internal/ops/deployment/supabase.md`;
+       - the `RESEND_FROM_EMAIL` default in `ENV_REFERENCE.md`.
+     - *Consoles (owner):*
+       - the Supabase Auth SMTP sender name and mailer subjects on `frapp-staging` and `frapp-prod`. Staging conformance fails until they match.
+       - `RESEND_FROM_EMAIL` in Infisical, if it carries a display name.
+  4. **Web dashboard and third-party sign-in and billing.**
+     - *Code:*
+       - Tab titles, the auth headings, onboarding, settings and roles copy, the invite share text and the CSV and ICS filenames, plus the `packages/validation` and `packages/hooks` strings the dashboard renders.
+       - Everything that names the Discord application or bot, on both sides: the web import copy, and the API's Discord error messages (`discord-import.service.ts`, `discord-bot-gateway.service.ts`, `discord-api-message.ts`).
+     - *Specs and docs:*
+       - the web half of `writing.md` § 7's Sign in title;
+       - the tab-title template and title-lock description in `spec/ui/web-greenfield/deletion-checklist.md` § Copy, with a dated note;
+       - the onboarding welcome slide in `spec/ui/design-system/iconography.md`;
+       - the Discord application name and consent screen in `docs/internal/ops/deployment/integrations.md`;
+       - the Services ID Description in `supabase.md` § Auth OAuth providers;
+       - the Stripe account name in `ENV_REFERENCE.md`.
+     - *Consoles (owner),* so no recovery instruction or consent screen names something the member can't find:
+       - rename the Discord application and bot in the Developer Portal;
+       - set the Sign in with Apple Services ID `live.frapp.mobile.web` Description (Apple Developer → Identifiers → Services IDs) to Frapp, because it shows on the web consent sheet;
+       - if they say Signet, change the Stripe account's public business name and statement descriptor (Settings → Business → Public details), which checkout, the billing portal and receipts show;
+       - and the app name on the Google Cloud OAuth consent screen. No doc records that one, so check it.
   5. **Landing and legal.**
-     - Metadata, the generated OG image, JSON-LD, the hero and footer copy, and the lockup wordmark. Its specs: `spec/ui/landing/README.md` (the header lockup word and the OG card) and `spec/ui/assets.md` (the lockup wordmark).
-     - The Terms, Privacy, FERPA and Support pages, with their `lastUpdated` dates. Its spec: the Terms and FERPA summaries in `spec/behavior/legal.md`.
-     - The owner decides whether a name-only change bumps `LEGAL_POLICY_VERSION`.
-     - After deploy, re-scrape the social previews and request a recrawl.
+     - *Code:*
+       - Metadata, the generated OG image, JSON-LD, the hero and footer copy, and the lockup wordmark.
+       - The Terms, Privacy, FERPA and Support pages, with their `lastUpdated` dates.
+     - *Specs:*
+       - `spec/ui/landing/README.md` (the header lockup word and the OG card);
+       - `spec/ui/assets.md` (the lockup wordmark);
+       - the Terms and FERPA summaries in `spec/behavior/legal.md`.
+     - *Owner:*
+       - decide whether a name-only change bumps `LEGAL_POLICY_VERSION`;
+       - after deploy, re-scrape the social previews and request a recrawl.
   6. **Store console (owner).** After step 2 is in a build, update the App Store Connect description and review notes, then capture and upload the screenshots ([#2454](https://github.com/pdcarlson/Frapp/issues/2454)).
 
   **Every step updates, in the same PR, every test and gate that pins a string it changes.** That means:
@@ -48,7 +80,9 @@
 
   An unflipped check fails CI. A lock that spans surfaces (calendar PRODID, export filenames, the auth wordmark and the ops-nudge copy) is split per surface by the first step that touches it.
 
-  **This is the one list of specs each step moves.** `spec/ui/brand-identity.md` § 1 links here rather than keeping its own copy. It was found at `ee9dd538` by reading every line of `git grep -n Signet -- spec`, leaving out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and design-system uses of the name. Specs change between now and each step, so re-run that grep when a step starts, and treat a new hit as part of that step.
+  **This is the one list of specs, docs and consoles each step moves.** `spec/ui/brand-identity.md` § 1 links here rather than keeping its own copy.
+  - The specs were found at `ee9dd538` by reading every line of `git grep -n Signet -- spec`, leaving out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and uses of the name that mean the design system. The docs and consoles came from a narrower sweep of `docs/` for console, sender and consent-screen names, not a line-by-line read.
+  - A list like this is a starting point, not a proof. Specs and docs change before each step lands, so re-run that grep when a step starts, and treat every hit that describes a string the step changes as part of that step, whether it is new or not.
 
 **Rationale:**
 
