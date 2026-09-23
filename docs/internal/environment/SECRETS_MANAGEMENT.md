@@ -153,7 +153,8 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. The workflows
 that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` with
 `method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
-`INFISICAL_CLIENT_SECRET` secrets of the GitHub environment the job names (§6). This is universal
+`INFISICAL_CLIENT_SECRET` secrets, read through the GitHub environment each job names (§6; until #2583
+moves them they are still repository secrets, which such a job also sees). This is universal
 auth, not OIDC. Every workflow that calls the composite action below does this — today
 `deploy-api.yml`, `deploy-production.yml`, `db-backup.yml`, `check-migration-drift.yml`,
 `migration-snapshot.yml`, `staging-conformance.yml` and `production-auth-conformance.yml`
@@ -306,7 +307,7 @@ much.
 
 **Not GitHub secrets — injected from Infisical at job time:**
 
-The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
+The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies of these values. That is still wrong, because Infisical serves them (#772). The only GitHub secrets are the credentials in the roster [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets) lists.)
 
 | Secret                   | Staging value                           | Production value                |
 | ------------------------ | --------------------------------------- | ------------------------------- |

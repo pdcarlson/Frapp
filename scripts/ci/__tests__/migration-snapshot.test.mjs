@@ -7,6 +7,7 @@ import {
   checkFreshness,
   DEFAULT_MAX_AGE_HOURS,
   loadSnapshot,
+  openSnapshot,
   parseSnapshot,
   SNAPSHOT_SCHEMA_VERSION,
   snapshotFetch,
@@ -254,4 +255,25 @@ test("the publisher refuses an empty history unless the environment allows one",
 test("the publisher's invocation guards", async () => {
   assert.equal(await publishSnapshot({ accessToken: "t", outPath: "", ...quiet }), 2);
   assert.equal(await publishSnapshot({ accessToken: "", outPath: "/tmp/x.json", ...quiet }), 2);
+});
+
+// ── openSnapshot ────────────────────────────────────────────────────────────
+
+test("openSnapshot resolves refs by environment name and reports the capture time", () => {
+  const text = JSON.stringify(sample());
+  const opened = openSnapshot("x.json", ["staging", "production"], {
+    nowMs: NOW,
+    environments: ENVIRONMENTS,
+    readFile: () => text,
+  });
+  assert.deepEqual(opened.refs, { staging: STAGING_REF, production: PRODUCTION_REF });
+  assert.equal(opened.capturedMs, Date.parse("2026-09-23T10:00:00.000Z"));
+  assert.match(opened.description, /captured 2026-09-23T10:00:00.000Z \(2\.0h old\)/);
+});
+
+test("openSnapshot refuses an environment name it cannot resolve", () => {
+  assert.throws(
+    () => openSnapshot("x.json", ["preview"], { nowMs: NOW, environments: ENVIRONMENTS, readFile: () => "{}" }),
+    /No "preview" environment/,
+  );
 });

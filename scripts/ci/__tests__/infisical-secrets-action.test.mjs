@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 
 // Pins the second and third cutover of stage 4's composite-action work (#1382):
-// the Infisical preamble+injection (14 call sites across 8 workflows) and the
+// the Infisical preamble+injection (14 call sites across 7 workflows) and the
 // Supabase CLI version pin (4 sites).
 //
 // Why this file has teeth beyond "the copies stayed gone": NONE of the

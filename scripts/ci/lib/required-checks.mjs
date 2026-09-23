@@ -372,8 +372,9 @@ export const DRIFT_CHECKS = [
   // Do the migrations a PR adds actually APPLY to the database they are heading
   // for? Rebuilds production's currently-applied state on a disposable Supabase
   // stack and runs the pending set against it, through the same CLI path
-  // `run-migration.mjs` uses for real. Read-only against production (one GET to
-  // the Management API); every apply lands on the throwaway stack.
+  // `run-migration.mjs` uses for real. It never contacts production: the
+  // applied state comes from the published migration snapshot (#2518), and
+  // every apply lands on the throwaway stack.
   //
   // The gap it closes: `pglite-migrations` applies the corpus from ZERO, which
   // is a different question from applying the tail to a database that is

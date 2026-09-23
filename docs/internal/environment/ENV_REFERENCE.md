@@ -542,10 +542,11 @@ provider state in a second file has no mechanism to stay true.
 
 ## GitHub Secrets
 
-Every GitHub secret is an **environment** secret on an environment restricted to `main`. None is a
-repository secret, because a repository secret is readable from any branch (#2518). Which
-environment holds which secret, what each one is for, and the state today (the move is the owner's
-#2583):
+Every GitHub secret belongs in an **environment** restricted to `main`, never in repository scope,
+because a repository secret is readable from any branch (#2518). Moving them there is the owner's
+#2583; until it lands they are all still repository secrets. The Infisical pair below is two of
+seven. The provider API keys, the release PAT and the base-sync App pair are the rest. Which
+environment holds which, and the state today:
 [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
 
 **Permanent (Infisical bootstrap):**
@@ -558,10 +559,10 @@ environment holds which secret, what each one is for, and the state today (the m
 `INFISICAL_PROJECT_ID` used to be listed here. No workflow reads it (the `infisical-secrets` action
 pins `project-slug: frapp-live-ej-ls`), and deleting the repository copy is #1587.
 
-**Everything else is injected from Infisical at job time.** Every workflow that needs deploy-time
-secrets (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `API_HEALTHCHECK_URL` and the rest) pulls
-them through the shared [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml)
-action, so none of them needs a GitHub copy.
+**Deploy-time values come from Infisical at job time.** Every workflow that needs them
+(`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `API_HEALTHCHECK_URL` and the rest) pulls them
+through the shared [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml)
+action with the pair above, so none of them needs a GitHub copy.
 
 ---
 

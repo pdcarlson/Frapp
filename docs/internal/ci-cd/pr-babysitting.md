@@ -279,9 +279,9 @@ runs on the updated head, and a failure there reaches the watching session throu
 ### The token
 
 `PR_BASE_SYNC_TOKEN` is a **GitHub App installation token**, minted per run by
-`actions/create-github-app-token@v3` in `pr-base-sync.yml` from two secrets of the `automation`
-environment: `PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY`. They were repository
-secrets until #2518; moving them is the owner's #2583
+`actions/create-github-app-token@v3` in `pr-base-sync.yml` from two secrets that belong in the
+`automation` environment: `PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY` (#2518).
+They are still repository secrets until the owner's #2583 moves them
 ([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](AGENT_INFRA.md#github-environments-and-bootstrap-secrets)). An App was chosen over the
 fine-grained PAT this originally specified for two reasons: an installation token has no expiry
 for a human to renew on a calendar reminder (it is minted fresh each run and expires in an hour),

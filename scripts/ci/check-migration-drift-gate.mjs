@@ -97,9 +97,8 @@ import {
   parseMigrationFilename,
 } from "./check-migration-drift.mjs";
 import { requireEnv, SECRETS_RUNBOOK } from "./lib/env.mjs";
-import { getEnvironment } from "./lib/environments.mjs";
 import { DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_MS } from "./lib/http.mjs";
-import { describeSnapshot, loadSnapshot } from "./lib/migration-snapshot.mjs";
+import { openSnapshot } from "./lib/migration-snapshot.mjs";
 
 export const DEFAULT_MAIN_REF = "origin/main";
 export const DEFAULT_GRACE_MINUTES = 30;
@@ -437,6 +436,12 @@ function getArg(name) {
 /**
  * Where staging's applied state comes from: the published snapshot when
  * `--snapshot` is given (CI), else a live read with a token (a laptop).
+ *
+ * `nowMs` is the moment that state describes. For a snapshot that is its
+ * capture time, not now, so the grace window is measured from what the
+ * snapshot could have seen. Measured from now, a migration that merged after
+ * the capture would read as overdue once 30 minutes passed, though staging may
+ * well hold it.
  */
 function resolveSource(snapshotPath) {
   if (!snapshotPath) {
@@ -444,17 +449,18 @@ function resolveSource(snapshotPath) {
       accessToken: requireEnv("SUPABASE_ACCESS_TOKEN", { hint: SECRETS_RUNBOOK }),
       projectRef: requireEnv("SUPABASE_PROJECT_REF", { hint: SECRETS_RUNBOOK }),
       fetchImpl: fetch,
+      nowMs: Date.now(),
       description: "live Management API read",
     };
   }
-  const projectRef = getEnvironment("staging").supabaseProjectRef;
   try {
-    const loaded = loadSnapshot(snapshotPath, { requireRefs: [projectRef] });
+    const opened = openSnapshot(snapshotPath, ["staging"]);
     return {
       accessToken: "snapshot",
-      projectRef,
-      fetchImpl: loaded.fetchImpl,
-      description: describeSnapshot(loaded.snapshot, loaded.ageHours),
+      projectRef: opened.refs.staging,
+      fetchImpl: opened.fetchImpl,
+      nowMs: opened.capturedMs,
+      description: `${opened.description}; grace measured from its capture time`,
     };
   } catch (thrown) {
     // Unreadable is not clean, the same posture as a failed live read below.
@@ -471,7 +477,7 @@ function resolveSource(snapshotPath) {
 }
 
 async function main() {
-  const { accessToken, projectRef, fetchImpl, description } = resolveSource(getArg("--snapshot"));
+  const { accessToken, projectRef, fetchImpl, nowMs, description } = resolveSource(getArg("--snapshot"));
   const mainRef = process.env.DRIFT_GATE_MAIN_REF || DEFAULT_MAIN_REF;
   const graceMinutes = Number(
     process.env.DRIFT_GATE_GRACE_MINUTES || DEFAULT_GRACE_MINUTES,
@@ -490,7 +496,7 @@ async function main() {
   console.log("══════════════════════════════════════════════════════════");
 
   process.exit(
-    await runDriftGate({ accessToken, projectRef, mainRef, graceMinutes, fetchImpl }),
+    await runDriftGate({ accessToken, projectRef, mainRef, graceMinutes, fetchImpl, nowMs }),
   );
 }
 

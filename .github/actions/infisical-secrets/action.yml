@@ -137,8 +137,8 @@ runs:
     # so the injected secrets are visible to the workflow exactly as they were
     # when this step was written inline. That is the one property the whole
     # extraction rests on. No pull request exercises it any more: since #2518 no
-    # PR-triggered job holds a credential, so every call site runs only from
-    # `main`. `migration-snapshot.yml` exercises it after every staging deploy,
+    # PR-triggered job holds a credential, and every call site sits in a job only
+    # `main` is meant to run (the environment rule, #2583). `migration-snapshot.yml` exercises it after every staging deploy,
     # and its very next step reads SUPABASE_ACCESS_TOKEN from the job env.
     #
     # `include-imports: true` is not a default -- it was written at every original

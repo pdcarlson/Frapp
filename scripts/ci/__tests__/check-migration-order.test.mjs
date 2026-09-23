@@ -570,9 +570,10 @@ test("a published snapshot blocks a migration back-dated against production", as
   assert.match(summary, /`production` has already applied `20260901120000`/);
 });
 
-test("a published snapshot passes a forward migration", async () => {
+test("a published snapshot passes a forward migration, and the summary dates the state", async () => {
   const base = [m("20260101000000", "a")];
   const applied = [{ version: "20260101000000", name: "a" }];
+  let summary = "";
   const code = await runOrderGate({
     snapshotPath: writeSnapshot({ staging: applied, production: applied }),
     nowMs: NOW,
@@ -581,9 +582,17 @@ test("a published snapshot passes a forward migration", async () => {
     readHead: () => [...base, m("20260901000000", "new")],
     readBase: () => base,
     fetchImpl: noNetwork,
-    ...quiet,
+    log: () => {},
+    error: () => {},
+    writeSummary: (text) => {
+      summary = text;
+    },
   });
   assert.equal(code, 0);
+  // A manual ledger change triggers no publish, so the reader must be told how
+  // old the state is and how to refresh it.
+  assert.match(summary, /captured 2026-09-23T10:00:00Z/);
+  assert.match(summary, /migration-snapshot\.yml/);
 });
 
 test("a stale snapshot fails a change that needs it and names the publisher", async () => {

@@ -13,14 +13,27 @@ description: >
 # `main` only, and PR jobs fetch the result here.
 #
 # ── Which run is trusted ────────────────────────────────────────────────────
-# Only a successful run of THIS repository's publisher, on `main`, triggered by
-# `workflow_run`, `schedule` or `workflow_dispatch`. Each of those runs `main`'s
-# copy of the workflow file. The filter matters because a branch can edit its
-# own copy of `migration-snapshot.yml` and make it run on `pull_request` or on a
-# push to that branch. Such a run is listed under the same workflow and can
-# upload an artifact with the same name, but its `event` or `head_branch` gives
-# it away. A fork PR whose own branch is called `main` fails the event and
-# head-repository checks.
+# A successful run of THIS repository's publisher, triggered by `workflow_run`,
+# `schedule` or `workflow_dispatch`, whose commit is on `main`. That last check
+# carries the weight. A branch can edit its own copy of
+# `migration-snapshot.yml`, make it need no secret, run it, and upload an
+# artifact with the same name. `event` and `head_branch` catch the obvious
+# forms (a pull_request run, a push to the branch, a fork whose branch is
+# called `main`), but not a dispatch on a TAG named `main`: GitHub reports a
+# tag run's `head_branch` as the bare tag name, and the tag's own workflow
+# file runs. So each candidate's `head_sha` must be an ancestor of `main`
+# (compare API: `identical` or `ahead`), which means the file that ran is one
+# `main` actually carried.
+#
+# ── Newer than the last deploy ──────────────────────────────────────────────
+# The snapshot must also have been read after the most recent completed
+# `Deploy API` or `Deploy production` run on `main`, the only workflows that
+# apply migrations. Each triggers a publish when it finishes, so this fails
+# only in the minute or two that publish takes, or when it failed. Without it,
+# a failed post-deploy publish would leave the gates judging a PR against the
+# pre-deploy state until the 24-hour age limit ran out. The worst case is a PR
+# that removes a migration the deploy had just applied: it merges, and the
+# next `db push` meets a foreign row.
 
 runs:
   using: composite
@@ -38,18 +51,47 @@ runs:
           echo "::error::Could not list Migration snapshot runs. Does the job grant 'actions: read', and is .github/workflows/migration-snapshot.yml on main?"
           exit 1
         fi
-        RUN_ID="$(jq -r --arg repo "$REPO" '
-          [.workflow_runs[]
+        CANDIDATES="${RUNNER_TEMP}/migration-snapshot-candidates.txt"
+        jq -r --arg repo "$REPO" '
+          .workflow_runs[]
             | select(.head_branch == "main")
             | select(.head_repository.full_name == $repo)
             | select(.event == "workflow_run" or .event == "schedule" or .event == "workflow_dispatch")
-          ][0].id // empty' "$RUNS")"
+            | "\(.id) \(.head_sha) \(.run_started_at // .created_at)"' "$RUNS" > "$CANDIDATES"
+
+        RUN_ID=""
+        RUN_STARTED=""
+        while read -r id sha started; do
+          if ! status="$(gh api "repos/${REPO}/compare/${sha}...main" --jq .status < /dev/null)"; then
+            echo "::error::Could not check whether Migration snapshot run ${id}'s commit ${sha} is on main."
+            exit 1
+          fi
+          case "$status" in
+            identical|ahead) RUN_ID="$id"; RUN_STARTED="$started"; break ;;
+            *) echo "::warning::Ignoring Migration snapshot run ${id}: its commit ${sha} is not on main (compare status: ${status})." ;;
+          esac
+        done < "$CANDIDATES"
         if [ -z "$RUN_ID" ]; then
-          echo "::error::No successful Migration snapshot run on main. Run it: Actions → Migration snapshot → Run workflow (branch: main). If it fails, its log names the cause."
+          echo "::error::No successful Migration snapshot run from main. Run it: Actions → Migration snapshot → Run workflow (branch: main). If it fails, its log names the cause."
           exit 1
         fi
+
+        LATEST_DEPLOY=""
+        for wf in deploy-api.yml deploy-production.yml; do
+          if ! finished="$(gh api "repos/${REPO}/actions/workflows/${wf}/runs?branch=main&status=completed&per_page=1" --jq '.workflow_runs[0].updated_at // ""')"; then
+            echo "::error::Could not read the latest ${wf} run, so the snapshot cannot be shown to postdate it."
+            exit 1
+          fi
+          # ISO-8601 UTC timestamps of one fixed width compare as strings.
+          if [[ "$finished" > "$LATEST_DEPLOY" ]]; then LATEST_DEPLOY="$finished"; fi
+        done
+        if [[ -n "$LATEST_DEPLOY" && "$RUN_STARTED" < "$LATEST_DEPLOY" ]]; then
+          echo "::error::The newest Migration snapshot (run ${RUN_ID}, started ${RUN_STARTED}) predates the last deploy on main (finished ${LATEST_DEPLOY}), which may have applied migrations. The publish that deploy triggers is still running, or it failed. Re-run this check in a few minutes; if it stays red, read the Migration snapshot run's log: ${GITHUB_SERVER_URL}/${REPO}/actions/workflows/migration-snapshot.yml"
+          exit 1
+        fi
+
         echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
-        echo "Using the snapshot published by ${GITHUB_SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
+        echo "Using the snapshot published by ${GITHUB_SERVER_URL}/${REPO}/actions/runs/${RUN_ID} (started ${RUN_STARTED}; last deploy on main finished ${LATEST_DEPLOY:-never})"
 
     - name: Download the snapshot
       uses: actions/download-artifact@v4

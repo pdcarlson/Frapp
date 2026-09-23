@@ -368,17 +368,18 @@ See **[`docs/internal/environment/ENV_REFERENCE.md`](../../docs/internal/environ
 
 ### Bootstrap Secrets (GitHub only)
 
-Two secrets live directly in GitHub. They bootstrap the Infisical connection:
+Two GitHub secrets bootstrap the Infisical connection:
 
 | Secret                          | Purpose                                           |
 | ------------------------------- | ------------------------------------------------- |
 | `INFISICAL_MACHINE_IDENTITY_ID` | Universal-auth machine identity for Infisical      |
 | `INFISICAL_CLIENT_SECRET`       | Client Secret for Infisical machine identity auth |
 
-They, like every other GitHub secret here, are **environment** secrets on environments restricted
-to `main`, never repository secrets. A repository secret is readable from any branch, because a
-branch's own workflow definitions run on its pushes and pull requests (#2518). Nothing a pull
-request triggers reads a secret. Roster, environments and current state:
+The other GitHub secrets are the provider API keys, the release PAT and the base-sync App pair.
+Every one of them belongs to an **environment** restricted to `main`, never to repository scope. A
+repository secret is readable from any branch, because a branch's own workflow definitions run on
+its pushes and pull requests (#2518). Nothing a pull request triggers reads a secret. Moving the
+secrets is the owner's #2583. Roster, environments and current state:
 `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.
 
 ### Local Development

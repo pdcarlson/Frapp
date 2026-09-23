@@ -77,9 +77,8 @@ import {
 import { join } from "node:path";
 
 import { fetchAppliedMigrations, readLocalMigrations } from "./check-migration-drift.mjs";
-import { getEnvironment } from "./lib/environments.mjs";
 import { resilientFetch } from "./lib/http.mjs";
-import { describeSnapshot, loadSnapshot } from "./lib/migration-snapshot.mjs";
+import { openSnapshot } from "./lib/migration-snapshot.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 // Files are moved here, not copied and deleted: a rename inside one filesystem
@@ -533,11 +532,10 @@ function fetchFromFile(path) {
  * unreadable production state means this gate verified nothing.
  */
 function snapshotSource(path) {
-  const projectRef = getEnvironment("production").supabaseProjectRef;
   try {
-    const loaded = loadSnapshot(path, { requireRefs: [projectRef] });
-    console.log(`Production's applied state: ${describeSnapshot(loaded.snapshot, loaded.ageHours)}.`);
-    return { fetchImpl: loaded.fetchImpl, accessToken: "snapshot", projectRef };
+    const opened = openSnapshot(path, ["production"]);
+    console.log(`Production's applied state: ${opened.description}.`);
+    return { fetchImpl: opened.fetchImpl, accessToken: "snapshot", projectRef: opened.refs.production };
   } catch (thrown) {
     console.error(`::error::Could not read production's applied migrations: ${thrown.message}.`);
     process.exit(1);

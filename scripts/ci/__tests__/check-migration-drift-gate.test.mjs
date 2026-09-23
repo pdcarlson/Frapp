@@ -9,6 +9,7 @@ import {
   readMigrationsAtRef,
   runDriftGate,
 } from "../check-migration-drift-gate.mjs";
+import { buildSnapshot, snapshotFetch } from "../lib/migration-snapshot.mjs";
 import { makeFetchMock } from "./helpers.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -444,4 +445,23 @@ test("the summary explains a foreign migration blocks db push", () => {
 
   assert.match(summary, /blocks `supabase db push`/);
   assert.match(summary, /20260228000000/);
+});
+
+test("a snapshot's grace runs from its capture time: a migration that landed after it is in grace", async () => {
+  // #2518: in CI the applied state is a published snapshot, and the CLI passes
+  // its capture time as nowMs. A migration that reached main after the capture
+  // cannot be in the snapshot, so it must never read as overdue, however long
+  // ago (by the wall clock) it landed. Measured from now, it did: the false
+  // "never reached staging" this pins.
+  const capturedMs = NOW - 3 * HOUR;
+  const snapshot = buildSnapshot({
+    capturedAt: new Date(capturedMs).toISOString(),
+    environments: [
+      { name: "staging", supabaseProjectRef: "examplestagingref01", migrations: applied(MAIN.slice(0, 2)) },
+    ],
+  });
+  // MAIN[2] landed 2h ago: after the capture, and well past the 30-minute grace by the wall clock.
+  const args = { fetchImpl: snapshotFetch(snapshot), accessToken: "snapshot" };
+  assert.equal(await runDriftGate(gateArgs({ ...args, nowMs: capturedMs })), 0);
+  assert.equal(await runDriftGate(gateArgs({ ...args, nowMs: NOW })), 1, "measured from now it would read as drift");
 });

@@ -431,11 +431,15 @@ jobs:
           # deploy in #1330.
           CHANGED="${RUNNER_TEMP:-/tmp}/order-changed-paths.txt"
 
-          # A dispatch exists to exercise the snapshot path, so it always takes
-          # it.
+          # A dispatch always downloads the snapshot, which exercises the
+          # download action's checks (commit on main, newer than the last
+          # deploy). It does NOT exercise this gate's reading of it: head and
+          # base are both `main` on a dispatch, so the script returns through
+          # its fast path before loading the file. The migration-drift job on
+          # the same dispatch does read and validate it.
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Manual dispatch — reading the snapshot regardless of the diff."
+            echo "Manual dispatch — downloading the snapshot regardless of the diff."
             exit 0
           fi
 

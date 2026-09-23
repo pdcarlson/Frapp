@@ -23,11 +23,19 @@ import { fileURLToPath } from "node:url";
 // repo, without which the owner's move would break a consumer or tempt a
 // secret back into repository scope:
 //
-//   A. Nothing a pull request triggers references a secret.
+//   A. Nothing a pull request triggers references a secret. "A pull request"
+//      means every trigger that runs definitions the PR's branch controls, not
+//      only `pull_request` (PR_TRIGGERS).
 //   B. Every job that references a secret names one of CREDENTIAL_ENVIRONMENTS
 //      as a literal. A computed name could select an unprotected environment,
 //      and a workflow that names an environment that doesn't exist makes GitHub
 //      create it with no rules.
+//   C. No secret is referenced outside a job. A workflow-level `env:` may read
+//      `secrets` and hands the value to every job, and no environment can gate
+//      it, because environment secrets exist only inside a job that named one.
+//
+// "References a secret" includes the dynamic forms, `secrets['NAME']` and
+// `toJSON(secrets)`, which dump what a name would have picked out.
 //
 // `secrets.GITHUB_TOKEN` is exempt: it is the job's own token, minted per run,
 // scoped by `permissions:`, and not a stored secret.
@@ -38,10 +46,25 @@ import { fileURLToPath } from "node:url";
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOWS = join(REPO, ".github", "workflows");
 
-/** Restricted to `main` by the owner (#2518). A new one needs the same policy first. */
+/**
+ * The environments secrets may live in. Each must admit `main` only, which is
+ * the owner's #2583 (not yet done on 2026-09-23). A new one gets that rule
+ * before its first secret.
+ */
 export const CREDENTIAL_ENVIRONMENTS = ["automation", "production", "production-backup", "staging"];
 
-const PR_TRIGGERS = ["pull_request", "pull_request_target"];
+// Every trigger whose run executes workflow definitions a PR's branch
+// controls: its merge ref (the review events run on it too), or, for
+// `merge_group`, the queue branch that carries the PR's changes.
+// `pull_request_target` runs the base branch's copy, but a job there that
+// checks out the head is the classic injection, so it holds no secret either.
+const PR_TRIGGERS = [
+  "pull_request",
+  "pull_request_target",
+  "pull_request_review",
+  "pull_request_review_comment",
+  "merge_group",
+];
 
 /**
  * Comment-only lines blanked, so prose about a secret is not a reference to one.
@@ -109,9 +132,17 @@ function secretsOf(body) {
     for (const m of line.matchAll(/(?<![\w.-])secrets\.([A-Za-z_][A-Za-z0-9_]*)/g)) {
       if (m[1] !== "GITHUB_TOKEN") names.add(m[1]);
     }
+    // `secrets['X']` and `toJSON(secrets)` name no secret, and can read any.
+    if (/(?<![\w.-])secrets\s*\[/.test(line) || /\(\s*secrets\s*\)/.test(line)) names.add("(dynamic)");
     if (/^\s+secrets:\s*inherit\s*$/.test(line)) names.add("(inherit)");
   }
   return [...names];
+}
+
+/** The lines above `jobs:`: triggers, workflow-level `env:`, `concurrency:`. */
+function preambleOf(lines) {
+  const at = lines.findIndex((l) => /^jobs:\s*$/.test(l));
+  return at === -1 ? lines : lines.slice(0, at);
 }
 
 /** A job that calls a reusable workflow in this repo: `./.github/workflows/<file>`. */
@@ -125,7 +156,7 @@ const workflows = readdirSync(WORKFLOWS)
   .sort()
   .map((name) => {
     const lines = codeLines(readFileSync(join(WORKFLOWS, name), "utf8"));
-    return { name, triggers: triggersOf(lines), jobs: jobsOf(lines) };
+    return { name, triggers: triggersOf(lines), jobs: jobsOf(lines), preamble: preambleOf(lines) };
   });
 
 const byName = new Map(workflows.map((w) => [w.name, w]));
@@ -168,6 +199,19 @@ describe("workflow secrets scope (#2518)", () => {
         "its own branch's copy of the workflow, so the secret is readable from any branch. Read " +
         "what the job needs from something a main-only job published instead (the migration " +
         "gates read migration-snapshot.yml's artifact).",
+    );
+  });
+
+  it("C: no secret is referenced outside a job", () => {
+    const offenders = workflows
+      .map((wf) => [wf.name, secretsOf(wf.preamble)])
+      .filter(([, secrets]) => secrets.length > 0)
+      .map(([name, secrets]) => `${name}: ${secrets.join(", ")}`);
+    assert.deepEqual(
+      offenders,
+      [],
+      "A workflow-level reference to a secret reaches every job, and no environment can gate it. " +
+        "Move it into the job that needs it, which then names a main-only environment (rule B).",
     );
   });
 
@@ -231,6 +275,7 @@ describe("workflow secrets scope (#2518)", () => {
         "      - run: echo ${{ secrets.X }} ${{ secrets.GITHUB_TOKEN }}",
         "      - run: node scripts/scan-secrets.mjs",
         '      - run: echo "#1" ${{ secrets.AFTER_A_HASH }}',
+        "      - run: echo '${{ toJSON(secrets) }}' ${{ secrets['BRACKETED'] }}",
         "      # ${{ secrets.IN_A_COMMENT }}",
         "  b:",
         "    environment: ${{ github.ref_name }}",
@@ -240,11 +285,14 @@ describe("workflow secrets scope (#2518)", () => {
     );
     assert.deepEqual(triggersOf(lines), ["pull_request", "push"]);
     const [a, b] = jobsOf(lines);
-    assert.deepEqual(secretsOf(a.body), ["X", "AFTER_A_HASH"]);
+    assert.deepEqual(secretsOf(a.body), ["X", "AFTER_A_HASH", "(dynamic)"]);
     assert.deepEqual(environmentOf(a.body), { name: "automation", literal: true });
     assert.deepEqual(secretsOf(b.body), ["(inherit)"]);
     assert.equal(environmentOf(b.body).literal, false);
     assert.equal(reusableCallOf(b.body), "release.yml");
     assert.deepEqual(triggersOf(codeLines("on: [push, pull_request]\njobs:\n")), ["push", "pull_request"]);
+    const withEnv = codeLines("on: push\nenv:\n  T: ${{ secrets.WORKFLOW_LEVEL }}\njobs:\n  a:\n    runs-on: x\n");
+    assert.deepEqual(secretsOf(preambleOf(withEnv)), ["WORKFLOW_LEVEL"]);
+    assert.deepEqual(secretsOf(jobsOf(withEnv)[0].body), []);
   });
 });

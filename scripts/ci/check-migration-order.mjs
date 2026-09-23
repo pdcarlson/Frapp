@@ -101,7 +101,7 @@ import {
   MIGRATIONS_PREFIX,
 } from "./check-migration-drift-gate.mjs";
 import { ENVIRONMENTS, loadEnvironments } from "./lib/environments.mjs";
-import { describeSnapshot, loadSnapshot } from "./lib/migration-snapshot.mjs";
+import { openSnapshot, SNAPSHOT_WORKFLOW } from "./lib/migration-snapshot.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
@@ -498,9 +498,12 @@ export async function runOrderGate({
   const local = classifyLocalOrder({ introduced, surviving });
   log(`  Newest migration already on the base branch: ${local.floor ?? "none"}.`);
 
+  // Set once the snapshot is read, so the summary can say how current it is.
+  let snapshotNote = null;
   const finish = (results) => {
     const outcome = decideOrderOutcome({ local, results, introduced, removed });
-    writeSummary(buildOrderSummary({ introduced, removed, local, results, outcome, baseRef }));
+    const summary = buildOrderSummary({ introduced, removed, local, results, outcome, baseRef });
+    writeSummary(snapshotNote ? `${summary}\n\n${snapshotNote}` : summary);
     if (!outcome.ok) {
       error(`::error::${outcome.message.split("\n")[0]}`);
       error(outcome.message);
@@ -546,14 +549,20 @@ export async function runOrderGate({
   let readToken = accessToken;
   if (snapshotPath) {
     try {
-      const loaded = loadSnapshot(snapshotPath, {
-        nowMs,
-        requireRefs: ENVIRONMENTS.filter((label) => resolved[label]).map(
-          (label) => resolved[label].supabaseProjectRef,
-        ),
-      });
-      log(`  Applied state: ${describeSnapshot(loaded.snapshot, loaded.ageHours)}.`);
-      readFetch = loaded.fetchImpl;
+      const opened = openSnapshot(
+        snapshotPath,
+        ENVIRONMENTS.filter((label) => resolved[label]),
+        { nowMs, environments: resolved },
+      );
+      log(`  Applied state: ${opened.description}.`);
+      // A manual ledger change (a `migration repair`, an `--include-all`
+      // apply) triggers no publish, so this state can predate it. Say so where
+      // the verdict is read.
+      snapshotNote =
+        `> Applied state is the ${opened.description}. If a database's migration ledger changed ` +
+        `since then outside a deploy (a manual repair or apply), run \`${SNAPSHOT_WORKFLOW}\` on ` +
+        `\`main\` and re-run this check.`;
+      readFetch = opened.fetchImpl;
       readToken = "snapshot";
     } catch (thrown) {
       // One row, not one per environment: the snapshot is a single source, and
@@ -664,6 +673,12 @@ function fetchFromFile(path) {
 const isDirectRun = process.argv[1] && process.argv[1].endsWith("check-migration-order.mjs");
 if (isDirectRun) {
   const appliedFrom = getArg("--applied-from");
+  if (appliedFrom && getArg("--snapshot")) {
+    // Same refusal as check-migration-replay.mjs: the snapshot would silently
+    // win, and an incident replay would check the wrong state.
+    console.error("Error: --applied-from and --snapshot are two sources for one answer; pass one.");
+    process.exit(2);
+  }
   process.exit(
     await runOrderGate({
       baseRef: getArg("--base") ?? process.env.ORDER_GATE_BASE_REF,

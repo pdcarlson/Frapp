@@ -27,7 +27,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { SUPABASE_PROJECT_REF_PATTERN } from "./environments.mjs";
+import { getEnvironment, SUPABASE_PROJECT_REF_PATTERN } from "./environments.mjs";
 
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 
@@ -39,16 +39,18 @@ export const SNAPSHOT_FILE_NAME = "migration-snapshot.json";
 export const SNAPSHOT_WORKFLOW = ".github/workflows/migration-snapshot.yml";
 
 /**
- * How old a snapshot may be before a consumer refuses it.
+ * How old a snapshot may be before a consumer refuses it. A backstop, not the
+ * main freshness rule.
  *
- * The publisher runs after every `Deploy API` and `Deploy production` run, the
- * only jobs that apply migrations, plus a 4-hourly schedule as a backstop.
- * Scheduled runs here start hours late (the 06:30 `db-backup.yml` cron started
- * at 11:52Z on 2026-09-23), so a 24-hour limit spans a missed day of schedule
- * without spanning a broken publisher for long. When the publisher does break,
- * every PR that touches a migration goes red naming it. That is the loud
- * failure the injected credential used to produce, moved to where it is
- * visible.
+ * The main rule lives in `.github/actions/download-migration-snapshot`: the
+ * snapshot must have been read after the latest completed `Deploy API` or
+ * `Deploy production` run on `main`, the only workflows that apply migrations.
+ * Each of them triggers a publish, so a failed or lagging post-deploy publish
+ * turns the gates red within minutes, naming the publisher. This limit covers
+ * the rest: an apply made outside those workflows, when nothing deploys for a
+ * day and the 4-hourly schedule is also failing. Scheduled runs here start hours
+ * late (the 06:30 `db-backup.yml` cron started at 11:52Z on 2026-09-23), so 24
+ * hours spans a missed day of schedule.
  */
 export const DEFAULT_MAX_AGE_HOURS = 24;
 
@@ -208,6 +210,33 @@ export function loadSnapshot(
     );
   }
   return { snapshot, fetchImpl: snapshotFetch(snapshot), ageHours: freshness.ageHours };
+}
+
+/**
+ * `loadSnapshot` for the named environments of `.github/environments.json`,
+ * which is what every gate wants: their refs, the snapshot's fetch stand-in, a
+ * log line, and `capturedMs`, the moment the state was read. A consumer that
+ * measures time (the drift gate's grace window) measures it from `capturedMs`,
+ * not from now: the snapshot cannot know about anything after it.
+ */
+export function openSnapshot(path, names, { nowMs = Date.now(), environments, readFile } = {}) {
+  const refs = {};
+  for (const name of names) {
+    const env = environments ? environments[name] : getEnvironment(name);
+    if (!env) throw new Error(`No "${name}" environment to look up in the migration snapshot.`);
+    refs[name] = env.supabaseProjectRef;
+  }
+  const loaded = loadSnapshot(path, {
+    nowMs,
+    requireRefs: Object.values(refs),
+    ...(readFile ? { readFile } : {}),
+  });
+  return {
+    ...loaded,
+    refs,
+    capturedMs: Date.parse(loaded.snapshot.capturedAt),
+    description: describeSnapshot(loaded.snapshot, loaded.ageHours),
+  };
 }
 
 /** One line for logs: where the data came from and how old it is. */

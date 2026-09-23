@@ -189,6 +189,14 @@ publishes from `main` after every deploy. When that snapshot is stale, they fail
 and name the publisher
 ([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../internal/ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets)).
 
+**After you change a migration ledger by hand, re-publish before you re-run a PR.**
+A `migration repair`, an `--include-all` apply or a hand-applied file triggers no
+publish, so the PR checks keep judging against the state from before your change.
+The fix PR you open next then fails, for example with `stranded-migrations`
+after a repair. Run Actions → **Migration snapshot** → Run workflow on `main`,
+wait for it to go green, then re-run the PR's checks. `migration-order`'s summary
+names the snapshot's capture time, so you can check which state it read.
+
 ### `migration-order` — the required one
 
 It asks whether a migration **this change introduces** sorts before a version

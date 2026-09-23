@@ -849,7 +849,7 @@ jobs:
       # The called job names the `automation` environment, and GitHub hands it
       # that environment's RELEASE_GITHUB_TOKEN in preference to this one. This
       # pass-through only matters while the PAT is still a repository secret,
-      # before the #2518 move. Empty falls back to GITHUB_TOKEN inside
+      # before the owner's #2583 move. Empty falls back to GITHUB_TOKEN inside
       # release.yml. A user PAT is what actually creates refs/tags when the
       # live SHA's workflow tree differs from main (run 34254679932).
       RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}
