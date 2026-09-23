@@ -36,7 +36,7 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 
     | Step | Worst seed | Clears 3:1 |
     | --- | --- | --- |
-    | `accent-9` | 4.70:1 (`#800000`) | yes, but with none of `accent-11`'s headroom: the engine lifts a dark fill only as far as its 3:1 floor needs, and the worst measures 3.78:1 on `--popover` |
+    | `accent-9` | 4.70:1 (`#800000`) | yes, but with none of `accent-11`'s headroom: the engine's floor guarantees 3:1 and no more, and the worst, `#800000`'s generated `#F42F22`, is a fill it leaves alone, at 3.78:1 on `--popover` |
     | `accent-8` | 2.98:1 (`#000000`) | no — fails on 3 (`#000000` / `#C0C0C0` / `#FFFFFF`, which all derive the same ring) |
     | `accent-11` | 8.48:1 (`#BF0A30`) | yes — all 19 |
 

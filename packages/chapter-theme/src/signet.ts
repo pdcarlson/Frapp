@@ -84,8 +84,10 @@ const MIN_FILL_CONTRAST = AA_LARGE;
 
 /**
  * How far one lift step raises the failing fill's OKLCH lightness. Small enough that the
- * lifted scale lands just past 3:1 rather than well beyond it, which keeps the
- * brand shift to the minimum the floor requires.
+ * lift stops within one step of the smallest one `scaleClears` accepts, which
+ * keeps the brand shift to the minimum §8 requires. Where that minimum lands
+ * is `scaleClears`' doing, not this step's: for the corpus's dark seeds it is
+ * the label check, which leaves the fill near 3.8:1 on `--popover`.
  */
 const LIFT_STEP = 0.002;
 
@@ -184,7 +186,7 @@ function ratio(foreground: string, background: string): number {
  * possible seed rather than most of them. It cannot itself fail: the two curves
  * cross at luminance ≈0.179, where both score ≈4.58:1, so the better of the pair
  * is always ≥4.5:1 for any color. The generator's own choice is kept whenever it
- * is legible, which is the common case and kept for the house seed (`#2B2009`).
+ * is legible, which is the common case and kept for the house seed (`#292109`).
  */
 function onPrimaryFor(generatedContrast: string, primary: string): string {
   if (ratio(generatedContrast, primary) >= MIN_TEXT_CONTRAST) {
@@ -252,7 +254,9 @@ function onPrimaryOf(generated: Generated): string {
  * hover darker than a fill this light, by about a fifth in luminance, so no
  * label clears 4.5:1 on both at the lift where hover first reaches 3:1: white
  * fails on the fill, and black on the hover. The lift runs on until black
- * clears the hover too.
+ * clears the hover too. It can also start a lift on its own, for a mid-tone
+ * whose fill and hover already clear 3:1 but whose black label misses 4.5:1 on
+ * the hover (`#9966CC` moves to `#9D6AD0`); those shifts are small.
  *
  * Exported only so `signet.spec.ts` can judge a candidate by the same measure
  * the lift does.

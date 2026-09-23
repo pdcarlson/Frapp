@@ -106,9 +106,10 @@ describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 a
     // accent-9 was the original defect: it failed on `#006400`, `#8B0000`,
     // `#8B4513` and `#BF0A30`. Since #2541 the engine holds the fill to 3:1 on
     // every ladder surface (accent-engine.md §8), so it no longer fails here.
-    // It is still the wrong token for the whole indicator: the engine lifts a
-    // dark fill only as far as the floor needs, so its worst seed (`#800000`,
-    // 4.70:1) has none of the 8:1 headroom the margin test above demands.
+    // It is still the wrong token for the whole indicator: the floor guarantees
+    // 3:1 and nothing more, and its worst seed, `#800000`, is one the engine
+    // leaves alone (its generated `#F42F22` already clears), at 4.70:1 with
+    // none of the 8:1 headroom the margin test above demands.
     expect(failingSeeds("--primary")).toEqual([]);
     expect(worstOn("--primary", SURFACE.background)).toBeLessThan(8);
 

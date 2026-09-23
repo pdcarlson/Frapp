@@ -84,8 +84,10 @@ export const FOCUS_RING =
  *
  * `--primary` failed on 4 seeds (worst 1.87:1) until #2541, when the engine
  * began lifting a dark fill until it clears 3:1 on every ladder surface
- * (`accent-engine.md` §8). It lifts only as far as the floor needs, so accent-9
- * still has nowhere near accent-11's headroom as a whole indicator.
+ * (`accent-engine.md` §8). The floor guarantees 3:1 and nothing more, and a
+ * seed that already clears it keeps its fill: the worst is `#800000`, whose
+ * generated `#F42F22` the engine leaves as it is. So accent-9 still has
+ * nowhere near accent-11's headroom as a whole indicator.
  *
  * `--ring` was the token here until the greenfield surface ladder
  * (foundations.md §2) lifted `--background` from `#0E0D0B` to `#131211`. Its

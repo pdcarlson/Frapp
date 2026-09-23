@@ -410,7 +410,7 @@ describe("deriveSignetPalette", () => {
       expect(palette["--signet-accent-primary"]).toBe("#D75748");
       expect(palette["--signet-accent-hover"]).toBe("#C84A3C");
       expect(ratio("#C84A3C", LADDER.popover)).toBeGreaterThanOrEqual(3);
-      // The label turns black. White cleared AA on #2541's `#C34437` (4.95:1),
+      // The label turns black. White cleared AA on #2541's `#C34437` (5.00:1),
       // but no label reads at 4.5:1 on both a fill and a hover this far apart
       // once the hover clears 3:1 (accent-engine.md §8), so the lift runs on
       // until black clears the hover.
@@ -657,8 +657,8 @@ describe("accent-text is the foreground-safe role", () => {
 
   it("shows why accent-primary is not interchangeable with it", () => {
     // Not a defect in the engine — step 9 is doing its specified job as a fill,
-    // paired with `on-primary`, and clears the 3:1 fill floor. The lifted fills
-    // sit just past 3:1 by design, so this pins the reason a consumer must not
+    // paired with `on-primary`, and clears the 3:1 fill floor. The floor holds
+    // it to 3:1, not to 4.5:1, so this pins the reason a consumer must not
     // reach for it when it needs a text foreground.
     const illegible = REAL_CHAPTER_COLORS.filter((seed) => {
       const primary =
