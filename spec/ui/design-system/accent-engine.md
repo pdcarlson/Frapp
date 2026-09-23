@@ -63,7 +63,7 @@ The generated scale is computed once and cached on the chapter (tenant) record �
 
 | Aspect | Behavior |
 |---|---|
-| Engine changes | Reach a chapter only when its palette is next written, because nothing regenerates on read. A row written before the §8 fill floor ([#2541](https://github.com/pdcarlson/Frapp/issues/2541)) for a seed that floor lifts (9 of the 19 §8 pins) keeps its sub-3:1 fill until a save or recompute; recomputing every stored row is the backfill [#1165](https://github.com/pdcarlson/Frapp/issues/1165) scopes. |
+| Engine changes | Reach a chapter only when its palette is next written, because nothing regenerates on read. A row written before the §8 fill floor ([#2541](https://github.com/pdcarlson/Frapp/issues/2541)) keeps the fill it was written with, which can be under 3:1 (§6 says which rows), until a save or recompute; recomputing every stored row is the backfill [#1165](https://github.com/pdcarlson/Frapp/issues/1165) scopes. |
 | Storage | `chapters.theme_palette` (jsonb), holding the `--signet-*` role tokens. It held the legacy web token map alongside them until the #920 slice-9 cutover; the namespace is what let the two ship side by side, because the legacy web reader iterated every key of the column (§6). The column is unconstrained and no backfill prunes it, so a row written before the cutover still carries the dead keys — inert, and kept off `:root` by the allow-lists in the Delivery rows. |
 | Regenerate when | An admin changes the accent, through **either** door: `PATCH /chapters/:id/config` carrying `branding.colors` (the onboarding wizards), or `PATCH /v1/chapters/current` carrying `accent_color` (the Settings accent editor, and the only path that UI actually uses). Also via the manual recompute endpoint. Never on read, never client-side. |
 | Recompute endpoint | `POST /chapters/:id/theme-palette` (`apps/api/src/interface/controllers/chapter-config.controller.ts`), guarded by `CHAPTER_CONFIG_MANAGE`. See [`../../behavior/chapter-config.md`](../../behavior/chapter-config.md). |
@@ -154,17 +154,20 @@ today.
   | | Status |
   | --- | --- |
   | The deleted legacy engine's eight keys | **Inert, permanently — no migration is needed and none ever will be.** Neither client can reach them: `use-chapter-theme.ts` gates on the seven `--signet-accent-*` roles and then applies only `signetAccentSemanticVars`' fixed output, and `chapter-branding.ts` reads `--signet-accent-text` by name. A pruning migration would be tidiness, not correctness. |
-  | A `--signet-*` map written before the §8 fill floor ([#2541](https://github.com/pdcarlson/Frapp/issues/2541)) | **An accessibility gap, not cosmetic.** The keys are all present, so neither client falls back; they paint the stored `accent-primary`, which for a seed the §8 floor lifts is under 3:1 (WCAG 1.4.11) on the ladder: crimson's `#8B0000` measures 1.50:1 on `--popover`. A dark seed the floor leaves alone (`#003087`, `#800000`) stored a fill that already clears. That fill carries state on its own in the switch track, the focus border and poll selection. A key-presence check passes these rows; only a recompute fixes them. |
+  | A `--signet-*` map written before the §8 fill floor ([#2541](https://github.com/pdcarlson/Frapp/issues/2541)) | **An accessibility gap, not cosmetic.** The keys are all present, so neither client falls back; they paint the stored `accent-primary`, which can be under 3:1 (WCAG 1.4.11) on the ladder: crimson's `#8B0000` measures 1.50:1 on `--popover`. That fill carries state on its own in the switch track, the focus border and poll selection. A key-presence check passes these rows; only a recompute fixes them. |
   | The absent `--signet-*` keys | **Real but cosmetic, and self-healing.** A chapter that chose crimson renders house gold on **both** clients until something recomputes it. Web applies nothing at all, so `signet.css`'s house-gold defaults stand. Mobile falls back to `resolveChapterAccentColor`, which keeps the chapter's own `accent_color` **only when it already clears 4.5:1 on `--card` (`#211E1A`)** and otherwise substitutes the fallback ladder, house gold first — and 14 of the 18 colours the seed directory has carried fail that check (`#8B0000` at 1.66:1, `#003087` at 1.40:1, `#000000` at 1.27:1). Do not scope a fix to web on the assumption mobile is unaffected. Neither breaks, and any save or recompute fixes the row for good. |
 
   Bound on which rows are affected: `deriveSignetPalette` entered `buildChapterPalette` in #1147
   (`def3efd`, 2026-08-20), so **only a chapter whose palette was last written before that date can
   be missing the keys** — the set is closed and shrinks on its own with every accent save. The
-  stale-fill set is a different one: **every chapter whose seed the §8 floor lifts and whose
-  palette was last written between #1147 and #2541 merging**. A row missing the keys paints house
-  gold on both clients, not a stored fill, so it belongs to the first set. The stale-fill set also
-  closes and shrinks with each save, but a backfill scoped to missing keys leaves it untouched, so
-  #1165 has to recompute every row.
+  stale-fill set is a different one: **every row with the keys whose stored `accent-primary` is
+  under 3:1 on the ladder**. Judge it from the stored value, not the seed. #2152 (`057bb1c`,
+  2026-09-10) moved the generator's background from `#0E0D0B` to `#131211`, so a row written before
+  then can hold a fill today's engine never produces for its seed: maroon `#800000` stored itself,
+  1.37:1 on `--popover`, where it now paints `#F42F22`. A row missing the keys paints house gold on
+  both clients, not a stored fill, so it belongs to the first set. The stale-fill set also closes
+  and shrinks with each save, but a backfill scoped to missing keys leaves it untouched, so #1165
+  has to recompute every row.
 - `resolveChapterAccentColor` survives only at the two call sites in the residual table above; the
   mobile fallback goes when every chapter has been through one save.
 
