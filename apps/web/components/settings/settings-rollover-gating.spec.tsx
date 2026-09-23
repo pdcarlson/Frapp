@@ -252,10 +252,18 @@ describe("the accent preview reports its own legibility", () => {
     // can't show it: on today's ladder `onHouse` wins for every colour the
     // resolver keeps (keeping it takes 4.5:1 on the dark card, past the two
     // tones' crossover), and `onHouse` is also the fallback a hard-coded
-    // swatch would reach for. So the ink is a sentinel neither tone is.
+    // swatch would reach for. So for the typed colour, and only for it, the
+    // ink is a sentinel neither tone is, with a failing ratio: the swatch must
+    // paint that ink and the warning must print that ratio, which pins both
+    // to one call on one input.
+    const real = accentPreviewInk.previewInkFor;
     const spy = vi
       .spyOn(accentPreviewInk, "previewInkFor")
-      .mockReturnValue({ ink: "#123456", ratio: 7 });
+      .mockImplementation((fill) =>
+        fill.toUpperCase() === "#0086FE"
+          ? { ink: "#123456", ratio: 3.27 }
+          : real(fill),
+      );
     try {
       const user = userEvent.setup();
       render(<SettingsPage />);
@@ -264,6 +272,9 @@ describe("the accent preview reports its own legibility", () => {
       await user.clear(hex);
       await user.type(hex, "#0086FE");
       expect(screen.getByText("Preview")).toHaveStyle({ color: "#123456" });
+      expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
+        /reads at 3\.2:1/,
+      );
     } finally {
       spy.mockRestore();
     }
