@@ -88,7 +88,7 @@ All API errors follow a consistent shape:
   OAuth callback (`GET /v1/discord/connect/callback`), whose capability is its single-use `state`.
 - All data access is scoped by `chapter_id`. No cross-chapter data access is possible through any endpoint.
 - Webhook endpoints (Stripe) verify signatures before processing. Invalid signatures return 401 and are logged as security events.
-- File uploads are scanned for allowed MIME types and extensions via `@repo/validation` (kinds `image` / `proof` / `document` / `archive`). Disallowed types are rejected before a signed URL is issued; storage buckets enforce the same MIME list and a size cap on the upload itself — 25 MB for the member-upload kinds, with `archive` deliberately held off `MAX_UPLOAD_BYTES` at 100 MB for the Discord importer.
+- File uploads are checked for allowed MIME types and extensions via `@repo/validation` before a signed URL is issued; storage buckets enforce the same MIME list and a size cap on the upload itself. Kinds: [`content-validation.md` § 1](../../docs/internal/security/content-validation.md#1-allowed-content-types); the member-upload cap: [§ 3](../../docs/internal/security/content-validation.md#3-size); per-bucket limits: [`spec/architecture/README.md` § 7](../architecture/README.md#7-storage-supabase-storage).
 - Rate limiting is applied per user per endpoint to prevent abuse. Default: 100 requests/minute for read endpoints, 30 requests/minute for write endpoints. Every handler holds its own counter per caller, so these are per-endpoint ceilings rather than one shared pool. Selected routes carry stricter static limits (table below); the limits are **not** chapter-configurable — no product surface exposes them. Exception: `POST /v1/webhooks/stripe` is exempt from rate limiting — Stripe delivers bursts from a small shared IP pool and the route is unauthenticated, so IP-keyed throttling would 429 real billing events; signature verification (invalid → 401) is the abuse control on that route.
 
 ### Per-route rate limits
@@ -103,7 +103,7 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | `POST /v1/invites/redeem` | 10/min | Token-guessing surface. |
 | `POST /v1/events`, `PATCH /v1/events/:id` | 10/min | Each one pushes a notification to every member of the chapter. |
 | The signed-upload-URL routes — `POST /v1/documents/upload-url`, `/v1/backwork/upload-url`, `/v1/channels/:id/upload-url`, `/v1/chapters/current/logo-url`, `/v1/service-entries/proof-upload-url`, `/v1/users/me/avatar-url` | 10/min | Mints signed object-storage URLs. The rule is per-mechanism rather than per-module, but it is a convention applied by hand at each handler — nothing inherits it, and `POST /v1/discord-imports/:id/upload-urls` currently mints signed URLs on the default ([#1709](https://github.com/pdcarlson/Frapp/issues/1709)). |
-| `GET /v1/search` | 20/min | Four full-text (`websearch_to_tsquery`) scans per call. |
+| `GET /v1/search` | 20/min | One full-text scan per search source, per call ([`search.md`](search.md#global-search)). |
 
 `POST /v1/points/adjust` is deliberately absent: its abuse control is the adjustments-per-hour anti-fraud rule in the points service, not the throttler. [`points.md`](points.md) § Anti-Fraud owns the limit and its scoping. `POST /v1/channels/:id/messages` also fans out push notifications but keeps the 30/min default — it is the chat send path, and a lower ceiling would degrade normal use.
 - Passwords are never stored by Frapp. Authentication is delegated entirely to Supabase Auth.

@@ -15,7 +15,7 @@ For list query parameters named `limit` (or similar caps), keep `@IsInt()` on th
 
 ### Never trust the client
 
-The global `ValidationPipe` runs `whitelist: true` + `forbidNonWhitelisted: true`, registered in `configureApp()` (`apps/api/src/bootstrap.ts`) rather than in `main.ts` — see [`testing.md`](testing.md#6-e2e-scaffolding) § 6, "Boot through `configureApp()`, never by hand" — so an unexpected property is rejected with a 400 rather than silently dropped. Two conventions keep that baseline honest:
+The global `ValidationPipe` runs `whitelist: true` + `forbidNonWhitelisted: true` (where it is registered, and why nothing may set it up by hand: [`testing.md` § 6](testing.md#6-e2e-scaffolding), "Boot through `configureApp()`, never by hand"), so an unexpected property is rejected with a 400 rather than silently dropped. Two conventions keep that baseline honest:
 
 **Every request-DTO property needs a real constraint, not just a gate.** A property with no decorators at all is safe — whitelisting strips it before a service ever sees it. The dangerous shape is a property carrying only `@IsOptional()` / `@ValidateIf()` / `@Allow()`: the gate is enough to survive whitelisting, and then nothing checks the value. Put a type check behind every gate, and a range/length/enum bound wherever the column has a real domain — money and point amounts get bounds on **both** sides, and ids that reach a uuid column get `@IsUUID()` so a malformed value is a 400 at the edge instead of a 500 from Postgres. `apps/api/src/interface/dtos/dto-constraint-coverage.spec.ts` enforces **the gate rule** automatically across every DTO — it walks the directory, so a new `*.dto.ts` is covered the moment it lands, and it fails in CI naming the offending property. The other two rules on this line (bounds on both sides, `@IsUUID()` for uuid-backed ids) are **not** derived: the same file pins them with a hand-maintained table of specific properties, so adding a uuid-backed `@IsString()` id or an unbounded amount elsewhere passes CI. Add a row when you add such a field — and when you find one that is missing, that is a real bug, not a test-maintenance chore.
 
@@ -77,7 +77,7 @@ Lookups that take a chapter and a second `string` (name, code, hash) are **chapt
 Every protected endpoint runs through a consistent guard chain:
 
 1. **SupabaseAuthGuard** — validates the JWT from Supabase Auth.
-2. **ChapterGuard** — resolves the active chapter from the JWT `active_chapter_id` claim (`x-chapter-id` is a legacy fallback and never overrides the claim; a disagreement is a hard `403 chapter.context.mismatch`), then verifies membership in it. Full chain, the header/claim precedence rules, and the four tenancy-proof idioms: [`docs/internal/security/AUTHORIZATION_MODEL.md`](../internal/security/AUTHORIZATION_MODEL.md) § "1. The model in short".
+2. **ChapterGuard** — resolves the active chapter (claim/header precedence and the mismatch response: [`spec/behavior/multi-tenancy.md`](../../spec/behavior/multi-tenancy.md)), then verifies membership in it. Full chain and the four tenancy-proof idioms: [`AUTHORIZATION_MODEL.md` § 1. The model in short](../internal/security/AUTHORIZATION_MODEL.md#1-the-model-in-short).
 3. **PermissionsGuard** — checks permission metadata against the user's roles. When both the controller class and the route handler declare `@RequirePermissions(...)`, the guard **merges** them: the union of both lists must be satisfied (AND semantics across every listed permission). `@RequireAnyOfPermissions` on handler and class is evaluated as **two separate OR-groups** when both are present (the caller must match at least one permission in each group).
 
 ### Subscription enforcement (ChapterGuard)
@@ -99,7 +99,7 @@ Route markers live in `src/interface/decorators/subscription.decorator.ts`: `@Fr
 - **Billing recovery** — `BillingController`, and `POST /v1/invoices/:id/payment-intent` (dues collection *is* the recovery path for a locked chapter).
 - **Member safety** — `POST|GET|PATCH /v1/chat/reports`, `POST /v1/chat/reports/{id}/remove-message` (#2311) and `GET|POST|DELETE /v1/chat/blocks` (#2257). App Store Guideline 1.2 expects a UGC app to offer reporting and blocking, and has no billing exception: a member being harassed in a chapter whose card failed needs them exactly as much as one in a paying chapter. `@FreeTier()` would not hold — it lapses with the `past_due` grace window and never applies under `canceled`.
 
-`subscription.decorator.spec.ts` pins both the class-level roster and the route-level one. The `past_due_since` clock is set/cleared on Stripe webhook transitions in `BillingService` (set only on the into-`past_due` transition, so repeated events don't reset it; cleared on recovery).
+`subscription.decorator.spec.ts` pins every class-level marker and every route-level one (`@FreeTier()` and `@SubscriptionExempt()` alike); keep it exhaustive against `grep -rnE '^\s*@(FreeTier|SubscriptionExempt)\(\)' src/interface/controllers`, run from `apps/api`: an unindented hit is a class marker, an indented one a route marker. The `past_due_since` clock is set/cleared on Stripe webhook transitions in `BillingService` (set only on the into-`past_due` transition, so repeated events don't reset it; cleared on recovery).
 
 Interceptors:
 
@@ -161,7 +161,7 @@ Example: adding a `polls` module.
    - Add a controller in `src/interface/controllers/poll.controller.ts`.
    - Decorate endpoints with `@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)` and `@RequirePermissions(...)` as needed (for example `polls:create` to post a poll, `polls:view_all` for `GET /v1/polls` chapter-wide aggregates).
 
-   **Dashboard list endpoints (reference):** `GET /v1/polls` lists polls for the chapter (aggregate tallies; optional `channel_id`, `active`, `limit`). `GET /v1/points/transactions` lists chapter `point_transactions` for the Points Audit UI (`user_id`, `category`, `flagged`, `before`, `limit`). Both are chapter-scoped via `ChapterGuard`; those routes add `@RequirePermissions(polls:view_all)` / `@RequirePermissions(points:view_all)` on the handler **in addition to** the controller baseline `members:view` (merged by `PermissionsGuard`). The chapter-wide polls list is **not** on the default Member role (Treasurer, Vice President, Secretary, and President have it via seeds or wildcard); chapters can still grant `polls:view_all` through custom roles. Full behavior and query semantics: [`spec/behavior/points.md`](../../spec/behavior/points.md) and [`spec/behavior/polls.md`](../../spec/behavior/polls.md).
+   **Dashboard list endpoints (reference):** `GET /v1/polls` lists polls for the chapter (aggregate tallies; optional `channel_id`, `active`, `limit`). `GET /v1/points/transactions` lists chapter `point_transactions` for the Points Audit UI (`user_id`, `category`, `flagged`, `before`, `limit`). Both are chapter-scoped via `ChapterGuard`; those routes add `@RequirePermissions(polls:view_all)` / `@RequirePermissions(points:view_all)` on the handler **in addition to** the controller baseline `members:view` (merged by `PermissionsGuard`). The chapter-wide polls list is **not** on the default Member role ([which seeded roles carry it](../../spec/behavior/rbac.md#role-lifecycle)); chapters can still grant `polls:view_all` through custom roles. Full behavior and query semantics: [`spec/behavior/points.md`](../../spec/behavior/points.md) and [`spec/behavior/polls.md`](../../spec/behavior/polls.md).
 
 5. **Module wiring**
    - Create `PollModule` in `src/modules/poll/poll.module.ts`, providing controller, service, and repository implementation.
@@ -197,7 +197,7 @@ When adding new modules:
 The API surface is instrumented for observability:
 
 - Structured logging with request ID, user ID, chapter ID, method, path, status, latency. Nest `Logger` records from services include the request id via `RequestContextLogger` + ALS (`spec/behavior/observability.md` § Structured Logging / Request Tracing).
-- `/health` endpoint used by load balancers and uptime checks.
+- Health routes, what each returns, and which one Render and the deploy smoke checks poll: [`spec/behavior/observability.md` § Health Check](../../spec/behavior/observability.md#health-check).
 - Sentry init in `apps/api/src/instrument.ts` (first import from `main.ts`); 5xx via `AllExceptionsFilter` + `toReportableError`. Sentry owns the Node OpenTelemetry tracer (`skipOpenTelemetrySetup: false`). Do not add `SentryGlobalFilter`.
 
 When you add new modules:

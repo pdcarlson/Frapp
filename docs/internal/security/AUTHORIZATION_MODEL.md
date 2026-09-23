@@ -17,7 +17,7 @@ Related: [`SECURITY_FIXES.md`](SECURITY_FIXES.md) (history of applied fixes) ·
 ## 1. The model in short
 
 Frapp is multi-tenant **by chapter**. Every request carries a bearer token, and the active chapter
-comes from the JWT `active_chapter_id` claim (an `x-chapter-id` header is a legacy fallback). Three
+comes from the JWT `active_chapter_id` claim, with an `x-chapter-id` header fallback whose precedence [`multi-tenancy.md`](../../../spec/behavior/multi-tenancy.md) owns. Three
 guards compose, in this order:
 
 | Guard | Proves | Source |
@@ -302,20 +302,20 @@ The two things that bound this *through the API* — `assertChannelAccess` narro
 
 ### Storage buckets
 
-All **eight** buckets are declared `public = false` in IaC, so nothing is served by an unauthenticated
+Every bucket is declared `public = false` in IaC, so nothing is served by an unauthenticated
 URL:
 
-| Bucket | Declared in | MIME allowlist | Size cap |
-| --- | --- | --- | --- |
-| `branding`, `profiles` | `20260808204500_declare_dashboard_created_buckets.sql` | images | 25 MB |
-| `documents`, `backwork`, `chat` | same | per-bucket | 25 MB |
-| `service` (service proof) | `20260803231500_service_proof_bucket.sql` | images + `application/pdf` | 25 MB |
-| `reports` | `20260805133000_reports_bucket.sql` | `application/pdf` | 25 MB |
-| `chat-archive` (Discord import media) | `20260823124000_chat_archive_bucket.sql` | images, video, audio, documents, archives — **no SVG** | 100 MB |
+| Bucket | Declared in | MIME allowlist |
+| --- | --- | --- |
+| `branding`, `profiles` | `20260808204500_declare_dashboard_created_buckets.sql` | images |
+| `documents`, `backwork`, `chat` | same | per-bucket |
+| `service` (service proof) | `20260803231500_service_proof_bucket.sql` | images + `application/pdf` |
+| `reports` | `20260805133000_reports_bucket.sql` | `application/pdf` |
+| `chat-archive` (Discord import media) | `20260823124000_chat_archive_bucket.sql` | images, video, audio, documents, archives — **no SVG** |
 
 Clients never read a bucket directly; the API issues short-lived signed URLs after running the same
-route guards. Every bucket carries a MIME allowlist and a size cap. The table above is this document's
-summary of them; the declarations, the exact byte values and the reasoning behind each are owned once
+route guards. Every bucket carries a MIME allowlist and a size cap. The table above summarizes the
+allowlists; the declarations, the size caps and the reasoning behind each are owned once
 by [`spec/architecture/README.md`](../../../spec/architecture/README.md) § 7 — change them there, and
 keep this table to what a security reader needs. Note the five dashboard-created buckets were only
 brought into IaC by #690 — their pre-migration public/private state is tracked in #770.

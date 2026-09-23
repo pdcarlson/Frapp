@@ -41,8 +41,8 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
      agents and humans, and every pushed commit needs exact-SHA evidence. There is no CI Claude
      review or `claude-review-gate` check. Details:
      [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
-3. **Human review pass** — a convention, **not a merge gate**. Branch protection sets
-   `required_pull_request_reviews: null` and `required_conversation_resolution: false`. The local
+3. **Human review pass** — a convention, **not a merge gate**
+   ([`CONTRIBUTING.md` § PR review requirement policy](../../../CONTRIBUTING.md#pr-review-requirement-policy)). The local
    hook can also be deliberately bypassed with Git's `--no-verify`, a changed hooks path, or skipped
    installation, so a diff can still reach `main` without a review. Confirm live protection with
    `npm run configure:branch-protection:verify`; agents never apply it.

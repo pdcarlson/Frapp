@@ -196,16 +196,16 @@ Script implementations and unit tests live under [`scripts/ci/`](../../../../scr
 
 **CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed.
 
-**CD (deploy workflows)** uses Infisical-injected runtime secrets in `deploy-api.yml` (staging) and `deploy-production.yml` (production). Variable names are **unified** — no `_STAGING` / `_PRODUCTION` suffixes. Each workflow resolves secrets at runtime from Infisical using the environment slug for its target (`staging` for `main`, `prod` for a production deploy):
+**CD (deploy workflows)** uses Infisical-injected runtime secrets in `deploy-api.yml` (staging) and `deploy-production.yml` (production). Variable names are **unified** across environments ([`SECRETS_MANAGEMENT.md` § Key Design Principles](../../environment/SECRETS_MANAGEMENT.md#key-design-principles)). Each workflow resolves secrets at runtime from Infisical using the environment slug for its target (`staging` for `main`, `prod` for a production deploy):
 
 | Variable                 | Purpose                                                  |
 | ------------------------ | -------------------------------------------------------- |
-| `RENDER_DEPLOY_HOOK_URL` | Trigger API deploy (value differs per environment)       |
+| `RENDER_DEPLOY_HOOK_URL` | Trigger the **staging** API deploy (Infisical `staging` only; production deploys by commit through the Render API) |
 | `API_HEALTHCHECK_URL`    | Post-deploy health check (value differs per environment) |
 | `SUPABASE_ACCESS_TOKEN`  | Supabase CLI auth for migrations                         |
 | `SUPABASE_PROJECT_REF`   | Target DB for migrations (value differs per environment) |
 
-3 permanent GitHub repository secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, and `INFISICAL_PROJECT_ID`. No GitHub environment-scoped deploy secrets are required once the workflow is using `Infisical/secrets-action`.
+3 permanent GitHub repository secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, and `INFISICAL_PROJECT_ID`. No GitHub environment-scoped deploy secrets are required: the workflows pull them from Infisical at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)).
 
 See `docs/internal/environment/ENV_REFERENCE.md` for the complete variable mapping.
 

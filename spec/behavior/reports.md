@@ -7,7 +7,7 @@ Admins with `reports:export` permission can generate and download reports from t
 | Report            | Scope                                                                     | Columns                                                                                     |
 | ----------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | **Attendance**    | Per event or date range                                                   | Member name, event name, date, status (PRESENT/ABSENT/EXCUSED/LATE), check-in time          |
-| **Points**        | Per member or chapter-wide; optional time window (all / semester / month) | Member name, total points, breakdown by category (ATTENDANCE, SERVICE, STUDY, MANUAL, FINE) |
+| **Points**        | Per member or chapter-wide; optional time window (all / semester / month) | Member name, total points, breakdown by [category](../architecture/README.md#points--events) |
 | **Member roster** | Current members                                                           | Name, email, role(s), join date, point balance                                              |
 | **Service hours** | Per member or chapter-wide                                                | Member name, date, duration, description, status (APPROVED/PENDING/REJECTED)                |
 
