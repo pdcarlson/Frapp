@@ -596,19 +596,13 @@ export interface TerminalRowOutcome {
    */
   placement: RowPlacement;
   /**
-   * `true` only when this write landed on disk and the entry has at least
-   * `DURABLE_NOTICE_MARGIN_MS` left before its age bound: the one case in
-   * which copy may promise the row survives the next rebuild, which is the
-   * reconnect that follows the outage, minutes away. Like every entry it is
-   * restored only until its bound, so a reload or eviction after that prunes
-   * it.
-   *
-   * `false` promises nothing either way. Either the write did not land
-   * (storage blocked or full, or no viewer to file it under), and a rebuild
-   * restores at most what an earlier write left; or it landed but the entry is
-   * near or past its bound (a Retry pressed about a day after the dispatch
-   * keeps the dispatch's timestamp), and a rebuild restores it only until the
-   * bound.
+   * Whether copy may promise the row survives the next rebuild: the
+   * reconnect that follows the outage, minutes away. `true` only when this
+   * write landed on disk and, for an `unconfirmed` entry, at least
+   * `DURABLE_NOTICE_MARGIN_MS` remains before its age bound. `false` promises
+   * nothing either way. What any later rebuild restores, and for how long, is
+   * the store's rule, stated once in `spec/behavior/chat/integrations.md`
+   * § Slash command dispatch.
    */
   durable: boolean;
 }
@@ -658,8 +652,9 @@ function settleConfirmed(
 /**
  * Leave a heavy-command placeholder in place, flipped to `unconfirmed` and
  * carrying what an explicit retry would replay (#1733), and persist it so a
- * reconnect, a reload or a `gcTime` eviction cannot take the row and its Retry
- * with it (#1909).
+ * reconnect, a reload or a `gcTime` eviction can restore the row and its Retry
+ * (#1909). Whether this write did, and so what copy may promise, is `durable`
+ * in the result.
  *
  * The counterpart to {@link removeLocalPlaceholder}, and the right call
  * whenever the request's outcome is *unknown* rather than known-failed:

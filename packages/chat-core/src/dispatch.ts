@@ -572,8 +572,7 @@ const UNCONFIRMED_NO_ROW_WARNING =
  * the safe recovery. It does not hedge about the row disappearing: this is
  * `durable: true`, so the row and its replay handle are on disk with at least
  * an hour before their age bound, and the reconnect that follows the outage
- * restores them (as does a reload or a `gcTime` eviction within the day,
- * #1909).
+ * restores them (#1909).
  */
 const UNCONFIRMED_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice.";
