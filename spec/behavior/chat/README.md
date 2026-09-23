@@ -5,9 +5,9 @@
 Chat is not a module — it is the spine of the app, and every other capability (events, tasks, dues, points, polls) is a **chat integration** surfaced inline in conversation rather than behind a separate nav tab. The mobile app opens directly into chat.
 
 - **Chat is non-optional. It cannot be disabled.** Every chapter always has, at minimum: `#general` (everyone, default landing), `#announcements` (exec-write, member-read, push by default), `#chapter-audit` (system-write only, member-read — the audit feed), and DMs / group DMs (always on).
-- **Modules-as-integrations.** When an ops module is enabled it does not get a top-level nav tab first. It gets: (1) one or more **slash commands** in chat, (2) a **rich message renderer** that turns the artifact into an inline card with primary actions (RSVP / Done / Vote / Pay / Confirm / Submit), (3) a **system channel** where the module's notifications land (`#events`, `#dues`, etc.) so the firehose doesn't drown `#general`, and (4) *optionally* a secondary dashboard page for the longer-form view. The dashboard is secondary to the chat experience, never primary.
+- **Modules-as-integrations.** When an ops module is enabled it does not get a top-level nav tab first. It gets: (1) one or more **slash commands** in chat, (2) a **rich message renderer** that turns the artifact into an inline card with primary actions (RSVP / Done / Vote / Pay / Confirm / Submit), and (3) *optionally* a secondary dashboard page for the longer-form view. The dashboard is secondary to the chat experience, never primary.
 - **Slash-command dispatch** is the entry point for module actions — a treasurer typing `/dues remind overdue` in `#general` gets a rich card inline, no tab-switching. The command catalog, dispatch path, and renderer registry are specified in [integrations.md](./integrations.md).
-- Disabling a paid module hides its slash commands, mutes its system channel, and hides its dashboard page.
+- Disabling a paid module hides its slash commands and its dashboard page. A module gets no system channel of its own ([`../integrations.md`](../integrations.md#integration-pattern)).
 
 ## Channels
 

@@ -73,4 +73,4 @@ On upload, an optional AI step parses the PDF and pre-fills metadata fields (dep
 
 ## Chat Integration
 
-Chat integration (slash commands, rich renderers, system channel): see [`integrations.md`](integrations.md).
+Chat integration (slash commands, rich renderers): see [`integrations.md`](integrations.md).
