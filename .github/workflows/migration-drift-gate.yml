@@ -259,9 +259,30 @@ jobs:
       # Only what the migrations need a real server for. Studio, imgproxy, the
       # edge runtime, the log pipeline and the pooler contribute nothing to an
       # apply and cost image pulls on every run.
+      #
+      # ghcr.io rate-limits image pulls (`toomanyrequests`), and the CLI gives
+      # up after two retries 4s and 8s apart, which failed this required check
+      # three times running on a limit that clears within minutes (#2609).
+      # Only that error is retried, with a clean stop between attempts; pulled
+      # images stay cached, so each attempt resumes the pulls where the last
+      # one stopped. Any other failure fails at once.
       - name: Start disposable Supabase stack
         if: steps.touched.outputs.run == 'true'
-        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,pooler,mailpit
+        run: |
+          set -uo pipefail
+          log="$(mktemp)"
+          for attempt in 1 2 3 4; do
+            if supabase start -x studio,imgproxy,edge-runtime,logflare,vector,pooler,mailpit 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            if ! grep -q 'toomanyrequests' "$log" || [ "$attempt" -eq 4 ]; then
+              exit 1
+            fi
+            delay=$((attempt * 60))
+            echo "::warning::ghcr.io rate-limited an image pull (attempt ${attempt}/4); retrying in ${delay}s."
+            supabase stop --no-backup || true
+            sleep "$delay"
+          done
 
       # A fixture run exercises the two-phase apply that a live run cannot when
       # production has nothing pending — which is its steady state, so on an
