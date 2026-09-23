@@ -154,14 +154,15 @@ today.
   | | Status |
   | --- | --- |
   | The deleted legacy engine's eight keys | **Inert, permanently — no migration is needed and none ever will be.** Neither client can reach them: `use-chapter-theme.ts` gates on the seven `--signet-accent-*` roles and then applies only `signetAccentSemanticVars`' fixed output, and `chapter-branding.ts` reads `--signet-accent-text` by name. A pruning migration would be tidiness, not correctness. |
-  | A `--signet-*` map written before the §8 fill floor ([#2541](https://github.com/pdcarlson/Frapp/issues/2541)) | **An accessibility gap, not cosmetic.** The keys are all present, so neither client falls back; they paint the stored `accent-primary`, which can be under 3:1 (WCAG 1.4.11) on the ladder: crimson's `#8B0000` measures 1.50:1 on `--popover`. That fill carries state on its own in the switch track, the focus border and poll selection. A key-presence check passes these rows; only a recompute fixes them. |
+  | A `--signet-*` map written before the §8 fill floor ([#2541](https://github.com/pdcarlson/Frapp/issues/2541)), or before it took in hover ([#2586](https://github.com/pdcarlson/Frapp/issues/2586)) | **An accessibility gap, not cosmetic.** The keys are all present, so neither client falls back; they paint the stored `accent-primary` and `accent-hover`, which can be under 3:1 (WCAG 1.4.11) on the ladder: crimson's `#8B0000` measures 1.50:1 on `--popover`. That fill carries state on its own in the switch track, the focus border and poll selection, and its hover carries it under a pointer. A row written between the two has a floored fill but can hold a hover under 3:1 (`#003087`'s `#1F63DE`, 2.79:1) and a label under 4.5:1 on that hover. A key-presence check passes these rows; only a recompute fixes them. |
   | The absent `--signet-*` keys | **Real but cosmetic, and self-healing.** A chapter that chose crimson renders house gold on **both** clients until something recomputes it. Web applies nothing at all, so `signet.css`'s house-gold defaults stand. Mobile falls back to `resolveChapterAccentColor`, which keeps the chapter's own `accent_color` **only when it already clears 4.5:1 on `--card` (`#211E1A`)** and otherwise substitutes the fallback ladder, house gold first — and 14 of the 18 colours the seed directory has carried fail that check (`#8B0000` at 1.66:1, `#003087` at 1.40:1, `#000000` at 1.27:1). Do not scope a fix to web on the assumption mobile is unaffected. Neither breaks, and any save or recompute fixes the row for good. |
 
   Bound on which rows are affected: `deriveSignetPalette` entered `buildChapterPalette` in #1147
   (`def3efd`, 2026-08-20), so **only a chapter whose palette was last written before that date can
   be missing the keys** — the set is closed and shrinks on its own with every accent save. The
-  stale-fill set is a different one: **every row with the keys whose stored `accent-primary` is
-  under 3:1 on the ladder**. Judge it from the stored value, not the seed. #2152 (`057bb1c`,
+  stale-fill set is a different one: **every row with the keys whose stored `accent-primary` or
+  `accent-hover` is under 3:1 on the ladder, or whose stored `on-primary` is under 4.5:1 on that
+  hover**. Judge it from the stored value, not the seed. #2152 (`057bb1c`,
   2026-09-10) moved the generator's background from `#0E0D0B` to `#131211`, so a row written before
   then can hold a fill today's engine never produces for its seed: maroon `#800000` stored itself,
   1.37:1 on `--popover`, where it now paints `#F42F22`. A row missing the keys paints house gold on

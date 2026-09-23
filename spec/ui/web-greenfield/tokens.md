@@ -267,8 +267,8 @@ against the old background and measuring the result against the *new* one, every
 4.5:1 (worst `#BF0A30` at 8.48, down from 8.80), and no seed flips the mobile fallback decision.
 Nothing in `supabase/` bakes in a derived palette either — the directory seed stores raw seeds, and
 grepping the old derived hexes across `supabase/` returns nothing. *Corrected 2026-09-23:* this read
-"Accessibility is not at risk", but it measured the text roles only. The `accent-primary` fill has
-its own floor ([`accent-engine.md` § 8](../design-system/accent-engine.md#8-validation)), and a stale row can hold a fill under it;
+"Accessibility is not at risk", but it measured the text roles only. The `accent-primary` fill and
+its hover have their own floor ([`accent-engine.md` § 8](../design-system/accent-engine.md#8-validation)), and a stale row can hold either under it;
 [`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status) owns which rows.
 
 **For a chapter that never picked an accent, what is wrong is cosmetic and visible:** its row is derived
@@ -286,8 +286,8 @@ generator), so the options are a recompute pass through the API or clearing the 
 that never carried a custom accent so they fall through to the CSS defaults. Precedent for the
 shape: `supabase/migrations/20260814120000_backfill_chapter_accent_color_from_branding.sql`.
 *Corrected 2026-09-23:* this offered the two as alternatives ("a recompute pass ... or clearing the
-Signet keys"), but only the recompute reaches a chapter that picked an accent, whose stored fill can
-be under its floor ([`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status)), so clearing keys can complement it but not
+Signet keys"), but only the recompute reaches a chapter that picked an accent, whose stored fill or
+hover can be under its floor ([`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status)), so clearing keys can complement it but not
 replace it.
 
 ### L-03 — Danger text on `--popover`
