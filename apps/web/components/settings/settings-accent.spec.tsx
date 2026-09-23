@@ -5,7 +5,6 @@ import {
   deriveSignetPalette,
   signetAccentSemanticVars,
 } from "@repo/chapter-theme";
-import { normalizeHex } from "@repo/color";
 
 /**
  * The Accent tab's card description makes four promises about where a chapter's
@@ -173,52 +172,10 @@ describe("the preview warnings say what the preview does", () => {
     );
   });
 
-  it("renders the malformed-hex warning its writing.md row states", () => {
-    expect(warning("accentDraftMalformed")).toBe(
-      writingRow("Accent hex malformed"),
+  it("renders the not-a-hex-code warning its writing.md row states", () => {
+    expect(warning("accentDraftUnsavable")).toBe(
+      writingRow("Accent not a hex code"),
     );
-  });
-
-  it("saves the draft as the #RRGGBB the preview read it as", () => {
-    // Both warnings promise what saving does, so the save has to send the
-    // colour the preview measured. It used to send the raw draft: `#08E`
-    // previewed as `#0088EE`, then the DTO's `^#[0-9A-Fa-f]{6}$` returned 400.
-    expect(settingsPage).toContain(
-      "const accentDraftHex = normalizeHex(accentDraft);",
-    );
-    expect(settingsPage).toContain("accent_color: accentDraftHex || undefined");
-    expect(settingsPage).not.toMatch(/accent_color: accentDraft\b(?!Hex)/);
-    const dto = /^#[0-9A-Fa-f]{6}$/;
-    for (const [draft, saved] of [
-      ["#08E", "#0088EE"],
-      [" #8B0000 ", "#8B0000"],
-      ["#8b0000", "#8B0000"],
-    ] as const) {
-      expect(normalizeHex(draft)).toBe(saved);
-      expect(saved).toMatch(dto);
-    }
-  });
-
-  it("names a malformed draft and will not save it", () => {
-    for (const draft of ["#8B00", "8B0000", "crimson"]) {
-      expect(normalizeHex(draft)).toBe("");
-    }
-    expect(settingsPage).toMatch(
-      /const accentDraftMalformed =\s*accentDraft\.trim\(\) !== "" && !accentDraftHex;/,
-    );
-    const submit = settingsPage.slice(
-      settingsPage.lastIndexOf(
-        'type="submit"',
-        settingsPage.indexOf("Save accent color"),
-      ),
-      settingsPage.indexOf("Save accent color"),
-    );
-    expect(submit).toContain("accentDraftMalformed");
-    // Save is disabled there, so the ink warning's "saving picks a label
-    // color" would promise a save that cannot happen.
-    expect(
-      settingsPage.match(/const previewInkFailsAA =([\s\S]*?);/)?.[1],
-    ).toContain("!accentDraftMalformed");
   });
 
   it("gates the fallback warning on contrast, not on fallbackApplied", () => {

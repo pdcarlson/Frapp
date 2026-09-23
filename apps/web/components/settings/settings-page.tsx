@@ -435,9 +435,11 @@ function SettingsPageContent() {
   // and the save describing one colour. Sending the raw draft let `#08E`
   // preview cleanly and then fail the save with a 400.
   const accentDraftHex = normalizeHex(accentDraft);
-  // Typed but not a hex colour: the preview falls back and Save is disabled,
-  // so this names why rather than leaving the swatch to change silently.
-  const accentDraftMalformed = accentDraft.trim() !== "" && !accentDraftHex;
+  // Empty, blank or not a hex colour: Save is disabled and the tab says why.
+  // An empty draft counts: it sends no `accent_color`, which the API treats as
+  // "no change" and answers with success, so the toast would claim a save that
+  // wrote nothing.
+  const accentDraftUnsavable = !accentDraftHex;
   // A well-formed colour that fails contrast on the card. `fallbackApplied`
   // alone is also true for an empty or malformed draft, where "saving keeps the
   // color you entered" would be false.
@@ -483,10 +485,7 @@ function SettingsPageContent() {
   const previewInkRatio = accentRgb
     ? contrastRatio(parseHex(previewInk)!, accentRgb)
     : 0;
-  // Not for a malformed draft: Save is disabled there, so "saving picks a label
-  // color" would promise a save that cannot happen.
-  const previewInkFailsAA =
-    !accentDraftMalformed && accentRgb !== null && previewInkRatio < AA_NORMAL;
+  const previewInkFailsAA = accentRgb !== null && previewInkRatio < AA_NORMAL;
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
   const permissionsCatalog = asArray<{ key: string; permission: string }>(
     catalogQuery.data,
@@ -544,9 +543,10 @@ function SettingsPageContent() {
 
   async function saveAccent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!accentDraftHex) return;
     try {
       const result = await updateChapter.mutateAsync({
-        accent_color: accentDraftHex || undefined,
+        accent_color: accentDraftHex,
       });
       setAccentContrastWarning(result?.failedContrastChecks ?? null);
       toast({
@@ -1147,7 +1147,7 @@ function SettingsPageContent() {
                       Preview
                     </div>
                   </div>
-                  {accentDraftMalformed ? (
+                  {accentDraftUnsavable ? (
                     <p className="text-xs text-warning">
                       Use a hex code like #8B0000 to save this color.
                     </p>
@@ -1178,9 +1178,9 @@ function SettingsPageContent() {
                     </p>
                   ) : null}
                   {/*
-                    A third, independent question from the two above — those
-                    are client-side checks of the unsaved draft against a
-                    single fixed backdrop each. This is the server's own §8
+                    Independent of the draft checks above, which run client-side
+                    on the unsaved draft (the two contrast ones against a single
+                    fixed backdrop each). This is the server's own §8
                     verdict on the colour actually saved, generated through
                     the real Signet pipeline. §8 forbids a runtime
                     substitution here, so a failing save still succeeds — this
@@ -1201,7 +1201,7 @@ function SettingsPageContent() {
                     disabled={
                       !canManage ||
                       updateChapter.isPending ||
-                      accentDraftMalformed
+                      accentDraftUnsavable
                     }
                   >
                     {updateChapter.isPending ? (
