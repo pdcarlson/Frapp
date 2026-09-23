@@ -856,7 +856,7 @@ test("a bringup at a path with a space, or run with a long option, is still a br
   }
 });
 
-test("processes that outlive SIGKILL keep the lock, and the hook does not launch beside them", async (t) => {
+test("processes that outlive SIGKILL keep the lock live until --stop is retried", async (t) => {
   // Faked by making `kill` and `sleep` no-ops, so the tree survives every signal at once.
   const s = scratch(t);
   const pid = liveBringup(t, s);
@@ -870,13 +870,42 @@ test("processes that outlive SIGKILL keep the lock, and the hook does not launch
   );
   assert.equal(run.status, 3, run.stderr);
   assert.match(run.stdout, new RegExp(`^${pid}\nsurvivors: .*\\b${pid}\\b`));
-  assert.ok(existsSync(path.join(s.lock, "pid")), "the lock is kept");
-  assert.equal(existsSync(path.join(s.lock, "stopping")), false, "and no longer marked as being stopped");
+  assert.equal(existsSync(path.join(s.lock, "stopping")), false, "no longer marked as being stopped");
+  assert.match(readFileSync(path.join(s.lock, "survivors"), "utf8"), new RegExp(`^${pid} \\S`, "m"));
   assert.match(readFileSync(failed, "utf8"), /outlived SIGKILL\. Its lock is kept/);
-  process.kill(pid);
-  const context = runHook(s, { boot: "boot-B" });
-  assert.match(context, /already finished/);
+  // The lock stays live with its script dead: a hand run refuses, and the hook launches nothing
+  // even with the .failed gone.
+  const script = liveProcess(t, "sleep", ["30"]);
+  lockPid(s, script, Math.floor(Date.now() / 1000) - 600);
+  process.kill(script);
+  // The stand-in's own `sleep` survived with it.
+  const refused = takeLock(s.lock, "boot-B", 4242);
+  assert.equal(refused.status, 1);
+  assert.match(refused.out, new RegExp(`^survivors:.*\\b${pid}\\b`));
+  const stuck = refused.out.slice("survivors:".length).split(" ").map(Number);
+  rmSync(failed);
+  assert.match(runHook(s, { boot: "boot-B" }), /processes a stopped bringup left behind are still running/);
   assert.equal(await eventually(() => existsSync(s.launched), 300), false, "nothing launches beside the survivors");
+  // --stop again, with real signals, retries them and frees the lock.
+  const retry = stopLock(s.lock, "boot-B");
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.ok(await eventually(() => stuck.every((p) => !alive(p))), "every survivor is stopped on retry");
+  assert.equal(existsSync(s.lock), false);
+});
+
+test("a survivor's pid, reused by another process, is never signalled", (t) => {
+  // The survivors file records start times; a pid that exited and came back as something
+  // else no longer matches, and must not keep the lock live or be killed.
+  const s = scratch(t);
+  const other = liveProcess(t, "sleep", ["30"]);
+  priorLock(s, { boot: "boot-B", sentinel: null, writtenAt: Math.floor(Date.now() / 1000) - 600 });
+  writeFileSync(path.join(s.lock, "survivors"), `${other} Mon Jan 1 00:00:00 2001\n`);
+  utimesSync(s.lock, Math.floor(Date.now() / 1000) - 600, Math.floor(Date.now() / 1000) - 600);
+  const run = stopLock(s.lock, "boot-B");
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout.trim(), "");
+  assert.ok(alive(other));
+  assert.equal(existsSync(s.lock), false);
 });
 
 test("a fresh launch clears an older run's sentinel under the guard", async (t) => {

@@ -210,6 +210,8 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ] && [ -f "$RO
     if bringup_lock_live "$LOCK"; then
       if stopper="$(bringup_stopping "$LOCK")"; then
         msg="${msg} Cloud sandbox: a hung stack bringup is being stopped (cloud-sandbox-up.sh --stop, pid ${stopper}). It writes ${ROOT}/.cloud-sandbox-up.failed when done; then run 'bash scripts/cloud-sandbox-up.sh' to start the stack again."
+      elif stuck="$(bringup_survivors "$LOCK")"; then
+        msg="${msg} Cloud sandbox: processes a stopped bringup left behind are still running (pids ${stuck}), so no bringup was started beside them. Tell the user; 'bash scripts/cloud-sandbox-up.sh --stop' retries them."
       elif bringup_alive "$prev_pid"; then
         msg="${msg} Cloud sandbox: stack bringup is still running (pid ${prev_pid}). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
       else

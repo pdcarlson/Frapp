@@ -98,9 +98,9 @@ if [ -z "${FRAPP_BRINGUP_LOCK_HELD:-}" ]; then
   case "$take_status" in
     0)
       # Still under the guard: the last run's sentinels go before a session start can read
-      # them beside the new lock and report this run as already finished. The `rm -f` after
-      # this block runs for every bringup, the hook's included (the hook clears them itself
-      # only when it replaces another boot's lock); on this path it finds nothing left.
+      # them beside the new lock and report this run as already finished. The hook clears
+      # them itself, under the same guard, whenever it takes the lock; the `rm -f` after this
+      # block then finds nothing left on either path, and is kept for the manifest it clears.
       rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL"
       bringup_unguard
       # Session starts point at this log for a running bringup, so a hand run writes it too,
@@ -113,6 +113,8 @@ if [ -z "${FRAPP_BRINGUP_LOCK_HELD:-}" ]; then
         cs_log "ERROR: another bringup is starting (its lock was taken seconds ago). Wait for its .cloud-sandbox-up.done / .cloud-sandbox-up.failed instead of starting a second one."
       elif [ "${running#stopping:}" != "$running" ]; then
         cs_log "ERROR: a hung bringup is being stopped (--stop, pid ${running#stopping:}). Run this again once it has finished; it writes .cloud-sandbox-up.failed when it does."
+      elif [ "${running#survivors:}" != "$running" ]; then
+        cs_log "ERROR: processes a stopped bringup left behind are still running (pids ${running#survivors:}), and would collide with a new one. Stop them with 'bash scripts/cloud-sandbox-up.sh --stop', or wait for them to exit, then run this again."
       else
         cs_log "ERROR: another bringup is already running (pid ${running}). Wait for its .cloud-sandbox-up.done / .cloud-sandbox-up.failed instead of starting a second one. If it is hung (${BRINGUP_LOG} has stopped advancing), stop it with 'bash scripts/cloud-sandbox-up.sh --stop' and run this again."
       fi
