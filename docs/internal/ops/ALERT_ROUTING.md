@@ -2,7 +2,7 @@
 
 ## Primary channels
 
-- **Critical production alerts:** Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, with email as the second path. Alert issues are assigned to the owner (ADR-24 decision 2, 2026-09-23). This is being wired in [#2505](https://github.com/pdcarlson/Frapp/issues/2505). **Until it lands, the only path seen live is Sentry's default email rule to issue owners** (read 2026-09-09; Render paging was never verified), and GitHub alert issues are unassigned.
+- **Critical production alerts:** Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, with email as the second path. Alert issues are assigned to the owner and labelled `incident` instead of `routine-state` (ADR-24 decision 2, 2026-09-23). This is being wired in [#2505](https://github.com/pdcarlson/Frapp/issues/2505). **Until it lands, a page reaches the owner two ways:** Sentry's default email rule to issue owners, the only provider path seen live (read 2026-09-09; Render paging was never verified), and the unassigned `routine-state` issues the [watchdogs](#automated-github-issue-alerts) open, including the production `/health/ready` alert.
 - **Non-critical staging alerts:** a daily Sentry digest (planned in #2505). None exists today.
 - **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API), `frapp-web` (Next dashboard) and `frapp-mobile` (Expo app)
 
@@ -99,7 +99,7 @@ These watchdogs alert through GitHub Issues rather than a provider channel — n
 token, and the issue thread doubles as the incident log. Each upserts **one** tracking issue (created
 if absent, reopened if closed, otherwise commented). All of them carry `routine-state`, which
 `/next` §0.2 treats as never-claimable — they track live state, not a unit of work, so do not pick
-them up as backlog.
+them up as backlog. #2505 relabels them `incident` and assigns them to the owner (ADR-24 decision 2).
 
 The table below is the roster. It carries no count on purpose: it previously said "four" while the
 tree held five, because a count is a second copy of a fact the rows already state
@@ -253,4 +253,4 @@ Signet has one on-call human: the owner. There is no second responder or rota ye
 1. **Where the page lands**, today and once #2505 lands: [Primary channels](#primary-channels).
 2. **Acknowledgement.** The owner acknowledges by commenting on the alert issue. No response target is set yet: ADR-24's rule I4 bounds how fast a failure pages (15 minutes), not how fast anyone answers. Setting one is part of #2505.
 3. **Agents.** Agent sessions may triage an alert issue and report what they find. They never change provider state because an alert suggested it (ADR-24 decision 2).
-4. **Chapters.** If a production incident affects chapters for 30 minutes or more, the owner tells the affected chapters what is broken and when to expect a fix. Signet has no status page yet, so this goes to the chapters directly.
+4. **Chapters.** If a production incident affects chapters for 30 minutes or more, the owner tells the affected chapters what is broken and when to expect a fix, then updates them every 15 minutes until it's resolved. Signet has no status page yet, so this goes to the chapters directly.

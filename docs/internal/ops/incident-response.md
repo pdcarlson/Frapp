@@ -41,7 +41,7 @@ Database rollback and restore are their own procedures:
 
 ### Communication
 
-- when and how to tell affected chapters: [`ALERT_ROUTING.md` § Escalation](ALERT_ROUTING.md#escalation). Signet has no status page yet
+- when to tell affected chapters, and how often to update them: [`ALERT_ROUTING.md` § Escalation](ALERT_ROUTING.md#escalation). Signet has no status page yet
 - include mitigation ETA and current customer impact
 
 ## Database latency
