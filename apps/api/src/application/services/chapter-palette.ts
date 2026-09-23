@@ -34,7 +34,11 @@ export type ChapterBrandColors = { accent?: string };
  */
 export type ChapterBrandingInput = NonNullable<ChapterBranding>;
 
-/** One Signet §8 text-contrast check that came back below the 4.5:1 AA floor. */
+/**
+ * One Signet §8 check that came back below its floor: 4.5:1 for a text role
+ * (`failedContrastChecks`), 3:1 for the `accent-primary` fill
+ * (`failedFillChecks`).
+ */
 export type FailedContrastCheck = {
   role: string;
   against: string;
@@ -112,6 +116,16 @@ export function buildChapterPalette(
  * `invalidSeed` for that reason, so a failed contrast or fill check there went
  * unrecorded.)
  */
+/**
+ * A failing ratio to two decimals, truncated rather than rounded: the line says
+ * the check fell below its floor, and rounding would log a 4.4954 as "4.50:1"
+ * under "below AA". The epsilon keeps a float a hair under a hundredth from
+ * losing it. The Settings page truncates the same ratios for the same reason.
+ */
+function belowFloor(ratio: number): string {
+  return (Math.floor(ratio * 100 + 1e-9) / 100).toFixed(2);
+}
+
 export function logChapterPaletteWarnings(
   logger: { warn: (message: string) => void },
   where: string,
@@ -129,7 +143,7 @@ export function logChapterPaletteWarnings(
   if (build.failedContrastChecks.length > 0) {
     logger.warn(
       `Signet accent contrast below AA ${where}: ${build.failedContrastChecks
-        .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
+        .map((c) => `${c.role} on ${c.against} = ${belowFloor(c.ratio)}:1`)
         .join(', ')}`,
     );
   }
@@ -138,7 +152,7 @@ export function logChapterPaletteWarnings(
   if (build.failedFillChecks.length > 0) {
     logger.warn(
       `Signet accent fill below 3:1 ${where}: ${build.failedFillChecks
-        .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
+        .map((c) => `${c.role} on ${c.against} = ${belowFloor(c.ratio)}:1`)
         .join(', ')}`,
     );
   }
