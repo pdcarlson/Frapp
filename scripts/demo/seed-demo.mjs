@@ -17,9 +17,8 @@
 // for `verify`), which is everything a hosted project exposes without Docker.
 //
 // Order: `auth`, then `sql`, then `storage`, then `verify`. The seed links its
-// login to the auth user with the same email, so that user has to exist first —
-// created by `auth`, or by hand in the Supabase dashboard (#2309); the seed does
-// not care which. Undo in the reverse order with `--remove`.
+// login to the auth user with the same email, and only to one `auth` created for
+// this namespace, so `auth` runs first. Undo in the reverse order with `--remove`.
 //
 // Environment (`infisical run --env=<slug> --` supplies the Supabase three):
 //   SUPABASE_URL               the project's API URL           auth, storage, verify
@@ -39,7 +38,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { requireEnv } from "../ci/lib/env.mjs";
 import { getEnvironment } from "../ci/lib/environments.mjs";
+import { IDEMPOTENT_METHODS, fetchWithRetry } from "../ci/lib/http.mjs";
 
 export const TEMPLATE_PATH = fileURLToPath(new URL("./demo-seed.sql", import.meta.url));
 
@@ -331,8 +332,16 @@ function serviceHeaders(key, extra = {}) {
   return { apikey: key, Authorization: `Bearer ${key}`, ...extra };
 }
 
-async function request(fetchImpl, url, init, what) {
-  const response = await fetchImpl(url, init);
+/**
+ * One API call through `fetchWithRetry`: a timeout on every request, and a
+ * bounded retry on 429/5xx for the ones safe to re-send. `idempotent` extends
+ * that to a POST or DELETE whose repeat changes nothing (a Storage upsert, a
+ * listing, a bulk delete); a create keeps its single attempt.
+ */
+async function request(fetchImpl, url, init, what, { idempotent = false } = {}) {
+  const method = (init.method ?? "GET").toUpperCase();
+  const retryMethods = idempotent ? new Set([...IDEMPOTENT_METHODS, method]) : IDEMPOTENT_METHODS;
+  const response = await fetchWithRetry(url, init, { fetchImpl, retryMethods });
   const text = await response.text();
   if (!response.ok) {
     throw new Error(`${what} failed: HTTP ${response.status} ${text.slice(0, 300)}`);
@@ -378,9 +387,9 @@ export async function findAuthUserByEmail({ supabaseUrl, serviceKey, email, fetc
  * On a hosted project an existing account is only touched when this script
  * created it (its `app_metadata` carries this namespace). Anything else could be
  * a real person's account, and resetting its password is not recoverable. The
- * one legitimate unmarked account — the App Review user created by hand in the
- * dashboard per #2309 — needs nothing from this command anyway: the seed links
- * it by email.
+ * seed applies the same rule from the other side — it links only a login
+ * carrying this namespace's marker — so a login made by hand in the Supabase
+ * dashboard is never adopted by either; create it here instead.
  */
 export async function ensureAuthUser({ supabaseUrl, serviceKey, email, password, namespace, fetchImpl = fetch }) {
   const existing = await findAuthUserByEmail({ supabaseUrl, serviceKey, email, fetchImpl });
@@ -402,8 +411,8 @@ export async function ensureAuthUser({ supabaseUrl, serviceKey, email, password,
   if (!ours && !isLoopbackUrl(supabaseUrl)) {
     throw new Error(
       `an auth user with ${email} already exists and this script did not create it for namespace ${namespace}. ` +
-        `Refusing to change its password. If it is the App Review login made in the Supabase dashboard (#2309), ` +
-        `skip this step: the seed links it by email.`,
+        `Refusing to change its password, and the seed will not link it either. Choose another DEMO_EMAIL, or ` +
+        `delete that account yourself if it is a stray demo login.`,
     );
   }
   await request(
@@ -415,6 +424,7 @@ export async function ensureAuthUser({ supabaseUrl, serviceKey, email, password,
       body: JSON.stringify({ password, email_confirm: true, app_metadata: marker }),
     },
     "updating the auth user",
+    { idempotent: true },
   );
   return { action: "updated", id: existing.id };
 }
@@ -484,6 +494,7 @@ export async function uploadPlaceholders({ supabaseUrl, serviceKey, namespace, f
           body: placeholderPdf(row.title ?? "Document"),
         },
         `uploading ${bucket}/${row.storage_path}`,
+        { idempotent: true },
       );
     }
     results.push({ bucket, count: rows.length });
@@ -503,6 +514,7 @@ async function listObjects({ supabaseUrl, serviceKey, bucket, prefix, fetchImpl,
       body: JSON.stringify({ prefix, limit: 1000, offset: 0 }),
     },
     `listing ${bucket}/${prefix}`,
+    { idempotent: true },
   );
   const paths = [];
   for (const entry of entries ?? []) {
@@ -549,6 +561,7 @@ export async function removePlaceholders({ supabaseUrl, serviceKey, namespace, f
           body: JSON.stringify({ prefixes: paths }),
         },
         `deleting ${paths.length} object(s) from ${bucket}`,
+        { idempotent: true },
       );
     }
     results.push({ bucket, count: paths.length });
@@ -559,9 +572,13 @@ export async function removePlaceholders({ supabaseUrl, serviceKey, namespace, f
 // ── verify ──────────────────────────────────────────────────────────────────
 
 /**
- * Sign in the way the app does and read what a reviewer would see. Read-only:
- * a password grant, then GETs against the Signet API. Each check is reported,
- * and the first failure stops the run, since later checks assume earlier ones.
+ * Sign in the way the app does and read what a reviewer would see: a password
+ * grant, then GETs against the Signet API. It writes nothing of its own, but it
+ * is a real sign-in, and the API's first-sign-in sync creates a chapterless
+ * `users` row for a login the seed has not linked yet. The next seed adopts that
+ * row (demo-seed.sql § Link the login), so running `verify` early costs a
+ * re-seed, never a stuck account. Each check is reported, and the first failure
+ * stops the run, since later checks assume earlier ones.
  */
 export async function verifyLogin({
   supabaseUrl,
@@ -607,7 +624,10 @@ export async function verifyLogin({
 
   const me = await api("/v1/users/me");
   if (me?.id !== loginUserId) {
-    fail(`signed in as users.id ${me?.id}, not the seeded login ${loginUserId} — the seed did not link this auth user`);
+    fail(
+      `signed in as users.id ${me?.id}, not the seeded login ${loginUserId} — the seed did not link this auth user. ` +
+        "Run `sql` for this namespace (after `auth`), then verify again.",
+    );
   }
   pass(`linked to the seeded login (users.id ${loginUserId})`);
 
@@ -623,7 +643,7 @@ export async function verifyLogin({
   const opened = await api(`/v1/documents/${documents[0].id}`);
   const downloadUrl = opened?.downloadUrl ?? opened?.download_url;
   if (!downloadUrl) fail(`GET /v1/documents/${documents[0].id} returned no downloadUrl`);
-  const file = await fetchImpl(downloadUrl);
+  const file = await fetchWithRetry(downloadUrl, {}, { fetchImpl });
   const bytes = Buffer.from(await file.arrayBuffer());
   if (!file.ok || bytes.subarray(0, 5).toString("latin1") !== "%PDF-") {
     fail(`"${documents[0].title}" did not open as a PDF (HTTP ${file.status}) — run \`seed-demo.mjs storage\``);
@@ -676,10 +696,19 @@ export function parseArgs(argv) {
   return options;
 }
 
-function requireEnv(env, name, why) {
-  const value = env[name];
-  if (!value) throw new Error(`${name} is required ${why}.`);
-  return value;
+/** Thrown after `requireEnv` has already printed why; the CLI adds nothing. */
+class ReportedError extends Error {}
+
+/** The shared `requireEnv`, with its exit turned into a throw `main` can own. */
+function needEnv(env, io, name, hint) {
+  return requireEnv(name, {
+    env,
+    hint,
+    log: (line) => io.err.write(`${line}\n`),
+    exit: () => {
+      throw new ReportedError(`${name} environment variable is required.`);
+    },
+  });
 }
 
 export async function main(argv, env = process.env, io = { out: process.stdout, err: process.stderr }, fetchImpl = fetch) {
@@ -697,16 +726,19 @@ export async function main(argv, env = process.env, io = { out: process.stdout, 
     return;
   }
 
-  const supabaseUrl = requireEnv(env, "SUPABASE_URL", `for ${options.command}`).replace(/\/+$/, "");
+  const supabaseUrl = needEnv(env, io, "SUPABASE_URL", `${options.command} needs the project's API URL.`).replace(/\/+$/, "");
 
   if (options.command === "verify") {
-    const email = validateEmail(requireEnv(env, "DEMO_EMAIL", "to sign in"));
-    const password = requireEnv(env, "DEMO_PASSWORD", "to sign in");
+    const email = validateEmail(needEnv(env, io, "DEMO_EMAIL", "verify signs in as the login."));
+    const password = needEnv(env, io, "DEMO_PASSWORD", "verify signs in as the login.");
+    // A hosted login that accepts the committed local password is exactly the
+    // credential #2308 must never hand App Review, whichever route created it.
+    assertPasswordAllowed({ supabaseUrl, password });
     const apiUrl = (options.apiUrl ?? (isLoopbackUrl(supabaseUrl) ? "http://localhost:3001" : null))?.replace(/\/+$/, "");
     if (!apiUrl) throw new Error("--api-url is required for a hosted project (the Signet API that project backs).");
     await verifyLogin({
       supabaseUrl,
-      anonKey: requireEnv(env, "SUPABASE_ANON_KEY", "for the password sign-in"),
+      anonKey: needEnv(env, io, "SUPABASE_ANON_KEY", "verify signs in with the anon key."),
       apiUrl,
       email,
       password,
@@ -720,11 +752,11 @@ export async function main(argv, env = process.env, io = { out: process.stdout, 
   }
 
   // auth and storage write with the service key.
-  const serviceKey = requireEnv(env, "SUPABASE_SERVICE_ROLE_KEY", `for ${options.command}`);
+  const serviceKey = needEnv(env, io, "SUPABASE_SERVICE_ROLE_KEY", `${options.command} writes with the service key.`);
   assertProductionAllowed({ supabaseUrl, allow: env.DEMO_ALLOW_PRODUCTION });
 
   if (options.command === "auth") {
-    const email = validateEmail(requireEnv(env, "DEMO_EMAIL", "to name the login"));
+    const email = validateEmail(needEnv(env, io, "DEMO_EMAIL", "auth names the login by it."));
     if (options.remove) {
       const result = await removeAuthUser({ supabaseUrl, serviceKey, email, namespace, fetchImpl });
       say(`auth: ${email} ${result.action}${result.id ? ` (${result.id})` : ""}`);
@@ -753,7 +785,7 @@ export async function main(argv, env = process.env, io = { out: process.stdout, 
 const invokedDirectly = process.argv[1] && process.argv[1].endsWith("seed-demo.mjs");
 if (invokedDirectly) {
   main(process.argv.slice(2)).catch((error) => {
-    process.stderr.write(`seed-demo: ${error.message}\n`);
+    if (!(error instanceof ReportedError)) process.stderr.write(`seed-demo: ${error.message}\n`);
     process.exit(1);
   });
 }

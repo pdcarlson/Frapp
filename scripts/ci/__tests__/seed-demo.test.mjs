@@ -56,7 +56,9 @@ function makeFetch(routes) {
         return new Response(body, { status });
       }
     }
-    return new Response(`no route for ${method} ${url}`, { status: 599 });
+    // 418, not a 5xx: fetchWithRetry re-sends a GET on 5xx, and a missing route
+    // is a test bug that should fail at once rather than after its backoff.
+    return new Response(`no route for ${method} ${url}`, { status: 418 });
   };
   return { fetchImpl, calls };
 }
@@ -374,12 +376,22 @@ test("storage --remove walks the demo folders and deletes only what is under the
 
 // ── verify ──────────────────────────────────────────────────────────────────
 
-function verifyRoutes({ meId, invoices = [], channels = [{ type: "DM" }], pdf = placeholderPdf("x"), ns = "a9900000" } = {}) {
+function verifyRoutes({
+  meId,
+  invoices = [],
+  channels = [{ type: "DM" }],
+  pdf = placeholderPdf("x"),
+  ns = "a9900000",
+  chapter = {},
+} = {}) {
   const { chapterId, loginUserId } = demoIds(ns);
   return [
     [on("POST", "/auth/v1/token"), () => ({ json: { access_token: "t" } })],
     [on("GET", "/v1/users/me"), () => ({ json: { id: meId ?? loginUserId } })],
-    [on("GET", "/v1/chapters/current"), () => ({ json: { id: chapterId, name: "Beta Theta Omega", subscription_status: "active" } })],
+    [
+      on("GET", "/v1/chapters/current"),
+      () => ({ json: { id: chapterId, name: "Beta Theta Omega", subscription_status: "active", ...chapter } }),
+    ],
     [on("GET", "/v1/documents/d1"), () => ({ json: { downloadUrl: "https://signed.example/d1" } })],
     [on("GET", "/v1/documents"), () => ({ json: [{ id: "d1", title: "Bylaws" }] })],
     [on("GET", "signed.example"), () => ({ bytes: pdf })],
@@ -397,6 +409,22 @@ test("verify passes a correctly seeded reviewer, sending the chapter header", as
   const me = calls.find((c) => c.url.endsWith("/v1/users/me"));
   assert.equal(me.headers["x-chapter-id"], demoIds("a9900000").chapterId);
   assert.equal(me.headers.Authorization, "Bearer t");
+});
+
+test("verify reads the reviewer's OWN ledger: an unfiltered read returns the whole chapter's", async () => {
+  const { fetchImpl, calls } = makeFetch(verifyRoutes());
+  await verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl });
+  const invoices = calls.find((c) => c.url.includes("/v1/invoices"));
+  // The reviewer is president (`*`), so without `user_id` the controller's
+  // billing:view branch answers with every invoice in the chapter.
+  assert.equal(new URL(invoices.url).searchParams.get("user_id"), demoIds("a9900000").loginUserId);
+});
+
+test("verify catches a login whose current chapter is another one, or not active", async () => {
+  const elsewhere = makeFetch(verifyRoutes({ chapter: { id: "some-other-chapter" } }));
+  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: elsewhere.fetchImpl }), /current chapter is some-other-chapter/);
+  const incomplete = makeFetch(verifyRoutes({ chapter: { subscription_status: "incomplete" } }));
+  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: incomplete.fetchImpl }), /subscription_status is incomplete, not active/);
 });
 
 test("verify catches an auth user the seed did not link", async () => {
@@ -449,6 +477,27 @@ test("main refuses production storage writes without the flag, before sending an
   for (const args of [["storage", "--namespace", "a9900000"], ["storage", "--namespace", "a9900000", "--remove"]]) {
     await assert.rejects(main(args, env, { out: sink(), err: sink() }, fetchImpl), /DEMO_ALLOW_PRODUCTION=true/);
   }
+  assert.deepEqual(calls, []);
+});
+
+test("main refuses to verify a hosted login with the committed password, before signing in", async () => {
+  const { fetchImpl, calls } = makeFetch([]);
+  const env = { SUPABASE_URL: HOSTED, SUPABASE_ANON_KEY: "anon", DEMO_EMAIL: "r@frapp.live", DEMO_PASSWORD: LOCAL_DEMO_PASSWORD };
+  await assert.rejects(
+    main(["verify", "--namespace", "a9900000", "--api-url", "https://api.example"], env, { out: sink(), err: sink() }, fetchImpl),
+    /committed default/,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test("a missing variable is reported through the shared requireEnv, before anything is sent", async () => {
+  const { fetchImpl, calls } = makeFetch([]);
+  const err = sink();
+  await assert.rejects(
+    main(["auth", "--namespace", "a9900000"], { SUPABASE_URL: HOSTED, SUPABASE_SERVICE_ROLE_KEY: KEY }, { out: sink(), err }, fetchImpl),
+    /DEMO_EMAIL environment variable is required/,
+  );
+  assert.match(err.text(), /Error: DEMO_EMAIL environment variable is required\. auth names the login by it\./);
   assert.deepEqual(calls, []);
 });
 

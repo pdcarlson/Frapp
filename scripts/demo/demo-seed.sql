@@ -134,34 +134,54 @@ UPDATE roster
 -- unique on it alone, and the API's first-sign-in sync finds the row by it
 -- (`auth.service.ts`). A login whose auth id matches no seeded row signs in as
 -- a brand-new user in no chapter — silently. So roster #1 takes the id of the
--- auth.users row with its email, here, in the same transaction that creates it.
--- That is why the login can be created before the seed by any route — this
--- script's `auth` command, or the Supabase dashboard as #2309 describes — with
--- no separate link step afterwards.
+-- auth.users row with its email, here, in the same transaction that creates it,
+-- and no separate link step exists to forget.
+--
+-- It links only a login `seed-demo.mjs auth` created for THIS chapter: one whose
+-- app_metadata carries `frapp_demo_namespace` equal to the namespace below.
+-- Matching on email alone would hand the chapter's presidency, with `*`, to
+-- whoever owns a mistyped DEMO_EMAIL the moment they next signed in. The marker
+-- is service-role-only data, so no one can put it on their own account.
 --
 -- Everyone else keeps a synthetic auth id: a plain uuid, no FK to auth.users.
 CREATE TEMP TABLE demo_login ON COMMIT DROP AS
-  SELECT a.id AS auth_id
+  SELECT a.id AS auth_id,
+         coalesce(a.raw_app_meta_data ->> 'frapp_demo_namespace', '')
+           = split_part('c0ffee00-0000-4000-8000-000000000001', '-', 1) AS ours
     FROM auth.users a
     JOIN roster r ON r.n = 1 AND lower(a.email) = r.email;
 
 DO $$
 DECLARE
+  v_email text := (SELECT email FROM roster WHERE n = 1);
   v_auth uuid := (SELECT auth_id FROM demo_login);
+  v_ours boolean := (SELECT ours FROM demo_login);
   v_owner uuid;
 BEGIN
-  IF v_auth IS NULL THEN
+  IF v_auth IS NULL OR NOT v_ours THEN
+    DELETE FROM demo_login;
     IF current_setting('frapp_demo.variant', true) = 'reviewer' THEN
-      RAISE EXCEPTION 'no auth user has the login email %; create it first (seed-demo.mjs auth, or the Supabase dashboard per #2309), then re-run', (SELECT email FROM roster WHERE n = 1);
+      RAISE EXCEPTION '%', CASE WHEN v_auth IS NULL
+        THEN format('no auth user has the login email %s; create it with `seed-demo.mjs auth` first, then re-run', v_email)
+        ELSE format('the auth user with %s was not created by `seed-demo.mjs auth` for this chapter; refusing to link an account this script does not own', v_email) END;
     END IF;
-    RAISE NOTICE 'no auth user has the login email % yet: roster #1 is seeded unlinked', (SELECT email FROM roster WHERE n = 1);
+    RAISE NOTICE 'login % is not a `seed-demo.mjs auth` login for this chapter: roster #1 is seeded unlinked', v_email;
     RETURN;
   END IF;
-  -- A real Signet account already holds this auth id. Linking would collide on
-  -- users_supabase_auth_id_key anyway; saying why is the point of checking first.
+  -- The namespace's own rows are gone (Reset), so any `users` row still holding
+  -- this auth id was made outside the seed. A sign-in before the seed linked the
+  -- login — `verify` run early, or the app opened on TestFlight — makes exactly
+  -- one: the API's first-sign-in sync inserts a chapterless row. That shell is
+  -- this login's and holds nothing, so it is adopted: deleted, and the roster
+  -- row below takes the auth id. A row with a membership anywhere is an account
+  -- in use, and is refused rather than destroyed.
   SELECT id INTO v_owner FROM users WHERE supabase_auth_id = v_auth;
   IF v_owner IS NOT NULL THEN
-    RAISE EXCEPTION 'the login email belongs to an existing Signet account (users.id %); refusing to link a real account to the demo chapter', v_owner;
+    IF EXISTS (SELECT 1 FROM members WHERE user_id = v_owner) THEN
+      RAISE EXCEPTION 'the login''s auth user already belongs to users.id %, which is a member of a chapter; refusing to take it over', v_owner;
+    END IF;
+    DELETE FROM users WHERE id = v_owner;
+    RAISE NOTICE 'adopted the login: removed the chapterless users row % a sign-in created before this seed', v_owner;
   END IF;
 END $$;
 
@@ -296,9 +316,13 @@ INSERT INTO service_entries (chapter_id, user_id, date, duration_minutes, descri
                              status, reviewed_by, points_awarded, created_at)
 SELECT 'c0ffee00-0000-4000-8000-000000000001', (SELECT id FROM u WHERE n = s.who), (current_date - s.days_ago)::date,
        s.mins, s.descr, s.status,
-       CASE WHEN s.status <> 'PENDING' THEN (SELECT id FROM u WHERE n = 1) END,
+       -- The president reviews everyone's entries; the VP reviews the president's.
+       CASE WHEN s.status <> 'PENDING' THEN (SELECT id FROM u WHERE n = CASE WHEN s.who = 1 THEN 3 ELSE 1 END) END,
        s.status = 'APPROVED', now() - (interval '1 day' * s.days_ago)
 FROM (VALUES
+ -- Roster #1's own entry: Service hours shows only the viewer's history, and the
+ -- App Review notes send the reviewer there.
+ (1,9,150,'Chapter house cleanup with the Westfield Rotary','APPROVED'),
  (5,3,240,'Adopt-a-highway cleanup, Route 9 North','APPROVED'),
  (6,3,240,'Adopt-a-highway cleanup, Route 9 North','APPROVED'),
  (7,4,180,'Food bank sorting shift, Westfield Community Pantry','APPROVED'),
@@ -410,6 +434,9 @@ FROM (VALUES
 ) AS m(chan, who, body, pinned, hrs);
 
 -- ── Study geofences + sessions ───────────────────────────────────────────────
+-- The zones sit on the fictional campus, at real coordinates in Akron, Ohio. A
+-- member anywhere else cannot start a session, which is the product working:
+-- the App Review note says so rather than pretending the reviewer can.
 INSERT INTO study_geofences (id, chapter_id, name, coordinates, is_active,
                              minutes_per_point, points_per_interval, min_session_minutes)
 VALUES

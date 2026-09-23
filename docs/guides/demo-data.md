@@ -51,6 +51,14 @@ inside its own transaction. That is also why the login has to exist *before* the
 seed runs, and why re-seeding needs no separate re-link: the chapter cascade and
 the delete-by-id-prefix remove the old rows, and the rebuild links the new one.
 
+It links only a login that `seed-demo.mjs auth` created for the same chapter,
+which it marks in the account's `app_metadata`. An account with the right email
+but no marker (a real person's, or one added by hand in the Supabase dashboard)
+is left alone: the local seed goes ahead unlinked, and `--reviewer` refuses. If
+the login signed in before the seed linked it (`verify` run early, or the app
+opened), the API created a `users` row with no chapter for it; the next seed
+removes that row and links the login properly.
+
 ## Seed a hosted project
 
 The App Review account is this seed, applied to production with `--reviewer`,
@@ -82,31 +90,38 @@ project's HTTP APIs, so nothing here needs Docker or a database connection strin
 supplies the three Supabase values for the environment named. The Infisical slug
 for production is `prod`.
 
-**Guards**, each refusing before anything is sent:
+**Guards**, each refusing before it changes anything:
 
 - `DEMO_PASSWORD` has no default. On a hosted project it must be at least 12
   characters and must not be the local stack's committed one.
 - `auth` changes an existing hosted account only if this script created it for
-  the same namespace (a marker in its `app_metadata`). Anything else could be a
-  real person's account.
+  the same namespace (a marker in its `app_metadata`), and the seed links only a
+  marked login. Anything else could be a real person's account.
+- `verify` refuses the committed local password on a hosted project too, so a
+  login that accepts it cannot pass.
 - `auth` and `storage` refuse production unless `DEMO_ALLOW_PRODUCTION=true`,
   the same fence `DB_RESTORE_ALLOW_PRODUCTION` puts on a restore. The production
   ref comes from [`.github/environments.json`](../../.github/environments.json).
-- The seed refuses to link a login whose auth user already belongs to a Signet
-  account, and `--reviewer` refuses to run at all until the login exists. Either
-  way the whole seed is one transaction, so it fails with nothing changed.
+- The seed refuses to link a login whose `users` row is a member of any chapter,
+  and `--reviewer` refuses to run at all until a marked login exists. Either way
+  the whole seed is one transaction, so a failed re-seed leaves the chapter it
+  was replacing exactly as it was.
 
 ### Production (App Review)
 
 Writing this fictional chapter to `frapp-prod` is the owner's decision, and the
 steps below need production access that agent sessions do not have
-([#2309](https://github.com/pdcarlson/Frapp/issues/2309)). Keep the password
-out of shell history: `read -rs DEMO_PASSWORD && export DEMO_PASSWORD`.
+([#2309](https://github.com/pdcarlson/Frapp/issues/2309)). Set the login's two
+values first, keeping the password out of shell history:
 
-1. **Create the login.** Either run step 1 with production values
-   (`DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs auth --namespace a9900000`),
-   or add the user in the Supabase dashboard (`frapp-prod` → Authentication →
-   Users → Add user, auto-confirmed) as #2309 describes. The seed links either.
+```bash
+export DEMO_EMAIL=<the App Review login's email>
+read -rs DEMO_PASSWORD && export DEMO_PASSWORD
+```
+
+1. **Create the login.** `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs auth --namespace a9900000`.
+   Use this, not the Supabase dashboard: the seed links only a login this
+   command created.
 2. **Seed.** `node scripts/demo/seed-demo.mjs sql --namespace a9900000 --reviewer > reviewer.sql`,
    then paste `reviewer.sql` into the `frapp-prod` SQL editor, or run
    `psql "<frapp-prod connection string>" -v ON_ERROR_STOP=1 -f reviewer.sql`.
