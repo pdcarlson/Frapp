@@ -237,7 +237,9 @@ export interface ChatMessage {
    * unblocking the sender, then apply its own block list, and must hold the
    * row, not render it, while that list is loading or unavailable — unless
    * the consumer confirmed unblocking the sender, or already showed the row
-   * against a ready list, since nothing re-evaluates an echoed row: the
+   * against a ready list or as a server-cleared row while the list was not
+   * ready (a pin or edit echo replaces it unevaluated), since nothing
+   * re-evaluates an echoed row: the
    * reconnect backfill reads only after the last-seen cursor, which the echo
    * itself advanced (mobile: `classifyMessage` in
    * `apps/mobile/lib/chat/blocks.ts`, and `block-clearance.ts` beside it;
