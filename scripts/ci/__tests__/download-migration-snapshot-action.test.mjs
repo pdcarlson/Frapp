@@ -12,10 +12,13 @@
 //     `stale` while the gate's own tests stayed green;
 //   - that `use` counts only Deploy API (the only workflow that migrates
 //     staging) and reports one still in flight;
-//   - that a failed lookup is a warning in `use` (the required gates on main
-//     use it) and an error in `wait`.
+//   - that a failed deploy lookup is a warning in `use` (the required gates on
+//     main use it) and an error in `wait`;
+//   - that every Actions API read retries, so one transient error does not
+//     fail the step.
 //
-// The `wait` branch that sleeps is not exercised: it polls for 15 minutes.
+// `sleep` is stubbed to return at once, so retries cost nothing. The `wait`
+// branch that polls is still not exercised: its deadline is wall-clock.
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -35,17 +38,32 @@ const RUN_STARTED = "2026-09-23T12:00:00Z";
 const hasJq = spawnSync("jq", ["--version"]).status === 0;
 const skip = !hasJq && !process.env.CI ? "jq is not installed" : false;
 
-/** The `Find the newest snapshot published from main` step's `run: |` block. */
+/**
+ * The `Find the newest snapshot published from main` step's literal `run:`
+ * block.
+ *
+ * The search is bounded by the step. An unbounded forward search binds to a
+ * later step's script when this one's block header changes, and every case
+ * then fails for a reason that isn't there (the trap
+ * `helpers/workflow-yaml.mjs` describes). That helper reads workflow jobs, not
+ * a composite action's `runs.steps`, so the bounded reader stays here. A
+ * folded (`>`) block would change the script's lines, so only `|` is accepted.
+ */
 function extractFindScript() {
   const lines = readFileSync(ACTION, "utf8").split("\n");
   const stepIndex = lines.findIndex((line) => /^\s*- name: Find the newest snapshot published from main\s*$/.test(line));
   assert.notEqual(stepIndex, -1, "find step not found in download-migration-snapshot/action.yml");
-  const runIndex = lines.findIndex((line, i) => i > stepIndex && /^\s*run: \|\s*$/.test(line));
-  assert.notEqual(runIndex, -1, "find step has no `run: |` block");
+  const stepIndent = lines[stepIndex].match(/^\s*/)[0].length;
+  let stepEnd = lines.findIndex(
+    (line, i) => i > stepIndex && line.trim() !== "" && line.match(/^\s*/)[0].length <= stepIndent,
+  );
+  if (stepEnd === -1) stepEnd = lines.length;
+  const runIndex = lines.findIndex((line, i) => i > stepIndex && i < stepEnd && /^\s*run:\s*\|[-+]?\s*$/.test(line));
+  assert.notEqual(runIndex, -1, "the find step has no literal `run: |` block of its own");
 
   const runIndent = lines[runIndex].match(/^\s*/)[0].length;
   const body = [];
-  for (let i = runIndex + 1; i < lines.length; i += 1) {
+  for (let i = runIndex + 1; i < stepEnd; i += 1) {
     const line = lines[i];
     if (line.trim() === "") {
       body.push("");
@@ -59,18 +77,31 @@ function extractFindScript() {
   return script;
 }
 
-// `gh api PATH [--jq EXPR]`, answered from ROUTES: one `<regex>\t<file>` per
-// line, first match wins. No match, or a route to a missing file, fails like
-// an unreachable API. Every requested path is logged to GH_CALLS.
+// `gh api PATH [--jq EXPR]`, answered from ROUTES: one
+// `<regex>\t<file>[\t<failFirst>]` per line, first match wins. A route with
+// failFirst fails that many calls before it answers, like a transient 5xx. No
+// match, or a route to a missing file, fails every time, like an unreachable
+// API. Every requested path is logged to GH_CALLS.
 const FAKE_GH = `#!/usr/bin/env bash
 [ "$1" = api ] || exit 2
 shift; path="$1"; shift
 expr=""
 if [ "\${1:-}" = "--jq" ]; then expr="$2"; fi
 echo "$path" >> "$GH_CALLS"
-while IFS=$'\\t' read -r pattern file; do
+n=0
+while IFS=$'\\t' read -r pattern file fail_first; do
+  n=$((n + 1))
   [ -n "$pattern" ] || continue
   if [[ "$path" =~ $pattern ]]; then
+    if [ -n "$fail_first" ]; then
+      count_file="$FIXTURES/.route-$n"
+      count=$(cat "$count_file" 2>/dev/null || echo 0)
+      if [ "$count" -lt "$fail_first" ]; then
+        echo $((count + 1)) > "$count_file"
+        echo '{"message":"Server Error"}'
+        exit 1
+      fi
+    fi
     [ -f "$FIXTURES/$file" ] || exit 1
     if [ -n "$expr" ]; then jq -r "$expr" "$FIXTURES/$file"; else cat "$FIXTURES/$file"; fi
     exit $?
@@ -88,7 +119,7 @@ function run({ onStale, fixtures, routes }) {
   for (const [name, body] of Object.entries(fixtures)) {
     writeFileSync(join(dir, name), JSON.stringify(body));
   }
-  writeFileSync(join(dir, "routes.tsv"), routes.map(([pattern, file]) => `${pattern}\t${file}`).join("\n") + "\n");
+  writeFileSync(join(dir, "routes.tsv"), routes.map((route) => route.join("\t")).join("\n") + "\n");
   for (const f of ["env", "output", "calls"]) writeFileSync(join(dir, f), "");
 
   const result = spawnSync("bash", [scriptPath], {
@@ -158,6 +189,9 @@ describe("download-migration-snapshot find step", { skip }, () => {
     spawnSync("mkdir", ["-p", binDir]);
     writeFileSync(join(binDir, "gh"), FAKE_GH);
     chmodSync(join(binDir, "gh"), 0o755);
+    // Retries back off with `sleep`; the stub makes them instant.
+    writeFileSync(join(binDir, "sleep"), "#!/usr/bin/env bash\nexit 0\n");
+    chmodSync(join(binDir, "sleep"), 0o755);
     scriptPath = join(workspace, "find.sh");
     writeFileSync(scriptPath, extractFindScript());
   });
@@ -221,6 +255,50 @@ describe("download-migration-snapshot find step", { skip }, () => {
     assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "unknown");
     assert.match(r.stdout, /::warning::Could not read the recent deploy-api\.yml runs/);
+    // Three attempts before it gives up.
+    assert.equal(r.calls.filter((path) => path.includes("deploy-api.yml/runs")).length, 3);
+  });
+
+  it("use: a failed in-progress lookup exports `unknown` too, never `none`", () => {
+    // `none` would tell the gate the snapshot is current while a Deploy API run
+    // may be applying the very migration it lacks.
+    const r = run({
+      onStale: "use",
+      fixtures: PUBLISHER,
+      routes: [...PUBLISHER_ROUTES, ["/deploy-api\\.yml/runs.*status=completed", "none.json"]],
+    });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "unknown");
+    assert.match(r.stdout, /::warning::Could not read in-progress Deploy API runs/);
+  });
+
+  it("retries a transient error on every read instead of failing the step", () => {
+    // Each route fails twice, then answers: the third attempt must succeed.
+    const r = run({
+      onStale: "use",
+      fixtures: PUBLISHER,
+      routes: [
+        ["/git/ref/heads/main$", "main-ref.json", "2"],
+        ["/actions/workflows/migration-snapshot\\.yml/runs", "publisher.json", "2"],
+        ["/compare/pubsha\\.\\.\\.mainsha$", "compare.json", "2"],
+        ["/deploy-api\\.yml/runs.*status=completed", "none.json", "2"],
+        ["/deploy-api\\.yml/runs.*status=in_progress", "none.json", "2"],
+      ],
+    });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "none");
+    assert.match(r.output, /run-id=7001/);
+  });
+
+  it("gives up after three attempts on a read that keeps failing", () => {
+    const r = run({
+      onStale: "use",
+      fixtures: PUBLISHER,
+      routes: [["/git/ref/heads/main$", "main-ref.json", "3"], ...PUBLISHER_ROUTES.slice(1)],
+    });
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /::error::Could not read refs\/heads\/main/);
+    assert.equal(r.calls.filter((path) => path.endsWith("/git/ref/heads/main")).length, 3);
   });
 
   it("use: a Deploy API run from another repository (a fork's `main`) is not counted", () => {

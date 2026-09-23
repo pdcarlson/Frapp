@@ -279,7 +279,8 @@ job summary's first line, because red has two meanings:
   drift.
 
 A run can show both. The drift summary then also lists the migrations the
-snapshot cannot vouch for, so one run names the stuck publisher too.
+snapshot cannot vouch for, with the reason and the step for each, so one run
+reports both problems.
 
 ### `--include-all` (recovery only)
 

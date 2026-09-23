@@ -47,9 +47,12 @@
 // staging had to catch up". Default grace is 30 minutes, far shorter than a
 // working day. In CI it has to cover the whole chain from merge to snapshot:
 // CI on main, `Deploy API` (whose `migrate-staging` applies it) and the publish
-// that run triggers. From the CI run's creation to its Deploy API run's
-// `updated_at` took 1 to 9 minutes across the last 12 Deploy API runs on
-// 2026-09-23. The publish leg is unmeasured until the publisher runs on main.
+// that run triggers. From a CI push run's creation to the end of the Deploy
+// API run it triggered took 256 to 599 seconds across the 12 Deploy API runs
+// on main before 16:32Z on 2026-09-23 (each paired with the CI run that
+// finished just before it was created: a `workflow_run` run's `head_sha` is
+// main's tip when it fired, not the commit that triggered it). The publish leg
+// is unmeasured until the publisher runs on main.
 //
 // `--first-parent` is what makes that true rather than merely intended: see
 // the comment at the call site. Without it the grace was measured from the

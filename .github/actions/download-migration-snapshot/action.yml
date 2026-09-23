@@ -60,9 +60,9 @@ description: >
 # nothing re-runs it. It would also hold main's non-cancellable concurrency
 # group open, so that a queued run behind it gets replaced and its required
 # checks end `cancelled`. The drift job reports and does not gate. It
-# still catches a stuck publisher without waiting, from the export below: a
+# still catches a lagging publisher without waiting, from the export below: a
 # migration past its grace window, read from a snapshot a staging deploy has
-# overtaken, turns it red as `stale`, naming the publisher (`classifyGateDrift`).
+# overtaken, turns it red as `stale`, saying why (`classifyGateDrift`).
 #
 # ── What it exports ─────────────────────────────────────────────────────────
 # `MIGRATION_SNAPSHOT`: the snapshot file's path.
@@ -78,6 +78,20 @@ description: >
 # overtaken, while one taken right after a failed apply is current.
 # `Deploy production` is not counted in this export, because it never touches
 # staging; `wait` counts it, because the gates it serves also judge production.
+#
+# ── What `wait` does not close ──────────────────────────────────────────────
+# A `Deploy production` run still in flight. It is not waited for, because its
+# one job ships for minutes after it migrates and would outlast the budget. The
+# staging row of the same snapshot usually already shows the migration, since
+# staging applied it at merge time. A live read had the same point-in-time
+# race, which was open until the apply.
+#
+# ── Retries ─────────────────────────────────────────────────────────────────
+# Every Actions API read goes through `gh_api`, three attempts with backoff,
+# because `use` serves the required gates on pushes to `main`: one transient
+# 5xx must not leave a red required check on a `main` commit, which
+# `validate-deploy-sha.mjs` then refuses to deploy. The credentialed reads this
+# action replaced retried the same way (`scripts/ci/lib/http.mjs`).
 
 inputs:
   on-stale:
@@ -107,6 +121,23 @@ runs:
         DEPLOYS="${RUNNER_TEMP}/migration-snapshot-deploys.json"
         DEADLINE=$(( $(date +%s) + 900 ))
 
+        # `gh api` with three attempts, backing off 5s then 20s. The body is
+        # printed only on success, so a failed attempt's error body never
+        # reaches the caller's file or variable.
+        gh_api() {
+          local attempt out
+          for attempt in 1 2 3; do
+            if out="$(gh api "$@")"; then
+              printf '%s\n' "$out"
+              return 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $(( attempt * attempt * 5 ))
+            fi
+          done
+          return 1
+        }
+
         # Which of the named workflows' completed runs on main finished after
         # the snapshot's run started? Sets LATEST_DEPLOY to its finish time, or
         # to "" when none has. Returns 1, with the reason in LOOKUP_ERROR, when
@@ -125,7 +156,7 @@ runs:
           LOOKUP_ERROR=""
           local wf newer run finished
           for wf in "$@"; do
-            if ! gh api "repos/${REPO}/actions/workflows/${wf}/runs?branch=main&status=completed&per_page=100" > "$DEPLOYS"; then
+            if ! gh_api "repos/${REPO}/actions/workflows/${wf}/runs?branch=main&status=completed&per_page=100" > "$DEPLOYS"; then
               LOOKUP_ERROR="Could not read the recent ${wf} runs."
               return 1
             fi
@@ -143,7 +174,7 @@ runs:
               return 1
             fi
             for run in $newer; do
-              if ! finished="$(gh api "repos/${REPO}/actions/runs/${run}/jobs?per_page=100" --jq '[.jobs[].completed_at | select(. != null)] | max // ""')"; then
+              if ! finished="$(gh_api "repos/${REPO}/actions/runs/${run}/jobs?per_page=100" --jq '[.jobs[].completed_at | select(. != null)] | max // ""')"; then
                 LOOKUP_ERROR="Could not read the jobs of ${wf} run ${run}."
                 return 1
               fi
@@ -160,7 +191,7 @@ runs:
         # that cannot be read.
         count_staging_running() {
           LOOKUP_ERROR=""
-          if ! gh api "repos/${REPO}/actions/workflows/deploy-api.yml/runs?branch=main&status=in_progress&per_page=100" > "$DEPLOYS"; then
+          if ! gh_api "repos/${REPO}/actions/workflows/deploy-api.yml/runs?branch=main&status=in_progress&per_page=100" > "$DEPLOYS"; then
             LOOKUP_ERROR="Could not read in-progress Deploy API runs."
             return 1
           fi
@@ -174,11 +205,11 @@ runs:
           # main's SHA, not the bare name: a tag called `main` would make the
           # name ambiguous, and it is the forgery this check exists to stop.
           # Re-read each round, because main can move while this waits.
-          if ! MAIN_SHA="$(gh api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)"; then
+          if ! MAIN_SHA="$(gh_api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)"; then
             echo "::error::Could not read refs/heads/main."
             exit 1
           fi
-          if ! gh api "repos/${REPO}/actions/workflows/migration-snapshot.yml/runs?branch=main&status=success&per_page=30" > "$RUNS"; then
+          if ! gh_api "repos/${REPO}/actions/workflows/migration-snapshot.yml/runs?branch=main&status=success&per_page=30" > "$RUNS"; then
             echo "::error::Could not list Migration snapshot runs. Does the job grant 'actions: read', and is .github/workflows/migration-snapshot.yml on main?"
             exit 1
           fi
@@ -192,7 +223,7 @@ runs:
           RUN_ID=""
           RUN_STARTED=""
           while read -r id sha started; do
-            if ! status="$(gh api "repos/${REPO}/compare/${sha}...${MAIN_SHA}" --jq .status < /dev/null)"; then
+            if ! status="$(gh_api "repos/${REPO}/compare/${sha}...${MAIN_SHA}" --jq .status < /dev/null)"; then
               echo "::error::Could not check whether Migration snapshot run ${id}'s commit ${sha} is on main."
               exit 1
             fi
