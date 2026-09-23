@@ -84,8 +84,8 @@ measurements.
 in that recipe, so it has to clear the 3:1 non-text floor unaided. It is not a two-component recipe:
 `ui/switch.tsx` and `ui/tabs.tsx` are the archetypes, but `settings-fields-tab`, `settings-modules-tab`,
 `chat-admin-page`, `members-directory`, `roles-page` and `documents-page` all use it
-too — eight files, across nine usage sites (`documents-page` applies it twice). Nine is where the
-old count came from. (`chapter-wizard` is not one of them: it imports and applies `FOCUS_RING`, and
+too, among others (`grep -rnw FOCUS_RING_OFFSET apps/web --include='*.tsx'` lists the current
+sites; a count written here went stale). (`chapter-wizard` is not one of them: it imports and applies `FOCUS_RING`, and
 names `FOCUS_RING_OFFSET` only inside a JSX comment. That comment cites
 [#1215](https://github.com/pdcarlson/Frapp/issues/1215) in the present tense, but #1215 closed
 completed on 2026-08-28 via [#1348](https://github.com/pdcarlson/Frapp/pull/1348), and lane 1 has
@@ -155,7 +155,7 @@ L-06, L-07, L-08 and L-09 reached past this epic, so they carry issues —
 [#2398](https://github.com/pdcarlson/Frapp/issues/2398),
 [#2153](https://github.com/pdcarlson/Frapp/issues/2153), now closed, and
 [#2154](https://github.com/pdcarlson/Frapp/issues/2154) — and outlive this directory, which is
-retired when [#2140](https://github.com/pdcarlson/Frapp/issues/2140) closes. The rest are lane-1
+due for retirement now that [#2140](https://github.com/pdcarlson/Frapp/issues/2140) has closed. The rest are lane-1
 consequences that a greenfield lane resolves here.
 
 ### L-01 — CLOSED 2026-09-11. The ladder is artifact-backed, and the board agrees

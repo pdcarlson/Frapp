@@ -76,7 +76,7 @@ scaffolding is not committed. The comment in
 | Reference in the board | What it is | Why it is not committed |
 | ---------------------- | ---------- | ----------------------- |
 | `./support.js` | The Claude Design canvas runtime, ~67 KB of generated JS | Same as the design-system boards, which reference it and do not carry it |
-| `assets/emblem.png` | Locked emblem B, 1024² | **Already in this repository.** Byte-identical to `packages/brand-assets/assets/signet-emblem-B-tile.png` (`sha256 ca55ab2f…3337b03`). A second copy under `spec/` would be an unguarded duplicate — `scripts/check-brand-assets.mjs` compares a fixed pair list and would not see it drift |
+| `assets/emblem.png` | Locked emblem B, 1024² | **The mark is already in this repository.** The board's copy (`sha256 ca55ab2f…3337b03`) matches no committed raster since #2153 re-exported the mark; the current 1024² tile is `packages/brand-assets/assets/signet-emblem-B-1024.png`. A second copy under `spec/` would be an unguarded duplicate — `scripts/check-brand-assets.mjs` checks only the `SYNCED` list and would not see it drift |
 | `uploads/google-oauth-signet-logo.png` | Google's "G" mark on the sign-in button in `2a`–`2b`, 120² | A third-party mark, incidental to the design. Not ours to vendor into `spec/` |
 
 ## What this board settles
