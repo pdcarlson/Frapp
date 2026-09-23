@@ -217,12 +217,11 @@ roster is the runbook's § Required Status Checks.
 
 ## Spec compliance
 
-`spec/` is intended behavior and code is current behavior. A disagreement is a bug to file; don't
-rewrite working code to match a stale spec, or a spec to match a bug (`AGENTS.md` § Spec vs code).
 Compare features with `spec/product/`, check that the edge cases and invariants in
 `spec/behavior/` are tested, and check stack and patterns against
 [`spec/architecture/README.md`](../../../spec/architecture/README.md) and environments against
-[`spec/environments/README.md`](../../../spec/environments/README.md).
+[`spec/environments/README.md`](../../../spec/environments/README.md). Handle a disagreement you
+find per [`AGENTS.md` § Spec vs code](../../../AGENTS.md#spec-vs-code).
 
 ## Reporting findings
 
