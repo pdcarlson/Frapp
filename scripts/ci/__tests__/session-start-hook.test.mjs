@@ -230,13 +230,9 @@ test("an old hook's lock (no boot id) last written before this boot is stale", a
   assert.equal(readFileSync(path.join(s.lock, "boot_id"), "utf8").trim(), "boot-B");
 });
 
-test("a lock whose bringup is still running is never torn down, whatever btime says", async (t) => {
-  // A clock stepped forward (a sync, a resumed VM) raises btime past a same-boot lock's mtime.
-  // The live bringup proves the lock is from this boot; relaunching would race it.
-  const s = scratch(t);
-  const inflight = path.join(s.dir, "cloud-sandbox-up-inflight.sh");
-  writeFileSync(inflight, "sleep 30\n");
-  const child = spawn("bash", [inflight], { detached: true, stdio: "ignore" });
+/** A live process whose command line is `args`, killed when the test ends. */
+function liveProcess(t, command, args) {
+  const child = spawn(command, args, { detached: true, stdio: "ignore" });
   t.after(() => {
     try {
       process.kill(child.pid);
@@ -244,14 +240,57 @@ test("a lock whose bringup is still running is never torn down, whatever btime s
       // already gone
     }
   });
-  priorLock(s, { boot: undefined, sentinel: null, writtenAt: 1_700_000_000 });
-  writeFileSync(path.join(s.lock, "pid"), `${child.pid}\n`);
-  utimesSync(s.lock, 1_700_000_000, 1_700_000_000);
+  return child.pid;
+}
+
+/** A running bringup: bash executing a file named cloud-sandbox-up.sh. */
+function liveBringup(t, s) {
+  mkdirSync(path.join(s.dir, "inflight"));
+  const script = path.join(s.dir, "inflight", "cloud-sandbox-up.sh");
+  writeFileSync(script, "sleep 30\n");
+  return liveProcess(t, "bash", [script]);
+}
+
+/** Point an existing lock at `pid`, keeping its mtime at `writtenAt`. */
+function lockPid(s, pid, writtenAt) {
+  writeFileSync(path.join(s.lock, "pid"), `${pid}\n`);
+  if (writtenAt !== undefined) utimesSync(s.lock, writtenAt, writtenAt);
+}
+
+test("a lock whose bringup is still running is never torn down, whatever btime says", async (t) => {
+  // A clock stepped forward (a sync, a resumed VM) raises btime past a same-boot lock's mtime.
+  // The live bringup proves the lock is from this boot; relaunching would race it.
+  const s = scratch(t);
+  const pid = liveBringup(t, s);
+  priorLock(s, { boot: undefined, sentinel: null });
+  lockPid(s, pid, 1_700_000_000);
   const context = runHook(s, { boot: "boot-B", btime: 1_700_000_500 });
   assert.match(context, /stack bringup is still running \(pid \d+\)/);
   assert.doesNotMatch(context, /restarted/);
-  assert.equal(readFileSync(path.join(s.lock, "pid"), "utf8").trim(), String(child.pid));
+  assert.equal(readFileSync(path.join(s.lock, "pid"), "utf8").trim(), String(pid));
   assert.equal(await eventually(() => existsSync(s.launched), 300), false, "a second bringup must not start");
+});
+
+test("the boot id test never consults the pid: after a restart it may name another process", async (t) => {
+  const s = scratch(t);
+  const pid = liveBringup(t, s);
+  priorLock(s, { boot: "boot-A" });
+  lockPid(s, pid);
+  const context = runHook(s, { boot: "boot-B" });
+  assert.match(context, /its lock carries another boot id/);
+  assert.ok(await eventually(() => existsSync(s.launched)), "bringup was not relaunched");
+});
+
+test("a process that only names the log is not a live bringup", async (t) => {
+  // Lock, no sentinel, and the recorded pid now held by something like
+  // `tail -f /tmp/cloud-sandbox-up.log`: the lock is stale, so it is reclaimed.
+  const s = scratch(t);
+  const pid = liveProcess(t, process.execPath, ["-e", "setTimeout(() => {}, 30000)", "/tmp/cloud-sandbox-up.log"]);
+  priorLock(s, { boot: "boot-B", sentinel: null });
+  lockPid(s, pid);
+  const context = runHook(s, { boot: "boot-B" });
+  assert.match(context, /cleared a stale bringup lock/);
+  assert.ok(await eventually(() => existsSync(s.launched)), "bringup was not relaunched");
 });
 
 test("an old hook's lock written during this boot keeps the old behavior", async (t) => {

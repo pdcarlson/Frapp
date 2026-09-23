@@ -128,25 +128,28 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
   # an earlier one. Nothing ever writes a boot id into an old lock, so without this such a
   # machine would keep the bug until its lock went away.
   #
-  # Neither test runs while the lock's own bringup is still alive: a live process cannot be
-  # from an earlier boot, and tearing its lock down would start a second bringup racing the
-  # first. That matters for the btime test, which the kernel derives from the wall clock, so a
-  # clock stepped forward since the lock was written (a sync, a resumed VM) can call a
-  # same-boot lock stale. With the live-process check, what a step can still cost is one
-  # needless re-run of the idempotent bringup behind a finished lock, once per machine (the
-  # relaunch records a boot id); trusting a dead stack is the failure this exists to end.
+  # The btime test alone is skipped while the lock's own bringup is still alive. The kernel
+  # derives btime from the wall clock, so a clock stepped forward since the lock was written
+  # (a sync, a resumed VM) can call a same-boot lock stale, and tearing down a lock whose
+  # bringup is running would start a second one racing it; a live bringup is proof of this
+  # boot. With that check, what a step can still cost is one needless re-run of the
+  # idempotent bringup behind a finished lock, once per machine (the relaunch records a boot
+  # id). The boot id test is exact and never consults a pid: after a restart the old pid may
+  # belong to some unrelated process by now.
+  #
+  # "Alive" means the recorded pid runs cloud-sandbox-up.sh itself, not merely a command that
+  # names its log or sentinels (a `tail -f /tmp/cloud-sandbox-up.log` would otherwise pass).
   bringup_alive() {
     [ -n "$1" ] && kill -0 "$1" 2>/dev/null \
-      && ps -p "$1" -o args= 2>/dev/null | grep -q cloud-sandbox-up
+      && ps -p "$1" -o args= 2>/dev/null | grep -q 'cloud-sandbox-up\.sh'
   }
   stale_boot=""
-  if [ -n "$current_boot" ] && [ -d "$LOCK" ] \
-    && ! bringup_alive "$(cat "$LOCK/pid" 2>/dev/null || true)"; then
+  if [ -n "$current_boot" ] && [ -d "$LOCK" ]; then
     if [ -f "$LOCK/boot_id" ]; then
       if [ "$(cat "$LOCK/boot_id" 2>/dev/null || true)" != "$current_boot" ]; then
         stale_boot="its lock carries another boot id"
       fi
-    else
+    elif ! bringup_alive "$(cat "$LOCK/pid" 2>/dev/null || true)"; then
       boot_time="$(awk '/^btime /{print $2; exit}' "$PROC_STAT" 2>/dev/null || true)"
       lock_time="$(stat -c %Y "$LOCK" 2>/dev/null || true)"
       case "$boot_time$lock_time" in

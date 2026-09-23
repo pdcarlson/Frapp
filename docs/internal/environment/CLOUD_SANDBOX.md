@@ -146,8 +146,9 @@ packages that publish their types through a gitignored `dist/` are otherwise unb
 checkout ([#2516](https://github.com/pdcarlson/Frapp/issues/2516)); which consumers read that
 `dist/` is in [`contributing.md` § 5](../../guides/contributing.md#5-linting-types-and-tests).
 Without it `npm run start:dev -w apps/api` fails on unresolved imports, and
-`check:dep-cruiser`, which resolves the `types` condition with no fallback, reports them as
-boundary violations in every workspace that imports those packages, `apps/web` included. It needs only `node_modules`, so it runs ahead of the steps that can
+`check:dep-cruiser`, which resolves the `types` condition with no fallback, fails in every
+workspace that imports those packages, `apps/web` included: it reports those imports apart, as
+packages that are not built, with the command that builds them. It needs only `node_modules`, so it runs ahead of the steps that can
 fail, and a Docker or network failure no longer leaves the packages unbuilt too; it took under
 two seconds uncached. The build writes `packages/*/dist/` and turbo's cache in `.turbo/`, never
 `node_modules`. It is over within the first seconds of bringup, but a session that runs its own
@@ -281,7 +282,9 @@ forever on a sentinel that can't arrive. It also relaunches when the lock carrie
 restart and the processes do not, so a lock and sentinel from before a restart describe a
 stack that is gone ([#2515](https://github.com/pdcarlson/Frapp/issues/2515)). A lock written
 before boot ids were recorded is judged by its age instead: one last written before the
-kernel's boot time (`btime` in `/proc/stat`) is from an earlier boot. Either way the hook
+kernel's boot time (`btime` in `/proc/stat`) is from an earlier boot, unless the bringup it
+records is still running, which proves the lock belongs to this boot (a wall-clock step moves
+`btime`). Either way the hook
 deletes the old `.done`/`.failed` along with the lock, so a second fire before the new
 bringup starts cannot report the dead stack. Where the kernel exposes no boot id, the hook
 trusts the lock and sentinel as it always has. The session is **never blocked** on the ~60-90s
