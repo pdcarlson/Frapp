@@ -15,7 +15,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 2. **References eliminate duplication.** Framework-specific names (`NEXT_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`) are Infisical **secret references** that resolve to the canonical value. Change `SUPABASE_URL` → all references update.
 
-3. **No environment suffixes.** There's no `RENDER_DEPLOY_HOOK_URL_STAGING` — just `RENDER_DEPLOY_HOOK_URL` with different values per environment. GitHub's `environment:` feature and Infisical's environment scoping handle the routing.
+3. **No environment suffixes.** There's no `API_HEALTHCHECK_URL_STAGING` — just `API_HEALTHCHECK_URL` with different values per environment. Infisical's environment scoping does the routing: each `infisical-secrets` call picks its environment with a literal `env-slug` ([§ GitHub Actions is not a sync](#github-actions-is-not-a-sync)). A job's GitHub `environment:` plays no part in it.
 
 4. **No `.env.local` files (primary path).** Default local run is **`npm run dev:stack`** from the repo root (API + web + landing + docs; secrets from Infisical `dev` via the CLI). Requires `npx infisical login` on the machine. Per-app `dev:*` and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
@@ -45,7 +45,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | ------------ | ----- | ------------------------------ |
 | Identities   | 5     | 1 (admin)                      |
 | Projects     | 3     | 1 (Frapp)                      |
-| Environments | 3     | 3 (dev, staging, prod)         |
+| Environments | 3     | 3 — [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#infisical-environments) |
 | Integrations | 10    | 6 secret syncs — see §5        |
 
 The integration count is derived from the sync inventory in §5, not tracked independently — this row
@@ -62,14 +62,10 @@ billing/usage view is authoritative if you need the number for a plan decision.
 
 ### 2. Create Environments
 
-| UI name     | Slug        | Maps to                               |
-| ----------- | ----------- | ------------------------------------- |
-| Development | `dev`       | Local development via `infisical run` |
-| Staging     | `staging`   | `main` branch deploys                 |
-| Production  | `prod`      | Production deploys — a dispatched commit, not a branch (#1340) |
-
-The **slug** is what every tool takes — `infisical run --env=`, the workflows' `env-slug:`, and
-`.infisical.json`. Two of the three differ from the UI name. Verify against
+Create one environment per row of
+[`ENV_REFERENCE.md` § Infisical Environments](./ENV_REFERENCE.md#infisical-environments), giving each
+the **slug** that table lists, not just its UI name: the slug is what every tool takes —
+`infisical run --env=`, the workflows' `env-slug:`, and `.infisical.json` — and the two differ. Verify against
 **Project Settings → Environments**, which lists Name and Slug side by side.
 
 ### 3. Add Canonical Values
@@ -83,7 +79,7 @@ value. Start with `staging`, then repeat for `prod` and `dev`.
 
 ### 4. Add References
 
-In **all three environments**, add the reference rows from
+In **every environment**, add the reference rows from
 [`ENV_REFERENCE.md` § "References — Framework-Specific Names"](./ENV_REFERENCE.md#references--framework-specific-names)
 — the value string you type is identical in every environment; only the canonical value it resolves to
 changes. That table also flags the one `NEXT_PUBLIC_*` name that is a **literal**, not a `${…}` reference
@@ -96,7 +92,7 @@ dashboard (`development` / `preview` / `production`) or a non-secret `eas.json` 
 entry. **This is not limited to `EXPO_PUBLIC_*`:** `SENTRY_AUTH_TOKEN` is build-time only and never
 bundled, yet a Release build *fails* without it in EAS — see
 [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#appsmobile-expo--eas) § apps/mobile. An Infisical entry for
-that name serves `apps/api` / `apps/web`, which do sync; it never reaches EAS. The six live syncs are Render + Vercel only (next section).
+that name serves `apps/api` / `apps/web`, which do sync; it never reaches EAS. The live syncs are Render + Vercel only (next section).
 
 ### 5. Configure Secret Syncs
 
@@ -157,9 +153,11 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. The workflows
 that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` with
 `method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
-`INFISICAL_CLIENT_SECRET` repository secrets. This is universal auth, not OIDC. Six workflows do
-this — `deploy-api.yml`, `deploy-production.yml`, `db-backup.yml`, `check-migration-drift.yml`,
-`migration-drift-gate.yml` and `staging-conformance.yml` — not `deploy-api.yml` alone.
+`INFISICAL_CLIENT_SECRET` repository secrets. This is universal auth, not OIDC. Every workflow that
+calls the composite action below does this — today `deploy-api.yml`, `deploy-production.yml`,
+`db-backup.yml`, `check-migration-drift.yml`, `migration-drift-gate.yml`, `staging-conformance.yml`
+and `production-auth-conformance.yml` (re-derive with
+`git grep -l 'actions/infisical-secrets' .github/workflows`) — not `deploy-api.yml` alone.
 
 That call is written once, in the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml)
 composite action, which every workflow needing secrets calls; no workflow spells out
@@ -290,7 +288,7 @@ much.
 
 > ⚠️ **`INFISICAL_MACHINE_IDENTITY_ID` wants the Client ID, not the identity ID.** An Infisical machine identity has an **ID** on its Details page and a separate **Client ID** inside its Universal Auth panel. Only the Client ID authenticates. The secret's name points at the wrong one, and pasting the Details-page ID yields `401 Invalid credentials` — indistinguishable at a glance from a revoked credential. This cost 71 days of dead deploys (#696).
 
-**Transitional (until Infisical GitHub Action injection is wired):**
+**Not GitHub secrets — injected from Infisical at job time:**
 
 The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
 
@@ -298,16 +296,14 @@ The deploy workflows inject these from Infisical at runtime through [`infisical-
 | ------------------------ | --------------------------------------- | ------------------------------- |
 | `SUPABASE_ACCESS_TOKEN`  | Account-level token (same for both)     | (same)                          |
 | `SUPABASE_PROJECT_REF`   | Staging project ref                     | Production project ref          |
-| `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL                 | Production deploy hook URL      |
+| `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL                 | _(none — production deploys by commit through the Render API, never a hook)_ |
 | `API_HEALTHCHECK_URL`    | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |
-
-Once the `@infisical/secrets-action` is integrated into the deploy workflow, these transitional secrets can be removed from GitHub and injected from Infisical at runtime.
 
 #### Troubleshooting: `Deploy API` fails with `401 Invalid credentials`
 
-`Infisical/secrets-action` reports the same `401 Invalid credentials` whether the bootstrap secrets are **absent** or **rejected**. To tell those apart, every injection runs a `Verify Infisical credentials are configured` preflight first. That preflight is no longer written in the workflow: it is the first step of the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml) composite action, so it now runs at **every** injection site (eleven at the cutover, fifteen since the production backup jobs in #1435) rather than the nine that happened to carry a copy.
+`Infisical/secrets-action` reports the same `401 Invalid credentials` whether the bootstrap secrets are **absent** or **rejected**. To tell those apart, every injection runs a `Verify Infisical credentials are configured` preflight first. That preflight is no longer written in the workflow: it is the first step of the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml) composite action, so it now runs at **every** injection site rather than the nine that happened to carry a copy. The sites are the `EXPECTED` roster in [`infisical-secrets-action.test.mjs`](../../../scripts/ci/__tests__/infisical-secrets-action.test.mjs), which fails when a call site is added or removed without it.
 
-The table below describes the fourteen sites that **fail** on a missing credential (every site, including the four production backup injections, uses the action's default `error` mode). **`staging-conformance.yml` is the exception** and reads differently: it passes `on-missing-credentials: warn`, because that workflow exists to *report* credential drift rather than die of it. There the preflight step stays green and emits a `::warning::` naming the missing secret, so a missing credential shows up as a **warning above an otherwise-normal 401**, not as a failed step. Read the warning before concluding from row 3 that the credentials were rejected.
+The table below describes the sites that **fail** on a missing credential: every site on the action's default `error` mode. **The two conformance watchdogs are the exception**, `staging-conformance.yml` and `production-auth-conformance.yml`, and read differently: they pass `on-missing-credentials: warn`, because those workflows exist to *report* credential drift rather than die of it. There the preflight step stays green and emits a `::warning::` naming the missing secret, so a missing credential shows up as a **warning above an otherwise-normal 401**, not as a failed step. Read the warning before concluding from row 3 that the credentials were rejected.
 
 | Preflight result                       | Meaning                                                                                          | Fix                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
@@ -345,7 +341,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | ------------------------- | ----------------------- | ------------------------------------------------------------ |
 | Supabase service role key | On suspected compromise | Regenerate in Supabase → update canonical value in Infisical |
 | Stripe secret key         | On suspected compromise | Regenerate in Stripe → update canonical value in Infisical   |
-| Render deploy hook URLs   | On service recreation   | Copy from Render → update canonical value in Infisical       |
+| Render deploy hook URL (staging only) | On service recreation | Copy from Render → update canonical value in Infisical       |
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
 | R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` staging syncs (§5) also push copies to the Render staging service and both Vercel Preview envs — count those in any blast-radius assessment (#834 tracks narrowing that) |
 

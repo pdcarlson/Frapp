@@ -6,7 +6,7 @@ suites, both in the **required** `web-responsive-floor` job:
 | Suite | Covers |
 | --- | --- |
 | `responsive-floor.spec.ts` | every `DASHBOARD_ROUTES` entry at 375px |
-| `pre-auth-floor.spec.ts` | the four `PRE_AUTH_ROUTES` at 375px, plus one guard |
+| `pre-auth-floor.spec.ts` | every `PRE_AUTH_ROUTES` entry at 375px, plus one guard |
 
 Both read `routes.ts`. Add a screen there and the matching spec picks it up.
 
@@ -25,7 +25,7 @@ sessionless harness to `/sign-in?redirectTo=/join` — so nothing here can
 measure it. That needs a seeded session, which is the same piece of work the
 last section of this file scopes. Measured by hand at 375px meanwhile: the
 column measures 375 with a widest child of 327, the same as `/sign-in`, which
-is expected — all five pre-auth routes compose one column.
+is expected — every pre-auth route, `/join` included, composes one column.
 
 The **onboarding wizard** is the second, and it is the harder one. It is never
 a route: `ChapterWizardGate` mounts it as a full-screen overlay when

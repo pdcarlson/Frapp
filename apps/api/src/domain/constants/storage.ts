@@ -53,10 +53,12 @@ export function reportsFolderPrefix(chapterId: string): string {
  *
  * **This layout supersedes the one that migration's header declared.** It wrote
  * `chapters/{chapter}/chat-archive/{channel_id}/{message_id}/{basename}`, which
- * assumed the API would fetch each object from Discord's CDN itself and place it
- * once the Signet ids existed. It does not: the admin's browser uploads the
- * files directly, before any Signet channel or message id has been assigned, so
- * a message-derived key is unknowable at upload time. Keying on the import
+ * assumed every object would be placed once the Signet ids existed. On the
+ * upload path they are not: the admin's browser uploads the files directly,
+ * before any Signet channel or message id has been assigned, so a
+ * message-derived key is unknowable at upload time. (The bot path does fetch
+ * from Discord's CDN server-side, and shares this key via
+ * `archiveMediaObjectPath` below.) Keying on the import
  * instead also gives the purge a single prefix to sweep — which matters more
  * than it sounds, because there is no chapter-deletion path in the product and
  * nothing else reaps this bucket, so the import is the only lifecycle it has.

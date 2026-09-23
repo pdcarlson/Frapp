@@ -290,8 +290,8 @@ in [`SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEME
 "5. Configure Secret Syncs". Read and update it there. It's a dated copy of the dashboard, so if the
 two disagree, the doc is wrong: fix it and update its date.
 
-GitHub Actions has no Infisical sync. Workflows pull secrets at job time through
-`.github/actions/infisical-secrets` (`Infisical/secrets-action`, universal auth, not OIDC).
+GitHub Actions has no Infisical sync; how workflows get secrets instead (and why there is no OIDC
+config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal/environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync).
 
 ## Common investigation patterns
 

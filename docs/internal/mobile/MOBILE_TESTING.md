@@ -167,33 +167,19 @@ screen — `lib/chat/channel-list.ts` and its spec are the pattern. A spec that
 must render a whole screen goes in `lib/` as well and reaches back through the
 `@/` alias, as `lib/onboarding/join-screen.spec.tsx` does.
 
-**Do not widen the React version range.** React is pinned to an exact `19.2.3` in
-every workspace and in the root `overrides`. React Native 0.86.2 bundles
-`react-native-renderer` 19.2.3, which asserts _exact_ equality with `react` at
-runtime, but declares its peer range as a caret — so npm will happily resolve a
-newer React, hoist it to the repo root, and leave the mobile app dead on first
-render with "Invalid hook call" followed by "Incompatible React versions". Unit
-tests, lint, and typecheck all pass in that state; only booting the app catches it.
+**Do not widen the React version range.** React is pinned to an exact version, and a caret lets
+npm hoist a newer React that leaves the mobile app dead on first render ("Invalid hook call", then
+"Incompatible React versions") while unit tests, lint, and typecheck all pass — only booting the
+app catches it. The pin sites, why exact equality is required, and how to move the pin with an
+Expo SDK upgrade: [`AGENTS.md` § Gotchas](../../../AGENTS.md#gotchas).
 
-The exact version is not frozen forever — it moves with each Expo SDK upgrade.
-Read the correct target for an SDK from `expo/bundledNativeModules.json` (it lists
-`react`, `react-dom`, and `react-native` together) and move all five pin sites —
-`apps/landing`, `apps/mobile`, `apps/web`, `packages/hooks`, and the root
-`overrides` — in one commit. A root `overrides` entry is global, so mobile
-cannot take a newer React while the override holds the old one.
-
-**Upgrading the SDK requires re-resolving the lockfile — narrowly, not by rebuilding it.** `@expo/vector-icons`
-declares `expo-font: ">=14.0.4"` as a _peer_, which the previous SDK's `expo-font`
-still satisfies — so a plain `npm install` keeps the whole old SDK chain hoisted at
-the root next to the new one, vulnerabilities included. **Prune and re-resolve just the
-Expo/React/Metro entries; do not run a blanket
-`rm -rf node_modules package-lock.json && npm install`** — that drops every optional
-platform binary except the host's, which `npm ci` and CI cannot see. The mechanism, with
-a worked package list: [`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md) § Do not "fix"
-this with a full lockfile rebuild — written up against the Next.js cleanup, but it is npm's
-behaviour rather than Next's and applies to any full rebuild. Then verify a single
-`node_modules/expo` at the expected
-version before trusting any audit numbers.
+**Upgrading the SDK requires re-resolving the lockfile — narrowly, not by rebuilding it.** A plain
+`npm install` keeps the old SDK chain hoisted beside the new one, and a blanket
+`rm -rf node_modules package-lock.json && npm install` breaks every other platform's install while
+CI stays green. The procedure: [`AGENTS.md` § Gotchas](../../../AGENTS.md#gotchas). Both mechanisms:
+[`SECURITY_FIXES.md` § Expo SDK 57 upgrade](../security/SECURITY_FIXES.md#expo-sdk-57-upgrade-289)
+and [§ Do not "fix" this with a full lockfile rebuild](../security/SECURITY_FIXES.md#do-not-fix-this-with-a-full-lockfile-rebuild).
+Then verify a single `node_modules/expo` at the expected version before trusting any audit numbers.
 
 **A `waitFor` on a derived flag can be satisfied by the wrong state.**
 `useAuthSession` exposes `isChapterResolving` as

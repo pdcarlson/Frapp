@@ -59,7 +59,7 @@ The outbox carries `chapterId` and drafts do not, which is not an oversight eith
 | Roles | 60s | 10min | Changes very rarely |
 | Events | 30s | 5min | New events / check-ins moderately frequent |
 | Points / Leaderboard | 30s | 5min | Points change frequently during events |
-| Chat messages | `Infinity` | _(default)_ | Realtime, not polling, keeps this cache fresh, so it opts out of staleness entirely — owned by [`web-dashboard/README.md`](../web-dashboard/README.md) § Surviving data contracts. `use-chat-channel.ts` sets only `staleTime`, on web and mobile alike, so `gcTime` falls through to each app's own default: **10 minutes on web** (`query-provider.tsx`) and **TanStack's 5-minute default on mobile**, whose `query-client.ts` sets no `gcTime`. Recorded as-is rather than as an intent nothing implements |
+| Chat messages | `Infinity` | _(default)_ | Realtime, not polling, keeps this cache fresh, so it opts out of staleness entirely — owned by [`web-dashboard/README.md` § Surviving data contracts](../web-dashboard/README.md#surviving-data-contracts). `use-chat-channel.ts` sets only `staleTime`, on web and mobile alike, so `gcTime` falls through to each app's own default: **10 minutes on web** (`query-provider.tsx`) and **TanStack's 5-minute default on mobile**, whose `query-client.ts` sets no `gcTime`. Recorded as-is rather than as an intent nothing implements |
 | Chat channels | 60s | 10min | Channel list changes rarely |
 | Notifications | 10s | 5min | Time-sensitive, refresh often |
 | Backwork | 60s | 10min | Content changes infrequently |
@@ -74,10 +74,10 @@ The outbox carries `chapterId` and drafts do not, which is not an oversight eith
 
 | Event | Invalidate |
 |-------|-----------|
-| User sends message | `['messages', channelId]` |
+| User sends message | Nothing: the send writes `chatMessagesKey(channelId)` in place (`setQueryData`, `packages/chat-core/src/chat-client.ts`) rather than invalidating it |
 | User creates event | `['events', chapterId]` |
-| User adjusts points | `['points', chapterId]`, `['leaderboard']` |
-| User changes roles | `['members', chapterId]`, `['roles']` |
+| User adjusts points | `['points', chapterId]` (the leaderboard lives under it) |
+| User changes roles | `['members', chapterId]`, `['roles', chapterId]` |
 | Supabase Realtime event | Relevant query key (auto-updated) |
 | Window focus (tab switch) | All stale queries (TanStack built-in) |
 | Network reconnect | Mounted, enabled queries. Web forces even fresh ones (`refetchOnReconnect: "always"`); mobile leaves the default, so only stale ones refetch. Separately, a fetch the drop left paused resumes regardless of observers |

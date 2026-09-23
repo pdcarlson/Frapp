@@ -12,7 +12,7 @@ Database rollback and restore are their own procedures:
 
 ### Detection signals
 
-- Uptime monitor fails `/health/ready` — **not `/health`**, which is Render's own `healthCheckPath` and is specified to always return 2xx while the process is up, so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency — or read the body, not the status. In-repo monitor: `.github/workflows/production-uptime.yml` (every 15 minutes; alert title *Production /health/ready is failing*). A Sentry 60s check is still the finer-grained human path
+- Uptime monitor fails `/health/ready` — **not `/health`**, which stays 2xx while the process is up ([`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check)), so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency — or read the body, not the status. In-repo monitor: `.github/workflows/production-uptime.yml` (scheduled every 15 minutes, [far less often in practice](../../../spec/architecture/adr/adr-24.md); alert title *Production /health/ready is failing*). A Sentry 60 s check is still the finer-grained human path, planned under #2505
 - Render service marked unhealthy
 - Elevated 5xx alerts
 
@@ -37,11 +37,11 @@ Database rollback and restore are their own procedures:
 - [ ] Validate required env vars are present
 - [ ] Verify DB connectivity from API
 - [ ] Re-run post-deploy smoke checks
-- [ ] Confirm `GET /health/ready` returns HTTP 200 with JSON `status: "ok"` (curl, or the next **Production uptime** run). Green on `/health` alone does not clear a degraded dependency. The in-repo monitor samples every 15 minutes, so do not treat that job as a 10-minute green window
+- [ ] Confirm `GET /health/ready` returns HTTP 200 with JSON `status: "ok"` with curl rather than waiting on the next **Production uptime** run. Green on `/health` alone does not clear a degraded dependency. The in-repo monitor's next run can be hours away ([ADR-24](../../../spec/architecture/adr/adr-24.md) has the measured gaps)
 
 ### Communication
 
-- announce status page/internal channel updates every 15 minutes
+- when to tell affected chapters, and how often to update them: [`ALERT_ROUTING.md` § Escalation](ALERT_ROUTING.md#escalation). Signet has no status page yet
 - include mitigation ETA and current customer impact
 
 ## Database latency

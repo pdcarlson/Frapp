@@ -119,8 +119,7 @@ Use conventional commit messages:
 type(scope): description
 ```
 
-The canonical type list lives in [`docs/guides/contributing.md`](docs/guides/contributing.md)
-§ Commit messages. It is not restated here — this file and that one carried two
+The canonical type list lives in [`docs/guides/contributing.md` § Commit messages](docs/guides/contributing.md#2-commit-messages). It is not restated here — this file and that one carried two
 divergent lists until #1635.
 
 ### 3. Open a PR targeting `main`
@@ -185,7 +184,7 @@ CI validates migration filenames and requires promotion docs to be updated. Migr
 - **Never** commit secrets (`.env*`, credentials, private keys).
 - **Never** log secrets.
 - **Never** use placeholder secrets in CI/CD workflows.
-- All secrets are managed in Infisical. It syncs to **Vercel and Render only**. GitHub Actions is not a sync target (CI pulls at job time), and neither is EAS — an `EXPO_PUBLIC_*` a device build needs must also be set in the EAS dashboard, or as a non-secret `eas.json` `build.<profile>.env` entry. See [`SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md) § 4 for the EAS rule and § 5 for the live sync list.
+- All secrets are managed in Infisical. Which providers it syncs to, and how CI gets its secrets instead: [`SECRETS_MANAGEMENT.md` § 5](docs/internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs). EAS is not synced: an `EXPO_PUBLIC_*` a device build needs must also be set in the EAS dashboard, or as a non-secret `eas.json` `build.<profile>.env` entry ([§ 4](docs/internal/environment/SECRETS_MANAGEMENT.md#4-add-references)).
 - See **[`docs/internal/environment/ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
 - See **[`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md)** for the Infisical setup guide and rotation policy.
 

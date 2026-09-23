@@ -8,9 +8,11 @@ name: Deploy API
 # why the `production` branch was retired (#1340).
 #
 # Secrets use UNIFIED names (no _STAGING / _PRODUCTION suffixes).
-# GitHub's `environment:` field scopes each job to the correct environment,
-# so `RENDER_DEPLOY_HOOK_URL` resolves to the staging value here. See
-# docs/internal/environment/ENV_REFERENCE.md.
+# `RENDER_DEPLOY_HOOK_URL` and `API_HEALTHCHECK_URL` are not GitHub secrets:
+# `.github/actions/infisical-secrets` injects them from the Infisical `staging`
+# environment at job time. See docs/internal/environment/SECRETS_MANAGEMENT.md.
+# Production doesn't use a deploy hook: it deploys a named commit through the
+# Render API. A stale production hook may still exist; see #2540.
 on:
   workflow_run:
     workflows: ["CI"]

@@ -34,16 +34,15 @@ import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
  * chat is two reads, and they are injections rather than a merge — which is why
  * it is exported from `ChatBlockModule` and not owned by `ChatModule`:
  *
- * - {@link listBlockedUserIds}, the masking set, read by every surface that
- *   serves message content to a named viewer — `ChatService.getMessages` and
- *   `getPinnedMessages`, `SearchService.searchMessages`,
- *   `ChatBookmarkService.listBookmarks` — and served to clients by
+ * - {@link listBlockedUserIds}, the masking set, read by the surfaces that
+ *   serve message content to a named viewer, and served to clients by
  *   `GET /v1/chat/blocks` so they can mask the Realtime echo themselves.
- * - {@link filterOutBlockers}, the audience filter, read by the push worker.
+ * - {@link filterOutBlockers}, the audience filter, read by whatever notifies:
+ *   the push worker and `ChatService`'s DM and announcement notifications.
  *
- * `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` is the
- * ledger of those surfaces: a new one that serves message content and masks
- * nothing fails there rather than shipping.
+ * Which surfaces those are, and which are still open, is kept in exactly one
+ * place: `apps/api/src/application/services/chat-read-surface-ledger.spec.ts`.
+ * A new chat route that is not classified there fails rather than shipping.
  */
 @Injectable()
 export class ChatBlockService {
@@ -57,13 +56,15 @@ export class ChatBlockService {
   /**
    * The caller's own blocked user ids in this chapter.
    *
-   * Serves two callers with the same rows, and both matter. `GET
+   * The same rows serve both halves of the masking contract. `GET
    * /v1/chat/blocks` hands the list to the client, because the server's
    * projection is not sufficient on its own: mobile and web also receive
    * message rows over a Supabase Realtime `postgres_changes` echo, which
    * delivers the raw row with no viewer attached and therefore cannot be
-   * server-masked. `ChatService.getMessages` uses the same method to mask what
-   * it serves.
+   * server-masked. Every server read surface that masks at read time uses the
+   * same method, and every one of them depends on the throw below. (The
+   * notification list's chat rows are masked at write time instead, by
+   * {@link filterOutBlockers}.)
    *
    * **Never takes a user id from the caller.** The owner is always
    * `@CurrentUser('id')`, so there is no parameter through which one member

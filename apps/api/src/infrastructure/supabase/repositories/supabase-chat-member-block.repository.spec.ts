@@ -10,6 +10,7 @@ import {
   inB,
   type TenantHarness,
 } from '#test/helpers/tenant-scope.harness';
+import { ID_CHUNK_SIZE } from '#domain/utils/chunk-ids';
 
 /**
  * Tenant scope for `chat_member_blocks` (#2257).
@@ -73,6 +74,32 @@ describe('SupabaseChatMemberBlockRepository — tenant scope', () => {
     );
 
     expect(ids).toEqual([USER_A]);
+  });
+
+  it('findBlockersAmong chunks a chapter-sized audience rather than sending one oversized in()', async () => {
+    // An audience can be the whole roster (a PUBLIC channel, the announcement
+    // fan-out), and one `.in()` over a few hundred UUIDs is a 414 from
+    // PostgREST (`chunk-ids.ts`). The blocker sits past the first chunk, so a
+    // single-query version that someone "simplified" back would miss it too.
+    const audience = Array.from(
+      { length: 250 },
+      (_, i) => `0c000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+    );
+    audience.splice(180, 0, USER_SHARED);
+
+    const blockers = await repo.findBlockersAmong(CHAPTER_A, USER_A, audience);
+
+    expect([...blockers]).toEqual([USER_SHARED]);
+    const selects = harness.ops.filter(
+      (op) => op.table === 'chat_member_blocks' && op.mode === 'select',
+    );
+    expect(selects).toHaveLength(Math.ceil(audience.length / ID_CHUNK_SIZE));
+    for (const op of selects) {
+      const inList = op.filters.find(
+        (filter) => filter.column === 'blocker_user_id',
+      )?.value as string[];
+      expect(inList.length).toBeLessThanOrEqual(ID_CHUNK_SIZE);
+    }
   });
 
   it('findBlockedUserIds never returns another member block list', async () => {

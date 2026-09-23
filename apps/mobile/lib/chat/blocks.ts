@@ -251,8 +251,8 @@ export function contradictingRows(
  * The reactions a viewer may see on any message, as a fresh `ReactionState`.
  *
  * A reaction is its author's own text (`reaction:` plus up to 41 characters),
- * and nothing masks it server-side (#2324), so the block list applies to every
- * reactor on every message — the reactions row of
+ * and nothing masks the chips server-side (#2494), so the block list applies
+ * to every reactor on every message — the reactions row of
  * `spec/behavior/chat/README.md` § What a block does and does not hide.
  *
  * - **Ready:** every reactor except the ones on the list.

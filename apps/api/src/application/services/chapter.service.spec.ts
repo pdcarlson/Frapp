@@ -1088,15 +1088,15 @@ describe('ChapterService', () => {
     // This route used to reject anything under 4.5:1 on the light surface. It
     // no longer does, and that is deliberate: `accent_color` is a mirror of
     // `branding.colors.accent`, which is the accent engine's seed and is not
-    // gated — the seed never paints, and gating it rejects 49 of the 50 real
-    // chapters in the directory seed.
+    // gated: gating it rejects 49 of the 50 real chapters in the directory
+    // seed.
     //
     // Gating only this path was worse than gating none: onboarding and the
     // config PATCH both write the column without checking, so a chapter could
     // hold an accent this route then refused, leaving the officer unable to
     // save anything in Settings (the form resends the stored value). Legibility
-    // is enforced at render time by `resolveChapterAccentColor`, which
-    // substitutes an accessible fallback per surface.
+    // is not gated here; why, and what is and isn't guaranteed instead:
+    // `spec/behavior/branding.md` § Accent Color.
     mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
     mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
 

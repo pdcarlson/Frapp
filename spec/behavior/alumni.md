@@ -33,7 +33,7 @@ If a chapter has no Alumni role, these checks fail open to the caller's normal p
 
 ## Alumni Chat Channel
 
-- A default `#alumni` channel is seeded on chapter creation alongside `#general`, `#announcements` and `#chapter-audit` (full definitions: [`chat/README.md`](chat/README.md) § Channels).
+- A default `#alumni` channel is seeded on chapter creation alongside the other default channels (full definitions: [`chat/README.md` § Channels](chat/README.md#channels)).
 - `#alumni` is ROLE_GATED: visible to members with the Alumni role AND active members. This allows current brothers and alumni to communicate.
 
 ## Donation Link

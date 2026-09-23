@@ -61,7 +61,7 @@ class RealtimeManager {
 
 ## Channel Subscriptions
 
-For each open chat channel, subscribe to Postgres changes:
+For each open chat channel, subscribe to Postgres changes. This sketch and the one under Cleanup below show the pattern only and are not code to copy: the implementation is `RealtimeManager` (`packages/chat-core/src/realtime-manager.ts`), which owns the `chat:channel:<id>` topic as a private channel and writes a normalized `ChannelCache` under `chatMessagesKey(channelId)`, not an array.
 
 ```typescript
 supabase
@@ -116,15 +116,13 @@ useEffect(() => {
 > `packages/chat-core/src/realtime-manager.ts`).
 >
 > **Maintenance (Item 4 / #1076, follow-up):** web chat and non-chat realtime
-> import `@repo/chat-core` by subpath (`types`, `cache`, `chat-client`,
-> `dispatch`, `realtime-manager`, `topic-registry`, `adapters`). The six #937
+> import `@repo/chat-core` by subpath (the `exports` map in
+> `packages/chat-core/package.json` lists them). The six #937
 > S3 re-export shims are deleted. `packages/chat-core/src/topic-registry.ts` is
 > imported directly (`@repo/chat-core/topic-registry`); the #937 web
 > topic-registry re-export shim is gone. `apps/web/lib/chat/offline-queue.ts` type-
 > imports `OutboxStore` from `@repo/chat-core/adapters`, not the package
-> barrel. `apps/web/lib/chat/` retains only the web glue:
-> `use-chat-channel.ts`, `chat-provider.tsx`, `offline-queue.ts`,
-> `offline-queue.spec.ts`, and `parsers.spec.ts`.
+> barrel.
 >
 > **The same rule binds every non-chat subscription.** `useRealtimeTable`
 > derives its topic from `table` + `scopeId` alone, so an effect re-run driven by

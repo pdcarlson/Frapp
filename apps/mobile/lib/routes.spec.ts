@@ -33,7 +33,7 @@ function walk(dir: string): string[] {
   // exists from Node 20.12. That was load-bearing when `engines` allowed >=18:
   // a contributor on 18 or 20.11 got a TypeError at collection time and lost
   // both guards in this file, and CI's Node 20 would never have shown it.
-  // `engines` is now `>=24` and CI pins 24, so the hazard is gone — the string
+  // `engines` now requires at least Node 24 and CI pins 24, so the hazard is gone — the string
   // form stays only to match its sibling, not because it is still required.
   // Directories are harmless here: every caller filters by file extension.
   return readdirSync(dir, { recursive: true })

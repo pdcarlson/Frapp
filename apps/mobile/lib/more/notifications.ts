@@ -188,7 +188,7 @@ export function selectUnreadIds(data: unknown): string[] {
  * `ChatService` writes a `notifications` row (`target.screen: "chat"`) for
  * every DM, group-DM, and announcement message, on top of the read-receipt
  * count `useChannelUnreadCounts` already returns for that same channel — see
- * `chat.service.ts`'s `sendMessageNotification`. Summing `selectUnreadIds`'s
+ * `chat.service.ts`'s `notifyMessageRecipients`. Summing `selectUnreadIds`'s
  * total with the channel-unread total would therefore double-count exactly
  * those messages. The app-icon badge (`use-badge-sync.ts`) needs this
  * exclusion; "Mark all read" does not — it must still clear chat-sourced rows
