@@ -659,7 +659,7 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       );
     });
 
-    it('leaves the engine stamp alone on a PATCH that carries no colours', async () => {
+    it('clears the engine stamp on a branding PATCH that carries no colours too', async () => {
       const supabase = makeSupabase([]);
       const service = await buildService(supabase);
 
@@ -667,12 +667,30 @@ describe('ChapterConfigService — branding accent (#795)', () => {
         branding: { greek_letters: 'ΑΒ' },
       });
 
+      // The write stores the whole merged branding as read, accent included,
+      // so it can put an older seed back under a palette an accent save
+      // stamped in between. The cleared stamp hands that row to the sweep.
+      const [write] = supabase.chapterUpdate.mock.calls[0] as [
+        Record<string, unknown>,
+      ];
+      expect(write.branding).toBeDefined();
+      expect(write).toHaveProperty('theme_palette_engine_version', null);
+      // No colours, no recompute: the only chapters write is the config one.
+      expect(supabase.chapterUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the engine stamp alone on a PATCH that writes no branding', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        vocabulary: { member: 'Brother' },
+      });
+
       const [write] = supabase.chapterUpdate.mock.calls[0] as [
         Record<string, unknown>,
       ];
       expect(write).not.toHaveProperty('theme_palette_engine_version');
-      // No colours, no recompute: the only chapters write is the config one.
-      expect(supabase.chapterUpdate).toHaveBeenCalledTimes(1);
     });
 
     it('writes the palette only while the seed it was derived from is still stored', async () => {

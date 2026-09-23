@@ -532,16 +532,18 @@ export class ChapterConfigService {
       >;
       diff['branding'] = { from: existing.branding, to: mergedBranding };
       update['branding'] = mergedBranding;
-      // The palette is recomputed below, in a second write that can fail on
-      // its own and is only logged. Clearing the engine stamp in this write,
-      // atomically with the new seed, means a failed recompute leaves the row
-      // stale rather than current: the stale-palette sweep then derives it
-      // from this seed within the hour (#1165, accent-engine.md §4). Without
-      // it, a row stamped by an earlier write would keep the old seed's
-      // palette under a current stamp, where the sweep never looks.
-      if (dto.branding.colors) {
-        update['theme_palette_engine_version'] = null;
-      }
+      // Clear the engine stamp in the same write as the branding, so the
+      // stale-palette sweep re-derives the palette from the seed this write
+      // stores (#1165, accent-engine.md §4). Every branding PATCH needs it,
+      // not only one that carries colors: this write stores the whole merged
+      // object, accent included, as `getConfig` read it. A Settings accent
+      // save landing between that read and this write stores a new seed and
+      // stamps its palette current; this write then puts the old seed back
+      // under that palette, and without the cleared stamp the sweep would
+      // never look at the row. When colors are present, the recompute below
+      // also re-derives it at once, and a failure there, which is only
+      // logged, leaves the row for the sweep instead of stamped current.
+      update['theme_palette_engine_version'] = null;
 
       const readAccent = (branding: unknown): string | undefined =>
         (branding as { colors?: { accent?: string } } | undefined)?.colors
@@ -991,8 +993,13 @@ export class ChapterConfigService {
     const colors = branding.colors ?? {};
     // A lost race (`written: false`) still returns the build: it is what this
     // chapter's seed, as read, derives to, and the newer write that beat it
-    // holds a palette derived from its own seed. The web client refetches the
-    // config after this call either way.
+    // holds a palette derived from its own seed. So after a lost race the
+    // response's `palette` is not the stored one, and a caller that painted
+    // it would show the superseded accent; spec/behavior/chapter-config.md
+    // says so. No client calls this route today (the Settings accent editor
+    // saves through `PATCH /v1/chapters/current`), so nothing is exposed to
+    // that. A first caller that applies the palette should re-read the
+    // chapter rather than trust this response.
     const { build } = await this.recomputePalette(chapterId, colors);
     // Picked, not spread: `failedFillChecks` is logged and never disclosed
     // (chapter-palette.ts), and a field added to the build later should not
