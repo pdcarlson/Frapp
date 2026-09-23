@@ -156,7 +156,7 @@ const warning = (condition: string) => {
     block[1]
       .replace(/\{" "\}/g, " ")
       .replace(/\{accent\.resolvedAccent\}/g, "<hex>")
-      .replace(/\{previewInkRatio\.toFixed\(1\)\}/g, "<n>")
+      .replace(/\{formatFailingRatio\(previewInkRatio\)\}/g, "<n>")
       .replace(/&apos;/g, "'"),
   );
 };
@@ -186,7 +186,7 @@ describe("the preview warnings say what the preview does", () => {
 
   it("gates the fallback warning on contrast, not on fallbackApplied", () => {
     // `fallbackApplied` is also true for an empty or malformed draft, where
-    // "saving keeps the color you entered" would be false.
+    // "saving stores the color you entered" would be false.
     expect(
       settingsPage.match(/const accentPreviewFallsBack =([\s\S]*?);/)?.[1],
     ).toMatch(/^\s*accent\.reason === "insufficient_contrast"\s*$/);
