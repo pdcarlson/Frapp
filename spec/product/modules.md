@@ -254,7 +254,7 @@ Enabling paid ops modules is never a gate — it is surfaced as a dismissible in
 
 The control surface is **Settings → Modules**, driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
 
-Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`), hides its dashboard nav item (module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`), hides its entry from the Cmd+K command menu (which resolves each command's module from `DASHBOARD_NAV_BY_HREF` so the two surfaces cannot drift), and mutes its system channel (no new messages, unread badge suppressed). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
+Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`), hides its dashboard nav item (module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`), and mutes its system channel (no new messages, unread badge suppressed). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
 
 **Server-side enforcement.** Hiding a surface is not the same as closing it: a direct API call bypasses every client-side gate above. Controllers for paid modules therefore carry `@RequireModule(key)` (`apps/api/src/interface/decorators/module.decorator.ts`), and `ChapterGuard` rejects **writes** to a disabled module with `403 chapter.module.disabled`. Two rules follow from the guarantee that data is preserved:
 

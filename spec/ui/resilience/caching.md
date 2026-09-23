@@ -74,10 +74,10 @@ The outbox carries `chapterId` and drafts do not, which is not an oversight eith
 
 | Event | Invalidate |
 |-------|-----------|
-| User sends message | `['messages', channelId]` |
+| User sends message | `chatMessagesKey(channelId)` (`['chat', channelId, 'messages']`) |
 | User creates event | `['events', chapterId]` |
-| User adjusts points | `['points', chapterId]`, `['leaderboard']` |
-| User changes roles | `['members', chapterId]`, `['roles']` |
+| User adjusts points | `['points', chapterId]` (the leaderboard lives under it) |
+| User changes roles | `['members', chapterId]`, `['roles', chapterId]` |
 | Supabase Realtime event | Relevant query key (auto-updated) |
 | Window focus (tab switch) | All stale queries (TanStack built-in) |
 | Network reconnect | Mounted, enabled queries. Web forces even fresh ones (`refetchOnReconnect: "always"`); mobile leaves the default, so only stale ones refetch. Separately, a fetch the drop left paused resumes regardless of observers |

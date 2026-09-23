@@ -65,7 +65,7 @@ For each open chat channel, subscribe to Postgres changes:
 
 ```typescript
 supabase
-  .channel(`messages:${channelId}`)
+  .channel(`chat:channel:${channelId}`)
   .on('postgres_changes', {
     event: 'INSERT',
     schema: 'public',
@@ -73,7 +73,7 @@ supabase
     filter: `channel_id=eq.${channelId}`,
   }, (payload) => {
     // Add to local message list if not already present (dedup by ID)
-    queryClient.setQueryData(['messages', channelId], (old) => {
+    queryClient.setQueryData(chatMessagesKey(channelId), (old) => {
       if (old?.some((m) => m.id === payload.new.id)) return old;
       return [...(old ?? []), payload.new];
     });
@@ -87,7 +87,7 @@ When navigating away from a channel, unsubscribe from its Realtime channel to av
 
 ```typescript
 useEffect(() => {
-  const channel = supabase.channel(`messages:${channelId}`);
+  const channel = supabase.channel(`chat:channel:${channelId}`);
   // ... subscribe
   return () => {
     supabase.removeChannel(channel);
@@ -116,15 +116,13 @@ useEffect(() => {
 > `packages/chat-core/src/realtime-manager.ts`).
 >
 > **Maintenance (Item 4 / #1076, follow-up):** web chat and non-chat realtime
-> import `@repo/chat-core` by subpath (`types`, `cache`, `chat-client`,
-> `dispatch`, `realtime-manager`, `topic-registry`, `adapters`). The six #937
+> import `@repo/chat-core` by subpath (the `exports` map in
+> `packages/chat-core/package.json` lists them). The six #937
 > S3 re-export shims are deleted. `packages/chat-core/src/topic-registry.ts` is
 > imported directly (`@repo/chat-core/topic-registry`); the #937 web
 > topic-registry re-export shim is gone. `apps/web/lib/chat/offline-queue.ts` type-
 > imports `OutboxStore` from `@repo/chat-core/adapters`, not the package
-> barrel. `apps/web/lib/chat/` retains only the web glue:
-> `use-chat-channel.ts`, `chat-provider.tsx`, `offline-queue.ts`,
-> `offline-queue.spec.ts`, and `parsers.spec.ts`.
+> barrel.
 >
 > **The same rule binds every non-chat subscription.** `useRealtimeTable`
 > derives its topic from `table` + `scopeId` alone, so an effect re-run driven by

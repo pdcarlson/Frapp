@@ -120,13 +120,14 @@ lock glyph with an `sr-only` label (`1b` pin 7).
 
 | File | Lines | Note |
 | ---- | ----- | ---- |
-| `apps/web/components/layout/ask-pill.tsx` | 102 | Sole importer `dashboard-shell.tsx:36`, mounted at `:497` |
+| `apps/web/components/layout/ask-pill.tsx` | 102 | Sole importer `top-bar.tsx` since lane 2 (was `dashboard-shell.tsx`) |
 
 - [x] Decide: remove the Ask pill, or keep it and restyle it in the greenfield top bar —
       **kept and restyled** by lane 2 to the board's 34px/r10 top-bar geometry. The `gold-ask-*`
       tokens therefore keep their consumer and L-05 does not fire
-- [ ] If removed, the `gold-ask-*` tokens lose their only consumer. Remove them from `signet.css`
-      and `signet.ts` in the same change, or state why they stay
+- [x] ~~If removed, the `gold-ask-*` tokens lose their only consumer.~~ N/A: the pill was kept, and
+      the tokens have other consumers anyway (`pro-chip.tsx`, `settings-page.tsx`,
+      `page-settings-drawer.tsx`)
 
 > **"AI page narration" does not exist in `apps/web`.** It was on the epic's deletion list, but there
 > is no page-summary or narration surface in the codebase, and no model call anywhere in the app. The
@@ -993,8 +994,9 @@ replays the same failed render against the same cache.
       rollover confirmation. Rewriting one is a writing.md change with its own review
 - [ ] **`@repo/chat-core`'s dispatch notices still carry em dashes, and they render on `/chat`**
       ([#2184](https://github.com/pdcarlson/Frapp/issues/2184)).
-      Nine strings in `packages/chat-core/src/dispatch.ts` — the five `*_RECORDED_ROW_NOTE`
-      constants, three `*_CARD_LOST_WARNING`s and `REPLAY_ACCEPTED_WARNING`. These are what a member
+      The em-dashed notice constants in `packages/chat-core/src/dispatch.ts`
+      (`grep -n '—' packages/chat-core/src/dispatch.ts`; the `*_RECORDED_ROW_NOTE`,
+      `*CARD_LOST_WARNING`, `REPLAY_ACCEPTED_WARNING` and `UNCONFIRMED_*` families among them). These are what a member
       actually reads when a slash command's card fails to post: they arrive as `message._error`, and
       the `message-item.tsx` string this lane fixed is only the fallback for when `_error` is
       **absent**. So the normal path still shows one. Not swept here because the package is shared

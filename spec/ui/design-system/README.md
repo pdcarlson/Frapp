@@ -119,7 +119,7 @@ For each of the three gate classes the API enforces, the client must mirror the 
 | Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason (`useSubscriptionGate`, `apps/web/components/shared/subscription-gate.tsx`) — the hook answers "may this surface write", so it also refuses queueless writes while OFFLINE with `title="Reconnect to make changes."` on the control, not via `SubscriptionNotice` |
 | Module enabled | `ChapterGuard.enforceModule` | Hide the surface |
 
-All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar / Cmd+K / slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionGate` for whether a surface may write (subscription plus connectivity). The chat composer is the outbox carve-out (`spec/ui/resilience/connection-state.md`) and does not go through this hook.
+All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar and slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionGate` for whether a surface may write (subscription plus connectivity). The chat composer is the outbox carve-out (`spec/ui/resilience/connection-state.md`) and does not go through this hook.
 
 **Writes only.** `enforceSubscription` returns early for `GET`/`HEAD`/`OPTIONS`, so a lapsed chapter can still read everything it owns. Mirror the gate on write affordances; never gate a read surface on subscription state.
 
@@ -142,7 +142,7 @@ Do not collapse these into the verdict: `allowed` folds in `isPending` and `isOf
 
 **Use the shared primitive, not the raw hook.** `useSubscriptionGate` / `useGatedDialog` / `SubscriptionNotice` (`apps/web/components/shared/subscription-gate.tsx`) package the six things a correct gated control needs: the pending fold-in, the offline fold-in, the mid-flight revoke, the refusal to open, the `aria-describedby` / `title` wiring, and the notice. `useSubscriptionWriteState` remains the predicate underneath, for callers that need the verdict without a control. Pass your own busy flags to `controlProps(alsoDisabled)` rather than OR-ing them in afterwards — spreading the props and then writing your own `disabled` silently drops the gate.
 
-Every paid-ops write **affordance** in `apps/web` is mirrored. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
+Every paid-ops write **affordance** in `apps/web` is mirrored except the rows the table below marks **not mirrored**: the backwork taxonomy drawer, the chat rush card and the Discord import wizard. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
 
 Two gaps are known and tracked, not overlooked:
 
@@ -160,13 +160,16 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | Paid-ops controller | Writes | Web surfaces (all of them) |
 | --- | --- | --- |
 | `attendance` | 3 | `components/events/attendance-panel.tsx` · `components/chat/renderers/event-card.tsx` (check-in) |
-| `backwork` | 4 | `components/backwork/backwork-page.tsx` |
+| `backwork` | 9 | `components/backwork/backwork-page.tsx` · `components/backwork/backwork-taxonomy-drawer.tsx` (department/professor edit, delete, merge; **not mirrored**) |
 | `chapter-document` | 6 | `components/documents/documents-page.tsx` |
 | `event` | 3 | `components/events/events-page.tsx` (both create triggers) · `components/events/event-editor-dialog.tsx` · `components/events/event-detail-sheet.tsx` (edit + delete) |
 | `financial-invoice` | 3 (+1 exempt) | `components/billing/invoice-list.tsx` |
 | `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points/points-adjustment-dialog.tsx` |
-| `poll` | 3 | `components/polls/polls-page.tsx` |
+| `poll` | 4 | `components/polls/polls-page.tsx` |
+| `discord-connection` | 3 | `components/discord-import/connect-step.tsx` · `components/discord-import/import-wizard.tsx` (**not mirrored**) |
+| `discord-import` | 10 | `components/discord-import/*` (**not mirrored**) |
 | `report` | 4 | `components/reports/reports-page.tsx` |
+| `rush` | 3 | `components/chat/renderers/rush-card.tsx` (vote, bid; **not mirrored**) |
 | `semester-rollover` | 1 | `components/settings/settings-page.tsx` (rollover only) |
 | `service-entry` | 4 | `components/service/service-page.tsx` |
 | `study` → `StudyGeofenceController` | 3 | `components/geofences/geofences-admin-page.tsx` |
@@ -175,7 +178,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 
 Where a dialog's `open` state lives in a parent, the **parent** carries the gate — rule 1 is about the control that starts the flow, and a dialog cannot refuse to open on its own behalf. `useGatedDialog` returns `contentProps` as well as `dialogProps`; a parent that owns `open` but not the `DialogContent` has to forward `onCloseAutoFocus` through, or the revoke path drops focus to `<body>`.
 
-**12 files / 13 controller classes / 45 gated writes** (46 non-GET routes, less the one `@SubscriptionExempt` payment-intent). `study.controller.ts` holds two controller classes behind different modules. `alumni` carries the guard but has no non-GET route, so it contributes no write surface.
+The table is hand-kept, so re-derive it before trusting it: list the `ChapterGuard` controllers in `apps/api/src/interface/controllers/` and count their non-GET routes without `@FreeTier` / `@SubscriptionExempt`. `financial-invoice`'s exempt route is the payment-intent. `study.controller.ts` holds two controller classes behind different modules. `alumni` carries the guard but has no non-GET route, so it contributes no write surface.
 
 Three of `chapter-document`'s six writes — folder create, rename and delete — have no client counterpart yet: the documents page derives its folder list from the loaded documents and its folder buttons are pure filters. A folder-management UI must adopt the gate when it lands.
 

@@ -34,7 +34,7 @@ not by the Governs column here. No CI check asserts this table is complete or it
 | ---- | ------- | ------ |
 | [`design-system/`](design-system/README.md) | Tokens and rules shared by every Signet surface: foundations (color, type, radius, spacing), components, iconography, writing, chapter accent engine | Active |
 | [`mobile/`](mobile/README.md) | Mobile app: screen inventory, navigation, interaction patterns | Active |
-| [`web-greenfield/`](web-greenfield/README.md) | The web UI rebuild (#2140): trust order, brand locks, foundation tokens, deletion acceptance | Active — **outranks `web-dashboard/` on visuals and structure while #2140 is open** |
+| [`web-greenfield/`](web-greenfield/README.md) | The web UI rebuild (#2140): trust order, brand locks, foundation tokens, deletion acceptance | Active — **outranks `web-dashboard/` on visuals and structure until the #2140 fold-back** |
 | [`web-dashboard/`](web-dashboard/README.md) | Admin web app: shell, nav, screens, state | Active (Signet since the #920 shell slice), but see the note below |
 | [`landing/`](landing/README.md) | Marketing site | **Reskin built out** ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)) — the visual freeze is lifted, the decisions are taken, and both cutover slices have merged; `apps/landing` is on Figtree, the Signet ladder and the boards' composition, and slice 3 ([#2368](https://github.com/pdcarlson/Frapp/issues/2368)) closed out the polish; what remains of the epic is owner decisions rather than build work |
 | [`brand-identity.md`](brand-identity.md) | Signet identity: name, tagline, mark/logo rules, house gold | Active |
@@ -50,15 +50,9 @@ not by the Governs column here. No CI check asserts this table is complete or it
 
 The web dashboard left the frozen list with the #920 shell slice; its per-screen-family truing-up is tracked on #920.
 
-### The web dashboard during #2140
+### The web dashboard after #2140
 
-`web-dashboard/` is **not** frozen and **not** deleted, but it is no longer the first thing to read about how the web surface looks. [#2140](https://github.com/pdcarlson/Frapp/issues/2140) is rebuilding that surface from a Claude Design framework, so on visuals and structure the framework and [`web-greenfield/`](web-greenfield/README.md) win, and `web-dashboard/` prose is stale by construction until a lane trues it up.
-
-Three consequences worth stating, because "distrusted" is easy to over-read:
-
-- **Its contracts are still truth.** The navigation and permission map, module gating, routing and redirect semantics, and the data contracts are current, and most are owned by [`../behavior/`](../behavior/README.md) regardless.
-- **Do not file spec-vs-code drift against its visual prose** while the epic is open. That gap is the plan, not a bug.
-- **When #2140 closes**, the surviving truth folds back into `web-dashboard/` and `web-greenfield/` is retired in the same change.
+`web-dashboard/` is **not** frozen and **not** deleted, but it is not yet the first thing to read about how the web surface looks. [#2140](https://github.com/pdcarlson/Frapp/issues/2140) rebuilt that surface and has closed; until its surviving truth folds back into `web-dashboard/`, [`web-greenfield/`](web-greenfield/README.md) wins on visuals and structure. What that does and does not license, and the fold-back itself: [`web-greenfield/README.md` § Why `web-dashboard/` is distrusted](web-greenfield/README.md#why-web-dashboard-is-distrusted-and-what-that-does-not-mean).
 
 ## Related trees
 

@@ -495,7 +495,7 @@ and its pair in §6 above went with the page-wide preview banner. **Offline
 you can manage chapter invoices.`) went with the officer invoice card: the
 invoice surface is no longer behind a screen-level `<Can>`, so the one gate
 left on it wraps a single control and takes §10's control-slot state
-(`Offline, can't check your access.`) rather than a card-shaped one. The
+(`Offline — can't check your access.`) rather than a card-shaped one. The
 **No billing rights** row is board `4b`'s "Ask an officer", which replaced a
 sentence that quoted the `billing:manage` permission key at the one person who
 cannot act on it.
