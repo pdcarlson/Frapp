@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  legalReadStatus,
   resolveAuthGate,
   type AuthGateDestination,
   type AuthGateInput,
@@ -281,6 +282,31 @@ describe("resolveAuthGate — the Terms prompt (#2302)", () => {
 
   it("never asks when the caller can't see the read (the frozen tabs layout)", () => {
     expect(resolveAuthGate({ ...member, ...complete })).toBe("tabs");
+  });
+});
+
+describe("legalReadStatus (#2302)", () => {
+  it("keeps a cached answer when a background refetch fails", () => {
+    // TanStack: status 'error', data kept. Reading the error first would
+    // discard `required: true` and walk the member past the prompt.
+    expect(
+      legalReadStatus({ authenticated: true, hasAnswer: true, isError: true }),
+    ).toBe("success");
+  });
+
+  it("fails open only when a first read failed", () => {
+    expect(
+      legalReadStatus({ authenticated: true, hasAnswer: false, isError: true }),
+    ).toBe("error");
+  });
+
+  it("is pending until the first answer, and idle when signed out", () => {
+    expect(
+      legalReadStatus({ authenticated: true, hasAnswer: false, isError: false }),
+    ).toBe("pending");
+    expect(
+      legalReadStatus({ authenticated: false, hasAnswer: true, isError: false }),
+    ).toBe("idle");
   });
 });
 

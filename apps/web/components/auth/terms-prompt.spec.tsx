@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { LEGAL_ACCEPTANCE_LABEL } from "@repo/validation";
+import { LEGAL_ACCEPTANCE_LABEL, TERMS_PROMPT_COPY } from "@repo/validation";
 
 /**
  * #2302. A member who hasn't accepted the Terms the server enforces is asked
@@ -19,7 +19,8 @@ const { acceptMutate, signOut, state } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useAccessibleChapters: () => state.chapters,
   useLegalAcceptance: () => state.legal,
   useAcceptLegalTerms: () => ({
@@ -33,7 +34,7 @@ vi.mock("@/lib/auth/session", () => ({
   signOutCurrentSession: () => signOut(),
 }));
 
-import { TERMS_PROMPT_COPY, TermsPromptGate } from "./terms-prompt";
+import { TERMS_PROMPT_SIGN_OUT_FAILED, TermsPromptGate } from "./terms-prompt";
 
 describe("TermsPromptGate", () => {
   beforeEach(() => {
@@ -45,6 +46,15 @@ describe("TermsPromptGate", () => {
   });
 
   it("asks a member who hasn't accepted the current Terms", () => {
+    render(<TermsPromptGate />);
+    expect(
+      screen.getByRole("heading", { name: TERMS_PROMPT_COPY.title }),
+    ).toBeTruthy();
+  });
+
+  it("keeps asking when a chapters refetch fails but memberships are cached", () => {
+    // TanStack after a failed background refetch: status 'error', data kept.
+    state.chapters = { data: [{ chapter_id: "ch-1" }], isSuccess: false };
     render(<TermsPromptGate />);
     expect(
       screen.getByRole("heading", { name: TERMS_PROMPT_COPY.title }),
@@ -118,6 +128,30 @@ describe("TermsPromptGate", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(assign).toHaveBeenCalledWith("/sign-in"));
     expect(signOut).toHaveBeenCalledTimes(1);
+    // Still locked while the page navigates away, rather than re-enabled.
+    expect(
+      (screen.getByRole("button", { name: "Sign out" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it("says so, and gives the controls back, when sign-out fails", async () => {
+    signOut.mockRejectedValueOnce(new Error("network"));
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    render(<TermsPromptGate />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe(
+        TERMS_PROMPT_SIGN_OUT_FAILED,
+      ),
+    );
+    expect(assign).not.toHaveBeenCalled();
+    expect(
+      (screen.getByRole("button", { name: "Sign out" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
     vi.unstubAllGlobals();
   });
 });

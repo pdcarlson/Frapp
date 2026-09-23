@@ -165,7 +165,10 @@ export interface paths {
         /** List chapters for current user */
         get: operations["ChapterController_listForCurrentUser_v1"];
         put?: never;
-        /** Create a new chapter */
+        /**
+         * Create a new chapter
+         * @description Makes the caller its President. The caller must already have accepted the current Terms (`POST /v1/users/me/legal-acceptance`), or this is 403. No client uses this route; the wizard uses `POST /v1/chapters/onboard`, which records the acceptance itself.
+         */
         post: operations["ChapterController_create_v1"];
         delete?: never;
         options?: never;

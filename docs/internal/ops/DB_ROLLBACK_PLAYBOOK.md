@@ -1954,7 +1954,9 @@ To roll back, re-apply the previous definition from `20260902160000_anonymize_us
 
 Two nullable columns on `users` (#2302). Nothing existing is altered.
 
-**Redeploy the API first**, to a build from before #2302. A build that reads these columns fails every invite redemption, every chapter onboarding and every Terms acceptance once they're gone, and the members it asks to accept can't. Then:
+**Roll forward instead, once a store binary built after #2302 is in users' hands.** That binary sends `accept_terms_privacy` with every join it asks the checkbox for. A pre-#2302 API rejects the field (`forbidNonWhitelisted`, 400), and a binary can't be rolled back, so every join from it would fail for as long as the rollback stood.
+
+Before that, roll back the API **and web** together, to builds from before #2302, API first. A web bundle from #2302 against the old API has the same problem as the binary: its status read 404s, so it shows the checkbox and sends the field the old API rejects. An API that reads these columns fails every invite redemption, every chapter onboarding and every Terms acceptance once they're gone, and the members it asks to accept can't. Then:
 
 ```sql
 ALTER TABLE users

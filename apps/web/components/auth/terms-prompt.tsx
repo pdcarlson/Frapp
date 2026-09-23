@@ -3,37 +3,21 @@
 import { useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Loader2 } from "lucide-react";
-import { statusOf } from "@repo/api-sdk";
 import {
+  termsPromptErrorCopy,
   useAcceptLegalTerms,
   useAccessibleChapters,
   useLegalAcceptance,
 } from "@repo/hooks";
+import { TERMS_PROMPT_COPY } from "@repo/validation";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { Button } from "@/components/ui/button";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { asArray } from "@/lib/utils";
 
-/**
- * Copy for the Terms prompt (#2302). Shared verbatim with mobile's
- * `apps/mobile/lib/onboarding/terms-prompt.ts`; `spec/ui/design-system/
- * writing.md` § Terms prompt is the one place it is written down, since
- * neither app can import the other's module.
- */
-export const TERMS_PROMPT_COPY = {
-  title: "Agree to the Terms to continue",
-  body: "We've updated the Terms of Service and Privacy Policy. Read them, then agree to keep using Frapp.",
-  cta: "Agree and continue",
-  unticked: "Agree to the Terms of Service and Privacy Policy to continue.",
-} as const;
-
-/** Copy for an acceptance the server didn't record. */
-export function termsPromptErrorCopy(error: unknown): string {
-  if (statusOf(error) === 410) {
-    return "This account has been deleted. Sign out to continue.";
-  }
-  return "Couldn't save your agreement. Check your connection and try again.";
-}
+/** Web only: the prompt's sign-out didn't finish. */
+export const TERMS_PROMPT_SIGN_OUT_FAILED =
+  "Couldn't sign out. Retry in a moment, or close this tab to end the session.";
 
 /**
  * The prompt itself: a full-screen dialog over the dashboard that Escape and
@@ -65,9 +49,13 @@ export function TermsPrompt() {
     setSigningOut(true);
     try {
       await signOutCurrentSession();
+      // Not in a `finally`, as in `profile-panel.tsx`: on success the page is
+      // navigating away, and re-enabling the controls then would hand a
+      // signed-out member a live "Agree and continue".
       window.location.assign("/sign-in");
-    } finally {
+    } catch {
       setSigningOut(false);
+      setError(TERMS_PROMPT_SIGN_OUT_FAILED);
     }
   }
 
@@ -138,14 +126,17 @@ export function TermsPrompt() {
  *
  * Only a member is asked. A user with no chapter gets the wizard, whose
  * checkbox records the same acceptance. The server decides through
- * `required`, never a compiled-in version. And a failed read of either query
- * asks nothing, so an outage of the endpoint can't lock the dashboard.
+ * `required`, never a compiled-in version. A first read of either query that
+ * failed asks nothing, so an outage of the endpoint can't lock the dashboard;
+ * a later refetch that fails keeps the answer already cached.
  */
 export function TermsPromptGate() {
   const chaptersQuery = useAccessibleChapters();
   const legalAcceptance = useLegalAcceptance();
-  const isMember =
-    chaptersQuery.isSuccess && asArray<unknown>(chaptersQuery.data).length > 0;
+  // Both read from cached data, never from `isSuccess`. A failed background
+  // refetch flips a query to `isError` but keeps its data, and reading the
+  // flag would let a known member past a known `required: true`.
+  const isMember = asArray<unknown>(chaptersQuery.data).length > 0;
   if (!isMember || legalAcceptance.data?.required !== true) return null;
   return <TermsPrompt />;
 }

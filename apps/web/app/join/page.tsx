@@ -4,18 +4,13 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { useLegalAcceptance, useRedeemInvite } from "@repo/hooks";
+import { useJoinTermsCheckbox, useRedeemInvite } from "@repo/hooks";
 import {
   extractInviteToken,
   extractInviteTokenFromQuery,
 } from "@repo/validation";
 import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
-import {
-  isTermsRequiredError,
-  JOIN_TERMS_REQUIRED_COPY,
-  joinErrorCopy,
-  redeemChapterId,
-} from "@/components/auth/join-errors";
+import { joinErrorCopy, redeemChapterId } from "@/components/auth/join-errors";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { Button } from "@/components/ui/button";
@@ -79,18 +74,9 @@ function JoinPageContent() {
   );
   const [attempt, setAttempt] = useState(0);
   const [redeemError, setRedeemError] = useState<string | null>(null);
-  const legalAcceptance = useLegalAcceptance({
-    enabled: sessionState === "ready",
-  });
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  // Set when the server refuses the join for want of the checkbox, which can
-  // happen if its answer changed after this page read the status.
-  const [termsDemanded, setTermsDemanded] = useState(false);
-  // Ask unless the server has said this user already accepted the current
-  // Terms (#2302). A status still loading, or one that failed, shows the
-  // checkbox: ticking it is harmless for someone who had accepted.
-  const termsNeeded =
-    termsDemanded || legalAcceptance.data?.required !== false;
+  // When to show the Terms checkbox, and what a refused join means for it,
+  // is shared with mobile s02 (#2302).
+  const terms = useJoinTermsCheckbox({ enabled: sessionState === "ready" });
 
   useEffect(() => {
     let isMounted = true;
@@ -140,15 +126,13 @@ function JoinPageContent() {
       );
       return;
     }
-    if (termsNeeded && !acceptedTerms) {
-      setRedeemError(JOIN_TERMS_REQUIRED_COPY);
+    if (terms.blocker) {
+      setRedeemError(terms.blocker);
       return;
     }
     try {
       const result = await redeemInviteMutation.mutateAsync(
-        termsNeeded
-          ? { token: extracted, accept_terms_privacy: true }
-          : { token: extracted },
+        terms.redeemBody(extracted),
       );
       const chapterId = redeemChapterId(result);
 
@@ -165,10 +149,7 @@ function JoinPageContent() {
       router.replace("/chat");
       router.refresh();
     } catch (error) {
-      if (isTermsRequiredError(error)) {
-        setTermsDemanded(true);
-        setAcceptedTerms(false);
-      }
+      terms.onJoinError(error);
       setRedeemError(joinErrorCopy(error));
     }
   }
@@ -250,12 +231,12 @@ function JoinPageContent() {
             </p>
           ) : null}
         </div>
-        {termsNeeded ? (
+        {terms.needed ? (
           <TermsAcceptance
             id="join-accept-legal"
-            accepted={acceptedTerms}
+            accepted={terms.accepted}
             onAcceptedChange={(next) => {
-              setAcceptedTerms(next);
+              terms.setAccepted(next);
               setRedeemError(null);
             }}
             disabled={redeemInviteMutation.isPending}

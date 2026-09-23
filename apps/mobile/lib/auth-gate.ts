@@ -92,6 +92,25 @@ export type AuthGateInput = {
   legalAcceptanceRequired?: boolean;
 };
 
+/**
+ * The legal-acceptance read as the gate sees it (#2302).
+ *
+ * An answer, once in, stands until a newer one replaces it. TanStack keeps a
+ * query's `data` when a background refetch fails but flips it to `isError`,
+ * so reading `isError` first would throw away a known `required: true` and
+ * walk the member past the prompt. Only a first read that failed has nothing
+ * to go on, and that one fails open like the memberships read.
+ */
+export function legalReadStatus(read: {
+  authenticated: boolean;
+  hasAnswer: boolean;
+  isError: boolean;
+}): NonNullable<AuthGateInput["legalAcceptanceStatus"]> {
+  if (!read.authenticated) return "idle";
+  if (read.hasAnswer) return "success";
+  return read.isError ? "error" : "pending";
+}
+
 export function resolveAuthGate({
   status,
   chapterId,
@@ -130,7 +149,8 @@ export function resolveAuthGate({
     }
     // Only a member is held for the Terms read, and only for its first
     // answer. Join and the wizard don't need it, and a later refetch keeps
-    // its last answer, so the hourly token refresh can't blank the app.
+    // its last answer, failed or not (`legalReadStatus`), so the hourly token
+    // refresh can't blank the app and a failed refetch can't skip the prompt.
     if (legalAcceptanceStatus === "pending") {
       return "hold";
     }

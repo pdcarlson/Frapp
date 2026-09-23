@@ -85,8 +85,29 @@ async function settle(page) {
     .catch(() => {});
 }
 
+/**
+ * A seeded login has accepted no Terms (#2302), so the dashboard opens under
+ * the full-screen Terms prompt, which every shot would otherwise capture. Tick
+ * it for the operator's own demo account. The title and button come from
+ * `TERMS_PROMPT_COPY` in `@repo/validation`; this script imports no workspace
+ * package, so change them here too if that copy changes.
+ */
+async function agreeToTermsIfAsked(page) {
+  const prompt = page.getByRole("heading", {
+    name: "Agree to the Terms to continue",
+  });
+  if (!(await prompt.isVisible().catch(() => false))) return;
+  await page.locator("#terms-prompt-accept").check();
+  await page.getByRole("button", { name: "Agree and continue" }).click();
+  await prompt.waitFor({ state: "detached", timeout: 30_000 });
+  console.log("  agreed to the Terms for the demo login");
+}
+
 async function signIn(page) {
-  await page.goto(`${BASE_URL}/sign-in`, { waitUntil: "domcontentloaded" });
+  // `networkidle`, not `domcontentloaded`: against `next dev` the form is
+  // server-rendered well before it hydrates, and a click that lands first
+  // submits nothing, so the wait below times out on /sign-in.
+  await page.goto(`${BASE_URL}/sign-in`, { waitUntil: "networkidle" });
   await page.fill("#email", EMAIL);
   await page.fill("#password", PASSWORD);
   await Promise.all([
@@ -97,6 +118,7 @@ async function signIn(page) {
   ]);
   await settle(page);
   console.log(`  signed in -> ${new URL(page.url()).pathname}`);
+  await agreeToTermsIfAsked(page);
 
   // The session cookie alone is not enough. `activeChapterId` lives in a
   // zustand/persist store that only `useSelectChapter` writes, so a fresh

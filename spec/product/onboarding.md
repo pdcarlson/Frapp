@@ -30,6 +30,6 @@ Checkout is offered at `incomplete` and again at `canceled`; `past_due` recovers
 
 1. Admin generates an invite token (valid for 24 hours, assigned a role).
 2. Token is shared as a link (e.g. `app.frapp.live/join?token=abc123`), or the admin enters a list of email addresses and the API emails each one its own token's join link directly.
-3. New user signs up (Supabase Auth) and enters the token.
-4. API validates the token (not expired, not used), links user to chapter with the token's role.
+3. New user signs up (Supabase Auth) and enters the token. A user who hasn't accepted the current Terms of Service and Privacy Policy also ticks the Terms checkbox; one who has isn't asked again.
+4. API validates the token (not expired, not used), refuses a user who hasn't accepted the current Terms and didn't tick the box (403, and the token stays usable), and links the user to the chapter with the token's role. The full rules, including 409 and the subscription lock, are [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § Invite Token Rules.
 5. Token is marked as used.

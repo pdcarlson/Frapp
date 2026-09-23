@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
-import { markLegalAcceptanceRecorded } from "./use-user";
+import { markLegalAcceptanceRecorded } from "./legal-acceptance";
 
 export function useInvites() {
   const client = useFrappClient();
@@ -77,9 +77,10 @@ export function useEmailInvites() {
 /**
  * Join a chapter with an invite token.
  *
- * `accept_terms_privacy` is the join screen's Terms checkbox (#2302). Send it
- * when `useLegalAcceptance` says `required`; the server refuses the join with
- * 403 `legal.acceptance_required` otherwise, and the token stays usable.
+ * `accept_terms_privacy` is the join screen's Terms checkbox (#2302);
+ * `useJoinTermsCheckbox` decides when to send it. Without it, a user who hasn't
+ * accepted the current Terms is refused with a 403 (`isTermsRequiredError`),
+ * and the token stays usable.
  */
 export function useRedeemInvite() {
   const client = useFrappClient();

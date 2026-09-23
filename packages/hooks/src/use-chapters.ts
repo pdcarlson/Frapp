@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
-import { markLegalAcceptanceRecorded } from "./use-user";
+import { markLegalAcceptanceRecorded } from "./legal-acceptance";
 
 export interface ChapterMembershipSummary {
   chapter_id: string;

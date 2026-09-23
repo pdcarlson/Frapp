@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import * as joinErrors from "./join-errors";
 import {
-  isTermsRequiredError,
   JOIN_TERMS_REQUIRED_COPY,
-  joinErrorCopy,
-  redeemChapterId,
-} from "./join-errors";
+  LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
+} from "@repo/validation";
+import { joinErrorCopy, redeemChapterId } from "./join-errors";
 
 /**
  * `/join` rendered every failure as one string — `getErrorMessage(error,
@@ -64,23 +63,21 @@ describe("joinErrorCopy", () => {
 
 describe("the Terms refusal (#2302)", () => {
   it("asks for the checkbox when the server refused for want of it", () => {
+    // As served: `AllExceptionsFilter` sends no `code` (#1020). Detection
+    // itself is `isTermsRequiredError`, tested in @repo/hooks.
     const refusal = {
       statusCode: 403,
-      code: "legal.acceptance_required",
-      message:
-        "Agree to the Terms of Service and Privacy Policy to join this chapter.",
+      error: "FORBIDDEN",
+      message: LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
     };
-    expect(isTermsRequiredError(refusal)).toBe(true);
     expect(joinErrorCopy(refusal)).toBe(JOIN_TERMS_REQUIRED_COPY);
   });
 
   it("does not read the subscription lock, also a 403, as a Terms refusal", () => {
     const locked = {
       statusCode: 403,
-      code: "chapter.subscription.canceled",
       message: "This chapter isn't accepting new members right now.",
     };
-    expect(isTermsRequiredError(locked)).toBe(false);
     expect(joinErrorCopy(locked)).toBe(locked.message);
   });
 });
@@ -104,11 +101,6 @@ describe("this module is error copy, not a status vocabulary", () => {
     // persisted, badged or coloured, so there is no kind to be wrong about and
     // nothing for `components/shared/status-kind.spec.ts` to register — the
     // same call `settings-status.ts` argues for a module tier.
-    expect(Object.keys(joinErrors).sort()).toEqual([
-      "JOIN_TERMS_REQUIRED_COPY",
-      "isTermsRequiredError",
-      "joinErrorCopy",
-      "redeemChapterId",
-    ]);
+    expect(Object.keys(joinErrors).sort()).toEqual(["joinErrorCopy", "redeemChapterId"]);
   });
 });

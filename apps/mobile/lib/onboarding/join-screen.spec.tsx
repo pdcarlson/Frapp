@@ -48,36 +48,74 @@ vi.mock("@/lib/select-chapter", () => ({
 const redeemMutateAsync = vi.fn();
 let legalRequired: boolean | undefined = false;
 
-vi.mock("@repo/hooks", () => ({
+// The Terms checkbox runs the real `useJoinTermsCheckbox`, against a mock API
+// client (`statusClient` below), so this pins the screen and the shared rule
+// together rather than a stand-in for the rule.
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRedeemInvite: () => ({
     isPending: false,
     isSuccess: false,
     mutateAsync: redeemMutateAsync,
   }),
   useDeleteAccount: () => ({ isPending, isSuccess, mutateAsync }),
-  useLegalAcceptance: () => ({
-    data:
-      legalRequired === undefined ? undefined : { required: legalRequired },
-  }),
 }));
+
+/** Answers `GET /v1/users/me/legal-acceptance`; `undefined` never answers. */
+const statusClient = {
+  GET: () =>
+    legalRequired === undefined
+      ? new Promise(() => {})
+      : Promise.resolve({
+          data: { required: legalRequired },
+          error: undefined,
+        }),
+};
 
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ComponentProps } from "react";
+import { FrappClientProvider } from "@repo/hooks";
+import { LEGAL_ACCEPTANCE_REQUIRED_MESSAGE } from "@repo/validation";
 import JoinChapter from "@/app/(auth)/join";
 
 type Node = ReactTestRenderer["root"];
 type AlertButton = { text: string; style?: string; onPress?: () => void };
 
 function render(): ReactTestRenderer {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
-      <FrappThemeProvider>
-        <JoinChapter />
-      </FrappThemeProvider>,
+      <QueryClientProvider client={queryClient}>
+        <FrappClientProvider
+          client={
+            statusClient as unknown as ComponentProps<
+              typeof FrappClientProvider
+            >["client"]
+          }
+          chapterId={null}
+        >
+          <FrappThemeProvider>
+            <JoinChapter />
+          </FrappThemeProvider>
+        </FrappClientProvider>
+      </QueryClientProvider>,
     );
   });
   return tree;
+}
+
+/** Let the status read settle, so the screen shows what the server said. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+  }
 }
 
 /**
@@ -262,6 +300,7 @@ describe("join screen — the Terms checkbox (#2302)", () => {
   it("doesn't ask a user who already accepted the current Terms", async () => {
     legalRequired = false;
     const tree = render();
+    await settle();
     expect(checkbox(tree.root)).toBeUndefined();
 
     typeToken(tree.root, "invite-token-1");
@@ -275,6 +314,7 @@ describe("join screen — the Terms checkbox (#2302)", () => {
   it("asks, and won't join until the box is ticked", async () => {
     legalRequired = true;
     const tree = render();
+    await settle();
     expect(checkbox(tree.root)).toBeDefined();
 
     typeToken(tree.root, "invite-token-1");
@@ -291,6 +331,7 @@ describe("join screen — the Terms checkbox (#2302)", () => {
   it("sends the checkbox once it is ticked", async () => {
     legalRequired = true;
     const tree = render();
+    await settle();
 
     typeToken(tree.root, "invite-token-1");
     act(() => {
@@ -314,12 +355,16 @@ describe("join screen — the Terms checkbox (#2302)", () => {
 
   it("shows the checkbox when the server refuses a join for want of it", async () => {
     legalRequired = false;
+    // As served: `AllExceptionsFilter` sends no `code` (#1020).
     redeemMutateAsync.mockRejectedValueOnce({
-      code: "legal.acceptance_required",
-      message:
-        "Agree to the Terms of Service and Privacy Policy to join this chapter.",
+      statusCode: 403,
+      error: "FORBIDDEN",
+      message: LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
+      requestId: "req_1",
     });
     const tree = render();
+    await settle();
+    expect(checkbox(tree.root)).toBeUndefined();
 
     typeToken(tree.root, "invite-token-1");
     await act(async () => {

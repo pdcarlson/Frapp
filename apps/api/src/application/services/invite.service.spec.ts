@@ -726,7 +726,7 @@ describe('InviteService', () => {
       new ForbiddenException({
         code: 'legal.acceptance_required',
         message:
-          'Agree to the Terms of Service and Privacy Policy to join this chapter.',
+          'Agree to the Terms of Service and Privacy Policy to continue.',
       });
 
     beforeEach(() => {

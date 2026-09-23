@@ -12,9 +12,11 @@ const { redeemMutate, legal } = vi.hoisted(() => ({
   legal: { data: { required: false } as { required: boolean } | undefined },
 }));
 
-vi.mock("@repo/hooks", () => ({
+// The Terms checkbox runs the real `useJoinTermsCheckbox` against a mock API
+// client (`statusClient`), so this pins the page and the shared rule together.
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRedeemInvite: () => ({ mutateAsync: redeemMutate, isPending: false }),
-  useLegalAcceptance: () => ({ data: legal.data }),
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
@@ -31,10 +33,38 @@ vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ isOffline: false }),
 }));
 
+import type { ComponentProps } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { FrappClientProvider } from "@repo/hooks";
+import { LEGAL_ACCEPTANCE_REQUIRED_MESSAGE } from "@repo/validation";
 import JoinPage from "./page";
 
+/** Answers `GET /v1/users/me/legal-acceptance`; `undefined` never answers. */
+const statusClient = {
+  GET: () =>
+    legal.data === undefined
+      ? new Promise(() => {})
+      : Promise.resolve({ data: legal.data, error: undefined }),
+};
+
 async function renderReady() {
-  render(<JoinPage />);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <FrappClientProvider
+        client={
+          statusClient as unknown as ComponentProps<
+            typeof FrappClientProvider
+          >["client"]
+        }
+        chapterId={null}
+      >
+        <JoinPage />
+      </FrappClientProvider>
+    </QueryClientProvider>,
+  );
   await screen.findByLabelText("Invite");
   fireEvent.change(screen.getByLabelText("Invite"), {
     target: { value: "invite-token-1" },
@@ -50,7 +80,7 @@ describe("web join — the Terms checkbox (#2302)", () => {
   it("doesn't ask a user who already accepted the current Terms", async () => {
     legal.data = { required: false };
     await renderReady();
-    expect(screen.queryByRole("checkbox")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
 
     fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
 
@@ -92,13 +122,15 @@ describe("web join — the Terms checkbox (#2302)", () => {
 
   it("shows the checkbox when the server refuses a join for want of it", async () => {
     legal.data = { required: false };
+    // As served: `AllExceptionsFilter` sends no `code` (#1020).
     redeemMutate.mockRejectedValueOnce({
       statusCode: 403,
-      code: "legal.acceptance_required",
-      message:
-        "Agree to the Terms of Service and Privacy Policy to join this chapter.",
+      error: "FORBIDDEN",
+      message: LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
+      requestId: "req_1",
     });
     await renderReady();
+    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
 
     fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
 

@@ -6,6 +6,7 @@ import type { User } from '#domain/entities/user.entity';
 jest.mock('@repo/validation', () => ({
   LEGAL_POLICY_VERSION: 'current-version',
   LEGAL_ACCEPTANCE_REQUIRED_CODE: 'legal.acceptance_required',
+  LEGAL_ACCEPTANCE_REQUIRED_MESSAGE: 'shared refusal message',
 }));
 
 const baseUser = (overrides: Partial<User> = {}): User => ({
@@ -186,6 +187,8 @@ describe('LegalAcceptanceService (#2302)', () => {
         status: 403,
         response: expect.objectContaining({
           code: 'legal.acceptance_required',
+          // The only part a client sees today (#1020): clients match on it.
+          message: 'shared refusal message',
         }),
       });
       expect(userRepo.update).not.toHaveBeenCalled();

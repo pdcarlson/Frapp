@@ -35,11 +35,40 @@ export const LEGAL_ACCEPTANCE_LABEL =
   "I'm 18 or older and agree to the Terms of Service and Privacy Policy.";
 
 /**
- * The 403 `code` a join answers with when the caller hasn't accepted the
- * current Terms and didn't send the checkbox (#2302). The API throws it and
- * both join screens key their copy on it.
+ * The 403 the API answers with when a caller who hasn't accepted the current
+ * Terms tries to join or create a chapter without the checkbox (#2302). It
+ * throws both; `isTermsRequiredError` in `@repo/hooks` recognises either.
+ *
+ * The message matters as much as the code. `AllExceptionsFilter` sends no
+ * `code` to clients (#1020), so until that contract changes the message is the
+ * only thing a client can match, and it is shared from here so the server and
+ * both apps can't drift apart on it.
  */
 export const LEGAL_ACCEPTANCE_REQUIRED_CODE = "legal.acceptance_required";
+export const LEGAL_ACCEPTANCE_REQUIRED_MESSAGE =
+  "Agree to the Terms of Service and Privacy Policy to continue.";
+
+/**
+ * The join screens' copy when the box isn't ticked, or when the server refused
+ * a join for want of it (#2302). Web `/join` and mobile s02 both render it;
+ * `spec/ui/design-system/writing.md` § 7, Join chapter, is its spec.
+ */
+export const JOIN_TERMS_REQUIRED_COPY =
+  "Agree to the Terms of Service and Privacy Policy to join.";
+
+/**
+ * The Terms prompt's copy (#2302), rendered by mobile `(auth)/terms.tsx` and
+ * web's `TermsPrompt`. `spec/ui/design-system/writing.md` § 7, Terms prompt,
+ * is its spec.
+ */
+export const TERMS_PROMPT_COPY = {
+  title: "Agree to the Terms to continue",
+  body: "We've updated the Terms of Service and Privacy Policy. Read them, then agree to keep using Frapp.",
+  cta: "Agree and continue",
+  unticked: "Agree to the Terms of Service and Privacy Policy to continue.",
+  deleted: "This account has been deleted. Sign out to continue.",
+  failed: "Couldn't save your agreement. Check your connection and try again.",
+} as const;
 
 const subscriptionStatusEnum = z.enum([
   "incomplete",

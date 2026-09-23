@@ -1,5 +1,9 @@
 import { useLegalAcceptance, useListChapters } from "@repo/hooks";
-import { resolveAuthGate, type AuthGateDestination } from "@/lib/auth-gate";
+import {
+  legalReadStatus,
+  resolveAuthGate,
+  type AuthGateDestination,
+} from "@/lib/auth-gate";
 import { useAuthSession } from "@/lib/auth-session";
 
 /**
@@ -37,16 +41,13 @@ export function useAuthGateDestination(): AuthGateDestination {
       }))
     : [];
 
-  // Same shape as memberships: once a first answer is in, `isSuccess` holds
-  // through a background refetch, so a refresh never reads as pending.
-  const legalAcceptanceStatus =
-    status !== "authenticated"
-      ? "idle"
-      : legalAcceptance.isError
-        ? "error"
-        : legalAcceptance.isSuccess
-          ? "success"
-          : "pending";
+  // Answer first, error second: a failed refetch keeps its cached answer, so
+  // it can neither blank the app nor let a member skip the prompt.
+  const legalAcceptanceStatus = legalReadStatus({
+    authenticated: status === "authenticated",
+    hasAnswer: legalAcceptance.data !== undefined,
+    isError: legalAcceptance.isError,
+  });
 
   return resolveAuthGate({
     status,

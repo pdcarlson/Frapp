@@ -639,7 +639,7 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 | **410** — expired, used, or missing | — | `This invite has expired or already been used. Ask an officer for a new one.` |
 | **409** — already a member | — | `You're already a member of this chapter. Open it from your chapter list.` |
 | Terms checkbox (#2302) | — | `I'm 18 or older and agree to the Terms of Service and Privacy Policy.` Shown unless the server says this user already accepted the current Terms. The wording is `LEGAL_ACCEPTANCE_LABEL` in `@repo/validation`, owner-approved with the September 2026 Terms, and shared by every acceptance surface. |
-| Join without the box ticked, or **403** `legal.acceptance_required` | — | `Agree to the Terms of Service and Privacy Policy to join.` |
+| Join without the box ticked, or a **403** Terms refusal | — | `Agree to the Terms of Service and Privacy Policy to join.` (`JOIN_TERMS_REQUIRED_COPY`). The refusal is recognised by its message, since no error `code` reaches a client (#1020); it also puts the checkbox back. |
 | Any other failure | — | The server's message, else `Couldn't join that chapter. Check the invite and try again.` |
 
 The two status rows are the reason this table exists. Both are routine, both were rendering one generic toast, and they need **opposite** next actions — one says fetch a new invite, the other says you already have what you came for. `spec/behavior/onboarding.md` §Invite Token Rules fixes the codes; the strings are shared verbatim with [`apps/mobile/lib/onboarding/join-errors.ts`](../../../apps/mobile/lib/onboarding/join-errors.ts) and [`apps/web/components/auth/join-errors.ts`](../../../apps/web/components/auth/join-errors.ts), and this table is the one place they are written down, since neither app can import the other's module.
@@ -648,7 +648,7 @@ The two status rows are the reason this table exists. Both are routine, both wer
 
 ### Terms prompt (mobile and web)
 
-A member who hasn't accepted the Terms version the server enforces (#2302): mobile's `(auth)/terms.tsx`, and web's full-screen `TermsPrompt` over the dashboard. The strings are shared verbatim with [`apps/mobile/lib/onboarding/terms-prompt.ts`](../../../apps/mobile/lib/onboarding/terms-prompt.ts) and [`apps/web/components/auth/terms-prompt.tsx`](../../../apps/web/components/auth/terms-prompt.tsx), and this table is the one place they are written down.
+A member who hasn't accepted the Terms version the server enforces (#2302): mobile's `(auth)/terms.tsx`, and web's full-screen `TermsPrompt` over the dashboard. Both render `TERMS_PROMPT_COPY` from `@repo/validation`, so the strings exist once in code; this table is where they are specified.
 
 | State | Title | Description |
 |---|---|---|
@@ -659,6 +659,7 @@ A member who hasn't accepted the Terms version the server enforces (#2302): mobi
 | **410** — the account was deleted | — | `This account has been deleted. Sign out to continue.` |
 | Any other failure | — | `Couldn't save your agreement. Check your connection and try again.` |
 | Ways out | — | `Sign out` on both. Mobile also offers `Delete account`, because Settings is unreachable while the gate holds a member here (Apple 5.1.1(v)). |
+| Sign-out failed (web) | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` The controls come back so the member can retry; they stay locked while a successful sign-out navigates away. |
 
 ### No access (pre-auth)
 

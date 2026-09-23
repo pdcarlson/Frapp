@@ -8,15 +8,16 @@ import {
   Text,
   View,
 } from "react-native";
-import { useAcceptLegalTerms, useDeleteAccount } from "@repo/hooks";
+import {
+  termsPromptErrorCopy,
+  useAcceptLegalTerms,
+  useDeleteAccount,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { TERMS_PROMPT_COPY } from "@repo/validation";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
-import {
-  TERMS_PROMPT_COPY,
-  termsPromptErrorCopy,
-} from "@/lib/onboarding/terms-prompt";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**

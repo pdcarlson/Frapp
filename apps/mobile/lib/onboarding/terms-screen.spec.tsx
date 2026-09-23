@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { TERMS_PROMPT_COPY } from "@/lib/onboarding/terms-prompt";
+import { TERMS_PROMPT_COPY } from "@repo/validation";
 
 /**
  * #2302. A member who hasn't accepted the current Terms is pinned to this
@@ -27,7 +27,8 @@ vi.mock("@/lib/auth-session", () => ({
   }),
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useAcceptLegalTerms: () => ({
     isPending: false,
     isSuccess: false,

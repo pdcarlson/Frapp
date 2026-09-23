@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   LEGAL_ACCEPTANCE_REQUIRED_CODE,
+  LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
   LEGAL_POLICY_VERSION,
 } from '@repo/validation';
 import {
@@ -78,7 +79,8 @@ export class LegalAcceptanceService {
   }
 
   /**
-   * The gate on every path into a chapter.
+   * The gate on every path into a chapter: invite redemption, onboarding and
+   * `POST /v1/chapters`.
    *
    * `accepting` is the request's validated checkbox. When it's true the
    * acceptance is recorded; when it's false the user must already have
@@ -98,10 +100,11 @@ export class LegalAcceptanceService {
     if (accepting) return this.accept(userId);
     const status = toStatus(await this.load(userId));
     if (status.required) {
+      // Both keys, but only the message reaches a client today: the global
+      // filter drops `code` (#1020), so clients match the shared message.
       throw new ForbiddenException({
         code: LEGAL_ACCEPTANCE_REQUIRED_CODE,
-        message:
-          'Agree to the Terms of Service and Privacy Policy to join this chapter.',
+        message: LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
       });
     }
     return status;
