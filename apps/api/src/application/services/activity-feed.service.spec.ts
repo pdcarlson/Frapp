@@ -266,12 +266,14 @@ describe('ActivityFeedService', () => {
     expect(announcementIds).toEqual(['announcement:msg-live']);
   });
 
-  it("reads announcements through getMessages as the caller, so the mask is the caller's own list", async () => {
-    // The feed does no masking of its own (#2324): it serves whatever
-    // `ChatService.getMessages` masked for the viewer it was asked about. So the
-    // guarantee is exactly "it asks as the caller". Asking as anyone else, or
-    // reading `chat_messages` directly, would hand the caller a thread masked
-    // for someone else's block list, or for none.
+  it('leaves out an announcement whose author the caller has blocked, reading as the caller', async () => {
+    // The feed keeps no block list of its own (#2324): it drops the rows
+    // `ChatService.getMessages` flagged `sender_blocked` for the viewer it was
+    // asked about. So the guarantee is "it asks as the caller, and drops what
+    // that caller's list flags". Asking as anyone else, or reading
+    // `chat_messages` directly, would apply someone else's block list, or none.
+    // Dropping rather than showing the masked row matters: it keeps the blocked
+    // member's `sender_id`, so the item would name them over the sentinel.
     mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
     mockChatService.getMessages.mockResolvedValue([
       messageFixture({
@@ -279,6 +281,7 @@ describe('ActivityFeedService', () => {
         content: '[message from a blocked member]',
         sender_blocked: true,
       }),
+      messageFixture({ id: 'msg-clear', sender_blocked: false }),
     ]);
 
     const result = await service.getFeed(CHAPTER_ID, USER_ID);
@@ -289,8 +292,10 @@ describe('ActivityFeedService', () => {
       USER_ID,
       expect.any(Object),
     );
-    const announcement = result.find((item) => item.type === 'announcement');
-    expect(announcement?.body).toBe('[message from a blocked member]');
+    const announcementIds = result
+      .filter((item) => item.type === 'announcement')
+      .map((item) => item.id);
+    expect(announcementIds).toEqual(['announcement:msg-clear']);
   });
 
   it('over-fetches announcements so soft-deleted rows do not crowd out live ones within the cap', async () => {

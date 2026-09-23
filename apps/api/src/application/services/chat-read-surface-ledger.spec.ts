@@ -113,8 +113,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_updateCategory_v1: CHANNEL_METADATA,
   ChatController_deleteCategory_v1: CHANNEL_METADATA,
   ChatController_getUnreadCounts_v1: {
-    status: 'no-foreign-content',
-    why: "Counts only. A blocked member's messages still count, because each renders as a tombstone the blocker can expand.",
+    status: 'open',
+    issues: [2521],
+    why: "Counts only, but `get_channel_unread_counts` counts a blocked member's messages and @-mentions, so they still move the blocker's unread, mention and app-icon badges.",
   },
   ChatController_markRead_v1: {
     status: 'no-foreign-content',
@@ -277,19 +278,19 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'masked',
     proof: {
       spec: 'application/services/activity-feed.service.spec.ts',
-      test: "reads announcements through getMessages as the caller, so the mask is the caller's own list",
+      test: 'leaves out an announcement whose author the caller has blocked, reading as the caller',
     },
   },
   NotificationController_listNotifications_v1: {
-    // Serves the in-app rows `ChatService.notifyMessageRecipients` writes for
-    // DMs and announcements, so its guarantee is made at write time: no row is
-    // written for a member who had blocked the sender. A row written before the
-    // block stays, as notification history.
-    status: 'masked',
-    proof: {
-      spec: CHAT_SERVICE_SPEC,
-      test: 'does not notify a DM recipient who has blocked the sender',
-    },
+    // Serves every in-app row, whoever wrote it. The chat rows
+    // `ChatService.notifyMessageRecipients` writes for DMs and announcements are
+    // masked at write time: no row is written for a member who had blocked the
+    // sender (PUSH_LEDGER below holds the proofs), and a row written before the
+    // block stays, as notification history. The non-chat rows that quote a
+    // member's text are MEMBER_TEXT, still open, so the route is too.
+    status: 'open',
+    issues: [2498],
+    why: "Chat rows are masked at write time; the non-chat rows carrying a member's own text (a task title, an event name) are not.",
   },
 };
 

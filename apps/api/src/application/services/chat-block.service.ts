@@ -63,7 +63,7 @@ export class ChatBlockService {
    * delivers the raw row with no viewer attached and therefore cannot be
    * server-masked. Every server read surface that masks at read time uses the
    * same method, and every one of them depends on the throw below. (The
-   * notification list is masked at write time instead, by
+   * notification list's chat rows are masked at write time instead, by
    * {@link filterOutBlockers}.)
    *
    * **Never takes a user id from the caller.** The owner is always

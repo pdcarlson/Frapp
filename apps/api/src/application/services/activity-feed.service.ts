@@ -323,8 +323,14 @@ export class ActivityFeedService {
       { limit: PER_DOMAIN_LIMIT * ANNOUNCEMENT_FETCH_BUFFER },
     );
 
+    // A blocked author's announcement is left out rather than shown masked
+    // (#2324): the masked row keeps its `sender_id`, so the item would carry the
+    // blocked member's name over the server's sentinel, and nothing may render
+    // or key off that sentinel (`spec/behavior/chat/README.md` § The masking
+    // contract). `getMessages` asked as the caller, so `sender_blocked` is the
+    // caller's own list.
     return messages
-      .filter((message) => !message.is_deleted)
+      .filter((message) => !message.is_deleted && !message.sender_blocked)
       .slice(0, PER_DOMAIN_LIMIT)
       .map((message): ActivityFeedItem => ({
         id: `announcement:${message.id}`,
