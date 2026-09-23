@@ -159,7 +159,7 @@ and keeps only the tracker rules built on these labels. Labels auto-create on fi
   Since 2026-08-30 the premise no longer holds: production is live (`frapp-prod`, deployed by
   `deploy-production.yml`; [ADR-20](../../../spec/architecture/adr/adr-20.md)), so don't read the
   label as evidence that a production-shaped risk is theoretical. Redefining its scope is the
-  owner's call, tracked in #1381.
+  owner's call, tracked in #2542.
 - **Routine infrastructure:** `routine-state` (cross-run state stores, never work; `/next` and the
   routines skip them)
 - **Legacy:** `bug`, `Improvement` and `release:*` persist on old issues; don't add them to new
