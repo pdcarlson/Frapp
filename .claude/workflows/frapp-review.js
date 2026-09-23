@@ -21,6 +21,10 @@ export const meta = {
 //       plus level: 'medium' | 'high' | 'xhigh'   full only, default 'high'
 //            ultracode: true                      full only: forces xhigh, adds the acceptance-and-tests finder
 //            acceptance                           optional acceptance criteria for that finder
+//            verify: [candidate]                  verify only: skip the finders and run these candidates
+//                                                 ({ file, line, angle, summary, failure_scenario })
+//                                                 through the same verify rule, e.g. an alsoFlaggedBy
+//                                                 entry Phase 3 splits out as a different defect
 
 const A = args || {}
 const SHA = /^[0-9a-f]{7,40}$/
@@ -174,8 +178,8 @@ function norm(file) {
 // is refuted or unverified, its next duplicate may be a different defect at the same line, so that
 // one takes over the line and is verified, carrying the rest: duplicates are verified one at a time,
 // and only while each one before them fails. Once one is kept, the rest ride along unverified, and
-// the skill's Phase 3 has the orchestrator verify, by the same rule, any that names a different defect.
-const note = (d) => ({ source: d.source, angle: d.angle, summary: d.summary, failure_scenario: d.failure_scenario })
+// the skill's Phase 3 passes any that names a different defect back in through `args.verify`.
+const note = (d) => ({ file: d.file, line: d.line, source: d.source, angle: d.angle, summary: d.summary, failure_scenario: d.failure_scenario })
 
 function admit(candidates, source) {
   const fresh = []
@@ -252,6 +256,14 @@ function onFinder(res, source, cap, angles) {
   return admit(res.candidates, source)
 }
 
+const VERIFY_ONLY = Array.isArray(A.verify) ? A.verify : null
+
+if (VERIFY_ONLY) {
+  log(`verify only: ${VERIFY_ONLY.length} candidate(s)`)
+  phase('Verify')
+  received += VERIFY_ONLY.length
+  await parallel(admit(VERIFY_ONLY, 'phase-3').map((rec) => () => verify(rec)))
+} else {
 log(`${MODE} review at ${LEVEL}: ${BUNDLES.length} finders${SWEEP_CAP ? ' + gap sweep' : ''}${SMALL ? ' (small diff)' : ''}`)
 
 phase('Find')
@@ -279,6 +291,7 @@ if (SWEEP_CAP) {
     { agentType: 'diff-finder', effort: EFFORT.finder, schema: candidatesSchema(SWEEP_CAP), phase: 'Sweep', label: 'find:gap-sweep' },
   )
   await parallel(onFinder(res, 'find:gap-sweep', SWEEP_CAP, ['Gap sweep']).map((rec) => () => verify(rec)))
+}
 }
 
 const counts = { finders, candidates: received, duplicatesMerged: merged, verifiers, escalations, agents: finders + verifiers }

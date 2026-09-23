@@ -237,9 +237,10 @@ Rank correctness and security above cleanups, and `CONFIRMED` above `PLAUSIBLE`.
 names a concrete broken pointer, an orphaned section reference, or a dropped dated stamp is a
 correctness finding and is not cut to fit the cap. Each `alsoFlaggedBy` entry is an unverified
 candidate at a kept finding's line, with its own summary and failure scenario. Merge it when it
-shares the root cause. When it names a different defect, verify it by the Phase 2 rule (reproduce,
-then material only on `REFUTED`; dropped only when both refute it, and a missing verdict is a check
-not run), and report it as its own finding if it survives. Merge other findings
+shares the root cause. When it names a different defect, send it back through the workflow, which
+verifies it exactly as Phase 2 does: `Workflow({ name: 'frapp-review', args: { ...scope, verify:
+[entry] } })` (on the Agent-tool path, verify it as Phase 2 does). Report it as its own finding if
+it's kept. Merge other findings
 that share a root cause. Cap at the level's limit.
 
 Report with one `ReportFindings` call, most severe first, with `level` set to the effort used and
