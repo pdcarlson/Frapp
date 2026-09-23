@@ -34,8 +34,8 @@ jest.mock('@repo/org-archetypes', () => ({
 jest.mock('@repo/chapter-theme', () => ({
   // Mirrors the real DeriveSignetPaletteResult shape — see the note in
   // chapter-onboarding.service.spec.ts for why a partial double is a trap
-  // here: the service reads `invalidSeed` and iterates `contrastChecks` and
-  // `fillChecks`.
+  // here: `buildChapterPalette` (chapter-palette.ts, not mocked) reads
+  // `invalidSeed` and iterates `contrastChecks` and `fillChecks`.
   deriveSignetPalette: jest.fn(() => ({
     palette: { '--signet-accent-primary': '#C49A3A' },
     resolvedSeed: '#F2B72E',
@@ -640,8 +640,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
 
     it('logs only the fill checks that failed, and nothing when all pass', async () => {
       // The engine reports a check for every ladder surface, passing or not;
-      // only the failures belong in the log, or every save would warn four
-      // times and bury the one line a broken lift raises.
+      // only the failures belong in the log, or every save would log a fill
+      // warning naming all four surfaces and bury the one a broken lift raises.
       const { deriveSignetPalette } = jest.requireMock(
         '@repo/chapter-theme',
       ) as { deriveSignetPalette: jest.Mock };
