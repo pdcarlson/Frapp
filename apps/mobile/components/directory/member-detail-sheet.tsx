@@ -12,8 +12,10 @@ import {
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import {
+  BLOCK_ROW_DESCRIPTION,
   confirmBlockMember,
   confirmUnblockMember,
+  UNBLOCK_ROW_DESCRIPTION,
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import { isBlockableSender } from "@/lib/chat/blocks";
@@ -231,7 +233,7 @@ export const MemberDetailSheet = forwardRef<
                 {isBlocked ? (
                   <ListRow
                     label={`Unblock ${blockTarget.displayName}`}
-                    description="Their messages in this chapter's chat show again."
+                    description={UNBLOCK_ROW_DESCRIPTION}
                     disabled={blockActions.isPending}
                     onPress={() =>
                       confirmUnblockMember({
@@ -243,7 +245,7 @@ export const MemberDetailSheet = forwardRef<
                 ) : (
                   <ListRow
                     label={`Block ${blockTarget.displayName}`}
-                    description="Hides their messages from you in this chapter's chat. They aren't told."
+                    description={BLOCK_ROW_DESCRIPTION}
                     destructive
                     disabled={blockActions.isPending}
                     onPress={() =>

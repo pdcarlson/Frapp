@@ -4,7 +4,7 @@ import { useBlockedUserIds, type BlockedUserIds } from "@repo/hooks";
 import { blockClearance, useBlockClearance } from "./block-clearance";
 import {
   applyBlockList,
-  contradictedSenders,
+  contradictingRows,
   rowsClearedByReadyList,
   type BlockedThread,
   type BlockState,
@@ -27,13 +27,15 @@ export interface ThreadBlockList {
  *
  * 1. Classifies every cached row (`applyBlockList`) against the list, this
  *    client's confirmed changes, and this session's clearances.
- * 2. Records rows a `ready` list cleared (`block-clearance.ts`), so a later
+ * 2. Records every row a `ready` list shows (`block-clearance.ts`), so a later
  *    outage holds only what arrives during it (finding 4).
- * 3. Re-reads the list once per distinct set of senders a ready list is
- *    contradicted on — a masked REST row for someone off the list, which is
- *    what a block made on another device looks like (finding 6). Once per set,
- *    not once per read: a masked copy that outlived an unblock made elsewhere
- *    keeps contradicting the list, and re-reading on every answer would poll.
+ * 3. Re-reads the list once per distinct set of masked REST rows a ready list
+ *    is contradicted by — a masked row for someone off the list, which is what
+ *    a block made on another device looks like (finding 6). Once per set, not
+ *    once per read: a masked copy that outlived an unblock keeps contradicting
+ *    the list, and re-reading on every answer would poll. The set is forgotten
+ *    once a ready list stops being contradicted, so the same rows contradicting
+ *    it again later — the member blocked again elsewhere — are a new question.
  *
  * Clearances are passed to the classifier only while the list is not ready.
  * A ready list never consults them, and holding them out keeps `blockState`
@@ -72,16 +74,23 @@ export function useThreadBlockList(
   }, [isReady, thread.rows, viewerId]);
 
   const contradicted = useMemo(
-    () => contradictedSenders(messages, blockState).join(","),
+    () => contradictingRows(messages, blockState).join(","),
     [messages, blockState],
   );
   const reconciledFor = useRef("");
   const { retry } = blockList;
   useEffect(() => {
-    if (contradicted === "" || contradicted === reconciledFor.current) return;
+    if (contradicted === "") {
+      // Resolved — but only a ready list can say so. A list that is loading or
+      // unavailable reports no contradiction because it proves nothing, and
+      // forgetting the set then would re-read on every recovery.
+      if (isReady) reconciledFor.current = "";
+      return;
+    }
+    if (contradicted === reconciledFor.current) return;
     reconciledFor.current = contradicted;
     retry();
-  }, [contradicted, retry]);
+  }, [contradicted, isReady, retry]);
 
   return { blockList, blockState, thread };
 }

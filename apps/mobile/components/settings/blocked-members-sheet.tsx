@@ -1,5 +1,11 @@
 import { forwardRef, useMemo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import {
   memberFallbackLabel,
@@ -23,6 +29,7 @@ import {
   confirmUnblockMember,
   useBlockActions,
 } from "@/lib/chat/block-actions";
+import { BLOCK_LIST_WAITING_FOR_NETWORK } from "@/lib/chat/blocks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -43,15 +50,20 @@ export const BLOCKED_MEMBERS_TITLE = "Blocked members";
  * The sheet's strings, exported so `spec/ui/design-system/writing.md` and the
  * spec can point at one home. A block is scoped to one chapter and a member can
  * belong to several (`spec/behavior/chat/README.md` § Block), so the sheet says
- * which chapter it is listing.
+ * which chapter it is listing — the empty state included: "You haven't blocked
+ * anyone" would be false for a member with blocks in another chapter.
  */
 export const BLOCKED_MEMBERS_SCOPE = "Blocks apply in this chapter only.";
-export const BLOCKED_MEMBERS_EMPTY_TITLE = "You haven't blocked anyone";
+export const BLOCKED_MEMBERS_EMPTY_TITLE =
+  "You haven't blocked anyone in this chapter";
 export const BLOCKED_MEMBERS_EMPTY_BODY =
   "Block someone from a message or their profile in the directory. Their messages in this chapter's chat are hidden from you, and they aren't told.";
 export const BLOCKED_MEMBERS_ERROR_TITLE = "Couldn't load your blocked members";
 export const BLOCKED_MEMBERS_ERROR_BODY =
   "Check your connection and try again. Your blocks haven't changed.";
+/** The first read is parked until the device is online; a tap cannot help. */
+export const BLOCKED_MEMBERS_OFFLINE_BODY =
+  "You're offline. This list loads when you're back online. Your blocks haven't changed.";
 export const BLOCKED_MEMBERS_STALE =
   "Couldn't refresh this list. It may be missing a recent change.";
 
@@ -85,15 +97,22 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
 
     // Only a confirmed read may say the list is empty. An unavailable read
     // with a cached list still shows that list (everyone on it is blocked) but
-    // says it could not be refreshed.
+    // says it could not be refreshed, and offers the same way back as the
+    // error state. While the read is parked for the network, both say it
+    // loads once the device is online instead of offering a dead Retry.
     const body =
       blockList.status === "loading" ? (
         <SkeletonLines lines={3} showTile={false} />
       ) : blockList.status === "unavailable" && rows.length === 0 ? (
         <ErrorState
           title={BLOCKED_MEMBERS_ERROR_TITLE}
-          body={BLOCKED_MEMBERS_ERROR_BODY}
-          onRetry={blockList.retry}
+          body={
+            blockList.isPaused
+              ? BLOCKED_MEMBERS_OFFLINE_BODY
+              : BLOCKED_MEMBERS_ERROR_BODY
+          }
+          onRetry={blockList.isPaused ? undefined : blockList.retry}
+          retryLabel="Retry"
           isRetrying={blockList.isRetrying}
         />
       ) : rows.length === 0 ? (
@@ -106,7 +125,35 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
         <>
           <Text style={styles.stale}>{BLOCKED_MEMBERS_SCOPE}</Text>
           {blockList.status === "unavailable" ? (
-            <Text style={styles.stale}>{BLOCKED_MEMBERS_STALE}</Text>
+            <View style={styles.staleRow}>
+              <Text style={[styles.stale, styles.staleText]}>
+                {BLOCKED_MEMBERS_STALE}
+              </Text>
+              {blockList.isPaused ? (
+                <Text style={styles.stale}>
+                  {BLOCK_LIST_WAITING_FOR_NETWORK}
+                </Text>
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry loading your blocked members"
+                  accessibilityState={{
+                    disabled: blockList.isRetrying,
+                    busy: blockList.isRetrying,
+                  }}
+                  disabled={blockList.isRetrying}
+                  hitSlop={12}
+                  onPress={blockList.retry}
+                  style={({ pressed }) => (pressed ? styles.pressed : null)}
+                >
+                  {blockList.isRetrying ? (
+                    <ActivityIndicator color={tokens.color.text.muted} />
+                  ) : (
+                    <Text style={styles.unblock}>Retry</Text>
+                  )}
+                </Pressable>
+              )}
+            </View>
           ) : null}
           <ListSection>
             {rows.map((row) => (
@@ -183,6 +230,14 @@ function createStyles(tokens: SignetTokens) {
     stale: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    staleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+    },
+    staleText: {
+      flex: 1,
     },
     pressed: {
       opacity: 0.6,

@@ -28,13 +28,18 @@ const BLOCKED = "22222222-2222-4222-8222-222222222222";
 const FRIEND = "33333333-3333-4333-8333-333333333333";
 const OTHER = "44444444-4444-4444-8444-444444444444";
 
-function setList(status: BlockListStatus, ids: string[] = []) {
+function setList(
+  status: BlockListStatus,
+  ids: string[] = [],
+  unblocked: string[] = [],
+) {
   list.current = {
     status,
     ids: new Set(ids),
-    unblocked: new Set(),
+    unblocked: new Set(unblocked),
     retry: list.retry,
     isRetrying: false,
+    isPaused: false,
   };
 }
 
@@ -102,6 +107,31 @@ describe("useThreadBlockList — clearances (finding 4)", () => {
     expect(result.current.thread.heldCount).toBe(1);
   });
 
+  it("keeps a REST row readable when an UPDATE echo lands during a later outage", () => {
+    setList("ready");
+    const read = messagesOf([restRow("m1", FRIEND)]);
+    const { result, rerender } = renderHook(
+      ({ messages }) => useThreadBlockList(messages, VIEWER),
+      { initialProps: { messages: read } },
+    );
+    expect(shownIds(result)).toEqual(["m1"]);
+
+    // The list goes down, then an officer pins m1. The echo replaces the REST
+    // row with an unevaluated one; the clearance recorded above is what keeps
+    // the message the viewer already read on screen.
+    setList("unavailable");
+    const pinned = selectMessages(
+      mergeServerRow(
+        mergeServerRow(emptyCache(), restRow("m1", FRIEND)),
+        { ...echoRow("m1", FRIEND), is_pinned: true },
+      ),
+    );
+    expect(pinned[0]!._blockEvaluated).toBe(false);
+    rerender({ messages: pinned });
+    expect(shownIds(result)).toEqual(["m1"]);
+    expect(result.current.thread.heldCount).toBe(0);
+  });
+
   it("holds everything unevaluated when the list was never ready", () => {
     setList("loading");
     const { result } = renderHook(() =>
@@ -161,6 +191,67 @@ describe("useThreadBlockList — cross-device blocks (finding 6)", () => {
       ]),
     });
     expect(list.retry).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-reads again when a member this client unblocked is blocked on another device (finding 7)", () => {
+    // Blocked elsewhere, and a ready list that does not say so yet.
+    setList("ready");
+    const masked = messagesOf([
+      restRow("m1", BLOCKED, { sender_blocked: true }),
+    ]);
+    const { rerender } = renderHook(
+      ({ messages }) => useThreadBlockList(messages, VIEWER),
+      { initialProps: { messages: masked } },
+    );
+    expect(list.retry).toHaveBeenCalledTimes(1);
+
+    // The re-read names them: the contradiction is resolved.
+    setList("ready", [BLOCKED]);
+    rerender({ messages: masked });
+    expect(list.retry).toHaveBeenCalledTimes(1);
+
+    // Unblocked here, and the unblock's refresh brought m1 back clear.
+    setList("ready", [], [BLOCKED]);
+    rerender({ messages: messagesOf([restRow("m1", BLOCKED)]) });
+    expect(list.retry).toHaveBeenCalledTimes(1);
+
+    // Blocked again on another device: the next REST read masks m1 again. The
+    // same row and the same sender as before, and this client's own unblock
+    // on record — still a question the list has to answer.
+    rerender({ messages: masked });
+    expect(list.retry).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-reads once for masked leftovers of this client's own unblock, then stops", () => {
+    setList("ready", [], [BLOCKED]);
+    const leftover = messagesOf([
+      restRow("m1", BLOCKED, { sender_blocked: true }),
+    ]);
+    const { rerender } = renderHook(
+      ({ messages }) => useThreadBlockList(messages, VIEWER),
+      { initialProps: { messages: leftover } },
+    );
+    expect(list.retry).toHaveBeenCalledTimes(1);
+    setList("ready", [], [BLOCKED]);
+    rerender({ messages: leftover });
+    expect(list.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-read on recovery just because the list was briefly unavailable", () => {
+    setList("ready");
+    const masked = messagesOf([
+      restRow("m1", BLOCKED, { sender_blocked: true }),
+    ]);
+    const { rerender } = renderHook(
+      ({ messages }) => useThreadBlockList(messages, VIEWER),
+      { initialProps: { messages: masked } },
+    );
+    expect(list.retry).toHaveBeenCalledTimes(1);
+    setList("unavailable");
+    rerender({ messages: masked });
+    setList("ready");
+    rerender({ messages: masked });
+    expect(list.retry).toHaveBeenCalledTimes(1);
   });
 
   it("does not re-read when the list agrees or is not ready", () => {

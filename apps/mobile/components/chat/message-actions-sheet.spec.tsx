@@ -51,18 +51,26 @@ import {
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
 } from "./message-actions-sheet";
-import { blockConfirmBody } from "@/lib/chat/block-actions";
+import {
+  BLOCK_NOT_A_MEMBER_BODY,
+  BLOCK_ROW_DESCRIPTION,
+  blockConfirmBody,
+} from "@/lib/chat/block-actions";
 import {
   REPORT_ALREADY_BODY,
   REPORT_FAILED_BODY,
   REPORT_FAILED_TITLE,
   REPORT_SENT_BODY,
   REPORT_SENT_TITLE,
+  REPORT_UNAVAILABLE_BODY,
 } from "@/lib/chat/report-reasons";
 
 const BLOCKED = "22222222-2222-4222-8222-222222222222";
 
-function render(target: MessageActionsTarget | null): ReactTestRenderer {
+function render(
+  target: MessageActionsTarget | null,
+  onSenderDeparted?: (userId: string) => void,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
@@ -70,6 +78,7 @@ function render(target: MessageActionsTarget | null): ReactTestRenderer {
         <MessageActionsSheet
           ref={createRef<MessageActionsSheetHandle>()}
           target={target}
+          onSenderDeparted={onSenderDeparted}
         />
       </FrappThemeProvider>,
     );
@@ -162,6 +171,45 @@ describe("MessageActionsSheet — menu", () => {
     act(() => confirm!.onPress!());
     await flush();
     expect(blockActions.block).toHaveBeenCalledWith(BLOCKED);
+  });
+
+  it("describes Block the way every other surface does", () => {
+    const tree = render({
+      messageId: "m1",
+      blockUserId: BLOCKED,
+      senderName: "Blake",
+      senderInDirectory: true,
+    });
+    expect(text(tree)).toContain(BLOCK_ROW_DESCRIPTION);
+  });
+
+  it("tells the caller when the API says the sender left, so Block stops being offered for them", async () => {
+    blockActions.block.mockRejectedValue({
+      statusCode: 404,
+      message: "Member not found",
+    });
+    const onSenderDeparted = vi.fn();
+    const tree = render(
+      {
+        messageId: "m1",
+        blockUserId: BLOCKED,
+        senderName: null,
+        senderInDirectory: false,
+      },
+      onSenderDeparted,
+    );
+
+    pressByLabel(tree, "Block this member");
+    const [, , buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
+    act(() => buttons!.find((b) => b.style === "destructive")!.onPress!());
+    await flush();
+    await flush();
+
+    expect(Alert.alert).toHaveBeenLastCalledWith(
+      "Couldn't block this member",
+      BLOCK_NOT_A_MEMBER_BODY,
+    );
+    expect(onSenderDeparted).toHaveBeenCalledWith(BLOCKED);
   });
 });
 
@@ -296,6 +344,61 @@ describe("MessageActionsSheet — report", () => {
     );
     // On screen, so no alert on top of it.
     expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it("says a refused report cannot be sent at all, rather than asking to retry (finding 8)", async () => {
+    for (const statusCode of [403, 404]) {
+      vi.mocked(AccessibilityInfo.announceForAccessibility).mockClear();
+      report.mutateAsync.mockRejectedValue({ statusCode, message: "nope" });
+      const tree = render(target);
+
+      pressByLabel(tree, "Spam");
+      act(() => sendButton(tree).props.onPress());
+      await flush();
+
+      expect(text(tree)).toContain(REPORT_UNAVAILABLE_BODY);
+      expect(text(tree)).not.toContain(REPORT_FAILED_BODY);
+      expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+        REPORT_UNAVAILABLE_BODY,
+      );
+    }
+  });
+
+  it("asks for another try on a server error", async () => {
+    report.mutateAsync.mockRejectedValue({ statusCode: 503 });
+    const tree = render(target);
+
+    pressByLabel(tree, "Spam");
+    act(() => sendButton(tree).props.onPress());
+    await flush();
+
+    expect(text(tree)).toContain(REPORT_FAILED_BODY);
+  });
+
+  it("alerts the permanent refusal too when the form was already dismissed", async () => {
+    const request = deferred<ReturnType<typeof filed>>();
+    report.mutateAsync.mockReturnValue(request.promise);
+    const tree = render(target);
+
+    pressByLabel(tree, "Spam");
+    act(() => sendButton(tree).props.onPress());
+    const reportSheet = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "BottomSheetModal" &&
+        typeof node.props.onDismiss === "function",
+    );
+    act(() => reportSheet.props.onDismiss());
+
+    await act(async () => {
+      request.reject({ statusCode: 403, message: "Forbidden" });
+      await Promise.resolve();
+    });
+    await flush();
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      REPORT_FAILED_TITLE,
+      REPORT_UNAVAILABLE_BODY,
+    );
   });
 
   it("starts a fresh form for the next message", async () => {

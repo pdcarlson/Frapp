@@ -16,7 +16,7 @@ import {
   blockListNotice,
   canOpenMessageActions,
   classifyMessage,
-  contradictedSenders,
+  contradictingRows,
   hasMaskedCopyFrom,
   isBlockableSender,
   messageActionsFor,
@@ -199,6 +199,24 @@ describe("classifyMessage", () => {
       );
     });
 
+    it("is visible in every list state once this client confirmed unblocking its sender", () => {
+      // A confirmed unblock applies at once, whatever the list's status — the
+      // same rule that makes a confirmed block tombstone at once.
+      const echoed = one(echoRow("m1", BLOCKED));
+      const unblocked = { unblocked: [BLOCKED] };
+      for (const state of [
+        ready([], unblocked),
+        loading([], unblocked),
+        unavailable([], unblocked),
+      ]) {
+        expect(classifyMessage(echoed, state, VIEWER)).toBe("visible");
+      }
+      // Nobody else's rows are released by it.
+      expect(
+        classifyMessage(one(echoRow("m2", FRIEND)), unavailable([], unblocked), VIEWER),
+      ).toBe("held");
+    });
+
     it("a clearance never outranks a block made since", () => {
       const echoed = one(echoRow("m1", BLOCKED));
       expect(
@@ -315,7 +333,7 @@ describe("applyBlockList", () => {
 });
 
 describe("rowsClearedByReadyList", () => {
-  it("names only the rows a ready list is the reason to show", () => {
+  it("names every row a ready list shows from someone the viewer could block", () => {
     const messages = selectMessages(
       [
         restRow("a", FRIEND),
@@ -326,44 +344,67 @@ describe("rowsClearedByReadyList", () => {
       ].reduce((cache, row) => mergeServerRow(cache, row), emptyCache()),
     );
     const thread = applyBlockList(messages, ready([BLOCKED]), VIEWER);
-    // a is server-evaluated, c is the viewer's, d is unblockable, e is a
-    // tombstone: none of them needs remembering.
-    expect(rowsClearedByReadyList(thread.rows, VIEWER)).toEqual(["b"]);
+    // c is the viewer's, d is unblockable and e is a tombstone: none of them
+    // needs remembering. a does, although the server evaluated it — see below.
+    expect(rowsClearedByReadyList(thread.rows, VIEWER).sort()).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("keeps a REST row readable through an outage after an UPDATE echo strips its evaluation", () => {
+    // Read over REST and shown against a ready list…
+    let cache = mergeServerRow(emptyCache(), restRow("m1", FRIEND));
+    const shown = applyBlockList(selectMessages(cache), ready(), VIEWER);
+    const cleared = rowsClearedByReadyList(shown.rows, VIEWER);
+    expect(cleared).toEqual(["m1"]);
+
+    // …then pinned by an officer while the list is down. The echo replaces the
+    // row as unevaluated, so only the clearance still vouches for it.
+    cache = mergeServerRow(cache, echoRow("m1", FRIEND, { is_pinned: true }));
+    const [pinned] = selectMessages(cache);
+    expect(pinned!._blockEvaluated).toBe(false);
+    expect(classifyMessage(pinned!, unavailable([], { cleared }), VIEWER)).toBe(
+      "visible",
+    );
+    expect(classifyMessage(pinned!, unavailable(), VIEWER)).toBe("held");
   });
 });
 
-describe("contradictedSenders (finding 6)", () => {
+describe("contradictingRows (finding 6)", () => {
   const maskedFromBlocked = one(
     restRow("m1", BLOCKED, { sender_blocked: true }),
   );
 
-  it("names a sender a ready list clears but a server read masked", () => {
+  it("names a masked row whose sender a ready list clears", () => {
     // What a block made on another device looks like before the list re-reads.
-    expect(contradictedSenders([maskedFromBlocked], ready())).toEqual([
-      BLOCKED,
-    ]);
+    expect(contradictingRows([maskedFromBlocked], ready())).toEqual(["m1"]);
   });
 
-  it("is quiet when the list agrees, or this client unblocked them itself", () => {
-    expect(contradictedSenders([maskedFromBlocked], ready([BLOCKED]))).toEqual(
+  it("is quiet when the list agrees", () => {
+    expect(contradictingRows([maskedFromBlocked], ready([BLOCKED]))).toEqual(
       [],
     );
+  });
+
+  it("still counts a sender this client unblocked — a later block elsewhere looks the same", () => {
+    const later = one(restRow("m2", BLOCKED, { sender_blocked: true }));
     expect(
-      contradictedSenders(
-        [maskedFromBlocked],
+      contradictingRows(
+        [later, maskedFromBlocked],
         ready([], { unblocked: [BLOCKED] }),
       ),
-    ).toEqual([]);
+    ).toEqual(["m1", "m2"]);
   });
 
   it("claims nothing against a list that is not ready", () => {
-    expect(contradictedSenders([maskedFromBlocked], unavailable())).toEqual([]);
-    expect(contradictedSenders([maskedFromBlocked], loading())).toEqual([]);
+    expect(contradictingRows([maskedFromBlocked], unavailable())).toEqual([]);
+    expect(contradictingRows([maskedFromBlocked], loading())).toEqual([]);
   });
 
   it("ignores unmasked and unevaluated rows", () => {
     expect(
-      contradictedSenders(
+      contradictingRows(
         [one(restRow("m1", FRIEND)), one(echoRow("m2", BLOCKED))],
         ready(),
       ),
@@ -395,6 +436,19 @@ describe("visibleReactions (finding 2)", () => {
     for (const state of [loading(), unavailable(), unavailable([BLOCKED])]) {
       expect(visibleReactions(reactions, state, VIEWER)).toEqual({
         [thumbs]: [VIEWER],
+      });
+    }
+  });
+
+  it("also keeps a reactor this client confirmed unblocking, in every list state", () => {
+    for (const state of [
+      loading([], { unblocked: [BLOCKED] }),
+      unavailable([], { unblocked: [BLOCKED] }),
+    ]) {
+      expect(visibleReactions(reactions, state, VIEWER)).toEqual({
+        [insult]: [BLOCKED],
+        [thumbs]: [BLOCKED, VIEWER],
+        "vote:o1": [BLOCKED],
       });
     }
   });
@@ -574,16 +628,18 @@ describe("messageActionsFor", () => {
     });
   });
 
-  it("reports but does not offer Block for a sender the roster no longer lists (finding 11)", () => {
-    const formerMember = rosterMembership({
+  it("offers Block to a sender the cached roster does not list — a brand-new member looks exactly like that", () => {
+    // Loaded before FRIEND joined. Hiding Block here would hide Guideline
+    // 1.2's control from the member who just arrived.
+    const staleRoster = rosterMembership({
       byId: { [VIEWER]: "Vic" },
       isPending: false,
       isError: false,
     });
-    expect(messageActionsFor(base, VIEWER, formerMember)).toEqual({
+    expect(messageActionsFor(base, VIEWER, staleRoster)).toEqual({
       canOpen: true,
       canReport: true,
-      canBlock: false,
+      canBlock: true,
     });
   });
 
@@ -597,22 +653,57 @@ describe("messageActionsFor", () => {
       ).toBe(true);
     }
   });
+
+  it("reports but does not offer Block once a block attempt proved they left (finding 11)", () => {
+    const afterA404 = rosterMembership(
+      { byId: { [VIEWER]: "Vic" }, isPending: false, isError: false },
+      new Set([FRIEND]),
+    );
+    expect(messageActionsFor(base, VIEWER, afterA404)).toEqual({
+      canOpen: true,
+      canReport: true,
+      canBlock: false,
+    });
+  });
 });
 
 describe("rosterMembership", () => {
-  it("answers from a loaded roster, and says nothing otherwise", () => {
+  it("says yes for a listed member and nothing either way for anyone else", () => {
     const loaded = rosterMembership({
       byId: { [FRIEND]: "Casey" },
       isPending: false,
       isError: false,
     });
     expect(loaded(FRIEND)).toBe(true);
-    expect(loaded(BLOCKED)).toBe(false);
+    // Not listed is not departed: the roster is cached.
+    expect(loaded(BLOCKED)).toBeNull();
     // Not fooled by the object prototype.
-    expect(loaded("toString")).toBe(false);
+    expect(loaded("toString")).toBeNull();
     expect(
       rosterMembership({ byId: {}, isPending: true, isError: false })(FRIEND),
     ).toBeNull();
+  });
+
+  it("says no only for a member a block attempt proved departed, until a roster lists them again", () => {
+    const departed = new Set([BLOCKED]);
+    expect(
+      rosterMembership(
+        { byId: {}, isPending: false, isError: false },
+        departed,
+      )(BLOCKED),
+    ).toBe(false);
+    expect(
+      rosterMembership({ byId: {}, isPending: true, isError: false }, departed)(
+        BLOCKED,
+      ),
+    ).toBe(false);
+    // Rejoined: the roster's word wins.
+    expect(
+      rosterMembership(
+        { byId: { [BLOCKED]: "Blake" }, isPending: false, isError: false },
+        departed,
+      )(BLOCKED),
+    ).toBe(true);
   });
 });
 

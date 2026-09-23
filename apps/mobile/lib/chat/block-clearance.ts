@@ -6,10 +6,12 @@ import { useSyncExternalStore } from "react";
  *
  * A row that arrived over the Realtime echo is never server-evaluated, and it
  * never will be: the reconnect backfill and the polling fallback read only rows
- * after the last-seen cursor, and every echo advances that cursor. So without a
- * memory, a later block-list outage would flip every live message the viewer
- * had already read back to held — a conversation vanishing mid-read. Recording
- * the rows a ready list cleared keeps what was legitimately seen on screen,
+ * after the last-seen cursor, and every echo advances that cursor. A row read
+ * over REST loses its evaluation the same way the moment an UPDATE echo of it —
+ * a pin, an edit, a soft delete — is merged over it. So without a memory, a
+ * later block-list outage would flip messages the viewer had already read back
+ * to held — a conversation vanishing mid-read. Recording every row a ready list
+ * showed (`rowsClearedByReadyList`) keeps what was legitimately seen on screen,
  * while a row that first arrives *during* an outage is still held
  * (`classifyMessage` in `blocks.ts`).
  *

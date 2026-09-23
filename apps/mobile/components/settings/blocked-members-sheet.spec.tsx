@@ -52,17 +52,22 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
+import { BLOCK_LIST_WAITING_FOR_NETWORK } from "@/lib/chat/blocks";
 import {
   BLOCKED_MEMBERS_EMPTY_BODY,
+  BLOCKED_MEMBERS_EMPTY_TITLE,
   BLOCKED_MEMBERS_ERROR_BODY,
   BLOCKED_MEMBERS_ERROR_TITLE,
+  BLOCKED_MEMBERS_OFFLINE_BODY,
   BLOCKED_MEMBERS_SCOPE,
+  BLOCKED_MEMBERS_STALE,
   BlockedMembersSheet,
 } from "./blocked-members-sheet";
 
 function list(
   status: BlockedUserIds["status"],
   ids: string[] = [],
+  extras: Partial<Pick<BlockedUserIds, "isPaused" | "isRetrying">> = {},
 ): BlockedUserIds {
   return {
     status,
@@ -70,7 +75,17 @@ function list(
     unblocked: new Set(),
     retry: vi.fn(),
     isRetrying: false,
+    isPaused: false,
+    ...extras,
   };
+}
+
+function retryButtons(tree: ReactTestRenderer) {
+  return tree.root.findAll(
+    (node) =>
+      typeof node.props.onPress === "function" &&
+      /^Retry/.test(String(node.props.accessibilityLabel ?? "")),
+  );
 }
 
 function render(): ReactTestRenderer {
@@ -101,10 +116,29 @@ describe("BlockedMembersSheet", () => {
     expect(flat).not.toContain("You haven't blocked anyone");
   });
 
-  it("says the list is empty only off a confirmed read", () => {
+  it("says the list is empty only off a confirmed read, and only for this chapter", () => {
     state.blockList = list("ready");
-    expect(text(render())).toContain("You haven't blocked anyone");
+    expect(text(render())).toContain(BLOCKED_MEMBERS_EMPTY_TITLE);
+    // A member can have blocks in another chapter, so "anyone" alone is false.
+    expect(BLOCKED_MEMBERS_EMPTY_TITLE).toBe(
+      "You haven't blocked anyone in this chapter",
+    );
     expect(BLOCKED_MEMBERS_EMPTY_BODY).toMatch(/this chapter's chat/);
+  });
+
+  it("offers Retry on a failed first read", () => {
+    state.blockList = list("unavailable");
+    const tree = render();
+    const [button] = retryButtons(tree);
+    act(() => button!.props.onPress());
+    expect(state.blockList.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("says a parked first read loads once online, instead of a Retry that cannot help", () => {
+    state.blockList = list("unavailable", [], { isPaused: true });
+    const tree = render();
+    expect(text(tree)).toContain(BLOCKED_MEMBERS_OFFLINE_BODY);
+    expect(retryButtons(tree)).toHaveLength(0);
   });
 
   it("says the list is this chapter's — a member can be in several", () => {
@@ -119,11 +153,23 @@ describe("BlockedMembersSheet", () => {
     expect(flat).toContain("Member 444444");
   });
 
-  it("keeps showing a cached list when a refresh failed, and says so", () => {
+  it("keeps showing a cached list when a refresh failed, says so, and offers Retry", () => {
     state.blockList = list("unavailable", [BLAKE]);
-    const flat = text(render());
+    const tree = render();
+    const flat = text(tree);
     expect(flat).toContain("Blake");
-    expect(flat).toContain("Couldn't refresh this list");
+    expect(flat).toContain(BLOCKED_MEMBERS_STALE);
+
+    const [button] = retryButtons(tree);
+    act(() => button!.props.onPress());
+    expect(state.blockList.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("over a cached list, says it retries once online while the read is parked", () => {
+    state.blockList = list("unavailable", [BLAKE], { isPaused: true });
+    const tree = render();
+    expect(text(tree)).toContain(BLOCK_LIST_WAITING_FOR_NETWORK);
+    expect(retryButtons(tree)).toHaveLength(0);
   });
 
   it("unblocks only after the member confirms", async () => {

@@ -91,10 +91,12 @@ export function isBlockableSender(senderId: string | null): senderId is string {
  *    this session.
  * 5. A row the server evaluated and cleared is visible.
  * 6. An unevaluated row is visible against a list known to be current.
- * 7. …and, once that list is loading or unavailable, only if it was already
- *    shown against a current list earlier this session. Anything else is held
- *    (fail closed): a row that first arrives during an outage never renders
- *    until the list is back.
+ * 7. …and, once that list is loading or unavailable, only if this client
+ *    confirmed unblocking its sender (a confirmed change applies in every list
+ *    state, and nothing since has contradicted it — see `BlockState.unblocked`)
+ *    or it was already shown against a current list earlier this session.
+ *    Anything else is held (fail closed): a row that first arrives during an
+ *    outage never renders until the list is back.
  */
 export function classifyMessage(
   message: ClassifiedFields,
@@ -108,6 +110,7 @@ export function classifyMessage(
   if (blockState.ids.has(sender)) return "tombstone";
   if (message._blockEvaluated) return "visible";
   if (blockState.status === "ready") return "visible";
+  if (blockState.unblocked.has(sender)) return "visible";
   return blockState.cleared.has(message.id) ? "visible" : "held";
 }
 
@@ -119,7 +122,7 @@ export function classifyMessage(
  * thread's newest page, not its whole history). A ready list that merely lacks
  * the sender is not that: a masked row for someone off a ready list is exactly
  * what a block made on another device looks like until the list is re-read
- * (`contradictedSenders`), so the control stays — unblocking is idempotent and
+ * (`contradictingRows`), so the control stays — unblocking is idempotent and
  * harmless if the block had in fact ended.
  */
 export function tombstoneCanUnblock(
@@ -160,10 +163,16 @@ export function applyBlockList(
 }
 
 /**
- * The rows a `ready` list is the only reason to show — unevaluated, from a
- * blockable sender who is not the viewer — for `block-clearance.ts` to
- * remember. Rows the server evaluated need no memory: their provenance already
- * survives an outage.
+ * Every row a `ready` list is showing from a blockable sender who is not the
+ * viewer, for `block-clearance.ts` to remember so a later outage cannot take it
+ * back.
+ *
+ * **Server-evaluated rows included.** Their provenance does not last: a
+ * Realtime UPDATE echo of the row — a pin, an edit, a soft delete — replaces
+ * it through `mergeServerRow` as an unevaluated row, and without a clearance a
+ * message read over REST and then pinned during a list outage would vanish
+ * mid-read (#2257 review). Tombstones are never recorded, and nothing recorded
+ * outranks a block: the classifier reads the list first.
  */
 export function rowsClearedByReadyList(
   rows: readonly ThreadRow[],
@@ -171,7 +180,7 @@ export function rowsClearedByReadyList(
 ): string[] {
   const cleared: string[] = [];
   for (const { message, visibility } of rows) {
-    if (visibility !== "visible" || message._blockEvaluated) continue;
+    if (visibility !== "visible") continue;
     if (!isBlockableSender(message.sender_id)) continue;
     if (message.sender_id === viewerId) continue;
     cleared.push(message.id);
@@ -180,32 +189,35 @@ export function rowsClearedByReadyList(
 }
 
 /**
- * Senders a `ready` list says are not blocked but a server read says are: a
- * REST row arrived masked (`sender_blocked: true`) for someone off the list.
- * That is what a block made on another device looks like until this client
- * re-reads the list, so the thread re-reads it once per distinct set.
+ * The masked REST rows a `ready` list is contradicted by: a row that arrived
+ * with `sender_blocked: true` for a sender the list does not name. That is what
+ * a block made on another device looks like until this client re-reads the
+ * list, so the thread re-reads it once per distinct set of these rows.
  *
- * A sender this client confirmed unblocking is not a contradiction — their
- * older masked copies are expected leftovers — and nothing is a contradiction
- * while the list is not ready, since a stale list proves nothing. Sorted, so
- * the thread can compare sets by joining them.
+ * **Keyed on rows, not senders, and a sender this client unblocked still
+ * counts.** Their older masked copies are leftovers of that unblock and cost
+ * one re-read, because they are the same rows on every pass. A masked copy that
+ * arrives *after* the unblock — the member blocked again on another device — is
+ * a new row, so it is a new question; skipping the unblocked sender, or keying
+ * on the sender alone, would leave that block unread until something else
+ * refreshed the list.
+ *
+ * Nothing is a contradiction while the list is not ready, since a stale list
+ * proves nothing. Sorted, so the thread can compare sets by joining them.
  */
-export function contradictedSenders(
+export function contradictingRows(
   messages: readonly ChatMessage[],
   blockState: BlockState,
 ): string[] {
   if (blockState.status !== "ready") return [];
-  const senders = new Set<string>();
+  const rows: string[] = [];
   for (const message of messages) {
     const sender = message.sender_id;
     if (!message._blockEvaluated || !message.sender_blocked) continue;
-    if (!isBlockableSender(sender)) continue;
-    if (blockState.ids.has(sender) || blockState.unblocked.has(sender)) {
-      continue;
-    }
-    senders.add(sender);
+    if (!isBlockableSender(sender) || blockState.ids.has(sender)) continue;
+    rows.push(message.id);
   }
-  return [...senders].sort();
+  return rows.sort();
 }
 
 /**
@@ -213,14 +225,15 @@ export function contradictedSenders(
  *
  * A reaction is its author's own text (`reaction:` plus up to 41 characters),
  * and nothing masks it server-side (#2324), so the block list applies to every
- * reactor on every message — not only on the blocker's own messages, as the
- * spec's table puts it, because a blocked member's reaction on anyone's
- * message still reaches the blocker's screen.
+ * reactor on every message — the reactions row of
+ * `spec/behavior/chat/README.md` § What a block does and does not hide.
  *
  * - **Ready:** every reactor except the ones on the list.
- * - **Loading or unavailable:** the viewer's own reactions only. A reactor who
- *   is not on a stale list could still be blocked, and a reaction has no
- *   provenance to vouch for it, so this fails closed the way held messages do.
+ * - **Loading or unavailable:** the viewer's own reactions, and those of
+ *   members this client confirmed unblocking (a confirmed change applies in
+ *   every list state). Anyone else could still be blocked, and a reaction has
+ *   no provenance to vouch for it, so this fails closed the way held messages
+ *   do.
  *
  * A chip's count is therefore the reactors the viewer can see, not the total —
  * true of a hidden blocked reactor in every status, and of everyone else while
@@ -244,7 +257,9 @@ export function visibleReactions(
     const shown = userIds.filter((userId) =>
       userId === viewerId
         ? true
-        : blockState.status === "ready" && !blockState.ids.has(userId),
+        : blockState.status === "ready"
+          ? !blockState.ids.has(userId)
+          : blockState.unblocked.has(userId),
     );
     if (shown.length !== userIds.length) hidden = true;
     if (shown.length > 0) visible[actionType] = shown;
@@ -295,6 +310,13 @@ export function hasMaskedCopyFrom(
 }
 
 /**
+ * What the notice says in place of its Retry control while the list's read is
+ * parked waiting for the network (`BlockedUserIds.isPaused`): a tap could not
+ * run it any sooner, and it resumes by itself on reconnect.
+ */
+export const BLOCK_LIST_WAITING_FOR_NETWORK = "Retries when you're back online";
+
+/**
  * The thread-level notice for a block list that is not `ready`, or `null`.
  *
  * Unavailable always says so, even with nothing held — the spec requires the
@@ -343,19 +365,36 @@ const NO_ACTIONS: MessageActions = {
 };
 
 /**
- * Whether a `users.id` is a member of the active chapter, from the roster the
- * screen already holds: `true` or `false` once the roster has loaded, `null`
- * while it has not (or failed), when nothing can be said either way.
+ * Whether a `users.id` is a member of the active chapter:
+ *
+ * - `true` — the loaded roster lists them.
+ * - `false` — **positively known departed**: this session the API refused to
+ *   block them as not a member (`isMemberNotFound` in `block-actions.ts`), and
+ *   no roster read since lists them.
+ * - `null` — nothing can be said. Covers a roster that has not loaded or
+ *   failed, and a loaded one that does not list them — which is not evidence
+ *   they left: the roster is cached, and the sender it is likeliest to miss is
+ *   a member who joined after it was read.
  */
 export type MemberLookup = (userId: string) => boolean | null;
 
-export function rosterMembership(roster: {
-  byId: Readonly<Record<string, string>>;
-  isPending: boolean;
-  isError: boolean;
-}): MemberLookup {
-  if (roster.isPending || roster.isError) return () => null;
-  return (userId) => Object.prototype.hasOwnProperty.call(roster.byId, userId);
+const NO_ONE: ReadonlySet<string> = new Set();
+
+export function rosterMembership(
+  roster: {
+    byId: Readonly<Record<string, string>>;
+    isPending: boolean;
+    isError: boolean;
+  },
+  departed: ReadonlySet<string> = NO_ONE,
+): MemberLookup {
+  const loaded = !roster.isPending && !roster.isError;
+  return (userId) => {
+    if (loaded && Object.prototype.hasOwnProperty.call(roster.byId, userId)) {
+      return true;
+    }
+    return departed.has(userId) ? false : null;
+  };
 }
 
 /**
@@ -379,12 +418,14 @@ export function canOpenMessageActions(
  *   API has never seen, so a report against it would 404.
  * - **Not on a deleted row.** Its content already reads `[message deleted]`,
  *   and the report would snapshot exactly that.
- * - **Block needs a blockable sender who is still a member** — not the system
- *   actor, not an imported row, and not someone the loaded roster no longer
- *   lists: `POST /v1/chat/blocks` refuses a non-member with a 404. An unknown
- *   roster still offers Block, and the confirmation reports a 404 honestly.
- *   Report stays in every case: an imported row names its author in
- *   `author_name`, which the API snapshots into the report for exactly that.
+ * - **Block needs a blockable sender not known to have left** — not the system
+ *   actor, not an imported row, and not someone `isMember` positively knows
+ *   departed. A sender the cached roster does not list still gets Block: that
+ *   is exactly what a brand-new member looks like, and App Review's block
+ *   control must not vanish for them. If they did leave, `POST /v1/chat/blocks`
+ *   answers 404 `Member not found` and the confirmation says so. Report stays
+ *   in every case: an imported row names its author in `author_name`, which the
+ *   API snapshots into the report for exactly that.
  *
  * A tombstoned row never reaches this: the thread renders it without the sheet.
  */

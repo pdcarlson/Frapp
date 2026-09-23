@@ -8,6 +8,7 @@ import { reactionActionType } from "@repo/chat-core/types";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { BlockState, ThreadRow } from "@/lib/chat/blocks";
+import type { MaskedRefreshState } from "@/lib/chat/masked-refresh";
 
 const attachmentHook = vi.hoisted(() => ({
   calls: 0,
@@ -99,6 +100,8 @@ function renderRow(
     replyParent?: ChatMessage | null;
     onOpenActions?: (message: ChatMessage) => void;
     onUnblock?: (userId: string) => void;
+    maskedRefresh?: ReadonlyMap<string, MaskedRefreshState>;
+    onReload?: (userId: string) => void;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -118,6 +121,8 @@ function renderRow(
           onUnreact={vi.fn()}
           onOpenActions={overrides.onOpenActions ?? vi.fn()}
           onUnblock={overrides.onUnblock ?? vi.fn()}
+          maskedRefresh={overrides.maskedRefresh ?? new Map()}
+          onReload={overrides.onReload ?? vi.fn()}
         />
       </FrappThemeProvider>,
     );
@@ -209,6 +214,57 @@ describe("ThreadMessageRow — tombstone", () => {
 
     expect(flat).toContain(TOMBSTONE_STALE_TEXT);
     expect(flat).not.toContain("Unblock");
+  });
+
+  describe("a masked leftover whose post-unblock re-read did not land", () => {
+    const leftover: ThreadRow = {
+      message: { ...leaked, _blockEvaluated: true, sender_blocked: true },
+      visibility: "tombstone",
+    };
+    const afterUnblock = blockState("ready", [], { unblocked: [BLOCKED] });
+
+    it("offers Reload, which re-runs that member's re-read", () => {
+      const onReload = vi.fn();
+      const tree = renderRow(leftover, {
+        blockState: afterUnblock,
+        maskedRefresh: new Map([[BLOCKED, "failed" as const]]),
+        onReload,
+      });
+      expect(flat(tree)).toContain(TOMBSTONE_STALE_TEXT);
+      expect(flat(tree)).not.toContain("Unblock");
+
+      const button = tree.root.find(
+        (node) =>
+          node.props.accessibilityLabel ===
+            "Reload hidden messages from Blake" &&
+          typeof node.props.onPress === "function",
+      );
+      act(() => button.props.onPress());
+      expect(onReload).toHaveBeenCalledWith(BLOCKED);
+    });
+
+    it("shows the re-read as busy while it runs, with nothing to tap", () => {
+      const tree = renderRow(leftover, {
+        blockState: afterUnblock,
+        maskedRefresh: new Map([[BLOCKED, "refreshing" as const]]),
+      });
+      expect(
+        tree.root.findAll(
+          (node) => (node.type as unknown) === "ActivityIndicator",
+        ),
+      ).toHaveLength(1);
+      expect(
+        tree.root.findAll((node) => typeof node.props.onPress === "function"),
+      ).toHaveLength(0);
+    });
+
+    it("offers nothing once the re-read landed — Reload could not reach an older copy", () => {
+      const tree = renderRow(leftover, { blockState: afterUnblock });
+      expect(flat(tree)).not.toContain("Reload");
+      expect(
+        tree.root.findAll((node) => typeof node.props.onPress === "function"),
+      ).toHaveLength(0);
+    });
   });
 
   it("keeps Unblock when a ready list merely lacks them — a block made elsewhere looks like that (finding 6)", () => {

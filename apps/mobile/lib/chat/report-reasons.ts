@@ -1,3 +1,4 @@
+import { statusOf } from "@repo/api-sdk";
 import { CHAT_REPORT_REASONS, type ChatReportReason } from "@repo/hooks";
 
 /**
@@ -45,3 +46,25 @@ export const REPORT_ALREADY_BODY =
 export const REPORT_FAILED_TITLE = "Couldn't send your report";
 export const REPORT_FAILED_BODY =
   "Your report didn't send. Check your connection and try again.";
+
+/**
+ * A refusal that trying again cannot change. `POST /v1/chat/reports` authorizes
+ * a report as a read of the message's channel (`ChatReportService.fileReport`):
+ * 403 when the member can no longer read that channel (removed from a private
+ * channel or a DM), 404 when the message is gone or is not in their chapter.
+ * "Check your connection" would send them round a loop that cannot succeed.
+ */
+export const REPORT_UNAVAILABLE_BODY =
+  "This message can't be reported anymore. It may have been deleted, or you may no longer have access to where it was posted.";
+
+/**
+ * What a failed report says, by status: a permanent refusal (403 / 404) gets
+ * {@link REPORT_UNAVAILABLE_BODY}; anything else — no response at all, a 5xx —
+ * is worth another try and gets {@link REPORT_FAILED_BODY}.
+ */
+export function reportFailureBody(error: unknown): string {
+  const status = statusOf(error);
+  return status === 403 || status === 404
+    ? REPORT_UNAVAILABLE_BODY
+    : REPORT_FAILED_BODY;
+}

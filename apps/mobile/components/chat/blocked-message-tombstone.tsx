@@ -1,5 +1,12 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import type { MaskedRefreshState } from "@/lib/chat/masked-refresh";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -19,6 +26,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * live echo — an affordance that works on some rows and not others. The
  * durable way back is Unblock, here and in Settings.
  *
+ * **Reload, only when a re-read failed.** Once this client unblocked the
+ * sender, a leftover masked copy has nothing to unblock, and only the
+ * post-unblock re-read can bring its words back. If that re-read gave up
+ * (`lib/chat/masked-refresh.ts`), the copy offers Reload, which runs it again —
+ * otherwise it would sit here with no control and nothing saying why. Reload is
+ * not offered on a copy whose re-read landed: that copy is older than the page
+ * the re-read covers, and tapping Reload would visibly do nothing.
+ *
  * These strings are the tombstone's, and a reply quoting a hidden message uses
  * the same words (`thread-message-row.tsx`), so the two cannot disagree.
  */
@@ -33,6 +48,13 @@ export interface BlockedMessageTombstoneProps {
    */
   canUnblock: boolean;
   onUnblock: () => void;
+  /**
+   * The sender's post-unblock re-read, when `canUnblock` is `false`: `failed`
+   * offers Reload, `refreshing` shows it busy, and `null` offers nothing.
+   * Ignored while `canUnblock` is `true`.
+   */
+  reload?: MaskedRefreshState | null;
+  onReload?: () => void;
 }
 
 export const TOMBSTONE_TEXT = "Message from a member you blocked";
@@ -42,10 +64,15 @@ export function BlockedMessageTombstone({
   senderName,
   canUnblock,
   onUnblock,
+  reload = null,
+  onReload,
 }: BlockedMessageTombstoneProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const text = canUnblock ? TOMBSTONE_TEXT : TOMBSTONE_STALE_TEXT;
+  const hiddenFrom = senderName
+    ? `hidden messages from ${senderName}`
+    : "hidden messages";
 
   return (
     <View style={styles.row}>
@@ -61,6 +88,22 @@ export function BlockedMessageTombstone({
           style={({ pressed }) => (pressed ? styles.pressed : null)}
         >
           <Text style={styles.action}>Unblock</Text>
+        </Pressable>
+      ) : reload === "refreshing" ? (
+        <ActivityIndicator
+          accessibilityLabel={`Reloading ${hiddenFrom}`}
+          accessibilityState={{ busy: true }}
+          color={tokens.color.text.muted}
+        />
+      ) : reload === "failed" && onReload ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Reload ${hiddenFrom}`}
+          hitSlop={12}
+          onPress={onReload}
+          style={({ pressed }) => (pressed ? styles.pressed : null)}
+        >
+          <Text style={styles.action}>Reload</Text>
         </Pressable>
       ) : null}
     </View>

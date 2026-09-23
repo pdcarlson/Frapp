@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@repo/chat-core/types";
+import type { MaskedRefreshState } from "@/lib/chat/masked-refresh";
 import {
   canOpenMessageActions,
   classifyMessage,
@@ -54,6 +55,10 @@ export interface ThreadMessageRowProps {
   onUnreact: (messageId: string, emoji: string) => void;
   onOpenActions: (message: ChatMessage) => void;
   onUnblock: (userId: string) => void;
+  /** Each member's post-unblock re-read (`useMaskedRefresh`), for stale tombstones. */
+  maskedRefresh: ReadonlyMap<string, MaskedRefreshState>;
+  /** A stale tombstone's Reload: re-runs that member's re-read. */
+  onReload: (userId: string) => void;
 }
 
 /**
@@ -92,6 +97,8 @@ export function ThreadMessageRow({
   onUnreact,
   onOpenActions,
   onUnblock,
+  maskedRefresh,
+  onReload,
 }: ThreadMessageRowProps) {
   const { message: cached, visibility } = row;
 
@@ -103,6 +110,10 @@ export function ThreadMessageRow({
         canUnblock={tombstoneCanUnblock(cached, blockState)}
         onUnblock={() => {
           if (senderId) onUnblock(senderId);
+        }}
+        reload={senderId ? (maskedRefresh.get(senderId) ?? null) : null}
+        onReload={() => {
+          if (senderId) onReload(senderId);
         }}
       />
     );

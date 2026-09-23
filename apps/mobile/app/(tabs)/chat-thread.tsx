@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   KeyboardAvoidingView,
@@ -14,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   resolveAuthorName,
+  useActiveChapterId,
   useChannel,
   useChannelNotificationPreferences,
   useMarkChannelRead,
@@ -37,19 +39,25 @@ import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
 import {
   confirmUnblockMember,
+  MASKED_RELOAD_FAILED_BODY,
+  MASKED_RELOAD_FAILED_TITLE,
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import {
+  isBlockableSender,
   messageActionsFor,
   rosterMembership,
   type ThreadRow,
 } from "@/lib/chat/blocks";
+import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import { selectPostCapability } from "@/lib/chat/channel-list";
 import { getKeyboardPath } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+
+const NO_DEPARTED: ReadonlySet<string> = new Set();
 
 /**
  * s05 — Chat thread.
@@ -132,17 +140,46 @@ export default function ChatThreadScreen() {
   // over the live `postgres_changes` echo as well as one from the REST page — a
   // join on the message payload could only ever have covered the latter.
   const roster = useMemberDisplayNames();
-  const { nameFor } = roster;
-  // Whether a sender is still a member, from that same roster — Block is not
-  // offered for someone it no longer lists, because the API 404s them.
+  const { nameFor, refetch: refetchRoster } = roster;
+
+  // Members a block attempt proved are not in this chapter (the API's 404
+  // `Member not found`), kept per chapter because membership and blocks are.
+  // That answer is the only positive evidence a sender left: a roster that
+  // merely does not list someone may be stale, and the likeliest sender it
+  // does not list yet is a brand-new member — exactly who Block is for.
+  const chapterId = useActiveChapterId();
+  const [departed, setDeparted] = useState<{
+    chapterId: string | null;
+    ids: ReadonlySet<string>;
+  }>(() => ({ chapterId, ids: new Set() }));
+  const departedIds =
+    departed.chapterId === chapterId ? departed.ids : NO_DEPARTED;
+  const markDeparted = useCallback(
+    (userId: string) => {
+      setDeparted((previous) => {
+        const ids = new Set(
+          previous.chapterId === chapterId ? previous.ids : [],
+        );
+        ids.add(userId);
+        return { chapterId, ids };
+      });
+    },
+    [chapterId],
+  );
+
+  // Whether a sender is a member: listed by the roster, known departed, or
+  // unknown (`rosterMembership`). Only "known departed" withholds Block.
   const isMember = useMemo(
     () =>
-      rosterMembership({
-        byId: roster.byId,
-        isPending: roster.isPending,
-        isError: roster.isError,
-      }),
-    [roster.byId, roster.isPending, roster.isError],
+      rosterMembership(
+        {
+          byId: roster.byId,
+          isPending: roster.isPending,
+          isError: roster.isError,
+        },
+        departedIds,
+      ),
+    [roster.byId, roster.isPending, roster.isError, departedIds],
   );
 
   // Opening a channel stamps the read cursor to server `now()`; there is no
@@ -302,7 +339,7 @@ export default function ChatThreadScreen() {
     return index;
   }, [messages]);
 
-  const { unblock } = useBlockActions();
+  const { unblock, reloadMaskedCopies } = useBlockActions();
   const handleUnblock = useCallback(
     (userId: string) => {
       confirmUnblockMember({
@@ -311,6 +348,21 @@ export default function ChatThreadScreen() {
       });
     },
     [nameFor, unblock],
+  );
+
+  // A stale tombstone's Reload (`lib/chat/masked-refresh.ts`). The tombstone
+  // keeps offering it while the re-read keeps failing; the alert says a tap
+  // that came back empty did not just do nothing.
+  const maskedRefresh = useMaskedRefresh();
+  const handleReload = useCallback(
+    (userId: string) => {
+      void reloadMaskedCopies(userId).then((landed) => {
+        if (!landed) {
+          Alert.alert(MASKED_RELOAD_FAILED_TITLE, MASKED_RELOAD_FAILED_BODY);
+        }
+      });
+    },
+    [reloadMaskedCopies],
   );
 
   // One sheet for the thread, retargeted per long-press — the same shape the
@@ -323,6 +375,16 @@ export default function ChatThreadScreen() {
     (message: ChatMessage) => {
       const actions = messageActionsFor(message, viewerId, isMember);
       if (!actions.canOpen) return;
+      // A sender the roster cannot vouch for most likely joined after it was
+      // read. Block is offered regardless; re-reading the roster is what lets
+      // the next long-press name them and say they stay in the directory.
+      // TanStack dedupes onto a read already in flight.
+      if (
+        isBlockableSender(message.sender_id) &&
+        isMember(message.sender_id) === null
+      ) {
+        refetchRoster();
+      }
       setActionTarget({
         messageId: message.id,
         blockUserId: actions.canBlock ? message.sender_id : null,
@@ -332,7 +394,7 @@ export default function ChatThreadScreen() {
       });
       actionsSheetRef.current?.present();
     },
-    [isMember, nameFor, viewerId],
+    [isMember, nameFor, refetchRoster, viewerId],
   );
 
   const renderItem = useCallback(
@@ -356,6 +418,8 @@ export default function ChatThreadScreen() {
           onUnreact={(id, emoji) => void unreact(id, emoji)}
           onOpenActions={openActions}
           onUnblock={handleUnblock}
+          maskedRefresh={maskedRefresh}
+          onReload={handleReload}
         />
       );
     },
@@ -374,6 +438,8 @@ export default function ChatThreadScreen() {
       blockState,
       openActions,
       handleUnblock,
+      maskedRefresh,
+      handleReload,
     ],
   );
 
@@ -485,6 +551,7 @@ export default function ChatThreadScreen() {
             heldCount={thread.heldCount}
             onRetry={blockList.retry}
             isRetrying={blockList.isRetrying}
+            isPaused={blockList.isPaused}
           />
         ) : null}
 
@@ -629,7 +696,11 @@ export default function ChatThreadScreen() {
           }
         />
       </KeyboardAvoidingView>
-      <MessageActionsSheet ref={actionsSheetRef} target={actionTarget} />
+      <MessageActionsSheet
+        ref={actionsSheetRef}
+        target={actionTarget}
+        onSenderDeparted={markDeparted}
+      />
     </SafeAreaView>
   );
 }

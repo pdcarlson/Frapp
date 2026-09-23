@@ -36,6 +36,7 @@ import {
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
+  BLOCK_ROW_DESCRIPTION,
   confirmBlockMember,
   UNNAMED_MEMBER,
   useBlockActions,
@@ -43,11 +44,11 @@ import {
 import {
   REPORT_ALREADY_BODY,
   REPORT_ALREADY_TITLE,
-  REPORT_FAILED_BODY,
   REPORT_FAILED_TITLE,
   REPORT_REASON_OPTIONS,
   REPORT_SENT_BODY,
   REPORT_SENT_TITLE,
+  reportFailureBody,
 } from "@/lib/chat/report-reasons";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -69,7 +70,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * **Which rows show is decided by the caller**, from `messageActionsFor` in
  * `lib/chat/blocks.ts`: this component is never opened on the viewer's own
  * message, and `canBlock` is false for the system actor, imported rows and a
- * sender the loaded roster no longer lists.
+ * sender a block attempt already proved has left the chapter — never merely
+ * because the cached roster does not list them yet.
+ *
+ * **A failed report says whether trying again can help** (`reportFailureBody`):
+ * a 403 or 404 is a permanent refusal, anything else asks for another try.
  *
  * **Every report outcome reaches the member.** On screen while the form is up;
  * as an alert if they dismissed it before a failure came back, the same way a
@@ -89,8 +94,8 @@ export interface MessageActionsTarget {
   senderName: string | null;
   /**
    * Whether the loaded roster lists the sender, which is what makes the block
-   * confirmation's "they stay in the directory" true. `false` when the roster
-   * has not loaded.
+   * confirmation's "they stay in the directory" true. `false` whenever it does
+   * not — not loaded yet, or not listing them.
    */
   senderInDirectory: boolean;
 }
@@ -103,22 +108,23 @@ function announce(message: string) {
   AccessibilityInfo.announceForAccessibility(message);
 }
 
-/** Copy for the "Block" row wherever the sheet offers it. */
-const BLOCK_ROW_DESCRIPTION =
-  "Hides their messages from you in this chapter's chat.";
-
 export interface MessageActionsSheetHandle {
   present: () => void;
 }
 
 export interface MessageActionsSheetProps {
   target: MessageActionsTarget | null;
+  /**
+   * A block attempt came back as the API's "not a member of this chapter"
+   * (`isMemberNotFound`): the caller can stop offering Block for them.
+   */
+  onSenderDeparted?: (userId: string) => void;
 }
 
 export const MessageActionsSheet = forwardRef<
   MessageActionsSheetHandle,
   MessageActionsSheetProps
->(function MessageActionsSheet({ target }, ref) {
+>(function MessageActionsSheet({ target, onSenderDeparted }, ref) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
@@ -138,7 +144,8 @@ export const MessageActionsSheet = forwardRef<
   const [reason, setReason] = useState<ChatReportReason | null>(null);
   const [details, setDetails] = useState("");
   const [outcome, setOutcome] = useState<ReportOutcome | null>(null);
-  const [failed, setFailed] = useState(false);
+  /** What the last failed report said (`reportFailureBody`), or `null`. */
+  const [failed, setFailed] = useState<string | null>(null);
 
   // A new target is a new form. Reset during render rather than in an effect
   // (React's "adjusting state when a prop changes" pattern), so the next
@@ -150,7 +157,7 @@ export const MessageActionsSheet = forwardRef<
     setReason(null);
     setDetails("");
     setOutcome(null);
-    setFailed(false);
+    setFailed(null);
   }
 
   /**
@@ -194,30 +201,32 @@ export const MessageActionsSheet = forwardRef<
         run: () => block(userId),
         onDone: () =>
           (sheet === "menu" ? menuRef : reportRef).current?.dismiss(),
+        onNotAMember: () => onSenderDeparted?.(userId),
       });
     },
-    [block, senderInDirectory, target],
+    [block, onSenderDeparted, senderInDirectory, target],
   );
 
   const submitReport = useCallback(() => {
     if (!target || !reason) return;
     const messageId = target.messageId;
     inFlightFor.current = messageId;
-    setFailed(false);
+    setFailed(null);
     void (async () => {
       let result: ReportOutcome;
       try {
         const filed = await report.mutateAsync({ messageId, reason, details });
         result = filed.alreadyReported ? "already" : "sent";
-      } catch {
+      } catch (error) {
+        const body = reportFailureBody(error);
         if (isCurrent(messageId)) {
-          setFailed(true);
-          announce(REPORT_FAILED_BODY);
+          setFailed(body);
+          announce(body);
         } else {
           // Dismissed, or moved to another message, before the failure came
           // back. Dropping it would leave the member believing the report
           // went through.
-          Alert.alert(REPORT_FAILED_TITLE, REPORT_FAILED_BODY);
+          Alert.alert(REPORT_FAILED_TITLE, body);
         }
         return;
       }
@@ -232,7 +241,7 @@ export const MessageActionsSheet = forwardRef<
     setReason(null);
     setDetails("");
     setOutcome(null);
-    setFailed(false);
+    setFailed(null);
   }, []);
 
   return (
@@ -367,7 +376,7 @@ export const MessageActionsSheet = forwardRef<
               />
               {failed ? (
                 <Text style={styles.error} accessibilityRole="alert">
-                  {REPORT_FAILED_BODY}
+                  {failed}
                 </Text>
               ) : null}
               <SheetPrimaryButton

@@ -3,7 +3,7 @@ import React from "react";
 import { act, renderHook } from "@testing-library/react";
 import { Alert } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyCache, mergeServerRow } from "@repo/chat-core/cache";
 import {
   chatMessagesKey,
@@ -37,8 +37,12 @@ import {
   blockConfirmBody,
   confirmBlockMember,
   confirmUnblockMember,
+  isMemberNotFound,
+  MASKED_REFRESH_RETRY_DELAYS_MS,
+  refreshMaskedCopies,
   useBlockActions,
 } from "./block-actions";
+import { maskedRefresh } from "./masked-refresh";
 
 const BLOCKED = "22222222-2222-4222-8222-222222222222";
 const FRIEND = "33333333-3333-4333-8333-333333333333";
@@ -116,7 +120,22 @@ beforeEach(() => {
   mutations.block.mockReset();
   mutations.unblock.mockReset();
   api.GET.mockReset();
+  maskedRefresh.reset();
 });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** Every retry delay `refreshMaskedCopies` would wait, run out on fake timers. */
+async function runOutRetries() {
+  for (const delay of MASKED_REFRESH_RETRY_DELAYS_MS) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(delay);
+    });
+  }
+  await flush();
+}
 
 describe("useBlockActions", () => {
   it("a block re-runs no thread query and fetches nothing — the list alone hides them", async () => {
@@ -203,7 +222,8 @@ describe("useBlockActions", () => {
     expect(cache.byId["m1"]!.content).toBe("the real words");
   });
 
-  it("an unblock still succeeds when the re-read fails", async () => {
+  it("an unblock still succeeds when the re-read fails, and the failure is recorded rather than swallowed", async () => {
+    vi.useFakeTimers();
     mutations.unblock.mockResolvedValue(undefined);
     const queryClient = new QueryClient();
     seed(queryClient, "chan-1", [
@@ -217,8 +237,41 @@ describe("useBlockActions", () => {
     await expect(
       act(() => result.current.unblock(BLOCKED)),
     ).resolves.toBeUndefined();
-    await flush();
+    expect(maskedRefresh.snapshot().get(BLOCKED)).toBe("refreshing");
+
+    await runOutRetries();
+    // Tried, then retried a bounded number of times — never forever.
+    expect(api.GET).toHaveBeenCalledTimes(
+      1 + MASKED_REFRESH_RETRY_DELAYS_MS.length,
+    );
     expect(cacheOf(queryClient, "chan-1").byId["m1"]!.content).toBe("hidden");
+    // What lets the stale tombstone offer Reload instead of nothing.
+    expect(maskedRefresh.snapshot().get(BLOCKED)).toBe("failed");
+  });
+
+  it("a Reload re-runs the re-read and clears the failure once it lands", async () => {
+    const queryClient = new QueryClient();
+    seed(queryClient, "chan-1", [
+      restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
+    ]);
+    maskedRefresh.set(BLOCKED, "failed");
+    api.GET.mockResolvedValue(
+      page([restRow("m1", BLOCKED, { content: "the real words" })]),
+    );
+    const { result } = renderHook(() => useBlockActions(), {
+      wrapper: wrapperFor(queryClient),
+    });
+
+    let landed: boolean | undefined;
+    await act(async () => {
+      landed = await result.current.reloadMaskedCopies(BLOCKED);
+    });
+
+    expect(landed).toBe(true);
+    expect(cacheOf(queryClient, "chan-1").byId["m1"]!.content).toBe(
+      "the real words",
+    );
+    expect(maskedRefresh.snapshot().has(BLOCKED)).toBe(false);
   });
 
   it("touches no cache when the write fails", async () => {
@@ -235,6 +288,105 @@ describe("useBlockActions", () => {
       "offline",
     );
     expect(api.GET).not.toHaveBeenCalled();
+  });
+});
+
+describe("refreshMaskedCopies — retries (#2257 review)", () => {
+  it("recovers from a transient failure on a retry", async () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient();
+    seed(queryClient, "chan-1", [
+      restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
+    ]);
+    api.GET.mockRejectedValueOnce(new Error("blip")).mockResolvedValue(
+      page([restRow("m1", BLOCKED, { content: "the real words" })]),
+    );
+
+    let landed: boolean | undefined;
+    void refreshMaskedCopies(queryClient, api as never, BLOCKED).then(
+      (value) => {
+        landed = value;
+      },
+    );
+    await runOutRetries();
+
+    expect(api.GET).toHaveBeenCalledTimes(2);
+    expect(landed).toBe(true);
+    expect(cacheOf(queryClient, "chan-1").byId["m1"]!.content).toBe(
+      "the real words",
+    );
+    expect(maskedRefresh.snapshot().has(BLOCKED)).toBe(false);
+  });
+
+  it("treats a non-2xx as a failure too", async () => {
+    const queryClient = new QueryClient();
+    seed(queryClient, "chan-1", [
+      restRow("m1", BLOCKED, { sender_blocked: true }),
+    ]);
+    api.GET.mockResolvedValue({
+      data: undefined,
+      response: new Response(null, { status: 503 }),
+    });
+
+    const landed = await refreshMaskedCopies(
+      queryClient,
+      api as never,
+      BLOCKED,
+      [],
+    );
+    expect(landed).toBe(false);
+    expect(maskedRefresh.snapshot().get(BLOCKED)).toBe("failed");
+  });
+
+  it("stops retrying a thread that no longer holds a masked copy", async () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient();
+    seed(queryClient, "chan-1", [
+      restRow("m1", BLOCKED, { sender_blocked: true }),
+    ]);
+    api.GET.mockRejectedValue(new Error("offline"));
+
+    let landed: boolean | undefined;
+    void refreshMaskedCopies(queryClient, api as never, BLOCKED).then(
+      (value) => {
+        landed = value;
+      },
+    );
+    await flush();
+    // The thread reloaded meanwhile and the copy came back clear.
+    seed(queryClient, "chan-1", [restRow("m1", BLOCKED)]);
+    await runOutRetries();
+
+    expect(api.GET).toHaveBeenCalledTimes(1);
+    expect(landed).toBe(true);
+  });
+
+  it("reads nothing and records nothing when no thread holds a masked copy", async () => {
+    const queryClient = new QueryClient();
+    seed(queryClient, "chan-1", [restRow("m1", FRIEND)]);
+    maskedRefresh.set(BLOCKED, "failed");
+
+    await expect(
+      refreshMaskedCopies(queryClient, api as never, BLOCKED),
+    ).resolves.toBe(true);
+    expect(api.GET).not.toHaveBeenCalled();
+    expect(maskedRefresh.snapshot().has(BLOCKED)).toBe(false);
+  });
+});
+
+describe("isMemberNotFound", () => {
+  it("is the API's non-member answer and nothing else", () => {
+    expect(
+      isMemberNotFound({ statusCode: 404, message: "Member not found" }),
+    ).toBe(true);
+    // A 404 from a route this build expects but the server does not serve.
+    expect(isMemberNotFound({ statusCode: 404, message: "Cannot POST" })).toBe(
+      false,
+    );
+    expect(isMemberNotFound({ statusCode: 404 })).toBe(false);
+    expect(
+      isMemberNotFound({ statusCode: 400, message: "Member not found" }),
+    ).toBe(false);
   });
 });
 
@@ -305,11 +457,12 @@ describe("confirmBlockMember / confirmUnblockMember", () => {
     );
   });
 
-  it("says a 404 means they left the chapter, not that the connection failed (finding 11)", async () => {
+  it("says a 404 `Member not found` means they left the chapter, and tells the caller (finding 11)", async () => {
     const run = vi
       .fn()
       .mockRejectedValue({ statusCode: 404, message: "Member not found" });
-    confirmBlockMember({ name: "Blake", inDirectory: false, run });
+    const onNotAMember = vi.fn();
+    confirmBlockMember({ name: "Blake", inDirectory: false, run, onNotAMember });
 
     buttons()
       .find((button) => button.style === "destructive")
@@ -320,5 +473,25 @@ describe("confirmBlockMember / confirmUnblockMember", () => {
       "Couldn't block Blake",
       BLOCK_NOT_A_MEMBER_BODY,
     );
+    expect(onNotAMember).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives any other 404 the ordinary failure copy — it is no evidence they left", async () => {
+    const run = vi
+      .fn()
+      .mockRejectedValue({ statusCode: 404, message: "Cannot POST /v1/chat/blocks" });
+    const onNotAMember = vi.fn();
+    confirmBlockMember({ name: "Blake", inDirectory: true, run, onNotAMember });
+
+    buttons()
+      .find((button) => button.style === "destructive")
+      ?.onPress?.();
+    await flush();
+
+    expect(Alert.alert).toHaveBeenLastCalledWith(
+      "Couldn't block Blake",
+      BLOCK_FAILURE_BODY,
+    );
+    expect(onNotAMember).not.toHaveBeenCalled();
   });
 });
