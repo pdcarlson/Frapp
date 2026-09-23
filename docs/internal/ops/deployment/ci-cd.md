@@ -200,7 +200,7 @@ Script implementations and unit tests live under [`scripts/ci/`](../../../../scr
 
 | Variable                 | Purpose                                                  |
 | ------------------------ | -------------------------------------------------------- |
-| `RENDER_DEPLOY_HOOK_URL` | Trigger API deploy (value differs per environment)       |
+| `RENDER_DEPLOY_HOOK_URL` | Trigger the **staging** API deploy (Infisical `staging` only; production deploys by commit through the Render API) |
 | `API_HEALTHCHECK_URL`    | Post-deploy health check (value differs per environment) |
 | `SUPABASE_ACCESS_TOKEN`  | Supabase CLI auth for migrations                         |
 | `SUPABASE_PROJECT_REF`   | Target DB for migrations (value differs per environment) |

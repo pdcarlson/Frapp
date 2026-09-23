@@ -148,8 +148,8 @@ the runner did.
 
 So before bumping this major, compare its `engines` against `node-version:` in
 [`ci.yml`](../../../.github/workflows/ci.yml) and against `FROM node:` in
-[`apps/api/Dockerfile`](../../../apps/api/Dockerfile). Those pin only the Node major; the root
-`package.json` `engines.node` pins the exact floor, which is stated once, in
+[`apps/api/Dockerfile`](../../../apps/api/Dockerfile). Those pin only the Node major; the exact floor
+is the root `package.json` `engines.node`, and how the pins relate to it is in
 [`spec/environments/README.md` § Prerequisites](../../../spec/environments/README.md#prerequisites).
 
 `expo-server-sdk` 7.x was the same class of engines mismatch with a different symptom, and the Node
@@ -160,8 +160,8 @@ in [`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md)), so `api-docker-build` 
 `api-tests` red, the stub in [`docs/guides/testing.md`](../../guides/testing.md) §6.
 
 The general lesson survives the specific fix: **a green Docker build is not proof a major is safe on
-the runtime under it.** An ESM-only dependency now loads because Node 24 has stable `require(esm)`
-and Jest ≥ 24.9 honours it, not because the packaging question went away. Lift Docker and CI Node
+the runtime under it.** An ESM-only dependency now loads because Node 24.9+ with `--experimental-vm-modules` lets Jest load
+it ([`testing.md` § 2a](../../guides/testing.md#2a-esm-only-dependencies-break-the-unit-suite-and-only-the-unit-suite)), not because the packaging question went away. Lift Docker and CI Node
 together, and read `api-tests` as the check that actually exercises the module graph.
 
 ### Why the baseline is ours rather than `--ignore-known`

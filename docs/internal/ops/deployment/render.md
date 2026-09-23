@@ -118,9 +118,9 @@ Splitting these into a standalone Render Background Worker is not currently warr
 
 ### 5.7 Deploy Hooks (for GitHub Actions)
 
-In each Render service → Settings → Deploy Hook → copy the URL. Store both values in **Infisical** (`staging` and `prod`, same names, different values), not as GitHub secrets: the deploy workflows inject them at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
+Store these in **Infisical**, not as GitHub secrets: the deploy workflows inject them at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
 
-- `RENDER_DEPLOY_HOOK_URL` → deploy hook URL for that environment
-- `API_HEALTHCHECK_URL` → smoke-check URL for that environment (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly; why the two differ is [`observability.md` § Health Check](../../../../spec/behavior/observability.md#health-check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
+- `RENDER_DEPLOY_HOOK_URL` → **staging only**: frapp-api-staging → Settings → Deploy Hook → copy the URL into Infisical `staging`. Production deploys by commit through the Render API (`RENDER_API_KEY`, `deploy-production.yml`), so it has no hook to store.
+- `API_HEALTHCHECK_URL` → smoke-check URL, in both `staging` and `prod` (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly; why the two differ is [`observability.md` § Health Check](../../../../spec/behavior/observability.md#health-check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
 
 ---

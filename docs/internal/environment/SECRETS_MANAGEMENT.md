@@ -15,7 +15,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 2. **References eliminate duplication.** Framework-specific names (`NEXT_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`) are Infisical **secret references** that resolve to the canonical value. Change `SUPABASE_URL` → all references update.
 
-3. **No environment suffixes.** There's no `RENDER_DEPLOY_HOOK_URL_STAGING` — just `RENDER_DEPLOY_HOOK_URL` with different values per environment. GitHub's `environment:` feature and Infisical's environment scoping handle the routing.
+3. **No environment suffixes.** There's no `API_HEALTHCHECK_URL_STAGING` — just `API_HEALTHCHECK_URL` with different values per environment. GitHub's `environment:` feature and Infisical's environment scoping handle the routing.
 
 4. **No `.env.local` files (primary path).** Default local run is **`npm run dev:stack`** from the repo root (API + web + landing + docs; secrets from Infisical `dev` via the CLI). Requires `npx infisical login` on the machine. Per-app `dev:*` and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
@@ -296,14 +296,14 @@ The deploy workflows inject these from Infisical at runtime through [`infisical-
 | ------------------------ | --------------------------------------- | ------------------------------- |
 | `SUPABASE_ACCESS_TOKEN`  | Account-level token (same for both)     | (same)                          |
 | `SUPABASE_PROJECT_REF`   | Staging project ref                     | Production project ref          |
-| `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL                 | Production deploy hook URL      |
+| `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL                 | _(none — production deploys by commit through the Render API, never a hook)_ |
 | `API_HEALTHCHECK_URL`    | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |
 
 #### Troubleshooting: `Deploy API` fails with `401 Invalid credentials`
 
 `Infisical/secrets-action` reports the same `401 Invalid credentials` whether the bootstrap secrets are **absent** or **rejected**. To tell those apart, every injection runs a `Verify Infisical credentials are configured` preflight first. That preflight is no longer written in the workflow: it is the first step of the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml) composite action, so it now runs at **every** injection site rather than the nine that happened to carry a copy. The sites are the `EXPECTED` roster in [`infisical-secrets-action.test.mjs`](../../../scripts/ci/__tests__/infisical-secrets-action.test.mjs), which fails when a call site is added or removed without it.
 
-The table below describes the sites that **fail** on a missing credential, which is every site but one: they use the action's default `error` mode. **`staging-conformance.yml` is the exception** and reads differently: it passes `on-missing-credentials: warn`, because that workflow exists to *report* credential drift rather than die of it. There the preflight step stays green and emits a `::warning::` naming the missing secret, so a missing credential shows up as a **warning above an otherwise-normal 401**, not as a failed step. Read the warning before concluding from row 3 that the credentials were rejected.
+The table below describes the sites that **fail** on a missing credential: every site on the action's default `error` mode. **The two conformance watchdogs are the exception**, `staging-conformance.yml` and `production-auth-conformance.yml`, and read differently: they pass `on-missing-credentials: warn`, because those workflows exist to *report* credential drift rather than die of it. There the preflight step stays green and emits a `::warning::` naming the missing secret, so a missing credential shows up as a **warning above an otherwise-normal 401**, not as a failed step. Read the warning before concluding from row 3 that the credentials were rejected.
 
 | Preflight result                       | Meaning                                                                                          | Fix                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |

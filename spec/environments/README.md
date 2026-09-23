@@ -36,7 +36,7 @@ with green CI. The `production` branch that used to occupy this table was retire
 
 ### Prerequisites
 
-- Node.js 24.9 or newer. The root `package.json` `engines.node` (`>=24.9.0`) is the floor. `.nvmrc`, CI's `node-version:` and `apps/api/Dockerfile` pin only the major (`24`): CI and the image resolve it to the newest 24.x, but a local `nvm use` can pick an older installed 24.x, so check `node -v` against the floor.
+- Node.js at or above the root `package.json` `engines.node`, which is the one statement of the floor. `.nvmrc`, CI's `node-version:` and `apps/api/Dockerfile` pin only the major, so whichever release of it they land on (an older install under `nvm use`, the runner's cached toolchain, a cached image layer) can sit below the floor. Check `node -v` against `engines.node`.
 - npm v10+
 - Docker available to your shell (Docker Desktop with **WSL integration** on Windows/WSL, or Docker Engine on Linux)
 - Supabase CLI (`npx supabase`)
