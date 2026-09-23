@@ -271,6 +271,19 @@ test("a lock whose bringup is still running is never torn down, whatever btime s
   assert.equal(await eventually(() => existsSync(s.launched), 300), false, "a second bringup must not start");
 });
 
+test("an empty boot id file is no evidence: a live bringup behind it is left alone", async (t) => {
+  // What a concurrent fire would read between the file's creation and its write, or after a
+  // failed write. Treated as a mismatch, it tore down a bringup that was running.
+  const s = scratch(t);
+  const pid = liveBringup(t, s);
+  priorLock(s, { boot: "", sentinel: null });
+  lockPid(s, pid, 1_700_000_000);
+  const context = runHook(s, { boot: "boot-B", btime: 1_700_000_500 });
+  assert.match(context, /stack bringup is still running/);
+  assert.doesNotMatch(context, /restarted/);
+  assert.equal(await eventually(() => existsSync(s.launched), 300), false, "a second bringup must not start");
+});
+
 test("the boot id test never consults the pid: after a restart it may name another process", async (t) => {
   const s = scratch(t);
   const pid = liveBringup(t, s);
@@ -316,6 +329,7 @@ test("a fresh launch records the boot it ran in", async (t) => {
   assert.doesNotMatch(context, /restarted/);
   assert.ok(await eventually(() => existsSync(s.launched)));
   assert.equal(readFileSync(path.join(s.lock, "boot_id"), "utf8").trim(), "boot-B");
+  assert.equal(existsSync(path.join(s.lock, "boot_id.tmp")), false, "the boot id is renamed into place");
 });
 
 test("the starting message tells a (dependencies) session to build the packages, quoted for zsh", (t) => {

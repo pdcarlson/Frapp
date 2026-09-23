@@ -104,7 +104,9 @@ never produces the `dist/` outputs they read, so a fresh clone fails with `TS230
 The apps that resolve with `moduleResolution: "Bundler"` mask it (`apps/web` and `apps/landing` through
 `@repo/typescript-config/nextjs.json`, `apps/mobile` through `expo/tsconfig.base`): TypeScript tries
 `types` first and, while that `dist/` file is missing, falls back to the `import` condition, which maps
-to source (once `dist/` exists it reads `dist/*.d.ts`), so the breakage shows up only in `apps/api`. The CI job `clean-checkout-typecheck` guards
+to source (once `dist/` exists it reads `dist/*.d.ts`). So the breakage shows up only where NodeNext
+resolution meets a dist-backed import: `apps/api`, and the CommonJS packages on
+`@repo/typescript-config/base.json` that import one (`packages/hooks`, `packages/chapter-theme`). The CI job `clean-checkout-typecheck` guards
 this: it installs and runs both checks with nothing prebuilt, so a regression here fails there while
 every other job (all of which prebuild the packages) stays green.
 

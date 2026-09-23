@@ -112,7 +112,10 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
   launch_bringup() {
     nohup bash "$ROOT/scripts/cloud-sandbox-up.sh" >"$BRINGUP_LOG" 2>&1 &
     echo "$!" >"$LOCK/pid" 2>/dev/null || true
-    [ -n "$current_boot" ] && { echo "$current_boot" >"$LOCK/boot_id" 2>/dev/null || true; }
+    # Written aside and renamed in, so a concurrent fire never reads a created-but-empty file.
+    if [ -n "$current_boot" ]; then
+      { echo "$current_boot" >"$LOCK/boot_id.tmp" && mv -f "$LOCK/boot_id.tmp" "$LOCK/boot_id"; } 2>/dev/null || true
+    fi
     disown || true
   }
 
@@ -135,7 +138,8 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
   # boot. With that check, what a step can still cost is one needless re-run of the
   # idempotent bringup behind a finished lock, once per machine (the relaunch records a boot
   # id). The boot id test is exact and never consults a pid: after a restart the old pid may
-  # belong to some unrelated process by now.
+  # belong to some unrelated process by now. An empty boot id file (a write that failed) is
+  # no evidence either way, so it takes the btime path too.
   #
   # "Alive" means the recorded pid runs cloud-sandbox-up.sh itself, not merely a command that
   # names its log or sentinels (a `tail -f /tmp/cloud-sandbox-up.log` would otherwise pass).
@@ -145,8 +149,9 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
   }
   stale_boot=""
   if [ -n "$current_boot" ] && [ -d "$LOCK" ]; then
-    if [ -f "$LOCK/boot_id" ]; then
-      if [ "$(cat "$LOCK/boot_id" 2>/dev/null || true)" != "$current_boot" ]; then
+    lock_boot="$(cat "$LOCK/boot_id" 2>/dev/null || true)"
+    if [ -n "$lock_boot" ]; then
+      if [ "$lock_boot" != "$current_boot" ]; then
         stale_boot="its lock carries another boot id"
       fi
     elif ! bringup_alive "$(cat "$LOCK/pid" 2>/dev/null || true)"; then
