@@ -60,9 +60,9 @@ inputs:
       Their own `continue-on-error: true` covers the INJECTION failing, but it
       cannot rescue this preflight: a failed step inside a composite action
       skips the action's remaining steps, so a hard-failing check here would
-      mean the injection never runs -- staging secrets silently absent, and a
-      conformance report that blames the credential every time. `warn` keeps
-      the preflight advisory, which is what it always was at that site.
+      mean the injection never runs -- that environment's secrets silently
+      absent, and a conformance report that blames the credential every time.
+      `warn` keeps the preflight advisory at both sites.
     required: false
     default: error
   preserve-nonempty:
