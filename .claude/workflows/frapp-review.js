@@ -17,7 +17,7 @@ export const meta = {
 // spec/architecture/adr/adr-23.md.
 //
 // args: the JSON line `node scripts/diff-review-scope.mjs` prints
-//         { mode: 'full' | 'delta', base, head, branchBase, root, changedLines, merges, dirty }
+//         { mode: 'full' | 'delta', base, head, branchBase, root, changedLines, dirty }
 //       plus level: 'medium' | 'high' | 'xhigh'   full only, default 'high'
 //            ultracode: true                      full only: forces xhigh, adds the acceptance-and-tests finder
 //            acceptance                           optional acceptance criteria for that finder
@@ -73,19 +73,12 @@ if (ULTRA) BUNDLES.push({ key: 'acceptance-tests', angles: EXTRA, cap: 6, worktr
 const SWEEP_CAP = MODE === 'full' && LEVEL === 'xhigh' ? 8 : 0
 
 const DIRTY = A.dirty ? ', plus the uncommitted changes in `git diff HEAD`' : ''
-// A delta covers the branch's own commits since the last review. When a merge from main is among
-// them, a plain diff would also show main's changes, so the scope becomes the non-merge commits
-// plus each merge's conflict resolutions (`--cc` shows only hunks that differ from every parent).
-const OWN = `${A.head} ^${A.base} ^${A.branchBase}`
-const DELTA =
-  A.merges > 0
-    ? `the branch's own commits since the last reviewed one, \`git log -p --no-merges ${OWN}\`, plus the conflict resolutions in its merges, \`git log -p --cc --merges ${OWN}\``
-    : `the changes since the last reviewed commit, \`git diff ${A.base} ${A.head}\``
+// A delta never spans a merge: the scope script turns that into a full review.
 const SCOPE =
   MODE === 'full'
     ? `the diff \`git diff ${A.base} ${A.head}\`${DIRTY}`
-    : `${DELTA}${DIRTY}. For context only, the whole branch is \`git diff ${A.branchBase} ${A.head}\`. ` +
-      'Report defects in those changes, or ones they create with the rest of the branch'
+    : `the changes since the last reviewed commit, \`git diff ${A.base} ${A.head}\`${DIRTY}. ` +
+      `For context only, the whole branch is \`git diff ${A.branchBase} ${A.head}\`. Report defects in those changes, or ones they create with the rest of the branch`
 const CODE_AT = A.dirty ? `the working tree (commit ${A.head} plus its uncommitted changes)` : `commit ${A.head}`
 
 // Every agent() call sets effort. Without it an agent inherits the session's effort, which
@@ -176,25 +169,25 @@ function norm(file) {
 }
 
 // Streaming dedup by file:line. JS runs each stage callback to completion, so check-and-set on
-// `seen` can't race. A duplicate waits on the first candidate's verdict: if that one is kept, the
-// duplicate rides along as `alsoFlaggedBy`; if it is refuted or unverified, the duplicate may be a
-// different defect at the same line, so it gets its own verification.
+// `seen` can't race. `seen` holds the one live candidate per line. A duplicate of a kept candidate
+// rides along as `alsoFlaggedBy`; a duplicate of a pending one waits in its `dups`. When a candidate
+// is refuted or unverified, its next duplicate may be a different defect at the same line, so that
+// one takes over the line and is verified, carrying the rest: duplicates are verified one at a time,
+// and only while each one before them fails.
 function admit(candidates, source) {
   const fresh = []
   for (const c of candidates) {
-    const rec = { ...c, file: norm(c.file), source, status: 'pending', alsoFlaggedBy: [], dups: [] }
-    const key = `${rec.file}:${rec.line}`
+    const key = `${norm(c.file)}:${c.line}`
+    const rec = { ...c, file: norm(c.file), key, source, status: 'pending', alsoFlaggedBy: [], dups: [] }
     const prior = seen.get(key)
-    if (!prior) {
-      seen.set(key, rec)
-      fresh.push(rec)
-    } else if (prior.status === 'kept') {
+    if (prior && prior.status === 'kept') {
       prior.alsoFlaggedBy.push(`${source}: ${c.angle} — ${c.summary}`)
       merged++
-    } else if (prior.status === 'pending') {
+    } else if (prior && prior.status === 'pending') {
       prior.dups.push(rec)
       merged++
     } else {
+      seen.set(key, rec)
       fresh.push(rec)
     }
   }
@@ -203,15 +196,19 @@ function admit(candidates, source) {
 
 async function settle(rec, status, extra) {
   rec.status = status
-  const { dups, ...out } = rec
+  const { dups, key, ...out } = rec
   if (status === 'kept') {
     for (const d of dups) rec.alsoFlaggedBy.push(`${d.source}: ${d.angle} — ${d.summary}`)
     kept.push({ ...out, ...extra })
     return
   }
   ;(status === 'refuted' ? refuted : unverified).push({ ...out, ...extra })
-  merged -= dups.length
-  await parallel(dups.map((d) => () => verify(d)))
+  const [next, ...rest] = dups
+  if (!next) return
+  merged--
+  next.dups.push(...rest)
+  seen.set(key, next)
+  await verify(next)
 }
 
 async function verify(rec) {

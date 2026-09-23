@@ -13,7 +13,8 @@
   materiality lens, look independently. The candidate is kept unless both say `REFUTED`.
 - **A re-review covers only what changed.** After a fix commit, the gate reviews the commits since
   the last reviewed one, with two finders. `scripts/diff-review-scope.mjs` decides, trusting only
-  markers the gate wrote with a kind (`full` or `delta`) on commits of this branch.
+  markers the gate wrote with a kind (`full` or `delta`) on commits of this branch. A merge since
+  the last review means a full review again, because a merge can hide a change from any diff.
 - **Everything else stays small.** `workflowSizeGuideline: "medium"` in `.claude/settings.json`
   tells the model to keep workflows under 10 agents; it is advisory text, not a cap. The repo adds
   at most 5 agents per fan-out step, which nothing enforces. Verification outside the gate is one

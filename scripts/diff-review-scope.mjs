@@ -2,20 +2,24 @@
 // Resolves /diff-review's scope to pinned SHAs, and writes its gate marker.
 //
 //   node scripts/diff-review-scope.mjs [--full]          print the scope as one JSON line
-//   node scripts/diff-review-scope.mjs --mark <kind>     write the marker for HEAD (kind: full | delta)
+//   node scripts/diff-review-scope.mjs --mark <kind>     write the marker for HEAD (kind: full | delta | merged)
 //
 // The rules live in .claude/skills/diff-review/SKILL.md (Phase 0 and Phase 4); this script only
 // applies them. A branch counts as reviewed up to the newest commit in <merge-base>..HEAD whose
 // marker says `full` or `delta`. Nothing else is trusted: not the upstream tip (a push can skip the
-// hook), and not an empty marker from an older review. A delta covers only the branch's own commits
-// since then (`head ^base ^branchBase`), so what a merge from main brought in stays out of scope.
+// hook), and not an empty marker from an older review. A delta covers the commits since then; if
+// one of them is a merge, the whole branch is reviewed again, because a merge can hide a change
+// (a conflict resolved by taking one side whole shows up in no diff of the merge). `merged` marks a
+// commit already on origin/main, which its own PR's review covered; it never counts as a review of
+// branch commits.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const MARK_KINDS = new Set(["full", "delta"]);
+const REVIEW_KINDS = new Set(["full", "delta"]);
+const MARK_KINDS = new Set([...REVIEW_KINDS, "merged"]);
 
 function git(cwd, ...args) {
   return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
@@ -54,7 +58,7 @@ export function resolveScope({ cwd = process.cwd(), full = false, baseRef = "ori
 
   let reviewed = null;
   for (const sha of lines(git(root, "rev-list", `${branchBase}..HEAD`))) {
-    if (MARK_KINDS.has(markerKind(root, sha))) {
+    if (REVIEW_KINDS.has(markerKind(root, sha))) {
       reviewed = sha;
       break;
     }
@@ -71,30 +75,28 @@ export function resolveScope({ cwd = process.cwd(), full = false, baseRef = "ori
   } else if (reviewed === head) {
     mode = "none";
     base = head;
+  } else if (Number(git(root, "rev-list", "--count", "--merges", `${reviewed}..HEAD`)) > 0) {
+    mode = "full";
+    base = branchBase;
   } else {
     mode = "delta";
     base = reviewed;
   }
 
-  let size = { files: 0, changedLines: 0 };
-  let merges = 0;
-  if (mode === "full") {
-    size = tally(git(root, "diff", "--numstat", "--no-renames", base, head));
-  } else if (mode === "delta") {
-    const own = [head, `^${base}`, `^${branchBase}`];
-    size = tally(git(root, "log", "--numstat", "--format=", "--no-merges", "--no-renames", ...own));
-    merges = Number(git(root, "rev-list", "--count", "--merges", ...own));
-  }
-
-  return { mode, base, head, branchBase, root, ...size, merges, dirty };
+  const size =
+    mode === "full" || mode === "delta" ? tally(git(root, "diff", "--numstat", "--no-renames", base, head)) : { files: 0, changedLines: 0 };
+  return { mode, base, head, branchBase, root, ...size, dirty };
 }
 
-export function writeMarker({ cwd = process.cwd(), kind }) {
+export function writeMarker({ cwd = process.cwd(), kind, baseRef = "origin/main" }) {
   if (!MARK_KINDS.has(kind)) {
     throw new Error(`marker kind must be one of ${[...MARK_KINDS].join(", ")}; got ${JSON.stringify(kind)}`);
   }
   const root = git(cwd, "rev-parse", "--show-toplevel");
   const head = git(root, "rev-parse", "HEAD");
+  if (kind === "merged" && git(root, "merge-base", baseRef, "HEAD") !== head) {
+    throw new Error(`\`merged\` is only for a commit already on ${baseRef}; ${head} is not`);
+  }
   mkdirSync(markerDir(root), { recursive: true });
   const file = path.join(markerDir(root), head);
   writeFileSync(file, `${kind}\n`);

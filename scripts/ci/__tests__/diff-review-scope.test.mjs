@@ -125,24 +125,32 @@ test("writeMarker records the kind for HEAD and rejects anything else", (t) => {
   assert.throws(() => writeMarker({ cwd: r.dir, kind: "target" }), /marker kind/, "a partial review is never push evidence");
 });
 
-test("a delta after merging main counts only the branch's own commits, and reports the merge", (t) => {
+test("a merge since the last review means a full review again", (t) => {
   const r = repo();
   t.after(r.cleanup);
-  r.commit("shared.txt", "1\nbranch\n3\n4\n5\n");
-  const reviewed = r.git("rev-parse", "HEAD");
-  mark(r.dir, reviewed, "full\n");
+  r.commit("shared.txt", "1\nbranch\n3\n");
+  mark(r.dir, r.git("rev-parse", "HEAD"), "full\n");
   r.git("checkout", "-q", "main");
-  r.commit("shared-main.txt", "main only\n");
   const newMain = r.commit("README.md", "base\nmain edit\n");
   r.git("update-ref", "refs/remotes/origin/main", newMain);
   r.git("checkout", "-q", "feature");
   r.git("merge", "-q", "--no-edit", "main");
   r.commit("fix.txt", "fix\n");
   const scope = resolveScope({ cwd: r.dir });
-  assert.equal(scope.mode, "delta");
-  assert.equal(scope.base, reviewed);
-  assert.equal(scope.branchBase, newMain);
-  assert.equal(scope.merges, 1);
-  assert.equal(scope.files, 1, "main's files stay out of the fix round");
-  assert.equal(scope.changedLines, 1);
+  assert.equal(scope.mode, "full");
+  assert.equal(scope.base, newMain);
+  assert.equal(scope.files, 2, "the branch's net change against the merged main");
+});
+
+test("`merged` marks only a commit already on origin/main, and never counts as a branch review", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.git("checkout", "-q", "main");
+  assert.equal(readFileSync(writeMarker({ cwd: r.dir, kind: "merged" }), "utf8"), "merged\n");
+  r.git("checkout", "-q", "feature");
+  const own = r.commit("a.txt", "1\n");
+  assert.throws(() => writeMarker({ cwd: r.dir, kind: "merged" }), /only for a commit already on origin\/main/);
+  mark(r.dir, own, "merged\n");
+  r.commit("b.txt", "1\n");
+  assert.equal(resolveScope({ cwd: r.dir }).mode, "full");
 });

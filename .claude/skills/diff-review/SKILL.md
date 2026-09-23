@@ -5,7 +5,7 @@ description: >
   pushing. Use before any git push, when the pre-push review gate blocks a push, and whenever
   asked to review uncommitted or unpushed work on this branch.
 argument-hint: "[medium|high|xhigh] [full] [ultracode] [<target>]"
-allowed-tools: Agent, Task, Workflow, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(git diff *), Bash(git show *), Bash(git log *), Bash(git status *), Bash(git rev-parse *), Bash(git merge-base *), Bash(node scripts/diff-review-scope.mjs*), Bash(npm run check:*)
+allowed-tools: Agent, Task, Workflow, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(git diff *), Bash(git show *), Bash(git log *), Bash(git status *), Bash(git rev-parse *), Bash(git merge-base *), Bash(git fetch origin main), Bash(node scripts/diff-review-scope.mjs*), Bash(npm run check:*)
 ---
 
 # Review this branch's diff
@@ -32,23 +32,25 @@ result more than you agreeing with yourself, so it runs at every effort level an
 
 ## Phase 0 — Scope
 
-Resolve the scope once, to pinned SHAs, with the scope script:
+Fetch main, then resolve the scope once, to pinned SHAs, with the scope script:
 
 ```sh
+git fetch origin main                     # a stale origin/main makes main's commits look like the branch's
 node scripts/diff-review-scope.mjs        # add --full to force a full review
 ```
 
 It prints one JSON line: `mode`, `base`, `head`, `branchBase`, `root`, `files`, `changedLines`,
-`merges`, `dirty`. Use those values as they are. Don't re-resolve `origin/main` later: a background agent's
+`dirty`. Use those values as they are. Don't re-resolve `origin/main` later: a background agent's
 `git fetch` can move it mid-review, and the same command would then name a different diff.
 
 - **`full`**: the branch's first review in this checkout, from `branchBase`.
-- **`delta`**: the branch passed a review up to `base`, so this reviews only the branch's own
-  commits since. What a merge from main brought in stays out; the merge's conflict resolutions stay
-  in. The finders still read the whole branch for context. This is the fix round. A level argument
-  doesn't change it; `full` does.
+- **`delta`**: the branch passed a review up to `base`, so this reviews only the commits since. The
+  finders still read the whole branch for context. This is the fix round. A level argument doesn't
+  change it; `full` does. If a merge landed since `base`, the script returns `full` instead: a merge
+  can hide a change (a conflict resolved by taking one side whole appears in no diff of the merge).
 - **`none`**: HEAD already has a marker. **`empty`**: the branch has no commits of its own.
-  Say so and stop.
+  Say so and stop. To push a commit that is already on `origin/main` anyway (a tag, say), mark it
+  `merged` in Phase 4: its own PR's review covered it, and the script refuses any other commit.
 
 "Passed a review" means a marker this skill wrote as `full` or `delta` (Phase 4) on a commit
 between `branchBase` and HEAD. Nothing else counts: not the upstream tip (a push can skip the
@@ -216,7 +218,7 @@ These run only in an ultracode full review, as one finder in its own worktree.
 
 Candidates are deduped by `file:line` first. A later duplicate of a kept candidate rides along as
 `alsoFlaggedBy`; a duplicate of one that is refuted or unverified may be a different defect at the
-same line, so it gets its own verdict (the exact rule is `admit()` in `frapp-review.js`). Each remaining candidate gets one `claim-verifier`
+same line, so it gets its own verdict (the exact rule is in `frapp-review.js`). Each remaining candidate gets one `claim-verifier`
 on the reproduce lens: does the stated failure scenario actually happen? Only if it returns
 `REFUTED` does a second `claim-verifier` look at it, on the material lens and without seeing the
 first verdict: is there a real defect here worth acting on, even if the scenario is inexact? A
@@ -258,8 +260,8 @@ the GitHub MCP is unreachable, say so and carry the unfiled finding in your summ
 
 After reporting and acting on the findings, check that `git rev-parse HEAD` is still the `head` you
 reviewed and that `git status` shows nothing you didn't write. Then write the marker the pre-push
-hook checks, with the kind of review it records (`full` or `delta`; an explicit-target review
-writes none):
+hook checks, with the kind of review it records (`full` or `delta`, or `merged` for a commit
+already on `origin/main`; an explicit-target review writes none):
 
 ```sh
 node scripts/diff-review-scope.mjs --mark full
