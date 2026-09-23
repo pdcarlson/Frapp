@@ -1,4 +1,5 @@
--- Frapp — demo chapter seed for marketing / showcase screenshots.
+-- Frapp — demo chapter seed: the marketing/screenshot chapter and the App Review
+-- reviewer's chapter.
 --
 -- Populates one fictional chapter with realistic-looking activity so the web
 -- dashboard and mobile app render populated screens instead of empty states.
@@ -6,22 +7,53 @@
 -- Everything here is invented. No real member data, no real chapter.
 -- Re-runnable: it deletes the demo chapter (cascade) and rebuilds it.
 --
---   docker exec -i supabase_db_Frapp psql -U postgres -d postgres < scripts/demo/demo-seed.sql
+-- Render it with `scripts/demo/seed-demo.mjs sql` rather than running it: that
+-- rewrites the id namespace below (the chapter identity) and replaces the
+-- `-- @settings` line with the run's settings. The result is plain SQL in ONE
+-- transaction with no psql meta-commands, so the same output runs through
+-- `psql`, the Supabase SQL editor, or an MCP `execute_sql` call, and a failure
+-- anywhere leaves the target exactly as it was. Run as-is, the file still
+-- works: it seeds the marketing chapter with the roster's own login email.
+--
+-- Settings (transaction-local, read with `current_setting(name, true)`):
+--   frapp_demo.login_email  roster #1's email, and the auth.users row it links to
+--   frapp_demo.variant      'reviewer' for the App Review chapter, else marketing
+--
+-- Id namespace: every fixed id below starts `c0ffee00-0000-4000-8000-`, and the
+-- block after that prefix says what it is:
+--   0000000000xx chapter / roles        1000000000nn users (roster n)
+--   2000000000nn synthetic auth ids     3000000000xx events
+--   4000000000xx chat                   5000000000xx study geofences
+--   6000000000xx polls                  70000000xxxx backwork depts / profs
+--   8000000000nn documents              9000000000nn backwork resources
+-- `seed-demo.mjs` refuses to render if the namespace appears anywhere but in
+-- that full prefix, so keep it out of comments and partial ids.
 
 BEGIN;
 
-\set chapter_id '''c0ffee00-0000-4000-8000-000000000001'''
+-- @settings
 
-DELETE FROM chapters WHERE id = :chapter_id;
+-- ── Reset ────────────────────────────────────────────────────────────────────
+DELETE FROM chapters WHERE id = 'c0ffee00-0000-4000-8000-000000000001';
 -- chapters -> users is ON DELETE SET NULL, so the demo people outlive the
 -- cascade and collide on re-run. Remove them explicitly by their id prefix.
+--
+-- Every other foreign key onto `users` that does not cascade sits on a
+-- chapter-scoped table, so the chapter cascade above has already removed the
+-- rows that would block this — unless a seeded account wrote somewhere outside
+-- its own chapter (a reviewer who founded a second chapter, say). Then this
+-- DELETE fails, and because the whole seed is one transaction, it fails with
+-- nothing changed rather than half-seeded.
 DELETE FROM users WHERE id::text LIKE 'c0ffee00-0000-4000-8000-1000%';
 
 -- ── Chapter ──────────────────────────────────────────────────────────────────
 -- Signet house accent (gold), not the legacy royal-blue column default.
+--
+-- `subscription_status 'active'` is load-bearing for the reviewer: an
+-- `incomplete` chapter refuses paid-ops writes on three surfaces (#2297).
 INSERT INTO chapters (id, name, university, org_archetype, accent_color,
                       subscription_status, enabled_modules, created_at)
-VALUES (:chapter_id, 'Beta Theta Omega', 'Westfield University', 'ifc', '#EFB63B',
+VALUES ('c0ffee00-0000-4000-8000-000000000001', 'Beta Theta Omega', 'Westfield University', 'ifc', '#EFB63B',
         'active',
         '{"chat":true,"members":true,"announcements":true,"audit-log":true,
           "chapter-settings":true,"events":true,"tasks":true,"points":true,
@@ -39,23 +71,16 @@ VALUES (:chapter_id, 'Beta Theta Omega', 'Westfield University', 'ifc', '#EFB63B
 -- of the Alumni restrictions applied to them.
 INSERT INTO roles (id, chapter_id, name, permissions, is_system, display_order, system_key)
 VALUES
- ('c0ffee00-0000-4000-8000-0000000000a1', :chapter_id, 'President',      ARRAY['*'], true, 1, 'PRESIDENT'),
- ('c0ffee00-0000-4000-8000-0000000000a2', :chapter_id, 'Treasurer',      ARRAY['billing:view','billing:manage','points:adjust','points:view_all','polls:view_all','members:view','reports:export','events:create','events:update'], true, 2, 'TREASURER'),
- ('c0ffee00-0000-4000-8000-0000000000a3', :chapter_id, 'Vice President', ARRAY['members:view','polls:view_all'], true, 3, 'VICE_PRESIDENT'),
- ('c0ffee00-0000-4000-8000-0000000000a4', :chapter_id, 'Secretary',      ARRAY['members:view','polls:view_all'], true, 4, 'SECRETARY'),
- ('c0ffee00-0000-4000-8000-0000000000a5', :chapter_id, 'Member',         ARRAY['members:view','backwork:upload','service:log','polls:create'], true, 5, 'MEMBER'),
- ('c0ffee00-0000-4000-8000-0000000000a6', :chapter_id, 'New Member',     ARRAY['members:view','backwork:upload'], true, 6, 'NEW_MEMBER'),
- ('c0ffee00-0000-4000-8000-0000000000a7', :chapter_id, 'Alumni',         ARRAY['members:view'], true, 7, 'ALUMNI');
-
-COMMIT;
-
-
-BEGIN;
-\set cid '''c0ffee00-0000-4000-8000-000000000001'''
+ ('c0ffee00-0000-4000-8000-0000000000a1', 'c0ffee00-0000-4000-8000-000000000001', 'President',      ARRAY['*'], true, 1, 'PRESIDENT'),
+ ('c0ffee00-0000-4000-8000-0000000000a2', 'c0ffee00-0000-4000-8000-000000000001', 'Treasurer',      ARRAY['billing:view','billing:manage','points:adjust','points:view_all','polls:view_all','members:view','reports:export','events:create','events:update'], true, 2, 'TREASURER'),
+ ('c0ffee00-0000-4000-8000-0000000000a3', 'c0ffee00-0000-4000-8000-000000000001', 'Vice President', ARRAY['members:view','polls:view_all'], true, 3, 'VICE_PRESIDENT'),
+ ('c0ffee00-0000-4000-8000-0000000000a4', 'c0ffee00-0000-4000-8000-000000000001', 'Secretary',      ARRAY['members:view','polls:view_all'], true, 4, 'SECRETARY'),
+ ('c0ffee00-0000-4000-8000-0000000000a5', 'c0ffee00-0000-4000-8000-000000000001', 'Member',         ARRAY['members:view','backwork:upload','service:log','polls:create'], true, 5, 'MEMBER'),
+ ('c0ffee00-0000-4000-8000-0000000000a6', 'c0ffee00-0000-4000-8000-000000000001', 'New Member',     ARRAY['members:view','backwork:upload'], true, 6, 'NEW_MEMBER'),
+ ('c0ffee00-0000-4000-8000-0000000000a7', 'c0ffee00-0000-4000-8000-000000000001', 'Alumni',         ARRAY['members:view'], true, 7, 'ALUMNI');
 
 -- ── People ───────────────────────────────────────────────────────────────────
--- 26 invented members. `supabase_auth_id` is a plain uuid here (no FK to
--- auth.users); the one real login is patched in afterwards by demo-login.mjs.
+-- 26 invented members. Roster #1, the president, is the one real login.
 CREATE TEMP TABLE roster (
   n int, uid uuid, name text, email text, grad int, city text, company text,
   role_key text, bio text
@@ -89,47 +114,112 @@ INSERT INTO roster (n, name, grad, city, company, role_key, bio) VALUES
  (25,'Peter Osei',2018,'Washington, DC','Federal Reserve','ALUMNI',NULL),
  (26,'Daniel Kirkpatrick',2021,'Charlotte, NC','Anchor Logistics','ALUMNI',NULL);
 
+-- Addresses are on example.com, never a plausible campus domain: this seed runs
+-- against production for App Review, and a real domain's `first.last@` could be
+-- a real person (spec/engineering.md, "No real identifiers in fixtures or seed
+-- data"). The directory's member sheet shows them, so they are visible, too.
 UPDATE roster SET
   uid   = ('c0ffee00-0000-4000-8000-1000' || lpad(n::text, 8, '0'))::uuid,
   email = lower(regexp_replace(split_part(name,' ',1),'[^a-z]','','gi')) || '.' ||
-          lower(regexp_replace(split_part(name,' ',2),'[^a-z]','','gi')) || '@westfield.edu';
+          lower(regexp_replace(split_part(name,' ',2),'[^a-z]','','gi')) || '@example.com';
+
+-- The login's email. GoTrue stores emails lower-cased, and the link below
+-- compares against auth.users, so the roster row is lower-cased to match.
+UPDATE roster
+   SET email = lower(coalesce(nullif(current_setting('frapp_demo.login_email', true), ''), email))
+ WHERE n = 1;
+
+-- ── Link the login ───────────────────────────────────────────────────────────
+-- `users.supabase_auth_id` is the ONLY thing sign-in matches on: `users` is
+-- unique on it alone, and the API's first-sign-in sync finds the row by it
+-- (`auth.service.ts`). A login whose auth id matches no seeded row signs in as
+-- a brand-new user in no chapter — silently. So roster #1 takes the id of the
+-- auth.users row with its email, here, in the same transaction that creates it,
+-- and no separate link step exists to forget.
+--
+-- It links only a login `seed-demo.mjs auth` created for THIS chapter: one whose
+-- app_metadata carries `frapp_demo_namespace` equal to the namespace below.
+-- Matching on email alone would hand the chapter's presidency, with `*`, to
+-- whoever owns a mistyped DEMO_EMAIL the moment they next signed in. The marker
+-- is service-role-only data, so no one can put it on their own account.
+--
+-- Everyone else keeps a synthetic auth id: a plain uuid, no FK to auth.users.
+CREATE TEMP TABLE demo_login ON COMMIT DROP AS
+  SELECT a.id AS auth_id,
+         coalesce(a.raw_app_meta_data ->> 'frapp_demo_namespace', '')
+           = split_part('c0ffee00-0000-4000-8000-000000000001', '-', 1) AS ours
+    FROM auth.users a
+    JOIN roster r ON r.n = 1 AND lower(a.email) = r.email;
+
+DO $$
+DECLARE
+  v_email text := (SELECT email FROM roster WHERE n = 1);
+  v_auth uuid := (SELECT auth_id FROM demo_login);
+  v_ours boolean := (SELECT ours FROM demo_login);
+  v_owner uuid;
+BEGIN
+  IF v_auth IS NULL OR NOT v_ours THEN
+    DELETE FROM demo_login;
+    IF current_setting('frapp_demo.variant', true) = 'reviewer' THEN
+      RAISE EXCEPTION '%', CASE WHEN v_auth IS NULL
+        THEN format('no auth user has the login email %s; create it with `seed-demo.mjs auth` first, then re-run', v_email)
+        ELSE format('the auth user with %s was not created by `seed-demo.mjs auth` for this chapter; refusing to link an account this script does not own', v_email) END;
+    END IF;
+    RAISE NOTICE 'login % is not a `seed-demo.mjs auth` login for this chapter: roster #1 is seeded unlinked', v_email;
+    RETURN;
+  END IF;
+  -- The namespace's own rows are gone (Reset), so any `users` row still holding
+  -- this auth id was made outside the seed. A sign-in before the seed linked the
+  -- login — `verify` run early, or the app opened on TestFlight — makes exactly
+  -- one: the API's first-sign-in sync inserts a chapterless row. That shell is
+  -- this login's and holds nothing, so it is adopted: deleted, and the roster
+  -- row below takes the auth id. A row with a membership anywhere is an account
+  -- in use, and is refused rather than destroyed.
+  SELECT id INTO v_owner FROM users WHERE supabase_auth_id = v_auth;
+  IF v_owner IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM members WHERE user_id = v_owner) THEN
+      RAISE EXCEPTION 'the login''s auth user already belongs to users.id %, which is a member of a chapter; refusing to take it over', v_owner;
+    END IF;
+    DELETE FROM users WHERE id = v_owner;
+    RAISE NOTICE 'adopted the login: removed the chapterless users row % a sign-in created before this seed', v_owner;
+  END IF;
+END $$;
 
 INSERT INTO users (id, supabase_auth_id, email, display_name, graduation_year,
                    current_city, current_company, bio, active_chapter_id, created_at)
-SELECT uid, ('c0ffee00-0000-4000-8000-2000' || lpad(n::text, 8, '0'))::uuid,
-       email, name, grad,
-       NULLIF(city,'—'), NULLIF(company,'—'), bio, :cid,
-       make_timestamptz(grad - 3, CASE WHEN grad >= 2029 THEN 1 ELSE 9 END, 5, 12, 0, 0)
-FROM roster;
+SELECT r.uid,
+       CASE WHEN r.n = 1 AND (SELECT auth_id FROM demo_login) IS NOT NULL
+            THEN (SELECT auth_id FROM demo_login)
+            ELSE ('c0ffee00-0000-4000-8000-2000' || lpad(r.n::text, 8, '0'))::uuid END,
+       r.email, r.name, r.grad,
+       NULLIF(r.city,'—'), NULLIF(r.company,'—'), r.bio, 'c0ffee00-0000-4000-8000-000000000001',
+       make_timestamptz(r.grad - 3, CASE WHEN r.grad >= 2029 THEN 1 ELSE 9 END, 5, 12, 0, 0)
+FROM roster r;
 
 INSERT INTO members (user_id, chapter_id, role_ids, has_completed_onboarding, created_at)
-SELECT r.uid, :cid, ARRAY[ro.id], true,
+SELECT r.uid, 'c0ffee00-0000-4000-8000-000000000001', ARRAY[ro.id], true,
        make_timestamptz(r.grad - 3, CASE WHEN r.grad >= 2029 THEN 1 ELSE 9 END, 5, 12, 0, 0)
 FROM roster r
-JOIN roles ro ON ro.chapter_id = :cid AND ro.system_key = r.role_key;
+JOIN roles ro ON ro.chapter_id = 'c0ffee00-0000-4000-8000-000000000001' AND ro.system_key = r.role_key;
 
-COMMIT;
-
-
-BEGIN;
-\set cid '''c0ffee00-0000-4000-8000-000000000001'''
-
-DROP TABLE IF EXISTS u;
 -- `n` is the roster number, read back out of the uuid it was encoded into.
 -- Deriving it from created_at ordering instead would silently re-map every
 -- downstream reference the moment join dates stop being monotonic in n.
-CREATE TEMP TABLE u AS
+CREATE TEMP TABLE u ON COMMIT DROP AS
   SELECT us.id, us.display_name, right(us.id::text, 8)::int AS n
-  FROM users us WHERE us.active_chapter_id = :cid;
+  FROM users us WHERE us.active_chapter_id = 'c0ffee00-0000-4000-8000-000000000001';
 
 -- ── Events ───────────────────────────────────────────────────────────────────
 -- Times are anchored to midnight, not to `now()`, so events land on the hour
 -- the way a real calendar does. Seeding them as `now() + interval` stamps the
 -- run time's minutes and seconds onto every row (7:35:51 PM), which reads as
 -- test data in a screenshot.
+--
+-- Anchored to the day the seed runs, so "upcoming" goes stale: re-seed the
+-- reviewer's chapter right before each submission (docs/guides/demo-data.md).
 INSERT INTO events (id, chapter_id, name, description, location, start_time, end_time,
                     point_value, is_mandatory, created_at)
-SELECT e.id::uuid, :cid, e.name, e.descr, e.loc,
+SELECT e.id::uuid, 'c0ffee00-0000-4000-8000-000000000001', e.name, e.descr, e.loc,
        date_trunc('day', now()) + (e.day_offset * interval '1 day') + (e.start_hour * interval '1 hour'),
        date_trunc('day', now()) + (e.day_offset * interval '1 day') + (e.start_hour * interval '1 hour')
          + (e.mins * interval '1 minute'),
@@ -174,7 +264,7 @@ SELECT e.id, u.id,
        (SELECT id FROM u WHERE n = 1),
        e.start_time
 FROM events e CROSS JOIN u
-WHERE e.chapter_id = :cid AND e.start_time < now() AND u.n <= 23;
+WHERE e.chapter_id = 'c0ffee00-0000-4000-8000-000000000001' AND e.start_time < now() AND u.n <= 23;
 
 -- A check-in already in progress on the one upcoming zoned event.
 --
@@ -193,7 +283,7 @@ WHERE e.id = 'c0ffee00-0000-4000-8000-3000000000e1' AND u.n <= 14;
 -- ── Tasks ────────────────────────────────────────────────────────────────────
 INSERT INTO tasks (chapter_id, title, description, assignee_id, created_by, due_date,
                    status, point_reward, completed_at, created_at)
-SELECT :cid, t.title, t.descr,
+SELECT 'c0ffee00-0000-4000-8000-000000000001', t.title, t.descr,
        (SELECT id FROM u WHERE n = t.assignee),
        (SELECT id FROM u WHERE n = 1),
        (current_date + t.due_offset)::date, t.status, t.pts,
@@ -221,27 +311,18 @@ FROM (VALUES
  ('Send alumni newsletter','Q4 edition — 5K recap and Founders Day photos.',24,10,'TODO',10)
 ) AS t(title, descr, assignee, due_offset, status, pts);
 
-COMMIT;
-
-
-BEGIN;
-\set cid '''c0ffee00-0000-4000-8000-000000000001'''
-DROP TABLE IF EXISTS u;
--- `n` is the roster number, read back out of the uuid it was encoded into.
--- Deriving it from created_at ordering instead would silently re-map every
--- downstream reference the moment join dates stop being monotonic in n.
-CREATE TEMP TABLE u AS
-  SELECT us.id, us.display_name, right(us.id::text, 8)::int AS n
-  FROM users us WHERE us.active_chapter_id = :cid;
-
 -- ── Service hours ────────────────────────────────────────────────────────────
 INSERT INTO service_entries (chapter_id, user_id, date, duration_minutes, description,
                              status, reviewed_by, points_awarded, created_at)
-SELECT :cid, (SELECT id FROM u WHERE n = s.who), (current_date - s.days_ago)::date,
+SELECT 'c0ffee00-0000-4000-8000-000000000001', (SELECT id FROM u WHERE n = s.who), (current_date - s.days_ago)::date,
        s.mins, s.descr, s.status,
-       CASE WHEN s.status <> 'PENDING' THEN (SELECT id FROM u WHERE n = 1) END,
+       -- The president reviews everyone's entries; the VP reviews the president's.
+       CASE WHEN s.status <> 'PENDING' THEN (SELECT id FROM u WHERE n = CASE WHEN s.who = 1 THEN 3 ELSE 1 END) END,
        s.status = 'APPROVED', now() - (interval '1 day' * s.days_ago)
 FROM (VALUES
+ -- Roster #1's own entry: Service hours shows only the viewer's history, and the
+ -- App Review notes send the reviewer there.
+ (1,9,150,'Chapter house cleanup with the Westfield Rotary','APPROVED'),
  (5,3,240,'Adopt-a-highway cleanup, Route 9 North','APPROVED'),
  (6,3,240,'Adopt-a-highway cleanup, Route 9 North','APPROVED'),
  (7,4,180,'Food bank sorting shift, Westfield Community Pantry','APPROVED'),
@@ -260,7 +341,7 @@ FROM (VALUES
 
 -- ── Points ───────────────────────────────────────────────────────────────────
 INSERT INTO point_transactions (chapter_id, user_id, amount, category, description, created_at)
-SELECT :cid, u.id,
+SELECT 'c0ffee00-0000-4000-8000-000000000001', u.id,
        CASE c.cat WHEN 'ATTENDANCE' THEN 10 WHEN 'SERVICE' THEN 20
                   WHEN 'ACADEMIC' THEN 15 WHEN 'STUDY' THEN 5
                   WHEN 'FINE' THEN -15 ELSE 10 END,
@@ -276,7 +357,7 @@ FROM u CROSS JOIN (VALUES
 WHERE u.n <= 23 AND (u.n + c.i) % 3 <> 0;
 
 INSERT INTO point_transactions (chapter_id, user_id, amount, category, description, created_at)
-SELECT :cid, id, -15, 'FINE', 'Missed mandatory chapter meeting', now() - interval '6 days'
+SELECT 'c0ffee00-0000-4000-8000-000000000001', id, -15, 'FINE', 'Missed mandatory chapter meeting', now() - interval '6 days'
 FROM u WHERE n IN (12, 17, 21);
 
 -- ── Dues + invoices ──────────────────────────────────────────────────────────
@@ -284,11 +365,11 @@ INSERT INTO chapter_dues_config (chapter_id, cadence, active_amount_cents,
                                  new_member_amount_cents, alumni_amount_cents,
                                  installments_allowed, installment_count,
                                  late_fee_cents, grace_days, scholarship_pool_cents)
-VALUES (:cid, 'per_semester', 145000, 189000, 0, true, 3, 5000, 10, 250000);
+VALUES ('c0ffee00-0000-4000-8000-000000000001', 'per_semester', 145000, 189000, 0, true, 3, 5000, 10, 250000);
 
 INSERT INTO financial_invoices (chapter_id, user_id, title, description, amount,
                                 status, due_date, paid_at, created_at)
-SELECT :cid, u.id, 'Fall 2026 Chapter Dues',
+SELECT 'c0ffee00-0000-4000-8000-000000000001', u.id, 'Fall 2026 Chapter Dues',
        'Semester dues — covers house operations, national fees, and social budget.',
        CASE WHEN u.n BETWEEN 19 AND 23 THEN 189000 ELSE 145000 END,
        CASE WHEN u.n % 7 = 0 THEN 'OPEN' WHEN u.n % 11 = 0 THEN 'OPEN' ELSE 'PAID' END,
@@ -299,34 +380,21 @@ FROM u WHERE u.n <= 23;
 
 INSERT INTO financial_invoices (chapter_id, user_id, title, description, amount,
                                 status, due_date, created_at)
-SELECT :cid, u.id, 'Formal Ticket — Winter Semiformal', 'Bus, venue, and dinner.',
+SELECT 'c0ffee00-0000-4000-8000-000000000001', u.id, 'Formal Ticket — Winter Semiformal', 'Bus, venue, and dinner.',
        8500, 'OPEN', (current_date + 16)::date, now() - interval '5 days'
 FROM u WHERE u.n <= 23 AND u.n % 4 = 0;
 
-COMMIT;
-
-
-BEGIN;
-\set cid '''c0ffee00-0000-4000-8000-000000000001'''
-DROP TABLE IF EXISTS u;
--- `n` is the roster number, read back out of the uuid it was encoded into.
--- Deriving it from created_at ordering instead would silently re-map every
--- downstream reference the moment join dates stop being monotonic in n.
-CREATE TEMP TABLE u AS
-  SELECT us.id, us.display_name, right(us.id::text, 8)::int AS n
-  FROM users us WHERE us.active_chapter_id = :cid;
-
 -- ── Chat ─────────────────────────────────────────────────────────────────────
 INSERT INTO chat_channel_categories (id, chapter_id, name, display_order) VALUES
- ('c0ffee00-0000-4000-8000-4000000000c1', :cid, 'Chapter', 1),
- ('c0ffee00-0000-4000-8000-4000000000c2', :cid, 'Committees', 2);
+ ('c0ffee00-0000-4000-8000-4000000000c1', 'c0ffee00-0000-4000-8000-000000000001', 'Chapter', 1),
+ ('c0ffee00-0000-4000-8000-4000000000c2', 'c0ffee00-0000-4000-8000-000000000001', 'Committees', 2);
 
 INSERT INTO chat_channels (id, chapter_id, name, description, type, category_id, is_read_only, created_at) VALUES
- ('c0ffee00-0000-4000-8000-4000000000b1', :cid, 'announcements', 'Officer announcements. Read-only.', 'PUBLIC', 'c0ffee00-0000-4000-8000-4000000000c1', true,  now() - interval '14 months'),
- ('c0ffee00-0000-4000-8000-4000000000b2', :cid, 'general',       'Everything else.',                  'PUBLIC', 'c0ffee00-0000-4000-8000-4000000000c1', false, now() - interval '14 months'),
- ('c0ffee00-0000-4000-8000-4000000000b3', :cid, 'philanthropy',  '5K planning and philanthropy committee.', 'PUBLIC', 'c0ffee00-0000-4000-8000-4000000000c2', false, now() - interval '7 months'),
- ('c0ffee00-0000-4000-8000-4000000000b4', :cid, 'intramurals',   'Game times, rosters, trash talk.',  'PUBLIC', 'c0ffee00-0000-4000-8000-4000000000c2', false, now() - interval '9 months'),
- ('c0ffee00-0000-4000-8000-4000000000b5', :cid, 'exec',          'Officer coordination.',             'ROLE_GATED', 'c0ffee00-0000-4000-8000-4000000000c1', false, now() - interval '12 months');
+ ('c0ffee00-0000-4000-8000-4000000000b1', 'c0ffee00-0000-4000-8000-000000000001', 'announcements', 'Officer announcements. Read-only.', 'PUBLIC', 'c0ffee00-0000-4000-8000-4000000000c1', true,  now() - interval '14 months'),
+ ('c0ffee00-0000-4000-8000-4000000000b2', 'c0ffee00-0000-4000-8000-000000000001', 'general',       'Everything else.',                  'PUBLIC', 'c0ffee00-0000-4000-8000-4000000000c1', false, now() - interval '14 months'),
+ ('c0ffee00-0000-4000-8000-4000000000b3', 'c0ffee00-0000-4000-8000-000000000001', 'philanthropy',  '5K planning and philanthropy committee.', 'PUBLIC', 'c0ffee00-0000-4000-8000-4000000000c2', false, now() - interval '7 months'),
+ ('c0ffee00-0000-4000-8000-4000000000b4', 'c0ffee00-0000-4000-8000-000000000001', 'intramurals',   'Game times, rosters, trash talk.',  'PUBLIC', 'c0ffee00-0000-4000-8000-4000000000c2', false, now() - interval '9 months'),
+ ('c0ffee00-0000-4000-8000-4000000000b5', 'c0ffee00-0000-4000-8000-000000000001', 'exec',          'Officer coordination.',             'ROLE_GATED', 'c0ffee00-0000-4000-8000-4000000000c1', false, now() - interval '12 months');
 
 INSERT INTO chat_messages (channel_id, sender_id, content, type, created_at)
 SELECT m.chan::uuid, (SELECT id FROM u WHERE n = m.who), m.body, 'TEXT',
@@ -366,22 +434,25 @@ FROM (VALUES
 ) AS m(chan, who, body, pinned, hrs);
 
 -- ── Study geofences + sessions ───────────────────────────────────────────────
+-- The zones sit on the fictional campus, at real coordinates in Akron, Ohio. A
+-- member anywhere else cannot start a session, which is the product working:
+-- the App Review note says so rather than pretending the reviewer can.
 INSERT INTO study_geofences (id, chapter_id, name, coordinates, is_active,
                              minutes_per_point, points_per_interval, min_session_minutes)
 VALUES
- ('c0ffee00-0000-4000-8000-5000000000d1', :cid, 'Hargrove Library — 3rd Floor',
+ ('c0ffee00-0000-4000-8000-5000000000d1', 'c0ffee00-0000-4000-8000-000000000001', 'Hargrove Library — 3rd Floor',
   '[{"lat":41.0812,"lng":-81.5190},{"lat":41.0816,"lng":-81.5190},{"lat":41.0816,"lng":-81.5183},{"lat":41.0812,"lng":-81.5183}]'::jsonb,
   true, 60, 5, 30),
- ('c0ffee00-0000-4000-8000-5000000000d2', :cid, 'Chapter House Study Room',
+ ('c0ffee00-0000-4000-8000-5000000000d2', 'c0ffee00-0000-4000-8000-000000000001', 'Chapter House Study Room',
   '[{"lat":41.0790,"lng":-81.5225},{"lat":41.0793,"lng":-81.5225},{"lat":41.0793,"lng":-81.5220},{"lat":41.0790,"lng":-81.5220}]'::jsonb,
   true, 60, 5, 30),
- ('c0ffee00-0000-4000-8000-5000000000d3', :cid, 'Engineering Commons',
+ ('c0ffee00-0000-4000-8000-5000000000d3', 'c0ffee00-0000-4000-8000-000000000001', 'Engineering Commons',
   '[{"lat":41.0845,"lng":-81.5162},{"lat":41.0849,"lng":-81.5162},{"lat":41.0849,"lng":-81.5156},{"lat":41.0845,"lng":-81.5156}]'::jsonb,
   true, 60, 5, 30);
 
 INSERT INTO study_sessions (chapter_id, user_id, geofence_id, status, start_time, end_time,
                             total_foreground_minutes, points_awarded, created_at)
-SELECT :cid, u.id,
+SELECT 'c0ffee00-0000-4000-8000-000000000001', u.id,
        (ARRAY['c0ffee00-0000-4000-8000-5000000000d1','c0ffee00-0000-4000-8000-5000000000d2','c0ffee00-0000-4000-8000-5000000000d3']::uuid[])[1 + (u.n + g.i) % 3],
        'COMPLETED',
        now() - (interval '1 day' * ((u.n + g.i) % 21)) - interval '4 hours',
@@ -393,43 +464,44 @@ WHERE u.n <= 23 AND (u.n + g.i) % 4 <> 0;
 
 INSERT INTO study_sessions (chapter_id, user_id, geofence_id, status, start_time,
                             last_heartbeat_at, total_foreground_minutes, created_at)
-SELECT :cid, id, 'c0ffee00-0000-4000-8000-5000000000d1', 'ACTIVE',
+SELECT 'c0ffee00-0000-4000-8000-000000000001', id, 'c0ffee00-0000-4000-8000-5000000000d1', 'ACTIVE',
        now() - interval '52 minutes', now() - interval '30 seconds', 52, now() - interval '52 minutes'
 FROM u WHERE n IN (6, 14, 20);
 
 -- ── Documents ────────────────────────────────────────────────────────────────
+-- Stored where the API itself puts an upload
+-- (`ChapterDocumentService.requestUploadUrl`):
+--   chapters/<chapter>/documents/<document id>/<file>
+-- The ids are fixed, so every re-seed names the same objects: `seed-demo.mjs
+-- storage` overwrites them in place rather than leaving the previous run's
+-- files orphaned in the bucket. Nothing here creates an object — a document row
+-- whose object was never uploaded opens as an error, so `storage` must run after
+-- the seed.
 INSERT INTO chapter_document_folders (chapter_id, name, sort_order) VALUES
- (:cid,'Meeting Minutes',1),(:cid,'Bylaws & Governance',2),(:cid,'Finance',3),
- (:cid,'Recruitment',4),(:cid,'Risk Management',5);
+ ('c0ffee00-0000-4000-8000-000000000001','Meeting Minutes',1),('c0ffee00-0000-4000-8000-000000000001','Bylaws & Governance',2),('c0ffee00-0000-4000-8000-000000000001','Finance',3),
+ ('c0ffee00-0000-4000-8000-000000000001','Recruitment',4),('c0ffee00-0000-4000-8000-000000000001','Risk Management',5);
 
-INSERT INTO chapter_documents (chapter_id, title, description, folder, storage_path, uploaded_by, created_at)
-SELECT :cid, d.title, d.descr, d.folder,
-       'demo/' || lower(regexp_replace(d.title,'[^a-zA-Z0-9]+','-','g')) || '.pdf',
+INSERT INTO chapter_documents (id, chapter_id, title, description, folder, storage_path,
+                               content_type, uploaded_by, created_at)
+SELECT d.id::uuid, 'c0ffee00-0000-4000-8000-000000000001', d.title, d.descr, d.folder,
+       'chapters/c0ffee00-0000-4000-8000-000000000001/documents/' || d.id || '/'
+         || btrim(lower(regexp_replace(d.title,'[^a-zA-Z0-9]+','-','g')), '-') || '.pdf',
+       'application/pdf',
        (SELECT id FROM u WHERE n = d.who), now() - (interval '1 day' * d.days)
 FROM (VALUES
- ('Chapter Bylaws (Revised 2026)','Adopted at the spring business meeting.','Bylaws & Governance',1,120),
- ('Chapter Meeting Minutes — Week 9','Approved.','Meeting Minutes',4,5),
- ('Chapter Meeting Minutes — Week 8','Approved.','Meeting Minutes',4,12),
- ('Chapter Meeting Minutes — Week 7','Approved.','Meeting Minutes',4,19),
- ('Fall 2026 Operating Budget','Approved by exec and the house corporation.','Finance',2,60),
- ('Dues Payment Plan Policy','Installments, grace period, and late fee schedule.','Finance',2,58),
- ('Risk Management Policy','Social event guidelines and sober monitor rotation.','Risk Management',3,90),
- ('Event Registration Form (Blank)','Submit to the Office of Greek Life 14 days out.','Risk Management',3,88),
- ('Recruitment Handbook','Conversation guides, bid process, and timeline.','Recruitment',3,45),
- ('New Member Education Curriculum','Eight-week schedule with learning objectives.','Recruitment',3,44)
-) AS d(title, descr, folder, who, days);
+ ('c0ffee00-0000-4000-8000-800000000001','Chapter Bylaws (Revised 2026)','Adopted at the spring business meeting.','Bylaws & Governance',1,120),
+ ('c0ffee00-0000-4000-8000-800000000002','Chapter Meeting Minutes — Week 9','Approved.','Meeting Minutes',4,5),
+ ('c0ffee00-0000-4000-8000-800000000003','Chapter Meeting Minutes — Week 8','Approved.','Meeting Minutes',4,12),
+ ('c0ffee00-0000-4000-8000-800000000004','Chapter Meeting Minutes — Week 7','Approved.','Meeting Minutes',4,19),
+ ('c0ffee00-0000-4000-8000-800000000005','Fall 2026 Operating Budget','Approved by exec and the house corporation.','Finance',2,60),
+ ('c0ffee00-0000-4000-8000-800000000006','Dues Payment Plan Policy','Installments, grace period, and late fee schedule.','Finance',2,58),
+ ('c0ffee00-0000-4000-8000-800000000007','Risk Management Policy','Social event guidelines and sober monitor rotation.','Risk Management',3,90),
+ ('c0ffee00-0000-4000-8000-800000000008','Event Registration Form (Blank)','Submit to the Office of Greek Life 14 days out.','Risk Management',3,88),
+ ('c0ffee00-0000-4000-8000-800000000009','Recruitment Handbook','Conversation guides, bid process, and timeline.','Recruitment',3,45),
+ ('c0ffee00-0000-4000-8000-800000000010','New Member Education Curriculum','Eight-week schedule with learning objectives.','Recruitment',3,44)
+) AS d(id, title, descr, folder, who, days);
 
-COMMIT;
-
-
--- ── Polls + backwork ─────────────────────────────────────────────────────────
-BEGIN;
-\set cid '''c0ffee00-0000-4000-8000-000000000001'''
-DROP TABLE IF EXISTS u;
-CREATE TEMP TABLE u AS
-  SELECT us.id, us.display_name, right(us.id::text, 8)::int AS n
-  FROM users us WHERE us.active_chapter_id = :cid;
-
+-- ── Polls ────────────────────────────────────────────────────────────────────
 -- A poll is a chat_message of type POLL; the question and options live in
 -- `metadata`, and each ballot is a poll_votes row (see PollMetadata).
 INSERT INTO chat_messages (id, channel_id, sender_id, content, type, metadata, created_at)
@@ -466,42 +538,92 @@ FROM u CROSS JOIN (VALUES
 WHERE u.n <= 23 AND (u.n + p.spread) % 5 <> 0
 ON CONFLICT DO NOTHING;
 
+-- ── Backwork ─────────────────────────────────────────────────────────────────
+-- Same layout rule as Documents, from `BackworkService.requestUploadUrl`:
+--   chapters/<chapter>/backwork/<resource id>/<file>
 INSERT INTO backwork_departments (id, chapter_id, code, name) VALUES
- ('c0ffee00-0000-4000-8000-70000000d001', :cid, 'MATH', 'Mathematics'),
- ('c0ffee00-0000-4000-8000-70000000d002', :cid, 'CHEM', 'Chemistry'),
- ('c0ffee00-0000-4000-8000-70000000d003', :cid, 'ECON', 'Economics'),
- ('c0ffee00-0000-4000-8000-70000000d004', :cid, 'MGMT', 'Management'),
- ('c0ffee00-0000-4000-8000-70000000d005', :cid, 'PHYS', 'Physics');
+ ('c0ffee00-0000-4000-8000-70000000d001', 'c0ffee00-0000-4000-8000-000000000001', 'MATH', 'Mathematics'),
+ ('c0ffee00-0000-4000-8000-70000000d002', 'c0ffee00-0000-4000-8000-000000000001', 'CHEM', 'Chemistry'),
+ ('c0ffee00-0000-4000-8000-70000000d003', 'c0ffee00-0000-4000-8000-000000000001', 'ECON', 'Economics'),
+ ('c0ffee00-0000-4000-8000-70000000d004', 'c0ffee00-0000-4000-8000-000000000001', 'MGMT', 'Management'),
+ ('c0ffee00-0000-4000-8000-70000000d005', 'c0ffee00-0000-4000-8000-000000000001', 'PHYS', 'Physics');
 
 INSERT INTO backwork_professors (id, chapter_id, name) VALUES
- ('c0ffee00-0000-4000-8000-70000000f001', :cid, 'Dr. H. Lindgren'),
- ('c0ffee00-0000-4000-8000-70000000f002', :cid, 'Dr. P. Anand'),
- ('c0ffee00-0000-4000-8000-70000000f003', :cid, 'Prof. M. Calloway'),
- ('c0ffee00-0000-4000-8000-70000000f004', :cid, 'Dr. S. Underwood');
+ ('c0ffee00-0000-4000-8000-70000000f001', 'c0ffee00-0000-4000-8000-000000000001', 'Dr. H. Lindgren'),
+ ('c0ffee00-0000-4000-8000-70000000f002', 'c0ffee00-0000-4000-8000-000000000001', 'Dr. P. Anand'),
+ ('c0ffee00-0000-4000-8000-70000000f003', 'c0ffee00-0000-4000-8000-000000000001', 'Prof. M. Calloway'),
+ ('c0ffee00-0000-4000-8000-70000000f004', 'c0ffee00-0000-4000-8000-000000000001', 'Dr. S. Underwood');
 
-INSERT INTO backwork_resources (chapter_id, department_id, course_number, professor_id,
+INSERT INTO backwork_resources (id, chapter_id, department_id, course_number, professor_id,
                                 uploader_id, title, year, semester, assignment_type,
                                 assignment_number, document_variant, storage_path,
                                 file_hash, is_redacted, created_at)
-SELECT :cid, b.dept::uuid, b.course, b.prof::uuid, (SELECT id FROM u WHERE n = b.who),
+SELECT b.id::uuid, 'c0ffee00-0000-4000-8000-000000000001', b.dept::uuid, b.course, b.prof::uuid, (SELECT id FROM u WHERE n = b.who),
        b.title, b.yr, b.sem, b.atype, b.anum, b.variant,
-       'demo/backwork/' || lower(regexp_replace(b.title,'[^a-zA-Z0-9]+','-','g')) || '.pdf',
+       'chapters/c0ffee00-0000-4000-8000-000000000001/backwork/' || b.id || '/'
+         || btrim(lower(regexp_replace(b.title,'[^a-zA-Z0-9]+','-','g')), '-') || '.pdf',
        -- Dedup key in the real upload path; a stable digest of the demo title
        -- keeps the seed re-runnable without colliding across rows.
        encode(sha256(b.title::bytea), 'hex'),
        true, now() - (b.days * interval '1 day')
 FROM (VALUES
- ('c0ffee00-0000-4000-8000-70000000d001','MATH 2010','c0ffee00-0000-4000-8000-70000000f001', 5,'Calculus II — Midterm 1',2025,'Fall','Midterm',1,'Student Copy',40),
- ('c0ffee00-0000-4000-8000-70000000d001','MATH 2010','c0ffee00-0000-4000-8000-70000000f001', 5,'Calculus II — Midterm 2',2025,'Fall','Midterm',2,'Answer Key',36),
- ('c0ffee00-0000-4000-8000-70000000d001','MATH 2010','c0ffee00-0000-4000-8000-70000000f001', 8,'Calculus II — Final',2025,'Fall','Final Exam',NULL,'Student Copy',30),
- ('c0ffee00-0000-4000-8000-70000000d002','CHEM 1100','c0ffee00-0000-4000-8000-70000000f002', 6,'General Chemistry — Exam 1',2026,'Spring','Exam',1,'Student Copy',28),
- ('c0ffee00-0000-4000-8000-70000000d002','CHEM 1100','c0ffee00-0000-4000-8000-70000000f002', 6,'General Chemistry — Lab Practical',2026,'Spring','Lab',3,'Blank Copy',24),
- ('c0ffee00-0000-4000-8000-70000000d003','ECON 2020','c0ffee00-0000-4000-8000-70000000f003',11,'Macroeconomics — Study Guide',2026,'Spring','Study Guide',NULL,'Student Copy',20),
- ('c0ffee00-0000-4000-8000-70000000d003','ECON 2020','c0ffee00-0000-4000-8000-70000000f003',11,'Macroeconomics — Midterm',2026,'Spring','Midterm',1,'Answer Key',19),
- ('c0ffee00-0000-4000-8000-70000000d004','MGMT 3300','c0ffee00-0000-4000-8000-70000000f004',13,'Organizational Behavior — Case Notes',2026,'Spring','Notes',NULL,'Student Copy',14),
- ('c0ffee00-0000-4000-8000-70000000d004','MGMT 3300','c0ffee00-0000-4000-8000-70000000f004', 2,'Organizational Behavior — Final',2025,'Fall','Final Exam',NULL,'Student Copy',12),
- ('c0ffee00-0000-4000-8000-70000000d005','PHYS 1500','c0ffee00-0000-4000-8000-70000000f001', 9,'Physics I — Problem Sets 1–6',2025,'Fall','Homework',NULL,'Answer Key',9),
- ('c0ffee00-0000-4000-8000-70000000d005','PHYS 1500','c0ffee00-0000-4000-8000-70000000f001', 9,'Physics I — Exam 2',2026,'Spring','Exam',2,'Student Copy',5)
-) AS b(dept, course, prof, who, title, yr, sem, atype, anum, variant, days);
+ ('c0ffee00-0000-4000-8000-900000000001','c0ffee00-0000-4000-8000-70000000d001','MATH 2010','c0ffee00-0000-4000-8000-70000000f001', 5,'Calculus II — Midterm 1',2025,'Fall','Midterm',1,'Student Copy',40),
+ ('c0ffee00-0000-4000-8000-900000000002','c0ffee00-0000-4000-8000-70000000d001','MATH 2010','c0ffee00-0000-4000-8000-70000000f001', 5,'Calculus II — Midterm 2',2025,'Fall','Midterm',2,'Answer Key',36),
+ ('c0ffee00-0000-4000-8000-900000000003','c0ffee00-0000-4000-8000-70000000d001','MATH 2010','c0ffee00-0000-4000-8000-70000000f001', 8,'Calculus II — Final',2025,'Fall','Final Exam',NULL,'Student Copy',30),
+ ('c0ffee00-0000-4000-8000-900000000004','c0ffee00-0000-4000-8000-70000000d002','CHEM 1100','c0ffee00-0000-4000-8000-70000000f002', 6,'General Chemistry — Exam 1',2026,'Spring','Exam',1,'Student Copy',28),
+ ('c0ffee00-0000-4000-8000-900000000005','c0ffee00-0000-4000-8000-70000000d002','CHEM 1100','c0ffee00-0000-4000-8000-70000000f002', 6,'General Chemistry — Lab Practical',2026,'Spring','Lab',3,'Blank Copy',24),
+ ('c0ffee00-0000-4000-8000-900000000006','c0ffee00-0000-4000-8000-70000000d003','ECON 2020','c0ffee00-0000-4000-8000-70000000f003',11,'Macroeconomics — Study Guide',2026,'Spring','Study Guide',NULL,'Student Copy',20),
+ ('c0ffee00-0000-4000-8000-900000000007','c0ffee00-0000-4000-8000-70000000d003','ECON 2020','c0ffee00-0000-4000-8000-70000000f003',11,'Macroeconomics — Midterm',2026,'Spring','Midterm',1,'Answer Key',19),
+ ('c0ffee00-0000-4000-8000-900000000008','c0ffee00-0000-4000-8000-70000000d004','MGMT 3300','c0ffee00-0000-4000-8000-70000000f004',13,'Organizational Behavior — Case Notes',2026,'Spring','Notes',NULL,'Student Copy',14),
+ ('c0ffee00-0000-4000-8000-900000000009','c0ffee00-0000-4000-8000-70000000d004','MGMT 3300','c0ffee00-0000-4000-8000-70000000f004', 2,'Organizational Behavior — Final',2025,'Fall','Final Exam',NULL,'Student Copy',12),
+ ('c0ffee00-0000-4000-8000-900000000010','c0ffee00-0000-4000-8000-70000000d005','PHYS 1500','c0ffee00-0000-4000-8000-70000000f001', 9,'Physics I — Problem Sets 1–6',2025,'Fall','Homework',NULL,'Answer Key',9),
+ ('c0ffee00-0000-4000-8000-900000000011','c0ffee00-0000-4000-8000-70000000d005','PHYS 1500','c0ffee00-0000-4000-8000-70000000f001', 9,'Physics I — Exam 2',2026,'Spring','Exam',2,'Student Copy',5)
+) AS b(id, dept, course, prof, who, title, yr, sem, atype, anum, variant, days);
+
+-- ── Reviewer variant ─────────────────────────────────────────────────────────
+-- The App Review chapter differs from the marketing one in exactly the two ways
+-- `apps/mobile/store/README.md` § Seed the reviewer's chapter asks for.
+
+-- 1. No invoices for the reviewer. The mobile Dues tab reads the viewer's own
+--    ledger only (`useInvoices(viewerId)`), and zero rows is the one state that
+--    shows no Pay control and no Stripe footer (§ Review notes owns why).
+DELETE FROM financial_invoices
+ WHERE current_setting('frapp_demo.variant', true) = 'reviewer'
+   AND chapter_id = 'c0ffee00-0000-4000-8000-000000000001'
+   AND user_id = 'c0ffee00-0000-4000-8000-100000000001';
+
+-- 2. A direct message into the reviewer's account, from the treasurer. Chat
+--    home hides its DIRECT section entirely while the list is empty, and a DM
+--    is otherwise only startable from the web dashboard. Shaped exactly as
+--    `ChatService.getOrCreateDm` writes one — `dm-<sorted ids>`, sorted
+--    `member_ids` — so the API finds this row instead of opening a second.
+INSERT INTO chat_channels (id, chapter_id, name, type, member_ids, created_at)
+SELECT 'c0ffee00-0000-4000-8000-4000000000d1', 'c0ffee00-0000-4000-8000-000000000001',
+       'dm-c0ffee00-0000-4000-8000-100000000001-c0ffee00-0000-4000-8000-100000000002', 'DM',
+       ARRAY['c0ffee00-0000-4000-8000-100000000001','c0ffee00-0000-4000-8000-100000000002']::uuid[],
+       now() - interval '3 days'
+ WHERE current_setting('frapp_demo.variant', true) = 'reviewer';
+
+INSERT INTO chat_messages (channel_id, sender_id, content, type, created_at)
+SELECT 'c0ffee00-0000-4000-8000-4000000000d1', (SELECT id FROM u WHERE n = m.who), m.body, 'TEXT',
+       now() - (interval '1 minute' * m.mins_ago)
+FROM (VALUES
+ (2, 'hey, can you look over the operating budget before exec? it''s in Documents under Finance', 2880),
+ (1, 'yep, reading it tonight', 2860),
+ (2, 'thanks. the banquet hall deposit went through this morning too', 55)
+) AS m(who, body, mins_ago)
+WHERE current_setting('frapp_demo.variant', true) = 'reviewer';
+
+-- ── Report ───────────────────────────────────────────────────────────────────
+DO $$
+DECLARE
+  v_members int := (SELECT count(*) FROM members WHERE chapter_id = 'c0ffee00-0000-4000-8000-000000000001');
+  v_auth uuid := (SELECT supabase_auth_id FROM users WHERE id = 'c0ffee00-0000-4000-8000-100000000001');
+BEGIN
+  RAISE NOTICE 'demo chapter c0ffee00-0000-4000-8000-000000000001 seeded (% variant, % members); login % %',
+    coalesce(nullif(current_setting('frapp_demo.variant', true), ''), 'marketing'), v_members,
+    (SELECT email FROM users WHERE id = 'c0ffee00-0000-4000-8000-100000000001'),
+    CASE WHEN EXISTS (SELECT 1 FROM demo_login) THEN 'linked to auth user ' || v_auth ELSE 'NOT linked' END;
+END $$;
 
 COMMIT;

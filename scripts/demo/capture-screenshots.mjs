@@ -30,7 +30,7 @@ const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 const CHAPTER_ID =
   process.env.DEMO_CHAPTER_ID ?? "c0ffee00-0000-4000-8000-000000000001";
 const OUT_DIR = process.env.OUT_DIR ?? "screenshots/web";
-const EMAIL = process.env.DEMO_EMAIL ?? "marcus.ellison@westfield.edu";
+const EMAIL = process.env.DEMO_EMAIL ?? "marcus.ellison@example.com";
 const PASSWORD = process.env.DEMO_PASSWORD ?? "DemoShowcase!2026";
 
 /** Marketing frame: 16:10, captured at 2x for retina-quality stills. */
