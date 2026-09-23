@@ -250,8 +250,12 @@ the ones a later reader would otherwise re-litigate.
   Under ADR-24 an artifact is built once and promoted, with its environment injected at runtime.
   #1381's two open stages move into #2504's first phase, #2505. The alert-routing item of #1383
   was waiting on the owner's choice of channel, which is now made (the Sentry mobile app).
-  #1384's production-parity items go with it. #1381 closes when #1383 and #1384 do. Decisions 1,
-  2 and 4–8 and this ADR's amendments stand as written.
+  #1384's production-parity items go with it, and so do #1383's other open items. #1381 closes
+  when #1383 and #1384 do. That makes this ADR's trigger to revisit ("the program completes or is
+  abandoned") effectively fired. **Decision 4** (the staged program) and **decision 8** (the
+  master plan lives in #1381) are superseded: the live program is #2504, sequenced by ADR-24.
+  Decisions 1, 2 and 5–7 still stand as written, as do this ADR's earlier amendments as records
+  of their dates.
 
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an

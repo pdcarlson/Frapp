@@ -119,9 +119,11 @@ Splitting these into a standalone Render Background Worker is not currently warr
 
 ### 5.7 Deploy Hooks (for GitHub Actions)
 
-In each Render service → Settings → Deploy Hook → copy the URL. Store these in **Infisical**, under the same name in the `staging` and `prod` environments with different values. `deploy-api.yml` injects them with the `infisical-secrets` action (`env-slug: staging`), not from GitHub secrets. The full list is in [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md).
+Only **staging** uses a deploy hook. Production doesn't: `deploy-production.yml` deploys a named commit through the Render API (`scripts/ci/deploy-render-production.mjs`, `RENDER_API_KEY`), because a hook can't name a commit and builds whatever is at the tip of the branch. **Don't create a deploy hook for `frapp-api-prod`.** A hook URL is a bearer credential, and anyone holding it could ship the branch tip past the production gates. If one exists, regenerate it in Render and delete it from Infisical `prod`.
 
-- `RENDER_DEPLOY_HOOK_URL` → deploy hook URL for that environment
+These values live in **Infisical**, and the deploy workflows inject them with the `infisical-secrets` action, not from GitHub secrets. [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) is the canonical list.
+
+- `RENDER_DEPLOY_HOOK_URL` → the `frapp-api-staging` deploy hook (Render service → Settings → Deploy Hook), in Infisical `staging` only
 - `API_HEALTHCHECK_URL` → smoke-check URL for that environment (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly — `/health` is Render's own `healthCheckPath` and always returns 2xx, while `/health/ready` 503s on a degraded dependency (see `spec/behavior/observability.md` § Health Check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
 
 ---

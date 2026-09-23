@@ -15,7 +15,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 2. **References eliminate duplication.** Framework-specific names (`NEXT_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`) are Infisical **secret references** that resolve to the canonical value. Change `SUPABASE_URL` → all references update.
 
-3. **No environment suffixes.** There's no `RENDER_DEPLOY_HOOK_URL_STAGING` — just `RENDER_DEPLOY_HOOK_URL` with different values per environment. GitHub's `environment:` feature and Infisical's environment scoping handle the routing.
+3. **No environment suffixes.** There's no `RENDER_DEPLOY_HOOK_URL_STAGING` — just `RENDER_DEPLOY_HOOK_URL` with different values per environment. Infisical's environment scoping handles the routing: each deploy job injects from the environment slug for its target.
 
 4. **No `.env.local` files (primary path).** Default local run is **`npm run dev:stack`** from the repo root (API + web + landing + docs; secrets from Infisical `dev` via the CLI). Requires `npx infisical login` on the machine. Per-app `dev:*` and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
@@ -290,7 +290,7 @@ much.
 
 > ⚠️ **`INFISICAL_MACHINE_IDENTITY_ID` wants the Client ID, not the identity ID.** An Infisical machine identity has an **ID** on its Details page and a separate **Client ID** inside its Universal Auth panel. Only the Client ID authenticates. The secret's name points at the wrong one, and pasting the Details-page ID yields `401 Invalid credentials` — indistinguishable at a glance from a revoked credential. This cost 71 days of dead deploys (#696).
 
-**Transitional (until Infisical GitHub Action injection is wired):**
+**Deploy-workflow secrets (injected from Infisical):**
 
 The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
 
@@ -298,10 +298,8 @@ The deploy workflows inject these from Infisical at runtime through [`infisical-
 | ------------------------ | --------------------------------------- | ------------------------------- |
 | `SUPABASE_ACCESS_TOKEN`  | Account-level token (same for both)     | (same)                          |
 | `SUPABASE_PROJECT_REF`   | Staging project ref                     | Production project ref          |
-| `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL                 | Production deploy hook URL      |
+| `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL                 | Not used (production deploys through the Render API) |
 | `API_HEALTHCHECK_URL`    | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |
-
-Once the `@infisical/secrets-action` is integrated into the deploy workflow, these transitional secrets can be removed from GitHub and injected from Infisical at runtime.
 
 #### Troubleshooting: `Deploy API` fails with `401 Invalid credentials`
 
