@@ -55,8 +55,8 @@ import {
  *
  * ## Fixed snap points, not `enableDynamicSizing`
  *
- * A bio can run to 500 characters (`packages/validation`'s `bio` schema),
- * custom fields are chapter-configurable and unbounded in count, and role
+ * A bio has no length cap (the API's `UpdateUserDto` bounds none of its
+ * free-text fields), custom fields are chapter-configurable and unbounded in count, and role
  * names can stack up — the same "grows without bound" shape `ask-sheet.tsx`
  * documents for why it does not use dynamic sizing. `BottomSheetScrollView`
  * is a **direct child** of the modal for the reason `new-task-sheet.tsx`
