@@ -1353,7 +1353,7 @@ describe('ChapterService', () => {
       mockChapterRepo.update.mockRejectedValue(new Error('db down'));
 
       // Both calls would write a row if the update succeeded: a removal of a
-      // set logo, and a confirm that changes the path.
+      // set logo, and any confirm.
       mockChapterRepo.findById.mockResolvedValue(withLogo);
       await expect(service.deleteLogo('ch-1', 'user-9')).rejects.toThrow(
         'db down',
@@ -1385,6 +1385,24 @@ describe('ChapterService', () => {
         'branding',
         'chapters/ch-1/branding/logo.png',
       );
+    });
+
+    it('aborts the removal when the object delete fails', async () => {
+      // A swallowed storage error would clear the column and audit a removal
+      // while the object stays at its fixed key, blocking every later upload
+      // of that extension (#2592). Failing here leaves the logo set, so a
+      // retry tries the object again.
+      mockChapterRepo.findById.mockResolvedValue(withLogo);
+      mockStorageProvider.deleteFile.mockRejectedValue(
+        new Error('storage down'),
+      );
+
+      await expect(service.deleteLogo('ch-1', 'user-9')).rejects.toThrow(
+        'storage down',
+      );
+
+      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
     it('surfaces an audit failure rather than swallowing it', async () => {
