@@ -6,7 +6,7 @@
 
 ## 1. Status: locked emblem B
 
-The committed assets ship **locked emblem B** — gold `#DDB844` on charcoal `#1A1A1A`, neck break, treated as an abstract crest. `frapp-*` filenames, `@repo/brand-assets`, and `frapp.live` domains stay as-is in code. Prose says Signet; code cites real current names.
+The committed assets ship **locked emblem B** — gold `#DDB844` on charcoal `#1A1A1A`, neck break, treated as an abstract crest. `frapp-*` filenames, `@repo/brand-assets`, and `frapp.live` domains stay as-is in code. Naming follows [`brand-identity.md` § 1](brand-identity.md#1-identity).
 
 - The animal mascot (a seal, the animal) remains **not commissioned** and MUST NOT ship until the USPTO search clears; [brand-identity.md](brand-identity.md) owns that ban.
 - Teams MUST NOT restyle the locked emblem piecemeal. Edit `packages/brand-assets/assets/signet-emblem-B.svg` — the vector master — then rasterize and sync (§8).

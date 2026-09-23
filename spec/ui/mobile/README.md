@@ -52,4 +52,4 @@ The app must feel iOS-native, not like a web view. These rules are binding for e
 
 ## Naming
 
-Spec prose says **Signet**; code stays `frapp` (`apps/mobile` app.json scheme `frapp`, domain `frapp.live`, `@repo/*` packages) until the deferred repo rename. When these docs cite code, they cite the real current names.
+The app is **Frapp** on the home screen, in iOS Settings and in every string a user sees. "Signet" is the design system's internal name. The binding rule is [`brand-identity.md` § 1](../brand-identity.md#1-identity) (ADR-25).

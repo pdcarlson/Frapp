@@ -23,4 +23,4 @@ The other quality gates are in
 one is required, advisory, or `warn`. This index does not enumerate them — a second copy of that
 roster drifts, and the last one did: it dropped required gates and listed one that is not a gate.
 
-Tech debt found in the Frapp → Signet rebuild is tracked as **GitHub Issues**, not in a doc — see [`AGENTS.md` § Tech debt protocol](../AGENTS.md#tech-debt-protocol) for what to do when you find orphaned or contradictory code.
+Tech debt found in the rebuild (legacy Frapp → the Signet design system; the product is named Frapp, ADR-25) is tracked as **GitHub Issues**, not in a doc — see [`AGENTS.md` § Tech debt protocol](../AGENTS.md#tech-debt-protocol) for what to do when you find orphaned or contradictory code.
