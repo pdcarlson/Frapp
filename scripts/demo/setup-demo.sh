@@ -15,10 +15,13 @@ cd "$(dirname "$0")/../.."
 
 DB_CONTAINER="${DB_CONTAINER:-supabase_db_Frapp}"
 SUPABASE_URL="${SUPABASE_URL:-http://127.0.0.1:54321}"
+# LOCAL_DEMO_EMAIL and LOCAL_DEMO_PASSWORD in seed-demo.mjs, restated because
+# this is bash; the capture scripts import them.
+LOCAL_PASSWORD='DemoShowcase!2026'
 DEMO_EMAIL="${DEMO_EMAIL:-marcus.ellison@example.com}"
 # The local stack's credential, and only the local stack's: seed-demo.mjs
 # refuses this password for any non-loopback host.
-DEMO_PASSWORD="${DEMO_PASSWORD:-DemoShowcase!2026}"
+DEMO_PASSWORD="${DEMO_PASSWORD:-$LOCAL_PASSWORD}"
 # The marketing/screenshot chapter. capture-screenshots.mjs and
 # capture-mobile.mjs read ids in this namespace.
 NAMESPACE="c0ffee00"
@@ -56,4 +59,11 @@ echo "==> Uploading document and backwork placeholders"
 node scripts/demo/seed-demo.mjs storage --namespace "$NAMESPACE"
 
 echo "==> Done. Sign in at http://localhost:3000/sign-in"
-echo "    $DEMO_EMAIL / $DEMO_PASSWORD  (local stack only)"
+# Only the committed local password is ever printed. DEMO_PASSWORD may be
+# inherited from a shell that ran the production procedure in demo-data.md,
+# and that value must not land in scrollback or a captured log.
+if [ "$DEMO_PASSWORD" = "$LOCAL_PASSWORD" ]; then
+  echo "    $DEMO_EMAIL / $DEMO_PASSWORD  (local stack only)"
+else
+  echo "    $DEMO_EMAIL / the password in DEMO_PASSWORD (not printed)"
+fi
