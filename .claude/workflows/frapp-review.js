@@ -183,11 +183,16 @@ function norm(file) {
 // the skill's Phase 3 passes any that names a different defect back in through `args.verify`.
 const note = (d) => ({ file: d.file, line: d.line, source: d.source, angle: d.angle, summary: d.summary, failure_scenario: d.failure_scenario })
 
+// The one shape settle() and verify() rely on, for finder candidates and verify-only entries alike.
+function record(c, source, key) {
+  return { ...c, file: norm(c.file), key, source, status: 'pending', alsoFlaggedBy: [], dups: [] }
+}
+
 function admit(candidates, source) {
   const fresh = []
   for (const c of candidates) {
     const key = `${norm(c.file)}:${c.line}`
-    const rec = { ...c, file: norm(c.file), key, source, status: 'pending', alsoFlaggedBy: [], dups: [] }
+    const rec = record(c, source, key)
     const prior = seen.get(key)
     if (prior && prior.status === 'kept') {
       prior.alsoFlaggedBy.push(note(rec))
@@ -222,7 +227,7 @@ async function settle(rec, status, extra) {
 
 async function verify(rec) {
   const other = rec.distinctFrom
-    ? `\nA different defect at this same line is already confirmed: "${rec.distinctFrom}". Judge only the defect stated above; that one doesn't count for or against it.`
+    ? `\nA different finding at this same line was already kept by this review: "${rec.distinctFrom}". Judge only the defect stated above; that one doesn't count for or against it.`
     : ''
   const claim =
     `Finding: ${rec.file}:${rec.line}: ${rec.summary}\nFailure scenario: ${rec.failure_scenario}\n` +
@@ -267,15 +272,8 @@ if (VERIFY_ONLY) {
   log(`verify only: ${VERIFY_ONLY.length} candidate(s)`)
   phase('Verify')
   received += VERIFY_ONLY.length
-  const recs = VERIFY_ONLY.map((c, i) => ({
-    ...c,
-    file: norm(c.file),
-    key: `${norm(c.file)}:${c.line}#verify-${i}`,
-    source: c.source || 'phase-3',
-    status: 'pending',
-    alsoFlaggedBy: [],
-    dups: [],
-  }))
+  // Each entry gets its own key: Phase 3 already judged them different defects, so no line dedup.
+  const recs = VERIFY_ONLY.map((c, i) => record(c, c.source || 'phase-3', `${norm(c.file)}:${c.line}#verify-${i}`))
   await parallel(recs.map((rec) => () => verify(rec)))
 } else {
 log(`${MODE} review at ${LEVEL}: ${BUNDLES.length} finders${SWEEP_CAP ? ' + gap sweep' : ''}${SMALL ? ' (small diff)' : ''}`)
