@@ -68,7 +68,7 @@ Status-only, never decorative. A semantic hue states a fact ("paid", "overdue");
 | `--warning` | `#e5a000` | Pending, at-risk, degraded |
 | `--destructive` | `#f85149` | Errors, overdue, destructive actions |
 | `--info` | `#2f81f7` | Informational status only — never a brand or accent color |
-| `--mention` | `#E5484D` | "You were addressed" — mention badges and DM indicators |
+| Mention/DM red | `#E5484D` | "You were addressed" — mention badges and DM indicators |
 | `--mention-chip` | `#4C3A1A` | Fill of the `@Name` chip *inside* a message body — recipe in [components.md](components.md) § Chat message bubbles |
 | `--mention-chip-text` | `#FAA81A` | The handle drawn on that fill |
 
