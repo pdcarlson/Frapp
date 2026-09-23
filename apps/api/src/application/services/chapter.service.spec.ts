@@ -1266,9 +1266,11 @@ describe('ChapterService', () => {
       });
     });
 
-    it('still audits a replacement that keeps the same path', async () => {
-      // `logo.<ext>`: a new PNG over an old one lands on the same path, and
-      // every branded surface repaints all the same.
+    it('writes no row for a confirm of the path already stored', async () => {
+      // The mint refuses to re-sign an existing key (no upsert), so a confirm
+      // of the stored path can't follow new bytes. A row for it would announce
+      // a logo change that never happened (#2592 tracks real same-extension
+      // replacement).
       mockChapterRepo.findById.mockResolvedValue(withLogo);
       mockChapterRepo.update.mockResolvedValue(withLogo);
 
@@ -1278,13 +1280,29 @@ describe('ChapterService', () => {
         'user-9',
       );
 
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('audits a replacement under a different extension', async () => {
+      mockChapterRepo.findById.mockResolvedValue(withLogo);
+      mockChapterRepo.update.mockResolvedValue({
+        ...withLogo,
+        logo_path: 'chapters/ch-1/branding/logo.jpg',
+      });
+
+      await service.confirmLogoUpload(
+        'ch-1',
+        'chapters/ch-1/branding/logo.jpg',
+        'user-9',
+      );
+
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'chapter_logo_updated',
           diff: {
             logo_path: {
               from: 'chapters/ch-1/branding/logo.png',
-              to: 'chapters/ch-1/branding/logo.png',
+              to: 'chapters/ch-1/branding/logo.jpg',
             },
           },
         }),
@@ -1321,12 +1339,15 @@ describe('ChapterService', () => {
     });
 
     it('writes the row only after the update lands', async () => {
-      mockChapterRepo.findById.mockResolvedValue(withLogo);
       mockChapterRepo.update.mockRejectedValue(new Error('db down'));
 
+      // Both calls would write a row if the update succeeded: a removal of a
+      // set logo, and a confirm that changes the path.
+      mockChapterRepo.findById.mockResolvedValue(withLogo);
       await expect(service.deleteLogo('ch-1', 'user-9')).rejects.toThrow(
         'db down',
       );
+      mockChapterRepo.findById.mockResolvedValue(withoutLogo);
       await expect(
         service.confirmLogoUpload(
           'ch-1',

@@ -589,16 +589,22 @@ export class ChapterService {
     const chapter = await this.chapterRepo.update(chapterId, {
       logo_path: storagePath,
     });
-    // Written on every confirm, even when `from` equals `to`. The storage path
-    // is `logo.<ext>`, so replacing a PNG with another PNG keeps the path while
-    // every branded surface repaints; skipping equal paths, as the profile diff
-    // does for re-sent fields, would leave a real logo change unaudited. The
-    // server can't see whether the bytes moved, so a confirm with no upload
-    // behind it also gets a row: a spurious row is the cheaper mistake.
-    await this.recordLogoAudit(chapterId, actorUserId, 'chapter_logo_updated', {
-      from: existing.logo_path ?? null,
-      to: storagePath,
-    });
+    // Only when the path moved, like the profile diff. A confirm of the path
+    // already stored can't be a replacement: the mint above refuses to re-sign
+    // an existing key (no upsert, so storage answers 409), and the bytes at
+    // that path can't have changed. Writing a row for it would announce a logo
+    // change that never happened in `#chapter-audit`. #2592 makes same-
+    // extension replacement work with a fresh key per upload, which keeps
+    // every real replacement a path change.
+    const previousPath = existing.logo_path ?? null;
+    if (previousPath !== storagePath) {
+      await this.recordLogoAudit(
+        chapterId,
+        actorUserId,
+        'chapter_logo_updated',
+        { from: previousPath, to: storagePath },
+      );
+    }
     return chapter;
   }
 
@@ -636,11 +642,12 @@ export class ChapterService {
    * permissions, and every other edit behind them writes a member-visible
    * `chapter_audit_log` row, so these do too.
    *
-   * Its own action rather than `chapter_profile_updated`, because the diff
-   * means something different: a profile row lists only fields whose value
-   * moved, while a logo row is written for a replaced image whose path did not
-   * (see `confirmLogoUpload`). Written after the update lands, like
-   * `recordProfileAudit`, with the same non-transactional residue (#1599).
+   * Its own actions rather than `chapter_profile_updated`, so the audit log can
+   * be filtered to logo changes, and so a removal reads as one. Like
+   * `recordProfileAudit`, a caller writes a row only for an effective change,
+   * after the update lands, with the same non-transactional residue (#1599):
+   * a failed insert leaves a committed change whose identical retry changes
+   * nothing, so it writes no row.
    */
   private async recordLogoAudit(
     chapterId: string,

@@ -116,7 +116,9 @@ export const CHAT_REPORT_QUEUE_PERMISSIONS = [
  *   `confirmLogoUpload` and `deleteLogo` routes, whose decorators
  *   `chapter.controller.spec.ts` pins to it;
  * - the Settings page's profile and accent saves (`settings-page.tsx`,
- *   `canEditProfile`), pinned by `settings-profile-permission.spec.tsx`.
+ *   `canEditProfile`), pinned by `settings-profile-permission.spec.tsx`;
+ * - the profile card's permission hint (`settings-org-tab.tsx`, `profileHint`),
+ *   which names these permissions to a member who lacks them.
  *
  * Prose that restates it: `spec/behavior/rbac.md`'s `chapter-config:manage`
  * row, `spec/behavior/chapter-config.md` § "PATCH /chapters/current — core
