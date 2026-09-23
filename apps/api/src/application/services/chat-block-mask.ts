@@ -7,11 +7,12 @@ import type {
  * Server-side application of a viewer's block list to chat message rows
  * (#2257), per `spec/behavior/chat/README.md` § The masking contract.
  *
- * **A module-level pure function rather than a method on a service**, because
- * more than one read surface owes the same guarantee — `ChatService.getMessages`
- * today, and any future timeline, digest or export that serves message rows to
- * a named viewer. Two copies of a masking rule is exactly the drift that leaves
- * one surface honest and the other leaking.
+ * **Module-level pure functions rather than methods on a service**, because
+ * every read surface that serves message rows to a named viewer owes the same
+ * guarantee: the timeline, pins, search, bookmarks, and any future digest or
+ * export (the full list is `chat-read-surface-ledger.spec.ts`). Two copies of a
+ * masking rule is exactly the drift that leaves one surface honest and the
+ * other leaking.
  *
  * It takes an already-resolved set of blocked user ids rather than fetching one,
  * so it stays synchronous and testable, and so the caller decides how a failed

@@ -869,17 +869,35 @@ export class ChatService {
       channel.is_read_only &&
       channel.name.toLowerCase().includes('announcements');
 
+    // Both branches drop everyone who has blocked the sender (#2324), for the
+    // reason the push worker does: each writes an in-app row and pushes the body
+    // to a lock screen, so masking the preview would still buzz the blocker's
+    // phone. A DM is the sharpest case, since "nothing they send reaches the
+    // blocker" is the whole rule. `filterOutBlockers` throws when the block list
+    // cannot be read, and `sendMessage` catches it: the message still lands, but
+    // nobody is notified rather than everybody.
+    const withoutBlockers = (userIds: string[]) =>
+      this.chatBlocks.filterOutBlockers(
+        channel.chapter_id,
+        input.sender_id,
+        userIds,
+      );
+
     if (isAnnouncement) {
-      await this.notificationService.notifyChapter(channel.chapter_id, {
-        title: 'New Announcement',
-        body: input.content.slice(0, 200),
-        priority: 'URGENT',
-        category: 'announcements',
-        data: { target: { screen: 'chat', channelId: channel.id } },
-      });
+      await this.notificationService.notifyChapter(
+        channel.chapter_id,
+        {
+          title: 'New Announcement',
+          body: input.content.slice(0, 200),
+          priority: 'URGENT',
+          category: 'announcements',
+          data: { target: { screen: 'chat', channelId: channel.id } },
+        },
+        { filterAudience: withoutBlockers },
+      );
     } else if (channel.type === 'DM' || channel.type === 'GROUP_DM') {
-      const recipientIds = (channel.member_ids ?? []).filter(
-        (id) => id !== input.sender_id,
+      const recipientIds = await withoutBlockers(
+        (channel.member_ids ?? []).filter((id) => id !== input.sender_id),
       );
       await Promise.allSettled(
         recipientIds.map((recipientId) =>
@@ -1805,8 +1823,9 @@ export class ChatService {
    * that. The `chat` bucket is private with no `storage.objects` policy, and
    * `chat_message_attachments` has RLS on with no policy, so a client cannot list
    * or fetch an attachment except through a URL minted here.
-   * `chat-read-surface-ledger.spec.ts` fails if either of those ever gains a
-   * policy.
+   * `chat-read-surface-ledger.spec.ts` fails on any migration that would open
+   * another way: a policy on the table, RLS off on it, a storage policy that
+   * could reach the bucket, or the bucket made public.
    */
   async listMessageAttachments(
     channelId: string,

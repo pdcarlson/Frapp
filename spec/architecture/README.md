@@ -332,7 +332,7 @@ Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_
 ## 8. Realtime (Supabase Realtime)
 
 - **Chat messages:** Clients subscribe to Postgres changes on `chat_messages` filtered by `channel_id`. New inserts (and edits/deletes) are pushed in real time.
-- **Reactions:** Clients subscribe to changes on `message_reactions` filtered by relevant message IDs. New reactions are pushed in real time.
+- **Reactions:** Clients hold one global subscription to changes on `chat_message_actions`, whose SELECT policy limits delivery to messages the member can read (`packages/chat-core/src/realtime-manager.ts`). New reactions are pushed in real time.
 - **Typing indicators:** Supabase Realtime Broadcast (ephemeral, not persisted). Clients send "typing" events to a channel-specific broadcast topic; other clients in the same channel receive them.
 - **Presence:** Supabase Realtime Presence tracks which users are online per chapter. Heartbeat-based (~30s timeout). Three states: Online, Idle, Offline.
 - **Fallback:** If Supabase Realtime cannot support a needed pattern, Socket.io via NestJS WebSocket gateway remains available. The goal is to minimize Socket.io usage.

@@ -84,7 +84,10 @@ describe('ChatService', () => {
   };
   // Nobody is blocked by default, so every existing case reads unmasked; the
   // masking tests below seed it.
-  let mockChatBlocks: { listBlockedUserIds: jest.Mock };
+  let mockChatBlocks: {
+    listBlockedUserIds: jest.Mock;
+    filterOutBlockers: jest.Mock;
+  };
   const baseMember = {
     id: 'mem-1',
     user_id: 'user-1',
@@ -225,6 +228,10 @@ describe('ChatService', () => {
 
     mockChatBlocks = {
       listBlockedUserIds: jest.fn().mockResolvedValue([]),
+      // Nobody has blocked anybody: the audience passes through untouched.
+      filterOutBlockers: jest.fn(
+        async (_chapterId: string, _senderId: string, ids: string[]) => ids,
+      ),
     };
 
     mockRbac = {
@@ -3647,7 +3654,103 @@ describe('ChatService', () => {
           priority: 'URGENT',
           category: 'announcements',
         }),
+        expect.objectContaining({ filterAudience: expect.any(Function) }),
       );
+    });
+
+    // ── Blocks (#2324) ───────────────────────────────────────────────
+    //
+    // This path writes an in-app row and pushes the body, independently of the
+    // chat push worker, so it owes the same audience filter the worker applies.
+
+    it('does not notify a DM recipient who has blocked the sender', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'GROUP_DM',
+        member_ids: ['user-1', 'user-2', 'user-blocker'],
+      });
+      mockChatBlocks.filterOutBlockers.mockResolvedValue(['user-2']);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello!',
+      });
+
+      expect(mockChatBlocks.filterOutBlockers).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+        ['user-2', 'user-blocker'],
+      );
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-2',
+        'ch-1',
+        expect.anything(),
+      );
+    });
+
+    it('drops blockers from the announcement fan-out', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        name: 'announcements',
+        type: 'PUBLIC',
+        is_read_only: true,
+      });
+      mockRbac.getEffectivePermissions.mockResolvedValue([
+        'announcements:post',
+      ]);
+      mockChatBlocks.filterOutBlockers.mockResolvedValue(['user-2']);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Important update!',
+      });
+
+      // The filter is handed to `notifyChapter`, which runs it on the roster it
+      // loads. Run it the way that method would.
+      const [, , options] = mockNotificationService.notifyChapter.mock
+        .calls[0] as unknown as [
+        string,
+        unknown,
+        { filterAudience: (ids: string[]) => Promise<string[]> },
+      ];
+      await expect(
+        options.filterAudience(['user-1', 'user-2', 'user-blocker']),
+      ).resolves.toEqual(['user-2']);
+      expect(mockChatBlocks.filterOutBlockers).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+        ['user-1', 'user-2', 'user-blocker'],
+      );
+    });
+
+    it('notifies nobody, and still sends, when the block list cannot be read', async () => {
+      // Fail closed on the notification, not on the message: the send has
+      // already committed, and every DM recipient going un-notified is the safe
+      // side of pushing a blocked member's words to the blocker.
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'DM',
+        member_ids: ['user-1', 'user-2'],
+      });
+      mockChatBlocks.filterOutBlockers.mockRejectedValue(new Error('pg down'));
+
+      const result = await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello!',
+      });
+
+      expect(result.message).toEqual(baseMessage);
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
     });
 
     // #1008: the fan-out pushes the message body to EVERY chapter member, so it
