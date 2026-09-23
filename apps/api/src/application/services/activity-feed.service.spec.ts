@@ -266,6 +266,33 @@ describe('ActivityFeedService', () => {
     expect(announcementIds).toEqual(['announcement:msg-live']);
   });
 
+  it("reads announcements through getMessages as the caller, so the mask is the caller's own list", async () => {
+    // The feed does no masking of its own (#2324): it serves whatever
+    // `ChatService.getMessages` masked for the viewer it was asked about. So the
+    // guarantee is exactly "it asks as the caller". Asking as anyone else, or
+    // reading `chat_messages` directly, would hand the caller a thread masked
+    // for someone else's block list, or for none.
+    mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
+    mockChatService.getMessages.mockResolvedValue([
+      messageFixture({
+        id: 'msg-masked',
+        content: '[message from a blocked member]',
+        sender_blocked: true,
+      }),
+    ]);
+
+    const result = await service.getFeed(CHAPTER_ID, USER_ID);
+
+    expect(mockChatService.getMessages).toHaveBeenCalledWith(
+      announcementsChannel.id,
+      CHAPTER_ID,
+      USER_ID,
+      expect.any(Object),
+    );
+    const announcement = result.find((item) => item.type === 'announcement');
+    expect(announcement?.body).toBe('[message from a blocked member]');
+  });
+
   it('over-fetches announcements so soft-deleted rows do not crowd out live ones within the cap', async () => {
     mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
     // 5 deleted, then 15 live — more live messages than PER_DOMAIN_LIMIT

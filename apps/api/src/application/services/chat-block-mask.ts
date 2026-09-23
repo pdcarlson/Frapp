@@ -46,6 +46,22 @@ export interface MaskedChatMessage extends ChatMessage {
 }
 
 /**
+ * Whether a row authored by `senderId` is withheld from a viewer whose block
+ * list is `blockedUserIds`.
+ *
+ * The one predicate every surface applies, so the rule that a `null` sender (an
+ * imported archive row) is never masked lives in one place. That is correct
+ * rather than a gap: blocks are keyed on `users.id`, so there is no user to have
+ * blocked.
+ */
+export function isFromBlockedSender(
+  senderId: string | null,
+  blockedUserIds: ReadonlySet<string>,
+): boolean {
+  return senderId !== null && blockedUserIds.has(senderId);
+}
+
+/**
  * Rebuild one message with every author-supplied field withheld.
  *
  * **An allowlist, not a denylist**, for the reason `redactBookmarkedMessage`
@@ -134,7 +150,7 @@ export function maskBlockedBookmarkMessage(
   message: BookmarkedMessage,
   blockedUserIds: ReadonlySet<string>,
 ): BookmarkedMessage {
-  if (message.sender_id === null || !blockedUserIds.has(message.sender_id)) {
+  if (!isFromBlockedSender(message.sender_id, blockedUserIds)) {
     return { ...message, sender_blocked: false };
   }
   return {
@@ -154,9 +170,7 @@ export function maskBlockedBookmarkMessage(
 /**
  * Apply `blockedUserIds` to `messages`, flagging every row.
  *
- * A message is masked when its `sender_id` is in the set. An imported archive
- * row (`sender_id: null`) is never masked, which is correct rather than a gap:
- * blocks are keyed on `users.id`, so there is no user to have blocked.
+ * A message is masked when {@link isFromBlockedSender} says so.
  *
  * Rows are rebuilt even when nothing is blocked. That is a deliberate
  * allocation: it is what makes `sender_blocked` mean "the server evaluated your
@@ -170,7 +184,7 @@ export function maskBlockedMessages(
   const blocked = new Set(blockedUserIds);
 
   return messages.map((message) =>
-    message.sender_id !== null && blocked.has(message.sender_id)
+    isFromBlockedSender(message.sender_id, blocked)
       ? maskMessage(message)
       : { ...message, sender_blocked: false },
   );

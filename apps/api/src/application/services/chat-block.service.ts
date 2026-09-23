@@ -35,10 +35,11 @@ import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
  * it is exported from `ChatBlockModule` and not owned by `ChatModule`:
  *
  * - {@link listBlockedUserIds}, the masking set, read by every surface that
- *   serves message content to a named viewer — `ChatService.getMessages` and
- *   `getPinnedMessages`, `SearchService.searchMessages`,
- *   `ChatBookmarkService.listBookmarks` — and served to clients by
- *   `GET /v1/chat/blocks` so they can mask the Realtime echo themselves.
+ *   serves message content to a named viewer — `ChatService.getMessages`,
+ *   `getPinnedMessages`, `listMessageAttachments` and `getReactions`,
+ *   `SearchService.searchMessages`, `ChatBookmarkService.listBookmarks` — and
+ *   served to clients by `GET /v1/chat/blocks` so they can mask the Realtime
+ *   echo themselves.
  * - {@link filterOutBlockers}, the audience filter, read by the push worker.
  *
  * `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` is the
