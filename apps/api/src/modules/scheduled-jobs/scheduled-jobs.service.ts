@@ -122,8 +122,10 @@ function formatUsd(cents: number): string {
  * action triggers either: it carries an accent-engine change to the chapters
  * already stored (#1165).
  *
- * Every sweep takes an explicit `now` so tests drive a fixed clock; the
- * `@Cron` handlers are thin wrappers that pass the real one.
+ * Every time-based sweep takes an explicit `now` so tests drive a fixed clock;
+ * the `@Cron` handlers are thin wrappers that pass the real one. The palette
+ * sweep takes none, because what it looks for is keyed on the engine version,
+ * not on time.
  *
  * **Idempotency.** Auto-absent delegates to `AttendanceService.markAutoAbsent`,
  * which already skips members holding an attendance record, so re-running it
@@ -183,6 +185,20 @@ export class ScheduledJobsService {
   }
 
   /**
+   * Hourly: an engine change reaches every stored chapter within an hour of the
+   * deploy that ships it. Nothing else is time-sensitive here, and once every
+   * row is current each tick is one query that returns nothing.
+   *
+   * Needs no catch of its own, by the test in the report-retention docblock
+   * below: the candidate read goes through `fetchAllPages`, and every per-row
+   * step sits inside a `try`.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleStalePaletteSweep(): Promise<void> {
+    await this.sweepStalePalettes();
+  }
+
+  /**
    * The only handler here that needs its own catch.
    *
    * Every other handler here reaches the database through `fetchAllPages`,
@@ -197,20 +213,6 @@ export class ScheduledJobsService {
    * takes the API process down, hourly. A sweep that cannot start must skip
    * this tick loudly, not restart the service.
    */
-  /**
-   * Hourly: an engine change reaches every stored chapter within an hour of the
-   * deploy that ships it. Nothing else is time-sensitive here, and once every
-   * row is current each tick is one query that returns nothing.
-   *
-   * Needs no catch of its own, by the test in the report-retention docblock
-   * below: the candidate read goes through `fetchAllPages`, and every per-row
-   * step sits inside a `try`.
-   */
-  @Cron(CronExpression.EVERY_HOUR)
-  async handleStalePaletteSweep(): Promise<void> {
-    await this.sweepStalePalettes();
-  }
-
   @Cron(CronExpression.EVERY_HOUR)
   async handleReportRetentionSweep(): Promise<void> {
     try {
@@ -231,8 +233,9 @@ export class ScheduledJobsService {
    * expired export within an hour of it expiring instead of leaving a
    * PII-bearing snapshot for up to a further day.
    *
-   * This is the one sweep here that needs no `scheduled_notification_dispatches`
-   * claim. The others guard against a *duplicate side effect* — two replicas
+   * One of two sweeps here that need no `scheduled_notification_dispatches`
+   * claim (the palette sweep is the other; its write is compare-and-set). The
+   * claiming sweeps guard against a *duplicate side effect* — two replicas
    * sending the same reminder twice. Deleting a storage object is idempotent:
    * Supabase's `remove()` reports success for a key that is already gone, so
    * the replica that loses the race simply deletes nothing. A plain `@Cron`

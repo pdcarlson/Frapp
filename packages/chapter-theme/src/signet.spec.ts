@@ -412,6 +412,12 @@ describe("deriveSignetPalette", () => {
  * without a bump reaches no stored chapter: exactly the silent staleness #1165
  * existed to end. This pin turns "remember to bump" into a failing test.
  *
+ * It proves as much as its corpus covers: the directory seeds, a hue sweep
+ * reaching every Radix scale family, and the input forms a stored seed takes
+ * (`FINGERPRINT_EXTRA_SEEDS`). A change that moves only a seed outside that set
+ * passes unbumped, so widen the corpus when you touch hue-specific or
+ * input-handling code.
+ *
  * When it fails because you changed the engine on purpose: bump
  * `SIGNET_ENGINE_VERSION` in `signet.ts` and add its fingerprint here as a new
  * entry. Don't overwrite the old entry to make the test pass: that ships the
@@ -420,15 +426,62 @@ describe("deriveSignetPalette", () => {
  * engine paints, and that is the bug.
  */
 const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
-  1: "c43cfaeabae84253f05378ecdc360da9656d60328361c881a9f8bebc27fe6438",
+  1: "b28ec5c9fc7519b9d6abf4445d9ac2d820ff550e59c4e3d15d9cfd066818635a",
 };
+
+/**
+ * What the fingerprint derives, beyond the directory corpus. The directory's 19
+ * seeds exercise the lift and the on-primary substitution, but no hue family
+ * near cyan, teal, jade, mint, sky, lime or yellow, and the generator snaps
+ * each seed to the nearest Radix scales, so a change to one of those scales
+ * alone moved no directory seed (#1165 review). Frozen hex, not computed here,
+ * so a `colorjs.io` upgrade cannot quietly move the inputs along with the
+ * outputs.
+ */
+const FINGERPRINT_EXTRA_SEEDS = [
+  // OKLCH hue sweep, every 30°, at L 0.55 C 0.15 and at L 0.82 C 0.12,
+  // gamut-mapped to sRGB.
+  "#B4446E",
+  "#B94739",
+  "#AE5600",
+  "#8F6C00",
+  "#677D00",
+  "#05893E",
+  "#008774",
+  "#008396",
+  "#0079BF",
+  "#5069C8",
+  "#8059BB",
+  "#A04C9A",
+  "#FFA3C1",
+  "#FFA696",
+  "#FDB171",
+  "#E2C162",
+  "#BAD074",
+  "#89DA9B",
+  "#5ADDC7",
+  "#50D9EF",
+  "#76CEFF",
+  "#A8C1FF",
+  "#D0B2FF",
+  "#F0A7E9",
+  // Input forms a stored seed can take: shorthand, lower case, no `#`, not a
+  // colour, and absent. A change in how any of them resolves changes what that
+  // chapter paints.
+  "#abc",
+  "#8b0000",
+  "8B0000",
+  "not-a-colour",
+  "",
+  null,
+] as const;
 
 /**
  * sha256 over what the engine persists for every corpus seed. Keys are sorted
  * because `jsonb` does not keep insertion order, so the order is not output.
  */
 const persistedOutputFingerprint = (): string => {
-  const corpus = ALL_SEEDS.map((seed) => {
+  const corpus = [...ALL_SEEDS, ...FINGERPRINT_EXTRA_SEEDS].map((seed) => {
     const { palette } = deriveSignetPalette(seed);
     return [
       seed,

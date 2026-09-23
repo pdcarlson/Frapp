@@ -73,9 +73,13 @@ export const HOUSE_SEED = "#DDB844";
  * save after it ships. Before #1165 nothing recorded which engine wrote a row,
  * and each change silently reached only the chapters that saved afterwards.
  *
- * Forgetting the bump is caught: `signet.spec.ts` pins a fingerprint of the
- * engine's output over the pinned seed corpus to this number, and a change in
- * the output fails there until a new version and its fingerprint are recorded.
+ * Forgetting the bump is caught for any seed in the fingerprint's corpus:
+ * `signet.spec.ts` pins a hash of the engine's output to this number, over the
+ * directory seeds, a hue sweep reaching every Radix scale family the generator
+ * snaps to, and the input forms a stored seed can take. A change there fails
+ * until a new version and its fingerprint are recorded. A change that moves
+ * only a seed outside the corpus is not caught, so widen the corpus when you
+ * touch hue-specific or input-handling code.
  */
 export const SIGNET_ENGINE_VERSION = 1;
 

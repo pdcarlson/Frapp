@@ -26,6 +26,12 @@
 -- existed is indistinguishable from one that never picked, and keeps house
 -- gold. That is the one case this cannot recover.
 --
+-- The demo chapters `scripts/demo/demo-seed.sql` inserted before this change
+-- match too: they carry `accent_color` `#EFB63B` (the brand house gold) and no
+-- branding. They are repaired to that accent like any other, which is also what
+-- mobile already painted for them; the seed now writes both stores itself, so a
+-- demo chapter seeded after this migration ends up the same.
+--
 -- `branding.colors` is created when absent. A row whose `colors` holds
 -- something other than an object is left alone rather than overwritten; the
 -- API never writes one.

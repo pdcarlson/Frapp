@@ -141,9 +141,10 @@ export function chapterPaletteColumns(build: ChapterPaletteBuild): {
  * Logs the by-construction problems a build can report — never throws,
  * since the palette written is still valid either way (#840, §8).
  *
- * Shared by all three writers so a change to the wording or logging strategy
- * has one place to land — this file's own docstring above names the
- * three-shapes drift that duplicating it independently caused once already.
+ * Shared by the three request-path writers and the stale-palette sweep, so a
+ * change to the wording or logging strategy has one place to land — this
+ * file's own docstring above names the three-shapes drift that duplicating it
+ * independently caused once already.
  * `where` says which chapter: `for chapter <id>`, or `during onboarding`, which
  * builds the palette before the chapter has an id. (Onboarding used to log only
  * `invalidSeed` for that reason, so a failed contrast or fill check there went
