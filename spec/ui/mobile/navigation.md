@@ -85,12 +85,12 @@ The first matching row wins.
 | Authenticated state | Destination |
 | --- | --- |
 | No chapter yet, and the `active_chapter_id` claim is still being read | `hold` |
-| Chapters list still loading (first read, before it has answered or failed) | `hold` |
+| Chapters list still loading (first read, its retry included, even paused offline) | `hold` |
 | **Chapters read succeeded:** zero memberships | `join` (s02) |
-| A member (in the last chapters list, even if a refetch since failed), the first Terms read still loading | `hold` |
+| A member (in the last chapters list, even if a refetch since failed), the first Terms read still loading (its retry included) | `hold` |
 | A member (likewise) who hasn't accepted the current Terms (#2302) | `terms` (`(auth)/terms.tsx`) |
 | **Chapters read succeeded:** active membership has `has_completed_onboarding === false` | `welcome` (s03) |
-| Otherwise: onboarded, or the chapters read failed in any other case (fail open), or the first Terms read failed. A read that failed with no answer keeps reading as failed while it retries, so it doesn't hold again; a failed Terms refetch keeps its cached answer | `tabs` |
+| Otherwise: onboarded, or the chapters read failed in any other case (fail open), or the first Terms read failed. A read that failed (retries spent) with no answer keeps reading as failed while it refetches, so it doesn't hold again; a failed Terms refetch keeps its cached answer | `tabs` |
 
 `terms` comes before `welcome` so a new member agrees before they can post. The server decides it (`GET /v1/users/me/legal-acceptance`), never a version compiled into the binary ([`../../behavior/legal.md`](../../behavior/legal.md#acceptance-record) § Acceptance record). While the gate reads `terms`, `/create-chapter` is also permitted, since the wizard carries the same checkbox.
 

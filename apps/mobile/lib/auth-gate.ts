@@ -53,14 +53,15 @@
  *
  * How each read fails (`toAuthGateInput`):
  *
- * - A read that has failed and has no answer fails open to tabs, and keeps
- *   reading as failed while it retries, so an outage can't trap every member
- *   and a retry can't blank the screen.
+ * - A read that has failed, retries spent, with no answer, fails open to tabs,
+ *   and keeps reading as failed while it refetches, so an outage can't trap
+ *   every member and a later refetch can't blank the screen again. A first
+ *   read still holds through its own retry, even one paused offline.
  * - A Terms refetch that fails keeps its last answer (`gateReadStatus`).
- * - A chapters refetch that fails drops the cached list instead, so a member
- *   whose refetch after a join or a finished first-run fails isn't pulled back
- *   to join or welcome. The exception is a member the last list showed: the
- *   Terms rules still apply to them (`resolveAuthGate`).
+ * - A chapters refetch that fails sends no one to join or welcome from its
+ *   cached list, so a member whose refetch after a join or a finished
+ *   first-run fails isn't pulled back. A member that list shows still gets
+ *   the Terms rules (`resolveAuthGate`).
  */
 import { needsFirstRun } from "./onboarding/membership";
 
@@ -106,13 +107,17 @@ export type AuthGateInput = {
 /**
  * A gate read (the chapters list or the Terms status) as the gate sees it.
  *
- * `pending` means the read has neither answered nor failed yet, and it is the
- * only state that holds. TanStack puts a query with no data back to
- * `pending` on every refetch, even after it failed (`fetchState` in
+ * `pending` means the read has neither answered nor spent its retries yet,
+ * and it is the only state that holds. TanStack puts a query with no data
+ * back to `pending` on every refetch, even after it failed (`fetchState` in
  * `@tanstack/query-core`), so a read that ever failed (`hasFailed`, from
- * `errorUpdateCount`) stays `error` while it retries. Otherwise every
- * foreground after an outage would blank the `(auth)` screens again, and an
- * offline retry, which pauses, would keep them blank until reconnect.
+ * `errorUpdateCount`, which counts only a failure with retries spent) stays
+ * `error` while it refetches. Otherwise every foreground after an outage
+ * would blank the `(auth)` screens again, and offline, where the refetch's
+ * retry pauses, keep them blank until reconnect. A first read's own retry
+ * still holds, paused or not, as the chapters read's first read always has:
+ * failing open on a first failed attempt would open the tabs before `join`,
+ * or before a member's Terms answer, on a one-off blip.
  *
  * `answerFirst` is for the Terms read. TanStack keeps a query's `data` when a
  * background refetch fails but flips it to `isError`, so reading `isError`
