@@ -8,8 +8,8 @@
 
 - **Visual truth:** [`reference/signet-design-system.dc.html`](reference/signet-design-system.dc.html). Panel 4h is the written token spec this file transcribes; panels 4a–4g render the same tokens. [`reference/canvas-screens.dc.html`](reference/canvas-screens.dc.html) is the screen-level reference. Where the Canvas header and panel 4h disagree, **the Canvas header wins** — the only such case is radius (§8).
 - **Scope:** these tokens govern **Signet surfaces** — the mobile app and the web dashboard (`apps/web` ships them via `packages/theme/src/signet.css` since the #920 shell cutover), plus the landing site. The landing's token cutover has **merged** ([#2366](https://github.com/pdcarlson/Frapp/issues/2366), a slice of [#2364](https://github.com/pdcarlson/Frapp/issues/2364)): `apps/landing` imports `packages/theme/src/signet.css` and the legacy bone/bronze/ink tokens are off every shipping surface. The composition followed in slice 2 ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)) and the polish in slice 3 ([#2368](https://github.com/pdcarlson/Frapp/issues/2368)), so that epic's build slices are all merged and what is left of it is owner decisions rather than work. The two systems MUST NOT mix on one surface, and there is no longer a surface on the other one.
-- **Naming:** prose says Signet; code identifiers and package names stay `frapp` / `@repo/*` until the deferred repo rename.
-- Brand identity (house gold, the "S" mark, direction) is owned by [`brand-identity.md`](../brand-identity.md). Per-chapter accent generation is owned by [`accent-engine.md`](accent-engine.md). Component-level application of these tokens is owned by [`components.md`](components.md).
+- **Naming:** "Signet" is this design system's internal name; the product is Frapp. The binding rule is [`brand-identity.md` § 1](../brand-identity.md#1-identity).
+- Brand identity (house gold, the mark, direction) is owned by [`brand-identity.md`](../brand-identity.md). Per-chapter accent generation is owned by [`accent-engine.md`](accent-engine.md). Component-level application of these tokens is owned by [`components.md`](components.md).
 
 ---
 

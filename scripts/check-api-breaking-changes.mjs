@@ -27,7 +27,7 @@
  * ADVISORY on purpose. Every consumer of this API — `apps/web`, `apps/mobile`
  * — lives in this repo and regenerates from the same commit, so a breaking
  * change ships atomically with the clients that adapt to it. The project is
- * also mid-rebuild (Frapp → Signet), where removing endpoints is the intended
+ * also mid-rebuild (legacy Frapp → Signet design system), where removing endpoints is the intended
  * work, not an accident. A hard gate would therefore fire constantly on correct
  * changes and need an escape hatch immediately.
  *
