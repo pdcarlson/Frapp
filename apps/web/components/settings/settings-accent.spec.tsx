@@ -137,7 +137,7 @@ const writingRow = (label: string) => {
     .split("\n")
     .find((line) => line.startsWith(`| ${label} |`));
   if (!row) throw new Error(`writing.md has no "${label}" row`);
-  const body = row.match(/`([^`]*)` \|$/);
+  const body = row.match(/`([^`]*)`[^`|]*\|$/);
   if (!body?.[1]) throw new Error(`the "${label}" row has no body cell`);
   return body[1];
 };
@@ -148,7 +148,7 @@ const warning = (condition: string) => {
   if (at === -1) throw new Error(`no warning is gated on ${condition}`);
   const block = settingsPage
     .slice(at)
-    .match(/<p className="text-xs text-warning">([\s\S]*?)<\/p>/);
+    .match(/<p\s+className=(?:"[^"]*"|\{[\s\S]*?\})\s*>([\s\S]*?)<\/p>/);
   if (!block?.[1]) throw new Error(`the ${condition} warning has no paragraph`);
   return collapse(
     block[1]
@@ -172,9 +172,13 @@ describe("the preview warnings say what the preview does", () => {
     );
   });
 
-  it("renders the not-a-hex-code warning its writing.md row states", () => {
-    expect(warning("accentDraftNotHex")).toBe(
-      writingRow("Accent not a hex code"),
+  it("renders the hex-needed hint its writing.md row states", () => {
+    // The row's body cell carries a styling note after the copy.
+    expect(writingRow("Accent hex needed")).toBe(
+      "Enter a hex code like #8B0000 to save an accent color.",
+    );
+    expect(warning("accentDraftUnsavable")).toBe(
+      writingRow("Accent hex needed"),
     );
   });
 

@@ -260,7 +260,10 @@ describe("the accent save sends the colour the preview shows", () => {
 
   const saveButton = () =>
     screen.getByRole("button", { name: /save accent color/i });
-  const notHex = () => screen.queryByText(/use a hex code like #8B0000/i);
+  const hexNeeded = () =>
+    screen.queryByText(
+      /enter a hex code like #8B0000 to save an accent color/i,
+    );
 
   it("saves a shorthand or padded hex as the #RRGGBB it previewed", async () => {
     const user = userEvent.setup();
@@ -291,7 +294,7 @@ describe("the accent save sends the colour the preview shows", () => {
       await user.clear(hex);
       await user.type(hex, draft);
       expect(saveButton()).toBeDisabled();
-      expect(notHex()).toBeInTheDocument();
+      expect(hexNeeded()).toHaveClass("text-warning");
       // The preview is the fallback gold there, which its ink clears, so the
       // label-ink warning never promises what a save that can't happen picks.
       expect(screen.queryByText(/saving picks a label color/i)).toBeNull();
@@ -300,19 +303,21 @@ describe("the accent save sends the colour the preview shows", () => {
     await user.clear(hex);
     await user.type(hex, "#8B0000");
     expect(saveButton()).toBeEnabled();
-    expect(notHex()).toBeNull();
+    expect(hexNeeded()).toBeNull();
   });
 
-  it("disables Save on an empty field without warning about it", async () => {
-    // What a chapter with no stored accent opens to: the placeholder shows the
-    // format, and there is no colour for "this color" to mean.
+  it("disables Save on an empty field and says what to enter, unstyled as a warning", async () => {
+    // What a chapter with no stored accent opens to, or a cleared input: the
+    // preview shows the fallback gold, so without the hint a disabled Save
+    // would look like a colour that can't be saved for no stated reason.
     const user = userEvent.setup();
     render(<SettingsPage />);
     await user.click(screen.getByRole("tab", { name: /accent/i }));
     await user.clear(screen.getByLabelText(/accent color hex value/i));
 
     expect(saveButton()).toBeDisabled();
-    expect(notHex()).toBeNull();
+    expect(hexNeeded()).toHaveClass("text-muted-foreground");
+    expect(hexNeeded()).not.toHaveClass("text-warning");
   });
 });
 

@@ -245,7 +245,7 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | No chapter | `Chapter settings` | `Select an active chapter to edit its branding, semester state, or billing configuration.` |
 | Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can start a new semester.` |
-| Accent not a hex code | — | `Use a hex code like #8B0000 to save this color.` |
+| Accent hex needed | — | `Enter a hex code like #8B0000 to save an accent color.` (muted on an empty field, warning once something unsavable is typed) |
 | Accent preview fallback | — | `This color is hard to read on the card, so the preview shows <hex> instead. Saving keeps the color you entered.` |
 | Accent label illegible | — | `Label text on this preview reads at <n>:1, under the 4.5:1 minimum. Saving picks a label color that clears it.` |
 | Accent server contrast disclosure | — | `<Accent text on the app background\|Accent text on its own tinted background\|Text on the accent's solid fill> reads at <n>:1, under the 4.5:1 minimum. Try a lighter or darker shade of this hue and save again.` |
