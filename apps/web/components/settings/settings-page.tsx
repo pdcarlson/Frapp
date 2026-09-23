@@ -23,7 +23,7 @@ import {
   type PatchChapterConfig,
 } from "@repo/validation";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
-import { AA_NORMAL, contrastRatio, parseHex } from "@repo/color";
+import { AA_NORMAL, contrastRatio, normalizeHex, parseHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { titleCase, vocab } from "@/lib/vocabulary";
 import { Button } from "@/components/ui/button";
@@ -429,6 +429,21 @@ function SettingsPageContent() {
     background: signetDarkTokens.color.surface.card,
     fallbackAccent: signetDarkTokens.color.gold.house,
   });
+  // What Save sends: the draft as the `#RRGGBB` the API's DTO requires. The
+  // resolver above already reads a 3-digit shorthand or a padded hex as that
+  // colour, so saving the same normalization keeps the preview, the warnings
+  // and the save describing one colour. Sending the raw draft let `#08E`
+  // preview cleanly and then fail the save with a 400.
+  const accentDraftHex = normalizeHex(accentDraft);
+  // Empty, blank or not a hex colour: Save is disabled and the tab says why.
+  // An empty draft counts: it sends no `accent_color`, which the API treats as
+  // "no change" and answers with success, so the toast would claim a save that
+  // wrote nothing.
+  const accentDraftUnsavable = !accentDraftHex;
+  // A well-formed colour that fails contrast on the card. `fallbackApplied`
+  // alone is also true for an empty or malformed draft, where "saving keeps the
+  // color you entered" would be false.
+  const accentPreviewFallsBack = accent.reason === "insufficient_contrast";
 
   /*
     The on-accent tone for the *draft* colour, and whether it is legible.
@@ -528,22 +543,19 @@ function SettingsPageContent() {
 
   async function saveAccent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!accentDraftHex) return;
     try {
       const result = await updateChapter.mutateAsync({
-        accent_color: accentDraft || undefined,
+        accent_color: accentDraftHex,
       });
       setAccentContrastWarning(result?.failedContrastChecks ?? null);
       toast({
         title: "Accent color saved",
-        description: "Buttons, chat tags, and branded reports use it.",
       });
     } catch (error) {
       toast({
         title: "Couldn't save accent color",
-        description: getErrorMessage(
-          error,
-          "Retry or check the accent color contrast.",
-        ),
+        description: getErrorMessage(error, "Retry, or check your connection."),
         variant: "destructive",
       });
     }
@@ -1085,7 +1097,7 @@ function SettingsPageContent() {
                     <Input
                       type="color"
                       aria-label="Accent color picker"
-                      value={accentDraft || accent.resolvedAccent}
+                      value={accentDraftHex || accent.resolvedAccent}
                       onChange={(event) =>
                         updateAccentDraft(event.target.value)
                       }
@@ -1135,11 +1147,16 @@ function SettingsPageContent() {
                       Preview
                     </div>
                   </div>
-                  {accent.fallbackApplied ? (
+                  {accentDraftUnsavable ? (
                     <p className="text-xs text-warning">
-                      The color you entered didn&apos;t meet contrast
-                      requirements. Using the safe fallback{" "}
-                      {accent.resolvedAccent}.
+                      Use a hex code like #8B0000 to save this color.
+                    </p>
+                  ) : null}
+                  {accentPreviewFallsBack ? (
+                    <p className="text-xs text-warning">
+                      This color is hard to read on the card, so the preview
+                      shows {accent.resolvedAccent} instead. Saving keeps the
+                      color you entered.
                     </p>
                   ) : null}
                   {/*
@@ -1148,22 +1165,22 @@ function SettingsPageContent() {
                     card*; this one when text is illegible *on the accent* —
                     which is what a primary button actually is, and what this
                     card's own description promises the accent will be used
-                    for. `#0080FD` passes the first and fails this one, so
-                    without it an admin ships unreadable button labels having
-                    been told the colour was fine.
+                    for. `#0080FD` passes the first and fails this one. Both
+                    check the draft preview only: the saved palette's label
+                    (`on-primary`) always clears 4.5:1 (accent-engine.md §8), so
+                    neither predicts what saving paints (#2543).
                   */}
                   {previewInkFailsAA ? (
                     <p className="text-xs text-warning">
-                      Label text on this color reads at{" "}
+                      Label text on this preview reads at{" "}
                       {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
-                      Buttons and name tags using it will be hard to read — pick
-                      a lighter or darker shade.
+                      Saving picks a label color that clears it.
                     </p>
                   ) : null}
                   {/*
-                    A third, independent question from the two above — those
-                    are client-side checks of the unsaved draft against a
-                    single fixed backdrop each. This is the server's own §8
+                    Independent of the draft checks above, which run client-side
+                    on the unsaved draft (the two contrast ones against a single
+                    fixed backdrop each). This is the server's own §8
                     verdict on the colour actually saved, generated through
                     the real Signet pipeline. §8 forbids a runtime
                     substitution here, so a failing save still succeeds — this
@@ -1181,7 +1198,11 @@ function SettingsPageContent() {
                 <CardFooter className="flex justify-end">
                   <Button
                     type="submit"
-                    disabled={!canManage || updateChapter.isPending}
+                    disabled={
+                      !canManage ||
+                      updateChapter.isPending ||
+                      accentDraftUnsavable
+                    }
                   >
                     {updateChapter.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
