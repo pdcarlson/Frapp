@@ -268,7 +268,7 @@ against the old background and measuring the result against the *new* one, every
 Nothing in `supabase/` bakes in a derived palette either — the directory seed stores raw seeds, and
 grepping the old derived hexes across `supabase/` returns nothing. *Corrected 2026-09-23:* this read
 "Accessibility is not at risk", but it measured the text roles only. The `accent-primary` fill has
-its own 3:1 floor, and a stale row can hold a fill under it;
+its own floor ([`accent-engine.md` § 8](../design-system/accent-engine.md#8-validation)), and a stale row can hold a fill under it;
 [`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status) owns which rows.
 
 **For a chapter that never picked an accent, what is wrong is cosmetic and visible:** its row is derived
@@ -276,14 +276,18 @@ from `#F2B72E`, so it renders `--primary: #F2B72E` beside a mark that was drawn 
 Settings hex placeholder that now reads `#DDB844` — three nearly-but-not-quite matching golds on one
 screen,
 indefinitely, until something rewrites the row. A backfill was already outstanding for rows written
-before the map existed; this widens it.
+before the map existed; this widens it. *Corrected 2026-09-23:* this read "What is wrong is
+cosmetic and visible", unqualified. That holds for these house-gold rows, and for any stale row whose
+stored fill still clears its floor; a row whose fill does not is the accessibility case
+[`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status) describes.
 
 A SQL backfill cannot regenerate these (the derivation is TypeScript, via the vendored Radix
 generator), so the options are a recompute pass through the API or clearing the Signet keys on rows
 that never carried a custom accent so they fall through to the CSS defaults. Precedent for the
 shape: `supabase/migrations/20260814120000_backfill_chapter_accent_color_from_branding.sql`.
-*Corrected 2026-09-23:* only the recompute reaches a chapter that picked an accent, whose stored
-fill can be under 3:1 ([`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status)), so clearing keys can complement it but not
+*Corrected 2026-09-23:* this offered the two as alternatives ("a recompute pass ... or clearing the
+Signet keys"), but only the recompute reaches a chapter that picked an accent, whose stored fill can
+be under its floor ([`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status)), so clearing keys can complement it but not
 replace it.
 
 ### L-03 — Danger text on `--popover`
