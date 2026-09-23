@@ -93,8 +93,24 @@ while IFS=$'\\t' read -r pattern file fail_first; do
   n=$((n + 1))
   [ -n "$pattern" ] || continue
   if [[ "$path" =~ $pattern ]]; then
-    if [ -n "$fail_first" ]; then
-      count_file="$FIXTURES/.route-$n"
+    count_file="$FIXTURES/.route-$n"
+    # Errors in gh's own words: gh 2.63.0 prints the body on stdout and the
+    # status on stderr. HTTP404 always fails. HTTP429 fails once, then serves
+    # the fixture named in the third column.
+    if [ "$file" = HTTP404 ]; then
+      echo '{"message":"Not Found","status":"404"}'
+      echo 'gh: Not Found (HTTP 404)' >&2
+      exit 1
+    fi
+    if [ "$file" = HTTP429 ]; then
+      if [ ! -f "$count_file" ]; then
+        echo 1 > "$count_file"
+        echo '{"message":"API rate limit exceeded","status":"429"}'
+        echo 'gh: API rate limit exceeded (HTTP 429)' >&2
+        exit 1
+      fi
+      file="$fail_first"
+    elif [ -n "$fail_first" ]; then
       count=$(cat "$count_file" 2>/dev/null || echo 0)
       if [ "$count" -lt "$fail_first" ]; then
         echo $((count + 1)) > "$count_file"
@@ -102,13 +118,6 @@ while IFS=$'\\t' read -r pattern file fail_first; do
         echo 'gh: Server Error (HTTP 502)' >&2
         exit 1
       fi
-    fi
-    # A 4xx, in gh's own words (gh 2.63.0 prints the body on stdout, the status
-    # on stderr).
-    if [ "$file" = HTTP404 ]; then
-      echo '{"message":"Not Found","status":"404"}'
-      echo 'gh: Not Found (HTTP 404)' >&2
-      exit 1
     fi
     [ -f "$FIXTURES/$file" ] || exit 1
     if [ -n "$expr" ]; then jq -r "$expr" "$FIXTURES/$file"; else cat "$FIXTURES/$file"; fi
@@ -128,7 +137,7 @@ function run({ onStale, fixtures, routes }) {
     writeFileSync(join(dir, name), JSON.stringify(body));
   }
   writeFileSync(join(dir, "routes.tsv"), routes.map((route) => route.join("\t")).join("\n") + "\n");
-  for (const f of ["env", "output", "calls"]) writeFileSync(join(dir, f), "");
+  for (const f of ["env", "output", "calls", "sleeps"]) writeFileSync(join(dir, f), "");
 
   const result = spawnSync("bash", [scriptPath], {
     encoding: "utf8",
@@ -145,6 +154,7 @@ function run({ onStale, fixtures, routes }) {
       FIXTURES: dir,
       ROUTES: join(dir, "routes.tsv"),
       GH_CALLS: join(dir, "calls"),
+      SLEEPS: join(dir, "sleeps"),
     },
   });
   const env = Object.fromEntries(
@@ -160,6 +170,7 @@ function run({ onStale, fixtures, routes }) {
     env,
     output: readFileSync(join(dir, "output"), "utf8"),
     calls: readFileSync(join(dir, "calls"), "utf8").split("\n").filter(Boolean),
+    sleeps: readFileSync(join(dir, "sleeps"), "utf8").split("\n").filter(Boolean),
   };
 }
 
@@ -197,8 +208,9 @@ describe("download-migration-snapshot find step", { skip }, () => {
     spawnSync("mkdir", ["-p", binDir]);
     writeFileSync(join(binDir, "gh"), FAKE_GH);
     chmodSync(join(binDir, "gh"), 0o755);
-    // Retries back off with `sleep`; the stub makes them instant.
-    writeFileSync(join(binDir, "sleep"), "#!/usr/bin/env bash\nexit 0\n");
+    // Retries back off with `sleep`; the stub makes them instant and logs each
+    // delay to SLEEPS, so the backoff itself is asserted.
+    writeFileSync(join(binDir, "sleep"), '#!/usr/bin/env bash\necho "$1" >> "$SLEEPS"\nexit 0\n');
     chmodSync(join(binDir, "sleep"), 0o755);
     scriptPath = join(workspace, "find.sh");
     writeFileSync(scriptPath, extractFindScript());
@@ -338,6 +350,23 @@ describe("download-migration-snapshot find step", { skip }, () => {
     assert.equal(r.status, 1);
     assert.match(r.stdout, /::error::Could not read refs\/heads\/main/);
     assert.equal(r.calls.filter((path) => path.endsWith("/git/ref/heads/main")).length, 3);
+    // lib/http.mjs's backoff: 1s, then 5s, and no sleep after the last attempt.
+    assert.deepEqual(r.sleeps, ["1", "5"]);
+  });
+
+  it("retries a 429, which is a rate limit, not a wrong request", () => {
+    const r = run({
+      onStale: "use",
+      fixtures: PUBLISHER,
+      routes: [
+        ["/git/ref/heads/main$", "HTTP429", "main-ref.json"],
+        ...PUBLISHER_ROUTES.slice(1),
+        ["/deploy-api\\.yml/runs", "none.json"],
+      ],
+    });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.calls.filter((path) => path.endsWith("/git/ref/heads/main")).length, 2);
+    assert.deepEqual(r.sleeps, ["1"]);
   });
 
   it("use: a Deploy API run from another repository (a fork's `main`) is not counted", () => {

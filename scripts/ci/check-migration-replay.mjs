@@ -542,6 +542,24 @@ function snapshotSource(path) {
   }
 }
 
+/**
+ * Where production's applied state comes from, from the CLI's flags. Exported
+ * so the wiring is tested.
+ *
+ * The live read, which `deploy-production.yml` runs at deploy time, uses
+ * `resilientFetch`, as `runReplayGate`'s own default does: a timeout and three
+ * attempts, so one transient Management API error doesn't fail a production
+ * deploy. It used to pass plain `fetch`, which overrode that default.
+ */
+export function replaySource({ appliedFrom, snapshotPath, env = process.env } = {}) {
+  if (snapshotPath) return snapshotSource(snapshotPath);
+  if (appliedFrom) {
+    // A recorded state needs no credentials; the fetch is stubbed out.
+    return { fetchImpl: fetchFromFile(appliedFrom), accessToken: "offline", projectRef: "offline" };
+  }
+  return { fetchImpl: resilientFetch, accessToken: env.SUPABASE_ACCESS_TOKEN, projectRef: env.SUPABASE_PROJECT_REF };
+}
+
 const isDirectRun = process.argv[1] && process.argv[1].endsWith("check-migration-replay.mjs");
 if (isDirectRun) {
   const appliedFrom = getArg("--applied-from");
@@ -550,14 +568,7 @@ if (isDirectRun) {
     console.error("Error: --applied-from and --snapshot are two sources for one answer; pass one.");
     process.exit(2);
   }
-  const source = snapshotPath
-    ? snapshotSource(snapshotPath)
-    : {
-        fetchImpl: appliedFrom ? fetchFromFile(appliedFrom) : fetch,
-        // A recorded state needs no credentials; the fetch is stubbed out.
-        accessToken: appliedFrom ? "offline" : process.env.SUPABASE_ACCESS_TOKEN,
-        projectRef: appliedFrom ? "offline" : process.env.SUPABASE_PROJECT_REF,
-      };
+  const source = replaySource({ appliedFrom, snapshotPath });
   process.exit(
     await runReplayGate({
       ...source,

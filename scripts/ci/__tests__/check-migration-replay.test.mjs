@@ -1,14 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   decideOutcome,
   describePartition,
   guessFailedFile,
   partitionMigrations,
+  replaySource,
   runReplayGate,
 } from "../check-migration-replay.mjs";
 import { readLocalMigrations } from "../check-migration-drift.mjs";
+import { resilientFetch } from "../lib/http.mjs";
 import { buildSnapshot, snapshotFetch } from "../lib/migration-snapshot.mjs";
 import { makeFetchMock } from "./helpers.mjs";
 
@@ -348,4 +353,26 @@ test("production's state from a published snapshot blocks a back-dated migration
     },
   });
   assert.equal(code, 1);
+});
+
+test("the CLI's live read uses resilientFetch, so one transient error doesn't fail a production deploy", () => {
+  // deploy-production.yml runs this script live. The CLI used to pass plain
+  // `fetch`, overriding runReplayGate's resilientFetch default: no timeout and
+  // a single attempt on the one Management API read a deploy depends on.
+  const live = replaySource({ env: { SUPABASE_ACCESS_TOKEN: "token", SUPABASE_PROJECT_REF: "ref" } });
+  assert.equal(live.fetchImpl, resilientFetch);
+  assert.equal(live.accessToken, "token");
+  assert.equal(live.projectRef, "ref");
+
+  // A recorded state is offline and needs neither.
+  const dir = mkdtempSync(join(tmpdir(), "replay-source-"));
+  try {
+    const path = join(dir, "applied.json");
+    writeFileSync(path, JSON.stringify([]));
+    const recorded = replaySource({ appliedFrom: path, env: {} });
+    assert.notEqual(recorded.fetchImpl, resilientFetch);
+    assert.equal(recorded.accessToken, "offline");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
