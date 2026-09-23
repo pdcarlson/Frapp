@@ -314,8 +314,8 @@ URL:
 | `chat-archive` (Discord import media) | `20260823124000_chat_archive_bucket.sql` | images, video, audio, documents, archives — **no SVG** |
 
 Clients never read a bucket directly; the API issues short-lived signed URLs after running the same
-route guards. Every bucket carries a MIME allowlist and a size cap. The table above is this document's
-summary of them; the declarations, the exact byte values and the reasoning behind each are owned once
+route guards. Every bucket carries a MIME allowlist and a size cap. The table above summarizes the
+allowlists; the declarations, the size caps and the reasoning behind each are owned once
 by [`spec/architecture/README.md`](../../../spec/architecture/README.md) § 7 — change them there, and
 keep this table to what a security reader needs. Note the five dashboard-created buckets were only
 brought into IaC by #690 — their pre-migration public/private state is tracked in #770.

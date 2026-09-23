@@ -210,7 +210,7 @@ unrecognized kind is rewritten to `text` upstream, so the row renders as its `co
 user-visible outcome, by a different path.
 
 That matters because **`CHAT_MESSAGE_KINDS` is declared in three places** and adding a kind means
-adding it to all three. Which three, and how each fails when missed — one of them silently — is
+adding it to all three. Which three, and how each fails when missed (two of them silently), is
 owned by [`README.md` § Message Kinds and Actions](README.md#message-kinds-and-actions).
 
 ## Posting

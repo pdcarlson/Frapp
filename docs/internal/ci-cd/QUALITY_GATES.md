@@ -148,8 +148,8 @@ the runner did.
 
 So before bumping this major, compare its `engines` against `node-version:` in
 [`ci.yml`](../../../.github/workflows/ci.yml) and against `FROM node:` in
-[`apps/api/Dockerfile`](../../../apps/api/Dockerfile). Those move together with the root
-`package.json` `engines.node`; the current floor is stated once, in
+[`apps/api/Dockerfile`](../../../apps/api/Dockerfile). Those pin only the Node major; the root
+`package.json` `engines.node` pins the exact floor, which is stated once, in
 [`spec/environments/README.md` § Prerequisites](../../../spec/environments/README.md#prerequisites).
 
 `expo-server-sdk` 7.x was the same class of engines mismatch with a different symptom, and the Node

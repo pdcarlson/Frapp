@@ -92,7 +92,7 @@ dashboard (`development` / `preview` / `production`) or a non-secret `eas.json` 
 entry. **This is not limited to `EXPO_PUBLIC_*`:** `SENTRY_AUTH_TOKEN` is build-time only and never
 bundled, yet a Release build *fails* without it in EAS — see
 [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#appsmobile-expo--eas) § apps/mobile. An Infisical entry for
-that name serves `apps/api` / `apps/web`, which do sync; it never reaches EAS. The six live syncs are Render + Vercel only (next section).
+that name serves `apps/api` / `apps/web`, which do sync; it never reaches EAS. The live syncs are Render + Vercel only (next section).
 
 ### 5. Configure Secret Syncs
 
@@ -301,9 +301,9 @@ The deploy workflows inject these from Infisical at runtime through [`infisical-
 
 #### Troubleshooting: `Deploy API` fails with `401 Invalid credentials`
 
-`Infisical/secrets-action` reports the same `401 Invalid credentials` whether the bootstrap secrets are **absent** or **rejected**. To tell those apart, every injection runs a `Verify Infisical credentials are configured` preflight first. That preflight is no longer written in the workflow: it is the first step of the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml) composite action, so it now runs at **every** injection site (eleven at the cutover, fifteen since the production backup jobs in #1435) rather than the nine that happened to carry a copy.
+`Infisical/secrets-action` reports the same `401 Invalid credentials` whether the bootstrap secrets are **absent** or **rejected**. To tell those apart, every injection runs a `Verify Infisical credentials are configured` preflight first. That preflight is no longer written in the workflow: it is the first step of the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml) composite action, so it now runs at **every** injection site rather than the nine that happened to carry a copy. The sites are the `EXPECTED` roster in [`infisical-secrets-action.test.mjs`](../../../scripts/ci/__tests__/infisical-secrets-action.test.mjs), which fails when a call site is added or removed without it.
 
-The table below describes the fourteen sites that **fail** on a missing credential (every site, including the four production backup injections, uses the action's default `error` mode). **`staging-conformance.yml` is the exception** and reads differently: it passes `on-missing-credentials: warn`, because that workflow exists to *report* credential drift rather than die of it. There the preflight step stays green and emits a `::warning::` naming the missing secret, so a missing credential shows up as a **warning above an otherwise-normal 401**, not as a failed step. Read the warning before concluding from row 3 that the credentials were rejected.
+The table below describes the sites that **fail** on a missing credential, which is every site but one: they use the action's default `error` mode. **`staging-conformance.yml` is the exception** and reads differently: it passes `on-missing-credentials: warn`, because that workflow exists to *report* credential drift rather than die of it. There the preflight step stays green and emits a `::warning::` naming the missing secret, so a missing credential shows up as a **warning above an otherwise-normal 401**, not as a failed step. Read the warning before concluding from row 3 that the credentials were rejected.
 
 | Preflight result                       | Meaning                                                                                          | Fix                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
