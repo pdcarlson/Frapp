@@ -44,12 +44,13 @@ the corpus — casual channels are not indexed, and DMs never are regardless of 
 with a v2+ revisit explicitly reserved. Vault documents are excluded by default, and every answer
 must cite its source inline.
 
-**It is specified, not shipped.** There is no `ai` module in `apps/api`. Both clients already carry
-the ✦ Ask entry, deliberately rather than by oversight: on web it is a shell with no engine behind
-it, and on mobile it opens a sheet that answers from a synthetic corpus when a build flag is set and
-states why it cannot when it is not. Nothing in this repo sets that flag — which is **not** the same
-as it being off in a given store build, a question only EAS can answer
-([`ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md)). Scope, non-goals, the citation
+**It is specified, not shipped.** There is no `ai` module in `apps/api`. On web the ✦ Ask entry is
+a shell with no engine behind it. On mobile Ask exists only when a build flag is set, and then it is
+a sheet that answers from a synthetic corpus. With the flag off, which is the default, there is no
+Ask at all: no ✦ pill, no sheet, and a `frapp://ask` link redirects to Chat home. Nothing in this
+repo sets that flag (a test fails if an `eas.json` profile does), and an EAS production build
+refuses to build with it on, so a store binary cannot ship Ask; preview and development builds
+are not fenced ([`ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md)). Scope, non-goals, the citation
 mechanism, and how the mock deliberately differs from the real contract:
 [`spec/behavior/ai.md`](spec/behavior/ai.md).
 

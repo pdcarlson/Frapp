@@ -44,6 +44,16 @@
 // `EXPO_PUBLIC_APP_URL` must be `https://app.frapp.live`; unset still
 // falls back at runtime.
 //
+// Every EAS **production** build also refuses when `EXPO_PUBLIC_ASK_ENABLED`
+// switches Ask on (#2259). Ask answers from a synthetic corpus
+// (`lib/ask/corpus.ts`), and the App Store listing and review notes describe
+// a binary with no Ask surface. The parse is `lib/ask/flag.ts`'s exactly:
+// `"1"` or `"true"` after trimming is on, anything else is off, so a value
+// the app would read as off is not refused either. This is the half of
+// "production has no Ask" that `eas.json` cannot show, because an
+// `eas env:set --environment production` reaches the bundle with no repo
+// change; with this fence such a value fails the build instead of shipping.
+//
 // The FCM V1 *service account* key (what Expo's push service uses to send) is
 // a separate upload under EAS credentials → Android → FCM V1; it never touches
 // this repo. iOS needs neither: EAS generates the APNs key on the first
@@ -213,6 +223,30 @@ function assertProductionAppUrl({ easBuildProfile, appUrl } = {}) {
   throw new Error(PRODUCTION_APP_URL_ERROR);
 }
 
+// `isAskAvailable()` in lib/ask/flag.ts, duplicated because this file is
+// CommonJS that Expo evaluates outside the app's TypeScript. The spec runs
+// both parses over the same values so the two cannot drift.
+const ASK_ON_VALUES = ["1", "true"];
+
+function isAskEnabledValue(raw) {
+  return typeof raw === "string" && ASK_ON_VALUES.includes(raw.trim());
+}
+
+const PRODUCTION_ASK_ENABLED_ERROR = [
+  "EAS production builds require EXPO_PUBLIC_ASK_ENABLED unset or off",
+  '(only "1" and "true" switch it on, the parse in apps/mobile/lib/ask/flag.ts).',
+  "Ask answers from a synthetic corpus, and the App Store listing and review",
+  "notes describe a store binary with no Ask (#2259). Remove it from the EAS",
+  "production environment (eas env:list --environment production).",
+  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+].join(" ");
+
+function assertProductionAskDisabled({ easBuildProfile, askEnabled } = {}) {
+  if (easBuildProfile !== "production") return;
+  if (!isAskEnabledValue(askEnabled)) return;
+  throw new Error(PRODUCTION_ASK_ENABLED_ERROR);
+}
+
 function applyMobileConfig(
   config,
   { env = process.env, existsSync = fs.existsSync } = {},
@@ -235,6 +269,10 @@ function applyMobileConfig(
   assertProductionAppUrl({
     easBuildProfile: env.EAS_BUILD_PROFILE,
     appUrl: env.EXPO_PUBLIC_APP_URL,
+  });
+  assertProductionAskDisabled({
+    easBuildProfile: env.EAS_BUILD_PROFILE,
+    askEnabled: env.EXPO_PUBLIC_ASK_ENABLED,
   });
   const gitSha = env.EAS_BUILD_GIT_COMMIT_HASH;
   return {
@@ -262,6 +300,8 @@ applyExpoConfig.assertProductionAndroidGoogleServices =
 applyExpoConfig.assertProductionApiUrl = assertProductionApiUrl;
 applyExpoConfig.assertProductionSupabasePublic = assertProductionSupabasePublic;
 applyExpoConfig.assertProductionAppUrl = assertProductionAppUrl;
+applyExpoConfig.assertProductionAskDisabled = assertProductionAskDisabled;
+applyExpoConfig.isAskEnabledValue = isAskEnabledValue;
 applyExpoConfig.applyMobileConfig = applyMobileConfig;
 applyExpoConfig.PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR =
   PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR;
@@ -270,6 +310,7 @@ applyExpoConfig.PRODUCTION_SUPABASE_PUBLIC_ERROR =
   PRODUCTION_SUPABASE_PUBLIC_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_URL_ERROR = PRODUCTION_SUPABASE_URL_ERROR;
 applyExpoConfig.PRODUCTION_APP_URL_ERROR = PRODUCTION_APP_URL_ERROR;
+applyExpoConfig.PRODUCTION_ASK_ENABLED_ERROR = PRODUCTION_ASK_ENABLED_ERROR;
 applyExpoConfig.PRODUCTION_API_ORIGIN = PRODUCTION_API_ORIGIN;
 applyExpoConfig.PRODUCTION_SUPABASE_ORIGIN = PRODUCTION_SUPABASE_ORIGIN;
 applyExpoConfig.PRODUCTION_APP_ORIGIN = PRODUCTION_APP_ORIGIN;

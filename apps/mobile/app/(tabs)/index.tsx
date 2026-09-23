@@ -22,6 +22,7 @@ import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
 import { ChannelRow } from "@/components/chat/channel-row";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
+import { isAskAvailable } from "@/lib/ask/flag";
 import {
   displayChannelName,
   indexUnread,
@@ -35,8 +36,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * s04 — Chat home. Chat is home, so this is the tab bar's `index` route.
  *
  * Three surfaces, top to bottom: the ✦ Ask pill in the header
- * (`navigation.md:53`), the UP NEXT pulse strip (`navigation.md:52`), then the
- * channel list with unread and mention badges.
+ * (`navigation.md` § Global entries — only in a build that has Ask), the UP
+ * NEXT pulse strip, then the channel list with unread and mention badges.
  *
  * `ScreenShell` is the right host here even though it wraps its children in a
  * `ScrollView`: a chapter's channel list is tens of rows, not thousands, so
@@ -108,7 +109,13 @@ export default function ChatHomeScreen() {
     <ScreenShell
       title="Chat"
       subtitle="Your chapter's channels and direct messages."
-      headerAction={<AskPill onPress={() => askSheetRef.current?.present()} />}
+      headerAction={
+        // No pill at all in a build without Ask (#2259): `AskSheet` renders
+        // nothing then, so the pill would be a control with nothing behind it.
+        isAskAvailable() ? (
+          <AskPill onPress={() => askSheetRef.current?.present()} />
+        ) : undefined
+      }
     >
       <UpNextStrip
         events={eventsQuery.data}

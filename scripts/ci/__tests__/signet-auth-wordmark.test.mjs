@@ -1,11 +1,16 @@
 // Locks the customer-visible auth wordmark and tagline on Signet.
 //
 // WHY THIS EXISTS. Mobile sign-in and the web pre-auth column already say
-// Signet / "Ask your chapter anything." #1950 locks metadata titles only.
+// Signet under a locked tagline. #1950 locks metadata titles only.
 // A leftover sweep can put Frapp back in the visible wordmark, switch the
 // title to single quotes the first lock used to miss, add a third
 // AuthScreen title=Signet site the hardcoded paths would miss, or walk
 // landing (copy is Signet; visual tokens still frozen). #1955.
+//
+// TWO TAGLINES. The web pre-auth column keeps the brand tagline. Mobile sign-in
+// carries the landing's D8 line instead, because a build without Ask must not
+// open on "Ask your chapter anything." for App Review (#2298, owner decision
+// 2026-09-22). Put the brand line back on mobile in the slice that ships Ask.
 //
 // SCOPE. Rendered title/subtitle props (web) and title/subtitle Text
 // nodes (mobile). Do not scan whole web auth files for Frapp — those files
@@ -29,6 +34,7 @@ const MOBILE_SIGN_IN = "apps/mobile/app/(auth)/sign-in.tsx";
 const WEB_HOME = "apps/web/app/page.tsx";
 const WEB_SIGN_IN = "apps/web/app/sign-in/page.tsx";
 const TAGLINE = "Ask your chapter anything.";
+const MOBILE_TAGLINE = "Everything your chapter needs is already in chat.";
 
 /** Home has one wordmark. Sign-in keeps the form and Suspense fallback. */
 const MIN_HOME_WORDMARKS = 1;
@@ -118,12 +124,14 @@ export function authWordmarkLockProblems({ mobile, home, signIn }) {
   if (!/<Text style=\{styles\.title\}>Signet<\/Text>/.test(mobile)) {
     problems.push("mobile sign-in title must be Signet");
   }
+  // `\s*` because Prettier moves a long JSX text child onto its own line, and
+  // JSX drops that surrounding whitespace, so both spellings render the same.
   if (
     !new RegExp(
-      `<Text style=\\{styles\\.subtitle\\}>${literal(TAGLINE)}</Text>`,
+      `<Text style=\\{styles\\.subtitle\\}>\\s*${literal(MOBILE_TAGLINE)}\\s*</Text>`,
     ).test(mobile)
   ) {
-    problems.push("mobile sign-in subtitle must be the Signet tagline");
+    problems.push("mobile sign-in subtitle must be the mobile tagline");
   }
   if (/<Text style=\{styles\.title\}>Frapp<\/Text>/.test(mobile)) {
     problems.push("mobile sign-in title must not be Frapp");
@@ -231,6 +239,18 @@ test("putting Frapp in the mobile wordmark fails", () => {
   });
   assert.ok(
     problems.some((problem) => problem.includes("mobile sign-in title")),
+    problems.join("; "),
+  );
+});
+
+test("putting the brand tagline back on mobile sign-in fails", () => {
+  const problems = authWordmarkLockProblems({
+    mobile: readRepo(MOBILE_SIGN_IN).replace(MOBILE_TAGLINE, TAGLINE),
+    home: readRepo(WEB_HOME),
+    signIn: readRepo(WEB_SIGN_IN),
+  });
+  assert.ok(
+    problems.some((problem) => problem.includes("mobile sign-in subtitle")),
     problems.join("; "),
   );
 });

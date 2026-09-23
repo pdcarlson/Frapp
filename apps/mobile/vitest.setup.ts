@@ -130,7 +130,17 @@ vi.mock("expo-router", () => {
     usePathname: vi.fn(() => "/"),
     Link: "Link",
     Redirect: "Redirect",
-    Tabs: "Tabs",
+    // A host string cannot carry `.Screen`, and a route file may render
+    // `<Tabs.Screen options={…} />` to set its own options (the flag-off
+    // branch of `app/(tabs)/ask.tsx` does). Both render as host nodes named
+    // for what they stand in for, so a spec can find them and read `options`.
+    Tabs: Object.assign(
+      (props: Record<string, unknown>) => React.createElement("Tabs", props),
+      {
+        Screen: (props: Record<string, unknown>) =>
+          React.createElement("Tabs.Screen", props),
+      },
+    ),
     Stack: "Stack",
   };
 });
@@ -222,12 +232,16 @@ vi.mock("react-native-keyboard-controller", () => ({
 // mock like this one would otherwise hide a static import that crashes Expo Go.
 vi.mock("expo-notifications", () => ({
   setNotificationChannelAsync: vi.fn().mockResolvedValue(null),
-  getPermissionsAsync: vi
-    .fn()
-    .mockResolvedValue({ granted: false, canAskAgain: true, status: "undetermined" }),
-  requestPermissionsAsync: vi
-    .fn()
-    .mockResolvedValue({ granted: true, canAskAgain: false, status: "granted" }),
+  getPermissionsAsync: vi.fn().mockResolvedValue({
+    granted: false,
+    canAskAgain: true,
+    status: "undetermined",
+  }),
+  requestPermissionsAsync: vi.fn().mockResolvedValue({
+    granted: true,
+    canAskAgain: false,
+    status: "granted",
+  }),
   getExpoPushTokenAsync: vi.fn().mockResolvedValue({ type: "expo", data: "" }),
   getLastNotificationResponse: vi.fn(() => null),
   clearLastNotificationResponse: vi.fn(),

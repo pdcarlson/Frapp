@@ -150,4 +150,62 @@ configuration, **not** on the profile name, so a `development` profile given an 
 > the *same* Supabase project — whichever was set last. `eas secret:*` is also deprecated in favour of
 > `eas env:*`, which is where the per-environment split lives.
 
+### 6.4 App Store screenshots
+
+App Store Connect will not take a submission without at least one iPhone screenshot set
+([#2454](https://github.com/pdcarlson/Frapp/issues/2454)). The owner approved **renders of the app
+on Expo web** as that set (2026-09-22): the real screens and components (react-native-web) against
+the local demo chapter, with no EAS build, device or `preview` environment involved. What differs
+from a device capture is chrome, not content: there is no iOS status bar, and native-only surfaces
+(sheets, the system keyboard) are web-rendered, which is why the set below has neither.
+
+**Size: 1320 × 2868 pixels, portrait** — a 440 × 956 point viewport at 3x. Apple's
+[screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications)
+(read 2026-09-22) list it among the accepted 6.9" iPhone sizes, alongside 1290 × 2796 and
+1260 × 2736, and require a 6.5" set only when no 6.9" set is provided; smaller iPhone sizes are
+scaled from the larger set. `app.json` sets `ios.supportsTablet: false`, so no iPad set applies.
+**Not yet confirmed in the console:** #2454 asks for the sizes App Store Connect states at upload to
+be recorded here, so replace this paragraph's source with the console's wording once uploaded.
+
+The set is seven screens, chosen to match what the listing's Description claims
+([`apps/mobile/store/README.md`](../../../../apps/mobile/store/README.md) § Description): Chat
+home, a chat thread, Events, Host check-in (the rotating QR), Tasks (assigned tasks, points and
+house rank), Study hours and the Directory. The list is `STORE_SCREENS` in
+[`scripts/demo/capture-mobile.mjs`](../../../../scripts/demo/capture-mobile.mjs). **No Ask shot:**
+the store binary has no Ask ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and
+Guideline 2.3.3 wants the screenshots to show the app as it ships. **No Dues shot:** a populated
+ledger shows "Payments run through your chapter's Stripe account.", and the reviewer's own Dues tab
+is seeded empty so App Review never sees that footer or a Pay control (the store README's § Seed the
+reviewer's chapter). The listing's text still names dues and payment history; the shots keep out the
+in-app payment copy.
+
+**Procedure**, on a machine or cloud sandbox with the local stack running (API on `:3001`, local
+Supabase):
+
+1. Write `apps/mobile/.env.local` per
+   [`docs/guides/demo-data.md` § Mobile setup](../../../guides/demo-data.md#mobile-setup), **without**
+   `EXPO_PUBLIC_ASK_ENABLED`. With it set the app draws the ✦ Ask pill, and the preset stops
+   rather than write a set containing it. The same section's `EVENT_CHECK_IN_TOKEN_SECRET` must be
+   in `apps/api/.env.local` before the API starts (the cloud sandbox's bring-up does not write
+   it): without it the Host check-in screen shows "Code unavailable" instead of a QR, and that
+   shot times out.
+2. Re-seed, so every unread badge and the demo data are fresh (opening a channel marks it read):
+   `bash scripts/demo/setup-demo.sh`
+3. From `apps/mobile`, start Expo web on the port the API's CORS list allows, clearing Metro's
+   cache so no earlier flag value is inlined: `npx expo start --web --port 3002 --clear`. Wait for
+   `http://localhost:3002` to answer 200.
+4. From the repo root: `node scripts/demo/capture-mobile.mjs --app-store`
+   (sandbox Chromium: prefix `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome`).
+   It signs in as the demo president — Host check-in needs an officer — and writes
+   `screenshots/app-store/01-chat-home.png` … `07-directory.png`.
+
+It prints each file's measured size, and exits non-zero if a screen lands on a route other than the
+one requested (a lost session redirects to sign-in), if a screen's data never arrives, or if a file
+is not 1320 × 2868 — re-run rather than upload a set with a gap. If any Ask surface is on screen it
+stops at once and deletes `screenshots/app-store/`, so there is nothing to upload by mistake.
+
+**Upload is the owner's step:** App Store Connect → the app → the version → iPhone 6.9" Display →
+drag in the files in order, for the English (U.S.) localization. `screenshots/` is gitignored and
+the PNGs are not committed; regenerate them with the procedure above rather than keeping copies.
+
 ---

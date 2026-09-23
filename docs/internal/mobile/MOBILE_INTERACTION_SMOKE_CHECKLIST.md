@@ -62,10 +62,11 @@ in the S2 nav restructure (#957) — see
 | Dues | Pay now (Expo Go) | CTA is **disabled with the reason stated**; balance and history still render |
 | Dues | Pay now (installed build, key configured) | Stripe PaymentSheet opens; dismissing it says nothing |
 | Dues | Complete a payment | Shows "payment received, confirmation pending", then flips to Paid only once the webhook lands |
-| Chat home (`/(tabs)`) | ✦ Ask pill | Presents the s17 Ask sheet over the screen, with the scrim behind it; the grabber or a tap on the scrim dismisses it (there is **no** Cancel control, by design) |
-| Events (`/(tabs)/events`) | ✦ Ask pill | Same sheet, same behavior — the s06 pill is new in C7 |
-| Ask sheet | Send a question, flag **off** (the default) | Sheet states why Ask is unavailable, the composer and send are disabled with that reason wired to the control, and the suggestion chips are omitted rather than dimmed. **This is the shipped state**: nothing sets `EXPO_PUBLIC_ASK_ENABLED` |
-| Ask sheet | Send a question, flag **on** (`EXPO_PUBLIC_ASK_ENABLED=1` in a local build) | Question echoes, a content-shaped skeleton holds briefly, then an answer card with source chips — or the refusal / "I don't know" path. Answers come from a **mock corpus**; do not read them as real chapter data |
+| Chat home (`/(tabs)`) and Events (`/(tabs)/events`) | Header, flag **off** (the default) | **No ✦ Ask pill at all** — nothing in the header row beside the title. This is the state a build gets when nothing sets `EXPO_PUBLIC_ASK_ENABLED`. A pill here, or one that opens a sheet saying Ask is off, is the placeholder #2259 removed |
+| `frapp://ask` | Open the link, flag **off** | Lands on Chat home. No "Ask" screen, no sheet |
+| Chat home (`/(tabs)`) | ✦ Ask pill, flag **on** (`EXPO_PUBLIC_ASK_ENABLED=1` in a local build) | Presents the s17 Ask sheet over the screen, with the scrim behind it; the grabber or a tap on the scrim dismisses it (there is **no** Cancel control, by design) |
+| Events (`/(tabs)/events`) | ✦ Ask pill, flag **on** | Same sheet, same behavior |
+| Ask sheet | Send a question, flag **on** | Question echoes, a content-shaped skeleton holds briefly, then an answer card with source chips — or the refusal / "I don't know" path. Answers come from a **mock corpus**; do not read them as real chapter data |
 | Ask sheet | Tap a source chip | Says the citation is a sample with nothing behind it to open. A chip that swallowed the tap would be the dead end this checklist exists to catch |
 | Notifications (`/(tabs)/notifications`) | Tap a row with a recognizable target | Marks it read **and** routes to the target (chat thread, event detail, tasks, dues, service hours, directory) |
 | Notifications (`/(tabs)/notifications`) | Tap a row whose target this build does not recognize | Marks it read and stays put — never a navigation to a wrong or dead screen |
