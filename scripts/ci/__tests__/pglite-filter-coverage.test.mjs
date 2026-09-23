@@ -360,9 +360,12 @@ export function scan(src, file) {
   // Static forms take only a string literal: find them in the masked code, where
   // a string can't be mistaken for one, and read the specifier from the source
   // at the same offsets. Unanchored, so two on one line both count.
+  // A masked body is `_` except for newlines, which `mask` keeps so offsets and
+  // line numbers hold; a line continuation leaves one inside a specifier, and
+  // the body must still match so `literal` can reject it.
   const staticForms = [
-    /\b(?:import|export)\b[^;]*?\bfrom\s*["'](_*)["']/dg,
-    /\bimport\s*["'](_*)["']/dg,
+    /\b(?:import|export)\b[^;]*?\bfrom\s*["']([_\n]*)["']/dg,
+    /\bimport\s*["']([_\n]*)["']/dg,
   ];
   const specifiers = [
     // Read through `literal`, quotes included, like every other form: the source
@@ -536,6 +539,9 @@ describe("the scanner reads each form as what it is", () => {
       'new URL("%zz.sql", import.meta.url);',
       // A static specifier with an escape: its source text is not its value.
       'import d from "./a\\\\..\\\\supabase\\\\d.json" with { type: "json" };',
+      // A line continuation, which `mask` leaves as a newline in the body.
+      'import d from "../../../supabase/x\\\n.json" with { type: "json" };',
+      'export * from "./y\\\n.mjs";',
     ]) {
       assert.throws(() => scan(src, at), /cannot resolve/, src);
     }
