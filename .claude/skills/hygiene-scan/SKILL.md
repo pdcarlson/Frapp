@@ -168,8 +168,10 @@ and 5, but open no second PR; findings go to the ledger and, up to the cap, the 
 
 ## Phase 1 — Scan
 
-Slice lenses are independent reads: on a large slice, give each lens or directory to a subagent
-that returns candidates in the finding format below, and keep gate output and quick greps yourself.
+Slice lenses are independent reads: on a large slice, split the lenses or directories across a few
+subagents (within the [`multi-agent`](../multi-agent/SKILL.md) budget, so several lenses share
+one) that return candidates in the finding format below, and keep gate output and quick greps
+yourself.
 A delegated candidate is a lead until you have opened the file, checked consumers, and named the
 rule.
 

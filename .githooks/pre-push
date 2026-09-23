@@ -26,8 +26,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   marker="$ROOT/.cache/diff-review/$pushed_commit"
   if [ ! -f "$marker" ]; then
     printf 'review-gate: no review evidence for %s (%s).\n' "$local_ref" "$pushed_commit" >&2
-    printf 'Run /diff-review, or after a completed /code-review record: mkdir -p "%s/.cache/diff-review" && touch "%s"\n' \
-      "$ROOT" "$marker" >&2
+    printf 'Run /diff-review on that commit; it records the evidence at %s once its findings are handled.\n' \
+      "$marker" >&2
     missing=1
   fi
 done
