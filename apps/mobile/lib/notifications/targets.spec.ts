@@ -41,6 +41,15 @@ describe("resolveNotificationTarget", () => {
     });
   });
 
+  it("sends the officer report queue to the list, since mobile has no queue", () => {
+    // `chat_reports` is emitted (the API's new-report notification) but routes
+    // nowhere on mobile: the queue is web-only (`/chat-admin`). The list is the
+    // honest landing rather than a guessed screen.
+    expect(
+      resolveNotificationTarget(payload({ screen: "chat_reports" })),
+    ).toEqual({ pathname: "/notifications" });
+  });
+
   it("renames the event param to what s07 reads", () => {
     // The payload spells it `eventId`; the route reads `id`. Getting this wrong
     // opens a detail screen that can never load.

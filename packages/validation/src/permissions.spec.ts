@@ -6,7 +6,13 @@ import { describe, expect, test } from "vitest";
  * an unmodified suite passing against the moved code is the no-regression proof
  * for the move.
  */
-import { can, canAll, canAny, WILDCARD_PERMISSION } from "./permissions";
+import {
+  can,
+  canAll,
+  canAny,
+  CHAT_REPORT_QUEUE_PERMISSIONS,
+  WILDCARD_PERMISSION,
+} from "./permissions";
 
 describe("can", () => {
   test("returns false for undefined, null, or empty permission sets", () => {
@@ -80,5 +86,18 @@ describe("canAny", () => {
     expect(
       canAny(["members:invite", "roles:manage"], ["events:create"]),
     ).toBe(false);
+  });
+});
+
+describe("CHAT_REPORT_QUEUE_PERMISSIONS", () => {
+  // The API side of the same list is pinned in chat-report.controller.spec.ts,
+  // against the route decorators themselves.
+  test("admits a holder of both halves, or the wildcard, and nobody holding one", () => {
+    expect(
+      canAll(CHAT_REPORT_QUEUE_PERMISSIONS, ["members:view", "channels:manage"]),
+    ).toBe(true);
+    expect(canAll(CHAT_REPORT_QUEUE_PERMISSIONS, [WILDCARD_PERMISSION])).toBe(true);
+    expect(canAll(CHAT_REPORT_QUEUE_PERMISSIONS, ["channels:manage"])).toBe(false);
+    expect(canAll(CHAT_REPORT_QUEUE_PERMISSIONS, ["members:view"])).toBe(false);
   });
 });

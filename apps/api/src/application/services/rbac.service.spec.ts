@@ -32,7 +32,7 @@ describe('RbacService', () => {
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
-  let mockCustomRoleService: { findByIds: jest.Mock };
+  let mockCustomRoleService: { findByIds: jest.Mock; findByChapter: jest.Mock };
   let mockChapterAuditLogService: AuditLogServiceMock;
 
   beforeEach(async () => {
@@ -71,6 +71,7 @@ describe('RbacService', () => {
 
     mockCustomRoleService = {
       findByIds: jest.fn().mockResolvedValue([]),
+      findByChapter: jest.fn().mockResolvedValue([]),
     };
 
     mockChapterAuditLogService = createAuditLogServiceMock();
@@ -1566,6 +1567,149 @@ describe('RbacService', () => {
       const [, updatePayload] = mockRoleRepo.update.mock.calls[0];
       expect(updatePayload).not.toHaveProperty('system_key');
       expect(updatePayload.name).toBe('Graduated');
+    });
+  });
+
+  // The audience for "tell whoever can act on this" notifications (#2257 —
+  // officers are told a chat message was reported). All-of, like
+  // `@RequirePermissions`, and flattened through the same helper the guard uses.
+  describe('findUserIdsWithPermissions', () => {
+    const REQUIRED = [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.CHANNELS_MANAGE,
+    ];
+
+    const role = (
+      id: string,
+      permissions: string[],
+      chapter_id = 'ch-1',
+    ): Role => ({
+      id,
+      chapter_id,
+      name: `role-${id}`,
+      system_key: null,
+      permissions,
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    });
+
+    const member = (
+      user_id: string,
+      role_ids: string[],
+      custom_role_ids: string[] = [],
+    ): Member => ({
+      id: `member-${user_id}`,
+      user_id,
+      chapter_id: 'ch-1',
+      role_ids,
+      custom_role_ids,
+      has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    beforeEach(() => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        role('role-president', ['*']),
+        role('role-mod', [
+          SystemPermissions.MEMBERS_VIEW,
+          SystemPermissions.CHANNELS_MANAGE,
+        ]),
+        role('role-member', [SystemPermissions.MEMBERS_VIEW]),
+        role('role-manage-only', [SystemPermissions.CHANNELS_MANAGE]),
+      ]);
+    });
+
+    it('returns holders of every required permission, and the wildcard', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('user-president', ['role-president']),
+        member('user-mod', ['role-mod']),
+        member('user-plain', ['role-member']),
+      ]);
+
+      const result = await service.findUserIdsWithPermissions('ch-1', REQUIRED);
+
+      expect(result.sort()).toEqual(['user-mod', 'user-president']);
+      expect(mockMemberRepo.findByChapter).toHaveBeenCalledWith('ch-1');
+      expect(mockRoleRepo.findByChapter).toHaveBeenCalledWith('ch-1');
+      expect(mockCustomRoleService.findByChapter).toHaveBeenCalledWith('ch-1');
+    });
+
+    it('is all-of: holding only one required permission is not enough', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('user-manage-only', ['role-manage-only']),
+      ]);
+
+      const result = await service.findUserIdsWithPermissions('ch-1', REQUIRED);
+
+      expect(result).toEqual([]);
+    });
+
+    it('combines live roles and custom-role capabilities, as the guard does', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('user-bridge', ['role-member'], ['custom-mod']),
+      ]);
+      mockCustomRoleService.findByChapter.mockResolvedValue([
+        {
+          id: 'custom-mod',
+          chapter_id: 'ch-1',
+          key: 'moderator',
+          label: 'Moderator',
+          rank: 5,
+          capabilities: [SystemPermissions.CHANNELS_MANAGE],
+          core: false,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ]);
+
+      const result = await service.findUserIdsWithPermissions('ch-1', REQUIRED);
+
+      expect(result).toEqual(['user-bridge']);
+    });
+
+    it('never honours a wildcard carried by a custom role', async () => {
+      // `flattenPermissionSets` drops `*` from custom roles so pre-validation
+      // data cannot mint a second President; the roster walk must agree.
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('user-custom-star', [], ['custom-star']),
+      ]);
+      mockCustomRoleService.findByChapter.mockResolvedValue([
+        {
+          id: 'custom-star',
+          chapter_id: 'ch-1',
+          key: 'legacy',
+          label: 'Legacy',
+          rank: 5,
+          capabilities: ['*'],
+          core: false,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ]);
+
+      const result = await service.findUserIdsWithPermissions('ch-1', REQUIRED);
+
+      expect(result).toEqual([]);
+    });
+
+    it('ignores a role id that belongs to another chapter', async () => {
+      // `role_ids` is not foreign-keyed, so a stale or foreign id must grant
+      // nothing — the same guarantee `findByIds(ids, chapterId)` gives the
+      // per-member resolver.
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        role('role-foreign-star', ['*'], 'ch-other'),
+      ]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('user-foreign-role', ['role-foreign-star', 'role-missing']),
+      ]);
+
+      const result = await service.findUserIdsWithPermissions('ch-1', REQUIRED);
+
+      expect(result).toEqual([]);
     });
   });
 });

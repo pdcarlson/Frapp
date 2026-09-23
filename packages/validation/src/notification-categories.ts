@@ -31,11 +31,14 @@
  *   emergency ones; see #1323. (An earlier version of this docblock said
  *   `chat.service.ts` was the only emitter, which would have let someone
  *   evaluating #1323 check one call site and miss the worker's.)
- * - **`admin`** — "new member joined" / "invite accepted" / "role change". It is
- *   member-facing in *delivery* (`InviteService` sends it through
- *   `notifyChapter`, so every member gets a row), but it is chapter operations
- *   rather than something a member opts into per-category, and it has no drawn
- *   row in the reference.
+ * - **`admin`** — "new member joined" / "invite accepted" / "role change", and
+ *   "message reported" to the officers who can open the chat report queue
+ *   (`ChatReportService`, via `notifyUser`). It is member-facing in *delivery*
+ *   (`InviteService` sends it through `notifyChapter`, so every member gets a
+ *   row), but it is chapter operations rather than something a member opts into
+ *   per-category, and it has no drawn row in the reference. That is also why the
+ *   report alert uses it rather than `chat`: a moderator's Chat switch must not
+ *   silence the moderation queue.
  *
  * `default` is the fallback the service substitutes when a payload omits a
  * category — never a member preference. There is no `study` category at all

@@ -3204,7 +3204,43 @@
             "bearer": []
           }
         ],
-        "summary": "Resolve a chat message report",
+        "summary": "Resolve an open chat message report",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/chat/reports/{id}/remove-message": {
+      "post": {
+        "operationId": "ChatReportController_removeReportedMessage_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatReportRemovalDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove the message an open report names and mark its open reports actioned",
         "tags": [
           "Chat"
         ]
@@ -9519,6 +9555,103 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "ChatReportRemovalDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence."
+          },
+          "reported_content": {
+            "type": "string",
+            "nullable": true,
+            "description": "The message content as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence."
+          },
+          "reported_sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for an imported archive message, which names its author in reported_author_name instead."
+          },
+          "reported_author_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "spam",
+              "harassment",
+              "hate",
+              "violence",
+              "sexual",
+              "self_harm",
+              "other"
+            ]
+          },
+          "details": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "reviewed",
+              "actioned",
+              "dismissed"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "resolved_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "resolved_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "message_already_deleted": {
+            "type": "boolean",
+            "description": "True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "message_id",
+          "reported_content",
+          "reported_sender_id",
+          "reported_author_name",
+          "reason",
+          "details",
+          "status",
+          "created_at",
+          "resolved_at",
+          "resolved_by",
+          "message_already_deleted",
+          "channel_id"
         ]
       },
       "ChatBlockListDto": {
