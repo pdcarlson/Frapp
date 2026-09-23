@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  legalReadStatus,
+  gateReadStatus,
   resolveAuthGate,
   toAuthGateInput,
   type AuthGateDestination,
@@ -294,81 +294,143 @@ describe("the gate's reads, from query state (#2302)", () => {
   };
   const member = { chapter_id: "chapter-a", has_completed_onboarding: true };
   const newMember = { ...member, has_completed_onboarding: false };
-  /** TanStack after a failed background refetch: status error, data kept. */
-  const failedRefetch = <T,>(data: T) => ({ data, isError: true, isSuccess: false });
-  const answered = <T,>(data: T) => ({ data, isError: false, isSuccess: true });
-  const gate = (
-    chapters: Parameters<typeof toAuthGateInput>[0]["chapters"],
-    legal: Parameters<typeof toAuthGateInput>[0]["legal"],
-  ) => resolveAuthGate(toAuthGateInput({ session, chapters, legal }));
+  type Chapters = Parameters<typeof toAuthGateInput>[0]["chapters"];
+  type Legal = Parameters<typeof toAuthGateInput>[0]["legal"];
+  // TanStack query states. A failed background refetch keeps its data and
+  // flips to error; a query with no data goes back to pending (isError false)
+  // on every refetch, even after it failed, so only errorUpdateCount says so.
+  const answered = (data: Chapters["data"]): Chapters => ({
+    data,
+    isError: false,
+    isSuccess: true,
+    errorUpdateCount: 0,
+  });
+  const failedRefetch = (data: Chapters["data"]): Chapters => ({
+    data,
+    isError: true,
+    isSuccess: false,
+    errorUpdateCount: 1,
+  });
+  const chaptersRetrying: Chapters = {
+    data: undefined,
+    isError: false,
+    isSuccess: false,
+    errorUpdateCount: 1,
+  };
+  const terms = (required: boolean, isError = false): Legal => ({
+    data: { required },
+    isError,
+    errorUpdateCount: isError ? 1 : 0,
+  });
+  const termsFirstRead: Legal = {
+    data: undefined,
+    isError: false,
+    errorUpdateCount: 0,
+  };
+  const termsFirstReadFailed: Legal = {
+    data: undefined,
+    isError: true,
+    errorUpdateCount: 1,
+  };
+  const termsRetrying: Legal = {
+    data: undefined,
+    isError: false,
+    errorUpdateCount: 1,
+  };
+  const gate = (chapters: Chapters, legal: Legal) =>
+    resolveAuthGate(toAuthGateInput({ session, chapters, legal }));
 
   it("keeps a member on the prompt when the Terms refetch fails", () => {
-    expect(
-      gate(answered([member]), { data: { required: true }, isError: true }),
-    ).toBe("terms");
+    expect(gate(answered([member]), terms(true, true))).toBe("terms");
   });
 
   it("keeps a member on the prompt when the chapters refetch fails", () => {
-    expect(
-      gate(failedRefetch([member]), { data: { required: true }, isError: false }),
-    ).toBe("terms");
+    expect(gate(failedRefetch([member]), terms(true))).toBe("terms");
   });
 
   it("still fails open after a join whose chapters refetch failed", () => {
     // Cached list from before the join is []; the member just ticked the box,
     // so the Terms cache says accepted. Must not bounce back to /join.
-    expect(
-      gate(failedRefetch([]), { data: { required: false }, isError: false }),
-    ).toBe("tabs");
+    expect(gate(failedRefetch([]), terms(false))).toBe("tabs");
   });
 
   it("still fails open after finishing first-run whose refetch failed", () => {
     // The cached row still says not onboarded; welcome's finish() relies on
     // the failed read failing open rather than pulling the member back.
-    expect(
-      gate(failedRefetch([newMember]), {
-        data: { required: false },
-        isError: false,
-      }),
-    ).toBe("tabs");
+    expect(gate(failedRefetch([newMember]), terms(false))).toBe("tabs");
   });
 
-  it("holds a known member for the first Terms answer when the chapters refetch fails", () => {
-    // Same as a successful chapters read: tabs here would let a member who
-    // owes the Terms post until the answer lands and walks them back.
-    expect(
-      gate(failedRefetch([member]), { data: undefined, isError: false }),
-    ).toBe("hold");
-  });
-
-  it("fails open on a failed chapters refetch once the first Terms read fails", () => {
-    expect(
-      gate(failedRefetch([member]), { data: undefined, isError: true }),
-    ).toBe("tabs");
+  it("holds a member until the first Terms answer, whatever the chapters refetch did", () => {
+    // An (auth) route holds rather than opening the tabs to a member who may
+    // owe the Terms. One already in the tabs is walked to the prompt by
+    // AppRuntime once the answer lands; `hold` doesn't move them.
+    expect(gate(answered([member]), termsFirstRead)).toBe("hold");
+    expect(gate(failedRefetch([member]), termsFirstRead)).toBe("hold");
   });
 
   it("fails open when the first Terms read fails", () => {
-    expect(gate(answered([member]), { data: undefined, isError: true })).toBe(
-      "tabs",
+    expect(gate(answered([member]), termsFirstReadFailed)).toBe("tabs");
+    expect(gate(failedRefetch([member]), termsFirstReadFailed)).toBe("tabs");
+  });
+
+  it("keeps failing open while a failed first Terms read retries", () => {
+    // Without errorUpdateCount this reads as a first read and holds, blanking
+    // the (auth) screens on every foreground after an outage.
+    expect(gate(answered([member]), termsRetrying)).toBe("tabs");
+    expect(gate(failedRefetch([member]), termsRetrying)).toBe("tabs");
+  });
+
+  it("keeps failing open while a failed first chapters read retries", () => {
+    expect(gate(chaptersRetrying, terms(false))).toBe("tabs");
+  });
+
+  it("holds for the first chapters read", () => {
+    expect(
+      gate(
+        { data: undefined, isError: false, isSuccess: false, errorUpdateCount: 0 },
+        termsFirstRead,
+      ),
+    ).toBe("hold");
+  });
+});
+
+describe("gateReadStatus", () => {
+  const read = (over: Partial<Parameters<typeof gateReadStatus>[0]>) =>
+    gateReadStatus({
+      authenticated: true,
+      hasAnswer: false,
+      isError: false,
+      hasFailed: false,
+      answerFirst: true,
+      ...over,
+    });
+
+  it("is idle when signed out", () => {
+    expect(read({ authenticated: false, hasAnswer: true })).toBe("idle");
+  });
+
+  it("pends only before the first answer or failure", () => {
+    expect(read({})).toBe("pending");
+    expect(read({ hasFailed: true })).toBe("error");
+    expect(read({ isError: true, hasFailed: true })).toBe("error");
+  });
+
+  it("keeps a Terms answer through a failed refetch", () => {
+    expect(read({ hasAnswer: true, isError: true, hasFailed: true })).toBe(
+      "success",
     );
   });
 
-  it("holds a member until the first Terms answer", () => {
-    expect(gate(answered([member]), { data: undefined, isError: false })).toBe(
-      "hold",
-    );
-  });
-
-  it("reads the Terms status answer-first", () => {
+  it("reads the chapters list error-first", () => {
     expect(
-      legalReadStatus({ authenticated: true, hasAnswer: true, isError: true }),
-    ).toBe("success");
-    expect(
-      legalReadStatus({ authenticated: true, hasAnswer: false, isError: true }),
+      read({
+        hasAnswer: true,
+        isError: true,
+        hasFailed: true,
+        answerFirst: false,
+      }),
     ).toBe("error");
-    expect(
-      legalReadStatus({ authenticated: false, hasAnswer: true, isError: false }),
-    ).toBe("idle");
+    expect(read({ hasAnswer: true, answerFirst: false })).toBe("success");
   });
 });
 
@@ -385,6 +447,9 @@ describe("the two layouts cannot loop", () => {
     complete,
     { membershipsStatus: "pending", memberships: [] },
     { membershipsStatus: "error", memberships: [] },
+    // A failed refetch whose cached list still shows a member (#2302).
+    { membershipsStatus: "error", memberships: complete.memberships },
+    { membershipsStatus: "error", memberships: incomplete.memberships },
   ];
 
   const legalCases: Array<

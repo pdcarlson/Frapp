@@ -27,8 +27,13 @@ export function useAuthGateDestination(): AuthGateDestination {
         data: Array.isArray(chapters.data) ? chapters.data : undefined,
         isError: chapters.isError,
         isSuccess: chapters.isSuccess,
+        errorUpdateCount: chapters.errorUpdateCount,
       },
-      legal: { data: legal.data, isError: legal.isError },
+      legal: {
+        data: legal.data,
+        isError: legal.isError,
+        errorUpdateCount: legal.errorUpdateCount,
+      },
     }),
   );
 }
