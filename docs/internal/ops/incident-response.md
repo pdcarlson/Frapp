@@ -41,7 +41,7 @@ Database rollback and restore are their own procedures:
 
 ### Communication
 
-- announce status page/internal channel updates every 15 minutes
+- when and how to tell affected chapters: [`ALERT_ROUTING.md` § Escalation](ALERT_ROUTING.md#escalation). Signet has no status page yet
 - include mitigation ETA and current customer impact
 
 ## Database latency

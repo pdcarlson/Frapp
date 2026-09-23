@@ -250,7 +250,7 @@ unread. Treat a missing threshold as a gap, not as a pointer to follow in a dash
 
 Signet has one on-call human: the owner. There is no second responder or rota yet.
 
-1. **Where the page lands.** Today it is Sentry's default email rule to issue owners, plus an unassigned `routine-state` issue from the watchdogs in [Automated GitHub-issue alerts](#automated-github-issue-alerts). Once #2505 lands, it is the Discord `#alerts` channel and email, plus an `incident` issue assigned to the owner (ADR-24 decision 2).
+1. **Where the page lands**, today and once #2505 lands: [Primary channels](#primary-channels).
 2. **Acknowledgement.** The owner acknowledges by commenting on the alert issue. No response target is set yet: ADR-24's rule I4 bounds how fast a failure pages (15 minutes), not how fast anyone answers. Setting one is part of #2505.
 3. **Agents.** Agent sessions may triage an alert issue and report what they find. They never change provider state because an alert suggested it (ADR-24 decision 2).
-4. **Chapters.** Status updates to affected chapters follow the Communication step in [`incident-response.md`](incident-response.md).
+4. **Chapters.** If a production incident affects chapters for 30 minutes or more, the owner tells the affected chapters what is broken and when to expect a fix. Signet has no status page yet, so this goes to the chapters directly.
