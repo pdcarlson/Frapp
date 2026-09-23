@@ -340,7 +340,7 @@ blocking `main` churn.
 
 There is **no AI-review required check.** Code review is a **repository-managed Git pre-push gate**
 ([`.githooks/pre-push`](../../../.githooks/pre-push), installed by the root `prepare` script; requires
-exact-pushed-commit evidence from `/diff-review` or `/code-review` before publication) — the former `claude-review-gate` CI check was removed (2026-06-04). See [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+exact-pushed-commit evidence from `/diff-review` before publication) — the former `claude-review-gate` CI check was removed (2026-06-04). See [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 
