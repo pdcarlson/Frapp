@@ -61,11 +61,11 @@ class RealtimeManager {
 
 ## Channel Subscriptions
 
-For each open chat channel, subscribe to Postgres changes:
+For each open chat channel, subscribe to Postgres changes. The two sketches in this section show the pattern only and are not code to copy: the implementation is `RealtimeManager` (`packages/chat-core/src/realtime-manager.ts`), which owns the `chat:channel:<id>` topic as a private channel and writes a normalized `ChannelCache` under `chatMessagesKey(channelId)`, not an array.
 
 ```typescript
 supabase
-  .channel(`chat:channel:${channelId}`)
+  .channel(`messages:${channelId}`)
   .on('postgres_changes', {
     event: 'INSERT',
     schema: 'public',
@@ -73,7 +73,7 @@ supabase
     filter: `channel_id=eq.${channelId}`,
   }, (payload) => {
     // Add to local message list if not already present (dedup by ID)
-    queryClient.setQueryData(chatMessagesKey(channelId), (old) => {
+    queryClient.setQueryData(['messages', channelId], (old) => {
       if (old?.some((m) => m.id === payload.new.id)) return old;
       return [...(old ?? []), payload.new];
     });
@@ -87,7 +87,7 @@ When navigating away from a channel, unsubscribe from its Realtime channel to av
 
 ```typescript
 useEffect(() => {
-  const channel = supabase.channel(`chat:channel:${channelId}`);
+  const channel = supabase.channel(`messages:${channelId}`);
   // ... subscribe
   return () => {
     supabase.removeChannel(channel);

@@ -37,10 +37,10 @@ Three things this does **not** license:
   *chrome*, not the *contracts*.
 - **It is not a licence to skip reading it.** A lane that changes a surface still has to know what
   that surface currently does before replacing it.
-- **The fold-back is owed.** A gap between `web-dashboard/` prose and greenfield code was expected
-  while lanes landed. #2140 has closed, so the surviving truth is due to fold back into
-  `web-dashboard/` and this directory to be archived or retired in that same change; that has not
-  happened yet.
+- **Drift is still not filed against its visual prose.** A gap between `web-dashboard/` prose and
+  greenfield code was expected while lanes landed, and the fix for it is the fold-back, not a drift
+  issue per gap. #2140 has closed, so the surviving truth is due to fold back into `web-dashboard/`
+  and this directory to be archived or retired in that same change; that has not happened yet.
 
 ### Precedence that still binds
 

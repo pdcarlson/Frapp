@@ -45,8 +45,8 @@ Title Case controls ship on the web dashboard today — `New Event`
 (`apps/web/components/events/events-page.tsx`) and `Open Documents`
 (`apps/web/components/layout/ask-pill.tsx`) — and
 [`../web-greenfield/reference/web-framework.dc.html`](../web-greenfield/reference/web-framework.dc.html),
-which outranks written docs on the web surface while
-[#2140](https://github.com/pdcarlson/Frapp/issues/2140) is open, draws Title Case on some of its
+which outranks written docs on the web surface until the
+[#2140](https://github.com/pdcarlson/Frapp/issues/2140) fold-back, draws Title Case on some of its
 controls. That is real drift against this rule rather than an exception to it, it is tracked as
 [#2386](https://github.com/pdcarlson/Frapp/issues/2386), and that issue carries the question the
 drift actually turns on: whether a board outranks this document on a control's *words* as well as on

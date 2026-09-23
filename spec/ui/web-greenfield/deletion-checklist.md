@@ -145,7 +145,7 @@ Seven satellites, none imported outside the shell: `account-menu.tsx` (136),
 `dashboard-notification-drawer.tsx` (229), `ask-pill.tsx` (102), `dashboard-command-menu.tsx` (407).
 
 - [x] Each satellite either rebuilt or deleted. None left rendering beside a replacement
-- [x] `nav-config.ts`, `protected-nav-item.tsx`, and the account menu's shared bottom region survive
+- [x] `nav-config.ts`, `protected-nav-item.tsx`, and the account menu survive (the menu moved to the top-bar avatar, and the drawer mounts its own instance)
       or have their behavior re-homed. These carry permission and module gating, which is behavior,
       not chrome
 - [x] The responsive contract is re-stated or deliberately changed. Today it is **two states, not
@@ -181,8 +181,8 @@ no title sits in the top bar.
 
 **Taken by lane 2, and this section's second line was wrong.** It restated the pre-greenfield
 `foundations.md` §12 rule. The framework board (option `3a`) declares the bar at the root, calls it
-chrome, and says scrollbars are "never hidden" — and committed HTML outranks written docs while
-#2140 is open. The `.signet-scroll` opt-in class had zero call sites repo-wide, so it was retired
+chrome, and says scrollbars are "never hidden" — and committed HTML outranks written docs until
+the #2140 fold-back. The `.signet-scroll` opt-in class had zero call sites repo-wide, so it was retired
 rather than left standing beside the global rule, and `foundations.md` §12 was rewritten in the same
 change rather than left contradicting the code.
 

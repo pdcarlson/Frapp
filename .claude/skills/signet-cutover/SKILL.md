@@ -32,12 +32,12 @@ Canonical docs (link to them; don't restate their values):
    [`canvas-screens.dc.html`](../../../spec/ui/design-system/reference/canvas-screens.dc.html) wins
    over [`signet-design-system.dc.html`](../../../spec/ui/design-system/reference/signet-design-system.dc.html)
    (for example, 4 tabs, not the system board's stale 5-tab bar).
-3. On the web surface, while [#2140](https://github.com/pdcarlson/Frapp/issues/2140) is open,
+3. On the web surface, until the [#2140](https://github.com/pdcarlson/Frapp/issues/2140) fold-back into `web-dashboard/`,
    [`spec/ui/web-greenfield/`](../../../spec/ui/web-greenfield/README.md) and anything committed
    under its [`reference/`](../../../spec/ui/web-greenfield/reference/README.md) outrank
    [`web-dashboard/`](../../../spec/ui/web-dashboard/README.md) on visuals and structure. Distrust
    only `web-dashboard/`'s chrome: its nav map, gating, routing and data contracts are still truth,
-   and its visual prose is not grounds for a drift issue during the epic. Mobile is unaffected.
+   and its visual prose is not grounds for a drift issue until then. Mobile is unaffected.
 4. The behavior spec wins over UI specs for what the product does. UI specs never override
    [`spec/behavior/`](../../../spec/behavior/README.md).
 5. For the landing, the boards under

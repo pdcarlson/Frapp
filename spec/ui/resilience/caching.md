@@ -74,7 +74,7 @@ The outbox carries `chapterId` and drafts do not, which is not an oversight eith
 
 | Event | Invalidate |
 |-------|-----------|
-| User sends message | `chatMessagesKey(channelId)` (`['chat', channelId, 'messages']`) |
+| User sends message | Nothing: the send writes `chatMessagesKey(channelId)` in place (`setQueryData`, `packages/chat-core/src/chat-client.ts`) rather than invalidating it |
 | User creates event | `['events', chapterId]` |
 | User adjusts points | `['points', chapterId]` (the leaderboard lives under it) |
 | User changes roles | `['members', chapterId]`, `['roles', chapterId]` |
