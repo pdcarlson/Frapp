@@ -12,6 +12,7 @@ import { describe, expect, test } from "vitest";
 import {
   applyReactionInsert,
   emptyCache,
+  markMessageDeleted,
   markRecorded,
   markUnconfirmed,
   mergeServerRow,
@@ -72,6 +73,62 @@ describe("mergeServerRow carry-forward on re-merge", () => {
   test("a fresh message merges with the row's own (empty) actions", () => {
     const cache = mergeServerRow(emptyCache(), row());
     expect(cache.byId["m1"]!.actions).toEqual([]);
+  });
+});
+
+describe("markMessageDeleted (#2311)", () => {
+  test("tombstones the cached row the way the server's soft delete does", () => {
+    let cache = mergeServerRow(
+      emptyCache(),
+      row({
+        content: "you are worthless",
+        kind: "text",
+        metadata: { attachment_count: 2 },
+      }),
+    );
+    cache = applyReactionInsert(cache, voteAction("a1", "u2"));
+
+    const next = markMessageDeleted(cache, "m1");
+
+    const message = next.byId["m1"]!;
+    expect(message).toMatchObject({
+      content: "[message deleted]",
+      is_deleted: true,
+      attachment_count: 0,
+      _status: "confirmed",
+    });
+    // Carried over like any re-merge, so the row keeps its place and tallies.
+    expect(message.actions.map((a) => a.id)).toEqual(["a1"]);
+    expect(next.order).toEqual(cache.order);
+  });
+
+  test("leaves every other row, including an unsent outbox row, where it was", () => {
+    let cache = mergeServerRow(emptyCache(), row());
+    cache = mergeServerRow(
+      cache,
+      row({ id: "m2", client_message_id: "cm2", content: "kept" }),
+    );
+    cache = upsertOptimistic(
+      cache,
+      optimisticMessage({
+        clientMessageId: "cm-pending",
+        channelId: "c1",
+        senderId: "u1",
+        content: "not sent yet",
+      }),
+    );
+
+    const next = markMessageDeleted(cache, "m1");
+
+    expect(next.byId["m2"]).toBe(cache.byId["m2"]);
+    expect(next.byId["cm-pending"]).toBe(cache.byId["cm-pending"]);
+    expect(next.order).toEqual(cache.order);
+  });
+
+  test("is a no-op for a message that is not cached, or is already deleted", () => {
+    const cache = mergeServerRow(emptyCache(), row({ is_deleted: true }));
+    expect(markMessageDeleted(cache, "m1")).toBe(cache);
+    expect(markMessageDeleted(cache, "nope")).toBe(cache);
   });
 });
 

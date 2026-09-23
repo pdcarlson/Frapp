@@ -10,11 +10,11 @@ import { networkMock } from "@/tests/network";
  *
  * The first test file this component has had. It exists mainly for the Retry
  * path, which on this surface does more than the bare `refetch()` most of the
- * eighteen gates pass — `members-directory.tsx` (clears the search) and
- * `points/page.tsx` (resets `window` and `semesterArchiveId`) share that.
- * (Eighteen, not the seventeen an earlier draft said: `study-page.tsx`'s gate
- * is Prettier-wrapped across four lines, so a one-line grep for
- * `isOffline && …anyReadUncached` misses it. Count with a multiline search.) `useAlumni`
+ * `isOffline && anyReadUncached` gates pass — `members-directory.tsx` (clears
+ * the search) and `points/page.tsx` (resets `window` and `semesterArchiveId`)
+ * share that. (No count here, because a hand-kept one drifted twice. To list
+ * them, search multiline: `study-page.tsx`'s gate is Prettier-wrapped across
+ * four lines, so a one-line grep misses it.) `useAlumni`
  * sets `placeholderData: keepPreviousData`, so committing a filter offline
  * keys the query to something never fetched and hands back the *previous*
  * key's rows as placeholder data. The gate counts that as uncached and
@@ -90,8 +90,9 @@ vi.mock("@repo/hooks", () => ({
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (state: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chap-1" }),
+  useChapterStore: (
+    selector: (state: { activeChapterId: string }) => unknown,
+  ) => selector({ activeChapterId: "chap-1" }),
 }));
 
 import { AlumniDirectory } from "./alumni-directory";

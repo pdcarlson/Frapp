@@ -74,7 +74,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * because the cached roster does not list them yet.
  *
  * **A failed report says whether trying again can help** (`reportFailureBody`):
- * a 403 or 404 is a permanent refusal, anything else asks for another try.
+ * a 403, 404 or 409 is a permanent refusal, anything else asks for another try.
  *
  * **Every report outcome reaches the member.** On screen while the form is up;
  * as an alert if they dismissed it before a failure came back, the same way a

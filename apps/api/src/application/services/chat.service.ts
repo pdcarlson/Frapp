@@ -65,7 +65,10 @@ import {
   isSettableNotificationKind,
 } from '#domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
-import { ChannelAccessService } from './channel-access.service';
+import {
+  ChannelAccessService,
+  type ReportedMessageGrant,
+} from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
 import { ActivationService } from './activation.service';
@@ -240,6 +243,20 @@ export interface CreateCategoryInput {
   chapter_id: string;
   name: string;
   display_order?: number;
+}
+
+/** What {@link ChatService.deleteReportedMessage} did, and where. */
+export interface ReportedMessageRemoval {
+  /** True when the message was already soft-deleted and nothing was written. */
+  alreadyDeleted: boolean;
+  /** The message's channel — an id only; it opens nothing. */
+  channelId: string;
+}
+
+/** What {@link ChatService.reportedMessageState} knows about a reported message. */
+export interface ReportedMessageState {
+  channelId: string;
+  isDeleted: boolean;
 }
 
 @Injectable()
@@ -923,18 +940,23 @@ export class ChatService {
    * messages too, and a second copy of this resolution would be free to drift
    * from the one the chat hot path uses. The body moved there; this stays as a
    * thin delegate so the call sites below read unchanged.
+   *
+   * `grant` is passed through untouched; only {@link deleteReportedMessage}
+   * supplies one.
    */
   private assertMessageAccess(
     messageId: string,
     chapterId: string,
     userId: string,
     operation: 'read' | 'post' = 'read',
+    grant?: ReportedMessageGrant,
   ): Promise<ChatMessage> {
     return this.channelAccess.assertMessageAccess(
       messageId,
       chapterId,
       userId,
       operation,
+      grant,
     );
   }
 
@@ -1002,6 +1024,122 @@ export class ChatService {
       );
     }
 
+    return this.softDeleteMessage(messageId, chapterId);
+  }
+
+  /**
+   * Remove the one message an open report names (#2311, option 1).
+   *
+   * **Not a second delete path.** Authorization goes through the same
+   * `assertMessageAccess` every message action uses, with the report as an
+   * explicit capability ({@link ReportedMessageGrant}) rather than a forked
+   * predicate; the write is the same {@link softDeleteMessage} `deleteMessage`
+   * ends in, so the tombstone, the `metadata` wipe and the attachment purge
+   * cannot drift between an author deleting their own message and an officer
+   * removing a reported one.
+   *
+   * The officer's `channels:manage` is proven by the route
+   * (`POST /v1/chat/reports/:id/remove-message`), in the same chapter the grant
+   * was read in. What this adds on top:
+   *
+   * - **No sender check.** The report, not authorship, is the authority.
+   * - **A message already soft-deleted is not an error**, and nothing is
+   *   written: `{ alreadyDeleted: true }`. The content is gone whoever removed
+   *   it — its sender, an officer's ordinary delete, a sibling report's
+   *   removal, or an earlier attempt of this same call that failed after the
+   *   delete landed — and the report still has to close. Refusing would strand
+   *   it open with nothing left to act on, and a retry of a half-finished
+   *   removal would never succeed. The caller learns which happened, so it can
+   *   say so honestly rather than claim a removal it did not make.
+   *
+   * `chapterId` is the caller's active chapter, taken separately from the
+   * grant's own so the predicate compares two independently sourced values
+   * rather than one against itself.
+   *
+   * Returns no part of the row but its `channel_id`: the caller must not
+   * receive the message. The only thing the officer is entitled to from a DM
+   * is the snapshot the report already holds. The channel id is an id, not a
+   * read — every channel route still refuses it — and it is what lets the
+   * client blank that one timeline's cached copy rather than refetch them all
+   * (`ChatReportRemovalDto.channel_id`).
+   */
+  async deleteReportedMessage(
+    grant: ReportedMessageGrant,
+    chapterId: string,
+    officerUserId: string,
+  ): Promise<ReportedMessageRemoval> {
+    const message = await this.assertMessageAccess(
+      grant.messageId,
+      chapterId,
+      officerUserId,
+      'read',
+      grant,
+    );
+
+    if (message.is_deleted) {
+      return { alreadyDeleted: true, channelId: message.channel_id };
+    }
+
+    await this.softDeleteMessage(message.id, chapterId);
+    return { alreadyDeleted: false, channelId: message.channel_id };
+  }
+
+  /**
+   * Whether a reported message is still there, and which channel it is in —
+   * or `null` when there is no such message in this chapter (hard-deleted by a
+   * channel delete or the import purge).
+   *
+   * **A state read, not an authorization.** It returns no content and grants
+   * nothing, and it has exactly three callers in `ChatReportService`, each
+   * passing a message id it already holds by right: a message the reporter
+   * was just authorized to read (the re-check after a report is written); the
+   * message a chapter-scoped, reviewer-visible report names, for the removal
+   * route's answer to a report that is already `actioned`; and the same
+   * message after a removal of it failed on a 5xx or a lost response
+   * (`messageStateAfterFailedRemoval`), from a report that call had just
+   * claimed. The channel must still resolve inside `chapterId`, as every
+   * message path here requires.
+   */
+  async reportedMessageState(
+    messageId: string,
+    chapterId: string,
+  ): Promise<ReportedMessageState | null> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) return null;
+    const channel = await this.channelRepo.findById(
+      message.channel_id,
+      chapterId,
+    );
+    if (!channel) return null;
+    return { channelId: message.channel_id, isDeleted: message.is_deleted };
+  }
+
+  /**
+   * Finish a reported message's removal whose soft delete committed but whose
+   * answer was lost: the tombstone landed, and the Storage purge that follows
+   * it in {@link softDeleteMessage} never ran. Best effort like that purge, and
+   * a no-op for objects already gone or still referenced by another message.
+   *
+   * Callers confirm the message is deleted first ({@link reportedMessageState})
+   * — this neither authorizes nor checks, and on a message still in place it
+   * would delete files that message still shows.
+   */
+  async purgeRemovedMessageAttachments(
+    messageId: string,
+    chapterId: string,
+  ): Promise<void> {
+    await this.purgeAttachmentObjects(messageId, chapterId);
+  }
+
+  /**
+   * The soft delete itself — shared by {@link deleteMessage} and
+   * {@link deleteReportedMessage}, which differ only in who may call them.
+   * Callers authorize first; this does not.
+   */
+  private async softDeleteMessage(
+    messageId: string,
+    chapterId: string,
+  ): Promise<ChatMessage> {
     const deleted = await this.messageRepo.update(messageId, {
       content: '[message deleted]',
       is_deleted: true,

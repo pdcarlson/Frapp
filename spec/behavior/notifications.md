@@ -41,8 +41,11 @@ Every notification payload includes a `target` object with screen and parameters
 push (`apps/api/src/application/services/notification.service.ts`), which is what lets
 a tap mark the row read without a lookup. The `target` itself carries **only** the keys
 its emitter sets: `chat` sends `channelId`, `events` sends `eventId`, `tasks` sends
-`taskId`, and `billing` / `points` / `service` / `members` send a bare `screen`. A
-bundled chat burst adds `bundled: true` and `count`
+`taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` send a bare
+`screen`. `chat_reports` names the officer report queue (the new-report notification,
+[`chat/README.md`](./chat/README.md#report)); web resolves it to `/chat-admin`, and
+mobile, which has no queue, falls through to the notification list like any screen it
+does not route. A bundled chat burst adds `bundled: true` and `count`
 (`chat-push-worker.service.ts` `buildPayload`). This example previously showed a
 `messageId` the chat push worker has never emitted; clients MUST NOT read one.
 
@@ -292,6 +295,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 | Admin         | New member joined                                                  | NORMAL                      |
 | Admin         | Invite accepted                                                    | SILENT                      |
 | Admin         | Role change on a member                                            | SILENT                      |
+| Admin         | Chat message reported (to report-queue officers; never the reported sender or the reporter; content-free) | NORMAL |
 
 ## Pre-Event Reminders
 
