@@ -1082,14 +1082,16 @@ function SettingsPageContent() {
                   `packages/theme/src/signet.css`.
 
                   "Lightened where it needs to stand out" covers two engine
-                  steps. The generator swaps in its own lighter step 9 for a
-                  seed near the dark background (accent-engine.md §2: `#800000`
-                  paints `#F42F22`), and the §8 floor (#2541, #2586) lifts any
-                  scale whose fill, hover or label would still fall short, which
-                  is every other dark accent (`#8B0000` paints `#D75748`) and
-                  some vivid mid-tones (`#3366FF` paints `#4479FF`). Without the
-                  clause this card would promise a colour the save does not
-                  paint. The wording is mobile's Preferences row's.
+                  steps, in order. The generator swaps in its own lighter step
+                  9 for a seed near the dark background (accent-engine.md §2),
+                  and then the §8 floor (#2541, #2586) lifts any scale whose
+                  fill, hover or label still falls short, swapped or not. So
+                  `#800000` paints its swapped `#F42F22` as is, `#003087`'s
+                  swapped `#1C6CFE` is lifted on to `#2D7BFF`, `#8B0000` is
+                  lifted to `#D75748`, and some vivid mid-tones move too
+                  (`#3366FF` paints `#4479FF`). Without the clause this card
+                  would promise a colour the save does not paint. The wording
+                  is mobile's Preferences row's.
 
                   The closing sentence is board `2e`'s own preview caption
                   ("The Signet mark and ✦ Ask never change"), moved into the
