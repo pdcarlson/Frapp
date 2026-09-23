@@ -48,7 +48,7 @@ Work lives in GitHub Issues on this repo, never in a scratch file. Linear is ret
 
 ## Tech debt protocol
 
-The repo is mid-rebuild (Frapp → Signet), so treat existing code as possibly dead until checked, not as precedent. Standard: [`spec/engineering.md` § Changing existing code](spec/engineering.md#changing-existing-code).
+The repo is mid-rebuild (legacy Frapp → the Signet design system; the product itself is named Frapp, ADR-25), so treat existing code as possibly dead until checked, not as precedent. Standard: [`spec/engineering.md` § Changing existing code](spec/engineering.md#changing-existing-code).
 
 - Before extending code, confirm it has real consumers. A definition or an `index.ts` re-export is not a caller, and building on an orphan doubles the debt.
 - Never silently work around orphaned, superseded, or contradictory code. Fix it inline when it's inside your change's blast radius, otherwise file it per `file-follow-up`; either way, flag it in the response and PR body. Blast radius decides, not diff radius: "out of scope" and "pre-existing" are not verdicts on a defect.

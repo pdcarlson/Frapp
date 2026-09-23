@@ -84,9 +84,11 @@ restyle them piecemeal.
 
 ## Naming
 
-Prose (specs, UI copy, marketing) says **Signet**. Code identifiers, package names (`@repo/*`),
-domains (`frapp.live`), and bundle ids stay **frapp** until the deferred rename. When citing code,
-cite the real current names.
+The product is **Frapp**, and everything a user sees says Frapp
+([ADR-25](../../../spec/architecture/adr/adr-25.md)). "Signet" is this design system's internal
+name until the post-beta internals rename. "Legacy Frapp" in this skill means the retired visuals
+in the table above, not the product name: a cutover deletes legacy Frapp visuals, never Frapp copy.
+The one canonical rule is [`brand-identity.md` § 1](../../../spec/ui/brand-identity.md#1-identity).
 
 ## Cutover deletes what it replaces
 

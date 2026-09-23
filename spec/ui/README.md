@@ -13,7 +13,7 @@ Signet is the rebrand of Frapp. Its dark-first, warm, consumer design system was
 
 A third set of boards, the landing reskin under [`landing/reference/`](landing/reference/README.md), **ranks with those two under rule 1** for the landing surface. It was committed as target state and stopped being that when the cutover merged in two parts, tokens in [#2366](https://github.com/pdcarlson/Frapp/issues/2366) and the composition in [#2367](https://github.com/pdcarlson/Frapp/issues/2367). Its README owns the boards' status, including the three standing exceptions that are not drift.
 
-Naming: spec prose says **Signet**. Code identifiers, package names, domains, and bundle ids remain `frapp` / `@repo/*` / `frapp.live` for now — the repo rename is deferred. When citing code, cite real current names.
+Naming: the product is **Frapp**, and "Signet" is the design system's internal name. The binding rule is [`brand-identity.md` § 1](brand-identity.md#1-identity) (ADR-25).
 
 ## Precedence
 

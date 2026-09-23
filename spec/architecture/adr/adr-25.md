@@ -1,0 +1,69 @@
+### ADR-25: The product is named Frapp; "Signet" stays the design system's internal name until after the beta (2026-09-23)
+
+**Decision:** The owner decided on 2026-09-23, on [#1829](https://github.com/pdcarlson/Frapp/issues/1829), after the USPTO searches recorded on [#1901](https://github.com/pdcarlson/Frapp/issues/1901).
+
+- **The product's name is Frapp.** It is the name everywhere a user can see one: the app, the web dashboard, email, push and OS permission prompts, the landing and legal pages, and the store listing. "Signet" is retired as a product name.
+- **Store identity.**
+  - The App Store listing name is `Frapp: Chapter Hub`. Plain "Frapp" is taken, as plain "Signet" was, which is why the old listing was `Signet: Chapter Hub`.
+  - The subtitle stays "Your chapter, in one place".
+  - The home-screen name (`expo.name` in `apps/mobile/app.json`) becomes `Frapp`.
+- **The permanent identifiers stay frapp, and the deferred frapp → signet identifier rename is cancelled.** They are:
+  - the bundle id `live.frapp.mobile`, which App Store Connect record `6812025642` fixes once a build is uploaded;
+  - `frapp.live` and its subdomains, which the beta binary bakes in as `api.frapp.live`;
+  - the `frapp://` scheme, the Expo slug `frapp` and the Sentry org `frapp-live`;
+  - the repo and `@repo/*` package names.
+- **"Signet" remains the design system's internal name until after the beta.** That covers the `--signet-*` tokens and identifiers, file names such as `signet-emblem-B.svg`, the `signet-cutover` skill, and the design-system vocabulary in `spec/ui/`. A second series renames them after the beta ships. Until then, "Signet" in a spec or skill means the design system, and **nothing a user sees may say Signet**.
+- **The mark is unchanged.** Emblem B is an abstract crest with no letterform, so it works under either name.
+- **The rename runs as an ordered series.** Every step lands before the first `eas build --profile production` ([#2478](https://github.com/pdcarlson/Frapp/issues/2478) § C):
+  1. **This ADR and the naming rule.** The naming rule in [`spec/ui/brand-identity.md`](../../ui/brand-identity.md) § 1 is its one canonical statement, and the specs and the skill that restated it now link to it.
+  2. **The mobile binary.** This step is first because it is the beta's critical path, and each binary stays as shipped until its user updates. It covers `expo.name`, the three iOS permission strings, and the in-app copy. That includes the `Settings → Frapp → …` recovery paths, which must match `expo.name` in the same build. It also covers the local study-pause notification, the Stripe PaymentSheet merchant fallback, the calendar-export filename and PRODID, and the listing paste in `apps/mobile/store/README.md`.
+  3. **Server.**
+     - API user-visible text: error messages, the PDF report footer and producer, report filenames and the ICS PRODID.
+     - The invite email's From name, subject and body.
+     - The OpenAPI title and descriptions, with the regenerated contract.
+     - A new forward migration renaming the system actor `Signet System` → `Frapp System`.
+     - The conformance constants `AUTH_SMTP_SENDER_NAME` and `AUTH_MAGIC_LINK_SUBJECT`.
+
+     On the day it merges, the owner changes the Supabase Auth SMTP sender name and the mailer subjects on `frapp-staging` and `frapp-prod`, and `RESEND_FROM_EMAIL` in Infisical if it carries a display name. Staging conformance fails until the dashboard matches.
+  4. **Web dashboard.** Tab titles, the auth headings, onboarding, settings and roles copy, the Discord import copy, the invite share text and the CSV and ICS filenames, plus the `packages/validation` and `packages/hooks` strings the dashboard renders. The owner renames the Discord application and bot in the Developer Portal the same day, so the consent screen matches the copy.
+  5. **Landing and legal.**
+     - Metadata, the generated OG image, JSON-LD, the hero and footer copy, and the lockup wordmark.
+     - The Terms, Privacy, FERPA and Support pages, with their `lastUpdated` dates.
+     - The owner decides whether a name-only change bumps `LEGAL_POLICY_VERSION`.
+     - After deploy, re-scrape the social previews and request a recrawl.
+  6. **Store console (owner).** After step 2 is in a build, update the App Store Connect description and review notes, then capture and upload the screenshots ([#2454](https://github.com/pdcarlson/Frapp/issues/2454)).
+
+  Each step rewrites the `scripts/ci/__tests__/signet-*.test.mjs` locks it touches in the same PR. They were written to keep "Frapp" out of exactly these strings, so an unflipped lock fails CI. A lock that spans surfaces (calendar PRODID, export filenames, the auth wordmark and the ops-nudge copy) is split per surface by the first step that touches it.
+
+**Rationale:**
+
+- **SIGNET collides on the federal register where the product lives.** The owner searched tmsearch.uspto.gov on 2026-09-23 (#1901).
+  - SN 99945230 is SIGNET for downloadable mobile-app software and SaaS, classes 9 and 42, pending. It was filed 2026-07-16, four weeks before "Signet" first appears in this repo (commit `977527f`, 2026-08-13). Once it registers, it would likely block a SIGNET application from us in those classes, and its owner's priority dates from the filing.
+  - SN 98639778 is a registered SIGNET mark for class 42 software.
+  - RN 4186843 is SIGNET for Phi Sigma Kappa's magazine for fraternity members. That is the product's own audience.
+- **FRAPP is clear on the register in the same classes.** The same search found no live mark containing FRAPP in classes 9 or 42. The only live near-match is FRAPP-WRAP (SN 90580395, class 21, drink holders).
+- **One name instead of two.** Under Signet, users would always see both names: the app said Signet while the URLs, the `mail.frapp.live` sender and the `frapp://` links said frapp. The bundle id can never change, so that split could only ever shrink, never close.
+- **The rename is cheapest now.** An inventory at `ee9dd538` found about 130 user-visible strings: roughly 30 in the mobile binary, 73 across web and landing, and 28 in the API and email. About 47 tests pin them. There is no production binary yet, and production has 2 users. After launch, every step would cost a new binary per install and a listing change.
+
+**Alternatives rejected:**
+
+- *Keep Signet, with the frapp identifiers made permanent.* The agent recommended this before the search, weighing a live same-audience app named Frapp (below) against Signet's adjacent collisions. The search reversed it: SN 99945230 is the same word for the same kind of goods, filed first.
+- *Ask a lawyer before deciding.* This would hold up everything store-facing, because the listing, the binary and the screenshots all wait on the name. The one question that does need counsel (below) doesn't change which name the register favours.
+- *Rename the internals too, before the beta.* That touches about 400 files, including 611 token and identifier lines in 126 files and 36 file names, with no user-visible gain, and churns work already in flight. They move after the beta instead.
+- *Keep "Signet" permanently as the design system's name*, the way Shopify has Polaris or GitHub has Primer. The agent recommended this; the owner chose one name for the codebase, after the beta.
+
+**Consequences:**
+
+- **Open risk: prior use of "Frapp".**
+  - "Frapp: Discover, Connect, Grow" (App Store id `6759274038`) is a live campus events app for student organisations, with event group chats, ticketing and QR check-in. It holds unregistered rights where it is used.
+  - Who used "Frapp" first is unresolved. This repo shows a Frapp landing page built by March 2026, and the other app's launch date isn't known here.
+  - That question, and whether to file a federal FRAPP application in classes 9 and 42, belong to the owner and counsel.
+- **Two senses of "Frapp" until the internals series.** In the specs and skills, "legacy Frapp" still means the retired pre-Signet visuals and code (bone, bronze, Geist, `#2563EB`). It never means the product name. A cutover deletes legacy Frapp visuals, never Frapp copy.
+- **Brand extras.** [`brand-identity.md` § 2](../../ui/brand-identity.md#2-the-mark) records what the rename means for the extras beyond the mark, and the CI lock on that section is revised with the internals series. Nothing is commissioned.
+- **Issues.**
+  - #1901 is answered: both searches are dated, and the go/no-go is recorded here.
+  - #1829 closes when the listing and `app.json` say Frapp (step 2).
+  - #1843 (`getsignet.live`) no longer has a purpose.
+  - #1256 (the headline) doesn't depend on the name and stays deferred.
+
+**Trigger to revisit:** Counsel judges the prior-use risk from the other Frapp app to be material, or a FRAPP application is refused.

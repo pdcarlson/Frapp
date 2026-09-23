@@ -1,6 +1,6 @@
-# Signet brand identity
+# Frapp brand identity
 
-> What "is Signet" at the brand level: the name, the mark, and the identity decisions every other UI spec inherits. Design tokens live in [design-system/foundations.md](design-system/foundations.md); chapter theming lives in [design-system/accent-engine.md](design-system/accent-engine.md). This doc does not restate either.
+> The product brand: the name, the mark, and the identity decisions every other UI spec inherits. Design tokens live in [design-system/foundations.md](design-system/foundations.md); chapter theming lives in [design-system/accent-engine.md](design-system/accent-engine.md). This doc does not restate either.
 
 ---
 
@@ -8,12 +8,17 @@
 
 | Fact        | Value                                                                                                       |
 | ----------- | ----------------------------------------------------------------------------------------------------------- |
-| Name        | **Signet** — a rebrand of Frapp                                                                             |
+| Name        | **Frapp** ([ADR-25](../architecture/adr/adr-25.md), 2026-09-23). "Signet" is retired as a product name and remains the design system's internal name. |
 | Tagline     | "Ask your chapter anything."                                                                                |
 | Positioning | The AI-first operating system for Greek life — see [../product/positioning.md](../product/positioning.md)   |
 | Lane        | Dark-first, warm, **consumer** (Notion / Cash App), with de-Google guardrails. Not Linear/Vercel technical. |
 
-**Naming rule (binding).** Prose — specs, UI copy, marketing — says **Signet**. Code identifiers, package names (`@repo/*`), domains (`frapp.live`, `app.frapp.live`), and bundle ids stay **frapp** for now: the repo/package/domain rename is deferred, and any tracking for it lives in GitHub Issues, not in this spec. When citing code, cite the real current names.
+**Naming rule (binding).** This is the one canonical statement; other docs link here.
+
+- **Everything a user can see says Frapp.** That covers UI copy, email, notifications, OS permission prompts, store listings, the landing and legal pages, and marketing. The store listing is `Frapp: Chapter Hub`, because plain "Frapp" is taken.
+- **"Signet" is the design system's internal name** until the post-beta internals rename (ADR-25). That covers the `--signet-*` tokens, identifiers, file names, and design-system prose in specs and skills. It never appears in user-visible text. New or edited product prose in specs says Frapp; existing spec prose is swept with the internals rename.
+- **"Legacy Frapp" means the retired pre-Signet visuals and code** (bone, bronze, Geist, `#2563EB`), not the product name.
+- **Code identifiers are frapp permanently:** package names (`@repo/*`), domains (`frapp.live`, `app.frapp.live`), the `frapp://` scheme and the bundle id `live.frapp.mobile`. When citing code, cite the real current names.
 
 ---
 
@@ -28,7 +33,7 @@ The shipping mark is **locked emblem B**: an abstract crest with a neck break, g
 | Mark field       | `#1A1A1A` — spec'd **and** measured; the committed rasters are drawn in it                                                     |
 | Mark gold        | `#DDB844` — spec'd **and** measured; the committed rasters are drawn in it                                                    |
 | Shipping mark    | Locked emblem B — abstract crest, neck break, gold on charcoal                                                                |
-| Mascot / extras  | Still **TBD** — the animal mascot stays blocked on the USPTO search for "Signet" (a human action). Do not commission mascot art before it clears. |
+| Mascot / extras  | **Not commissioned.** The USPTO searches it waited on are done ([#1901](https://github.com/pdcarlson/Frapp/issues/1901)), and the product is now Frapp (ADR-25), so a mascot is a new owner decision. § The mascot below is revised with the post-beta internals rename. Do not commission mascot art before that decision. |
 
 > **These two rows once described only the spec, not the pixels.** Until
 > [#2153](https://github.com/pdcarlson/Frapp/issues/2153) a full census of the committed rasters
