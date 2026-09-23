@@ -469,8 +469,8 @@ on both domains.
 | `*.supabase.co` | the **production database project** | `unttyvyfezddlyafcydh.supabase.co` |
 
 The second is the easier one to get wrong, because nothing in the hostname says "prod" —
-`frapp-staging` is `hnoyzpidbmizhbqaiity` and `frapp-prod` is `unttyvyfezddlyafcydh`, two
-opaque refs on one apex (`mcp__Supabase__list_projects` maps them). A single `*.supabase.co`
+the two project refs are opaque strings on one apex ([`.github/environments.json`](../../../.github/environments.json)
+and `mcp__Supabase__list_projects` map them to names). A single `*.supabase.co`
 line therefore hands every unattended session a route to production data, which is exactly
 what enumerating the `frapp.live` hosts was meant to prevent. This was shipped once and
 caught by probing; the negative assertion in the bringup probe exists so it cannot happen

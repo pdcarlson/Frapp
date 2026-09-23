@@ -121,16 +121,16 @@ Established from the Supabase Management API and Supabase's own documentation on
 | **Plan** | **`free`** — holds *both* `frapp-staging` and `frapp-prod` |
 | `frapp-staging` | `hnoyzpidbmizhbqaiity`, `us-east-1`, Postgres 17.6.1.063 |
 | `frapp-prod` | `unttyvyfezddlyafcydh`, `us-east-2`, Postgres 17.6.1.063 |
+| Supabase daily backups | **None available.** [Pro/Team/Enterprise only](https://supabase.com/docs/guides/platform/backups) |
+| Point-in-Time Recovery | **Not available.** Paid add-on, Pro and above |
 
-> **Rotating either project is a four-place change.** The ref is recorded in
+> **Rotating either project touches every file that names its ref — `git grep` the old ref.** Among other places, the ref is recorded in
 > [`.github/environments.json`](../../../.github/environments.json) as well as in Infisical, in this table, and in
 > [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md)'s egress allowlist. `scripts/run-migration.mjs`
 > compares the injected `SUPABASE_PROJECT_REF` against the committed file and **refuses to run** when they
 > disagree — deliberately, so a staging label can never write to production — so a rotation that updates
 > Infisical and not the file blocks every production migration, and `migration-order` fails every
 > migration-bearing PR against the dead ref. Update the file in the same change.
-| Supabase daily backups | **None available.** [Pro/Team/Enterprise only](https://supabase.com/docs/guides/platform/backups) |
-| Point-in-Time Recovery | **Not available.** Paid add-on, Pro and above |
 
 Supabase's guidance for the free tier is to do exactly what this repo now does:
 
@@ -140,13 +140,9 @@ Supabase's guidance for the free tier is to do exactly what this repo now does:
 Two consequences worth stating plainly:
 
 - **The offsite dump is not defence-in-depth. It is the only restorable backup
-  either project has.** For `frapp-staging` it is nightly, and has been since
-  2026-08-27. For `frapp-prod` the nightly jobs were added on 2026-09-06 (#1435,
-  #1794), and before their first successful scheduled run there is exactly
-  **one** dump: `production/2026-09-06T22-22-57Z/`, taken by hand from an agent
-  session (§ Backups: what exists) and restored locally the preferred way (see
-  the rehearsal log). **Check the `production/` prefix in the bucket for what
-  actually exists, not this sentence.** Anything written to production after the
+  either project has.** What it covers, and since when, is
+  [§ Backups: what exists](#backups-what-exists). **Check the `production/`
+  prefix in the bucket for what actually exists, not this page.** Anything written to production after the
   newest label there is not backed up anywhere, and a production restore into a
   hosted project has not been rehearsed. If the workflow is not running, there is
   no recovery path from data loss beyond replaying migrations into an empty
@@ -164,7 +160,7 @@ Two consequences worth stating plainly:
 | Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 06:30 UTC, plus `workflow_dispatch` |
 | Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
 | Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file. **A recovery pairs a database prefix with its Storage prefix**: `staging/<label>/` with `storage/`, `production/<label>/` with `storage-production/` |
-| Scope | **Both projects** since 2026-09-06. `frapp-staging` under the `staging/` prefix (jobs `backup-staging`, `backup-staging-storage`, `environment: staging`) and `frapp-prod` under `production/` (jobs `backup-production`, `backup-production-storage`). The production jobs run under a **`production-backup`** GitHub environment with **no required reviewers** — a `schedule:` job naming `production` would suspend on ADR-19's required-reviewer gate every night (#1435, the design trap this resolves). Once that environment exists it should get Deployment branches → Selected → `main` (the workflow header); that is a branch filter, not a reviewer gate. Both environments share one code path: the [`db-offsite-backup`](../../../.github/actions/db-offsite-backup/action.yml) and [`storage-offsite-backup`](../../../.github/actions/storage-offsite-backup/action.yml) composite actions, each of which asserts the injected project ref / URL against `.github/environments.json` before touching anything, so a dump can never be filed under the wrong label. Still open: #1403 (Supabase Pro / PITR). #1421 (hosted staging Storage restore rehearsal) passed 2026-09-07; a hosted production database restore is still unrehearsed. |
+| Scope | **Both projects** since 2026-09-06. `frapp-staging` under the `staging/` prefix (jobs `backup-staging`, `backup-staging-storage`, `environment: staging`) and `frapp-prod` under `production/` (jobs `backup-production`, `backup-production-storage`). The production jobs run under a **`production-backup`** GitHub environment, not `production`; why, and how that environment must stay configured, is [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets). Both environments share one code path: the [`db-offsite-backup`](../../../.github/actions/db-offsite-backup/action.yml) and [`storage-offsite-backup`](../../../.github/actions/storage-offsite-backup/action.yml) composite actions, each of which asserts the injected project ref / URL against `.github/environments.json` before touching anything, so a dump can never be filed under the wrong label. Still open: #1403 (Supabase Pro / PITR). #1421 (hosted staging Storage restore rehearsal) passed 2026-09-07; a hosted production database restore is still unrehearsed. |
 | Destination | A private Cloudflare R2 bucket, outside Supabase on purpose — Supabase deletes its own backups with the project. Provisioned 2026-08-27 (#1287): scoped API token (object read/write on that one bucket), `BACKUP_S3_*` secrets in Infisical `staging` at `/` — see [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) § Offsite Backup Secrets for today's shared bucket and the separate-production-bucket target (do not copy the staging token into `prod`). The production jobs read the same four from `staging` (injected first) and their source credentials from `prod` (injected second). Empty `prod` `BACKUP_S3_*` values keep the staging destination (`preserve-nonempty` on that inject in `db-backup.yml`); non-empty prod values still win. Storage mirrors: `storage/` (staging) and `storage-production/` |
 | Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
 | First verified run | Staging: [2026-08-27, run 1](https://github.com/pdcarlson/Frapp/actions/runs/33116113194) — upload plus independent read-back listing all 4 objects. **Production: `production/2026-09-06T22-22-57Z/`, taken 2026-09-06 by hand from an agent session** with the same `scripts/db-backup.sh --linked` the nightly job runs, uploaded with read-back (4 objects, manifest byte-identical to the local copy), plus the Storage mirror manifest under `storage-production/` (0 objects — production Storage was empty). That dump held 54 ledger rows and one `public.users` row (the migration-seeded system sender) and nothing else: production had no sign-ups yet. It exists so that the first scheduled production run (#1794) is not also the first production backup |

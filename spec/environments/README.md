@@ -195,9 +195,10 @@ would have applied migrations to production while every log line said staging.
 
 Two consequences worth holding together:
 
-- **Rotating a project is a four-place change** — Infisical, `.github/environments.json`, and the two doc tables
-  above. Missing the file blocks every production migration and fails `migration-order` on every
-  migration-bearing PR. The playbook's ref table says so where the tables live.
+- **Rotating a project touches every file that names its ref**, not only `.github/environments.json` — see
+  [`DB_ROLLBACK_PLAYBOOK.md` § Backup reality](../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md#backup-reality).
+  Missing the file blocks every production migration and fails `migration-order` on every
+  migration-bearing PR.
 - **`check-migration-drift.yml` deliberately still reads its refs from Infisical.** Pointing it at the
   committed file too would make the pair agree by construction, and the fence would assert nothing.
 

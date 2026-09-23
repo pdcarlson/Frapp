@@ -1040,7 +1040,7 @@ same minute and a dump never races a Management API read of the project it is du
 | Time (UTC) | Workflow | Watches |
 | --- | --- | --- |
 | 06:15 | `production-backup-env.yml` | GitHub environment `production-backup` has no `required_reviewers` or `wait_timer`. Unreadable or missing is FAIL. `deployment_branch_policy` is ignored. Does not name `environment: production` or `environment: production-backup` |
-| 06:30 | `db-backup.yml` | Offsite backup of `frapp-staging` **and** (since 2026-09-06, #1435) `frapp-prod` — Postgres dump + Storage mirror for each, four jobs in one run |
+| 06:30 | `db-backup.yml` | Offsite Postgres dump + Storage mirror; what it covers is [`DB_ROLLBACK_PLAYBOOK.md` § Backups: what exists](../ops/DB_ROLLBACK_PLAYBOOK.md#backups-what-exists) |
 | 07:00 | `check-migration-drift.yml` | Applied migrations match `supabase/migrations/`, staging **and** production |
 | 07:15 | `production-guardrails.yml` | Render auto-deploy off and tracking `main`, `healthCheckPath` `/health`, and neither Vercel project linked to Git |
 | 07:30 | `staging-conformance.yml` | Project health, auth hook, redirect allow list, Auth SMTP (Resend + ≥300/hour), Magic Link template (`token_hash` on the app host), Render `healthCheckPath` `/health`, Render auto-deploy on tracking `main`, Infisical syncs, and a live sign-in probe against `frapp-staging` |
