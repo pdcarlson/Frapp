@@ -14,10 +14,12 @@
   - the repo and `@repo/*` package names.
 - **"Signet" remains the design system's internal name until after the beta.** That covers the `--signet-*` tokens and identifiers, file names such as `signet-emblem-B.svg`, the `signet-cutover` skill, and the design-system vocabulary in `spec/ui/`. A second series renames them after the beta ships. Until then, "Signet" in a spec or skill means the design system, and **nothing a user sees may say Signet**.
 - **The mark is unchanged.** Emblem B is an abstract crest with no letterform, so it works under either name.
-- **The rename runs as an ordered series.** Every step lands before the first `eas build --profile production` ([#2478](https://github.com/pdcarlson/Frapp/issues/2478) § C):
-  1. **This ADR and the naming rule.** The naming rule in [`spec/ui/brand-identity.md`](../../ui/brand-identity.md) § 1 is its one canonical statement, and the specs and the skill that restated it now link to it.
-  Each step lists three things: the code it changes; the specs and docs that pin those strings, which change in the same PR; and the consoles the owner changes by hand on the day it merges.
+- **The rename runs as an ordered series.** Every step lands before the first `eas build --profile production` ([#2478](https://github.com/pdcarlson/Frapp/issues/2478) § C). Steps 2 to 5 each break down into up to three parts:
+  - the code the step changes;
+  - the specs and docs that pin those strings, which change in the same PR;
+  - what the owner does by hand on the day it merges, whether in a console or as a decision.
 
+  1. **This ADR and the naming rule.** The naming rule in [`spec/ui/brand-identity.md`](../../ui/brand-identity.md) § 1 is its one canonical statement, and the specs and the skill that restated it now link to it.
   2. **The mobile binary.** This step is first because it is the beta's critical path, and each binary stays as shipped until its user updates.
      - *Code:*
        - `expo.name`, the three iOS permission strings, and the in-app copy. That includes the `Settings → Frapp → …` recovery paths, which must match `expo.name` in the same build.
@@ -37,11 +39,12 @@
        - The App Review demo seed's placeholder PDF text in `scripts/demo/seed-demo.mjs`. If the production seed (#2309) runs before this step, re-run its `storage` command after it.
      - *Specs and docs:*
        - the PDF footer in `spec/behavior/reports.md` and `spec/product/modules.md`;
-       - the system actor's target state in `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md`;
-       - the SMTP From and sender name in `docs/internal/ops/deployment/supabase.md`;
+       - a new dated entry for the system actor in `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md`, which record the 2026-09-09 `Signet System` rename;
+       - every email string in `docs/internal/ops/deployment/supabase.md`: the SMTP table, the From addresses, the conformance description, and the Magic Link template's subject and body;
+       - the conformance assertions restated in `AGENT_INFRA.md` (the staging and production conformance rows) and `ALERT_ROUTING.md` (the production Auth row);
        - the `RESEND_FROM_EMAIL` default in `ENV_REFERENCE.md`.
      - *Consoles (owner):*
-       - the Supabase Auth SMTP sender name and mailer subjects on `frapp-staging` and `frapp-prod`. Staging conformance fails until they match.
+       - on `frapp-staging` and `frapp-prod`, in Supabase Auth: the SMTP sender name, the mailer subjects, and the **Magic Link template body**, whose heading and link both read "Sign in to Signet". Conformance checks the subject but not the body, so a missed body stays silent.
        - `RESEND_FROM_EMAIL` in Infisical, if it carries a display name.
   4. **Web dashboard and third-party sign-in and billing.**
      - *Code:*
@@ -51,7 +54,7 @@
        - the web half of `writing.md` § 7's Sign in title;
        - the tab-title template and title-lock description in `spec/ui/web-greenfield/deletion-checklist.md` § Copy, with a dated note;
        - the onboarding welcome slide in `spec/ui/design-system/iconography.md`;
-       - the Discord application name and consent screen in `docs/internal/ops/deployment/integrations.md`;
+       - the Discord application and bot names and the consent screen in `docs/internal/ops/deployment/integrations.md`, `ENV_REFERENCE.md` (`DISCORD_BOT_TOKEN`), `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md`;
        - the Services ID Description in `supabase.md` § Auth OAuth providers;
        - the Stripe account name in `ENV_REFERENCE.md`.
      - *Consoles (owner),* so no recovery instruction or consent screen names something the member can't find:
@@ -81,8 +84,8 @@
   An unflipped check fails CI. A lock that spans surfaces (calendar PRODID, export filenames, the auth wordmark and the ops-nudge copy) is split per surface by the first step that touches it.
 
   **This is the one list of specs, docs and consoles each step moves.** `spec/ui/brand-identity.md` § 1 links here rather than keeping its own copy.
-  - The specs were found at `ee9dd538` by reading every line of `git grep -n Signet -- spec`, leaving out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and uses of the name that mean the design system. The docs and consoles came from a narrower sweep of `docs/` for console, sender and consent-screen names, not a line-by-line read.
-  - A list like this is a starting point, not a proof. Specs and docs change before each step lands, so re-run that grep when a step starts, and treat every hit that describes a string the step changes as part of that step, whether it is new or not.
+  - It was found by reading every line of `git grep -n Signet -- spec docs`, leaving out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and uses of the name that mean the design system or the product in general prose. The spec lines were read at `ee9dd538`, and the 57 docs lines at this ADR's branch.
+  - A list like this is a starting point, not a proof. Specs and docs change before each step lands, so re-run `git grep -n Signet -- spec docs` when a step starts, and treat every hit that describes a string the step changes as part of that step, whether it is new or not.
 
 **Rationale:**
 
