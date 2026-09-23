@@ -50,6 +50,26 @@ export function ListSection({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * A pressable row's accessibility hint: its description, then any explicit
+ * hint, each read as its own sentence and never twice. The description is the
+ * second line a sighted member reads under the label; without this a screen
+ * reader heard only the label (#2257 review).
+ */
+export function listRowHint(
+  description: string | null | undefined,
+  accessibilityHint: string | undefined,
+): string | undefined {
+  const parts = [description, accessibilityHint].filter(
+    (part, index, all): part is string =>
+      !!part && all.indexOf(part) === index,
+  );
+  if (parts.length === 0) return undefined;
+  return parts
+    .map((part) => (/[.!?…]$/.test(part) ? part : `${part}.`))
+    .join(" ");
+}
+
 export type ListRowProps = {
   label: string;
   /** Trailing static text — a value the member reads but cannot change here. */
@@ -102,11 +122,15 @@ export function ListRow({
 
   if (!onPress) return content;
 
+  // The Pressable is one accessibility element, so the texts inside it are not
+  // read on their own: the label names it, the trailing value is its value,
+  // and the description goes into the hint (`listRowHint`).
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint={accessibilityHint}
+      accessibilityValue={value ? { text: value } : undefined}
+      accessibilityHint={listRowHint(description, accessibilityHint)}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}

@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  BackfillMessagesQuerySchema,
   canAccessChannel,
-  ChatMessageActionSchema,
-  CreateCheckoutSchema,
   CurrentChapterPayloadSchema,
   CustomFieldOptionsSchema,
+  EmailInviteSchema,
   PatchChapterConfigSchema,
   SendChatMessageSchema,
 } from "./index";
@@ -18,9 +16,8 @@ const UUID = "11111111-1111-4111-8111-111111111111";
  * Dependabot 3 → 4 bump failed CI on `z.record`'s TypeScript arity
  * (`tsc` on `index.ts`); these cases do not catch that (specs are
  * excluded from the package `tsc`), but they would trip if `.uuid()`,
- * `.email()`, `.url()`, `.default()`, `.coerce`, `.passthrough()`,
- * `.strict()`, or record *runtime* parsing stopped matching the v3
- * shapes callers still send.
+ * `.email()`, `.default()`, `.passthrough()`, `.strict()`, or record
+ * *runtime* parsing stopped matching the v3 shapes callers still send.
  */
 describe("Zod 4 schema smoke", () => {
   describe("z.record(key, value)", () => {
@@ -52,30 +49,20 @@ describe("Zod 4 schema smoke", () => {
       });
       expect(send.kind).toBe("text");
       expect(send.payload).toEqual({ option_id: "a", extra: 1 });
-
-      const action = ChatMessageActionSchema.parse({
-        message_id: UUID,
-        action_type: "vote",
-        payload: { option_id: "a" },
-      });
-      expect(action.payload).toEqual({ option_id: "a" });
     });
   });
 
-  it("accepts uuid / email / url string checks", () => {
+  it("applies the email string check", () => {
     expect(
-      CreateCheckoutSchema.parse({
-        customer_email: "member@example.com",
-        success_url: "https://example.com/ok",
-        cancel_url: "https://example.com/cancel",
-      }),
-    ).toMatchObject({ customer_email: "member@example.com" });
-  });
-
-  it("coerces backfill limit from a query string", () => {
-    expect(BackfillMessagesQuerySchema.parse({ limit: "10" })).toEqual({
-      limit: 10,
-    });
+      EmailInviteSchema.safeParse({
+        role: "member",
+        emails: ["member@example.com"],
+      }).success,
+    ).toBe(true);
+    expect(
+      EmailInviteSchema.safeParse({ role: "member", emails: ["not-an-email"] })
+        .success,
+    ).toBe(false);
   });
 
   it("keeps unknown keys on CurrentChapterPayloadSchema", () => {

@@ -1,6 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { ChannelAccessService } from './channel-access.service';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  ChannelAccessService,
+  ReportedMessageGrant,
+} from './channel-access.service';
+import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
 import { RbacService } from './rbac.service';
 import {
   CHAT_CHANNEL_REPOSITORY,
@@ -400,6 +408,184 @@ describe('ChannelAccessService', () => {
       await expect(
         service.assertChannelAccess('ch-announce', 'chap-1', 'user-1', 'vote'),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  // #2311, option 1: the report row as a capability over exactly one message.
+  // The grant is the one way past the channel predicate, so every edge of it is
+  // pinned here, where the predicate lives.
+  describe('assertMessageAccess — reported-message grant', () => {
+    const OFFICER = 'user-officer';
+    const dmChannel: ChatChannel = {
+      ...publicChannel,
+      id: 'ch-dm',
+      name: 'dm-a-b',
+      type: 'DM',
+      member_ids: ['user-a', 'user-b'],
+    };
+    const reported = {
+      id: 'msg-reported',
+      channel_id: 'ch-dm',
+      sender_id: 'user-b',
+      content: 'reported text',
+      is_deleted: false,
+    };
+    const sibling = { ...reported, id: 'msg-sibling', content: 'unreported' };
+    const openReport: ChatMessageReportView = {
+      id: 'report-1',
+      chapter_id: 'chap-1',
+      message_id: 'msg-reported',
+      reported_content: 'reported text',
+      reported_sender_id: 'user-b',
+      reported_author_name: null,
+      reason: 'harassment',
+      details: null,
+      status: 'open',
+      created_at: '2026-01-01T00:00:00.000Z',
+      resolved_at: null,
+      resolved_by: null,
+    };
+    const grant = () => ReportedMessageGrant.fromOpenReport(openReport);
+
+    beforeEach(() => {
+      mockChannelRepo.findById.mockResolvedValue(dmChannel);
+      mockMessageRepo.findById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === reported.id ? reported : id === sibling.id ? sibling : null,
+        ),
+      );
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+    });
+
+    it('without a grant, a wildcard officer is refused the DM message', async () => {
+      // The baseline the grant exists to narrow: `channels:manage` — even `*` —
+      // does not reach a direct conversation.
+      await expect(
+        service.assertMessageAccess('msg-reported', 'chap-1', OFFICER),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('with a grant, admits the one message the report names', async () => {
+      const message = await service.assertMessageAccess(
+        'msg-reported',
+        'chap-1',
+        OFFICER,
+        'read',
+        grant(),
+      );
+
+      expect(message.id).toBe('msg-reported');
+      // The channel still resolves inside the caller's chapter, and the caller
+      // is still checked for membership of it.
+      expect(mockChannelRepo.findById).toHaveBeenCalledWith('ch-dm', 'chap-1');
+      expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+        OFFICER,
+        'chap-1',
+      );
+    });
+
+    it('refuses a sibling message in the same DM, before reading it', async () => {
+      await expect(
+        service.assertMessageAccess(
+          'msg-sibling',
+          'chap-1',
+          OFFICER,
+          'read',
+          grant(),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      // Decided from the grant alone: a grant pointed elsewhere cannot even
+      // learn whether that message id exists.
+      expect(mockMessageRepo.findById).not.toHaveBeenCalled();
+    });
+
+    it('never authorizes a post — a report grants removal, not authorship', async () => {
+      await expect(
+        service.assertMessageAccess(
+          'msg-reported',
+          'chap-1',
+          OFFICER,
+          'post',
+          grant(),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('refuses a grant from another chapter', async () => {
+      await expect(
+        service.assertMessageAccess(
+          'msg-reported',
+          'chap-other',
+          OFFICER,
+          'read',
+          grant(),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('normalizes a channel outside the chapter to the same 404', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.assertMessageAccess(
+          'msg-reported',
+          'chap-1',
+          OFFICER,
+          'read',
+          grant(),
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('refuses a caller who is not a member of the chapter', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.assertMessageAccess(
+          'msg-reported',
+          'chap-1',
+          OFFICER,
+          'read',
+          grant(),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('does not widen channel reads: the DM itself stays closed', async () => {
+      // `assertChannelAccess` takes no grant at all, so every thread read
+      // (`getMessages`, pins, the channel row) is decided exactly as before.
+      await expect(
+        service.assertChannelAccess('ch-dm', 'chap-1', OFFICER),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    describe('ReportedMessageGrant.fromOpenReport', () => {
+      it.each(['reviewed', 'actioned', 'dismissed'] as const)(
+        'refuses a %s report',
+        (status) => {
+          expect(() =>
+            ReportedMessageGrant.fromOpenReport({ ...openReport, status }),
+          ).toThrow(ConflictException);
+        },
+      );
+
+      it('refuses a report whose message was hard-deleted', () => {
+        expect(() =>
+          ReportedMessageGrant.fromOpenReport({
+            ...openReport,
+            message_id: null,
+          }),
+        ).toThrow(ConflictException);
+      });
+
+      it('names the report, its chapter and its message', () => {
+        expect(grant()).toMatchObject({
+          reportId: 'report-1',
+          chapterId: 'chap-1',
+          messageId: 'msg-reported',
+        });
+      });
     });
   });
 

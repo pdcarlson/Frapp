@@ -52,23 +52,30 @@ export interface NotificationGroup {
 /**
  * `data.target.screen` → the label drawn under a row.
  *
- * Keyed on the screen names the API actually emits. Grepping `target: {` across
- * `apps/api/src` yields exactly seven: `chat`, `events`, `tasks`, `billing`,
- * `points`, `service`, `members`. All seven are here — `members` was missing
- * until C7 (#998) noticed that an invite notification
- * (`invite.service.ts` sends `screen: 'members'`) navigated correctly to the
- * directory while rendering with no category label at all, which is the one
- * thing this map exists to produce.
+ * Keyed on the screen names the API actually emits — every `screen:` in a
+ * `target: {` across `apps/api/src`, which is the list to re-derive from
+ * rather than a count kept here: `chat`, `events`, `tasks`, `billing`,
+ * `points`, `service`, `members` and `chat_reports`. Each has a label — an
+ * emitted screen missing here is the bug C7 (#998) found, when an invite
+ * notification (`invite.service.ts` sends `screen: 'members'`) navigated
+ * correctly to the directory while rendering with no category label at all,
+ * which is the one thing this map exists to produce.
+ *
+ * `chat_reports` is the officer new-report notification
+ * (`ChatReportService`). Mobile has no report queue, so the row routes to the
+ * notification list (`lib/notifications/targets.ts`), but it is still labelled:
+ * an officer reading it here should see what kind of notice it is.
  *
  * The extra keys below (`event`, `event-details`, `task`, `dues`, `study`) are
  * not emitted by anything today. They are kept because a label that is merely
  * absent costs a member nothing, whereas guessing a *route* would send them
  * somewhere wrong — which is why `lib/notifications/targets.ts` maps only the
- * seven and falls back rather than tolerating spelling variants. Anything
- * unmapped here gets no label.
+ * emitted screens it has a route for and falls back rather than tolerating
+ * spelling variants. Anything unmapped here gets no label.
  */
 const SCREEN_LABELS: Record<string, string> = {
   chat: "Chat",
+  chat_reports: "Reports",
   event: "Events",
   events: "Events",
   "event-details": "Events",
@@ -181,7 +188,7 @@ export function selectUnreadIds(data: unknown): string[] {
  * `ChatService` writes a `notifications` row (`target.screen: "chat"`) for
  * every DM, group-DM, and announcement message, on top of the read-receipt
  * count `useChannelUnreadCounts` already returns for that same channel — see
- * `chat.service.ts`'s `sendMessageNotification`. Summing `selectUnreadIds`'s
+ * `chat.service.ts`'s `notifyMessageRecipients`. Summing `selectUnreadIds`'s
  * total with the channel-unread total would therefore double-count exactly
  * those messages. The app-icon badge (`use-badge-sync.ts`) needs this
  * exclusion; "Mark all read" does not — it must still clear chat-sourced rows

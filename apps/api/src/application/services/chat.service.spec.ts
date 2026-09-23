@@ -40,7 +40,11 @@ import type {
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { RbacService } from './rbac.service';
-import { ChannelAccessService } from './channel-access.service';
+import {
+  ChannelAccessService,
+  ReportedMessageGrant,
+} from './channel-access.service';
+import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
 import { ChatBlockService } from './chat-block.service';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
 import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
@@ -84,7 +88,10 @@ describe('ChatService', () => {
   };
   // Nobody is blocked by default, so every existing case reads unmasked; the
   // masking tests below seed it.
-  let mockChatBlocks: { listBlockedUserIds: jest.Mock };
+  let mockChatBlocks: {
+    listBlockedUserIds: jest.Mock;
+    filterOutBlockers: jest.Mock;
+  };
   const baseMember = {
     id: 'mem-1',
     user_id: 'user-1',
@@ -225,6 +232,10 @@ describe('ChatService', () => {
 
     mockChatBlocks = {
       listBlockedUserIds: jest.fn().mockResolvedValue([]),
+      // Nobody has blocked anybody: the audience passes through untouched.
+      filterOutBlockers: jest.fn(
+        async (_chapterId: string, _senderId: string, ids: string[]) => ids,
+      ),
     };
 
     mockRbac = {
@@ -1275,6 +1286,92 @@ describe('ChatService', () => {
       await expect(
         service.listMessageAttachments('ch-chan-1', 'ch-1', 'user-1', 'msg-1'),
       ).rejects.toThrow(NotFoundException);
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
+    });
+
+    // ── Block masking (#2324) ────────────────────────────────────────
+    //
+    // The masked row keeps its `id`, so the tombstone alone does not stop a
+    // client asking for the files. This route is the only way to them (the
+    // bucket and the table carry no read policy — pinned by
+    // `chat-read-surface-ledger.spec.ts`), so this is where they are withheld.
+
+    it('refuses to hand out URLs for a message whose sender the caller has blocked', async () => {
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        sender_id: 'user-blocked',
+      });
+      mockAttachmentRepo.findByMessage.mockResolvedValue([attachmentRow]);
+
+      // The same 404 a deleted message gets, so the answer reads as "no such
+      // message" rather than as a block-specific refusal.
+      await expect(
+        service.listMessageAttachments('ch-chan-1', 'ch-1', 'user-1', 'msg-1'),
+      ).rejects.toThrow(new NotFoundException('Message not found'));
+      expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
+      expect(mockAttachmentRepo.findByMessage).not.toHaveBeenCalled();
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
+    });
+
+    it('still serves the files of a sender the caller has not blocked', async () => {
+      // The control for the case above: a block list with someone else on it
+      // must not withhold an unrelated member's files.
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockAttachmentRepo.findByMessage.mockResolvedValue([attachmentRow]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        [attachmentRow.storage_path]: 'https://signed/minutes.pdf',
+      });
+
+      const rows = await service.listMessageAttachments(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'msg-1',
+      );
+
+      expect(rows.map((row) => row.download_url)).toEqual([
+        'https://signed/minutes.pdf',
+      ]);
+    });
+
+    it('serves an imported message, which has no sender anyone can block', async () => {
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        sender_id: null,
+        kind: 'imported',
+      });
+      mockAttachmentRepo.findByMessage.mockResolvedValue([attachmentRow]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        [attachmentRow.storage_path]: 'https://signed/minutes.pdf',
+      });
+
+      const rows = await service.listMessageAttachments(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'msg-1',
+      );
+
+      expect(rows).toHaveLength(1);
+    });
+
+    it('withholds every file when the block list cannot be read', async () => {
+      // "A block list that cannot be read is not an empty block list." Signing
+      // anyway would hand a blocker the blocked member's files for as long as
+      // the table was unreachable.
+      mockChatBlocks.listBlockedUserIds.mockRejectedValue(new Error('pg down'));
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockAttachmentRepo.findByMessage.mockResolvedValue([attachmentRow]);
+
+      await expect(
+        service.listMessageAttachments('ch-chan-1', 'ch-1', 'user-1', 'msg-1'),
+      ).rejects.toThrow('pg down');
       expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
     });
 
@@ -2400,6 +2497,246 @@ describe('ChatService', () => {
     });
   });
 
+  // #2311, option 1 (owner decision 2026-09-22): an OPEN report lets a
+  // `channels:manage` holder remove exactly the message it names — including
+  // one in a DM they are not in — and nothing else. Run over the REAL
+  // ChannelAccessService wired above, so the DM predicate is the one that ships.
+  describe('deleteReportedMessage (report-scoped removal)', () => {
+    const OFFICER = 'user-officer';
+    const dmChannel: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-dm',
+      name: 'dm-user-1-user-2',
+      type: 'DM',
+      member_ids: ['user-1', 'user-2'],
+    };
+    const reportedMessage: ChatMessage = {
+      ...baseMessage,
+      id: 'msg-reported',
+      channel_id: 'ch-dm',
+      sender_id: 'user-2',
+      content: 'you are worthless',
+    };
+    const siblingMessage: ChatMessage = {
+      ...reportedMessage,
+      id: 'msg-sibling',
+      content: 'a message nobody reported',
+    };
+    const openReport: ChatMessageReportView = {
+      id: 'report-1',
+      chapter_id: 'ch-1',
+      message_id: 'msg-reported',
+      reported_content: 'you are worthless',
+      reported_sender_id: 'user-2',
+      reported_author_name: null,
+      reason: 'harassment',
+      details: null,
+      status: 'open',
+      created_at: '2026-01-01T12:05:00.000Z',
+      resolved_at: null,
+      resolved_by: null,
+    };
+    const grantFor = (report: ChatMessageReportView = openReport) =>
+      ReportedMessageGrant.fromOpenReport(report);
+
+    beforeEach(() => {
+      mockChannelRepo.findById.mockResolvedValue(dmChannel);
+      mockMessageRepo.findById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === reportedMessage.id
+            ? reportedMessage
+            : id === siblingMessage.id
+              ? siblingMessage
+              : null,
+        ),
+      );
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        ...baseMember,
+        user_id: OFFICER,
+      });
+      // The officer is a President: the wildcard is exactly the permission the
+      // DM predicate refuses to honour, which is what makes this the hard case.
+      mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+      mockMessageRepo.update.mockResolvedValue({
+        ...reportedMessage,
+        content: '[message deleted]',
+        is_deleted: true,
+      });
+    });
+
+    it('removes the reported DM message through the ordinary soft delete', async () => {
+      await service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER);
+
+      expect(mockChannelRepo.findById).toHaveBeenCalledWith('ch-dm', 'ch-1');
+      expect(mockMessageRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockMessageRepo.update).toHaveBeenCalledWith('msg-reported', {
+        content: '[message deleted]',
+        is_deleted: true,
+        metadata: {},
+      });
+      // Same tail as `deleteMessage`: the attachment purge runs, scoped to the
+      // chapter.
+      expect(mockAttachmentRepo.findByMessage).toHaveBeenCalledWith(
+        'msg-reported',
+        'ch-1',
+      );
+    });
+
+    it('returns nothing from the DM to the officer but the channel id', async () => {
+      // Whether it removed anything, and the channel's id so the client can
+      // blank that one cached timeline — no content, no channel row, no
+      // message row.
+      await expect(
+        service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
+      ).resolves.toEqual({ alreadyDeleted: false, channelId: 'ch-dm' });
+    });
+
+    it('does not open the thread: the officer still cannot read the DM', async () => {
+      // "A report about a DM does not open the DM to officers." Only the
+      // delete path accepts a grant; every read goes through the unchanged
+      // predicate.
+      await expect(
+        service.getMessages('ch-dm', 'ch-1', OFFICER),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.findByChannel).not.toHaveBeenCalled();
+    });
+
+    it('does not open the sibling messages to the ordinary delete route', async () => {
+      // `DELETE /v1/channels/messages/:id` for any other message in the DM is
+      // still the 403 it was, wildcard or not.
+      await expect(
+        service.deleteMessage('msg-sibling', 'ch-1', OFFICER, true),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('answers an already-deleted message as such, writing nothing', async () => {
+      // Its sender, an ordinary delete, a sibling report's removal or an
+      // earlier half-finished attempt got there first. Not an error — the
+      // report still has to close — but nothing is removed now, and the caller
+      // is told so it does not claim a removal it did not make.
+      mockMessageRepo.findById.mockResolvedValue({
+        ...reportedMessage,
+        content: '[message deleted]',
+        is_deleted: true,
+      });
+
+      await expect(
+        service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
+      ).resolves.toEqual({ alreadyDeleted: true, channelId: 'ch-dm' });
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      expect(mockAttachmentRepo.findByMessage).not.toHaveBeenCalled();
+    });
+
+    it('404s a message that no longer exists', async () => {
+      mockMessageRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a grant minted in another chapter', async () => {
+      // The caller's active chapter and the report's chapter are sourced
+      // independently; a mismatch grants nothing.
+      const foreign = grantFor({ ...openReport, chapter_id: 'ch-other' });
+
+      await expect(
+        service.deleteReportedMessage(foreign, 'ch-1', OFFICER),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('404s when the message channel is not in the caller chapter', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a caller who is not a member of the chapter', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('also removes a reported message in a channel (non-DM) the officer is not in', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        id: 'ch-dm',
+        type: 'PRIVATE',
+        member_ids: ['user-1', 'user-2'],
+      });
+
+      await service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER);
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-reported',
+        expect.objectContaining({ is_deleted: true }),
+      );
+    });
+
+    it('also removes a reported message in a PUBLIC channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        id: 'ch-dm',
+      });
+
+      await service.deleteReportedMessage(grantFor(), 'ch-1', OFFICER);
+
+      expect(mockMessageRepo.update).toHaveBeenCalledTimes(1);
+    });
+
+    describe('reportedMessageState', () => {
+      it('says whether the message is still there, and its channel, with no content', async () => {
+        await expect(
+          service.reportedMessageState('msg-reported', 'ch-1'),
+        ).resolves.toEqual({ channelId: 'ch-dm', isDeleted: false });
+        // Chapter-scoped like every message path: the channel must resolve in
+        // the chapter asked about.
+        expect(mockChannelRepo.findById).toHaveBeenCalledWith('ch-dm', 'ch-1');
+      });
+
+      it('reports a soft-deleted message as deleted', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...reportedMessage,
+          is_deleted: true,
+        });
+
+        await expect(
+          service.reportedMessageState('msg-reported', 'ch-1'),
+        ).resolves.toEqual({ channelId: 'ch-dm', isDeleted: true });
+      });
+
+      it('is null for a message that no longer exists', async () => {
+        mockMessageRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.reportedMessageState('msg-reported', 'ch-1'),
+        ).resolves.toBeNull();
+      });
+
+      it('is null for a message whose channel is not in the chapter', async () => {
+        mockChannelRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.reportedMessageState('msg-reported', 'ch-other'),
+        ).resolves.toBeNull();
+      });
+
+      it('writes nothing', async () => {
+        await service.reportedMessageState('msg-reported', 'ch-1');
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      });
+    });
+  });
+
   // spec/behavior/multi-tenancy.md treats cross-chapter access as a critical
   // security bug, and spec/behavior/chat/README.md requires every message
   // surface to authorize through the channel → chapter → membership lookup.
@@ -2504,6 +2841,97 @@ describe('ChatService', () => {
         service.toggleReaction('msg-1', 'ch-1', 'outsider', '👍'),
       ).rejects.toThrow(ForbiddenException);
       expect(mockReactionRepo.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getReactions', () => {
+    function reaction(id: string, userId: string): MessageReaction {
+      return {
+        id,
+        message_id: 'msg-1',
+        user_id: userId,
+        emoji: '👍',
+        created_at: '2026-01-01T12:00:00.000Z',
+      };
+    }
+
+    it('drops the reactions of a member the caller has blocked', async () => {
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+      mockReactionRepo.findByMessage.mockResolvedValue([
+        reaction('rxn-1', 'user-2'),
+        reaction('rxn-2', 'user-blocked'),
+      ]);
+
+      const result = await service.getReactions('msg-1', 'ch-1', 'user-1');
+
+      expect(result.map((row) => row.id)).toEqual(['rxn-1']);
+      expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
+    });
+
+    it('fails the read when the block list cannot be read', async () => {
+      mockChatBlocks.listBlockedUserIds.mockRejectedValue(new Error('pg down'));
+      mockReactionRepo.findByMessage.mockResolvedValue([
+        reaction('rxn-2', 'user-blocked'),
+      ]);
+
+      await expect(
+        service.getReactions('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('pg down');
+    });
+
+    it('authorizes the message before reading anything', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.getReactions('msg-1', 'ch-1', 'outsider'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReactionRepo.findByMessage).not.toHaveBeenCalled();
+      expect(mockChatBlocks.listBlockedUserIds).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reaction writes notify nobody (#2324)', () => {
+    // "The blocker never gets a reaction ping from the blocked member" holds
+    // today because no reaction notifies anyone: the push worker fans out on
+    // `chat_messages` INSERT only. This pins that. A reaction push added later
+    // has to decide what a block does to it first — see
+    // `chat-read-surface-ledger.spec.ts`.
+
+    it('does not notify on a legacy reaction toggle', async () => {
+      mockReactionRepo.findOne.mockResolvedValue(null);
+      mockReactionRepo.create.mockResolvedValue({
+        id: 'rxn-1',
+        message_id: 'msg-1',
+        user_id: 'user-1',
+        emoji: '👍',
+        created_at: '2026-01-01T12:00:00.000Z',
+      });
+
+      await service.toggleReaction('msg-1', 'ch-1', 'user-1', '👍');
+
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+    });
+
+    it('does not notify on a hot-path reaction action', async () => {
+      mockActionRepo.create.mockResolvedValue({
+        id: 'act-1',
+        message_id: 'msg-1',
+        user_id: 'user-1',
+        action_type: 'reaction:👍',
+        payload: {},
+        created_at: '2026-01-01T12:00:00.000Z',
+      });
+
+      await service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
+        action_type: 'reaction:👍',
+      });
+
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
     });
   });
 
@@ -3470,7 +3898,103 @@ describe('ChatService', () => {
           priority: 'URGENT',
           category: 'announcements',
         }),
+        expect.objectContaining({ filterAudience: expect.any(Function) }),
       );
+    });
+
+    // ── Blocks (#2324) ───────────────────────────────────────────────
+    //
+    // This path writes an in-app row and pushes the body, independently of the
+    // chat push worker, so it owes the same audience filter the worker applies.
+
+    it('does not notify a DM recipient who has blocked the sender', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'GROUP_DM',
+        member_ids: ['user-1', 'user-2', 'user-blocker'],
+      });
+      mockChatBlocks.filterOutBlockers.mockResolvedValue(['user-2']);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello!',
+      });
+
+      expect(mockChatBlocks.filterOutBlockers).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+        ['user-2', 'user-blocker'],
+      );
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-2',
+        'ch-1',
+        expect.anything(),
+      );
+    });
+
+    it('drops blockers from the announcement fan-out', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        name: 'announcements',
+        type: 'PUBLIC',
+        is_read_only: true,
+      });
+      mockRbac.getEffectivePermissions.mockResolvedValue([
+        'announcements:post',
+      ]);
+      mockChatBlocks.filterOutBlockers.mockResolvedValue(['user-2']);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Important update!',
+      });
+
+      // The filter is handed to `notifyChapter`, which runs it on the roster it
+      // loads. Run it the way that method would.
+      const [, , options] = mockNotificationService.notifyChapter.mock
+        .calls[0] as unknown as [
+        string,
+        unknown,
+        { filterAudience: (ids: string[]) => Promise<string[]> },
+      ];
+      await expect(
+        options.filterAudience(['user-1', 'user-2', 'user-blocker']),
+      ).resolves.toEqual(['user-2']);
+      expect(mockChatBlocks.filterOutBlockers).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+        ['user-1', 'user-2', 'user-blocker'],
+      );
+    });
+
+    it('notifies nobody, and still sends, when the block list cannot be read', async () => {
+      // Fail closed on the notification, not on the message: the send has
+      // already committed, and every DM recipient going un-notified is the safe
+      // side of pushing a blocked member's words to the blocker.
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'DM',
+        member_ids: ['user-1', 'user-2'],
+      });
+      mockChatBlocks.filterOutBlockers.mockRejectedValue(new Error('pg down'));
+
+      const result = await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello!',
+      });
+
+      expect(result.message).toEqual(baseMessage);
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
     });
 
     // #1008: the fan-out pushes the message body to EVERY chapter member, so it

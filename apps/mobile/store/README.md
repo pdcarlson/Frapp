@@ -83,12 +83,18 @@ search.
 > `frapp-prod` migrations are **current** — its applied list ends at the same
 > `20260915210100` the repo does (83 files; the old "81" was stale) — and it already
 > carries `chat_reports_and_blocks`, so the Guideline 1.2 **write** path is deployed.
-> That narrows #2257 to client work but does not close it: nothing anywhere reads
-> `/v1/chat/reports`, including the web dashboard, and 1.2 requires acting on a report,
-> not only accepting it — so an officer review surface is still owed. (`mcp__Render__list_deploys`
-> on `srv-d6lqu41aae7s73f62df0`; `mcp__Supabase__list_migrations` on
-> `unttyvyfezddlyafcydh`.) **Re-check again before submitting**; a 200 on `/health` says
-> the service is up, not that it matches the app.
+> (`mcp__Render__list_deploys` on `srv-d6lqu41aae7s73f62df0`;
+> `mcp__Supabase__list_migrations` on `unttyvyfezddlyafcydh`.) **Re-check again before
+> submitting**; a 200 on `/health` says the service is up, not that it matches the app.
+>
+> That narrows #2257 to client work but does not close it. Both client halves were built
+> later than the deploy verified above, so check that each shipped before relying on it.
+> The member half (report a message, block and unblock a member, the tombstone and
+> Settings → Blocked members) ships only in a binary built from `main` after the #2257
+> member-side change merged; confirm the merge and the build. The officer half, which 1.2
+> also requires (acting on a report, not only accepting it), is on the web dashboard only:
+> Chat Admin reads `/v1/chat/reports` and can remove the one message an open report names
+> (#2311). Both per `spec/behavior/chat/README.md` § Report and block.
 >
 > **Superseded, kept as the provenance of the Resend gap (2026-09-14):** production then
 > served `0ca478e` (2026-09-08), ~160 commits behind `main`, with 76 of the repo's 81
@@ -106,7 +112,7 @@ search.
 > `invites`, `financial_invoices` (total and `where status = 'OPEN'`), `events`,
 > `chat_messages`, `chat_channels where type in ('DM','GROUP_DM')` and `study_geofences`.
 > **These invert as soon as § Seed the reviewer's chapter is acted on — re-run the query
-> rather than trusting the figures.** Three review notes below describe things a reviewer
+> rather than trusting the figures.** Four review notes below describe things a reviewer
 > cannot currently reach; that section is the fix.
 
 ## As submitted — App Store Connect (recorded 2026-09-14)
@@ -171,8 +177,11 @@ has only `MANUAL` (reward) and `FINE` (penalty) adjustments plus task point
 rewards — no prizes, entries or winners.
 
 **Why 13+ rather than the calculated 4+:** the app ships chapter channels and
-direct messages with no member-level report or block, and its real audience is
-college students. 18+ was rejected because Apple reads it as mature content and
+direct messages, at the time of the override (2026-09-14) with no member-level report
+or block, and its real audience is college students. Report and block exist only in a
+binary built from `main` after the #2257 member-side change merged (§ Review notes); the
+override has not been revisited since. 18+ was rejected because Apple reads it as
+mature content and
 [`apps/landing/app/terms/page.tsx`](../../landing/app/terms/page.tsx) carries no
 minimum-age clause to back it.
 
@@ -183,7 +192,7 @@ record; each is a review-time or launch risk.
 
 | # | Risk |
 | --- | --- |
-| [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 — no member-level report or block, with DMs shipping |
+| [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 — member-level report and block ship on mobile only in a binary built from `main` after the #2257 member-side change merged; the officer queue that reads reports is on the web dashboard only (#2311) |
 | [#2258](https://github.com/pdcarlson/Frapp/issues/2258) | Guideline 5.2 — Backwork's v1 posture (**decision, not work**) |
 | ~~[#2259](https://github.com/pdcarlson/Frapp/issues/2259)~~ | Fixed in the repo 2026-09-22 (owner decision): with Ask off, Chat home and Events draw no ✦ pill, the sheet renders nothing, and `frapp://ask` redirects to Chat home, so **a reviewer is shown no Ask surface at all**. That is also why § Review notes says nothing about Ask: there is nothing on screen to explain. Live only in the next build. It needs `EXPO_PUBLIC_ASK_ENABLED` off in the EAS `production` environment, which the repo cannot see, and since 2026-09-22 an EAS `production` build refuses to evaluate its config when the flag is on (`apps/mobile/app.config.js`), so a set value fails the build instead of shipping Ask (§ Description's note) |
 | ~~[#2260](https://github.com/pdcarlson/Frapp/issues/2260)~~ | Closed 2026-09-18 — answered ("it is not set"), superseded by #2415 |
@@ -201,7 +210,7 @@ the work; the detail lives there, not here.
 | [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` holds only `SENTRY_AUTH_TOKEN`. It no longer owns the screenshot route (#2454 shoots from Expo web), but a `preview` build still cannot sign in. Its other half, no Stripe key in `production`, stopped gating submission on 2026-09-21: this listing no longer claims card payments, so that key is a product decision rather than a blocker. Neither half now gates submission, which ships the `production` build | no longer a gate (2026-09-22) |
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | No App Review chapter or login exists in `frapp-prod` yet, so the reviewer cannot sign in. The seed is ready: `scripts/demo/seed-demo.mjs --reviewer` targets a hosted project, and its `auth` → `sql` → `storage` → `verify` path passed end to end on staging on 2026-09-23 (the run's output is in #2308's PR, and staging was cleaned afterwards). Applying it to production is the owner's step, [`demo-data.md` § Production (App Review)](../../../docs/guides/demo-data.md#production-app-review) | hard gate |
-| [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 (restated as a blocker, not a risk): API and production DB ship report/block, **no client consumes either** | blocker |
+| [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 (restated as a blocker, not a risk): API and production DB ship report/block. The mobile client consumes both, but only in a binary built from `main` after the #2257 member-side change merged; the web dashboard's officer queue reads filed reports and acts on them (#2311), once that is deployed. Web members still cannot report or block (#2313). Stays a blocker until the submitted build and the deploy are confirmed | blocker |
 | [#2305](https://github.com/pdcarlson/Frapp/issues/2305) | **Fixed in the repo 2026-09-22; live only after the next Deploy production.** The policy's photo-library clause read "choose a profile photo or attach an image", and the iOS app has no profile-photo picker, so it now names chat photos only. Resend (sign-in and invite email) and the two hosts, Render and Vercel, were added to § Service Providers. Both stores fetch the live URL, so deploy the landing before submitting | 5.1.2 |
 | ~~[#2298](https://github.com/pdcarlson/Frapp/issues/2298)~~ / [#2301](https://github.com/pdcarlson/Frapp/issues/2301) | The `sheet-demo` dev route ships and is reachable via `frapp://sheet-demo`. (The sign-in tagline no longer advertises Ask, fixed in the repo 2026-09-22, and the two permanently inert controls, [#2300](https://github.com/pdcarlson/Frapp/issues/2300), were removed the same day. Both are live only in the next build.) | 2.1 |
 | [#2334](https://github.com/pdcarlson/Frapp/issues/2334) | **Smoke-test Sign in with Apple on the TestFlight build before submitting.** At the pinned `expo-apple-authentication ~57.0.2` a nil `keyWindow` reaches an uncatchable Swift `fatalError`, i.e. a SIGTRAP abort on the sign-in screen with the browser-OAuth fallback unreachable — and no live Apple sign-in has ever been observed against `frapp-prod`. The unit suite gives **zero** signal because it never loads the native module. A crash on the first screen a reviewer touches outranks the 4.8 question it also raises | 4.8 + crash |
@@ -287,9 +296,9 @@ First release.
 
 ## Seed the reviewer's chapter
 
-The review notes below promise a reviewer three things a fresh demo account cannot see.
+The review notes below promise a reviewer four things a fresh demo account cannot see.
 A reviewer who follows the notes and finds nothing files it as the app not working, so
-this is a prerequisite list, not a polish list. **All three, and the no-invoice row, are
+this is a prerequisite list, not a polish list. **All four, and the no-invoice row, are
 what `scripts/demo/seed-demo.mjs --reviewer` seeds** ([`demo-data.md` § Seed a hosted
 project](../../../docs/guides/demo-data.md#seed-a-hosted-project)), **and each one inverts
 a count in § Identity's production reading**. Re-run that query afterwards rather than
@@ -303,6 +312,7 @@ states what a reviewer will actually be shown.
 | A reviewer account that can sign in | Create the App Review login in `frapp-prod` with `seed-demo.mjs auth` (#2309), not the dashboard, then seed: the seed makes that login, and only a login `auth` created, the president of the demo chapter (namespace `a9900000`), and `verify` proves the sign-in lands there. Give App Review its email and password. Do not plan on an invite: 24h hardcoded, single-use, no override. The seed sets `subscription_status` `active`, without which paid-ops **writes** are refused on three surfaces (#2297) — reads are exempt (`chapter.guard.ts` returns early for `GET`/`HEAD`/`OPTIONS`), so every screen still loads |
 | Location confirms "inside a chapter study zone" | Seeded: the chapter carries three study zones, at fixed coordinates on its campus in Akron, Ohio, and the reviewer has past sessions in them. A reviewer anywhere else is told the device is outside a zone when starting one, which is the check working; § Review notes says so, so it does not read as broken. Zone creation is web-dashboard-only, so it cannot be done from the app being reviewed |
 | "direct messages your chapter has started" | Seeded by `--reviewer`: one DM from the chapter's treasurer into the reviewer's account. The DIRECT section is hidden entirely when the list is empty |
+| "Long-press any message from another member to report it or block them" | Seeded: #general carries fifteen ordinary text messages from other members of the chapter, and `--reviewer` adds the treasurer's two in the reviewer's DM, so a long-press in #general offers Block. A reseed or a hand edit must keep at least one such message, **from another real member of the seeded chapter**, in a channel the reviewer can read. The system actor's posts — the welcome post, the audit bridge — offer Report only, never Block (it is unblockable by design), and the reviewer's own messages offer nothing, so a chapter whose only chat is system posts cannot show Guideline 1.2's block control at all. Any real member's message offers Block, including one from a member who joined after the app loaded its roster; the only other member it is withheld for is one a block attempt already proved has left the chapter. It inverts the `chat_messages` count in § Identity |
 | *(nothing — the dues sentence was dropped 2026-09-21)* | **Leave the reviewer with no invoices at all**, which `--reviewer` does. Zero rows is the only state that shows them nothing about payments — no Pay control and no Stripe footer; § Review notes owns the mechanics and is the copy to keep current. **Nothing to undo:** the ledger is viewer-scoped, so the 2 OPEN invoices in § Identity's production reading belong to the two pre-existing auth users and are invisible to the reviewer. **Do not void or delete those** — they are live beta-chapter billing. If a populated ledger is wanted anyway, insert a **PAID** row directly in SQL — never through the API, where `DRAFT → OPEN` is the only route to PAID and writes a persisted "New Invoice" notification deep-linked to the Dues tab (`financial-invoice.service.ts`). That fallback surfaces the Stripe footer, leaves the balance at $0.00, and inverts § Identity's invoice count — re-run that query too |
 
 ## Review notes (App Store Connect → App Review Information)
@@ -322,6 +332,7 @@ states what a reviewer will actually be shown.
   > has it, and production was not readable from the session that wrote this. Confirm it
   > in Infisical `prod` before adding Host check-in to the list.
 - Universal links are not configured, so tapping an `https://` invite link opens the web app, not this app — do not describe any link as opening the app. If a reviewer ever does need to redeem by hand, the join screen accepts a bare token or a full `https://app.frapp.live/join?token=…` pasted link and extracts the token from either; that is a fallback, not the route to describe.
+- **Report and block (Guideline 1.2).** Tell App Review where they are: "Long-press any message from another member to report it or block them; Settings → Blocked members lists and removes blocks." A member's profile in the directory also has Block / Unblock. *Not for the note itself:* this is true only of a binary built from `main` after the #2257 member-side change merged; it needs the message § Seed the reviewer's chapter asks for, because a system post offers Report only; and a filed report still lands in an officer queue that nothing renders yet (§ Open before submitting), so do not describe reports being reviewed in the app.
 - Camera is used only to scan a chapter's event check-in QR code. Location is used only while the app is open, to confirm the member is inside a chapter study zone or at the event being checked in to; there is no background location.
 - Sign in with Apple and Sign in with Google are offered on the sign-in screen (Guideline 4.8: Apple is required once Google is offered). Password and magic-link remain. **Tell App Review to sign in with the email and password supplied above — and smoke-test that exact route on the TestFlight build first.** No sign-in of any kind has been exercised against `frapp-prod`, which still has no demo user (#2309), and [#2334](https://github.com/pdcarlson/Frapp/issues/2334) records that the Apple button can abort the app outright on the sign-in screen. An OAuth identity joins the seeded account **only when its email matches the seeded address** (GoTrue Automatic linking, [`deployment/supabase.md`](../../../docs/internal/ops/deployment/supabase.md)); a reviewer who signs in with their own Apple or Google account — or with Hide My Email, whose relay address can never match — becomes a *new* user in no chapter. That is not a blank app: `resolveAuthGate` routes a member-less account to the **join** screen, which asks for an invite they were never given and offers *Create a chapter*, and a chapter founded there is `incomplete`, which refuses paid-ops **writes** on three surfaces (#2297) while every screen still loads. Do not plan to rescue that with an invite — the first bullet's arithmetic holds here too: a token minted mid-review is usually dead before the reply lands. (Corrected 2026-09-22; this clause used to end "a reviewer still joins with the invite token after signing in". That is a real member's route — `redeem` binds whoever is signed in rather than matching the invite email, which is why the sign-in screen's Hide My Email promise is correct — and it is simply not the reviewer's, who is handed credentials rather than an invite. Do not delete that hint on the strength of this note.)
 - No in-app purchases and no digital goods. **The app takes no payment of any kind.** `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is not set in the EAS `production` environment ([#2415](https://github.com/pdcarlson/Frapp/issues/2415)), so `isStripeAvailable()` is false and PaymentSheet never opens. Do not tell App Review the app takes dues by card, and do not argue guideline 3.1.5 from it — the beta chapter is not collecting dues by card (decided 2026-09-21). **That decision is the only thing making the two sentences above true, and reversing it needs no repo change** — `eas env:set` reaches the bundle server-side. If the key ever ships, this bullet and § Identity's Price row become false statements to App Review: change both in the same sitting as the privacy rows below. Chapter *subscriptions* to Signet itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
@@ -529,10 +540,14 @@ Google Play Data safety: data is encrypted in transit; users delete in the app o
 > questions, so "Everyone" beside an 18-and-over target audience is not self-evidently a
 > contradiction, and this file asserts no cross-store consistency rule it can cite.
 > **Do not "simplify" them to one number, and in particular do not lower the Android
-> target audience.** An under-18 target audience pulls in Play's families and
-> child-safety policy set, which an app shipping chapter channels and DMs with no
-> member-level report or block (#2257, still open) does not satisfy — a harder rejection
-> than any listing untidiness.
+> target audience on the strength of anything here.** This file cites no Play policy for
+> what a lower target audience would require, and the 18-and-over declaration has not
+> been re-examined since member-level report and block were added. What is verified is
+> only what the app does: those controls exist in a binary built from `main` after the
+> #2257 member-side change merged (long-press report and block, Settings → Blocked
+> members), and officers act on a filed report from the web dashboard's queue (#2311).
+> Re-examining the audience is a decision with its own research, not a side
+> effect of editing this note.
 >
 > The reasoning actually on record is in § Age rating: 13+ was chosen over the calculated
 > 4+ **because** of the DMs-without-report-or-block situation and a college audience, and

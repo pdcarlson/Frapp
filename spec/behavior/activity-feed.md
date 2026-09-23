@@ -24,7 +24,7 @@ The activity aggregation for the user's active chapter covers:
 - Backwork: new resource uploaded.
 - Points: points awarded or deducted (own).
 - Members: new member joined.
-- Announcements: recent announcements.
+- Announcements: recent announcements, except those from a member the viewer has blocked ([chat § What a block does and does not hide](chat/README.md#what-a-block-does-and-does-not-hide)).
 
 Feed items are pulled from existing data (events, point_transactions, backwork_resources, members, chat_messages where channel = announcements). This is a **read-only aggregation view**, not a separate data store.
 

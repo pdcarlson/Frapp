@@ -41,8 +41,11 @@ Every notification payload includes a `target` object with screen and parameters
 push (`apps/api/src/application/services/notification.service.ts`), which is what lets
 a tap mark the row read without a lookup. The `target` itself carries **only** the keys
 its emitter sets: `chat` sends `channelId`, `events` sends `eventId`, `tasks` sends
-`taskId`, and `billing` / `points` / `service` / `members` send a bare `screen`. A
-bundled chat burst adds `bundled: true` and `count`
+`taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` send a bare
+`screen`. `chat_reports` names the officer report queue (the new-report notification,
+[`chat/README.md`](./chat/README.md#report)); web resolves it to `/chat-admin`, and
+mobile, which has no queue, falls through to the notification list like any screen it
+does not route. A bundled chat burst adds `bundled: true` and `count`
 (`chat-push-worker.service.ts` `buildPayload`). This example previously showed a
 `messageId` the chat push worker has never emitted; clients MUST NOT read one.
 
@@ -123,7 +126,7 @@ The app icon badge shows the total unread count: unread in-app notifications + u
 
 **Mobile syncs the OS badge from the same queries the app already fetches, not from a dedicated count endpoint.** `apps/mobile/lib/notifications/use-badge-sync.ts`'s `useBadgeSyncRuntime` (mounted app-wide from `components/app-runtime.tsx`) sums `GET /v1/notifications`' unread rows (`read_at === null`, the same definition the in-app history and its "Mark all read" use) with `GET /v1/channels/unread`'s per-channel `unread_count`, and calls `Notifications.setBadgeCountAsync`. It resyncs whenever either query's data changes — including on app foreground, since `refetchOnWindowFocus` is already wired to `AppState` (`lib/connection/query-connectivity.ts`) — so no separate resume listener is needed. Badge setting needs no EAS `projectId`; it is a local OS call, not a remote push.
 
-Two adjustments keep the two sources additive rather than double-counted or unbounded: `ChatService` writes a `notifications` row for every DM, group-DM, and announcement message on top of the read-receipt count `GET /v1/channels/unread` already reflects for that channel, so the notification half excludes chat-targeted rows (`selectUnreadNonChatCount`) rather than summing both unfiltered. And like the in-app history it mirrors, the notification half only sees the first page (`GET /v1/notifications`' default 50-row limit), so a member with more than 50 unread in-app notifications sees an undercounted badge until they clear some — the same accepted cap the history screen and its own unread pill already carry.
+Two adjustments keep the two sources additive rather than double-counted or unbounded: `ChatService` writes a `notifications` row for every DM, group-DM, and announcement message (to each recipient who has not blocked its sender) on top of the read-receipt count `GET /v1/channels/unread` already reflects for that channel, so the notification half excludes chat-targeted rows (`selectUnreadNonChatCount`) rather than summing both unfiltered. And like the in-app history it mirrors, the notification half only sees the first page (`GET /v1/notifications`' default 50-row limit), so a member with more than 50 unread in-app notifications sees an undercounted badge until they clear some — the same accepted cap the history screen and its own unread pill already carry.
 
 ## Per-Channel Mute
 
@@ -292,6 +295,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 | Admin         | New member joined                                                  | NORMAL                      |
 | Admin         | Invite accepted                                                    | SILENT                      |
 | Admin         | Role change on a member                                            | SILENT                      |
+| Admin         | Chat message reported (to report-queue officers; never the reported sender or the reporter; content-free) | NORMAL |
 
 ## Pre-Event Reminders
 

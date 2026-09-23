@@ -1110,14 +1110,13 @@ describe("MessageItem unconfirmed live regions (#1733 review)", () => {
   });
 
   // The row's note must not restate the toast's guidance: it sits directly
-  // above its own Retry button, where "if the message is gone" is nonsense.
+  // above its own Retry button, where "use Retry on the message" is nonsense.
   it("does not print the toast's guidance on the row", () => {
     renderItemWithProps({
       message: unconfirmedMessage(),
       onRetryUnconfirmed: vi.fn(),
     });
 
-    expect(screen.queryByText(/if the message is gone/i)).toBeNull();
     expect(screen.queryByText(/use retry on the message/i)).toBeNull();
   });
 });

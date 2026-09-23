@@ -7,11 +7,12 @@ import type {
  * Server-side application of a viewer's block list to chat message rows
  * (#2257), per `spec/behavior/chat/README.md` § The masking contract.
  *
- * **A module-level pure function rather than a method on a service**, because
- * more than one read surface owes the same guarantee — `ChatService.getMessages`
- * today, and any future timeline, digest or export that serves message rows to
- * a named viewer. Two copies of a masking rule is exactly the drift that leaves
- * one surface honest and the other leaking.
+ * **Module-level pure functions rather than methods on a service**, because
+ * every read surface that serves message rows to a named viewer owes the same
+ * guarantee: the timeline, pins, search, bookmarks, and any future digest or
+ * export (the full list is `chat-read-surface-ledger.spec.ts`). Two copies of a
+ * masking rule is exactly the drift that leaves one surface honest and the
+ * other leaking.
  *
  * It takes an already-resolved set of blocked user ids rather than fetching one,
  * so it stays synchronous and testable, and so the caller decides how a failed
@@ -43,6 +44,22 @@ export const BLOCKED_MESSAGE_CONTENT = '[message from a blocked member]';
  */
 export interface MaskedChatMessage extends ChatMessage {
   sender_blocked: boolean;
+}
+
+/**
+ * Whether a row authored by `senderId` is withheld from a viewer whose block
+ * list is `blockedUserIds`.
+ *
+ * The one predicate every surface applies, so the rule that a `null` sender (an
+ * imported archive row) is never masked lives in one place. That is correct
+ * rather than a gap: blocks are keyed on `users.id`, so there is no user to have
+ * blocked.
+ */
+export function isFromBlockedSender(
+  senderId: string | null,
+  blockedUserIds: ReadonlySet<string>,
+): boolean {
+  return senderId !== null && blockedUserIds.has(senderId);
 }
 
 /**
@@ -134,7 +151,7 @@ export function maskBlockedBookmarkMessage(
   message: BookmarkedMessage,
   blockedUserIds: ReadonlySet<string>,
 ): BookmarkedMessage {
-  if (message.sender_id === null || !blockedUserIds.has(message.sender_id)) {
+  if (!isFromBlockedSender(message.sender_id, blockedUserIds)) {
     return { ...message, sender_blocked: false };
   }
   return {
@@ -154,9 +171,7 @@ export function maskBlockedBookmarkMessage(
 /**
  * Apply `blockedUserIds` to `messages`, flagging every row.
  *
- * A message is masked when its `sender_id` is in the set. An imported archive
- * row (`sender_id: null`) is never masked, which is correct rather than a gap:
- * blocks are keyed on `users.id`, so there is no user to have blocked.
+ * A message is masked when {@link isFromBlockedSender} says so.
  *
  * Rows are rebuilt even when nothing is blocked. That is a deliberate
  * allocation: it is what makes `sender_blocked` mean "the server evaluated your
@@ -170,7 +185,7 @@ export function maskBlockedMessages(
   const blocked = new Set(blockedUserIds);
 
   return messages.map((message) =>
-    message.sender_id !== null && blocked.has(message.sender_id)
+    isFromBlockedSender(message.sender_id, blocked)
       ? maskMessage(message)
       : { ...message, sender_blocked: false },
   );

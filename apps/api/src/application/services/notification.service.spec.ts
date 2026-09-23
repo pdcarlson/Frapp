@@ -672,6 +672,50 @@ describe('NotificationService', () => {
       expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(2);
     });
 
+    it('narrows the roster through filterAudience before writing or pushing anything', async () => {
+      stubChapterNotify({
+        userIds: ['u-1', 'u-2'],
+        created: notificationsFor(['u-2']),
+        tokens: tokensFor(['u-2']),
+      });
+      const filterAudience = jest.fn(async (ids: string[]) =>
+        ids.filter((id) => id !== 'u-1'),
+      );
+
+      await service.notifyChapter(
+        'ch-1',
+        { title: 'New Announcement', body: 'Hello', priority: 'URGENT' },
+        { filterAudience },
+      );
+
+      expect(filterAudience).toHaveBeenCalledWith(['u-1', 'u-2']);
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'u-2' }),
+      ]);
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends nothing to anyone when filterAudience throws', async () => {
+      // A filter that cannot decide must not fall back to the whole chapter:
+      // for the block filter, that would push a blocked member's announcement
+      // to everyone who blocked them.
+      stubChapterNotify({ userIds: ['u-1', 'u-2'] });
+
+      await expect(
+        service.notifyChapter(
+          'ch-1',
+          { title: 'New Announcement', body: 'Hello', priority: 'URGENT' },
+          {
+            filterAudience: async () => {
+              throw new Error('pg down');
+            },
+          },
+        ),
+      ).rejects.toThrow('pg down');
+      expect(mockNotificationRepo.createMany).not.toHaveBeenCalled();
+      expect(mockPushProvider.sendToUser).not.toHaveBeenCalled();
+    });
+
     it('skips members who disabled the category and still delivers the rest', async () => {
       stubChapterNotify({
         userIds: ['u-1', 'u-2'],

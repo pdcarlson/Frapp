@@ -48,9 +48,11 @@ import { getOutboxStore } from "./outbox-store";
  * They hold what a member wrote, so they are keyed per member and built by
  * {@link useChatRuntime} from the live scope — a process-wide instance is
  * exactly the shared-device authorship bug that issue fixes. The key-value
- * mirror stays process-wide because its only consumer is the
+ * mirror stays process-wide because what it serves on mobile is the
  * `chat:lastSeen:` backfill cursor, where a stale read widens a backfill
- * rather than misattributing a message.
+ * rather than misattributing a message; heavy-command notices also pass
+ * through it, but mobile never writes one (`spec/ui/mobile/patterns.md`
+ * § Chat).
  */
 export const chatKeyValueStore = createAsyncStorageKeyValueStore();
 export const chatNetworkState = createMonitorNetworkState(connectionMonitor);

@@ -69,6 +69,7 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { ChatReportsCard } from "./chat-reports-card";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -222,7 +223,17 @@ export function ChatAdminPage() {
           />
         )}
       >
-        <ChatAdminBody />
+        {/*
+          The report queue first, and outside `ChatAdminBody`: the new-report
+          notification deep-links here (`chat_reports` → `/chat-admin`), so it
+          is what an officer arrives to act on, and a failed channels read —
+          which replaces the whole body with an error — must not take the
+          queue down with it.
+        */}
+        <div className="space-y-6">
+          <ChatReportsCard />
+          <ChatAdminBody />
+        </div>
       </Can>
     </>
   );

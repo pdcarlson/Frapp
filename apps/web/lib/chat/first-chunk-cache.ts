@@ -84,11 +84,13 @@
  *   of it would be a second definition to keep in step, and rehydrating through
  *   the canonical `mergeServerRows` means a restored row went through exactly
  *   the merge every other source goes through.
- * - **Not pending, failed, unconfirmed or recorded rows.** Those are the Dexie
- *   *outbox*'s (`offline-queue.ts`), which `hydrateOutboxIntoCache` already
- *   replays on top of whatever the timeline starts from. Persisting them here
- *   too would render each queued message twice on a cold load, and would let a
- *   stale copy of a row contradict the outbox that actually owns its status.
+ * - **Not pending, failed, unconfirmed or recorded rows.** Pending and failed
+ *   sends are the Dexie *outbox*'s (`offline-queue.ts`); unconfirmed and
+ *   recorded heavy-command rows are the notice store's
+ *   (`@repo/chat-core`'s `heavy-command-notices.ts`). `hydrateOutboxIntoCache`
+ *   replays both on top of whatever the timeline starts from. Persisting them
+ *   here too would render each row twice on a cold load, and would let a stale
+ *   copy of a row contradict the store that actually owns its status.
  * - **Not reactions or actions.** `1s` puts them after paint, and a reaction
  *   chip that paints from cache and then disagrees with the server is worse
  *   than one that arrives a moment later.
@@ -575,8 +577,8 @@ export async function pruneForeignScopes(
  * FIRST_CHUNK_MESSAGE_LIMIT} rows.
  *
  * Only `confirmed` rows survive the filter. Every other `_status` is the
- * outbox's to replay (`pending`, `failed`, `unconfirmed`) or a locally
- * persisted notice's (`recorded`, `recorded-notices.ts`), and both of those
+ * outbox's to replay (`pending`, `failed`) or a locally persisted notice's
+ * (`unconfirmed`, `recorded`, `heavy-command-notices.ts`), and both of those
  * sources run on top of whatever this seeds — so a copy here would be a
  * second, staler writer for a row somebody else owns.
  *

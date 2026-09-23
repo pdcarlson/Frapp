@@ -154,7 +154,7 @@ The tables below are the canonical strings for high-frequency state messages, so
 | Offline (permission check), control slot | — | `Offline — can't check your access.` |
 | Offline (permission check), whole surface | `Can't confirm your access` | `Reconnect to check whether you can <do the thing the surface does>.` |
 
-A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Polls unavailable offline" states a fact about the polls; here we do not know whether this member may see them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are in the five tables below.
+A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Polls unavailable offline" states a fact about the polls; here we do not know whether this member may see them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are the `Offline (permission check)` rows in the surface tables below.
 
 Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.tsx`) carries the first string; the second is passed to `<Can offlineFallback>` at each screen-level gate. Behaviour is [README.md](README.md) §4.
 
@@ -442,6 +442,37 @@ that rule and the string is shared with mobile.
 
 Channel seeding happens at chapter onboarding and has no billing prerequisite; [onboarding.md](../../behavior/onboarding.md) owns the seeding flow.
 
+### Chat Admin — reported messages (dashboard)
+
+The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Report and block). One empty row per status tab, because each tab is a different claim about the chapter.
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading reports...` |
+| Empty (Open) | `No open reports` | `When a member reports a message, it lands here for officers to review.` |
+| Empty (Reviewed / Actioned / Dismissed) | `No reviewed reports` · `No actioned reports` · `No dismissed reports` | `Reports marked reviewed are kept here.` · `Reports whose message was removed are kept here.` · `Reports you dismiss are kept here.` |
+| Error | `Couldn't load reports` | `Confirm your chapter access and retry.` |
+| Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review reported messages.` |
+| Permission denied | `Reported messages` | `Reviewing reported messages needs the members:view and channels:manage permissions. Ask your chapter president to grant access.` |
+| Nothing to remove | — | `This message no longer exists, so there's nothing to remove. Mark actioned to close the report.` (hard-deleted; the row offers `Mark actioned` in place of `Remove message`) |
+| Remove confirmation | `Remove the message from <author>?` | `It reads “<first 40 characters>”. This removes this one message for everyone and marks the report actioned. Nothing else in the conversation changes, and a direct message stays private: officers can't open it. The sender will see this message was removed. In a direct message they may be able to tell who reported it. This cannot be undone.` (the quote is dropped for a message with no text) · confirm `Remove message` |
+| Removed (toast) | — | `Message removed. The report is marked actioned.` |
+| Already removed (toast) | — | `This message was already removed. The report is marked actioned.` |
+| Resolved (toast) | — | `Report marked reviewed.` · `Report dismissed.` · `Report marked actioned.` |
+| Refused (toast) | — | For a 404 or 409, the server's own message (`This report is no longer open`, `Report not found`, …). Any other 4xx on Mark reviewed / Dismiss / Mark actioned: `Couldn't mark the report reviewed.` / `Couldn't dismiss the report.` / `Couldn't mark the report actioned.`; any other 4xx on Remove: `Couldn't remove the message.` Never a raw 5xx body or a transport error's text |
+| Resolution unconfirmed (toast) | — | `Couldn't confirm the report was marked reviewed.` / `Couldn't confirm the report was dismissed.` / `Couldn't confirm the report was marked actioned.`, each followed by `It may have gone through anyway. Refresh to check, and retry if the report is still open.` (a 5xx or no response on Mark reviewed / Dismiss / Mark actioned) |
+| Removal unconfirmed (toast) | — | `Couldn't confirm the removal. The message may have been removed anyway. Refresh to check, and retry if the report is still open.` (a 5xx or no response on Remove) |
+| Row control names (accessible) | — | `Mark reviewed: report on message from <author>, “<excerpt>” (<reason>, reported <date and time>, with a reporter's note, report <n> of <total>)` · `Dismiss report on …` · `Mark actioned: report on …` · `Remove message from <author>, “<excerpt>” (…)` — `with no text` in place of the excerpt for a message with none; the date and time is the locale's absolute one (the row's hover title), left out when unreadable; the note clause only when there is a note; `report <n> of <total>` only on rows that would otherwise share a name, numbered in list order |
+
+The confirmation says the conversation stays closed because that is the rule an officer is most likely to assume away: removing a message from a DM does not open the DM. It also says what the removal costs, because the officer is the one choosing to pay it: the sender sees their message go, and in a 1:1 DM the only other reader is who must have reported it — the trade-off accepted with report-scoped removal ([`chat/README.md`](../../behavior/chat/README.md) § Report and block → Officer action). The row has no channel name or kind to say "direct message" more specifically — the report snapshots the message, not its channel — so that sentence is conditional. It names the author and quotes the start of the message because every row carries the same verbs, and a confirmation that could belong to any row is not a confirmation of this one; the row's accessible names carry the same subject for the same reason, and add the report's reason, filing time and note because two members can report one message, and those are what the two rows differ by. The time is absolute, not the visible relative age: every report filed in the same minute reads "5 minutes ago", and a relative age would rename the controls on every tick. Reports that still match on all of it are numbered, so no two controls in the queue share a name.
+
+**A refusal is quoted; a failure is not.** The report routes author their 404 and 409 answers to be read, and they are decided before anything changes. A 5xx body ("Internal server error") or a transport error ("Failed to fetch") is not copy, so the fallback stands in. Those failures are also an unknown outcome — a removal or a resolution may have committed before the response was lost — so the toast says that and how to find out, rather than claiming it failed.
+
+**"Already removed" names no one.** The removal is idempotent on the message — its sender, another officer's delete, a sibling report's removal or an earlier attempt may each be why it is gone — and the queue cannot tell which, so the copy states the outcome and not a culprit.
+
+Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
+
 ### Billing (dashboard)
 
 | State | Title | Description |
@@ -492,6 +523,50 @@ flagged state and includes the chapter's `wf_dues_grace` window, which a member'
 client cannot read (`GET /v1/invoices/overdue` is `billing:view`-only). §Status
 labels reserves the backend's own labels for states the client can actually
 confirm.
+
+### Report and block (mobile, s05 / s13 / s16)
+
+Member-safety copy (#2257). The behavior each string describes is owned by
+[`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Report and block.
+Each string lives once, in the file named in its row's last column, so web (#2313)
+should reuse these words from there. Paths are under `apps/mobile/`.
+
+| State | Title | Description | Home |
+|---|---|---|---|
+| Block confirmation | `Block <name>?` | `Their messages in this chapter's chat will be hidden from you. They won't be told, and they can still post where you both are. Poll votes still count, and they stay in the directory. You can unblock them anytime in Settings.` · confirm `Block`. The directory clause appears only when the loaded roster lists them | `lib/chat/block-actions.ts` (`blockConfirmBody`) |
+| Unblock confirmation | `Unblock <name>?` | `Their messages in this chapter's chat will show again. They won't be told.` · confirm `Unblock` | `lib/chat/block-actions.ts` |
+| Block / unblock failed | `Couldn't block <name>` / `Couldn't unblock <name>` | `Nothing changed. Check your connection and try again.` Also any 404 other than the one below | `lib/chat/block-actions.ts` |
+| Block refused, not a member | `Couldn't block <name>` | `This member is no longer in your chapter, so there's nothing to block.` Only for a 404 whose message is `Member not found` (`isMemberNotFound`) | `lib/chat/block-actions.ts` |
+| Actions sheet, Report row | — | `Report message` · `Your chapter's officers will be able to see it.` | `components/chat/message-actions-sheet.tsx` |
+| Block / Unblock rows (message actions sheet and the directory's member sheet) | — | `Block <name>` · `Hides their messages from you in this chapter's chat. They aren't told.`; `Unblock <name>` · `Their messages in this chapter's chat show again.` (directory only) | `lib/chat/block-actions.ts` (`BLOCK_ROW_DESCRIPTION`, `UNBLOCK_ROW_DESCRIPTION`) |
+| Report sent | `Report sent` | `Your chapter's officers can see this report. The member you reported isn't told.` | `lib/chat/report-reasons.ts` |
+| Already reported | `Already reported` | `You already reported this message, and that report is still open. Your chapter's officers can see it.` | `lib/chat/report-reasons.ts` |
+| Report failed, form open | — | `Your report didn't send. Check your connection and try again.` — no response, a 5xx, or any status the next row doesn't list | `lib/chat/report-reasons.ts` (`reportFailureBody`) |
+| Report refused (403 / 404 / 409), form open | — | `This message can't be reported anymore. It may have been deleted, or you may no longer have access to where it was posted.` | `lib/chat/report-reasons.ts` (`reportFailureBody`) |
+| Report failed after the form was dismissed | `Couldn't send your report` | Whichever of the two bodies above applies (an alert) | `lib/chat/report-reasons.ts` |
+| Tombstone | — | `Message from a member you blocked` · action `Unblock` | `components/chat/blocked-message-tombstone.tsx` |
+| Tombstone, unblocked since | — | `Hidden while you had this member blocked` · action `Reload` only while the post-unblock re-read has failed (a spinner while it runs) | `components/chat/blocked-message-tombstone.tsx` |
+| Tombstone Reload failed again | `Couldn't reload these messages` | `Check your connection and try again.` (an alert) | `lib/chat/block-actions.ts` |
+| Reply quoting a blocked member | — | The tombstone's own words, in place of the quote's author and preview | `components/chat/blocked-message-tombstone.tsx` |
+| Reply quoting a held message | — | `Message hidden` | `components/chat/reply-quote.tsx` |
+| Block list unavailable | `Couldn't load your block list` | `<N new messages are> held until it loads, so nothing from a member you blocked shows by mistake.` · action `Retry`, or `Retries when you're back online` in its place while the read waits for the network | `lib/chat/blocks.ts` (`blockListNotice`, `BLOCK_LIST_WAITING_FOR_NETWORK`) |
+| Block list loading, rows held | `Checking your block list` | `<N new messages are> held until it loads.` | `lib/chat/blocks.ts` |
+| Blocked members, list | `Blocked members` | `Blocks apply in this chapter only.` above the rows, each with `Unblock` | `components/settings/blocked-members-sheet.tsx` |
+| Blocked members, empty | `You haven't blocked anyone in this chapter` | `Block someone from a message or their profile in the directory. Their messages in this chapter's chat are hidden from you, and they aren't told.` | `components/settings/blocked-members-sheet.tsx` |
+| Blocked members, first read failed | `Couldn't load your blocked members` | `Check your connection and try again. Your blocks haven't changed.` · action `Retry` | `components/settings/blocked-members-sheet.tsx` |
+| Blocked members, first read waiting for the network | `Couldn't load your blocked members` | `You're offline. This list loads when you're back online. Your blocks haven't changed.` · no action | `components/settings/blocked-members-sheet.tsx` |
+| Blocked members, refresh failed over a cached list | — | `Couldn't refresh this list. It may be missing a recent change.` above the cached rows · action `Retry`, or `Retries when you're back online` while the read waits for the network | `components/settings/blocked-members-sheet.tsx` |
+
+**The report confirmation promises neither a reviewer nor a response time.** The API
+files a report into a queue only `channels:manage` holders — the chapter's officers —
+can read, and no screen renders that queue yet; "officers will review this" would
+promise an action nobody is set up to take. "Can see" is the capability, which is true
+in every channel type, DMs included. It does not say reports are anonymous: nothing on
+this client can promise what an officer surface will show. The block copy names what a
+block does *not* do (the blocked member is not told, can still post, still counts in
+polls) because silence is the feature — a member who assumed the other person was
+notified would be wrong in the one way that matters — and says "this chapter" because a
+block is scoped to one chapter and a member can belong to several.
 
 ### Alumni (dashboard)
 
