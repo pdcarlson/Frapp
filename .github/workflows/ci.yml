@@ -98,6 +98,8 @@ jobs:
               - 'supabase/seed/**'
               - 'scripts/load-chapter-directory.mjs'
               - 'scripts/lib/chapter-directory-seed.mjs'
+              # ...and the demo seed App Review signs in to (#2308).
+              - 'scripts/demo/**'
 
   # ── Shared packages build (dependency for downstream jobs) ──────────────
   packages-build:

@@ -2359,6 +2359,128 @@ try {
   );
 }
 
+// ─── Demo seed load (#2308) ──────────────────────────────────────────────────
+// `scripts/demo/demo-seed.sql` is what App Review signs in to, and until this
+// block nothing in CI ran it: a migration that renamed a column it writes would
+// have surfaced on submission day, against production. This is where both
+// variants actually execute against the migrated schema.
+//
+// Beyond "it runs", four properties are asserted, each one a way the reviewer's
+// chapter has been wrong or could be:
+//   - the login is linked to its auth user, since sign-in matches on
+//     `users.supabase_auth_id` alone and an unlinked login signs in chapterless;
+//   - the reviewer variant carries what `apps/mobile/store/README.md` § Seed the
+//     reviewer's chapter asks for — no invoice on the reviewer, one DM into them;
+//   - re-running is idempotent, which also proves the delete-then-rebuild clears
+//     every foreign key onto `users` before it removes them;
+//   - a reviewer seed with no auth user to link fails and leaves nothing behind,
+//     the property that makes it safe to run against production at all.
+//
+// PGlite has no GoTrue, so `auth.users` is stubbed with the two columns the seed
+// reads, for the length of this block.
+console.log("\n=== demo seed load (#2308) ===");
+{
+  const seedDemo = await import("./demo/seed-demo.mjs");
+  const template = readFileSync(seedDemo.TEMPLATE_PATH, "utf8");
+  const REVIEWER_EMAIL = "app-review@example.test";
+  const REVIEWER_AUTH_ID = "0a0a0a0a-0000-4000-8000-00000000a001";
+  const namespaces = [seedDemo.TEMPLATE_NAMESPACE, seedDemo.REVIEWER_NAMESPACE];
+  const marketingSql = seedDemo.renderSeedSql({ template, namespace: seedDemo.TEMPLATE_NAMESPACE });
+  const reviewerSql = seedDemo.renderSeedSql({
+    template,
+    namespace: seedDemo.REVIEWER_NAMESPACE,
+    loginEmail: REVIEWER_EMAIL,
+    reviewer: true,
+  });
+
+  const n = async (sql) => (await db.query(sql)).rows[0].n;
+  const snapshot = async (namespace) => {
+    const { chapterId, loginUserId, userIdLike } = seedDemo.demoIds(namespace);
+    return {
+      members: await n(`select count(*)::int as n from members where chapter_id = '${chapterId}'`),
+      users: await n(`select count(*)::int as n from users where id::text like '${userIdLike}'`),
+      events: await n(`select count(*)::int as n from events where chapter_id = '${chapterId}'`),
+      documents: await n(`select count(*)::int as n from chapter_documents where chapter_id = '${chapterId}'`),
+      backwork: await n(`select count(*)::int as n from backwork_resources where chapter_id = '${chapterId}'`),
+      offLayout: await n(
+        `select (select count(*) from chapter_documents
+                  where chapter_id = '${chapterId}'
+                    and storage_path not like 'chapters/${chapterId}/documents/' || id || '/%.pdf')
+              + (select count(*) from backwork_resources
+                  where chapter_id = '${chapterId}'
+                    and storage_path not like 'chapters/${chapterId}/backwork/' || id || '/%.pdf') as n`,
+      ),
+      loginInvoices: await n(`select count(*)::int as n from financial_invoices where user_id = '${loginUserId}'`),
+      dms: await n(`select count(*)::int as n from chat_channels where chapter_id = '${chapterId}' and type = 'DM'`),
+      dmMessages: await n(
+        `select count(*)::int as n from chat_messages m join chat_channels c on c.id = m.channel_id
+          where c.chapter_id = '${chapterId}' and c.type = 'DM'`,
+      ),
+      loginAuthId: (await db.query(`select supabase_auth_id::text as a from users where id = '${loginUserId}'`)).rows[0]?.a ?? null,
+    };
+  };
+
+  try {
+    await db.exec(`create table auth.users (id uuid primary key, email text not null);`);
+    await db.exec(`insert into auth.users (id, email) values ('${REVIEWER_AUTH_ID}', '${REVIEWER_EMAIL}');`);
+
+    await db.exec(marketingSql);
+    await db.exec(reviewerSql);
+    const first = await Promise.all(namespaces.map(snapshot));
+    await db.exec(marketingSql);
+    await db.exec(reviewerSql);
+    const second = await Promise.all(namespaces.map(snapshot));
+    const [marketing, reviewer] = second;
+
+    // A reviewer seed whose login has no auth user must raise, and roll back.
+    const orphanNamespace = "0bad0000";
+    let refused = false;
+    try {
+      await db.exec(
+        seedDemo.renderSeedSql({ template, namespace: orphanNamespace, loginEmail: "nobody@example.test", reviewer: true }),
+      );
+    } catch {
+      refused = true;
+      // The simple-query protocol leaves an explicit transaction aborted, not
+      // closed; psql and the SQL editor end the session instead.
+      await db.exec("rollback;");
+    }
+    const orphan = await snapshot(orphanNamespace);
+
+    for (const namespace of namespaces) await db.exec(seedDemo.renderRemoveSql({ namespace }));
+    const removed = await Promise.all(namespaces.map(snapshot));
+
+    const checks = [
+      [marketing.members === 26 && reviewer.members === 26, `both variants seed 26 members (marketing ${marketing.members}, reviewer ${reviewer.members})`],
+      [marketing.events === 12 && marketing.documents === 10 && marketing.backwork === 11, `the chapter's events, documents and backwork land (${marketing.events}/${marketing.documents}/${marketing.backwork})`],
+      [marketing.offLayout === 0 && reviewer.offLayout === 0, `every document and backwork path is the API's own chapters/<chapter>/<kind>/<id>/ layout (${marketing.offLayout + reviewer.offLayout} off it)`],
+      [reviewer.loginAuthId === REVIEWER_AUTH_ID, `the reviewer login is linked to its auth user (got ${reviewer.loginAuthId})`],
+      [marketing.loginAuthId?.startsWith("c0ffee00-0000-4000-8000-2000"), `with no matching auth user, the marketing login keeps a synthetic auth id`],
+      [reviewer.loginInvoices === 0 && marketing.loginInvoices > 0, `no invoices on the reviewer (reviewer ${reviewer.loginInvoices}, marketing ${marketing.loginInvoices})`],
+      [reviewer.dms === 1 && reviewer.dmMessages === 3 && marketing.dms === 0, `one DM into the reviewer, none in marketing (${reviewer.dms} with ${reviewer.dmMessages} messages / ${marketing.dms})`],
+      [JSON.stringify(first) === JSON.stringify(second), "re-running both variants is idempotent"],
+      [refused && orphan.members === 0 && orphan.users === 0, `a reviewer seed with no auth user raises and leaves nothing (${orphan.users} users)`],
+      [removed.every((s) => s.members === 0 && s.users === 0 && s.documents === 0), "sql --remove clears both chapters and their people"],
+    ];
+    for (const [ok, name] of checks) {
+      if (ok) {
+        console.log(`OK    ${name}`);
+      } else {
+        missing += 1;
+        console.log(`MISS  ${name}`);
+      }
+    }
+  } catch (e) {
+    missing += 1;
+    console.log(`MISS  demo seed load\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`);
+    await db.exec("rollback;").catch(() => {});
+  } finally {
+    // Leave the schema as the migrations produced it, as every block here does.
+    for (const namespace of namespaces) await db.exec(seedDemo.renderRemoveSql({ namespace })).catch(() => {});
+    await db.exec("drop table if exists auth.users;");
+  }
+}
+
 // ─── `security definer` search_path guard (#985) ─────────────────────────────
 //
 // Postgres resolves unqualified relation names against `pg_temp` FIRST unless

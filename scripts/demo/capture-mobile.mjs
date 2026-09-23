@@ -51,7 +51,7 @@ const STORE_DIR = path.join(OUT_ROOT, "app-store");
 const APP_STORE =
   process.argv.includes("--app-store") || process.env.APP_STORE === "1";
 
-const EMAIL = process.env.DEMO_EMAIL ?? "marcus.ellison@westfield.edu";
+const EMAIL = process.env.DEMO_EMAIL ?? "marcus.ellison@example.com";
 const PASSWORD = process.env.DEMO_PASSWORD ?? "DemoShowcase!2026";
 
 /** The zoned Chapter Meeting the demo seed marks up for check-in. */

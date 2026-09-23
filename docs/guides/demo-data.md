@@ -1,11 +1,13 @@
 # Demo data & screenshots
 
-How to fill a local stack with a realistic chapter and capture screenshots of it —
-for demos, design review, or marketing stills.
+How to fill a Supabase project with a realistic chapter: the local stack, for
+demos, design review and marketing stills, and a hosted project, for the account
+App Review signs in to.
 
 Everything here is invented. The seed contains no real chapter and no real member
-data; the chapter name and roster live at the top of the seed file and are meant
-to be edited.
+data, and its addresses are all on `example.com`
+([`spec/engineering.md`](../../spec/engineering.md): no real identifiers in seed
+data). The chapter name and roster live at the top of the seed file.
 
 ## Seed the demo chapter
 
@@ -14,31 +16,116 @@ scripts/cloud-sandbox-up.sh     # or your usual local Supabase bring-up
 scripts/demo/setup-demo.sh
 ```
 
-`setup-demo.sh` loads [`scripts/demo/demo-seed.sql`](../../scripts/demo/demo-seed.sql)
-and then creates (or re-points) the demo login. It is idempotent — re-running
-rebuilds the chapter from scratch.
+`setup-demo.sh` drives [`scripts/demo/seed-demo.mjs`](../../scripts/demo/seed-demo.mjs)
+against the local stack: it creates (or updates) the demo login, loads
+[`scripts/demo/demo-seed.sql`](../../scripts/demo/demo-seed.sql), and uploads a
+placeholder PDF for every document and backwork row. It is idempotent: re-running
+rebuilds the chapter from scratch. It refuses any non-loopback `SUPABASE_URL`;
+[Seed a hosted project](#seed-a-hosted-project) covers those.
 
 It seeds one chapter (**Beta Theta Omega**, Westfield University, all modules on,
 Signet gold accent) with 26 members across the seven system roles, 12 events with
 attendance, 16 tasks (two of them the demo login's own), service hours in every
 review state, a points ledger, dues config plus paid/open invoices, five chat
 channels with conversation, three polls with vote spreads, study geofences and
-sessions, documents, and a backwork archive.
+sessions, ten documents, and an eleven-item backwork archive. Every document and
+backwork row opens: its file is a one-page PDF saying it is demo content.
 
 Sign in at <http://localhost:3000/sign-in> as:
 
 ```
-marcus.ellison@westfield.edu / DemoShowcase!2026
+marcus.ellison@example.com / DemoShowcase!2026
 ```
 
-Override with `DEMO_EMAIL` / `DEMO_PASSWORD` if you want different credentials.
+That password belongs to the local stack alone. It is committed here, so
+`seed-demo.mjs` refuses it for any hosted project. Override either value with
+`DEMO_EMAIL` / `DEMO_PASSWORD`.
 
-### Re-seeding drops the auth link
+### How the login stays linked
 
-`chapters → users` is `ON DELETE SET NULL`, so the demo people survive the chapter
-cascade and the seed deletes them explicitly by id prefix. The Supabase auth user
-outlives both, which is why `setup-demo.sh` re-points `users.supabase_auth_id`
-after every seed rather than only on first run.
+Sign-in matches a Supabase auth user to its `users` row on
+`users.supabase_auth_id` alone, so a login whose auth id matches no seeded row
+signs in as a brand-new user in no chapter, with no error anywhere. The seed
+therefore links roster #1 to the `auth.users` row with the login's email itself,
+inside its own transaction. That is also why the login has to exist *before* the
+seed runs, and why re-seeding needs no separate re-link: the chapter cascade and
+the delete-by-id-prefix remove the old rows, and the rebuild links the new one.
+
+## Seed a hosted project
+
+The App Review account is this seed, applied to production with `--reviewer`,
+under its own chapter identity. Staging takes the same commands, which is how the
+path is tested before production sees it.
+
+`--reviewer` differs from the local chapter in exactly what
+[`apps/mobile/store/README.md` § Seed the reviewer's chapter](../../apps/mobile/store/README.md#seed-the-reviewers-chapter)
+asks for: no invoice on the reviewer (so the Dues tab shows no Pay control and no
+Stripe footer), and one direct message from the treasurer into the reviewer, since
+chat home hides its DIRECT section while the list is empty.
+
+**Chapter identity is `--namespace`.** Eight hex characters prefix every id the
+seed writes, so two demo chapters in one project never collide. The App Review
+chapter is `a9900000`; the local marketing chapter is `c0ffee00`, and
+`--reviewer` refuses it.
+
+**The four commands**, in order. `sql` only prints; the other three talk to the
+project's HTTP APIs, so nothing here needs Docker or a database connection string.
+
+| Step | Command | Needs |
+| --- | --- | --- |
+| 1. Login | `seed-demo.mjs auth --namespace a9900000` | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DEMO_EMAIL`, `DEMO_PASSWORD` |
+| 2. Seed | `seed-demo.mjs sql --namespace a9900000 --reviewer` | `DEMO_EMAIL`; prints SQL for `psql`, the SQL editor or an MCP `execute_sql` |
+| 3. Files | `seed-demo.mjs storage --namespace a9900000` | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` |
+| 4. Check | `seed-demo.mjs verify --namespace a9900000 --reviewer --api-url <api>` | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `DEMO_EMAIL`, `DEMO_PASSWORD` |
+
+`npx infisical run --env=<slug> --path=/ -- node scripts/demo/seed-demo.mjs …`
+supplies the three Supabase values for the environment named. The Infisical slug
+for production is `prod`.
+
+**Guards**, each refusing before anything is sent:
+
+- `DEMO_PASSWORD` has no default. On a hosted project it must be at least 12
+  characters and must not be the local stack's committed one.
+- `auth` changes an existing hosted account only if this script created it for
+  the same namespace (a marker in its `app_metadata`). Anything else could be a
+  real person's account.
+- `auth` and `storage` refuse production unless `DEMO_ALLOW_PRODUCTION=true`,
+  the same fence `DB_RESTORE_ALLOW_PRODUCTION` puts on a restore. The production
+  ref comes from [`.github/environments.json`](../../.github/environments.json).
+- The seed refuses to link a login whose auth user already belongs to a Signet
+  account, and `--reviewer` refuses to run at all until the login exists. Either
+  way the whole seed is one transaction, so it fails with nothing changed.
+
+### Production (App Review)
+
+Writing this fictional chapter to `frapp-prod` is the owner's decision, and the
+steps below need production access that agent sessions do not have
+([#2309](https://github.com/pdcarlson/Frapp/issues/2309)). Keep the password
+out of shell history: `read -rs DEMO_PASSWORD && export DEMO_PASSWORD`.
+
+1. **Create the login.** Either run step 1 with production values
+   (`DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs auth --namespace a9900000`),
+   or add the user in the Supabase dashboard (`frapp-prod` → Authentication →
+   Users → Add user, auto-confirmed) as #2309 describes. The seed links either.
+2. **Seed.** `node scripts/demo/seed-demo.mjs sql --namespace a9900000 --reviewer > reviewer.sql`,
+   then paste `reviewer.sql` into the `frapp-prod` SQL editor, or run
+   `psql "<frapp-prod connection string>" -v ON_ERROR_STOP=1 -f reviewer.sql`.
+   An agent can apply it through Supabase MCP `execute_sql` once you approve.
+3. **Upload the files.** `DEMO_ALLOW_PRODUCTION=true npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs storage --namespace a9900000`.
+4. **Check it.** `npx infisical run --env=prod --path=/ -- node scripts/demo/seed-demo.mjs verify --namespace a9900000 --reviewer --api-url https://api.frapp.live`.
+   Every line reads `OK`, ending `verify: every check passed`.
+5. **Hand it over.** App Store Connect → App Review Information → Sign-In
+   Required: the login's email and password.
+
+**Re-seed before every submission.** Events are dated relative to the day the
+seed runs, so a chapter seeded weeks earlier shows no upcoming events. Re-run
+steps 2 to 4. The login and its password persist, and `storage` overwrites the
+same objects in place: document ids are fixed, so each run names the same files.
+
+**To remove a demo chapter**, run the steps backwards with `--remove`:
+`storage --remove` (every object under the chapter's documents and backwork
+folders), `sql --remove` (prints the chapter and user deletes), then
+`auth --remove` (only a login this script created).
 
 ## Capture screenshots
 
