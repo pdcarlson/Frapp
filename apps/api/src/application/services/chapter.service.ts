@@ -451,10 +451,10 @@ export class ChapterService {
    * produces an empty diff and writes nothing. The change stays unaudited.
    * Closing it needs the row and the update in one transaction, which is not
    * reachable through PostgREST from here. `chapter-config.service.ts` has the
-   * same hole — it early-returns before its insert when nothing changed
-   * (`chapter-config.service.ts:400-407`) — so no writer in this codebase
-   * actually guarantees "never silently unaudited", and the specs should not
-   * be read as promising it.
+   * same hole — it early-returns before its insert when nothing changed (the
+   * empty-update `return existing` in `ChapterConfigService.patchConfig`) —
+   * so no writer in this codebase actually guarantees "never silently
+   * unaudited", and the specs should not be read as promising it.
    *
    * `ChatBridgeWorkerService` mirrors member-visible rows into `#chapter-audit`
    * off a Realtime subscription, so there is no chat call to make here.
@@ -508,10 +508,10 @@ export class ChapterService {
     // Stated about this writer only, deliberately. Two earlier attempts at this
     // comment characterised `chapter-config.service.ts` and got it wrong both
     // times — it is neither "unconditional" nor the same rule. Its early return
-    // (`chapter-config.service.ts:400-406`) is gated on an empty *update
-    // payload*, not an empty diff, so it still writes a `from`-equals-`to` row
-    // for any jsonb field a client re-sends unchanged (#1605). Do not
-    // re-describe it here without reading it.
+    // (the empty-update `return existing` in `ChapterConfigService.patchConfig`)
+    // is gated on an empty *update payload*, not an empty diff, so it still
+    // writes a `from`-equals-`to` row for any jsonb field a client re-sends
+    // unchanged (#1605). Do not re-describe it here without reading it.
     if (Object.keys(diff).length === 0) return;
 
     await this.auditLog.record({
