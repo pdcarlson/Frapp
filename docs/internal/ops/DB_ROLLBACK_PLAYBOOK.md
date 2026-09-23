@@ -1132,7 +1132,7 @@ After any rollback event:
   ```
 * **Order**: no coordinated redeploy required *if the bucket is unused*. Once an
   import has run, the objects in it are the only copy of the archive's media —
-  `chat_message_attachments.external_url` is **always null** for imported rows (the importer never contacts Discord, so there is no CDN link to keep) and the only recovery handle is `discord_import_files` plus the admin's original export — so
+  `chat_message_attachments.external_url` is **always null** for imported rows (why: [`spec/architecture/README.md` § Communications](../../../spec/architecture/README.md#communications)) and the only recovery handle is `discord_import_files` plus the admin's original export — so
   treat deletion as destructive.
 * **Note**: additive bucket only. Nothing else references it, and the live `chat`
   bucket is untouched. Re-applying the migration recreates it with the same id

@@ -119,8 +119,7 @@ Use conventional commit messages:
 type(scope): description
 ```
 
-The canonical type list lives in [`docs/guides/contributing.md`](docs/guides/contributing.md)
-§ Commit messages. It is not restated here — this file and that one carried two
+The canonical type list lives in [`docs/guides/contributing.md` § Commit messages](docs/guides/contributing.md#2-commit-messages). It is not restated here — this file and that one carried two
 divergent lists until #1635.
 
 ### 3. Open a PR targeting `main`

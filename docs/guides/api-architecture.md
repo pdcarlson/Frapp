@@ -99,7 +99,7 @@ Route markers live in `src/interface/decorators/subscription.decorator.ts`: `@Fr
 - **Billing recovery** — `BillingController`, and `POST /v1/invoices/:id/payment-intent` (dues collection *is* the recovery path for a locked chapter).
 - **Member safety** — `POST|GET|PATCH /v1/chat/reports` and `GET|POST|DELETE /v1/chat/blocks` (#2257). App Store Guideline 1.2 expects a UGC app to offer reporting and blocking, and has no billing exception: a member being harassed in a chapter whose card failed needs them exactly as much as one in a paying chapter. `@FreeTier()` would not hold — it lapses with the `past_due` grace window and never applies under `canceled`.
 
-`subscription.decorator.spec.ts` pins both the class-level roster and the route-level one. The `past_due_since` clock is set/cleared on Stripe webhook transitions in `BillingService` (set only on the into-`past_due` transition, so repeated events don't reset it; cleared on recovery).
+`subscription.decorator.spec.ts` pins every class-level marker and every route-level one (`@FreeTier()` and `@SubscriptionExempt()` alike); keep it exhaustive against `grep -rnE '@(FreeTier|SubscriptionExempt)\(\)' src/interface/controllers`. The `past_due_since` clock is set/cleared on Stripe webhook transitions in `BillingService` (set only on the into-`past_due` transition, so repeated events don't reset it; cleared on recovery).
 
 Interceptors:
 

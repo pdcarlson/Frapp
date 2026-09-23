@@ -14,7 +14,7 @@
 | API            | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                 |
 | Database       | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                |
 | Auth           | Supabase Auth                                | Email/password, magic link, Google, Apple.                                                                            |
-| Storage        | Supabase Storage                             | Eight private buckets (§7), all declared in migrations. Signed URLs only — no public access.                          |
+| Storage        | Supabase Storage                             | Private buckets ([§7](#7-storage-supabase-storage)), all declared in migrations. Signed URLs only — no public access.                          |
 | Realtime       | Supabase Realtime                            | Postgres changes for chat + the audit-log worker (publication membership is required and was missing until #867). Private broadcast for dashboard change-pings. Broadcast for typing indicators. Presence for online status. |
 | Billing        | Stripe                                       | Subscriptions, checkout, webhooks, invoices.                                                                          |
 | Push           | Expo Push Service                            | Mobile push notifications via `expo-server-sdk`.                                                                      |
@@ -124,7 +124,7 @@ Frapp/
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill. Consumed by the API (chapter config seed), web Settings + first-officer wizard, and `apps/mobile` (`package.json` declares the workspace dependency; the wizard reads `ARCHETYPES` directly). |
 | `@repo/theme`             | Shared Tailwind preset plus one stylesheet: `signet.css` (dark-only Signet tokens), imported by `apps/web` and, since #2366, `apps/landing`. The legacy bone/bronze `globals.css` was deleted in that cutover. Typed tokens for non-Tailwind consumers; `accent.ts` holds `resolveChapterAccentColor`, the per-surface accent re-validator. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
-| `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document` / `archive`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`, `isAnalyticsOptedOut`) used by API + clients. `z.record` requires a key schema and a value schema. |
+| `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (kinds: [`content-validation.md` § 1](../../docs/internal/security/content-validation.md#1-allowed-content-types)), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`, `isAnalyticsOptedOut`) used by API + clients. `z.record` requires a key schema and a value schema. |
 
 ---
 
@@ -323,7 +323,7 @@ Owned by [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../docs/internal/s
 | `branding`, `profiles`, `documents`, `backwork`, `chat` | `20260808204500_declare_dashboard_created_buckets.sql` |
 | `chat-archive` | `20260823124000_chat_archive_bucket.sql` |
 
-Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_size_limit`. That limit is 26214400 (25MB = `MAX_UPLOAD_BYTES` in `@repo/validation`) on seven of the eight; `chat-archive` is 104857600 (100MB), sized to Discord's boosted-server per-file ceiling. `supabase/config.toml`'s global `[storage] file_size_limit` is 104857600 to match the highest of them — it caps the local stack and overrides any per-bucket column that is higher, so it is deliberately *not* 25MB and must not be "corrected" down to `MAX_UPLOAD_BYTES`. Application-layer MIME and extension checks use the same module (`packages/validation/src/upload-allowlists.ts`, kinds `image` / `proof` / `document` / `archive`) — do not keep a second copy in a service or page. The bucket MIME list is **load-bearing, not documentation**: a signed upload URL cannot pin a content type — the uploader sets its own header on the PUT — so for the member-upload buckets the API's check gates only URL *issuance*, and these bucket columns are the only thing enforced on the upload itself. (`reports` is the exception: it is written only server-side, which passes the content type the server actually resolved, so there the column is a second belt rather than the only one. `chat-archive` is **both** — server-side on its bot path, but signed-URL on its upload path, where the bucket column is again the only enforcement.) What they enforce is the **declared header, not the bytes**, so the column does not stop hostile bytes reaching storage; it constrains the type they are served as. Without it a member with upload permission could have `text/html` served from the storage origin. Measurement, and what is *not* covered, in `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist actually enforces. Add the bucket declaration in the same change set as any new bucket; never create one from the dashboard alone. Shipped migration DDL is immutable; a genuine bucket-policy change is a new migration with a comment pointing at the shared kind.
+Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_size_limit`. That limit is 26214400 (25MB = `MAX_UPLOAD_BYTES` in `@repo/validation`) on seven of the eight; `chat-archive` is 104857600 (100MB), sized to Discord's boosted-server per-file ceiling. `supabase/config.toml`'s global `[storage] file_size_limit` is 104857600 to match the highest of them — it caps the local stack and overrides any per-bucket column that is higher, so it is deliberately *not* 25MB and must not be "corrected" down to `MAX_UPLOAD_BYTES`. Application-layer MIME and extension checks use the same module (`packages/validation/src/upload-allowlists.ts`; kinds in [`content-validation.md` § 1](../../docs/internal/security/content-validation.md#1-allowed-content-types)) — do not keep a second copy in a service or page. The bucket MIME list is **load-bearing, not documentation**: a signed upload URL cannot pin a content type — the uploader sets its own header on the PUT — so for the member-upload buckets the API's check gates only URL *issuance*, and these bucket columns are the only thing enforced on the upload itself. (`reports` is the exception: it is written only server-side, which passes the content type the server actually resolved, so there the column is a second belt rather than the only one. `chat-archive` is **both** — server-side on its bot path, but signed-URL on its upload path, where the bucket column is again the only enforcement.) What they enforce is the **declared header, not the bytes**, so the column does not stop hostile bytes reaching storage; it constrains the type they are served as. Without it a member with upload permission could have `text/html` served from the storage origin. Measurement, and what is *not* covered, in `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist actually enforces. Add the bucket declaration in the same change set as any new bucket; never create one from the dashboard alone. Shipped migration DDL is immutable; a genuine bucket-policy change is a new migration with a comment pointing at the shared kind.
 
 **Upload flow:** API generates a signed upload URL; client uploads directly to Supabase Storage. API generates a signed download URL; client fetches directly.
 
@@ -553,7 +553,7 @@ The **neutral ladder is not derived**. Backgrounds, borders, the sidebar and the
 Delivery differs per surface, and neither client applies the column blindly:
 
 - **Web** — `apps/web/lib/hooks/use-chapter-theme.ts`, mounted once by `DashboardShell`. It reads a fixed allow-list of `--signet-*` roles and re-keys them onto the semantic names `signet.css` defines, all-or-nothing. A row missing those keys leaves the house-gold defaults standing.
-- **Native** — `apps/mobile/lib/chapter-branding.ts` reads `--signet-accent-text` (step 11, a foreground) and falls back to `resolveChapterAccentColor` against the real surface for a row that predates the Signet map.
+- **Native** — `apps/mobile/lib/chapter-branding.ts`; which role it reads, and the legacy fallback it keeps for a row that predates the Signet map, are in [`accent-engine.md` § 6](../ui/design-system/accent-engine.md#6-implementation-status).
 
 ### The legacy engine, and why the stored map is not self-describing
 
@@ -601,11 +601,11 @@ The same TanStack Query mutations and Supabase Realtime subscriptions run on bot
 ### Push delivery
 
 Burst bundling and presence-aware suppression match the web push rules (ADR-04, ADR-09). What the
-app actually declares and sends is owned by [`../ui/mobile/patterns.md`](../ui/mobile/patterns.md)
-§ Push notifications and [`../behavior/notifications.md`](../behavior/notifications.md) — and it is
-narrower than this section used to claim: there is **one** Android channel (`default`), no
-per-category iOS or Android grouping, and **no silent/background push at all** (`UIBackgroundModes`
-is deliberately unset, so there is no background-sync handler to wake).
+app actually declares and sends — its Android channels, any grouping, and whether it sends
+silent/background push at all — is owned by
+[`../ui/mobile/patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications) and
+[`../behavior/notifications.md`](../behavior/notifications.md). It is narrower than this section
+used to claim, so read those rather than this file.
 
 ### Voice memos
 

@@ -113,8 +113,8 @@ single "N new messages" push, and that decision reaches the client only as
 sent: `ExpoPushProvider` builds each message from `to`, `title`, `body`, `data`,
 `sound` and `priority` alone, so a client cannot group on identifiers it never
 receives. The Android **notification channel** is a separate thing and is not a
-grouping key — the app defines exactly one (`"default"`, set as the plugin's
-`defaultChannel` in `apps/mobile/app.json`). The "2 upcoming events today" example
+grouping key; which channels the app defines is owned by
+[`../ui/mobile/patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications). The "2 upcoming events today" example
 above is aspirational: only chat is bundled today.
 
 ## Badge Count

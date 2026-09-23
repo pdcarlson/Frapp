@@ -301,16 +301,16 @@ The two things that bound this *through the API* — `assertChannelAccess` narro
 
 ### Storage buckets
 
-All **eight** buckets are declared `public = false` in IaC, so nothing is served by an unauthenticated
+Every bucket is declared `public = false` in IaC, so nothing is served by an unauthenticated
 URL:
 
-| Bucket | Declared in | MIME allowlist | Size cap |
-| --- | --- | --- | --- |
-| `branding`, `profiles` | `20260808204500_declare_dashboard_created_buckets.sql` | images | 25 MB |
-| `documents`, `backwork`, `chat` | same | per-bucket | 25 MB |
-| `service` (service proof) | `20260803231500_service_proof_bucket.sql` | images + `application/pdf` | 25 MB |
-| `reports` | `20260805133000_reports_bucket.sql` | `application/pdf` | 25 MB |
-| `chat-archive` (Discord import media) | `20260823124000_chat_archive_bucket.sql` | images, video, audio, documents, archives — **no SVG** | 100 MB |
+| Bucket | Declared in | MIME allowlist |
+| --- | --- | --- |
+| `branding`, `profiles` | `20260808204500_declare_dashboard_created_buckets.sql` | images |
+| `documents`, `backwork`, `chat` | same | per-bucket |
+| `service` (service proof) | `20260803231500_service_proof_bucket.sql` | images + `application/pdf` |
+| `reports` | `20260805133000_reports_bucket.sql` | `application/pdf` |
+| `chat-archive` (Discord import media) | `20260823124000_chat_archive_bucket.sql` | images, video, audio, documents, archives — **no SVG** |
 
 Clients never read a bucket directly; the API issues short-lived signed URLs after running the same
 route guards. Every bucket carries a MIME allowlist and a size cap. The table above is this document's

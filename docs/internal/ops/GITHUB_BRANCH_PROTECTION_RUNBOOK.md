@@ -212,9 +212,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Conversation resolution     | Disabled        |
 | Required approving reviews  | Disabled        |
 
-No required human approval on merge is deliberate and unchanged: review is the local
-pre-push gate, and the human gate on what reaches users is the production deploy
-approval, not the merge.
+Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requirement policy](../../../CONTRIBUTING.md#pr-review-requirement-policy).
 
 ### Required Status Checks
 
