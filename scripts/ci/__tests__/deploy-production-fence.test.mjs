@@ -453,10 +453,10 @@ describe("the dry run rehearses the build and ships nothing", () => {
 // present a dry run would create a Sentry release, and upload source maps, for
 // a commit that is not being deployed.
 //
-// Whether the token is in Infisical `prod` today has not been verified
-// (docs/internal/environment/ENV_REFERENCE.md § apps/api), so this may already be
-// live rather than latent — which is precisely why it needs a test. Nothing would
-// go red on the day it is added.
+// Whether the token is in Infisical `prod` is recorded in
+// docs/internal/environment/ENV_REFERENCE.md § apps/api; wherever it is, this gap
+// is live, not latent. That is precisely why it needs a test: nothing else would
+// go red when the token reaches the job.
 describe("the dry-run Sentry guard on the Vercel build step", () => {
   const BUILD_STEP = "Build the Vercel production bundles (web + landing)";
 

@@ -413,8 +413,8 @@ each one writes to production or takes production traffic — not because they a
 impossible to rehearse, so do not read the list as a technical limit.
 
 One difference sits _inside_ the build, and it is the easiest thing here to
-misread: a real run compiles with `SENTRY_AUTH_TOKEN` present and therefore
-uploads source maps and creates a Sentry release. A dry run clears that token —
+misread: a real run compiles with `SENTRY_AUTH_TOKEN` whenever the deploy
+environment carries it, and then uploads source maps and creates a Sentry release. A dry run clears that token —
 but only the copy in the job environment, **not** the copy `vercel pull` writes
 into the pulled env file. So whenever that token is in Infisical `prod`
 ([which environments carry it](../environment/ENV_REFERENCE.md#appsapi-nestjs--render)),
