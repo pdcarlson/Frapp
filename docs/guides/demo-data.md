@@ -112,9 +112,10 @@ for production is `prod`.
   ref comes from [`.github/environments.json`](../../.github/environments.json).
 - The seed refuses to link a login whose `users` row is a member of any chapter,
   and `--reviewer` refuses to run at all until a marked login exists. The seed and
-  `sql --remove` also refuse while any seeded account is a member of another
+  `sql --remove` also refuse while any seeded account still has rows once the demo
+  chapter is gone, that is, a membership in or anything written to another
   chapter (the App Review login founding one, say), since deleting that account
-  would cascade through its membership there. Either way
+  would cascade through those rows or fail on them. Either way
   the whole seed is one transaction, so a failed re-seed leaves the chapter it
   was replacing exactly as it was.
 
@@ -153,11 +154,12 @@ seed runs, so a chapter seeded weeks earlier shows no upcoming events. Re-run
 steps 2 to 4. The login and its password persist, and `storage` overwrites the
 same objects in place: document ids are fixed, so each run names the same files.
 
-**To remove a demo chapter**, run the steps backwards with `--remove`:
-`storage --remove` (every object under `chapters/<chapter id>/` in every bucket,
-which includes anything the reviewer uploaded, such as a chat photo), `sql --remove`
-(prints the chapter and user deletes), then
-`auth --remove` (only a login this script created).
+**To remove a demo chapter**, apply `sql --remove` first: it prints the chapter
+and user deletes, and it is the step that can refuse (a seeded account with rows in
+another chapter), so stop there if it does. Then `storage --remove` (every object
+under `chapters/<chapter id>/` in every bucket, which includes anything the reviewer
+uploaded, such as a chat photo; it cannot be undone), then `auth --remove` (only a
+login this script created).
 
 ## Capture screenshots
 

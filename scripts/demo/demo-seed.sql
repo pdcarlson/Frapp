@@ -34,24 +34,37 @@ BEGIN;
 -- @settings
 
 -- ── Reset ────────────────────────────────────────────────────────────────────
--- Refuse first when a seeded account belongs to another chapter too: the App
--- Review login founding a second chapter, say. `members.user_id` cascades, so
--- the users delete below would silently empty that chapter's membership. The
--- whole seed is one transaction, so it stops with nothing changed.
-DO $reset_guard$
-BEGIN
-  IF EXISTS (SELECT 1 FROM members
-              WHERE user_id::text LIKE 'c0ffee00-0000-4000-8000-1000%'
-                AND chapter_id <> 'c0ffee00-0000-4000-8000-000000000001') THEN
-    RAISE EXCEPTION 'a seeded account is also a member of another chapter; refusing to delete it, which would cascade through that membership';
-  END IF;
-END $reset_guard$;
-
 DELETE FROM chapters WHERE id = 'c0ffee00-0000-4000-8000-000000000001';
 -- chapters -> users is ON DELETE SET NULL, so the demo people outlive the
 -- cascade and collide on re-run. Remove them explicitly by their id prefix.
--- Every other foreign key onto `users` either cascades or sits on a
--- chapter-scoped table the chapter cascade above has already emptied.
+--
+-- But only once the cascade has taken everything they did: a row that still
+-- references a seeded account now belongs to another chapter (the App Review
+-- login founding or joining one), and deleting the account would cascade
+-- through it or fail on it. The block below refuses in that case, reading every
+-- foreign key onto users from the catalog (seed-demo.mjs accountGuardSql, which
+-- a test holds this copy to). The whole seed is one transaction, so a refusal
+-- changes nothing.
+DO $guard$
+DECLARE
+  r record;
+  hit boolean;
+BEGIN
+  FOR r IN
+    SELECT c.conrelid::regclass AS tbl, a.attname AS col
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+     WHERE c.contype = 'f' AND c.confrelid = 'public.users'::regclass
+       AND array_length(c.conkey, 1) = 1
+       AND t.relname NOT IN ('users', 'push_tokens', 'user_settings')
+  LOOP
+    EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I::text LIKE %L)', r.tbl, r.col, 'c0ffee00-0000-4000-8000-1000%') INTO hit;
+    IF hit THEN
+      RAISE EXCEPTION 'a demo account still has rows in %.% once its chapter is gone, so they belong to another chapter; refusing to delete the account, which would cascade through or fail on them', r.tbl, r.col;
+    END IF;
+  END LOOP;
+END $guard$;
 DELETE FROM users WHERE id::text LIKE 'c0ffee00-0000-4000-8000-1000%';
 
 -- ── Chapter ──────────────────────────────────────────────────────────────────

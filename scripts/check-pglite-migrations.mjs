@@ -2502,6 +2502,25 @@ console.log("\n=== demo seed load (#2308) ===");
     const afterCross = await snapshot(seedDemo.REVIEWER_NAMESPACE);
     await db.exec(`delete from members where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}';`);
 
+    // The same without a membership: rows the login wrote in another chapter before leaving
+    // it. The membership check this replaced let them cascade away with the account.
+    await db.exec(
+      `insert into point_transactions (chapter_id, user_id, amount, category) values ('${marketingChapter}', '${reviewerLogin}', 5, 'MANUAL');`,
+    );
+    const refusedLeftRows = await refuses(reviewerSql);
+    const leftRowsKept = await n(
+      `select count(*)::int as n from point_transactions where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}'`,
+    );
+    await db.exec(`delete from point_transactions where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}';`);
+
+    // What the account owns outright goes with it: a push token or settings row is no reason to refuse.
+    await db.exec(`insert into push_tokens (user_id, token) values ('${reviewerLogin}', 'demo-token');`);
+    await db.exec(`insert into user_settings (user_id) values ('${reviewerLogin}');`);
+    await db.exec(reviewerSql);
+    const ownedLeft = await n(
+      `select (select count(*) from push_tokens where user_id = '${reviewerLogin}') + (select count(*) from user_settings where user_id = '${reviewerLogin}') as n`,
+    );
+
     // The marketing variant seeds an unmarked account's email unlinked.
     await db.exec(render(seedDemo.TEMPLATE_NAMESPACE, STRANGER_EMAIL, false));
     const strangerLink = (await snapshot(seedDemo.TEMPLATE_NAMESPACE)).loginAuthId;
@@ -2548,6 +2567,8 @@ console.log("\n=== demo seed load (#2308) ===");
       [refusedStranger && same(afterStranger, reviewer), "a reviewer re-seed naming an unmarked account raises and leaves the existing chapter untouched"],
       [refusedOtherNs && same(afterOtherNs, reviewer), "a login marked for another namespace is never linked: the reviewer re-seed raises"],
       [refusedCrossReseed && refusedCrossRemove && crossKept === 1 && same(afterCross, reviewer), "a seeded account in another chapter makes the re-seed and sql --remove refuse, and that membership survives"],
+      [refusedLeftRows && leftRowsKept === 1, "rows a seeded account left in another chapter, with no membership there, also make the re-seed refuse"],
+      [Number(ownedLeft) === 0, "a push token and a settings row go with the account, without a refusal"],
       [adopted.loginAuthId === REVIEWER_AUTH_ID && shells === 1, `a chapterless row from an early sign-in is adopted (linked ${adopted.loginAuthId}, ${shells} row on the auth id)`],
       [refusedInUse && inUseKept === 1, "a row on the login's auth id that is a member of a chapter is refused, not taken over"],
       [removed.every((r) => r.chapters === 0 && r.members === 0 && r.users === 0 && r.documents === 0), "sql --remove clears both chapters and their people"],

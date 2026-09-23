@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import {
   AUTH_MARKER_KEY,
+  accountGuardSql,
   LOCAL_DEMO_EMAIL,
   LOCAL_DEMO_PASSWORD,
   REVIEWER_NAMESPACE,
@@ -160,9 +161,15 @@ test("sql --remove is the seed's own opening deletes, and nothing more", () => {
   const statements = remove.split("\n").filter((l) => l.startsWith("DELETE"));
   assert.equal(statements.length, 2);
   for (const statement of statements) assert.ok(seed.includes(statement), `seed lacks: ${statement}`);
-  // Both refuse while a demo account belongs to another chapter; the PGlite gate runs them.
-  assert.match(remove, /IF EXISTS \(SELECT 1 FROM members WHERE user_id::text LIKE 'a9900000-0000-4000-8000-1000%' AND chapter_id <> 'a9900000-0000-4000-8000-000000000001'\)/);
-  assert.ok(remove.indexOf("RAISE EXCEPTION") < remove.indexOf("DELETE FROM chapters"), "the guard runs before the deletes");
+  // Both run the same account guard, between the chapter delete and the people's; the
+  // pglite-migrations check exercises it. The template's copy is pinned to the function.
+  const guard = accountGuardSql("a9900000-0000-4000-8000-1000%");
+  assert.ok(seed.includes(guard), "demo-seed.sql's guard drifted from accountGuardSql");
+  assert.ok(remove.includes(guard));
+  for (const sql of [seed, remove]) {
+    assert.ok(sql.indexOf("DELETE FROM chapters") < sql.indexOf(guard), "the guard runs after the chapter cascade");
+    assert.ok(sql.indexOf(guard) < sql.indexOf("DELETE FROM users"), "...and before the accounts are deleted");
+  }
 });
 
 // ── Guards ──────────────────────────────────────────────────────────────────
