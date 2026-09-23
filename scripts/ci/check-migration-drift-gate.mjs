@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Blocking migration-drift gate for the `migration-drift` job in ci.yml.
+// Migration-drift report for the `migration-drift` job in migration-drift-gate.yml.
 //
 // This is the SECOND drift check in this repo and the two are not redundant:
 //
@@ -52,10 +52,16 @@
 // feature-branch commit, so a PR that sat in review longer than the window got
 // no grace at all — which is every agent-authored migration PR.
 //
-// ── Read-only ───────────────────────────────────────────────────────────────
+// ── Read-only, and credential-free in CI ────────────────────────────────────
 // Same data source as the sibling: `GET /v1/projects/{ref}/database/migrations`
 // on the Supabase Management API. No SQL is sent, so this cannot mutate a
 // database even if its logic is wrong.
+//
+// In CI the answer comes from the published migration snapshot (`--snapshot`),
+// not from a credential. This job runs on `pull_request`, and a same-repository
+// PR runs its own branch's workflow, so a credential here is a credential every
+// branch holds (#2518). The staging ref then comes from
+// `.github/environments.json`. See `lib/migration-snapshot.mjs`.
 //
 // ── Availability trade ──────────────────────────────────────────────────────
 // A required check that calls a third-party API makes repo-wide merge
@@ -68,9 +74,13 @@
 // merge freeze, so no escape hatch is needed: the outage is visible and merges
 // keep moving.
 //
+// Flags:
+//   --snapshot <file>          — read staging's applied state from a published
+//                                snapshot; the two env inputs below are then unused
+//
 // Env inputs:
-//   SUPABASE_ACCESS_TOKEN      — required, Supabase Management API token
-//   SUPABASE_PROJECT_REF       — required, the STAGING project ref
+//   SUPABASE_ACCESS_TOKEN      — live read only: Supabase Management API token
+//   SUPABASE_PROJECT_REF       — live read only: the STAGING project ref
 //   DRIFT_GATE_MAIN_REF        — optional, default "origin/main"
 //   DRIFT_GATE_GRACE_MINUTES   — optional, default 30
 //   GITHUB_STEP_SUMMARY        — optional, written when present
@@ -87,7 +97,9 @@ import {
   parseMigrationFilename,
 } from "./check-migration-drift.mjs";
 import { requireEnv, SECRETS_RUNBOOK } from "./lib/env.mjs";
+import { getEnvironment } from "./lib/environments.mjs";
 import { DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_MS } from "./lib/http.mjs";
+import { describeSnapshot, loadSnapshot } from "./lib/migration-snapshot.mjs";
 
 export const DEFAULT_MAIN_REF = "origin/main";
 export const DEFAULT_GRACE_MINUTES = 30;
@@ -411,9 +423,55 @@ export async function runDriftGate({
   return 0;
 }
 
+function getArg(name) {
+  const i = process.argv.indexOf(name);
+  if (i === -1) return undefined;
+  const v = process.argv[i + 1];
+  if (v === undefined || v.startsWith("--")) {
+    console.error(`Error: ${name} requires a value.`);
+    process.exit(2);
+  }
+  return v;
+}
+
+/**
+ * Where staging's applied state comes from: the published snapshot when
+ * `--snapshot` is given (CI), else a live read with a token (a laptop).
+ */
+function resolveSource(snapshotPath) {
+  if (!snapshotPath) {
+    return {
+      accessToken: requireEnv("SUPABASE_ACCESS_TOKEN", { hint: SECRETS_RUNBOOK }),
+      projectRef: requireEnv("SUPABASE_PROJECT_REF", { hint: SECRETS_RUNBOOK }),
+      fetchImpl: fetch,
+      description: "live Management API read",
+    };
+  }
+  const projectRef = getEnvironment("staging").supabaseProjectRef;
+  try {
+    const loaded = loadSnapshot(snapshotPath, { requireRefs: [projectRef] });
+    return {
+      accessToken: "snapshot",
+      projectRef,
+      fetchImpl: loaded.fetchImpl,
+      description: describeSnapshot(loaded.snapshot, loaded.ageHours),
+    };
+  } catch (thrown) {
+    // Unreadable is not clean, the same posture as a failed live read below.
+    console.error(`::error::Could not read staging's applied migrations: ${thrown.message}.`);
+    writeSummary(
+      [
+        "## Migration drift gate — staging",
+        "",
+        `**Could not read staging's applied migrations.** ${thrown.message}.`,
+      ].join("\n"),
+    );
+    process.exit(1);
+  }
+}
+
 async function main() {
-  const accessToken = requireEnv("SUPABASE_ACCESS_TOKEN", { hint: SECRETS_RUNBOOK });
-  const projectRef = requireEnv("SUPABASE_PROJECT_REF", { hint: SECRETS_RUNBOOK });
+  const { accessToken, projectRef, fetchImpl, description } = resolveSource(getArg("--snapshot"));
   const mainRef = process.env.DRIFT_GATE_MAIN_REF || DEFAULT_MAIN_REF;
   const graceMinutes = Number(
     process.env.DRIFT_GATE_GRACE_MINUTES || DEFAULT_GRACE_MINUTES,
@@ -428,10 +486,11 @@ async function main() {
   console.log("  Migration drift gate (staging)");
   console.log(`  Comparing: ${mainRef} → staging ${projectRef.slice(0, 8)}…`);
   console.log(`  Grace: ${graceMinutes} minute(s) from merge time`);
+  console.log(`  Source: ${description}`);
   console.log("══════════════════════════════════════════════════════════");
 
   process.exit(
-    await runDriftGate({ accessToken, projectRef, mainRef, graceMinutes }),
+    await runDriftGate({ accessToken, projectRef, mainRef, graceMinutes, fetchImpl }),
   );
 }
 

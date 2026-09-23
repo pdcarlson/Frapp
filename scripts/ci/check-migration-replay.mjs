@@ -52,6 +52,15 @@
 // to production, ever. Every apply in this file targets the disposable local
 // database.
 //
+// Where that GET happens depends on the caller. `deploy-production.yml` makes it
+// live, with a token, inside the reviewed `production` environment. The PR gate
+// (`migration-drift-gate.yml`) holds no credential, because a same-repository
+// PR runs its own branch's workflow and so hands whatever that job can read to
+// every branch (#2518). It passes `--snapshot <file>` instead: the published
+// migration snapshot, a `main`-only job's copy of the same GET
+// (`lib/migration-snapshot.mjs`). The production ref then comes from
+// `.github/environments.json`.
+//
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/check-migration-replay.test.mjs`.
 
@@ -68,7 +77,9 @@ import {
 import { join } from "node:path";
 
 import { fetchAppliedMigrations, readLocalMigrations } from "./check-migration-drift.mjs";
+import { getEnvironment } from "./lib/environments.mjs";
 import { resilientFetch } from "./lib/http.mjs";
+import { describeSnapshot, loadSnapshot } from "./lib/migration-snapshot.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 // Files are moved here, not copied and deleted: a rename inside one filesystem
@@ -515,16 +526,44 @@ function fetchFromFile(path) {
   });
 }
 
+/**
+ * `--snapshot <file>` reads production's applied state from the published
+ * migration snapshot, keyed by the production ref in `.github/environments.json`.
+ * A snapshot that is unreadable, stale or has no production entry is fatal: an
+ * unreadable production state means this gate verified nothing.
+ */
+function snapshotSource(path) {
+  const projectRef = getEnvironment("production").supabaseProjectRef;
+  try {
+    const loaded = loadSnapshot(path, { requireRefs: [projectRef] });
+    console.log(`Production's applied state: ${describeSnapshot(loaded.snapshot, loaded.ageHours)}.`);
+    return { fetchImpl: loaded.fetchImpl, accessToken: "snapshot", projectRef };
+  } catch (thrown) {
+    console.error(`::error::Could not read production's applied migrations: ${thrown.message}.`);
+    process.exit(1);
+  }
+}
+
 const isDirectRun = process.argv[1] && process.argv[1].endsWith("check-migration-replay.mjs");
 if (isDirectRun) {
   const appliedFrom = getArg("--applied-from");
+  const snapshotPath = getArg("--snapshot");
+  if (appliedFrom && snapshotPath) {
+    console.error("Error: --applied-from and --snapshot are two sources for one answer; pass one.");
+    process.exit(2);
+  }
+  const source = snapshotPath
+    ? snapshotSource(snapshotPath)
+    : {
+        fetchImpl: appliedFrom ? fetchFromFile(appliedFrom) : fetch,
+        // A recorded state needs no credentials; the fetch is stubbed out.
+        accessToken: appliedFrom ? "offline" : process.env.SUPABASE_ACCESS_TOKEN,
+        projectRef: appliedFrom ? "offline" : process.env.SUPABASE_PROJECT_REF,
+      };
   process.exit(
     await runReplayGate({
-      fetchImpl: appliedFrom ? fetchFromFile(appliedFrom) : fetch,
+      ...source,
       label: getArg("--label") ?? (appliedFrom ? `recorded state (${appliedFrom})` : "production"),
-      // A recorded state needs no credentials; the fetch is stubbed out.
-      accessToken: appliedFrom ? "offline" : process.env.SUPABASE_ACCESS_TOKEN,
-      projectRef: appliedFrom ? "offline" : process.env.SUPABASE_PROJECT_REF,
     }),
   );
 }

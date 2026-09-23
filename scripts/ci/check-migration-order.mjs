@@ -61,23 +61,27 @@
 // one that refuses first — and that is usually staging.
 //
 // Project refs come from `.github/environments.json` (not secret; a ref grants
-// nothing without a token), so one Infisical injection for the account-level
-// `SUPABASE_ACCESS_TOKEN` covers both reads.
+// nothing without a token).
 //
-// ── Read-only ───────────────────────────────────────────────────────────────
-// One GET per environment to the Management API's migration-history endpoint,
-// the same call `check-migration-drift.mjs` makes. No SQL is sent, ever.
+// ── Where the applied state comes from ──────────────────────────────────────
+// In CI, from the published migration snapshot (`--snapshot <file>`), never
+// from a credential. This check runs on `pull_request`, and a same-repository
+// PR runs its own branch's workflow, so any credential it could read, any
+// branch could read (#2518). `publish-migration-snapshot.mjs` makes the
+// Management API read from `main` instead, and the job downloads the result.
+// `lib/migration-snapshot.mjs` serves it back through the same `fetchImpl` seam
+// the live read uses, so every clause below is identical either way. The live
+// read (`SUPABASE_ACCESS_TOKEN`, one GET per environment to the migration-history
+// endpoint, no SQL) remains for a manual run from a laptop.
 //
 // Env inputs:
-//   SUPABASE_ACCESS_TOKEN   — required, Supabase Management API token
 //   ORDER_GATE_BASE_REF     — required, the ref this change is measured against
+//   SUPABASE_ACCESS_TOKEN   — for a live read only; ignored with --snapshot
 //   GITHUB_STEP_SUMMARY     — optional, written when present
 //
 // Flags:
-//   --probe        read both environments, print what they hold, assert nothing
-//                  about the change. The rollout evidence a green gate run
-//                  cannot give: a change introducing no migrations passes
-//                  having made zero network calls.
+//   --snapshot <file>      read applied state from a published snapshot
+//   --applied-from <file>  replay one recorded list for every environment
 //
 // Exit codes:
 //   0 — no introduced migration is back-dated against any environment
@@ -97,6 +101,7 @@ import {
   MIGRATIONS_PREFIX,
 } from "./check-migration-drift-gate.mjs";
 import { ENVIRONMENTS, loadEnvironments } from "./lib/environments.mjs";
+import { describeSnapshot, loadSnapshot } from "./lib/migration-snapshot.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
@@ -282,7 +287,7 @@ function renameRemedy(floor) {
  * applied migration is about to create a foreign row, and telling its author to
  * rename something is the opposite of the advice they need.
  */
-export function decideOrderOutcome({ local, results, introduced = [], removed = [], localOnly = false }) {
+export function decideOrderOutcome({ local, results, introduced = [], removed = [] }) {
   // Clause 1 first, because it needs nothing and is never ambiguous.
   if (local && local.offending.length > 0) {
     const files = local.offending.map((m) => `  ~ ${m.file}`).join("\n");
@@ -319,7 +324,7 @@ export function decideOrderOutcome({ local, results, introduced = [], removed = 
   // Clause 6: something was introduced or removed and NOTHING was checked. A
   // verdict of "fine" reached without consulting anything is the false green
   // every gate in this repo is written to avoid.
-  if (!localOnly && (introduced.length > 0 || removed.length > 0) && results.length === 0) {
+  if ((introduced.length > 0 || removed.length > 0) && results.length === 0) {
     return {
       ok: false,
       code: "no-environment-checked",
@@ -358,11 +363,8 @@ export function decideOrderOutcome({ local, results, introduced = [], removed = 
       message:
         introduced.length === 0 && removed.length === 0
           ? "This change introduces no migrations — nothing to order."
-          : localOnly
-            ? `Every introduced migration sorts after everything on the base branch. ` +
-              `The deployed databases were NOT checked (no credentials in this context).`
-            : `Every introduced migration sorts after everything on the base branch and after ` +
-              `the newest version applied to ${results.map((r) => `\`${r.label}\``).join(" and ")}.`,
+          : `Every introduced migration sorts after everything on the base branch and after ` +
+            `the newest version applied to ${results.map((r) => `\`${r.label}\``).join(" and ")}.`,
     };
   }
 
@@ -388,7 +390,7 @@ export function decideOrderOutcome({ local, results, introduced = [], removed = 
   };
 }
 
-export function buildOrderSummary({ introduced, removed = [], local, results, outcome, baseRef, localOnly = false }) {
+export function buildOrderSummary({ introduced, removed = [], local, results, outcome, baseRef }) {
   const lines = [
     `## Migration order gate`,
     "",
@@ -408,14 +410,7 @@ export function buildOrderSummary({ introduced, removed = [], local, results, ou
         `${local.offending.length} introduced migration(s) sort before it.`,
     );
   }
-  if (localOnly) {
-    lines.push(
-      "",
-      "> The deployed databases were **not** checked: this context has no Supabase credentials",
-      "> (a fork PR). The ordering rule against the base branch still ran, and it is the one that",
-      "> does not depend on when an environment happens to apply anything.",
-    );
-  } else if (results.length > 0) {
+  if (results.length > 0) {
     lines.push(
       "",
       "| Environment | Newest applied | Back-dated introductions | Removed-but-applied |",
@@ -444,82 +439,11 @@ function defaultWriteSummary(text) {
   }
 }
 
-/**
- * Read both environments and report what they hold, asserting nothing about the
- * change.
- *
- * This exists for one job: proving, before `migration-order` is promoted to a
- * required context, that the credentials in CI can actually read BOTH projects.
- * The gate's own green run is not that evidence — a change introducing no
- * migrations returns green having made zero network calls, so it proves the job
- * starts and nothing more. A dispatch on `main` is exactly that case, which
- * made the obvious "just dispatch it" instruction useless.
- *
- * Exits 0 only when every environment answered. A project-scoped token or a
- * wrong ref surfaces here, deliberately, rather than as a hard block on the
- * first migration PR after the check starts blocking.
- */
-export async function probeEnvironments({
-  accessToken = process.env.SUPABASE_ACCESS_TOKEN,
-  environments,
-  fetchImpl = fetch,
-  writeSummary = defaultWriteSummary,
-  log = console.log,
-  error = console.error,
-} = {}) {
-  let resolved;
-  try {
-    resolved = environments ?? loadEnvironments();
-  } catch (thrown) {
-    error(`::error::Could not resolve environment identity: ${thrown.message}`);
-    return 2;
-  }
-
-  const rows = [];
-  let allOk = true;
-  for (const label of ENVIRONMENTS) {
-    const target = resolved[label];
-    if (!target) continue;
-    const applied = await fetchAppliedWithRetry({
-      accessToken,
-      projectRef: target.supabaseProjectRef,
-      fetchImpl,
-      log,
-    });
-    if (!applied.ok) {
-      allOk = false;
-      rows.push(`| \`${label}\` | \`${target.supabaseProjectRef}\` | — | ❌ ${applied.error} |`);
-      error(`::error::${label} (${target.supabaseProjectRef}) could not be read: ${applied.error}`);
-      continue;
-    }
-    const newest = newestVersion(applied.migrations.filter((m) => VERSION_PATTERN.test(m.version)));
-    rows.push(
-      `| \`${label}\` | \`${target.supabaseProjectRef}\` | ${applied.migrations.length} | \`${newest ?? "none"}\` |`,
-    );
-    log(`  ${label} (${target.supabaseProjectRef}): ${applied.migrations.length} applied, newest ${newest}.`);
-  }
-
-  writeSummary(
-    [
-      "## Migration order gate — credential probe",
-      "",
-      allOk ? "✅ Both environments were read." : "❌ At least one environment could not be read.",
-      "",
-      "| Environment | Project ref | Applied | Newest |",
-      "| --- | --- | --- | --- |",
-      ...rows,
-      "",
-      "Asserts nothing about any change — this run exists to prove the credentials reach both",
-      "projects before `migration-order` is promoted to a required check.",
-    ].join("\n"),
-  );
-  return allOk ? 0 : 1;
-}
-
 export async function runOrderGate({
   accessToken = process.env.SUPABASE_ACCESS_TOKEN,
+  snapshotPath,
+  nowMs = Date.now(),
   baseRef = process.env.ORDER_GATE_BASE_REF,
-  localOnly = process.env.ORDER_GATE_LOCAL_ONLY === "true",
   migrationsDir = MIGRATIONS_DIR,
   environments,
   readBase,
@@ -575,8 +499,8 @@ export async function runOrderGate({
   log(`  Newest migration already on the base branch: ${local.floor ?? "none"}.`);
 
   const finish = (results) => {
-    const outcome = decideOrderOutcome({ local, results, introduced, removed, localOnly });
-    writeSummary(buildOrderSummary({ introduced, removed, local, results, outcome, baseRef, localOnly }));
+    const outcome = decideOrderOutcome({ local, results, introduced, removed });
+    writeSummary(buildOrderSummary({ introduced, removed, local, results, outcome, baseRef }));
     if (!outcome.ok) {
       error(`::error::${outcome.message.split("\n")[0]}`);
       error(outcome.message);
@@ -593,24 +517,19 @@ export async function runOrderGate({
   // an environment's availability or over state the change did not cause.
   if (introduced.length === 0 && removed.length === 0) return finish([]);
 
-  // A fork PR gets no secrets. Reporting Success there having skipped the whole
-  // job is what the old job-level `if:` did; running clause 1 and saying plainly
-  // that the databases were not consulted is strictly more than that.
-  if (localOnly) {
-    log("  ORDER_GATE_LOCAL_ONLY is set — the deployed databases are not being read.");
-    return finish([]);
-  }
-
   // Asserted HERE, past the fast path, and deliberately not in the workflow.
   // A shell guard in the job runs before `node` does, so it fires on changes
   // that were never going to read a database — which is how a required check
   // ends up failing every PR in the repository because a credential expired.
-  // The script is the only place that knows whether the read is needed.
-  if (!accessToken) {
+  // The script is the only place that knows whether the read is needed. The
+  // snapshot is loaded past the same line for the same reason: a stale one
+  // must not redden a change that introduces nothing.
+  if (!snapshotPath && !accessToken) {
     error(
-      "::error::SUPABASE_ACCESS_TOKEN is required to read the deployed databases, and this " +
-        "change adds or removes migrations so they must be read. It is injected from the " +
-        "Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md.",
+      "::error::This change adds or removes migrations, so the deployed databases must be " +
+        "read, and there is nothing to read them with. In CI, pass --snapshot <file> (the " +
+        "migration snapshot migration-drift-gate.yml downloads). From a laptop, set " +
+        "SUPABASE_ACCESS_TOKEN for a live read.",
     );
     return 2;
   }
@@ -623,14 +542,43 @@ export async function runOrderGate({
     return 2;
   }
 
+  let readFetch = fetchImpl;
+  let readToken = accessToken;
+  if (snapshotPath) {
+    try {
+      const loaded = loadSnapshot(snapshotPath, {
+        nowMs,
+        requireRefs: ENVIRONMENTS.filter((label) => resolved[label]).map(
+          (label) => resolved[label].supabaseProjectRef,
+        ),
+      });
+      log(`  Applied state: ${describeSnapshot(loaded.snapshot, loaded.ageHours)}.`);
+      readFetch = loaded.fetchImpl;
+      readToken = "snapshot";
+    } catch (thrown) {
+      // One row, not one per environment: the snapshot is a single source, and
+      // "staging: stale; production: stale" says the same thing twice.
+      return finish([
+        {
+          label: "migration snapshot",
+          status: "unknown",
+          error: thrown.message,
+          newestApplied: null,
+          offending: [],
+          stranded: [],
+        },
+      ]);
+    }
+  }
+
   const results = [];
   for (const label of ENVIRONMENTS) {
     const target = resolved[label];
     if (!target) continue;
     const applied = await fetchAppliedWithRetry({
-      accessToken,
+      accessToken: readToken,
       projectRef: target.supabaseProjectRef,
-      fetchImpl,
+      fetchImpl: readFetch,
       log,
     });
     if (!applied.ok) {
@@ -716,18 +664,10 @@ function fetchFromFile(path) {
 const isDirectRun = process.argv[1] && process.argv[1].endsWith("check-migration-order.mjs");
 if (isDirectRun) {
   const appliedFrom = getArg("--applied-from");
-  if (process.argv.includes("--probe")) {
-    process.exit(
-      await probeEnvironments({
-        fetchImpl: appliedFrom ? fetchFromFile(appliedFrom) : fetch,
-        accessToken: appliedFrom ? "offline" : process.env.SUPABASE_ACCESS_TOKEN,
-      }),
-    );
-  }
   process.exit(
     await runOrderGate({
       baseRef: getArg("--base") ?? process.env.ORDER_GATE_BASE_REF,
-      localOnly: process.argv.includes("--local-only") || process.env.ORDER_GATE_LOCAL_ONLY === "true",
+      snapshotPath: getArg("--snapshot"),
       fetchImpl: appliedFrom ? fetchFromFile(appliedFrom) : fetch,
       accessToken: appliedFrom ? "offline" : process.env.SUPABASE_ACCESS_TOKEN,
     }),

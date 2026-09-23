@@ -9,6 +9,7 @@ import {
   runReplayGate,
 } from "../check-migration-replay.mjs";
 import { readLocalMigrations } from "../check-migration-drift.mjs";
+import { buildSnapshot, snapshotFetch } from "../lib/migration-snapshot.mjs";
 import { makeFetchMock } from "./helpers.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -311,6 +312,37 @@ test("the replay is not run at all when a migration is back-dated", async () => 
     projectRef: "ref",
     migrationsDir: local,
     fetchImpl: makeFetchMock(appliedRoute(applied)).fetchImpl,
+    replayImpl: () => {
+      throw new Error("the replay must not run for a back-dated partition");
+    },
+  });
+  assert.equal(code, 1);
+});
+
+test("production's state from a published snapshot blocks a back-dated migration", async () => {
+  // Acceptance criterion 3 of #2518, on the replay side: the PR job holds no
+  // credential and reads production's applied state from the snapshot a
+  // `main`-only job published. Same fixture shape as the test above, served
+  // through `snapshotFetch` instead of a mocked Management API.
+  const local = "supabase/migrations";
+  const repo = readLocalMigrations(local);
+  const productionRef = "productionrefbbb";
+  const snapshot = buildSnapshot({
+    capturedAt: "2026-09-23T10:00:00Z",
+    environments: [
+      {
+        name: "production",
+        supabaseProjectRef: productionRef,
+        migrations: repo.slice(1).map((m) => ({ version: m.version, name: m.name })),
+      },
+    ],
+  });
+
+  const code = await runReplayGate({
+    accessToken: "snapshot",
+    projectRef: productionRef,
+    migrationsDir: local,
+    fetchImpl: snapshotFetch(snapshot),
     replayImpl: () => {
       throw new Error("the replay must not run for a back-dated partition");
     },
