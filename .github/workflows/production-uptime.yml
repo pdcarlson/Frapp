@@ -21,9 +21,8 @@ name: Production uptime
 
 on:
   schedule:
-    # Scheduled every 15 minutes. GitHub delays scheduled runs far more than
-    # that in practice (ADR-24 cause 3 has the measured gaps); it is still
-    # tighter than "only after a deploy". Full schedule:
+    # Scheduled every 15 minutes; GitHub runs it far less often, which is
+    # still tighter than "only after a deploy". Real cadence and schedule:
     # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
     - cron: "*/15 * * * *"
   workflow_dispatch:

@@ -12,7 +12,7 @@ Database rollback and restore are their own procedures:
 
 ### Detection signals
 
-- Uptime monitor fails `/health/ready` — **not `/health`**, which stays 2xx while the process is up ([`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check)), so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency — or read the body, not the status. In-repo monitor: `.github/workflows/production-uptime.yml` (scheduled every 15 minutes, but GitHub runs it far less often; see [ADR-24](../../../spec/architecture/adr/adr-24.md). Alert title *Production /health/ready is failing*). A Sentry 60 s check is still the finer-grained human path, planned under #2505
+- Uptime monitor fails `/health/ready` — **not `/health`**, which stays 2xx while the process is up ([`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check)), so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency — or read the body, not the status. In-repo monitor: `.github/workflows/production-uptime.yml` (scheduled every 15 minutes, [far less often in practice](../ci-cd/AGENT_INFRA.md#scheduled-conformance-scriptscistaging-conformancemjs); alert title *Production /health/ready is failing*). A Sentry 60 s check is still the finer-grained human path, planned under #2505
 - Render service marked unhealthy
 - Elevated 5xx alerts
 
@@ -37,7 +37,7 @@ Database rollback and restore are their own procedures:
 - [ ] Validate required env vars are present
 - [ ] Verify DB connectivity from API
 - [ ] Re-run post-deploy smoke checks
-- [ ] Confirm `GET /health/ready` returns HTTP 200 with JSON `status: "ok"` with curl rather than waiting on the next **Production uptime** run. Green on `/health` alone does not clear a degraded dependency. The in-repo monitor is scheduled every 15 minutes but runs far less often than that (see [ADR-24](../../../spec/architecture/adr/adr-24.md)), so its next run can be hours away
+- [ ] Confirm `GET /health/ready` returns HTTP 200 with JSON `status: "ok"` with curl rather than waiting on the next **Production uptime** run. Green on `/health` alone does not clear a degraded dependency. The in-repo monitor's next run can be hours away ([§ Scheduled conformance](../ci-cd/AGENT_INFRA.md#scheduled-conformance-scriptscistaging-conformancemjs))
 
 ### Communication
 

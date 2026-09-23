@@ -99,7 +99,7 @@ export const PRODUCTION_AUTH_COPY = Object.freeze({
   issueDriftLine:
     "(`scripts/ci/production-auth-conformance.mjs`). While it is open, `frapp-prod` Auth settings have drifted from the",
   whySee:
-    "after #643 shipped (#805). Production's copy of those settings is this workflow. See #1384.",
+    "after #643 shipped (#805). Production's copy of those settings is this workflow. Remaining parity work: #2505.",
   commentReopened: "**Production Auth settings have drifted again** — reopening.",
   commentFailedAgain: "**Production Auth settings failed again.**",
   commentFooter:
