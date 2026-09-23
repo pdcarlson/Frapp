@@ -24,8 +24,8 @@ import * as ts from 'typescript';
  *   `postgres_changes` echo), with RLS pinned on for every public table so a
  *   table cannot be read with no policy at all, and with no storage policy
  *   anywhere;
- * - every call to `notifyUser` / `notifyChapter` in the API, counted per file,
- *   and every Realtime subscription the API opens, since that is how a new
+ * - every notify-named call in the API, counted per file, and every Realtime
+ *   `postgres_changes` subscription the API opens, since that is how a new
  *   push gets built.
  *
  * What it cannot see, so nobody reads a green run as more than it is:
@@ -33,10 +33,13 @@ import * as ts from 'typescript';
  * - an existing notification edited to carry another member's words, since
  *   the per-file count does not move, and a notification sent through a
  *   wrapper whose name does not contain `notify`;
- * - a Realtime subscription whose event is not spelled out in `apps/api/src`:
- *   built at runtime, passed in as a parameter or config value, or held in a
- *   constant declared outside it, or a subscription opened by a helper
- *   outside it;
+ * - a `postgres_changes` subscription whose event is not a single literal (or
+ *   the enum member) in `apps/api/src`: concatenated, built at runtime, passed
+ *   in as a parameter or config value, or held in a constant declared outside
+ *   it, or a subscription opened by a helper outside it;
+ * - Broadcast and Presence subscriptions, which this does not scan. The push
+ *   worker reads Presence on `chat:channel:<id>`; what those topics may carry
+ *   is the `realtime.messages` entry below (#2496);
  * - member text re-posted under the system actor, which cannot be blocked. The
  *   poll-expiry notice quotes the poll's question this way (#2495);
  * - a policy or table written through dynamic SQL assembled from parts.
@@ -913,10 +916,9 @@ describe('chat read-surface ledger (#2324)', () => {
     // held in a constant is a problem to resolve by hand, never a pass. Prose
     // about the echo inside a longer string is not the literal and does not
     // count. A reaction subscription would be a reaction push.
-    // The event in any static spelling written inside apps/api/src, in any
-    // position: either
-    // string (`'postgres_changes'`, or `'POSTGRES_CHANGES'` as a quoted or
-    // computed key), the enum member read as a property or an element, or the
+    // The event written as a single literal inside apps/api/src, in any
+    // position: either string (`'postgres_changes'`, or `'POSTGRES_CHANGES'`
+    // as a quoted or computed key), the enum member read as a property or an element, or the
     // bare name, whether referenced, destructured (renamed or not, as a
     // declaration or an assignment) or imported. Anything but the event
     // argument of an `.on(…)` call is a problem to resolve by hand: the local
@@ -931,9 +933,9 @@ describe('chat read-surface ledger (#2324)', () => {
       if (ts.isPropertyAccessExpression(node)) {
         return node.name.text === 'POSTGRES_CHANGES';
       }
-      // Only the enum's own key. `m['postgres_changes']` on some other object
-      // is a lookup that could hold anything, so its literal is left to be
-      // reported on its own.
+      // A key spelled `POSTGRES_CHANGES`, on whatever object, as the enum is
+      // indexed. The object itself is not checked. `m['postgres_changes']` is a
+      // lookup that could hold anything, so its literal is reported on its own.
       if (ts.isElementAccessExpression(node)) {
         return literalText(node.argumentExpression) === 'POSTGRES_CHANGES';
       }
