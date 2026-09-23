@@ -71,8 +71,9 @@ const PAID_MODULES = MODULE_CATALOG.filter(
  * Settings → Modules. Toggles the chapter's enabled integrations. Always-on
  * (free) modules are locked; paid modules toggle `enabled_modules[key]`.
  * Disabling a module immediately removes its sidebar item (Chunk 06 nav gate)
- * and its slash commands (Chunk 05 palette filter), and mutes its system
- * channel — re-enabling restores everything; no data is deleted.
+ * and its slash commands (Chunk 05 palette filter); re-enabling restores
+ * everything, and no data is deleted. A module has no system channel of its
+ * own to mute (spec/behavior/integrations.md, #576).
  */
 export function SettingsModulesTab({
   enabledModules,
@@ -92,9 +93,8 @@ export function SettingsModulesTab({
         <CardTitle>Modules</CardTitle>
         <CardDescription>
           {enabledCount} of {MODULE_CATALOG.length} modules enabled. Disabling a
-          module hides it from the sidebar and chat slash commands and mutes its
-          system channel. Re-enabling restores everything. Data is never
-          deleted.
+          module hides it from the sidebar and chat slash commands. Re-enabling
+          restores everything. Data is never deleted.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
