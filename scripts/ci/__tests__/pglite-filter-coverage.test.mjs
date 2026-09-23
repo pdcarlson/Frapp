@@ -91,6 +91,15 @@ export function mask(src) {
   // Indices of each `)` that closes an `if`/`while`/`for`/`with` condition,
   // after which a `/` starts a regex rather than a division.
   const closesControl = new Set();
+  // Whether the `(` at `i` opens an `if`/`while`/`for`/`with` condition: the
+  // keyword itself, not a method named like one (`Symbol.for(k)`), and
+  // `for await (` too.
+  const opensControl = (i) => {
+    const { token, at } = previous(i);
+    if (out[at - 1] === ".") return false;
+    if (token === "await") return previous(at).token === "for";
+    return ["if", "while", "for", "with"].includes(token);
+  };
   const regexCanStart = (i) => {
     const { token, at } = previous(i);
     if (token === "") return true;
@@ -152,9 +161,7 @@ export function mask(src) {
         blank(i, end, "_");
         i = end;
       } else {
-        if (c === "(") {
-          parens.push(["if", "while", "for", "with"].includes(previous(i).token));
-        }
+        if (c === "(") parens.push(opensControl(i));
         if (c === ")" && parens.pop()) closesControl.add(i);
         if (inTemplate && c === "{") depth += 1;
         if (inTemplate && c === "}") {
@@ -266,7 +273,8 @@ export function scan(src, file) {
       !call.startsWith("resolve") || parts.every((p) => !p.startsWith("/")),
       `${file}: \`${call}\` names a path outside the repo`,
     );
-    route(posix.join(...parts), call);
+    // `join` keeps a leading `/` segment inside the root, as Node's does.
+    route(posix.join(...parts).replace(/^\/+/, ""), call);
   }
 
   for (const { call, args } of callArgs(src, masked, /\bnew\s+URL\s*\(/g)) {
@@ -477,9 +485,10 @@ describe("the scanner reads each form as what it is", () => {
       'spawn(fileURLToPath(new URL("./run.mjs", import.meta.url)));',
       'readFileSync(resolve(REPO_ROOT, "apps", "y.ts"));',
       'readFileSync(join(REPO_ROOT, "scripts", "demo", "..", "..", "apps", "z.ts"));',
+      'readFileSync(join(REPO_ROOT, "/supabase/w.sql"));',
     ].join("\n");
     assert.deepEqual(scan(src, at), {
-      found: ["supabase/seed.sql", "apps/y.ts", "apps/z.ts"],
+      found: ["supabase/seed.sql", "apps/y.ts", "apps/z.ts", "supabase/w.sql"],
       follow: ["scripts/ci/lib/run.mjs"],
     });
   });
@@ -500,6 +509,9 @@ describe("the scanner reads each form as what it is", () => {
       ['const n = i++ / 2; join(REPO_ROOT, "b.sql"); const q = n / 3;', "b.sql"],
       ['const h = o.return / 2; join(REPO_ROOT, "c.sql"); const k = h / 4;', "c.sql"],
       ['if (ok) /\\/\\//.test(u); join(REPO_ROOT, "d.sql");', "d.sql"],
+      ['for await (const x of y) /a"b/.test(x); join(REPO_ROOT, "e.sql");', "e.sql"],
+      ['const r = a.if(b) / 2; join(REPO_ROOT, "f.sql"); const q = 1 / 2;', "f.sql"],
+      ['const s = Symbol.for(k) / 2; join(REPO_ROOT, "g.sql"); const t = 1 / 2;', "g.sql"],
     ]) {
       assert.deepEqual(scan(src, at).found, [path], src);
     }
@@ -509,7 +521,7 @@ describe("the scanner reads each form as what it is", () => {
     for (const [src, error] of [
       ['const s = "unterminated;\nimport("./x.mjs");', /unterminated string/],
       ["const t = `unterminated;", /unterminated template literal/],
-      ["const t = `${a;", /unterminated template/],
+      ["const t = `${a;", /unterminated template expression/],
       ["const r = /unterminated;\nx;", /unterminated regex/],
       ["/* unterminated", /unterminated block comment/],
     ]) {
