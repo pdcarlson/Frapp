@@ -25,9 +25,10 @@
  * unset the ✦ pill is not drawn and the sheet renders nothing, so nothing calls
  * into this file. A value set in an EAS environment never reaches the repo, so
  * `app.config.js` refuses an EAS `production` build that has the flag on
- * (`assertProductionAskDisabled`): a store binary cannot carry this corpus. So
- * no fabricated answer reaches a member, and the rule is satisfied rather than
- * bent.
+ * (`assertProductionAskDisabled`). The table still ships in every bundle,
+ * because `ask-sheet.tsx` imports it statically and Metro does not tree-shake,
+ * but in a store binary nothing can reach it. So no fabricated answer reaches
+ * a member, and the rule is satisfied rather than bent.
  *
  * What the mock buys is that the *screen* is real — the layout, the citation
  * chips, the refusal path and the in-flight state are all built and reviewable

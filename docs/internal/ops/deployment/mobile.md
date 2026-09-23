@@ -174,8 +174,10 @@ house rank), Study hours and the Directory. The list is `STORE_SCREENS` in
 [`scripts/demo/capture-mobile.mjs`](../../../../scripts/demo/capture-mobile.mjs). **No Ask shot:**
 the store binary has no Ask ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and
 Guideline 2.3.3 wants the screenshots to show the app as it ships. **No Dues shot:** a populated
-ledger shows "Payments run through your chapter's Stripe account.", and the listing is built so App
-Review never sees payment copy (the store README's § Seed the reviewer's chapter).
+ledger shows "Payments run through your chapter's Stripe account.", and the reviewer's own Dues tab
+is seeded empty so App Review never sees that footer or a Pay control (the store README's § Seed the
+reviewer's chapter). The listing's text still names dues and payment history; the shots keep out the
+in-app payment copy.
 
 **Procedure**, on a machine or cloud sandbox with the local stack running (API on `:3001`, local
 Supabase):

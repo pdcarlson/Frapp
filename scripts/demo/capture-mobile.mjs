@@ -293,8 +293,10 @@ const APP_SCREENS = [
  * is deliberately no Ask shot, because that binary has no Ask (#2259).
  *
  * No Dues shot either: a populated ledger footers "Payments run through your
- * chapter's Stripe account.", and the listing is built so App Review never
- * sees payment copy (store README § Seed the reviewer's chapter).
+ * chapter's Stripe account.", and the reviewer's own Dues tab is seeded empty
+ * so App Review never sees that footer or a Pay control (store README § Seed
+ * the reviewer's chapter). The listing's text still names dues and payment
+ * history; it is the in-app payment copy the shots keep out.
  *
  * Same shape as `APP_SCREENS`. `ready` gates on content that only arrives
  * once the screen's queries have landed, so no shot is of a skeleton or an
@@ -305,7 +307,12 @@ const STORE_SCREENS = [
     slug: "01-chat-home",
     route: "/",
     label: "Chat home — chapter channels, unread counts, UP NEXT",
-    ready: () => document.body.innerText.includes("CHANNELS"),
+    // CHANNELS alone is the channels query; UP NEXT and the unread badges come
+    // from separate queries (events/tasks, unread counts), so wait for both.
+    ready: () =>
+      document.body.innerText.includes("CHANNELS") &&
+      document.body.innerText.includes("UP NEXT") &&
+      /\n\d+\n/.test(document.body.innerText),
   },
   {
     slug: "02-chat-thread",
@@ -333,7 +340,8 @@ const STORE_SCREENS = [
     slug: "04-host-check-in",
     route: `/host-check-in?eventId=${EVENT_ID}`,
     label: "Host check-in — rotating QR at the door (officer)",
-    // Same clock rule as the marketing shot: ten seconds or more left.
+    // Same clock rule as the marketing shot: twelve seconds or more left,
+    // for the reason given there.
     ready: () => /Rotates in 0:(1[2-9]|2\d)/.test(document.body.innerText),
   },
   {
