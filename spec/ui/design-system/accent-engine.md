@@ -157,13 +157,14 @@ today.
 What the sweep settled, so the next reader does not re-derive it ([#1165](https://github.com/pdcarlson/Frapp/issues/1165)):
 before it, a stored row could lack every `--signet-*` key (written before #1147, 2026-08-20),
 hold them with a sub-3:1 fill (written before the §8 fill floor), or carry the eight dead legacy
-keys. On the first case both clients painted house gold for a chapter that had chosen, say,
-crimson: web applied nothing, and mobile's fallback kept `accent_color` only when it already
-cleared 4.5:1 on the `#1E1B17` card, which 14 of the 18 seed-directory colours fail. Recomputing
+keys. On the first case neither client painted the chapter's own colour, say crimson: web
+applied nothing, so `signet.css`'s default-seed (`#DDB844`) palette stood, and mobile's fallback
+kept `accent_color` only when it already cleared 4.5:1 on the `#1E1B17` card, which 14 of the 18
+seed-directory colours fail, and otherwise painted house gold (`#EFB63B`). Recomputing
 every row with `NULL` engine version fixes all three at once, because every writer replaces the
 whole map. The one precondition was the seed: a Settings save from before the #795 mirror wrote
 `accent_color` but never `branding.colors.accent`, so a recompute of such a row seeded from
-nothing and would have repainted it house gold.
+nothing and would have repainted it with the default seed's (`#DDB844`) palette.
 `supabase/migrations/20260923170100_backfill_chapter_branding_accent_from_accent_color.sql`
 repairs those rows first (§7).
 

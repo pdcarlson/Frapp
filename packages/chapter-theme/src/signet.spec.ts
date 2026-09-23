@@ -433,10 +433,13 @@ const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
 
 /**
  * What the fingerprint derives, beyond the directory corpus. The directory's 19
- * seeds exercise the lift and the on-primary substitution, but no hue family
- * near cyan, teal, jade, mint, sky, lime or yellow, and the generator snaps
- * each seed to the nearest Radix scales, so a change to one of those scales
- * alone moved no directory seed (#1165 review). Even with the sweep, eight
+ * seeds exercise the lift and the on-primary substitution, but the generator
+ * snaps each seed to its nearest Radix scales, and 15 of its 29 scales are no
+ * directory seed's nearest: slate, sage, olive, ruby, crimson, plum, iris,
+ * blue, cyan, teal, jade, green, mint, lime and yellow (measured 2026-09-23 by
+ * instrumenting `getScaleFromColor`). A change confined to one of those scales
+ * moved at most a secondary mix of a directory seed, and for most of them
+ * nothing at all (#1165 review). Even with the sweep, eight
  * scales were no seed's nearest (slate, sage, olive, jade, teal, green, ruby,
  * iris), hence one dedicated seed for each after it. Frozen hex, not computed
  * here, so a `colorjs.io` upgrade cannot quietly move the inputs along with the
