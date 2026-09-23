@@ -116,7 +116,8 @@ type SignetRole = keyof typeof ROLE_STEPS;
  * The fills the §8 floor holds: the resting fill, and the hover shade that
  * replaces it under a pointer. Pressed is not one of them. It is hover with 8%
  * black (`--primary-pressed` in `packages/theme/src/signet.css`), shown only
- * while the pointer is down, and §8 says why it is left under the floor.
+ * while the pointer is down, and §8 says why it, and the label on it, are left
+ * short (#2604).
  */
 const FLOORED_FILLS = [
   "--signet-accent-primary",
