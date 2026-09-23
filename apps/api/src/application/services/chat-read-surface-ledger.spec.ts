@@ -1073,9 +1073,9 @@ describe('chat read-surface ledger (#2324)', () => {
   ];
 
   it.each(
-    allEntries.flatMap(([key, entry]) =>
-      entry.status === 'masked' || (entry.status === 'open' && entry.proof)
-        ? [[key, entry.proof] as const]
+    allEntries.flatMap(([key, entry]): (readonly [string, Proof])[] =>
+      (entry.status === 'masked' || entry.status === 'open') && entry.proof
+        ? [[key, entry.proof]]
         : [],
     ),
   )('%s names a live proof test', (_key, proof) => {
