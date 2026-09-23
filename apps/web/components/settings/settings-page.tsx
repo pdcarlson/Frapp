@@ -447,7 +447,7 @@ function SettingsPageContent() {
   // takes warning styling only once something unsavable has been typed.
   const accentDraftUnsavable = !accentDraftHex;
   // A well-formed colour that fails contrast on the card. `fallbackApplied`
-  // alone is also true for an empty or malformed draft, where "saving keeps the
+  // alone is also true for an empty or malformed draft, where "saving stores the
   // color you entered" would be false.
   const accentPreviewFallsBack = accent.reason === "insufficient_contrast";
 
@@ -1178,8 +1178,8 @@ function SettingsPageContent() {
                     card*; this one when text is illegible *on the accent* —
                     which is what a primary button actually is, and what this
                     card's own description promises the accent will be used
-                    for. `#0086FE` passes the first (4.62:1) and fails this one
-                    (4.45:1). Both check the draft preview only, and each says
+                    for. `#0086FE` passes the first and fails this one (pinned
+                    in `settings-contrast.spec.ts`). Both check the draft preview only, and each says
                     what a save does instead, because saving differs from the
                     preview: the entered colour is stored, not the substitute,
                     and the saved label (`on-primary`) always clears 4.5:1
