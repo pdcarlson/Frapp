@@ -50,6 +50,11 @@ jest.mock('@repo/chapter-theme', () => ({
       },
     ],
   })),
+  // The real constant, not a stand-in: a writer that dropped the stamp would
+  // otherwise persist `undefined` here and still pass (#1165).
+  SIGNET_ENGINE_VERSION: jest.requireActual<{ SIGNET_ENGINE_VERSION: number }>(
+    '@repo/chapter-theme',
+  ).SIGNET_ENGINE_VERSION,
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -62,6 +67,12 @@ import { ActivationService } from './activation.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
+
+// Read from the real package, not the mock above: compared against the mocked
+// value, a mock that dropped the constant would make both sides `undefined`.
+const { SIGNET_ENGINE_VERSION } = jest.requireActual<{
+  SIGNET_ENGINE_VERSION: number;
+}>('@repo/chapter-theme');
 
 const CHAPTER_ID = 'ch-1';
 
@@ -124,6 +135,11 @@ function makeSupabase(
     // Model a chapter id that resolves to no row at all — the legitimate 404,
     // which must stay distinguishable from a failed read.
     chapterRowOverride?: null;
+    // The branding a chapters read returns (default `{}`).
+    chapterBranding?: Record<string, unknown>;
+    // What the seed-guarded palette write resolves to (#1165). `data: []` is a
+    // lost compare-and-set: the accent changed after it was read.
+    paletteWrite?: { data: unknown[] | null; error: unknown };
   } = {},
 ) {
   const readErrors = options.readErrors ?? {};
@@ -158,7 +174,7 @@ function makeSupabase(
     org_archetype: 'ifc',
     enabled_modules: enabledModules,
     vocabulary: {},
-    branding: {},
+    branding: options.chapterBranding ?? {},
     theme_palette: {},
     beta_config: { enabled: true, style: 'sidebar_pill' },
     analytics_opt_out: false,
@@ -170,6 +186,14 @@ function makeSupabase(
   const serviceUpsert = jest.fn().mockReturnValue({ error: null });
   const pointsUpsert = jest.fn().mockReturnValue({ error: null });
   const chapterUpdate = jest.fn();
+  // Filters chained after `.eq('id', …)`: the palette write's seed guard.
+  const chapterGuards: Array<
+    [op: 'eq' | 'is', column: string, value: unknown]
+  > = [];
+  const paletteWrite = options.paletteWrite ?? {
+    data: [{ id: CHAPTER_ID }],
+    error: null,
+  };
 
   const from = jest.fn((table: string) => {
     if (table === 'chapters') {
@@ -179,9 +203,12 @@ function makeSupabase(
         chapterUpdate(payload);
         return builder;
       });
-      // `eq` is the terminal for updates (awaited) and a passthrough for selects.
-      builder.eq = jest.fn().mockReturnValue(
-        Object.assign(Promise.resolve({ error: null }), {
+      // `eq('id', …)` is the terminal for the config update (awaited), a
+      // passthrough for selects (`maybeSingle`), and the start of the palette
+      // write's seed guard (`eq`/`is` on the accent path, then `select('id')`).
+      const terminal: Record<string, unknown> = Object.assign(
+        Promise.resolve({ error: null }),
+        {
           maybeSingle: jest
             .fn()
             .mockImplementation(() =>
@@ -192,8 +219,18 @@ function makeSupabase(
                 ),
               ),
             ),
-        }),
+          eq: jest.fn((column: string, value: unknown) => {
+            chapterGuards.push(['eq', column, value]);
+            return terminal;
+          }),
+          is: jest.fn((column: string, value: unknown) => {
+            chapterGuards.push(['is', column, value]);
+            return terminal;
+          }),
+          select: jest.fn(() => Promise.resolve(paletteWrite)),
+        },
       );
+      builder.eq = jest.fn().mockReturnValue(terminal);
       return builder;
     }
     if (table === 'chapter_workflows') {
@@ -302,6 +339,7 @@ function makeSupabase(
     serviceUpsert,
     pointsUpsert,
     chapterUpdate,
+    chapterGuards,
   };
 }
 
@@ -597,6 +635,140 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       );
       expect(written.length).toBeGreaterThan(0);
       expect(written.every((key) => key.startsWith('--signet-'))).toBe(true);
+    });
+
+    it('clears the engine stamp in the same write as a new branding seed (#1165)', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: { colors: { accent: '#8B0000' } },
+      });
+
+      // The branding write goes first and the palette write second, and the
+      // second can fail on its own. Nulling the stamp with the seed means a
+      // failed recompute leaves the row for the stale-palette sweep instead of
+      // under a current stamp the sweep never looks at.
+      const [brandingWrite] = supabase.chapterUpdate.mock.calls[0] as [
+        Record<string, unknown>,
+      ];
+      expect(brandingWrite.branding).toBeDefined();
+      expect(brandingWrite).toHaveProperty(
+        'theme_palette_engine_version',
+        null,
+      );
+    });
+
+    it('re-derives the palette on a branding PATCH that carries no colours too', async () => {
+      const supabase = makeSupabase([], null, {}, null, null, {
+        chapterBranding: { colors: { accent: '#2F6B4F' } },
+      });
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: { greek_letters: 'ΑΒ' },
+      });
+
+      // The write stores the whole merged branding as read, accent included,
+      // so it can put an older seed back under a palette an accent save
+      // stamped in between. It clears the stamp with that seed, and the
+      // recompute re-derives from the seed it stored, guarded on it.
+      const [write] = supabase.chapterUpdate.mock.calls[0] as [
+        Record<string, unknown>,
+      ];
+      expect(write.branding).toBeDefined();
+      expect(write).toHaveProperty('theme_palette_engine_version', null);
+      expect(supabase.chapterUpdate).toHaveBeenCalledTimes(2);
+      expect(supabase.chapterGuards).toEqual([
+        ['eq', 'branding->colors->>accent', '#2F6B4F'],
+      ]);
+    });
+
+    it('leaves the engine stamp alone on a PATCH that writes no branding', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        vocabulary: { member: 'Brother' },
+      });
+
+      const [write] = supabase.chapterUpdate.mock.calls[0] as [
+        Record<string, unknown>,
+      ];
+      expect(write).not.toHaveProperty('theme_palette_engine_version');
+    });
+
+    it('writes the palette only while the seed it was derived from is still stored', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: { colors: { accent: '#8B0000' } },
+      });
+
+      // The same compare-and-set the stale-palette sweep uses: a Settings save
+      // landing between the read and this write must not be overwritten.
+      expect(supabase.chapterGuards).toEqual([
+        ['eq', 'branding->colors->>accent', '#8B0000'],
+      ]);
+    });
+
+    it('guards a chapter with no accent on the accent still being absent', async () => {
+      const supabase = makeSupabase([], null, {}, null, null, {
+        chapterBranding: {},
+      });
+      const service = await buildService(supabase);
+
+      await service.recomputeAndPersistPalette(CHAPTER_ID);
+
+      // `eq(null)` would compile to `= null`, which matches nothing.
+      expect(supabase.chapterGuards).toEqual([
+        ['is', 'branding->colors->>accent', null],
+      ]);
+    });
+
+    it('treats a lost compare-and-set as superseded, not as a failure', async () => {
+      const supabase = makeSupabase([], null, {}, null, null, {
+        chapterBranding: { colors: { accent: '#8B0000' } },
+        paletteWrite: { data: [], error: null },
+      });
+      const service = await buildService(supabase);
+      const warn = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
+
+      const result = await service.recomputeAndPersistPalette(CHAPTER_ID);
+
+      expect(result.palette).toBeDefined();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'not written: its accent changed after it was read',
+        ),
+      );
+    });
+
+    it('stamps the palette with the engine that wrote it, through both doors (#1165)', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: { colors: { accent: '#8B0000' } },
+      });
+      await service.recomputeAndPersistPalette(CHAPTER_ID);
+
+      // The config PATCH and `POST /v1/chapters/:id/theme-palette`. A palette
+      // written without its stamp reads as stale to the hourly sweep, and a
+      // stamp without its palette would hide a stale fill from it for good, so
+      // the two go in the same write.
+      const paletteWrites = (
+        supabase.chapterUpdate.mock.calls as Array<[Record<string, unknown>]>
+      )
+        .map(([patch]) => patch)
+        .filter((patch) => 'theme_palette' in patch);
+      expect(paletteWrites).toHaveLength(2);
+      for (const patch of paletteWrites) {
+        expect(patch.theme_palette_engine_version).toBe(SIGNET_ENGINE_VERSION);
+      }
     });
 
     it('recompute logs a failed fill floor and does not return it (#2541)', async () => {

@@ -3,6 +3,7 @@ import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import type { CustomFieldEntry } from '@repo/org-archetypes';
 import {
   buildChapterPalette,
+  chapterPaletteColumns,
   logChapterPaletteWarnings,
   type ChapterBrandingInput,
 } from './chapter-palette';
@@ -89,7 +90,7 @@ export class ChapterOnboardingService {
 
     const branding = this.normalizeBranding(dto.branding);
     const colors = (branding.colors ?? {}) as { accent?: string };
-    const themePalette = this.buildPalette(colors);
+    const paletteColumns = this.buildPalette(colors);
 
     const config: Partial<Chapter> = {
       org_archetype: seed.archetype,
@@ -117,8 +118,10 @@ export class ChapterOnboardingService {
       // Always present now: `buildChapterPalette` yields at least the Signet
       // map even for a chapter that supplied no colours, because §3 defines the
       // no-accent case as the house seed run through the same pipeline. The
-      // conditional spread this replaced could never be false.
-      theme_palette: themePalette,
+      // conditional spread this replaced could never be false. Stamped with
+      // the engine version in the same spread (#1165), so a new chapter is
+      // never mistaken for a stale one by the palette sweep.
+      ...paletteColumns,
     };
 
     const chapter = await this.chapterService.create(userId, {
@@ -216,7 +219,7 @@ export class ChapterOnboardingService {
       build,
     );
 
-    return build.palette;
+    return chapterPaletteColumns(build);
   }
 
   /**

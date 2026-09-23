@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import { contrastRatio, normalizeHex, parseHex } from "@repo/color";
@@ -8,6 +10,7 @@ import {
   HOUSE_SEED,
   liftAccent,
   scaleClears,
+  SIGNET_ENGINE_VERSION,
   SIGNET_FILL_SURFACES,
   signetAccentSemanticVars,
   signetFillChecks,
@@ -560,6 +563,135 @@ describe("deriveSignetPalette", () => {
         expect(() => deriveSignetPalette(input)).not.toThrow();
       }
     });
+  });
+});
+
+/**
+ * What each engine version persists for the pinned corpus: one fingerprint per
+ * `SIGNET_ENGINE_VERSION`, oldest first, never edited once merged.
+ *
+ * The API recomputes a stored palette only when its stamp is behind
+ * `SIGNET_ENGINE_VERSION` (accent-engine.md §4), so an output change shipped
+ * without a bump reaches no stored chapter: exactly the silent staleness #1165
+ * existed to end. This pin turns "remember to bump" into a failing test.
+ *
+ * It proves as much as its corpus covers: the directory seeds, a hue sweep,
+ * and one dedicated seed for each scale those leave out, so every scale the
+ * generator snaps to is some seed's nearest, plus the input forms a stored seed
+ * takes
+ * (`FINGERPRINT_EXTRA_SEEDS`). A change that moves only a seed outside that set
+ * passes unbumped, so widen the corpus when you touch hue-specific or
+ * input-handling code.
+ *
+ * When it fails because you changed the engine on purpose: bump
+ * `SIGNET_ENGINE_VERSION` in `signet.ts` and add its fingerprint here as a new
+ * entry. Don't overwrite the old entry to make the test pass: that ships the
+ * new output under the old number, and the sweep leaves every stored row as it
+ * was. When it fails and you meant no output change, the diff changed what the
+ * engine paints, and that is the bug.
+ */
+const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
+  1: "7a88bfcb9c0c79372b194d0ea6136042f25e115990ffd41b7067f17a020d7f4e",
+};
+
+/**
+ * What the fingerprint derives, beyond `ALL_SEEDS`. The 18 directory colours and
+ * the house seed exercise the lift and the on-primary substitution, but the
+ * generator snaps each seed to its nearest Radix scales, and 15 of its 29
+ * scales are the nearest for none of those 19 seeds: slate, sage, olive, ruby, crimson, plum, iris,
+ * blue, cyan, teal, jade, green, mint, lime and yellow (measured 2026-09-23 by
+ * instrumenting `getScaleFromColor`). A change confined to one of those scales
+ * moved at most a secondary mix of a directory seed, and for most of them
+ * nothing at all (#1165 review). Even with the sweep, eight
+ * scales were no seed's nearest (slate, sage, olive, jade, teal, green, ruby,
+ * iris), hence one dedicated seed for each after it. Frozen hex, not computed
+ * here, so a `colorjs.io` upgrade cannot quietly move the inputs along with the
+ * outputs.
+ */
+const FINGERPRINT_EXTRA_SEEDS = [
+  // OKLCH hue sweep, every 30°, at L 0.55 C 0.15 and at L 0.82 C 0.12,
+  // gamut-mapped to sRGB.
+  "#B4446E",
+  "#B94739",
+  "#AE5600",
+  "#8F6C00",
+  "#677D00",
+  "#05893E",
+  "#008774",
+  "#008396",
+  "#0079BF",
+  "#5069C8",
+  "#8059BB",
+  "#A04C9A",
+  "#FFA3C1",
+  "#FFA696",
+  "#FDB171",
+  "#E2C162",
+  "#BAD074",
+  "#89DA9B",
+  "#5ADDC7",
+  "#50D9EF",
+  "#76CEFF",
+  "#A8C1FF",
+  "#D0B2FF",
+  "#F0A7E9",
+  // One seed for each scale no directory or sweep seed lands on first (jade,
+  // sage, olive, teal, green, ruby, iris, slate). With these, every one of the
+  // generator's 29 scales is the nearest scale for some seed, without relying
+  // on the input forms below; measured 2026-09-23 by instrumenting the
+  // vendored `getScaleFromColor`. A scale the generator gains needs a seed
+  // here too.
+  "#29A383",
+  "#6B7B6E",
+  "#71796A",
+  "#0D9B8A",
+  "#30A46C",
+  "#E54666",
+  "#5B5BD6",
+  "#B0B4BA",
+  // Input forms a stored seed can take: shorthand, lower case, no `#`, not a
+  // colour, and absent. A change in how any of them resolves changes what that
+  // chapter paints.
+  "#abc",
+  "#8b0000",
+  "8B0000",
+  "not-a-colour",
+  "",
+  null,
+] as const;
+
+/**
+ * sha256 over what the engine persists for every corpus seed. Keys are sorted
+ * because `jsonb` does not keep insertion order, so the order is not output.
+ */
+const persistedOutputFingerprint = (): string => {
+  const corpus = [...ALL_SEEDS, ...FINGERPRINT_EXTRA_SEEDS].map((seed) => {
+    const { palette } = deriveSignetPalette(seed);
+    return [
+      seed,
+      Object.entries(palette).sort(([a], [b]) => a.localeCompare(b)),
+    ];
+  });
+  return createHash("sha256").update(JSON.stringify(corpus)).digest("hex");
+};
+
+describe("SIGNET_ENGINE_VERSION", () => {
+  it("names the engine whose output this is", () => {
+    expect(
+      persistedOutputFingerprint(),
+      "deriveSignetPalette's output changed. Bump SIGNET_ENGINE_VERSION and " +
+        "record the new fingerprint as a new ENGINE_FINGERPRINTS entry, or " +
+        "stored palettes will never be recomputed (see the docblock above).",
+    ).toBe(ENGINE_FINGERPRINTS[SIGNET_ENGINE_VERSION]);
+  });
+
+  it("has one fingerprint per version, 1 through the current one, all distinct", () => {
+    const versions = Object.keys(ENGINE_FINGERPRINTS).map(Number);
+    expect(versions).toEqual(
+      Array.from({ length: SIGNET_ENGINE_VERSION }, (_, i) => i + 1),
+    );
+    const fingerprints = Object.values(ENGINE_FINGERPRINTS);
+    expect(new Set(fingerprints).size).toBe(fingerprints.length);
   });
 });
 

@@ -8,6 +8,8 @@ import { PollService } from '../../application/services/poll.service';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ScheduledJobsService } from './scheduled-jobs.service';
 import { ScheduledJobsRepository } from './scheduled-jobs.repository';
+import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
+import { buildChapterPalette } from '../../application/services/chapter-palette';
 
 /**
  * Fixed clock for every sweep. The sweeps take `now` as a parameter precisely
@@ -34,6 +36,8 @@ describe('ScheduledJobsService', () => {
   let announceExpiry: jest.Mock;
   let findEventsStartingBetween: jest.Mock;
   let resolveRequiredMembers: jest.Mock;
+  let findChaptersWithStalePalette: jest.Mock;
+  let writeRecomputedPalette: jest.Mock;
 
   const INVOICE = {
     id: 'inv-1',
@@ -75,6 +79,9 @@ describe('ScheduledJobsService', () => {
     resolveRequiredMembers = jest
       .fn()
       .mockResolvedValue([{ user_id: 'user-1', role_ids: [] }]);
+    findChaptersWithStalePalette = jest.fn().mockResolvedValue([]);
+    // Default: the compare-and-set write lands.
+    writeRecomputedPalette = jest.fn().mockResolvedValue(true);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -89,6 +96,8 @@ describe('ScheduledJobsService', () => {
             findEventsStartingBetween,
             claimDispatch,
             releaseDispatch,
+            findChaptersWithStalePalette,
+            writeRecomputedPalette,
           },
         },
         {
@@ -844,6 +853,125 @@ describe('ScheduledJobsService', () => {
       await expect(
         service.handleReportRetentionSweep(),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('sweepStalePalettes', () => {
+    it('asks for every row the running engine did not write', async () => {
+      await service.sweepStalePalettes();
+
+      expect(findChaptersWithStalePalette).toHaveBeenCalledWith(
+        SIGNET_ENGINE_VERSION,
+      );
+    });
+
+    it('recomputes each through buildChapterPalette from its branding seed, and stamps it', async () => {
+      findChaptersWithStalePalette.mockResolvedValue([
+        { id: 'chap-crimson', seed: '#8B0000' },
+        { id: 'chap-house', seed: null },
+      ]);
+
+      const result = await service.sweepStalePalettes();
+
+      expect(result).toEqual({ recomputed: 2, superseded: 0, failed: 0 });
+      // The whole map, exactly as every writer builds it: no key-sniffing,
+      // and no second derivation path to drift from the writers'.
+      expect(writeRecomputedPalette).toHaveBeenCalledWith(
+        { id: 'chap-crimson', seed: '#8B0000' },
+        {
+          theme_palette: buildChapterPalette({ accent: '#8B0000' }).palette,
+          theme_palette_engine_version: SIGNET_ENGINE_VERSION,
+        },
+      );
+      // No accent picked is the house seed, per accent-engine.md §3.
+      expect(writeRecomputedPalette).toHaveBeenCalledWith(
+        { id: 'chap-house', seed: null },
+        {
+          theme_palette: buildChapterPalette({}).palette,
+          theme_palette_engine_version: SIGNET_ENGINE_VERSION,
+        },
+      );
+    });
+
+    it('counts a lost compare-and-set apart from a failure, and leaves the row to its newer write', async () => {
+      findChaptersWithStalePalette.mockResolvedValue([
+        { id: 'chap-1', seed: '#8B0000' },
+        { id: 'chap-2', seed: '#003087' },
+      ]);
+      writeRecomputedPalette
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
+
+      const result = await service.sweepStalePalettes();
+
+      expect(result).toEqual({ recomputed: 1, superseded: 1, failed: 0 });
+      expect(writeRecomputedPalette).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not let one chapter's failed write stop the rest", async () => {
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      findChaptersWithStalePalette.mockResolvedValue([
+        { id: 'chap-1', seed: '#8B0000' },
+        { id: 'chap-2', seed: '#003087' },
+      ]);
+      writeRecomputedPalette
+        .mockRejectedValueOnce(new Error('statement timeout'))
+        .mockResolvedValueOnce(true);
+
+      const result = await service.sweepStalePalettes();
+
+      expect(result).toEqual({ recomputed: 1, superseded: 0, failed: 1 });
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining('palette sweep: chapter chap-1'),
+        expect.anything(),
+      );
+      error.mockRestore();
+    });
+
+    it('logs a bad seed once and still writes, so the row is not retried forever', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      findChaptersWithStalePalette.mockResolvedValue([
+        { id: 'chap-1', seed: 'not-a-colour' },
+      ]);
+
+      const result = await service.sweepStalePalettes();
+
+      expect(result.recomputed).toBe(1);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid accent seed for chapter chap-1'),
+      );
+      warn.mockRestore();
+    });
+
+    it('writes nothing and logs nothing when every row is current', async () => {
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+
+      const result = await service.sweepStalePalettes();
+
+      expect(result).toEqual({ recomputed: 0, superseded: 0, failed: 0 });
+      expect(writeRecomputedPalette).not.toHaveBeenCalled();
+      expect(log).not.toHaveBeenCalled();
+      log.mockRestore();
+    });
+
+    it('runs through the cron wrapper without rejecting when a write fails', async () => {
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      findChaptersWithStalePalette.mockResolvedValue([
+        { id: 'chap-1', seed: '#8B0000' },
+      ]);
+      writeRecomputedPalette.mockRejectedValue(new Error('down'));
+
+      await expect(service.handleStalePaletteSweep()).resolves.toBeUndefined();
+      expect(writeRecomputedPalette).toHaveBeenCalled();
+      error.mockRestore();
     });
   });
 });

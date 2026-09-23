@@ -95,8 +95,11 @@ digest 07).
   - **Then (#2506).** Staging and production both switch to deploying the CI-built image by
     digest (decision 1). The commit-based path is the interim step.
 - **The API isn't replica-safe yet.** The push and audit-bridge Realtime subscribers double-send
-  with two instances, and deploys already overlap briefly. The `@Cron` sweeps are safe, because
-  their dispatch-claim rows prevent duplicates (`docs/internal/ops/deployment/render.md` §5.6). The
+  with two instances, and deploys already overlap briefly. The `@Cron` sweeps are safe: each one
+  either claims a dispatch row, is idempotent (report retention), or writes compare-and-set (the
+  #1165 stale-palette sweep) (`docs/internal/ops/deployment/render.md` §5.6). *(Corrected
+  2026-09-23: this used to credit the dispatch claim alone, which was already untrue of report
+  retention.)* The
   cheap fixes land during the beta (#2507): push idempotency keys, a unique key on bridged audit
   messages, a cap on the push worker's presence channels (which today fail silently at about 98), and
   a fan-out latency span that makes ADR-09's watermark measurable. The full stateless refactor, with

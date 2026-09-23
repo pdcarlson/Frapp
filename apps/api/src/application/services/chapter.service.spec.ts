@@ -1129,6 +1129,27 @@ describe('ChapterService', () => {
     );
   });
 
+  it('stamps the recomputed palette with the engine that wrote it (#1165)', async () => {
+    // In the same write as the palette, so the hourly stale-palette sweep sees
+    // this row as current and cannot overwrite the accent just saved.
+    mockChapterRepo.findById.mockResolvedValue({
+      id: 'ch-1',
+      branding: { colors: { accent: '#8B0000' } },
+    });
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+
+    await service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-1');
+
+    const [, patch] = mockChapterRepo.update.mock.calls[0] as [
+      string,
+      { theme_palette?: unknown; theme_palette_engine_version?: unknown },
+    ];
+    expect(patch.theme_palette).toBeDefined();
+    expect(patch.theme_palette_engine_version).toBe(
+      chapterTheme.SIGNET_ENGINE_VERSION,
+    );
+  });
+
   it('accepts a low-contrast accent rather than gating it on save', async () => {
     // This route used to reject anything under 4.5:1 on the light surface. It
     // no longer does, and that is deliberate: `accent_color` is a mirror of

@@ -16,8 +16,10 @@ import { PollModule } from '../poll/poll.module';
  *
  * Unlike those workers, a `@Cron` handler fires on **every** replica rather
  * than following a single Realtime subscription, so multi-instance safety here
- * comes from the `scheduled_notification_dispatches` claim rather than from
- * the deployment topology — see `docs/internal/ops/deployment/render.md` §5.6.
+ * comes from the database rather than from the deployment topology: the
+ * `scheduled_notification_dispatches` claim for the reminder sweeps, and a
+ * compare-and-set write for the stale-palette sweep — see
+ * `docs/internal/ops/deployment/render.md` §5.6.
  *
  * Imports `AttendanceModule` to reuse `markAutoAbsent` rather than restate its
  * eligibility rules, `NotificationModule` for the preference- and

@@ -30,6 +30,7 @@ function fullChapterRow(): Chapter {
     vocabulary: { member: 'brother' },
     branding: { greek_letters: 'ΑΒ' },
     theme_palette: { 'accent-text': '#B00020' },
+    theme_palette_engine_version: 1,
     directory_id: 'dir-1',
     beta_config: { enabled: true, style: 'loud' },
     legal_accepted_at: '2026-01-01T00:00:00.000Z',
@@ -67,6 +68,7 @@ describe('toChapterMemberView', () => {
       'legal_accepted_by',
       'beta_config',
       'directory_id',
+      'theme_palette_engine_version',
     ])('omits %s', (field) => {
       expect(toChapterMemberView(fullChapterRow())).not.toHaveProperty(field);
     });

@@ -78,10 +78,11 @@ function readString(
  * foreground would miss AA: on `--card`, in a palette written since #2586
  * lightened both fills further, a crimson chapter's step 9 measures **4.23:1**
  * and a forest-green one **4.37:1** (3.32:1 and 3.34:1 after #2541 alone; a
- * stored palette paints its older, darker fill; `accent-engine.md` §4). Step 11
- * measures 7.5–8.6:1 on `--card` for each of the five colours the chapter
- * directory seed holds today, and reads equally well as a chip fill under the
- * fixed `gold.onHouse` label (7.2:1+).
+ * palette stored before then paints its older, darker fill until the
+ * stale-palette sweep recomputes it; `accent-engine.md` §4). Step 11 measures
+ * 7.5–8.6:1 on `--card` for each of the five colours the chapter directory
+ * seed holds today, and reads equally well as a chip fill under the fixed
+ * `gold.onHouse` label (7.2:1+).
  *
  * So the generated scale removes the problem rather than compensating for it —
  * but only via the role that was specified for this job. A surface that wants a
@@ -90,11 +91,15 @@ function readString(
  * that pairing.
  *
  * The legacy resolver stays as the fallback for exactly one case — a chapter
- * whose `theme_palette` predates the Signet map and has not been recomputed. It
+ * whose `theme_palette` lacks the Signet map and has not been recomputed. It
  * outlived `derivePalette`, which the #920 slice-9 cutover deleted: the two
  * were independent all along, since this path re-validates `accent_color` and
- * never read that engine's token map. It retires when every chapter has been
- * through one save or recompute (§6).
+ * never read that engine's token map. The API's stale-palette sweep recomputes
+ * every such row within the hour (#1165), so once production has run it, the
+ * branch serves only a row inserted without a palette since the last tick: a
+ * demo seed (`scripts/demo/demo-seed.sql`) or `POST /v1/chapters`. Deleting
+ * it, and letting those rows show the default accent for that hour, is
+ * #2595.
  *
  * `accentPrimary`/`accentOnPrimary` are gated **together**, both-or-neither —
  * not chained off `generatedAccent`'s own presence check, and not defaulted

@@ -15,9 +15,10 @@
  * (`apps/api/src/application/services/chapter-palette.ts`) and produced for
  * **every** chapter, including one that supplied no colours — §3 defines the
  * no-accent case as the house seed run through this same pipeline, not as an
- * absent palette. Rows written before this map existed carry none of these keys
- * and render the house defaults until a save or recompute refreshes them
- * (the backfill is tracked separately).
+ * absent palette. The API stamps each palette with `SIGNET_ENGINE_VERSION` and
+ * recomputes any stored row written by an older engine (accent-engine.md §4),
+ * so what a chapter paints tracks this function rather than whichever engine
+ * last saw a save.
  *
  * DOM-free and CommonJS-safe, because the NestJS API calls it.
  */
@@ -67,6 +68,29 @@ const GENERATOR_PARAMS = {
 
 /** The house default seed (accent-engine.md §3). Not a separate palette — it runs the same pipeline. */
 export const HOUSE_SEED = "#DDB844";
+
+/**
+ * Which engine produced a palette. Bump it in the same change as anything that
+ * alters `deriveSignetPalette`'s output for any seed: a role, a step, the lift,
+ * a generator resync, a `colorjs.io` upgrade.
+ *
+ * The API persists it beside every palette it writes
+ * (`chapters.theme_palette_engine_version`), and an hourly sweep recomputes each
+ * stored row that is behind it (accent-engine.md §4). So bumping this is how an
+ * engine change reaches every chapter already stored, not only the ones that
+ * save after it ships. Before #1165 nothing recorded which engine wrote a row,
+ * and each change silently reached only the chapters that saved afterwards.
+ *
+ * Forgetting the bump is caught for any seed in the fingerprint's corpus:
+ * `signet.spec.ts` pins a hash of the engine's output to this number, over the
+ * directory seeds, enough extra seeds that each of the generator's 29 Radix
+ * scales is some seed's nearest (measured 2026-09-23), and the input forms a
+ * stored seed can take. A change there fails
+ * until a new version and its fingerprint are recorded. A change that moves
+ * only a seed outside the corpus is not caught, so widen the corpus when you
+ * touch hue-specific or input-handling code.
+ */
+export const SIGNET_ENGINE_VERSION = 1;
 
 /** WCAG AA for normal text, the floor the accent-derived text roles must clear. */
 const MIN_TEXT_CONTRAST = AA_NORMAL;

@@ -34,12 +34,17 @@ import {
  *    (`spec/ui/design-system/accent-engine.md` §8) — there is no per-token
  *    client-side fallback to run. A row written before an engine change
  *    carries what that engine produced, keys and all, so this applies it:
- *    its fill or hover can sit under the §8 floor until a save or recompute
- *    (accent-engine.md §4).
- *  - A row persisted before the Signet map existed simply lacks those keys;
- *    the house-gold defaults baked into `signet.css` stand until a save or
- *    recompute refreshes the row (accent-engine.md §3, staleness tracked in
- *    #1165). Nothing here assumes the keys exist.
+ *    its fill or hover can sit under the §8 floor until the API's
+ *    stale-palette sweep recomputes it (accent-engine.md §4, #1165).
+ *  - A row missing any of those keys applies nothing, so whatever already
+ *    paints stands: the palette the `(dashboard)` layout emitted from this
+ *    browser's accent cache, if it holds one for the chapter, otherwise the
+ *    default-seed (`#DDB844`) palette baked into `signet.css`. A row persisted
+ *    before the Signet map existed is that case until the API's stale-palette
+ *    sweep recomputes it (accent-engine.md §4, #1165), and so is a row
+ *    inserted without a palette since the sweep's last tick; the gate also
+ *    keeps a malformed row from applying half a palette. Nothing here assumes
+ *    the keys exist.
  *  - **No legacy token is applied at all**, which is why this is an allow-list
  *    rather than the blind key iteration it used to be. `derivePalette` was
  *    deleted at the slice-9 cutover so nothing writes its map any more, but
@@ -66,8 +71,8 @@ import {
  * ever holds, so it is the only honest place to record it for the next cold
  * load. `lib/theme/accent-cache.ts` explains what that record is for — the
  * short version is that everything above happens *after* `signet.css` has
- * already painted house gold, and a cookie read by the `(dashboard)` layout is
- * what closes that window.
+ * already painted its default-seed (`#DDB844`) palette, and a cookie read by
+ * the `(dashboard)` layout is what closes that window.
  *
  * Writing here also means the cache has no invalidation of its own to get
  * wrong. `useUpdateChapter` invalidates `["chapters","current",chapterId]` on
@@ -100,8 +105,9 @@ export function useChapterTheme() {
    * The semantic tokens for the current chapter, or `null`.
    *
    * All-or-nothing, which is the rule this hook has always applied and which
-   * the cache inherits: a row persisted before the Signet keys existed (#1165)
-   * simply lacks them, and half a map is worse than none — the stylesheet's
+   * the cache inherits: a row missing the Signet keys (as a row persisted
+   * before them does, until the #1165 sweep reaches it) applies none, and half a map is
+   * worse than none — the stylesheet's
    * house defaults are internally consistent, one chapter's primary beside the
    * house ring is not.
    */
