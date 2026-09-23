@@ -44,16 +44,15 @@ import { Textarea } from "@/components/ui/textarea";
  * `confirm-dialog.spec.tsx` pins that distinction.
  *
  * **Focus return is not Radix's default here.** These dialogs open from a plain
- * `onClick`, not a `DialogTrigger`, so Radix restores focus to whatever was
- * focused when they opened — which is the right answer only while that control
- * survives the confirmation. It often does not: a delete removes the row its
- * own button lives in, and every one of these buttons carries
- * `gate.controlProps()` and can go `disabled` mid-flight. That is the same
- * failure `useGatedDialog` documents on the revoke path, and the fix is the
- * same one — preempt `onCloseAutoFocus` rather than chase it with a
- * `requestAnimationFrame`, which Radix overwrites. It always places focus
- * itself, because Radix's own fallback focuses a trigger these dialogs don't
- * have, which drops focus to `<body>`: on the opener while it is still usable;
+ * `onClick`, not a `DialogTrigger`, and Radix's modal content returns focus to
+ * its trigger on close, so with none it drops focus to `<body>`, even on a
+ * plain cancel (#2302). The opener this hook records instead is the right
+ * target only while it survives the confirmation, and it often does not: a
+ * delete removes the row its own button lives in, and every one of these
+ * buttons carries `gate.controlProps()` and can go `disabled` mid-flight. So it
+ * preempts `onCloseAutoFocus`, as `useGatedDialog` does on its revoke path,
+ * rather than chase it with a `requestAnimationFrame`, which Radix overwrites,
+ * and always places focus itself: on the opener while it is still usable;
  * otherwise inside a dialog still open under this one (the Terms prompt, a
  * detail sheet), since the page behind a modal is hidden; otherwise on the
  * shell's `#main-content` landmark, the target the "Skip to main content" link
@@ -150,8 +149,9 @@ export function useConfirmDialog(): {
     // A dialog still open under this one (the Terms prompt, a detail sheet):
     // focus goes back into it, because the page's landmark sits behind it,
     // hidden from assistive tech. Found by what is open, not by the opener's
-    // ancestors, since the opener may be gone. The closing confirmation reads
-    // `data-state="closed"` by now; the last open one is the topmost.
+    // ancestors, since the opener may be gone. The closing confirmation has
+    // already left the document (FocusScope calls this after unmount), so it
+    // can't match; the last open one is the topmost.
     const stillOpen = document.querySelectorAll<HTMLElement>(
       '[role="dialog"][data-state="open"]',
     );

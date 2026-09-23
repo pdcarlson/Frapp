@@ -369,4 +369,37 @@ describe("focus after a confirmation opened from inside another dialog", () => {
       ),
     );
   });
+
+  it("falls back to the page's landmark when no dialog is open under it", async () => {
+    // A page-level delete: its opener is disabled while the request runs.
+    function PageRow() {
+      const { confirm, confirmDialog } = useConfirmDialog();
+      const [busy, setBusy] = useState(false);
+      return (
+        <main id="main-content">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              if ((await confirm(REQUEST)) !== null) setBusy(true);
+            }}
+          >
+            Delete row
+          </button>
+          {confirmDialog}
+        </main>
+      );
+    }
+    const user = userEvent.setup();
+    render(<PageRow />);
+    await user.click(screen.getByRole("button", { name: "Delete row" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Delete study zone" }),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.getElementById("main-content"),
+      ),
+    );
+  });
 });
