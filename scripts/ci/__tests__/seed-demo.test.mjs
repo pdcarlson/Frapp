@@ -622,6 +622,19 @@ test("verify fails a seed whose zoned Chapter Meeting has started, however many 
   await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl }), /no upcoming event with a check-in zone \(2 upcoming in all\)/);
 });
 
+test("verify fails at the zoned meeting's start, not its end", async () => {
+  // NOW is 12:00Z. Five minutes into the meeting it is still running, and the seed is stale;
+  // five minutes before it, the seed still passes.
+  const at = (start) => [
+    { name: "Chapter Meeting", start_time: start, check_in_zone: ZONE },
+    { name: "Recruitment Info Night", start_time: "2026-10-05T23:00:00.000Z", check_in_zone: null },
+  ];
+  const started = makeFetch(verifyRoutes({ events: at("2026-09-23T11:55:00.000Z") }));
+  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: started.fetchImpl }), /no upcoming event with a check-in zone/);
+  const ahead = makeFetch(verifyRoutes({ events: at("2026-09-23T12:05:00.000Z") }));
+  await verifyLogin({ ...verifyArgs, fetchImpl: ahead.fetchImpl });
+});
+
 test("verify's re-seed advice keeps --reviewer when it checked the reviewer variant", async () => {
   // `sql` without it would rebuild the marketing chapter over the reviewer's.
   const stale = [{ name: "Old", start_time: "2026-09-01T12:00:00.000Z", check_in_zone: ZONE }];
