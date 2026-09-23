@@ -293,6 +293,8 @@ const SURFACE_GATES: readonly { file: string; match: string }[] = [
   { file: "components/points/points-audit-card.tsx", match: 'permission="points:view_all"' },
   { file: "components/settings/settings-page.tsx", match: 'permission="semester:rollover"' },
   { file: "components/service/service-page.tsx", match: 'permission="service:approve"' },
+  { file: "components/chat-admin/chat-admin-page.tsx", match: 'permission="channels:manage"' },
+  { file: "components/chat-admin/chat-reports-card.tsx", match: "allOf={CHAT_REPORT_QUEUE_PERMISSIONS}" },
 ];
 
 /**
@@ -305,6 +307,8 @@ const CONSUMERS: readonly string[] = [
   "components/backwork/backwork-page.tsx",
   "components/billing/invoice-list.tsx",
   "components/billing/plan-panel.tsx",
+  "components/chat-admin/chat-admin-page.tsx",
+  "components/chat-admin/chat-reports-card.tsx",
   "components/chat/renderers/task-card.tsx",
   "components/documents/documents-page.tsx",
   "components/events/attendance-panel.tsx",

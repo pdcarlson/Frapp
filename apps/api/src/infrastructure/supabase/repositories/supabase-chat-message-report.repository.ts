@@ -6,8 +6,10 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
+import { escapeFilterValue } from '../supabase.utils';
 import type {
   CreateChatReportInput,
+  CreateChatReportResult,
   IChatMessageReportRepository,
 } from '#domain/repositories/chat-moderation.repository.interface';
 import type {
@@ -24,6 +26,12 @@ import type {
  * an unscoped `.eq('id', …)` on the resolve path would let an officer in one
  * chapter close another chapter's report. `spec/behavior/multi-tenancy.md`
  * owns the rule; `supabase-chat-message-report.repository.spec.ts` proves it.
+ *
+ * Every officer read and write also leaves out the reports **about the
+ * caller** ({@link notAbout}): an officer can be reported like anyone else,
+ * and the queue is where the reporter's note — and, for a DM, the reporter by
+ * elimination — lives. Like the chapter predicate it is in the query, not in a
+ * caller, so no service path can forget it.
  *
  * The table enables RLS with **zero policies** and the API reaches it through
  * the service-role client, so there is no client-reachable read path at all —
@@ -55,8 +63,11 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
    * to the caller's own `(chapter_id, reporter_user_id, message_id, 'open')`,
    * which is the only tuple the index could have collided on, so it cannot hand
    * back somebody else's report.
+   *
+   * `created` says which of the two happened, so the service can notify
+   * officers about a new report and stay silent on a replay.
    */
-  async create(input: CreateChatReportInput): Promise<ChatMessageReportView> {
+  async create(input: CreateChatReportInput): Promise<CreateChatReportResult> {
     const payload: TablesInsert<'chat_message_reports'> = {
       chapter_id: input.chapter_id,
       message_id: input.message_id,
@@ -76,7 +87,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
 
     if (error) {
       if (error.code === PG_UNIQUE_VIOLATION) {
-        const existing = await this.findOpenReport(
+        const existing = await this.findOwnOpenReport(
           input.chapter_id,
           input.reporter_user_id,
           input.message_id,
@@ -85,23 +96,47 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
         // insert and this read. Surfacing the original 23505 is the honest
         // answer: the caller can retry and will then succeed, where inventing a
         // row would be a lie about what is in the queue.
-        if (existing) return existing;
+        if (existing) return { report: existing, created: false };
       }
       throw error;
     }
 
-    return stripReportRow(data);
+    return { report: stripReportRow(data), created: true };
+  }
+
+  /**
+   * Scoped by `chapter_id` as well as `id`, like {@link resolve}: the chapter
+   * predicate is what stops a `channels:manage` holder in one chapter from
+   * reaching another chapter's report — and, through it, another chapter's
+   * message — by UUID. A report about the reviewer is the same `null`.
+   */
+  async findById(
+    id: string,
+    chapterId: string,
+    reviewerUserId: string,
+  ): Promise<ChatMessageReportView | null> {
+    const { data, error } = await this.supabase
+      .from('chat_message_reports')
+      .select()
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .or(notAbout(reviewerUserId))
+      .maybeSingle();
+    if (error) throw error;
+    return data ? stripReportRow(data) : null;
   }
 
   async findByChapterAndStatus(
     chapterId: string,
     status: ChatReportStatus,
+    reviewerUserId: string,
   ): Promise<ChatMessageReportView[]> {
     const { data, error } = await this.supabase
       .from('chat_message_reports')
       .select()
       .eq('chapter_id', chapterId)
       .eq('status', status)
+      .or(notAbout(reviewerUserId))
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data ?? []).map(stripReportRow);
@@ -114,8 +149,13 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
    * chapter they are acting in, but neither says anything about which chapter
    * the report in the URL belongs to.
    *
+   * **`status = 'open'` makes it a compare-and-set.** Two officers can load the
+   * same open report; without the predicate the slower one's Dismiss would
+   * overwrite the faster one's `actioned`, and the record would say a removed
+   * message was dismissed. The miss is a `null` the service answers with 409.
+   *
    * `maybeSingle()` rather than `single()` so a miss is a `null` the service
-   * turns into a 404, not a `PGRST116` surfacing as a 500.
+   * turns into a 404 or 409, not a `PGRST116` surfacing as a 500.
    */
   async resolve(
     id: string,
@@ -124,16 +164,13 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
     resolvedBy: string,
     resolvedAt: string,
   ): Promise<ChatMessageReportView | null> {
-    const patch: TablesUpdate<'chat_message_reports'> = {
-      status,
-      resolved_at: resolvedAt,
-      resolved_by: resolvedBy,
-    };
     const { data, error } = await this.supabase
       .from('chat_message_reports')
-      .update(patch)
+      .update(resolutionPatch(status, resolvedBy, resolvedAt))
       .eq('id', id)
       .eq('chapter_id', chapterId)
+      .eq('status', 'open')
+      .or(notAbout(resolvedBy))
       .select()
       .maybeSingle();
     if (error) throw error;
@@ -141,16 +178,94 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
   }
 
   /**
-   * The caller's own open report on one message, read back after a unique
-   * violation.
-   *
-   * Private, and deliberately not on the repository interface. The interface is
-   * the list of questions this table can be asked, and "which of my reports is
-   * open on this message" is only safe because `reporter_user_id` is bound to
-   * the authenticated caller at the one call site above. Exposing it would make
-   * "who reported this message" one argument away.
+   * One `UPDATE … WHERE chapter_id AND message_id AND status = 'open'`, so the
+   * set it closes is decided by Postgres at write time rather than by a read
+   * the caller took earlier. Scoped by chapter like everything here; a message
+   * id is a bare UUID too.
    */
-  private async findOpenReport(
+  async resolveOpenForMessage(
+    chapterId: string,
+    messageId: string,
+    status: ChatReportResolutionStatus,
+    resolvedBy: string,
+    resolvedAt: string,
+  ): Promise<ChatMessageReportView[]> {
+    const { data, error } = await this.supabase
+      .from('chat_message_reports')
+      .update(resolutionPatch(status, resolvedBy, resolvedAt))
+      .eq('chapter_id', chapterId)
+      .eq('message_id', messageId)
+      .eq('status', 'open')
+      .or(notAbout(resolvedBy))
+      .select();
+    if (error) throw error;
+    return (data ?? []).map(stripReportRow);
+  }
+
+  /**
+   * Undo a removal's claim, matching its whole stamp (see the interface for
+   * why this is not a reopen). `actioned` + `resolved_by` + `resolved_at` in
+   * the predicate means it can only withdraw the write the same request made:
+   * a report some other decision closed does not match, and stays closed.
+   */
+  async releaseClaim(
+    id: string,
+    chapterId: string,
+    resolvedBy: string,
+    resolvedAt: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('chat_message_reports')
+      .update({ status: 'open', resolved_at: null, resolved_by: null })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('status', 'actioned')
+      .eq('resolved_by', resolvedBy)
+      .eq('resolved_at', resolvedAt)
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    return data !== null;
+  }
+
+  /**
+   * `actioned` with `resolved_by` NULL: no officer decided it, the message was
+   * already gone. Conditional on `status = 'open'`, so a removal's sweep that
+   * reached the row first keeps its own stamp.
+   */
+  async closeForDeletedMessage(
+    id: string,
+    chapterId: string,
+    resolvedAt: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('chat_message_reports')
+      .update({
+        status: 'actioned',
+        resolved_at: resolvedAt,
+        resolved_by: null,
+      })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('status', 'open')
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    return data !== null;
+  }
+
+  /**
+   * The caller's own open report on one message: read back after a unique
+   * violation, and asked directly when the message is already deleted
+   * (`ChatReportService.fileReport` checks the replay before refusing).
+   *
+   * Scoped to `(chapter_id, reporter_user_id, message_id, 'open')`, which is
+   * the tuple the partial unique index covers, so it cannot hand back
+   * somebody else's report. `reporterUserId` is the authenticated caller at
+   * every call site; the interface says why that, rather than keeping this
+   * method private, is the boundary.
+   */
+  async findOwnOpenReport(
     chapterId: string,
     reporterUserId: string,
     messageId: string,
@@ -166,6 +281,29 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
     if (error) throw error;
     return data ? stripReportRow(data) : null;
   }
+}
+
+/**
+ * The PostgREST `.or()` filter that leaves out reports about `userId`.
+ *
+ * Spelled as `is null OR <> userId`, not a bare `.neq()`, because
+ * `reported_sender_id` is NULL for an imported archive message and
+ * `NULL <> x` is not true — a bare `.neq()` would silently drop every report
+ * on an imported message from the queue. `userId` is the authenticated
+ * caller's `users.id`, never client input; it is quoted anyway, as every
+ * `.or()` string here is.
+ */
+function notAbout(userId: string): string {
+  const quoted = escapeFilterValue(userId);
+  return `reported_sender_id.is.null,reported_sender_id.neq.${quoted}`;
+}
+
+function resolutionPatch(
+  status: ChatReportResolutionStatus,
+  resolvedBy: string,
+  resolvedAt: string,
+): TablesUpdate<'chat_message_reports'> {
+  return { status, resolved_at: resolvedAt, resolved_by: resolvedBy };
 }
 
 /**

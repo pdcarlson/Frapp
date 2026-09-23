@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -19,6 +20,7 @@ import type {
   ChatChannelView,
   ChatMessage,
 } from '#domain/entities/chat.entity';
+import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
 import { canAccessChannel, isAlumniPostableChannel } from '@repo/validation';
 import type { ChannelOperation } from '@repo/validation';
 import { RbacService } from './rbac.service';
@@ -37,6 +39,99 @@ function toPredicateChannel(channel: ChatChannel) {
     is_read_only: channel.is_read_only ?? null,
     archived_at: channel.archived_at,
   };
+}
+
+/**
+ * An officer's authority over **exactly one** reported message — the report row
+ * as a capability (#2311, option 1; `spec/behavior/chat/README.md` § Report and
+ * block).
+ *
+ * `channels:manage` does not reach a direct conversation: `canAccessChannel`
+ * admits a DM only to the two members in `member_ids`, with no wildcard bypass,
+ * because no officer may open a member's private thread. That left a reported
+ * DM message irremovable. The owner's decision was the narrowest expansion that
+ * closes it: an OPEN report in the officer's chapter lets a `channels:manage`
+ * holder remove the one message it names — not its siblings, not the thread,
+ * and nothing once the report is resolved.
+ *
+ * **Why a type rather than a boolean flag.** The grant is passed *through*
+ * {@link ChannelAccessService.assertMessageAccess} rather than forking a second
+ * authorization path beside it (the issue's own implementation note), and the
+ * thing it carries is a message id, not a mode. A bare `bypass: true` would be
+ * one argument away from opening every message in every DM; a grant can only
+ * ever match the message its report names, and the check that it does lives in
+ * the predicate, not at the call site.
+ *
+ * **Only constructible from an open report** ({@link fromOpenReport}). The
+ * private constructor is a structural nudge, not a security boundary — TypeScript
+ * privacy is erased at runtime — but it means every grant in this codebase is
+ * built by the one function that checks status and `message_id`, from a row a
+ * chapter-scoped read just returned.
+ *
+ * **What it deliberately cannot do:** authorize a `'post'` (an edit, an upload
+ * URL) — {@link ChannelAccessService.assertMessageAccess} refuses one — or reach
+ * a channel read at all: `assertChannelAccess`, `getMessages` and every list
+ * surface take no grant, so "a report about a DM does not open the DM to
+ * officers" stays true by construction. Today one method accepts it,
+ * `ChatService.deleteReportedMessage`.
+ */
+export class ReportedMessageGrant {
+  private constructor(
+    readonly reportId: string,
+    readonly chapterId: string,
+    readonly messageId: string,
+  ) {}
+
+  /**
+   * Mint the grant from a report the caller has just read **within their own
+   * chapter**, and not about themselves
+   * (`IChatMessageReportRepository.findById(id, chapterId, reviewerUserId)`).
+   *
+   * 409 rather than 404 for both refusals: the report exists and the caller may
+   * see it (it is in their queue); what conflicts is its state. A resolved report
+   * grants nothing — the capability is an *open* report — and a report whose
+   * message was hard-deleted (`message_id` SET NULL, e.g. a channel delete) has
+   * nothing left to remove. (A message that is only soft-deleted still mints a
+   * grant: the removal is idempotent on it — `ChatReportService.removeReportedMessage`.)
+   */
+  static fromOpenReport(report: ChatMessageReportView): ReportedMessageGrant {
+    if (report.status !== 'open') {
+      throw new ConflictException('This report is no longer open');
+    }
+    if (!report.message_id) {
+      throw new ConflictException('The reported message no longer exists');
+    }
+    return new ReportedMessageGrant(
+      report.id,
+      report.chapter_id,
+      report.message_id,
+    );
+  }
+}
+
+/**
+ * The first half of the grant arm of `ChannelAccessService.assertMessageAccess`:
+ * what a grant may be used for, decided from the grant and the arguments alone.
+ *
+ * - **`'read'` only.** A report authorizes removing content, never authoring
+ *   it; an edit or an upload URL is a `'post'` and a grant must not carry one.
+ * - **The grant names this message, in this chapter.** The report was read
+ *   chapter-scoped and its `message_id` fresh, so a mismatch is a caller
+ *   pointing a real grant at a sibling message, or at another chapter —
+ *   refused as the same 403 the channel predicate would give.
+ */
+function assertGrantNames(
+  grant: ReportedMessageGrant,
+  messageId: string,
+  chapterId: string,
+  operation: ChannelOperation,
+): void {
+  if (operation !== 'read') {
+    throw new ForbiddenException('A report does not grant write access');
+  }
+  if (grant.chapterId !== chapterId || grant.messageId !== messageId) {
+    throw new ForbiddenException('You do not have access to this channel');
+  }
 }
 
 /**
@@ -151,15 +246,29 @@ export class ChannelAccessService {
    * a message-level authorization helper is exactly the drift this service
    * exists to prevent. `ChatService` keeps a thin private delegate so its call
    * sites read unchanged.
+   *
+   * `grant` is the one way past the channel predicate, and it is narrow by
+   * construction — see {@link ReportedMessageGrant}. With a grant the
+   * message → channel → chapter resolution and the chapter-membership check
+   * still run; what is replaced is only the per-channel visibility rule, and
+   * only for the single message the grant's report names.
    */
   async assertMessageAccess(
     messageId: string,
     chapterId: string,
     userId: string,
     operation: ChannelOperation = 'read',
+    grant?: ReportedMessageGrant,
   ): Promise<ChatMessage> {
+    // A grant is checked against what it names before anything is read, so
+    // pointing one at another message cannot even learn whether that id exists.
+    if (grant) assertGrantNames(grant, messageId, chapterId, operation);
     const message = await this.messageRepo.findById(messageId);
     if (!message) throw new NotFoundException('Message not found');
+    if (grant) {
+      await this.assertGrantedMessageInChapter(message, chapterId, userId);
+      return message;
+    }
     try {
       await this.assertChannelAccess(
         message.channel_id,
@@ -177,6 +286,38 @@ export class ChannelAccessService {
       throw error;
     }
     return message;
+  }
+
+  /**
+   * The second half of the grant arm of {@link assertMessageAccess} (the first
+   * is {@link assertGrantNames}, run before the message is read).
+   *
+   * Everything the ordinary arm proves about *where* the message lives is still
+   * proven here; only the per-channel visibility rule is replaced by the report:
+   *
+   * - **The message's channel resolves inside the chapter**, normalized to the
+   *   same 404 the ordinary arm gives for a foreign channel.
+   * - **The caller is a member of the chapter.** `ChapterGuard` already proved
+   *   it on the request path; re-checking here keeps the predicate honest for
+   *   any other caller, as `assertChannelAccess` does.
+   */
+  private async assertGrantedMessageInChapter(
+    message: ChatMessage,
+    chapterId: string,
+    userId: string,
+  ): Promise<void> {
+    const channel = await this.channelRepo.findById(
+      message.channel_id,
+      chapterId,
+    );
+    if (!channel) throw new NotFoundException('Message not found');
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this channel');
+    }
   }
 
   /**
