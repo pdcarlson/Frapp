@@ -877,8 +877,10 @@ we could not re-send it to find out. A caller that knows its POST is idempotent 
 opts in to retry explicitly with `retryMethods`, and an explicit `timeoutMs` always wins over both
 defaults.
 
-**What is retried:** `429`, any `5xx`, and a network-level rejection (undici throws on DNS failure and
-`ECONNRESET` rather than returning a response). **What is not:** every other `4xx`. A `401`, `403` or
+**What is retried:** `429`, any `5xx`, a network-level rejection (undici throws on DNS failure and
+`ECONNRESET` rather than returning a response), and our own timeout while the response is awaited. A
+body that stalls after the response arrives is not ([#2601](https://github.com/pdcarlson/Frapp/issues/2601)).
+`http.mjs`'s header has the exact rules. **What is not:** every other `4xx`. A `401`, `403` or
 `404` on a deploy path is a dead token or a wrong id, and re-sending it three times converts a clear
 failure into a slow one.
 

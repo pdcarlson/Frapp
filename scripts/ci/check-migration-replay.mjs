@@ -564,7 +564,10 @@ export function replaySource({ appliedFrom, snapshotPath, env = process.env } = 
  * The CLI, returning its exit code. The gate is injectable so a test sees
  * exactly what reaches `runReplayGate`: a fetch chosen here would override
  * `resilientFetch` on the live read Deploy production depends on, as plain
- * `fetch` once did.
+ * `fetch` once did. Not every error comes back as a code: a flag with no value
+ * exits 2 on the spot (`getArg`), an unreadable `--snapshot` exits 1
+ * (`snapshotSource`), and an unreadable `--applied-from` file throws
+ * (`fetchFromFile`).
  */
 export async function runCli({ argv = process.argv, env = process.env, runGate = runReplayGate } = {}) {
   const appliedFrom = getArg("--applied-from", argv);
