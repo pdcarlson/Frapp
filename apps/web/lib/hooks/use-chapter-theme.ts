@@ -33,12 +33,14 @@ import {
  *    guaranteed by the engine at generation time
  *    (`spec/ui/design-system/accent-engine.md` §8) — there is no per-token
  *    client-side fallback to run.
- *  - A row missing any of those keys leaves the default-seed (`#DDB844`)
- *    palette baked into `signet.css` standing. Rows persisted before the Signet
- *    map existed were that case until the API's stale-palette sweep recomputed
- *    them (accent-engine.md §4, #1165); the gate stays, so a malformed row
- *    degrades to that default rather than half a palette. Nothing here assumes
- *    the keys exist.
+ *  - A row missing any of those keys applies nothing, so whatever already
+ *    paints stands: the palette the `(dashboard)` layout emitted from this
+ *    browser's accent cache, if it holds one for the chapter, otherwise the
+ *    default-seed (`#DDB844`) palette baked into `signet.css`. Rows persisted
+ *    before the Signet map existed were that case until the API's stale-palette
+ *    sweep recomputed them (accent-engine.md §4, #1165); the gate stays, so a
+ *    malformed row never applies half a palette. Nothing here assumes the keys
+ *    exist.
  *  - **No legacy token is applied at all**, which is why this is an allow-list
  *    rather than the blind key iteration it used to be. `derivePalette` was
  *    deleted at the slice-9 cutover so nothing writes its map any more, but
@@ -65,8 +67,8 @@ import {
  * ever holds, so it is the only honest place to record it for the next cold
  * load. `lib/theme/accent-cache.ts` explains what that record is for — the
  * short version is that everything above happens *after* `signet.css` has
- * already painted house gold, and a cookie read by the `(dashboard)` layout is
- * what closes that window.
+ * already painted its default-seed (`#DDB844`) palette, and a cookie read by
+ * the `(dashboard)` layout is what closes that window.
  *
  * Writing here also means the cache has no invalidation of its own to get
  * wrong. `useUpdateChapter` invalidates `["chapters","current",chapterId]` on
