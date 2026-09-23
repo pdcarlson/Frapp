@@ -245,6 +245,14 @@ the ones a later reader would otherwise re-litigate.
   `doc-paths` takes it to 19. That is the last count either amendment states, and it will go stale
   the same way the previous one did — read `ALL_REQUIRED_CHECKS` rather than either number.
 
+- **Amendment (2026-09-23) — succeeded by ADR-24.** ADR-24 sets the next delivery program (epic
+  #2504) and supersedes decision 3's trade-off, where each environment builds its own frontends.
+  Under ADR-24 an artifact is built once and promoted, with its environment injected at runtime.
+  #1381's two open stages move into #2504's first phase, #2505. The alert-routing item of #1383
+  was waiting on the owner's choice of channel, which is now made (the Sentry mobile app).
+  #1384's production-parity items go with it. #1381 closes when #1383 and #1384 do. Decisions 1,
+  2 and 4–8 and this ADR's amendments stand as written.
+
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an
 agent session, which would retire the write-only rollout step.
