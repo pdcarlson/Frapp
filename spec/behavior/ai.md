@@ -38,8 +38,9 @@ should query canon rather than keep a stale copy of it.
 > and dues amounts in with the indexed prose, because there is no `ai` module in
 > the API to route a tool call through. It exists so the *screen* — citation chips, the
 > refusal path, the in-flight state — is real and reviewable against the drawing, and it
-> is unreachable in any shipped build: `EXPO_PUBLIC_ASK_ENABLED` is off by default and no
-> build sets it ([`../ui/mobile/screens.md`](../ui/mobile/screens.md) s17). **A real
+> is off unless a build sets `EXPO_PUBLIC_ASK_ENABLED`: nothing in the repo sets it, and an
+> EAS `production` build refuses to evaluate its config when it is on
+> (`apps/mobile/app.config.js`; [`../ui/mobile/screens.md`](../ui/mobile/screens.md) s17). **A real
 > implementation MUST NOT copy that shape.** The two access paths above are the contract;
 > the flattened table is scaffolding to be deleted, not extended, the moment Ask can be
 > turned on for a real chapter.

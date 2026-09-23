@@ -7,6 +7,7 @@ import {
   PRODUCTION_APP_ORIGIN as SHARED_PRODUCTION_APP_ORIGIN,
 } from "@repo/validation";
 import { afterEach, describe, expect, it } from "vitest";
+import { ASK_FLAG_ENV_KEY, isAskAvailable } from "./lib/ask/flag";
 
 /**
  * EAS production Android must not compile without Firebase client config.
@@ -61,6 +62,12 @@ function loadConfig() {
       easBuildProfile?: string;
       appUrl?: string;
     }) => void;
+    assertProductionAskDisabled: (opts?: {
+      easBuildProfile?: string;
+      askEnabled?: string;
+    }) => void;
+    isAskEnabledValue: (raw: unknown) => boolean;
+    PRODUCTION_ASK_ENABLED_ERROR: string;
   };
 }
 
@@ -93,6 +100,7 @@ const restoredEnvKeys = [
   "EXPO_PUBLIC_API_URL",
   "EXPO_PUBLIC_SUPABASE_URL",
   "EXPO_PUBLIC_SUPABASE_ANON_KEY",
+  "EXPO_PUBLIC_ASK_ENABLED",
 ] as const;
 const initialEnv = Object.fromEntries(
   restoredEnvKeys.map((name) => [name, process.env[name]]),
@@ -235,9 +243,7 @@ describe("applyMobileConfig", () => {
     const extra = result.extra as { gitSha?: string; existing?: boolean };
     expect(extra.gitSha).toBe(sha);
     expect(extra.existing).toBe(true);
-    expect(JSON.stringify(result)).not.toContain(
-      `"release":"${sha}"`,
-    );
+    expect(JSON.stringify(result)).not.toContain(`"release":"${sha}"`);
   });
 
   it("omits extra.gitSha when EAS_BUILD_GIT_COMMIT_HASH is unset", () => {
@@ -367,6 +373,35 @@ describe("applyMobileConfig", () => {
         existsSync: missing,
       }),
     ).toThrow(PRODUCTION_APP_URL_ERROR);
+  });
+
+  it("refuses iOS production when EXPO_PUBLIC_ASK_ENABLED switches Ask on", () => {
+    const { applyMobileConfig, PRODUCTION_ASK_ENABLED_ERROR } = loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: {
+          ...productionPublicEnv,
+          EAS_BUILD_PROFILE: "production",
+          EAS_BUILD_PLATFORM: "ios",
+          EXPO_PUBLIC_ASK_ENABLED: "1",
+        },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_ASK_ENABLED_ERROR);
+  });
+
+  it("lets a preview build with Ask on evaluate", () => {
+    const { applyMobileConfig } = loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: {
+          EAS_BUILD_PROFILE: "preview",
+          EAS_BUILD_PLATFORM: "ios",
+          EXPO_PUBLIC_ASK_ENABLED: "true",
+        },
+        existsSync: missing,
+      }),
+    ).not.toThrow();
   });
 
   it("refuses production Android with a google-services file when the API origin is wrong", () => {
@@ -622,6 +657,89 @@ describe("PRODUCTION_APP_ORIGIN", () => {
   });
 });
 
+/**
+ * The store binary has no Ask (#2259), and `eas.json` can only show the half
+ * of that the repo owns: a value set in the EAS `production` environment
+ * reaches the bundle with no repo change. This fence is the other half — a
+ * production build with Ask on fails to evaluate its config.
+ */
+describe("assertProductionAskDisabled", () => {
+  /** Every spelling the flag spec exercises, on and off. */
+  const spellings = [
+    "1",
+    "true",
+    " true ",
+    "",
+    "  ",
+    "0",
+    "false",
+    "TRUE",
+    "True",
+    "yes",
+    "on",
+  ];
+
+  it("allows CI and expo start with Ask on (profile unset)", () => {
+    const { assertProductionAskDisabled } = loadConfig();
+    expect(() =>
+      assertProductionAskDisabled({ askEnabled: "1" }),
+    ).not.toThrow();
+  });
+
+  it("allows preview and development builds with Ask on", () => {
+    const { assertProductionAskDisabled } = loadConfig();
+    for (const easBuildProfile of ["preview", "development"]) {
+      expect(() =>
+        assertProductionAskDisabled({ easBuildProfile, askEnabled: "true" }),
+      ).not.toThrow();
+    }
+  });
+
+  it("allows production with the flag unset", () => {
+    const { assertProductionAskDisabled } = loadConfig();
+    expect(() =>
+      assertProductionAskDisabled({ easBuildProfile: "production" }),
+    ).not.toThrow();
+  });
+
+  it("refuses production exactly when the app would switch Ask on", () => {
+    const { assertProductionAskDisabled, PRODUCTION_ASK_ENABLED_ERROR } =
+      loadConfig();
+    for (const askEnabled of spellings) {
+      process.env[ASK_FLAG_ENV_KEY] = askEnabled;
+      const check = () =>
+        assertProductionAskDisabled({
+          easBuildProfile: "production",
+          askEnabled,
+        });
+      if (isAskAvailable()) {
+        expect(check, JSON.stringify(askEnabled)).toThrow(
+          PRODUCTION_ASK_ENABLED_ERROR,
+        );
+      } else {
+        expect(check, JSON.stringify(askEnabled)).not.toThrow();
+      }
+    }
+  });
+
+  it("parses the value the way lib/ask/flag.ts does, so the duplicate cannot drift", () => {
+    const { isAskEnabledValue } = loadConfig();
+    for (const raw of spellings) {
+      process.env[ASK_FLAG_ENV_KEY] = raw;
+      expect(isAskEnabledValue(raw), JSON.stringify(raw)).toBe(
+        isAskAvailable(),
+      );
+    }
+    delete process.env[ASK_FLAG_ENV_KEY];
+    expect(isAskEnabledValue(undefined)).toBe(isAskAvailable());
+    // Both directions are exercised, or the loop above proves nothing.
+    expect(spellings.filter((raw) => isAskEnabledValue(raw))).toEqual([
+      "1",
+      "true",
+      " true ",
+    ]);
+  });
+});
 
 /**
  * App Store compliance: the iOS privacy manifest (#2294) and the native
@@ -662,7 +780,10 @@ describe("iOS privacy manifest (#2294)", () => {
     const { getConfig } = requireConfig("expo/config") as {
       getConfig: (
         dir: string,
-        opts?: { skipSDKVersionRequirement?: boolean; isModdedConfig?: boolean },
+        opts?: {
+          skipSDKVersionRequirement?: boolean;
+          isModdedConfig?: boolean;
+        },
       ) => {
         exp: {
           ios?: { privacyManifests?: Record<string, unknown> };
@@ -723,16 +844,18 @@ describe("iOS privacy manifest (#2294)", () => {
     // Pinned as the whole array rather than per-category lookups: a keyed lookup
     // is last-wins, so a duplicate category or an extra entry carrying an
     // invalid reason code — which Apple rejects on upload — would pass unseen.
-    expect(resolved().ios?.privacyManifests?.NSPrivacyAccessedAPITypes).toEqual([
-      {
-        NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
-        NSPrivacyAccessedAPITypeReasons: ["CA92.1"],
-      },
-      {
-        NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
-        NSPrivacyAccessedAPITypeReasons: ["C617.1"],
-      },
-    ]);
+    expect(resolved().ios?.privacyManifests?.NSPrivacyAccessedAPITypes).toEqual(
+      [
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
+          NSPrivacyAccessedAPITypeReasons: ["CA92.1"],
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
+          NSPrivacyAccessedAPITypeReasons: ["C617.1"],
+        },
+      ],
+    );
   });
 
   it("resolves the camera permission the QR scanner requests (#2296, effect level)", () => {
@@ -772,7 +895,9 @@ describe("native permission declarations (#2296)", () => {
       .flatMap(([name, opts]) =>
         Object.entries(opts)
           .filter(([key]) => /(?:Permission|UsageDescription)$/.test(key))
-          .map(([key, value]) => [`${name}:${key}`, value] as [string, unknown]),
+          .map(
+            ([key, value]) => [`${name}:${key}`, value] as [string, unknown],
+          ),
       )
       .sort(([a], [b]) => a.localeCompare(b));
   }
@@ -836,7 +961,10 @@ describe("native permission declarations (#2296)", () => {
     // full option set is pinned, values included, so neither a new string nor a
     // flipped decline slips through.
     expect(permissionOptions()).toEqual([
-      ["expo-camera:cameraPermission", "Signet uses the camera to scan the check-in code at chapter events."],
+      [
+        "expo-camera:cameraPermission",
+        "Signet uses the camera to scan the check-in code at chapter events.",
+      ],
       ["expo-camera:microphonePermission", false],
       // `expo-image-picker` carries NO `cameraPermission` key, deliberately, and
       // that is not the omitted-option hazard the block above warns about.
@@ -861,10 +989,16 @@ describe("native permission declarations (#2296)", () => {
       // strips nothing another plugin contributes: `expo-camera` above sets
       // `recordAudioAndroid: false`, so it never adds RECORD_AUDIO either.
       ["expo-image-picker:microphonePermission", false],
-      ["expo-image-picker:photosPermission", "Signet uses your photo library so you can send photos in chapter chat."],
+      [
+        "expo-image-picker:photosPermission",
+        "Signet uses your photo library so you can send photos in chapter chat.",
+      ],
       ["expo-location:locationAlwaysAndWhenInUsePermission", false],
       ["expo-location:locationAlwaysPermission", false],
-      ["expo-location:locationWhenInUsePermission", "Signet confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code."],
+      [
+        "expo-location:locationWhenInUsePermission",
+        "Signet confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
+      ],
       ["expo-location:motionUsagePermission", false],
       ["expo-secure-store:faceIDPermission", false],
     ]);

@@ -19,8 +19,23 @@
  *   npx expo start --web --port 3002                  # from apps/mobile
  *   node scripts/demo/capture-mobile.mjs
  *
+ * ## App Store preset (`--app-store`, or `APP_STORE=1`)
+ *
+ * The owner approved these renders as the App Store screenshots (#2454), and
+ * the store binary has no Ask (#2259), so the store set is a different list
+ * from the marketing one above, not a subset of its output:
+ *
+ *   app-store/         1320x2868 PNGs (440x956 at 3x, the 6.9" iPhone size)
+ *
+ * No Ask shot, no reference board, and a hard stop: if any ✦ Ask surface is on
+ * screen — which is what an Expo server started with `EXPO_PUBLIC_ASK_ENABLED`
+ * set looks like — the run deletes the folder and exits non-zero, so a
+ * flag-on dev server can never produce a store set. Run it with the flag
+ * unset. Procedure and the size's provenance:
+ * `docs/internal/ops/deployment/mobile.md` § 6.4.
+ *
  * Env: MOBILE_URL (default http://localhost:3002), OUT_ROOT, CHROMIUM_PATH,
- *      DEMO_EMAIL, DEMO_PASSWORD, EVENT_ID, SKIP_REFERENCE=1
+ *      DEMO_EMAIL, DEMO_PASSWORD, EVENT_ID, SKIP_REFERENCE=1, APP_STORE=1
  */
 import { chromium } from "playwright";
 import { mkdir, rm, readFile } from "node:fs/promises";
@@ -31,6 +46,10 @@ const MOBILE_URL = process.env.MOBILE_URL ?? "http://localhost:3002";
 const OUT_ROOT = process.env.OUT_ROOT ?? "screenshots";
 const APP_DIR = path.join(OUT_ROOT, "mobile-app");
 const REF_DIR = path.join(OUT_ROOT, "mobile-reference");
+const STORE_DIR = path.join(OUT_ROOT, "app-store");
+
+const APP_STORE =
+  process.argv.includes("--app-store") || process.env.APP_STORE === "1";
 
 const EMAIL = process.env.DEMO_EMAIL ?? "marcus.ellison@westfield.edu";
 const PASSWORD = process.env.DEMO_PASSWORD ?? "DemoShowcase!2026";
@@ -44,6 +63,18 @@ const FONT = "packages/theme/fonts/FigtreeVF.woff2";
 /** iPhone 16 Pro logical size — the `hint-size` the board's artboards declare. */
 const PHONE = { width: 402, height: 874 };
 const SCALE = 3;
+
+/**
+ * The App Store's 6.9" iPhone size: 440x956 points at 3x is 1320x2868 pixels.
+ * Apple's screenshot specifications (developer.apple.com → App Store Connect
+ * help → Reference → Screenshot specifications, read 2026-09-22) list 1320x2868
+ * portrait among the 6.9" sizes, ask for a 6.5" set only when no 6.9" set is
+ * provided, and scale the smaller iPhone sizes from the set above them. That
+ * is the published page, not the console: #2454 asks for the size App Store
+ * Connect states at upload to be confirmed and recorded.
+ */
+const STORE_PHONE = { width: 440, height: 956 };
+const STORE_PIXELS = { width: 1320, height: 2868 };
 
 const FREEZE_CSS = `
   *, *::before, *::after {
@@ -63,9 +94,17 @@ const FREEZE_CSS = `
  * "Aborted(...)" pill across the tab bar. It is a dev-server artifact of the
  * web target — the native build neither loads that wasm nor renders a toast —
  * so it is chrome to suppress, not a defect the screenshot should record.
+ *
+ * `#error-toast` is the same toast in the current Expo web runtime: a direct
+ * child of `<body>` that draws inside its own shadow root, which no selector
+ * here can reach, so the host itself is what gets hidden. Seen 2026-09-22 over
+ * the chat thread's tab bar, reporting a dev-only React DOM warning ("Received
+ * `false` for a non-boolean attribute `accessible`") that the native build
+ * never raises.
  */
 const HIDE_DEV_OVERLAY_CSS = `
   #metro-error-overlay,
+  #error-toast,
   [data-testid="logbox-toast"],
   div[role="alert"]:has(> div > div > span) { display: none !important; }
 `;
@@ -240,9 +279,118 @@ const APP_SCREENS = [
     // floors at zero in between. Hold out for ten seconds or more left on the
     // clock — merely non-zero lands "0:02" about as often as not, which reads
     // as a code caught mid-expiry rather than one an officer is projecting.
-    ready: () => /Rotates in 0:[12]\d/.test(document.body.innerText),
+    // The check asks for twelve: the shot is taken a second or so after it
+    // passes, and a check at "0:10" was saved as "0:09" (2026-09-22).
+    ready: () => /Rotates in 0:(1[2-9]|2\d)/.test(document.body.innerText),
   },
 ];
+
+/**
+ * The App Store set: what the listing sells (`apps/mobile/store/README.md`
+ * § Description), in the order a browser of the listing should meet it —
+ * chat first, because that is the product's centre, then the officer's QR,
+ * then the member's week. Every screen here ships in the store binary; there
+ * is deliberately no Ask shot, because that binary has no Ask (#2259).
+ *
+ * No Dues shot either: a populated ledger footers "Payments run through your
+ * chapter's Stripe account.", and the reviewer's own Dues tab is seeded empty
+ * so App Review never sees that footer or a Pay control (store README § Seed
+ * the reviewer's chapter). The listing's text still names dues and payment
+ * history; it is the in-app payment copy the shots keep out.
+ *
+ * Same shape as `APP_SCREENS`. `ready` gates on content that only arrives
+ * once the screen's queries have landed, so no shot is of a skeleton or an
+ * empty state.
+ */
+const STORE_SCREENS = [
+  {
+    slug: "01-chat-home",
+    route: "/",
+    label: "Chat home — chapter channels, unread counts, UP NEXT",
+    // CHANNELS alone is the channels query; UP NEXT and the unread badges come
+    // from separate queries (events/tasks, unread counts), so wait for both.
+    ready: () =>
+      document.body.innerText.includes("CHANNELS") &&
+      document.body.innerText.includes("UP NEXT") &&
+      /\n\d+\n/.test(document.body.innerText),
+  },
+  {
+    slug: "02-chat-thread",
+    route: "/",
+    label: "Chat thread — #general",
+    async act(page) {
+      await page.getByText("general", { exact: true }).first().click();
+      await page.waitForTimeout(2000);
+    },
+    // Why these two and not something simpler: see `03-chat-thread` above.
+    ready: () =>
+      document.body.innerText.includes("Thread") &&
+      Boolean(document.querySelector('[placeholder="Message"]')),
+    expectRoute: "/chat-thread",
+  },
+  {
+    slug: "03-events",
+    route: "/events",
+    label: "Events — upcoming, with points and the mandatory meeting",
+    ready: () =>
+      document.body.innerText.includes("Chapter Meeting") &&
+      document.body.innerText.includes("pts"),
+  },
+  {
+    slug: "04-host-check-in",
+    route: `/host-check-in?eventId=${EVENT_ID}`,
+    label: "Host check-in — rotating QR at the door (officer)",
+    // Same clock rule as the marketing shot: twelve seconds or more left,
+    // for the reason given there.
+    ready: () => /Rotates in 0:(1[2-9]|2\d)/.test(document.body.innerText),
+  },
+  {
+    slug: "05-tasks",
+    route: "/tasks",
+    label: "Tasks — assigned tasks, semester points and house rank",
+    // A task row as well as the points card: the card lands on its own, and
+    // without a row the shot is the "You're all clear" empty state. The demo
+    // seed assigns roster #1, the account this signs in as, two open tasks.
+    ready: () =>
+      /House rank\s*#\d+/.test(document.body.innerText) &&
+      Boolean(document.querySelector('[role="checkbox"]')),
+  },
+  {
+    slug: "06-study",
+    route: "/study",
+    label: "Study hours — zones, this week, recent sessions",
+    ready: () => document.body.innerText.includes("RECENT SESSIONS"),
+  },
+  {
+    slug: "07-directory",
+    route: "/directory",
+    // Not "actives and alumni": the Actives chip lists every member, alumni
+    // included, so the screen does not yet make the split its chips name.
+    label: "Directory — the chapter's members, searchable by name",
+    ready: () =>
+      Boolean(document.querySelector('[aria-label^="View "][role="button"]')),
+  },
+];
+
+/**
+ * Whether any Ask surface is on screen: the ✦ glyph, the pill's accessible
+ * name, or a leaf whose whole text is "Ask" (the pill's label, or the tab
+ * navigator's title on the `ask` route). Runs in the page.
+ */
+const ASK_ON_SCREEN = () =>
+  document.body.innerText.includes("✦") ||
+  Boolean(document.querySelector('[aria-label="Ask"]')) ||
+  [...document.querySelectorAll("body *")].some(
+    (el) => el.childElementCount === 0 && el.textContent.trim() === "Ask",
+  );
+
+class AskOnScreenError extends Error {}
+
+/** Width and height from a PNG's IHDR chunk, which always follows the magic. */
+async function pngSize(file) {
+  const bytes = await readFile(file);
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+}
 
 async function signIn(page) {
   await page.goto(`${MOBILE_URL}/sign-in`, {
@@ -270,9 +418,17 @@ async function signIn(page) {
   );
 }
 
-async function captureRunningApp(browser) {
+async function captureRunningApp(
+  browser,
+  {
+    screens = APP_SCREENS,
+    viewport = PHONE,
+    outDir = APP_DIR,
+    noAsk = false,
+  } = {},
+) {
   const context = await browser.newContext({
-    viewport: PHONE,
+    viewport,
     deviceScaleFactor: SCALE,
     colorScheme: "dark",
     isMobile: true,
@@ -285,7 +441,7 @@ async function captureRunningApp(browser) {
   await signIn(page);
   console.log("ok");
 
-  for (const screen of APP_SCREENS) {
+  for (const screen of screens) {
     const { slug, route, label } = screen;
     process.stdout.write(`  app ${slug} ... `);
     try {
@@ -312,11 +468,26 @@ async function captureRunningApp(browser) {
       await page.addStyleTag({ content: HIDE_DEV_OVERLAY_CSS }).catch(() => {});
       await page.waitForTimeout(300);
 
-      const file = path.join(APP_DIR, `${slug}.png`);
+      // Checked on the settled screen, immediately before the shot, so what is
+      // checked is what is saved.
+      if (noAsk && (await page.evaluate(ASK_ON_SCREEN))) {
+        throw new AskOnScreenError(
+          `${slug}: an Ask surface is on screen. The store binary has no Ask ` +
+            `(#2259), so this server must be started with ` +
+            `EXPO_PUBLIC_ASK_ENABLED unset. Refusing to write a store set.`,
+        );
+      }
+
+      const file = path.join(outDir, `${slug}.png`);
       await page.screenshot({ path: file });
       done.push({ slug, label, file });
       console.log("ok");
     } catch (error) {
+      if (error instanceof AskOnScreenError) {
+        console.log("REFUSED");
+        await context.close();
+        throw error;
+      }
       failures.push(`${slug}: ${error.message.split("\n")[0]}`);
       console.log(`FAILED: ${error.message.split("\n")[0]}`);
     }
@@ -400,14 +571,69 @@ async function captureReferenceBoard(browser) {
   return done;
 }
 
-async function main() {
-  await rm(APP_DIR, { recursive: true, force: true });
-  await mkdir(APP_DIR, { recursive: true });
+async function captureAppStore(browser) {
+  await rm(STORE_DIR, { recursive: true, force: true });
+  await mkdir(STORE_DIR, { recursive: true });
 
+  console.log(
+    `App Store set, ${STORE_PHONE.width}x${STORE_PHONE.height} @${SCALE}x ` +
+      "(signed in against the seeded demo chapter):",
+  );
+  let shots;
+  try {
+    shots = await captureRunningApp(browser, {
+      screens: STORE_SCREENS,
+      viewport: STORE_PHONE,
+      outDir: STORE_DIR,
+      noAsk: true,
+    });
+  } catch (error) {
+    // No partial store set survives a run that saw Ask: a folder of the shots
+    // taken before it is exactly what someone would upload by mistake.
+    await rm(STORE_DIR, { recursive: true, force: true });
+    throw error;
+  }
+
+  for (const shot of shots) {
+    const { width, height } = await pngSize(shot.file);
+    shot.size = `${width}x${height}`;
+    if (width !== STORE_PIXELS.width || height !== STORE_PIXELS.height) {
+      failures.push(
+        `${shot.slug}: ${shot.size}, expected ` +
+          `${STORE_PIXELS.width}x${STORE_PIXELS.height}`,
+      );
+    }
+  }
+
+  console.log(`\n${shots.length} App Store screens -> ${STORE_DIR}`);
+  for (const { slug, label, size } of shots) {
+    console.log(`  ${slug}.png  ${size}  ${label}`);
+  }
+  return shots;
+}
+
+async function main() {
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,
     args: ["--no-sandbox"],
   });
+
+  if (APP_STORE) {
+    try {
+      await captureAppStore(browser);
+    } finally {
+      await browser.close();
+    }
+    if (failures.length) {
+      console.log("\nFailed:");
+      for (const f of failures) console.log(`  ${f}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  await rm(APP_DIR, { recursive: true, force: true });
+  await mkdir(APP_DIR, { recursive: true });
 
   console.log("Running app (signed in against the seeded demo chapter):");
   const app = await captureRunningApp(browser);

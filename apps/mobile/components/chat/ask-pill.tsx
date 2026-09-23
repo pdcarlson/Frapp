@@ -30,9 +30,15 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * host owns the `BottomSheetModal` ref and presents it, exactly as `tasks.tsx`
  * hosts the s19 sheet behind its `+`.
  *
- * The pill presses through even when Ask is switched off for the build. The
- * sheet states the reason; a control that silently does nothing is the dead end
- * `components.md` §5 bans.
+ * **Only in a build that has Ask.** Each host renders this behind
+ * `isAskAvailable()` (`lib/ask/flag.ts`), so a build without Ask draws no pill
+ * at all. It used to press through and open a sheet that said Ask was off;
+ * that was reversed on 2026-09-22 (#2259), because a control whose only
+ * function is to say its feature is missing reads as a placeholder under App
+ * Review Guideline 2.1 (`spec/ui/mobile/navigation.md` § Global entries). The
+ * gate sits at the host rather than in here because `ScreenShell` wraps any
+ * non-null `headerAction` in its own view, so a pill that rendered `null`
+ * would still leave that wrapper behind.
  */
 export function AskPill({ onPress }: { onPress: () => void }) {
   const { tokens } = useFrappTheme();

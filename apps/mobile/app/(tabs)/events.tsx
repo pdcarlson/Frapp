@@ -13,6 +13,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
+import { isAskAvailable } from "@/lib/ask/flag";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { formatEventRowTime, resolveCheckInWindow } from "@/lib/events/format";
 import { selectEventRows, type EventRow } from "@/lib/events/select";
@@ -28,10 +29,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * meeting under last semester's.
  *
  * The ✦ Ask pill in the header is the s06 half of the global Ask entry.
- * `spec/ui/mobile/navigation.md:60` puts it "in the top bar of Chat home **and
- * Events**"; only the s04 half was built, so this screen carried no
- * `headerAction` at all until C7. The sheet it opens is hosted here rather than
- * routed to, per `spec/ui/mobile/patterns.md` § Bottom sheets.
+ * `spec/ui/mobile/navigation.md` § Global entries puts it "in the top bar of
+ * Chat home and Events", and only in a build that has Ask (#2259). The sheet
+ * it opens is hosted here rather than routed to, per
+ * `spec/ui/mobile/patterns.md` § Bottom sheets.
  */
 
 export default function EventsScreen() {
@@ -59,7 +60,12 @@ export default function EventsScreen() {
     <ScreenShell
       title="Events"
       subtitle="What's coming up, and what you can check in to right now."
-      headerAction={<AskPill onPress={() => askSheetRef.current?.present()} />}
+      headerAction={
+        // No pill in a build without Ask (#2259) — see `app/(tabs)/index.tsx`.
+        isAskAvailable() ? (
+          <AskPill onPress={() => askSheetRef.current?.present()} />
+        ) : undefined
+      }
     >
       {eventsQuery.isPending ? (
         <View style={styles.stateBlock}>

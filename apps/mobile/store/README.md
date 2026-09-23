@@ -5,16 +5,21 @@ they are reviewed like code. Nothing here is read by a build; it is what a human
 pastes into App Store Connect and the Play Console when creating the listing
 (build and EAS environment procedure:
 [`docs/internal/ops/deployment/mobile.md`](../../../docs/internal/ops/deployment/mobile.md)
-§ 6 — note that it covers `eas` setup only and says nothing about screenshots, listing
-fields or submission, so there is no written capture procedure to follow). **Screenshots are not committed and none exist — App Store Connect does not
-accept a submission without them**, and the documented route to them is itself blocked:
-the EAS `preview` environment holds only `SENTRY_AUTH_TOKEN`
-([#2415](https://github.com/pdcarlson/Frapp/issues/2415)), so a preview build installs
-and then reports sign-in unavailable, because `getSupabaseClient()` returns `null`
-without `EXPO_PUBLIC_SUPABASE_URL` / `_ANON_KEY`. Nothing fences `preview` the way
-[`app.config.js`](../app.config.js) fences `production`, so that build fails at the
-sign-in screen rather than at build time. Provision `preview` (#2415) and shoot from an
-internal build, or shoot from TestFlight off the production binary (#938).
+§ 6 — it covers `eas` setup and the screenshot capture, and says nothing about listing
+fields or submission).
+
+**Screenshots: produced by a script, uploaded by the owner.** App Store Connect does not
+accept a submission without them ([#2454](https://github.com/pdcarlson/Frapp/issues/2454)).
+The owner approved renders of the real app on Expo web as the set (2026-09-22), so they
+no longer wait on a device build or on `preview` (#2415):
+`node scripts/demo/capture-mobile.mjs --app-store` signs in to the local demo chapter and
+writes seven 1320 × 2868 PNGs (the 6.9" iPhone size) to `screenshots/app-store/`, with
+no Ask screen, because this binary has none (#2259), and no Dues screen, because a
+populated ledger shows the Stripe footer § Review notes keeps from App Review. The
+procedure, and where the size comes from, are in
+[`mobile.md` § 6.4](../../../docs/internal/ops/deployment/mobile.md#64-app-store-screenshots).
+They are generated rather than committed (`screenshots/` is gitignored). Whether they
+have been uploaded is recorded on #2454, not here: until that issue closes, assume not.
 
 **Display name vs listing name — they differ, deliberately.** Chrome (home
 screen, iOS Settings) is **Signet**, which comes from `expo.name` in
@@ -179,7 +184,7 @@ record; each is a review-time or launch risk.
 | --- | --- |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 — no member-level report or block, with DMs shipping |
 | [#2258](https://github.com/pdcarlson/Frapp/issues/2258) | Guideline 5.2 — Backwork's v1 posture (**decision, not work**) |
-| [#2259](https://github.com/pdcarlson/Frapp/issues/2259) | Guideline 2.1 — the ✦ Ask pill renders with Ask switched off |
+| ~~[#2259](https://github.com/pdcarlson/Frapp/issues/2259)~~ | Fixed in the repo 2026-09-22 (owner decision): with Ask off, Chat home and Events draw no ✦ pill, the sheet renders nothing, and `frapp://ask` redirects to Chat home, so **a reviewer is shown no Ask surface at all**. That is also why § Review notes says nothing about Ask: there is nothing on screen to explain. Live only in the next build. It needs `EXPO_PUBLIC_ASK_ENABLED` off in the EAS `production` environment, which the repo cannot see, and since 2026-09-22 an EAS `production` build refuses to evaluate its config when the flag is on (`apps/mobile/app.config.js`), so a set value fails the build instead of shipping Ask (§ Description's note) |
 | ~~[#2260](https://github.com/pdcarlson/Frapp/issues/2260)~~ | Closed 2026-09-18 — answered ("it is not set"), superseded by #2415 |
 | [#2261](https://github.com/pdcarlson/Frapp/issues/2261) | Terms of Service carries no minimum-age clause |
 | ~~[#2262](https://github.com/pdcarlson/Frapp/issues/2262)~~ | Fixed in the repo 2026-09-22: the FERPA notice no longer points at a redaction tool. Live only after the next Deploy production |
@@ -191,13 +196,13 @@ the work; the detail lives there, not here.
 
 | # | Risk | Kind |
 | --- | --- | --- |
-| [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **No screenshots exist**, and the preview route to them is blocked by #2415 (see the note at the top of this file). Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked | hard gate |
-| [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` holds only `SENTRY_AUTH_TOKEN` — owns the screenshot route. Its other half, no Stripe key in `production`, stopped gating submission on 2026-09-21: this listing no longer claims card payments, so that key is a product decision rather than a blocker | hard gate |
+| [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **No screenshots uploaded.** Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked. Since 2026-09-22 the set comes from `capture-mobile.mjs --app-store` (see the note at the top of this file); what remains is the owner's upload and confirming the accepted size in the console | hard gate |
+| [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` holds only `SENTRY_AUTH_TOKEN`. It no longer owns the screenshot route (#2454 shoots from Expo web), but a `preview` build still cannot sign in. Its other half, no Stripe key in `production`, stopped gating submission on 2026-09-21: this listing no longer claims card payments, so that key is a product decision rather than a blocker. Neither half now gates submission, which ships the `production` build | no longer a gate (2026-09-22) |
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | No App Review demo user exists in `frapp-prod`; the demo seed is Docker-only. The reviewer cannot sign in | hard gate |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 (restated as a blocker, not a risk): API and production DB ship report/block, **no client consumes either** | blocker |
 | [#2305](https://github.com/pdcarlson/Frapp/issues/2305) | **Fixed in the repo 2026-09-22; live only after the next Deploy production.** The policy's photo-library clause read "choose a profile photo or attach an image", and the iOS app has no profile-photo picker, so it now names chat photos only. Resend (sign-in and invite email) and the two hosts, Render and Vercel, were added to § Service Providers. Both stores fetch the live URL, so deploy the landing before submitting | 5.1.2 |
-| [#2298](https://github.com/pdcarlson/Frapp/issues/2298) / [#2301](https://github.com/pdcarlson/Frapp/issues/2301) | Sign-in tagline advertises Ask; the `sheet-demo` dev route ships and is reachable via `frapp://sheet-demo`. (The two permanently inert controls, [#2300](https://github.com/pdcarlson/Frapp/issues/2300), were removed 2026-09-22.) | 2.1 |
+| ~~[#2298](https://github.com/pdcarlson/Frapp/issues/2298)~~ / [#2301](https://github.com/pdcarlson/Frapp/issues/2301) | The `sheet-demo` dev route ships and is reachable via `frapp://sheet-demo`. (The sign-in tagline no longer advertises Ask, fixed in the repo 2026-09-22, and the two permanently inert controls, [#2300](https://github.com/pdcarlson/Frapp/issues/2300), were removed the same day. Both are live only in the next build.) | 2.1 |
 | [#2334](https://github.com/pdcarlson/Frapp/issues/2334) | **Smoke-test Sign in with Apple on the TestFlight build before submitting.** At the pinned `expo-apple-authentication ~57.0.2` a nil `keyWindow` reaches an uncatchable Swift `fatalError`, i.e. a SIGTRAP abort on the sign-in screen with the browser-OAuth fallback unreachable — and no live Apple sign-in has ever been observed against `frapp-prod`. The unit suite gives **zero** signal because it never loads the native module. A crash on the first screen a reviewer touches outranks the 4.8 question it also raises | 4.8 + crash |
 
 ## Description
@@ -205,12 +210,20 @@ the work; the detail lives there, not here.
 > Deliberately omits Ask. [`spec/ui/brand-identity.md`](../../../spec/ui/brand-identity.md)
 > gives the tagline as "Ask your chapter anything." and positions Signet as the
 > AI-first operating system for Greek life, but Ask is gated behind
-> `EXPO_PUBLIC_ASK_ENABLED` (default off, and set by no `eas.json` profile — but see the
-> dues note below on why that is *not* proof it is off in a build: only
-> `eas env:list --environment production` settles it) and answers
+> `EXPO_PUBLIC_ASK_ENABLED` (default off, and set by no `eas.json` profile — which alone
+> is *not* proof it is off in a build, as the dues note below explains, so an EAS
+> `production` build now refuses to evaluate its config with the flag on:
+> `apps/mobile/app.config.js`) and answers
 > from a hand-written table in `apps/mobile/lib/ask/corpus.ts`. Store metadata that
 > advertised it would be inaccurate under Guideline 2.3. **Use the tagline as the
 > subtitle once Ask genuinely ships** — the subtitle is editable on any new version.
+>
+> **The binary now agrees (2026-09-22).** The sign-in screen used to open on the brand
+> tagline, making in the app the claim this listing avoids. It now reads "Everything your
+> chapter needs is already in chat." ([#2298](https://github.com/pdcarlson/Frapp/issues/2298)),
+> and a build without Ask draws no ✦ pill ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).
+> The copy lives in [`spec/ui/design-system/writing.md`](../../../spec/ui/design-system/writing.md)
+> § 7, Sign in. When Ask ships, move the listing subtitle and the sign-in line together.
 
 Signet is the app your chapter actually runs on.
 

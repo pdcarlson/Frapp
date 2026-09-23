@@ -20,7 +20,7 @@ import {
   type AskAnswer,
   type AskSource,
 } from "@/lib/ask/corpus";
-import { askUnavailableReason, isAskAvailable } from "@/lib/ask/flag";
+import { isAskAvailable } from "@/lib/ask/flag";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -53,13 +53,16 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * is the scrollable's sibling rather than its last row, so it stays pinned
  * above the keyboard as drawn instead of scrolling away under a long answer.
  *
- * ## The flag is not a gate on the entry point
+ * ## A build without Ask has no sheet
  *
- * `isAskAvailable()` is false by default (`lib/ask/flag.ts`), and the ✦ pill
- * still renders and still opens this sheet when it is. The sheet then states
- * the reason. A control that silently does nothing is the dead end
- * `components.md` §5 bans, and this mirrors the disabled Pay CTA in
- * `lib/payments/stripe.ts` exactly.
+ * `isAskAvailable()` is false by default (`lib/ask/flag.ts`), and when it is
+ * this renders nothing. The hosts mount it unconditionally and gate only the
+ * ✦ pill in their header, and `app/(tabs)/ask.tsx` redirects. It used to open
+ * anyway and say "Ask isn't switched on for this build yet"; that was reversed
+ * on 2026-09-22 (#2259), and `spec/ui/mobile/navigation.md` § Global entries
+ * has why. The gate lives here rather than at each host because this is the
+ * one component that reads `lib/ask/corpus.ts`: whatever a future host does,
+ * the synthetic answers stay unreachable in a build without the flag.
  */
 
 /**
@@ -87,9 +90,6 @@ export const AskSheet = forwardRef<BottomSheetModal>(
     const { tokens } = useFrappTheme();
     const styles = createStyles(tokens);
     const backgroundStyle = useSheetBackgroundStyle();
-
-    const available = isAskAvailable();
-    const unavailableReason = askUnavailableReason();
 
     const [draft, setDraft] = useState("");
     /** The question being answered — `null` before the first ask. */
@@ -120,7 +120,7 @@ export const AskSheet = forwardRef<BottomSheetModal>(
     const ask = useCallback(
       (text: string) => {
         const trimmed = text.trim();
-        if (!available || trimmed.length === 0) return;
+        if (trimmed.length === 0) return;
 
         clearTimer();
         setQuestion(trimmed);
@@ -132,7 +132,7 @@ export const AskSheet = forwardRef<BottomSheetModal>(
           setAnswer(answerQuestion(trimmed));
         }, ANSWER_DELAY_MS);
       },
-      [available, clearTimer],
+      [clearTimer],
     );
 
     /**
@@ -154,17 +154,16 @@ export const AskSheet = forwardRef<BottomSheetModal>(
     }, []);
 
     const trimmedDraft = draft.trim();
-    const canSend = available && trimmedDraft.length > 0;
+    const canSend = trimmedDraft.length > 0;
     /**
      * Wired to the control rather than placed beside it: a member using a screen
      * reader lands on a dimmed button and needs the reason *there*, not in a
      * paragraph they may never reach.
      */
     const sendHint =
-      unavailableReason ??
-      (trimmedDraft.length === 0
+      trimmedDraft.length === 0
         ? "Type a question first."
-        : "Send your question to Ask.");
+        : "Send your question to Ask.";
 
     const renderBackdrop = useCallback(
       (props: BottomSheetBackdropProps) => (
@@ -180,6 +179,10 @@ export const AskSheet = forwardRef<BottomSheetModal>(
       ),
       [],
     );
+
+    // After every hook, so the hook order is the same whichever way the flag
+    // reads. The flag is fixed for a build, so this never flips mid-session.
+    if (!isAskAvailable()) return null;
 
     return (
       <BottomSheetModal
@@ -216,12 +219,6 @@ export const AskSheet = forwardRef<BottomSheetModal>(
             </Text>
           </View>
 
-          {unavailableReason ? (
-            <View style={styles.notice}>
-              <Text style={styles.noticeText}>{unavailableReason}</Text>
-            </View>
-          ) : null}
-
           {question !== null ? (
             <View style={styles.echo}>
               <Text style={styles.echoText}>{question}</Text>
@@ -236,40 +233,35 @@ export const AskSheet = forwardRef<BottomSheetModal>(
             <Text style={styles.sourceNotice}>{notice}</Text>
           ) : null}
 
-          {/* Omitted rather than disabled when Ask is off: the notice above
-            already names the blocker once, and a row of dimmed chips repeating
-            it would bury it. */}
-          {available ? (
-            <View style={styles.suggestionRow}>
-              {SUGGESTED_QUESTIONS.map((suggestion) => (
-                <Pressable
-                  key={suggestion}
-                  accessibilityRole="button"
-                  accessibilityLabel={suggestion}
-                  accessibilityHint="Ask this question."
-                  // 32pt drawn against the 44pt minimum — the #939 ruling
-                  // `ask-pill.tsx` and `sheet-scaffold.tsx` already apply.
-                  //
-                  // Asymmetric on purpose: the floor is a *vertical* shortfall
-                  // (32 + 6 + 6 = 44), and 6pt horizontally would push each
-                  // chip 12pt into an 8pt gap, so adjacent chips' touch regions
-                  // would overlap and RN would resolve the seam to whichever
-                  // view sits later in the hierarchy. A member aiming between
-                  // two suggestions would ask the question they did not tap —
-                  // and `ask()` clears the draft immediately, so there is no
-                  // undo. 4pt a side is exactly half the gap: no overlap.
-                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                  onPress={() => ask(suggestion)}
-                  style={({ pressed }) => [
-                    styles.suggestion,
-                    pressed ? styles.pressed : null,
-                  ]}
-                >
-                  <Text style={styles.suggestionText}>{suggestion}</Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
+          <View style={styles.suggestionRow}>
+            {SUGGESTED_QUESTIONS.map((suggestion) => (
+              <Pressable
+                key={suggestion}
+                accessibilityRole="button"
+                accessibilityLabel={suggestion}
+                accessibilityHint="Ask this question."
+                // 32pt drawn against the 44pt minimum — the #939 ruling
+                // `ask-pill.tsx` and `sheet-scaffold.tsx` already apply.
+                //
+                // Asymmetric on purpose: the floor is a *vertical* shortfall
+                // (32 + 6 + 6 = 44), and 6pt horizontally would push each
+                // chip 12pt into an 8pt gap, so adjacent chips' touch regions
+                // would overlap and RN would resolve the seam to whichever
+                // view sits later in the hierarchy. A member aiming between
+                // two suggestions would ask the question they did not tap —
+                // and `ask()` clears the draft immediately, so there is no
+                // undo. 4pt a side is exactly half the gap: no overlap.
+                hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                onPress={() => ask(suggestion)}
+                style={({ pressed }) => [
+                  styles.suggestion,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={styles.suggestionText}>{suggestion}</Text>
+              </Pressable>
+            ))}
+          </View>
         </BottomSheetScrollView>
 
         <View style={styles.composerRow}>
@@ -280,14 +272,10 @@ export const AskSheet = forwardRef<BottomSheetModal>(
             value={draft}
             onChangeText={setDraft}
             onSubmitEditing={() => ask(draft)}
-            editable={available}
             placeholder="Ask anything…"
             placeholderTextColor={tokens.color.text.muted}
             accessibilityLabel="Ask a question"
-            accessibilityHint={
-              unavailableReason ??
-              "Ask about your chapter's bylaws, minutes and announcements."
-            }
+            accessibilityHint="Ask about your chapter's bylaws, minutes and announcements."
             returnKeyType="send"
             style={styles.composerField}
           />
@@ -379,18 +367,6 @@ function createStyles(tokens: SignetTokens) {
       textAlign: "right",
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-    },
-    notice: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.lg,
-      paddingVertical: tokens.spacing.md,
-    },
-    noticeText: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
     },
     echo: {
       borderRadius: tokens.radius.card,

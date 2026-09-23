@@ -528,7 +528,7 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 
 | State | Title | Description |
 |---|---|---|
-| Idle | `Signet` | `Ask your chapter anything.` — s01's wordmark and tagline are the screen's heading and body, not decoration above one. |
+| Idle | `Signet` | `Everything your chapter needs is already in chat.` — s01's wordmark and tagline are the screen's heading and body, not decoration above one. Not the brand tagline "Ask your chapter anything." ([`../brand-identity.md`](../brand-identity.md) §1): Ask is off by default (`EXPO_PUBLIC_ASK_ENABLED`), and this is the first screen App Review opens, so leading with it would advertise a feature the binary does not have (Guidelines 2.1 and 2.3). The line is the landing's closing line, held there for the same reason (landing D8, [`../landing/README.md`](../landing/README.md)). Owner decision 2026-09-22, [#2298](https://github.com/pdcarlson/Frapp/issues/2298). Mobile only: the web pre-auth column keeps the brand tagline, which App Review never sees. It returns to mobile in the slice that ships Ask. |
 | Submitting | — | The primary reads `Continue` throughout and disables; no separate copy. |
 | Auth error | `Unable to sign in` | The Supabase message, verbatim. It is deliberately non-enumerating ("Invalid login credentials" whether or not the address exists), so passing it through leaks nothing and says more than a generic line would. |
 | Magic link sent | `Magic link sent` | `Check your inbox to continue signing in.` |
