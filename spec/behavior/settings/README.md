@@ -28,7 +28,6 @@ Related canon lives in:
 - **Disabling a module immediately:**
   - Hides its nav item (gated on `isModuleEnabled`).
   - Removes its slash commands from the chat palette.
-  - Mutes its system channel — it is **not** deleted, so re-enabling restores it.
 - Module state is read from chapter config, never from a `window.*` global.
 
 ## Privacy Tab

@@ -30,7 +30,7 @@ A per-chapter monthly subscription unlocks the ops integrations and AI:
 - The flatness is load-bearing in the code, not only in the positioning: per-seat billing, quantity tiers and per-chapter price variation are code changes, not a different Stripe Price. Why: [`billing.md` § The chapter subscription](../behavior/billing.md#the-chapter-subscription).
 - Events with QR check-in, points ledger, dues invoicing / Stripe collection, custom workflows, exports/reports, backwork library, and the AI features (meeting transcription/summary, Q&A over chapter content).
 - **14-day trial, opened at checkout, once per chapter.** The trial begins when the chapter subscribes, not when it first activates a paid module — activation-triggered trials would need module-activation state that does not exist. A chapter that has already held a subscription is charged immediately on any later checkout. Stripe reports the window as `trialing`, which maps to `active`, so a trialing chapter is fully active to every permission gate. A card is collected up front; the first charge lands on day 15. Set by `subscription_data.trial_period_days` on the Checkout Session — Stripe's Price object has no writable trial field, so this cannot ride on `STRIPE_PRICE_ID`.
-- Disabling a paid module hides its slash commands, mutes its system channel, and hides its dashboard page; data is preserved and restored on re-enable.
+- Disabling a paid module hides its slash commands and its dashboard page; data is preserved and restored on re-enable.
 
 ## Vocabulary-first
 
