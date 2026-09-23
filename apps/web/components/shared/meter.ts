@@ -28,8 +28,8 @@
  * against its own groove — in chat, at the time. (By #2541, `#800000` no
  * longer painted itself: the generator swaps in its own step 9, `#F42F22`.
  * The dark red still colliding was `#8B0000`, at about 1.07:1, and #2541's
- * fill floor lifted it to `#C34437`, which ended the collision. The ordering
- * below still holds.)
+ * fill floor lifted it to `#C34437` (`#D75748` since #2586), which ended the
+ * collision. The ordering below still holds.)
  *
  * So the track is **`--background`: a recess, not a raise.** Worst case across
  * every seed and both containers, measured after #2586 (the fill column's
