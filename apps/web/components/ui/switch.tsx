@@ -58,10 +58,10 @@ const Switch = React.forwardRef<
        *     where the switch KEEPS its place in the tab order, so that ring is
        *     the entire focus indicator. Measured over all 19 seeds,
        *     ring-vs-`--background` falls from 8.48-11.47 undimmed to 2.96-3.68
-       *     at a 50% dim, putting 5 of the 19 under §6's 3:1. (The undimmed
+       *     at a 50% dim, putting 4 of the 19 under §6's 3:1. (The undimmed
        *     range was 3.05-4.07 while this recipe drew in accent-8; it draws in
        *     accent-11 since the greenfield ladder, so the dim no longer fails
-       *     every chapter — it fails five, which is still five chapters whose
+       *     every chapter — it fails four, which is still four chapters whose
        *     keyboard users lose the indicator.) The offset band is a second
        *     casualty: a composited one is no longer `--background` at all, so
        *     the measurement stops being the one `focus.ts` reasons about.
@@ -71,8 +71,8 @@ const Switch = React.forwardRef<
        *     `--popover`, the same `#2A2621`, in palettes written since;
        *     `accent-engine.md` §4 covers stored ones), and a 50%
        *     dim composited over `--background` drops 16 of them under it
-       *     (`#8B0000` 3.01 → 1.61, `#CC0000` 3.01 → 1.56; measured
-       *     2026-09-23, #2541). That is the same erasure that made the real
+       *     (`#8B0000` 3.83 → 1.86, `#CC0000` 3.82 → 1.81; measured
+       *     2026-09-23, #2586). That is the same erasure that made the real
        *     `disabled` attribute wrong here.
        *
        * `button.tsx` and `label.tsx` already state the system's ban on this

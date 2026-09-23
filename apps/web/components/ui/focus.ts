@@ -21,10 +21,11 @@
  * How strong that border is depends on the chapter, and the figure this comment
  * used to give ("8.7:1 and up") was the house seed's, stated as if it were
  * everyone's. Solid `--primary` against the ladder step behind it ranges
- * 3.01–18.71:1 across the 19 seeds (the house seed's is 7.88–9.81: 7.88 on
+ * 3.78–18.71:1 across the 19 seeds (the house seed's is 7.88–9.81: 7.88 on
  * `--popover`, 8.70 on `--card`). The bottom of that range was 1.50:1 until
- * #2541: the engine now holds accent-9 to 3:1 on every ladder step
- * (`accent-engine.md` §8), so the border half of `FOCUS_RING` conforms for
+ * #2541 and 3.01:1 until #2586: the engine now holds accent-9 and its hover to
+ * 3:1 on every ladder step (`accent-engine.md` §8), which lifts a dark fill
+ * past the floor on its own, so the border half of `FOCUS_RING` conforms for
  * every palette written since (`accent-engine.md` §4 covers stored ones). The
  * guarantee is pinned in `packages/chapter-theme/src/signet.spec.ts`, not in
  * `focus-contrast.spec.ts`, which guards only the offset recipe.
@@ -77,14 +78,16 @@ export const FOCUS_RING =
  *
  * | Role | Worst seed | Clears 3:1 |
  * | --- | --- | --- |
- * | `--primary` (accent-9) | 3.74:1 | yes, but only just: 3.01:1 on `--popover` |
+ * | `--primary` (accent-9) | 4.70:1 | yes, and 3.78:1 on `--popover` |
  * | `--ring` (accent-8) | 2.98:1 | no, fails on 3 |
  * | `--accent-text` (accent-11) | 8.48:1 | yes, on all 19 |
  *
  * `--primary` failed on 4 seeds (worst 1.87:1) until #2541, when the engine
  * began lifting a dark fill until it clears 3:1 on every ladder surface
- * (`accent-engine.md` §8). It lifts only as far as the floor, so accent-9
- * still has no headroom as a whole indicator.
+ * (`accent-engine.md` §8). The floor guarantees 3:1 and nothing more, and a
+ * seed that already clears it keeps its fill: the worst is `#800000`, whose
+ * generated `#F42F22` the engine leaves as it is. So accent-9 still has
+ * nowhere near accent-11's headroom as a whole indicator.
  *
  * `--ring` was the token here until the greenfield surface ladder
  * (foundations.md §2) lifted `--background` from `#0E0D0B` to `#131211`. Its

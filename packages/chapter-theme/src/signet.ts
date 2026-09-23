@@ -4,7 +4,8 @@
  * Implements `spec/ui/design-system/accent-engine.md`: the generator call in §1
  * with its parameters fixed, the role map in §2, the house default seed in §3,
  * and the by-construction contrast guarantees in §8 — AA on the text roles, and
- * 3:1 for the `accent-primary` fill on every ladder surface (#2541).
+ * 3:1 for the `accent-primary` fill and its `accent-hover` shade on every
+ * ladder surface (#2541, #2586).
  *
  * The only chapter accent engine. It superseded the legacy two-colour
  * `derivePalette` map, which the #920 slice-9 cutover deleted once every
@@ -39,9 +40,10 @@ export type { SignetPalette };
 
 /**
  * The Signet neutral ladder (foundations.md §2), darkest to lightest: every
- * surface `accent-primary` paints on, and so what the §8 fill floor is measured
- * against. Restated here rather than imported from `@repo/theme`, which depends
- * on this package, not the reverse; `packages/theme/src/signet.css.spec.ts`
+ * surface `accent-primary` and its hover shade paint on, and so what the §8
+ * fill floor is measured against. Restated here rather than imported from
+ * `@repo/theme`, which depends on this package, not the reverse;
+ * `packages/theme/src/signet.css.spec.ts`
  * fails if it stops matching `signetDarkTokens` and `signet.css`, since a lift
  * measured against a stale ladder would clear 3:1 on surfaces that no longer
  * ship. `--background` is also the generator's `background` parameter.
@@ -94,17 +96,23 @@ export const SIGNET_ENGINE_VERSION = 1;
 const MIN_TEXT_CONTRAST = AA_NORMAL;
 
 /**
- * WCAG 1.4.11 non-text contrast, the floor the `accent-primary` fill must clear
- * (accent-engine.md §8). The fill is the only cue for a state in several
- * consumers — the switch track, the active tab underline, the focus ring
- * border, poll selection — so a legible label on a button is not enough.
+ * WCAG 1.4.11 non-text contrast, the floor the `accent-primary` fill and its
+ * `accent-hover` shade must clear (accent-engine.md §8). The fill is the only
+ * cue for a state in several consumers — the switch track, the active tab
+ * underline, the focus ring border, poll selection — so a legible label on a
+ * button is not enough. Hover is held too because pointing at a filled control
+ * swaps its fill for the hover shade while the state still has to read: the
+ * voted poll option is a `default` Button, whose hover is `accent-hover`.
  */
 const MIN_FILL_CONTRAST = AA_LARGE;
 
 /**
- * How far one lift step raises the failing fill's OKLCH lightness. Small enough that the
- * lifted fill lands just past 3:1 rather than well beyond it, which keeps the
- * brand shift to the minimum the floor requires.
+ * How far one lift step raises the failing fill's OKLCH lightness: the grid
+ * `liftAccent` searches, fine enough that the lift it returns is the smallest
+ * `scaleClears` accepts on that grid (bar the skip its doc describes), which
+ * keeps the brand shift to the minimum §8 requires. Where that minimum lands
+ * is `scaleClears`' doing, not this step's: for the corpus's dark seeds it is
+ * the label check, which leaves the fill near 3.8:1 on `--popover`.
  */
 const LIFT_STEP = 0.002;
 
@@ -128,6 +136,21 @@ const ROLE_STEPS = {
 
 type SignetRole = keyof typeof ROLE_STEPS;
 
+/**
+ * The fills the §8 floor holds: the resting fill, and the hover shade that
+ * replaces it under a pointer. Pressed is not one of them. It is hover with 8%
+ * black (`--primary-pressed` in `packages/theme/src/signet.css`), shown only
+ * while the pointer is down, and §8 says why it, and the label on it, are left
+ * short (#2604).
+ */
+const FLOORED_FILLS = [
+  "--signet-accent-primary",
+  "--signet-accent-hover",
+] as const;
+
+/** The two floored fills of one generation, or of one palette. */
+export type SignetFills = Pick<SignetPalette, (typeof FLOORED_FILLS)[number]>;
+
 export interface SignetContrastCheck {
   /** The role whose contrast was measured. */
   role: string;
@@ -148,7 +171,8 @@ export interface DeriveSignetPaletteResult {
    */
   invalidSeed: boolean;
   /**
-   * The §8 fill gate: `accent-primary` against each ladder surface at 3:1.
+   * The §8 fill gate: `accent-primary`, then `accent-hover`, against each
+   * ladder surface at 3:1.
    *
    * Kept apart from `contrastChecks` on purpose: that list is the text-role
    * gate at 4.5:1, which the API reports as `failedContrastChecks` and the
@@ -188,7 +212,7 @@ function ratio(foreground: string, background: string): number {
  * possible seed rather than most of them. It cannot itself fail: the two curves
  * cross at luminance ≈0.179, where both score ≈4.58:1, so the better of the pair
  * is always ≥4.5:1 for any color. The generator's own choice is kept whenever it
- * is legible, which is the common case and kept for the house seed (`#2B2009`).
+ * is legible, which is the common case and kept for the house seed (`#292109`).
  */
 function onPrimaryFor(generatedContrast: string, primary: string): string {
   if (ratio(generatedContrast, primary) >= MIN_TEXT_CONTRAST) {
@@ -205,32 +229,71 @@ function generate(accent: string): Generated {
   return generateRadixColors({ ...GENERATOR_PARAMS, accent });
 }
 
-/** The step-9 fill the generator actually produced, which is what paints. */
-function generatedFill(generated: Generated): string {
-  return normalizeHex(
-    generated.accentScale[ROLE_STEPS["accent-primary"] - 1] ?? "",
+/**
+ * The step-9 fill and step-10 hover the generator actually produced, which is
+ * what paints. Either can differ from the colour the generator was handed.
+ */
+function generatedFills(generated: Generated): SignetFills {
+  const at = (role: SignetRole) =>
+    normalizeHex(generated.accentScale[ROLE_STEPS[role] - 1] ?? "");
+  return {
+    "--signet-accent-primary": at("accent-primary"),
+    "--signet-accent-hover": at("accent-hover"),
+  };
+}
+
+/**
+ * The §8 fill floor for a fill and its hover shade: each one's ratio on each
+ * ladder surface and whether that clears 3:1, the fill's four checks first.
+ * `deriveSignetPalette` reports it as `fillChecks`, and the lift judges every
+ * candidate by it, so the two cannot disagree.
+ */
+export function signetFillChecks(fills: SignetFills): SignetContrastCheck[] {
+  return FLOORED_FILLS.flatMap((role) =>
+    Object.entries(SIGNET_FILL_SURFACES).map(([name, surface]) => {
+      const fillRatio = ratio(fills[role], surface);
+      return {
+        role,
+        against: name,
+        ratio: fillRatio,
+        passes: fillRatio >= MIN_FILL_CONTRAST,
+      };
+    }),
+  );
+}
+
+/** The label the engine puts on a generation's fill: its `on-primary`. */
+function onPrimaryOf(generated: Generated): string {
+  return onPrimaryFor(
+    normalizeHex(generated.accentContrast ?? ""),
+    generatedFills(generated)["--signet-accent-primary"],
   );
 }
 
 /**
- * The §8 fill floor for one fill: its ratio on each ladder surface and whether
- * that clears 3:1. `deriveSignetPalette` reports it as `fillChecks`, and the
- * lift judges every candidate by it, so the two cannot disagree.
+ * Whether one generation meets everything the lift is for (accent-engine.md
+ * §8): its fill and hover clear 3:1 on every ladder surface, and its label
+ * clears 4.5:1 on the hover shade as well as on the fill, since the label does
+ * not change when the pointer does.
+ *
+ * The label check is what sets how far a dark seed moves. The generator makes
+ * hover darker than a fill this light, by about a fifth in luminance, so no
+ * label clears 4.5:1 on both at the lift where hover first reaches 3:1: white
+ * fails on the fill, and black on the hover. The lift runs on until black
+ * clears the hover too. It can also start a lift on its own, for a mid-tone
+ * whose fill and hover already clear 3:1 but whose black label misses 4.5:1 on
+ * the hover (`#9966CC` moves to `#9D6AD0`); those shifts are small.
+ *
+ * Exported only so `signet.spec.ts` can judge a candidate by the same measure
+ * the lift does.
  */
-export function signetFillChecks(fill: string): SignetContrastCheck[] {
-  return Object.entries(SIGNET_FILL_SURFACES).map(([name, surface]) => {
-    const fillRatio = ratio(fill, surface);
-    return {
-      role: "--signet-accent-primary",
-      against: name,
-      ratio: fillRatio,
-      passes: fillRatio >= MIN_FILL_CONTRAST,
-    };
-  });
-}
-
-function fillClears(fill: string): boolean {
-  return signetFillChecks(fill).every((check) => check.passes);
+export function scaleClears(generated: Generated): boolean {
+  const fills = generatedFills(generated);
+  return (
+    signetFillChecks(fills).every((check) => check.passes) &&
+    ratio(onPrimaryOf(generated), fills["--signet-accent-hover"]) >=
+      MIN_TEXT_CONTRAST
+  );
 }
 
 /**
@@ -251,8 +314,9 @@ function liftedAt(fill: string, steps: number): string {
 }
 
 /**
- * Lifts a generated fill that falls under 3:1 on the ladder until the fill the
- * generator produces from the lifted colour clears (accent-engine.md §8).
+ * Lifts a generated fill until the scale the generator produces from the
+ * lifted colour clears `scaleClears`: fill and hover at 3:1 on every ladder
+ * surface, and the label legible on both (accent-engine.md §8).
  *
  * The lift starts from the fill the seed produced, not from the seed. The two
  * are the same colour for most seeds, since the generator returns the seed as
@@ -262,20 +326,23 @@ function liftedAt(fill: string, steps: number): string {
  * trade the vivid fill the chapter already sees for a duller one. Lifting the
  * fill keeps the hue and chroma that were painting and changes only lightness.
  *
- * Every candidate is still judged by the **generated** step 9, not by the
- * lifted input, because the same swap can apply to the lifted colour.
+ * Every candidate is still judged by the **generated** steps 9 and 10, not by
+ * the lifted input: the same swap can apply to the lifted colour, and hover
+ * exists only as the generator derives it.
  *
- * The generator costs a few milliseconds a call and a deep crimson needs about
- * eighty fine steps, so the search walks coarse steps of `LIFT_COARSE` fine
+ * The generator costs a few milliseconds a call and a deep crimson needs over
+ * a hundred fine steps, so the search walks coarse steps of `LIFT_COARSE` fine
  * steps to the first one that clears, then walks back through that last
  * interval one fine step at a time. It returns the smallest clearing lift on
  * the fine grid, except that a clearing window narrower than one coarse step
  * that is followed by failures could be skipped; that costs a slightly larger
- * lift, never a failing fill. Returns `null` if even full lightness never
- * clears, which no sRGB seed reaches, since white clears the ladder at 15:1.
+ * lift, never a failing scale. Returns `null` if even full lightness never
+ * clears, which no sRGB seed reaches: a white fill clears the ladder at 15:1,
+ * and its hover, `#F6F6F6`, keeps the generator's `#311921` label at 15:1.
  *
  * `generateFrom` is the generator, a parameter only so `signet.spec.ts` can
- * hand it one that swaps step 9 and prove a candidate is judged by what paints.
+ * hand it one that swaps step 9 or step 10 and prove a candidate is judged by
+ * what paints.
  */
 export function liftAccent(
   fill: string,
@@ -287,11 +354,11 @@ export function liftAccent(
     const steps = Math.min(coarse, maxSteps);
     const accent = liftedAt(fill, steps);
     const generated = generateFrom(accent);
-    if (fillClears(generatedFill(generated))) {
+    if (scaleClears(generated)) {
       for (let fine = previous + 1; fine < steps; fine += 1) {
         const fineAccent = liftedAt(fill, fine);
         const fineGenerated = generateFrom(fineAccent);
-        if (fillClears(generatedFill(fineGenerated))) {
+        if (scaleClears(fineGenerated)) {
           return { accent: fineAccent, generated: fineGenerated };
         }
       }
@@ -327,17 +394,18 @@ export function deriveSignetPalette(
   const invalidSeed = provided !== "" && normalized === "";
   const resolvedSeed = normalized || HOUSE_SEED;
 
-  // §8 fill floor: derive as the seed asks, and only when that fill falls under
-  // 3:1 on the ladder, re-run the generator with the fill lightened as its
+  // §8 fill floor: derive as the seed asks, and only when that scale fails
+  // `scaleClears` (its fill or hover under 3:1 on the ladder, or its label
+  // under 4.5:1 on hover), re-run the generator with the fill lightened as its
   // accent, so hover, the alpha steps and on-primary all derive from the fill
   // that actually paints.
   let generated = generate(resolvedSeed);
   let generatorAccent = resolvedSeed;
-  const seedFill = generatedFill(generated);
+  const seedFill = generatedFills(generated)["--signet-accent-primary"];
   // `seedFill` is empty only if the generator returned no step 9, which it never
   // does; the guard keeps an unparseable colour out of `liftAccent` regardless,
   // since this function must not throw.
-  if (seedFill && !fillClears(seedFill)) {
+  if (seedFill && !scaleClears(generated)) {
     const lift = liftAccent(seedFill);
     if (lift) {
       generated = lift.generated;
@@ -373,10 +441,8 @@ export function deriveSignetPalette(
     "--signet-accent-subtle-bg": step("accent-subtle-bg"),
     "--signet-accent-border": step("accent-border"),
     "--signet-accent-text": step("accent-text"),
-    "--signet-accent-on-primary": onPrimaryFor(
-      solidValue(generated.accentContrast),
-      primary,
-    ),
+    // The label the lift judged, so the two cannot disagree.
+    "--signet-accent-on-primary": onPrimaryOf(generated),
     "--signet-accent-primary-alpha": alphaStep("accent-primary"),
     "--signet-accent-hover-alpha": alphaStep("accent-hover"),
     "--signet-accent-ring-alpha": alphaStep("accent-ring"),
@@ -386,9 +452,9 @@ export function deriveSignetPalette(
   };
 
   // §8: accent-derived TEXT roles must clear AA on the surfaces they are
-  // specified for. Only text is held to 4.5:1 here; the fill's 3:1 floor is
-  // `fillChecks` below, and the tinted-background and border roles are held to
-  // no ratio.
+  // specified for. Only text is held to 4.5:1 here; the 3:1 floor on the fill
+  // and its hover is `fillChecks` below, and the tinted-background and border
+  // roles are held to no ratio.
   const contrastChecks: SignetContrastCheck[] = [
     {
       role: "--signet-accent-text",
@@ -417,9 +483,20 @@ export function deriveSignetPalette(
       ),
       passes: false,
     },
+    // The same label on the hover shade, which is what it sits on while the
+    // pointer is over a primary button (#2586).
+    {
+      role: "--signet-accent-on-primary",
+      against: "--signet-accent-hover",
+      ratio: ratio(
+        palette["--signet-accent-on-primary"],
+        palette["--signet-accent-hover"],
+      ),
+      passes: false,
+    },
   ].map((check) => ({ ...check, passes: check.ratio >= MIN_TEXT_CONTRAST }));
 
-  const fillChecks = signetFillChecks(primary);
+  const fillChecks = signetFillChecks(palette);
 
   return {
     palette,

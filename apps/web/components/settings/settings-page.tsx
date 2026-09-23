@@ -159,7 +159,7 @@ const DEFAULT_DUES: OrgDues = {
 
 /**
  * Names the surface a server-reported §8 contrast failure was measured
- * against, for the fixed three checks `deriveSignetPalette` can return
+ * against, for the fixed four checks `deriveSignetPalette` can return
  * (`packages/chapter-theme/src/signet.ts`). Falls back to the raw values for
  * a shape a future engine change adds — never hides a real failure behind an
  * unrecognized pair.
@@ -191,6 +191,12 @@ function describeFailedContrastCheck(check: {
     check.against === "--signet-accent-primary"
   ) {
     return `Text on the accent's solid fill reads at ${ratio}:1, under the 4.5:1 minimum.`;
+  }
+  if (
+    check.role === "--signet-accent-on-primary" &&
+    check.against === "--signet-accent-hover"
+  ) {
+    return `Text on the accent's hover shade reads at ${ratio}:1, under the 4.5:1 minimum.`;
   }
   return `${check.role} against ${check.against} reads at ${ratio}:1, under the 4.5:1 minimum.`;
 }
@@ -1088,11 +1094,17 @@ function SettingsPageContent() {
                   the accent-painted self bubble. See the rule's own comment in
                   `packages/theme/src/signet.css`.
 
-                  "Lightened if it is too dark to stand out" is the engine's
-                  fill floor (accent-engine.md §8, #2541): a dark accent paints
-                  a lighter fill (`#8B0000` paints `#C34437`), so without the
-                  clause this card would promise a colour the save does not
-                  paint. Mobile's Preferences row says the same.
+                  "Lightened where it needs to stand out" covers two engine
+                  steps, in order. The generator swaps in its own lighter step
+                  9 for a seed near the dark background (accent-engine.md §2),
+                  and then the §8 floor (#2541, #2586) lifts any scale whose
+                  fill, hover or label still falls short, swapped or not. So
+                  `#800000` paints its swapped `#F42F22` as is, `#003087`'s
+                  swapped `#1C6CFE` is lifted on to `#2D7BFF`, `#8B0000` is
+                  lifted to `#D75748`, and some vivid mid-tones move too
+                  (`#3366FF` paints `#4479FF`). Without the clause this card
+                  would promise a colour the save does not paint. The wording
+                  is mobile's Preferences row's.
 
                   The closing sentence is board `2e`'s own preview caption
                   ("The Signet mark and ✦ Ask never change"), moved into the
@@ -1102,10 +1114,10 @@ function SettingsPageContent() {
                 */}
                 <CardDescription>
                   Paints primary buttons, your own chat bubbles and the
-                  nav&apos;s active item, lightened if it is too dark to stand
-                  out. Saving derives the rest of the palette from it, and
-                  contrast is checked against the dark surfaces it lands on. The
-                  Signet mark, the Ask pill and the scrollbars never change.
+                  nav&apos;s active item, lightened where it needs to stand out.
+                  Saving derives the rest of the palette from it, and contrast
+                  is checked against the dark surfaces it lands on. The Signet
+                  mark, the Ask pill and the scrollbars never change.
                 </CardDescription>
               </CardHeader>
               <form onSubmit={saveAccent}>

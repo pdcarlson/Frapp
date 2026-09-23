@@ -211,9 +211,10 @@ describeIntegration('Stale-palette sweep against live PostgREST', () => {
       theme_palette: buildChapterPalette({ accent: '#8B0000' }).palette,
       theme_palette_engine_version: SIGNET_ENGINE_VERSION,
     });
-    // The #2541 lift reached a row written before it.
+    // The §8 lift (#2541, and its hover floor #2586) reached a row written
+    // before it.
     expect(crimsonRow.theme_palette?.['--signet-accent-primary']).toBe(
-      '#C34437',
+      '#D75748',
     );
     // Replaced, not merged: the dead legacy key is gone.
     expect(crimsonRow.theme_palette).not.toHaveProperty('--side-bg');

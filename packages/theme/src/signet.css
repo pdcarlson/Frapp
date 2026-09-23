@@ -151,6 +151,10 @@
      * plus the contrast color (accent-engine.md §2).
      *
      * `--primary-pressed` is §3's "fill accent-10 + 8% black overlay".
+     * Unlike the fill and hover it is not held to 3:1, and the label
+     * on it can fall under 4.5:1 (#2604), so it is only ever the
+     * momentary pointer-down shade, never a held state
+     * (accent-engine.md §8).
      * `--accent-subtle-hover` is the Tinted hover, which §3 calls
      * accent-4: a fifth of the way from accent-3 toward accent-7,
      * which lands between the two steps rather than on a named one.

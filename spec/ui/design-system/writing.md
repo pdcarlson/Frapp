@@ -248,7 +248,7 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | Accent hex needed | — | `Enter a hex code like #5AA9E6 to save an accent color.` (muted on an empty field, warning once something unsavable is typed) |
 | Accent preview fallback | — | `This color is hard to read on the card, so the preview shows <hex> instead. Saving stores the color you entered, and the palette is derived from it.` |
 | Accent label illegible | — | `Label text on this preview reads at <n>:1, under the 4.5:1 minimum. Saving picks a label color that clears it.` |
-| Accent server contrast disclosure | — | `<Accent text on the app background\|Accent text on its own tinted background\|Text on the accent's solid fill> reads at <n>:1, under the 4.5:1 minimum. Try a lighter or darker shade of this hue and save again.` |
+| Accent server contrast disclosure | — | `<Accent text on the app background\|Accent text on its own tinted background\|Text on the accent's solid fill\|Text on the accent's hover shade> reads at <n>:1, under the 4.5:1 minimum. Try a lighter or darker shade of this hue and save again.` |
 | Rollover confirmation | `Start a new semester labelled "<label>"?` | `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.` · confirm `Start new semester` |
 | Delete field confirmation | `Delete the field "<label>"?` | `Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.` · confirm `Delete field` |
 | Delete custom role confirmation | `Delete the custom role "<label>"?` | `Members holding it lose its capabilities on their next request. This cannot be undone.` · confirm `Delete custom role` |

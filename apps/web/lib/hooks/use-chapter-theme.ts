@@ -34,8 +34,8 @@ import {
  *    (`spec/ui/design-system/accent-engine.md` §8) — there is no per-token
  *    client-side fallback to run. A row written before an engine change
  *    carries what that engine produced, keys and all, so this applies it:
- *    its fill can sit under the §8 floor until the API's stale-palette sweep
- *    recomputes it (accent-engine.md §4, #1165).
+ *    its fill or hover can sit under the §8 floor until the API's
+ *    stale-palette sweep recomputes it (accent-engine.md §4, #1165).
  *  - A row missing any of those keys applies nothing, so whatever already
  *    paints stands: the palette the `(dashboard)` layout emitted from this
  *    browser's accent cache, if it holds one for the chapter, otherwise the
