@@ -13,7 +13,7 @@ import {
 import { resolveChapterAccentColor } from "@repo/theme/accent";
 import {
   ACCENT_PREVIEW_INK,
-  formatInkRatio,
+  formatFailingRatio,
   previewInkFor,
 } from "@/components/settings/accent-preview-ink";
 
@@ -208,12 +208,15 @@ describe("the accent preview's label tone, computed from the draft", () => {
   });
 
   it("prints a failing ratio below the minimum it is compared with", () => {
-    // Truncated, not rounded: 4.4954 is under 4.5:1 and must not read "4.5".
-    expect(formatInkRatio(4.4954)).toBe("4.4");
-    expect(formatInkRatio(previewInkFor("#008AF1")!.ratio)).toBe("4.4");
-    expect(previewInkFor("#008AF1")!.ratio).toBeLessThan(AA_TEXT);
-    // A float a hair under a tenth keeps its tenth.
-    expect(formatInkRatio(4.3)).toBe("4.3");
-    expect(formatInkRatio(0.1 + 0.2)).toBe("0.3");
+    // Truncated, not rounded: 4.46 is under 4.5:1 and must not read "4.5".
+    expect(formatFailingRatio(4.46)).toBe("4.4");
+    // `#008AF1` is the page-level example because its best ink sits in the
+    // band rounding got wrong, [4.45, 4.5).
+    const ink = previewInkFor("#008AF1")!.ratio;
+    expect(ink).toBeGreaterThanOrEqual(4.45);
+    expect(ink).toBeLessThan(AA_TEXT);
+    expect(formatFailingRatio(ink)).toBe("4.4");
+    // A float a hair under a tenth keeps its tenth: 0.7 + 0.1 is 0.7999….
+    expect(formatFailingRatio(0.7 + 0.1)).toBe("0.8");
   });
 });

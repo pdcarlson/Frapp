@@ -155,7 +155,7 @@ const warning = (condition: string) => {
     block[1]
       .replace(/\{" "\}/g, " ")
       .replace(/\{accent\.resolvedAccent\}/g, "<hex>")
-      .replace(/\{formatInkRatio\(previewInkRatio\)\}/g, "<n>")
+      .replace(/\{formatFailingRatio\(previewInkRatio\)\}/g, "<n>")
       .replace(/&apos;/g, "'"),
   );
 };

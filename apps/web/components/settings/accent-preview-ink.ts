@@ -30,11 +30,12 @@ export function previewInkFor(
 }
 
 /**
- * A failing ratio for the warning, to one decimal and truncated, not rounded:
- * the sentence says the figure is under 4.5:1, and rounding would print a
- * 4.4954 as "4.5:1, under the 4.5:1 minimum". The epsilon keeps a ratio whose
- * float sits a hair under a tenth (4.3 as 4.2999…) from dropping a tenth.
+ * A failing ratio for either Accent-card warning (the preview's label ink, or a
+ * check the save reported), to one decimal and truncated, not rounded: both
+ * sentences say the figure is under 4.5:1, and rounding would print 4.46 as
+ * "4.5:1, under the 4.5:1 minimum". The epsilon keeps a ratio whose float sits
+ * a hair under a tenth (0.7 + 0.1 is 0.7999…) from dropping a tenth.
  */
-export function formatInkRatio(ratio: number): string {
+export function formatFailingRatio(ratio: number): string {
   return (Math.floor(ratio * 10 + 1e-9) / 10).toFixed(1);
 }

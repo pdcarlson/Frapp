@@ -68,7 +68,7 @@ import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
 import {
-  formatInkRatio,
+  formatFailingRatio,
   previewInkFor,
 } from "@/components/settings/accent-preview-ink";
 
@@ -164,7 +164,7 @@ function describeFailedContrastCheck(check: {
   against: string;
   ratio: number;
 }): string {
-  const ratio = check.ratio.toFixed(1);
+  const ratio = formatFailingRatio(check.ratio);
   if (
     check.role === "--signet-accent-text" &&
     check.against === "--signet-accent-subtle-bg"
@@ -1181,7 +1181,7 @@ function SettingsPageContent() {
                   {previewInkFailsAA ? (
                     <p className="text-xs text-warning">
                       Label text on this preview reads at{" "}
-                      {formatInkRatio(previewInkRatio)}:1, under the 4.5:1
+                      {formatFailingRatio(previewInkRatio)}:1, under the 4.5:1
                       minimum. Saving picks a label color that clears it.
                     </p>
                   ) : null}
