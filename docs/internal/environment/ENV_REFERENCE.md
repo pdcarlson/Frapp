@@ -544,9 +544,9 @@ provider state in a second file has no mechanism to stay true.
 
 Every GitHub secret belongs in an **environment** restricted to `main`, never in repository scope,
 because a repository secret is readable from any branch (#2518). Moving them there is the owner's
-#2583; until it lands they are all still repository secrets. The Infisical pair below is two of
-seven. The provider API keys, the release PAT and the base-sync App pair are the rest. Which
-environment holds which, and the state today:
+#2583; until it lands they are all still repository secrets. The Infisical pair below is not the
+only GitHub secret. The provider API keys, the release PAT and the base-sync App pair live there
+too. Which secrets exist, which environment holds each, and the state today:
 [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
 
 **Permanent (Infisical bootstrap):**

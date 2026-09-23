@@ -189,13 +189,21 @@ export function readMigrationsAtRef({ ref, runGit = defaultRunGit }) {
  *   pending — on main, not applied to staging (split overdue / withinGrace)
  *   foreign — applied to staging, absent from main
  *
+ * `capturedMs`, when the applied list is a published snapshot, is when that
+ * list was read. A migration that landed on main after it cannot be in it, so
+ * it stays in grace whatever the clock says: the snapshot knows nothing about
+ * it yet. Everything else is graced from now, exactly as a live read is. A
+ * migration that landed before the capture and is still missing more than the
+ * grace window after it landed is overdue, which is how a failed apply shows,
+ * however soon after the merge the snapshot was taken.
+ *
  * `foreign` is never graced and is always drift. A version staging holds that
  * main does not is not just untidy: `supabase db push` refuses to run at all in
  * that state, so the next legitimate migration cannot be applied either. That
  * is a live outage of the promotion path, and it is exactly the shape of the
  * February row still sitting on production (#832).
  */
-export function classifyGateDrift({ main, applied, nowMs, graceMs }) {
+export function classifyGateDrift({ main, applied, nowMs, graceMs, capturedMs = null }) {
   const appliedVersions = new Set(applied.map((m) => m.version));
   const mainVersions = new Set(main.map((m) => m.version));
 
@@ -205,7 +213,8 @@ export function classifyGateDrift({ main, applied, nowMs, graceMs }) {
   const overdue = [];
   const withinGrace = [];
   for (const migration of pending) {
-    if (migration.landedMs === null || nowMs - migration.landedMs >= graceMs) {
+    const unseen = capturedMs !== null && migration.landedMs !== null && migration.landedMs > capturedMs;
+    if (!unseen && (migration.landedMs === null || nowMs - migration.landedMs >= graceMs)) {
       overdue.push(migration);
     } else {
       withinGrace.push(migration);
@@ -325,6 +334,7 @@ export async function runDriftGate({
   mainRef = DEFAULT_MAIN_REF,
   graceMinutes = DEFAULT_GRACE_MINUTES,
   nowMs = Date.now(),
+  capturedMs = null,
   runGit = defaultRunGit,
   fetchImpl = fetch,
   sleepImpl = sleep,
@@ -394,6 +404,7 @@ export async function runDriftGate({
     applied: applied.migrations,
     nowMs,
     graceMs: graceMinutes * 60 * 1000,
+    capturedMs,
   });
 
   onSummary(buildGateSummary({ result, graceMinutes, projectRef, mainRef }));
@@ -437,11 +448,10 @@ function getArg(name) {
  * Where staging's applied state comes from: the published snapshot when
  * `--snapshot` is given (CI), else a live read with a token (a laptop).
  *
- * `nowMs` is the moment that state describes. For a snapshot that is its
- * capture time, not now, so the grace window is measured from what the
- * snapshot could have seen. Measured from now, a migration that merged after
- * the capture would read as overdue once 30 minutes passed, though staging may
- * well hold it.
+ * `capturedMs` is the moment a snapshot's state describes (null for a live
+ * read). `classifyGateDrift` keeps a migration that landed after it in grace,
+ * since the snapshot cannot know about it. Grace is otherwise measured from now,
+ * so a failed apply still turns red 30 minutes after the merge.
  */
 function resolveSource(snapshotPath) {
   if (!snapshotPath) {
@@ -449,7 +459,7 @@ function resolveSource(snapshotPath) {
       accessToken: requireEnv("SUPABASE_ACCESS_TOKEN", { hint: SECRETS_RUNBOOK }),
       projectRef: requireEnv("SUPABASE_PROJECT_REF", { hint: SECRETS_RUNBOOK }),
       fetchImpl: fetch,
-      nowMs: Date.now(),
+      capturedMs: null,
       description: "live Management API read",
     };
   }
@@ -459,8 +469,8 @@ function resolveSource(snapshotPath) {
       accessToken: "snapshot",
       projectRef: opened.refs.staging,
       fetchImpl: opened.fetchImpl,
-      nowMs: opened.capturedMs,
-      description: `${opened.description}; grace measured from its capture time`,
+      capturedMs: opened.capturedMs,
+      description: `${opened.description}; migrations that landed after it stay in grace`,
     };
   } catch (thrown) {
     // Unreadable is not clean, the same posture as a failed live read below.
@@ -477,7 +487,7 @@ function resolveSource(snapshotPath) {
 }
 
 async function main() {
-  const { accessToken, projectRef, fetchImpl, nowMs, description } = resolveSource(getArg("--snapshot"));
+  const { accessToken, projectRef, fetchImpl, capturedMs, description } = resolveSource(getArg("--snapshot"));
   const mainRef = process.env.DRIFT_GATE_MAIN_REF || DEFAULT_MAIN_REF;
   const graceMinutes = Number(
     process.env.DRIFT_GATE_GRACE_MINUTES || DEFAULT_GRACE_MINUTES,
@@ -496,7 +506,7 @@ async function main() {
   console.log("══════════════════════════════════════════════════════════");
 
   process.exit(
-    await runDriftGate({ accessToken, projectRef, mainRef, graceMinutes, fetchImpl, nowMs }),
+    await runDriftGate({ accessToken, projectRef, mainRef, graceMinutes, fetchImpl, capturedMs }),
   );
 }
 

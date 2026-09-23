@@ -23,17 +23,29 @@ description: >
 # tag run's `head_branch` as the bare tag name, and the tag's own workflow
 # file runs. So each candidate's `head_sha` must be an ancestor of `main`
 # (compare API: `identical` or `ahead`), which means the file that ran is one
-# `main` actually carried.
+# `main` actually carried. The compare target is main's SHA, read from
+# `git/ref/heads/main`, never the bare name `main`: with a tag of that name the
+# bare name is ambiguous, and git resolves it to the tag.
 #
 # ── Newer than the last deploy ──────────────────────────────────────────────
 # The snapshot must also have been read after the most recent completed
-# `Deploy API` or `Deploy production` run on `main`, the only workflows that
-# apply migrations. Each triggers a publish when it finishes, so this fails
-# only in the minute or two that publish takes, or when it failed. Without it,
-# a failed post-deploy publish would leave the gates judging a PR against the
-# pre-deploy state until the 24-hour age limit ran out. The worst case is a PR
-# that removes a migration the deploy had just applied: it merges, and the
-# next `db push` meets a foreign row.
+# `Deploy API` or `Deploy production` run on `main` (the latest finish among
+# the recent runs, so a re-run of an older one counts). Those are the only
+# workflows that apply migrations, and each triggers a publish when it
+# finishes. So this refuses a snapshot during the minute or two that publish
+# takes, and for as long as it keeps failing. Without the check, a failed
+# post-deploy publish would leave the gates judging a PR against the pre-deploy
+# state until the 24-hour age limit ran out. The worst case is a PR that
+# removes a migration the deploy had just applied: it merges, and the next
+# `db push` meets a foreign row.
+#
+# What this does not close: a deploy still RUNNING has applied its migrations
+# but not yet finished, so no newer snapshot can exist and the previous one
+# passes. On staging that window is about 40 seconds (migrate-staging to the
+# end of the run). On production the staging row of the same snapshot usually
+# already shows the migration. A live read had the same point-in-time race,
+# which was open until the apply, and any green check that predates a later
+# deploy stays green to the merge either way.
 
 runs:
   using: composite
@@ -59,10 +71,17 @@ runs:
             | select(.event == "workflow_run" or .event == "schedule" or .event == "workflow_dispatch")
             | "\(.id) \(.head_sha) \(.run_started_at // .created_at)"' "$RUNS" > "$CANDIDATES"
 
+        # main's SHA, not the bare name: a tag called `main` would make the name
+        # ambiguous, and it is the forgery this check exists to stop.
+        if ! MAIN_SHA="$(gh api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)"; then
+          echo "::error::Could not read refs/heads/main."
+          exit 1
+        fi
+
         RUN_ID=""
         RUN_STARTED=""
         while read -r id sha started; do
-          if ! status="$(gh api "repos/${REPO}/compare/${sha}...main" --jq .status < /dev/null)"; then
+          if ! status="$(gh api "repos/${REPO}/compare/${sha}...${MAIN_SHA}" --jq .status < /dev/null)"; then
             echo "::error::Could not check whether Migration snapshot run ${id}'s commit ${sha} is on main."
             exit 1
           fi
@@ -78,8 +97,11 @@ runs:
 
         LATEST_DEPLOY=""
         for wf in deploy-api.yml deploy-production.yml; do
-          if ! finished="$(gh api "repos/${REPO}/actions/workflows/${wf}/runs?branch=main&status=completed&per_page=1" --jq '.workflow_runs[0].updated_at // ""')"; then
-            echo "::error::Could not read the latest ${wf} run, so the snapshot cannot be shown to postdate it."
+          # The latest FINISH among the last 100 runs, not the newest run's: the
+          # list is ordered by creation, and a re-run of an older run can finish
+          # last (Deploy API run 31318329969 was re-run a day after it was created).
+          if ! finished="$(gh api "repos/${REPO}/actions/workflows/${wf}/runs?branch=main&status=completed&per_page=100" --jq '[.workflow_runs[].updated_at] | max // ""')"; then
+            echo "::error::Could not read the recent ${wf} runs, so the snapshot cannot be shown to postdate them."
             exit 1
           fi
           # ISO-8601 UTC timestamps of one fixed width compare as strings.

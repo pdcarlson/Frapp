@@ -10,7 +10,8 @@
 // used to inject Infisical `prod` for one read, and the account-level
 // `SUPABASE_ACCESS_TOKEN` that answered it also manages production. This
 // script makes that read instead, in `migration-snapshot.yml`, which runs only
-// from `main` under the `automation` environment (restricted to `main`). The PR
+// from `main` under the `automation` environment (to be restricted to `main` by
+// the owner's #2583; until then its secrets are repository-level). The PR
 // jobs download what it writes, with `GITHUB_TOKEN` and no secret.
 //
 // It also replaces `check-migration-order.mjs --probe`. That probe existed to
@@ -33,8 +34,9 @@
 // Exit codes:
 //   0 — every project was read and the snapshot was written
 //   1 — a project could not be read, or answered with an empty history;
-//       nothing is written, so consumers keep the last good snapshot until it
-//       ages out
+//       nothing is written. Consumers keep using the last good snapshot until
+//       a deploy outdates it (the download action refuses one read before the
+//       latest deploy on main) or it ages out
 //   2 — the invocation itself is wrong (no token, no --out, unreadable config)
 //
 // Unit tests: scripts/ci/__tests__/migration-snapshot.test.mjs.

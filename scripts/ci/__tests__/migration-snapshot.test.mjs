@@ -200,8 +200,9 @@ test("the publisher reads both projects and writes a snapshot consumers can load
 });
 
 test("the publisher writes nothing when either project cannot be read", async () => {
-  // Consumers then keep the last good snapshot until it ages out. Writing a
-  // partial one would hand them an environment with no entry at best.
+  // Consumers then keep using the last good snapshot until a deploy outdates it
+  // or it ages out. Writing a partial one would hand them an environment with
+  // no entry at best.
   const { fetchImpl } = makeFetchMock([
     migrationsRoute(STAGING_REF, STAGING_APPLIED),
     migrationsRoute(PRODUCTION_REF, { message: "boom" }, 500),

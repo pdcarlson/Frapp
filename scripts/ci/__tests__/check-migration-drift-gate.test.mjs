@@ -447,21 +447,27 @@ test("the summary explains a foreign migration blocks db push", () => {
   assert.match(summary, /20260228000000/);
 });
 
-test("a snapshot's grace runs from its capture time: a migration that landed after it is in grace", async () => {
+test("a snapshot keeps a migration that landed after its capture in grace, and still reds a failed apply", async () => {
   // #2518: in CI the applied state is a published snapshot, and the CLI passes
-  // its capture time as nowMs. A migration that reached main after the capture
-  // cannot be in the snapshot, so it must never read as overdue, however long
-  // ago (by the wall clock) it landed. Measured from now, it did: the false
-  // "never reached staging" this pins.
-  const capturedMs = NOW - 3 * HOUR;
-  const snapshot = buildSnapshot({
-    capturedAt: new Date(capturedMs).toISOString(),
-    environments: [
-      { name: "staging", supabaseProjectRef: "examplestagingref01", migrations: applied(MAIN.slice(0, 2)) },
-    ],
-  });
-  // MAIN[2] landed 2h ago: after the capture, and well past the 30-minute grace by the wall clock.
-  const args = { fetchImpl: snapshotFetch(snapshot), accessToken: "snapshot" };
-  assert.equal(await runDriftGate(gateArgs({ ...args, nowMs: capturedMs })), 0);
-  assert.equal(await runDriftGate(gateArgs({ ...args, nowMs: NOW })), 1, "measured from now it would read as drift");
+  // its capture time as capturedMs. A migration that reached main after the
+  // capture cannot be in it, so it must not read as overdue however long ago
+  // it landed by the wall clock. One that landed BEFORE the capture and is
+  // still missing is a failed apply: that must go red on the usual 30-minute
+  // clock, even when the snapshot was taken minutes after the merge.
+  const snapshotOf = (migrations, capturedMs) =>
+    buildSnapshot({
+      capturedAt: new Date(capturedMs).toISOString(),
+      environments: [{ name: "staging", supabaseProjectRef: "examplestagingref01", migrations: applied(migrations) }],
+    });
+
+  // MAIN[2] landed 2h ago. Captured 3h ago: the snapshot could not have seen it.
+  const before = NOW - 3 * HOUR;
+  const early = { fetchImpl: snapshotFetch(snapshotOf(MAIN.slice(0, 2), before)), accessToken: "snapshot" };
+  assert.equal(await runDriftGate(gateArgs({ ...early, capturedMs: before })), 0);
+  assert.equal(await runDriftGate(gateArgs(early)), 1, "without capturedMs it would read as drift");
+
+  // Captured 10 minutes after MAIN[2] landed, still without it: a failed apply.
+  const after = MAIN[2].landedMs + 10 * 60 * 1000;
+  const late = { fetchImpl: snapshotFetch(snapshotOf(MAIN.slice(0, 2), after)), accessToken: "snapshot" };
+  assert.equal(await runDriftGate(gateArgs({ ...late, capturedMs: after })), 1);
 });

@@ -251,7 +251,7 @@ describe("workflow secrets scope (#2518)", () => {
     assert.deepEqual(
       offenders,
       [],
-      "Every secret lives in a GitHub environment restricted to main, so every job that reads one " +
+      "Every secret belongs in a GitHub environment restricted to main, so every job that reads one " +
         "must name that environment. Add `environment: { name: <one of the list>, deployment: " +
         "false }` to the job, or, for a new environment, have the owner create it with a main-only " +
         "branch policy first and then add it to CREDENTIAL_ENVIRONMENTS.",

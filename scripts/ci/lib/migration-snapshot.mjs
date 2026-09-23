@@ -11,7 +11,8 @@
 // Supabase token that answered it also drives production.
 //
 // Now `publish-migration-snapshot.mjs` makes that read from `main` only, under
-// a GitHub environment restricted to `main`, and uploads the answer as a
+// a GitHub environment meant to admit `main` only (the owner's #2583 sets that
+// rule), and uploads the answer as a
 // workflow artifact. The PR jobs download it with `GITHUB_TOKEN` and
 // `actions: read`, and serve it back to the unchanged gate logic through
 // `snapshotFetch` below, which answers exactly the one URL shape

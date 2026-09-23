@@ -375,8 +375,8 @@ Two GitHub secrets bootstrap the Infisical connection:
 | `INFISICAL_MACHINE_IDENTITY_ID` | Universal-auth machine identity for Infisical      |
 | `INFISICAL_CLIENT_SECRET`       | Client Secret for Infisical machine identity auth |
 
-The other GitHub secrets are the provider API keys, the release PAT and the base-sync App pair.
-Every one of them belongs to an **environment** restricted to `main`, never to repository scope. A
+Other GitHub secrets (the provider API keys, the release PAT, the base-sync App pair) sit beside
+them. Every GitHub secret belongs to an **environment** restricted to `main`, never to repository scope. A
 repository secret is readable from any branch, because a branch's own workflow definitions run on
 its pushes and pull requests (#2518). Nothing a pull request triggers reads a secret. Moving the
 secrets is the owner's #2583. Roster, environments and current state:
