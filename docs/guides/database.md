@@ -114,6 +114,11 @@ the full dataset is tracked in #232.
   `20260602210000_add_confirm_task_completion_rpc.sql`) confirms a task and inserts its point-ledger
   row together, with a `WHERE points_awarded = false` compare-and-set so concurrent confirms cannot
   double-award. See also the read-side `get_points_report`. Canonical behavior: `spec/behavior/points.md`.
+- **Shipped migrations are never edited.** Once a migration has merged, change the schema with a new
+  migration and leave the old file alone, comments included. Supabase keys applied migrations by
+  their 14-digit version, so a database that already ran the file never runs the edit, and the file
+  stops describing what ran. A comment-only edit is still a change under `supabase/migrations/`, and
+  CI's `check:migration-safety` treats it as one.
 
 Examples:
 

@@ -49,4 +49,4 @@ The `image/svg+xml` content type and `.svg` extension must **never** be included
 - `BackworkService` (academic library) — kind `document`
 - `ChatService` (attachments) — kind `document`
 
-Bucket SQL in `supabase/migrations/` mirrors these kinds with comment cross-references. Do not edit shipped migration DDL to change a MIME list; add a new migration.
+Bucket SQL in `supabase/migrations/` mirrors these kinds with comment cross-references. To change a MIME list, add a new migration: [shipped ones are never edited](../../guides/database.md#3-conventions).

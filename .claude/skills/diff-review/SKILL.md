@@ -154,6 +154,9 @@ These encode invariants the codebase can't enforce for itself.
   - **Deletion sweep.** For each deleted file, exported symbol, npm script, workflow job id, or
     command, find prose that still names it. A live instruction is a finding; a deliberately
     historical mention (a removals table, a dated amendment) is not. When unsure, treat it as live.
+    A citation inside a shipped migration is neither: it keeps the path it shipped with
+    ([`DOCUMENTATION_CONVENTIONS.md` § When a doc turns out to be wrong](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md#when-a-doc-turns-out-to-be-wrong)),
+    so a stale path there is not a finding.
   - **Roster drift.** For each array, job id, workspace list, table, or version constant the diff
     changes, search for docs that restate it by hand; the breakage sits in a doc nobody on the PR
     opened. Known restatements (not exhaustive; treat an unlisted source the same way):

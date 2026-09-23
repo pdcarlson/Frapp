@@ -55,7 +55,7 @@ Frapp is explicitly **spec-driven**:
    - `apps/web` / `apps/mobile` (UI)
 3. Update **`docs/`** (e.g. [`docs/guides/`](README.md)) when developer-facing workflow or setup changes.
 
-> **Note:** If you ever notice the implementation and specs diverging, treat it as a bug. Either update the code to match the spec, or revise the spec and document the change.
+> **Note:** When the implementation and the spec diverge, [`AGENTS.md` § Spec vs code](../../AGENTS.md#spec-vs-code) says what to do.
 
 ## 4. Pull requests
 
@@ -65,7 +65,7 @@ When opening a PR:
 - Describe changes in terms of **behavior** and **domains** (e.g. "Backwork upload metadata", not "added 3 columns").
 - List test coverage: unit tests, E2E, and any manual scenarios you ran.
 - Call out any follow-up work or tech debt explicitly.
-- Fill out the **Docs / Spec impact** section (from the PR template). If you claim "None", reviewers should treat that as a strong assertion.
+- Fill out the **Docs / Spec impact** section (from the PR template).
 
 PR targets:
 

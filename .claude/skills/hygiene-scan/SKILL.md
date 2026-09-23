@@ -57,7 +57,8 @@ exception is a bug inside the pattern you are cleaning that violates what its ow
 or the spec already require, in a way no caller could rely on (an off-by-one, a guard that can't
 fire, a `catch` that swallows what it logs), and that a fails-then-passes test covers. Put it under
 its own PR-body heading. A spec-vs-code disagreement about what *should* happen is filed, never
-resolved by editing either side (`AGENTS.md` § Spec vs code). A security or tenant-isolation bug is
+resolved by editing either side, even where `AGENTS.md` § Spec vs code would let an in-scope change
+fix the stale side. A security or tenant-isolation bug is
 not hygiene: file it `P1`/`P2` at once and lead the report with it; fix it here only if this run has
 a PR and the fix is one line the new test covers.
 

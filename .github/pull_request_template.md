@@ -31,7 +31,7 @@
 - [ ] If this PR changes a fact a doc asserts, it updates **that** doc — not the nearest one, and not a new stray file. An unrelated doc edited to make the change look documented is a review finding. See `docs/internal/ci-cd/DOCS_CI.md`.
 - [ ] If I changed API source, I regenerated `openapi.json` and `packages/api-sdk/src/types.ts`.
 - [ ] If I moved a heading other docs deep-link into, `npm run check:links` still passes (`npm run install:lychee` first).
-- [ ] If I added a migration, it has both a promotion-log entry and a rollback recipe (`npm run check:migration-safety` fails without either).
+- [ ] If I changed `supabase/migrations/**`, the change set also updates the promotion log or the rollback playbook, and every migration has an entry in both (CI's `check:migration-safety` fails otherwise).
 - [ ] No secrets committed (`.env*`, credentials, private keys).
 - [ ] No placeholder secrets in CI/CD workflows.
 

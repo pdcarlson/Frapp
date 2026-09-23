@@ -128,7 +128,7 @@ divergent lists until #1635.
   - This runs the gitleaks scan, then the CI parity checks (lint, type-check, API tests, contract freshness, migration safety, npm audit). It previews what CI will run and nothing more — never add a local-only check to it.
 - If a check needs a different base branch, use: `npm run ci:local-gate -- --base-ref <ref>`
 - Fill out the PR template completely.
-- Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
+- Check the "Docs / Spec impact" section. "None" is the usual answer; when your change makes a documented fact false, update the doc that owns it ([`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md) says which).
 - CI checks will run automatically.
 - Code review runs **locally before you push**, not on the PR: the pre-push review-gate hook requires a
   `/diff-review` pass, which writes the evidence marker itself. `git push --no-verify` is for
@@ -172,10 +172,10 @@ When you change the database schema:
 2. Write the SQL in the generated file under `supabase/migrations/`.
 3. Apply locally: `npx supabase db push --local`
 4. Test locally.
-5. Update `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md` with the rollback strategy.
-6. Commit the migration file and docs update together.
+5. Add its rollback recipe to `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md` and its entry to the promotion log in `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
+6. Commit the migration file and both entries together.
 
-CI validates migration filenames and requires promotion docs to be updated. Migrations are applied automatically in the deploy pipeline.
+CI validates migration filenames and fails a migration missing either entry (`check:migration-safety`). Migrations are applied automatically in the deploy pipeline. A migration that has merged is never edited: [`docs/guides/database.md` § Conventions](docs/guides/database.md#3-conventions).
 
 ---
 
