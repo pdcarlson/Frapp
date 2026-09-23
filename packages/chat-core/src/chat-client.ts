@@ -653,8 +653,7 @@ function settleConfirmed(
  * Leave a heavy-command placeholder in place, flipped to `unconfirmed` and
  * carrying what an explicit retry would replay (#1733), and persist it so a
  * reconnect, a reload or a `gcTime` eviction can restore the row and its Retry
- * (#1909). Whether this write did, and so what copy may promise, is `durable`
- * in the result.
+ * (#1909).
  *
  * The counterpart to {@link removeLocalPlaceholder}, and the right call
  * whenever the request's outcome is *unknown* rather than known-failed:
