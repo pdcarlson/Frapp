@@ -32,7 +32,8 @@
  * with no accent of its own resolves (`accent-engine.md` §3). A chapter that
  * chose a seed overrides these at runtime: `use-chapter-theme.ts` maps the
  * persisted `--signet-accent-*` tokens onto these names via
- * `signetAccentSemanticVars`. The raw seed never paints UI.
+ * `signetAccentSemanticVars`. Nothing references the seed hex itself
+ * (`accent-engine.md` §1).
  */
 
 @layer base {

@@ -4,7 +4,8 @@
  * Anonymous Next.js option builders live in `@repo/observability/next`.
  *
  * Values match the intended contract in `spec/behavior/observability.md`.
- * A dashboard that disagrees is a tracked bug, not a reason to change these.
+ * A dashboard that disagrees is handled per `AGENTS.md` § Spec vs code, never
+ * by changing these to match it.
  */
 
 export { DEFAULT_TRACES_SAMPLE_RATE } from "./sample-rate";

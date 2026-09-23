@@ -382,7 +382,12 @@ export class ChapterService {
     // `buildChapterPalette` never throws and always yields at least the Signet
     // map, so this cannot turn a legitimate accent save into a failed request.
     const build = buildChapterPalette({ accent: colors.accent });
-    logChapterPaletteWarnings(this.logger, id, data.accent_color, build);
+    logChapterPaletteWarnings(
+      this.logger,
+      `for chapter ${id}`,
+      data.accent_color,
+      build,
+    );
 
     const chapter = await this.chapterRepo.update(id, {
       ...data,
