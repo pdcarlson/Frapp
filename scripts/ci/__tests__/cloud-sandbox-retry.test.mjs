@@ -303,7 +303,7 @@ test("every class carries a non-empty, actionable hint", () => {
   assert.match(deps, /npm ci/);
   // Bringup stops at this check, before it builds the packages (#2516), so `npm ci` alone
   // leaves every `@repo/*` import unresolvable; the remedy has to name the build as well.
-  assert.match(deps, /turbo run build --filter=\.\/packages\/\*/);
+  assert.match(deps, /npx turbo run build --filter='\.\/packages\/\*'/);
   assert.doesNotMatch(
     deps,
     /already tried|tried to repair|repair(ed)? it/i,
@@ -822,15 +822,35 @@ test("bringup never writes to node_modules, and checks it only after the stack i
     "...but it must precede the success sentinel, so .done never lies about the toolchain",
   );
 
-  // The package build (#2516) needs node_modules, so it follows the toolchain check, and it
-  // lands before .done so the sentinel can carry its WARN. It must never be a `fail`: the stack
-  // is up, and a failed build is a warning a session can act on, not a failed bringup.
-  const build = upCmds.search(/turbo"?\s+run build --filter='\.\/packages\/\*'/);
+  // The package build (#2516) needs node_modules and nothing else, so it runs before the
+  // Docker work: after it, any `fail` on the way (a rate limit, a blocked host) exited before
+  // the build. Located by the invocation itself, not by `turbo run build`, which the quoted
+  // re-run hints also contain: with the real call gone, a hint alone must not pass this.
+  const build = upCmds.search(/"\$ROOT\/node_modules\/\.bin\/turbo" run build --filter='\.\/packages\/\*'/);
   assert.ok(build !== -1, "bringup must build the workspace packages");
-  assert.ok(firstCheck < build && build < sentinel, "the build runs after the toolchain check and before .done");
-  assert.doesNotMatch(
-    upCmds.slice(build, sentinel),
-    /\bfail\b/,
-    "a failed package build must not fail bringup",
+  assert.ok(build < docker, "the build runs before any Docker/Supabase step, so none of their failures skip it");
+  assert.ok(build < firstCheck, "...and so before the toolchain check, which stays last");
+  const buildBlock = upCmds.slice(upCmds.lastIndexOf("\nif ", build), upCmds.indexOf("\nfi\n", build));
+  assert.match(buildBlock, /turbo" --version/, "the build is skipped, not failed, when turbo does not run");
+  assert.match(buildBlock, /packages_build_failed=1/, "a failed build is recorded");
+  assert.doesNotMatch(buildBlock, /\bfail\b/, "a failed package build must not fail bringup");
+
+  // Recorded is not reported: the sentinel body is what sessions read, so the WARN has to
+  // reach whichever sentinel the run ends with.
+  const failFn = upCmds.slice(upCmds.indexOf("fail() {"), upCmds.indexOf("\n}\n", upCmds.indexOf("fail() {")));
+  assert.match(
+    failFn,
+    /\[ -n "\$packages_build_failed" \] && printf '%s\\n' "\$PACKAGES_BUILD_WARN" >>"\$FAILED_SENTINEL"/,
+    ".failed must carry the package-build WARN",
+  );
+  assert.match(
+    upCmds.slice(sentinel),
+    /^if \[ -n "\$packages_build_failed" \]; then\n\s*printf '%s\\n' "\$PACKAGES_BUILD_WARN" >>"\$DONE_SENTINEL"/m,
+    ".done must carry the package-build WARN",
+  );
+  assert.match(
+    upCmds,
+    /PACKAGES_BUILD_WARN='[^\n]*npx turbo run build --filter='"'"'\.\/packages\/\*'"'"'/,
+    "the WARN names the build, quoted for zsh",
   );
 });

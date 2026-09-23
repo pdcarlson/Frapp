@@ -11,8 +11,9 @@
 #   6. load the chapter directory seed (non-fatal)
 #   7. verify node_modules is usable — LAST, so a broken npm never costs the database
 #      (see the comment above the call for why this is not the first step)
-#   8. build the workspace packages (`packages/*`), which the apps import through their
-#      gitignored `dist/` — needs step 7, so it is the one step after it
+#
+# Before step 1 it probes egress and builds the workspace packages (`packages/*`). Neither
+# needs Docker, and each comment says why it comes first.
 #
 # Steps 4 and 5 are in that order deliberately, and this list had them backwards until
 # #1156 — see the comment above the ACL repair for why the env write has to come first.
@@ -49,9 +50,15 @@ EGRESS_MANIFEST="$ROOT/.cloud-sandbox-capabilities.json"
 # the one reading that must never outlive the run that earned it.
 rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL" "$EGRESS_MANIFEST"
 
+# Set by the package build below, and read by both sentinel writers: it runs before any step
+# that can fail, so its result belongs in whichever sentinel this run ends with.
+packages_build_failed=""
+PACKAGES_BUILD_WARN='WARN: the workspace package build failed, so anything that resolves @repo/* through dist/ (the API, check:dep-cruiser) will not resolve; run `npx turbo run build --filter='"'"'./packages/*'"'"'` and read its errors.'
+
 fail() {
   cs_log "ERROR: $1"
   printf '%s — %s\n' "$(date -u +%FT%TZ)" "$1" >"$FAILED_SENTINEL"
+  [ -n "$packages_build_failed" ] && printf '%s\n' "$PACKAGES_BUILD_WARN" >>"$FAILED_SENTINEL"
   exit 1
 }
 
@@ -95,6 +102,34 @@ fi
 if [ ! -s "$EGRESS_MANIFEST" ]; then
   cs_log "WARN: no egress capability manifest at $EGRESS_MANIFEST."
   cs_log "WARN: the probe writes an UNKNOWN manifest even when it cannot probe, so an ABSENT one means it never got that far — a parse error or a kill, not a network result. Sessions are told to read that file instead of probing hosts by hand; until it exists, treat deployed-staging reachability as UNKNOWN (not as blocked). Re-run: bash scripts/cloud-sandbox-egress-probe.sh"
+fi
+
+# Workspace packages (#2516) — the second step that needs no Docker, so it runs before any.
+# The API, and the `require`/`types` side of every package whose manifest points into
+# `dist/`, resolve `@repo/*` through that gitignored `dist/`, and nothing else in setup or
+# bringup builds it. So on a fresh checkout `npm run start:dev -w apps/api` died with 91
+# type errors, and `check:dep-cruiser` reported every `@repo/chat-integrations` import as a
+# NEW boundary violation "this change introduced", an instruction to go and break working
+# imports. A cached filesystem holding an older `dist/` hid it.
+#
+# Why here and not after the toolchain check, where it first went: it needs node_modules
+# and nothing else, and every step between here and there can `fail()`. After them, a
+# Docker Hub rate limit or a blocked host exited before the build, and the session was left
+# with the same unresolvable imports as before. It costs ~2s (an uncached build of all
+# eight packages took 1.7s on 2026-09-23), so the database barely waits for it.
+#
+# Not fatal: the packages are not the stack. Skipped when turbo does not run, because then
+# the toolchain check at the end fails with `(dependencies)`, and that remedy includes the
+# build. A failed build is reported in whichever sentinel this run writes (see fail()),
+# since the sentinel body is what sessions read.
+if "$ROOT/node_modules/.bin/turbo" --version >/dev/null 2>&1; then
+  cs_log "Building the workspace packages..."
+  if ! timeout 300 "$ROOT/node_modules/.bin/turbo" run build --filter='./packages/*' --output-logs=errors-only; then
+    packages_build_failed=1
+    cs_log "WARN: the workspace package build failed; see the output above."
+  fi
+else
+  cs_log "Skipping the workspace package build: node_modules/.bin/turbo does not run (the toolchain check at the end says what to do)."
 fi
 
 # Write apps/api/.env.local and apps/web/.env.local from the live local Supabase status
@@ -328,27 +363,9 @@ cs_verify_node_deps "$ROOT" \
 # this sentinel, not to read /tmp/cloud-sandbox-up.log — so a warning that exists only in the
 # log is a warning the session never sees, which is precisely the failure #1631 is about. It
 # would be an odd fix that reproduced its own bug one file over.
-# Workspace packages (#2516). Every app imports `@repo/*` through the package's `dist/`,
-# which is gitignored, and nothing else in setup or bringup builds it — so on a fresh
-# checkout `npm run start:dev -w apps/api` died with 91 type errors, and
-# `check:dep-cruiser` reported every `@repo/chat-integrations` import as a NEW boundary
-# violation "this change introduced", an instruction to go and break working imports. A
-# cached filesystem holding an older `dist/` hid it. Turbo caches the build, and a cold
-# one took ~3s on 2026-09-23, so it costs nothing on the interactive path.
-#
-# Not fatal, for the reason the toolchain check above gives: the stack is up and the
-# session is usable. The failure rides in the .done body, which is what sessions read.
-cs_log "Building the workspace packages..."
-packages_build_failed=""
-if ! timeout 600 "$ROOT/node_modules/.bin/turbo" run build --filter='./packages/*' --output-logs=errors-only; then
-  packages_build_failed=1
-  cs_log "WARN: the workspace package build failed; see the output above. Re-run: npx turbo run build --filter='./packages/*'"
-fi
-
 printf '%s\n' "$(date -u +%FT%TZ)" >"$DONE_SENTINEL"
 if [ -n "$packages_build_failed" ]; then
-  printf 'WARN: the workspace package build failed, so anything importing @repo/* (the API, check:dep-cruiser) will not resolve; run `npx turbo run build --filter=./packages/*` and read its errors.\n' \
-    >>"$DONE_SENTINEL"
+  printf '%s\n' "$PACKAGES_BUILD_WARN" >>"$DONE_SENTINEL"
 fi
 if [ "${CS_NODE_DEPS_WHY:-}" = "incomplete" ]; then
   printf 'WARN: npm ls --depth=0 reports a missing declared dependency; run `npm ci` if a workspace hits "Cannot find module".\n' \

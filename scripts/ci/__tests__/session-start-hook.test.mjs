@@ -1,33 +1,54 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Drives the REAL .claude/hooks/session-start.sh, not a copy of its logic: each case builds a
-// scratch git repo, a scratch bringup lock and log, and a fake boot id file, points the hook at
-// them through the variables it reads, and checks what it did. A stub `cloud-sandbox-up.sh`
-// stands in for bringup and only records that it was launched.
+// scratch git repo, a scratch bringup lock and log, a fake boot id and a fake /proc/stat,
+// points the hook at them through the variables it reads, and checks what it did. A stub
+// `cloud-sandbox-up.sh` stands in for bringup and only records that it was launched; the real
+// `scripts/setup-git-hooks.mjs` is copied in, because the hook runs it.
 
-const HOOK = fileURLToPath(new URL("../../../.claude/hooks/session-start.sh", import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+const HOOK = path.join(REPO_ROOT, ".claude/hooks/session-start.sh");
+const INSTALLER = path.join(REPO_ROOT, "scripts/setup-git-hooks.mjs");
 
-function scratch(t, { prePush = true, bringup = true } = {}) {
+// Every git call sees only the scratch repo's own config. A developer's global hooksPath (a
+// common home for gitleaks or Talisman hooks) would otherwise read through as the "unset"
+// value these cases start from.
+const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+const git = (...args) => spawnSync("git", args, { env: GIT_ENV, encoding: "utf8" });
+
+function scratch(t, { prePush = true, bringup = true, installer = true } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), "session-start-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const root = path.join(dir, "repo");
   mkdirSync(root);
-  execFileSync("git", ["init", "-q", root]);
+  execFileSync("git", ["init", "-q", root], { env: GIT_ENV });
+  mkdirSync(path.join(root, "scripts"));
   if (prePush) {
     mkdirSync(path.join(root, ".githooks"));
-    writeFileSync(path.join(root, ".githooks", "pre-push"), "#!/usr/bin/env bash\nexit 0\n");
+    for (const hook of ["pre-push", "pre-commit"]) {
+      writeFileSync(path.join(root, ".githooks", hook), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
+    }
   }
+  if (installer) copyFileSync(INSTALLER, path.join(root, "scripts", "setup-git-hooks.mjs"));
   const launched = path.join(dir, "launched");
-  if (bringup) {
-    mkdirSync(path.join(root, "scripts"));
-    writeFileSync(path.join(root, "scripts", "cloud-sandbox-up.sh"), `touch ${JSON.stringify(launched)}\n`);
-  }
+  if (bringup) writeFileSync(path.join(root, "scripts", "cloud-sandbox-up.sh"), `touch ${JSON.stringify(launched)}\n`);
   return {
     dir,
     root,
@@ -35,18 +56,26 @@ function scratch(t, { prePush = true, bringup = true } = {}) {
     lock: path.join(dir, "cloud-sandbox-up.lock"),
     log: path.join(dir, "cloud-sandbox-up.log"),
     bootFile: path.join(dir, "boot_id"),
+    procStat: path.join(dir, "proc-stat"),
   };
 }
 
-/** Run the hook; `boot` is the current boot id, or null for a host that exposes none. */
-function runHook(s, { boot = "boot-B", cloud = true } = {}) {
+/**
+ * Run the hook. `boot` is the current boot id, or null for a host that exposes none;
+ * `btime` is the kernel boot time, in epoch seconds, the fake /proc/stat reports.
+ */
+function runHook(s, { boot = "boot-B", btime = 1000, cloud = true } = {}) {
   if (boot !== null) writeFileSync(s.bootFile, `${boot}\n`);
+  writeFileSync(s.procStat, `cpu  1 2 3 4\nbtime ${btime}\nprocesses 1\n`);
   const env = {
-    ...process.env,
+    ...GIT_ENV,
     CLAUDE_PROJECT_DIR: s.root,
+    // Never the host's real marker: this machine may well carry one.
+    FRAPP_CLOUD_MARKER: path.join(s.dir, "no-cloud-marker-here"),
     FRAPP_BRINGUP_LOCK: s.lock,
     FRAPP_BRINGUP_LOG: s.log,
     FRAPP_BOOT_ID_FILE: boot === null ? path.join(s.dir, "no-boot-id-here") : s.bootFile,
+    FRAPP_PROC_STAT: s.procStat,
   };
   if (cloud) env.FRAPP_CLOUD_SANDBOX = "1";
   else delete env.FRAPP_CLOUD_SANDBOX;
@@ -55,16 +84,16 @@ function runHook(s, { boot = "boot-B", cloud = true } = {}) {
   return run.stdout.trim() ? JSON.parse(run.stdout).hookSpecificOutput.additionalContext : "";
 }
 
-/** A lock left by an earlier bringup, as launch_bringup writes it. */
-function priorLock(s, { boot, sentinel = ".cloud-sandbox-up.done" } = {}) {
+/** A lock left by an earlier bringup, as launch_bringup writes it (`boot` undefined: an old hook's lock). */
+function priorLock(s, { boot, sentinel = ".cloud-sandbox-up.done", writtenAt } = {}) {
   mkdirSync(s.lock);
   writeFileSync(path.join(s.lock, "pid"), "999999\n");
   if (boot !== undefined) writeFileSync(path.join(s.lock, "boot_id"), `${boot}\n`);
   if (sentinel) writeFileSync(path.join(s.root, sentinel), "2026-09-23T01:46:36Z\n");
+  if (writtenAt !== undefined) utimesSync(s.lock, writtenAt, writtenAt);
 }
 
-const hooksPath = (s) =>
-  spawnSync("git", ["-C", s.root, "config", "--get", "core.hooksPath"], { encoding: "utf8" }).stdout.trim();
+const hooksPath = (s) => git("-C", s.root, "config", "--get", "core.hooksPath").stdout.trim();
 
 async function eventually(check, ms = 5000) {
   const until = Date.now() + ms;
@@ -77,39 +106,82 @@ async function eventually(check, ms = 5000) {
 
 // ── The review gate (#2488) ─────────────────────────────────────────────────
 
-test("arms the review gate in a checkout that never ran npm ci, cloud or not", (t) => {
+test("a cloud session arms the review gate in a checkout that never ran npm ci", (t) => {
   const s = scratch(t, { bringup: false });
   assert.equal(hooksPath(s), "", "precondition: a fresh clone has no hooksPath");
-  runHook(s, { cloud: false });
+  runHook(s);
   assert.equal(hooksPath(s), ".githooks");
 });
 
-test("leaves a hooksPath that already names the hooks directory as it is", (t) => {
+test("it runs the npm installer, so a hook that lost its exec bit is executable again", (t) => {
   const s = scratch(t, { bringup: false });
-  const absolute = path.join(s.root, ".githooks");
-  execFileSync("git", ["-C", s.root, "config", "core.hooksPath", absolute]);
-  runHook(s, { cloud: false });
-  assert.equal(hooksPath(s), absolute);
+  const prePush = path.join(s.root, ".githooks", "pre-push");
+  chmodSync(prePush, 0o644);
+  runHook(s);
+  assert.equal(hooksPath(s), ".githooks");
+  assert.ok(statSync(prePush).mode & 0o100, "pre-push should be executable again");
 });
 
-test("points a hooksPath naming some other directory back at .githooks, as npm ci would", (t) => {
+test("without node's installer script it still sets the path with plain git", (t) => {
+  const s = scratch(t, { bringup: false, installer: false });
+  runHook(s);
+  assert.equal(hooksPath(s), ".githooks");
+});
+
+test("a cloud session points a hooksPath naming another directory back at .githooks", (t) => {
   const s = scratch(t, { bringup: false });
-  execFileSync("git", ["-C", s.root, "config", "core.hooksPath", "/somewhere/else"]);
-  runHook(s, { cloud: false });
+  git("-C", s.root, "config", "core.hooksPath", "/somewhere/else");
+  runHook(s);
+  assert.equal(hooksPath(s), ".githooks");
+});
+
+test("a laptop session leaves the hooks path alone, unset or custom", (t) => {
+  // SECRET_SCANNING.md's opt-out (`git config --unset core.hooksPath`) and a developer's own
+  // hooks directory must survive session start; only `npm install` resets them on a laptop.
+  const unset = scratch(t, { bringup: false });
+  runHook(unset, { cloud: false });
+  assert.equal(hooksPath(unset), "");
+
+  const custom = scratch(t, { bringup: false });
+  git("-C", custom.root, "config", "core.hooksPath", "/home/dev/.my-hooks");
+  runHook(custom, { cloud: false });
+  assert.equal(hooksPath(custom), "/home/dev/.my-hooks");
+});
+
+test("the cloud marker file alone makes it a cloud session", (t) => {
+  const s = scratch(t, { bringup: false });
+  const marker = path.join(s.dir, "frapp-cloud-sandbox");
+  writeFileSync(marker, "");
+  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_CLOUD_MARKER: marker };
+  delete env.FRAPP_CLOUD_SANDBOX;
+  assert.equal(spawnSync("bash", [HOOK], { env }).status, 0);
   assert.equal(hooksPath(s), ".githooks");
 });
 
 test("sets nothing in a checkout with no committed pre-push hook", (t) => {
   const s = scratch(t, { prePush: false, bringup: false });
-  runHook(s, { cloud: false });
+  runHook(s);
   assert.equal(hooksPath(s), "");
 });
 
-test("arms the gate before bringup, so a (dependencies) sentinel no longer means an open gate", (t) => {
+test("a (dependencies) sentinel no longer means an open gate", (t) => {
   const s = scratch(t);
   priorLock(s, { boot: "boot-B", sentinel: ".cloud-sandbox-up.failed" });
   runHook(s, { boot: "boot-B" });
   assert.equal(hooksPath(s), ".githooks");
+});
+
+test("the gate is armed before any bringup code runs", () => {
+  // The behavioural cases above cannot see order: in their fixtures the bringup block always
+  // completes. Order matters because a step added there that aborts under `set -e` would end
+  // the hook before a later arming block ran. Pinned on the source instead.
+  const hook = readFileSync(HOOK, "utf8");
+  const arm = hook.indexOf("node scripts/setup-git-hooks.mjs");
+  assert.ok(arm > 0, "arming block not found");
+  for (const later of ["egress_summary() {", "launch_bringup() {", 'mkdir "$LOCK"']) {
+    const at = hook.indexOf(later);
+    assert.ok(at > arm, `${later} must come after the gate is armed`);
+  }
 });
 
 // ── A lock from before a restart (#2515) ────────────────────────────────────
@@ -119,13 +191,25 @@ for (const sentinel of [".cloud-sandbox-up.done", ".cloud-sandbox-up.failed"]) {
     const s = scratch(t);
     priorLock(s, { boot: "boot-A", sentinel });
     const context = runHook(s, { boot: "boot-B" });
-    assert.match(context, /this machine restarted since the last bringup/);
+    assert.match(context, /this machine restarted since the last bringup \(its lock carries another boot id\)/);
     assert.match(context, /is starting in the background/);
     assert.doesNotMatch(context, /already finished/);
     assert.ok(await eventually(() => existsSync(s.launched)), "bringup was not relaunched");
     assert.equal(readFileSync(path.join(s.lock, "boot_id"), "utf8").trim(), "boot-B");
+    // Removed by the hook itself, so a second fire before bringup's own `rm -f` cannot
+    // read the old sentinel next to the new lock.
+    assert.equal(existsSync(path.join(s.root, sentinel)), false, `${sentinel} from the earlier boot is still there`);
   });
 }
+
+test("a second fire right after a restart relaunch does not report the old stack", (t) => {
+  const s = scratch(t);
+  priorLock(s, { boot: "boot-A" });
+  runHook(s, { boot: "boot-B" });
+  // The stub bringup writes no sentinel, as the real one has not yet at this point.
+  const again = runHook(s, { boot: "boot-B" });
+  assert.doesNotMatch(again, /already finished/);
+});
 
 test("a lock and sentinel from THIS boot keep the 'already finished' message", async (t) => {
   const s = scratch(t);
@@ -133,21 +217,31 @@ test("a lock and sentinel from THIS boot keep the 'already finished' message", a
   const context = runHook(s, { boot: "boot-B" });
   assert.match(context, /already finished this session/);
   assert.doesNotMatch(context, /restarted/);
+  assert.ok(existsSync(path.join(s.root, ".cloud-sandbox-up.done")));
   assert.equal(await eventually(() => existsSync(s.launched), 300), false, "bringup must not relaunch");
 });
 
-test("a lock written before boot ids were recorded keeps the old behavior", async (t) => {
+test("an old hook's lock (no boot id) last written before this boot is stale", async (t) => {
   const s = scratch(t);
-  priorLock(s, { boot: undefined });
-  const context = runHook(s, { boot: "boot-B" });
+  priorLock(s, { boot: undefined, writtenAt: 1_700_000_000 });
+  const context = runHook(s, { boot: "boot-B", btime: 1_700_000_500 });
+  assert.match(context, /this machine restarted since the last bringup \(its lock predates this boot\)/);
+  assert.ok(await eventually(() => existsSync(s.launched)), "bringup was not relaunched");
+  assert.equal(readFileSync(path.join(s.lock, "boot_id"), "utf8").trim(), "boot-B");
+});
+
+test("an old hook's lock written during this boot keeps the old behavior", async (t) => {
+  const s = scratch(t);
+  priorLock(s, { boot: undefined, writtenAt: 1_700_000_900 });
+  const context = runHook(s, { boot: "boot-B", btime: 1_700_000_500 });
   assert.match(context, /already finished this session/);
   assert.equal(await eventually(() => existsSync(s.launched), 300), false);
 });
 
 test("a host with no boot id keeps the old behavior", async (t) => {
   const s = scratch(t);
-  priorLock(s, { boot: "boot-A" });
-  const context = runHook(s, { boot: null });
+  priorLock(s, { boot: "boot-A", writtenAt: 1_700_000_000 });
+  const context = runHook(s, { boot: null, btime: 1_700_000_500 });
   assert.match(context, /already finished this session/);
   assert.equal(await eventually(() => existsSync(s.launched), 300), false);
 });
@@ -161,8 +255,9 @@ test("a fresh launch records the boot it ran in", async (t) => {
   assert.equal(readFileSync(path.join(s.lock, "boot_id"), "utf8").trim(), "boot-B");
 });
 
-test("the starting message tells a (dependencies) session to build the packages too", (t) => {
+test("the starting message tells a (dependencies) session to build the packages, quoted for zsh", (t) => {
   const s = scratch(t);
   const context = runHook(s, { boot: "boot-B" });
   assert.match(context, /run 'npm ci' yourself, then build the workspace packages/);
+  assert.ok(context.includes(`--filter="./packages/*"`), "the filter must be quoted");
 });

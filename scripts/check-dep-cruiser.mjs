@@ -254,37 +254,116 @@ export function packageNameOf(specifier) {
   return first.startsWith("@") && second ? `${first}/${second}` : first;
 }
 
+/** The command that builds every workspace package's `dist/`, quoted so zsh does not glob it. */
+export const BUILD_PACKAGES_COMMAND = "npx turbo run build --filter='./packages/*'";
+
+/**
+ * The `./dist/` files a workspace manifest maps an import subpath to, under any condition.
+ *
+ * `subpath` is `"."` for the bare package name, otherwise `"./rest"`. A key with one `*` is
+ * expanded, and `main`/`types` count for `"."`. Only `dist/` targets are returned: the other
+ * conditions (the `import` condition maps to `./src/` in every package that has one) are not
+ * build outputs, so a missing one is a real defect rather than a missing build.
+ */
+export function distTargets(manifest, subpath) {
+  const found = [];
+  const collect = (value, star) => {
+    if (typeof value === "string") {
+      const target = star === undefined ? value : value.replaceAll("*", star);
+      if (target.startsWith("./dist/")) found.push(target);
+    } else if (value && typeof value === "object") {
+      for (const inner of Object.values(value)) collect(inner, star);
+    }
+  };
+  const { exports } = manifest;
+  const keyed = exports && typeof exports === "object" && Object.keys(exports).some((k) => k.startsWith("."));
+  if (keyed) {
+    if (Object.hasOwn(exports, subpath)) {
+      collect(exports[subpath]);
+    } else {
+      for (const [key, value] of Object.entries(exports)) {
+        const star = key.indexOf("*");
+        if (star === -1) continue;
+        const [prefix, suffix] = [key.slice(0, star), key.slice(star + 1)];
+        if (subpath.length >= prefix.length + suffix.length && subpath.startsWith(prefix) && subpath.endsWith(suffix)) {
+          collect(value, subpath.slice(prefix.length, subpath.length - suffix.length));
+        }
+      }
+    }
+  } else if (subpath === ".") {
+    collect(exports); // `exports` given as the "." entry itself, a string or a conditions object
+  }
+  if (subpath === ".") {
+    collect(manifest.main);
+    collect(manifest.types);
+  }
+  return [...new Set(found)];
+}
+
+/**
+ * The `dist/` files an `@repo/*` import needs that this checkout does not have.
+ *
+ * `manifests` maps a package name to `{ dir, manifest }`; `exists` is the file test. Checked
+ * per import rather than per package: a `dist/` built before a new subpath export existed, or
+ * by a build that died halfway, leaves the directory in place and the file missing, and a
+ * directory test called that package built.
+ */
+export function missingDistTargets(specifier, manifests, exists) {
+  const name = packageNameOf(specifier);
+  const entry = manifests.get(name);
+  if (!entry) return [];
+  const subpath = specifier === name ? "." : `.${specifier.slice(name.length)}`;
+  return distTargets(entry.manifest, subpath).filter((target) => !exists(path.join(entry.dir, target)));
+}
+
 /**
  * The `not-to-unresolvable` violations that are really an unbuilt workspace package (#2516).
  *
- * Every `@repo/*` package resolves through its `dist/`, which is gitignored, so on a checkout
- * where nothing has built it every import of it is unresolvable — and this gate would report
- * each one as a new boundary violation "this change introduced", on a branch that touched
- * none of them. That message is an instruction to go and change working imports. These are
- * reported apart, with the build that clears them, and still fail the run: an unresolvable
- * import cannot be passed over, whatever its cause.
+ * The API, and the `require`/`types` conditions of each package whose manifest points into
+ * `dist/`, resolve `@repo/*` through that gitignored `dist/`. So on a checkout where nothing
+ * has built it, those imports are unresolvable, and this gate reported each one as a new
+ * boundary violation "this change introduced", on a branch that touched none of them. That
+ * message is an instruction to go and change working imports. These are reported apart, with
+ * the build that clears them, and still fail the run: an unresolvable import cannot be passed
+ * over, whatever its cause. `isUnbuilt` takes the imported specifier.
  */
 export function unbuiltPackageViolations(violations, isUnbuilt) {
-  return violations.filter(
-    (v) => v.rule === "not-to-unresolvable" && v.to.startsWith("@repo/") && isUnbuilt(packageNameOf(v.to)),
+  return violations.filter((v) => v.rule === "not-to-unresolvable" && v.to.startsWith("@repo/") && isUnbuilt(v.to));
+}
+
+/**
+ * Why `--update-baseline` must not record this run, or null when it may. Recording an unbuilt
+ * checkout would write its `@repo/*` imports into the baseline as known violations, silently
+ * waiving the real unresolvable imports they would later hide.
+ */
+export function baselineRefusal(violations, isUnbuilt) {
+  const unbuilt = unbuiltPackageViolations(violations, isUnbuilt);
+  if (unbuilt.length === 0) return null;
+  return (
+    `check-dep-cruiser: refusing to record the baseline — ${unbuilt.length} violation(s) come from ` +
+    `unbuilt workspace packages. Run \`${BUILD_PACKAGES_COMMAND}\` first.`
   );
 }
 
-/** Names of workspace packages whose manifest points into `dist/` while `dist/` is absent. */
-function unbuiltWorkspacePackages() {
-  const unbuilt = new Set();
+/** The new violations split into those an unbuilt package explains and the genuine rest. */
+export function splitIntroduced(introduced, isUnbuilt) {
+  const unbuilt = unbuiltPackageViolations(introduced, isUnbuilt);
+  const genuine = introduced.filter((v) => !unbuilt.includes(v));
+  return { unbuilt, genuine };
+}
+
+/** Whether an import misses a build output, against the workspace manifests on disk. */
+function unbuiltImportCheck() {
+  const manifests = new Map();
   for (const workspace of discoverWorkspaces()) {
-    let manifest;
     try {
-      manifest = JSON.parse(readFileSync(path.join(REPO_ROOT, workspace, "package.json"), "utf8"));
+      const manifest = JSON.parse(readFileSync(path.join(REPO_ROOT, workspace, "package.json"), "utf8"));
+      if (manifest.name) manifests.set(manifest.name, { dir: path.join(REPO_ROOT, workspace), manifest });
     } catch {
-      continue;
+      // An unreadable manifest explains nothing; its imports stay in the genuine list.
     }
-    if (!manifest.name) continue;
-    const pointsAtDist = JSON.stringify([manifest.main, manifest.types, manifest.exports]).includes("./dist/");
-    if (pointsAtDist && !existsSync(path.join(REPO_ROOT, workspace, "dist"))) unbuilt.add(manifest.name);
   }
-  return unbuilt;
+  return (specifier) => missingDistTargets(specifier, manifests, existsSync).length > 0;
 }
 
 function main() {
@@ -315,15 +394,9 @@ function main() {
   violations.sort((a, b) => violationKey(a).localeCompare(violationKey(b)));
 
   if (updateBaseline) {
-    // Recording on an unbuilt checkout would write every `@repo/*` import into the baseline
-    // as a known violation, silently waiving the real ones they would later hide.
-    const unbuiltNames = unbuiltWorkspacePackages();
-    const unbuilt = unbuiltPackageViolations(violations, (name) => unbuiltNames.has(name));
-    if (unbuilt.length > 0) {
-      console.error(
-        `check-dep-cruiser: refusing to record the baseline — ${unbuilt.length} violation(s) come from ` +
-          `unbuilt workspace packages. Run \`npx turbo run build --filter=./packages/*\` first.`,
-      );
+    const refusal = baselineRefusal(violations, unbuiltImportCheck());
+    if (refusal) {
+      console.error(refusal);
       return 2;
     }
     const entries = violations.map(({ rule, from, to }) => ({ rule, from, to }));
@@ -360,9 +433,7 @@ function main() {
     return 0;
   }
 
-  const unbuiltNames = unbuiltWorkspacePackages();
-  const unbuilt = unbuiltPackageViolations(introduced, (name) => unbuiltNames.has(name));
-  const genuine = introduced.filter((v) => !unbuilt.includes(v));
+  const { unbuilt, genuine } = splitIntroduced(introduced, unbuiltImportCheck());
 
   if (unbuilt.length > 0) {
     const packages = [...new Set(unbuilt.map((v) => packageNameOf(v.to)))].sort();
@@ -370,9 +441,10 @@ function main() {
     console.error(
       `${unbuilt.length} unresolvable import(s) of workspace package(s) that are not built: ${packages.join(", ")}.`,
     );
-    console.error("Each resolves through its gitignored dist/, which does not exist in this checkout, so");
-    console.error("these say nothing about your change. Build the packages and re-run:");
-    console.error("  npx turbo run build --filter=./packages/*");
+    console.error("Each maps to a file in the package's gitignored dist/ that this checkout does not have");
+    console.error("(never built, or built before that export existed), so these say nothing about your");
+    console.error("change. Build the packages and re-run:");
+    console.error(`  ${BUILD_PACKAGES_COMMAND}`);
   }
 
   if (genuine.length > 0) {

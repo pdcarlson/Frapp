@@ -36,6 +36,9 @@ warning instead of a hard block — **CI is the authoritative gate**.
 The pre-commit hook installs itself: the root `package.json` `prepare` script
 (`scripts/setup-git-hooks.mjs`) points git at `.githooks/` via `core.hooksPath` on `npm install`. That
 supersedes any other local `.git/hooks` you have configured; undo it with `git config --unset core.hooksPath`.
+In a Claude Code cloud session the SessionStart hook runs the same script at every session start, so
+there an undo lasts only until the next session; laptop sessions are left alone
+([review runbook § How the gate enforces](AI_CODE_REVIEW_RUNBOOK.md#how-the-gate-enforces)).
 
 The pinned gitleaks binary is the source of truth: `scripts/scan-secrets.mjs` ensures it on every run
 (idempotent, checksum-verified) in the gitignored `.cache/gitleaks/`. A compatible `gitleaks` on PATH is

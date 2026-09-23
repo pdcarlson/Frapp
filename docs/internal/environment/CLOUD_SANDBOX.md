@@ -129,7 +129,7 @@ The filesystem is cached but running processes are not, so work is split:
 | Phase | Script | Runs | Does |
 |-------|--------|------|------|
 | Setup (cached) | `scripts/cloud-sandbox-setup.sh` | once, as root, before the agent | writes the `/etc/frapp-cloud-sandbox` marker; `npm ci`; transient dockerd + `docker login` + `supabase start`/`stop` purely to **pull + cache images** |
-| Per-session | `scripts/cloud-sandbox-up.sh` | every session, in the background | start dockerd; `docker login`; `supabase start` (fast — images cached); `db push --local`; repair local Postgres default ACLs; write `apps/api/.env.local` + `apps/web/.env.local`; verify `node_modules` is usable (**last**, so a broken npm never costs the database); build the workspace packages (`packages/*`), non-fatally |
+| Per-session | `scripts/cloud-sandbox-up.sh` | every session, in the background | build the workspace packages (`packages/*`), non-fatally and before any Docker step; start dockerd; `docker login`; `supabase start` (fast — images cached); `db push --local`; repair local Postgres default ACLs; write `apps/api/.env.local` + `apps/web/.env.local`; verify `node_modules` is usable (**last**, so a broken npm never costs the database) |
 
 Both source `scripts/lib/cloud-sandbox-common.sh` (`cs_log`, `cs_ensure_docker_daemon`,
 `cs_docker_login_if_creds`, `cs_supabase`, `cs_retry`, `cs_classify_failure`,
@@ -141,15 +141,22 @@ going (it is launched with `nohup … &`), so a repair here would race the agent
 `node_modules` with no lock — and `npm ci` *deletes* the tree before installing, which would
 turn a merely incomplete tree into a destroyed one whenever the repair itself failed.
 
-**It does build the workspace packages**, once `node_modules` checks out, because every app
-imports `@repo/*` through the package's gitignored `dist/` and nothing else builds it on a fresh
-checkout ([#2516](https://github.com/pdcarlson/Frapp/issues/2516)): without it
+**It does build the workspace packages**, first, before any Docker step, because the API
+resolves `@repo/*` through each package's gitignored `dist/` (so do the `require` and `types`
+conditions of every package whose manifest points there; `apps/web` takes the `import`
+condition, which maps to source) and nothing else builds it on a fresh checkout
+([#2516](https://github.com/pdcarlson/Frapp/issues/2516)). Without it
 `npm run start:dev -w apps/api` fails on unresolved imports, and `check:dep-cruiser` reports
-them as boundary violations. The build writes `packages/*/dist/` and turbo's cache in `.turbo/`,
-never `node_modules`; a session's own `turbo run build` running at the same time produces the
-same outputs. A failed build is not fatal, and it is reported as a `WARN` line in the `.done` body.
-When the sentinel reads `(dependencies)`, bringup stopped before the build, so the remedy is
-`npm ci` followed by `npx turbo run build --filter=./packages/*`.
+them as boundary violations. It needs only `node_modules`, so it runs ahead of the steps that can
+fail, and a Docker or network failure no longer leaves the packages unbuilt too; it took under
+two seconds uncached. The build writes `packages/*/dist/` and turbo's cache in `.turbo/`, never
+`node_modules`. It is over within the first seconds of bringup, but a session that runs its own
+`turbo run build` (or `check-types`, `lint`, which build first) in that window has two builds
+writing the same `dist/` files; if that run reports errors in a `dist/*.d.ts`, run it again. A
+failed build is not fatal, and it is reported as a `WARN` line in whichever sentinel the run
+writes. When turbo does not run at all, bringup skips the build and the sentinel reads
+`(dependencies)`, so the remedy is `npm ci` followed by
+`npx turbo run build --filter='./packages/*'`.
 
 ### Retry on transient registry failures
 
@@ -172,7 +179,7 @@ fix just delays the answer:
 | `ratelimit` — Docker Hub pull limit | **no** | needs credentials, not patience |
 | `deterministic` — denied ulimit, port in use, dockerd down, incompatible data volume | **no** | local and repeatable; each has a row in the symptom table below, and adding a pattern to the matcher means adding one |
 | `toolchain` — `cs_supabase` exit 127 | **no** | bad version pin or blocked npm registry; a retry repeats a failing `npm install` |
-| `dependencies` — `node_modules/.bin/turbo` does not run | **no** | not a retry at all. Unlike every class above it, this one never comes out of `cs_classify_failure` — bringup's last step raises it directly, and the fix is a foreground `npm ci` the session runs itself |
+| `dependencies` — `node_modules/.bin/turbo` does not run | **no** | not a retry at all. Unlike every class above it, this one never comes out of `cs_classify_failure` — bringup's last step raises it directly, and the fix is a foreground `npm ci` the session runs itself, then the package build bringup skipped |
 
 Two details that look like nits and are not. The classifier strips telemetry lines *before*
 testing for a policy failure (see the telemetry row below), and it matches HTTP statuses only
@@ -254,14 +261,15 @@ image's dev-deps stage would download it for a tool only these two scripts call.
 
 ### Auto-bringup and how the agent waits
 
-The same hook also arms the review gate first, in every session, cloud or not: it sets
-`core.hooksPath` to `.githooks` whenever `.githooks/pre-push` exists and the setting does
-not already name that directory. The only other thing that sets it is the root `prepare`
-script, so before this a checkout whose `npm ci` had not run, which is exactly what a
-`(dependencies)` sentinel leaves behind, pushed with no review gate at all
-([#2488](https://github.com/pdcarlson/Frapp/issues/2488)). The hooks need no installed
-packages: `pre-push` is bash and git, and `pre-commit`'s secret scan imports only node
-builtins and runs with `--soft-missing`.
+In a cloud session the same hook also arms the review gate, before anything else: when
+`.githooks/pre-push` exists it runs `scripts/setup-git-hooks.mjs`, the installer the root
+`prepare` script runs, which sets `core.hooksPath` to `.githooks` and restores the hooks' exec
+bit. Before this, `prepare` was the only thing that set it, so a checkout whose `npm ci` had not
+run, which is exactly what a `(dependencies)` sentinel leaves behind, pushed with no review
+gate at all ([#2488](https://github.com/pdcarlson/Frapp/issues/2488)). The hooks need no
+installed packages: `pre-push` is bash and git, and `pre-commit`'s secret scan imports only
+node builtins and runs with `--soft-missing`. Laptop sessions are left alone, so a developer's
+own hooks directory, or an opt-out, survives session start.
 
 `.claude/hooks/session-start.sh` launches `cloud-sandbox-up.sh` in the background when
 the `/etc/frapp-cloud-sandbox` marker exists **or** `FRAPP_CLOUD_SANDBOX=1`. A `/tmp`
@@ -271,9 +279,12 @@ and left the lock with no `.done`/`.failed` sentinel — so a resumed session ne
 forever on a sentinel that can't arrive. It also relaunches when the lock carries a
 **different boot id** from `/proc/sys/kernel/random/boot_id`: `/tmp` here survives a VM
 restart and the processes do not, so a lock and sentinel from before a restart describe a
-stack that is gone ([#2515](https://github.com/pdcarlson/Frapp/issues/2515)). Where the
-kernel exposes no boot id, or on a lock written before that check existed, the hook trusts
-the lock and sentinel as it always has. The session is **never blocked** on the ~60-90s
+stack that is gone ([#2515](https://github.com/pdcarlson/Frapp/issues/2515)). A lock written
+before boot ids were recorded is judged by its age instead: one last written before the
+kernel's boot time (`btime` in `/proc/stat`) is from an earlier boot. Either way the hook
+deletes the old `.done`/`.failed` along with the lock, so a second fire before the new
+bringup starts cannot report the dead stack. Where the kernel exposes no boot id, the hook
+trusts the lock and sentinel as it always has. The session is **never blocked** on the ~60-90s
 bringup. Before using the DB or booting the API, wait for one of:
 
 - `.cloud-sandbox-up.done` — success (timestamp). Stack is up and `apps/api/.env.local` + `apps/web/.env.local`
@@ -371,9 +382,9 @@ every session), so skim the log even when bringup succeeds.
 | `failed to bind host port 0.0.0.0:54322/tcp: address already in use`, or `port is already allocated`; sentinel says `(deterministic)` | Something already holds a Supabase port — **check `docker ps -a` first**, since which holder it is decides the remedy. A `supabase_*` container left by an earlier bringup in this session is the case the scripts can clear. It is **not** the SessionStart stale-lock reclaim, which tests liveness (`kill -0` plus a `ps` args match) before relaunching and so cannot race a live predecessor | **Clear the containers, then re-run** — `deterministic` is fail-fast, so `cs_retry`'s `supabase stop` cleanup never runs for this class and nothing clears them for you: `bash -c '. scripts/lib/cloud-sandbox-common.sh && cs_supabase stop'` — **plain `stop`, no `--no-backup`**: the port is the problem, the data is not, and `--no-backup` would discard the local database to free a socket. If containers survive that, `docker ps -aq --filter name=supabase_ \| xargs -r docker rm -f`. Then `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh`. If `docker ps -a` is **empty** and the port is still held, the holder is outside this Docker daemon — report that, it is not something the scripts can fix |
 | `cannot connect to the docker daemon at unix:///var/run/docker.sock`; sentinel says `(deterministic)` | The daemon died *after* bringup started it. `cs_ensure_docker_daemon` runs first and `fail()`s with `Docker daemon did not start.` when it never comes up, so seeing this inside a `supabase start` log means it came up and then went away — usually the sandbox reclaiming it, or `dockerd` exiting on a privilege error | **Read `/tmp/dockerd.log` first** — it holds the reason, and the bringup log does not. If `dockerd` exited for lack of privileges, that is a **platform limit to report** — no web-UI field grants it, so a new session will not change it — and not a repo fix. Otherwise re-run `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh`; a daemon that dies repeatedly in the same session is worth reporting rather than retrying |
 | `database files are incompatible with server`; sentinel says `(deterministic)` | A `supabase_db_*` data volume was initialised by a **different Postgres major version** than the pinned image now starting over it. Retrying cannot help; the volume is the problem | **Discard the volume** — nothing in the sandbox holds data worth keeping and every table is rebuilt from `supabase/migrations/` on the next `db push`; if you believe otherwise, stop and ask rather than deleting. Order matters: `bash -c '. scripts/lib/cloud-sandbox-common.sh && cs_supabase stop --no-backup'` deletes the volumes by itself, but a crash-looping db container often makes that stop fail — so if it errors, run `docker ps -aq --filter name=supabase_ \| xargs -r docker rm -f` **first** (`docker volume rm` refuses a volume still attached to a container, even a stopped one), then `docker volume ls -q --filter name=supabase_db \| xargs -r docker volume rm`. Then re-run bringup. Background on the mismatch: [`getting-started.md`](../../guides/getting-started.md#postgres-17-and-local-supabase-volumes) — its `scripts/local-dev-setup.sh --reset-supabase-data` is the laptop equivalent, but it drives `npx supabase`, so use the pinned CLI here |
-| Every `turbo` gate dies with `sh: 1: turbo: not found` (`check-types`, `lint`, workspace tests) while the plain-node gates such as `check:npm-audit` and `check:migration-safety` pass; or the sentinel says `node_modules/.bin/turbo does not run (dependencies)` | `node_modules` is empty or half-populated. `cloud-sandbox-setup.sh` installs deps **non-fatally** on purpose and its warning goes to the web UI's environment setup log, which the session cannot read — so a failed install used to reach a green `.done` silently. The selective-looking split is the tell: only gates that shell out to `turbo` are affected | **Not a repo defect, and not `turbo.json`** — that is the wrong trail this row exists to close. Run **`npm ci`**; bringup deliberately does not run it for you (see *How it works*). Bringup's last step now checks the toolchain, so a `.failed` naming `(dependencies)` means turbo could not run. Note what `.done` does and does not promise: it means turbo ran, **not** that the tree is complete — a missing declared dependency only logs `WARN: 'npm ls --depth=0' reports a missing declared dependency` and still lands `.done`, so a later `Cannot find module` is worth tracing back here. **Read npm's own output before blaming the network** — `registry.npmjs.org` rides the **default list**, which this doc's own [network section](#whats-configured-in-the-web-ui) says is "enough for `npm ci`", so it is reachable under every policy sanctioned here. A genuine block means "include default list" is off or Network = None, **not** a missing `public.ecr.aws` entry; only then is it a report, and because setup's filesystem is cached ~7 days a NEW session inherits the same broken tree until it is fixed |
+| Every `turbo` gate dies with `sh: 1: turbo: not found` (`check-types`, `lint`, workspace tests) while the plain-node gates such as `check:npm-audit` and `check:migration-safety` pass; or the sentinel says `node_modules/.bin/turbo does not run (dependencies)` | `node_modules` is empty or half-populated. `cloud-sandbox-setup.sh` installs deps **non-fatally** on purpose and its warning goes to the web UI's environment setup log, which the session cannot read — so a failed install used to reach a green `.done` silently. The selective-looking split is the tell: only gates that shell out to `turbo` are affected | **Not a repo defect, and not `turbo.json`** — that is the wrong trail this row exists to close. Run **`npm ci`**, then **`npx turbo run build --filter='./packages/*'`**: bringup deliberately does not install for you (see *How it works*), and it skips the package build when turbo does not run. Bringup's last step checks the toolchain, so a `.failed` naming `(dependencies)` means turbo could not run. Note what `.done` does and does not promise: it means turbo ran, **not** that the tree is complete — a missing declared dependency only logs `WARN: 'npm ls --depth=0' reports a missing declared dependency` and still lands `.done`, so a later `Cannot find module` is worth tracing back here. **Read npm's own output before blaming the network** — `registry.npmjs.org` rides the **default list**, which this doc's own [network section](#whats-configured-in-the-web-ui) says is "enough for `npm ci`", so it is reachable under every policy sanctioned here. A genuine block means "include default list" is off or Network = None, **not** a missing `public.ecr.aws` entry; only then is it a report, and because setup's filesystem is cached ~7 days a NEW session inherits the same broken tree until it is fixed |
 | Auto-bringup never starts (no `.done`/`.failed`, no log) | Marker absent and `FRAPP_CLOUD_SANDBOX` unset | Set `FRAPP_CLOUD_SANDBOX=1` (or confirm the setup script ran to write the marker) |
-| The hook says bringup "already finished", but `docker` cannot connect and `uptime` is minutes old | The VM restarted and the lock plus sentinel from before it were trusted. Since #2515 the hook compares boot ids and relaunches on its own, so this now means a lock with no boot id (written before that check) or a host that exposes none | `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` |
+| The hook says bringup "already finished", but `docker` cannot connect and `uptime` is minutes old | The VM restarted and the lock plus sentinel from before it were trusted. Since #2515 the hook detects a lock from an earlier boot (by boot id, or by age for a lock written before boot ids) and relaunches on its own, so this now means a host that exposes no boot id | `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` |
 | Log ends mid-step with no `.done`/`.failed` (e.g. frozen at "Starting Docker daemon") | A prior bringup was killed when the session paused/was reclaimed, leaving a stale `/tmp/cloud-sandbox-up.lock` | Self-heals — the SessionStart hook clears the stale lock and relaunches next session. To force it now: `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` |
 | `Error: No matching Supabase CLI binary package found for linux-x64` (from `supabase/dist/supabase.js`), then a sentinel reading `'supabase start' failed (toolchain)` | The Supabase v2 CLI ships its binary as a platform-specific **optionalDependency** (`@supabase/cli-<platform>`). If that optional install is skipped, the launcher finds no binary and throws — and npx caches the broken tree under `~/.npm/_npx`, so it stays broken all session | **Repo fix, not an env change** — already handled: both scripts go through `cs_supabase`, which installs a pinned CLI into `.cache/supabase-cli/` and probes it by running `--version`. If it recurs, delete `.cache/supabase-cli/` to force a clean reinstall |
 | API logs `42501 permission denied for table <name>` and `/health` reports `{"database":"error"}` / `degraded`, on a bringup that otherwise succeeded | The pinned `supabase/postgres` image (17.6.x) ships a default ACL for role `postgres` in schema `public` granting `anon`/`authenticated`/`service_role` only `Dxtm` — the DML bits `arwd` are missing. Migrations are applied as `postgres`, so every table inherits it. The **defect** is not cleared by `supabase db reset --local` — a reset rebuilds from the same template and reintroduces it (and drops the repair) | **Already handled at bringup** — `frapp_repair_local_acls` (shared with the laptop path via `scripts/lib/local-postgres-acl.sh`) runs after `db push`, granting table/sequence DML and fixing the schema's default privileges for future migrations. **Re-run `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` after any `supabase db reset --local`**, which is the usual way this reappears mid-session (the lock cleanup keeps a resumed session from launching a second concurrent bringup). Confirm with `select defaclacl from pg_default_acl where pg_get_userbyid(defaclrole)='postgres' and defaclnamespace::regnamespace::text='public' and defaclobjtype='r';` — healthy shows `anon=arwdDxtm/postgres`, broken shows `anon=Dxtm/postgres`. The repair deliberately never grants function `EXECUTE` (the RPC migrations lock that down explicitly) |
