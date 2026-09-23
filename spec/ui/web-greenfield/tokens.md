@@ -148,7 +148,9 @@ where the board and the theme package disagree. L-08 is **closed** too, by
 [#2153](https://github.com/pdcarlson/Frapp/issues/2153) re-exporting the mark — not by the board,
 which only restated the spec. **L-05 is closed as of 2026-09-13** by lane 7
 ([#2147](https://github.com/pdcarlson/Frapp/issues/2147)), in the direction that leaves its tokens
-standing. L-02, L-03, L-04, L-06, L-07 and L-09 are open.
+standing. **L-02 is closed as of 2026-09-23** by the stale-palette sweep
+([#1165](https://github.com/pdcarlson/Frapp/issues/1165)), which takes its recompute option. L-03,
+L-04, L-06, L-07 and L-09 are open.
 
 L-06, L-07, L-08 and L-09 reached past this epic, so they carry issues —
 [#2399](https://github.com/pdcarlson/Frapp/issues/2399),
@@ -254,7 +256,16 @@ a colour — so it neither confirms nor contradicts the shipped `#796938`, and i
 `FOCUS_RING` (L-07). Its grid is stated as "4px grid" in geometry terms only, so it takes no position
 on §1's decision to bind no `--space-*` utilities.
 
-### L-02 — Chapter palettes need recomputing
+### L-02 — CLOSED 2026-09-23. Chapter palettes need recomputing
+
+**Closed 2026-09-23 by [#1165](https://github.com/pdcarlson/Frapp/issues/1165), with the first
+option below.** Every palette now carries the engine version that wrote it, and the API's hourly
+stale-palette sweep recomputes every row that is behind, which includes every row written before the
+stamp existed ([`../design-system/accent-engine.md`](../design-system/accent-engine.md) §4). In each
+environment the fix lands on the first hourly tick after the API carrying #1165 deploys. Don't take
+the second option, clearing the Signet keys: a row whose stamp is current is never selected again, so
+cleared keys would stay cleared for good, and each client would stay on whatever it falls back to for a row without the keys (the Delivery rows of `accent-engine.md` §6 describe both). The entry below is kept as the
+measurement that scoped it.
 
 `deriveSignetPalette` generates from `GENERATOR_PARAMS.background`, which moved with the ladder.
 Every chapter's palette is **persisted** in `chapters.theme_palette` (written by `buildChapterPalette`

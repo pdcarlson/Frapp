@@ -39,7 +39,9 @@ import { Chapter } from '#domain/entities/chapter.entity';
  *   `ChapterLockup` and the mobile branding hook read them off this payload
  *   directly; `beta_config` is internal rollout state with no reader on it.
  * - `legal_accepted_at` / `legal_policy_version` / `legal_accepted_by`,
- *   `last_stripe_webhook_at`, `directory_id` — no client reads them at all.
+ *   `last_stripe_webhook_at`, `directory_id`, `theme_palette_engine_version`
+ *   — no client reads them at all. (The last is server bookkeeping for the
+ *   stale-palette sweep, #1165.)
  */
 export const CHAPTER_MEMBER_VIEW_FIELDS = [
   'id',

@@ -23,6 +23,11 @@ jest.mock('@repo/chapter-theme', () => ({
     fillChecks: [],
     contrastChecks: [],
   })),
+  // The real constant, not a stand-in: a writer that dropped the stamp would
+  // otherwise persist `undefined` here and still pass (#1165).
+  SIGNET_ENGINE_VERSION: jest.requireActual<{ SIGNET_ENGINE_VERSION: number }>(
+    '@repo/chapter-theme',
+  ).SIGNET_ENGINE_VERSION,
 }));
 
 import { Type } from '@nestjs/common';

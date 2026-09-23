@@ -20,8 +20,10 @@ import {
 import { isModuleEnabled } from '@repo/validation';
 import {
   buildChapterPalette,
+  chapterPaletteColumns,
   logChapterPaletteWarnings,
   type ChapterBrandingInput,
+  type ChapterPaletteBuild,
 } from './chapter-palette';
 import {
   SERVICE_CONFIG_DEFAULTS,
@@ -530,6 +532,17 @@ export class ChapterConfigService {
       >;
       diff['branding'] = { from: existing.branding, to: mergedBranding };
       update['branding'] = mergedBranding;
+      // Every branding write re-derives the palette (below) and clears the
+      // engine stamp here, atomically with the seed, with or without colors
+      // in the PATCH (#1165, accent-engine.md §4). This write stores the whole
+      // merged object as `getConfig` read it, accent included, so a Settings
+      // accent save landing between that read and this write gets its seed
+      // replaced under the palette it just stamped current. The recompute
+      // re-derives from the seed stored here; if it fails, which is only
+      // logged, the cleared stamp leaves the row for the stale-palette sweep
+      // instead of stamped current over a palette from another seed. (The
+      // accent save itself is still lost in that race: #2607.)
+      update['theme_palette_engine_version'] = null;
 
       const readAccent = (branding: unknown): string | undefined =>
         (branding as { colors?: { accent?: string } } | undefined)?.colors
@@ -797,21 +810,24 @@ export class ChapterConfigService {
       );
     }
 
-    // Recompute the theme palette whenever the PATCH carries `branding.colors` —
-    // presence, not change. Use the merged
-    // branding colors so a partial color patch keeps the untouched channel.
-    // Capture the derived map so a trailing `getConfig` failure can still
-    // return the tokens we just persisted (#1670 fallback).
+    // Recompute the theme palette whenever the PATCH wrote `branding`, with or
+    // without colors and changed or not: the seed guard needs the palette
+    // re-derived from whatever seed that write stored (see the stamp above).
+    // Use the merged branding colors so a partial color patch keeps the
+    // untouched channel. Capture the derived map so a trailing `getConfig`
+    // failure can still return the tokens we just persisted (#1670 fallback).
     let committedThemePalette:
       | Awaited<ReturnType<ChapterConfigService['getConfig']>>['theme_palette']
       | undefined;
-    if (dto.branding?.colors) {
+    if (mergedBranding) {
       const mergedColors =
-        (mergedBranding as { colors?: { accent?: string } })?.colors ??
-        dto.branding.colors;
+        (mergedBranding as { colors?: { accent?: string } }).colors ?? {};
       try {
-        const build = await this.recomputePalette(chapterId, mergedColors);
-        committedThemePalette = build.palette;
+        const { build, written } = await this.recomputePalette(
+          chapterId,
+          mergedColors,
+        );
+        if (written) committedThemePalette = build.palette;
       } catch (err) {
         logThrowable(this.logger, 'warn', 'Failed to recompute palette', err);
       }
@@ -974,7 +990,16 @@ export class ChapterConfigService {
       colors?: { accent?: string };
     };
     const colors = branding.colors ?? {};
-    const build = await this.recomputePalette(chapterId, colors);
+    // A lost race (`written: false`) still returns the build: it is what this
+    // chapter's seed, as read, derives to, and the newer write that beat it
+    // holds a palette derived from its own seed. So after a lost race the
+    // response's `palette` is not the stored one, and a caller that painted
+    // it would show the superseded accent; spec/behavior/chapter-config.md
+    // says so. No client calls this route today (the Settings accent editor
+    // saves through `PATCH /v1/chapters/current`), so nothing is exposed to
+    // that. A first caller that applies the palette should re-read the
+    // chapter rather than trust this response.
+    const { build } = await this.recomputePalette(chapterId, colors);
     // Picked, not spread: `failedFillChecks` is logged and never disclosed
     // (chapter-palette.ts), and a field added to the build later should not
     // reach the response by default.
@@ -985,10 +1010,23 @@ export class ChapterConfigService {
     };
   }
 
+  /**
+   * Derive and persist the palette for the seed the caller read, and report
+   * whether the write landed.
+   *
+   * Compare-and-set on the seed, the same guard the stale-palette sweep uses
+   * (`ScheduledJobsRepository.writeRecomputedPalette`): the write lands only
+   * while `branding.colors.accent` is still the seed this palette was derived
+   * from. Both callers read that seed in an earlier statement, so a Settings
+   * accent save can land in between; without the guard this write would put
+   * the old seed's palette back under a current stamp, where neither the next
+   * read nor the sweep would notice. `written: false` is that lost race, not
+   * an error: the write that won carries a palette derived from its own seed.
+   */
   private async recomputePalette(
     chapterId: string,
     colors: { accent?: string },
-  ) {
+  ): Promise<{ build: ChapterPaletteBuild; written: boolean }> {
     const build = buildChapterPalette(colors);
 
     // Colour problems are logged, never thrown: the palette written is still
@@ -1000,11 +1038,16 @@ export class ChapterConfigService {
       colors.accent,
       build,
     );
-    const patch: TablesUpdate<'chapters'> = { theme_palette: build.palette };
-    const { error } = await this.supabase
+    const patch: TablesUpdate<'chapters'> = chapterPaletteColumns(build);
+    const update = this.supabase
       .from('chapters')
       .update(patch)
       .eq('id', chapterId);
+    const guarded =
+      typeof colors.accent === 'string'
+        ? update.eq('branding->colors->>accent', colors.accent)
+        : update.is('branding->colors->>accent', null);
+    const { data, error } = await guarded.select('id');
 
     if (error) {
       logThrowable(
@@ -1016,6 +1059,12 @@ export class ChapterConfigService {
       throw error;
     }
 
-    return build;
+    const written = (data?.length ?? 0) > 0;
+    if (!written) {
+      this.logger.warn(
+        `Theme palette for chapter ${chapterId} not written: its accent changed after it was read, and the newer write stands`,
+      );
+    }
+    return { build, written };
   }
 }
