@@ -21,7 +21,8 @@ a successful deploy, and nothing noticed for 171 days (#1273). Five causes recur
 1. **Alerts reach no one reliably.** Every watchdog upserts an issue labelled `routine-state` with no
    assignee or @mention (the watchdog scripts in `scripts/ci/`), and `/next`, issue-triage and `/needs-me`
    all skip that label. Whether GitHub tells the owner depends on their repo-watch setting, which
-   hasn't been checked. #1100 opened 39 seconds after its failure and was read 16 hours later. In #763, the
+   hasn't been checked. When #1100 reopened on 2026-08-29 for a halted staging migration, the first human response came
+   about 15 hours later. In #763, the
    staging deploy path failed 44 of 44 runs over 71 days while runs that skipped every job read green.
 2. **The pipeline checks triggers, not outcomes.** `deploy-api.yml` fires Render's staging deploy
    hook, sleeps 15 seconds, then polls `/health/ready`. That poll can answer from the instance that

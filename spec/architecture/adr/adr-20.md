@@ -260,9 +260,11 @@ the ones a later reader would otherwise re-litigate.
   - **#1381 closes when #1383 and #1384 do.** That makes this ADR's trigger to revisit ("the
     program completes or is abandoned") effectively fired.
   - **Decisions 4 and 8 are superseded.** Decision 4 (the staged program) and decision 8 (the
-    master plan lives in #1381) give way to #2504, sequenced by ADR-24. Decisions 1, 2 and 5–7
-    still stand as written, decision 3 stands as described above, and this ADR's earlier
-    amendments stand as records of their dates.
+    master plan lives in #1381) give way to #2504, sequenced by ADR-24. Decisions 1 and 5–7
+    still stand as written, and decision 3 stands as described above. Decision 2's "stage 5"
+    belonged to decision 4's program: its 2026-09-06 amendment already added the nightly
+    production dump, and the rest of that risk (a restore proven to work) now sits under ADR-24
+    decision 4. This ADR's earlier amendments stand as records of their dates.
 
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an

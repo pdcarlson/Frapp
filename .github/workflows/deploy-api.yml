@@ -11,7 +11,8 @@ name: Deploy API
 # `RENDER_DEPLOY_HOOK_URL` and `API_HEALTHCHECK_URL` are not GitHub secrets:
 # `.github/actions/infisical-secrets` injects them from the Infisical `staging`
 # environment at job time. See docs/internal/environment/SECRETS_MANAGEMENT.md.
-# Production has no deploy hook: it deploys a named commit through the Render API.
+# Production doesn't use a deploy hook: it deploys a named commit through the
+# Render API. A stale production hook may still exist; see #2540.
 on:
   workflow_run:
     workflows: ["CI"]
