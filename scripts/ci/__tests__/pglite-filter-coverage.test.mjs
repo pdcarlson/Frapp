@@ -18,28 +18,26 @@ import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 // `package.json` and `ci.yml` itself were all unlisted.
 //
 // So the filter's coverage is derived here from the script, not restated: every
-// repo path the check reads by `join(REPO_ROOT, ...)`, every relative module it
-// imports (followed transitively), every script it runs via
-// `join(process.cwd(), ...)`, and every `new URL("...", import.meta.url)` file
-// those modules read. Any number of arguments and any quote style count as long
-// as each argument is a literal. A `join(REPO_ROOT, ...)` with a computed
-// argument fails the test rather than being skipped, because this derivation
-// cannot resolve it. A path read through some other computed form (a module
-// constant joined onto a local root, say) is invisible here; the one such input
-// today, the chapter directory seed, is imported from its module below rather
-// than restated.
+// repo path the check reads by `join(REPO_ROOT, ...)`, every script it runs via
+// `join(process.cwd(), ...)`, every `new URL(..., import.meta.url)` file its
+// modules read, and every relative module they import (followed transitively
+// when it is JavaScript). Each form takes literal arguments in any quote style,
+// and each fails the test on a computed argument rather than skipping it,
+// because this derivation cannot resolve one. A path read through a form not
+// listed here (a module constant joined onto a local root, say) is invisible;
+// the one such input today, the chapter directory seed, is imported from its
+// module below rather than restated.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const ENTRY = "scripts/check-pglite-migrations.mjs";
 
-// Inputs the job depends on that no source line names: the job's own definition,
-// the npm script it runs, the lockfile, the migrations directory it globs, and
-// the seed CSV `chapter-directory-seed.mjs` reads through its own constant.
+// Inputs the job depends on that the forms above cannot derive: the job's own
+// definition, the npm script it runs, the lockfile, and the seed CSV that
+// `chapter-directory-seed.mjs` reads through its own constant.
 const STRUCTURAL = [
   ".github/workflows/ci.yml",
   "package.json",
   "package-lock.json",
-  "supabase/migrations/0000_example.sql",
   SEED_RELATIVE_PATH.split("\\").join("/"),
 ];
 
@@ -121,15 +119,26 @@ function inputs() {
       assert.ok(parts, `${file}: \`${call}\` runs a script this test cannot resolve`);
       queue.push(parts.join("/"));
     }
-    for (const [, q1, q2] of src.matchAll(
-      /new URL\(\s*(?:"(\.{1,2}\/[^"]+)"|'(\.{1,2}\/[^']+)')\s*,\s*import\.meta\.url\s*\)/g,
+    for (const [call, list] of src.matchAll(
+      /new URL\(([^,()]*),\s*import\.meta\.url\s*\)/g,
     )) {
-      found.add(rel(resolve(here, q1 ?? q2)));
+      const [target] = literalArgs(list) ?? [];
+      assert.ok(target, `${file}: \`${call}\` reads a file this test cannot resolve`);
+      if (/^\.{1,2}\//.test(target)) found.add(rel(resolve(here, target)));
     }
-    for (const [, q1, q2] of src.matchAll(
-      /(?:from\s+|import\(\s*)(?:"(\.{1,2}\/[^"]+\.m?js)"|'(\.{1,2}\/[^']+\.m?js)')/g,
-    )) {
-      queue.push(rel(resolve(here, q1 ?? q2)));
+    const specifiers = [
+      ...[...src.matchAll(/\bfrom\s*(["'`])([^"'`]+)\1/g)].map((m) => m[2]),
+      ...[...src.matchAll(/^\s*import\s*(["'`])([^"'`]+)\1/gm)].map((m) => m[2]),
+      ...[...src.matchAll(/\bimport\(([^)]*)\)/g)].map(([call, list]) => {
+        const [target] = literalArgs(list) ?? [];
+        assert.ok(target, `${file}: \`${call}\` imports a module this test cannot resolve`);
+        return target;
+      }),
+    ];
+    for (const specifier of specifiers.filter((s) => /^\.{1,2}\//.test(s))) {
+      const target = rel(resolve(here, specifier));
+      if (/\.[cm]?js$/.test(target)) queue.push(target);
+      else found.add(target);
     }
   }
   return [...found];
