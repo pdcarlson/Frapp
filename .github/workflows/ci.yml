@@ -23,8 +23,8 @@ concurrency:
 # pglite-migrations are path-gated on PRs via the `changes` job and run
 # unconditionally on push; everything else always runs.
 #
-# Path-gated does NOT mean advisory. web-tests, web-responsive-floor and
-# landing-fold are all REQUIRED checks — a job skipped by a job-level `if:` reports Success, which
+# Path-gated does NOT mean advisory. web-tests, web-responsive-floor,
+# landing-fold and pglite-migrations are all REQUIRED checks — a job skipped by a job-level `if:` reports Success, which
 # satisfies one. That is also why `changes` is itself required: a required job
 # skipped because a `needs:` parent FAILED also reports skipped, so a
 # non-required parent would be a hole. See scripts/ci/lib/required-checks.mjs.
@@ -98,8 +98,23 @@ jobs:
               - 'supabase/seed/**'
               - 'scripts/load-chapter-directory.mjs'
               - 'scripts/lib/chapter-directory-seed.mjs'
-              # ...and the demo seed App Review signs in to (#2308).
+              # ...and the demo seed App Review signs in to (#2308), with the
+              # scripts/ci/lib modules it imports and the environments file one
+              # of them reads.
               - 'scripts/demo/**'
+              - 'scripts/ci/lib/env.mjs'
+              - 'scripts/ci/lib/environments.mjs'
+              - 'scripts/ci/lib/http.mjs'
+              - '.github/environments.json'
+              # The search-column landmark reads the API's search source.
+              - 'apps/api/src/application/services/search.service.ts'
+              # The job's own definition and the npm script it runs. The job is
+              # REQUIRED (#2538): a skipped run reports Success, so a change the
+              # filter misses would merge green here and first fail on `main`,
+              # where validate-deploy-sha then refuses to deploy the commit.
+              # Every file the check reads belongs in this list.
+              - '.github/workflows/ci.yml'
+              - 'package.json'
 
   # ── Shared packages build (dependency for downstream jobs) ──────────────
   packages-build:
