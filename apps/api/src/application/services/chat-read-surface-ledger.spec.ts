@@ -33,8 +33,10 @@ import * as ts from 'typescript';
  * - an existing notification edited to carry another member's words, since
  *   the per-file count does not move, and a notification sent through a
  *   wrapper whose name does not contain `notify`;
- * - a Realtime subscription whose event name is built at runtime, or opened by
- *   a helper outside `apps/api/src`;
+ * - a Realtime subscription whose event is not spelled out in `apps/api/src`:
+ *   built at runtime, passed in as a parameter or config value, or held in a
+ *   constant declared outside it, or a subscription opened by a helper
+ *   outside it;
  * - member text re-posted under the system actor, which cannot be blocked. The
  *   poll-expiry notice quotes the poll's question this way (#2495);
  * - a policy or table written through dynamic SQL assembled from parts.
@@ -911,7 +913,8 @@ describe('chat read-surface ledger (#2324)', () => {
     // held in a constant is a problem to resolve by hand, never a pass. Prose
     // about the echo inside a longer string is not the literal and does not
     // count. A reaction subscription would be a reaction push.
-    // The event in any spelling the code can hold it, in any position: either
+    // The event in any static spelling written inside apps/api/src, in any
+    // position: either
     // string (`'postgres_changes'`, or `'POSTGRES_CHANGES'` as a quoted or
     // computed key), the enum member read as a property or an element, or the
     // bare name, whether referenced, destructured (renamed or not, as a
@@ -928,8 +931,11 @@ describe('chat read-surface ledger (#2324)', () => {
       if (ts.isPropertyAccessExpression(node)) {
         return node.name.text === 'POSTGRES_CHANGES';
       }
+      // Only the enum's own key. `m['postgres_changes']` on some other object
+      // is a lookup that could hold anything, so its literal is left to be
+      // reported on its own.
       if (ts.isElementAccessExpression(node)) {
-        return isEvent(node.argumentExpression);
+        return literalText(node.argumentExpression) === 'POSTGRES_CHANGES';
       }
       return (
         ts.isIdentifier(node) &&
