@@ -622,6 +622,90 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     );
     expect(cache?.order).toContain("msg-live");
   });
+
+  test("an echo never lands server-evaluated, even carrying a sender_blocked of its own (#2315)", () => {
+    // `sender_blocked`'s presence is how a REST row says the server applied
+    // the viewer's block list. An echo has no viewer, so whatever it carries
+    // must not read that way — an evaluated row renders in the clear while the
+    // list is loading or unavailable. The timestamp is the shape local
+    // Realtime v2.113.4 actually delivered, not a `.toISOString()` stand-in.
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+
+    ch.emitPostgresChange({
+      new: {
+        id: "msg-echo",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "raw words",
+        sender_blocked: false,
+        created_at: "2026-09-23T01:49:55.661142+00:00",
+        client_message_id: "client-echo",
+      },
+    });
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("channel-1"),
+    );
+    expect(cache?.byId["msg-echo"]?.content).toBe("raw words");
+    expect(cache?.byId["msg-echo"]?._blockEvaluated).toBe(false);
+  });
+
+  test("a reconnect backfill lands server-evaluated, even over the echo of the same row (#2315)", async () => {
+    // The backfill merges through `setQueryData`, never the thread's
+    // `queryFn`, so provenance kept anywhere but on the row itself never
+    // advanced here and every row a reconnect pulled rendered as held. Here it
+    // re-reads a row an echo already delivered: the REST copy must replace the
+    // echo's provenance, not inherit it.
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalledTimes(1));
+
+    ch.emitPostgresChange({
+      new: {
+        id: "msg-both",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "raw words",
+        created_at: "2026-09-23T01:49:55.661142+00:00",
+        client_message_id: "client-both",
+      },
+    });
+    const key = chatMessagesKey("channel-1");
+    expect(
+      queryClient.getQueryData<ChannelCache>(key)?.byId["msg-both"]
+        ?._blockEvaluated,
+    ).toBe(false);
+
+    // The reconnect, simulated as the rest of this suite does it: the channel
+    // errors, then subscribes again, and the backfill returns the same row as
+    // the server serves it to this viewer — masked.
+    ch.trigger("CHANNEL_ERROR");
+    backfill.mockResolvedValueOnce([
+      {
+        id: "msg-both",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "[masked by the server]",
+        sender_blocked: true,
+        created_at: "2026-09-23T01:49:55.661142+00:00",
+        client_message_id: "client-both",
+      },
+    ]);
+    current("channel-1").trigger("SUBSCRIBED");
+
+    await vi.waitFor(() => {
+      const row = queryClient.getQueryData<ChannelCache>(key)?.byId["msg-both"];
+      expect(row?._blockEvaluated).toBe(true);
+      expect(row?.sender_blocked).toBe(true);
+      expect(row?.content).toBe("[masked by the server]");
+    });
+  });
 });
 
 /**
