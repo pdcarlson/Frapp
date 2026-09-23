@@ -142,10 +142,12 @@ going (it is launched with `nohup … &`), so a repair here would race the agent
 turn a merely incomplete tree into a destroyed one whenever the repair itself failed.
 
 **It does build the workspace packages**, first, before any Docker step, because the API
-resolves `@repo/*` through each package's gitignored `dist/` (so do the `require` and `types`
-conditions of every package whose manifest points there; `apps/web` takes the `import`
-condition, which maps to source) and nothing else builds it on a fresh checkout
-([#2516](https://github.com/pdcarlson/Frapp/issues/2516)). Without it
+resolves `@repo/*` through each package's gitignored `dist/`, and so does `check:dep-cruiser`,
+for every workspace including `apps/web`: it takes the first condition a manifest lists,
+`types`, which points into `dist/`, and does not fall back. Only `apps/web`'s bundler takes the
+`import` condition, which maps to source; its type-check falls back to it while `dist/` is
+missing, but reads `dist/*.d.ts` once they exist. Nothing else builds `dist/` on a fresh
+checkout ([#2516](https://github.com/pdcarlson/Frapp/issues/2516)). Without it
 `npm run start:dev -w apps/api` fails on unresolved imports, and `check:dep-cruiser` reports
 them as boundary violations. It needs only `node_modules`, so it runs ahead of the steps that can
 fail, and a Docker or network failure no longer leaves the packages unbuilt too; it took under

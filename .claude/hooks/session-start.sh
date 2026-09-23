@@ -126,7 +126,11 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
   # (by an older copy of this hook) has none, so for that lock alone the kernel's boot time
   # (`btime` in /proc/stat) stands in: a lock last written before this boot began is from
   # an earlier one. Nothing ever writes a boot id into an old lock, so without this such a
-  # machine would keep the bug until its lock went away.
+  # machine would keep the bug until its lock went away. The kernel derives btime from the
+  # wall clock, so a clock stepped forward since the lock was written (a sync, a resumed VM)
+  # can call a same-boot lock stale. That costs one needless re-run of an idempotent
+  # bringup, once per machine (the relaunch records a boot id); trusting a dead stack is the
+  # failure this exists to end, so the heuristic errs this way.
   stale_boot=""
   if [ -n "$current_boot" ] && [ -d "$LOCK" ]; then
     if [ -f "$LOCK/boot_id" ]; then
