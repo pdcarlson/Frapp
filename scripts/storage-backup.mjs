@@ -468,10 +468,13 @@ export async function listBuckets({ supabaseUrl, serviceKey, fetchImpl = fetch }
  * Storage's list endpoint returns one level at a time and is paginated, with no
  * recursive mode -- so this is the only way to enumerate a bucket, and it must
  * page or it silently truncates at the default limit.
+ *
+ * `prefix` starts the walk at one folder (no trailing slash) instead of the
+ * bucket root: scripts/demo/seed-demo.mjs lists a demo chapter's folder this way.
  */
-export async function listBucketObjects({ supabaseUrl, serviceKey, bucket, fetchImpl = fetch }) {
+export async function listBucketObjects({ supabaseUrl, serviceKey, bucket, prefix: start = "", fetchImpl = fetch }) {
   const out = [];
-  const queue = [""];
+  const queue = [start];
 
   while (queue.length > 0) {
     const prefix = queue.shift();
