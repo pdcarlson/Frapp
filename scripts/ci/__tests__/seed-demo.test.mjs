@@ -612,7 +612,7 @@ test("verify fails a stale seed: every event already past", async () => {
 });
 
 test("verify fails a seed whose zoned Chapter Meeting has started, however many events remain", async () => {
-  // Days after the seed its later events are still ahead, but the scanner's zoned branch is gone.
+  // Days after the seed its later events are still ahead, but the seed is past its window.
   const events = [
     { name: "Chapter Meeting", start_time: "2026-09-22T23:00:00.000Z", check_in_zone: ZONE },
     { name: "Philanthropy 5K", start_time: "2026-09-26T13:00:00.000Z", check_in_zone: null },

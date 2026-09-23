@@ -154,9 +154,7 @@ read -rs DEMO_PASSWORD && export DEMO_PASSWORD
 **Re-seed before every submission, the same day.** Events are dated relative to
 the day the seed runs, and the one with a check-in zone, the Chapter Meeting, is at
 19:00 UTC two days later, so `verify` fails 43 to 67 hours after a seed. App Review
-can take longer than that. A seed that outlives the window has lost that meeting, and
-with it the check-in scanner's zoned branch; its last event is 12 days out. Re-run
-steps 2 to 4. The login and its password persist, and `storage` overwrites the
+can take longer than that; the seed's last event is 12 days out. Re-run steps 2 to 4. The login and its password persist, and `storage` overwrites the
 same objects in place: document ids are fixed, so each run names the same files.
 
 **To remove a demo chapter**, apply `sql --remove` first: it prints the chapter

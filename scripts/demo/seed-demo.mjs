@@ -726,10 +726,10 @@ export async function verifyLogin({
   pass(`${documents.length} documents; "${documents[0].title}" opens as a ${bytes.length}-byte PDF`);
 
   // The seed dates events from the day it ran, so an old seed signs in and opens
-  // documents like a fresh one while its Events tab thins out day by day. The
-  // Chapter Meeting two days after the seed is its one event with a check-in zone
-  // (demo-seed.sql § Events), so once it has started the scanner's zoned branch is
-  // gone and the seed is stale, however many later events remain.
+  // documents like a fresh one while its calendar empties. Its one event with a
+  // check-in zone, the Chapter Meeting two days after the seed (demo-seed.sql
+  // § Events), marks its age without hard-coding an id: once that has started, the
+  // seed is 43 hours old or more and counts as stale, however many later events remain.
   const events = await api("/v1/events");
   const upcoming = (Array.isArray(events) ? events : [])
     .filter((e) => Date.parse(e.start_time) > now())
