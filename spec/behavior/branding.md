@@ -12,10 +12,10 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
 
 ## Accent Color
 
-> This section describes the stored accent and how clients re-validate it per surface. Signet
-> derives a 12-step scale from that accent as its seed — see
-> [`../ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md). Which legacy
-> accent units still ship, and at which call sites, is owned by
+> This section describes the stored accent. Signet derives a 12-step scale from it as its seed — see
+> [`../ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md) — and that scale is
+> what the web dashboard shell paints: it applies no token from the per-surface re-validation below.
+> Which call sites still re-validate (`resolveChapterAccentColor`) is owned by
 > [`accent-engine.md` § 6](../ui/design-system/accent-engine.md#6-implementation-status) and is not
 > restated here. `apps/landing` is not a consumer: it resolves no chapter and reads no accent.
 
@@ -29,7 +29,7 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
   - It cannot apply to only one of the two stores either. They are one logical value written through three paths, so gating the column while the seed stays open let a chapter be created holding an accent it could never re-save — the Settings form resends the stored value and got a 400 telling the officer to choose a darker color they had never chosen. This supersedes #600, which assumed the two stores were different kinds of thing.
   - Legibility is enforced where it is observable instead: clients re-validate per surface at render time and substitute an accessible fallback, so an illegible stored accent is never painted. Crimson (`#8B0000`) is the worked example: 10.0:1 on white, 1.7:1 on the native dark card.
 - Because of that, **clients re-validate per surface** rather than trusting the stored value. `resolveChapterAccentColor` (`@repo/theme/accent`) takes the background and the mode's own fallback accent, and substitutes the fallback when the chapter's accent fails. A failing color surfaces an inline warning in the editor and falls back to safe tokens rather than hard-failing the edit.
-- Note this bites the stored default too: `#2563EB` is 5.2:1 on white but 3.2:1 on the dark card, so in dark mode an uncustomized chapter renders the fallback token rather than Royal Blue. That is the intended outcome — legibility wins over exactness.
+- Note this bites the stored default too: `#2563EB` is 5.2:1 on white but 3.2:1 on the dark card, so at a call site that re-validates, an uncustomized chapter renders the fallback token in dark mode rather than Royal Blue. That is the intended outcome — legibility wins over exactness.
 
 ## Brand Boundaries
 
