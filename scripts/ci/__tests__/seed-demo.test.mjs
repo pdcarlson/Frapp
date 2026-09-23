@@ -611,7 +611,7 @@ test("verify fails a stale seed: every event already past", async () => {
   await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl }), /no upcoming event with a check-in zone \(0 upcoming in all\): the seed is stale/);
 });
 
-test("verify fails a seed whose zoned Chapter Meeting has passed, however many events remain", async () => {
+test("verify fails a seed whose zoned Chapter Meeting has started, however many events remain", async () => {
   // Days after the seed its later events are still ahead, but the scanner's zoned branch is gone.
   const events = [
     { name: "Chapter Meeting", start_time: "2026-09-22T23:00:00.000Z", check_in_zone: ZONE },
