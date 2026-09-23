@@ -5,6 +5,7 @@ import {
   deriveSignetPalette,
   signetAccentSemanticVars,
 } from "@repo/chapter-theme";
+import { normalizeHex } from "@repo/color";
 
 /**
  * The Accent tab's card description makes four promises about where a chapter's
@@ -118,13 +119,13 @@ describe("the Accent tab says what the accent actually does", () => {
 });
 
 /**
- * The two preview warnings, pinned to the copy table that owns them.
+ * The draft warnings, pinned to the copy table that owns them.
  *
- * Both check the unsaved draft, not the saved palette (#2543), and both had
- * drifted: one said the colour "didn't meet contrast requirements", which read
- * as a rejection no save makes, and the other named "name tags" that no surface
- * draws. Pinning each to its `writing.md` row means the copy and its spec move
- * together or a test fails.
+ * All three check the unsaved draft, not the saved palette (#2543), and the two
+ * contrast ones had drifted: one said the colour "didn't meet contrast
+ * requirements", which read as a rejection no save makes, and the other named
+ * "name tags" that no surface draws. Pinning each to its `writing.md` row means
+ * the copy and its spec move together or a test fails.
  */
 const writing = readFileSync(
   `${__dirname}/../../../../spec/ui/design-system/writing.md`,
@@ -172,20 +173,63 @@ describe("the preview warnings say what the preview does", () => {
     );
   });
 
-  it("shows the fallback warning only for a colour the save would accept", () => {
-    // "Saving keeps the color you entered" is false for an empty, partial or
-    // 3-digit draft: `fallbackApplied` is true there too, and the API's
-    // `^#[0-9A-Fa-f]{6}$` rejects it. So the gate is the contrast reason on a
-    // well-formed draft, not `fallbackApplied`.
-    const gate = settingsPage.match(
-      /const accentPreviewFallsBack =([\s\S]*?);/,
-    )?.[1];
-    expect(gate).toBeDefined();
-    expect(gate).toMatch(/accent\.reason === "insufficient_contrast"/);
-    expect(gate).toContain("/^#[0-9A-Fa-f]{6}$/.test(accentDraft)");
+  it("renders the malformed-hex warning its writing.md row states", () => {
+    expect(warning("accentDraftMalformed")).toBe(
+      writingRow("Accent hex malformed"),
+    );
   });
 
-  it("neither reads as a rejection, which no save makes", () => {
+  it("saves the draft as the #RRGGBB the preview read it as", () => {
+    // Both warnings promise what saving does, so the save has to send the
+    // colour the preview measured. It used to send the raw draft: `#08E`
+    // previewed as `#0088EE`, then the DTO's `^#[0-9A-Fa-f]{6}$` returned 400.
+    expect(settingsPage).toContain(
+      "const accentDraftHex = normalizeHex(accentDraft);",
+    );
+    expect(settingsPage).toContain("accent_color: accentDraftHex || undefined");
+    expect(settingsPage).not.toMatch(/accent_color: accentDraft\b(?!Hex)/);
+    const dto = /^#[0-9A-Fa-f]{6}$/;
+    for (const [draft, saved] of [
+      ["#08E", "#0088EE"],
+      [" #8B0000 ", "#8B0000"],
+      ["#8b0000", "#8B0000"],
+    ] as const) {
+      expect(normalizeHex(draft)).toBe(saved);
+      expect(saved).toMatch(dto);
+    }
+  });
+
+  it("names a malformed draft and will not save it", () => {
+    for (const draft of ["#8B00", "8B0000", "crimson"]) {
+      expect(normalizeHex(draft)).toBe("");
+    }
+    expect(settingsPage).toMatch(
+      /const accentDraftMalformed =\s*accentDraft\.trim\(\) !== "" && !accentDraftHex;/,
+    );
+    const submit = settingsPage.slice(
+      settingsPage.lastIndexOf(
+        'type="submit"',
+        settingsPage.indexOf("Save accent color"),
+      ),
+      settingsPage.indexOf("Save accent color"),
+    );
+    expect(submit).toContain("accentDraftMalformed");
+    // Save is disabled there, so the ink warning's "saving picks a label
+    // color" would promise a save that cannot happen.
+    expect(
+      settingsPage.match(/const previewInkFailsAA =([\s\S]*?);/)?.[1],
+    ).toContain("!accentDraftMalformed");
+  });
+
+  it("gates the fallback warning on contrast, not on fallbackApplied", () => {
+    // `fallbackApplied` is also true for an empty or malformed draft, where
+    // "saving keeps the color you entered" would be false.
+    expect(
+      settingsPage.match(/const accentPreviewFallsBack =([\s\S]*?);/)?.[1],
+    ).toMatch(/^\s*accent\.reason === "insufficient_contrast"\s*$/);
+  });
+
+  it("neither contrast warning reads as a rejection, which no save makes", () => {
     for (const condition of ["accentPreviewFallsBack", "previewInkFailsAA"]) {
       expect(warning(condition)).not.toMatch(/contrast requirements|rejected/);
     }

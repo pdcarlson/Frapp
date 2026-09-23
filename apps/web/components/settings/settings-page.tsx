@@ -23,7 +23,7 @@ import {
   type PatchChapterConfig,
 } from "@repo/validation";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
-import { AA_NORMAL, contrastRatio, parseHex } from "@repo/color";
+import { AA_NORMAL, contrastRatio, normalizeHex, parseHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { titleCase, vocab } from "@/lib/vocabulary";
 import { Button } from "@/components/ui/button";
@@ -429,14 +429,19 @@ function SettingsPageContent() {
     background: signetDarkTokens.color.surface.card,
     fallbackAccent: signetDarkTokens.color.gold.house,
   });
-  // The fallback warning speaks only to a colour the save would accept and that
-  // failed contrast. `fallbackApplied` is also true for an empty, partial or
-  // 3-digit draft (`reason: "invalid_format"`, or a shorthand the resolver
-  // expands), which the API's `^#[0-9A-Fa-f]{6}$` rejects, so "saving keeps the
-  // color you entered" would be false there.
-  const accentPreviewFallsBack =
-    accent.reason === "insufficient_contrast" &&
-    /^#[0-9A-Fa-f]{6}$/.test(accentDraft);
+  // What Save sends: the draft as the `#RRGGBB` the API's DTO requires. The
+  // resolver above already reads a 3-digit shorthand or a padded hex as that
+  // colour, so saving the same normalization keeps the preview, the warnings
+  // and the save describing one colour. Sending the raw draft let `#08E`
+  // preview cleanly and then fail the save with a 400.
+  const accentDraftHex = normalizeHex(accentDraft);
+  // Typed but not a hex colour: the preview falls back and Save is disabled,
+  // so this names why rather than leaving the swatch to change silently.
+  const accentDraftMalformed = accentDraft.trim() !== "" && !accentDraftHex;
+  // A well-formed colour that fails contrast on the card. `fallbackApplied`
+  // alone is also true for an empty or malformed draft, where "saving keeps the
+  // color you entered" would be false.
+  const accentPreviewFallsBack = accent.reason === "insufficient_contrast";
 
   /*
     The on-accent tone for the *draft* colour, and whether it is legible.
@@ -478,7 +483,10 @@ function SettingsPageContent() {
   const previewInkRatio = accentRgb
     ? contrastRatio(parseHex(previewInk)!, accentRgb)
     : 0;
-  const previewInkFailsAA = accentRgb !== null && previewInkRatio < AA_NORMAL;
+  // Not for a malformed draft: Save is disabled there, so "saving picks a label
+  // color" would promise a save that cannot happen.
+  const previewInkFailsAA =
+    !accentDraftMalformed && accentRgb !== null && previewInkRatio < AA_NORMAL;
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
   const permissionsCatalog = asArray<{ key: string; permission: string }>(
     catalogQuery.data,
@@ -538,7 +546,7 @@ function SettingsPageContent() {
     event.preventDefault();
     try {
       const result = await updateChapter.mutateAsync({
-        accent_color: accentDraft || undefined,
+        accent_color: accentDraftHex || undefined,
       });
       setAccentContrastWarning(result?.failedContrastChecks ?? null);
       toast({
@@ -1089,7 +1097,7 @@ function SettingsPageContent() {
                     <Input
                       type="color"
                       aria-label="Accent color picker"
-                      value={accentDraft || accent.resolvedAccent}
+                      value={accentDraftHex || accent.resolvedAccent}
                       onChange={(event) =>
                         updateAccentDraft(event.target.value)
                       }
@@ -1139,6 +1147,11 @@ function SettingsPageContent() {
                       Preview
                     </div>
                   </div>
+                  {accentDraftMalformed ? (
+                    <p className="text-xs text-warning">
+                      Use a hex code like #8B0000 to save this color.
+                    </p>
+                  ) : null}
                   {accentPreviewFallsBack ? (
                     <p className="text-xs text-warning">
                       This color is hard to read on the card, so the preview
@@ -1185,7 +1198,11 @@ function SettingsPageContent() {
                 <CardFooter className="flex justify-end">
                   <Button
                     type="submit"
-                    disabled={!canManage || updateChapter.isPending}
+                    disabled={
+                      !canManage ||
+                      updateChapter.isPending ||
+                      accentDraftMalformed
+                    }
                   >
                     {updateChapter.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
