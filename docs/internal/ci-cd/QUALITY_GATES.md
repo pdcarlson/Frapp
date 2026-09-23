@@ -154,8 +154,9 @@ is the root `package.json` `engines.node`, and how the pins relate to it is in
 
 `expo-server-sdk` 7.x was the same class of engines mismatch with a different symptom, and the Node
 move cleared it too. 6.0.0 went ESM-only; 7.0.0 raised `engines.node` to `>=22.12.0` (stable
-`require(esm)`). npm does not fail `npm ci` on an engines mismatch unless `engine-strict` is set, which this
-repo never sets (the same holds for undici 8.x; see [`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md)), so `api-docker-build` stayed green on
+`require(esm)`). npm does not fail `npm ci` on an engines mismatch unless `engine-strict` is set,
+which this repo never sets (the same holds for undici 8.x; see
+[`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md)), so `api-docker-build` stayed green on
 `node:20-alpine` while Jest's CommonJS runtime could not parse the ESM entry — that is what turned
 `api-tests` red, the stub in [`docs/guides/testing.md`](../../guides/testing.md) §6.
 
