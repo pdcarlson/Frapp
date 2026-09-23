@@ -101,9 +101,7 @@ Frapp/
 
 - **Authoring:** Developer guides in **[`docs/guides/`](../../docs/guides/README.md)**; product and architecture in **`spec/`**. Read and edit in GitHub or your editor; there is no separate Next.js documentation deployment in this repo for now.
 - **Spec rendering:** Previously the removed docs app rendered `spec/*.md` in a browser. Today, use the repo view on GitHub (or a local markdown preview). A future public docs site may restore styled rendering.
-  - **Sync rule:** When behavior, architecture, or workflows change, update **`docs/`** and/or **`spec/`** in the same change set. Spec is intended behavior; code is current behavior; disagreement is a tracked bug (see [`AGENTS.md`](../../AGENTS.md) § Spec vs code).
-  - **Enforcement:** none. A gate that required a `docs/` or `spec/` write on every product-code PR existed and was deleted in #1597: it could not tell a real doc edit from filler, so it got filler. The sync rule above is reviewed, not gated — see [`docs/internal/ci-cd/DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) for what CI does still check.
-  - **Workflow:** The PR template requires a “Docs / Spec impact” section; treat “None” as an explicit claim that reviewers should challenge.
+- **Keeping it true:** what to do when a change makes a doc wrong, or when spec and code disagree, is owned by [`AGENTS.md` § Spec vs code](../../AGENTS.md#spec-vs-code) and [§ Documentation discipline](../../AGENTS.md#documentation-discipline). What CI checks: [`DOCS_CI.md` § What runs](../../docs/internal/ci-cd/DOCS_CI.md#what-runs).
 
 ---
 

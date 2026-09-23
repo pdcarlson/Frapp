@@ -13,6 +13,7 @@
 
 - A new "we hit X, don't do Y" story is an ADR (or an amendment), not a paragraph in `AGENTS.md`, unless it meets the three-part graduation test.
 - `README.md`, `spec/behavior/README.md`, and `spec/README.md` use the same spec-vs-code formulation. Do not reintroduce "the spec is the single source of truth" or "code is ground truth for behavior; docs are ground truth for intent" as competing slogans.
+- **Amendment (2026-09-23, #1598) — one statement, not identical copies.** The bullet above is retained as the original decision. The rule is now stated once, in [`AGENTS.md` § Spec vs code](../../../AGENTS.md#spec-vs-code); `README.md`, `spec/README.md`, `spec/behavior/README.md` and every other doc link to it instead of restating it. The ban on competing slogans stands. By 2026-09-23 copies of the rule had spread to `README.md`, `docs/guides/contributing.md`, `DOCUMENTATION_CONVENTIONS.md`, `spec/README.md`, `spec/behavior/README.md`, `spec/architecture/README.md`, `spec/behavior/observability.md`, the audit and docs-upkeep skills, the PR template and a comment in `packages/observability/src/policy.ts`. Each copy was free to drift, and each was a sentence the fold of `spec/` into `docs/` would have to rewrite.
 - Filing follow-up work lives in `.claude/skills/file-follow-up/SKILL.md`. Routine ownership boilerplate lives once in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
 
 **Trigger to revisit:** `AGENTS.md` grows past ~200 lines again, or a rule in it is no longer true.
