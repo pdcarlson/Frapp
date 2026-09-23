@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { basename, dirname, join } from "node:path";
 
 import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
@@ -92,11 +92,13 @@ export function mask(src) {
   // after which a `/` starts a regex rather than a division.
   const closesControl = new Set();
   // Whether the token starting at `at` is a member name (`o.for`, `o. for`,
-  // `this.#for`) rather than a keyword.
+  // `this.#for`) rather than a keyword. The `.` of a spread (`... await`) is
+  // not member access.
   const isProperty = (at) => {
     let k = at - 1;
     while (k >= 0 && /\s/.test(out[k])) k -= 1;
-    return out[k] === "." || out[k] === "#";
+    const spread = out[k - 1] === "." && out[k - 2] === ".";
+    return (out[k] === "." && !spread) || out[k] === "#";
   };
   // Whether the `(` at `i` opens an `if`/`while`/`for` condition: the
   // keyword itself, not a method named like one (`Symbol.for(k)`), and
@@ -258,8 +260,6 @@ function literal(arg) {
  */
 export function scan(src, file) {
   const masked = mask(src);
-  const moduleUrl = pathToFileURL(join(REPO, file));
-  const rel = (url) => relative(REPO, fileURLToPath(url)).split("\\").join("/");
   const found = [];
   const follow = [];
   const unresolved = (call) =>
@@ -271,22 +271,17 @@ export function scan(src, file) {
     assert.ok(path !== ".." && !path.startsWith("../"), `${file}: \`${call}\` names a path outside the repo`);
     (/\.[cm]?js$/.test(path) ? follow : found).push(path);
   };
-
-  for (const { call, args } of callArgs(src, masked, /\b(?:join|resolve)\s*\(/g)) {
-    const [root, ...rest] = args;
-    if (root !== "REPO_ROOT" && root !== "process.cwd()") continue;
-    const parts = rest.map(literal);
-    assert.ok(parts.length > 0 && parts.every((p) => p !== null), unresolved(call));
-    // Normalized segment by segment, not against a stand-in root: a stand-in
-    // can collide with a real segment (`"..", "repo-root"` would climb out and
-    // land back "inside" a root named that). As in Node, `join` treats a
-    // leading `/` as a separator; `resolve` restarts at an absolute segment,
-    // which here leaves the repo. A `..` past the root leaves it too; that
-    // also rejects the rare climb that re-enters by name, which is fine.
+  // Every path is normalized here, segment by segment from a repo-relative
+  // start, never against the checkout's real path or a stand-in root. Either
+  // of those accepts a climb that re-enters by name: a stand-in's own
+  // (`"..", "repo-root"`), or the checkout directory's (`../../Frapp/x` in a
+  // checkout at `…/Frapp/Frapp`), so the verdict would depend on where the
+  // repo was cloned. A `..` past the root leaves the repo, even when a later
+  // segment would climb back in, which is fine.
+  const normalize = (from, parts, call) => {
     const outside = `${file}: \`${call}\` names a path outside the repo`;
-    const segments = [];
+    const segments = [...from];
     for (const part of parts) {
-      assert.ok(!(call.startsWith("resolve") && part.startsWith("/")), outside);
       for (const segment of part.split("/")) {
         if (segment === "" || segment === ".") continue;
         if (segment === "..") {
@@ -296,16 +291,50 @@ export function scan(src, file) {
       }
     }
     route(segments.join("/"), call);
+  };
+  // A module-relative target, as `new URL(target, import.meta.url)` and a
+  // relative import resolve it. An absolute path is the machine's, not the
+  // repo's; a query or fragment is not part of the path.
+  const moduleDir = file.split("/").slice(0, -1);
+  const fromModule = (target, call) => {
+    const path = target.split(/[?#]/)[0];
+    assert.ok(!path.startsWith("/"), `${file}: \`${call}\` names a path outside the repo`);
+    if (path === "") route(file, call);
+    else normalize(moduleDir, [path], call);
+  };
+
+  for (const { call, args } of callArgs(src, masked, /\b(?:join|resolve)\s*\(/g)) {
+    const [root, ...rest] = args;
+    if (root !== "REPO_ROOT" && root !== "process.cwd()") continue;
+    const parts = rest.map(literal);
+    assert.ok(parts.length > 0 && parts.every((p) => p !== null), unresolved(call));
+    // As in Node, `join` treats a leading `/` as a separator; `resolve`
+    // restarts at an absolute segment, which here leaves the repo.
+    for (const part of parts) {
+      assert.ok(
+        !(call.startsWith("resolve") && part.startsWith("/")),
+        `${file}: \`${call}\` names a path outside the repo`,
+      );
+    }
+    normalize([], parts, call);
   }
 
   for (const { call, args } of callArgs(src, masked, /\bnew\s+URL\s*\(/g)) {
     if (args[1] !== "import.meta.url") continue;
     const target = literal(args[0] ?? "");
     assert.ok(target !== null, unresolved(call));
-    // WHATWG resolution, so `"x.csv"` is the module's sibling just as
-    // `"./x.csv"` is.
-    const url = new URL(target, moduleUrl);
-    if (url.protocol === "file:") route(rel(url), call);
+    // As WHATWG resolves it: `"x.csv"` is the module's sibling just as
+    // `"./x.csv"` is, and a target with a scheme is absolute. Only a `file:`
+    // one names a path, and that path is the machine's.
+    const scheme = /^([a-z][a-z\d+.-]*):/i.exec(target);
+    if (scheme) {
+      assert.ok(
+        scheme[1].toLowerCase() !== "file",
+        `${file}: \`${call}\` names a path outside the repo`,
+      );
+      continue;
+    }
+    fromModule(target, call);
   }
 
   // Static forms take only a string literal: find them in the masked code, where
@@ -328,7 +357,7 @@ export function scan(src, file) {
   ];
   for (const specifier of specifiers) {
     // ESM resolves only `./`, `../` and `/` as paths; anything else is a package.
-    if (/^\.{0,2}\//.test(specifier)) route(rel(new URL(specifier, moduleUrl)), specifier);
+    if (/^\.{0,2}\//.test(specifier)) fromModule(specifier, specifier);
   }
 
   return { found, follow };
@@ -438,8 +467,17 @@ describe("the scanner reads each form as what it is", () => {
   });
 
   it("resolves a bare `new URL` target as the module's sibling", () => {
-    const src = 'new URL("seed.csv", import.meta.url); new URL(`../a.json`, import.meta.url);';
-    assert.deepEqual(scan(src, at).found, ["scripts/ci/lib/seed.csv", "scripts/ci/a.json"]);
+    const src = [
+      'new URL("seed.csv", import.meta.url); new URL(`../a.json`, import.meta.url);',
+      // A query or fragment is not part of the path; another scheme is no file.
+      'new URL("b.json?raw#x", import.meta.url);',
+      'new URL("https://example.com/c.json", import.meta.url);',
+    ].join("\n");
+    assert.deepEqual(scan(src, at).found, [
+      "scripts/ci/lib/seed.csv",
+      "scripts/ci/a.json",
+      "scripts/ci/lib/b.json",
+    ]);
   });
 
   it("fails on a computed argument, nested calls included", () => {
@@ -534,6 +572,12 @@ describe("the scanner reads each form as what it is", () => {
       'new URL("../../../..", import.meta.url);',
       'resolve(REPO_ROOT, "/repo-root/x.sql");',
       'import "../../../../x.mjs";',
+      'new URL("/etc/passwd", import.meta.url);',
+      'new URL("file:///etc/passwd", import.meta.url);',
+      // Out and back in by the checkout directory's own name, which these
+      // forms accepted while they resolved against the real path.
+      `new URL("../../../../${basename(REPO)}/supabase/x.sql", import.meta.url);`,
+      `import "../../../../${basename(REPO)}/y.mjs";`,
     ]) {
       assert.throws(() => scan(src, at), /outside the repo/, src);
     }
@@ -541,7 +585,7 @@ describe("the scanner reads each form as what it is", () => {
     assert.throws(() => scan('join(REPO_ROOT, "a", "..");', at), /repo root itself/);
   });
 
-  it("tells a division from a regex after `++`, a property and a condition", () => {
+  it("tells a division from a regex after `++`, a property, a spread and a condition", () => {
     // Each misread would blank the `join` between the two slashes.
     for (const [src, path] of [
       ['const n = i++ / 2; join(REPO_ROOT, "b.sql"); const q = n / 3;', "b.sql"],
@@ -557,6 +601,8 @@ describe("the scanner reads each form as what it is", () => {
       ['const v = await (p) / 2; join(REPO_ROOT, "j.sql"); const w = 1 / 2;', "j.sql"],
       ['while (ok) /a"b/.test(u); join(REPO_ROOT, "k.sql");', "k.sql"],
       ['for (const x of y) /a"b/.test(x); join(REPO_ROOT, "l.sql");', "l.sql"],
+      ['x = [... await /a"b/.test(u)]; join(REPO_ROOT, "o.sql");', "o.sql"],
+      ['x = [...typeof /a"b/]; join(REPO_ROOT, "p.sql");', "p.sql"],
     ]) {
       assert.deepEqual(scan(src, at).found, [path], src);
     }
