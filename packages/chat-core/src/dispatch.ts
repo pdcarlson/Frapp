@@ -276,7 +276,7 @@ async function dispatchPoints(
     },
   };
 
-  const placeholderContent = `${parsed.value.action === "grant" ? "Granting" : "Deducting"} ${parsed.value.amount} points…`;
+  const placeholderContent = pointsPlaceholderContent(replay);
 
   insertLocalPlaceholder(ctx, {
     channelId,
@@ -285,6 +285,16 @@ async function dispatchPoints(
   });
 
   return submitPointsAdjustment(ctx, replay, false, placeholderContent);
+}
+
+/**
+ * The placeholder's copy, derived from the request rather than the command
+ * text, so a row redrawn after a REST rebuild (from nothing but its replay
+ * handle) reads exactly like the one the officer saw.
+ */
+function pointsPlaceholderContent(replay: ReplayRequest): string {
+  const { amount } = replay.body;
+  return `${amount < 0 ? "Deducting" : "Granting"} ${Math.abs(amount)} points…`;
 }
 
 /**
@@ -545,30 +555,30 @@ const REPLAY_ACCEPTED_WARNING =
 const RETRY_RESOLVED_NOTE = "Points recorded.";
 
 /**
- * The row is gone — the card's Realtime echo reconciled it while the request
- * was still in flight, or the channel query was rebuilt underneath us. Pointing
- * the officer at a Retry control that no longer exists is worse than saying
- * nothing, so the copy has to stand on its own.
+ * There is no row on screen to point at: no signed-in viewer to attribute it
+ * to, or no channel cache to draw it in (the query was garbage-collected while
+ * the request was in flight — the notice on disk restores the row on the next
+ * load). Pointing the officer at a Retry control that is not there is worse
+ * than saying nothing, so the copy has to stand on its own.
  */
 const UNCONFIRMED_NO_ROW_WARNING =
   "We couldn't confirm whether these points were recorded. Check the points ledger before running the command again — running it again would record them twice.";
 
 /**
- * The row is still there and carries the original key, so an explicit Retry is
- * the safe recovery. The second sentence is not padding: the row lives only in
- * the in-memory cache today, and a reconnect or reload rebuilds the channel
- * from the server and takes it with it (#1909), so the copy must not promise a
- * Retry that may be gone by the time the officer looks.
+ * The row is on screen and carries the original key, so an explicit Retry is
+ * the safe recovery. It no longer hedges about the row disappearing: the row
+ * and its replay handle are persisted, so the reconnect that follows the
+ * outage, a reload, and a `gcTime` eviction all restore it (#1909).
  */
 const UNCONFIRMED_WARNING =
-  "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice. If the message is gone, check the points ledger before re-running.";
+  "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice.";
 
 /**
  * What the timeline row itself says. Short on purpose: it sits directly above
- * its own Retry button, so the toast's "use Retry on the message … if the
- * message is gone" guidance is nonsense in that position — and printing the
- * toast's three sentences on the row duplicates them verbatim on screen and,
- * under `aria-atomic`, in the announcement.
+ * its own Retry button, so the toast's "use Retry on the message" guidance is
+ * nonsense in that position — and printing the toast's sentences on the row
+ * duplicates them verbatim on screen and, under `aria-atomic`, in the
+ * announcement.
  */
 const UNCONFIRMED_ROW_NOTE =
   "Not confirmed — these points may or may not have been recorded.";
@@ -598,7 +608,12 @@ function unconfirmed(
   replay: ReplayRequest,
   isReplay = false,
 ): DispatchResult {
-  const placement = markLocalUnconfirmed(ctx, replay, UNCONFIRMED_ROW_NOTE);
+  const placement = markLocalUnconfirmed(
+    ctx,
+    replay,
+    UNCONFIRMED_ROW_NOTE,
+    pointsPlaceholderContent(replay),
+  );
 
   // The echo already re-keyed the row under its server id. That is not a
   // missing row — it is proof the server posted the card, which it only does

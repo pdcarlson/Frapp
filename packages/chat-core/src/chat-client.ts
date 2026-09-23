@@ -36,8 +36,6 @@ import {
   emptyCache,
   locateRow,
   markFailed,
-  markRecorded,
-  markUnconfirmed,
   type RowPlacement,
   mergeServerRow,
   removeMessage,
@@ -53,10 +51,13 @@ import {
   type OutboxStore,
 } from "./adapters";
 import {
-  mergePersistedRecorded,
-  persistRecordedNotice,
-  readRecordedNotices,
-} from "./recorded-notices";
+  applyNotice,
+  dropNotices,
+  mergePersistedNotices,
+  persistNotice,
+  readNotices,
+  type HeavyCommandNotice,
+} from "./heavy-command-notices";
 import { randomClientId } from "./random-id";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import type { AnalyticsProperties } from "@repo/validation";
@@ -110,10 +111,11 @@ export interface ChatActionContext {
   /** Connectivity probe. Omitted → the browser implementation. */
   net?: NetworkState;
   /**
-   * Small string store for `_status: "recorded"` notices (#1789). Omitted →
-   * `browserKeyValueStore`. Web and mobile already inject a store into the
-   * realtime manager; this is the same shape so a reload can restore a
-   * committed-but-uncarded row the REST backfill will never return.
+   * Small string store for heavy-command rows the REST backfill will never
+   * return: `recorded` (#1789) and `unconfirmed` with its replay handle
+   * (#1909). See `heavy-command-notices.ts`. Omitted → `browserKeyValueStore`.
+   * Web and mobile inject the same store into the realtime manager, which
+   * evicts an entry when its card's echo arrives.
    */
   kv?: KeyValueStore;
   toast?: ToastFn;
@@ -524,7 +526,14 @@ export function insertLocalPlaceholder(
   );
 }
 
-/** Remove a cache-only placeholder (e.g. when the heavy-command RPC fails). */
+/**
+ * Remove a cache-only placeholder (e.g. when the heavy-command RPC fails), and
+ * any persisted notice for it.
+ *
+ * A retry that resolves, or that is refused because its key is spent, clears
+ * its row through here. Its stored replay handle has to go with it, or the next
+ * rebuild restores a Retry for a request that is already settled (#1909).
+ */
 export function removeLocalPlaceholder(
   ctx: ChatActionContext,
   channelId: string,
@@ -533,11 +542,69 @@ export function removeLocalPlaceholder(
   patchCache(ctx.queryClient, channelId, (cache) =>
     removeMessage(cache, clientMessageId),
   );
+  dropNotices(channelId, [clientMessageId], ctx.kv);
+}
+
+/**
+ * The fields a terminal heavy-command row is persisted and redrawn from.
+ *
+ * The live row's own content and timestamp win, so a restored row sits where
+ * the placeholder sat. `null` when there is no one to attribute the row to: no
+ * viewer and no row to read a sender from.
+ */
+function terminalNoticeFields(
+  ctx: ChatActionContext,
+  existing: ChannelCache | undefined,
+  args: {
+    channelId: string;
+    clientMessageId: string;
+    note: string;
+    content?: string;
+  },
+): Omit<HeavyCommandNotice, "status" | "replay"> | null {
+  const current = existing?.byId[args.clientMessageId];
+  const senderId = ctx.userId || current?.sender_id;
+  if (!senderId) return null;
+  return {
+    clientMessageId: args.clientMessageId,
+    channelId: args.channelId,
+    senderId,
+    content: current?.content || args.content || "",
+    note: args.note,
+    createdAt: current?.created_at ?? new Date().toISOString(),
+  };
+}
+
+/**
+ * Keep a terminal heavy-command row: persist it for the viewer, and draw it in
+ * the channel's cache if that cache exists.
+ *
+ * Persisted only under a known viewer, because a notice is restored only into
+ * the view of the member who dispatched it (`heavy-command-notices.ts`).
+ *
+ * Drawn only into a cache that already exists. With none (the channel query
+ * was garbage-collected mid-request), seeding one here would hand the channel a
+ * one-row cache that `staleTime: Infinity` never refetches; the notice on disk
+ * restores the row on the next load instead. Returns whether it was drawn.
+ */
+function keepTerminalRow(
+  ctx: ChatActionContext,
+  existing: ChannelCache | undefined,
+  notice: HeavyCommandNotice,
+): boolean {
+  if (ctx.userId) persistNotice(notice, ctx.kv);
+  if (!existing) return false;
+  patchCache(ctx.queryClient, notice.channelId, (cache) =>
+    applyNotice(cache, notice),
+  );
+  return true;
 }
 
 /**
  * Leave a heavy-command placeholder in place, flipped to `unconfirmed` and
- * carrying what an explicit retry would replay (#1733).
+ * carrying what an explicit retry would replay (#1733), and persist it so a
+ * reconnect, a reload or a `gcTime` eviction cannot take the row and its Retry
+ * with it (#1909).
  *
  * The counterpart to {@link removeLocalPlaceholder}, and the right call
  * whenever the request's outcome is *unknown* rather than known-failed:
@@ -545,29 +612,49 @@ export function removeLocalPlaceholder(
  * have committed, and the officer's "retry" then becomes re-typing the command,
  * which mints a fresh key and double-grants.
  *
- * Returns where the row actually is, because the caller's copy depends on it —
+ * A placeholder that a REST rebuild already dropped (a reconnect refetch that
+ * raced the request) is drawn again from `content`.
+ *
+ * Returns where the row is afterwards, because the caller's copy depends on it —
  * and the three answers are not interchangeable. A row already re-keyed under
  * its server id (`"confirmed"`) means the card arrived, so the write is not
  * unknown at all; treating that as "no row" produced a never-dismissing "we
- * couldn't confirm" notice sitting above a visibly successful card.
+ * couldn't confirm" notice sitting above a visibly successful card. `"absent"`
+ * now means only that there is no row on screen to point at: no viewer to
+ * attribute it to, or no channel cache to draw it in.
  */
 export function markLocalUnconfirmed(
   ctx: ChatActionContext,
   replay: ReplayRequest,
   note: string,
+  content?: string,
 ): RowPlacement {
   const existing = ctx.queryClient.getQueryData<ChannelCache>(
     chatMessagesKey(replay.channelId),
   );
   const placement = locateRow(existing, replay.clientMessageId);
 
-  if (placement === "optimistic") {
-    patchCache(ctx.queryClient, replay.channelId, (cache) =>
-      markUnconfirmed(cache, replay.clientMessageId, replay, note),
-    );
+  if (placement === "confirmed") {
+    // The card's echo got here first. A replay's stored handle is settled.
+    dropNotices(replay.channelId, [replay.clientMessageId], ctx.kv);
+    return "confirmed";
   }
 
-  return placement;
+  const fields = terminalNoticeFields(ctx, existing, {
+    channelId: replay.channelId,
+    clientMessageId: replay.clientMessageId,
+    note,
+    content,
+  });
+  if (!fields) return placement;
+
+  return keepTerminalRow(ctx, existing, {
+    ...fields,
+    status: "unconfirmed",
+    replay,
+  })
+    ? "optimistic"
+    : "absent";
 }
 
 /**
@@ -577,7 +664,8 @@ export function markLocalUnconfirmed(
  * The counterpart to {@link removeLocalPlaceholder} on `card_posted: false`.
  * Removing the row there left only an evictable toast as evidence of an
  * append-only write, which is how a second `/points` / `/task` / `/event`
- * command gets typed. No `_replay`: Retry is the dangerous action.
+ * command gets typed. No `_replay`: Retry is the dangerous action. On a
+ * `/points` replay this replaces the row's persisted `unconfirmed` notice.
  */
 export function markLocalRecorded(
   ctx: ChatActionContext,
@@ -592,42 +680,12 @@ export function markLocalRecorded(
   const existing = ctx.queryClient.getQueryData<ChannelCache>(
     chatMessagesKey(args.channelId),
   );
-  const current = existing?.byId[args.clientMessageId];
-  const content = current?.content || args.content || "";
-  const senderId = current?.sender_id || ctx.userId || "";
-  const createdAt = current?.created_at ?? new Date().toISOString();
-  patchCache(ctx.queryClient, args.channelId, (cache) => {
-    let next = cache;
-    if (!cache.byId[args.clientMessageId] && senderId) {
-      const row = optimisticMessage({
-        clientMessageId: args.clientMessageId,
-        channelId: args.channelId,
-        senderId,
-        content,
-        kind: "loading",
-        payload: null,
-        replyToId: null,
-      });
-      row.created_at = createdAt;
-      next = upsertOptimistic(next, row);
-    }
-    return markRecorded(next, args.clientMessageId, args.note);
-  });
-  if (!ctx.userId) return;
-  persistRecordedNotice(
-    {
-      clientMessageId: args.clientMessageId,
-      channelId: args.channelId,
-      senderId: senderId || ctx.userId,
-      content,
-      note: args.note,
-      createdAt,
-    },
-    ctx.kv,
-  );
+  const fields = terminalNoticeFields(ctx, existing, args);
+  if (!fields) return;
+  keepTerminalRow(ctx, existing, { ...fields, status: "recorded" });
 }
 
-export { mergePersistedRecorded };
+export { mergePersistedNotices };
 
 function coerceKind(kind: string | undefined): ChatMessageKind {
   return (CHAT_MESSAGE_KINDS.find((k) => k === kind) ??
@@ -692,7 +750,9 @@ export async function flushOutbox(ctx: ChatActionContext): Promise<void> {
 
 /**
  * On boot, restore any persisted outbox rows for a channel into the cache as
- * pending/failed messages so the composer reflects unsent work after a reload.
+ * pending/failed messages so the composer reflects unsent work after a reload,
+ * plus the viewer's persisted heavy-command rows (`recorded`, and `unconfirmed`
+ * with its Retry — `heavy-command-notices.ts`).
  */
 export async function hydrateOutboxIntoCache(
   ctx: ChatActionContext,
@@ -700,7 +760,7 @@ export async function hydrateOutboxIntoCache(
 ): Promise<void> {
   if (!ctx.userId) return;
   const rows = await ctx.outbox.listForChannel(channelId);
-  const notices = readRecordedNotices(channelId, ctx.kv);
+  const notices = readNotices(channelId, ctx.kv);
   if (rows.length === 0 && notices.length === 0) return;
   patchCache(ctx.queryClient, channelId, (cache) => {
     let next = cache;
@@ -722,9 +782,9 @@ export async function hydrateOutboxIntoCache(
         next = markFailed(next, row.clientId, row.lastError ?? "Send failed");
       }
     }
-    return mergePersistedRecorded(next, {
+    return mergePersistedNotices(next, {
       channelId,
-      userId: ctx.userId!,
+      viewerId: ctx.userId,
       kv: ctx.kv,
     });
   });

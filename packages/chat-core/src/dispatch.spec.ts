@@ -6,7 +6,11 @@ import type { ChatActionContext } from "./chat-client";
 import type { KeyValueStore, OutboxStore } from "./adapters";
 import { chatMessagesKey, type ChannelCache, type ChatMessage } from "./types";
 import { selectMessages, mergeServerRow } from "./cache";
-import { readRecordedNotices } from "./recorded-notices";
+import {
+  mergePersistedNotices,
+  readNotices,
+} from "./heavy-command-notices";
+import { emptyCache } from "./cache";
 import { memoryStore } from "./test/memory-store";
 import { stubOutbox } from "./test/outbox-stub";
 
@@ -32,7 +36,9 @@ const POINTS_COMMAND: SlashCommand = {
 
 function buildCtx(
   post: ReturnType<typeof vi.fn>,
-  kv?: KeyValueStore,
+  // A fresh store per context rather than the browser default: terminal rows
+  // persist, and jsdom's `localStorage` would carry them into the next test.
+  kv: KeyValueStore = memoryStore(),
 ): ChatActionContext {
   return {
     queryClient: new QueryClient(),
@@ -114,7 +120,7 @@ describe("dispatchPoints — card_posted (#544)", () => {
     expect(row._replay).toBeUndefined();
     expect(result.warning).toMatch(/don't run the command again/i);
     expect(row._error).toMatch(/don't run this command again/i);
-    expect(readRecordedNotices(CHANNEL_ID, kv)).toEqual([
+    expect(readNotices(CHANNEL_ID, kv)).toEqual([
       expect.objectContaining({
         clientMessageId: row.client_message_id,
         note: row._error,
@@ -582,6 +588,158 @@ describe("dispatchPoints — second-pass review fixes (#1733)", () => {
     const again = await retryPointsDispatch(ctx, replay);
 
     expect(again.warning).not.toMatch(/still running/i);
+  });
+});
+
+/**
+ * #1909 — the `unconfirmed` row used to live only in the query cache, so the
+ * reconnect that follows the outage (`refetchOnReconnect: "always"`), a reload,
+ * or a `gcTime` eviction rebuilt the channel from REST and took the row and
+ * its Retry with it. The officer had been told not to re-type, had nothing to
+ * press, re-typed anyway: fresh key, second ledger row.
+ *
+ * `rebuild` is what every one of those does to the channel: an empty cache
+ * from the server's rows (none — the server never wrote this one) plus the
+ * persisted notices, exactly as the web channel query's `queryFn` merges them.
+ */
+describe("dispatchPoints — the unconfirmed row survives a rebuild (#1909)", () => {
+  function rebuild(ctx: ChatActionContext): void {
+    ctx.queryClient.setQueryData(
+      chatMessagesKey(CHANNEL_ID),
+      mergePersistedNotices(emptyCache(), {
+        channelId: CHANNEL_ID,
+        viewerId: ctx.userId,
+        kv: ctx.kv,
+      }),
+    );
+  }
+
+  async function parkAndRebuild(post: ReturnType<typeof vi.fn>) {
+    const ctx = buildCtx(post);
+    post.mockResolvedValue(LOST_RESPONSE);
+    await dispatchGrant(ctx);
+    const original = onlyRow(ctx);
+    rebuild(ctx);
+    return { ctx, original };
+  }
+
+  it("restores the row and its Retry under the original key", async () => {
+    const post = vi.fn();
+    const { ctx, original } = await parkAndRebuild(post);
+
+    const restored = onlyRow(ctx);
+    expect(restored.client_message_id).toBe(original.client_message_id);
+    expect(restored._status).toBe("unconfirmed");
+    expect(restored.content).toBe(original.content);
+    expect(restored._replay).toEqual(original._replay);
+
+    post.mockResolvedValue({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 200 },
+    });
+    await retryPointsDispatch(ctx, restored._replay!);
+
+    // The replay after the rebuild is byte-for-byte the original request.
+    const [first, second] = post.mock.calls;
+    expect(second![1].body).toEqual(first![1].body);
+  });
+
+  it("evicts the stored handle once a retry resolves", async () => {
+    const post = vi.fn();
+    const { ctx } = await parkAndRebuild(post);
+
+    post.mockResolvedValue({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 200 },
+    });
+    const result = await retryPointsDispatch(ctx, onlyRow(ctx)._replay!);
+    expect(result.resolved).toBeTruthy();
+
+    expect(readNotices(CHANNEL_ID, ctx.kv)).toEqual([]);
+    rebuild(ctx);
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  it("evicts the stored handle when the key turns out to be spent (409)", async () => {
+    const post = vi.fn();
+    const { ctx } = await parkAndRebuild(post);
+
+    post.mockResolvedValue({
+      data: undefined,
+      error: { message: "different adjustment" },
+      response: { status: 409 },
+    });
+    await retryPointsDispatch(ctx, onlyRow(ctx)._replay!);
+
+    expect(readNotices(CHANNEL_ID, ctx.kv)).toEqual([]);
+  });
+
+  // The write turned out to have committed without its card: one `recorded`
+  // entry, no replay handle left anywhere to press.
+  it("leaves only a recorded entry when the retry reports the card missing", async () => {
+    const post = vi.fn();
+    const { ctx } = await parkAndRebuild(post);
+
+    post.mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 200 },
+    });
+    await retryPointsDispatch(ctx, onlyRow(ctx)._replay!);
+
+    const stored = readNotices(CHANNEL_ID, ctx.kv);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.status).toBe("recorded");
+    rebuild(ctx);
+    expect(onlyRow(ctx)._status).toBe("recorded");
+    expect(onlyRow(ctx)._replay).toBeUndefined();
+  });
+
+  it("keeps the handle when a retry is refused again", async () => {
+    const post = vi.fn();
+    const { ctx } = await parkAndRebuild(post);
+
+    post.mockResolvedValue(LOST_RESPONSE);
+    await retryPointsDispatch(ctx, onlyRow(ctx)._replay!);
+
+    expect(readNotices(CHANNEL_ID, ctx.kv)).toHaveLength(1);
+    rebuild(ctx);
+    expect(onlyRow(ctx)._status).toBe("unconfirmed");
+  });
+
+  // The reconnect refetch can also land while the request is still in flight,
+  // dropping the placeholder before the response is lost. The row is redrawn,
+  // so the toast can point at a Retry that is really there.
+  it("redraws the row when a rebuild dropped it mid-request", async () => {
+    const post = vi.fn();
+    const ctx = buildCtx(post);
+    let settle: (value: unknown) => void = () => {};
+    post.mockReturnValue(new Promise((resolve) => (settle = resolve)));
+
+    const pending = dispatchGrant(ctx);
+    rebuild(ctx);
+    expect(placeholderCount(ctx)).toBe(0);
+    settle(LOST_RESPONSE);
+    const result = await pending;
+
+    expect(result.unconfirmed).toBe(true);
+    expect(result.warning).toMatch(/use retry on the message/i);
+    const row = onlyRow(ctx);
+    expect(row._status).toBe("unconfirmed");
+    expect(row.content).toBe("Granting 5 points…");
+    expect(row._replay?.body.client_message_id).toBe(row.client_message_id);
+  });
+
+  // Nothing about the row can vanish on its own any more, so the copy stops
+  // hedging about it.
+  it("no longer tells the officer the message may be gone", async () => {
+    const post = vi.fn().mockResolvedValue(LOST_RESPONSE);
+    const result = await dispatchGrant(buildCtx(post));
+
+    expect(result.warning).toMatch(/use retry on the message/i);
+    expect(result.warning).not.toMatch(/message is gone/i);
   });
 });
 

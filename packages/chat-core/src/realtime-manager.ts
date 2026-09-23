@@ -3,8 +3,10 @@
  *
  * Responsibilities:
  *   - Per visible channel: Postgres Changes on `chat_messages` (filtered by
- *     channel_id) → `mergeServerRow` into the normalized cache. Also a
- *     Broadcast endpoint per channel for typing + presence.
+ *     channel_id) → `mergeServerRow` into the normalized cache. A merged row
+ *     (live or backfilled) also evicts any persisted heavy-command notice
+ *     under its `client_message_id` (`heavy-command-notices.ts`, #1909). Also
+ *     a Broadcast endpoint per channel for typing + presence.
  *   - One global Postgres Changes subscription on `chat_message_actions` (no
  *     `channel_id` column on that table to filter by) — events are dispatched
  *     to whichever subscribed channel cache holds the message. Reactions on
@@ -72,6 +74,7 @@ import {
   isTopicOccupied as isRealtimeTopicOccupied,
   releaseTopic as releaseRealtimeTopic,
 } from "./topic-registry";
+import { dropNotices } from "./heavy-command-notices";
 
 export type ConnectionStatus = "live" | "polling" | "reconnecting" | "offline";
 
@@ -456,6 +459,14 @@ class ChatRealtimeManager {
           this.patchCache(state.channelId, (cache) =>
             mergeServerRow(cache, next),
           );
+          // The card a heavy command was waiting on. Evicted now, not at the
+          // next load: by then the card may be outside the loaded window, and
+          // the stored entry would come back as a stale Retry (#1909).
+          dropNotices(
+            state.channelId,
+            [next.client_message_id],
+            this.kvStore(),
+          );
           this.writeLastSeen(state.channelId, next.id);
           return;
         }
@@ -737,6 +748,13 @@ class ChatRealtimeManager {
         }
         return next;
       });
+      // Same eviction as the live echo: a card that arrived while Realtime
+      // was down lands here instead.
+      dropNotices(
+        channelId,
+        rows.map((row) => row.client_message_id),
+        this.kvStore(),
+      );
       // Advance the cursor to the newest row we just merged.
       let newest = since;
       let newestTs = "";

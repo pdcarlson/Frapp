@@ -13,6 +13,10 @@ import {
   type ChannelCache,
   type RawChatMessage,
 } from "./types";
+import type { KeyValueStore } from "./adapters";
+import { persistNotice, readNotices } from "./heavy-command-notices";
+import { memoryStore } from "./test/memory-store";
+import { unconfirmedNotice } from "./test/notices";
 
 type SubscribeStatus =
   | "SUBSCRIBED"
@@ -617,5 +621,81 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
       chatMessagesKey("channel-1"),
     );
     expect(cache?.order).toContain("msg-live");
+  });
+});
+
+/**
+ * #1909 — a persisted heavy-command notice is evicted the moment its card
+ * arrives, live or by backfill. Waiting for the next load is not enough: by
+ * then the card can be outside the loaded window, and an entry still on disk
+ * would come back as a Retry for a request that already committed.
+ */
+describe("ChatRealtimeManager — heavy-command notice eviction (#1909)", () => {
+  let backfill: ReturnType<typeof vi.fn> & BackfillFetcher;
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+  let kv: KeyValueStore;
+
+  const card: RawChatMessage = {
+    id: "server-1",
+    channel_id: "chan-1",
+    sender_id: "user-1",
+    kind: "points",
+    content: "+5 points",
+    created_at: "2026-09-09T00:00:01.000Z",
+    client_message_id: "cm-1",
+  };
+
+  beforeEach(() => {
+    backfill = vi.fn(async (): Promise<RawChatMessage[]> => []) as ReturnType<
+      typeof vi.fn
+    > &
+      BackfillFetcher;
+    queryClient = new QueryClient();
+    kv = memoryStore();
+    let supabase: SupabaseClient;
+    ({ supabase, channels } = makeFakeSupabase());
+    chatRealtime.configure({ queryClient, supabase, backfill, kv });
+    persistNotice(unconfirmedNotice(), kv);
+  });
+
+  afterEach(() => {
+    chatRealtime.destroy();
+    queryClient.clear();
+  });
+
+  function joined(): FakeChannel {
+    chatRealtime.subscribe("chan-1");
+    const ch = channels.get("chat:channel:chan-1");
+    if (!ch) throw new Error("no fake channel for chan-1");
+    ch.trigger("SUBSCRIBED");
+    return ch;
+  }
+
+  test("the card's live echo evicts the stored entry", async () => {
+    const ch = joined();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalled());
+
+    ch.emitPostgresChange({ new: card });
+
+    expect(readNotices("chan-1", kv)).toEqual([]);
+  });
+
+  test("a card that arrives by backfill evicts it too", async () => {
+    backfill.mockResolvedValueOnce([card]);
+    joined();
+
+    await vi.waitFor(() => expect(readNotices("chan-1", kv)).toEqual([]));
+  });
+
+  test("an unrelated message leaves the entry alone", async () => {
+    const ch = joined();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalled());
+
+    ch.emitPostgresChange({
+      new: { ...card, id: "server-2", client_message_id: "cm-other" },
+    });
+
+    expect(readNotices("chan-1", kv)).toHaveLength(1);
   });
 });
