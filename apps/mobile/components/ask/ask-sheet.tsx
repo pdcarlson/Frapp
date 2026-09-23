@@ -165,10 +165,6 @@ export const AskSheet = forwardRef<BottomSheetModal>(
         ? "Type a question first."
         : "Send your question to Ask.";
 
-    // After every hook, so the hook order is the same whichever way the flag
-    // reads. The flag is fixed for a build, so this never flips mid-session.
-    if (!isAskAvailable()) return null;
-
     const renderBackdrop = useCallback(
       (props: BottomSheetBackdropProps) => (
         <BottomSheetBackdrop
@@ -183,6 +179,10 @@ export const AskSheet = forwardRef<BottomSheetModal>(
       ),
       [],
     );
+
+    // After every hook, so the hook order is the same whichever way the flag
+    // reads. The flag is fixed for a build, so this never flips mid-session.
+    if (!isAskAvailable()) return null;
 
     return (
       <BottomSheetModal
