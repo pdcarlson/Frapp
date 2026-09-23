@@ -76,7 +76,7 @@ export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P2"];
 
 const SETUP_STEPS = [
   "The token is minted in `.github/workflows/pr-base-sync.yml` by",
-  "`actions/create-github-app-token`, from two repository secrets:",
+  "`actions/create-github-app-token`, from two secrets that belong in the `automation` environment:",
   "`PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY`.",
   "Setup and rotation: `docs/internal/ci-cd/pr-babysitting.md` § Base-branch sync.",
 ].join(" ");

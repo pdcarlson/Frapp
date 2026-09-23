@@ -60,9 +60,11 @@ jobs:
       # matching production-release-pin.yml's deliberately minimal action surface.
       - name: Assert production-backup has no required reviewers
         env:
+          # GITHUB_TOKEN only. No GITHUB_PAT: a PAT would have to be a
+          # repository secret, since this job names no environment (above), and
+          # a repository secret is readable from any branch (#2518). The job
+          # token has read this environment on every scheduled run so far.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # GET /environments needs Administration; GITHUB_TOKEN often 403s.
-          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/ci/production-backup-env.mjs

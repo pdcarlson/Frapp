@@ -129,8 +129,10 @@ Established from the Supabase Management API and Supabase's own documentation on
 > [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md)'s egress allowlist. `scripts/run-migration.mjs`
 > compares the injected `SUPABASE_PROJECT_REF` against the committed file and **refuses to run** when they
 > disagree — deliberately, so a staging label can never write to production — so a rotation that updates
-> Infisical and not the file blocks every production migration, and `migration-order` fails every
-> migration-bearing PR against the dead ref. Update the file in the same change.
+> Infisical and not the file blocks every production migration. The migration snapshot publisher also
+> reads its refs from the file, so it fails against the dead ref, and once the next deploy outdates the
+> last good snapshot, `migration-order` fails every migration-bearing PR. Update the file in the same
+> change.
 
 Supabase's guidance for the free tier is to do exactly what this repo now does:
 

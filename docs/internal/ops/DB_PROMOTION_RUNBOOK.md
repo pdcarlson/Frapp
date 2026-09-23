@@ -180,8 +180,27 @@ Three checks, deliberately different shapes:
 | `migration-drift` (same workflow)                                                                     | Every PR and every push to `main` — **reports only**   | Staging only               | Reports; does not block        |
 | [`check-migration-drift.yml`](../../../.github/workflows/check-migration-drift.yml)                   | Daily, 07:00 UTC                                       | Staging **and** production | Files/updates a tracking issue |
 
-All three are read-only: they call the Supabase Management API's
-migration-history endpoint and send no SQL. None of them ever repairs anything.
+All three are read-only, and none of them ever repairs anything. The daily
+watchdog calls the Supabase Management API's migration-history endpoint itself
+and sends no SQL. The two PR checks, and `migration-replay` in the same
+workflow, hold no credential at all (#2518). They read the snapshot of that same
+endpoint that
+[`migration-snapshot.yml`](../../../.github/workflows/migration-snapshot.yml)
+publishes from `main` after every deploy. Off `main` (a pull request, or a
+dispatch on a branch), when the snapshot predates the latest deploy,
+`migration-order` and `migration-replay` wait up to 15 minutes for the next
+publish, then fail and name the publisher
+([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../internal/ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets)).
+`migration-drift` never waits: it judges the newest snapshot as it is, and says
+when a `Deploy API` run has overtaken that snapshot (below).
+
+**After you change a migration ledger by hand, re-publish before you re-run a PR.**
+A `migration repair`, an `--include-all` apply or a hand-applied file triggers no
+publish, so the PR checks keep judging against the state from before your change.
+The fix PR you open next then fails, for example with `stranded-migrations`
+after a repair. Run Actions → **Migration snapshot** → Run workflow on `main`,
+wait for it to go green, then re-run the PR's checks. `migration-order`'s summary
+names the snapshot's capture time, so you can check which state it read.
 
 ### `migration-order` — the required one
 
@@ -215,8 +234,10 @@ structurally blind to #1373.
 ### `migration-drift` — reports, does not block
 
 It compares `origin/main` against staging's applied history — **not** your PR's
-head — with a 30-minute grace from the moment a migration landed on `main`,
-which is the window `migrate-staging` needs to apply it.
+head — with a 30-minute grace from the moment a migration landed on `main`.
+The grace has to cover `migrate-staging` applying the migration and the
+snapshot publish that follows it, because the check reads the published
+snapshot, not staging.
 
 "Landed on `main`" means the commit on `main`'s own first-parent chain — the
 merge commit, or the squash commit where the merge was squashed — not the
@@ -233,12 +254,33 @@ required check it was a repo-wide merge-freeze switch rather than a gate — and
 human intervened. It still runs and reports on every PR, and the daily scheduled
 check above files a self-closing P1 issue for the same condition.
 
-So if `migration-drift` is red on your PR and you did not cause it: staging is
-out of sync for everyone and the schema your tests ran against is not the schema
-on staging. That is worth fixing and worth not ignoring — it is simply no longer
-worth blocking your merge on. Since #1363 that reading is reliable; before it,
-a red here in the half hour after a merge was as likely to be the gate
-mis-dating its own grace window as a real drift.
+So if `migration-drift` is red on your PR and you did not cause it, read the
+job summary's first line, because red has two meanings:
+
+- **Drift detected.** Staging is out of sync for everyone, and the schema your
+  tests ran against is not the schema on staging. That is worth fixing and
+  worth not ignoring — it is simply no longer worth blocking your merge on.
+  Since #1363 that reading is reliable; before it, a red here in the half hour
+  after a merge was as likely to be the gate mis-dating its own grace window as
+  a real drift.
+- **Cannot verify** (the `stale` verdict, #2518). A migration on `main` is past
+  its grace window, and the newest snapshot cannot show whether staging has
+  it. The summary names which of three reasons applies:
+  - A `Deploy API` run finished after the snapshot was taken, and the publish
+    it triggers has not landed. The publisher is behind, not staging. If
+    **Migration snapshot** is still running, re-run the check when it
+    finishes. If it failed, fix it, re-run it on `main`, then re-run the check.
+  - A `Deploy API` run is still in progress. Re-run the check once it and its
+    publish have finished.
+  - The download step could not read what `Deploy API` did (an Actions API
+    error, named in that step's log). Re-run the check.
+
+  If a migration is still missing after a fresh publish, that run reports
+  drift.
+
+A run can show both. The drift summary then also lists the migrations the
+snapshot cannot vouch for, with the reason and the step for each, so one run
+reports both problems.
 
 ### `--include-all` (recovery only)
 

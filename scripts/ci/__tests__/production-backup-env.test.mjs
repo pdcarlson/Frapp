@@ -429,11 +429,11 @@ describe("workflow wiring", () => {
     assert.ok(tokenIdx < readIdx, "a missing token must not look like a successful watch");
   });
 
-  it("passes GITHUB_PAT and runs with no npm ci", () => {
-    assert.ok(
-      workflow.includes("GITHUB_PAT: ${{ secrets.GITHUB_PAT }}"),
-      "Environments GET needs the PAT; GITHUB_TOKEN often 403s",
-    );
+  it("passes no GITHUB_PAT and runs with no npm ci", () => {
+    // #2518: this job names no environment, so a PAT here could only be a
+    // repository secret, and a repository secret is readable from any branch.
+    // The script still honours GITHUB_PAT for a local run.
+    assert.doesNotMatch(liveYaml, /secrets\.GITHUB_PAT/);
     assert.match(liveYaml, /node scripts\/ci\/production-backup-env\.mjs/);
     assert.doesNotMatch(liveYaml, /npm ci/);
   });

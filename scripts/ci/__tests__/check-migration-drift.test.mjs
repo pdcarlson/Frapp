@@ -225,6 +225,28 @@ test("fetchAppliedMigrations survives a network rejection", async () => {
   assert.match(result.error, /ECONNRESET/);
 });
 
+test("fetchAppliedMigrations names a body that failed mid-read, instead of calling it invalid JSON", async () => {
+  // With resilientFetch the request's timeout also covers the body, so a body
+  // still streaming at 15s rejects in text(). That is not a malformed answer.
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => {
+      throw new Error("The operation was aborted due to timeout");
+    },
+  });
+  const result = await fetchAppliedMigrations({ accessToken: "tok", projectRef: "ref1", fetchImpl });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /reading the response failed: The operation was aborted due to timeout/);
+
+  const garbled = await fetchAppliedMigrations({
+    accessToken: "tok",
+    projectRef: "ref1",
+    fetchImpl: async () => ({ ok: true, status: 200, text: async () => "{not json" }),
+  });
+  assert.equal(garbled.error, "response was not valid JSON");
+});
+
 // ── classifyDrift ───────────────────────────────────────────────────────────
 
 test("classifyDrift reports clean when the repo and database agree", () => {

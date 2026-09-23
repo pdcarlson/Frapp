@@ -1,14 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   decideOutcome,
   describePartition,
   guessFailedFile,
   partitionMigrations,
+  replaySource,
+  runCli,
   runReplayGate,
 } from "../check-migration-replay.mjs";
 import { readLocalMigrations } from "../check-migration-drift.mjs";
+import { resilientFetch } from "../lib/http.mjs";
+import { buildSnapshot, snapshotFetch } from "../lib/migration-snapshot.mjs";
 import { makeFetchMock } from "./helpers.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -316,4 +323,87 @@ test("the replay is not run at all when a migration is back-dated", async () => 
     },
   });
   assert.equal(code, 1);
+});
+
+test("production's state from a published snapshot blocks a back-dated migration", async () => {
+  // Acceptance criterion 3 of #2518, on the replay side: the PR job holds no
+  // credential and reads production's applied state from the snapshot a
+  // `main`-only job published. Same fixture shape as the test above, served
+  // through `snapshotFetch` instead of a mocked Management API.
+  const local = "supabase/migrations";
+  const repo = readLocalMigrations(local);
+  const productionRef = "productionrefbbb";
+  const snapshot = buildSnapshot({
+    capturedAt: "2026-09-23T10:00:00Z",
+    environments: [
+      {
+        name: "production",
+        supabaseProjectRef: productionRef,
+        migrations: repo.slice(1).map((m) => ({ version: m.version, name: m.name })),
+      },
+    ],
+  });
+
+  const code = await runReplayGate({
+    accessToken: "snapshot",
+    projectRef: productionRef,
+    migrationsDir: local,
+    fetchImpl: snapshotFetch(snapshot),
+    replayImpl: () => {
+      throw new Error("the replay must not run for a back-dated partition");
+    },
+  });
+  assert.equal(code, 1);
+});
+
+test("the CLI's live read uses resilientFetch, so one transient error doesn't fail a production deploy", () => {
+  // deploy-production.yml runs this script live. The CLI used to pass plain
+  // `fetch`, overriding runReplayGate's resilientFetch default: no timeout and
+  // a single attempt on the one Management API read a deploy depends on.
+  const live = replaySource({ env: { SUPABASE_ACCESS_TOKEN: "token", SUPABASE_PROJECT_REF: "ref" } });
+  assert.equal(live.fetchImpl, resilientFetch);
+  assert.equal(live.accessToken, "token");
+  assert.equal(live.projectRef, "ref");
+
+  // A recorded state is offline and needs neither.
+  const dir = mkdtempSync(join(tmpdir(), "replay-source-"));
+  try {
+    const path = join(dir, "applied.json");
+    writeFileSync(path, JSON.stringify([]));
+    const recorded = replaySource({ appliedFrom: path, env: {} });
+    assert.notEqual(recorded.fetchImpl, resilientFetch);
+    assert.equal(recorded.accessToken, "offline");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the CLI hands runReplayGate the live source untouched: resilientFetch and the env's credentials", async () => {
+  // Behavioural, not a read of the source text: whatever the CLI passes is
+  // what Deploy production's read uses.
+  let seen;
+  const runGate = async (options) => {
+    seen = options;
+    return 0;
+  };
+  const code = await runCli({
+    argv: ["node", "check-migration-replay.mjs"],
+    env: { SUPABASE_ACCESS_TOKEN: "token", SUPABASE_PROJECT_REF: "ref" },
+    runGate,
+  });
+  assert.equal(code, 0);
+  assert.equal(seen.fetchImpl, resilientFetch);
+  assert.equal(seen.accessToken, "token");
+  assert.equal(seen.projectRef, "ref");
+  assert.equal(seen.label, "production");
+
+  // Two sources for one answer is a usage error, and the gate never runs.
+  seen = undefined;
+  const conflict = await runCli({
+    argv: ["node", "check-migration-replay.mjs", "--applied-from", "a.json", "--snapshot", "b.json"],
+    env: {},
+    runGate,
+  });
+  assert.equal(conflict, 2);
+  assert.equal(seen, undefined);
 });

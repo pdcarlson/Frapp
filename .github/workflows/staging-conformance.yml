@@ -63,6 +63,13 @@ concurrency:
 jobs:
   conformance:
     runs-on: ubuntu-latest
+    # Secrets belong to the `staging` environment, `main` only once the owner's
+    # #2583 sets that rule and moves them there (#2518). `deployment: false`: a
+    # check, not a deploy, so no deployment record. See
+    # docs/internal/ci-cd/AGENT_INFRA.md § GitHub environments and bootstrap secrets.
+    environment:
+      name: staging
+      deployment: false
     # Bounded, like the sibling watchdogs. Without it an unresponsive provider
     # socket could hold the runner to GitHub's 360-minute default while writing
     # no summary and raising no alert. The script also caps each fetch.
