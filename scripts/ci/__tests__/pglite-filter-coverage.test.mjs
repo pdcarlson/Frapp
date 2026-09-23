@@ -259,6 +259,7 @@ export function scan(src, file) {
     "write it with literal arguments, or add it to STRUCTURAL";
   // Every form routes through here: follow a JavaScript module, record the rest.
   const route = (path, call) => {
+    assert.ok(path !== "", `${file}: \`${call}\` names the repo root itself`);
     assert.ok(path !== ".." && !path.startsWith("../"), `${file}: \`${call}\` names a path outside the repo`);
     (/\.[cm]?js$/.test(path) ? follow : found).push(path);
   };
@@ -268,13 +269,12 @@ export function scan(src, file) {
     if (root !== "REPO_ROOT" && root !== "process.cwd()") continue;
     const parts = rest.map(literal);
     assert.ok(parts.length > 0 && parts.every((p) => p !== null), unresolved(call));
-    // `resolve` restarts at an absolute segment, which here would leave the repo.
-    assert.ok(
-      !call.startsWith("resolve") || parts.every((p) => !p.startsWith("/")),
-      `${file}: \`${call}\` names a path outside the repo`,
-    );
-    // `join` keeps a leading `/` segment inside the root, as Node's does.
-    route(posix.join(...parts).replace(/^\/+/, ""), call);
+    // Evaluated against a stand-in root with Node's own semantics, so `join`
+    // keeps a leading `/` segment inside it, `resolve` restarts at one, and a
+    // `..` that climbs past it comes back as `../…` for `route` to reject.
+    const standIn = "/repo-root";
+    const target = (call.startsWith("resolve") ? posix.resolve : posix.join)(standIn, ...parts);
+    route(posix.relative(standIn, target), call);
   }
 
   for (const { call, args } of callArgs(src, masked, /\bnew\s+URL\s*\(/g)) {
@@ -497,10 +497,14 @@ describe("the scanner reads each form as what it is", () => {
     for (const src of [
       'join(REPO_ROOT, "..", "x");',
       'resolve(REPO_ROOT, "/etc/passwd");',
+      'join(REPO_ROOT, "/..", "supabase", "migrations");',
+      'join(REPO_ROOT, "/a/../../b");',
       'import "../../../../x.mjs";',
     ]) {
       assert.throws(() => scan(src, at), /outside the repo/, src);
     }
+    // The root itself is no file to cover.
+    assert.throws(() => scan('join(REPO_ROOT, "a", "..");', at), /repo root itself/);
   });
 
   it("tells a division from a regex after `++`, a property and a condition", () => {
