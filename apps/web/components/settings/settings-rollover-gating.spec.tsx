@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
-import { previewInkFor } from "@/components/settings/accent-preview-ink";
+import * as accentPreviewInk from "@/components/settings/accent-preview-ink";
 
 const { mockCurrentChapter, mockUpdateChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -248,19 +248,25 @@ describe("the accent preview reports its own legibility", () => {
 
   it("paints the swatch label in the ink the warning measured", async () => {
     // The warning's ratio comes from `previewInkFor`; the swatch must draw that
-    // same ink, or the warning measures a label nobody sees. (On today's
-    // ladder `onHouse` wins for every colour the resolver keeps, since keeping
-    // it takes 4.5:1 on the dark card, past the two tones' crossover; the
-    // ladder keeps the swatch right if the card or the fallback moves.)
-    const user = userEvent.setup();
-    render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
-    const hex = screen.getByLabelText(/accent color hex value/i);
-    await user.clear(hex);
-    await user.type(hex, "#0086FE");
-    expect(screen.getByText("Preview")).toHaveStyle({
-      color: previewInkFor("#0086FE")!.ink,
-    });
+    // same ink, or the warning measures a label nobody sees. A real accent
+    // can't show it: on today's ladder `onHouse` wins for every colour the
+    // resolver keeps (keeping it takes 4.5:1 on the dark card, past the two
+    // tones' crossover), and `onHouse` is also the fallback a hard-coded
+    // swatch would reach for. So the ink is a sentinel neither tone is.
+    const spy = vi
+      .spyOn(accentPreviewInk, "previewInkFor")
+      .mockReturnValue({ ink: "#123456", ratio: 7 });
+    try {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await user.click(screen.getByRole("tab", { name: /accent/i }));
+      const hex = screen.getByLabelText(/accent color hex value/i);
+      await user.clear(hex);
+      await user.type(hex, "#0086FE");
+      expect(screen.getByText("Preview")).toHaveStyle({ color: "#123456" });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("stays quiet for an accent whose label text is legible", async () => {
