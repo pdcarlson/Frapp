@@ -4,9 +4,9 @@
  * Responsibilities:
  *   - Per visible channel: Postgres Changes on `chat_messages` (filtered by
  *     channel_id) → `mergeServerRow` into the normalized cache. A merged row
- *     (live or backfilled) also evicts any persisted heavy-command notice
- *     under its `client_message_id` (`heavy-command-notices.ts`, #1909). Also
- *     a Broadcast endpoint per channel for typing + presence.
+ *     (live or backfilled) also evicts the persisted heavy-command notice its
+ *     sender filed under its `client_message_id` (`heavy-command-notices.ts`,
+ *     #1909). Also a Broadcast endpoint per channel for typing + presence.
  *   - One global Postgres Changes subscription on `chat_message_actions` (no
  *     `channel_id` column on that table to filter by) — events are dispatched
  *     to whichever subscribed channel cache holds the message. Reactions on
@@ -760,9 +760,10 @@ class ChatRealtimeManager {
 
   /**
    * Evict any persisted heavy-command notice these rows confirm (#1909): the
-   * card a `/points`, `/task` or `/event` command was waiting on. Now, not at
-   * the next load: by then the card may be outside the loaded window, and the
-   * stored entry would come back as a stale Retry.
+   * card a heavy command (`/points`, `/task`, `/event`, `/hours`,
+   * `/<vocab> add`) was waiting on. Now, not at the next load: by then the card
+   * may be outside the loaded window, and the stored entry would come back as
+   * a stale Retry.
    *
    * Addressed by each row's sender. A notice is filed under the member who
    * dispatched it, and the server posts that command's card as them.

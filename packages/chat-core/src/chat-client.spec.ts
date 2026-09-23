@@ -20,7 +20,11 @@ import {
   type ToastFn,
 } from "./chat-client";
 import type { OutboxRow, OutboxStore } from "./adapters";
-import { persistNotice, readNotices } from "./heavy-command-notices";
+import {
+  persistNotice,
+  readNotices,
+  UNCONFIRMED_NOTICE_TTL_MS,
+} from "./heavy-command-notices";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import { assertContentFreeProperties } from "@repo/validation";
 import { chatMessagesKey, type ChannelCache } from "./types";
@@ -1162,6 +1166,34 @@ describe("markLocalUnconfirmed (#1909)", () => {
       "confirmed",
     );
     expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
+  });
+
+  // A Retry pressed more than a day after the dispatch keeps the dispatch's
+  // timestamp, so the next rebuild prunes the entry rather than restoring it.
+  // Reporting it durable would promise a Retry that is about to vanish.
+  it("reports a row already past the age bound as not durable", () => {
+    const kv = memoryStore();
+    const ctx = buildCtx({ kv });
+    placeholder(ctx);
+    const key = chatMessagesKey("chan-1");
+    const cache = ctx.queryClient.getQueryData<ChannelCache>(key)!;
+    ctx.queryClient.setQueryData<ChannelCache>(key, {
+      ...cache,
+      byId: {
+        ...cache.byId,
+        "cm-1": {
+          ...cache.byId["cm-1"]!,
+          created_at: new Date(
+            Date.now() - UNCONFIRMED_NOTICE_TTL_MS - 60_000,
+          ).toISOString(),
+        },
+      },
+    });
+
+    expect(markLocalUnconfirmed(ctx, pointsReplay(), NOTE)).toEqual({
+      placement: "optimistic",
+      durable: false,
+    });
   });
 
   // Blocked or full storage: the row is on screen but only as durable as this

@@ -293,7 +293,14 @@ export function applyNotice(
       );
 }
 
-function isExpired(notice: HeavyCommandNotice, now: number): boolean {
+/**
+ * Whether an entry is past {@link UNCONFIRMED_NOTICE_TTL_MS} and so will be
+ * pruned, not restored, by the next rebuild. Only `unconfirmed` entries age.
+ */
+export function isNoticeExpired(
+  notice: HeavyCommandNotice,
+  now: number,
+): boolean {
   if (notice.status !== "unconfirmed") return false;
   const age = now - Date.parse(notice.createdAt);
   // An unparseable timestamp cannot prove the entry is young enough to keep.
@@ -327,7 +334,7 @@ export function mergePersistedNotices(
   const settled: string[] = [];
   for (const notice of notices) {
     const placement = locateRow(next, notice.clientMessageId);
-    if (placement === "confirmed" || isExpired(notice, now)) {
+    if (placement === "confirmed" || isNoticeExpired(notice, now)) {
       settled.push(notice.clientMessageId);
       continue;
     }
