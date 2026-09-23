@@ -93,7 +93,11 @@ sys.stdout.write("".join(parts))
 # on the ~60-90s bringup. Gated on `in_cloud` above, so local laptop sessions skip it. A
 # /tmp lock prevents relaunching on session resume.
 # See docs/internal/environment/CLOUD_SANDBOX.md.
-if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
+if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ] && [ -f "$ROOT/scripts/lib/bringup-lock.sh" ]; then
+  # bringup_alive, bringup_record: the lock's format, shared with a bringup run by hand.
+  # shellcheck source=scripts/lib/bringup-lock.sh
+  . "$ROOT/scripts/lib/bringup-lock.sh"
+
   # Overridable only so scripts/ci/__tests__/session-start-hook.test.mjs can drive this
   # hook against a scratch lock, log, boot id and /proc/stat, as FRAPP_CLOUD_MARKER is
   # above; nothing else sets them.
@@ -112,21 +116,20 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
   launch_bringup() {
     # `9>&-`: the bringup must not inherit the decision guard below, or it would hold it
     # for its whole run and every other session start would wait it out.
-    nohup bash "$ROOT/scripts/cloud-sandbox-up.sh" >"$BRINGUP_LOG" 2>&1 9>&- &
-    echo "$!" >"$LOCK/pid" 2>/dev/null || true
-    # Written aside and renamed in, so a concurrent fire never reads a created-but-empty file.
-    if [ -n "$current_boot" ]; then
-      { echo "$current_boot" >"$LOCK/boot_id.tmp" && mv -f "$LOCK/boot_id.tmp" "$LOCK/boot_id"; } 2>/dev/null || true
-    fi
+    # FRAPP_BRINGUP_LOCK_HELD tells it this hook already took the lock for it, so it does
+    # not try to take the lock itself as a bringup run by hand does.
+    FRAPP_BRINGUP_LOCK_HELD=1 nohup bash "$ROOT/scripts/cloud-sandbox-up.sh" >"$BRINGUP_LOG" 2>&1 9>&- &
+    bringup_record "$LOCK" "$!" "$current_boot"
     disown || true
   }
 
   # One session start decides at a time. Every branch below reads the lock and then acts on
   # it (removes it, takes it, relaunches), and two fires interleaving between those steps
   # could each find a lock worth reclaiming and each start a bringup. An flock on a file
-  # beside the lock serializes the whole decision, released before the manifest summary. The
-  # wait is bounded, so a wedged holder cannot stall session start, and where flock is
-  # missing the hook decides unserialized, as it always did.
+  # beside the lock serializes the whole decision, released before the manifest summary; a
+  # bringup run by hand takes the same guard to take the lock. The wait is bounded, so a
+  # wedged holder cannot stall session start, and where flock is missing the hook decides
+  # unserialized, as it always did.
   guard_open=""
   if command -v flock >/dev/null 2>&1 && { exec 9>>"${LOCK}.guard"; } 2>/dev/null; then
     guard_open=1
@@ -154,13 +157,8 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/cloud-sandbox-up.sh" ]; then
   # id). The boot id test is exact and never consults a pid: after a restart the old pid may
   # belong to some unrelated process by now. An empty boot id file (a write that failed) is
   # no evidence either way, so it takes the btime path too.
-  #
-  # "Alive" means the recorded pid runs cloud-sandbox-up.sh itself, not merely a command that
-  # names its log or sentinels (a `tail -f /tmp/cloud-sandbox-up.log` would otherwise pass).
-  bringup_alive() {
-    [ -n "$1" ] && kill -0 "$1" 2>/dev/null \
-      && ps -p "$1" -o args= 2>/dev/null | grep -q 'cloud-sandbox-up\.sh'
-  }
+  # ("Alive" is bringup_alive in scripts/lib/bringup-lock.sh: the recorded pid runs
+  # cloud-sandbox-up.sh itself, not merely a command that names its log.)
   stale_boot=""
   if [ -n "$current_boot" ] && [ -d "$LOCK" ]; then
     lock_boot="$(cat "$LOCK/boot_id" 2>/dev/null || true)"

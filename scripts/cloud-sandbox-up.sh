@@ -38,6 +38,29 @@ FRAPP_SEED_LOG_PREFIX='[cloud-sandbox]'
 # shellcheck source=scripts/lib/local-seed-data.sh
 . "$ROOT/scripts/lib/local-seed-data.sh"
 
+# The bringup lock (#2547). The SessionStart hook takes it before launching this script and
+# says so through FRAPP_BRINGUP_LOCK_HELD. Run by hand, this script takes it itself, under the
+# same guard flock the hook decides under, so a session start during a manual run finds a live
+# bringup instead of launching a second one; before this a hand run held no lock at all. It
+# refuses while another bringup from this boot is running, and replaces a dead or other-boot
+# lock, so no remedy needs to remove the lock first. First, before the sentinels are cleared:
+# a refused run must not erase the running bringup's.
+# shellcheck source=scripts/lib/bringup-lock.sh
+. "$ROOT/scripts/lib/bringup-lock.sh"
+if [ -z "${FRAPP_BRINGUP_LOCK_HELD:-}" ]; then
+  BRINGUP_LOCK="${FRAPP_BRINGUP_LOCK:-/tmp/cloud-sandbox-up.lock}"
+  boot_now="$(cat "${FRAPP_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null || true)"
+  if command -v flock >/dev/null 2>&1 && { exec 9>>"${BRINGUP_LOCK}.guard"; } 2>/dev/null; then
+    flock -w 10 9 2>/dev/null || true
+  fi
+  if ! running="$(bringup_take_lock "$BRINGUP_LOCK" "$boot_now" "$$")"; then
+    exec 9>&-
+    cs_log "ERROR: another bringup is already running${running:+ (pid ${running})}. Wait for its .cloud-sandbox-up.done / .cloud-sandbox-up.failed instead of starting a second one."
+    exit 1
+  fi
+  exec 9>&-
+fi
+
 DONE_SENTINEL="$ROOT/.cloud-sandbox-up.done"
 FAILED_SENTINEL="$ROOT/.cloud-sandbox-up.failed"
 EGRESS_MANIFEST="$ROOT/.cloud-sandbox-capabilities.json"
