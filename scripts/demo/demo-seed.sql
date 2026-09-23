@@ -39,9 +39,10 @@ DELETE FROM chapters WHERE id = 'c0ffee00-0000-4000-8000-000000000001';
 -- cascade and collide on re-run. Remove them explicitly by their id prefix.
 --
 -- But only once the cascade has taken everything they did: a row that still
--- references a seeded account now belongs to another chapter (the App Review
--- login founding or joining one), and deleting the account would cascade
--- through it or fail on it. The block below refuses in that case, reading every
+-- references a seeded account now lies outside the demo chapter (in another
+-- chapter the App Review login founded or joined, or in none, like a directory
+-- request), and deleting the account would delete it, fail on it, or null its
+-- reference. The block below refuses in that case, reading every
 -- foreign key onto users from the catalog (seed-demo.mjs accountGuardSql, which
 -- a test holds this copy to). The whole seed is one transaction, so a refusal
 -- changes nothing.

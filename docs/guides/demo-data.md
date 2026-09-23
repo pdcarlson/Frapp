@@ -165,8 +165,8 @@ it, and only `storage --remove` clears that folder. The login and its password
 persist, and step 2 links the same login again.
 
 **To remove a demo chapter**, apply `sql --remove` first: it prints the chapter
-and user deletes, and it is the step that can refuse (a seeded account with rows in
-another chapter), so stop there if it does. Then `storage --remove` (every object
+and user deletes, and it is the step that can refuse (anything outside the demo
+chapter still referencing a seeded account), so stop there if it does. Then `storage --remove` (every object
 under `chapters/<chapter id>/` in every bucket, which includes anything the reviewer
 uploaded, such as a chat photo; it cannot be undone, so it refuses while the chapter
 row still exists), then `auth --remove` (only a login this script created).
