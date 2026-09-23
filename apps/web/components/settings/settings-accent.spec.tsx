@@ -117,6 +117,78 @@ describe("the Accent tab says what the accent actually does", () => {
   });
 });
 
+/**
+ * The two preview warnings, pinned to the copy table that owns them.
+ *
+ * Both check the unsaved draft, not the saved palette (#2543), and both had
+ * drifted: one said the colour "didn't meet contrast requirements", which read
+ * as a rejection no save makes, and the other named "name tags" that no surface
+ * draws. Pinning each to its `writing.md` row means the copy and its spec move
+ * together or a test fails.
+ */
+const writing = readFileSync(
+  `${__dirname}/../../../../spec/ui/design-system/writing.md`,
+  "utf8",
+);
+
+/** The body cell of a `writing.md` Settings row, placeholders as written there. */
+const writingRow = (label: string) => {
+  const row = writing
+    .split("\n")
+    .find((line) => line.startsWith(`| ${label} |`));
+  if (!row) throw new Error(`writing.md has no "${label}" row`);
+  const body = row.match(/`([^`]*)` \|$/);
+  if (!body?.[1]) throw new Error(`the "${label}" row has no body cell`);
+  return body[1];
+};
+
+/** The rendered text of the warning guarded by `condition`, placeholders named. */
+const warning = (condition: string) => {
+  const at = settingsPage.indexOf(`{${condition} ? (`);
+  if (at === -1) throw new Error(`no warning is gated on ${condition}`);
+  const block = settingsPage
+    .slice(at)
+    .match(/<p className="text-xs text-warning">([\s\S]*?)<\/p>/);
+  if (!block?.[1]) throw new Error(`the ${condition} warning has no paragraph`);
+  return collapse(
+    block[1]
+      .replace(/\{" "\}/g, " ")
+      .replace(/\{accent\.resolvedAccent\}/g, "<hex>")
+      .replace(/\{previewInkRatio\.toFixed\(1\)\}/g, "<n>")
+      .replace(/&apos;/g, "'"),
+  );
+};
+
+describe("the preview warnings say what the preview does", () => {
+  it("renders the fallback warning its writing.md row states", () => {
+    expect(warning("accent.fallbackApplied")).toBe(
+      writingRow("Accent preview fallback"),
+    );
+  });
+
+  it("renders the label-ink warning its writing.md row states", () => {
+    expect(warning("previewInkFailsAA")).toBe(
+      writingRow("Accent label illegible"),
+    );
+  });
+
+  it("neither reads as a rejection, which no save makes", () => {
+    for (const condition of ["accent.fallbackApplied", "previewInkFailsAA"]) {
+      expect(warning(condition)).not.toMatch(/contrast requirements|rejected/);
+    }
+  });
+
+  it("the saved toast lists no surface it could drift from", () => {
+    const toastAt = settingsPage.indexOf('title: "Accent color saved"');
+    expect(toastAt).toBeGreaterThan(-1);
+    const toastCall = settingsPage.slice(
+      toastAt,
+      settingsPage.indexOf("});", toastAt),
+    );
+    expect(toastCall).not.toMatch(/description:/);
+  });
+});
+
 describe("the three things the copy promises never change", () => {
   /*
    * The copy is the product-facing half of the no-retint lock, and a promise in

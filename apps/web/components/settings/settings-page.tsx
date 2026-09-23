@@ -535,7 +535,6 @@ function SettingsPageContent() {
       setAccentContrastWarning(result?.failedContrastChecks ?? null);
       toast({
         title: "Accent color saved",
-        description: "The dashboard now uses it.",
       });
     } catch (error) {
       toast({
@@ -1134,9 +1133,9 @@ function SettingsPageContent() {
                   </div>
                   {accent.fallbackApplied ? (
                     <p className="text-xs text-warning">
-                      The color you entered didn&apos;t meet contrast
-                      requirements. Using the safe fallback{" "}
-                      {accent.resolvedAccent}.
+                      This color is hard to read on the card, so the preview
+                      shows {accent.resolvedAccent} instead. Saving keeps the
+                      color you entered.
                     </p>
                   ) : null}
                   {/*
@@ -1145,16 +1144,17 @@ function SettingsPageContent() {
                     card*; this one when text is illegible *on the accent* —
                     which is what a primary button actually is, and what this
                     card's own description promises the accent will be used
-                    for. `#0080FD` passes the first and fails this one, so
-                    without it an admin ships unreadable button labels having
-                    been told the colour was fine.
+                    for. `#0080FD` passes the first and fails this one. Both
+                    check the draft preview only: the saved palette's label
+                    (`on-primary`) is corrected by the engine to black or white
+                    at 4.5:1 or better (accent-engine.md §8), so neither
+                    predicts what saving paints (#2543).
                   */}
                   {previewInkFailsAA ? (
                     <p className="text-xs text-warning">
-                      Label text on this color reads at{" "}
+                      Label text on this preview reads at{" "}
                       {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
-                      Buttons and your chat bubbles will be hard to read. Pick a
-                      lighter or darker shade.
+                      Saving picks a black or white label that clears it.
                     </p>
                   ) : null}
                   {/*
