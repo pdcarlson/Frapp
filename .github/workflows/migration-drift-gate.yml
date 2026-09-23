@@ -260,12 +260,14 @@ jobs:
       # edge runtime, the log pipeline and the pooler contribute nothing to an
       # apply and cost image pulls on every run.
       #
-      # ghcr.io rate-limits image pulls (`toomanyrequests`), and the CLI gives
-      # up after two retries 4s and 8s apart, which failed this required check
-      # three times running on a limit that clears within minutes (#2609).
-      # Only that error is retried, with a clean stop between attempts; pulled
-      # images stay cached, so each attempt resumes the pulls where the last
-      # one stopped. Any other failure fails at once.
+      # ghcr.io rate-limits image pulls (`toomanyrequests`), and once the
+      # CLI's own pull retries run out, `start` fails: it failed this required
+      # check three runs in a row (#2609). The step retries only when that is
+      # the error `start` exits with, judged from the last lines of its output,
+      # since the CLI also prints rate limits it recovered from. A clean stop
+      # runs between attempts, and whole images already pulled stay cached, so
+      # each attempt pulls only what the last one did not finish. Any other
+      # failure fails at once.
       - name: Start disposable Supabase stack
         if: steps.touched.outputs.run == 'true'
         run: |
@@ -275,7 +277,7 @@ jobs:
             if supabase start -x studio,imgproxy,edge-runtime,logflare,vector,pooler,mailpit 2>&1 | tee "$log"; then
               exit 0
             fi
-            if ! grep -q 'toomanyrequests' "$log" || [ "$attempt" -eq 4 ]; then
+            if ! tail -n 3 "$log" | grep -q 'toomanyrequests' || [ "$attempt" -eq 4 ]; then
               exit 1
             fi
             delay=$((attempt * 60))
