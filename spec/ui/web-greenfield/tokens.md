@@ -280,6 +280,15 @@ generator), so the options are a recompute pass through the API or clearing the 
 that never carried a custom accent so they fall through to the CSS defaults. Precedent for the
 shape: `supabase/migrations/20260814120000_backfill_chapter_accent_color_from_branding.sql`.
 
+*Corrected 2026-09-23:* "Accessibility is not at risk" measured the text roles only. The
+`accent-primary` fill has its own 3:1 floor ([`accent-engine.md`](../design-system/accent-engine.md)
+§8), and a row derived against `#0E0D0B` can hold a fill under it: maroon `#800000` stored itself,
+1.37:1 on `--popover`, and navy `#1F4E79` 1.73:1, where today's engine paints `#F42F22` and
+`#8AC8FF`. Those chapters carried a custom accent, so the narrow option above leaves their switch
+track, focus border and poll selection under 3:1; only recomputing every row fixes them.
+[`accent-engine.md`](../design-system/accent-engine.md) §6 owns which rows, and #1165 is the
+backfill. The house-gold rows are the cosmetic case described above.
+
 ### L-03 — Danger text on `--popover`
 
 Solid `--destructive` now measures 4.482:1 on `--popover`, just under the gate (it was 4.717). The
