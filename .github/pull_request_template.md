@@ -27,12 +27,11 @@
 
 ## Checklist
 
-- [ ] This PR keeps intended behavior (`spec/`) and current behavior (code) aligned — disagreement is a tracked bug, not silent discretion (see `AGENTS.md` § Spec vs code).
+- [ ] Any spec/code disagreement this PR finds is fixed here or filed (`AGENTS.md` § Spec vs code).
 - [ ] If this PR changes a fact a doc asserts, it updates **that** doc — not the nearest one, and not a new stray file. An unrelated doc edited to make the change look documented is a review finding. See `docs/internal/ci-cd/DOCS_CI.md`.
-- [ ] If I changed API/domain/workflows, I updated `docs/` and/or `spec/` in the same change set.
 - [ ] If I changed API source, I regenerated `openapi.json` and `packages/api-sdk/src/types.ts`.
 - [ ] If I moved a heading other docs deep-link into, `npm run check:links` still passes (`npm run install:lychee` first).
-- [ ] If I changed `supabase/migrations/**`, I also updated rollback docs.
+- [ ] If I added a migration, it has both a promotion-log entry and a rollback recipe (`npm run check:migration-safety` fails without either).
 - [ ] No secrets committed (`.env*`, credentials, private keys).
 - [ ] No placeholder secrets in CI/CD workflows.
 
