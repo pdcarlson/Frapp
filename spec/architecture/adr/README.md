@@ -25,3 +25,4 @@ One file per ADR. [`spec/architecture/README.md`](../README.md) is the system ma
 | ADR-20: CI/CD pipeline redesign — production-shaped CI, one path to production, a six-stage program (2026-08-30) | [adr-20.md](adr-20.md) |
 | ADR-21: Retire the Vercel Git integration — deploys move into CI (landing 2026-09-01, web 2026-09-02) | [adr-21.md](adr-21.md) |
 | ADR-22: Sentry is the system of record for exceptions and traces; PostHog for product analytics | [adr-22.md](adr-22.md) |
+| ADR-23: Multi-agent budget — one big review, everything else small, explicit effort (2026-09-23) | [adr-23.md](adr-23.md) |

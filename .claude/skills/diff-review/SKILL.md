@@ -4,8 +4,8 @@ description: >
   Review the current working diff for correctness bugs, security holes, and cleanups before
   pushing. Use before any git push, when the pre-push review gate blocks a push, and whenever
   asked to review uncommitted or unpushed work on this branch.
-argument-hint: "[medium|high|xhigh] [<target>]"
-allowed-tools: Agent, Task, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(git diff *), Bash(git show *), Bash(git log *), Bash(git status *), Bash(git rev-parse *), Bash(git merge-base *), Bash(npm run check:*), Bash(mkdir *), Bash(touch *)
+argument-hint: "[medium|high|xhigh] [full] [ultracode] [<target>]"
+allowed-tools: Agent, Task, Workflow, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(git diff *), Bash(git show *), Bash(git log *), Bash(git status *), Bash(git rev-parse *), Bash(git merge-base *), Bash(git fetch origin main), Bash(node scripts/diff-review-scope.mjs*), Bash(npm run check:*)
 ---
 
 # Review this branch's diff
@@ -13,52 +13,102 @@ allowed-tools: Agent, Task, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(
 Frapp's pre-push review gate, and the review an agent can always run. Done means the findings are
 reported, each one is fixed or filed, and the gate marker exists for the commit you are pushing.
 
-**Try `/code-review` first.** The bundled command is richer, but a model can invoke it only when the
+This is the one review that is allowed to be big. Every other fan-out in the repo stays small
+([`multi-agent`](../multi-agent/SKILL.md)), because this gate reviews everything that gets pushed.
+
+**`/code-review` doesn't replace this skill.** A model can invoke the bundled command only when the
 current turn's prompt carries the token whitespace-delimited on both sides (regex
 `(?<!\S)/code-review(?=$|\s)`). Backticks, quotes, `**bold**`, and a trailing `.` or `,` all defeat
-the match, and it is always refused inside a subagent, so expect refusal. A result reading
-`cannot be used with Skill tool due to disable-model-invocation` means the condition isn't met; carry
-on with this skill. Full rule: `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`. `/code-review` knows
-nothing of the Frapp-specific angles below and does not write the gate marker, so after it runs,
-cover those angles here and write the marker (Phase 4) yourself.
+the match, and it is always refused inside a subagent. When the token is there, run it as asked,
+then run this skill in full: `/code-review` knows nothing of the Frapp-specific angles, for Opus
+models it runs no verifier pass, and it doesn't write the gate marker. Full rule:
+`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`.
 
 Don't get past the gate with `git push --no-verify`: it bypasses the hook and leaves no review
 evidence.
 
 You are usually reviewing your own work. The independent verifier pass in Phase 2 is what makes the
-result more than you agreeing with yourself, so it runs at every effort level.
+result more than you agreeing with yourself, so it runs at every effort level and in a re-review.
 
 ## Phase 0 — Scope
 
-Use the first of these that is non-empty:
+Fetch main, then resolve the scope once, to pinned SHAs, with the scope script:
 
-1. `git diff @{upstream}...HEAD`
-2. `git diff origin/main...HEAD` (no upstream, the usual case on a fresh branch)
-3. `git diff HEAD~1`
+```sh
+git fetch origin main                     # a stale origin/main makes main's commits look like the branch's
+node scripts/diff-review-scope.mjs        # add --full to force a full review
+```
 
-Add `git diff HEAD` when the tree is dirty. An explicit `<target>` (path, ref, or range) overrides
-all of this. State the scope in one line (base, head, file count). If the diff is empty, say so and
-stop.
+It prints one JSON line: `mode`, `base`, `head`, `branchBase`, `root`, `files`, `changedLines`,
+`dirty`. Use those values as they are. Don't re-resolve `origin/main` later: a background agent's
+`git fetch` can move it mid-review, and the same command would then name a different diff.
 
-Effort sets the generic angle count and the findings cap. The Frapp-specific angles run at every
-level: they are cheap, targeted searches, and several can share one finder.
+- **`full`**: the branch's first review in this checkout, from `branchBase`.
+- **`delta`**: the branch passed a review up to `base`, so this reviews only the commits since. The
+  finders still read the whole branch for context. This is the fix round. A level argument doesn't
+  change it; `full` does. If a merge landed since `base`, the script returns `full` instead: a merge
+  can hide a change (a conflict resolved by taking one side whole appears in no diff of the merge).
+- **`none`**: HEAD already has a marker. **`empty`**: the branch has no commits of its own.
+  Say so and stop. To push a commit that is already on `origin/main` anyway (a tag, say), mark it
+  `merged` in Phase 4. It is already public on main, so the gate has nothing left to protect; the
+  script refuses any commit that isn't there.
 
-| Level | Generic angles | Findings cap | Gap sweep |
-|---|---|---|---|
-| `medium` | 3 | 6 | no |
-| `high` (default) | 5 | 10 | no |
-| `xhigh` | 5 | 15 | yes |
+"Passed a review" means a marker this skill wrote as `full` or `delta` (Phase 4) on a commit
+between `branchBase` and HEAD. Nothing else counts: not the upstream tip (a push can skip the
+hook), and not a marker from before markers carried a kind.
+After a rebase the old markers sit on commits outside that range, so the branch gets a full
+review again.
 
-The gap sweep is one more `diff-finder` after Phase 2, given the surviving findings, with the angle
-"what the other angles missed". Verify its candidates the same way.
+An explicit `<target>` (a path, ref, or range) replaces the script: review exactly what it names
+with pinned SHAs, as a full review. It writes no marker, because it didn't review the commit a push
+would publish. To push another ref, check it out and run this skill there. Commit before you review,
+because the marker keys to a commit. If you must review a dirty tree (`dirty: true`), say so; the
+acceptance-and-tests finder sees only committed code. State the scope in one line (mode, base,
+head, file count).
+
+Effort sets the findings cap below. The finders it runs, their candidate caps and the gap sweep
+are set in [`frapp-review.js`](../../workflows/frapp-review.js). An ultracode review is a full review
+at `xhigh` with the acceptance-and-tests finder added. A re-review runs two light finders at any
+level.
+
+| Level | Findings cap |
+|---|---|
+| `medium` | 6 |
+| `high` (default), re-review | 10 |
+| `xhigh`, ultracode | 15 |
 
 ## Phase 1 — Find
 
-Launch one `diff-finder` agent per angle, all in one message so they run in parallel, and give each
-the resolved scope and its angle. (Where an agent type here or in Phase 2 isn't available,
-run a general-purpose agent with its `.claude/agents/` file's body as the prompt.) Each returns
-up to 6 candidates with `file`, `line`, `summary`, and `failure_scenario`. Drop a candidate with no
-plausible failure scenario.
+**When you are opted into the Workflow tool** (a session-level ultracode reminder, `ultracode` in
+this skill's arguments or in the command that called it, such as `/next ultracode`, or the user
+invoking `/diff-review` themselves), run the saved workflow. It runs this phase and Phase 2, and
+sets every agent's effort itself. Pass the scope script's JSON as `args`, plus:
+
+```js
+Workflow({ name: 'frapp-review', args: {
+  ...scope,                   // the JSON line from scripts/diff-review-scope.mjs, unchanged
+  level: 'high',              // the level argument, if any
+  ultracode: true,            // whenever you are opted in through ultracode: forces xhigh plus the extra finder
+  acceptance: '<the issue's acceptance criteria, when there is an issue>',
+} })
+```
+
+**Otherwise**, run the same shape with the Agent tool. Read `frapp-review.js` for the angle bundles,
+the candidate caps and the verify rule, launch the `diff-finder` agents in one message, then the
+verifiers. The Agent tool can't set effort per call. The agent files pin theirs, but whether that
+beats a session's `xhigh` hasn't been measured ([`multi-agent`](../multi-agent/SKILL.md) § Effort),
+so prefer the workflow whenever you may use it.
+
+Either way:
+
+- Finders share this working tree, so they are read-only. The one finder that may mutate source
+  (to prove a test bites) runs in its own git worktree and reverts before it returns. Don't commit,
+  reset, merge, stash or check out while finders or verifiers are live: a finder reading a moving
+  tree reports lines that no longer exist, and a hook that fires on `git status` would have you
+  commit someone's experiment.
+- A finder that returned nothing, or reported a `problem` (`finderFailures` in the workflow's
+  result), left angles unchecked: cover them inline before you report.
+- Drop a candidate with no plausible failure scenario.
 
 ### Generic angles
 
@@ -138,7 +188,8 @@ These encode invariants the codebase can't enforce for itself.
   when neither is in the diff, and CI doesn't close that gap either (what CI still scans is in
   [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)). Never report a clean review as evidence
   that the corpus is clean.
-- **Blast radius, not diff radius.** "Pre-existing" is no reason to drop a candidate. Judge it
+- **Blast radius, not diff radius.** A rule every finder applies, not an angle of its own.
+  "Pre-existing" is no reason to drop a candidate. Judge it
   against [`spec/engineering.md`](../../../spec/engineering.md#changing-existing-code) § Changing
   existing code, which draws the fence.
 - **Tracker.** Flag code, scripts, or workflows that write to a retired tracker. Issues live on
@@ -148,18 +199,51 @@ These encode invariants the codebase can't enforce for itself.
 - **Verification honesty.** Flag a comment, doc line, or PR text claiming a check ran that the diff
   shows could not have (an E2E pass when the stack can't start).
 
+
+### Ultracode angles
+
+These run only in an ultracode full review, as one finder in its own worktree.
+
+- **Acceptance criteria.** Against the issue's acceptance criteria when the launcher passes them,
+  otherwise against what the commits and PR text say the change does: each criterion the diff
+  claims to meet but doesn't, and each one left silently unmet.
+- **Test adequacy.** Whether the tests that changed, or should have, would fail if the new behavior
+  broke. Prove it where you can: mutate the source in your worktree, run the narrowest test, and
+  revert. A test that still passes with the guard removed is a finding. A worktree has no
+  `node_modules` or `.env.local` of its own: resolution walks up to the main checkout's, whose
+  workspace links point at the main checkout's packages. So a mutation proves something only when
+  the test reaches the mutated file by a relative import inside one workspace. Where it can't be
+  proven, say what stopped you rather than reporting "doesn't bite".
+
 ## Phase 2 — Verify
 
-Launch one `claim-verifier` agent per surviving candidate, in parallel, with the candidate's file,
-line, summary, and failure scenario. It tries to disprove the finding and returns `CONFIRMED`,
-`PLAUSIBLE`, or `REFUTED` with evidence. Discard everything `REFUTED`.
+Candidates are deduped by `file:line` first. A later duplicate of a kept candidate rides along as
+`alsoFlaggedBy`; a duplicate of one that is refuted or unverified may be a different defect at the
+same line, so it gets its own verdict (the exact rule is in `frapp-review.js`). Each remaining candidate gets one `claim-verifier`
+on the reproduce lens: does the stated failure scenario actually happen? Only if it returns
+`REFUTED` does a second `claim-verifier` look at it, on the material lens and without seeing the
+first verdict: is there a real defect here worth acting on, even if the scenario is inexact? A
+candidate is discarded only when both say `REFUTED`. With the same two verifiers, that is the
+keep-or-drop call two verifiers per candidate would make keeping on either vote, at about half the
+cost. These verifiers run at `medium` and `high` effort, not the `xhigh` the earlier two-verifier
+runs inherited, so their recall per vote isn't measured
+([ADR-23](../../../spec/architecture/adr/adr-23.md)).
+A verdict that never came back (`unverified` in the workflow's result) is a check not run: get it
+before you report.
 
 ## Phase 3 — Synthesize and report
 
 Rank correctness and security above cleanups, and `CONFIRMED` above `PLAUSIBLE`. A docs finding that
 names a concrete broken pointer, an orphaned section reference, or a dropped dated stamp is a
-correctness finding and is not cut to fit the cap. Merge findings that share a root cause. Cap at the
-level's limit.
+correctness finding and is not cut to fit the cap. Each `alsoFlaggedBy` entry is an unverified
+candidate at a kept finding's line, with its own summary and failure scenario. Merge it when it
+shares the root cause. When it names a different defect, send it back through the workflow, which
+verifies it exactly as Phase 2 does and tells both lenses to ignore the finding already kept there:
+`Workflow({ name: 'frapp-review', args: { ...scope, verify: [{ ...entry, distinctFrom: '<the kept
+finding's summary>' }] } })`, one array entry per such defect. On the Agent-tool path, verify it as
+Phase 2 does with the same instruction. Report it as its own finding if it's kept; one that comes
+back `unverified` is a check not run. Merge other findings
+that share a root cause. Cap at the level's limit.
 
 Report with one `ReportFindings` call, most severe first, with `level` set to the effort used and
 `verdict` on each finding. Pass an empty array when nothing survived. Don't also restate the findings
@@ -182,15 +266,16 @@ the GitHub MCP is unreachable, say so and carry the unfiled finding in your summ
 
 ## Phase 4 — Record that the review ran
 
-After reporting and acting on the findings, write the marker the pre-push hook checks:
+After reporting and acting on the findings, check that `git rev-parse HEAD` is still the `head` you
+reviewed and that `git status` shows nothing you didn't write. Then write the marker the pre-push
+hook checks, with the kind of review it records (`full` or `delta`, or `merged` for a commit
+already on `origin/main`; an explicit-target review writes none):
 
 ```sh
-mkdir -p "$(git rev-parse --show-toplevel)/.cache/diff-review" \
-  && touch "$(git rev-parse --show-toplevel)/.cache/diff-review/$(git rev-parse HEAD)"
+node scripts/diff-review-scope.mjs --mark full
 ```
 
-Use the absolute repo-root path, as above, not a `.cache/…` path relative to the cwd.
-`.githooks/pre-push` reads `<repo-root>/.cache/diff-review/<SHA>`, so a marker written from
-`apps/api` lands where the hook never looks and the push stays denied. The marker is keyed to the
-commit, so committing fixes invalidates it by design: re-run this skill on the new HEAD, and the
-review always covers exactly what gets pushed.
+The script writes `<repo-root>/.cache/diff-review/<HEAD SHA>`, the only place the hook looks, and
+the kind is what lets the next Phase 0 trust it. The marker is keyed to the commit, so committing
+fixes invalidates it by design: re-run this skill on the new HEAD. Phase 0 then finds this marker
+and re-reviews just the fix commits, or the whole branch if any merge landed since.

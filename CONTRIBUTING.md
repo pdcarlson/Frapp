@@ -88,8 +88,8 @@ Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled
 
 ### PR review requirement policy
 
-- `main`: a human approving review is **not required**; review is the local pre-push gate
-  (`/diff-review` for agents, `/code-review` for humans).
+- `main`: a human approving review is **not required**; review is the local pre-push gate,
+  `/diff-review`, for agents and humans alike (`/code-review` can add coverage but doesn't pass it).
 - `main`: conversation resolution is **not required**.
 - There is no second branch with a stricter policy. The `production` branch carried
   **1 required approving review** as the promotion gate; that gate moved to the

@@ -7,8 +7,9 @@ Operating guide for agents and developers in this repo. Machines, Infisical and 
 - Be proactive on internal repo work. Confirm before external or public actions.
 - Instructions Paul will execute go one step at a time, waiting for each outcome: the exact command, the exact setting or secret name (never its value), and what he'll see when it worked. A wall of nine steps gets half-done. Analysis (findings, trade-offs, the reasoning behind a recommendation) is still stated in full. A one-shot delivery with no next turn (an end-of-run report, a `[human]` issue body) carries every step; [`file-follow-up`](.claude/skills/file-follow-up/SKILL.md) governs that case.
 - Verify a command against the tool (its `--help`, or the installed version's manifest), not against this repo's docs: nothing in CI runs a documented command, so a stale one stays stale. Say which claims you verified and which you derived.
-- A question for Paul goes last, after any status and after the "debt spotted" note.
+- A question for Paul goes last, after any status and after the "debt spotted" note. Ask it with AskUserQuestion, your recommended option first; an unattended run carries it to its end-of-run report instead of blocking.
 - Delegate sizeable, independent, reading-heavy work (a broad search, a separate research thread, a self-contained chunk) to parallel subagents, which keeps it out of your context. Do small lookups, and checks of your own work, yourself. The exception is an independent role from `.claude/agents/` where a procedure calls for one (see [Skills and subagents](#skills-and-subagents)).
+- Size every fan-out and set every subagent's effort by the [`multi-agent`](.claude/skills/multi-agent/SKILL.md) skill, ultracode included: `/diff-review` is the only review allowed to be big, and nothing else is allowed to inherit ultracode's effort.
 - If the cloud-sandbox stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, a Docker Hub rate limit, a missing env var), stop and tell the user exactly what to change in this session's Claude Code web environment settings. That config can't be fixed from inside the session, and a workaround hides it. Trust the sentinel over the log; symptom-to-fix map: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails"). The exception: a sentinel reading `(dependencies)` means only `node_modules` is unusable and the stack is up, so run `npm ci` yourself, and report only if it can't reach the registry.
 
 ## Credentials and secrets
@@ -97,14 +98,15 @@ Read the matching skill before deep work. Skills live in [`.claude/skills/`](.cl
 - Building: `api-development`, `ui-development`, `signet-cutover`, `realtime-resilience`, `testing`.
 - Reviewing and verifying: `diff-review` (the pre-push gate; [runbook](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md)), `audit`, `infrastructure-research`, `live-verification` (deployed staging only, never production).
 - Tracker and sessions: `file-follow-up`, `needs-me`, `handoff`.
+- Multi-agent work: `multi-agent` (budget, effort and mechanics for any Workflow or subagent fan-out).
 - The five scheduled routines, 1 to 5: `issue-curator`, `issue-triage`, `pr-followups`, `docs-upkeep`, `hygiene-scan` ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)).
 
 Long sessions degrade. Offer `/handoff` when context is filling or a task is ending, written as orientation for the next session, not instructions.
 
-Subagent roles in [`.claude/agents/`](.claude/agents/), both read-only. Where the agent type isn't available, run a general-purpose agent with the agent file's body as its prompt.
+Subagent roles in [`.claude/agents/`](.claude/agents/), both read-only, each with its effort pinned in frontmatter. Where the agent type isn't available, run a general-purpose agent with the agent file's body as its prompt.
 
-- [`diff-finder`](.claude/agents/diff-finder.md): reviews a diff from one assigned angle and returns candidate findings with failure scenarios. Launch one per angle, in parallel.
-- [`claim-verifier`](.claude/agents/claim-verifier.md): tries to disprove one claim (a review finding, an issue's "already done" or "still blocked", a doc statement, a close-on-proof call) and returns CONFIRMED, PLAUSIBLE, or REFUTED with evidence. Use it where a verdict should come from someone other than the claim's author.
+- [`diff-finder`](.claude/agents/diff-finder.md): reviews a diff from its assigned angles (usually a bundle of two or more) and returns candidate findings with failure scenarios. `/diff-review` launches them through the `frapp-review` workflow, which owns the bundles.
+- [`claim-verifier`](.claude/agents/claim-verifier.md): tries to disprove a claim, or a small batch with one verdict each (a review finding, an issue's "already done" or "still blocked", a doc statement, a close-on-proof call) and returns CONFIRMED, PLAUSIBLE, or REFUTED with evidence. Use it where a verdict should come from someone other than the claim's author.
 
 ## Gotchas
 
@@ -120,6 +122,7 @@ When the user gives you a durable environment hint or tool workaround not docume
 - `jsdom` lives in the root `devDependencies`. Vitest resolves its `jsdom` environment from its own hoisted root install, so a workspace-level `jsdom` is invisible to it, and vitest marks the peer optional, so npm never installs it for you. Without the root copy, every `environment: "jsdom"` config and `@vitest-environment jsdom` spec fails with `Cannot find package 'jsdom' imported from .../node_modules/vitest/...`. Likewise, a workspace declares what it imports (renderers declare `@testing-library/react` and `react-dom`), because a package found only through hoisting gets nested by the next re-resolution.
 - `Skill(skill: "code-review")` is invocable only when this turn's prompt carries `/code-review` as a whitespace-delimited token; backticks, quotes and trailing punctuation defeat it. `/diff-review` is always invocable and is the pre-push gate. Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 - Branch protection sets `enforce_admins: true`, so admin credentials don't bypass it.
+- Never `pkill -f` or `pgrep -f` a pattern from Bash: it also matches the calling shell's own command line, so the kill takes out the shell running it. Kill by explicit PID.
 
 ## Claude Code web sandbox
 

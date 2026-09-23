@@ -34,7 +34,7 @@
       "mcp__github__update_pull_request_branch"
     ]
   },
-  "skipWorkflowUsageWarning": true,
+  "workflowSizeGuideline": "medium",
   "hooks": {
     "SessionStart": [
       {
