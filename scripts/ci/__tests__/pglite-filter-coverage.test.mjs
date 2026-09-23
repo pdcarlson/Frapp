@@ -21,9 +21,10 @@ import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 // path its modules name by `join(...)` or `resolve(...)` on `REPO_ROOT` or
 // `process.cwd()` (the same directory in the entry), by `new URL(...,
 // import.meta.url)`, or by a relative `import`/`export ... from`/`import()`.
-// Each path is normalized and routed the same way whatever named it: a
-// JavaScript module is followed and scanned in turn, anything else is recorded
-// as an input. Each path argument must be a literal, in any quote style; a
+// Each path is resolved as its form resolves it at runtime (a `join` segment is
+// file-system text, a `new URL` or import target is a URL) and then routed the
+// same way whatever named it: a JavaScript module is followed and scanned in
+// turn, anything else is recorded as an input. Each path argument must be a literal, in any quote style; a
 // computed one, or a path outside the repo, fails the test rather than being
 // skipped, because this derivation cannot resolve it.
 //
@@ -271,16 +272,18 @@ export function scan(src, file) {
     assert.ok(path !== ".." && !path.startsWith("../"), `${file}: \`${call}\` names a path outside the repo`);
     (/\.[cm]?js$/.test(path) ? follow : found).push(path);
   };
-  // Every path is normalized here, segment by segment from a repo-relative
-  // start, never against the checkout's real path or a stand-in root. Either
-  // of those accepts a climb that re-enters by name: a stand-in's own
-  // (`"..", "repo-root"`), or the checkout directory's (`../../Frapp/x` in a
-  // checkout at `…/Frapp/Frapp`), so the verdict would depend on where the
-  // repo was cloned. A `..` past the root leaves the repo, even when a later
-  // segment would climb back in, which is fine.
-  const normalize = (from, parts, call) => {
+  // A path is never resolved against the checkout's real path, or against a
+  // single stand-in root: either accepts a climb that re-enters by name, the
+  // checkout directory's (`../../Frapp/x` in a checkout at `…/Frapp/Frapp`,
+  // so the verdict would depend on where the repo was cloned) or the
+  // stand-in's own (`"..", "repo-root"`).
+  //
+  // `join`/`resolve` segments are literal file-system path text, so they are
+  // walked segment by segment from the repo root. A `..` past the root leaves
+  // the repo, even when a later segment would climb back in, which is fine.
+  const normalize = (parts, call) => {
     const outside = `${file}: \`${call}\` names a path outside the repo`;
-    const segments = [...from];
+    const segments = [];
     for (const part of parts) {
       for (const segment of part.split("/")) {
         if (segment === "" || segment === ".") continue;
@@ -292,15 +295,40 @@ export function scan(src, file) {
     }
     route(segments.join("/"), call);
   };
-  // A module-relative target, as `new URL(target, import.meta.url)` and a
-  // relative import resolve it. An absolute path is the machine's, not the
-  // repo's; a query or fragment is not part of the path.
-  const moduleDir = file.split("/").slice(0, -1);
+  // A `new URL(target, import.meta.url)` or relative-import target is a URL,
+  // so it resolves as WHATWG resolves it at runtime (`%2e%2e` is `..`, `%20`
+  // a space, a query or fragment no part of the path, surrounding spaces
+  // trimmed, another scheme no file), against two stand-in roots with no name
+  // in common. A target inside the repo lands at the same relative path under
+  // both; one that climbs out lands outside at least one of them, even when it
+  // climbs back in by name.
+  const STAND_INS = ["stand-in-a", "stand-in-b"];
+  const decodeSegment = (segment, call) => {
+    let decoded;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      assert.fail(unresolved(call));
+    }
+    // An encoded `/` is no separator, and no file name either.
+    assert.ok(!decoded.includes("/"), unresolved(call));
+    return decoded;
+  };
+  const moduleHref = file.split("/").map(encodeURIComponent).join("/");
   const fromModule = (target, call) => {
-    const path = target.split(/[?#]/)[0];
-    assert.ok(!path.startsWith("/"), `${file}: \`${call}\` names a path outside the repo`);
-    if (path === "") route(file, call);
-    else normalize(moduleDir, [path], call);
+    const paths = STAND_INS.map((root) => {
+      const url = new URL(target, new URL(moduleHref, `file:///${root}/`));
+      if (url.protocol !== "file:") return null;
+      if (url.host !== "" || !url.pathname.startsWith(`/${root}/`)) return "..";
+      return url.pathname
+        .slice(root.length + 2)
+        .split("/")
+        .map((segment) => decodeSegment(segment, call))
+        .join("/");
+    });
+    if (paths[0] === null) return;
+    assert.ok(paths[0] === paths[1], `${file}: \`${call}\` names a path outside the repo`);
+    route(paths[0], call);
   };
 
   for (const { call, args } of callArgs(src, masked, /\b(?:join|resolve)\s*\(/g)) {
@@ -316,24 +344,14 @@ export function scan(src, file) {
         `${file}: \`${call}\` names a path outside the repo`,
       );
     }
-    normalize([], parts, call);
+    normalize(parts, call);
   }
 
   for (const { call, args } of callArgs(src, masked, /\bnew\s+URL\s*\(/g)) {
     if (args[1] !== "import.meta.url") continue;
     const target = literal(args[0] ?? "");
     assert.ok(target !== null, unresolved(call));
-    // As WHATWG resolves it: `"x.csv"` is the module's sibling just as
-    // `"./x.csv"` is, and a target with a scheme is absolute. Only a `file:`
-    // one names a path, and that path is the machine's.
-    const scheme = /^([a-z][a-z\d+.-]*):/i.exec(target);
-    if (scheme) {
-      assert.ok(
-        scheme[1].toLowerCase() !== "file",
-        `${file}: \`${call}\` names a path outside the repo`,
-      );
-      continue;
-    }
+    // `"x.csv"` is the module's sibling, just as `"./x.csv"` is.
     fromModule(target, call);
   }
 
@@ -472,12 +490,24 @@ describe("the scanner reads each form as what it is", () => {
       // A query or fragment is not part of the path; another scheme is no file.
       'new URL("b.json?raw#x", import.meta.url);',
       'new URL("https://example.com/c.json", import.meta.url);',
+      // As WHATWG reads it: `%2e%2e` is `..`, `%20` a space, and surrounding
+      // spaces are trimmed.
+      'new URL("%2e%2e/%2e%2e/%2e%2e/supabase/e.sql", import.meta.url);',
+      'new URL("my%20seed.csv", import.meta.url);',
+      'new URL(" ../trim.sql", import.meta.url);',
+      'import "./%2e%2e/y.mjs";',
     ].join("\n");
-    assert.deepEqual(scan(src, at).found, [
-      "scripts/ci/lib/seed.csv",
-      "scripts/ci/a.json",
-      "scripts/ci/lib/b.json",
-    ]);
+    assert.deepEqual(scan(src, at), {
+      found: [
+        "scripts/ci/lib/seed.csv",
+        "scripts/ci/a.json",
+        "scripts/ci/lib/b.json",
+        "supabase/e.sql",
+        "scripts/ci/lib/my seed.csv",
+        "scripts/ci/trim.sql",
+      ],
+      follow: ["scripts/ci/y.mjs"],
+    });
   });
 
   it("fails on a computed argument, nested calls included", () => {
@@ -486,6 +516,9 @@ describe("the scanner reads each form as what it is", () => {
       "new URL(join(\"..\", \"x.sql\"), import.meta.url);",
       "join(REPO_ROOT, dir);",
       "await import(`./${name}.mjs`);",
+      // An encoded `/`, and an escape that decodes to nothing.
+      'new URL("a%2Fb.sql", import.meta.url);',
+      'new URL("%zz.sql", import.meta.url);',
     ]) {
       assert.throws(() => scan(src, at), /cannot resolve/, src);
     }
@@ -578,6 +611,9 @@ describe("the scanner reads each form as what it is", () => {
       // forms accepted while they resolved against the real path.
       `new URL("../../../../${basename(REPO)}/supabase/x.sql", import.meta.url);`,
       `import "../../../../${basename(REPO)}/y.mjs";`,
+      // And by a stand-in's, which one stand-in alone would accept.
+      'new URL("../../../../stand-in-a/x.sql", import.meta.url);',
+      'import "../../../../stand-in-b/y.mjs";',
     ]) {
       assert.throws(() => scan(src, at), /outside the repo/, src);
     }
