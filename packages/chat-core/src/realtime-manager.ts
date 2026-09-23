@@ -113,6 +113,26 @@ export interface ManagerContext {
   net?: NetworkState;
 }
 
+/**
+ * A `postgres_changes` row, stripped of anything that would let it read as
+ * server-evaluated for the viewer (#2315).
+ *
+ * `sender_blocked` is how a REST row says the server ran the viewer's block
+ * list over it, and its presence is what `normalizeRow` turns into
+ * `ChatMessage._blockEvaluated`. An echo is the raw table row, delivered with
+ * no viewer attached, so it can vouch for nothing. It carries no such key
+ * today — `chat_messages` has no such column — which is exactly why this is
+ * enforced here rather than assumed: the one path that knows a row arrived by
+ * echo is the one that must say so, and an echo that read as evaluated would
+ * render in the clear while the block list is loading or unavailable.
+ */
+function asEcho(row: RawChatMessage): RawChatMessage {
+  if (!("sender_blocked" in row)) return row;
+  const echo = { ...row };
+  delete echo.sender_blocked;
+  return echo;
+}
+
 interface PerChannelState {
   channelId: string;
   refCount: number;
@@ -452,9 +472,12 @@ class ChatRealtimeManager {
         // time. History arrives through the ordinary channel read, in order.
         if (next?.kind === "imported") return;
         if (next && next.id) {
-          // INSERT / UPDATE — full row is present and authoritative.
+          // INSERT / UPDATE — full row is present and authoritative about its
+          // content, and says nothing about the viewer's block list: this path
+          // has no viewer. `asEcho` makes that explicit (#2315).
+          const echo = asEcho(next);
           this.patchCache(state.channelId, (cache) =>
-            mergeServerRow(cache, next),
+            mergeServerRow(cache, echo),
           );
           this.writeLastSeen(state.channelId, next.id);
           return;

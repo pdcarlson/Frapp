@@ -189,7 +189,13 @@ describe("markRecorded (#1789)", () => {
 describe("block-list provenance through the merge (#2315)", () => {
   /** REST/PostgREST's `timestamptz`: ISO, `T`, microseconds, `+00:00`. */
   const REST_CREATED_AT = "2026-09-15T18:00:00.123456+00:00";
-  /** Realtime's `timestamptz`, untouched by realtime-js: space, `+00`. */
+  /**
+   * Postgres's text form of `timestamptz`, which realtime-js would pass through
+   * untouched (`transformers.js`). Local Realtime v2.113.4 actually sends the
+   * ISO shape above (probed 2026-09-23, `spec/behavior/chat/README.md` § The
+   * masking contract); this one is kept so nothing here can come to depend on
+   * the two paths agreeing.
+   */
   const REALTIME_CREATED_AT = "2026-09-15 18:05:12.4+00";
 
   /** A row as `GET /v1/channels/{id}/messages` serves it. */
@@ -240,10 +246,13 @@ describe("block-list provenance through the merge (#2315)", () => {
     });
   });
 
-  test("an UPDATE echo of a server-masked row clears the provenance it overwrites", () => {
-    // The reachable leak from #2315 defect 5: a pin by any `channels:manage`
-    // holder echoes the raw row over a masked one. The content is now the
-    // blocked member's real words, so the row must stop reading as vouched.
+  test("an UPDATE echo of a server-masked row clears its provenance but carries the mask", () => {
+    // #2315 defect 5: a pin by any `channels:manage` holder echoes the raw row
+    // over a masked one. The content is now the blocked member's real words,
+    // so the row must stop reading as evaluated — and must keep the server's
+    // verdict. Dropping it left the client's list as the only guard, and a
+    // list that read ready but predated a block made on another device showed
+    // those words in full.
     let cache = mergeServerRow(
       emptyCache(),
       restRow({ sender_blocked: true, content: "[redacted by server]" }),
@@ -253,10 +262,52 @@ describe("block-list provenance through the merge (#2315)", () => {
       echoRow({ is_pinned: true, content: "the real words" }),
     );
 
-    const message = cache.byId["m1"]!;
-    expect(message.content).toBe("the real words");
-    expect(message._blockEvaluated).toBe(false);
-    expect(message.sender_blocked).toBe(false);
+    expect(cache.byId["m1"]).toMatchObject({
+      content: "the real words",
+      is_pinned: true,
+      _blockEvaluated: false,
+      sender_blocked: true,
+    });
+
+    // A second echo — an edit after the pin — keeps carrying it.
+    cache = mergeServerRow(
+      cache,
+      echoRow({ content: "edited again", edited_at: "2026-09-15 18:07:00+00" }),
+    );
+    expect(cache.byId["m1"]).toMatchObject({
+      content: "edited again",
+      _blockEvaluated: false,
+      sender_blocked: true,
+    });
+  });
+
+  test("an UPDATE echo of a server-cleared row carries nothing", () => {
+    let cache = mergeServerRow(emptyCache(), restRow());
+    cache = mergeServerRow(
+      cache,
+      echoRow({ is_pinned: true, content: "edited words" }),
+    );
+
+    expect(cache.byId["m1"]).toMatchObject({
+      content: "edited words",
+      _blockEvaluated: false,
+      sender_blocked: false,
+    });
+  });
+
+  test("a later REST read is the server's answer again, so an unblock brings the words back", () => {
+    let cache = mergeServerRow(
+      emptyCache(),
+      restRow({ sender_blocked: true, content: "[redacted by server]" }),
+    );
+    cache = mergeServerRow(cache, echoRow({ content: "the real words" }));
+    cache = mergeServerRow(cache, restRow({ content: "the real words" }));
+
+    expect(cache.byId["m1"]).toMatchObject({
+      content: "the real words",
+      _blockEvaluated: true,
+      sender_blocked: false,
+    });
   });
 
   test("a REST read that does return an echoed row vouches for it", () => {
