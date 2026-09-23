@@ -16,8 +16,9 @@ run files findings as GitHub issues instead of fixing them. Two routines fix ins
 issues, and [`hygiene-scan`](../hygiene-scan/SKILL.md) fixes code hygiene in a product-code PR.
 
 A broad audit splits well across subagents by audit type, since each is independent,
-context-heavy reading. Before filing a finding whose proof is more than one read, the
-`claim-verifier` agent can try to refute it.
+context-heavy reading; group the types so the fan-out stays within the
+[`multi-agent`](../multi-agent/SKILL.md) budget. Before filing findings whose proof is more than
+one read, hand them to one `claim-verifier` as a batch to try to refute.
 
 ## Commands that write
 

@@ -62,8 +62,9 @@ and `spec/`. Two groups are different:
 A close needs proof you can point at; when in doubt, mark `stale` instead, because a wrong close
 silently drops real work. When the proof is a direct citation, cite it and close. When it rests on
 inference (behavior spread across modules, "superseded" judged from a redesign), you can hand the
-close to a `claim-verifier` agent (`.claude/agents/claim-verifier.md`) and close only on
-CONFIRMED. Don't spin one up for a close you can already cite.
+close to a `claim-verifier` agent (`.claude/agents/claim-verifier.md`), batching the run's
+inferred closes into one, and close only on CONFIRMED. Don't spin one up for a close you can
+already cite.
 
 **Body rewrites.** Whether an MCP read is safe to rewrite from is a measurement that has flipped
 before. The table, the probe, and the fallback when it's red live in

@@ -38,7 +38,7 @@ Two skills satisfy this gate, and the difference matters:
 | Skill | Who can run it | Notes |
 |---|---|---|
 | [**`/diff-review`**](../../../.claude/skills/diff-review/SKILL.md) | **agent or human, always** | The project's own skill. An agent runs it unprompted when the gate fires. |
-| **`/code-review`** | human always; **agent only when the turn's prompt contains the token `/code-review`** | The bundled command. Richer — per-model-tuned effort cells, a workflow-backed path at `high`/`xhigh`/`max`, cloud `ultra` mode, `--fix`, `--comment`. |
+| **`/code-review`** | human always; **agent only when the turn's prompt contains the token `/code-review`** | The bundled command: per-model-tuned effort cells, cloud `ultra` mode, `--fix`, `--comment`. Extra coverage, not a replacement for the gate ([below](#code-review-doesnt-replace-the-gate)). |
 
 ### The `/code-review` invocation rule
 
@@ -107,20 +107,31 @@ full forked review; with it absent the same call returned
 usually does not hold. It also carries Frapp-specific review angles the bundled command has no
 knowledge of.
 
-**Prefer `/code-review` when it is available.** If the turn's prompt carries the token, run it instead
-— it ships per-model-tuned effort cells and, at `high`/`xhigh`/`max` with dynamic workflows enabled
-(including under the **Ultracode** session setting, which pins xhigh), a workflow-backed path with an
-independent verifier per distinct `file:line`. It does **not** write the gate marker, so once you
-have acted on its findings, record the evidence by hand:
-`mkdir -p "$(git rev-parse --show-toplevel)/.cache/diff-review" && touch "$(git rev-parse --show-toplevel)/.cache/diff-review/$(git rev-parse HEAD)"`.
-Do **not** use `git push --no-verify` instead: that deliberately bypasses the repository hook and leaves no review evidence.
+#### `/code-review` doesn't replace the gate
 
-`/diff-review` reproduces the bundled workflow (scope → parallel finder subagents per angle → one
-independent verifier subagent per candidate → a single `ReportFindings` call) and additionally encodes
-Frapp's own invariants as review angles: `chapter_id` scoping and chapter-scoped role lookups,
-permission decorators, the PGlite migration gate, broken doc pointers, the tracker rule (GitHub Issues), and
-verification honesty. The per-candidate verifier pass is what makes an agent-run review trustworthy
-rather than the agent agreeing with its own work — do not weaken it.
+*Corrected 2026-09-23, against Claude Code 2.1.280.* This section used to say to prefer
+`/code-review` over `/diff-review`, because at `high`/`xhigh`/`max` it had "a workflow-backed path
+with an independent verifier per distinct `file:line`". That path is gone. The command's telemetry
+hardcodes `routed_to_workflow: false`, and its 2.1.274 changelog entry reads "leaner inline review
+prompts … instead of spawning many review subagents". It now picks a prompt recipe per model and
+effort level. For Opus-family models, medium and high are one inline pass with no verifier, and
+only the `max` recipe (and Sonnet 5 from medium up) spawns finders with one verifier per deduped
+candidate.
+
+So when a turn carries the token, run `/code-review` as asked, then run `/diff-review` in full; it
+writes the marker. Do **not** use `git push --no-verify` instead of `/diff-review`: that
+deliberately bypasses the repository hook and leaves no review evidence. Whether `/diff-review`'s
+generic angles should retire in favor of the bundled command is
+[#706](https://github.com/pdcarlson/Frapp/issues/706).
+
+`/diff-review` runs scope → bundled finder subagents → dedup → one independent verifier per
+candidate, plus a second only when the first refutes → a single `ReportFindings` call, through the
+saved workflow `frapp-review` (shape and reasons:
+[ADR-23](../../../spec/architecture/adr/adr-23.md)). It also encodes Frapp's own invariants as
+review angles: `chapter_id` scoping and chapter-scoped role lookups, permission decorators, the
+PGlite migration gate, broken doc pointers, the tracker rule (GitHub Issues), and verification
+honesty. The per-candidate verifier pass is what makes an agent-run review trustworthy rather than
+the agent agreeing with its own work — do not weaken it.
 
 ## How the gate enforces
 

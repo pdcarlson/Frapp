@@ -94,7 +94,8 @@ Decide each item from current code, config, CI history or runtime evidence, neve
 | Neither provable | Leave open; add `stale` plus a dated comment only if untouched over 30 days |
 
 Close only on proof. When a close rests on a chain of evidence rather than one read, hand the
-"done" claim to the `claim-verifier` agent to try to refute it first. When you touch an older issue
+"done" claim to the `claim-verifier` agent to try to refute it first, batching the run's claims
+into one agent. When you touch an older issue
 whose `fp=` marker sits inside an HTML comment, promote the marker to the visible form.
 
 ## Job 2: Harvest
