@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  gateReadStatus,
+  legalReadStatus,
   resolveAuthGate,
+  toAuthGateInput,
   type AuthGateDestination,
   type AuthGateInput,
 } from "./auth-gate";
@@ -285,47 +286,74 @@ describe("resolveAuthGate — the Terms prompt (#2302)", () => {
   });
 });
 
-describe("gateReadStatus (#2302)", () => {
-  it("keeps a member held on the prompt when a chapters refetch fails", () => {
-    // Both reads cached, then the chapters refetch fails: the membership and
-    // the `required: true` both still stand, so the gate still says terms.
+describe("the gate's reads, from query state (#2302)", () => {
+  const session = {
+    status: "authenticated" as const,
+    chapterId: "chapter-a",
+    isChapterResolving: false,
+  };
+  const member = { chapter_id: "chapter-a", has_completed_onboarding: true };
+  const newMember = { ...member, has_completed_onboarding: false };
+  /** TanStack after a failed background refetch: status error, data kept. */
+  const failedRefetch = <T,>(data: T) => ({ data, isError: true, isSuccess: false });
+  const answered = <T,>(data: T) => ({ data, isError: false, isSuccess: true });
+  const gate = (
+    chapters: Parameters<typeof toAuthGateInput>[0]["chapters"],
+    legal: Parameters<typeof toAuthGateInput>[0]["legal"],
+  ) => resolveAuthGate(toAuthGateInput({ session, chapters, legal }));
+
+  it("keeps a member on the prompt when the Terms refetch fails", () => {
     expect(
-      resolveAuthGate({
-        status: "authenticated",
-        chapterId: "chapter-a",
-        ...RESOLVED,
-        membershipsStatus: gateReadStatus({
-          authenticated: true,
-          hasAnswer: true,
-          isError: true,
-        }),
-        memberships: complete.memberships,
-        legalAcceptanceStatus: "success",
-        legalAcceptanceRequired: true,
-      }),
+      gate(answered([member]), { data: { required: true }, isError: true }),
     ).toBe("terms");
   });
 
-  it("keeps a cached answer when a background refetch fails", () => {
-    // TanStack: status 'error', data kept. Reading the error first would
-    // discard `required: true` and walk the member past the prompt.
+  it("keeps a member on the prompt when the chapters refetch fails", () => {
     expect(
-      gateReadStatus({ authenticated: true, hasAnswer: true, isError: true }),
+      gate(failedRefetch([member]), { data: { required: true }, isError: false }),
+    ).toBe("terms");
+  });
+
+  it("still fails open after a join whose chapters refetch failed", () => {
+    // Cached list from before the join is []; the member just ticked the box,
+    // so the Terms cache says accepted. Must not bounce back to /join.
+    expect(
+      gate(failedRefetch([]), { data: { required: false }, isError: false }),
+    ).toBe("tabs");
+  });
+
+  it("still fails open after finishing first-run whose refetch failed", () => {
+    // The cached row still says not onboarded; welcome's finish() relies on
+    // the failed read failing open rather than pulling the member back.
+    expect(
+      gate(failedRefetch([newMember]), {
+        data: { required: false },
+        isError: false,
+      }),
+    ).toBe("tabs");
+  });
+
+  it("fails open when the first Terms read fails", () => {
+    expect(gate(answered([member]), { data: undefined, isError: true })).toBe(
+      "tabs",
+    );
+  });
+
+  it("holds a member until the first Terms answer", () => {
+    expect(gate(answered([member]), { data: undefined, isError: false })).toBe(
+      "hold",
+    );
+  });
+
+  it("reads the Terms status answer-first", () => {
+    expect(
+      legalReadStatus({ authenticated: true, hasAnswer: true, isError: true }),
     ).toBe("success");
-  });
-
-  it("fails open only when a first read failed", () => {
     expect(
-      gateReadStatus({ authenticated: true, hasAnswer: false, isError: true }),
+      legalReadStatus({ authenticated: true, hasAnswer: false, isError: true }),
     ).toBe("error");
-  });
-
-  it("is pending until the first answer, and idle when signed out", () => {
     expect(
-      gateReadStatus({ authenticated: true, hasAnswer: false, isError: false }),
-    ).toBe("pending");
-    expect(
-      gateReadStatus({ authenticated: false, hasAnswer: true, isError: false }),
+      legalReadStatus({ authenticated: false, hasAnswer: true, isError: false }),
     ).toBe("idle");
   });
 });

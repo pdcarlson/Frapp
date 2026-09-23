@@ -16,10 +16,10 @@ import { signOutCurrentSession } from "@/lib/auth/session";
 import { asArray } from "@/lib/utils";
 
 /**
- * Web only: the prompt's sign-out threw. Rare, because auth-js returns a
- * failed server-side logout as `{ error }` (which `signOutCurrentSession`
- * ignores) after clearing the local session; only a thrown failure, such as
- * the browser failing to clear its stored session, lands here.
+ * Web only: the prompt's sign-out threw. Rare: auth-js returns most sign-out
+ * failures as `{ error }` instead of throwing, and `signOutCurrentSession`
+ * ignores that, so they navigate as if they had worked, sometimes with the
+ * local session still stored (#2610). Only a thrown failure lands here.
  */
 export const TERMS_PROMPT_SIGN_OUT_FAILED =
   "Couldn't sign out. Retry in a moment, or close this tab to end the session.";

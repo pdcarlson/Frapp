@@ -77,9 +77,9 @@ export type AuthGateInput = {
    * tabs — so that layout never blanks. `AppRuntime` is what walks a member
    * *out* of the tabs onto join/welcome once `GET /v1/chapters` is in.
    *
-   * `pending` is only for the first authenticated chapters read. A failed first
-   * read fails open to tabs so an outage of `/v1/chapters` cannot trap every
-   * member on join; a failed refetch keeps its cached list (`gateReadStatus`).
+   * `pending` is only for the first authenticated chapters read. A failed read
+   * fails open to tabs so an outage of `/v1/chapters` cannot trap every member
+   * on join, except a known member who still owes the Terms (`resolveAuthGate`).
    */
   membershipsStatus?: "idle" | "pending" | "success" | "error";
   memberships?: AuthGateMembership[];
@@ -93,24 +93,75 @@ export type AuthGateInput = {
 };
 
 /**
- * A gate read (the memberships list or the Terms status) as the gate sees it.
+ * The Terms read as the gate sees it (#2302).
  *
  * An answer, once in, stands until a newer one replaces it. TanStack keeps a
- * query's `data` when a background refetch fails but flips it to `isError`.
- * Reading `isError` first would throw away a known answer: for the Terms read,
- * a `required: true`, and for memberships, the membership that makes the
- * Terms check run at all. Either way the member would be walked past the
- * prompt (#2302). Only a first read that failed has nothing to go on, and that
- * one fails open, so an outage can't trap every member.
+ * query's `data` when a background refetch fails but flips it to `isError`,
+ * so reading `isError` first would throw away a known `required: true` and
+ * walk the member past the prompt. Only a first read that failed has nothing
+ * to go on, and that one fails open so an outage can't trap every member.
+ *
+ * The chapters read deliberately stays error-first (`toAuthGateInput`). Its
+ * fail-open is what lets a member through when the refetch after a join, or
+ * after finishing first-run, fails; reading the stale list instead would pull
+ * them back to join or welcome. `resolveAuthGate` covers the Terms case for a
+ * failed chapters read on its own.
  */
-export function gateReadStatus(read: {
+export function legalReadStatus(read: {
   authenticated: boolean;
   hasAnswer: boolean;
   isError: boolean;
-}): "idle" | "pending" | "success" | "error" {
+}): NonNullable<AuthGateInput["legalAcceptanceStatus"]> {
   if (!read.authenticated) return "idle";
   if (read.hasAnswer) return "success";
   return read.isError ? "error" : "pending";
+}
+
+/**
+ * The gate's input from the live session and the two query results. Pure, so
+ * the mapping from query state to gate state is tested here rather than only
+ * through the hook that calls it (`lib/onboarding/use-auth-gate.ts`).
+ */
+export function toAuthGateInput({
+  session,
+  chapters,
+  legal,
+}: {
+  session: Pick<AuthGateInput, "status" | "chapterId" | "isChapterResolving">;
+  chapters: {
+    data: readonly AuthGateMembership[] | undefined;
+    isError: boolean;
+    isSuccess: boolean;
+  };
+  legal: { data: { required: boolean } | undefined; isError: boolean };
+}): AuthGateInput {
+  const authenticated = session.status === "authenticated";
+  return {
+    ...session,
+    // Authenticated + not yet success/error is pending, not idle. Idle is the
+    // frozen tabs layout's "I cannot see memberships" fail-open; here we *can*
+    // see the query, and treating a not-yet-started fetch as idle would paint
+    // tabs for a frame and skip s02/s03. Error-first: see `legalReadStatus`.
+    membershipsStatus: !authenticated
+      ? "idle"
+      : chapters.isError
+        ? "error"
+        : chapters.isSuccess
+          ? "success"
+          : "pending",
+    memberships: Array.isArray(chapters.data)
+      ? chapters.data.map((row) => ({
+          chapter_id: row.chapter_id,
+          has_completed_onboarding: row.has_completed_onboarding,
+        }))
+      : [],
+    legalAcceptanceStatus: legalReadStatus({
+      authenticated,
+      hasAnswer: legal.data !== undefined,
+      isError: legal.isError,
+    }),
+    legalAcceptanceRequired: legal.data?.required === true,
+  };
 }
 
 export function resolveAuthGate({
@@ -151,7 +202,7 @@ export function resolveAuthGate({
     }
     // Only a member is held for the Terms read, and only for its first
     // answer. Join and the wizard don't need it, and a later refetch keeps
-    // its last answer, failed or not (`gateReadStatus`), so the hourly token
+    // its last answer, failed or not (`legalReadStatus`), so the hourly token
     // refresh can't blank the app and a failed refetch can't skip the prompt.
     if (legalAcceptanceStatus === "pending") {
       return "hold";
@@ -164,7 +215,22 @@ export function resolveAuthGate({
     }
   }
 
+  // A failed chapters read fails open, below. The one exception is a member
+  // the last list we saw showed, whom the Terms read says still owes the
+  // Terms: they stay on the prompt, or a failed refetch would let them past
+  // it (#2302). Everyone else still fails open, so a refetch that fails
+  // after a join or a finished first-run doesn't pull anyone back.
+  if (
+    membershipsStatus === "error" &&
+    memberships.length > 0 &&
+    legalAcceptanceStatus === "success" &&
+    legalAcceptanceRequired
+  ) {
+    return "terms";
+  }
+
   // Resolved, and either there is a membership that has finished onboarding,
-  // the chapters read failed (fail open), or it has not been asked yet.
+  // the chapters read failed (fail open, bar the Terms case above), or it has
+  // not been asked yet.
   return "tabs";
 }

@@ -24,9 +24,10 @@ import { JOIN_TERMS_REQUIRED_COPY } from "@repo/validation";
  * `spec/ui/design-system/writing.md` §7's "Join chapter" table is where they
  * are specified. Two surfaces redeeming the same token must not explain the
  * same 410 differently; that table is what stops them forking. The Terms
- * refusal's copy and its detection are different: they carry the #2302 rule
- * for when to show the checkbox, so they live once, in `@repo/validation`
- * (`JOIN_TERMS_REQUIRED_COPY`) and `@repo/hooks` (`isTermsRequiredError`).
+ * refusal is different: its copy lives once in `@repo/validation`
+ * (`JOIN_TERMS_REQUIRED_COPY`), and its detection and the rule for when to
+ * show the checkbox live once in `@repo/hooks` (`isTermsRequiredError`,
+ * `useJoinTermsCheckbox`), #2302.
  *
  * **This is error copy, not a status vocabulary.** It deliberately exports no
  * `*Kind` mapper and does not join `components/shared/status-kind.spec.ts`'s
