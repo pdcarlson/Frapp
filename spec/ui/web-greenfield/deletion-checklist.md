@@ -238,7 +238,10 @@ for each is below the list rather than left implied.
       a real defect rather than dead text, was that it had no token behind it at all
 - [x] No legacy bone / bronze / Geist token on this surface
 - [x] No unused component left under `apps/web/components/ui`
-- [x] No customer-facing "Frapp" string or wordmark
+- [x] No customer-facing "Frapp" string or wordmark. *(Superseded 2026-09-23 by
+      [ADR-25](../../architecture/adr/adr-25.md): the product is now named Frapp, so customer-facing
+      copy says Frapp from step 4 of its series. What this row verified, that the legacy Frapp
+      wordmark is gone, still holds.)*
 
 **The five rows above were ticked by lane 7, and how matters more than that they are ticked.** They
 had stood unticked with no lane recorded against them since this section was written, which reads as

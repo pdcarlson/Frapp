@@ -1,6 +1,6 @@
-# Signet
+# Frapp
 
-**Chat is the spine.** Signet is a multi-tenant chat app for Greek-letter organizations in which
+**Chat is the spine.** Frapp is a multi-tenant chat app for Greek-letter organizations in which
 every other capability — events, tasks, dues, points, polls — is a *chat integration*, surfaced
 inline in the conversation rather than parked behind its own nav tab. Chat itself is free,
 unlimited, and non-optional: it is the default landing route on web and mobile.
@@ -30,7 +30,7 @@ the spec as the pattern.
 
 ## AI
 
-Signet's AI surface (Q&A, summarization, drafting) is built on **authoritative sources only**, and
+Frapp's AI surface (Q&A, summarization, drafting) is built on **authoritative sources only**, and
 that is the product decision rather than an implementation detail — a smaller AI that is reliably
 right instead of a bigger one that is frequently embarrassing.
 
@@ -84,12 +84,12 @@ The canonical table is
 
 ## A note on the two names
 
-The product is **Signet**. Code identifiers, the root npm package name, the Expo `slug`, the iOS
-bundle id (`live.frapp.mobile`), and the domains are all still `frapp` — and that split is a binding
-rule, not an oversight: prose says Signet, identifiers stay `frapp` until the deferred rename. It is
-stated once, in [`spec/ui/brand-identity.md`](spec/ui/brand-identity.md), which also says the
-rename's own tracking belongs in GitHub Issues rather than in a doc. Treat the two names as one
-product, and do not "fix" a `frapp` identifier on sight.
+The product is **Frapp** ([ADR-25](spec/architecture/adr/adr-25.md), 2026-09-23). **Signet** is
+the design system's internal name, so you'll see it in tokens (`--signet-*`), file names and
+design-system specs. The UI still shows "Signet" in places until ADR-25's rename series lands.
+Code identifiers, the root npm package name, the Expo `slug`, the iOS bundle id
+(`live.frapp.mobile`) and the domains are `frapp` permanently. The binding rule is
+[`spec/ui/brand-identity.md` § 1](spec/ui/brand-identity.md#1-identity).
 
 ## Spec-Driven Development
 

@@ -10,7 +10,7 @@
 
 ## 1. Direction
 
-Signet (the rebrand of Frapp — see [`../brand-identity.md`](../brand-identity.md)) is **dark-first, warm, and consumer**. The lane is Notion dark / Cash App — a product members *want* to open — not the Linear/Vercel technical-tool aesthetic.
+Signet, the design system behind the Frapp product (see [`../brand-identity.md`](../brand-identity.md)), is **dark-first, warm, and consumer**. The lane is Notion dark / Cash App — a product members *want* to open — not the Linear/Vercel technical-tool aesthetic.
 
 Principles:
 
