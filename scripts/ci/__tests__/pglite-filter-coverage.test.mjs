@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, join, posix, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { basename, dirname, join } from "node:path";
 
 import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
@@ -21,9 +21,10 @@ import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 // path its modules name by `join(...)` or `resolve(...)` on `REPO_ROOT` or
 // `process.cwd()` (the same directory in the entry), by `new URL(...,
 // import.meta.url)`, or by a relative `import`/`export ... from`/`import()`.
-// Each path is normalized and routed the same way whatever named it: a
-// JavaScript module is followed and scanned in turn, anything else is recorded
-// as an input. Each path argument must be a literal, in any quote style; a
+// Each path is resolved as its form resolves it at runtime (a `join` segment is
+// file-system text, a `new URL` or import target is a URL) and then routed the
+// same way whatever named it: a JavaScript module is followed and scanned in
+// turn, anything else is recorded as an input. Each path argument must be a literal, in any quote style; a
 // computed one, or a path outside the repo, fails the test rather than being
 // skipped, because this derivation cannot resolve it.
 //
@@ -88,17 +89,27 @@ export function mask(src) {
     while (from > 0 && /[\w$]/.test(out[from - 1])) from -= 1;
     return { token: out.slice(from, k + 1).join(""), at: from };
   };
-  // Indices of each `)` that closes an `if`/`while`/`for`/`with` condition,
+  // Indices of each `)` that closes an `if`/`while`/`for` condition,
   // after which a `/` starts a regex rather than a division.
   const closesControl = new Set();
-  // Whether the `(` at `i` opens an `if`/`while`/`for`/`with` condition: the
+  // Whether the token starting at `at` is a member name (`o.for`, `o. for`,
+  // `this.#for`) rather than a keyword. The `.` of a spread (`... await`) is
+  // not member access.
+  const isProperty = (at) => {
+    let k = at - 1;
+    while (k >= 0 && /\s/.test(out[k])) k -= 1;
+    const spread = out[k - 1] === "." && out[k - 2] === ".";
+    return (out[k] === "." && !spread) || out[k] === "#";
+  };
+  // Whether the `(` at `i` opens an `if`/`while`/`for` condition: the
   // keyword itself, not a method named like one (`Symbol.for(k)`), and
   // `for await (` too.
   const opensControl = (i) => {
     const { token, at } = previous(i);
-    if (out[at - 1] === ".") return false;
+    if (isProperty(at)) return false;
     if (token === "await") return previous(at).token === "for";
-    return ["if", "while", "for", "with"].includes(token);
+    // No `with`: it is a syntax error in a module.
+    return ["if", "while", "for"].includes(token);
   };
   const regexCanStart = (i) => {
     const { token, at } = previous(i);
@@ -108,7 +119,7 @@ export function mask(src) {
     if ((token === "+" || token === "-") && out[at - 1] === token) return false;
     if (/^[(,=:[!&|?{};+\-*%<>~^]$/.test(token)) return true;
     // A keyword, unless it is a property name (`stats.in / n`).
-    return REGEX_AFTER_WORD.has(token) && out[at - 1] !== ".";
+    return REGEX_AFTER_WORD.has(token) && !isProperty(at);
   };
 
   const quoted = (i) => {
@@ -250,8 +261,6 @@ function literal(arg) {
  */
 export function scan(src, file) {
   const masked = mask(src);
-  const moduleUrl = pathToFileURL(join(REPO, file));
-  const rel = (url) => relative(REPO, fileURLToPath(url)).split("\\").join("/");
   const found = [];
   const follow = [];
   const unresolved = (call) =>
@@ -263,40 +272,113 @@ export function scan(src, file) {
     assert.ok(path !== ".." && !path.startsWith("../"), `${file}: \`${call}\` names a path outside the repo`);
     (/\.[cm]?js$/.test(path) ? follow : found).push(path);
   };
+  // A path is never resolved against the checkout's real path, or against a
+  // single stand-in root: either accepts a climb that re-enters by name, the
+  // checkout directory's (`../../Frapp/x` in a checkout at `…/Frapp/Frapp`,
+  // so the verdict would depend on where the repo was cloned) or the
+  // stand-in's own (`"..", "repo-root"`).
+  //
+  // `join`/`resolve` segments are literal file-system path text, so they are
+  // walked segment by segment from the repo root. A `..` past the root leaves
+  // the repo, even when a later segment would climb back in, which is fine.
+  const normalize = (parts, call) => {
+    const outside = `${file}: \`${call}\` names a path outside the repo`;
+    const segments = [];
+    for (const part of parts) {
+      for (const segment of part.split("/")) {
+        if (segment === "" || segment === ".") continue;
+        if (segment === "..") {
+          assert.ok(segments.length > 0, outside);
+          segments.pop();
+        } else segments.push(segment);
+      }
+    }
+    route(segments.join("/"), call);
+  };
+  // A `new URL(target, import.meta.url)` or relative-import target is a URL,
+  // so it resolves as WHATWG resolves it at runtime (`%2e%2e` is `..`, `%20`
+  // a space, a query or fragment no part of the path, surrounding spaces
+  // trimmed, another scheme no file), against two stand-in roots with no name
+  // in common. A target inside the repo lands at the same relative path under
+  // both; one that climbs out lands outside at least one of them, even when it
+  // climbs back in by name.
+  const STAND_INS = ["stand-in-a", "stand-in-b"];
+  const decodeSegment = (segment, call) => {
+    let decoded;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      assert.fail(unresolved(call));
+    }
+    // An encoded `/` is no separator, and no file name either.
+    assert.ok(!decoded.includes("/"), unresolved(call));
+    return decoded;
+  };
+  const moduleHref = file.split("/").map(encodeURIComponent).join("/");
+  const fromModule = (target, call) => {
+    const paths = STAND_INS.map((root) => {
+      const url = new URL(target, new URL(moduleHref, `file:///${root}/`));
+      if (url.protocol !== "file:") return null;
+      if (url.host !== "" || !url.pathname.startsWith(`/${root}/`)) return "..";
+      return url.pathname
+        .slice(root.length + 2)
+        .split("/")
+        .map((segment) => decodeSegment(segment, call))
+        // WHATWG keeps empty segments (`a//b`, a trailing `/`); a path doesn't.
+        .filter((segment) => segment !== "")
+        .join("/");
+    });
+    if (paths[0] === null) return;
+    assert.ok(paths[0] === paths[1], `${file}: \`${call}\` names a path outside the repo`);
+    route(paths[0], call);
+  };
 
   for (const { call, args } of callArgs(src, masked, /\b(?:join|resolve)\s*\(/g)) {
     const [root, ...rest] = args;
     if (root !== "REPO_ROOT" && root !== "process.cwd()") continue;
     const parts = rest.map(literal);
     assert.ok(parts.length > 0 && parts.every((p) => p !== null), unresolved(call));
-    // Evaluated against a stand-in root with Node's own semantics, so `join`
-    // keeps a leading `/` segment inside it, `resolve` restarts at one, and a
-    // `..` that climbs past it comes back as `../…` for `route` to reject.
-    const standIn = "/repo-root";
-    const target = (call.startsWith("resolve") ? posix.resolve : posix.join)(standIn, ...parts);
-    route(posix.relative(standIn, target), call);
+    // As in Node, `join` treats a leading `/` as a separator; `resolve`
+    // restarts at an absolute segment, which here leaves the repo.
+    for (const part of parts) {
+      assert.ok(
+        !(call.startsWith("resolve") && part.startsWith("/")),
+        `${file}: \`${call}\` names a path outside the repo`,
+      );
+    }
+    normalize(parts, call);
   }
 
   for (const { call, args } of callArgs(src, masked, /\bnew\s+URL\s*\(/g)) {
     if (args[1] !== "import.meta.url") continue;
     const target = literal(args[0] ?? "");
     assert.ok(target !== null, unresolved(call));
-    // WHATWG resolution, so `"x.csv"` is the module's sibling just as
-    // `"./x.csv"` is.
-    const url = new URL(target, moduleUrl);
-    if (url.protocol === "file:") route(rel(url), call);
+    // `"x.csv"` is the module's sibling, just as `"./x.csv"` is.
+    fromModule(target, call);
   }
 
   // Static forms take only a string literal: find them in the masked code, where
   // a string can't be mistaken for one, and read the specifier from the source
   // at the same offsets. Unanchored, so two on one line both count.
+  // A masked body is `_` except for newlines, which `mask` keeps so offsets and
+  // line numbers hold; a line continuation leaves one inside a specifier, and
+  // the body must still match so `literal` can reject it.
   const staticForms = [
-    /\b(?:import|export)\b[^;]*?\bfrom\s*["'](_*)["']/dg,
-    /\bimport\s*["'](_*)["']/dg,
+    /\b(?:import|export)\b[^;]*?\bfrom\s*["']([_\n]*)["']/dg,
+    /\bimport\s*["']([_\n]*)["']/dg,
   ];
   const specifiers = [
+    // Read through `literal`, quotes included, like every other form: the source
+    // text of `"a\\b"` is not the specifier `a\b`, and an escape would be read
+    // as path characters.
     ...staticForms.flatMap((form) =>
-      [...masked.matchAll(form)].map((m) => src.slice(...m.indices[1])),
+      [...masked.matchAll(form)].map((m) => {
+        const [start, end] = m.indices[1];
+        const quoted = src.slice(start - 1, end + 1);
+        const target = literal(quoted);
+        assert.ok(target !== null, unresolved(quoted));
+        return target;
+      }),
     ),
     // Dynamic: the first argument is the specifier; a second is its attributes.
     ...callArgs(src, masked, /(?<![.\w$])import\s*\(/g).map(({ call, args }) => {
@@ -307,7 +389,7 @@ export function scan(src, file) {
   ];
   for (const specifier of specifiers) {
     // ESM resolves only `./`, `../` and `/` as paths; anything else is a package.
-    if (/^\.{0,2}\//.test(specifier)) route(rel(new URL(specifier, moduleUrl)), specifier);
+    if (/^\.{0,2}\//.test(specifier)) fromModule(specifier, specifier);
   }
 
   return { found, follow };
@@ -417,16 +499,50 @@ describe("the scanner reads each form as what it is", () => {
   });
 
   it("resolves a bare `new URL` target as the module's sibling", () => {
-    const src = 'new URL("seed.csv", import.meta.url); new URL(`../a.json`, import.meta.url);';
-    assert.deepEqual(scan(src, at).found, ["scripts/ci/lib/seed.csv", "scripts/ci/a.json"]);
+    const src = [
+      'new URL("seed.csv", import.meta.url); new URL(`../a.json`, import.meta.url);',
+      // A query or fragment is not part of the path; another scheme is no file.
+      'new URL("b.json?raw#x", import.meta.url);',
+      'new URL("https://example.com/c.json", import.meta.url);',
+      // As WHATWG reads it: `%2e%2e` is `..`, `%20` a space, and surrounding
+      // spaces are trimmed.
+      'new URL("%2e%2e/%2e%2e/%2e%2e/supabase/e.sql", import.meta.url);',
+      'new URL("my%20seed.csv", import.meta.url);',
+      'new URL(" ../trim.sql", import.meta.url);',
+      'import "./%2e%2e/y.mjs";',
+      // And an empty segment is no segment.
+      'new URL("a//b.sql", import.meta.url); new URL("../data/", import.meta.url);',
+    ].join("\n");
+    assert.deepEqual(scan(src, at), {
+      found: [
+        "scripts/ci/lib/seed.csv",
+        "scripts/ci/a.json",
+        "scripts/ci/lib/b.json",
+        "supabase/e.sql",
+        "scripts/ci/lib/my seed.csv",
+        "scripts/ci/trim.sql",
+        "scripts/ci/lib/a/b.sql",
+        "scripts/ci/data",
+      ],
+      follow: ["scripts/ci/y.mjs"],
+    });
   });
 
-  it("fails on a computed argument, nested calls included", () => {
+  it("fails on a target it cannot resolve: computed, nested or escaped", () => {
     for (const src of [
       "new URL(name(), import.meta.url);",
       "new URL(join(\"..\", \"x.sql\"), import.meta.url);",
       "join(REPO_ROOT, dir);",
       "await import(`./${name}.mjs`);",
+      // An encoded `/`, and an escape that decodes to nothing.
+      'new URL("a%2Fb.sql", import.meta.url);',
+      'new URL("%zz.sql", import.meta.url);',
+      // A static specifier with an escape: its source text is not its value.
+      'import d from "./a\\\\..\\\\supabase\\\\d.json" with { type: "json" };',
+      // A line continuation, which `mask` leaves as a newline in the body.
+      'import d from "../../../supabase/x\\\n.json" with { type: "json" };',
+      'export * from "./y\\\n.mjs";',
+      'import "./z\\\n.mjs";',
     ]) {
       assert.throws(() => scan(src, at), /cannot resolve/, src);
     }
@@ -486,9 +602,18 @@ describe("the scanner reads each form as what it is", () => {
       'readFileSync(resolve(REPO_ROOT, "apps", "y.ts"));',
       'readFileSync(join(REPO_ROOT, "scripts", "demo", "..", "..", "apps", "z.ts"));',
       'readFileSync(join(REPO_ROOT, "/supabase/w.sql"));',
+      'readFileSync(join(REPO_ROOT, "./supabase", "v.sql"));',
+      'readFileSync(join(REPO_ROOT, "a", ".", "..", "u.sql"));',
     ].join("\n");
     assert.deepEqual(scan(src, at), {
-      found: ["supabase/seed.sql", "apps/y.ts", "apps/z.ts", "supabase/w.sql"],
+      found: [
+        "supabase/seed.sql",
+        "apps/y.ts",
+        "apps/z.ts",
+        "supabase/w.sql",
+        "supabase/v.sql",
+        "u.sql",
+      ],
       follow: ["scripts/ci/lib/run.mjs"],
     });
   });
@@ -499,7 +624,20 @@ describe("the scanner reads each form as what it is", () => {
       'resolve(REPO_ROOT, "/etc/passwd");',
       'join(REPO_ROOT, "/..", "supabase", "migrations");',
       'join(REPO_ROOT, "/a/../../b");',
+      'join(REPO_ROOT, "..", "repo-root", "supabase", "migrations");',
+      // `at` sits three deep, so four `..` land exactly one above the root.
+      'new URL("../../../..", import.meta.url);',
+      'resolve(REPO_ROOT, "/repo-root/x.sql");',
       'import "../../../../x.mjs";',
+      'new URL("/etc/passwd", import.meta.url);',
+      'new URL("file:///etc/passwd", import.meta.url);',
+      // Out and back in by the checkout directory's own name, which these
+      // forms accepted while they resolved against the real path.
+      `new URL("../../../../${basename(REPO)}/supabase/x.sql", import.meta.url);`,
+      `import "../../../../${basename(REPO)}/y.mjs";`,
+      // And by a stand-in's, which one stand-in alone would accept.
+      'new URL("../../../../stand-in-a/x.sql", import.meta.url);',
+      'import "../../../../stand-in-b/y.mjs";',
     ]) {
       assert.throws(() => scan(src, at), /outside the repo/, src);
     }
@@ -507,15 +645,24 @@ describe("the scanner reads each form as what it is", () => {
     assert.throws(() => scan('join(REPO_ROOT, "a", "..");', at), /repo root itself/);
   });
 
-  it("tells a division from a regex after `++`, a property and a condition", () => {
+  it("tells a division from a regex after `++`, a property, a spread and a condition", () => {
     // Each misread would blank the `join` between the two slashes.
     for (const [src, path] of [
       ['const n = i++ / 2; join(REPO_ROOT, "b.sql"); const q = n / 3;', "b.sql"],
       ['const h = o.return / 2; join(REPO_ROOT, "c.sql"); const k = h / 4;', "c.sql"],
+      ['const h = o. return / 2; join(REPO_ROOT, "m.sql"); const k = h / 4;', "m.sql"],
+      ['const h = this.#in / 2; join(REPO_ROOT, "n.sql"); const k = h / 4;', "n.sql"],
       ['if (ok) /\\/\\//.test(u); join(REPO_ROOT, "d.sql");', "d.sql"],
       ['for await (const x of y) /a"b/.test(x); join(REPO_ROOT, "e.sql");', "e.sql"],
       ['const r = a.if(b) / 2; join(REPO_ROOT, "f.sql"); const q = 1 / 2;', "f.sql"],
       ['const s = Symbol.for(k) / 2; join(REPO_ROOT, "g.sql"); const t = 1 / 2;', "g.sql"],
+      ['const s = this.#for(k) / 2; join(REPO_ROOT, "h.sql"); const t = 1 / 2;', "h.sql"],
+      ['const s = o. for(k) / 2; join(REPO_ROOT, "i.sql"); const t = 1 / 2;', "i.sql"],
+      ['const v = await (p) / 2; join(REPO_ROOT, "j.sql"); const w = 1 / 2;', "j.sql"],
+      ['while (ok) /a"b/.test(u); join(REPO_ROOT, "k.sql");', "k.sql"],
+      ['for (const x of y) /a"b/.test(x); join(REPO_ROOT, "l.sql");', "l.sql"],
+      ['x = [... await /a"b/.test(u)]; join(REPO_ROOT, "o.sql");', "o.sql"],
+      ['x = [...typeof /a"b/]; join(REPO_ROOT, "p.sql");', "p.sql"],
     ]) {
       assert.deepEqual(scan(src, at).found, [path], src);
     }
