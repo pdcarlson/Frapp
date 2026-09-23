@@ -196,8 +196,9 @@ describe("the accent preview reports its own legibility", () => {
    * the card*; a primary button needs the other question, whether text is
    * legible *on the accent*. They diverge, and the pre-push review found the
    * band where: `#0086FE` passes the first with `reason: "ok"` and no warning,
-   * and fails the second at 4.446:1. Before this, the swatch drew "Preview" in
-   * a tone `pickAccessibleColor` had explicitly rejected and said nothing.
+   * and fails the second (both figures pinned in `settings-contrast.spec.ts`).
+   * Before this, the swatch drew "Preview" in a tone `pickAccessibleColor` had
+   * explicitly rejected and said nothing.
    *
    * The band is narrow by construction, which is why the seed is exact and why
    * it moved once already. Both checks rise together as the accent lightens —
@@ -207,9 +208,8 @@ describe("the accent preview reports its own legibility", () => {
    * measured 4.497:1 on the old `--card` and survived only because the
    * resolver rounds to 2dp before comparing. The greenfield ladder
    * (foundations.md §2) lifted `--card` to `#211E1A`, dropping it to 4.352 and
-   * substituting it away, which silently emptied this test. `#0086FE` sits at
-   * 4.62:1 on the card, so it clears the floor on the value rather than on the
-   * rounding.
+   * substituting it away, which silently emptied this test. `#0086FE` clears
+   * the card floor on the value rather than on the rounding.
    *
    * `settings-contrast.spec.ts` measures the tones. This asserts the screen
    * actually surfaces the verdict, which no measurement can.
@@ -228,6 +228,20 @@ describe("the accent preview reports its own legibility", () => {
     await user.type(hex, "#0086FE");
     expect(screen.getByText(/under the 4\.5:1 minimum/i)).toBeInTheDocument();
     expect(screen.getByText(/4\.4:1/)).toBeInTheDocument();
+  });
+
+  it("never prints a failing ratio as 4.5:1", async () => {
+    // `#008AF1`'s best ink is 4.4954:1: it fails AA, and rounding printed it
+    // as "4.5:1, under the 4.5:1 minimum".
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    const hex = screen.getByLabelText(/accent color hex value/i);
+    await user.clear(hex);
+    await user.type(hex, "#008AF1");
+    expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
+      /reads at 4\.4:1/,
+    );
   });
 
   it("stays quiet for an accent whose label text is legible", async () => {

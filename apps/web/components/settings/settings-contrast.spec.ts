@@ -11,6 +11,11 @@ import {
   TEXT,
 } from "@/tests/signet-contrast";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
+import {
+  ACCENT_PREVIEW_INK,
+  formatInkRatio,
+  previewInkFor,
+} from "@/components/settings/accent-preview-ink";
 
 /**
  * The defect this file exists for.
@@ -131,24 +136,17 @@ describe("the accent preview's label tone, computed from the draft", () => {
    * description promises the colour will be used for. They diverge, and the
    * review found the band where: `#0080FD` passed the first (`reason: "ok"`,
    * no warning) and failed the second at 4.191:1. It no longer reaches the
-   * second: the greenfield ladder lifted `--card`, and it now scores 4.35:1
-   * there, so the resolver substitutes it. `#0086FE` (4.62:1 on the card, ink
-   * 4.45:1) is the band's example now; the ink-only assertions below still
+   * second: the greenfield ladder lifted `--card`, and it now falls under
+   * 4.5:1 there, so the resolver substitutes it (pinned below). `#0086FE` is the band's example now
+   * (its figures are pinned in the test below); the ink-only assertions still
    * hold for `#0080FD`, since they measure text on the fill, not the card.
    *
    * The first fix here made it worse in a quiet way — `pickAccessibleColor(...)
    * ?? gold.onHouse` reasserted the very tone the picker had just rejected, so
    * the swatch drew an illegible label and reported nothing.
    */
-  const INK = [
-    signetDarkTokens.color.gold.onHouse,
-    signetDarkTokens.color.text.foreground,
-  ] as const;
-
-  const bestInk = (fill: string) =>
-    INK.reduce((best, candidate) =>
-      ratio(candidate, fill) > ratio(best, fill) ? candidate : best,
-    );
+  // The page's own choice, not a copy of it.
+  const bestInk = (fill: string) => previewInkFor(fill)!.ink;
 
   it("always picks the better of the two tones, never the first that passes", () => {
     // The property that makes the result defined for every input, including
@@ -158,7 +156,7 @@ describe("the accent preview's label tone, computed from the draft", () => {
     // something.
     for (const fill of [...SEEDS, "#0080FD", "#767676", "#FFFFFF", "#000000"]) {
       const ink = bestInk(fill);
-      for (const other of INK) {
+      for (const other of ACCENT_PREVIEW_INK) {
         expect(ratio(ink, fill), `${fill} vs ${other}`).toBeGreaterThanOrEqual(
           ratio(other, fill),
         );
@@ -191,16 +189,31 @@ describe("the accent preview's label tone, computed from the draft", () => {
   it("uses #0086FE as the band's example: kept on the card, ink under AA", () => {
     // The example writing.md and the Accent card's comments cite. Kept by the
     // resolver on `--card` (so no fallback warning), yet its best label ink
-    // misses AA (so the label warning fires). Pinned here so the figures
-    // quoted elsewhere have one place that fails when they move.
-    const card = resolveChapterAccentColor("#0086FE", {
-      background: SURFACE.card,
-      fallbackAccent: signetDarkTokens.color.gold.house,
-    });
-    expect(card.reason).toBe("ok");
+    // misses AA (so the label warning fires). Those mentions point here rather
+    // than quoting the figures, so this is the one place that fails when they
+    // move.
+    const onCard = (accent: string) =>
+      resolveChapterAccentColor(accent, {
+        background: SURFACE.card,
+        fallbackAccent: signetDarkTokens.color.gold.house,
+      }).reason;
+    expect(onCard("#0086FE")).toBe("ok");
+    // And why the example moved: the original `#0080FD` is substituted on the
+    // card now, so it never reaches the label check.
+    expect(onCard("#0080FD")).toBe("insufficient_contrast");
     expect(ratio("#0086FE", SURFACE.card)).toBeCloseTo(4.62, 2);
     const ink = bestInk("#0086FE");
     expect(ratio(ink, "#0086FE")).toBeLessThan(AA_TEXT);
     expect(ratio(ink, "#0086FE")).toBeCloseTo(4.45, 2);
+  });
+
+  it("prints a failing ratio below the minimum it is compared with", () => {
+    // Truncated, not rounded: 4.4954 is under 4.5:1 and must not read "4.5".
+    expect(formatInkRatio(4.4954)).toBe("4.4");
+    expect(formatInkRatio(previewInkFor("#008AF1")!.ratio)).toBe("4.4");
+    expect(previewInkFor("#008AF1")!.ratio).toBeLessThan(AA_TEXT);
+    // A float a hair under a tenth keeps its tenth.
+    expect(formatInkRatio(4.3)).toBe("4.3");
+    expect(formatInkRatio(0.1 + 0.2)).toBe("0.3");
   });
 });
