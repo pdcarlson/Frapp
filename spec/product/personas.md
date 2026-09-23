@@ -5,6 +5,6 @@
 | **Prospect**            | Landing (frapp.live)     | An officer researching tools for their chapter. Sees pricing, features, and signs up.                                                                           |
 | **President / Admin**   | Web App (app.frapp.live) | Chapter leader. Creates chapter, manages members, roles, events, billing, Backwork config, and settings.                                                        |
 | **Treasurer**           | Web App (app.frapp.live) | Manages billing, dues/invoices, and the points ledger.                                                                                                          |
-| **Member**              | Mobile app               | Active brother. Uses chat, browses Backwork, checks into events, logs study hours, views points.                                                                |
+| **Member**              | Mobile app               | Active brother. Uses chat, checks into events, logs study hours, views points. Browses Backwork on the web dashboard; the app has none for the beta (#2258). |
 | **New Member (Pledge)** | Mobile app               | Limited-permission member during the new-member period.                                                                                                         |
 | **Alumni**              | Mobile app (read-mostly) | Graduated member with read access to chat. Alumni directory, `#alumni` channel, optional donation link. No points, event check-in, or study hours. |

@@ -11,6 +11,7 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RawValue } from './raw-value.transform';
 import { LEGAL_ACCEPTANCE_LABEL } from '@repo/validation';
 
 /**
@@ -75,6 +76,7 @@ export class RedeemInviteDto {
     description: `True when the user ticked "${LEGAL_ACCEPTANCE_LABEL}" Needed only if they haven't accepted the current version.`,
   })
   @IsOptional()
+  @RawValue()
   @IsBoolean()
   @Equals(true, {
     message: 'Terms of Service and Privacy Policy must be accepted',

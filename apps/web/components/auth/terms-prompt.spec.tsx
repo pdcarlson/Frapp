@@ -7,8 +7,9 @@ import { LEGAL_ACCEPTANCE_LABEL, TERMS_PROMPT_COPY } from "@repo/validation";
  * over every dashboard route, and a failed read never locks anyone out.
  */
 
-const { acceptMutate, signOut, state } = vi.hoisted(() => ({
+const { acceptMutate, deleteMutate, signOut, state } = vi.hoisted(() => ({
   acceptMutate: vi.fn(),
+  deleteMutate: vi.fn(),
   signOut: vi.fn(),
   state: {
     chapters: { data: [{ chapter_id: "ch-1" }], isSuccess: true } as {
@@ -28,18 +29,24 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
     isSuccess: false,
   }),
+  useDeleteAccount: () => ({ mutateAsync: deleteMutate }),
 }));
 
 vi.mock("@/lib/auth/session", () => ({
   signOutCurrentSession: () => signOut(),
 }));
 
-import { TERMS_PROMPT_SIGN_OUT_FAILED, TermsPromptGate } from "./terms-prompt";
+import {
+  TERMS_PROMPT_DELETE_FAILED,
+  TERMS_PROMPT_SIGN_OUT_FAILED,
+  TermsPromptGate,
+} from "./terms-prompt";
 
 describe("TermsPromptGate", () => {
   beforeEach(() => {
     acceptMutate.mockReset();
     acceptMutate.mockResolvedValue({ required: false });
+    deleteMutate.mockReset();
     signOut.mockReset();
     state.chapters = { data: [{ chapter_id: "ch-1" }], isSuccess: true };
     state.legal = { data: { required: true } };
@@ -153,5 +160,42 @@ describe("TermsPromptGate", () => {
         .disabled,
     ).toBe(false);
     vi.unstubAllGlobals();
+  });
+
+  it("lets a member who declines delete their account, since the prompt covers /profile", async () => {
+    deleteMutate.mockResolvedValue(undefined);
+    signOut.mockResolvedValue(undefined);
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    render(<TermsPromptGate />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete account…" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete account" }),
+    );
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/sign-in"));
+    expect(deleteMutate).toHaveBeenCalledTimes(1);
+    expect(acceptMutate).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("says so, and gives the controls back, when deletion fails", async () => {
+    deleteMutate.mockRejectedValueOnce(new Error("network"));
+    render(<TermsPromptGate />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete account…" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete account" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe(
+        TERMS_PROMPT_DELETE_FAILED,
+      ),
+    );
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Delete account…",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
   });
 });

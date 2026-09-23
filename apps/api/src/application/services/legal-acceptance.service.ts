@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  ACCOUNT_DELETED_MESSAGE,
   LEGAL_ACCEPTANCE_REQUIRED_CODE,
   LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
   LEGAL_POLICY_VERSION,
@@ -116,7 +117,7 @@ export class LegalAcceptanceService {
     // A tombstoned account can still hold a working token for a moment during
     // deletion (see UserService.update). Refuse rather than stamp a record
     // onto it; the repository's update would refuse the write anyway.
-    if (user.deleted_at) throw new GoneException('Account has been deleted');
+    if (user.deleted_at) throw new GoneException(ACCOUNT_DELETED_MESSAGE);
     return user;
   }
 }

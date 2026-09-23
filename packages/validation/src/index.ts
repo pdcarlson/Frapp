@@ -49,6 +49,13 @@ export const LEGAL_ACCEPTANCE_REQUIRED_MESSAGE =
   "Agree to the Terms of Service and Privacy Policy to continue.";
 
 /**
+ * The API's 410 message for a request from an account that has been deleted
+ * but whose session hasn't ended yet. Shared so a client can tell it apart
+ * from the other 410s it can meet on the same route (an expired invite).
+ */
+export const ACCOUNT_DELETED_MESSAGE = "Account has been deleted";
+
+/**
  * The join screens' copy when the box isn't ticked, or when the server refused
  * a join for want of it (#2302). Web `/join` and mobile s02 both render it;
  * `spec/ui/design-system/writing.md` § 7, Join chapter, is its spec.

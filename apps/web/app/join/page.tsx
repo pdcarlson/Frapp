@@ -4,13 +4,17 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { useJoinTermsCheckbox, useRedeemInvite } from "@repo/hooks";
+import {
+  joinErrorCopy,
+  redeemChapterId,
+  useJoinTermsCheckbox,
+  useRedeemInvite,
+} from "@repo/hooks";
 import {
   extractInviteToken,
   extractInviteTokenFromQuery,
 } from "@repo/validation";
 import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
-import { joinErrorCopy, redeemChapterId } from "@/components/auth/join-errors";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { Button } from "@/components/ui/button";
@@ -53,7 +57,7 @@ import { useNetwork } from "@/lib/providers/network-provider";
  *   invite link on a dropped connection sat on "Verifying your session…"
  *   forever, with no retry and nothing announced.
  * - **Redemption.** Every failure rendered one generic toast. 410 and 409 need
- *   opposite next actions, so the copy comes from `join-errors.ts` and is
+ *   opposite next actions, so the copy comes from `joinErrorCopy` (`@repo/hooks`) and is
  *   rendered inline beside the field rather than as a toast that scrolls away.
  */
 function JoinPageContent() {

@@ -88,18 +88,21 @@ async function settle(page) {
 /**
  * A seeded login has accepted no Terms (#2302), so the dashboard opens under
  * the full-screen Terms prompt, which every shot would otherwise capture. Tick
- * it for the operator's own demo account. The title and button come from
- * `TERMS_PROMPT_COPY` in `@repo/validation`; this script imports no workspace
- * package, so change them here too if that copy changes.
+ * it for the operator's own demo account. Found by the checkbox's id and the
+ * form's submit button, not by copy: `TERMS_PROMPT_COPY` lives in
+ * `@repo/validation`, which this script can't import, and a copy match would
+ * miss the prompt silently the day the wording changed.
  */
+const TERMS_PROMPT_CHECKBOX = "#terms-prompt-accept";
+
 async function agreeToTermsIfAsked(page) {
-  const prompt = page.getByRole("heading", {
-    name: "Agree to the Terms to continue",
-  });
-  if (!(await prompt.isVisible().catch(() => false))) return;
-  await page.locator("#terms-prompt-accept").check();
-  await page.getByRole("button", { name: "Agree and continue" }).click();
-  await prompt.waitFor({ state: "detached", timeout: 30_000 });
+  const checkbox = page.locator(TERMS_PROMPT_CHECKBOX);
+  if (!(await checkbox.isVisible().catch(() => false))) return;
+  await checkbox.check();
+  await page
+    .locator(`form:has(${TERMS_PROMPT_CHECKBOX}) button[type="submit"]`)
+    .click();
+  await checkbox.waitFor({ state: "detached", timeout: 30_000 });
   console.log("  agreed to the Terms for the demo login");
 }
 
@@ -176,6 +179,9 @@ async function main() {
       const landed = new URL(page.url()).pathname;
       if (landed.startsWith("/sign-in")) {
         throw new Error("bounced to /sign-in — session lost");
+      }
+      if (await page.locator(TERMS_PROMPT_CHECKBOX).isVisible()) {
+        throw new Error("the Terms prompt is covering the page");
       }
 
       const file = path.join(OUT_DIR, `${slug}.png`);

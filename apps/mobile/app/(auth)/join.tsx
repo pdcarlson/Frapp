@@ -13,6 +13,8 @@ import {
   View,
 } from "react-native";
 import {
+  joinErrorCopy,
+  redeemChapterId,
   useDeleteAccount,
   useJoinTermsCheckbox,
   useRedeemInvite,
@@ -27,7 +29,6 @@ import {
   extractInviteTokenFromQuery,
   rememberInviteToken,
 } from "@/lib/onboarding/invite-token";
-import { joinErrorCopy, redeemChapterId } from "@/lib/onboarding/join-errors";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
 

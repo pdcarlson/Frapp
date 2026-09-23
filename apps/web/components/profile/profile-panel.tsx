@@ -5,7 +5,6 @@ import { Loader2 } from "lucide-react";
 import {
   useActiveChapterId,
   useCurrentUser,
-  useDeleteAccount,
   useNotificationPreferences,
   useUpdateNotificationPreference,
   useUpdateOnboarding,
@@ -33,7 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useDeleteAccountFlow } from "@/components/profile/use-delete-account-flow";
 import {
   ErrorState,
   anyReadUncached,
@@ -89,8 +88,16 @@ export function ProfilePanel() {
   const updateUser = useUpdateUser();
   const updateSettings = useUpdateUserSettings();
   const updateOnboarding = useUpdateOnboarding();
-  const deleteAccount = useDeleteAccount();
-  const { confirm, confirmDialog } = useConfirmDialog();
+  const deleteFlow = useDeleteAccountFlow({
+    onFailed: () =>
+      toast({
+        title: "Deletion didn't finish",
+        description:
+          "Part of it may already have gone through, and running it again is safe. Try once more in a moment.",
+        variant: "destructive",
+      }),
+  });
+  const isDeletingAccount = deleteFlow.isDeleting;
   // The notification categories are per-chapter — `notification_preferences` is
   // keyed `(user_id, chapter_id, category)` — so this card, unlike the rest of
   // /profile, has a tenant. With no active chapter there is nothing to read and
@@ -102,7 +109,6 @@ export function ProfilePanel() {
   const [profileDraft, setProfileDraft] = useState<CurrentUser>({});
   const [settingsDraft, setSettingsDraft] = useState<UserSettings>({});
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [timeZoneError, setTimeZoneError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -291,47 +297,6 @@ export function ProfilePanel() {
         variant: "destructive",
       });
     }
-  }
-
-  async function handleDeleteAccount() {
-    const confirmed = await confirm({
-      title: "Delete your account?",
-      description:
-        'This cannot be undone. Your profile and contact details are erased; chapter history you took part in stays, anonymized as "Deleted User". See the Privacy Policy for what is kept and for how long.',
-      confirmLabel: "Delete account",
-      tone: "destructive",
-    });
-    if (!confirmed) return;
-    setIsDeletingAccount(true);
-    try {
-      await deleteAccount.mutateAsync();
-    } catch {
-      setIsDeletingAccount(false);
-      toast({
-        title: "Deletion didn't finish",
-        description:
-          "Part of it may already have gone through, and running it again is safe. Try once more in a moment.",
-        variant: "destructive",
-      });
-      return;
-    }
-    // The account is gone at this point, so nothing past here should block on
-    // — or be undone by — its own failure. `signOutCurrentSession` is
-    // best-effort: whether or not it succeeds, the hard navigation below is
-    // what actually satisfies `useDeleteAccount`'s "the caller must clear the
-    // query cache on success" contract (a full document load discards the
-    // in-memory QueryClient; web has no persister), and a signed-out-looking
-    // page beats leaving the member on a screen for an account that no longer
-    // exists. Deliberately not `handleSignOut()`: that function swallows its
-    // own errors and only navigates on its own success path, which would
-    // strand the member here — cache intact, no redirect — on a sign-out
-    // hiccup immediately after a successful deletion.
-    try {
-      await signOutCurrentSession();
-    } catch {
-      // Ignored — see above.
-    }
-    window.location.assign("/sign-in");
   }
 
   const profile = profileDraft;
@@ -956,7 +921,7 @@ export function ProfilePanel() {
             </p>
             <Button
               variant="destructive"
-              onClick={() => void handleDeleteAccount()}
+              onClick={() => void deleteFlow.start()}
               disabled={isDeletingAccount || isSigningOut}
             >
               {isDeletingAccount ? "Deleting account…" : "Delete account…"}
@@ -964,7 +929,7 @@ export function ProfilePanel() {
           </div>
         </CardContent>
       </Card>
-      {confirmDialog}
+      {deleteFlow.confirmDialog}
     </div>
   );
 }

@@ -14,12 +14,14 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { MAX_UPLOAD_URL_BATCH } from '../../application/services/discord-import.service';
+import { RawValue } from './raw-value.transform';
 
 export class CreateDiscordImportDto {
   @ApiProperty({
     description:
       'The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Signet. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this.',
   })
+  @RawValue()
   @IsBoolean()
   consent_acknowledged: boolean;
 

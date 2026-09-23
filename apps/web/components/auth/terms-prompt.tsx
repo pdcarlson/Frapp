@@ -11,6 +11,7 @@ import {
 } from "@repo/hooks";
 import { TERMS_PROMPT_COPY } from "@repo/validation";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
+import { useDeleteAccountFlow } from "@/components/profile/use-delete-account-flow";
 import { Button } from "@/components/ui/button";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { asArray } from "@/lib/utils";
@@ -24,17 +25,27 @@ import { asArray } from "@/lib/utils";
 export const TERMS_PROMPT_SIGN_OUT_FAILED =
   "Couldn't sign out. Retry in a moment, or close this tab to end the session.";
 
+/** Web only: the prompt's account deletion didn't finish. */
+export const TERMS_PROMPT_DELETE_FAILED =
+  "Deletion didn't finish. Part of it may already have gone through, and running it again is safe. Try once more in a moment.";
+
 /**
  * The prompt itself: a full-screen dialog over the dashboard that Escape and
  * outside clicks can't close, the same shape as the chapter wizard. The ways
- * out are agreeing and signing out, so a member who declines is never trapped.
- * Accepting updates the cached status, and the gate unmounts this.
+ * out are agreeing, signing out and deleting the account, so a member who
+ * declines is never trapped. Deletion is here because the prompt covers
+ * `/profile`, where it otherwise lives (`spec/behavior/data-retention.md`),
+ * as mobile's Terms screen offers it too. Accepting updates the cached status,
+ * and the gate unmounts this.
  */
 export function TermsPrompt() {
   const acceptTerms = useAcceptLegalTerms();
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const deleteFlow = useDeleteAccountFlow({
+    onFailed: () => setError(TERMS_PROMPT_DELETE_FAILED),
+  });
 
   async function handleAccept(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,7 +75,11 @@ export function TermsPrompt() {
     }
   }
 
-  const busy = acceptTerms.isPending || acceptTerms.isSuccess || signingOut;
+  const busy =
+    acceptTerms.isPending ||
+    acceptTerms.isSuccess ||
+    signingOut ||
+    deleteFlow.isDeleting;
 
   return (
     <DialogPrimitive.Root open>
@@ -116,8 +131,23 @@ export function TermsPrompt() {
               >
                 Sign out
               </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full text-destructive"
+                disabled={busy}
+                onClick={() => {
+                  setError(null);
+                  void deleteFlow.start();
+                }}
+              >
+                {deleteFlow.isDeleting ? "Deleting account…" : "Delete account…"}
+              </Button>
             </form>
           </div>
+          {/* Inside Content, so Radix stacks the confirmation over this
+              dialog as a nested layer rather than a sibling it traps out. */}
+          {deleteFlow.confirmDialog}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
