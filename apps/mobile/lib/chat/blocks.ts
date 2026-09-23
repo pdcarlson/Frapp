@@ -94,9 +94,9 @@ export function isBlockableSender(senderId: string | null): senderId is string {
  *    mask withheld and a list that reads ready may predate a block made on
  *    another device. It yields only to an unblock this client confirmed,
  *    which applies in every list state like any confirmed change. Nothing
- *    dates the verdict against that unblock, so a member re-blocked elsewhere
- *    whose masked row is echoed before the list re-read lands still shows
- *    (#2499).
+ *    dates the verdict against that unblock, so a member unblocked here and
+ *    re-blocked elsewhere shows when their masked row is echoed, until a list
+ *    read succeeds — for a whole outage if the list is unavailable (#2499).
  * 3. A sender nobody can block (imported, system) cannot be hidden by a list.
  * 4. A sender on the list is a tombstone on **every** path — including a row
  *    the server cleared before the block was made, and a row cleared earlier
@@ -140,7 +140,6 @@ export function classifyMessage(
  * what a block made on another device looks like until the list is re-read
  * (`contradictingRows`), so the control stays — unblocking is idempotent and
  * harmless if the block had in fact ended.
-
  */
 export function tombstoneCanUnblock(
   message: Pick<ChatMessage, "sender_id">,
@@ -308,8 +307,8 @@ export function visibleReactions(
  * overwrites one the echo has updated since. That row is no longer a *masked
  * copy*: its `sender_blocked` may still be true (a verdict `mergeServerRow`
  * carried over), but its body is the echo's, so the guard below requires
- * `_blockEvaluated` as well. It needs no swap — once the unblock is settled,
- * `classifyMessage` shows it as it stands.
+ * `_blockEvaluated` as well. It needs no swap — once this client has
+ * confirmed the unblock, `classifyMessage` shows it as it stands.
  */
 export function replaceMaskedCopies(
   cache: ChannelCache,

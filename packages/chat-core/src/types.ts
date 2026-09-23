@@ -233,14 +233,15 @@ export interface ChatMessage {
    * `_`-prefixed because it is client-derived state, not a column. A consumer
    * that renders a row with this `false` must first tombstone it if
    * `sender_blocked` is `true` (a verdict carried over from a masked copy —
-   * its body is what the mask withheld) unless it has since confirmed
-   * unblocking the sender, then apply its own block list, and
-   * must hold the row, not render it, while that list is loading or
-   * unavailable — unless it already showed the row against a ready list, since
-   * nothing re-evaluates an echoed row: the reconnect backfill reads only after
-   * the last-seen cursor, which the echo itself advanced (mobile:
-   * `classifyMessage` in `apps/mobile/lib/chat/blocks.ts`, and
-   * `block-clearance.ts` beside it).
+   * its body is what the mask withheld) unless the consumer has confirmed
+   * unblocking the sender, then apply its own block list, and must hold the
+   * row, not render it, while that list is loading or unavailable — unless
+   * the consumer confirmed unblocking the sender, or already showed the row
+   * against a ready list, since nothing re-evaluates an echoed row: the
+   * reconnect backfill reads only after the last-seen cursor, which the echo
+   * itself advanced (mobile: `classifyMessage` in
+   * `apps/mobile/lib/chat/blocks.ts`, and `block-clearance.ts` beside it;
+   * `spec/behavior/chat/README.md` § The masking contract has every rule).
    */
   _blockEvaluated: boolean;
   reactions: ReactionState;

@@ -263,8 +263,8 @@ describe("classifyMessage", () => {
     it("an echo that carried a mask shows once this client confirmed the unblock, in every list state", () => {
       // A confirmed unblock applies whatever the list is doing, like any
       // confirmed change — and a pinned or edited message from a member the
-      // viewer unblocked must not stay hidden. (It cannot tell a mask that
-      // postdates the unblock, from a re-block elsewhere: #2499.)
+      // viewer unblocked must not stay hidden. (It cannot tell this leftover
+      // mask from one read after the unblock — a re-block elsewhere: #2499.)
       let cache = mergeServerRow(
         emptyCache(),
         restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
@@ -287,7 +287,7 @@ describe("classifyMessage", () => {
       );
     });
 
-    it("a carried mask is never remembered as seen, so a later outage cannot surface it", () => {
+    it("a carried mask without a confirmed unblock is never remembered as seen, so a later outage cannot surface it", () => {
       let cache = mergeServerRow(
         emptyCache(),
         restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
