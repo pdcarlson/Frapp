@@ -140,9 +140,11 @@ function wait(ms: number): Promise<void> {
  *
  * Only threads that hold a masked copy from this member are read. Older copies
  * beyond the newest page stay masked, as stale tombstones, until the thread's
- * query is next read from scratch (its cache entry expires, or the app
- * restarts) — and that read covers only the newest page, so they then leave
- * the timeline (spec/behavior/chat/README.md, Channel messages row).
+ * query is next read from scratch — the thread screen stays mounted, so that is
+ * a chapter switch, a sign-out, an app restart, or the default `gcTime` after
+ * the member opens a different channel — and that read covers only the newest
+ * page, so they then leave the timeline (spec/behavior/chat/README.md, Channel
+ * messages row).
  *
  * **A failure is retried, then recorded — never swallowed.** Each thread's read
  * is tried up to `1 + retryDelaysMs.length` times, and a thread that no longer

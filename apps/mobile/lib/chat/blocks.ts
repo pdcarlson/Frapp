@@ -13,9 +13,10 @@
  * - **The block list** — `useBlockedUserIds()`, tri-state, with every change
  *   this client confirmed applied on top. Its ids are a floor in every status:
  *   anyone on it is known-blocked.
- * - **This session's clearances** — rows already shown against a `ready` list
- *   (`block-clearance.ts`), so a later list outage does not take back messages
- *   the viewer legitimately read.
+ * - **This session's clearances** — rows already shown against a `ready` list,
+ *   and server-cleared rows shown while it was loading or unavailable
+ *   (`rowsToRemember`, `block-clearance.ts`), so a later list outage does not
+ *   take back messages the viewer legitimately read.
  *
  * **Nothing here reads `content`.** The server's masking sentinel is a
  * rendering detail of one code path, and a client that pattern-matches it
@@ -47,8 +48,9 @@ export interface BlockState {
    */
   unblocked: ReadonlySet<string>;
   /**
-   * Message ids already shown against a `ready` list this session
-   * (`block-clearance.ts`). Consulted only once the list is no longer ready.
+   * Message ids already shown this session — against a `ready` list, or as a
+   * server-cleared row while the list was not ready (`rowsToRemember`,
+   * `block-clearance.ts`). Consulted only once the list is no longer ready.
    */
   cleared: ReadonlySet<string>;
 }
@@ -94,9 +96,10 @@ export function isBlockableSender(senderId: string | null): senderId is string {
  * 7. …and, once that list is loading or unavailable, only if this client
  *    confirmed unblocking its sender (a confirmed change applies in every list
  *    state, and nothing since has contradicted it — see `BlockState.unblocked`)
- *    or it was already shown against a current list earlier this session.
- *    Anything else is held (fail closed): a row that first arrives during an
- *    outage never renders until the list is back.
+ *    or it was already shown earlier this session — against a current list,
+ *    or as a server-cleared row since replaced by an unevaluated echo (a pin,
+ *    an edit). Anything else is held (fail closed): an unevaluated row that
+ *    first arrives during an outage never renders until the list is back.
  */
 export function classifyMessage(
   message: ClassifiedFields,
