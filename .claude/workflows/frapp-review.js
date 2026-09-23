@@ -174,7 +174,7 @@ function norm(file) {
 // is refuted or unverified, its next duplicate may be a different defect at the same line, so that
 // one takes over the line and is verified, carrying the rest: duplicates are verified one at a time,
 // and only while each one before them fails. Once one is kept, the rest ride along unverified, and
-// the skill's Phase 3 has the orchestrator read each note and split out a different defect.
+// the skill's Phase 3 has the orchestrator verify, by the same rule, any that names a different defect.
 const note = (d) => ({ source: d.source, angle: d.angle, summary: d.summary, failure_scenario: d.failure_scenario })
 
 function admit(candidates, source) {

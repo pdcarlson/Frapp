@@ -237,8 +237,9 @@ Rank correctness and security above cleanups, and `CONFIRMED` above `PLAUSIBLE`.
 names a concrete broken pointer, an orphaned section reference, or a dropped dated stamp is a
 correctness finding and is not cut to fit the cap. Each `alsoFlaggedBy` entry is an unverified
 candidate at a kept finding's line, with its own summary and failure scenario. Merge it when it
-shares the root cause. When it names a different defect, give it one `claim-verifier` like any other
-candidate, and report it as its own finding unless that verifier refutes it. Merge other findings
+shares the root cause. When it names a different defect, verify it by the Phase 2 rule (reproduce,
+then material only on `REFUTED`; dropped only when both refute it, and a missing verdict is a check
+not run), and report it as its own finding if it survives. Merge other findings
 that share a root cause. Cap at the level's limit.
 
 Report with one `ReportFindings` call, most severe first, with `level` set to the effort used and
@@ -274,4 +275,4 @@ node scripts/diff-review-scope.mjs --mark full
 The script writes `<repo-root>/.cache/diff-review/<HEAD SHA>`, the only place the hook looks, and
 the kind is what lets the next Phase 0 trust it. The marker is keyed to the commit, so committing
 fixes invalidates it by design: re-run this skill on the new HEAD. Phase 0 then finds this marker
-and re-reviews just the fix commits, or the whole branch if a merge from `main` landed since.
+and re-reviews just the fix commits, or the whole branch if any merge landed since.
