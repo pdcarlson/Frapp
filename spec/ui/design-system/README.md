@@ -144,7 +144,7 @@ Do not collapse these into the verdict: `allowed` folds in `isPending` and `isOf
 
 Every paid-ops write **affordance** in `apps/web` is mirrored except the rows the table below marks **not mirrored**: the chat slash commands, the backwork taxonomy drawer, the chat rush card and the Discord import wizard. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
 
-The backwork taxonomy drawer, the rush card and the Discord import wizard are recorded here but not yet tracked by an issue. Two gaps are known and tracked, not overlooked (the first is the slash-command entries the table marks **not mirrored**):
+Separately from those three surfaces, two gaps are known and tracked, not overlooked (the first is the slash-command entries the table marks **not mirrored**):
 
 - **The chat slash commands.** `/event`, `/task`, `/points`, `/hours` and `/rush` dispatch straight to `POST /v1/events`, `/v1/tasks`, `/v1/points/adjust`, `/v1/service-entries` and `/v1/rush/candidates` (plus its vote and bid routes) from `packages/chat-core/src/dispatch.ts`. The palette filters on module state only, and a *typed* command bypasses the palette entirely — so the gate has to sit on the dispatcher, not on a control, which is a different shape from everything above.
 - **Residual `chapter.subscription.*` errors.** Nothing yet reads the guard's structured codes off a rejected response to render the remedy alongside the message. That is the backstop for exactly the paths a client-side mirror cannot cover, the typed slash command among them.
@@ -166,7 +166,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | `financial-invoice` | 3 (+1 exempt) | `components/billing/invoice-list.tsx` |
 | `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points/points-adjustment-dialog.tsx` · the `/points` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `poll` | 4 | `components/polls/polls-page.tsx` |
-| `discord-connection` | 3 | `components/discord-import/connect-step.tsx` · `components/discord-import/import-wizard.tsx` (both **not mirrored**) |
+| `discord-connection` | 3 | `components/discord-import/connect-step.tsx` · `components/discord-import/import-wizard.tsx` (both **not mirrored**; `DELETE /discord/connection` has no web client yet and must adopt the gate when one lands) |
 | `discord-import` | 10 | `components/discord-import/*` (**not mirrored**) |
 | `report` | 4 | `components/reports/reports-page.tsx` |
 | `rush` | 3 | `components/chat/renderers/rush-card.tsx` (vote, bid; **not mirrored**) · the `/rush` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
