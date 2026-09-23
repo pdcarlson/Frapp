@@ -144,7 +144,7 @@ Do not collapse these into the verdict: `allowed` folds in `isPending` and `isOf
 
 Every paid-ops write **affordance** in `apps/web` is mirrored except the rows the table below marks **not mirrored**: the chat slash commands, the backwork taxonomy drawer, the chat rush card and the Discord import wizard. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
 
-Separately from those three surfaces, two gaps are known and tracked, not overlooked (the first is the slash-command entries the table marks **not mirrored**):
+Beyond the backwork taxonomy drawer, the rush card and the Discord import wizard, two gaps are known, not overlooked (the first is the slash-command entries the table marks **not mirrored**):
 
 - **The chat slash commands.** `/event`, `/task`, `/points`, `/hours` and `/rush` dispatch straight to `POST /v1/events`, `/v1/tasks`, `/v1/points/adjust`, `/v1/service-entries` and `/v1/rush/candidates` (plus its vote and bid routes) from `packages/chat-core/src/dispatch.ts`. The palette filters on module state only, and a *typed* command bypasses the palette entirely — so the gate has to sit on the dispatcher, not on a control, which is a different shape from everything above.
 - **Residual `chapter.subscription.*` errors.** Nothing yet reads the guard's structured codes off a rejected response to render the remedy alongside the message. That is the backstop for exactly the paths a client-side mirror cannot cover, the typed slash command among them.
