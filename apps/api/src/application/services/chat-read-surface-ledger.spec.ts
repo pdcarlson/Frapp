@@ -27,6 +27,13 @@ import { join } from 'node:path';
  *   and every Realtime subscription the API opens, since that is how a new
  *   push gets built.
  *
+ * What it cannot see, so nobody reads a green run as more than it is: a chat
+ * read added to a controller outside `CHAT_CONTROLLERS`; an existing
+ * notification call edited to carry chat content (the per-file count does not
+ * move); and a subscription or policy written through an indirection no
+ * pattern here reads (an event name built at runtime, dynamic SQL assembled
+ * from parts).
+ *
  * A `masked` entry names the test that proves it, and that test must be live:
  * present, not commented out, in a spec that skips and focuses nothing. That
  * cannot prove the test asserts the right thing, but it stops a renamed,
@@ -284,42 +291,56 @@ const HTTP_LEDGER: Record<string, Entry> = {
  * policy on a table already listed here still has to be classified: a table
  * entry would pre-approve whatever policy came next.
  *
+ * Each entry also says how many `create policy` statements carry its name.
+ * This repo changes a policy by dropping and re-creating it under the same
+ * name, so a new re-creation (a widened role, a looser `using`) keeps its key
+ * and would otherwise inherit the old entry's reason. Changing the count forces
+ * a person to re-read the reason. `alter policy` is refused outright below, for
+ * the same reason.
+ *
  * Tables with RLS on and no read policy are absent on purpose
  * (`chat_message_attachments`, `message_reactions`, `chat_member_blocks` and
  * `chat_message_reports` among them): only the API reaches them, and the routes
  * above are where they are masked. A table with RLS *off* would need no policy
  * at all, which is why the gate below also pins RLS on for every public table.
  */
-const DIRECT_READ_LEDGER: Record<string, Entry> = {
+const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
   'public.chat_messages chat_messages_select': {
+    creates: 2,
     status: 'open',
     issues: [2315, 2313],
     why: 'The Realtime echo carries no viewer and cannot be masked by the server; § The masking contract makes each client apply its own list. Neither client has one yet.',
   },
   'public.chat_message_actions chat_message_actions_select': {
+    creates: 2,
     status: 'open',
     issues: [2494],
     why: "Reaction chips: a blocked member's `reaction:*` rows reach the blocker over PostgREST and Realtime. `vote` rows are counted, not hidden, by design.",
   },
   'public.chat_notification_preferences chat_notification_preferences_select_own':
     {
+      creates: 1,
       status: 'no-foreign-content',
       why: "Select-own only: the caller's own preferences.",
     },
   'realtime.messages realtime_messages_scoped_select': {
+    creates: 2,
     status: 'open',
     issues: [2496],
     why: "Authorizes Broadcast and Presence on `chat:channel:<id>`. Clients act only on presence and `typing`, rendered anonymously, and neither carries message content. A blocked member's `typing` still counts toward that indicator.",
   },
   'public.users auth_admin_can_read_users': {
+    creates: 1,
     status: 'no-foreign-content',
     why: '`to supabase_auth_admin` only, for the Auth hook that stamps the active-chapter claim. No client role reaches it.',
   },
   'public.members auth_admin_can_read_members': {
+    creates: 1,
     status: 'no-foreign-content',
     why: '`to supabase_auth_admin` only, as `auth_admin_can_read_users`.',
   },
   'public.member_custom_field_values member_custom_field_values_service_role': {
+    creates: 1,
     status: 'no-foreign-content',
     why: "`auth.role() = 'service_role'` only. No client role reaches it.",
   },
@@ -362,41 +383,62 @@ const PUSH_LEDGER: Record<string, Entry> = {
   },
 };
 
-const CHAPTER_RECORD =
-  'A chapter-record notification, not chat. A block is a chat control, and the spec keeps the records themselves unaffected by it.';
+/**
+ * A non-chat notification whose body carries text the acting member wrote (a
+ * fine reason, a task title, a review comment, an event or invoice name). The
+ * spec hides that same text in chat, and does not say whether a block reaches
+ * the notification. Open until #2498 decides it.
+ */
+const ACTOR_TEXT: Entry = {
+  status: 'open',
+  issues: [2498],
+  why: 'Not chat, but delivers text the acting member wrote to the target, so a member who blocked the actor still receives it. Whether a chat block reaches these is undecided.',
+};
 
 /**
  * Every file under `apps/api/src` that calls `notifyUser` or `notifyChapter`,
- * with how many calls it makes. The count is the point: a new call in any file,
- * including one already listed, changes it and fails until someone decides
- * whether the new notification carries chat content. If it does, it needs a
- * PUSH_LEDGER entry with its proof.
+ * with how many calls it makes and what they carry. The count is the point: a
+ * new call in any file, including one already listed, changes it and fails
+ * until someone decides whether the new notification carries another member's
+ * words. What it cannot catch is an existing call edited to carry them.
  */
-const NOTIFY_EMITTERS: Record<string, { calls: number; why: string }> = {
+const NOTIFY_EMITTERS: Record<string, { calls: number; entry: Entry }> = {
   'application/services/chat.service.ts': {
     calls: 2,
-    why: 'Chat content: the DM and announcement notifications in PUSH_LEDGER.',
+    entry: PUSH_LEDGER['ChatService.sendMessageNotification (DM and group DM)'],
   },
   'modules/chat-push-worker/chat-push-worker.service.ts': {
     calls: 1,
-    why: 'Chat content: the push worker in PUSH_LEDGER.',
+    entry: PUSH_LEDGER['chat-push-worker (chat_messages INSERT)'],
   },
-  'application/services/billing.service.ts': { calls: 1, why: CHAPTER_RECORD },
-  'application/services/event.service.ts': { calls: 2, why: CHAPTER_RECORD },
+  'application/services/billing.service.ts': {
+    calls: 1,
+    entry: {
+      status: 'no-foreign-content',
+      why: 'Subscription status, to the president. No member-written text.',
+    },
+  },
+  'application/services/invite.service.ts': {
+    calls: 1,
+    entry: {
+      status: 'no-foreign-content',
+      why: '"A new member has joined the chapter": fixed text.',
+    },
+  },
+  'application/services/event.service.ts': { calls: 2, entry: ACTOR_TEXT },
   'application/services/financial-invoice.service.ts': {
     calls: 3,
-    why: CHAPTER_RECORD,
+    entry: ACTOR_TEXT,
   },
-  'application/services/invite.service.ts': { calls: 1, why: CHAPTER_RECORD },
-  'application/services/points.service.ts': { calls: 1, why: CHAPTER_RECORD },
+  'application/services/points.service.ts': { calls: 1, entry: ACTOR_TEXT },
   'application/services/service-entry.service.ts': {
     calls: 2,
-    why: CHAPTER_RECORD,
+    entry: ACTOR_TEXT,
   },
-  'application/services/task.service.ts': { calls: 1, why: CHAPTER_RECORD },
+  'application/services/task.service.ts': { calls: 1, entry: ACTOR_TEXT },
   'modules/scheduled-jobs/scheduled-jobs.service.ts': {
     calls: 1,
-    why: CHAPTER_RECORD,
+    entry: ACTOR_TEXT,
   },
 };
 
@@ -528,7 +570,7 @@ function stripJsComments(source: string): string {
  * block around it leaves the title in place with nothing running.
  */
 const SKIPS_OR_FOCUSES =
-  /\b(?:describe|it|test)(?:\.concurrent)?\.(?:skip|only|todo)\b|\b[xf](?:describe|it|test)\b/;
+  /\b(?:describe|it|test)(?:\.concurrent)?\.(?:skip|only|todo)\b|\b[xf](?:describe|it|test)\s*[.(]/;
 
 /**
  * The proof's title appears as a live `it(` in its spec, and that spec neither
@@ -623,26 +665,59 @@ describe('chat read-surface ledger (#2324)', () => {
     ).toEqual([]);
   });
 
+  it('notices a read policy re-created or altered under a name it already knows', () => {
+    // A same-name re-creation keeps the key but can change the role or the
+    // `using` clause the entry's reason depends on, so the count has to be
+    // bumped by someone who re-read the new statement. `alter policy` changes
+    // the same things with no `create` at all, so it is not allowed.
+    const counts = new Map<string, number>();
+    for (const { table, policy, reads } of policies) {
+      if (!reads) continue;
+      const key = `${table} ${policy}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    expect(
+      Object.entries(DIRECT_READ_LEDGER)
+        .filter(([key, entry]) => counts.get(key) !== entry.creates)
+        .map(
+          ([key, entry]) =>
+            `${key}: ledger ${entry.creates}, migrations ${counts.get(key) ?? 0}`,
+        ),
+    ).toEqual([]);
+    expect(
+      allMigrations
+        .filter(({ sql }) => /\balter\s+policy\b/i.test(sql))
+        .map(({ name }) => name),
+    ).toEqual([]);
+  });
+
   it('keeps RLS on for every public table, so no table is readable without a policy', () => {
     // With RLS off, PostgREST serves a table to any client under the default
     // grants and no policy is involved, so the check above would never see it.
     // `check:pglite-migrations` asserts the same thing against a replayed
     // database, but it is advisory; this one is not. Statements are replayed
-    // in order, so a table dropped and re-created without its `enable` is off.
+    // in order, so a table dropped and re-created without its `enable` is off,
+    // while `create table if not exists` on a table that already exists is the
+    // no-op Postgres makes it. A `disable` fails in any schema, since
+    // `realtime.messages` and `storage.objects` are exactly the tables whose
+    // RLS the chat surfaces depend on.
     const rls = new Map<string, 'on' | 'off'>();
+    const disabled: string[] = [];
     const statement =
-      /create\s+table\s+(?:if\s+not\s+exists\s+)?([\w."]+)|drop\s+table\s+(?:if\s+exists\s+)?([\w.",\s]+?)\s*(?:cascade|restrict)?\s*;|alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([\w."]+)\s+(enable|disable)\s+row\s+level\s+security/gi;
-    for (const { sql } of allMigrations) {
+      /create\s+table\s+(if\s+not\s+exists\s+)?([\w."]+)|drop\s+table\s+(?:if\s+exists\s+)?([\w.",\s]+?)\s*(?:cascade|restrict)?\s*;|alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([\w."]+)\s+(enable|disable)\s+row\s+level\s+security/gi;
+    for (const { name: migration, sql } of allMigrations) {
       for (const match of sql.matchAll(statement)) {
-        if (match[1]) rls.set(qualify(match[1]), 'off');
-        else if (match[2]) {
-          for (const name of match[2].split(','))
-            rls.delete(qualify(name.trim()));
+        if (match[2]) {
+          const table = qualify(match[2]);
+          if (!(match[1] && rls.has(table))) rls.set(table, 'off');
         } else if (match[3]) {
-          rls.set(
-            qualify(match[3]),
-            match[4].toLowerCase() === 'enable' ? 'on' : 'off',
-          );
+          for (const name of match[3].split(','))
+            rls.delete(qualify(name.trim()));
+        } else if (match[4]) {
+          const table = qualify(match[4]);
+          const enable = match[5].toLowerCase() === 'enable';
+          rls.set(table, enable ? 'on' : 'off');
+          if (!enable) disabled.push(`${migration}: ${table}`);
         }
       }
     }
@@ -651,6 +726,7 @@ describe('chat read-surface ledger (#2324)', () => {
     );
     expect(tables.length).toBeGreaterThan(40);
     expect(tables.filter((table) => rls.get(table) !== 'on')).toEqual([]);
+    expect(disabled).toEqual([]);
   });
 
   it('keeps the API the only path to chat attachments', () => {
@@ -702,7 +778,7 @@ describe('chat read-surface ledger (#2324)', () => {
     // table would be a reaction push; one with no table filter would be every
     // table at once.
     const subscribes =
-      /(['"])postgres_changes\1|REALTIME_LISTEN_TYPES\.POSTGRES_CHANGES/;
+      /[(,=]\s*(['"`])postgres_changes\1|REALTIME_LISTEN_TYPES\.POSTGRES_CHANGES/;
     const problems = sources
       .filter(({ code }) => subscribes.test(code))
       .flatMap(({ rel, code }) => {
@@ -728,8 +804,9 @@ describe('chat read-surface ledger (#2324)', () => {
     const expected = Object.fromEntries(
       Object.entries(NOTIFY_EMITTERS).map(([rel, { calls }]) => [rel, calls]),
     );
-    // A new or moved notification lands here. If it carries chat content, it
-    // has to drop blockers, and PUSH_LEDGER needs an entry naming the proof.
+    // A new or moved notification lands here. If it carries another member's
+    // words, it has to drop blockers and name the proof, or be open against an
+    // issue that decides whether it must.
     expect(found).toEqual(expected);
   });
 
@@ -737,6 +814,9 @@ describe('chat read-surface ledger (#2324)', () => {
     ...Object.entries(HTTP_LEDGER),
     ...Object.entries(DIRECT_READ_LEDGER),
     ...Object.entries(PUSH_LEDGER),
+    ...Object.entries(NOTIFY_EMITTERS).map(
+      ([rel, { entry }]) => [rel, entry] as [string, Entry],
+    ),
   ];
 
   it.each(
