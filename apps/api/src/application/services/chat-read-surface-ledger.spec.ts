@@ -18,12 +18,14 @@ import { join } from 'node:path';
  *   on other controllers serve chat content too (search, the activity feed,
  *   the notification list) and are listed by hand, so a chat read added to
  *   some other controller is the one case this does not catch;
- * - every table any migration grants an RLS policy on, which is how a client
+ * - every policy any migration creates that can read, which is how a client
  *   reads around the API entirely (PostgREST and the Realtime
  *   `postgres_changes` echo), with RLS pinned on for every public table so a
- *   table cannot be read with no policy at all;
- * - every emitter that writes a notification or a push, and every Realtime
- *   subscription the API opens, since that is how a new push gets built.
+ *   table cannot be read with no policy at all, and with no storage policy
+ *   anywhere;
+ * - every call to `notifyUser` / `notifyChapter` in the API, counted per file,
+ *   and every Realtime subscription the API opens, since that is how a new
+ *   push gets built.
  *
  * A `masked` entry names the test that proves it, and that test must be live:
  * present, not commented out, in a spec that skips and focuses nothing. That
@@ -274,57 +276,60 @@ const HTTP_LEDGER: Record<string, Entry> = {
 };
 
 /**
- * Every table any migration grants an RLS policy on, keyed as `schema.table`,
- * chat or not. A policy is a way to the rows that skips every API mask, so each
- * one has to answer the block question, including the ones whose answer is
- * "carries no chat content". Tables with RLS on and no policy are absent on
- * purpose (`chat_message_attachments`, `message_reactions`, `chat_member_blocks`
- * and `chat_message_reports` among them): only the API reaches them, and the
- * routes above are where they are masked. A table with RLS *off* would need no
- * policy at all, which is why the gate below also pins RLS on for every table.
+ * Every policy any migration creates that can *read* (`for select`, `for all`,
+ * or no command clause), keyed as `schema.table policy_name`, chat or not. A
+ * read policy is a way to the rows that skips every API mask, so each one has
+ * to answer the block question, including the ones whose answer is "no client
+ * role reaches this". Keyed by policy rather than by table so that a new read
+ * policy on a table already listed here still has to be classified: a table
+ * entry would pre-approve whatever policy came next.
+ *
+ * Tables with RLS on and no read policy are absent on purpose
+ * (`chat_message_attachments`, `message_reactions`, `chat_member_blocks` and
+ * `chat_message_reports` among them): only the API reaches them, and the routes
+ * above are where they are masked. A table with RLS *off* would need no policy
+ * at all, which is why the gate below also pins RLS on for every public table.
  */
 const DIRECT_READ_LEDGER: Record<string, Entry> = {
-  'public.chat_messages': {
+  'public.chat_messages chat_messages_select': {
     status: 'open',
     issues: [2315, 2313],
     why: 'The Realtime echo carries no viewer and cannot be masked by the server; § The masking contract makes each client apply its own list. Neither client has one yet.',
   },
-  'public.chat_message_actions': {
+  'public.chat_message_actions chat_message_actions_select': {
     status: 'open',
     issues: [2494],
     why: "Reaction chips: a blocked member's `reaction:*` rows reach the blocker over PostgREST and Realtime. `vote` rows are counted, not hidden, by design.",
   },
-  'public.chat_notification_preferences': {
-    status: 'no-foreign-content',
-    why: "Select-own only: the caller's own preferences.",
-  },
-  'realtime.messages': {
+  'public.chat_notification_preferences chat_notification_preferences_select_own':
+    {
+      status: 'no-foreign-content',
+      why: "Select-own only: the caller's own preferences.",
+    },
+  'realtime.messages realtime_messages_scoped_select': {
     status: 'open',
     issues: [2496],
     why: "Authorizes Broadcast and Presence on `chat:channel:<id>`. Clients act only on presence and `typing`, rendered anonymously, and neither carries message content. A blocked member's `typing` still counts toward that indicator.",
   },
-  'public.users': {
-    status: 'not-hidden',
-    why: 'Directory data. "Blocking is a chat control, not a chapter-membership one."',
-  },
-  'public.members': {
-    status: 'not-hidden',
-    why: 'Directory data, as `public.users`.',
-  },
-  'public.member_custom_field_values': {
-    status: 'not-hidden',
-    why: 'Directory data, as `public.users`.',
-  },
-  'public.chapter_audit_log': {
+  'public.users auth_admin_can_read_users': {
     status: 'no-foreign-content',
-    why: 'Admin actions, not chat. Its #chapter-audit bridge posts as the system actor, which cannot be blocked.',
+    why: '`to supabase_auth_admin` only, for the Auth hook that stamps the active-chapter claim. No client role reaches it.',
+  },
+  'public.members auth_admin_can_read_members': {
+    status: 'no-foreign-content',
+    why: '`to supabase_auth_admin` only, as `auth_admin_can_read_users`.',
+  },
+  'public.member_custom_field_values member_custom_field_values_service_role': {
+    status: 'no-foreign-content',
+    why: "`auth.role() = 'service_role'` only. No client role reaches it.",
   },
 };
 
 /**
  * Everything that writes a notification or pushes to a lock screen with chat
- * content in it. Keyed by emitter, not by route: none of these is a request
- * the viewer makes.
+ * content in it, with the proof that it drops blockers. Keyed by emitter, not by
+ * route: none of these is a request the viewer makes. `NOTIFY_EMITTERS` below
+ * is what makes this list complete.
  */
 const PUSH_LEDGER: Record<string, Entry> = {
   'chat-push-worker (chat_messages INSERT)': {
@@ -357,6 +362,44 @@ const PUSH_LEDGER: Record<string, Entry> = {
   },
 };
 
+const CHAPTER_RECORD =
+  'A chapter-record notification, not chat. A block is a chat control, and the spec keeps the records themselves unaffected by it.';
+
+/**
+ * Every file under `apps/api/src` that calls `notifyUser` or `notifyChapter`,
+ * with how many calls it makes. The count is the point: a new call in any file,
+ * including one already listed, changes it and fails until someone decides
+ * whether the new notification carries chat content. If it does, it needs a
+ * PUSH_LEDGER entry with its proof.
+ */
+const NOTIFY_EMITTERS: Record<string, { calls: number; why: string }> = {
+  'application/services/chat.service.ts': {
+    calls: 2,
+    why: 'Chat content: the DM and announcement notifications in PUSH_LEDGER.',
+  },
+  'modules/chat-push-worker/chat-push-worker.service.ts': {
+    calls: 1,
+    why: 'Chat content: the push worker in PUSH_LEDGER.',
+  },
+  'application/services/billing.service.ts': { calls: 1, why: CHAPTER_RECORD },
+  'application/services/event.service.ts': { calls: 2, why: CHAPTER_RECORD },
+  'application/services/financial-invoice.service.ts': {
+    calls: 3,
+    why: CHAPTER_RECORD,
+  },
+  'application/services/invite.service.ts': { calls: 1, why: CHAPTER_RECORD },
+  'application/services/points.service.ts': { calls: 1, why: CHAPTER_RECORD },
+  'application/services/service-entry.service.ts': {
+    calls: 2,
+    why: CHAPTER_RECORD,
+  },
+  'application/services/task.service.ts': { calls: 1, why: CHAPTER_RECORD },
+  'modules/scheduled-jobs/scheduled-jobs.service.ts': {
+    calls: 1,
+    why: CHAPTER_RECORD,
+  },
+};
+
 /**
  * Every table the API opens a Realtime `postgres_changes` subscription on. A
  * subscription is how a push gets built, so a new one is a new lock-screen
@@ -369,6 +412,19 @@ const API_SUBSCRIPTIONS: Record<string, string> = {
   chapter_audit_log:
     'chat-bridge-worker. Posts into #chapter-audit as the system actor, which cannot be blocked.',
 };
+
+/**
+ * The only migrations that write `storage.buckets`, each read by a person for
+ * what it does to the `chat` bucket's `public` flag. A new one fails until it is
+ * read and added: a column-order or `insert … select` upsert can flip the
+ * bucket public in a shape no pattern here would recognize.
+ */
+const BUCKET_WRITERS = new Set([
+  '20260803231500_service_proof_bucket.sql',
+  '20260805133000_reports_bucket.sql',
+  '20260808204500_declare_dashboard_created_buckets.sql',
+  '20260823124000_chat_archive_bucket.sql',
+]);
 
 // ── Readers ──────────────────────────────────────────────────────────────
 
@@ -426,6 +482,9 @@ function migrations(): Migration[] {
 interface PolicyStatement {
   migration: string;
   table: string;
+  policy: string;
+  /** Whether it can read: `for select`, `for all`, or no command clause. */
+  reads: boolean;
   body: string;
 }
 
@@ -440,13 +499,20 @@ function policyStatements(all: Migration[]): PolicyStatement[] {
   return all.flatMap(({ name, sql }) =>
     [
       ...sql.matchAll(
-        /create\s+policy\s+(?:"[^"]+"|\w+)\s+on\s+([\w."]+)([\s\S]*?)(?:;|\$\w*\$)/gi,
+        /create\s+policy\s+("[^"]+"|\w+)\s+on\s+([\w."]+)([\s\S]*?)(?:;|\$\w*\$)/gi,
       ),
-    ].map((match) => ({
-      migration: name,
-      table: qualify(match[1]),
-      body: match[2],
-    })),
+    ].map((match) => {
+      const command = /\bfor\s+(select|insert|update|delete|all)\b/i.exec(
+        match[3],
+      )?.[1];
+      return {
+        migration: name,
+        table: qualify(match[2]),
+        policy: match[1].replace(/"/g, ''),
+        reads: !command || /^(select|all)$/i.test(command),
+        body: match[3],
+      };
+    }),
   );
 }
 
@@ -456,10 +522,17 @@ function stripJsComments(source: string): string {
 }
 
 /**
+ * Anything that makes Jest skip a test in this file: `.skip`, `.only` and
+ * `.todo` on `describe`, `it` or `test`, with or without `.concurrent`, and
+ * the `x`/`f` prefixes. A focused test anywhere skips the proof; a skipped
+ * block around it leaves the title in place with nothing running.
+ */
+const SKIPS_OR_FOCUSES =
+  /\b(?:describe|it|test)(?:\.concurrent)?\.(?:skip|only|todo)\b|\b[xf](?:describe|it|test)\b/;
+
+/**
  * The proof's title appears as a live `it(` in its spec, and that spec neither
- * skips nor focuses anything. A skipped `describe` around the proof would leave
- * the title in place with nothing running, and a focused one elsewhere in the
- * file would skip the proof. Matching on title rather than on the test body
+ * skips nor focuses anything. Matching on title rather than on the test body
  * cannot prove the test asserts the right thing; it stops a renamed, deleted,
  * commented-out or skipped proof leaving the ledger vouching for nothing.
  */
@@ -467,11 +540,7 @@ function proofProblem(proof: Proof): string | null {
   const source = stripJsComments(
     readFileSync(join(API_SRC, proof.spec), 'utf8'),
   );
-  if (
-    /\b(?:describe|it|test)\.(?:skip|only|todo)\b|\bx(?:describe|it)\(|\bf(?:describe|it)\(/.test(
-      source,
-    )
-  ) {
+  if (SKIPS_OR_FOCUSES.test(source)) {
     return `${proof.spec} skips or focuses a test`;
   }
   const escaped = proof.test.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -506,14 +575,23 @@ describe('chat read-surface ledger (#2324)', () => {
   const operationIds = openApiOperationIds();
   const allMigrations = migrations();
   const policies = policyStatements(allMigrations);
+  const sources = apiSources();
+  const readPolicyKeys = [
+    ...new Set(
+      policies
+        .filter(({ reads }) => reads)
+        .map(({ table, policy }) => `${table} ${policy}`),
+    ),
+  ];
 
-  it('is reading the real contract and the real migrations, not empty ones', () => {
+  it('is reading the real contract, migrations and source, not empty ones', () => {
     // Anchors every check below: a moved file or a bad path would otherwise
     // make "nothing unclassified" pass vacuously.
     expect(operationIds).toContain('ChatController_getMessages_v1');
-    expect(policies.map(({ table }) => table)).toContain(
-      'public.chat_message_actions',
+    expect(readPolicyKeys).toContain(
+      'public.chat_message_actions chat_message_actions_select',
     );
+    expect(sources.length).toBeGreaterThan(100);
   });
 
   it('classifies every operation of a chat-owning controller', () => {
@@ -532,64 +610,69 @@ describe('chat read-surface ledger (#2324)', () => {
     expect(Object.keys(HTTP_LEDGER).filter((id) => !known.has(id))).toEqual([]);
   });
 
-  it('classifies every table a client can read directly', () => {
-    const tables = [...new Set(policies.map(({ table }) => table))];
-    // Ledger it, and decide what a block does on that path. A policy on a
-    // table with no chat content in it still gets an entry saying so.
-    expect(tables.filter((table) => !(table in DIRECT_READ_LEDGER))).toEqual(
-      [],
-    );
+  it('classifies every policy a client could read through', () => {
+    // Ledger it, and decide what a block does on that path. A policy no client
+    // role reaches still gets an entry saying so.
+    expect(
+      readPolicyKeys.filter((key) => !(key in DIRECT_READ_LEDGER)),
+    ).toEqual([]);
+    expect(
+      Object.keys(DIRECT_READ_LEDGER).filter(
+        (key) => !readPolicyKeys.includes(key),
+      ),
+    ).toEqual([]);
   });
 
   it('keeps RLS on for every public table, so no table is readable without a policy', () => {
     // With RLS off, PostgREST serves a table to any client under the default
     // grants and no policy is involved, so the check above would never see it.
     // `check:pglite-migrations` asserts the same thing against a replayed
-    // database, but it is advisory; this one is not.
-    const created = new Set<string>();
-    const enabled = new Set<string>();
-    const disabled: string[] = [];
-    for (const { name, sql } of allMigrations) {
-      for (const match of sql.matchAll(
-        /create\s+table\s+(?:if\s+not\s+exists\s+)?([\w."]+)/gi,
-      )) {
-        const table = qualify(match[1]);
-        if (table.startsWith('public.')) created.add(table);
-      }
-      for (const match of sql.matchAll(
-        /alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([\w."]+)\s+enable\s+row\s+level\s+security/gi,
-      )) {
-        enabled.add(qualify(match[1]));
-      }
-      for (const match of sql.matchAll(
-        /alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([\w."]+)\s+disable\s+row\s+level\s+security/gi,
-      )) {
-        disabled.push(`${name}: ${qualify(match[1])}`);
+    // database, but it is advisory; this one is not. Statements are replayed
+    // in order, so a table dropped and re-created without its `enable` is off.
+    const rls = new Map<string, 'on' | 'off'>();
+    const statement =
+      /create\s+table\s+(?:if\s+not\s+exists\s+)?([\w."]+)|drop\s+table\s+(?:if\s+exists\s+)?([\w.",\s]+?)\s*(?:cascade|restrict)?\s*;|alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([\w."]+)\s+(enable|disable)\s+row\s+level\s+security/gi;
+    for (const { sql } of allMigrations) {
+      for (const match of sql.matchAll(statement)) {
+        if (match[1]) rls.set(qualify(match[1]), 'off');
+        else if (match[2]) {
+          for (const name of match[2].split(','))
+            rls.delete(qualify(name.trim()));
+        } else if (match[3]) {
+          rls.set(
+            qualify(match[3]),
+            match[4].toLowerCase() === 'enable' ? 'on' : 'off',
+          );
+        }
       }
     }
-    expect(created.size).toBeGreaterThan(40);
-    expect([...created].filter((table) => !enabled.has(table))).toEqual([]);
-    expect(disabled).toEqual([]);
+    const tables = [...rls.keys()].filter((table) =>
+      table.startsWith('public.'),
+    );
+    expect(tables.length).toBeGreaterThan(40);
+    expect(tables.filter((table) => rls.get(table) !== 'on')).toEqual([]);
   });
 
   it('keeps the API the only path to chat attachments', () => {
     // `listMessageAttachments` is where a blocked member's files are withheld,
     // and that is only sufficient while nothing else can reach them.
     // `chat_message_attachments` must carry no policy (its RLS is pinned on
-    // above), and the `chat` bucket must stay private with no storage policy
-    // that could reach it. A storage policy is allowed only when it names its
-    // buckets and none of them is `chat`: one with no `bucket_id` filter, or one
-    // that mentions 'chat' in any form (`=`, `in (…)`, `any(…)`), fails here.
-    const offending = policies
-      .filter(
-        ({ table, body }) =>
-          table === 'public.chat_message_attachments' ||
-          (table === 'storage.objects' &&
-            (!/bucket_id/.test(body) || /'chat'/.test(body))),
-      )
-      .map(({ migration, table }) => `${migration}: ${table}`);
-    expect(offending).toEqual([]);
+    // above), and there must be no storage policy at all: every bucket is
+    // private and reached through API-signed URLs (`spec/architecture/README.md`
+    // § 7), so a storage policy is a design change, not a detail, however its
+    // bucket filter is spelled.
+    expect(
+      policies
+        .filter(
+          ({ table }) =>
+            table === 'public.chat_message_attachments' ||
+            table === 'storage.objects',
+        )
+        .map(({ migration, table }) => `${migration}: ${table}`),
+    ).toEqual([]);
 
+    // And the bucket stays private: its one declaration says `public = false`,
+    // and nothing else writes `storage.buckets` without having been read.
     const declarations = allMigrations.flatMap(({ name, sql }) =>
       [...sql.matchAll(/\(\s*'chat'\s*,\s*'chat'\s*,\s*(\w+)/gi)].map(
         (match) => `${name}: public=${match[1].toLowerCase()}`,
@@ -597,26 +680,29 @@ describe('chat read-surface ledger (#2324)', () => {
     );
     expect(declarations.length).toBeGreaterThan(0);
     expect(declarations.filter((d) => !d.endsWith('public=false'))).toEqual([]);
-    // No migration updates a bucket in place. One that does has to be read by
-    // a person before this passes, since it could flip `chat` public.
     expect(
       allMigrations
-        .filter(({ sql }) => /update\s+storage\.buckets/i.test(sql))
-        .map(({ name }) => name),
+        .filter(({ sql }) =>
+          /(?:insert\s+into|update)\s+"?storage"?\s*\.\s*"?buckets"?/i.test(
+            sql,
+          ),
+        )
+        .map(({ name }) => name)
+        .filter((name) => !BUCKET_WRITERS.has(name)),
     ).toEqual([]);
   });
 
   it('opens Realtime subscriptions only on ledgered tables', () => {
-    // Every `postgres_changes` subscription has to name its table as a literal,
-    // so this can read it, and the table has to be in API_SUBSCRIPTIONS. A
-    // subscription on a reaction table would be a reaction push; one with no
-    // table filter would be every table at once.
-    const sources = apiSources();
-    expect(sources.length).toBeGreaterThan(100);
-    // The call shape, not the word: prose about the echo (a DTO description,
-    // a log line) must not count as a subscription.
+    // A file counts as subscribing when it names the `postgres_changes` event
+    // as a bare string literal or through the enum, however the call around it
+    // is written (`.on(…)`, `.on<Row>(…)`, or an event held in a variable).
+    // Prose that mentions the echo inside a longer string does not count. Every
+    // such file has to name its tables as literals, so this can read them, and
+    // each table has to be in API_SUBSCRIPTIONS. A subscription on a reaction
+    // table would be a reaction push; one with no table filter would be every
+    // table at once.
     const subscribes =
-      /\.on\(\s*(?:(['"`])postgres_changes\1|REALTIME_LISTEN_TYPES\.POSTGRES_CHANGES)/;
+      /(['"])postgres_changes\1|REALTIME_LISTEN_TYPES\.POSTGRES_CHANGES/;
     const problems = sources
       .filter(({ code }) => subscribes.test(code))
       .flatMap(({ rel, code }) => {
@@ -631,6 +717,20 @@ describe('chat read-surface ledger (#2324)', () => {
           .map((table) => `${rel}: ${table}`);
       });
     expect(problems).toEqual([]);
+  });
+
+  it('knows every notification emitter, and how many calls each makes', () => {
+    const found: Record<string, number> = {};
+    for (const { rel, code } of sources) {
+      const calls = code.match(/\.notify(?:User|Chapter)\s*\(/g)?.length ?? 0;
+      if (calls > 0) found[rel] = calls;
+    }
+    const expected = Object.fromEntries(
+      Object.entries(NOTIFY_EMITTERS).map(([rel, { calls }]) => [rel, calls]),
+    );
+    // A new or moved notification lands here. If it carries chat content, it
+    // has to drop blockers, and PUSH_LEDGER needs an entry naming the proof.
+    expect(found).toEqual(expected);
   });
 
   const allEntries: [string, Entry][] = [
