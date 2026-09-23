@@ -169,7 +169,7 @@ function onPrimaryFor(generatedContrast: string, primary: string): string {
     : "#FFFFFF";
 }
 
-type Generated = ReturnType<typeof generateRadixColors>;
+export type Generated = ReturnType<typeof generateRadixColors>;
 
 function generate(accent: string): Generated {
   return generateRadixColors({ ...GENERATOR_PARAMS, accent });
@@ -182,10 +182,25 @@ function generatedFill(generated: Generated): string {
   );
 }
 
+/**
+ * The §8 fill floor for one fill: its ratio on each ladder surface and whether
+ * that clears 3:1. `deriveSignetPalette` reports it as `fillChecks`, and the
+ * lift judges every candidate by it, so the two cannot disagree.
+ */
+export function signetFillChecks(fill: string): SignetContrastCheck[] {
+  return Object.entries(SIGNET_FILL_SURFACES).map(([name, surface]) => {
+    const fillRatio = ratio(fill, surface);
+    return {
+      role: "--signet-accent-primary",
+      against: name,
+      ratio: fillRatio,
+      passes: fillRatio >= MIN_FILL_CONTRAST,
+    };
+  });
+}
+
 function fillClears(fill: string): boolean {
-  return Object.values(SIGNET_FILL_SURFACES).every(
-    (surface) => ratio(fill, surface) >= MIN_FILL_CONTRAST,
-  );
+  return signetFillChecks(fill).every((check) => check.passes);
 }
 
 /**
@@ -228,20 +243,24 @@ function liftedAt(fill: string, steps: number): string {
  * that is followed by failures could be skipped; that costs a slightly larger
  * lift, never a failing fill. Returns `null` if even full lightness never
  * clears, which no sRGB seed reaches, since white clears the ladder at 15:1.
+ *
+ * `generateFrom` is the generator, a parameter only so `signet.spec.ts` can
+ * hand it one that swaps step 9 and prove a candidate is judged by what paints.
  */
-function liftAccent(
+export function liftAccent(
   fill: string,
+  generateFrom: (accent: string) => Generated = generate,
 ): { accent: string; generated: Generated } | null {
   const maxSteps = Math.ceil(1 / LIFT_STEP);
   let previous = 0;
   for (let coarse = LIFT_COARSE; ; coarse += LIFT_COARSE) {
     const steps = Math.min(coarse, maxSteps);
     const accent = liftedAt(fill, steps);
-    const generated = generate(accent);
+    const generated = generateFrom(accent);
     if (fillClears(generatedFill(generated))) {
       for (let fine = previous + 1; fine < steps; fine += 1) {
         const fineAccent = liftedAt(fill, fine);
-        const fineGenerated = generate(fineAccent);
+        const fineGenerated = generateFrom(fineAccent);
         if (fillClears(generatedFill(fineGenerated))) {
           return { accent: fineAccent, generated: fineGenerated };
         }
@@ -369,17 +388,7 @@ export function deriveSignetPalette(
     },
   ].map((check) => ({ ...check, passes: check.ratio >= MIN_TEXT_CONTRAST }));
 
-  const fillChecks: SignetContrastCheck[] = Object.entries(
-    SIGNET_FILL_SURFACES,
-  ).map(([name, surface]) => {
-    const fillRatio = ratio(primary, surface);
-    return {
-      role: "--signet-accent-primary",
-      against: name,
-      ratio: fillRatio,
-      passes: fillRatio >= MIN_FILL_CONTRAST,
-    };
-  });
+  const fillChecks = signetFillChecks(primary);
 
   return {
     palette,

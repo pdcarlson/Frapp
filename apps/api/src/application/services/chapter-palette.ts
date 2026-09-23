@@ -51,7 +51,9 @@ export type ChapterPaletteBuild = {
   /**
    * `accent-primary` fill checks that came back below the §8 3:1 floor (#2541).
    * Always empty unless the generator changed under the engine, so it is logged
-   * but not returned to the client: nothing the officer chose caused it.
+   * and never sent to a client: nothing the officer chose caused it. Every
+   * route that returns a build picks the fields it discloses, as
+   * `ChapterConfigService.recomputeAndPersistPalette` does.
    */
   failedFillChecks: FailedContrastCheck[];
 };
@@ -102,22 +104,23 @@ export function buildChapterPalette(
  * Logs the by-construction problems a build can report — never throws,
  * since the palette written is still valid either way (#840, §8).
  *
- * Shared by every writer that already has a `chapterId` (the config PATCH /
- * recompute endpoint and the Settings accent save) so a change to the wording
- * or logging strategy has one place to land — this file's own docstring above
- * names the three-shapes drift that duplicating it independently caused once
- * already. Onboarding logs its own `invalidSeed` message instead: it has no
- * `chapterId` yet at that point, so the message shape genuinely differs.
+ * Shared by all three writers so a change to the wording or logging strategy
+ * has one place to land — this file's own docstring above names the
+ * three-shapes drift that duplicating it independently caused once already.
+ * `where` says which chapter: `for chapter <id>`, or `during onboarding`, which
+ * builds the palette before the chapter has an id. (Onboarding used to log only
+ * `invalidSeed` for that reason, so a failed contrast or fill check there went
+ * unrecorded.)
  */
 export function logChapterPaletteWarnings(
   logger: { warn: (message: string) => void },
-  chapterId: string,
+  where: string,
   attemptedAccent: string | undefined,
   build: ChapterPaletteBuild,
 ): void {
   if (build.invalidSeed) {
     logger.warn(
-      `Invalid accent seed for chapter ${chapterId}: accent="${attemptedAccent}" — substituted house gold. Expected #RRGGBB.`,
+      `Invalid accent seed ${where}: accent="${attemptedAccent}" — substituted house gold. Expected #RRGGBB.`,
     );
   }
   // The engine guarantees these by construction (accent-engine.md §8), so a
@@ -125,7 +128,7 @@ export function logChapterPaletteWarnings(
   // behaviour under us — worth a log trace either way (#1183).
   if (build.failedContrastChecks.length > 0) {
     logger.warn(
-      `Signet accent contrast below AA for chapter ${chapterId}: ${build.failedContrastChecks
+      `Signet accent contrast below AA ${where}: ${build.failedContrastChecks
         .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
         .join(', ')}`,
     );
@@ -134,7 +137,7 @@ export function logChapterPaletteWarnings(
   // it clears, so a failure here means the lift itself stopped working.
   if (build.failedFillChecks.length > 0) {
     logger.warn(
-      `Signet accent fill below 3:1 for chapter ${chapterId}: ${build.failedFillChecks
+      `Signet accent fill below 3:1 ${where}: ${build.failedFillChecks
         .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
         .join(', ')}`,
     );

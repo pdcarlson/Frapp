@@ -6,8 +6,10 @@ import Color from "colorjs.io";
 import {
   deriveSignetPalette,
   HOUSE_SEED,
+  liftAccent,
   SIGNET_FILL_SURFACES,
   signetAccentSemanticVars,
+  signetFillChecks,
   type SignetPalette,
 } from "./signet.js";
 import { generateRadixColors } from "./vendor/generate-radix-colors.js";
@@ -206,6 +208,62 @@ describe("deriveSignetPalette", () => {
           ).toBe(true);
         }
       }
+    });
+
+    it("reports each fill check as measured, and fails one under 3:1", () => {
+      // `fillChecks` is what the API logs as `failedFillChecks`, the one
+      // detector for a lift that stops working. A check that always passed, or
+      // measured some other colour, would silence it while every seed above
+      // still cleared.
+      const surfaceOf = (against: string) =>
+        SIGNET_FILL_SURFACES[against as keyof typeof SIGNET_FILL_SURFACES];
+      for (const seed of ALL_SEEDS) {
+        const { palette, fillChecks } = deriveSignetPalette(seed);
+        const primary = palette["--signet-accent-primary"];
+        expect(fillChecks.map((check) => check.against)).toEqual(
+          Object.keys(SIGNET_FILL_SURFACES),
+        );
+        for (const check of fillChecks) {
+          expect(check.ratio, `${seed} on ${check.against}`).toBeCloseTo(
+            ratio(primary, surfaceOf(check.against)),
+            6,
+          );
+        }
+      }
+      // Crimson's own fill, before the lift, fails on every surface.
+      const unlifted = signetFillChecks("#8B0000");
+      expect(unlifted.map((check) => check.passes)).toEqual([
+        false,
+        false,
+        false,
+        false,
+      ]);
+      for (const check of unlifted) {
+        expect(check.ratio).toBeCloseTo(
+          ratio("#8B0000", surfaceOf(check.against)),
+          6,
+        );
+      }
+    });
+
+    it("judges each lift candidate by the fill the generator paints", () => {
+      // The generator can swap in its own step 9, so a lifted colour is not
+      // necessarily what paints. This one always paints crimson back: every
+      // lifted input clears on its own and nothing it paints does, so the only
+      // right answer is that no lift clears.
+      const paintsCrimson = (accent: string) => {
+        const generated = generateRadixColors({
+          appearance: "dark",
+          gray: "#191919",
+          background: LADDER.background,
+          accent,
+        });
+        generated.accentScale[8] = "#8B0000";
+        return generated;
+      };
+      expect(liftAccent("#8B0000", paintsCrimson)).toBeNull();
+      const real = liftAccent("#8B0000");
+      expect(normalizeHex(real!.generated.accentScale[8]!)).toBe("#C34437");
     });
 
     it("lifts exactly the seeds whose own fill failed, and no others", () => {

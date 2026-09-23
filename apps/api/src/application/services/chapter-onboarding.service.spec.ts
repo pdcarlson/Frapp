@@ -217,6 +217,37 @@ describe('ChapterOnboardingService', () => {
       // disagree. Until that decision lands, no new read path.
       expect(deriveSignetPalette).toHaveBeenCalledWith('#C9A56F');
     });
+
+    it('logs a failed fill floor like the other two writers (#2541)', async () => {
+      // Onboarding used to log only a substituted seed, so a broken lift wrote
+      // a sub-3:1 fill for every new chapter and nothing recorded it.
+      const { deriveSignetPalette } = jest.requireMock(
+        '@repo/chapter-theme',
+      ) as { deriveSignetPalette: jest.Mock };
+      deriveSignetPalette.mockReturnValueOnce({
+        palette: { '--signet-accent-primary': '#8B0000' },
+        resolvedSeed: '#8B0000',
+        invalidSeed: false,
+        fillChecks: [
+          {
+            role: '--signet-accent-primary',
+            against: '--popover',
+            ratio: 1.5,
+            passes: false,
+          },
+        ],
+        contrastChecks: [],
+      });
+      const warn = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
+
+      await service.onboard('user-1', directoryDto);
+
+      expect(warn).toHaveBeenCalledWith(
+        'Signet accent fill below 3:1 during onboarding: --signet-accent-primary on --popover = 1.50:1',
+      );
+    });
   });
 
   describe('accent_color mirror (#795)', () => {

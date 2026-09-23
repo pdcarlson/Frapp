@@ -25,8 +25,10 @@
  * collides with the dark-red chapters: **1.017:1 under `#800000`**, because a
  * white wash at 14% happens to land almost exactly where a maroon `accent-9`
  * lands. A chapter branded maroon shipped a bar whose fill was invisible
- * against its own groove — in chat, at the time. (Since #2541 the engine lifts
- * a dark fill to 3:1 on the ladder, which ended that collision; the ordering
+ * against its own groove — in chat, at the time. (By #2541, `#800000` no
+ * longer painted itself: the generator swaps in its own step 9, `#F42F22`.
+ * The dark red still colliding was `#8B0000`, at about 1.07:1, and #2541's
+ * fill floor lifted it to `#C34437`, which ended the collision. The ordering
  * below still holds.)
  *
  * So the track is **`--background`: a recess, not a raise.** Worst case across

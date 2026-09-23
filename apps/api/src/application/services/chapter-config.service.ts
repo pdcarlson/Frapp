@@ -974,7 +974,15 @@ export class ChapterConfigService {
       colors?: { accent?: string };
     };
     const colors = branding.colors ?? {};
-    return this.recomputePalette(chapterId, colors);
+    const build = await this.recomputePalette(chapterId, colors);
+    // Picked, not spread: `failedFillChecks` is logged and never disclosed
+    // (chapter-palette.ts), and a field added to the build later should not
+    // reach the response by default.
+    return {
+      palette: build.palette,
+      invalidSeed: build.invalidSeed,
+      failedContrastChecks: build.failedContrastChecks,
+    };
   }
 
   private async recomputePalette(
@@ -986,7 +994,12 @@ export class ChapterConfigService {
     // Colour problems are logged, never thrown: the palette written is still
     // valid, and failing a config save the officer asked for because one hex
     // was malformed is a worse outcome than a slightly wrong accent (#840).
-    logChapterPaletteWarnings(this.logger, chapterId, colors.accent, build);
+    logChapterPaletteWarnings(
+      this.logger,
+      `for chapter ${chapterId}`,
+      colors.accent,
+      build,
+    );
     const patch: TablesUpdate<'chapters'> = { theme_palette: build.palette };
     const { error } = await this.supabase
       .from('chapters')

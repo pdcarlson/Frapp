@@ -598,6 +598,45 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       expect(written.every((key) => key.startsWith('--signet-'))).toBe(true);
     });
 
+    it('recompute logs a failed fill floor and does not return it (#2541)', async () => {
+      // `POST /v1/chapters/:id/theme-palette` returns the build. Spreading it
+      // sent `failedFillChecks`, which only a broken lift causes, to the
+      // client; the route picks what it discloses instead.
+      const { deriveSignetPalette } = jest.requireMock(
+        '@repo/chapter-theme',
+      ) as { deriveSignetPalette: jest.Mock };
+      deriveSignetPalette.mockReturnValueOnce({
+        palette: { '--signet-accent-primary': '#8B0000' },
+        resolvedSeed: '#8B0000',
+        invalidSeed: false,
+        fillChecks: [
+          {
+            role: '--signet-accent-primary',
+            against: '--popover',
+            ratio: 1.5,
+            passes: false,
+          },
+        ],
+        contrastChecks: [],
+      });
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+      const warn = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
+
+      const result = await service.recomputeAndPersistPalette(CHAPTER_ID);
+
+      expect(result).toEqual({
+        palette: { '--signet-accent-primary': '#8B0000' },
+        invalidSeed: false,
+        failedContrastChecks: [],
+      });
+      expect(warn).toHaveBeenCalledWith(
+        `Signet accent fill below 3:1 for chapter ${CHAPTER_ID}: --signet-accent-primary on --popover = 1.50:1`,
+      );
+    });
+
     it('feeds the engine the branding accent, not a third read path', async () => {
       const supabase = makeSupabase([]);
       const service = await buildService(supabase);
