@@ -556,12 +556,13 @@ const REPLAY_ACCEPTED_WARNING =
 const RETRY_RESOLVED_NOTE = "Points recorded.";
 
 /**
- * There is no row on screen to point at: no signed-in viewer to attribute it
- * to, or no channel cache to draw it in (the query was garbage-collected while
- * the request was in flight — the notice on disk restores the row on the next
- * load, unless it is past its age bound by then). Pointing the officer at a
- * Retry control that is not there is worse than saying nothing, so the copy
- * has to stand on its own.
+ * There is no row on screen to point at. Either there is no channel cache to
+ * draw it in (the query was garbage-collected while the request was in flight;
+ * a notice that reached disk restores the row on the next load unless it is
+ * past its age bound by then, and with storage blocked or full none did), or
+ * there is neither a signed-in viewer nor a placeholder row to attribute it
+ * to. Pointing the officer at a Retry control that is not there is worse than
+ * saying nothing, so the copy has to stand on its own.
  */
 const UNCONFIRMED_NO_ROW_WARNING =
   "We couldn't confirm whether these points were recorded. Check the points ledger before running the command again — running it again would record them twice.";
@@ -576,13 +577,14 @@ const UNCONFIRMED_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice.";
 
 /**
- * The row is on screen but will not outlive the next rebuild — likely the
- * reconnect that follows this very outage — which takes it and its Retry with
- * it. Either it could not be persisted (storage blocked or full, no viewer), or
- * it is at or near its age bound, so the rebuild prunes it rather than
- * restoring it (a Retry pressed about a day after the dispatch keeps the
- * dispatch's timestamp). This is `durable: false` from `markLocalUnconfirmed`.
- * The copy keeps the fallback rather than promising a Retry that may be gone.
+ * The row is on screen, but it may not outlive the next rebuild — likely the
+ * reconnect that follows this very outage. Either it could not be persisted
+ * (storage blocked or full, or no viewer to file it under), so any rebuild
+ * takes it and its Retry; or it is within an hour of its age bound or past it
+ * (a Retry pressed about a day after the dispatch keeps the dispatch's
+ * timestamp), so a rebuild after the bound prunes it rather than restoring it.
+ * This is `durable: false` from `markLocalUnconfirmed`. The copy keeps the
+ * fallback rather than promising a Retry that may be gone.
  */
 const UNCONFIRMED_VOLATILE_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice. If the message is gone, check the points ledger before re-running.";

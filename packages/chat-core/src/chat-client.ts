@@ -595,13 +595,15 @@ export interface TerminalRowOutcome {
    */
   placement: RowPlacement;
   /**
-   * Whether the row will survive the next rebuild — the reconnect that follows
-   * the outage, a reload, a cache eviction. `false` when storage is blocked or
-   * full, when there is no viewer to file it under, or when the entry is within
-   * `DURABLE_NOTICE_MARGIN_MS` of its age bound (a Retry pressed about a day
-   * after the dispatch keeps the dispatch's timestamp, and the rebuild prunes
-   * it). The row then lasts only until that rebuild, and copy must not promise
-   * otherwise.
+   * Whether copy may promise the row survives the next rebuild — the
+   * reconnect that follows the outage, a reload, a cache eviction. `false`
+   * when it certainly won't (storage blocked or full, or no viewer to file it
+   * under: nothing reached disk) and when it may not (the entry is within
+   * `DURABLE_NOTICE_MARGIN_MS` of its age bound, or past it, because a Retry
+   * pressed about a day after the dispatch keeps the dispatch's timestamp: a
+   * rebuild after the bound prunes it instead of restoring it). `false` never
+   * means the entry was withheld from disk; it is still restored while young
+   * enough.
    */
   durable: boolean;
 }
