@@ -88,6 +88,7 @@ function blockState(
     ids: new Set(ids),
     unblocked: new Set(extras.unblocked ?? []),
     cleared: new Set(extras.cleared ?? []),
+    reading: false,
   };
 }
 

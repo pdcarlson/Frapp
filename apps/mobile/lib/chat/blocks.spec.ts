@@ -39,18 +39,20 @@ const SERVER_SENTINEL = "[message from a blocked member]";
 interface StateExtras {
   unblocked?: string[];
   cleared?: string[];
+  reading?: boolean;
 }
 
 function state(
   status: BlockState["status"],
   ids: string[],
-  { unblocked = [], cleared = [] }: StateExtras,
+  { unblocked = [], cleared = [], reading = false }: StateExtras,
 ): BlockState {
   return {
     status,
     ids: new Set(ids),
     unblocked: new Set(unblocked),
     cleared: new Set(cleared),
+    reading,
   };
 }
 
@@ -260,7 +262,7 @@ describe("classifyMessage", () => {
       }
     });
 
-    it("an echo that carried a mask shows once this client confirmed the unblock", () => {
+    it("an echo that carried a mask shows once a confirmed unblock is settled against a ready list", () => {
       let cache = mergeServerRow(
         emptyCache(),
         restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
@@ -270,16 +272,37 @@ describe("classifyMessage", () => {
         echoRow("m1", BLOCKED, { content: "edited after the unblock" }),
       );
       const [edited] = selectMessages(cache);
-      for (const blockState of [
-        ready([], { unblocked: [BLOCKED] }),
-        unavailable([], { unblocked: [BLOCKED] }),
-      ]) {
-        expect(classifyMessage(edited!, blockState, VIEWER)).toBe("visible");
-      }
-      // …unless a block made since outranks it.
       expect(
-        classifyMessage(edited!, ready([BLOCKED], { unblocked: [] }), VIEWER),
-      ).toBe("tombstone");
+        classifyMessage(edited!, ready([], { unblocked: [BLOCKED] }), VIEWER),
+      ).toBe("visible");
+      // …unless a block made since outranks it.
+      expect(classifyMessage(edited!, ready([BLOCKED]), VIEWER)).toBe(
+        "tombstone",
+      );
+    });
+
+    it("a carried mask does not yield to an unblock the list cannot confirm yet", () => {
+      // Unblocked here, then blocked again on another device: a REST read
+      // masks X's row, the contradiction re-reads the list, and a pin echoes
+      // over the masked row while that re-read is in flight — or after it
+      // failed. Nothing dates the carried verdict, so it may postdate the
+      // unblock; only a list read that has landed can say which.
+      let cache = mergeServerRow(
+        emptyCache(),
+        restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
+      );
+      cache = mergeServerRow(
+        cache,
+        echoRow("m1", BLOCKED, { is_pinned: true, content: "the real words" }),
+      );
+      const [pinned] = selectMessages(cache);
+      for (const blockState of [
+        ready([], { unblocked: [BLOCKED], reading: true }),
+        unavailable([], { unblocked: [BLOCKED] }),
+        loading([], { unblocked: [BLOCKED] }),
+      ]) {
+        expect(classifyMessage(pinned!, blockState, VIEWER)).toBe("tombstone");
+      }
     });
 
     it("a carried mask is never remembered as seen, so a later outage cannot surface it", () => {

@@ -9,13 +9,14 @@
  * endpoint that is already failing. `useBlockedUserIds` sets none, and the
  * safety notice's Retry is the member's way back.
  *
- * Driven through the real hook under **this app's** QueryClient defaults, not
- * a test client: an interval or an unbounded retry added to either the hook or
- * `lib/query-client.ts` fails here.
+ * Driven through the real hook on **this app's own** `QueryClient`
+ * (`lib/query-client.ts`), not a test client built from it: an interval or an
+ * unbounded retry added to the hook, to the client's defaults, or as a
+ * per-key default (`setQueryDefaults`) on that client fails here.
  */
 
 import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { createFrappClient } from "@repo/api-sdk";
@@ -30,9 +31,7 @@ const mockGet = vi.fn(async () => ({
 }));
 
 function renderBlockList() {
-  const queryClient = new QueryClient({
-    defaultOptions: appQueryClient.getDefaultOptions(),
-  });
+  const queryClient = appQueryClient;
   const client = { GET: mockGet };
   function Wrapper({ children }: { children: React.ReactNode }) {
     return (
@@ -56,6 +55,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // The singleton outlives this file's tests; nothing may leak between them.
+  appQueryClient.clear();
   vi.useRealTimers();
 });
 

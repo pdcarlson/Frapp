@@ -9,7 +9,9 @@
  * - **Provenance** — `ChatMessage._blockEvaluated`, set by `@repo/chat-core`'s
  *   `normalizeRow` when the raw row carried `sender_blocked`, i.e. it came
  *   through a REST read the server ran the list over. The echo (INSERT and
- *   UPDATE) and the viewer's own send/edit responses are unevaluated.
+ *   UPDATE) and the viewer's own send/edit responses are unevaluated — except
+ *   that an echo overwriting a server-masked row keeps its `sender_blocked`
+ *   (`mergeServerRow`), because the server's verdict on that message stands.
  * - **The block list** — `useBlockedUserIds()`, tri-state, with every change
  *   this client confirmed applied on top. Its ids are a floor in every status:
  *   anyone on it is known-blocked.
@@ -53,6 +55,12 @@ export interface BlockState {
    * `block-clearance.ts`). Consulted only once the list is no longer ready.
    */
   cleared: ReadonlySet<string>;
+  /**
+   * A read of the list is in flight. While it is, a `ready` list may be about
+   * to say a confirmed unblock no longer holds, so a carried mask verdict
+   * (`classifyMessage` step 2) does not yield to that unblock yet.
+   */
+  reading: boolean;
 }
 
 /**
@@ -88,10 +96,12 @@ export function isBlockableSender(senderId: string | null): senderId is string {
  * 2. A row the server evaluated and masked is a tombstone whatever the list
  *    now says: its content was withheld, so there is nothing else to draw.
  *    So is an echo that overwrote such a row — `mergeServerRow` carries the
- *    server's `sender_blocked` onto it — unless this client has since
- *    confirmed unblocking the sender. Its body is exactly what the mask
- *    withheld, and a list that reads ready may predate a block made on
- *    another device.
+ *    server's `sender_blocked` onto it — because its body is exactly what the
+ *    mask withheld and a list that reads ready may predate a block made on
+ *    another device. It yields to an unblock this client confirmed only
+ *    against a ready list with no read of it in flight: nothing dates the
+ *    carried verdict, so it may postdate that unblock (the member blocked
+ *    again elsewhere), and only a list read that has landed can say so.
  * 3. A sender nobody can block (imported, system) cannot be hidden by a list.
  * 4. A sender on the list is a tombstone on **every** path — including a row
  *    the server cleared before the block was made, and a row cleared earlier
@@ -115,7 +125,12 @@ export function classifyMessage(
   if (viewerId !== null && sender === viewerId) return "visible";
   if (message.sender_blocked) {
     if (message._blockEvaluated) return "tombstone";
-    if (sender === null || !blockState.unblocked.has(sender)) return "tombstone";
+    const unblockSettled =
+      blockState.status === "ready" &&
+      !blockState.reading &&
+      sender !== null &&
+      blockState.unblocked.has(sender);
+    if (!unblockSettled) return "tombstone";
   }
   if (!isBlockableSender(sender)) return "visible";
   if (blockState.ids.has(sender)) return "tombstone";
@@ -299,8 +314,11 @@ export function visibleReactions(
  * row, a send or a delete that landed in between is still there afterwards.
  * And it only ever swaps a masked row for its clear twin — it never adds a row
  * the cache no longer holds (that would resurrect a deleted message) and never
- * overwrites one the echo has updated since (that row is no longer masked, so
- * it no longer matches).
+ * overwrites one the echo has updated since. That row is no longer a *masked
+ * copy*: its `sender_blocked` may still be true (a verdict `mergeServerRow`
+ * carried over), but its body is the echo's, so the guard below requires
+ * `_blockEvaluated` as well. It needs no swap — once the unblock is settled,
+ * `classifyMessage` shows it as it stands.
  */
 export function replaceMaskedCopies(
   cache: ChannelCache,
@@ -317,7 +335,11 @@ export function replaceMaskedCopies(
   return next;
 }
 
-/** Whether a channel cache holds a server-masked copy from this sender. */
+/**
+ * Whether a channel cache holds a server-masked copy from this sender — an
+ * evaluated row with its masked body, not an echo carrying the verdict (see
+ * `replaceMaskedCopies`).
+ */
 export function hasMaskedCopyFrom(
   cache: ChannelCache | undefined,
   senderId: string,

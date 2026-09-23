@@ -649,32 +649,55 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     expect(cache?.byId["msg-echo"]?._blockEvaluated).toBe(false);
   });
 
-  test("a reconnect backfill lands server-evaluated, because it read through the server's mask (#2315)", async () => {
-    // It merges through `setQueryData`, never the thread's `queryFn`, so
-    // provenance kept anywhere but on the row itself never advanced here and
-    // every row a reconnect pulled rendered as held.
+  test("a reconnect backfill lands server-evaluated, even over the echo of the same row (#2315)", async () => {
+    // The backfill merges through `setQueryData`, never the thread's
+    // `queryFn`, so provenance kept anywhere but on the row itself never
+    // advanced here and every row a reconnect pulled rendered as held. Here it
+    // re-reads a row an echo already delivered: the REST copy must replace the
+    // echo's provenance, not inherit it.
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalledTimes(1));
+
+    ch.emitPostgresChange({
+      new: {
+        id: "msg-both",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "raw words",
+        created_at: "2026-09-23T01:49:55.661142+00:00",
+        client_message_id: "client-both",
+      },
+    });
+    const key = chatMessagesKey("channel-1");
+    expect(
+      queryClient.getQueryData<ChannelCache>(key)?.byId["msg-both"]
+        ?._blockEvaluated,
+    ).toBe(false);
+
+    // The reconnect: the channel resubscribes and the backfill returns the
+    // same row as the server serves it to this viewer — masked.
     backfill.mockResolvedValueOnce([
       {
-        id: "msg-backfilled",
+        id: "msg-both",
         channel_id: "channel-1",
         sender_id: "user-2",
         kind: "text",
         content: "[masked by the server]",
         sender_blocked: true,
-        created_at: "2026-09-15T18:00:00.123456+00:00",
-        client_message_id: "client-backfilled",
+        created_at: "2026-09-23T01:49:55.661142+00:00",
+        client_message_id: "client-both",
       },
     ]);
-
-    chatRealtime.subscribe("channel-1");
-    current("channel-1").trigger("SUBSCRIBED");
+    ch.trigger("SUBSCRIBED");
 
     await vi.waitFor(() => {
-      const row = queryClient.getQueryData<ChannelCache>(
-        chatMessagesKey("channel-1"),
-      )?.byId["msg-backfilled"];
+      const row = queryClient.getQueryData<ChannelCache>(key)?.byId["msg-both"];
       expect(row?._blockEvaluated).toBe(true);
       expect(row?.sender_blocked).toBe(true);
+      expect(row?.content).toBe("[masked by the server]");
     });
   });
 });
