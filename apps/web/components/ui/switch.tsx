@@ -66,9 +66,13 @@ const Switch = React.forwardRef<
        *     casualty: a composited one is no longer `--background` at all, so
        *     the measurement stops being the one `focus.ts` reasons about.
        *   - It flattens the very cue this variant exists to protect: checked
-       *     `--primary` vs unchecked `--accent-subtle` drops below 3:1 on six
-       *     accents (`#003087` 4.01 → 2.22, `#CC0000` 3.10 → 1.76), which is
-       *     the same erasure, at the same magnitude, that made the real
+       *     `--primary` against the unchecked `bg-accent` track clears 3:1 on
+       *     all 19 seeds undimmed (the §8 fill floor holds it against
+       *     `--popover`, the same `#2A2621`, in palettes written since;
+       *     `accent-engine.md` §4 covers stored ones), and a 50%
+       *     dim composited over `--background` drops 16 of them under it
+       *     (`#8B0000` 3.01 → 1.61, `#CC0000` 3.01 → 1.56; measured
+       *     2026-09-23, #2541). That is the same erasure that made the real
        *     `disabled` attribute wrong here.
        *
        * `button.tsx` and `label.tsx` already state the system's ban on this

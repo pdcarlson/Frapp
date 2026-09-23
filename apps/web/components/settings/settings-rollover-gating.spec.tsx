@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import * as accentPreviewInk from "@/components/settings/accent-preview-ink";
 
 const { mockCurrentChapter, mockUpdateChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -9,6 +10,9 @@ const { mockCurrentChapter, mockUpdateChapter } = vi.hoisted(() => ({
 }));
 
 const PERMISSIONS = [
+  // Both halves of `CHAPTER_PROFILE_PERMISSIONS`: the profile and accent saves
+  // asserted below need `view` as well as `manage` (#2575).
+  "chapter-config:view",
   "chapter-config:manage",
   "semester:rollover",
   "billing:view",
@@ -196,8 +200,9 @@ describe("the accent preview reports its own legibility", () => {
    * the card*; a primary button needs the other question, whether text is
    * legible *on the accent*. They diverge, and the pre-push review found the
    * band where: `#0086FE` passes the first with `reason: "ok"` and no warning,
-   * and fails the second at 4.446:1. Before this, the swatch drew "Preview" in
-   * a tone `pickAccessibleColor` had explicitly rejected and said nothing.
+   * and fails the second (both figures pinned in `settings-contrast.spec.ts`).
+   * Before this, the swatch drew "Preview" in a tone `pickAccessibleColor` had
+   * explicitly rejected and said nothing.
    *
    * The band is narrow by construction, which is why the seed is exact and why
    * it moved once already. Both checks rise together as the accent lightens —
@@ -206,10 +211,9 @@ describe("the accent preview reports its own legibility", () => {
    * strip rather than a broad region. The original seed was `#0080FD`, which
    * measured 4.497:1 on the old `--card` and survived only because the
    * resolver rounds to 2dp before comparing. The greenfield ladder
-   * (foundations.md §2) lifted `--card` to `#211E1A`, dropping it to 4.352 and
-   * substituting it away, which silently emptied this test. `#0086FE` sits at
-   * 4.62:1 on the card, so it clears the floor on the value rather than on the
-   * rounding.
+   * (foundations.md §2) lifted `--card` to `#211E1A`, dropping it under 4.5:1
+   * and substituting it away, which silently emptied this test. `#0086FE` clears
+   * the card floor on the value rather than on the rounding.
    *
    * `settings-contrast.spec.ts` measures the tones. This asserts the screen
    * actually surfaces the verdict, which no measurement can.
@@ -228,6 +232,55 @@ describe("the accent preview reports its own legibility", () => {
     await user.type(hex, "#0086FE");
     expect(screen.getByText(/under the 4\.5:1 minimum/i)).toBeInTheDocument();
     expect(screen.getByText(/4\.4:1/)).toBeInTheDocument();
+  });
+
+  it("never prints a failing ratio as 4.5:1", async () => {
+    // `#008AF1`'s best ink sits just under 4.5:1 (the band is pinned in
+    // `settings-contrast.spec.ts`): it fails AA, and rounding printed it as
+    // "4.5:1, under the 4.5:1 minimum".
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    const hex = screen.getByLabelText(/accent color hex value/i);
+    await user.clear(hex);
+    await user.type(hex, "#008AF1");
+    expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
+      /reads at 4\.4:1/,
+    );
+  });
+
+  it("paints the swatch label in the ink the warning measured", async () => {
+    // The warning's ratio comes from `previewInkFor`; the swatch must draw that
+    // same ink, or the warning measures a label nobody sees. A real accent
+    // can't show it: on today's ladder `onHouse` wins for every colour the
+    // resolver keeps (keeping it takes 4.5:1 on the dark card, past the two
+    // tones' crossover), and `onHouse` is also the fallback a hard-coded
+    // swatch would reach for. So for the typed colour, and only for it, the
+    // ink is a sentinel neither tone is, with a failing ratio: the swatch must
+    // paint that ink and the warning must print that ratio, which pins both
+    // to one call on one input.
+    const real = accentPreviewInk.previewInkFor;
+    const spy = vi
+      .spyOn(accentPreviewInk, "previewInkFor")
+      .mockImplementation((fill) =>
+        fill.toUpperCase() === "#0086FE"
+          ? { ink: "#123456", ratio: 3.27 }
+          : real(fill),
+      );
+    try {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await user.click(screen.getByRole("tab", { name: /accent/i }));
+      const hex = screen.getByLabelText(/accent color hex value/i);
+      await user.clear(hex);
+      await user.type(hex, "#0086FE");
+      expect(screen.getByText("Preview")).toHaveStyle({ color: "#123456" });
+      expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
+        /reads at 3\.2:1/,
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("stays quiet for an accent whose label text is legible", async () => {
@@ -371,6 +424,25 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     expect(screen.getByText(/under the 4\.5:1 minimum/i)).toBeInTheDocument();
     expect(
       screen.getByText(/try a lighter or darker shade of this hue/i),
+    ).toBeInTheDocument();
+  });
+
+  it("never prints a failing reported ratio as 4.5:1", async () => {
+    // The engine fails a check on the unrounded ratio, so 4.47 is a failure,
+    // and rounding printed it as "4.5:1, under the 4.5:1 minimum".
+    mockUpdateChapter.mockResolvedValue({
+      id: "chap-1",
+      failedContrastChecks: [
+        { role: "--signet-accent-text", against: "#0E0D0B", ratio: 4.47 },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await saveAccent(user);
+
+    expect(
+      screen.getByText(/accent text on the app background reads at 4\.4:1/i),
     ).toBeInTheDocument();
   });
 

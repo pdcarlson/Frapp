@@ -18,6 +18,8 @@ import { FOCUS_RING, FOCUS_RING_OFFSET } from "./focus";
  * and has to clear README §6's 3:1 non-text floor unaided. On five of the 19
  * seeded chapter accents it did not, which means a keyboard user on those
  * chapters got no conforming indicator on any control using this recipe.
+ * (The engine has held accent-9 to 3:1 since #2541, but only just; see the
+ * last test in the first block.)
  *
  * The guard measures **the token the recipe actually ships**, parsed out of the
  * exported class string, rather than a hard-coded role name. A guard that
@@ -89,31 +91,33 @@ describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 a
 
   it("records why --primary and --ring are both wrong here, so the swap is not undone as cosmetic", () => {
     // Kept as explicit expectations rather than comments: if a palette change
-    // ever made one of these pass, the failure tells the next reader the
+    // ever moves one of these, the failure tells the next reader the
     // constraint has moved instead of leaving a stale rationale in a comment.
     const failingSeeds = (role: string) =>
       SEEDS.filter(
         (seed) =>
           ratio(accentRolesFor(seed)[role]!, SURFACE.background) < AA_NON_TEXT,
       );
+    const worstOn = (role: string, surface: string) =>
+      Math.min(
+        ...SEEDS.map((seed) => ratio(accentRolesFor(seed)[role]!, surface)),
+      );
 
-    // accent-9 never worked here; this is the original defect.
-    expect(failingSeeds("--primary")).toEqual([
-      "#006400",
-      "#8B0000",
-      "#8B4513",
-      "#BF0A30",
-    ]);
+    // accent-9 was the original defect: it failed on `#006400`, `#8B0000`,
+    // `#8B4513` and `#BF0A30`. Since #2541 the engine holds the fill to 3:1 on
+    // every ladder surface (accent-engine.md §8), so it no longer fails here.
+    // It is still the wrong token for the whole indicator: the engine lifts a
+    // dark fill only as far as the floor, so it clears `--popover` at 3.01:1,
+    // with none of the headroom the margin test above demands.
+    expect(failingSeeds("--primary")).toEqual([]);
+    expect(worstOn("--primary", SURFACE.popover)).toBeLessThan(3.1);
 
     // accent-8 worked on the previous surface ladder and stopped working when
-    // the greenfield ladder lifted `--background` to `#131211`. Three of these
-    // four are the achromatic seeds, which all derive the same `#606060` ring.
-    expect(failingSeeds("--ring")).toEqual([
-      "#000000",
-      "#4B0082",
-      "#C0C0C0",
-      "#FFFFFF",
-    ]);
+    // the greenfield ladder lifted `--background` to `#131211`. The three that
+    // still fail are the achromatic seeds, which all derive the same `#606060`
+    // ring. `#4B0082` failed too until #2541 lifted its fill, which moved its
+    // whole scale.
+    expect(failingSeeds("--ring")).toEqual(["#000000", "#C0C0C0", "#FFFFFF"]);
   });
 });
 

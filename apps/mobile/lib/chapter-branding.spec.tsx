@@ -152,9 +152,9 @@ describe("useChapterBranding", () => {
 
 // `accent-engine.md` §1 and `spec/ui/mobile/README.md` both forbid painting the
 // raw seed: only generated scale steps may reach a screen. The served palette
-// carries step 9 as `--signet-accent-primary`, so that is what the hook reads —
-// the legacy per-surface resolver survives only for a chapter whose palette
-// predates the Signet map.
+// carries step 11 as `--signet-accent-text`, so that is what the hook reads (see
+// "the accent role this hook reads" below) — the legacy per-surface resolver
+// survives only for a chapter whose palette predates the Signet map.
 describe("useChapterBranding accent source", () => {
   /** Step 11 of a generated scale — not equal to any seed we pass in. */
   const GENERATED_ACCENT_TEXT = "#FF907F";
@@ -248,9 +248,9 @@ describe("useChapterBranding accent source", () => {
  * hoisting makes it resolve anyway and breaks only under an isolated install.
  *
  * An earlier draft of this hook read `--signet-accent-primary` (step 9) and
- * justified it with §8's "contrast-correct by construction". §8 does not cover
- * step 9 — it is the solid *fill* role, and only the text roles are gated. On
- * the card surface a crimson chapter's step 9 measures 1.71:1.
+ * justified it with §8's "contrast-correct by construction". §8 holds step 9
+ * only to the 3:1 fill floor, not to 4.5:1 as text: on `--card` a crimson
+ * chapter's step 9 measures 3.32:1 (1.66:1 before #2541 lightened it).
  */
 describe("the accent role this hook reads", () => {
   it("reads accent-text (step 11), never accent-primary (step 9)", async () => {

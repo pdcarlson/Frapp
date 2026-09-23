@@ -262,23 +262,33 @@ at onboarding, config PATCH and Settings accent save), so existing rows still ca
 against `#0E0D0B`. `useChapterTheme` applies a stored palette over the CSS defaults all-or-nothing,
 so a stale row wins over `signet.css`.
 
-**Accessibility is not at risk, and that was measured rather than assumed:** deriving all 19 seeds
+**The text roles are not at risk, and that was measured rather than assumed:** deriving all 19 seeds
 against the old background and measuring the result against the *new* one, every seed still clears
 4.5:1 (worst `#BF0A30` at 8.48, down from 8.80), and no seed flips the mobile fallback decision.
 Nothing in `supabase/` bakes in a derived palette either — the directory seed stores raw seeds, and
-grepping the old derived hexes across `supabase/` returns nothing.
+grepping the old derived hexes across `supabase/` returns nothing. *Corrected 2026-09-23:* this read
+"Accessibility is not at risk", but it measured the text roles only. The `accent-primary` fill has
+its own floor ([`accent-engine.md` § 8](../design-system/accent-engine.md#8-validation)), and a stale row can hold a fill under it;
+[`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status) owns which rows.
 
-**What is wrong is cosmetic and visible:** a chapter that never picked an accent has a row derived
+**For a chapter that never picked an accent, what is wrong is cosmetic and visible:** its row is derived
 from `#F2B72E`, so it renders `--primary: #F2B72E` beside a mark that was drawn in `#DDA220` until #2153 (L-08) and a
 Settings hex placeholder that now reads `#DDB844` — three nearly-but-not-quite matching golds on one
 screen,
 indefinitely, until something rewrites the row. A backfill was already outstanding for rows written
-before the map existed; this widens it.
+before the map existed; this widens it. *Corrected 2026-09-23:* this read "What is wrong is
+cosmetic and visible", unqualified. That holds for these house-gold rows, and for any stale row whose
+stored fill still clears its floor; a row whose fill does not is the accessibility case
+[`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status) describes.
 
 A SQL backfill cannot regenerate these (the derivation is TypeScript, via the vendored Radix
 generator), so the options are a recompute pass through the API or clearing the Signet keys on rows
 that never carried a custom accent so they fall through to the CSS defaults. Precedent for the
 shape: `supabase/migrations/20260814120000_backfill_chapter_accent_color_from_branding.sql`.
+*Corrected 2026-09-23:* this offered the two as alternatives ("a recompute pass ... or clearing the
+Signet keys"), but only the recompute reaches a chapter that picked an accent, whose stored fill can
+be under its floor ([`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status)), so clearing keys can complement it but not
+replace it.
 
 ### L-03 — Danger text on `--popover`
 
@@ -378,6 +388,15 @@ touched and is not guarded by anything. Measured across the 19 seeds: its dilute
 1.14–1.31:1 (0 of 76 seed × surface pairs clear 3:1), and the solid `accent-9` border that is
 supposed to carry the indicator ranges 1.50–18.71:1, failing 3:1 on 7 of 19 seeds over `--card` and
 9 of 19 over `--popover`.
+
+*Corrected 2026-09-23:* the border half no longer fails for a palette the engine derives. Since
+[#2541](https://github.com/pdcarlson/Frapp/issues/2541) the accent engine holds `accent-9` to 3:1 on
+every ladder step by construction ([`accent-engine.md`](../design-system/accent-engine.md) §8), so
+the border measures 3.01–18.71:1 and clears on all 19 seeds, pinned in
+`packages/chapter-theme/src/signet.spec.ts`, for a palette written since ([`accent-engine.md`](../design-system/accent-engine.md) §4
+covers stored ones). The rest of this entry stands and stays with #2398:
+the diluted ring (now 1.18–1.31:1) and the absence of any contrast assertion on the recipes
+themselves.
 
 This predates the greenfield and the ladder made it slightly worse. `focus-contrast.spec.ts`
 asserts only that the recipe *string* contains `border-primary`; there is no contrast assertion on

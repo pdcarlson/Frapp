@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   ARCHETYPES,
@@ -8,7 +8,10 @@ import {
   getArchetype,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
-import type { PatchChapterConfig } from "@repo/validation";
+import {
+  CHAPTER_PROFILE_PERMISSIONS,
+  type PatchChapterConfig,
+} from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -48,6 +51,12 @@ type Props = {
   profile: { name: string; university: string; donation_url: string };
   /** Whether the caller holds `chapter-config:manage`. */
   canManage: boolean;
+  /**
+   * Whether the caller may save the chapter profile: the permissions
+   * `PATCH /v1/chapters/current` guards on, `CHAPTER_PROFILE_PERMISSIONS`
+   * (#2575).
+   */
+  canEditProfile: boolean;
   /** Persist the core chapter profile (name/university/donation). */
   onSaveProfile: (profile: {
     name: string;
@@ -68,6 +77,7 @@ export function SettingsOrgTab({
   branding,
   profile,
   canManage,
+  canEditProfile,
   onSaveProfile,
   onPatchConfig,
   savingProfile,
@@ -163,22 +173,31 @@ export function SettingsOrgTab({
     setPendingArchetype(null);
   }
 
-  const manageHint = canManage ? null : (
+  const permissionHint = (permissions: readonly string[]) => (
     <p className="text-xs text-muted-foreground">
       Editing chapter settings requires the{" "}
-      {/*
-        `--secondary` aliases `--card` and this sits in a `CardContent`, so
-        `bg-secondary` here was 1.000:1 — a chip with no chip. `--surface-1` is
-        the step *below* the card, which is what §4 already specifies for an
-        input fill inside a card, and a recess cannot invert the way a raised
-        step can.
-      */}
-      <code className="rounded bg-surface-1 px-1 py-0.5">
-        chapter-config:manage
-      </code>{" "}
-      permission.
+      {permissions.map((permission, index) => (
+        <Fragment key={permission}>
+          {index > 0 ? " and " : null}
+          {/*
+            `--secondary` aliases `--card` and this sits in a `CardContent`, so
+            `bg-secondary` here was 1.000:1 — a chip with no chip. `--surface-1`
+            is the step *below* the card, which is what §4 already specifies for
+            an input fill inside a card, and a recess cannot invert the way a
+            raised step can.
+          */}
+          <code className="rounded bg-surface-1 px-1 py-0.5">{permission}</code>
+        </Fragment>
+      ))}{" "}
+      {permissions.length > 1 ? "permissions." : "permission."}
     </p>
   );
+  const manageHint = canManage
+    ? null
+    : permissionHint(["chapter-config:manage"]);
+  const profileHint = canEditProfile
+    ? null
+    : permissionHint(CHAPTER_PROFILE_PERMISSIONS);
 
   return (
     <div className="space-y-6">
@@ -238,8 +257,8 @@ export function SettingsOrgTab({
             </div>
           </CardContent>
           <CardFooter className="flex items-center justify-between gap-3">
-            {manageHint ?? <span />}
-            <Button type="submit" disabled={!canManage || savingProfile}>
+            {profileHint ?? <span />}
+            <Button type="submit" disabled={!canEditProfile || savingProfile}>
               {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Save profile
             </Button>

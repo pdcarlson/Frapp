@@ -7,6 +7,7 @@ const baseProps = {
   branding: {},
   profile: { name: "Test Chapter", university: "State U", donation_url: "" },
   canManage: true,
+  canEditProfile: true,
   onSaveProfile: () => {},
   onPatchConfig: () => {},
 };
@@ -89,12 +90,47 @@ describe("SettingsOrgTab", () => {
     });
   });
 
-  it("disables save controls when the caller cannot manage", () => {
-    render(
-      <SettingsOrgTab archetypeKey="ifc" {...baseProps} canManage={false} />,
+  it("gates Save profile on the profile permission, not on config", () => {
+    // `PATCH /v1/chapters/current` guards on `CHAPTER_PROFILE_PERMISSIONS`, so
+    // the profile save follows `canEditProfile`; the config saves follow
+    // `canManage` (#2575). Each save reads the gate its own route checks.
+    const { rerender } = render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        canManage={false}
+        canEditProfile
+      />,
+    );
+    expect(screen.getByRole("button", { name: /save profile/i })).toBeEnabled();
+    rerender(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        canManage
+        canEditProfile={false}
+      />,
     );
     expect(
       screen.getByRole("button", { name: /save profile/i }),
     ).toBeDisabled();
+  });
+
+  it("names both profile permissions when the caller lacks them", () => {
+    render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        canEditProfile={false}
+      />,
+    );
+    expect(
+      screen.getByText(
+        (_, node) =>
+          node?.tagName === "P" &&
+          node.textContent ===
+            "Editing chapter settings requires the chapter-config:view and chapter-config:manage permissions.",
+      ),
+    ).toBeInTheDocument();
   });
 });
