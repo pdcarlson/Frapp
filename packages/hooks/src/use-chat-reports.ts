@@ -8,6 +8,7 @@ import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { bookmarkKeys } from "./use-chat";
+import type { ChatReport } from "./use-chat-safety";
 
 // ── The officer report queue (#2257, #2311) ─────────────────────────────────
 //
@@ -17,9 +18,11 @@ import { bookmarkKeys } from "./use-chat";
 // and `channels:manage` (`ChatReportController`), so a caller mounts them
 // behind that gate — the hooks do not re-check it.
 
-export type ChatReport = components["schemas"]["ChatReportDto"];
+// `ChatReport` and `ChatReportReason` are declared once, beside the member-side
+// report hook in `use-chat-safety.ts`, and the package index re-exports both
+// modules with `export *` — a second declaration here would be an ambiguous
+// re-export.
 export type ChatReportStatus = ChatReport["status"];
-export type ChatReportReason = ChatReport["reason"];
 /** What `PATCH /v1/chat/reports/{id}` accepts — never `open`. */
 export type ChatReportResolution =
   components["schemas"]["ResolveChatReportDto"]["status"];

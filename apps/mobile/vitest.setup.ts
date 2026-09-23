@@ -71,6 +71,12 @@ vi.mock("react-native", () => ({
   Alert: {
     alert: vi.fn(),
   },
+  // Outcomes a sighted member reads off the screen are announced to VoiceOver
+  // through this, because `accessibilityLiveRegion` is Android-only. A spec
+  // asserting on it clears it itself (`clearMocks` is off, see the config).
+  AccessibilityInfo: {
+    announceForAccessibility: vi.fn(),
+  },
   // Enough of the styling/layout surface for Signet token factories and
   // component tests; string stand-ins render fine under react-test-renderer.
   StyleSheet: {

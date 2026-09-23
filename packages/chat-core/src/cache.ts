@@ -93,6 +93,10 @@ export function mergeServerRow(
     order = order.filter((k) => k !== clientKey);
   }
 
+  // Everything else — `_blockEvaluated` included — is the incoming row's, never
+  // carried from `prior`. A pin/edit UPDATE echo of a server-masked row writes
+  // the raw, unmasked content; keeping the prior row's "the server evaluated
+  // this" would vouch for content the server never saw (#2315 defect 5).
   byId[serverKey] = { ...incoming, actions, reactions };
   const next: ChannelCache = { ...cache, byId, order };
   return { ...next, order: withOrderedKey(next, serverKey) };
