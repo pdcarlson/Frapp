@@ -1956,4 +1956,4 @@ To roll back, re-apply the previous definition from `20260902160000_anonymize_us
 
 * **Migration**: `20260923170100_backfill_chapter_branding_accent_from_accent_color.sql`
 * **Action**: Not reversible to the exact prior state without the pre-apply id list (the promotion runbook's query). No information was lost: the value copied into `branding.colors.accent` is still in `accent_color`, which the migration never touches. For known ids: `update public.chapters set branding = branding #- '{colors,accent}' where id in (<ids>);`.
-* **Note**: Data only. Undoing it recreates the divergence it repaired, where every recompute, sweep and `POST /v1/chapters/:id/theme-palette` included, seeds from an empty branding accent and repaints the chapter house gold. There is rarely a reason to roll it back.
+* **Note**: Data only. Undoing it recreates the divergence it repaired, where every recompute, sweep and `POST /v1/chapters/:id/theme-palette` included, seeds from an empty branding accent and repaints the chapter with the default seed's palette (`#DDB844`). There is rarely a reason to roll it back.

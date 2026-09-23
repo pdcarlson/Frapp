@@ -412,9 +412,10 @@ describe("deriveSignetPalette", () => {
  * without a bump reaches no stored chapter: exactly the silent staleness #1165
  * existed to end. This pin turns "remember to bump" into a failing test.
  *
- * It proves as much as its corpus covers: the directory seeds, a hue sweep
- * plus one seed per remaining scale, so every scale the generator snaps to is
- * some seed's nearest, and the input forms a stored seed takes
+ * It proves as much as its corpus covers: the directory seeds, a hue sweep,
+ * and one dedicated seed for each scale those leave out, so every scale the
+ * generator snaps to is some seed's nearest, plus the input forms a stored seed
+ * takes
  * (`FINGERPRINT_EXTRA_SEEDS`). A change that moves only a seed outside that set
  * passes unbumped, so widen the corpus when you touch hue-specific or
  * input-handling code.
@@ -427,7 +428,7 @@ describe("deriveSignetPalette", () => {
  * engine paints, and that is the bug.
  */
 const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
-  1: "5ec87f75f4da51c5324533b54c7673850479aba4c0731eabe69c4f57dfabc6cc",
+  1: "e6d5ef80ec8f45bcfda4d8db8f3f6b97d3e8bb4198ad7a7a4bf63bd5b584ca45",
 };
 
 /**
@@ -435,10 +436,11 @@ const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
  * seeds exercise the lift and the on-primary substitution, but no hue family
  * near cyan, teal, jade, mint, sky, lime or yellow, and the generator snaps
  * each seed to the nearest Radix scales, so a change to one of those scales
- * alone moved no directory seed (#1165 review). The sweep alone still missed
- * three scales entirely, hence the per-scale seeds after it. Frozen hex, not
- * computed here, so a `colorjs.io` upgrade cannot quietly move the inputs along
- * with the outputs.
+ * alone moved no directory seed (#1165 review). Even with the sweep, eight
+ * scales were no seed's nearest (slate, sage, olive, jade, teal, green, ruby,
+ * iris), hence one dedicated seed for each after it. Frozen hex, not computed
+ * here, so a `colorjs.io` upgrade cannot quietly move the inputs along with the
+ * outputs.
  */
 const FINGERPRINT_EXTRA_SEEDS = [
   // OKLCH hue sweep, every 30°, at L 0.55 C 0.15 and at L 0.82 C 0.12,
@@ -467,11 +469,12 @@ const FINGERPRINT_EXTRA_SEEDS = [
   "#A8C1FF",
   "#D0B2FF",
   "#F0A7E9",
-  // One seed for each scale the sweep never lands on first (jade, sage,
-  // olive, teal, green, ruby, iris). With these, every one of the generator's
-  // 29 scales is the nearest scale for some seed in this corpus, measured
-  // 2026-09-23 by instrumenting the vendored `getScaleFromColor`. A scale the
-  // generator gains needs a seed here too.
+  // One seed for each scale no directory or sweep seed lands on first (jade,
+  // sage, olive, teal, green, ruby, iris, slate). With these, every one of the
+  // generator's 29 scales is the nearest scale for some seed, without relying
+  // on the input forms below; measured 2026-09-23 by instrumenting the
+  // vendored `getScaleFromColor`. A scale the generator gains needs a seed
+  // here too.
   "#29A383",
   "#6B7B6E",
   "#71796A",
@@ -479,6 +482,7 @@ const FINGERPRINT_EXTRA_SEEDS = [
   "#30A46C",
   "#E54666",
   "#5B5BD6",
+  "#B0B4BA",
   // Input forms a stored seed can take: shorthand, lower case, no `#`, not a
   // colour, and absent. A change in how any of them resolves changes what that
   // chapter paints.

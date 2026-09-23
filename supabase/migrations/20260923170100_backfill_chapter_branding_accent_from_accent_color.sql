@@ -12,23 +12,23 @@
 -- Every path that recomputes a palette seeds from `branding.colors.accent`:
 -- `POST /v1/chapters/:id/theme-palette`, the config PATCH, and now the
 -- stale-palette sweep that follows `20260923170000`. On such a row that seed is
--- absent, so a recompute paints house gold over the chapter's own colour.
--- Staging had one on 2026-09-23: `accent_color` `#7d007d`, no branding accent,
+-- absent, so a recompute paints the palette of the engine's default seed
+-- (`#DDB844`) over the chapter's own colour. Staging had one on 2026-09-23: `accent_color` `#7d007d`, no branding accent,
 -- a palette derived from the purple. Without this repair the sweep would have
 -- rebranded that chapter within an hour of deploying.
 --
 -- Which rows: branding has no accent, and the column holds a well-formed
 -- `#RRGGBB` that is not the schema default `#2563EB`. The default is excluded
 -- because it is what the column holds when nothing ever wrote it (the #795
--- header describes exactly that), and a chapter in that state paints house
--- gold today. Copying the default in would repaint it Royal Blue. A chapter
--- that deliberately picked exactly `#2563EB` in Settings before the mirror
--- existed is indistinguishable from one that never picked, and keeps house
--- gold. That is the one case this cannot recover.
+-- header describes exactly that), and a chapter in that state paints the
+-- default seed's palette today. Copying the default in would repaint it Royal
+-- Blue. A chapter that deliberately picked exactly `#2563EB` in Settings before
+-- the mirror existed is indistinguishable from one that never picked, and keeps
+-- the default seed's palette. That is the one case this cannot recover.
 --
 -- The demo chapters `scripts/demo/demo-seed.sql` inserted before this change
--- match too: they carry `accent_color` `#EFB63B` (house gold, the brand
--- colour, not the engine's default seed `#DDB844`) and no branding. They are
+-- match too: they carry `accent_color` `#EFB63B` (the brand's house-gold
+-- token, a different colour from the default seed `#DDB844`) and no branding. They are
 -- repaired to that accent like any other, which is what mobile already painted
 -- for them (web painted the `#DDB844` defaults); the seed now writes both
 -- stores itself, so a demo chapter seeded after this migration ends up the
