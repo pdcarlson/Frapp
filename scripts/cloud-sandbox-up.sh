@@ -65,12 +65,16 @@ if [ "${1:-}" = "--stop" ]; then
   stop_status=0
   stopped="$(bringup_stop "$BRINGUP_LOCK" "$$" "$boot_now" "$FAILED_SENTINEL")" || stop_status=$?
   stopped_pid="$(printf '%s\n' "$stopped" | head -n 1)"
+  # A retry stops what an earlier --stop left behind; the lock's own pid is long dead by then.
+  if [ "${stopped_pid#retried:}" != "$stopped_pid" ]; then
+    stopped_what="the processes an earlier --stop left behind (pids ${stopped_pid#retried:})"
+  else
+    stopped_what="bringup pid ${stopped_pid} and the commands under it"
+  fi
   case "$stop_status" in
     0)
-      if [ "${stopped_pid#retried:}" != "$stopped_pid" ]; then
-        cs_log "Stopped the processes an earlier --stop left behind (pids ${stopped_pid#retried:}), and removed the lock. Run 'bash scripts/cloud-sandbox-up.sh' to start again."
-      elif [ -n "$stopped_pid" ]; then
-        cs_log "Stopped bringup pid ${stopped_pid} and the commands under it, and removed its lock. Containers it had started run under the Docker daemon and are still up. Run 'bash scripts/cloud-sandbox-up.sh' to start again."
+      if [ -n "$stopped_pid" ]; then
+        cs_log "Stopped ${stopped_what}, and removed the lock. Containers a bringup started run under the Docker daemon and are still up. Run 'bash scripts/cloud-sandbox-up.sh' to start again."
       else
         cs_log "No bringup was running; removed any lock left at ${BRINGUP_LOCK}."
       fi
@@ -89,7 +93,7 @@ if [ "${1:-}" = "--stop" ]; then
       cs_log "ERROR: another --stop (pid ${stopped_pid}) is already stopping this bringup. Wait for it to finish; it writes .cloud-sandbox-up.failed when it does."
       ;;
     *)
-      cs_log "ERROR: stopped bringup pid ${stopped_pid}, but could not remove its lock ${BRINGUP_LOCK}. Check its owner and the permissions of $(dirname "$BRINGUP_LOCK")."
+      cs_log "ERROR: stopped ${stopped_what}, but could not remove the lock ${BRINGUP_LOCK}. Check its owner and the permissions of $(dirname "$BRINGUP_LOCK")."
       ;;
   esac
   exit 1

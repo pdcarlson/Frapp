@@ -145,7 +145,7 @@ bringup_descendants() {
 #      stopped pid is printed, then a line naming them. The lock is KEPT, recording them in its
 #      `survivors` file, so bringup_lock_live counts it live until they exit and nothing starts
 #      beside them; `.failed` says so. Running `--stop` again retries them.
-#   4  stopped (its pid is printed), but the lock could not be removed afterwards.
+#   4  stopped (printed as for 0), but the lock could not be removed afterwards.
 #   5  another `--stop` is already stopping it; its pid is printed, and nothing is done.
 # Killing only the script would orphan the command it is blocked in (a hung `supabase start`,
 # say): bash runs no trap while it waits on a foreground child, and the next bringup would then
@@ -206,17 +206,22 @@ bringup_stop() {
   for p in $tree; do bringup_pid_running "$p" && survivors="$survivors $p"; done
 
   bringup_guard "$lock"
+  # What this call stopped, for the sentinel: the bringup, or on a retry what an earlier stop
+  # left behind (the lock's pid is then long dead).
+  local what="bringup pid $pid" owned=""
+  [ -n "$stuck" ] && what="the processes $stuck an earlier --stop left behind"
   if [ -n "$failed" ]; then
     if [ -n "$survivors" ]; then
-      printf '%s — bringup pid %s was stopped by cloud-sandbox-up.sh --stop, but processes%s outlived SIGKILL. Its lock is kept so nothing starts beside them; once they are gone, run bash scripts/cloud-sandbox-up.sh, or run --stop again to retry them.\n' \
-        "$(date -u +%FT%TZ)" "$pid" "$survivors" >"$failed" 2>/dev/null || true
+      printf '%s — cloud-sandbox-up.sh --stop stopped %s, but processes%s outlived SIGKILL. The lock is kept so nothing starts beside them; once they are gone, run bash scripts/cloud-sandbox-up.sh, or run --stop again to retry them.\n' \
+        "$(date -u +%FT%TZ)" "$what" "$survivors" >"$failed" 2>/dev/null || true
     else
-      printf '%s — bringup pid %s was stopped by cloud-sandbox-up.sh --stop. Run bash scripts/cloud-sandbox-up.sh to start it again.\n' \
-        "$(date -u +%FT%TZ)" "$pid" >"$failed" 2>/dev/null || true
+      printf '%s — cloud-sandbox-up.sh --stop stopped %s. Run bash scripts/cloud-sandbox-up.sh to start the stack again.\n' \
+        "$(date -u +%FT%TZ)" "$what" >"$failed" 2>/dev/null || true
     fi
   fi
   # Only a lock this call marked: one another writer holds instead is theirs.
   if [ "$(cat "$lock/stopping" 2>/dev/null || true)" = "$self" ]; then
+    owned=1
     if [ -n "$survivors" ]; then
       for p in $survivors; do printf '%s %s\n' "$p" "$(bringup_started "$p")"; done >"$lock/survivors.tmp" 2>/dev/null \
         && mv -f "$lock/survivors.tmp" "$lock/survivors" 2>/dev/null
@@ -230,7 +235,8 @@ bringup_stop() {
     echo "survivors:$survivors"
     return 3
   fi
-  if [ "$(cat "$lock/stopping" 2>/dev/null || true)" = "$self" ]; then return 4; fi
+  # `rm -rf` can empty the lock and still fail to remove it (another user's, in sticky /tmp).
+  if [ -n "$owned" ] && { [ -e "$lock" ] || [ -L "$lock" ]; }; then return 4; fi
   return 0
 }
 

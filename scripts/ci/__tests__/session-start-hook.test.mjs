@@ -814,7 +814,7 @@ test("while --stop waits for a stubborn tree, the lock names it, so no second br
   assert.ok(await eventually(() => !alive(blocked)), "the TERM-proof step is killed");
   assert.equal(existsSync(s.lock), false);
   // What a session told to wait is watching for.
-  assert.match(readFileSync(path.join(s.root, ".cloud-sandbox-up.failed"), "utf8"), /was stopped by cloud-sandbox-up\.sh --stop/);
+  assert.match(readFileSync(path.join(s.root, ".cloud-sandbox-up.failed"), "utf8"), new RegExp(`cloud-sandbox-up\\.sh --stop stopped bringup pid ${child.pid}\\.`));
 });
 
 test("--stop says it could not remove a lock rather than claiming it did", { skip: process.getuid?.() === 0 && "root ignores directory permissions" }, (t) => {
@@ -840,6 +840,32 @@ test("--stop says it could not remove a lock rather than claiming it did", { ski
   assert.match(stop.stderr, /could not write or remove the bringup lock/);
   assert.doesNotMatch(stop.stderr, /removed any lock/);
   assert.ok(existsSync(lock));
+});
+
+test("--stop that kills a bringup but cannot remove its lock says so", { skip: process.getuid?.() === 0 && "root ignores directory permissions" }, async (t) => {
+  // `rm -rf` empties the lock yet cannot unlink it from a directory it may not write.
+  const s = scratch(t, { bringup: false });
+  const script = realBringup(s);
+  const parent = path.join(s.dir, "locked");
+  mkdirSync(parent);
+  const lock = path.join(parent, "cloud-sandbox-up.lock");
+  mkdirSync(lock);
+  const pid = liveBringup(t, s);
+  writeFileSync(path.join(lock, "pid"), `${pid}\n`);
+  writeFileSync(s.bootFile, "boot-B\n");
+  writeFileSync(path.join(lock, "boot_id"), "boot-B\n");
+  const env = { ...GIT_ENV, CLAUDE_PROJECT_DIR: s.root, FRAPP_BRINGUP_LOG: s.log, FRAPP_BRINGUP_LOCK: lock, FRAPP_BOOT_ID_FILE: s.bootFile };
+  delete env.FRAPP_BRINGUP_LOCK_HELD;
+  chmodSync(parent, 0o555);
+  let stop;
+  try {
+    stop = spawnSync("bash", [script, "--stop"], { env, encoding: "utf8", timeout: 30000 });
+  } finally {
+    chmodSync(parent, 0o755);
+  }
+  assert.equal(stop.status, 1, stop.stderr);
+  assert.match(stop.stderr, new RegExp(`stopped bringup pid ${pid} and the commands under it, but could not remove the lock`));
+  assert.ok(await eventually(() => !alive(pid)));
 });
 
 test("a bringup at a path with a space, or run with a long option, is still a bringup", async (t) => {
@@ -872,7 +898,7 @@ test("processes that outlive SIGKILL keep the lock live until --stop is retried"
   assert.match(run.stdout, new RegExp(`^${pid}\nsurvivors: .*\\b${pid}\\b`));
   assert.equal(existsSync(path.join(s.lock, "stopping")), false, "no longer marked as being stopped");
   assert.match(readFileSync(path.join(s.lock, "survivors"), "utf8"), new RegExp(`^${pid} \\S`, "m"));
-  assert.match(readFileSync(failed, "utf8"), /outlived SIGKILL\. Its lock is kept/);
+  assert.match(readFileSync(failed, "utf8"), new RegExp(`stopped bringup pid ${pid}, but processes .* outlived SIGKILL\\. The lock is kept`));
   // The lock stays live with its script dead: a hand run refuses, and the hook launches nothing
   // even with the .failed gone.
   const script = liveProcess(t, "sleep", ["30"]);
@@ -887,9 +913,18 @@ test("processes that outlive SIGKILL keep the lock live until --stop is retried"
   assert.match(runHook(s, { boot: "boot-B" }), /processes a stopped bringup left behind are still running/);
   assert.equal(await eventually(() => existsSync(s.launched), 300), false, "nothing launches beside the survivors");
   // --stop again, with real signals, retries them and frees the lock.
-  const retry = stopLock(s.lock, "boot-B");
+  const retry = spawnSync(
+    "bash",
+    ["-c", `. ${JSON.stringify(LOCK_LIB)}; bringup_stop "$1" "$$" boot-B "$2"`, "_", s.lock, failed],
+    { encoding: "utf8", timeout: 30000 },
+  );
   assert.equal(retry.status, 0, retry.stderr);
   assert.equal(retry.stdout.trim(), `retried:${stuck.join(" ")}`, "it names what it retried, not the dead script");
+  assert.match(
+    readFileSync(failed, "utf8"),
+    new RegExp(`stopped the processes ${stuck.join(" ")} an earlier --stop left behind\\.`),
+    "and so does the sentinel",
+  );
   assert.ok(await eventually(() => stuck.every((p) => !alive(p))), "every survivor is stopped on retry");
   assert.equal(existsSync(s.lock), false);
 });
