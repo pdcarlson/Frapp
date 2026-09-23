@@ -21,8 +21,9 @@ name: Production uptime
 
 on:
   schedule:
-    # Scheduled every 15 minutes; GitHub runs it far less often, which is
-    # still tighter than "only after a deploy". Real cadence and schedule:
+    # Scheduled every 15 minutes; GitHub runs it far less often (the measured
+    # gaps are in spec/architecture/adr/adr-24.md, cause 3), which is still
+    # tighter than "only after a deploy". Full schedule:
     # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
     - cron: "*/15 * * * *"
   workflow_dispatch:
