@@ -48,6 +48,7 @@ import {
   chatReportCopy as copy,
   reportAge,
   reportDistinction,
+  reportDistinctions,
   reportedMessageSubject,
 } from "./chat-report-copy";
 import type { ChatReportTab } from "./chat-report-copy";
@@ -75,9 +76,10 @@ import type { ChatReportTab } from "./chat-report-copy";
  * - **A failure is described by what the server could have done.** Only a
  *   404 or 409 carries a refusal worth quoting — the API's own authored words,
  *   decided before anything changed. A 5xx or a transport failure is shown in
- *   this card's words, never as "Internal server error" or "Failed to fetch";
- *   on a removal it says the outcome is unknown, because it is
- *   ({@link removalFailureMessage}).
+ *   this card's words, never as "Internal server error" or "Failed to fetch",
+ *   and says the outcome is unknown, because it is: a removal or a resolution
+ *   may have committed before its answer was lost
+ *   ({@link removalFailureMessage}, {@link resolutionFailureMessage}).
  *
  * The gate is `CHAT_REPORT_QUEUE_PERMISSIONS` (`@repo/validation`) —
  * `members:view` **and** `channels:manage`, the route's full requirement
@@ -122,6 +124,12 @@ const FAILED_TOAST: Record<Resolution, string> = {
   actioned: copy.toast.actionedFailed,
 };
 
+const UNCONFIRMED_TOAST: Record<Resolution, string> = {
+  reviewed: copy.toast.reviewedUnconfirmed,
+  dismissed: copy.toast.dismissedUnconfirmed,
+  actioned: copy.toast.actionedUnconfirmed,
+};
+
 /**
  * The server's own message, but only for the refusals the report routes
  * author: 404 (the report is not one this officer can see) and 409 (it is no
@@ -147,6 +155,21 @@ function removalFailureMessage(error: unknown): string {
   return removalOutcomeUnknown(error)
     ? copy.toast.removeUnconfirmed
     : copy.toast.removeFailed;
+}
+
+/**
+ * The same three outcomes for Mark reviewed / Dismiss / Mark actioned. The
+ * PATCH is a conditional update, so a 5xx or a lost response may follow a
+ * commit exactly as a removal's may; the classification is
+ * `removalOutcomeUnknown`'s (a 4xx is decided before the write), which says
+ * nothing specific to removal.
+ */
+function resolutionFailureMessage(error: unknown, next: Resolution): string {
+  const refusal = refusalMessage(error);
+  if (refusal) return refusal;
+  return removalOutcomeUnknown(error)
+    ? UNCONFIRMED_TOAST[next]
+    : FAILED_TOAST[next];
 }
 
 function ChatReportsQueue() {
@@ -182,7 +205,7 @@ function ChatReportsQueue() {
     } catch (error) {
       toast({
         variant: "destructive",
-        description: refusalMessage(error) ?? FAILED_TOAST[next],
+        description: resolutionFailureMessage(error, next),
       });
     } finally {
       markBusy(report.id, null);
@@ -321,23 +344,51 @@ function ReportList({
     );
   }
 
+  // Named here rather than per row, because a control's name has to be unique
+  // across the list: two reports that still match on message, reason, time
+  // and note are numbered (`reportDistinctions`).
+  const rows = reports.map((report) => {
+    const author = resolveAuthorLabel(
+      {
+        sender_id: report.reported_sender_id,
+        author_name: report.reported_author_name,
+      },
+      nameFor,
+      null,
+    );
+    return {
+      report,
+      author,
+      subject: reportedMessageSubject(author, report.reported_content),
+      distinction: reportDistinction({
+        reason: report.reason,
+        createdAt: report.created_at,
+        hasNote: Boolean(report.details?.trim()),
+      }),
+    };
+  });
+  const distinctions = reportDistinctions(rows);
+
   return (
     <div className="space-y-3">
       {tab.status === "open" ? (
         <p className="text-xs text-muted-foreground">{copy.openHint}</p>
       ) : null}
       <ul className="space-y-3" aria-label={`${tab.label} reports`}>
-        {reports.map((report) => (
+        {rows.map(({ report, author, subject }, index) => (
           <ReportRow
             key={report.id}
             report={report}
+            author={author}
+            subject={subject}
+            details={distinctions[index] ?? ""}
             tab={tab}
             now={now}
             nameFor={nameFor}
             busy={busy[report.id] ?? null}
             offline={isOffline}
             onResolve={(next) => onResolve(report, next)}
-            onRemove={(author) => onRemove(report, author)}
+            onRemove={() => onRemove(report, author)}
           />
         ))}
       </ul>
@@ -347,6 +398,9 @@ function ReportList({
 
 function ReportRow({
   report,
+  author,
+  subject,
+  details,
   tab,
   now,
   nameFor,
@@ -356,22 +410,19 @@ function ReportRow({
   onRemove,
 }: {
   report: ChatReport;
+  author: string;
+  /** The message the controls act on ({@link reportedMessageSubject}). */
+  subject: string;
+  /** What tells this report from the others in the list, for the names. */
+  details: string;
   tab: ChatReportTab;
   now: number;
   nameFor: (userId: string) => string | null;
   busy: RowAction | null;
   offline: boolean;
   onResolve: (next: Resolution) => void;
-  onRemove: (author: string) => void;
+  onRemove: () => void;
 }) {
-  const author = resolveAuthorLabel(
-    {
-      sender_id: report.reported_sender_id,
-      author_name: report.reported_author_name,
-    },
-    nameFor,
-    null,
-  );
   const isOpen = report.status === "open";
   // Hard-deleted (a channel delete, or the import purge): nothing to remove,
   // and the server refuses a removal on it. Mark actioned closes it instead.
@@ -381,13 +432,6 @@ function ReportRow({
   const content = report.reported_content?.trim();
   const note = report.details?.trim();
   const age = reportAge(report.created_at, now);
-  const subject = reportedMessageSubject(author, report.reported_content);
-  // What tells this report from a sibling on the same message, for the names.
-  const details = reportDistinction({
-    reason: report.reason,
-    age,
-    hasNote: Boolean(note),
-  });
 
   return (
     <li
@@ -484,7 +528,7 @@ function ReportRow({
                 pending={busy === "remove"}
                 disabled={disabled}
                 title={disabledTitle}
-                onClick={() => onRemove(author)}
+                onClick={onRemove}
               />
             )}
           </div>
@@ -506,7 +550,8 @@ function RowButton({
   label: string;
   /**
    * Starts with `label` (label in name), then names the message and the
-   * report — reason, age, note — so sibling reports on one message differ.
+   * report — reason, time, note, and a number if those still match — so
+   * sibling reports on one message differ.
    */
   accessibleName: string;
   variant?: "secondary" | "destructive";

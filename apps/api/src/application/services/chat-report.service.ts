@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpException,
   Inject,
   Injectable,
   Logger,
@@ -386,10 +387,23 @@ export class ChatReportService {
    *    report could be dismissed between the read and the delete, and the
    *    message would be removed on a capability that no longer existed.
    * 2. **Remove.** The ordinary soft delete, through the grant. If it fails,
-   *    the claim is withdrawn ({@link releaseClaim}) before the error is
-   *    rethrown: an `actioned` report over a message still in place is a false
-   *    statement in the moderation record, and the report must be open for a
-   *    retry to use.
+   *    the message is read again first
+   *    ({@link messageStateAfterFailedRemoval}): a failure is not proof that
+   *    nothing was written, because Postgres can commit the tombstone and the
+   *    answer still be lost on the way back.
+   *    - **Still there** (or unreadable): the claim is withdrawn
+   *      ({@link releaseClaim}) before the error is rethrown. An `actioned`
+   *      report over a message still in place is a false statement in the
+   *      moderation record, and the report must be open for a retry to use.
+   *    - **Gone:** the claim stands and the sweep below runs, because
+   *      reopening would put an `open` report over a removed message, for a
+   *      Dismiss to record as "left up". Then the answer is what the route's
+   *      idempotency rules give. A 4xx was decided before this call wrote
+   *      anything ({@link decidedBeforeWrite}), so someone else removed the
+   *      message, and this is the same 200 with `message_already_deleted:
+   *      true`. Otherwise this call's own write may be what landed, and the
+   *      original error is rethrown: the client says the outcome is unknown
+   *      and refetches, and a retry gets the report-level replay's 200.
    * 3. **Sweep.** Every other open report on the message closes, in one
    *    conditional `UPDATE` stamped with this officer and the claim's
    *    timestamp. It runs *after* the delete so it also catches a report filed
@@ -457,6 +471,9 @@ export class ChatReportService {
     }
 
     let removal: ReportedMessageRemoval;
+    // Set when the delete failed but the message is gone anyway, and this
+    // call's own write may be what removed it: rethrown after the sweep.
+    let unconfirmed: { error: unknown } | null = null;
     try {
       removal = await this.chatService.deleteReportedMessage(
         grant,
@@ -464,8 +481,22 @@ export class ChatReportService {
         officerUserId,
       );
     } catch (error) {
-      await this.releaseClaim(report.id, chapterId, officerUserId, resolvedAt);
-      throw error;
+      const state = await this.messageStateAfterFailedRemoval(
+        report.id,
+        grant.messageId,
+        chapterId,
+      );
+      if (!state?.isDeleted) {
+        await this.releaseClaim(
+          report.id,
+          chapterId,
+          officerUserId,
+          resolvedAt,
+        );
+        throw error;
+      }
+      removal = { alreadyDeleted: true, channelId: state.channelId };
+      if (!decidedBeforeWrite(error)) unconfirmed = { error };
     }
 
     await this.reportRepo.resolveOpenForMessage(
@@ -475,6 +506,7 @@ export class ChatReportService {
       officerUserId,
       resolvedAt,
     );
+    if (unconfirmed) throw unconfirmed.error;
 
     return {
       ...claimed,
@@ -523,6 +555,34 @@ export class ChatReportService {
       new Date().toISOString(),
     );
     return { ...gone, channel_id: state.channelId };
+  }
+
+  /**
+   * The message as it stands after its removal reported a failure, read
+   * chapter-scoped and without content ({@link ChatService.reportedMessageState}).
+   *
+   * Null when it cannot say the message is gone: the row no longer exists, or
+   * the read itself failed. The caller then withdraws the claim, as it did
+   * before this check existed — a report left `actioned` over a message still
+   * in place would refuse the retry (409), where a reopened one over a message
+   * already removed is closed by it.
+   */
+  private async messageStateAfterFailedRemoval(
+    reportId: string,
+    messageId: string,
+    chapterId: string,
+  ): Promise<ReportedMessageState | null> {
+    try {
+      return await this.chatService.reportedMessageState(messageId, chapterId);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not re-read the message of chat report ${reportId} after a failed removal`,
+        error,
+      );
+      return null;
+    }
   }
 
   /**
@@ -650,6 +710,16 @@ export class ChatReportService {
     if (!report) throw new NotFoundException('Report not found');
     return report;
   }
+}
+
+/**
+ * Whether a failed removal was refused before anything was written: a 4xx from
+ * `deleteReportedMessage` comes from its access check, which runs before the
+ * soft delete. A 5xx or a non-HTTP error (a store fault, a lost response) may
+ * have come after the write.
+ */
+function decidedBeforeWrite(error: unknown): boolean {
+  return error instanceof HttpException && error.getStatus() < 500;
 }
 
 function reportNoLongerOpen(): ConflictException {

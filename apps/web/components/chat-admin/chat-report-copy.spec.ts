@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatLocaleDate } from "@repo/formatting";
+import { formatLocaleDate, formatLocaleDateTime } from "@repo/formatting";
 import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
 import {
   CHAT_REPORT_TABS,
@@ -8,6 +8,7 @@ import {
   messageExcerpt,
   reportAge,
   reportDistinction,
+  reportDistinctions,
   reportedMessageSubject,
 } from "./chat-report-copy";
 
@@ -83,19 +84,21 @@ describe("messageExcerpt", () => {
 });
 
 describe("row accessible names", () => {
+  const FILED = "2026-09-22T11:55:00Z";
+  const filed = formatLocaleDateTime(FILED);
   const report = reportDistinction({
     reason: "harassment",
-    age: "5 minutes ago",
+    createdAt: FILED,
     hasNote: true,
   });
 
   it("starts with the visible label and names the message and the report it acts on", () => {
     const subject = reportedMessageSubject("Harper Lane", "go away");
     expect(chatReportActionLabel.dismissed(subject, report)).toBe(
-      "Dismiss report on message from Harper Lane, “go away” (Harassment, reported 5 minutes ago, with a reporter's note)",
+      `Dismiss report on message from Harper Lane, “go away” (Harassment, reported ${filed}, with a reporter's note)`,
     );
     expect(chatReportActionLabel.remove(subject, report)).toBe(
-      "Remove message from Harper Lane, “go away” (Harassment, reported 5 minutes ago, with a reporter's note)",
+      `Remove message from Harper Lane, “go away” (Harassment, reported ${filed}, with a reporter's note)`,
     );
     expect(chatReportActionLabel.reviewed(subject, report)).toMatch(
       /^Mark reviewed/,
@@ -111,39 +114,87 @@ describe("row accessible names", () => {
     );
   });
 
-  it("tells two reports on one message apart by reason, age and note", () => {
+  it("tells two reports on one message apart by reason, filing time and note", () => {
     // Two members reported the same message: author and excerpt match, so
     // the subject does too. The report's own details are what differ.
     const subject = reportedMessageSubject("Harper Lane", "go away");
     const names = [
       reportDistinction({
         reason: "harassment",
-        age: "5 minutes ago",
+        createdAt: FILED,
         hasNote: false,
       }),
+      reportDistinction({ reason: "spam", createdAt: FILED, hasNote: false }),
       reportDistinction({
-        reason: "spam",
-        age: "5 minutes ago",
+        reason: "harassment",
+        createdAt: "2026-09-22T10:00:00Z",
         hasNote: false,
       }),
       reportDistinction({
         reason: "harassment",
-        age: "2 hours ago",
-        hasNote: false,
-      }),
-      reportDistinction({
-        reason: "harassment",
-        age: "5 minutes ago",
+        createdAt: FILED,
         hasNote: true,
       }),
     ].map((details) => chatReportActionLabel.dismissed(subject, details));
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("leaves the age out when the timestamp could not be read", () => {
-    expect(reportDistinction({ reason: "spam", age: "", hasNote: false })).toBe(
+  it("uses the absolute filing time, so two reports filed a minute apart differ where their ages would not", () => {
+    // Both read "5 minutes ago" for a stretch of every minute; the time does not.
+    const a = reportDistinction({
+      reason: "spam",
+      createdAt: "2026-09-22T11:55:10Z",
+      hasNote: false,
+    });
+    const b = reportDistinction({
+      reason: "spam",
+      createdAt: "2026-09-22T11:55:50Z",
+      hasNote: false,
+    });
+    expect(a).not.toBe(b);
+  });
+
+  it("leaves the time out when the timestamp could not be read", () => {
+    expect(
+      reportDistinction({
+        reason: "spam",
+        createdAt: "not a date",
+        hasNote: false,
+      }),
+    ).toBe("Spam");
+  });
+});
+
+describe("reportDistinctions", () => {
+  it("numbers the reports that still match on message, reason, time and note, in list order", () => {
+    const same = {
+      subject: "message from Harper Lane, “go away”",
+      distinction: "Spam",
+    };
+    expect(
+      reportDistinctions([
+        same,
+        { ...same, distinction: "Harassment" },
+        same,
+        { ...same, subject: "message from old_handle with no text" },
+        same,
+      ]),
+    ).toEqual([
+      "Spam, report 1 of 3",
+      "Harassment",
+      "Spam, report 2 of 3",
       "Spam",
-    );
+      "Spam, report 3 of 3",
+    ]);
+  });
+
+  it("leaves a list with no collisions as it is", () => {
+    expect(
+      reportDistinctions([
+        { subject: "a", distinction: "Spam" },
+        { subject: "b", distinction: "Spam" },
+      ]),
+    ).toEqual(["Spam", "Spam"]);
   });
 });
 

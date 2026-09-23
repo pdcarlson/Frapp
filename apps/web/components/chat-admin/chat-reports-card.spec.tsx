@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
+import { formatLocaleDateTime } from "@repo/formatting";
 import { networkMock } from "@/tests/network";
 
 /*
@@ -118,6 +119,9 @@ function report(overrides: Partial<ChatReport> = {}): ChatReport {
 function settled(rows: ChatReport[]) {
   return { data: rows, isPending: false, isLoading: false, isError: false };
 }
+
+/** The default report's filing time, as its accessible names read it. */
+const FILED = formatLocaleDateTime("2026-09-22T11:55:00Z");
 
 const row = (text: RegExp | string) =>
   screen.getByText(text).closest("li") as HTMLElement;
@@ -309,12 +313,12 @@ describe("ChatReportsCard — accessible names", () => {
 
     expect(
       screen.getByRole("button", {
-        name: "Remove message from Harper Lane, “You should quit the chapter, nobody wan…” (Harassment, reported 5 minutes ago, with a reporter's note)",
+        name: `Remove message from Harper Lane, “You should quit the chapter, nobody wan…” (Harassment, reported ${FILED}, with a reporter's note)`,
       }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: "Dismiss report on message from old_handle, “second report” (Harassment, reported 5 minutes ago)",
+        name: `Dismiss report on message from old_handle, “second report” (Harassment, reported ${FILED})`,
       }),
     ).toBeInTheDocument();
     // One of each verb per row, and no two share a name.
@@ -327,7 +331,7 @@ describe("ChatReportsCard — accessible names", () => {
 
   it("tells apart two reports on the same message, which share an author and an excerpt", () => {
     // Two members reported one message. The subject is identical; the
-    // reason, age and note are what the rows visibly differ by.
+    // reason, filing time and note are what the rows differ by.
     reportsByStatus.value = {
       open: settled([
         report(),
@@ -345,8 +349,8 @@ describe("ChatReportsCard — accessible names", () => {
       .getAllByRole("button", { name: /^Dismiss/ })
       .map((button) => button.getAttribute("aria-label"));
     expect(dismissals).toEqual([
-      "Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Harassment, reported 5 minutes ago, with a reporter's note)",
-      "Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Spam, reported 2 hours ago)",
+      `Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Harassment, reported ${FILED}, with a reporter's note)`,
+      `Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Spam, reported ${formatLocaleDateTime("2026-09-22T10:00:00Z")})`,
     ]);
   });
 
@@ -368,8 +372,28 @@ describe("ChatReportsCard — accessible names", () => {
       .getAllByRole("button", { name: /^Remove/ })
       .map((button) => button.getAttribute("aria-label"));
     expect(removals).toEqual([
-      "Remove message from Harper Lane with no text (Harassment, reported 5 minutes ago)",
-      "Remove message from Harper Lane with no text (Sexual content, reported 5 minutes ago, with a reporter's note)",
+      `Remove message from Harper Lane with no text (Harassment, reported ${FILED})`,
+      `Remove message from Harper Lane with no text (Sexual content, reported ${FILED}, with a reporter's note)`,
+    ]);
+  });
+
+  it("numbers two reports that match on message, reason, time and note, so their names still differ", () => {
+    // Two members reported one message for the same reason in the same second,
+    // neither with a note: everything visible about the rows is the same.
+    reportsByStatus.value = {
+      open: settled([
+        report({ details: null }),
+        report({ id: "r-2", details: null }),
+      ]),
+    };
+    render(<ChatReportsCard />);
+
+    const dismissals = screen
+      .getAllByRole("button", { name: /^Dismiss/ })
+      .map((button) => button.getAttribute("aria-label"));
+    expect(dismissals).toEqual([
+      `Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Harassment, reported ${FILED}, report 1 of 2)`,
+      `Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Harassment, reported ${FILED}, report 2 of 2)`,
     ]);
   });
 });
@@ -492,14 +516,13 @@ describe("ChatReportsCard — resolving", () => {
       "a 500 that carries a message body",
       { statusCode: 500, message: "Internal server error" },
     ],
+    ["a 503", { statusCode: 503 }],
     ["a transport failure", new TypeError("Failed to fetch")],
-    [
-      "a 403 from a guard",
-      { statusCode: 403, message: "Insufficient permissions" },
-    ],
   ])(
-    "toasts its own words, never the raw text, for %s",
+    "says the outcome is unknown, never that it failed or the raw text, for %s",
     async (_label, failure) => {
+      // The PATCH is a conditional update that may have committed before its
+      // answer was lost; the queue refetches either way.
       const user = userEvent.setup();
       mockResolve.mockRejectedValue(failure);
       render(<ChatReportsCard />);
@@ -508,10 +531,59 @@ describe("ChatReportsCard — resolving", () => {
 
       expect(mockToast).toHaveBeenCalledWith({
         variant: "destructive",
-        description: "Couldn't dismiss the report.",
+        description:
+          "Couldn't confirm the report was dismissed. It may have gone through anyway. Refresh to check, and retry if the report is still open.",
       });
     },
   );
+
+  it.each([
+    [
+      "reviewed",
+      /^Mark reviewed/,
+      "Couldn't confirm the report was marked reviewed. It may have gone through anyway. Refresh to check, and retry if the report is still open.",
+    ],
+    [
+      "actioned",
+      /^Mark actioned/,
+      "Couldn't confirm the report was marked actioned. It may have gone through anyway. Refresh to check, and retry if the report is still open.",
+    ],
+  ])(
+    "says a 5xx on Mark %s left the outcome unknown",
+    async (_status, name, description) => {
+      const user = userEvent.setup();
+      mockResolve.mockRejectedValue({ statusCode: 500 });
+      // Mark actioned is offered only where the message is gone.
+      reportsByStatus.value = {
+        open: settled([report({ message_id: null })]),
+      };
+      render(<ChatReportsCard />);
+
+      await user.click(screen.getByRole("button", { name }));
+
+      expect(mockToast).toHaveBeenCalledWith({
+        variant: "destructive",
+        description,
+      });
+    },
+  );
+
+  it("says plainly it couldn't, for a 4xx that is not one of the route's refusals", async () => {
+    // A guard's 403 is decided before anything is written, so nothing landed.
+    const user = userEvent.setup();
+    mockResolve.mockRejectedValue({
+      statusCode: 403,
+      message: "Insufficient permissions",
+    });
+    render(<ChatReportsCard />);
+
+    await user.click(screen.getByRole("button", { name: /^Dismiss/ }));
+
+    expect(mockToast).toHaveBeenCalledWith({
+      variant: "destructive",
+      description: "Couldn't dismiss the report.",
+    });
+  });
 
   it("disables every write offline and says why, rather than failing on click", () => {
     mockOffline.value = true;

@@ -727,6 +727,12 @@ describe('ChatReportService', () => {
         service.removeReportedMessage('report-1', CHAPTER, OFFICER),
       ).rejects.toBe(failure);
 
+      // The message is read again, chapter-scoped, before the claim goes: it
+      // is still there, so nothing was removed.
+      expect(chatService.reportedMessageState).toHaveBeenCalledWith(
+        MESSAGE_ID,
+        CHAPTER,
+      );
       const claimedAt = reportRepo.resolve.mock.calls[0][4];
       expect(reportRepo.releaseClaim).toHaveBeenCalledWith(
         'report-1',
@@ -735,6 +741,51 @@ describe('ChatReportService', () => {
         claimedAt,
       );
       expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
+    });
+
+    it('still withdraws the claim when the message cannot be read again either', async () => {
+      const failure = new Error('db down');
+      chatService.deleteReportedMessage.mockRejectedValue(failure);
+      chatService.reportedMessageState.mockRejectedValue(new Error('db down'));
+      jest
+        .spyOn(
+          (service as unknown as { logger: { warn: jest.Mock } }).logger,
+          'warn',
+        )
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+      ).rejects.toBe(failure);
+      expect(reportRepo.releaseClaim).toHaveBeenCalledTimes(1);
+      expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
+    });
+
+    it('keeps the claim and answers 200 when a 4xx refusal raced another removal of the message', async () => {
+      // A 4xx is decided before the soft delete, so this call wrote nothing:
+      // the message is gone because someone else removed it. The report is
+      // not reopened over it, and the answer is the idempotent one.
+      chatService.deleteReportedMessage.mockRejectedValue(
+        new ForbiddenException('Not a member of this chapter'),
+      );
+      chatService.reportedMessageState.mockResolvedValue({
+        channelId: 'chan-1',
+        isDeleted: true,
+      });
+
+      const result = await service.removeReportedMessage(
+        'report-1',
+        CHAPTER,
+        OFFICER,
+      );
+
+      expect(result).toEqual({
+        ...actioned,
+        message_already_deleted: true,
+        channel_id: 'chan-1',
+      });
+      expect(reportRepo.releaseClaim).not.toHaveBeenCalled();
+      expect(reportRepo.resolveOpenForMessage).toHaveBeenCalledTimes(1);
     });
 
     it("keeps the removal's own error, and logs, when the claim cannot be withdrawn either", async () => {
@@ -1064,6 +1115,46 @@ describe('ChatReportService', () => {
       await expect(
         service.resolveReport('report-1', CHAPTER, 'dismissed', OTHER_OFFICER),
       ).resolves.toMatchObject({ status: 'dismissed' });
+    });
+
+    it('a delete that commits and then throws keeps the claim, closes the siblings, and a retry answers 200', async () => {
+      // Postgres committed the tombstone; the answer was lost on the way back.
+      const lost = new Error('fetch failed');
+      chatService.deleteReportedMessage.mockImplementationOnce(async () => {
+        messageDeleted = true;
+        throw lost;
+      });
+
+      // This call's own write may be what landed, so the outcome is reported
+      // as unknown — the original error — not as a removal or a refusal.
+      await expect(
+        service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+      ).rejects.toBe(lost);
+
+      // Not reopened over a removed message, and the sibling closed with it.
+      expect(reportRepo.releaseClaim).not.toHaveBeenCalled();
+      expect(current('report-1')).toMatchObject({
+        status: 'actioned',
+        resolved_by: OFFICER,
+      });
+      expect(current('report-2')).toMatchObject({
+        status: 'actioned',
+        resolved_by: OFFICER,
+      });
+      // So a Dismiss cannot record the removed message as left up.
+      await expect(
+        service.resolveReport('report-1', CHAPTER, 'dismissed', OTHER_OFFICER),
+      ).rejects.toThrow(new ConflictException('This report is no longer open'));
+
+      await expect(
+        service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+      ).resolves.toMatchObject({
+        id: 'report-1',
+        status: 'actioned',
+        message_already_deleted: true,
+        channel_id: 'chan-1',
+      });
+      expect(chatService.deleteReportedMessage).toHaveBeenCalledTimes(1);
     });
 
     it('the second of two removals on sibling reports gets the same 200, whichever order they land in', async () => {

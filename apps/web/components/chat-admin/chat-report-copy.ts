@@ -1,5 +1,9 @@
 import type { ChatReportReason, ChatReportStatus } from "@repo/hooks";
-import { formatLocaleDate, parseInstant } from "@repo/formatting";
+import {
+  formatLocaleDate,
+  formatLocaleDateTime,
+  parseInstant,
+} from "@repo/formatting";
 
 /**
  * Words for the officer report queue (`chat-reports-card.tsx`), in one module
@@ -140,6 +144,20 @@ export const chatReportCopy = {
     reviewedFailed: "Couldn't mark the report reviewed.",
     dismissedFailed: "Couldn't dismiss the report.",
     actionedFailed: "Couldn't mark the report actioned.",
+    /**
+     * A 5xx or a transport failure on Mark reviewed / Dismiss / Mark actioned.
+     * The PATCH is a conditional update that may have committed before its
+     * answer was lost, so, like `removeUnconfirmed`, these say the
+     * outcome is unknown rather than that it failed. The queue refetches
+     * either way (`useResolveChatReport`'s `onSettled`), and a retry of one
+     * that landed is answered 409, never applied twice.
+     */
+    reviewedUnconfirmed:
+      "Couldn't confirm the report was marked reviewed. It may have gone through anyway. Refresh to check, and retry if the report is still open.",
+    dismissedUnconfirmed:
+      "Couldn't confirm the report was dismissed. It may have gone through anyway. Refresh to check, and retry if the report is still open.",
+    actionedUnconfirmed:
+      "Couldn't confirm the report was marked actioned. It may have gone through anyway. Refresh to check, and retry if the report is still open.",
     removeFailed: "Couldn't remove the message.",
     /**
      * A 5xx or a transport failure on the removal: the outcome is unknown, and
@@ -186,25 +204,58 @@ export function reportedMessageSubject(
 }
 
 /**
- * "Harassment, reported 5 minutes ago, with a reporter's note" — what tells
- * one **report** apart from another on the same message.
+ * "Harassment, reported 9/22/2026, 11:55:00 AM, with a reporter's note" — what
+ * tells one **report** apart from another on the same message.
  *
  * The subject alone names the message, and two members can report one message:
  * two rows then share an author and an excerpt, and two messages with no text
- * from one author share a subject outright. The reason, the age and whether
- * the reporter left a note are what the rows visibly differ by, so the names
- * carry them too. The age is the row's own visible "Reported …" text; an
- * unparseable timestamp leaves it out rather than reading "reported ".
+ * from one author share a subject outright. The reason, when it was filed and
+ * whether the reporter left a note are what the rows differ by, so the names
+ * carry them too.
+ *
+ * The time is the absolute one the row's "Reported …" text shows on hover
+ * (`formatLocaleDateTime`), not the relative age: "5 minutes ago" is shared by
+ * every report filed that minute, and would rename the controls on every tick.
+ * An unparseable timestamp leaves it out rather than reading "reported —".
+ * Two reports can still match on all of it; {@link reportDistinctions} numbers
+ * those.
  */
 export function reportDistinction(report: {
   reason: ChatReportReason;
-  age: string;
+  createdAt: string;
   hasNote: boolean;
 }): string {
   const parts: string[] = [CHAT_REPORT_REASON_LABEL[report.reason]];
-  if (report.age) parts.push(`reported ${report.age}`);
+  if (parseInstant(report.createdAt)) {
+    parts.push(`reported ${formatLocaleDateTime(report.createdAt)}`);
+  }
   if (report.hasNote) parts.push("with a reporter's note");
   return parts.join(", ");
+}
+
+/**
+ * Each row's {@link reportDistinction}, made unique across the list.
+ *
+ * Rows whose subject and distinction still match — the same message, reason
+ * and second, both with or both without a note — get "report 2 of 3" appended,
+ * numbered in list order, so no two controls in the queue share a name. A row
+ * that is already unique is left as it is.
+ */
+export function reportDistinctions(
+  rows: readonly { subject: string; distinction: string }[],
+): string[] {
+  const key = (row: { subject: string; distinction: string }) =>
+    `${row.subject}\u0000${row.distinction}`;
+  const totals = new Map<string, number>();
+  for (const row of rows) totals.set(key(row), (totals.get(key(row)) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return rows.map((row) => {
+    const total = totals.get(key(row)) ?? 1;
+    if (total === 1) return row.distinction;
+    const position = (seen.get(key(row)) ?? 0) + 1;
+    seen.set(key(row), position);
+    return `${row.distinction}, report ${position} of ${total}`;
+  });
 }
 
 /**
