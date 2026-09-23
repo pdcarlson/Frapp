@@ -56,9 +56,9 @@ RUN npm run build --workspace=apps/api
 # ARG, not ENV: do not bake `SENTRY_AUTH_TOKEN` into later layers. Render
 # passes service env vars matching these ARG names at build time. Unset (CI,
 # laptops, or a Render service whose Infisical environment does not carry
-# it, which may include production; spec/behavior/observability.md
-# § Release naming says which do) → the script skips sentry-cli and still
-# strips `*.map` so the runner does not ship TypeScript. Set but sentry-cli
+# it; docs/internal/environment/ENV_REFERENCE.md § apps/api says which do)
+# → the script skips sentry-cli and still strips `*.map` so the runner does
+# not ship TypeScript. Set but sentry-cli
 # fails (inject or upload: cannot be resolved or started, non-zero exit,
 # signal, or time bound) → the script prints one `WARNING:` line per failed
 # step, still strips `*.map`, and exits 0: the upload is best effort and must not gate
