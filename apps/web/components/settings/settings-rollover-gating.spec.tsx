@@ -287,9 +287,9 @@ describe("the accent save sends the colour the preview shows", () => {
     await user.click(screen.getByRole("tab", { name: /accent/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
 
-    for (const draft of ["#8B00", "crimson", "   ", ""]) {
+    for (const draft of ["#8B00", "crimson", "   "]) {
       await user.clear(hex);
-      if (draft) await user.type(hex, draft);
+      await user.type(hex, draft);
       expect(saveButton()).toBeDisabled();
       expect(notHex()).toBeInTheDocument();
       // The preview is the fallback gold there, which its ink clears, so the
@@ -297,17 +297,30 @@ describe("the accent save sends the colour the preview shows", () => {
       expect(screen.queryByText(/saving picks a label color/i)).toBeNull();
     }
 
+    await user.clear(hex);
     await user.type(hex, "#8B0000");
     expect(saveButton()).toBeEnabled();
+    expect(notHex()).toBeNull();
+  });
+
+  it("disables Save on an empty field without warning about it", async () => {
+    // What a chapter with no stored accent opens to: the placeholder shows the
+    // format, and there is no colour for "this color" to mean.
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.clear(screen.getByLabelText(/accent color hex value/i));
+
+    expect(saveButton()).toBeDisabled();
     expect(notHex()).toBeNull();
   });
 });
 
 describe("the accent form surfaces the server's own §8 disclosure (#1183)", () => {
   /*
-   * A third, independent question from the pair above — those are client-side
-   * checks of the unsaved draft against one fixed backdrop each, computed by
-   * `resolveChapterAccentColor`/`pickAccessibleColor`. This is the real
+   * Independent of the draft checks tested above — the preview's two contrast
+   * questions, each against one fixed backdrop and computed by
+   * `resolveChapterAccentColor`/`pickAccessibleColor`, and its format. This is the real
    * Signet engine's verdict on the colour actually saved, returned by
    * `PATCH /v1/chapters/current` and disclosed rather than corrected: §8
    * forbids a runtime substitution, so a failing save still succeeds.

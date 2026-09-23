@@ -435,11 +435,15 @@ function SettingsPageContent() {
   // and the save describing one colour. Sending the raw draft let `#08E`
   // preview cleanly and then fail the save with a 400.
   const accentDraftHex = normalizeHex(accentDraft);
-  // Empty, blank or not a hex colour: Save is disabled and the tab says why.
-  // An empty draft counts: it sends no `accent_color`, which the API treats as
-  // "no change" and answers with success, so the toast would claim a save that
-  // wrote nothing.
+  // Empty, blank or not a hex colour: Save is disabled. An empty draft counts:
+  // it sends no `accent_color`, which the API treats as "no change" and answers
+  // with success, so the toast would claim a save that wrote nothing.
   const accentDraftUnsavable = !accentDraftHex;
+  // Says why once something is typed. An empty field is also what a chapter
+  // with no stored accent, or a page still loading it, starts with; there the
+  // placeholder shows the format and a warning about "this color" would be
+  // about nothing.
+  const accentDraftNotHex = accentDraft !== "" && !accentDraftHex;
   // A well-formed colour that fails contrast on the card. `fallbackApplied`
   // alone is also true for an empty or malformed draft, where "saving keeps the
   // color you entered" would be false.
@@ -1147,7 +1151,7 @@ function SettingsPageContent() {
                       Preview
                     </div>
                   </div>
-                  {accentDraftUnsavable ? (
+                  {accentDraftNotHex ? (
                     <p className="text-xs text-warning">
                       Use a hex code like #8B0000 to save this color.
                     </p>

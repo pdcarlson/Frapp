@@ -173,7 +173,7 @@ describe("the preview warnings say what the preview does", () => {
   });
 
   it("renders the not-a-hex-code warning its writing.md row states", () => {
-    expect(warning("accentDraftUnsavable")).toBe(
+    expect(warning("accentDraftNotHex")).toBe(
       writingRow("Accent not a hex code"),
     );
   });
