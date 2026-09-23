@@ -35,8 +35,9 @@
 //   0 — every project was read and the snapshot was written
 //   1 — a project could not be read, or answered with an empty history;
 //       nothing is written. Consumers keep using the last good snapshot until
-//       a deploy outdates it (the download action waits, then refuses one
-//       read before the latest deploy on main) or it ages out
+//       a deploy outdates it for a pull request's gates (the download
+//       action waits, then refuses one read before the latest deploy on
+//       main) or it ages out
 //   2 — the invocation itself is wrong (no token, no --out, unreadable config)
 //
 // Unit tests: scripts/ci/__tests__/migration-snapshot.test.mjs.

@@ -6,11 +6,12 @@ import {
   buildGateSummary,
   classifyGateDrift,
   fetchAppliedWithRetry,
+  driftGateOptions,
   readMigrationsAtRef,
   resolveSource,
   runDriftGate,
 } from "../check-migration-drift-gate.mjs";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -479,19 +480,25 @@ test("a snapshot keeps a migration that landed after its capture in grace, and s
 });
 
 test("the CLI hands a snapshot's capture time to the gate as capturedMs, never as the clock", () => {
-  // The wiring the test above relies on. resolveSource is what main() calls;
-  // if it passed the capture time as nowMs instead (the bug #2518's review
-  // caught), a failed apply captured soon after its merge would never go red.
+  // The wiring the test above relies on: main() runs exactly
+  // runDriftGate(driftGateOptions(resolveSource(path))). If the capture time
+  // became nowMs instead (the bug #2518's review caught), a failed apply
+  // captured soon after its merge would never go red.
   const capturedAt = new Date(Date.now() - HOUR).toISOString();
   const dir = mkdtempSync(join(tmpdir(), "drift-source-"));
-  const path = join(dir, "migration-snapshot.json");
-  const ref = getEnvironment("staging").supabaseProjectRef;
-  writeFileSync(
-    path,
-    JSON.stringify(buildSnapshot({ capturedAt, environments: [{ name: "staging", supabaseProjectRef: ref, migrations: [] }] })),
-  );
-  const source = resolveSource(path);
-  assert.equal(source.capturedMs, Date.parse(capturedAt));
-  assert.equal(source.projectRef, ref);
-  assert.equal("nowMs" in source, false, "the snapshot must not become the gate's clock");
+  try {
+    const path = join(dir, "migration-snapshot.json");
+    const ref = getEnvironment("staging").supabaseProjectRef;
+    writeFileSync(
+      path,
+      JSON.stringify(buildSnapshot({ capturedAt, environments: [{ name: "staging", supabaseProjectRef: ref, migrations: [] }] })),
+    );
+    const options = driftGateOptions(resolveSource(path), {});
+    assert.equal(options.capturedMs, Date.parse(capturedAt));
+    assert.equal(options.projectRef, ref);
+    assert.equal("nowMs" in options, false, "the snapshot must not become the gate's clock");
+    assert.equal(options.graceMinutes, DEFAULT_GRACE_MINUTES);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

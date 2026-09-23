@@ -126,9 +126,13 @@ jobs:
         with:
           node-version: 24
 
-      # Exports MIGRATION_SNAPSHOT, the downloaded file's path.
+      # Exports MIGRATION_SNAPSHOT, the downloaded file's path. `use`: this job
+      # reports and does not gate, so it never waits on a publish (see the
+      # action's header).
       - name: Download the migration snapshot
         uses: ./.github/actions/download-migration-snapshot
+        with:
+          on-stale: use
 
       - name: Check migration drift against staging
         env:
@@ -236,9 +240,14 @@ jobs:
       # Production's applied state, because this gate is about the database
       # the migrations are heading for. Not needed for a fixture run, which
       # replays a recorded state instead.
+      # `wait` only on a pull request, where the snapshot gates the merge. A push
+      # to main has already merged: waiting there would only risk a red
+      # required check on a main commit (see the action's header).
       - name: Download the migration snapshot
         if: steps.touched.outputs.run == 'true' && !inputs.replay_fixture
         uses: ./.github/actions/download-migration-snapshot
+        with:
+          on-stale: ${{ github.event_name == 'pull_request' && 'wait' || 'use' }}
 
       - name: Setup Supabase CLI
         if: steps.touched.outputs.run == 'true'
@@ -465,10 +474,13 @@ jobs:
             echo "No files under supabase/migrations/ changed — the base-branch rule still runs, no database is read."
           fi
 
-      # Exports MIGRATION_SNAPSHOT when it runs; unset otherwise.
+      # Exports MIGRATION_SNAPSHOT when it runs; unset otherwise. `wait` only on
+      # a pull request, as in migration-replay above.
       - name: Download the migration snapshot
         if: steps.touched.outputs.run == 'true'
         uses: ./.github/actions/download-migration-snapshot
+        with:
+          on-stale: ${{ github.event_name == 'pull_request' && 'wait' || 'use' }}
 
       # The script loads the snapshot past its own zero-network fast path, so a
       # change that introduces nothing never depends on it. That is also why

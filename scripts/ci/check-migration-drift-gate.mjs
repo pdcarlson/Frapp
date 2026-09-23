@@ -486,12 +486,26 @@ export function resolveSource(snapshotPath) {
   }
 }
 
+/**
+ * What `main()` hands `runDriftGate`, from a resolved source and the env.
+ * Exported so the wiring is tested: a snapshot's capture time must arrive as
+ * `capturedMs` and must never become `nowMs`, the gate's clock (#2518).
+ */
+export function driftGateOptions(source, env = process.env) {
+  return {
+    accessToken: source.accessToken,
+    projectRef: source.projectRef,
+    fetchImpl: source.fetchImpl,
+    capturedMs: source.capturedMs,
+    mainRef: env.DRIFT_GATE_MAIN_REF || DEFAULT_MAIN_REF,
+    graceMinutes: Number(env.DRIFT_GATE_GRACE_MINUTES || DEFAULT_GRACE_MINUTES),
+  };
+}
+
 async function main() {
-  const { accessToken, projectRef, fetchImpl, capturedMs, description } = resolveSource(getArg("--snapshot"));
-  const mainRef = process.env.DRIFT_GATE_MAIN_REF || DEFAULT_MAIN_REF;
-  const graceMinutes = Number(
-    process.env.DRIFT_GATE_GRACE_MINUTES || DEFAULT_GRACE_MINUTES,
-  );
+  const source = resolveSource(getArg("--snapshot"));
+  const options = driftGateOptions(source);
+  const { projectRef, mainRef, graceMinutes } = options;
 
   if (!Number.isFinite(graceMinutes) || graceMinutes < 0) {
     console.error("::error::DRIFT_GATE_GRACE_MINUTES must be a non-negative number.");
@@ -502,11 +516,11 @@ async function main() {
   console.log("  Migration drift gate (staging)");
   console.log(`  Comparing: ${mainRef} → staging ${projectRef.slice(0, 8)}…`);
   console.log(`  Grace: ${graceMinutes} minute(s) from merge time`);
-  console.log(`  Source: ${description}`);
+  console.log(`  Source: ${source.description}`);
   console.log("══════════════════════════════════════════════════════════");
 
   process.exit(
-    await runDriftGate({ accessToken, projectRef, mainRef, graceMinutes, fetchImpl, capturedMs }),
+    await runDriftGate(options),
   );
 }
 

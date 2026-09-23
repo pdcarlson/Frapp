@@ -9,8 +9,9 @@ description: >
 # Why this exists (#2518): the migration gates run on `pull_request`, and a
 # same-repository PR runs its own branch's workflow definitions, so any secret a
 # PR job can read, any branch can read. The gates used to inject Infisical for
-# one Management API read. `migration-snapshot.yml` now makes that read from
-# `main` only, and PR jobs fetch the result here.
+# one Management API read. `migration-snapshot.yml` now makes that read, in a
+# job meant to run from `main` only (its environment's rule is the owner's
+# #2583), and PR jobs fetch the result here.
 #
 # ── Which run is trusted ────────────────────────────────────────────────────
 # A successful run of THIS repository's publisher, triggered by `workflow_run`,
@@ -27,33 +28,50 @@ description: >
 # `git/ref/heads/main`, never the bare name `main`: with a tag of that name the
 # bare name is ambiguous, and git resolves it to the tag.
 #
-# ── Newer than the last deploy, waiting rather than failing ────────────────
-# The snapshot must also have been read after the most recent completed
-# `Deploy API` or `Deploy production` run on `main` finished (its last job's
-# `completed_at`, across the last 100 runs, so a re-run of an older one
-# counts), and no `Deploy API`
-# run may still be in flight. Those are the only workflows that apply
-# migrations, and each triggers a publish when it finishes.
+# ── Newer than the last deploy (`on-stale`) ─────────────────────────────────
+# Freshness matters only where the snapshot gates a merge: a pull request's
+# runs of the required `migration-order` and `migration-replay`. Those callers
+# pass `on-stale: wait`. The step then requires the snapshot to have been read
+# after the latest finished `Deploy API` or `Deploy production` run on `main`,
+# with no `Deploy API` run in flight. Those are the only workflows that apply
+# migrations, and each triggers a publish when it finishes. While that is not
+# yet true, the step waits, polling every 30 seconds for up to 5 minutes (a
+# post-deploy publish takes a minute or two). If the snapshot is still stale
+# after that, the step fails and names the publisher. Without this, a failed
+# post-deploy publish would leave the gates judging a PR against the
+# pre-deploy state until the 24-hour age limit ran out. The worst case is a PR
+# that removes a migration the deploy had just applied: it merges, and the
+# next `db push` meets a foreign row.
 #
-# While that is not yet true, the step WAITS, polling every 45 seconds for up
-# to 15 minutes, rather than failing. The ordinary cause is a publish still
-# running a minute or two after a deploy. Failing there would also redden the
-# push-to-main runs of the required `migration-order` and `migration-replay`
-# checks, and nothing re-runs those: a migration merge that landed in the
-# window would leave a commit `validate-deploy-sha.mjs` refuses to deploy. Only
-# a publisher that stays stale past the budget fails the step, naming itself.
-# That is the case that matters: without this check, a failed post-deploy
-# publish would leave the gates judging a PR against the pre-deploy state until
-# the 24-hour age limit ran out. The worst case is a PR that removes a migration
-# the deploy had just applied: it merges, and the next `db push` meets a
-# foreign row.
+# Everything else passes `on-stale: use` and takes the newest trusted
+# snapshot as it is. That covers push-to-main and dispatch runs and the
+# report-only `migration-drift`. On a push the migration has already merged,
+# so a snapshot a few minutes older decides nothing, and `deploy-production.yml`
+# re-reads production live at deploy time. Waiting there would cost more than
+# it buys. It would red a required check on a `main` commit whenever the budget
+# ran out, a commit `validate-deploy-sha.mjs` then refuses to deploy, and
+# nothing re-runs it. It would also hold main's non-cancellable concurrency
+# group open, so that a queued run behind it gets replaced and its required
+# checks end `cancelled`. The drift job reports, it does not gate, and its
+# grace rule already treats a migration that landed after the capture as in
+# grace.
 #
-# What this does not close: a `Deploy production` run still in flight. It is
+# What `wait` does not close: a `Deploy production` run still in flight. It is
 # not waited for, because its one job ships for minutes after it migrates and
-# would outlast the budget. So a production apply is invisible until that run
-# finishes and publishes. The staging row of the same snapshot usually already
-# shows the migration, since staging applied it at merge time. A live read had
-# the same point-in-time race, which was open until the apply.
+# would outlast the budget. The staging row of the same snapshot usually
+# already shows the migration, since staging applied it at merge time. A live
+# read had the same point-in-time race, which was open until the apply.
+
+inputs:
+  on-stale:
+    description: >
+      `wait` (the default) or `use`. What to do while the newest trusted snapshot
+      predates a finished deploy on main, or a Deploy API run is in flight: wait
+      up to 5 minutes and then fail, or take it as it is. Pass `wait` only where
+      the snapshot gates a pull request's merge; see the header comment. Any
+      value but `use` waits, so a typo errs toward the stricter check.
+    required: false
+    default: wait
 
 runs:
   using: composite
@@ -64,11 +82,12 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.repository }}
+        ON_STALE: ${{ inputs.on-stale }}
       run: |
         set -euo pipefail
         RUNS="${RUNNER_TEMP}/migration-snapshot-runs.json"
         CANDIDATES="${RUNNER_TEMP}/migration-snapshot-candidates.txt"
-        DEADLINE=$(( $(date +%s) + 900 ))
+        DEADLINE=$(( $(date +%s) + 300 ))
 
         while :; do
           # main's SHA, not the bare name: a tag called `main` would make the
@@ -106,6 +125,7 @@ runs:
             echo "::error::No successful Migration snapshot run from main. Run it: Actions → Migration snapshot → Run workflow (branch: main). If it fails, its log names the cause."
             exit 1
           fi
+          if [ "$ON_STALE" = "use" ]; then break; fi
 
           # Which completed deploy runs finished after the snapshot started?
           # Look at the last 100 runs, not only the newest: the list is ordered
@@ -126,7 +146,17 @@ runs:
             # Newest first, and one run that finished after the snapshot is
             # enough to wait on, so a stale snapshot costs one jobs call, not one
             # per deploy since it.
-            for run in $(jq -r --arg since "$RUN_STARTED" '[.workflow_runs[] | select(.updated_at > $since)] | sort_by(.updated_at) | reverse | .[].id' "$DEPLOYS"); do
+            # Captured first, so a jq failure fails the step: in a `for` list it
+            # would read as "no deploy since", which is the permissive answer.
+            # This repository's runs only. A fork PR from a branch named `main`
+            # triggers a Deploy API run listed under head_branch `main`, and
+            # its chained publish is (rightly) not trusted above, so counting
+            # it would leave no acceptable snapshot at all.
+            if ! newer="$(jq -r --arg since "$RUN_STARTED" --arg repo "$REPO" '[.workflow_runs[] | select(.head_repository.full_name == $repo) | select(.updated_at > $since)] | sort_by(.updated_at) | reverse | .[].id' "$DEPLOYS")"; then
+              echo "::error::Could not parse the recent ${wf} runs."
+              exit 1
+            fi
+            for run in $newer; do
               if ! finished="$(gh api "repos/${REPO}/actions/runs/${run}/jobs?per_page=100" --jq '[.jobs[].completed_at | select(. != null)] | max // ""')"; then
                 echo "::error::Could not read the jobs of ${wf} run ${run}."
                 exit 1
@@ -134,8 +164,12 @@ runs:
               if [[ "$finished" > "$RUN_STARTED" ]]; then LATEST_DEPLOY="$finished"; break 2; fi
             done
           done
-          if ! staging_running="$(gh api "repos/${REPO}/actions/workflows/deploy-api.yml/runs?branch=main&status=in_progress&per_page=1" --jq '.total_count')"; then
+          if ! gh api "repos/${REPO}/actions/workflows/deploy-api.yml/runs?branch=main&status=in_progress&per_page=100" > "$DEPLOYS"; then
             echo "::error::Could not read in-progress Deploy API runs."
+            exit 1
+          fi
+          if ! staging_running="$(jq -r --arg repo "$REPO" '[.workflow_runs[] | select(.head_repository.full_name == $repo)] | length' "$DEPLOYS")"; then
+            echo "::error::Could not parse in-progress Deploy API runs."
             exit 1
           fi
 
@@ -147,15 +181,19 @@ runs:
           fi
           if [ -z "$WAIT_FOR" ]; then break; fi
           if (( $(date +%s) >= DEADLINE )); then
-            echo "::error::Waited 15 minutes: ${WAIT_FOR}. If Migration snapshot is failing, its log names the cause: ${GITHUB_SERVER_URL}/${REPO}/actions/workflows/migration-snapshot.yml"
+            echo "::error::Waited 5 minutes: ${WAIT_FOR}. Re-run this check once Migration snapshot has published; if it is failing, its log names the cause: ${GITHUB_SERVER_URL}/${REPO}/actions/workflows/migration-snapshot.yml"
             exit 1
           fi
-          echo "Waiting 45s: ${WAIT_FOR}."
-          sleep 45
+          echo "Waiting 30s: ${WAIT_FOR}."
+          sleep 30
         done
 
         echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
-        echo "Using the snapshot published by ${GITHUB_SERVER_URL}/${REPO}/actions/runs/${RUN_ID} (started ${RUN_STARTED}; no deploy on main has finished since)"
+        if [ "$ON_STALE" = "use" ]; then
+          echo "Using the snapshot published by ${GITHUB_SERVER_URL}/${REPO}/actions/runs/${RUN_ID} (started ${RUN_STARTED}; on-stale: use, so not checked against later deploys)"
+        else
+          echo "Using the snapshot published by ${GITHUB_SERVER_URL}/${REPO}/actions/runs/${RUN_ID} (started ${RUN_STARTED}; no deploy on main has finished since)"
+        fi
 
     - name: Download the snapshot
       uses: actions/download-artifact@v4

@@ -29,9 +29,9 @@ name: Migration snapshot
 # apply migrations. That is what keeps the snapshot current, because a
 # scheduled run here starts hours late. The 4-hourly schedule is a backstop
 # for applies made outside those workflows (DB_PROMOTION_RUNBOOK repairs).
-# Consumers wait up to 15 minutes for a snapshot newer than the latest
-# completed deploy, then refuse the stale one
-# (`.github/actions/download-migration-snapshot`), with an age limit of
+# A pull request's required gates wait up to 5 minutes for a snapshot newer than
+# the latest finished deploy, then refuse the stale one
+# (`.github/actions/download-migration-snapshot`, `on-stale`), with an age limit of
 # `DEFAULT_MAX_AGE_HOURS` (`scripts/ci/lib/migration-snapshot.mjs`) as backstop.
 # A manual ledger change triggers nothing, so dispatch this after one
 # (DB_PROMOTION_RUNBOOK.md § What catches drift, and what catches bad ordering).
