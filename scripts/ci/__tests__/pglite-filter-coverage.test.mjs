@@ -324,6 +324,8 @@ export function scan(src, file) {
         .slice(root.length + 2)
         .split("/")
         .map((segment) => decodeSegment(segment, call))
+        // WHATWG keeps empty segments (`a//b`, a trailing `/`); a path doesn't.
+        .filter((segment) => segment !== "")
         .join("/");
     });
     if (paths[0] === null) return;
@@ -363,8 +365,17 @@ export function scan(src, file) {
     /\bimport\s*["'](_*)["']/dg,
   ];
   const specifiers = [
+    // Read through `literal`, quotes included, like every other form: the source
+    // text of `"a\\b"` is not the specifier `a\b`, and an escape would be read
+    // as path characters.
     ...staticForms.flatMap((form) =>
-      [...masked.matchAll(form)].map((m) => src.slice(...m.indices[1])),
+      [...masked.matchAll(form)].map((m) => {
+        const [start, end] = m.indices[1];
+        const quoted = src.slice(start - 1, end + 1);
+        const target = literal(quoted);
+        assert.ok(target !== null, unresolved(quoted));
+        return target;
+      }),
     ),
     // Dynamic: the first argument is the specifier; a second is its attributes.
     ...callArgs(src, masked, /(?<![.\w$])import\s*\(/g).map(({ call, args }) => {
@@ -496,6 +507,8 @@ describe("the scanner reads each form as what it is", () => {
       'new URL("my%20seed.csv", import.meta.url);',
       'new URL(" ../trim.sql", import.meta.url);',
       'import "./%2e%2e/y.mjs";',
+      // And an empty segment is no segment.
+      'new URL("a//b.sql", import.meta.url); new URL("../data/", import.meta.url);',
     ].join("\n");
     assert.deepEqual(scan(src, at), {
       found: [
@@ -505,12 +518,14 @@ describe("the scanner reads each form as what it is", () => {
         "supabase/e.sql",
         "scripts/ci/lib/my seed.csv",
         "scripts/ci/trim.sql",
+        "scripts/ci/lib/a/b.sql",
+        "scripts/ci/data",
       ],
       follow: ["scripts/ci/y.mjs"],
     });
   });
 
-  it("fails on a computed argument, nested calls included", () => {
+  it("fails on a target it cannot resolve: computed, nested or escaped", () => {
     for (const src of [
       "new URL(name(), import.meta.url);",
       "new URL(join(\"..\", \"x.sql\"), import.meta.url);",
@@ -519,6 +534,8 @@ describe("the scanner reads each form as what it is", () => {
       // An encoded `/`, and an escape that decodes to nothing.
       'new URL("a%2Fb.sql", import.meta.url);',
       'new URL("%zz.sql", import.meta.url);',
+      // A static specifier with an escape: its source text is not its value.
+      'import d from "./a\\\\..\\\\supabase\\\\d.json" with { type: "json" };',
     ]) {
       assert.throws(() => scan(src, at), /cannot resolve/, src);
     }
