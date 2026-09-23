@@ -333,6 +333,14 @@ describe("the gate's reads, from query state (#2302)", () => {
     ).toBe("tabs");
   });
 
+  it("fails open when the chapters refetch fails before the first Terms answer", () => {
+    // Nothing known says the Terms are owed yet, so this fails open like any
+    // other failed chapters read; the Terms answer, once in, decides.
+    expect(
+      gate(failedRefetch([member]), { data: undefined, isError: false }),
+    ).toBe("tabs");
+  });
+
   it("fails open when the first Terms read fails", () => {
     expect(gate(answered([member]), { data: undefined, isError: true })).toBe(
       "tabs",

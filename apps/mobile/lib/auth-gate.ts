@@ -49,8 +49,11 @@
  * (`GET /v1/users/me/legal-acceptance`), never a compiled-in version, so an
  * old binary can't disagree with it. A user with no membership isn't sent
  * here: the join screen and the create-chapter wizard carry the checkbox
- * themselves. Like memberships, a failed read fails open to tabs, so an
- * outage of that endpoint can't lock every member out of the app.
+ * themselves. Like memberships, a failed *first* read fails open to tabs, so
+ * an outage of that endpoint can't lock every member out of the app. A failed
+ * refetch keeps its last answer (`legalReadStatus`), and a member the last
+ * chapters list showed who still owes the Terms stays on the prompt even when
+ * the chapters read fails (`resolveAuthGate`).
  */
 import { needsFirstRun } from "./onboarding/membership";
 
