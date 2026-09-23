@@ -3,6 +3,7 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IChatMemberBlockRepository } from '#domain/repositories/chat-moderation.repository.interface';
 import type { ChatMemberBlockRef } from '#domain/entities/chat-moderation.entity';
+import { chunkIds } from '#domain/utils/chunk-ids';
 
 /**
  * Per-chapter member block list (#2257).
@@ -55,8 +56,10 @@ export class SupabaseChatMemberBlockRepository implements IChatMemberBlockReposi
    *
    * This is the one query in this file that filters on `blocked_user_id`, and
    * it is the shape the class docblock warns about — so the bound is not
-   * optional. `candidateBlockerUserIds` is the push worker's already-authorized
-   * audience for one channel, and the `.in()` is what keeps this "which of
+   * optional. `candidateBlockerUserIds` is an audience the caller has already
+   * authorized for another reason (the push worker's channel readers, or a DM's
+   * members, or the announcement roster in `ChatService`), and the `.in()` is
+   * what keeps this "which of
    * these recipients must not be delivered to" rather than "who has blocked
    * this member". An empty candidate list short-circuits without a query: a
    * bare `.in('blocker_user_id', [])` is a well-formed PostgREST filter that
@@ -65,6 +68,14 @@ export class SupabaseChatMemberBlockRepository implements IChatMemberBlockReposi
    * Served by the same `(chapter_id, blocker_user_id, blocked_user_id)` unique
    * index as {@link findBlockedUserIds} — the leading `chapter_id` and the
    * trailing equality make it an index scan, not a sequential one.
+   *
+   * **Chunked at `ID_CHUNK_SIZE`** (#2324). The candidate list is an audience,
+   * and an audience can be the whole chapter: a PUBLIC channel's readers, or the
+   * announcement fan-out's roster. One `.in()` over a roster that size is a URL
+   * PostgREST answers with `414 URI Too Long` (measured in `chunk-ids.ts`). The
+   * callers treat a throw as "notify nobody", so an unchunked query would
+   * silently stop every push to a large chapter's public channels. Any chunk
+   * failing fails the whole call, for the same reason.
    */
   async findBlockersAmong(
     chapterId: string,
@@ -72,14 +83,19 @@ export class SupabaseChatMemberBlockRepository implements IChatMemberBlockReposi
     candidateBlockerUserIds: string[],
   ): Promise<Set<string>> {
     if (candidateBlockerUserIds.length === 0) return new Set();
-    const { data, error } = await this.supabase
-      .from('chat_member_blocks')
-      .select('blocker_user_id')
-      .eq('chapter_id', chapterId)
-      .eq('blocked_user_id', blockedUserId)
-      .in('blocker_user_id', candidateBlockerUserIds);
-    if (error) throw error;
-    return new Set((data ?? []).map((row) => row.blocker_user_id));
+    const chunks = await Promise.all(
+      chunkIds(candidateBlockerUserIds).map(async (chunk) => {
+        const { data, error } = await this.supabase
+          .from('chat_member_blocks')
+          .select('blocker_user_id')
+          .eq('chapter_id', chapterId)
+          .eq('blocked_user_id', blockedUserId)
+          .in('blocker_user_id', chunk);
+        if (error) throw error;
+        return data ?? [];
+      }),
+    );
+    return new Set(chunks.flat().map((row) => row.blocker_user_id));
   }
 
   /**

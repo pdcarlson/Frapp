@@ -70,7 +70,11 @@ import {
   type ReportedMessageGrant,
 } from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
-import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
+import {
+  isFromBlockedSender,
+  maskBlockedMessages,
+  type MaskedChatMessage,
+} from './chat-block-mask';
 import { ActivationService } from './activation.service';
 import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 import type { ChatNotificationLevel } from '../../modules/chat-push-worker/chat-notification-preference.repository';
@@ -777,7 +781,7 @@ export class ChatService {
     await this.persistAttachments(message.id, input.channel_id, attachments);
 
     try {
-      await this.sendMessageNotification(input, channel);
+      await this.notifyMessageRecipients(input, channel);
     } catch (error) {
       this.logger.warn('Failed to send message notification', {
         messageId: message.id,
@@ -852,7 +856,7 @@ export class ChatService {
     }
   }
 
-  private async sendMessageNotification(
+  private async notifyMessageRecipients(
     input: SendMessageInput,
     channel: ChatChannel,
   ): Promise<void> {
@@ -882,17 +886,35 @@ export class ChatService {
       channel.is_read_only &&
       channel.name.toLowerCase().includes('announcements');
 
+    // Both branches drop everyone who has blocked the sender (#2324), for the
+    // reason the push worker does: each writes an in-app row and pushes the body
+    // to a lock screen, so masking the preview would still buzz the blocker's
+    // phone. A DM is the sharpest case, since "nothing they send reaches the
+    // blocker" is the whole rule. `filterOutBlockers` throws when the block list
+    // cannot be read, and `sendMessage` catches it: the message still lands, but
+    // nobody is notified rather than everybody.
+    const withoutBlockers = (userIds: string[]) =>
+      this.chatBlocks.filterOutBlockers(
+        channel.chapter_id,
+        input.sender_id,
+        userIds,
+      );
+
     if (isAnnouncement) {
-      await this.notificationService.notifyChapter(channel.chapter_id, {
-        title: 'New Announcement',
-        body: input.content.slice(0, 200),
-        priority: 'URGENT',
-        category: 'announcements',
-        data: { target: { screen: 'chat', channelId: channel.id } },
-      });
+      await this.notificationService.notifyChapter(
+        channel.chapter_id,
+        {
+          title: 'New Announcement',
+          body: input.content.slice(0, 200),
+          priority: 'URGENT',
+          category: 'announcements',
+          data: { target: { screen: 'chat', channelId: channel.id } },
+        },
+        { filterAudience: withoutBlockers },
+      );
     } else if (channel.type === 'DM' || channel.type === 'GROUP_DM') {
-      const recipientIds = (channel.member_ids ?? []).filter(
-        (id) => id !== input.sender_id,
+      const recipientIds = await withoutBlockers(
+        (channel.member_ids ?? []).filter((id) => id !== input.sender_id),
       );
       await Promise.allSettled(
         recipientIds.map((recipientId) =>
@@ -1367,9 +1389,27 @@ export class ChatService {
     return { action: 'added' as const, reaction };
   }
 
+  /**
+   * Reactions on one message from the legacy `message_reactions` table, without
+   * those of members the caller has blocked (#2324).
+   *
+   * No client reads this route. Both render reaction chips from
+   * `chat_message_actions`, which they read directly under RLS. The route is
+   * still live, though, and "the blocker never sees the blocked member's
+   * reaction chrome" is a rule about every surface, not just the ones our
+   * clients happen to call. It fails closed like every other read here: a block
+   * list that cannot be read throws.
+   */
   async getReactions(messageId: string, chapterId: string, userId: string) {
     await this.assertMessageAccess(messageId, chapterId, userId);
-    return this.reactionRepo.findByMessage(messageId);
+    const [reactions, blockedUserIds] = await Promise.all([
+      this.reactionRepo.findByMessage(messageId),
+      this.chatBlocks.listBlockedUserIds(chapterId, userId),
+    ]);
+    const blocked = new Set(blockedUserIds);
+    return reactions.filter(
+      (reaction) => !isFromBlockedSender(reaction.user_id, blocked),
+    );
   }
 
   /**
@@ -1916,6 +1956,14 @@ export class ChatService {
    *
    * Access is the ordinary channel check, so a message in a channel the caller
    * cannot read answers 403/404 exactly as its own read does.
+   *
+   * **This route is the only way to a chat file**, and the block mask depends on
+   * that. The `chat` bucket is private with no `storage.objects` policy, and
+   * `chat_message_attachments` has RLS on with no policy, so a client cannot list
+   * or fetch an attachment except through a URL minted here.
+   * `chat-read-surface-ledger.spec.ts` fails on any migration that would open
+   * another way: a policy on the table, RLS off on it, a storage policy that
+   * could reach the bucket, or the bucket made public.
    */
   async listMessageAttachments(
     channelId: string,
@@ -1925,7 +1973,10 @@ export class ChatService {
   ): Promise<ChatMessageAttachmentWithUrl[]> {
     await this.assertChannelAccess(channelId, chapterId, userId);
 
-    const message = await this.messageRepo.findById(messageId);
+    const [message, blockedUserIds] = await Promise.all([
+      this.messageRepo.findById(messageId),
+      this.chatBlocks.listBlockedUserIds(chapterId, userId),
+    ]);
     if (!message || message.channel_id !== channelId) {
       throw new NotFoundException('Message not found');
     }
@@ -1934,7 +1985,18 @@ export class ChatService {
     // this check the API keeps minting fresh download URLs for content the
     // sender believes they removed, and the rule would live only in the web
     // renderer, which is not where a rule about who may fetch bytes belongs.
-    if (message.is_deleted) {
+    //
+    // A message from a member the caller has blocked answers the same way
+    // (#2324). The masked row drops `metadata.attachment_count`, but it keeps
+    // its `id`, so the tombstone alone does not stop a client asking for the
+    // files. It is the same 404 as a deleted message, not a distinct one. The
+    // caller is the blocker, so nothing here tells the blocked member anything.
+    // A block list that cannot be read has already thrown above: files are
+    // withheld rather than served unchecked.
+    if (
+      message.is_deleted ||
+      isFromBlockedSender(message.sender_id, new Set(blockedUserIds))
+    ) {
       throw new NotFoundException('Message not found');
     }
 
