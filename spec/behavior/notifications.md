@@ -14,7 +14,7 @@ Other modules (Chat, Events, Study, Billing) call these methods without knowing 
 1. Resolve the payload's priority (absent means `NORMAL`).
 2. **Unless the priority is URGENT**, check the user's notification preferences for the payload's category. If disabled, skip — no push *and* no in-app row.
 3. Check quiet hours. If active and priority is not URGENT, queue as badge-only (no sound/vibration).
-4. Save notification to `notifications` table (in-app history). The row always carries that `chapter_id`. **History is active-chapter-only:** `GET /v1/notifications` and `PATCH /v1/notifications/{id}/read` resolve the chapter the same way every other member surface does (`ChapterGuard`: JWT `active_chapter_id`, then `x-chapter-id`) and bind `chapter_id` on the select and the update. A member of two chapters does not see, or mark read, the other chapter's rows while one is active. Preferences remain the exception — they take `chapter_id` from the query or body and check membership in the service, because a member may edit another chapter's switches without switching into it.
+4. Save notification to `notifications` table (in-app history). The row always carries that `chapter_id`. **History is active-chapter-only:** `GET /v1/notifications` and `PATCH /v1/notifications/{id}/read` resolve the chapter the same way every other member surface does (`ChapterGuard`, per [`multi-tenancy.md`](multi-tenancy.md)) and bind `chapter_id` on the select and the update. A member of two chapters does not see, or mark read, the other chapter's rows while one is active. Preferences remain the exception — they take `chapter_id` from the query or body and check membership in the service, because a member may edit another chapter's switches without switching into it.
 5. Fetch the user's `push_tokens`.
 6. Send push notification via Expo Push Service with the appropriate priority.
 7. If Expo reports a token as permanently undeliverable (`DeviceNotRegistered`), remove it from `push_tokens`. This is classified from the *ticket* Expo returns at send time (`ExpoPushProvider.recordTickets`), not from polling delivery *receipts* — receipt polling is a separate, unimplemented enhancement. Every other Expo error (rate limit, oversized message, bad app credentials, transport failure) is transient or describes something other than this specific token, and does not prune it — pruning on those would unregister a device that is still valid.
@@ -116,8 +116,8 @@ single "N new messages" push, and that decision reaches the client only as
 sent: `ExpoPushProvider` builds each message from `to`, `title`, `body`, `data`,
 `sound` and `priority` alone, so a client cannot group on identifiers it never
 receives. The Android **notification channel** is a separate thing and is not a
-grouping key — the app defines exactly one (`"default"`, set as the plugin's
-`defaultChannel` in `apps/mobile/app.json`). The "2 upcoming events today" example
+grouping key; which channels the app defines is owned by
+[`../ui/mobile/patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications). The "2 upcoming events today" example
 above is aspirational: only chat is bundled today.
 
 ## Badge Count
@@ -126,7 +126,7 @@ The app icon badge shows the total unread count: unread in-app notifications + u
 
 **Mobile syncs the OS badge from the same queries the app already fetches, not from a dedicated count endpoint.** `apps/mobile/lib/notifications/use-badge-sync.ts`'s `useBadgeSyncRuntime` (mounted app-wide from `components/app-runtime.tsx`) sums `GET /v1/notifications`' unread rows (`read_at === null`, the same definition the in-app history and its "Mark all read" use) with `GET /v1/channels/unread`'s per-channel `unread_count`, and calls `Notifications.setBadgeCountAsync`. It resyncs whenever either query's data changes — including on app foreground, since `refetchOnWindowFocus` is already wired to `AppState` (`lib/connection/query-connectivity.ts`) — so no separate resume listener is needed. Badge setting needs no EAS `projectId`; it is a local OS call, not a remote push.
 
-Two adjustments keep the two sources additive rather than double-counted or unbounded: `ChatService` writes a `notifications` row for every DM, group-DM, and announcement message on top of the read-receipt count `GET /v1/channels/unread` already reflects for that channel, so the notification half excludes chat-targeted rows (`selectUnreadNonChatCount`) rather than summing both unfiltered. And like the in-app history it mirrors, the notification half only sees the first page (`GET /v1/notifications`' default 50-row limit), so a member with more than 50 unread in-app notifications sees an undercounted badge until they clear some — the same accepted cap the history screen and its own unread pill already carry.
+Two adjustments keep the two sources additive rather than double-counted or unbounded: `ChatService` writes a `notifications` row for every DM, group-DM, and announcement message (to each recipient who has not blocked its sender) on top of the read-receipt count `GET /v1/channels/unread` already reflects for that channel, so the notification half excludes chat-targeted rows (`selectUnreadNonChatCount`) rather than summing both unfiltered. And like the in-app history it mirrors, the notification half only sees the first page (`GET /v1/notifications`' default 50-row limit), so a member with more than 50 unread in-app notifications sees an undercounted badge until they clear some — the same accepted cap the history screen and its own unread pill already carry.
 
 ## Per-Channel Mute
 

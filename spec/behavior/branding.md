@@ -4,7 +4,7 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
 
 ## Logo
 
-- Chapters can upload a logo image. Types, extensions, and size follow the shared `image` kind in `@repo/validation` (`packages/validation/src/upload-allowlists.ts`: `isAllowedUploadMime`, `isAllowedUploadExtension`, `MAX_UPLOAD_BYTES`) — the same allowlist and 25 MB cap as avatars and every other image-upload surface. This spec does not copy those lists; the kind is the source of truth. The private `branding` bucket enforces the same MIME list and `file_size_limit` on the PUT itself.
+- Chapters can upload a logo image. Types, extensions, and size follow the shared `image` kind in `@repo/validation` (`packages/validation/src/upload-allowlists.ts`: `isAllowedUploadMime`, `isAllowedUploadExtension`, `MAX_UPLOAD_BYTES`) — the same allowlist and cap as avatars and every other image-upload surface. This spec does not copy those lists; the kind is the source of truth. The private `branding` bucket enforces the same MIME list and `file_size_limit` on the PUT itself.
 - The logo is displayed in: the app header/sidebar, the member directory, exported PDF reports, and the onboarding tutorial welcome screen. On mobile it appears in the Chat header (`ChapterHeaderTitle`, mounted by `(tabs)/_layout.tsx`) — there is no Home screen; chat is home. PDF export is a renderer limit, not an upload restriction: the PDF library can embed only a subset of the `image` kind, and an unreadable logo is skipped with a warning rather than failing the export — see [`reports.md`](reports.md) § PDF Formatting.
 - Logo is stored in Supabase Storage under `chapters/{chapter_id}/branding/logo.{ext}`.
 - The `branding` bucket is **private**, so `logo_path` is not addressable by a client on its own. `GET /v1/chapters/current` returns a signed **`logo_url`** alongside it; that is the only supported way for a client to render the logo. When signing fails the field is `null` — the logo is decoration, and an unreachable asset must not fail the chapter read.
@@ -12,16 +12,12 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
 
 ## Accent Color
 
-> This section describes the legacy single-accent model. Signet replaces it with a
-> 12-step generated scale — see [`../ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md).
-> Both are live during the cutover: Signet surfaces consume the generated scale, and since the
-> #920 shell slice that includes the web dashboard — `apps/web/lib/hooks/use-chapter-theme.ts`
-> maps the persisted `--signet-accent-*` roles onto the shell's semantic tokens via
-> `signetAccentSemanticVars` and applies **no** token from the model below — every one of them is
-> composited over bone, so carrying any onto the dark surface would paint a light value on it.
-> `apps/landing` is not a consumer either way: it resolves no chapter and reads no accent. What it
-> still ships is the legacy `@repo/theme` token stylesheet, which is a different thing from the
-> chapter-accent model described below.
+> This section describes the stored accent. Signet derives a 12-step scale from it as its seed — see
+> [`../ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md) — and that scale is
+> what the web dashboard shell paints: it applies no token from the per-surface re-validation below.
+> Which call sites still re-validate (`resolveChapterAccentColor`) is owned by
+> [`accent-engine.md` § 6](../ui/design-system/accent-engine.md#6-implementation-status) and is not
+> restated here. `apps/landing` is not a consumer: it resolves no chapter and reads no accent.
 
 - Chapters can set a custom accent color (hex string, e.g. `#8B0000` for crimson). It is stored on the `chapters` table in two places, and **`branding.colors.accent` is authoritative** (#795). The `accent_color` column is a mirror the API maintains on every write path — onboarding, the config PATCH, and the direct column update from Settings, which also writes the value back into `branding.colors.accent` on every hex save. An explicit `accent_color: null` is the gap: it takes the early-return branch in `ChapterService.update` and nulls the column without touching the jsonb. Before this, the onboarding wizard wrote only the jsonb, so the column kept its default and every surface reading it showed Royal Blue for a chapter that had chosen otherwise.
 - The accent color is applied to: primary buttons, links, active tab indicators, the chat self-bubble, mention pills (which take the engine's `--accent-subtle` / `--accent-text` roles — not the `--mention` status token, which is fixed and never accent-derived), and highlights throughout the app — for that chapter's members only. On mobile that means the active tab tint, primary buttons, and in-chapter highlights.
@@ -33,7 +29,7 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
   - It cannot apply to only one of the two stores either. They are one logical value written through three paths, so gating the column while the seed stays open let a chapter be created holding an accent it could never re-save — the Settings form resends the stored value and got a 400 telling the officer to choose a darker color they had never chosen. This supersedes #600, which assumed the two stores were different kinds of thing.
   - Legibility is enforced where it is observable instead: clients re-validate per surface at render time and substitute an accessible fallback, so an illegible stored accent is never painted. Crimson (`#8B0000`) is the worked example: 10.0:1 on white, 1.7:1 on the native dark card.
 - Because of that, **clients re-validate per surface** rather than trusting the stored value. `resolveChapterAccentColor` (`@repo/theme/accent`) takes the background and the mode's own fallback accent, and substitutes the fallback when the chapter's accent fails. A failing color surfaces an inline warning in the editor and falls back to safe tokens rather than hard-failing the edit.
-- Note this bites the stored default too: `#2563EB` is 5.2:1 on white but 3.2:1 on the dark card, so in dark mode an uncustomized chapter renders the fallback token rather than Royal Blue. That is the intended outcome — legibility wins over exactness.
+- Note this bites the stored default too: `#2563EB` is 5.2:1 on white but 3.2:1 on the dark card, so at a call site that re-validates, an uncustomized chapter renders the fallback token in dark mode rather than Royal Blue. That is the intended outcome — legibility wins over exactness.
 
 ## Brand Boundaries
 

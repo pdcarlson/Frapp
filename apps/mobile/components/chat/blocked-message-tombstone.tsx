@@ -17,8 +17,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * component — never its body, attachments, reactions or card payload — so no
  * later edit here can start rendering what the block is meant to hide. A masked
  * row carries no `attachment_count` anyway; an unmasked Realtime row still
- * does, and this is what keeps its files from mounting (#2324 tracks the
- * server-side half of that).
+ * does, and this is what keeps its files from mounting. (The server refuses the
+ * attachments route for a blocked sender's message too, #2324.)
  *
  * **Unblock is the only action — no "tap to expand".** The owner's decision
  * (2026-09-22): a server-masked row arrives with its content already withheld,

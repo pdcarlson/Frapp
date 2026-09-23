@@ -9,10 +9,6 @@ import {
   ROLE_KEY_MAX_LENGTH,
   ROLE_NAME_MAX_LENGTH,
 } from "./field-limits";
-import {
-  isAllowedUploadExtension,
-  isAllowedUploadMime,
-} from "./upload-allowlists";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
 /**
@@ -24,20 +20,6 @@ import {
  * imports it so client and server agree on a single value.
  */
 export const LEGAL_POLICY_VERSION = "2026-03";
-
-export const ChapterSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(3).max(100),
-  university: z.string().min(2).max(100),
-  stripeCustomerId: z.string().optional(),
-  subscriptionStatus: z.enum(["incomplete", "active", "past_due", "canceled"]),
-  accentColor: z
-    .string()
-    .regex(/^#[0-9A-Fa-f]{6}$/)
-    .optional(),
-  logoPath: z.string().optional(),
-  donationUrl: z.string().url().optional(),
-});
 
 const subscriptionStatusEnum = z.enum([
   "incomplete",
@@ -89,13 +71,6 @@ export const CurrentChapterPayloadSchema = z
   })
   .passthrough();
 
-export const CreateChapterSchema = z.object({
-  name: z.string().min(3, "Chapter name must be at least 3 characters"),
-  university: z
-    .string()
-    .min(2, "University name must be at least 2 characters"),
-});
-
 export const EmailInviteSchema = z.object({
   role: z.string().min(1),
   emails: z.array(z.string().email()).min(1).max(50),
@@ -121,23 +96,6 @@ export function dedupeEmails(emails: string[]): string[] {
   return result;
 }
 
-export const UpdateUserSchema = z.object({
-  display_name: z.string().min(1).max(100).optional(),
-  bio: z.string().max(500).optional(),
-  avatar_url: z.string().url().optional(),
-  graduation_year: z.number().int().min(1900).max(2100).optional(),
-  current_city: z.string().max(100).optional(),
-  current_company: z.string().max(100).optional(),
-});
-
-// ── Billing ──────────────────────────────────────────────────────────────────
-
-export const CreateCheckoutSchema = z.object({
-  customer_email: z.string().email(),
-  success_url: z.string().url(),
-  cancel_url: z.string().url(),
-});
-
 // ── Backwork ─────────────────────────────────────────────────────────────────
 
 export const SEMESTERS = ["Spring", "Summer", "Fall", "Winter"] as const;
@@ -158,31 +116,6 @@ export const DOCUMENT_VARIANTS = [
   "Blank Copy",
   "Answer Key",
 ] as const;
-
-export const RequestUploadUrlSchema = z
-  .object({
-    filename: z.string().min(1).max(255),
-    content_type: z.string().min(1),
-  })
-  .superRefine((value, ctx) => {
-    // Widest member-upload kind (`document`). Image- and proof-only routes
-    // still narrow at the service. This is the shared schema that used to
-    // accept any non-empty content_type string.
-    if (!isAllowedUploadExtension("document", value.filename)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "file extension is not allowed",
-        path: ["filename"],
-      });
-    }
-    if (!isAllowedUploadMime("document", value.content_type)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "content type is not allowed",
-        path: ["content_type"],
-      });
-    }
-  });
 
 // ── Chapter config schemas (Chunk 02) ─────────────────────────────────────────
 
@@ -487,17 +420,6 @@ export const SendChatMessageSchema = z.object({
   reply_to_id: z.string().uuid().optional(),
 });
 
-export const ChatMessageActionSchema = z.object({
-  message_id: z.string().uuid(),
-  action_type: z.string().min(1).max(50),
-  payload: z.record(z.string(), z.unknown()).optional(),
-});
-
-export const BackfillMessagesQuerySchema = z.object({
-  since: z.string().uuid().optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-});
-
 // ── Chat channel-access predicate ────────────────────────────────────────────
 // Shared by every chat + search code path in the NestJS API: cold reads,
 // the hot-path send + react controllers (`ChatService.sendMessage`,
@@ -747,13 +669,7 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
 
 // ── Type Exports ─────────────────────────────────────────────────────────────
 
-export type Chapter = z.infer<typeof ChapterSchema>;
 export type CurrentChapterPayload = z.infer<typeof CurrentChapterPayloadSchema>;
-export type CreateChapter = z.infer<typeof CreateChapterSchema>;
-export type EmailInvite = z.infer<typeof EmailInviteSchema>;
-export type UpdateUser = z.infer<typeof UpdateUserSchema>;
-export type CreateCheckout = z.infer<typeof CreateCheckoutSchema>;
-export type RequestUploadUrl = z.infer<typeof RequestUploadUrlSchema>;
 
 export type ChapterBranding = z.infer<typeof ChapterBrandingSchema>;
 export type ChapterDuesConfig = z.infer<typeof ChapterDuesConfigSchema>;
@@ -764,13 +680,10 @@ export type CreateCustomRole = z.infer<typeof CreateCustomRoleSchema>;
 export type UpdateCustomRole = z.infer<typeof UpdateCustomRoleSchema>;
 export type CustomFieldType = z.infer<typeof CustomFieldTypeSchema>;
 export type CustomFieldVisibility = z.infer<typeof CustomFieldVisibilitySchema>;
-export type CustomFieldOptions = z.infer<typeof CustomFieldOptionsSchema>;
 export type ChapterCustomField = z.infer<typeof ChapterCustomFieldSchema>;
 export type CreateCustomField = z.infer<typeof CreateCustomFieldSchema>;
 export type UpdateCustomField = z.infer<typeof UpdateCustomFieldSchema>;
 export type SendChatMessage = z.infer<typeof SendChatMessageSchema>;
-export type ChatMessageAction = z.infer<typeof ChatMessageActionSchema>;
-export type BackfillMessagesQuery = z.infer<typeof BackfillMessagesQuerySchema>;
 
 // ── Pseudonymous analytics (issue #464) ──────────────────────────────────────
 export {

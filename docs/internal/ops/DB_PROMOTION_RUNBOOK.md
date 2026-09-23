@@ -327,7 +327,7 @@ Two other refusals, both deliberate:
       still carries the password on the command line, so it reaches your shell
       history and the process table like any other argv.) Either way it captures
       the **database** only; Storage objects need `scripts/storage-backup-run.mjs`,
-      which is what `db-backup.yml`'s second job runs for staging.
+      which is what `db-backup.yml`'s Storage jobs run.
 
 ## Local validation
 

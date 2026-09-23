@@ -8,9 +8,9 @@ Frapp uses **Supabase Cloud** for staging/production and **Supabase CLI** + Dock
 
 - Postgres is the single source of truth.
 - Supabase provides **Auth**, **Storage**, and **Realtime** on top of Postgres.
-- The schema lives in `supabase/migrations/`. A new migration is applied locally with
-  `npx supabase db push --local` (see [`CONTRIBUTING.md`](../../CONTRIBUTING.md) § Database
-  Migrations); `npx supabase db reset` is the full rebuild-from-scratch path described below,
+- The schema lives in `supabase/migrations/`. How a new migration is applied locally:
+  [`CONTRIBUTING.md` § Database Migrations](../../CONTRIBUTING.md#database-migrations);
+  `npx supabase db reset` is the full rebuild-from-scratch path described below,
   not the way a single migration is applied.
 
 ## 2. Schema location
@@ -66,7 +66,7 @@ Three things about it are load-bearing:
   from another source is never overwritten by a re-run.
 - **Colors must be canonical `#RRGGBB`.** `npm run check:chapter-directory-seed` runs
   in CI as the `chapter-directory-seed` job, because a malformed hex does not fail —
-  the accent engine substitutes the house seed (`#DDB844`), so the chapter gets a
+  the accent engine substitutes the [house seed](../../spec/ui/design-system/accent-engine.md#3-default-seed), so the chapter gets a
   plausible-looking wrong brand color with no error anywhere. The seed originally
   shipped with 50 of its 100 values missing a leading `#` and nothing noticed (#840).
   `deriveSignetPalette` reports the substitution on `invalidSeed` and the API callers

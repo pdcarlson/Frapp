@@ -212,9 +212,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Conversation resolution     | Disabled        |
 | Required approving reviews  | Disabled        |
 
-No required human approval on merge is deliberate and unchanged: review is the local
-pre-push gate, and the human gate on what reaches users is the production deploy
-approval, not the merge.
+Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requirement policy](../../../CONTRIBUTING.md#pr-review-requirement-policy).
 
 ### Required Status Checks
 
@@ -243,7 +241,7 @@ approval, not the merge.
 
 **A path-gated job can still be required.** `web-tests`, `web-responsive-floor` and `landing-fold` run only when the `changes` filter matches (`apps/web/**` or `apps/landing/**`, plus `packages/**`, the lockfile, `turbo.json`), and that is compatible with being required: GitHub reports a job skipped by a **job-level** conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. The blocking case is a whole **workflow** skipped by path or branch filtering, whose checks never report at all — `ci.yml` has no workflow-level `paths:` filter, so it cannot happen here. See [Troubleshooting required status checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks).
 
-**Not required on branches (informational):** `pglite-migrations` is advisory, as is `duplicate-detection` — jscpd has no clone-level baseline, so its only lever is a repo-wide percentage, which is too coarse to block a merge on ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). Both are intentionally omitted from [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs).
+**Not required on branches (informational):** `pglite-migrations` and `duplicate-detection` are advisory. Why `duplicate-detection` is: [`QUALITY_GATES.md` § The gates, and why each has the posture it does](../ci-cd/QUALITY_GATES.md#the-gates-and-why-each-has-the-posture-it-does). No doc records the reason for `pglite-migrations` yet (#2538). Both are intentionally omitted from [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs).
 
 > **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent. **That run is a live `PUT` and a human step with an admin PAT; from an agent session run `npm run configure:branch-protection:verify` and nothing else** (see **Prerequisites**).
 

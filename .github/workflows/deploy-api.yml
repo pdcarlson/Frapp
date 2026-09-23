@@ -7,12 +7,11 @@ name: Deploy API
 # `workflow_dispatch` that names an exact commit — see that file's header for
 # why the `production` branch was retired (#1340).
 #
-# Secrets use UNIFIED names (no _STAGING / _PRODUCTION suffixes). The jobs that
-# need them (`migrate-staging`, `deploy-staging`) inject them from Infisical with
-# `env-slug: staging` (the `infisical-secrets` action), so
-# `RENDER_DEPLOY_HOOK_URL` resolves to the staging value here.
-# Production has no deploy hook: it deploys through the Render API. See
-# docs/internal/environment/ENV_REFERENCE.md.
+# Secrets use UNIFIED names (no _STAGING / _PRODUCTION suffixes).
+# `RENDER_DEPLOY_HOOK_URL` and `API_HEALTHCHECK_URL` are not GitHub secrets:
+# `.github/actions/infisical-secrets` injects them from the Infisical `staging`
+# environment at job time. See docs/internal/environment/SECRETS_MANAGEMENT.md.
+# Production has no deploy hook: it deploys a named commit through the Render API.
 on:
   workflow_run:
     workflows: ["CI"]

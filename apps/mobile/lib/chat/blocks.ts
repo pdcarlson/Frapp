@@ -9,7 +9,9 @@
  * - **Provenance** — `ChatMessage._blockEvaluated`, set by `@repo/chat-core`'s
  *   `normalizeRow` when the raw row carried `sender_blocked`, i.e. it came
  *   through a REST read the server ran the list over. The echo (INSERT and
- *   UPDATE) and the viewer's own send/edit responses are unevaluated.
+ *   UPDATE) and the viewer's own send/edit responses are unevaluated — except
+ *   that an echo overwriting a server-masked row keeps its `sender_blocked`
+ *   (`mergeServerRow`), because the server's verdict on that message stands.
  * - **The block list** — `useBlockedUserIds()`, tri-state, with every change
  *   this client confirmed applied on top. Its ids are a floor in every status:
  *   anyone on it is known-blocked.
@@ -23,9 +25,9 @@
  * silently stops masking the day it changes. `blocks.spec.ts` pins that.
  *
  * **Nothing here reads `created_at` either.** A timestamp says when a row was
- * written, not how it reached the cache, and REST and Realtime serialize
- * `timestamptz` differently — the watermark design this replaced was a no-op
- * for exactly that reason (#2315).
+ * written, not how it reached the cache — an UPDATE echo re-delivers a row
+ * under the `created_at` it was read with — so a watermark can only proxy for
+ * provenance, and the design this replaced failed on that proxy (#2315).
  */
 
 import { mergeServerRow } from "@repo/chat-core/cache";
@@ -87,6 +89,14 @@ export function isBlockableSender(senderId: string | null): senderId is string {
  * 1. The viewer's own message is always visible — you cannot block yourself.
  * 2. A row the server evaluated and masked is a tombstone whatever the list
  *    now says: its content was withheld, so there is nothing else to draw.
+ *    So is an echo that overwrote such a row — `mergeServerRow` carries the
+ *    server's `sender_blocked` onto it — because its body is exactly what the
+ *    mask withheld and a list that reads ready may predate a block made on
+ *    another device. It yields only to an unblock this client confirmed,
+ *    which applies in every list state like any confirmed change. Nothing
+ *    dates the verdict against that unblock, so a member unblocked here and
+ *    re-blocked elsewhere shows when their masked row is echoed, until a list
+ *    read succeeds — for a whole outage if the list is unavailable (#2499).
  * 3. A sender nobody can block (imported, system) cannot be hidden by a list.
  * 4. A sender on the list is a tombstone on **every** path — including a row
  *    the server cleared before the block was made, and a row cleared earlier
@@ -108,7 +118,10 @@ export function classifyMessage(
 ): MessageVisibility {
   const sender = message.sender_id;
   if (viewerId !== null && sender === viewerId) return "visible";
-  if (message._blockEvaluated && message.sender_blocked) return "tombstone";
+  if (message.sender_blocked) {
+    if (message._blockEvaluated) return "tombstone";
+    if (sender === null || !blockState.unblocked.has(sender)) return "tombstone";
+  }
   if (!isBlockableSender(sender)) return "visible";
   if (blockState.ids.has(sender)) return "tombstone";
   if (message._blockEvaluated) return "visible";
@@ -238,8 +251,8 @@ export function contradictingRows(
  * The reactions a viewer may see on any message, as a fresh `ReactionState`.
  *
  * A reaction is its author's own text (`reaction:` plus up to 41 characters),
- * and nothing masks it server-side (#2324), so the block list applies to every
- * reactor on every message — the reactions row of
+ * and nothing masks the chips server-side (#2494), so the block list applies
+ * to every reactor on every message — the reactions row of
  * `spec/behavior/chat/README.md` § What a block does and does not hide.
  *
  * - **Ready:** every reactor except the ones on the list.
@@ -291,8 +304,11 @@ export function visibleReactions(
  * row, a send or a delete that landed in between is still there afterwards.
  * And it only ever swaps a masked row for its clear twin — it never adds a row
  * the cache no longer holds (that would resurrect a deleted message) and never
- * overwrites one the echo has updated since (that row is no longer masked, so
- * it no longer matches).
+ * overwrites one the echo has updated since. That row is no longer a *masked
+ * copy*: its `sender_blocked` may still be true (a verdict `mergeServerRow`
+ * carried over), but its body is the echo's, so the guard below requires
+ * `_blockEvaluated` as well. It needs no swap — once this client has
+ * confirmed the unblock, `classifyMessage` shows it as it stands.
  */
 export function replaceMaskedCopies(
   cache: ChannelCache,
@@ -309,7 +325,11 @@ export function replaceMaskedCopies(
   return next;
 }
 
-/** Whether a channel cache holds a server-masked copy from this sender. */
+/**
+ * Whether a channel cache holds a server-masked copy from this sender — an
+ * evaluated row with its masked body, not an echo carrying the verdict (see
+ * `replaceMaskedCopies`).
+ */
 export function hasMaskedCopyFrom(
   cache: ChannelCache | undefined,
   senderId: string,

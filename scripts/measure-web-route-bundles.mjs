@@ -58,7 +58,7 @@ const NEXT_DIR = join(ROOT, "apps/web/.next");
 /**
  * Hand-rolled rather than `fs.globSync`, which is Node 22+.
  *
- * That constraint has lifted: the repo now declares `engines: { node: ">=24" }`
+ * That constraint has lifted: the repo's `engines` now requires at least Node 24
  * and every CI job pins `node-version: 24`, so `globSync` would link fine. The
  * walk stays hand-rolled anyway, because the numbers this script prints are
  * quoted in `spec/ui/resilience/performance-budgets.md` on the argument that

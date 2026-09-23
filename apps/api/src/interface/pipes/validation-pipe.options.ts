@@ -8,8 +8,8 @@ import { ValidationPipeOptions } from '@nestjs/common';
  * than silently dropped. Together they are what stops a client from posting
  * `role`, `points`, or `chapter_id` into a write it does not own (#849).
  *
- * This lives beside `main.ts` rather than inside it for the same reason
- * `buildSentryOptions` does: a test that rebuilds these flags locally is
+ * This lives in its own module rather than inline in `configureApp()`
+ * (`bootstrap.ts`) for the same reason `buildSentryOptions` does: a test that rebuilds these flags locally is
  * testing its own copy, and stays green when production's copy is loosened.
  * `test/mass-assignment.e2e-spec.ts` imports this object so that loosening a
  * flag here fails that suite.

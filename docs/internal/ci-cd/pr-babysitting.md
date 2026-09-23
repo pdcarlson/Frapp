@@ -406,8 +406,7 @@ the cheapest hardening available if that trade is ever revisited. Count the work
 `ls .github/workflows/*.yml` rather than trusting a number written here.
 
 One pre-existing property this rests on: `main` requires **zero** approving reviews — and since
-#1340 it is the only branch, so there is no branch anywhere that requires one (the PR review
-policy in [`AGENT_INFRA.md`](AGENT_INFRA.md), and `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`).
+#1340 it is the only branch, so there is no branch anywhere that requires one ([`CONTRIBUTING.md` § PR review requirement policy](../../../CONTRIBUTING.md#pr-review-requirement-policy)).
 So "only reviewed code runs with the App token" is really "only code merged by someone with
 write access" — fine for a single-maintainer repo, and the thing to revisit first if
 collaborators are ever added. Note this is about the App token, not about what ships: the

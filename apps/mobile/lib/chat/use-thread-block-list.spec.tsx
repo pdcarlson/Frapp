@@ -293,3 +293,56 @@ describe("useThreadBlockList — cross-device blocks (finding 6)", () => {
     expect(list.retry).not.toHaveBeenCalled();
   });
 });
+
+describe("useThreadBlockList — readable history is never wholesale held (#2315)", () => {
+  // Provenance lives on each cached row, not in per-mount state, so nothing
+  // resets when the member leaves a channel and comes back, and nothing has to
+  // advance when a reconnect backfill merges straight into the cache through
+  // `setQueryData`. The list here was never ready at all: the harshest case.
+
+  it("re-entering an already-loaded channel shows its history, not a wall of holds", () => {
+    setList("unavailable");
+    const channelA = messagesOf([
+      restRow("a1", FRIEND),
+      restRow("a2", OTHER),
+      restRow("a3", BLOCKED, { sender_blocked: true, content: "masked" }),
+    ]);
+    const channelB = messagesOf([restRow("b1", FRIEND)]);
+    const { result, rerender } = renderHook(
+      ({ messages }) => useThreadBlockList(messages, VIEWER),
+      { initialProps: { messages: channelA } },
+    );
+    const firstVisit = result.current.thread;
+    expect(shownIds(result)).toEqual(["a1", "a2", "a3"]);
+    expect(firstVisit.heldCount).toBe(0);
+
+    rerender({ messages: channelB });
+    expect(shownIds(result)).toEqual(["b1"]);
+
+    // Back to the warm cache: the same rows, classified the same way.
+    rerender({ messages: channelA });
+    expect(shownIds(result)).toEqual(["a1", "a2", "a3"]);
+    expect(result.current.thread.heldCount).toBe(0);
+    expect(
+      result.current.thread.rows.find((row) => row.message.id === "a3")
+        ?.visibility,
+    ).toBe("tombstone");
+  });
+
+  it("rows a reconnect backfill merged in show, while echoes that arrived in the outage stay held", () => {
+    setList("unavailable");
+    // Echoes from before the disconnect, then the backfill's REST page — the
+    // realtime manager merges it with `mergeServerRow`, never the queryFn.
+    const afterReconnect = messagesOf([
+      echoRow("e1", FRIEND),
+      restRow("r1", FRIEND),
+      restRow("r2", OTHER),
+    ]);
+    const { result } = renderHook(() =>
+      useThreadBlockList(afterReconnect, VIEWER),
+    );
+
+    expect(shownIds(result)).toEqual(["r1", "r2"]);
+    expect(result.current.thread.heldCount).toBe(1);
+  });
+});

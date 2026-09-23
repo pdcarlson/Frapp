@@ -36,12 +36,11 @@ each sync reads path `/` and pushes the **whole** source environment ([`SECRETS_
 
 ### 5.4 Health Check
 
-The API exposes `GET /health`, which answers `200` in both states — `status: ok` when the database
-round-trip succeeds, `status: degraded` when it does not
+The API exposes `GET /health`, which answers `200` whether or not its dependency probes pass
 ([`health.controller.ts`](../../../../apps/api/src/interface/controllers/health.controller.ts)). It
 never throws, so a `200` proves the process booted and Nest is serving, not that the database is
 reachable. The JSON body is the liveness payload in
-[`spec/behavior/observability.md`](../../../../spec/behavior/observability.md) § Health Check.
+[`spec/behavior/observability.md` § Health Check](../../../../spec/behavior/observability.md#health-check).
 
 > **This section previously claimed Render auto-detects the health check from the Dockerfile
 > `HEALTHCHECK` directive. That claim is unverified and the configuration contradicts it.** Render
@@ -119,11 +118,11 @@ Splitting these into a standalone Render Background Worker is not currently warr
 
 ### 5.7 Deploy Hooks (for GitHub Actions)
 
-Only **staging** uses a deploy hook. Production doesn't: `deploy-production.yml` deploys a named commit through the Render API with `RENDER_API_KEY` (where that key lives: [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets)). The header of `scripts/ci/deploy-render-production.mjs` explains why it doesn't use the hook: the hook builds whatever is at the tip of the service's branch. **Don't create or store a deploy hook for `frapp-api-prod`.** A hook URL is a bearer credential, so anyone holding one could deploy past the production gates. Earlier revisions of these docs told operators to store a production hook: this section said a GitHub `production` environment secret, and the environment docs said Infisical `prod`, which the Infisical syncs copy onward. On 2026-08-12 the name `RENDER_DEPLOY_HOOK_URL` was read in `frapp-web`'s Vercel Production scope, which only Infisical `prod` feeds ([`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md)). Only the name was read, so that row holding the production hook is an inference. The Preview-scope row is fed from Infisical `staging`, which holds the staging hook; leave it alone. Regenerating the hook in Render kills every copy at once. Then remove the copies, source first, because a sync rewrites a destination row whose source still exists: Infisical `prod`; then any leftover row in the Vercel Production scopes of `frapp-web` and `frapp-landing` and in `frapp-api-prod`'s Render environment; then any GitHub `production` environment or repository secret. This is an owner step, tracked in [#2540](https://github.com/pdcarlson/Frapp/issues/2540).
+Store these in **Infisical**, not as GitHub secrets: the deploy workflows inject them at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
 
-The two values below live in **Infisical**, and the deploy workflows inject them with the `infisical-secrets` action, not from GitHub secrets. [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) is the canonical list.
+- `RENDER_DEPLOY_HOOK_URL` → **staging only**: frapp-api-staging → Settings → Deploy Hook → copy the URL into Infisical `staging`. Production deploys by commit through the Render API (`RENDER_API_KEY`, `deploy-production.yml`), so it has no hook to store.
+- `API_HEALTHCHECK_URL` → smoke-check URL, in both `staging` and `prod` (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly; why the two differ is [`observability.md` § Health Check](../../../../spec/behavior/observability.md#health-check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
 
-- `RENDER_DEPLOY_HOOK_URL` → the `frapp-api-staging` deploy hook (Render service → Settings → Deploy Hook), in Infisical `staging` only
-- `API_HEALTHCHECK_URL` → smoke-check URL for that environment (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly — `/health` is Render's own `healthCheckPath` and always returns 2xx, while `/health/ready` 503s on a degraded dependency (see `spec/behavior/observability.md` § Health Check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
+**Don't create or store a deploy hook for `frapp-api-prod`.** The hook builds whatever is at the tip of the service's branch (the header of `scripts/ci/deploy-render-production.mjs` explains why production doesn't use one), and a hook URL is a bearer credential, so anyone holding one could deploy past the production gates. Earlier revisions of these docs told operators to store a production hook: this section said a GitHub `production` environment secret, and the environment docs said Infisical `prod`, which the Infisical syncs copy onward. On 2026-08-12 the name `RENDER_DEPLOY_HOOK_URL` was read in `frapp-web`'s Vercel Production scope, which only Infisical `prod` feeds ([`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md)). Only the name was read, so that row holding the production hook is an inference. The Preview-scope row is fed from Infisical `staging`, which holds the staging hook; leave it alone. Regenerating the hook in Render kills every copy at once. Then remove the copies, source first, because a sync rewrites a destination row whose source still exists: Infisical `prod`; then any leftover row in the Vercel Production scopes of `frapp-web` and `frapp-landing` and in `frapp-api-prod`'s Render environment; then any GitHub `production` environment or repository secret. This is an owner step, tracked in [#2540](https://github.com/pdcarlson/Frapp/issues/2540).
 
 ---

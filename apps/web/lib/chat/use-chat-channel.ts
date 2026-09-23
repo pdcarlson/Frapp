@@ -8,7 +8,14 @@
  * outbox so components stay dumb (arrays + callbacks).
  */
 
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
@@ -38,7 +45,7 @@ import {
   editMessage as editMessageAction,
   flushOutbox,
   hydrateOutboxIntoCache,
-  mergePersistedRecorded,
+  mergePersistedNotices,
   react as reactAction,
   retryOutboxRow,
   sendMessage,
@@ -146,6 +153,18 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     `principles.md` §5 is the rule that outranks everything else here.
   */
   const userId = useChatViewerId();
+  /*
+    The viewer as of *now*, for the channel query's merge of persisted
+    heavy-command rows. That query's key does not include the viewer, so a
+    first fetch that started before the viewer resolved can finish after the
+    hydrate that restored those rows; reading the viewer from its own closure
+    would overwrite them with a snapshot built for nobody (#1789). A ref read
+    at merge time sees the resolved id instead.
+  */
+  const viewerRef = useRef(userId);
+  useEffect(() => {
+    viewerRef.current = userId;
+  }, [userId]);
   const { toast: rawToast } = useToast();
   const track = useContext(AnalyticsContext);
   const supabase = useMemo(() => getRealtimeClient(), []);
@@ -218,13 +237,14 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           cache = mutated;
         }
       }
-      // Always re-merge recorded notices, even before `userId` resolves.
-      // Notices carry their own sender id; gating on the queryFn closure's
-      // `userId` let an in-flight first fetch (key does not include userId)
-      // overwrite a later hydrate with a REST-only snapshot (#1789).
-      cache = mergePersistedRecorded(cache, {
+      // Re-merge the viewer's persisted heavy-command rows: `recorded`
+      // (#1789), and `unconfirmed` with its Retry (#1909). The server never
+      // wrote either, so this rebuild would otherwise drop them, and the
+      // rebuild that matters most is `refetchOnReconnect: "always"` firing
+      // on the reconnect that follows the outage which lost the response.
+      cache = mergePersistedNotices(cache, {
         channelId,
-        userId: userId ?? undefined,
+        viewerId: viewerRef.current,
         kv: browserKeyValueStore,
       });
       return cache;

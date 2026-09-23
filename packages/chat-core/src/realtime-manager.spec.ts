@@ -13,6 +13,10 @@ import {
   type ChannelCache,
   type RawChatMessage,
 } from "./types";
+import type { KeyValueStore } from "./adapters";
+import { persistNotice, readNotices } from "./heavy-command-notices";
+import { memoryStore } from "./test/memory-store";
+import { unconfirmedNotice } from "./test/notices";
 
 type SubscribeStatus =
   | "SUBSCRIBED"
@@ -617,5 +621,203 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
       chatMessagesKey("channel-1"),
     );
     expect(cache?.order).toContain("msg-live");
+  });
+
+  test("an echo never lands server-evaluated, even carrying a sender_blocked of its own (#2315)", () => {
+    // `sender_blocked`'s presence is how a REST row says the server applied
+    // the viewer's block list. An echo has no viewer, so whatever it carries
+    // must not read that way — an evaluated row renders in the clear while the
+    // list is loading or unavailable. The timestamp is the shape local
+    // Realtime v2.113.4 actually delivered, not a `.toISOString()` stand-in.
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+
+    ch.emitPostgresChange({
+      new: {
+        id: "msg-echo",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "raw words",
+        sender_blocked: false,
+        created_at: "2026-09-23T01:49:55.661142+00:00",
+        client_message_id: "client-echo",
+      },
+    });
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("channel-1"),
+    );
+    expect(cache?.byId["msg-echo"]?.content).toBe("raw words");
+    expect(cache?.byId["msg-echo"]?._blockEvaluated).toBe(false);
+  });
+
+  test("a reconnect backfill lands server-evaluated, even over the echo of the same row (#2315)", async () => {
+    // The backfill merges through `setQueryData`, never the thread's
+    // `queryFn`, so provenance kept anywhere but on the row itself never
+    // advanced here and every row a reconnect pulled rendered as held. Here it
+    // re-reads a row an echo already delivered: the REST copy must replace the
+    // echo's provenance, not inherit it.
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalledTimes(1));
+
+    ch.emitPostgresChange({
+      new: {
+        id: "msg-both",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "raw words",
+        created_at: "2026-09-23T01:49:55.661142+00:00",
+        client_message_id: "client-both",
+      },
+    });
+    const key = chatMessagesKey("channel-1");
+    expect(
+      queryClient.getQueryData<ChannelCache>(key)?.byId["msg-both"]
+        ?._blockEvaluated,
+    ).toBe(false);
+
+    // The reconnect, simulated as the rest of this suite does it: the channel
+    // errors, then subscribes again, and the backfill returns the same row as
+    // the server serves it to this viewer — masked.
+    ch.trigger("CHANNEL_ERROR");
+    backfill.mockResolvedValueOnce([
+      {
+        id: "msg-both",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "[masked by the server]",
+        sender_blocked: true,
+        created_at: "2026-09-23T01:49:55.661142+00:00",
+        client_message_id: "client-both",
+      },
+    ]);
+    current("channel-1").trigger("SUBSCRIBED");
+
+    await vi.waitFor(() => {
+      const row = queryClient.getQueryData<ChannelCache>(key)?.byId["msg-both"];
+      expect(row?._blockEvaluated).toBe(true);
+      expect(row?.sender_blocked).toBe(true);
+      expect(row?.content).toBe("[masked by the server]");
+    });
+  });
+});
+
+/**
+ * #1909 — a persisted heavy-command notice is evicted the moment its card
+ * arrives, live or by backfill. Waiting for the next load is not enough: by
+ * then the card can be outside the loaded window, and an entry still on disk
+ * would come back as a Retry for a request that already committed.
+ */
+describe("ChatRealtimeManager — heavy-command notice eviction (#1909)", () => {
+  let backfill: ReturnType<typeof vi.fn> & BackfillFetcher;
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+  let kv: KeyValueStore;
+
+  const card: RawChatMessage = {
+    id: "server-1",
+    channel_id: "chan-1",
+    sender_id: "user-1",
+    kind: "points",
+    content: "+5 points",
+    created_at: "2026-09-09T00:00:01.000Z",
+    client_message_id: "cm-1",
+  };
+
+  beforeEach(() => {
+    backfill = vi.fn(async (): Promise<RawChatMessage[]> => []) as ReturnType<
+      typeof vi.fn
+    > &
+      BackfillFetcher;
+    queryClient = new QueryClient();
+    kv = memoryStore();
+    let supabase: SupabaseClient;
+    ({ supabase, channels } = makeFakeSupabase());
+    chatRealtime.configure({ queryClient, supabase, backfill, kv });
+    persistNotice(unconfirmedNotice(), kv);
+  });
+
+  afterEach(() => {
+    chatRealtime.destroy();
+    queryClient.clear();
+  });
+
+  function joined(): FakeChannel {
+    chatRealtime.subscribe("chan-1");
+    const ch = channels.get("chat:channel:chan-1");
+    if (!ch) throw new Error("no fake channel for chan-1");
+    ch.trigger("SUBSCRIBED");
+    return ch;
+  }
+
+  test("the card's live echo evicts the stored entry", async () => {
+    const ch = joined();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalled());
+
+    ch.emitPostgresChange({ new: card });
+
+    expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
+  });
+
+  test("a card that arrives by backfill evicts it too", async () => {
+    backfill.mockResolvedValueOnce([card]);
+    joined();
+
+    await vi.waitFor(() => expect(readNotices("chan-1", "user-1", kv)).toEqual([]));
+  });
+
+  // A notice is filed under the member who dispatched, and the server posts
+  // that command's card as them — so the card's sender addresses the entry.
+  test("an echo from another sender leaves the entry alone", async () => {
+    const ch = joined();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalled());
+
+    ch.emitPostgresChange({ new: { ...card, sender_id: "user-9" } });
+
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
+  });
+
+  // Same guard as `readLastSeen`/`writeLastSeen`: an injected store is not
+  // trusted to be no-throw, and a throw here would abort the frame after the
+  // merge and stop the cursor advancing.
+  test("a store that throws on the notice key cannot break the echo", async () => {
+    const throwing: KeyValueStore = {
+      ...kv,
+      get: (key) => {
+        if (key.startsWith("chat:heavy:")) throw new Error("storage exploded");
+        return kv.get(key);
+      },
+    };
+    chatRealtime.destroy();
+    let supabase: SupabaseClient;
+    ({ supabase, channels } = makeFakeSupabase());
+    chatRealtime.configure({ queryClient, supabase, backfill, kv: throwing });
+    const ch = joined();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalled());
+
+    expect(() => ch.emitPostgresChange({ new: card })).not.toThrow();
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    expect(cache?.order).toContain("server-1");
+    expect(kv.get("chat:lastSeen:chan-1")).toBe("server-1");
+  });
+
+  test("an unrelated message leaves the entry alone", async () => {
+    const ch = joined();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalled());
+
+    ch.emitPostgresChange({
+      new: { ...card, id: "server-2", client_message_id: "cm-other" },
+    });
+
+    expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
   });
 });

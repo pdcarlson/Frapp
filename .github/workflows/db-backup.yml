@@ -23,11 +23,11 @@ name: Nightly Backup
 # gate is not deploy-only: every job naming the environment pauses on it, and an
 # unapproved scheduled run just expires — a workflow that LOOKS like coverage and
 # writes nothing. #1435 records the trap. The production jobs run under a separate
-# `production-backup` environment instead, which GitHub creates on the first run
-# that references it, with no protection rules. It must never gain REQUIRED
+# `production-backup` environment instead, which GitHub created on the first run
+# that referenced it, with no protection rules. It must never gain REQUIRED
 # REVIEWERS — that would reintroduce the trap — but it SHOULD get a deployment
 # branch policy of `main` only (Settings → Environments → production-backup →
-# Deployment branches → Selected → main) once it exists: without one, anyone with
+# Deployment branches → Selected → main; still unset, tracked on #1827): without one, anyone with
 # write access can dispatch a modified copy of this workflow from a branch and
 # run it under this environment. (The Infisical machine identity is a repo-level
 # secret, so the policy narrows the environment rather than the secret; the same
