@@ -51,12 +51,15 @@
  * here: the join screen and the create-chapter wizard carry the checkbox
  * themselves.
  *
- * How each read fails (`toAuthGateInput`):
+ * How each read fails (`toAuthGateInput`, `gateReadStatus`). This is the
+ * status each read reports; which destination that gives is
+ * `resolveAuthGate`'s, and `spec/ui/mobile/navigation.md` tabulates it.
  *
- * - A read that has failed, retries spent, with no answer, fails open to tabs,
- *   and keeps reading as failed while it refetches, so an outage can't trap
- *   every member and a later refetch can't blank the screen again. A first
- *   read still holds through its own retry, even one paused offline.
+ * - A first read is `pending` through its own retry, even one paused offline,
+ *   and `pending` is the only status that can hold.
+ * - A read that failed, retries spent, with no answer, is `error`, which
+ *   fails open, and it stays `error` while it refetches, so an outage can't
+ *   trap every member and a later refetch can't blank the screen again.
  * - A Terms refetch that fails keeps its last answer (`gateReadStatus`).
  * - A chapters refetch that fails sends no one to join or welcome from its
  *   cached list, so a member whose refetch after a join or a finished
@@ -88,10 +91,11 @@ export type AuthGateInput = {
    * tabs — so that layout never blanks. `AppRuntime` is what walks a member
    * *out* of the tabs onto join/welcome once `GET /v1/chapters` is in.
    *
-   * `pending` is only for the first authenticated chapters read, before it
-   * has either answered or failed. A failed read fails open to tabs so an
-   * outage of `/v1/chapters` cannot trap every member on join, except that a
-   * member the cached list shows still gets the Terms rules (`resolveAuthGate`).
+   * `pending` is only for the first authenticated chapters read, until it
+   * answers or spends its retries (`gateReadStatus`). A failed read fails open
+   * to tabs so an outage of `/v1/chapters` cannot trap every member on join,
+   * except that a member the cached list shows still gets the Terms rules
+   * (`resolveAuthGate`).
    */
   membershipsStatus?: "idle" | "pending" | "success" | "error";
   memberships?: AuthGateMembership[];
@@ -166,10 +170,10 @@ export function toAuthGateInput({
   const authenticated = session.status === "authenticated";
   return {
     ...session,
-    // Authenticated + not yet answered or failed is pending, not idle. Idle is
-    // the frozen tabs layout's "I cannot see memberships" fail-open; here we
-    // *can* see the query, and treating a not-yet-started fetch as idle would
-    // paint tabs for a frame and skip s02/s03.
+    // Authenticated + not yet answered, retries not yet spent, is pending, not
+    // idle. Idle is the frozen tabs layout's "I cannot see memberships"
+    // fail-open; here we *can* see the query, and treating a not-yet-started
+    // fetch as idle would paint tabs for a frame and skip s02/s03.
     membershipsStatus: gateReadStatus({
       authenticated,
       hasAnswer: chapters.isSuccess,

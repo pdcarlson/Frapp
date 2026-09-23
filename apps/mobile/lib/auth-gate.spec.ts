@@ -311,7 +311,7 @@ describe("the gate's reads, from query state (#2302)", () => {
     isSuccess: false,
     errorUpdateCount: 1,
   });
-  const chaptersRetrying: Chapters = {
+  const chaptersRefetchingAfterFailure: Chapters = {
     data: undefined,
     isError: false,
     isSuccess: false,
@@ -332,7 +332,7 @@ describe("the gate's reads, from query state (#2302)", () => {
     isError: true,
     errorUpdateCount: 1,
   };
-  const termsRetrying: Legal = {
+  const termsRefetchingAfterFailure: Legal = {
     data: undefined,
     isError: false,
     errorUpdateCount: 1,
@@ -363,7 +363,9 @@ describe("the gate's reads, from query state (#2302)", () => {
   it("holds a member until the first Terms answer, whatever the chapters refetch did", () => {
     // An (auth) route holds rather than opening the tabs to a member who may
     // owe the Terms. One already in the tabs is walked to the prompt by
-    // AppRuntime once the answer lands; `hold` doesn't move them.
+    // AppRuntime once the answer lands; `hold` doesn't move them. A first
+    // read's retry, paused offline or not, looks exactly like termsFirstRead
+    // to the gate (errorUpdateCount stays 0 until retries are spent).
     expect(gate(answered([member]), termsFirstRead)).toBe("hold");
     expect(gate(failedRefetch([member]), termsFirstRead)).toBe("hold");
   });
@@ -373,15 +375,15 @@ describe("the gate's reads, from query state (#2302)", () => {
     expect(gate(failedRefetch([member]), termsFirstReadFailed)).toBe("tabs");
   });
 
-  it("keeps failing open while a failed first Terms read retries", () => {
+  it("keeps failing open while a Terms read that failed (retries spent) refetches", () => {
     // Without errorUpdateCount this reads as a first read and holds, blanking
     // the (auth) screens on every foreground after an outage.
-    expect(gate(answered([member]), termsRetrying)).toBe("tabs");
-    expect(gate(failedRefetch([member]), termsRetrying)).toBe("tabs");
+    expect(gate(answered([member]), termsRefetchingAfterFailure)).toBe("tabs");
+    expect(gate(failedRefetch([member]), termsRefetchingAfterFailure)).toBe("tabs");
   });
 
-  it("keeps failing open while a failed first chapters read retries", () => {
-    expect(gate(chaptersRetrying, terms(false))).toBe("tabs");
+  it("keeps failing open while a chapters read that failed (retries spent) refetches", () => {
+    expect(gate(chaptersRefetchingAfterFailure, terms(false))).toBe("tabs");
   });
 
   it("holds for the first chapters read", () => {
@@ -409,7 +411,7 @@ describe("gateReadStatus", () => {
     expect(read({ authenticated: false, hasAnswer: true })).toBe("idle");
   });
 
-  it("pends only before the first answer or failure", () => {
+  it("pends only until the first answer, or until a read spends its retries", () => {
     expect(read({})).toBe("pending");
     expect(read({ hasFailed: true })).toBe("error");
     expect(read({ isError: true, hasFailed: true })).toBe("error");
