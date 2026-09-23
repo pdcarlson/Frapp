@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  legalReadStatus,
+  gateReadStatus,
   resolveAuthGate,
   type AuthGateDestination,
   type AuthGateInput,
@@ -285,27 +285,47 @@ describe("resolveAuthGate — the Terms prompt (#2302)", () => {
   });
 });
 
-describe("legalReadStatus (#2302)", () => {
+describe("gateReadStatus (#2302)", () => {
+  it("keeps a member held on the prompt when a chapters refetch fails", () => {
+    // Both reads cached, then the chapters refetch fails: the membership and
+    // the `required: true` both still stand, so the gate still says terms.
+    expect(
+      resolveAuthGate({
+        status: "authenticated",
+        chapterId: "chapter-a",
+        ...RESOLVED,
+        membershipsStatus: gateReadStatus({
+          authenticated: true,
+          hasAnswer: true,
+          isError: true,
+        }),
+        memberships: complete.memberships,
+        legalAcceptanceStatus: "success",
+        legalAcceptanceRequired: true,
+      }),
+    ).toBe("terms");
+  });
+
   it("keeps a cached answer when a background refetch fails", () => {
     // TanStack: status 'error', data kept. Reading the error first would
     // discard `required: true` and walk the member past the prompt.
     expect(
-      legalReadStatus({ authenticated: true, hasAnswer: true, isError: true }),
+      gateReadStatus({ authenticated: true, hasAnswer: true, isError: true }),
     ).toBe("success");
   });
 
   it("fails open only when a first read failed", () => {
     expect(
-      legalReadStatus({ authenticated: true, hasAnswer: false, isError: true }),
+      gateReadStatus({ authenticated: true, hasAnswer: false, isError: true }),
     ).toBe("error");
   });
 
   it("is pending until the first answer, and idle when signed out", () => {
     expect(
-      legalReadStatus({ authenticated: true, hasAnswer: false, isError: false }),
+      gateReadStatus({ authenticated: true, hasAnswer: false, isError: false }),
     ).toBe("pending");
     expect(
-      legalReadStatus({ authenticated: false, hasAnswer: true, isError: false }),
+      gateReadStatus({ authenticated: false, hasAnswer: true, isError: false }),
     ).toBe("idle");
   });
 });

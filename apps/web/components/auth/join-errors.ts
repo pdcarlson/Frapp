@@ -19,12 +19,14 @@ import { JOIN_TERMS_REQUIRED_COPY } from "@repo/validation";
  * directly — no new error-code framework, and no client-side re-derivation of
  * a rule the server already owns.
  *
- * **The strings are shared with `apps/mobile/lib/onboarding/join-errors.ts`
- * verbatim**, and `spec/ui/design-system/writing.md` §7's "Join chapter" table
- * is the single place they are written down. Two surfaces redeeming the same
- * token must not explain the same 410 differently; that table is what stops
- * them forking, since neither app can import the other's module and
- * `packages/` is not the home for four strings.
+ * **The 410, 409 and fallback strings are shared with
+ * `apps/mobile/lib/onboarding/join-errors.ts` verbatim**, and
+ * `spec/ui/design-system/writing.md` §7's "Join chapter" table is where they
+ * are specified. Two surfaces redeeming the same token must not explain the
+ * same 410 differently; that table is what stops them forking. The Terms
+ * refusal's copy and its detection are different: they carry the #2302 rule
+ * for when to show the checkbox, so they live once, in `@repo/validation`
+ * (`JOIN_TERMS_REQUIRED_COPY`) and `@repo/hooks` (`isTermsRequiredError`).
  *
  * **This is error copy, not a status vocabulary.** It deliberately exports no
  * `*Kind` mapper and does not join `components/shared/status-kind.spec.ts`'s

@@ -87,7 +87,7 @@ The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter
 | A member, the Terms read still loading | `hold` |
 | A member who hasn't accepted the current Terms (#2302) | `terms` (`(auth)/terms.tsx`) |
 | Active membership has `has_completed_onboarding === false` | `welcome` (s03) |
-| Otherwise (or the chapters read failed, or the first Terms read failed; a failed Terms refetch keeps its cached answer) | `tabs` |
+| Otherwise (or the first chapters or Terms read failed; a failed refetch of either keeps its cached answer) | `tabs` |
 
 `terms` comes before `welcome` so a new member agrees before they can post. The server decides it (`GET /v1/users/me/legal-acceptance`), never a version compiled into the binary ([`../../behavior/legal.md`](../../behavior/legal.md#acceptance-record) § Acceptance record). While the gate reads `terms`, `/create-chapter` is also permitted, since the wizard carries the same checkbox.
 

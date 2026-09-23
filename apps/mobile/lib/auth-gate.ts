@@ -77,9 +77,9 @@ export type AuthGateInput = {
    * tabs — so that layout never blanks. `AppRuntime` is what walks a member
    * *out* of the tabs onto join/welcome once `GET /v1/chapters` is in.
    *
-   * `pending` is only for the first authenticated chapters read. A failed read
-   * fails open to tabs so an outage of `/v1/chapters` cannot trap every member
-   * on join.
+   * `pending` is only for the first authenticated chapters read. A failed first
+   * read fails open to tabs so an outage of `/v1/chapters` cannot trap every
+   * member on join; a failed refetch keeps its cached list (`gateReadStatus`).
    */
   membershipsStatus?: "idle" | "pending" | "success" | "error";
   memberships?: AuthGateMembership[];
@@ -93,19 +93,21 @@ export type AuthGateInput = {
 };
 
 /**
- * The legal-acceptance read as the gate sees it (#2302).
+ * A gate read (the memberships list or the Terms status) as the gate sees it.
  *
  * An answer, once in, stands until a newer one replaces it. TanStack keeps a
- * query's `data` when a background refetch fails but flips it to `isError`,
- * so reading `isError` first would throw away a known `required: true` and
- * walk the member past the prompt. Only a first read that failed has nothing
- * to go on, and that one fails open like the memberships read.
+ * query's `data` when a background refetch fails but flips it to `isError`.
+ * Reading `isError` first would throw away a known answer: for the Terms read,
+ * a `required: true`, and for memberships, the membership that makes the
+ * Terms check run at all. Either way the member would be walked past the
+ * prompt (#2302). Only a first read that failed has nothing to go on, and that
+ * one fails open, so an outage can't trap every member.
  */
-export function legalReadStatus(read: {
+export function gateReadStatus(read: {
   authenticated: boolean;
   hasAnswer: boolean;
   isError: boolean;
-}): NonNullable<AuthGateInput["legalAcceptanceStatus"]> {
+}): "idle" | "pending" | "success" | "error" {
   if (!read.authenticated) return "idle";
   if (read.hasAnswer) return "success";
   return read.isError ? "error" : "pending";
@@ -149,7 +151,7 @@ export function resolveAuthGate({
     }
     // Only a member is held for the Terms read, and only for its first
     // answer. Join and the wizard don't need it, and a later refetch keeps
-    // its last answer, failed or not (`legalReadStatus`), so the hourly token
+    // its last answer, failed or not (`gateReadStatus`), so the hourly token
     // refresh can't blank the app and a failed refetch can't skip the prompt.
     if (legalAcceptanceStatus === "pending") {
       return "hold";

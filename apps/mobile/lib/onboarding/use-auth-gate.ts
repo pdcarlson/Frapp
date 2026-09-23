@@ -1,6 +1,6 @@
 import { useLegalAcceptance, useListChapters } from "@repo/hooks";
 import {
-  legalReadStatus,
+  gateReadStatus,
   resolveAuthGate,
   type AuthGateDestination,
 } from "@/lib/auth-gate";
@@ -21,18 +21,16 @@ export function useAuthGateDestination(): AuthGateDestination {
     enabled: status === "authenticated",
   });
 
-  // Authenticated + not yet success/error is pending, not idle. Idle is the
+  // Authenticated + not yet answered is pending, not idle. Idle is the
   // frozen tabs layout's "I cannot see memberships" fail-open; here we *can*
   // see the query, and treating a not-yet-started fetch as idle would paint
-  // tabs for a frame and skip s02/s03.
-  const membershipsStatus =
-    status !== "authenticated"
-      ? "idle"
-      : chapters.isError
-        ? "error"
-        : chapters.isSuccess
-          ? "success"
-          : "pending";
+  // tabs for a frame and skip s02/s03. Answer before error: a failed refetch
+  // keeps the cached list, or it would skip the Terms prompt (#2302).
+  const membershipsStatus = gateReadStatus({
+    authenticated: status === "authenticated",
+    hasAnswer: Array.isArray(chapters.data),
+    isError: chapters.isError,
+  });
 
   const memberships = Array.isArray(chapters.data)
     ? chapters.data.map((row) => ({
@@ -43,7 +41,7 @@ export function useAuthGateDestination(): AuthGateDestination {
 
   // Answer first, error second: a failed refetch keeps its cached answer, so
   // it can neither blank the app nor let a member skip the prompt.
-  const legalAcceptanceStatus = legalReadStatus({
+  const legalAcceptanceStatus = gateReadStatus({
     authenticated: status === "authenticated",
     hasAnswer: legalAcceptance.data !== undefined,
     isError: legalAcceptance.isError,

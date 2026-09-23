@@ -4,9 +4,10 @@ import { JOIN_TERMS_REQUIRED_COPY } from "@repo/validation";
 
 /**
  * Copy for a failed invite redemption. Status is the reliable split: 410 is
- * expired/used/missing, 409 is already a member, a 403 carrying
- * `legal.acceptance_required` wants the Terms checkbox, and everything else is
- * retryable.
+ * expired/used/missing, 409 is already a member, and everything else is
+ * retryable. The one exception is the Terms refusal, a 403 that
+ * `isTermsRequiredError` recognises by its shared message, because no error
+ * `code` reaches a client (#1020); it wants the Terms checkbox.
  */
 export function joinErrorCopy(error: unknown): string {
   if (isTermsRequiredError(error)) return JOIN_TERMS_REQUIRED_COPY;
