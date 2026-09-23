@@ -173,7 +173,8 @@ function norm(file) {
 // rides along as `alsoFlaggedBy`; a duplicate of a pending one waits in its `dups`. When a candidate
 // is refuted or unverified, its next duplicate may be a different defect at the same line, so that
 // one takes over the line and is verified, carrying the rest: duplicates are verified one at a time,
-// and only while each one before them fails.
+// and only while each one before them fails. Once one is kept, the rest ride along unverified, and
+// the skill's Phase 3 has the orchestrator read each note and split out a different defect.
 function admit(candidates, source) {
   const fresh = []
   for (const c of candidates) {

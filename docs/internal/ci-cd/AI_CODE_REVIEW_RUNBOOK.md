@@ -159,7 +159,8 @@ the agent agreeing with its own work — do not weaken it.
 - **An explicit ref or tag is denied although HEAD was reviewed:** the hook checks the commit
   actually named by each ref update, and a HEAD marker can't authorize a different object. Check out
   that commit and run `/diff-review` there; it marks the commit it reviewed. A commit already on
-  `origin/main` (a tag on main, say) was covered by its own PR's review: check it out and run
+  `origin/main` (a tag on main, say) is already public, so the gate has nothing left to protect:
+  run `git fetch origin main`, check the commit out, and run
   `node scripts/diff-review-scope.mjs --mark merged`, which refuses any commit not on `origin/main`.
 - **`/diff-review` is unavailable:** its frontmatter must not contain `disable-model-invocation`.
   Skills load at session start, so start a fresh session after fixing it.

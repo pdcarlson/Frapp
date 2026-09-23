@@ -50,7 +50,8 @@ It prints one JSON line: `mode`, `base`, `head`, `branchBase`, `root`, `files`, 
   can hide a change (a conflict resolved by taking one side whole appears in no diff of the merge).
 - **`none`**: HEAD already has a marker. **`empty`**: the branch has no commits of its own.
   Say so and stop. To push a commit that is already on `origin/main` anyway (a tag, say), mark it
-  `merged` in Phase 4: its own PR's review covered it, and the script refuses any other commit.
+  `merged` in Phase 4. It is already public on main, so the gate has nothing left to protect; the
+  script refuses any commit that isn't there.
 
 "Passed a review" means a marker this skill wrote as `full` or `delta` (Phase 4) on a commit
 between `branchBase` and HEAD. Nothing else counts: not the upstream tip (a push can skip the
@@ -234,8 +235,10 @@ before you report.
 
 Rank correctness and security above cleanups, and `CONFIRMED` above `PLAUSIBLE`. A docs finding that
 names a concrete broken pointer, an orphaned section reference, or a dropped dated stamp is a
-correctness finding and is not cut to fit the cap. Merge findings that share a root cause, including
-the `alsoFlaggedBy` notes the dedup attached. Cap at the level's limit.
+correctness finding and is not cut to fit the cap. Each `alsoFlaggedBy` note is an unverified
+candidate at a kept finding's line: read it, merge it when it shares the root cause, and treat it as
+its own finding when it names a different defect (check it yourself if you're unsure). Merge other
+findings that share a root cause. Cap at the level's limit.
 
 Report with one `ReportFindings` call, most severe first, with `level` set to the effort used and
 `verdict` on each finding. Pass an empty array when nothing survived. Don't also restate the findings

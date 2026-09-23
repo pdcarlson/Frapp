@@ -31,8 +31,8 @@ and how hard each one thinks. Decision and evidence: [ADR-23](../../../spec/arch
 - **Verification outside the gate is one opinion.** Where a procedure calls for an independent
   verdict, batch up to 5 claims into one `claim-verifier` and don't add a second verifier. Don't
   spawn subagents to re-check your own work.
-- **A fix round is a fix plus the gate.** Fix inline, or with one agent. `/diff-review` then
-  re-reviews only the commits since the last reviewed one, with two finders.
+- **A fix round is a fix plus the gate.** Fix inline, or with one agent, then run `/diff-review`,
+  which decides how much to review again (Phase 0 of its skill). Don't add a review of your own.
 
 ## Effort
 

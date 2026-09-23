@@ -10,8 +10,8 @@
 // hook), and not an empty marker from an older review. A delta covers the commits since then; if
 // one of them is a merge, the whole branch is reviewed again, because a merge can hide a change
 // (a conflict resolved by taking one side whole shows up in no diff of the merge). `merged` marks a
-// commit already on origin/main, which its own PR's review covered; it never counts as a review of
-// branch commits.
+// commit already on origin/main: it is public already, so the gate has nothing left to protect. It
+// is not evidence of a review, and never counts as one for branch commits.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -95,7 +95,7 @@ export function writeMarker({ cwd = process.cwd(), kind, baseRef = "origin/main"
   const root = git(cwd, "rev-parse", "--show-toplevel");
   const head = git(root, "rev-parse", "HEAD");
   if (kind === "merged" && git(root, "merge-base", baseRef, "HEAD") !== head) {
-    throw new Error(`\`merged\` is only for a commit already on ${baseRef}; ${head} is not`);
+    throw new Error(`\`merged\` is only for a commit already on ${baseRef}; ${head} is not (if it merged recently, run \`git fetch origin main\` first)`);
   }
   mkdirSync(markerDir(root), { recursive: true });
   const file = path.join(markerDir(root), head);

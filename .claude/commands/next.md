@@ -364,15 +364,16 @@ until `.cache/diff-review/<PUSHED_COMMIT_SHA>` exists, and `/diff-review` writes
 is always refused here.
 
 Address every finding: fix it, or file a self-contained `triage` follow-up with a reason. A
-post-review commit changes HEAD and invalidates the marker, so re-run `/diff-review` after it. That
-re-review covers only the commits since the last reviewed one, and the earlier marker vouches for
-the rest, so every commit you push has been reviewed. Never push around the gate (`--no-verify`), and never
+post-review commit changes HEAD and invalidates the marker, so re-run `/diff-review` after it. The
+skill decides how much to review again: usually just the commits since the last reviewed one, but
+the whole branch after a merge from `main`. Either way every commit you push has been reviewed. Never push around the gate (`--no-verify`), and never
 delete, revert, stash, or gitignore a file to make it pass. If the gate objects to a file, review the
 file.
 
-A batch of 2 or more gets its full review at `xhigh` (a fix round after it is a re-review either
-way): it concentrates several issues' surface under
-one fixed findings cap, and batching must not dilute per-issue depth.
+A batch of 2 or more runs every full review at `xhigh`, so pass `xhigh` whenever the skill's scope
+says `full` (a fix round is usually a re-review, which ignores the level): a full review
+concentrates several issues' surface under one fixed findings cap, and batching must not dilute
+per-issue depth.
 
 Under ultracode, run `/diff-review ultracode` and pass the unit's acceptance criteria as
 `acceptance`: its full review runs at `xhigh`, plus a finder that checks those criteria and test
@@ -439,8 +440,8 @@ for the suffixed branch. Never branch B from A.
   into a dirty-tree review or lands on the wrong branch.
 - Migrations in both PRs: pick non-colliding version prefixes up front. Branch protection's
   `strict: true` re-runs the checks after the first merge, so expect an
-  `update_pull_request_branch` and fresh CI on the surviving PR; the gate doesn't ask you to
-  re-review `main`'s merge delta.
+  `update_pull_request_branch` and fresh CI on the surviving PR. Once you pull that merge, your next
+  `/diff-review` is a full review of the branch, not a re-review.
 - The [`AGENTS.md`](../../AGENTS.md) babysit obligations read plural: subscribe per PR, read wake
   comments per PR, and evaluate stop conditions over the set.
 
