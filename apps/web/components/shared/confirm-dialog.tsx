@@ -44,15 +44,15 @@ import { Textarea } from "@/components/ui/textarea";
  * `confirm-dialog.spec.tsx` pins that distinction.
  *
  * **Focus return is not Radix's default here.** These dialogs open from a plain
- * `onClick`, not a `DialogTrigger`, and Radix's modal content returns focus to
- * its trigger on close, so with none it drops focus to `<body>`, even on a
- * plain cancel (#2302). The opener this hook records instead is the right
- * target only while it survives the confirmation, and it often does not: a
- * delete removes the row its own button lives in, and every one of these
- * buttons carries `gate.controlProps()` and can go `disabled` mid-flight. So it
- * preempts `onCloseAutoFocus`, as `useGatedDialog` does on its revoke path,
- * rather than chase it with a `requestAnimationFrame`, which Radix overwrites,
- * and always places focus itself: on the opener while it is still usable;
+ * `onClick`, not a `DialogTrigger`. Once the content unmounts, after its exit
+ * animation, Radix's modal handler cancels FocusScope's own return and focuses
+ * the trigger instead, so with none focus drops to `<body>`, even on a plain
+ * cancel (#2302). This hook handles `onCloseAutoFocus` itself and always
+ * places focus. The opener it recorded on open is the right target only while
+ * it survives the confirmation, and often it does not: a delete can remove the
+ * row its own button lives in, or the button can go `disabled` while the
+ * request runs (a gate's `controlProps()`, or a caller's own busy state). So:
+ * on the opener while it is still usable;
  * otherwise inside a dialog still open under this one (the Terms prompt, a
  * detail sheet), since the page behind a modal is hidden; otherwise on the
  * shell's `#main-content` landmark, the target the "Skip to main content" link
