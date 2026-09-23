@@ -238,9 +238,11 @@ names a concrete broken pointer, an orphaned section reference, or a dropped dat
 correctness finding and is not cut to fit the cap. Each `alsoFlaggedBy` entry is an unverified
 candidate at a kept finding's line, with its own summary and failure scenario. Merge it when it
 shares the root cause. When it names a different defect, send it back through the workflow, which
-verifies it exactly as Phase 2 does: `Workflow({ name: 'frapp-review', args: { ...scope, verify:
-[entry] } })` (on the Agent-tool path, verify it as Phase 2 does). Report it as its own finding if
-it's kept. Merge other findings
+verifies it exactly as Phase 2 does and tells both lenses to ignore the finding already kept there:
+`Workflow({ name: 'frapp-review', args: { ...scope, verify: [{ ...entry, distinctFrom: '<the kept
+finding's summary>' }] } })`, one array entry per such defect. On the Agent-tool path, verify it as
+Phase 2 does with the same instruction. Report it as its own finding if it's kept; one that comes
+back `unverified` is a check not run. Merge other findings
 that share a root cause. Cap at the level's limit.
 
 Report with one `ReportFindings` call, most severe first, with `level` set to the effort used and

@@ -3,7 +3,7 @@ export const meta = {
   description:
     "/diff-review's find and verify phases: bundled diff-finders, dedup, one claim-verifier per candidate and a second only on REFUTED",
   whenToUse:
-    'Only from the diff-review skill (Phases 1-2), which passes the output of scripts/diff-review-scope.mjs as args. Not a standalone review.',
+    "Only from the diff-review skill: Phases 1-2 with scripts/diff-review-scope.mjs's output as args, and Phase 3's `verify` for a split-out duplicate. Not a standalone review.",
   phases: [
     { title: 'Find', detail: 'bundled diff-finders; each candidate is deduped and verified as it arrives' },
     { title: 'Verify', detail: 'one claim-verifier per new candidate; a second lens only on REFUTED' },
@@ -21,10 +21,12 @@ export const meta = {
 //       plus level: 'medium' | 'high' | 'xhigh'   full only, default 'high'
 //            ultracode: true                      full only: forces xhigh, adds the acceptance-and-tests finder
 //            acceptance                           optional acceptance criteria for that finder
-//            verify: [candidate]                  verify only: skip the finders and run these candidates
-//                                                 ({ file, line, angle, summary, failure_scenario })
-//                                                 through the same verify rule, e.g. an alsoFlaggedBy
-//                                                 entry Phase 3 splits out as a different defect
+//            verify: [candidate]                  verify only: skip the finders and run each candidate
+//                                                 ({ file, line, angle, summary, failure_scenario,
+//                                                 distinctFrom }) through the same verify rule, with no
+//                                                 line dedup: Phase 3 sends alsoFlaggedBy entries it
+//                                                 judged different defects, and distinctFrom names the
+//                                                 kept finding at that line so no lens counts it
 
 const A = args || {}
 const SHA = /^[0-9a-f]{7,40}$/
@@ -219,9 +221,12 @@ async function settle(rec, status, extra) {
 }
 
 async function verify(rec) {
+  const other = rec.distinctFrom
+    ? `\nA different defect at this same line is already confirmed: "${rec.distinctFrom}". Judge only the defect stated above; that one doesn't count for or against it.`
+    : ''
   const claim =
     `Finding: ${rec.file}:${rec.line}: ${rec.summary}\nFailure scenario: ${rec.failure_scenario}\n` +
-    `Found by the "${rec.angle}" angle while reviewing ${SCOPE}. ${PINNED}`
+    `Found by the "${rec.angle}" angle while reviewing ${SCOPE}. ${PINNED}${other}`
   const label = `${rec.file.split('/').pop()}:${rec.line}`
   verifiers++
   const first = await safeAgent(
@@ -262,7 +267,16 @@ if (VERIFY_ONLY) {
   log(`verify only: ${VERIFY_ONLY.length} candidate(s)`)
   phase('Verify')
   received += VERIFY_ONLY.length
-  await parallel(admit(VERIFY_ONLY, 'phase-3').map((rec) => () => verify(rec)))
+  const recs = VERIFY_ONLY.map((c, i) => ({
+    ...c,
+    file: norm(c.file),
+    key: `${norm(c.file)}:${c.line}#verify-${i}`,
+    source: c.source || 'phase-3',
+    status: 'pending',
+    alsoFlaggedBy: [],
+    dups: [],
+  }))
+  await parallel(recs.map((rec) => () => verify(rec)))
 } else {
 log(`${MODE} review at ${LEVEL}: ${BUNDLES.length} finders${SWEEP_CAP ? ' + gap sweep' : ''}${SMALL ? ' (small diff)' : ''}`)
 
