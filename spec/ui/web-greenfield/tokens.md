@@ -392,9 +392,11 @@ supposed to carry the indicator ranges 1.50–18.71:1, failing 3:1 on 7 of 19 se
 *Corrected 2026-09-23:* the border half no longer fails for a palette the engine derives. Since
 [#2541](https://github.com/pdcarlson/Frapp/issues/2541) the accent engine holds `accent-9` to 3:1 on
 every ladder step by construction ([`accent-engine.md`](../design-system/accent-engine.md) §8), so
-the border measures 3.01–18.71:1 and clears on all 19 seeds, pinned in
-`packages/chapter-theme/src/signet.spec.ts`, for a palette written since ([`accent-engine.md`](../design-system/accent-engine.md) §4
-covers stored ones). The rest of this entry stands and stays with #2398:
+the border measures 3.78–18.71:1 and clears on all 19 seeds (3.01–18.71:1 until
+[#2586](https://github.com/pdcarlson/Frapp/issues/2586) held the hover shade to the same floor, which
+lifts a dark fill further), pinned in `packages/chapter-theme/src/signet.spec.ts`, for a palette
+written since ([`accent-engine.md`](../design-system/accent-engine.md) §4 covers stored ones). The
+rest of this entry stands and stays with #2398:
 the diluted ring (now 1.18–1.31:1) and the absence of any contrast assertion on the recipes
 themselves.
 

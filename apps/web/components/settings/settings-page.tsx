@@ -154,7 +154,7 @@ const DEFAULT_DUES: OrgDues = {
 
 /**
  * Names the surface a server-reported §8 contrast failure was measured
- * against, for the fixed three checks `deriveSignetPalette` can return
+ * against, for the fixed four checks `deriveSignetPalette` can return
  * (`packages/chapter-theme/src/signet.ts`). Falls back to the raw values for
  * a shape a future engine change adds — never hides a real failure behind an
  * unrecognized pair.
@@ -186,6 +186,12 @@ function describeFailedContrastCheck(check: {
     check.against === "--signet-accent-primary"
   ) {
     return `Text on the accent's solid fill reads at ${ratio}:1, under the 4.5:1 minimum.`;
+  }
+  if (
+    check.role === "--signet-accent-on-primary" &&
+    check.against === "--signet-accent-hover"
+  ) {
+    return `Text on the accent's hover shade reads at ${ratio}:1, under the 4.5:1 minimum.`;
   }
   return `${check.role} against ${check.against} reads at ${ratio}:1, under the 4.5:1 minimum.`;
 }
@@ -1077,7 +1083,7 @@ function SettingsPageContent() {
 
                   "Lightened if it is too dark to stand out" is the engine's
                   fill floor (accent-engine.md §8, #2541): a dark accent paints
-                  a lighter fill (`#8B0000` paints `#C34437`), so without the
+                  a lighter fill (`#8B0000` paints `#D75748`), so without the
                   clause this card would promise a colour the save does not
                   paint. Mobile's Preferences row says the same.
 

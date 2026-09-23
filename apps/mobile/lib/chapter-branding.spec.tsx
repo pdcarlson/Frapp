@@ -250,7 +250,8 @@ describe("useChapterBranding accent source", () => {
  * An earlier draft of this hook read `--signet-accent-primary` (step 9) and
  * justified it with §8's "contrast-correct by construction". §8 holds step 9
  * only to the 3:1 fill floor, not to 4.5:1 as text: on `--card` a crimson
- * chapter's step 9 measures 3.32:1 (1.66:1 before #2541 lightened it).
+ * chapter's step 9 measures 4.23:1 (1.66:1 before #2541 lightened it, and
+ * 3.32:1 before #2586 lightened it further).
  */
 describe("the accent role this hook reads", () => {
   it("reads accent-text (step 11), never accent-primary (step 9)", async () => {

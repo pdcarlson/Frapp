@@ -443,6 +443,31 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     ).toBeInTheDocument();
   });
 
+  it("names the label-on-hover check by the surface it measured", async () => {
+    // The engine's fourth text check (#2586): the fill's label on the hover
+    // shade it sits on under a pointer. Falling to the raw fallback would print
+    // two token names at an officer.
+    mockUpdateChapter.mockResolvedValue({
+      id: "chap-1",
+      failedContrastChecks: [
+        {
+          role: "--signet-accent-on-primary",
+          against: "--signet-accent-hover",
+          ratio: 4.21,
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await saveAccent(user);
+
+    expect(
+      screen.getByText(/text on the accent's hover shade reads at 4\.2:1/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/--signet-accent-hover/)).toBeNull();
+  });
+
   it("stays quiet when the save reports no failing checks", async () => {
     mockUpdateChapter.mockResolvedValue({
       id: "chap-1",

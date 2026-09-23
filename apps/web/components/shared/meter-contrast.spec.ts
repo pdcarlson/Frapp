@@ -96,15 +96,16 @@ describe("the fix that would itself have been a defect", () => {
     // maroon `accent-9` landed almost exactly on that wash (under 1.1:1).
     //
     // Since #2541 the engine lifts a dark fill until it clears 3:1 on every
-    // ladder surface, so no seed's fill sits at the wash's luminance any more:
-    // the worst case is `#CC0000`'s lifted `#DA2017` at 2.13:1. The collision
-    // is gone, but `bg-input` is still a worse track than the chosen one, and
-    // that ordering, not the collision, is what kept it out.
+    // ladder surface (and since #2586 until its hover does too), so no seed's
+    // fill sits at the wash's luminance any more: the worst case is
+    // `#800000`'s `#F42F22` at 2.68:1. The collision is gone, but `bg-input` is
+    // still a worse track than the chosen one, and that ordering, not the
+    // collision, is what kept it out.
     const inputTrack = applyAlpha(WHITE, INPUT_ALPHA, SURFACE.card);
     const worst = Math.min(
       ...SEEDS.map((seed) => ratio(fillFor(seed), inputTrack)),
     );
-    expect(worst).toBeCloseTo(2.134, 2);
+    expect(worst).toBeCloseTo(2.681, 2);
     expect(worst).toBeLessThan(
       Math.min(...SEEDS.map((seed) => ratio(fillFor(seed), TRACK))),
     );
@@ -174,11 +175,11 @@ describe("why the track recedes instead of rising", () => {
 
 describe("the accent fill, across every seeded chapter", () => {
   it("separates from its own track for all 19 seeds", () => {
-    // Worst is 3.742:1 under `#CC0000` (lifted to `#DA2017`). The threshold is
-    // set just below the measured worst case rather than at a round number, so
-    // a change that erodes it fails here instead of shipping.
+    // Worst is 4.701:1 under `#800000` (its generated step 9, `#F42F22`). The
+    // threshold is set just below the measured worst case rather than at a
+    // round number, so a change that erodes it fails here instead of shipping.
     for (const seed of SEEDS) {
-      expect(ratio(fillFor(seed), TRACK), `seed ${seed}`).toBeGreaterThan(3.7);
+      expect(ratio(fillFor(seed), TRACK), `seed ${seed}`).toBeGreaterThan(4.65);
     }
   });
 

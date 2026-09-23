@@ -32,15 +32,17 @@
  * below still holds.)
  *
  * So the track is **`--background`: a recess, not a raise.** Worst case across
- * every seed and both containers, measured after #2541:
+ * every seed and both containers, measured after #2586 (the fill column's
+ * worst is `#800000`'s `#F42F22` throughout, except `bg-accent-subtle`'s,
+ * which is `#003087`'s):
  *
  * | Track | Fill vs track, worst | Track vs container, worst |
  * | --- | --- | --- |
- * | `bg-input` | 2.134 | 1.540 |
- * | `bg-border` | 2.625 | 1.253 |
- * | `bg-popover` | 3.005 | **1.000** (inside a dialog) |
- * | `bg-accent-subtle` | 3.027 | **1.001** (inside a dialog) |
- * | **`bg-background`** | **3.742** | 1.133 |
+ * | `bg-input` | 2.681 | 1.540 |
+ * | `bg-border` | 3.298 | 1.253 |
+ * | `bg-popover` | 3.775 | **1.000** (inside a dialog) |
+ * | `bg-accent-subtle` | 3.847 | **1.001** (inside a dialog) |
+ * | **`bg-background`** | **4.701** | 1.133 |
  *
  * It wins on the relationship that carries the data by a wide margin, and it
  * is the only candidate that cannot invert: `--background` is the *bottom* of
@@ -62,7 +64,7 @@
  * unchanged; only the track tone is decided by measurement.
  *
  * **The bar is never the only signal.** Since #2541 the fill clears README
- * §6's 3:1 non-text floor against this track for every seed (worst 3.742:1),
+ * §6's 3:1 non-text floor against this track for every seed (worst 4.701:1),
  * because the engine holds `accent-9` to 3:1 on every ladder surface, for a
  * palette written since (`accent-engine.md` §4 covers stored ones). A bar's
  * length still cannot carry the exact figure, so both call sites print the

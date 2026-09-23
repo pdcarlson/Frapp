@@ -18,8 +18,8 @@ import { FOCUS_RING, FOCUS_RING_OFFSET } from "./focus";
  * and has to clear README §6's 3:1 non-text floor unaided. On five of the 19
  * seeded chapter accents it did not, which means a keyboard user on those
  * chapters got no conforming indicator on any control using this recipe.
- * (The engine has held accent-9 to 3:1 since #2541, but only just; see the
- * last test in the first block.)
+ * (The engine has held accent-9 to 3:1 since #2541, but without the headroom
+ * this recipe needs; see the last test in the first block.)
  *
  * The guard measures **the token the recipe actually ships**, parsed out of the
  * exported class string, rather than a hard-coded role name. A guard that
@@ -107,10 +107,10 @@ describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 a
     // `#8B4513` and `#BF0A30`. Since #2541 the engine holds the fill to 3:1 on
     // every ladder surface (accent-engine.md §8), so it no longer fails here.
     // It is still the wrong token for the whole indicator: the engine lifts a
-    // dark fill only as far as the floor, so it clears `--popover` at 3.01:1,
-    // with none of the headroom the margin test above demands.
+    // dark fill only as far as the floor needs, so its worst seed (`#800000`,
+    // 4.70:1) has none of the 8:1 headroom the margin test above demands.
     expect(failingSeeds("--primary")).toEqual([]);
-    expect(worstOn("--primary", SURFACE.popover)).toBeLessThan(3.1);
+    expect(worstOn("--primary", SURFACE.background)).toBeLessThan(8);
 
     // accent-8 worked on the previous surface ladder and stopped working when
     // the greenfield ladder lifted `--background` to `#131211`. The three that
