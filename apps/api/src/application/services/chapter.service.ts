@@ -451,10 +451,11 @@ export class ChapterService {
    * produces an empty diff and writes nothing. The change stays unaudited.
    * Closing it needs the row and the update in one transaction, which is not
    * reachable through PostgREST from here. `chapter-config.service.ts` has the
-   * same hole — it early-returns before its insert when nothing changed (the
-   * empty-update `return existing` in `ChapterConfigService.patchConfig`) —
-   * so no writer in this codebase actually guarantees "never silently
-   * unaudited", and the specs should not be read as promising it.
+   * same hole for a retry whose update payload comes out empty (the
+   * `return existing` in `ChapterConfigService.patchConfig`; a re-sent jsonb
+   * field doesn't take it, see below) — so no writer in this codebase
+   * actually guarantees "never silently unaudited", and the specs should not
+   * be read as promising it.
    *
    * `ChatBridgeWorkerService` mirrors member-visible rows into `#chapter-audit`
    * off a Realtime subscription, so there is no chat call to make here.
