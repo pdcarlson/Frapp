@@ -203,12 +203,11 @@ Chat is the spine of the app (see [`spec/product/positioning.md`](./positioning.
 
 1. **A slash command** in chat (`/event`, `/task`, `/poll`, `/dues`, `/points`, `/hours`).
 2. **A rich message renderer** that turns the artifact into an inline card with primary actions (RSVP / Done / Vote / Pay / Confirm / Submit).
-3. **A system channel** where the module's notifications land (`#events`, `#dues`, etc.) so the firehose does not drown `#general`.
-4. **Optionally, a dashboard page** for the longer-form view (calendar, ledger, kanban). The dashboard page is secondary to the chat experience, not primary.
+3. **Optionally, a dashboard page** for the longer-form view (calendar, ledger, kanban). The dashboard page is secondary to the chat experience, not primary.
 
 Example: a treasurer types `/dues remind overdue` in `#general`; a rich card summarizes overdue members with a per-row "Send DM reminder" button that DMs each member a templated message with a Pay button — no tab-switching, no separate workflow.
 
-Every paid module ships with: slash command(s), rich renderer, system channel, and an optional dashboard surface.
+Every paid module ships with slash command(s), a rich renderer, and an optional dashboard surface. It gets no system channel of its own ([`spec/behavior/integrations.md`](../behavior/integrations.md#integration-pattern)).
 
 ## Tiers
 
@@ -254,7 +253,7 @@ Enabling paid ops modules is never a gate — it is surfaced as a dismissible in
 
 The control surface is **Settings → Modules**, driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
 
-Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`), hides its dashboard nav item (module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`), and mutes its system channel (no new messages, unread badge suppressed). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
+Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`), and hides its dashboard nav item (module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
 
 **Server-side enforcement.** Hiding a surface is not the same as closing it: a direct API call bypasses every client-side gate above. Controllers for paid modules therefore carry `@RequireModule(key)` (`apps/api/src/interface/decorators/module.decorator.ts`), and `ChapterGuard` rejects **writes** to a disabled module with `403 chapter.module.disabled`. Two rules follow from the guarantee that data is preserved:
 
