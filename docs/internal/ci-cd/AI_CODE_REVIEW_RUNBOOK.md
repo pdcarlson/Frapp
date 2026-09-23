@@ -146,12 +146,16 @@ the agent agreeing with its own work — do not weaken it.
 - The deliberate emergency bypass is Git's standard `git push --no-verify`. It is auditable in the
   operator's command but not server-enforced. Never use it in place of `/diff-review`, including
   after a `/code-review` run.
-- `npm install` and `npm ci` run the root `prepare` script, which sets
-  `core.hooksPath=.githooks`. A raw checkout that never runs the installer is not protected.
+- `scripts/setup-git-hooks.mjs` sets `core.hooksPath=.githooks`. Two things run it: the root
+  `prepare` script, which `npm install` and `npm ci` run, and, in a Claude Code cloud session
+  only, the SessionStart hook (`.claude/hooks/session-start.sh`), at every session start whether
+  or not dependencies are installed (#2488). A laptop checkout that never ran the installer is not
+  protected; the hook leaves laptops alone so a developer's own hooks setting survives.
 
 ## Troubleshooting
 
-- **Push was not blocked:** run `git config --get core.hooksPath`; it must print `.githooks`. Run
+- **Push was not blocked:** run `git config --get core.hooksPath`; it must name the repo's
+  `.githooks` directory (`.githooks`, or its absolute path, which some harnesses write). Run
   `node scripts/setup-git-hooks.mjs` if dependencies were not installed. Also check whether the push
   used `--no-verify`.
 - **Denied repeatedly:** retrying is intentionally inert. Run `/diff-review`; after addressing its
