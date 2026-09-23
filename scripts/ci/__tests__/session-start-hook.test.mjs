@@ -889,6 +889,7 @@ test("processes that outlive SIGKILL keep the lock live until --stop is retried"
   // --stop again, with real signals, retries them and frees the lock.
   const retry = stopLock(s.lock, "boot-B");
   assert.equal(retry.status, 0, retry.stderr);
+  assert.equal(retry.stdout.trim(), `retried:${stuck.join(" ")}`, "it names what it retried, not the dead script");
   assert.ok(await eventually(() => stuck.every((p) => !alive(p))), "every survivor is stopped on retry");
   assert.equal(existsSync(s.lock), false);
 });
@@ -899,7 +900,7 @@ test("a survivor's pid, reused by another process, is never signalled", (t) => {
   const s = scratch(t);
   const other = liveProcess(t, "sleep", ["30"]);
   priorLock(s, { boot: "boot-B", sentinel: null, writtenAt: Math.floor(Date.now() / 1000) - 600 });
-  writeFileSync(path.join(s.lock, "survivors"), `${other} Mon Jan 1 00:00:00 2001\n`);
+  writeFileSync(path.join(s.lock, "survivors"), `${other} 1\n`);
   utimesSync(s.lock, Math.floor(Date.now() / 1000) - 600, Math.floor(Date.now() / 1000) - 600);
   const run = stopLock(s.lock, "boot-B");
   assert.equal(run.status, 0, run.stderr);
@@ -916,4 +917,17 @@ test("a fresh launch clears an older run's sentinel under the guard", async (t) 
   runHook(s, { boot: "boot-B" });
   assert.equal(existsSync(path.join(s.root, ".cloud-sandbox-up.failed")), false);
   assert.match(runHook(s, { boot: "boot-B" }), /stack bringup is still running/);
+});
+
+test("a survivor's recorded start time does not depend on the clock's rendering or TZ", (t) => {
+  // `ps -o lstart` is local wall-clock time: a TZ change or a clock step moved it, and a real
+  // survivor then read as a reused pid, freeing the lock beside it.
+  const pid = liveProcess(t, "sleep", ["30"]);
+  const started = (tz) =>
+    spawnSync("bash", ["-c", `. ${JSON.stringify(LOCK_LIB)}; bringup_started "$1"`, "_", String(pid)], {
+      encoding: "utf8",
+      env: { ...process.env, TZ: tz },
+    }).stdout.trim();
+  assert.match(started("UTC"), /^\d+$/, "ticks since boot");
+  assert.equal(started("UTC"), started("Asia/Tokyo"));
 });

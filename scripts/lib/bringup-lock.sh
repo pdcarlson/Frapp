@@ -10,7 +10,9 @@
 # interleave their read-then-act steps or disagree about that (#2547). The hook also trusts a
 # `.done`/`.failed` sentinel from this boot before it asks; a hand run replaces a finished
 # bringup's lock, whose pid is dead. `cloud-sandbox-up.sh --stop` ends a hung one (bringup_stop),
-# marking the lock with a `stopping` file while it does.
+# marking the lock with a `stopping` file while it does, and leaving a `survivors` file in a
+# kept lock when processes outlive SIGKILL. Either keeps the lock live though its pid is dead
+# (bringup_lock_live), so the lock is never removed by hand: `--stop` is the way to clear it.
 
 # Whether $1 is the pid of a running cloud-sandbox-up.sh: bash (or sh) whose first operand is
 # the script, as the hook and a hand run start it. Its argv is read whole, from
@@ -40,9 +42,16 @@ bringup_stopping() {
   bringup_alive "$stopper" && echo "$stopper"
 }
 
-# When pid $1 started, as `ps` reports it, spaces squeezed; nothing if it is not running.
+# When pid $1 started, in clock ticks since boot (field 22 of /proc/<pid>/stat, read after the
+# command name, which may hold spaces); nothing if it is not running. Unlike `ps -o lstart`,
+# which renders it as local wall-clock time, it survives a clock step and a change of TZ. Where
+# there is no /proc, `ps` in UTC stands in.
 bringup_started() {
-  ps -p "$1" -o lstart= 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//'
+  if [ -r "/proc/$1/stat" ]; then
+    sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{ print $20 }'
+  else
+    TZ=UTC LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//'
+  fi
 }
 
 # The processes a stop left behind in lock $1 that are still running, as pids on one line. The
@@ -126,7 +135,8 @@ bringup_descendants() {
 
 # Stop the bringup holding lock $1, with every process under it. $2 is the caller's pid, $3 the
 # current boot id (may be empty), $4 the `.failed` sentinel to write. Takes the guard itself.
-#   0  stopped (its pid is printed) or none was running (nothing printed); the lock is gone.
+#   0  stopped (its pid is printed, or "retried:<pids>" when this retried what an earlier stop
+#      left behind) or none was running (nothing printed); the lock is gone.
 #   1  a bringup is starting (bringup_lock_live, but its pid is not yet a bringup to stop);
 #      nothing is done, since removing its lock would let a second bringup start beside it.
 #   2  the lock could not be marked or removed (another user's, or /tmp's permissions);
@@ -147,7 +157,7 @@ bringup_descendants() {
 # stop, so a session told to wait for a sentinel gets one. A lock from another boot names a pid
 # that may since belong to anything, so nothing is killed for it.
 bringup_stop() {
-  local lock="$1" self="$2" boot="${3:-}" failed="${4:-}" pid lock_boot stopper stuck tree="" p alive i survivors=""
+  local lock="$1" self="$2" boot="${3:-}" failed="${4:-}" pid lock_boot stopper stuck="" tree="" p alive i survivors=""
   bringup_guard "$lock"
   pid="$(cat "$lock/pid" 2>/dev/null || true)"
   lock_boot="$(cat "$lock/boot_id" 2>/dev/null || true)"
@@ -179,7 +189,9 @@ bringup_stop() {
   fi
   bringup_unguard
 
-  echo "$pid"
+  # The first line names what is being stopped: the bringup's pid, or, on a retry of what an
+  # earlier stop left behind, those processes.
+  if [ -n "$stuck" ]; then echo "retried:$stuck"; else echo "$pid"; fi
   # shellcheck disable=SC2086 # one pid per word
   kill -TERM $tree 2>/dev/null || true
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do

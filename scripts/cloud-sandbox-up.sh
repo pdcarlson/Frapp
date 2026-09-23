@@ -47,8 +47,9 @@ EGRESS_MANIFEST="$ROOT/.cloud-sandbox-capabilities.json"
 # same guard flock the hook decides under and by the same rule (bringup_lock_live), so a
 # session start during a manual run finds a live bringup instead of launching a second one;
 # before this a hand run held no lock at all. It refuses while another bringup from this boot
-# is running or starting (a lock seconds old whose pid is not yet a bringup), and replaces any
-# other lock: a dead one, one from another boot, or a stray file at the path. This happens
+# is running, being stopped, stuck (processes a stop could not kill) or starting (a lock
+# seconds old whose pid is not yet a bringup), and replaces any other lock: a dead one, one
+# from another boot, or a stray file at the path. This happens
 # before anything else writes: a refused run must not touch the running bringup's sentinels or
 # log. A taken run clears the last run's sentinels while still under the guard; see below.
 #
@@ -66,7 +67,9 @@ if [ "${1:-}" = "--stop" ]; then
   stopped_pid="$(printf '%s\n' "$stopped" | head -n 1)"
   case "$stop_status" in
     0)
-      if [ -n "$stopped_pid" ]; then
+      if [ "${stopped_pid#retried:}" != "$stopped_pid" ]; then
+        cs_log "Stopped the processes an earlier --stop left behind (pids ${stopped_pid#retried:}), and removed the lock. Run 'bash scripts/cloud-sandbox-up.sh' to start again."
+      elif [ -n "$stopped_pid" ]; then
         cs_log "Stopped bringup pid ${stopped_pid} and the commands under it, and removed its lock. Containers it had started run under the Docker daemon and are still up. Run 'bash scripts/cloud-sandbox-up.sh' to start again."
       else
         cs_log "No bringup was running; removed any lock left at ${BRINGUP_LOCK}."
@@ -80,7 +83,7 @@ if [ "${1:-}" = "--stop" ]; then
       cs_log "ERROR: could not write or remove the bringup lock ${BRINGUP_LOCK}, so nothing was stopped. Check its owner (a bringup run as another user) and the permissions of $(dirname "$BRINGUP_LOCK")."
       ;;
     3)
-      cs_log "ERROR: stopped bringup pid ${stopped_pid}, but some of its processes outlived SIGKILL (${stopped#*survivors: }); they are stuck in the kernel or belong to another user. Its lock is kept, and .cloud-sandbox-up.failed says why, so no session start launches a bringup beside them; once they are gone, run 'bash scripts/cloud-sandbox-up.sh'."
+      cs_log "ERROR: processes outlived SIGKILL (${stopped#*survivors: }); they are stuck in the kernel or belong to another user. The lock is kept and records them, so nothing starts beside them until they exit, and .cloud-sandbox-up.failed says why. Run 'bash scripts/cloud-sandbox-up.sh --stop' again to retry them; once they are gone, 'bash scripts/cloud-sandbox-up.sh' starts the stack."
       ;;
     5)
       cs_log "ERROR: another --stop (pid ${stopped_pid}) is already stopping this bringup. Wait for it to finish; it writes .cloud-sandbox-up.failed when it does."

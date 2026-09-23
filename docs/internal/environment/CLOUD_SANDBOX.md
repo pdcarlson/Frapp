@@ -285,7 +285,7 @@ Run by hand, `bash scripts/cloud-sandbox-up.sh` takes the same lock under the sa
 whether a bringup is running by the same rule, `bringup_lock_live` in
 [`scripts/lib/bringup-lock.sh`](../../../scripts/lib/bringup-lock.sh)
 ([#2547](https://github.com/pdcarlson/Frapp/issues/2547)): it refuses while another bringup from
-this boot is running or starting, and replaces any other lock (a dead one, one from an earlier
+this boot is running, being stopped, stuck (below) or starting, and replaces any other lock (a dead one, one from an earlier
 boot, a stray file at the path), so no remedy needs the lock removed first. The one difference
 is a finished bringup: the hook trusts its `.done`/`.failed` and does not relaunch, while a hand
 run is a request to run again. A hand run writes `/tmp/cloud-sandbox-up.log` as well as the
@@ -297,7 +297,7 @@ writes a `.cloud-sandbox-up.failed` saying so and removes the lock. While the ol
 the lock carries a `stopping` mark that both writers count as a bringup in progress, so nothing
 starts beside them and a second `--stop` refuses; a session start in that window is told to
 wait for the `.failed`. If any process outlives `SIGKILL`, the lock is kept and records them, with
-their start times so a reused pid is never mistaken for one, and counts as live until they exit:
+their start times since boot so a reused pid is never mistaken for one, and counts as live until they exit:
 no session start or hand run launches beside them, and `--stop` run again retries them. The
 `.failed` names them. A plain `kill` of the pid is not
 enough: it orphans the command the script is blocked in, and the next bringup starts beside it.
