@@ -34,7 +34,8 @@ jest.mock('@repo/org-archetypes', () => ({
 jest.mock('@repo/chapter-theme', () => ({
   // Mirrors the real DeriveSignetPaletteResult shape — see the note in
   // chapter-onboarding.service.spec.ts for why a partial double is a trap
-  // here: the service reads `invalidSeed` and iterates `contrastChecks`.
+  // here: the service reads `invalidSeed` and iterates `contrastChecks` and
+  // `fillChecks`.
   deriveSignetPalette: jest.fn(() => ({
     palette: { '--signet-accent-primary': '#C49A3A' },
     resolvedSeed: '#F2B72E',
@@ -690,7 +691,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
 
     it('never logs a failing ratio as its floor', async () => {
       // The engine fails a check on the unrounded ratio; `toFixed(2)` logged a
-      // 4.4954 as "4.50:1" under "below AA".
+      // 4.4954 as "4.50:1" under "below AA", and would log a 2.996 fill as
+      // "3.00:1" under "below 3:1". Both lines truncate.
       const { deriveSignetPalette } = jest.requireMock(
         '@repo/chapter-theme',
       ) as { deriveSignetPalette: jest.Mock };
@@ -698,7 +700,14 @@ describe('ChapterConfigService — branding accent (#795)', () => {
         palette: { '--signet-accent-primary': '#0086FE' },
         resolvedSeed: '#0086FE',
         invalidSeed: false,
-        fillChecks: [],
+        fillChecks: [
+          {
+            role: '--signet-accent-primary',
+            against: '--popover',
+            ratio: 2.996,
+            passes: false,
+          },
+        ],
         contrastChecks: [
           {
             role: '--signet-accent-text',
@@ -718,6 +727,9 @@ describe('ChapterConfigService — branding accent (#795)', () => {
 
       expect(warn).toHaveBeenCalledWith(
         `Signet accent contrast below AA for chapter ${CHAPTER_ID}: --signet-accent-text on #131211 = 4.49:1`,
+      );
+      expect(warn).toHaveBeenCalledWith(
+        `Signet accent fill below 3:1 for chapter ${CHAPTER_ID}: --signet-accent-primary on --popover = 2.99:1`,
       );
     });
 

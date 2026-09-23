@@ -105,6 +105,18 @@ export function buildChapterPalette(
 }
 
 /**
+ * A failing ratio to two decimals, truncated rather than rounded: the line says
+ * the check fell below its floor, and rounding would log a 4.4954 as "4.50:1"
+ * under "below AA". The epsilon keeps a float a hair under a hundredth from
+ * losing it. The Settings page truncates the text-check ratios a save returns
+ * for the same reason, to one decimal (`formatFailingRatio` in
+ * `apps/web/components/settings/accent-preview-ink.ts`).
+ */
+function belowFloor(ratio: number): string {
+  return (Math.floor(ratio * 100 + 1e-9) / 100).toFixed(2);
+}
+
+/**
  * Logs the by-construction problems a build can report — never throws,
  * since the palette written is still valid either way (#840, §8).
  *
@@ -116,16 +128,6 @@ export function buildChapterPalette(
  * `invalidSeed` for that reason, so a failed contrast or fill check there went
  * unrecorded.)
  */
-/**
- * A failing ratio to two decimals, truncated rather than rounded: the line says
- * the check fell below its floor, and rounding would log a 4.4954 as "4.50:1"
- * under "below AA". The epsilon keeps a float a hair under a hundredth from
- * losing it. The Settings page truncates the same ratios for the same reason.
- */
-function belowFloor(ratio: number): string {
-  return (Math.floor(ratio * 100 + 1e-9) / 100).toFixed(2);
-}
-
 export function logChapterPaletteWarnings(
   logger: { warn: (message: string) => void },
   where: string,

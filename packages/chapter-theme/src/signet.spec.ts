@@ -441,9 +441,9 @@ describe("deriveSignetPalette", () => {
     });
 
     it("never throws", () => {
-      // Load-bearing: ChapterOnboardingService wraps its palette call in a
-      // try/catch returning null, so a throw here would not surface as an error
-      // — it would silently onboard a chapter with no palette at all.
+      // Load-bearing: every API writer calls it bare, and onboarding calls it
+      // before the chapter row exists, so a throw here fails chapter creation
+      // outright (`deriveSignetPalette`'s docstring says why).
       for (const input of [undefined, null, "", "☃", "#".repeat(64)]) {
         expect(() => deriveSignetPalette(input)).not.toThrow();
       }

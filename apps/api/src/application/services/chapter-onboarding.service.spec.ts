@@ -28,7 +28,8 @@ jest.mock('@repo/chapter-theme', () => ({
   // object here hid a live defect once: the service read a result field
   // unguarded, threw, and the surrounding try/catch turned that into a silently
   // missing theme_palette. The service reads `invalidSeed` and iterates
-  // `contrastChecks`. Keep this in step with packages/chapter-theme.
+  // `contrastChecks` and `fillChecks`. Keep this in step with
+  // packages/chapter-theme.
   deriveSignetPalette: jest.fn(() => ({
     palette: { '--signet-accent-primary': '#C49A3A' },
     resolvedSeed: '#F2B72E',
@@ -246,6 +247,33 @@ describe('ChapterOnboardingService', () => {
 
       expect(warn).toHaveBeenCalledWith(
         'Signet accent fill below 3:1 during onboarding: --signet-accent-primary on --popover = 1.50:1',
+      );
+    });
+
+    it('logs a substituted seed with the accent it was given (#840)', async () => {
+      // Nothing else records it: the chapter is onboarded in plausible house
+      // gold, so without this line the wrong brand colour goes unnoticed.
+      const { deriveSignetPalette } = jest.requireMock(
+        '@repo/chapter-theme',
+      ) as { deriveSignetPalette: jest.Mock };
+      deriveSignetPalette.mockReturnValueOnce({
+        palette: { '--signet-accent-primary': '#DDB844' },
+        resolvedSeed: '#DDB844',
+        invalidSeed: true,
+        fillChecks: [],
+        contrastChecks: [],
+      });
+      const warn = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
+
+      await service.onboard('user-1', {
+        ...directoryDto,
+        branding: { ...directoryDto.branding, colors: { accent: 'crimson' } },
+      });
+
+      expect(warn).toHaveBeenCalledWith(
+        'Invalid accent seed during onboarding: accent="crimson" — substituted house gold. Expected #RRGGBB.',
       );
     });
   });
