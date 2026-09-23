@@ -86,7 +86,7 @@ When a user checks into an event:
 - Requires `points:view_all` (same permission as viewing another member’s point summary on `GET /v1/points/members/:userId`).
 - Query parameters (all optional unless noted):
   - `user_id` — restrict to one member’s rows.
-  - `category` — one of `ATTENDANCE`, `ACADEMIC`, `SERVICE`, `FINE`, `MANUAL`, `STUDY`.
+  - `category` — any value the [`point_transactions.category` column](../architecture/README.md#points--events) allows.
   - `flagged` — boolean filter; when true, returns only rows the anomaly rules marked for review. The exact string-to-boolean parsing rules (`true`/`false`/`1`/`0`) are an API-layer detail documented in the OpenAPI spec.
   - `before` — ISO8601 timestamp cursor; return transactions created **strictly before** this instant (older page).
   - `limit` — page size; default **50**, clamped to **1–200** inclusive on the server.

@@ -137,9 +137,8 @@ repo — `ALUMNI_CHANNEL_PERMISSION` in `@repo/validation` documents the same mi
 
 ### There is no officer channel
 
-`DEFAULT_CHANNELS` seeds **four** channels on every chapter: `#general` (`PUBLIC`),
-`#announcements` (`PUBLIC`, read-only), `#chapter-audit` (`PUBLIC`, read-only), and `#alumni`
-(`ROLE_GATED`, `required_permissions: ['members:view', 'alumni:post']`). Plus DMs.
+The channels `DEFAULT_CHANNELS` seeds, and each one's gating, are listed in
+[`README.md` § Channels](README.md#channels). Plus DMs.
 
 **None of them is officer-only**, and `#alumni` is a trap: it is the only seeded `ROLE_GATED`
 channel, so an implementation that picks a target by `type === 'ROLE_GATED'` will find it in every
@@ -211,16 +210,8 @@ unrecognized kind is rewritten to `text` upstream, so the row renders as its `co
 user-visible outcome, by a different path.
 
 That matters because **`CHAT_MESSAGE_KINDS` is declared in three places** and adding a kind means
-adding it to all three:
-
-| Declaration | Consumed by | Symptom if missed |
-| --- | --- | --- |
-| `apps/api/src/domain/entities/chat.entity.ts` | `@IsIn(...)` in `chat.dto.ts` — **the live send gate** | API rejects the send, loudly |
-| `packages/validation/src/index.ts` | `SendChatMessageSchema`. Currently referenced by nothing but its own `z.infer` — it is the shared contract for non-Nest consumers, not an active gate | Nothing fails today; the shared contract silently diverges |
-| `packages/chat-core/src/types.ts` | `coerceKind` in `normalizeRow` | Row arrives rewritten to `text`, so the renderer never fires no matter how correct it is |
-
-The middle row is the dangerous one precisely *because* nothing fails: skipping it ships a divergence
-that only bites a future consumer.
+adding it to all three. Which three, and how each fails when missed (two of them silently), is
+owned by [`README.md` § Message Kinds and Actions](README.md#message-kinds-and-actions).
 
 ## Posting
 

@@ -213,7 +213,7 @@ Constraints to know before you fight the compiler:
 
 Full treatment: [`api-architecture.md` § Rate limiting](../../../docs/guides/api-architecture.md#rate-limiting).
 
-`PointsService` also caps point adjustments per admin per hour. The cap is chapter-configurable
-(`chapter_points_config.adjustment_rate_limit_per_hour`, read through
-`ChapterPointsConfigService`), and 50 is only the default. Don't hardcode 50 in a guard, an
-assertion, or user-facing copy, and don't stack a throttle profile on `POST /v1/points/adjust`.
+`PointsService` also caps point adjustments per admin per hour, from chapter config rather than a
+constant ([`points.md` § Anti-Fraud](../../../spec/behavior/points.md#anti-fraud) owns the scoping
+and the default). Don't hardcode the default in a guard, an assertion, or user-facing copy, and
+don't stack a throttle profile on `POST /v1/points/adjust`.

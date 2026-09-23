@@ -24,12 +24,17 @@ jest.mock('@repo/chapter-theme', () => ({
   })),
 }));
 
+import { Type } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import {
   SUBSCRIPTION_EXEMPT_KEY,
   SUBSCRIPTION_FREE_TIER_KEY,
 } from './subscription.decorator';
 import { ChatController } from '../controllers/chat.controller';
+import { ChatBookmarkController } from '../controllers/chat-bookmark.controller';
+import { CustomFieldController } from '../controllers/custom-field.controller';
+import { CustomRoleController } from '../controllers/custom-role.controller';
+import { NotificationController } from '../controllers/notification.controller';
 import { ChatReportController } from '../controllers/chat-report.controller';
 import { ChatBlockController } from '../controllers/chat-block.controller';
 import { MemberController } from '../controllers/member.controller';
@@ -57,11 +62,23 @@ import { ReportController } from '../controllers/report.controller';
 import { AlumniController } from '../controllers/alumni.controller';
 import { SemesterRolloverController } from '../controllers/semester-rollover.controller';
 
+/** A route-level marker: its label, its handler, and the class it lives on. */
+type RouteMarker = [string, (...args: never[]) => unknown, Type<unknown>];
+
 describe('subscription decorator wiring', () => {
   const reflector = new Reflector();
 
+  /**
+   * Keep it exhaustive: every class `grep -rnE '^@FreeTier\(\)' src` finds
+   * belongs here. `docs/guides/api-architecture.md` § Subscription enforcement
+   * tells readers this file is the roster, and three classes were once missing
+   * from it (#1635).
+   */
   const freeTier = [
     ChatController,
+    ChatBookmarkController,
+    CustomFieldController,
+    CustomRoleController,
     MemberController,
     InviteController,
     RbacController,
@@ -136,17 +153,66 @@ describe('subscription decorator wiring', () => {
    * route. A ledger that cannot see part of what it ledgers is a proof that
    * cannot fail, so this pins the handlers too.
    *
-   * Keep it exhaustive: `grep -rn '@SubscriptionExempt()' src` should turn up
-   * nothing that is neither in `exempt` above nor here.
+   * Keep it exhaustive: `grep -rnE '^\s*@SubscriptionExempt\(\)' src` should
+   * turn up nothing that is neither in `exempt` above nor here.
    */
-  const routeExempt: [string, (...args: never[]) => unknown][] = [
+  const routeExempt: RouteMarker[] = [
     [
       'FinancialInvoiceController.createPaymentIntent',
       FinancialInvoiceController.prototype.createPaymentIntent,
+      FinancialInvoiceController,
     ],
   ];
 
-  it.each(routeExempt)('%s is marked @SubscriptionExempt', (_name, handler) => {
-    expect(reflector.get(SUBSCRIPTION_EXEMPT_KEY, handler)).toBe(true);
-  });
+  it.each(routeExempt)(
+    '%s is marked @SubscriptionExempt',
+    (_name, handler, controller) => {
+      expect(
+        reflector.getAllAndOverride(SUBSCRIPTION_EXEMPT_KEY, [
+          handler,
+          controller,
+        ]),
+      ).toBe(true);
+    },
+  );
+
+  /**
+   * The route-level free-tier markers, for the same reason as `routeExempt`:
+   * `NotificationController`'s class is unmarked (most of its routes declare no
+   * `ChapterGuard`), and its two chapter-guarded routes carry `@FreeTier()` on
+   * the handler, where the class-level arrays cannot see it.
+   *
+   * Both route tables resolve a marker the way `ChapterGuard` does, handler
+   * first and then class (`getAllAndOverride`), because the class is the
+   * fallback: a `@SubscriptionExempt()` later added to `NotificationController`
+   * would take these two routes out of the hard lock without touching either
+   * handler, and a handler-only read would stay green.
+   *
+   * Keep it exhaustive: an indented `@FreeTier()` under `src` belongs here.
+   */
+  const routeFreeTier: RouteMarker[] = [
+    [
+      'NotificationController.listNotifications',
+      NotificationController.prototype.listNotifications,
+      NotificationController,
+    ],
+    [
+      'NotificationController.markRead',
+      NotificationController.prototype.markRead,
+      NotificationController,
+    ],
+  ];
+
+  it.each(routeFreeTier)(
+    '%s is marked @FreeTier',
+    (_name, handler, controller) => {
+      const lookup = [handler, controller];
+      expect(
+        reflector.getAllAndOverride(SUBSCRIPTION_FREE_TIER_KEY, lookup),
+      ).toBe(true);
+      expect(
+        reflector.getAllAndOverride(SUBSCRIPTION_EXEMPT_KEY, lookup),
+      ).toBeUndefined();
+    },
+  );
 });

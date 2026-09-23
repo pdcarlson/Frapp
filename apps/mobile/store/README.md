@@ -133,7 +133,7 @@ answer that caused it rather than re-derived.
 dialog's second option reads "I'm not a trader under the DSA **or I don't plan to
 distribute in the EU**"; the declaration was made on the *second* limb, which is
 true — Signet targets US Greek life. It was **not** a claim of non-trader status:
-Signet charges $149/chapter/month ([`spec/behavior/billing.md`](../../../spec/behavior/billing.md)),
+Signet charges chapters a paid subscription ([`spec/product/positioning.md` § Paid tier (Chapter Pro)](../../../spec/product/positioning.md#paid-tier-chapter-pro)),
 which is trading under Apple's test. The consequence is that Apple withholds the
 app from the 27 EU storefronts; availability follows the viewer's Apple Account
 country, not their physical location, so a member travelling in Europe on a US

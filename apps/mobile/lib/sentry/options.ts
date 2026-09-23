@@ -74,7 +74,7 @@ type TransactionEvent = Parameters<
  * Empty string is treated as unset so a blank EAS variable no-ops rather than
  * sending the SDK a malformed DSN.
  *
- * **There is no Infisical→EAS sync** — the six live syncs are Render + Vercel
+ * **There is no Infisical→EAS sync** — the live syncs are Render + Vercel
  * only (`SECRETS_MANAGEMENT.md` §5) — so unlike every `NEXT_PUBLIC_*` this does
  * not arrive by itself. It is entered per build profile in the EAS dashboard.
  * A DSN authorizes *writing* events, not reading them, so `EXPO_PUBLIC_` is the

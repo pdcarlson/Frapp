@@ -36,7 +36,7 @@ with green CI. The `production` branch that used to occupy this table was retire
 
 ### Prerequisites
 
-- Node.js v24+ (`.nvmrc` is the dev copy; CI's `node-version:`, `apps/api/Dockerfile` and the root `engines` field all pin the same floor)
+- Node.js at or above the root `package.json` `engines.node`, which is the one statement of the floor. `.nvmrc`, CI's `node-version:` and `apps/api/Dockerfile` pin only the major, so whichever release of it they land on (an older install under `nvm use`, the runner's cached toolchain, a cached image layer) can sit below the floor. Check `node -v` against `engines.node`.
 - npm v10+
 - Docker available to your shell (Docker Desktop with **WSL integration** on Windows/WSL, or Docker Engine on Linux)
 - Supabase CLI (`npx supabase`)
@@ -176,7 +176,7 @@ Live branch protection is whatever an admin last applied and can lag the script,
 per-check whether a gate is live today; read live state per
 [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
-`pglite-migrations` is also path-gated but remains **advisory**. `duplicate-detection` is advisory for a different reason: jscpd has no clone-level baseline, so its only lever is a repo-wide percentage that cannot tell one bad copy-paste from ordinary drift. Postures and their rationale: [`docs/internal/ci-cd/QUALITY_GATES.md`](../../docs/internal/ci-cd/QUALITY_GATES.md).
+`pglite-migrations` is also path-gated but remains **advisory**; no doc records why yet (#2538). `duplicate-detection` is advisory too, for the reason in [`QUALITY_GATES.md` § The gates, and why each has the posture it does](../../docs/internal/ci-cd/QUALITY_GATES.md#the-gates-and-why-each-has-the-posture-it-does).
 
 There was a third advisory job, `web-visual-regression`, and it has been **deleted**. It compared each dashboard route against a committed PNG; its exemption was specifically about pixels, since baselines pinned to CI's Chromium build drift with it. The 375px floor gate used to live in the same job and inherited that exemption by directory despite storing no baseline and comparing no pixels — #1152 split it into the required `web-responsive-floor` above, and the snapshot job was later removed along with its spec, its baselines and the `test:visual` script.
 
@@ -195,25 +195,20 @@ would have applied migrations to production while every log line said staging.
 
 Two consequences worth holding together:
 
-- **Rotating a project is a four-place change** — Infisical, `.github/environments.json`, and the two doc tables
-  above. Missing the file blocks every production migration and fails `migration-order` on every
-  migration-bearing PR. The playbook's ref table says so where the tables live.
+- **Rotating a project touches every file that names its ref**, not only `.github/environments.json` — see
+  [`DB_ROLLBACK_PLAYBOOK.md` § Backup reality](../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md#backup-reality).
+  Missing the file blocks every production migration and fails `migration-order` on every
+  migration-bearing PR.
 - **`check-migration-drift.yml` deliberately still reads its refs from Infisical.** Pointing it at the
   committed file too would make the pair agree by construction, and the fence would assert nothing.
 
 ### Additional checks outside `ci.yml`
 
-`.github/workflows/docs.yml` has exactly one job, `env-slugs`, running
-[`scripts/check-env-slugs.mjs`](../../scripts/check-env-slugs.mjs) — it asserts that every Infisical
-environment slug it reads names a slug that exists, over the files and directories the script's own
-`SCAN_ROOTS` lists and nowhere else. `.github/workflows/links.yml` has exactly one job,
-`link-check` — lychee, offline, internal markdown links and heading anchors.
-`migration-order`, `migration-drift` and `migration-replay` run in
-`.github/workflows/migration-drift-gate.yml`. Which of them are required, what each validates, and
-why `migration-drift` was demoted out of `DRIFT_CHECKS` are in
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
-**§ Required Status Checks**; what each surviving job does is in
-[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md).
+The docs workflows (`docs.yml`, `links.yml`) and what each of their jobs checks:
+[`DOCS_CI.md` § What runs](../../docs/internal/ci-cd/DOCS_CI.md#what-runs). The migration checks —
+which workflow runs them, which are required, what each validates, and why `migration-drift` was
+demoted out of `DRIFT_CHECKS` — are in
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Required Status Checks](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks).
 
 Four docs gates used to run here — `docs-structure`, `doc-paths`, `doc-refs` and `doc-tables` — and
 all four are **deleted**, with their scripts, their allowlists and their `check:doc-*` npm scripts.
@@ -228,8 +223,7 @@ defects now. `link-check` still resolves its links and anchors, and `env-slugs` 
 
 **Code review is a repository-managed Git pre-push gate, not a CI check.** Frapp's gate is **`/diff-review`**. The root `prepare` script installs [`.githooks/pre-push`](../../.githooks/pre-push) through `core.hooksPath`, so local Codex, cloud agents, and humans share one mechanism. Every non-deletion ref update requires evidence for its exact pushed commit at `.cache/diff-review/<PUSHED_COMMIT_SHA>`; retrying cannot satisfy it. Git guarantees that the hook's nonzero exit aborts the push when installed, but `--no-verify`, a changed hooks path, or skipped installation bypass it, so it is not an unconditional server-side gate. Details live in the [review runbook](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
-- On `main`, conversation resolution is not required, so unresolved review threads do not block merge.
-- There is no second branch with a stricter policy. The human gate on what reaches users is the `production` **environment**'s Required reviewers, which pauses the deploy itself (#1340).
+- Merge-time review requirements on `main` (approving reviews, conversation resolution), and why no branch is stricter: [`CONTRIBUTING.md` § PR review requirement policy](../../CONTRIBUTING.md#pr-review-requirement-policy).
 - Full runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ### Key Design Decisions
@@ -363,12 +357,12 @@ Secrets are centrally managed in **Infisical** (free tier) with automatic syncs 
 | Property         | Value                                                  |
 | ---------------- | ------------------------------------------------------ |
 | **Project**      | Frapp                                                  |
-| **Environments** | `dev`, `staging`, `prod` — slugs, not display names. Owned by [`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) § Infisical Environments |
-| **Syncs**        | Not restated here — the live inventory is [`SECRETS_MANAGEMENT.md`](../../docs/internal/environment/SECRETS_MANAGEMENT.md) § 5. **There is no GitHub Actions sync**; CI pulls at job time via Universal Auth |
+| **Environments** | Named by slug, not display name — [`ENV_REFERENCE.md` § Infisical Environments](../../docs/internal/environment/ENV_REFERENCE.md#infisical-environments) |
+| **Syncs**        | Not restated here — the live inventory, and why GitHub Actions is not a sync, is [`SECRETS_MANAGEMENT.md` § 5](../../docs/internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs) |
 
 ### How It Works
 
-Canonical values (e.g., `SUPABASE_URL`) are stored **once** per Infisical environment. Framework-specific names (e.g., `NEXT_PUBLIC_SUPABASE_URL`) are **secret references** that resolve to the canonical value automatically. No duplication, no environment suffixes.
+Canonical values (e.g., `SUPABASE_URL`) are stored **once** per Infisical environment. Framework-specific names (e.g., `NEXT_PUBLIC_SUPABASE_URL`) are **secret references** that resolve to the canonical value automatically. No duplication.
 
 See **[`docs/internal/environment/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md)** for the complete variable list and **[`docs/internal/environment/SECRETS_MANAGEMENT.md`](../../docs/internal/environment/SECRETS_MANAGEMENT.md)** for the setup guide.
 
@@ -397,7 +391,7 @@ Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal
 
 - **Never** commit secrets. **Never** log secrets. Rotate keys immediately if exposed.
 - **No placeholder secrets in CI.** CI does not build apps that require runtime secrets.
-- **No environment suffixes.** `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment — no `_STAGING` / `_PRODUCTION` suffixes.
+- **No environment suffixes**: one name per secret, its value differing per Infisical environment ([`SECRETS_MANAGEMENT.md` § Key Design Principles](../../docs/internal/environment/SECRETS_MANAGEMENT.md#key-design-principles)).
 
 ---
 
@@ -405,9 +399,7 @@ Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal
 
 ### Local Development
 
-- Create: `npx supabase migration new <name>`
-- Apply locally: `npx supabase db push --local`
-- Reset local: `npx supabase db reset` (reapplies all migrations from scratch)
+Creating and applying a migration locally: [`CONTRIBUTING.md` § Database Migrations](../../CONTRIBUTING.md#database-migrations). Rebuilding the local database from scratch, and what that drops: [`docs/guides/database.md` § 2. Schema location](../../docs/guides/database.md#2-schema-location).
 
 ### Remote (Staging / Production)
 

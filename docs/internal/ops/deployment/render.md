@@ -36,12 +36,11 @@ each sync reads path `/` and pushes the **whole** source environment ([`SECRETS_
 
 ### 5.4 Health Check
 
-The API exposes `GET /health`, which answers `200` in both states — `status: ok` when the database
-round-trip succeeds, `status: degraded` when it does not
+The API exposes `GET /health`, which answers `200` whether or not its dependency probes pass
 ([`health.controller.ts`](../../../../apps/api/src/interface/controllers/health.controller.ts)). It
 never throws, so a `200` proves the process booted and Nest is serving, not that the database is
 reachable. The JSON body is the liveness payload in
-[`spec/behavior/observability.md`](../../../../spec/behavior/observability.md) § Health Check.
+[`spec/behavior/observability.md` § Health Check](../../../../spec/behavior/observability.md#health-check).
 
 > **This section previously claimed Render auto-detects the health check from the Dockerfile
 > `HEALTHCHECK` directive. That claim is unverified and the configuration contradicts it.** Render
@@ -119,9 +118,9 @@ Splitting these into a standalone Render Background Worker is not currently warr
 
 ### 5.7 Deploy Hooks (for GitHub Actions)
 
-In each Render service → Settings → Deploy Hook → copy the URL. Store secrets as GitHub **environment-scoped** secrets (same names in both environments, different values):
+Store these in **Infisical**, not as GitHub secrets: the deploy workflows inject them at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
 
-- `RENDER_DEPLOY_HOOK_URL` → deploy hook URL for that environment
-- `API_HEALTHCHECK_URL` → smoke-check URL for that environment (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly — `/health` is Render's own `healthCheckPath` and always returns 2xx, while `/health/ready` 503s on a degraded dependency (see `spec/behavior/observability.md` § Health Check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
+- `RENDER_DEPLOY_HOOK_URL` → **staging only**: frapp-api-staging → Settings → Deploy Hook → copy the URL into Infisical `staging`. Production deploys by commit through the Render API (`RENDER_API_KEY`, `deploy-production.yml`), so it has no hook to store.
+- `API_HEALTHCHECK_URL` → smoke-check URL, in both `staging` and `prod` (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly; why the two differ is [`observability.md` § Health Check](../../../../spec/behavior/observability.md#health-check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
 
 ---

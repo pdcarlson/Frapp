@@ -148,19 +148,21 @@ the runner did.
 
 So before bumping this major, compare its `engines` against `node-version:` in
 [`ci.yml`](../../../.github/workflows/ci.yml) and against `FROM node:` in
-[`apps/api/Dockerfile`](../../../apps/api/Dockerfile). Those three move together; all are on 24
-today, with `engines.node` at `>=24` in the root `package.json`.
+[`apps/api/Dockerfile`](../../../apps/api/Dockerfile). Those pin only the Node major; the exact floor
+is the root `package.json` `engines.node`, and how the pins relate to it is in
+[`spec/environments/README.md` § Prerequisites](../../../spec/environments/README.md#prerequisites).
 
 `expo-server-sdk` 7.x was the same class of engines mismatch with a different symptom, and the Node
 move cleared it too. 6.0.0 went ESM-only; 7.0.0 raised `engines.node` to `>=22.12.0` (stable
-`require(esm)`). npm does not fail `npm ci` on that (unlike undici 8.x, which is `EBADENGINE`-hard
-in [`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md)), so `api-docker-build` stayed green on
+`require(esm)`). npm does not fail `npm ci` on an engines mismatch unless `engine-strict` is set,
+which this repo never sets (the same holds for undici 8.x; see
+[`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md)), so `api-docker-build` stayed green on
 `node:20-alpine` while Jest's CommonJS runtime could not parse the ESM entry — that is what turned
 `api-tests` red, the stub in [`docs/guides/testing.md`](../../guides/testing.md) §6.
 
 The general lesson survives the specific fix: **a green Docker build is not proof a major is safe on
-the runtime under it.** An ESM-only dependency now loads because Node 24 has stable `require(esm)`
-and Jest ≥ 24.9 honours it, not because the packaging question went away. Lift Docker and CI Node
+the runtime under it.** An ESM-only dependency now loads because Node 24.9+ with `--experimental-vm-modules` lets Jest load
+it ([`testing.md` § 2a](../../guides/testing.md#2a-esm-only-dependencies-break-the-unit-suite-and-only-the-unit-suite)), not because the packaging question went away. Lift Docker and CI Node
 together, and read `api-tests` as the check that actually exercises the module graph.
 
 ### Why the baseline is ours rather than `--ignore-known`
