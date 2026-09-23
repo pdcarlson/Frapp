@@ -275,11 +275,15 @@ const HTTP_LEDGER: Record<string, Entry> = {
     },
   },
   ActivityFeedController_getFeed_v1: {
-    status: 'masked',
-    proof: {
-      spec: 'application/services/activity-feed.service.spec.ts',
-      test: 'leaves out an announcement whose author the caller has blocked, reading as the caller',
-    },
+    // Its announcement items are masked: a blocked author's announcement is
+    // left out, reading as the caller (activity-feed.service.spec.ts, "leaves
+    // out an announcement whose author the caller has blocked, reading as the
+    // caller"). Its other items carry text a member wrote (a backwork title
+    // beside its uploader, an event name, a points reason), which is
+    // MEMBER_TEXT, still open, so the route is too.
+    status: 'open',
+    issues: [2498],
+    why: "Announcements are masked; the items carrying a member's own text (a backwork title, an event name, a points reason) are not.",
   },
   NotificationController_listNotifications_v1: {
     // Serves every in-app row, whoever wrote it. The chat rows

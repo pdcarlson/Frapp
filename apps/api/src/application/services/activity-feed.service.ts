@@ -5,6 +5,7 @@ import { PointsService } from './points.service';
 import { BackworkService } from './backwork.service';
 import { MemberService } from './member.service';
 import { ChatService } from './chat.service';
+import type { MaskedChatMessage } from './chat-block-mask';
 import { RbacService } from './rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 
@@ -44,8 +45,10 @@ export interface ActivityFeedItem {
 const PER_DOMAIN_LIMIT = 10;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
-/** How many extra announcement rows to fetch, to absorb soft-deleted ones filtered out afterward — see {@link ActivityFeedService['announcementItems']}. */
+/** How many extra announcement rows to fetch per page, to absorb the soft-deleted and blocked-author ones filtered out afterward — see {@link ActivityFeedService['announcementItems']}. */
 const ANNOUNCEMENT_FETCH_BUFFER = 3;
+/** How many such pages to read before settling for fewer than `PER_DOMAIN_LIMIT` announcements. */
+const ANNOUNCEMENT_MAX_PAGES = 3;
 /** "New event created" only surfaces events created within this window — otherwise a chapter's entire history reads as "new" forever. */
 const EVENT_CREATED_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -308,29 +311,43 @@ export class ActivityFeedService {
     );
     if (!announcementChannel) return [];
 
-    // Over-fetch before filtering: `getMessages` applies its `limit` at the
-    // SQL level with no `is_deleted` predicate (deleted rows stay in place so
-    // chat threads can render a "[message deleted]" placeholder), so asking
-    // for exactly PER_DOMAIN_LIMIT and filtering afterward could hand back
-    // fewer live announcements than actually exist — or none, if the newest
-    // PER_DOMAIN_LIMIT rows all happen to be deleted. The buffer trades one
-    // slightly larger read for not silently under-reporting a channel's
-    // actual recent activity.
-    const messages = await this.chatService.getMessages(
-      announcementChannel.id,
-      chapterId,
-      userId,
-      { limit: PER_DOMAIN_LIMIT * ANNOUNCEMENT_FETCH_BUFFER },
-    );
+    // Two kinds of row are filtered out after the read, so it over-fetches and
+    // pages. `getMessages` applies its `limit` at the SQL level with no
+    // `is_deleted` predicate (deleted rows stay in place so chat threads can
+    // render a "[message deleted]" placeholder). And a blocked author's
+    // announcement is left out rather than shown masked (#2324): the masked row
+    // keeps its `sender_id`, so the item would carry the blocked member's name
+    // over the server's sentinel, and nothing may render or key off that
+    // sentinel (`spec/behavior/chat/README.md` § The masking contract).
+    // `getMessages` asks as the caller, so `sender_blocked` is the caller's own
+    // list. Asking for exactly PER_DOMAIN_LIMIT and filtering afterward could
+    // hand back fewer live announcements than exist — or none, if the newest
+    // rows are all deleted, or all by one officer the caller blocked — so each
+    // page is buffered, and a short result reads the next page (older than the
+    // last row seen, newest first like the thread) up to ANNOUNCEMENT_MAX_PAGES.
+    // Past that bound the feed under-reports rather than scan the channel.
+    const pageSize = PER_DOMAIN_LIMIT * ANNOUNCEMENT_FETCH_BUFFER;
+    const messages: MaskedChatMessage[] = [];
+    let before: string | undefined;
+    for (let page = 0; page < ANNOUNCEMENT_MAX_PAGES; page++) {
+      const batch = await this.chatService.getMessages(
+        announcementChannel.id,
+        chapterId,
+        userId,
+        { limit: pageSize, ...(before ? { before } : {}) },
+      );
+      messages.push(
+        ...batch.filter(
+          (message) => !message.is_deleted && !message.sender_blocked,
+        ),
+      );
+      if (messages.length >= PER_DOMAIN_LIMIT || batch.length < pageSize) {
+        break;
+      }
+      before = batch[batch.length - 1].created_at;
+    }
 
-    // A blocked author's announcement is left out rather than shown masked
-    // (#2324): the masked row keeps its `sender_id`, so the item would carry the
-    // blocked member's name over the server's sentinel, and nothing may render
-    // or key off that sentinel (`spec/behavior/chat/README.md` § The masking
-    // contract). `getMessages` asked as the caller, so `sender_blocked` is the
-    // caller's own list.
     return messages
-      .filter((message) => !message.is_deleted && !message.sender_blocked)
       .slice(0, PER_DOMAIN_LIMIT)
       .map((message): ActivityFeedItem => ({
         id: `announcement:${message.id}`,
