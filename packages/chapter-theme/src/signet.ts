@@ -83,8 +83,9 @@ const MIN_TEXT_CONTRAST = AA_NORMAL;
 const MIN_FILL_CONTRAST = AA_LARGE;
 
 /**
- * How far one lift step raises the failing fill's OKLCH lightness. Small enough that the
- * lift stops within one step of the smallest one `scaleClears` accepts, which
+ * How far one lift step raises the failing fill's OKLCH lightness: the grid
+ * `liftAccent` searches, fine enough that the lift it returns is the smallest
+ * `scaleClears` accepts on that grid (bar the skip its doc describes), which
  * keeps the brand shift to the minimum §8 requires. Where that minimum lands
  * is `scaleClears`' doing, not this step's: for the corpus's dark seeds it is
  * the label check, which leaves the fill near 3.8:1 on `--popover`.
