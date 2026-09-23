@@ -584,15 +584,25 @@ function policyStatements(all: Migration[]): PolicyStatement[] {
   );
 }
 
-/** Parsed once per file. Comments and string contents are not code here. */
+const parsed = new Map<string, ts.SourceFile>();
+
+/**
+ * Parsed once per path and cached, since one proof spec backs many entries.
+ * Comments and string contents are not code here.
+ */
 function parse(file: string): ts.SourceFile {
-  return ts.createSourceFile(
-    file,
-    readFileSync(file, 'utf8'),
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS,
-  );
+  let source = parsed.get(file);
+  if (!source) {
+    source = ts.createSourceFile(
+      file,
+      readFileSync(file, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    parsed.set(file, source);
+  }
+  return source;
 }
 
 function everyNode(root: ts.Node): ts.Node[] {
@@ -613,11 +623,16 @@ function literalText(node: ts.Node | undefined): string | undefined {
     : undefined;
 }
 
-/** The leftmost identifier of `a.b.c`, or of `a` itself. */
-function rootIdentifier(node: ts.Expression): string | undefined {
+/** Every name on `a.b.c`, left to right, so `j.it.only` gives `j`, `it`, `only`. */
+function chainNames(node: ts.Expression): string[] {
+  const names: string[] = [];
   let current: ts.Expression = node;
-  while (ts.isPropertyAccessExpression(current)) current = current.expression;
-  return ts.isIdentifier(current) ? current.text : undefined;
+  while (ts.isPropertyAccessExpression(current)) {
+    names.unshift(current.name.text);
+    current = current.expression;
+  }
+  if (ts.isIdentifier(current)) names.unshift(current.text);
+  return names;
 }
 
 const SKIPPING_IDENTIFIERS = new Set([
@@ -631,9 +646,10 @@ const SKIPPING_IDENTIFIERS = new Set([
 
 /**
  * What makes Jest skip a test in this file, read from the syntax tree: `.skip`,
- * `.only` or `.todo` anywhere on a `describe` / `it` / `test` chain (so
- * `it.concurrent.only` too), and the `x`/`f` identifiers in any position,
- * called or used as a value (`cond ? describe : xdescribe`). A focused test
+ * `.only` or `.todo` anywhere on a chain that names `describe`, `it` or `test`
+ * (so `it.concurrent.only` and a namespace import's `j.it.only` too), and the
+ * `x`/`f` names, whether referenced (`fit(…)`, `cond ? describe : xdescribe`)
+ * or called off a namespace (`j.fit(…)`). A focused test
  * anywhere skips the proof, and a skipped block around it leaves the title in
  * place with nothing running. Comments and strings are not in the tree, so the
  * word "fit" in a title is not the identifier.
@@ -641,12 +657,24 @@ const SKIPPING_IDENTIFIERS = new Set([
 function skipsOrFocuses(file: ts.SourceFile): boolean {
   return everyNode(file).some(
     (node) =>
+      // `fit(…)`, `cond ? describe : xdescribe`.
       (ts.isIdentifier(node) &&
         SKIPPING_IDENTIFIERS.has(node.text) &&
         !isNameOnly(node)) ||
+      // `j.fit(…)` or `j.fit.each(…)` through a namespace import. A property
+      // named `fit` that is only read (`expect(o.fit)`) is not a focus.
+      (ts.isPropertyAccessExpression(node) &&
+        SKIPPING_IDENTIFIERS.has(node.name.text) &&
+        ((ts.isCallExpression(node.parent) &&
+          node.parent.expression === node) ||
+          ts.isPropertyAccessExpression(node.parent))) ||
+      // `.skip` / `.only` / `.todo` anywhere on a chain that names describe,
+      // it or test: `it.concurrent.only`, `j.it.only`, `describe.skip.each`.
       (ts.isPropertyAccessExpression(node) &&
         ['skip', 'only', 'todo'].includes(node.name.text) &&
-        ['describe', 'it', 'test'].includes(rootIdentifier(node) ?? '')),
+        chainNames(node).some((name) =>
+          ['describe', 'it', 'test'].includes(name),
+        )),
   );
 }
 
@@ -871,18 +899,32 @@ describe('chat read-surface ledger (#2324)', () => {
     // held in a constant is a problem to resolve by hand, never a pass. Prose
     // about the echo inside a longer string is not the literal and does not
     // count. A reaction subscription would be a reaction push.
+    // The event in any spelling the code can hold it: the string literal, the
+    // enum member read as a property or an element, or a destructured binding
+    // referenced by name. Declarations (`const { POSTGRES_CHANGES } = …`) are
+    // not references, and are skipped.
     const isEvent = (node: ts.Node | undefined): boolean =>
       literalText(node) === 'postgres_changes' ||
       (!!node &&
-        ts.isPropertyAccessExpression(node) &&
-        node.name.text === 'POSTGRES_CHANGES');
+        ((ts.isPropertyAccessExpression(node) &&
+          node.name.text === 'POSTGRES_CHANGES') ||
+          (ts.isElementAccessExpression(node) &&
+            literalText(node.argumentExpression) === 'POSTGRES_CHANGES') ||
+          (ts.isIdentifier(node) &&
+            node.text === 'POSTGRES_CHANGES' &&
+            !isNameOnly(node) &&
+            !ts.isBindingElement(node.parent) &&
+            !ts.isImportSpecifier(node.parent))));
+    const subscribed = new Set<string>();
     const problems = sources.flatMap(({ rel, file }) =>
       everyNode(file)
         .filter(
           (node) =>
             isEvent(node) &&
             !(
-              ts.isPropertyAccessExpression(node.parent) && isEvent(node.parent)
+              (ts.isPropertyAccessExpression(node.parent) ||
+                ts.isElementAccessExpression(node.parent)) &&
+              isEvent(node.parent)
             ),
         )
         .flatMap((event) => {
@@ -909,10 +951,16 @@ describe('chat read-surface ledger (#2324)', () => {
           if (name === undefined) {
             return [`${where}: subscription with no literal table`];
           }
+          subscribed.add(name);
           return name in API_SUBSCRIPTIONS ? [] : [`${where}: ${name}`];
         }),
     );
     expect(problems).toEqual([]);
+    // The anchor: every ledgered subscription is actually seen. A scan that
+    // silently stopped recognizing subscriptions would otherwise pass here.
+    expect([...subscribed].sort()).toEqual(
+      Object.keys(API_SUBSCRIPTIONS).sort(),
+    );
   });
 
   it('knows every notification emitter, and every notify-named call in it', () => {
