@@ -1,8 +1,14 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { Bell, CheckCheck, Loader2 } from "lucide-react";
-import { useMarkNotificationRead, useNotifications } from "@repo/hooks";
+import {
+  CHAT_REPORTS_NOTIFICATION_SCREEN,
+  useInvalidateChatReports,
+  useMarkNotificationRead,
+  useNotifications,
+} from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -75,9 +81,17 @@ function deepLinkFor(notification: Notification): string {
       return "/service";
     case "profile":
       return "/profile";
+    // The officer report queue (#2257): the API's new-report notification
+    // targets it with a bare screen, and the queue lives on Chat Admin.
+    case CHAT_REPORTS_NOTIFICATION_SCREEN:
+      return "/chat-admin";
     default:
       return "/chat";
   }
+}
+
+function isReportNotification(notification: Notification): boolean {
+  return notification.data?.target?.screen === CHAT_REPORTS_NOTIFICATION_SCREEN;
 }
 
 export function DashboardNotificationDrawer({
@@ -87,6 +101,7 @@ export function DashboardNotificationDrawer({
   const frappUser = useFrappUser();
   const notificationsQuery = useNotifications();
   const markRead = useMarkNotificationRead();
+  const invalidateReports = useInvalidateChatReports();
 
   // Live updates: any notification INSERT for the current user (and
   // UPDATE when it's marked read elsewhere) refreshes the list.
@@ -101,6 +116,25 @@ export function DashboardNotificationDrawer({
     (a, b) => (a.created_at < b.created_at ? 1 : -1),
   );
   const unreadCount = notifications.filter((n) => !n.read_at).length;
+
+  /*
+    Keep the officer report queue in step with its notifications (#2257).
+
+    The realtime ping above carries no row, so it cannot say *which*
+    notification arrived; once the list has refetched, the newest report
+    notification can. When that changes, a report was filed and the queue's
+    cached slices are stale — `staleTime` alone would leave an officer who
+    opens Chat Admin within 30s of an earlier visit looking at a queue without
+    the report they were paged about. Invalidation refetches a mounted queue
+    at once and an unmounted one on its next mount, so this costs nothing for
+    a member with no queue. Following the link invalidates again, below, for
+    the report whose ping this tab never heard.
+  */
+  const newestReportNotification =
+    notifications.find(isReportNotification)?.id ?? null;
+  useEffect(() => {
+    if (newestReportNotification) void invalidateReports();
+  }, [newestReportNotification, invalidateReports]);
 
   async function handleMarkRead(notification: Notification) {
     if (notification.read_at) return;
@@ -191,6 +225,9 @@ export function DashboardNotificationDrawer({
                     <Link
                       href={deepLinkFor(notification)}
                       onClick={() => {
+                        if (isReportNotification(notification)) {
+                          void invalidateReports();
+                        }
                         void handleMarkRead(notification);
                         onOpenChange(false);
                       }}

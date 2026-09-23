@@ -44,6 +44,15 @@ describe("categoryLabelFor", () => {
     expect(categoryLabelFor({ target: { screen: "event" } })).toBe("Events");
   });
 
+  it("labels the officer report notification, though mobile routes it to the list", () => {
+    // `ChatReportService`'s new-report notification targets `chat_reports`.
+    // Mobile has no queue to open, but an officer reading the row here should
+    // still see what kind of notice it is.
+    expect(categoryLabelFor({ target: { screen: "chat_reports" } })).toBe(
+      "Reports",
+    );
+  });
+
   // Better no label than a guessed one: nothing in the row says what category
   // the server used, so an unmapped screen is genuinely unknown.
   it("returns null rather than guessing for an unknown or absent target", () => {

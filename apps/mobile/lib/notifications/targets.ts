@@ -18,6 +18,11 @@
  * is worse than landing on the notification list, so anything unrecognized
  * falls through to `/notifications`, which can always render the row.
  *
+ * One emitted screen is deliberately absent: `chat_reports`, the officer report
+ * queue (`ChatReportService`'s new-report notification). The queue is a web
+ * surface (`/chat-admin`) with no mobile route, so it takes the fallback above
+ * rather than a guess.
+ *
  * ## Why the table is spelled with `pathname:`
  *
  * `lib/routes.spec.ts` is what actually checks route strings against the file

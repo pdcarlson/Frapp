@@ -25,6 +25,22 @@ export interface CreateChatReportInput {
   details: string | null;
 }
 
+/**
+ * What filing a report produced: the report, and whether this call wrote it.
+ *
+ * `created` exists for one consumer, and it is load-bearing there: the officer
+ * notification fires only for a report this call actually inserted
+ * (`ChatReportService.fileReport`). Without it a double-tap or an offline retry
+ * — which the idempotent path below answers with the *existing* open report —
+ * would page every officer a second time for the same report, and a member
+ * could re-page the whole moderation team at will by re-filing.
+ */
+export interface CreateChatReportResult {
+  report: ChatMessageReportView;
+  /** False when the caller already had an open report on this message and this is it. */
+  created: boolean;
+}
+
 export interface IChatMessageReportRepository {
   /**
    * File a report, idempotently on the caller's *open* report for this message.
@@ -33,13 +49,65 @@ export interface IChatMessageReportRepository {
    * not use a partial unique index as an `ON CONFLICT` arbiter — the same
    * limitation `SupabaseChatMessageRepository.create` documents for the send
    * dedupe. So this cannot be an upsert: the implementation inserts, and on
-   * `23505` re-selects the open row and returns it. A double-tap or an offline
-   * retry is therefore a no-op rather than a 500.
+   * `23505` re-selects the open row and returns it with `created: false`. A
+   * double-tap or an offline retry is therefore a no-op rather than a 500.
    */
-  create(input: CreateChatReportInput): Promise<ChatMessageReportView>;
+  create(input: CreateChatReportInput): Promise<CreateChatReportResult>;
 
   /**
-   * The officer queue for one chapter, newest first, filtered to one status.
+   * The caller's own **open** report on one message, or `null` — the replay
+   * {@link create} answers on a unique violation, asked for directly.
+   *
+   * For the one path where the insert cannot be the question:
+   * `ChatReportService.fileReport` refuses a report on a message that is
+   * already deleted *before* writing, and a member re-sending a report they
+   * filed while the message was live must still get that report back rather
+   * than the refusal. So the replay is looked up first.
+   *
+   * **`reporterUserId` must be the authenticated caller**, exactly as
+   * `create`'s `reporter_user_id` is. That, not this interface, is what keeps
+   * "who reported this message" unanswerable: `create` already answers "did
+   * this user report it" for any id passed to it (the `23505`), so the
+   * boundary was never the method list — it is that no route accepts a
+   * reporter id and the only call sites thread `@CurrentUser('id')`. The
+   * answer is the caller's own report, stripped like every other exit.
+   */
+  findOwnOpenReport(
+    chapterId: string,
+    reporterUserId: string,
+    messageId: string,
+  ): Promise<ChatMessageReportView | null>;
+
+  /**
+   * One report within a chapter, whatever its status, **as `reviewerUserId`
+   * may see it**. Returns `null` when the id does not resolve inside
+   * `chapterId`, or when the report is about `reviewerUserId` themselves
+   * (`reported_sender_id` is the caller).
+   *
+   * - **Chapter.** A report id is a bare UUID and the caller's
+   *   `channels:manage` says nothing about which chapter it belongs to.
+   * - **Not about the reviewer.** An officer can be reported like anybody
+   *   else, and a report about them — its reporter's note, and for a DM the
+   *   reporter by elimination — is exactly what "the reporter is never
+   *   disclosed to the reported member" keeps from them. Both misses are the
+   *   same `null`, so the route's 404 does not confirm the report exists.
+   *
+   * Exists for the officer actions (#2311), where the row is the capability:
+   * the caller needs the report's *current* `status` and `message_id`, read
+   * fresh, before it may act on the message it names.
+   */
+  findById(
+    id: string,
+    chapterId: string,
+    reviewerUserId: string,
+  ): Promise<ChatMessageReportView | null>;
+
+  /**
+   * The officer queue for one chapter as `reviewerUserId` may see it, newest
+   * first, filtered to one status. Reports whose `reported_sender_id` is the
+   * reviewer are left out, for the reason {@link findById} gives; a report on
+   * an imported archive message (`reported_sender_id` NULL) names no Signet
+   * member and is always included.
    *
    * Status is required rather than optional so the read always matches
    * `idx_chat_message_reports_chapter_status` — `(chapter_id, status,
@@ -49,12 +117,18 @@ export interface IChatMessageReportRepository {
   findByChapterAndStatus(
     chapterId: string,
     status: ChatReportStatus,
+    reviewerUserId: string,
   ): Promise<ChatMessageReportView[]>;
 
   /**
-   * Resolve one report within a chapter. Returns `null` when the id does not
-   * resolve **inside `chapterId`**, so a caller holding `channels:manage` in
-   * their own chapter cannot reach another chapter's report by UUID.
+   * Resolve one **open** report within a chapter, as a compare-and-set.
+   *
+   * Returns `null` when no row matched: the id is not in `chapterId`, the
+   * report is about `resolvedBy`, or — the case the predicate exists for — it
+   * is no longer `open`. Without the status predicate a stale client could
+   * overwrite an `actioned` report with `dismissed`, rewriting what the
+   * moderation record says happened to the message. The caller tells the
+   * three apart with its own read ({@link findById}).
    */
   resolve(
     id: string,
@@ -63,6 +137,70 @@ export interface IChatMessageReportRepository {
     resolvedBy: string,
     resolvedAt: string,
   ): Promise<ChatMessageReportView | null>;
+
+  /**
+   * Resolve **every** open report on one message within a chapter, in one
+   * statement, and return the rows it changed.
+   *
+   * For the report-scoped removal (#2311): several members can report the same
+   * message, and once it is removed every one of those reports has been acted
+   * on. Resolving only the report the officer clicked would leave its siblings
+   * open over a message that is already gone. A single conditional `UPDATE`
+   * rather than a read-then-loop, so no sibling filed or resolved in between
+   * can be missed or overwritten. Reports about `resolvedBy` are excluded like
+   * everywhere else, though every report on one message shares its sender.
+   */
+  resolveOpenForMessage(
+    chapterId: string,
+    messageId: string,
+    status: ChatReportResolutionStatus,
+    resolvedBy: string,
+    resolvedAt: string,
+  ): Promise<ChatMessageReportView[]>;
+
+  /**
+   * Undo a removal's claim: put one report back to `open` **only if it still
+   * carries exactly that claim** — `actioned`, by `resolvedBy`, at
+   * `resolvedAt` — and say whether it did.
+   *
+   * Not a reopen, which the product does not have (`open` is absent from
+   * `CHAT_REPORT_RESOLUTION_STATUSES`: the answer to "it happened again" is a
+   * new report). It exists for one caller, `ChatReportService`'s
+   * report-scoped removal, which claims the report *before* deleting the
+   * message so a concurrent Dismiss cannot slip in between (#2311); when the
+   * delete then fails, the claim is a false statement — `actioned` over a
+   * message still in place — and this withdraws it. Matching the whole stamp
+   * means it can only ever withdraw that request's own write: no officer
+   * action produces the same `(resolved_by, resolved_at)` pair, and resolution
+   * is otherwise one-way.
+   *
+   * Can fail on the partial unique index if the same reporter filed a new
+   * report on the message while the claim stood; the caller logs that rather
+   * than failing on it.
+   */
+  releaseClaim(
+    id: string,
+    chapterId: string,
+    resolvedBy: string,
+    resolvedAt: string,
+  ): Promise<boolean>;
+
+  /**
+   * Close one **open** report as `actioned` with no reviewer (`resolved_by`
+   * NULL), and say whether it did.
+   *
+   * For a report that landed on a message removed while it was being written
+   * (`ChatReportService.fileReport`): the removal's sweep had already run, so
+   * nothing else would close it, and leaving it open would page every officer
+   * about a message that is already gone. No officer decided it, so none is
+   * stamped. Scoped by chapter and conditional on `status = 'open'` like every
+   * write here.
+   */
+  closeForDeletedMessage(
+    id: string,
+    chapterId: string,
+    resolvedAt: string,
+  ): Promise<boolean>;
 }
 
 export interface IChatMemberBlockRepository {

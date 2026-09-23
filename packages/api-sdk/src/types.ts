@@ -1260,8 +1260,25 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Resolve a chat message report */
+        /** Resolve an open chat message report */
         patch: operations["ChatReportController_resolveReport_v1"];
+        trace?: never;
+    };
+    "/v1/chat/reports/{id}/remove-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove the message an open report names and mark its open reports actioned */
+        post: operations["ChatReportController_removeReportedMessage_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/chat/blocks": {
@@ -3649,6 +3666,41 @@ export interface components {
              * @enum {string}
              */
             status: "reviewed" | "actioned" | "dismissed";
+        };
+        ChatReportRemovalDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /**
+             * Format: uuid
+             * @description Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence.
+             */
+            message_id: string | null;
+            /** @description The message content as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence. */
+            reported_content: string | null;
+            /**
+             * Format: uuid
+             * @description Null for an imported archive message, which names its author in reported_author_name instead.
+             */
+            reported_sender_id: string | null;
+            reported_author_name: string | null;
+            /** @enum {string} */
+            reason: "spam" | "harassment" | "hate" | "violence" | "sexual" | "self_harm" | "other";
+            details: string | null;
+            /** @enum {string} */
+            status: "open" | "reviewed" | "actioned" | "dismissed";
+            created_at: string;
+            resolved_at: string | null;
+            /** Format: uuid */
+            resolved_by: string | null;
+            /** @description True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way. */
+            message_already_deleted: boolean;
+            /**
+             * Format: uuid
+             * @description The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists.
+             */
+            channel_id: string | null;
         };
         ChatBlockListDto: {
             /** @description users.id values the caller has blocked in the active chapter. An empty array means nobody is blocked — a failed request is NOT an empty list, and a client must hold unmaskable messages rather than render them when the read fails. */
@@ -6470,6 +6522,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatReportDto"];
+                };
+            };
+        };
+    };
+    ChatReportController_removeReportedMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatReportRemovalDto"];
                 };
             };
         };
