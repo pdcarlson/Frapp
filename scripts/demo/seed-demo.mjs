@@ -521,7 +521,7 @@ export async function uploadPlaceholders({ supabaseUrl, serviceKey, namespace, f
   return results;
 }
 
-/** Storage's page size for one listing call. */
+/** Storage's page size for one listing call, and the batch size for one bulk delete. */
 export const STORAGE_LIST_PAGE = 1000;
 
 /**
@@ -584,16 +584,20 @@ export async function removePlaceholders({ supabaseUrl, serviceKey, namespace, f
     for (const path of paths) {
       if (!path.startsWith(prefix)) throw new Error(`refusing to delete ${bucket}/${path}: outside ${prefix}`);
     }
-    if (paths.length > 0) {
+    // In batches of a listing page: Storage can cap a bulk delete at 1000 objects
+    // per request (its per-tenant request limits), and paging the listing is
+    // exactly what lets more than that arrive here.
+    for (let start = 0; start < paths.length; start += STORAGE_LIST_PAGE) {
+      const batch = paths.slice(start, start + STORAGE_LIST_PAGE);
       await request(
         fetchImpl,
         `${supabaseUrl}/storage/v1/object/${bucket}`,
         {
           method: "DELETE",
           headers: serviceHeaders(serviceKey, { "Content-Type": "application/json" }),
-          body: JSON.stringify({ prefixes: paths }),
+          body: JSON.stringify({ prefixes: batch }),
         },
-        `deleting ${paths.length} object(s) from ${bucket}`,
+        `deleting ${batch.length} object(s) from ${bucket}`,
         { idempotent: true },
       );
     }

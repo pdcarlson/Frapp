@@ -418,7 +418,9 @@ test("storage --remove pages a folder that holds more than one listing's worth",
   const result = await removePlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: ns, fetchImpl });
   assert.deepEqual(offsets, [0, STORAGE_LIST_PAGE]);
   assert.deepEqual(result[0], { bucket: "documents", count: total });
-  assert.equal(JSON.parse(calls.find((c) => c.method === "DELETE").body).prefixes.length, total);
+  // Deleted in batches no larger than a page: Storage can cap a bulk delete at 1000.
+  const batches = calls.filter((c) => c.method === "DELETE").map((c) => JSON.parse(c.body).prefixes.length);
+  assert.deepEqual(batches, [STORAGE_LIST_PAGE, 2]);
 });
 
 // ── verify ──────────────────────────────────────────────────────────────────
@@ -516,6 +518,11 @@ test("verify fails a stale seed: every event already past", async () => {
 });
 
 // ── setup-demo.sh ───────────────────────────────────────────────────────────
+
+test("demo-data.md shows the local login seed-demo.mjs owns", () => {
+  const guide = readFileSync(new URL("../../../docs/guides/demo-data.md", import.meta.url), "utf8");
+  assert.ok(guide.includes(`${LOCAL_DEMO_EMAIL} / ${LOCAL_DEMO_PASSWORD}`), "demo-data.md's local sign-in line drifted");
+});
 
 test("setup-demo.sh restates the local login seed-demo.mjs owns, and prints only that password", () => {
   const sh = readFileSync(new URL("../../demo/setup-demo.sh", import.meta.url), "utf8");

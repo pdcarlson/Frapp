@@ -2431,15 +2431,15 @@ console.log("\n=== demo seed load (#2308) ===");
       loginPastSessions: await n(
         `select count(*)::int as n from study_sessions where user_id = '${loginUserId}' and status = 'COMPLETED'`,
       ),
-      // A text message in a public channel from a member other than the login:
-      // what the README's Block row needs. The system actor is no member, so the
-      // join leaves its posts out, as the app's Block control does.
+      // A text message in #general from a member other than the login: what the
+      // README's Block row points the reviewer at. The system actor is no member,
+      // so the join leaves its posts out, as the app's Block control does.
       blockable: await n(
         `select count(*)::int as n from chat_messages m
            join chat_channels c on c.id = m.channel_id
            join members mb on mb.user_id = m.sender_id and mb.chapter_id = c.chapter_id
-          where c.chapter_id = '${chapterId}' and c.type = 'PUBLIC' and m.type = 'TEXT'
-            and m.sender_id <> '${loginUserId}'`,
+          where c.chapter_id = '${chapterId}' and c.type = 'PUBLIC' and c.name = 'general'
+            and m.type = 'TEXT' and m.sender_id <> '${loginUserId}'`,
       ),
       loginAuthId: (await db.query(`select supabase_auth_id::text as a from users where id = '${loginUserId}'`)).rows[0]?.a ?? null,
     };
@@ -2508,7 +2508,7 @@ console.log("\n=== demo seed load (#2308) ===");
       [reviewer.loginServiceEntries > 0, `the reviewer has a service entry of their own (${reviewer.loginServiceEntries})`],
       [reviewer.dms === 1 && reviewer.dmMessages === 3 && marketing.dms === 0, `one DM into the reviewer, none in marketing (${reviewer.dms} with ${reviewer.dmMessages} messages / ${marketing.dms})`],
       [reviewer.studyZones > 0 && reviewer.loginPastSessions > 0, `the reviewer has study zones and past sessions of their own (${reviewer.studyZones} zones, ${reviewer.loginPastSessions} sessions)`],
-      [reviewer.blockable > 0, `a public channel holds text from another member, so Block is offered (${reviewer.blockable} messages)`],
+      [reviewer.blockable > 0, `#general holds text from another member, so Block is offered there (${reviewer.blockable} messages)`],
       [same(first, second), "re-running both variants is idempotent"],
       [refusedMissing && same(afterMissing, reviewer), "a reviewer re-seed with no auth user raises and leaves the existing chapter untouched"],
       [refusedStranger && same(afterStranger, reviewer), "a reviewer re-seed naming an unmarked account raises and leaves the existing chapter untouched"],
