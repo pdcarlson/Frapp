@@ -539,7 +539,7 @@ export async function uploadPlaceholders({ supabaseUrl, serviceKey, namespace, f
   );
   const chapter = Array.isArray(chapters) ? chapters[0] : undefined;
   if (!chapter?.name) {
-    throw new Error(`no chapter ${chapterId} in this project: run \`seed-demo.mjs sql\` against it first.`);
+    throw new Error(`no chapter ${chapterId} in this project: run \`seed-demo.mjs sql --namespace ${namespace}\` against it first.`);
   }
   const chapterLine = [chapter.name, chapter.university].filter(Boolean).join("  ·  ");
   const results = [];
@@ -552,7 +552,7 @@ export async function uploadPlaceholders({ supabaseUrl, serviceKey, namespace, f
       `reading ${table}`,
     );
     if (!Array.isArray(rows) || rows.length === 0) {
-      throw new Error(`no ${table} rows for chapter ${chapterId}: run \`seed-demo.mjs sql\` against this project first.`);
+      throw new Error(`no ${table} rows for chapter ${chapterId}: run \`seed-demo.mjs sql --namespace ${namespace}\` against this project first.`);
     }
     for (const row of rows) {
       assertDemoObjectPath({ namespace, kind, rowId: row.id, path: row.storage_path });
@@ -732,7 +732,7 @@ export async function verifyLogin({
   if (me?.id !== loginUserId) {
     fail(
       `signed in as users.id ${me?.id}, not the seeded login ${loginUserId} — the seed did not link this auth user. ` +
-        `Run ${reseed} (after \`auth\`), then verify again.`,
+        `Run ${reseed} (after \`auth --namespace ${namespace}\`), then verify again.`,
     );
   }
   pass(`linked to the seeded login (users.id ${loginUserId})`);
@@ -752,7 +752,7 @@ export async function verifyLogin({
   const file = await fetchWithRetry(downloadUrl, {}, { fetchImpl });
   const bytes = Buffer.from(await file.arrayBuffer());
   if (!file.ok || bytes.subarray(0, 5).toString("latin1") !== "%PDF-") {
-    fail(`"${documents[0].title}" did not open as a PDF (HTTP ${file.status}) — run \`seed-demo.mjs storage\``);
+    fail(`"${documents[0].title}" did not open as a PDF (HTTP ${file.status}) — run \`seed-demo.mjs storage --namespace ${namespace}\``);
   }
   pass(`${documents.length} documents; "${documents[0].title}" opens as a ${bytes.length}-byte PDF`);
 
@@ -769,8 +769,9 @@ export async function verifyLogin({
   if (!zoned) {
     fail(
       `no upcoming event with a check-in zone (${upcoming.length} upcoming in all): the seed is stale. ` +
-        `Re-seed it the way docs/guides/demo-data.md, "Re-seed before every submission", lays out: tear it down, ` +
-        `then run ${reseed} and \`storage\` again, then verify again`,
+        `Re-seed it: apply \`sql --namespace ${namespace} --remove\`, run \`storage --namespace ${namespace} --remove\`, ` +
+        `apply ${reseed}, run \`storage --namespace ${namespace}\`, then verify again. Against production each ` +
+        `step also needs the fence and credentials in docs/guides/demo-data.md, "Re-seed before every submission"`,
     );
   }
   pass(

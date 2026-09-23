@@ -378,12 +378,12 @@ test("storage names the missing step when the seed has not run", async () => {
   const noRows = makeFetch([chapterRow(), [on("GET", "/rest/v1/chapter_documents"), () => ({ json: [] })]]);
   await assert.rejects(
     uploadPlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: "a9900000", fetchImpl: noRows.fetchImpl }),
-    /run `seed-demo\.mjs sql`/,
+    /run `seed-demo\.mjs sql --namespace a9900000`/,
   );
   const noChapter = makeFetch([[on("GET", "/rest/v1/chapters?"), () => ({ json: [] })]]);
   await assert.rejects(
     uploadPlaceholders({ supabaseUrl: HOSTED, serviceKey: KEY, namespace: "a9900000", fetchImpl: noChapter.fetchImpl }),
-    /no chapter a9900000-.* run `seed-demo\.mjs sql`/,
+    /no chapter a9900000-.* run `seed-demo\.mjs sql --namespace a9900000`/,
   );
   assert.equal(noChapter.calls.some((c) => c.method === "POST"), false);
 });
@@ -450,6 +450,14 @@ test("storage --remove refuses any listed path not plainly under the chapter's f
   ]) {
     assert.throws(() => assertUnderPrefix("documents", [stray], prefix), /refusing to delete documents\/.*: not a file under chapters\//, stray);
   }
+});
+
+test("every command seed-demo.mjs prints for the reader carries --namespace, which parseArgs requires", () => {
+  // Messages kept naming commands bare (`storage`, `sql --remove`), each refused as printed.
+  const source = readFileSync(new URL("../../demo/seed-demo.mjs", import.meta.url), "utf8");
+  const printed = [...source.matchAll(/\\`((?:seed-demo\.mjs )?(?:sql|auth|storage|verify)\b[^`\\]*)\\`/g)].map((m) => m[1]);
+  assert.ok(printed.length >= 8, `found only ${printed.length} printed commands; the scan has gone stale`);
+  assert.deepEqual(printed.filter((cmd) => !cmd.includes("--namespace")), []);
 });
 
 test("the SQL sql --remove prints names its follow-up commands runnably, with the namespace", () => {
@@ -687,11 +695,11 @@ test("verify's re-seed advice keeps --reviewer when it checked the reviewer vari
   // `sql` without it would rebuild the marketing chapter over the reviewer's.
   const stale = [{ name: "Old", start_time: "2026-09-01T12:00:00.000Z", check_in_zone: ZONE }];
   const reviewer = makeFetch(verifyRoutes({ events: stale }));
-  await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: reviewer.fetchImpl }), /"Re-seed before every submission", lays out: tear it down, then run `sql --namespace a9900000 --reviewer` and `storage` again/);
+  await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: reviewer.fetchImpl }), /apply `sql --namespace a9900000 --remove`, run `storage --namespace a9900000 --remove`, apply `sql --namespace a9900000 --reviewer`, run `storage --namespace a9900000`, then verify again/);
   const unlinked = makeFetch(verifyRoutes({ meId: "some-new-user" }));
-  await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: unlinked.fetchImpl }), /Run `sql --namespace a9900000 --reviewer` \(after `auth`\)/);
+  await assert.rejects(verifyLogin({ ...verifyArgs, reviewer: true, fetchImpl: unlinked.fetchImpl }), /Run `sql --namespace a9900000 --reviewer` \(after `auth --namespace a9900000`\)/);
   const marketing = makeFetch(verifyRoutes({ events: stale }));
-  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: marketing.fetchImpl }), /then run `sql --namespace a9900000` and `storage` again/);
+  await assert.rejects(verifyLogin({ ...verifyArgs, fetchImpl: marketing.fetchImpl }), /apply `sql --namespace a9900000`, run `storage --namespace a9900000`, then verify again/);
 });
 
 // ── setup-demo.sh ───────────────────────────────────────────────────────────
