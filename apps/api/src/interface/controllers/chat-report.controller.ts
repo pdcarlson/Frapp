@@ -69,18 +69,9 @@ import {
  * **That union has one spelling in code**, `CHAT_REPORT_QUEUE_PERMISSIONS` in
  * `@repo/validation`, and this controller's decorators are pinned equal to it
  * (`chat-report.controller.spec.ts`). The constant's docblock
- * (`packages/validation/src/permissions.ts`) keeps the list of everything that
- * has to agree with it; the same list, so the two cannot disagree:
- *
- * - code that reads the constant: the new-report notification's recipients
- *   (`REPORT_QUEUE_PERMISSIONS`, `chat-report.service.ts`) and the web queue's
- *   `<Can allOf>` gate (`apps/web/components/chat-admin/chat-reports-card.tsx`);
- * - prose that restates it and changes by hand with it: the card's
- *   permission-denied copy (`chatReportCopy.deniedDescription`, whose spec
- *   checks it names every permission in the constant),
- *   `spec/ui/design-system/writing.md` §7's Chat Admin row, the Status line,
- *   § Report and § Officer action of `spec/behavior/chat/README.md`, and the
- *   `chat/reports` row of `docs/internal/security/AUTHORIZATION_MODEL.md`.
+ * (`packages/validation/src/permissions.ts`) keeps the one list of everything
+ * that has to agree with it — code that reads the constant and prose that
+ * restates it — so read it there rather than here.
  *
  * **No officer route serves or acts on a report about its caller.** The
  * repository leaves out rows whose `reported_sender_id` is the caller on the

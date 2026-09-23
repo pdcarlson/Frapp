@@ -542,7 +542,7 @@ should reuse these words from there. Paths are under `apps/mobile/`.
 | Report sent | `Report sent` | `Your chapter's officers can see this report. The member you reported isn't told.` | `lib/chat/report-reasons.ts` |
 | Already reported | `Already reported` | `You already reported this message, and that report is still open. Your chapter's officers can see it.` | `lib/chat/report-reasons.ts` |
 | Report failed, form open | — | `Your report didn't send. Check your connection and try again.` — no response, a 5xx, or any status but the two below | `lib/chat/report-reasons.ts` (`reportFailureBody`) |
-| Report refused (403 / 404), form open | — | `This message can't be reported anymore. It may have been deleted, or you may no longer have access to where it was posted.` | `lib/chat/report-reasons.ts` (`reportFailureBody`) |
+| Report refused (403 / 404 / 409), form open | — | `This message can't be reported anymore. It may have been deleted, or you may no longer have access to where it was posted.` | `lib/chat/report-reasons.ts` (`reportFailureBody`) |
 | Report failed after the form was dismissed | `Couldn't send your report` | Whichever of the two bodies above applies (an alert) | `lib/chat/report-reasons.ts` |
 | Tombstone | — | `Message from a member you blocked` · action `Unblock` | `components/chat/blocked-message-tombstone.tsx` |
 | Tombstone, unblocked since | — | `Hidden while you had this member blocked` · action `Reload` only while the post-unblock re-read has failed (a spinner while it runs) | `components/chat/blocked-message-tombstone.tsx` |

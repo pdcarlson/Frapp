@@ -347,7 +347,7 @@ describe("MessageActionsSheet — report", () => {
   });
 
   it("says a refused report cannot be sent at all, rather than asking to retry (finding 8)", async () => {
-    for (const statusCode of [403, 404]) {
+    for (const statusCode of [403, 404, 409]) {
       vi.mocked(AccessibilityInfo.announceForAccessibility).mockClear();
       report.mutateAsync.mockRejectedValue({ statusCode, message: "nope" });
       const tree = render(target);

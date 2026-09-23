@@ -183,8 +183,14 @@ export function messageExcerpt(
 ): string | null {
   const text = content?.replace(/\s+/g, " ").trim();
   if (!text) return null;
-  if (text.length <= EXCERPT_LENGTH) return text;
-  return `${text.slice(0, EXCERPT_LENGTH - 1).trimEnd()}…`;
+  // Counted in code points, not UTF-16 units, so the cut never splits an
+  // emoji's surrogate pair and leaves half a character in an accessible name.
+  const chars = Array.from(text);
+  if (chars.length <= EXCERPT_LENGTH) return text;
+  return `${chars
+    .slice(0, EXCERPT_LENGTH - 1)
+    .join("")
+    .trimEnd()}…`;
 }
 
 /**

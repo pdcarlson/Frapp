@@ -77,6 +77,13 @@ describe("messageExcerpt", () => {
     expect(excerpt!.length).toBeLessThanOrEqual(40);
   });
 
+  it("never cuts an emoji in half", () => {
+    // 38 ASCII characters, then an emoji whose surrogate pair straddles the cut.
+    const excerpt = messageExcerpt(`${"a".repeat(38)}😀 and more after it`);
+    expect(excerpt).toBe(`${"a".repeat(38)}😀…`);
+    expect(excerpt).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
   it("is null for a message with no text", () => {
     expect(messageExcerpt(null)).toBeNull();
     expect(messageExcerpt("   ")).toBeNull();

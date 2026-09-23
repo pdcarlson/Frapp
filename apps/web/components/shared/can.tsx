@@ -26,9 +26,10 @@ type BaseProps = {
    *
    * Unlike the other two, this defaults to something rather than to `null`.
    * The default is the control-slot member of the §10 offline family, which is
-   * the right shape for the eighteen call sites that gate a single button; the
-   * five that stand in for a screen or a card pass `OfflineState` /
-   * `NestedOffline` themselves. Defaulting it non-null is the point: #1211 was
+   * the right shape for a call site that gates a single button; one that
+   * stands in for a screen or a card passes `OfflineState` / `NestedOffline`
+   * itself (`SURFACE_GATES` in `can-fallback.spec.tsx` lists those).
+   * Defaulting it non-null is the point: #1211 was
    * twelve surfaces rendering nothing at all, and every one of them reached
    * that by *omitting* a prop rather than by passing `null`.
    *

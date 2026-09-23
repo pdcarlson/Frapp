@@ -65,8 +65,8 @@ export function canAny(
  * **and** `channels:manage`, or the wildcard.
  *
  * **The one spelling of that union**, shared because several places have to
- * agree on it and a copy in each is how they drift. `ChatReportController`'s
- * docblock carries the same list; change the two together.
+ * agree on it and a copy in each is how they drift. This is the one list of
+ * them; `ChatReportController`'s docblock points here rather than repeating it.
  *
  * Code that reads it:
  *
