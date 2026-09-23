@@ -36,8 +36,8 @@ export type ChapterBrandingInput = NonNullable<ChapterBranding>;
 
 /**
  * One Signet §8 check that came back below its floor: 4.5:1 for a text role
- * (`failedContrastChecks`), 3:1 for the `accent-primary` fill
- * (`failedFillChecks`).
+ * (`failedContrastChecks`), 3:1 for the `accent-primary` fill or its
+ * `accent-hover` shade (`failedFillChecks`).
  */
 export type FailedContrastCheck = {
   role: string;

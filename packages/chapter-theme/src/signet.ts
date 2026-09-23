@@ -313,7 +313,7 @@ function liftedAt(fill: string, steps: number): string {
  * that is followed by failures could be skipped; that costs a slightly larger
  * lift, never a failing scale. Returns `null` if even full lightness never
  * clears, which no sRGB seed reaches: a white fill clears the ladder at 15:1,
- * and its hover, `#F6F6F6`, takes a black label at over 18:1.
+ * and its hover, `#F6F6F6`, keeps the generator's `#311921` label at 15:1.
  *
  * `generateFrom` is the generator, a parameter only so `signet.spec.ts` can
  * hand it one that swaps step 9 or step 10 and prove a candidate is judged by

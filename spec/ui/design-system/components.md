@@ -77,7 +77,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 - **Loading:** the button disables, keeps its width, and shows a spinner in place of (or before) the label. Double-submit locking per [resilience](../resilience/README.md).
 - Hover states are pointer-only; mobile uses pressed feedback.
-- **Primary's pressed fill is momentary, never a state.** The engine holds `accent-9` and `accent-10` to 3:1 on every ladder step, but not the pressed overlay, which can sit under it on a dark chapter ([accent-engine.md](accent-engine.md) §8). A control that stays on (toggled, selected, voted) paints `accent-9`, never the pressed shade.
+- **Primary's pressed fill is momentary, never a state.** In every palette written since [#2586](https://github.com/pdcarlson/Frapp/issues/2586) ([accent-engine.md](accent-engine.md) §4 covers stored ones) the engine holds `accent-9` and `accent-10` to 3:1 on every ladder step, and the label to 4.5:1 on both. It does not hold the pressed overlay, where on a dark chapter the fill can sit under 3:1 and the label under 4.5:1 ([accent-engine.md](accent-engine.md) §8, [#2604](https://github.com/pdcarlson/Frapp/issues/2604)). A control that stays on (toggled, selected, voted) paints `accent-9`, never the pressed shade.
 
 ### Sizes
 

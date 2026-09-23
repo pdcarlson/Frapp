@@ -278,7 +278,8 @@ screen,
 indefinitely, until something rewrites the row. A backfill was already outstanding for rows written
 before the map existed; this widens it. *Corrected 2026-09-23:* this read "What is wrong is
 cosmetic and visible", unqualified. That holds for these house-gold rows, and for any stale row whose
-stored fill still clears its floor; a row whose fill does not is the accessibility case
+stored fill and hover still clear their floor and whose label still reads on that hover; a row that
+fails any of those is the accessibility case
 [`accent-engine.md` § 6](../design-system/accent-engine.md#6-implementation-status) describes.
 
 A SQL backfill cannot regenerate these (the derivation is TypeScript, via the vendored Radix
