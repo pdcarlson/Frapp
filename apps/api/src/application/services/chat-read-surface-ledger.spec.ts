@@ -48,8 +48,9 @@ import * as ts from 'typescript';
  * present, not commented out, in a spec that skips and focuses nothing. That
  * cannot prove the test asserts the right thing, but it stops a renamed,
  * deleted or disabled proof leaving the ledger vouching for nothing. An `open`
- * entry is a known gap, and names the issue tracking it. The ledger's job is to
- * keep gaps visible, not to pretend there are none.
+ * entry is a known gap, and names the issue tracking it; one that is masked in
+ * part also names the proof of that part, checked the same way. The ledger's
+ * job is to keep gaps visible, not to pretend there are none.
  */
 
 /** Paths are relative to `apps/api/src`. */
@@ -64,8 +65,11 @@ type Entry =
   | { status: 'no-foreign-content'; why: string }
   /** Serves another member's content on purpose. The spec's table says so. */
   | { status: 'not-hidden'; why: string }
-  /** A known gap, tracked. */
-  | { status: 'open'; issues: number[]; why: string };
+  /**
+   * A known gap, tracked. `proof`, when the surface is masked in part: the
+   * test for the part that is, held live like a `masked` entry's.
+   */
+  | { status: 'open'; issues: number[]; why: string; proof?: Proof };
 
 const API_SRC = join(__dirname, '..', '..');
 const API_ROOT = join(API_SRC, '..');
@@ -276,14 +280,16 @@ const HTTP_LEDGER: Record<string, Entry> = {
   },
   ActivityFeedController_getFeed_v1: {
     // Its announcement items are masked: a blocked author's announcement is
-    // left out, reading as the caller (activity-feed.service.spec.ts, "leaves
-    // out an announcement whose author the caller has blocked, reading as the
-    // caller"). Its other items carry text a member wrote (a backwork title
-    // beside its uploader, an event name, a points reason), which is
-    // MEMBER_TEXT, still open, so the route is too.
+    // left out, reading as the caller. Its other items carry text a member
+    // wrote (a backwork title beside its uploader, an event name, a points
+    // reason), which is MEMBER_TEXT, still open, so the route is too.
     status: 'open',
     issues: [2498],
     why: "Announcements are masked; the items carrying a member's own text (a backwork title, an event name, a points reason) are not.",
+    proof: {
+      spec: 'application/services/activity-feed.service.spec.ts',
+      test: 'leaves out an announcement whose author the caller has blocked, reading as the caller',
+    },
   },
   NotificationController_listNotifications_v1: {
     // Serves every in-app row, whoever wrote it. The chat rows
@@ -1068,7 +1074,9 @@ describe('chat read-surface ledger (#2324)', () => {
 
   it.each(
     allEntries.flatMap(([key, entry]) =>
-      entry.status === 'masked' ? [[key, entry.proof] as const] : [],
+      entry.status === 'masked' || (entry.status === 'open' && entry.proof)
+        ? [[key, entry.proof] as const]
+        : [],
     ),
   )('%s names a live proof test', (_key, proof) => {
     expect(proofProblem(proof)).toBeNull();

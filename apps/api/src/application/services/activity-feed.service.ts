@@ -325,17 +325,29 @@ export class ActivityFeedService {
     // rows are all deleted, or all by one officer the caller blocked — so each
     // page is buffered, and a short result reads the next page (older than the
     // last row seen, newest first like the thread) up to ANNOUNCEMENT_MAX_PAGES.
-    // Past that bound the feed under-reports rather than scan the channel.
+    // Past that bound the feed under-reports rather than scan the channel. A
+    // later page that fails ends the read with what the earlier ones found:
+    // those were masked against a block list that was read, so keeping them
+    // fails nothing open. Only the first page's failure fails the domain.
     const pageSize = PER_DOMAIN_LIMIT * ANNOUNCEMENT_FETCH_BUFFER;
     const messages: MaskedChatMessage[] = [];
     let before: string | undefined;
     for (let page = 0; page < ANNOUNCEMENT_MAX_PAGES; page++) {
-      const batch = await this.chatService.getMessages(
-        announcementChannel.id,
-        chapterId,
-        userId,
-        { limit: pageSize, ...(before ? { before } : {}) },
-      );
+      let batch: MaskedChatMessage[];
+      try {
+        batch = await this.chatService.getMessages(
+          announcementChannel.id,
+          chapterId,
+          userId,
+          { limit: pageSize, ...(before ? { before } : {}) },
+        );
+      } catch (error) {
+        if (page === 0) throw error;
+        this.logger.warn(
+          `Activity feed announcements stopped at page ${page + 1} for chapter ${chapterId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        break;
+      }
       messages.push(
         ...batch.filter(
           (message) => !message.is_deleted && !message.sender_blocked,

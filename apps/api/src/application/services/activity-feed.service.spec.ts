@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ActivityFeedService } from './activity-feed.service';
 import { EventService } from './event.service';
@@ -375,6 +376,52 @@ describe('ActivityFeedService', () => {
       const secondPage = mockChatService.getMessages.mock.calls[1][3];
       expect(firstPage?.before).toBeUndefined();
       expect(secondPage?.before).toBe(at((firstPage?.limit ?? 0) - 1));
+    });
+
+    it('keeps the earlier pages when a later one fails', async () => {
+      channelOf([
+        ...Array.from({ length: 29 }, (_, i) =>
+          messageFixture({
+            id: `msg-blocked-${i}`,
+            sender_blocked: true,
+            created_at: at(i),
+          }),
+        ),
+        messageFixture({ id: 'msg-clear', created_at: at(29) }),
+      ]);
+      const firstPage = mockChatService.getMessages.getMockImplementation();
+      mockChatService.getMessages
+        .mockImplementationOnce(firstPage)
+        .mockRejectedValueOnce(new Error('connection reset'));
+
+      const result = await service.getFeed(CHAPTER_ID, USER_ID, 50);
+
+      expect(
+        result
+          .filter((item) => item.type === 'announcement')
+          .map((item) => item.id),
+      ).toEqual(['announcement:msg-clear']);
+      expect(mockChatService.getMessages).toHaveBeenCalledTimes(2);
+    });
+
+    it('fails the domain when the first page fails', async () => {
+      // Nothing was read, so nothing is kept: getFeed records the domain as
+      // failed, rather than the loop settling quietly for an empty page.
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
+      mockChatService.getMessages.mockRejectedValue(
+        new Error('block list unavailable'),
+      );
+
+      const result = await service.getFeed(CHAPTER_ID, USER_ID, 50);
+
+      expect(result.filter((item) => item.type === 'announcement')).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("domain 'announcements' failed"),
+      );
+      warn.mockRestore();
     });
 
     it('stops after a bounded number of pages rather than scan the channel', async () => {
