@@ -93,17 +93,25 @@ function walkMobile(dir = MOBILE_ROOT, { specs = false } = {}) {
  * `"**\/*"` glob in app.json can't hide the keys after it. For code, one pass
  * tracks strings, template literals (with `${…}` nesting) and regex literals,
  * so the `/*` in `"image/*"` or `/\/*$/`, the `//` in `"PRODID:-//…"` or
- * `/^https?:\/\//`, and a backtick in `/`/` all stay code. A `//` right after
- * `:` never opens a comment, so a URL in JSX text stays code too.
+ * `/^https?:\/\//`, and a backtick in `/`/` all stay code.
+ *
+ * A `//` or `/*` also opens a comment only where a comment can start in this
+ * code: at the start of the file, or after whitespace, a bracket, `,`, `;` or
+ * `=`. So even when string tracking goes wrong, `https://`, `image/*` and
+ * `**\/*` can't open one: a miscounted quote can't start a comment that runs
+ * over the lines below it.
  *
  * It is a heuristic, not a parser. What it still gets wrong:
- * - A bare `//` or `/*` in unquoted JSX text reads as a comment opener.
+ * - A `//` or `/*` after a space in unquoted JSX text (`and/or // this`) reads
+ *   as a comment opener.
  * - Whether a `/` starts a regex or divides is decided by the character
  *   before it, which an unusual expression can defeat.
  * - A raw `'` or `"` in JSX text would miscount strings. Lint keeps them out
  *   (react/no-unescaped-entities, and `lint` runs with --max-warnings 0).
- * codeMatches below backs it with a line-shape check, so a comment state that
- * runs away across lines reports copy instead of hiding it.
+ * - A stray backtick in JSX text, which that rule allows, flips template
+ *   tracking, so a later template's ` //` reads as a comment to its line end.
+ * Checked 2026-09-24 against the TypeScript compiler's comment ranges over
+ * every file this lock walks in apps/mobile: identical at every letter.
  */
 export function commentRanges(rel, source) {
   if (rel.endsWith(".json")) return [];
@@ -136,11 +144,11 @@ export function commentRanges(rel, source) {
         state = "code";
         i += 1;
       }
-    } else if (char === "/" && next === "/" && source[i - 1] !== ":") {
+    } else if (char === "/" && next === "/" && COMMENT_AFTER.test(source[i - 1] ?? " ")) {
       state = "line";
       start = i;
       i += 1;
-    } else if (char === "/" && next === "*") {
+    } else if (char === "/" && next === "*" && COMMENT_AFTER.test(source[i - 1] ?? " ")) {
       state = "block";
       start = i;
       i += 1;
@@ -162,6 +170,9 @@ export function commentRanges(rel, source) {
   if (state === "line" || state === "block") ranges.push([start, source.length]);
   return ranges;
 }
+
+/** What may sit right before a comment opener. Not `:` (a URL), a word character or `*` (a glob). */
+const COMMENT_AFTER = /[\s{}()[\],;=]/;
 
 // `<` is left out on purpose: `</Text>` is a closing tag, not a regex.
 const REGEX_AFTER = /(?:^|[(,=:[!&|?{};+\-*%>~^]|\b(?:return|typeof|case|do|else|in|of|new|delete|void|throw|yield|await))\s*$/;
@@ -189,26 +200,13 @@ function inRanges(ranges, index) {
   return ranges.some(([from, to]) => index >= from && index < to);
 }
 
-/**
- * Whether the line holding `index` looks like a comment there in this repo's
- * style: the comment opens earlier on that line, or the line continues a
- * JSDoc block with `*`. A block comment the scanner opened by mistake runs on
- * over lines of code, and those lines fail this shape, so they are reported.
- */
-function commentShaped(source, index) {
-  const lineStart = source.lastIndexOf("\n", index - 1) + 1;
-  const before = source.slice(lineStart, index);
-  return /^\s*\*/.test(before) || before.includes("//") || before.includes("/*");
-}
-
-/** Every match of `pattern` in each file that the scanner and the line shape don't both call a comment. */
+/** Every match of `pattern` in each file that sits outside a comment. */
 function codeMatches(files, pattern) {
   const found = [];
   for (const { rel, source } of files) {
     const comments = commentRanges(rel, source);
     for (const match of source.matchAll(pattern)) {
-      const comment = inRanges(comments, match.index) && commentShaped(source, match.index);
-      if (!comment) found.push({ rel, source, match });
+      if (!inRanges(comments, match.index)) found.push({ rel, source, match });
     }
   }
   return found;
@@ -422,13 +420,33 @@ test("a regex literal opens no comment, template or string", () => {
   ]);
 });
 
-test("a comment that runs away over code is reported, not trusted", () => {
+test("a miscounted quote can't open a comment over the lines below", () => {
   // A raw apostrophe in JSX text (lint refuses it, but a lock can't lean on
-  // lint) pairs with the quote before image/, so the scanner opens a block
-  // comment at the glob. The next line is JSX, not a comment line, so it's
-  // reported anyway.
-  const source = "<Text>Don't worry</Text><Picker accept={'image/*'} />\n<Text>Return to Signet.</Text>\n";
-  assert.deepEqual(signetCopyProblems([{ rel: "a.tsx", source }]), ["a.tsx:2"]);
+  // lint) pairs with the quote before image/, so the glob's `/*` is read as
+  // code. It follows a word character, so it opens no comment, and the lines
+  // below stay code even when they carry a URL.
+  const source = [
+    "<Text>Don't worry</Text><Picker accept={'image/*'} />",
+    "<Text>Return to Signet.</Text>",
+    '<Link href="https://frapp.live">Open Settings → Signet</Link>',
+    "",
+  ].join("\n");
+  const backtick = "<Text>Press ` then</Text>\nconst g = `**/*.ts`;\n<Text>See https://frapp.live, Signet</Text>\n";
+  assert.deepEqual(signetCopyProblems([{ rel: "b.tsx", source: backtick }]), ["b.tsx:3"]);
+  assert.deepEqual(signetCopyProblems([{ rel: "a.tsx", source }]), ["a.tsx:2", "a.tsx:3"]);
+  assert.deepEqual(settingsPathProblems([{ rel: "a.tsx", source }], "Frapp"), [
+    "must keep at least 2 Settings → Frapp paths",
+    "a.tsx:3 names Settings → Signet, not Frapp",
+  ]);
+});
+
+test("a multi-line JSX or block comment stays a comment on every line", () => {
+  const files = [
+    { rel: "a.tsx", source: "{/* The\n    Signet gold ring */}\n" },
+    { rel: "b.ts", source: "/*\n  Signet design tokens\n*/\n" },
+    { rel: "c.ts", source: "foo(); /* Signet gold */\n" },
+  ];
+  assert.deepEqual(signetCopyProblems(files), []);
 });
 
 test("design-system names and comments are not copy", () => {
