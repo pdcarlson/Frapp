@@ -53,8 +53,8 @@ export const RENDER_OVERALL_TIMEOUT_MS = 20 * 60 * 1000;
 
 // ── Read errors ─────────────────────────────────────────────────────────────
 // Since #2431 a failure verdict files a P1 alert, so one bad read must not be
-// one. `resilientFetch` re-sends a 429, a 5xx or a connection failure within a
-// read (three attempts, each bounded by its 15s timeout); what outlasts that,
+// one. `resilientFetch` re-sends a 429, a 5xx, a network-level failure or its
+// own 15s per-attempt timeout within a read (three attempts); what outlasts that,
 // or fails after the headers (a body that resets or stalls, which it never
 // retries), is re-asked on the next poll instead. Only this many failed reads
 // IN A ROW end the run. At the default interval that is about a minute when
@@ -69,7 +69,8 @@ export const RENDER_MAX_CONSECUTIVE_READ_ERRORS = 3;
  * failing on it would page for a blip. Those count toward
  * RENDER_MAX_CONSECUTIVE_READ_ERRORS and are re-asked on the next poll. They
  * get no retry inside the read, though: `resilientFetch` re-sends only a 429,
- * a 5xx or a connection failure, so each such read is a single attempt.
+ * a 5xx, a network-level failure or its own per-attempt timeout, so each such
+ * read is a single attempt.
  */
 export const RENDER_PERMANENT_READ_STATUSES = new Set([401, 403, 404]);
 

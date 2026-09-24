@@ -121,7 +121,7 @@ function envMapAt(lines, headerIndex) {
  */
 function findEnvHeader(lines, from, to, indent) {
   for (let i = from; i < to; i += 1) {
-    if (indentOf(lines[i]) === indent && new RegExp(String.raw`^\s*${named("env")}:(\s*#.*)?\s*$`).test(lines[i])) {
+    if (indentOf(lines[i]) === indent && new RegExp(String.raw`^\s*${named("env")}\s*:(\s*#.*)?\s*$`).test(lines[i])) {
       return i;
     }
   }
@@ -174,7 +174,7 @@ function isBlockScalarHeader(value) {
 function stepIndices(lines, jobStart, jobEnd) {
   let stepsKey = -1;
   for (let i = jobStart + 1; i < jobEnd; i += 1) {
-    if (indentOf(lines[i]) === 4 && new RegExp(String.raw`^\s*${named("steps")}:\s*(#.*)?$`).test(lines[i])) {
+    if (indentOf(lines[i]) === 4 && new RegExp(String.raw`^\s*${named("steps")}\s*:\s*(#.*)?$`).test(lines[i])) {
       stepsKey = i;
       break;
     }
@@ -203,7 +203,7 @@ function stepIndices(lines, jobStart, jobEnd) {
  */
 function stepName(lines, stepStart, stepEnd) {
   const first = lines[stepStart].trim().replace(/^-\s*/, "");
-  const nameKey = new RegExp(String.raw`^${named("name")}:\s*`);
+  const nameKey = new RegExp(String.raw`^${named("name")}\s*:\s*`);
   if (nameKey.test(first)) return scalarValue(first.replace(nameKey, ""));
   for (let i = stepStart + 1; i < stepEnd; i += 1) {
     if (indentOf(lines[i]) === 8 && nameKey.test(lines[i].trim())) {
@@ -226,11 +226,11 @@ function stepIf(lines, stepStart, stepEnd) {
   for (let i = stepStart; i < stepEnd; i += 1) {
     const atStepKeyIndent =
       i === stepStart
-        ? new RegExp(String.raw`^\s{6}- ${named("if")}:\s*`).test(lines[i])
-        : indentOf(lines[i]) === 8 && new RegExp(String.raw`^\s*${named("if")}:\s*`).test(lines[i]);
+        ? new RegExp(String.raw`^\s{6}- ${named("if")}\s*:\s*`).test(lines[i])
+        : indentOf(lines[i]) === 8 && new RegExp(String.raw`^\s*${named("if")}\s*:\s*`).test(lines[i]);
     if (!atStepKeyIndent) continue;
 
-    const inline = lines[i].replace(new RegExp(String.raw`^\s*-?\s*${named("if")}:\s*`), "").trim();
+    const inline = lines[i].replace(new RegExp(String.raw`^\s*-?\s*${named("if")}\s*:\s*`), "").trim();
     if (inline !== "" && !isBlockScalarHeader(inline)) return inline;
 
     // Block scalar: the condition is the deeper-indented lines beneath it.
@@ -269,7 +269,7 @@ export function workflowSteps(workflowPath) {
   const workflowFile = basename(workflowPath);
   const lines = significantLines(readFileSync(workflowPath, "utf8"));
 
-  const jobsIndex = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  const jobsIndex = lines.findIndex((line) => new RegExp(String.raw`^${named("jobs")}\s*:\s*(#.*)?$`).test(line));
   // Scanned across the WHOLE file, not just above `jobs:` — YAML mapping key
   // order is free, and a workflow-level `env:` written after `jobs:` was
   // invisible, emptying every step's merged env and failing correct workflows.
@@ -354,8 +354,9 @@ function opensMapping(raw) {
  * entries). Like YAML, a quote opens a quoted scalar only where a scalar
  * starts (after `{`, `[`, `,` or `:`), so the apostrophe in `note: don't` is
  * plain text; `\"` inside double quotes and `''` inside single quotes are
- * escapes, not the end. A stray closer never drives the depth below zero, so
- * one `)` in a value can't stop the splitting for the rest of the body.
+ * escapes, not the end. A stray `]` or `}` in a plain value never drives the
+ * depth below zero, so it can't stop the splitting for the rest of the body.
+ * Parentheses aren't flow indicators and aren't tracked.
  */
 function splitFlow(body) {
   const parts = [];
@@ -454,7 +455,7 @@ export function workflowKeys(workflowPath) {
  */
 export function workflowJobs(workflowPath) {
   const lines = significantLines(readFileSync(workflowPath, "utf8"));
-  const jobsIndex = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  const jobsIndex = lines.findIndex((line) => new RegExp(String.raw`^${named("jobs")}\s*:\s*(#.*)?$`).test(line));
   if (jobsIndex === -1) return [];
 
   const jobs = [];
@@ -470,7 +471,7 @@ export function workflowJobs(workflowPath) {
 
     let condition = null;
     for (let i = from + 1; i < to; i += 1) {
-      const ifKey = new RegExp(String.raw`^\s*${named("if")}:\s*`);
+      const ifKey = new RegExp(String.raw`^\s*${named("if")}\s*:\s*`);
       if (indentOf(lines[i]) !== 4 || !ifKey.test(lines[i])) continue;
       const inline = lines[i].replace(ifKey, "").trim();
       if (inline !== "" && !isBlockScalarHeader(inline)) {

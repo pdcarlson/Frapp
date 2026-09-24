@@ -46,6 +46,7 @@ jobs:
     nested: { a: [x, y], b: c }
     apostrophe: { note: don't, issues: write }
     closer: { x: a), y: z }
+    bracket: { x: a], y: z }
     escaped: { a: "x\\", y", b: z }
     doubled: { a: 'it''s, ok', b: z }
     steps:
@@ -57,6 +58,15 @@ jobs:
         "if": \${{ success() }}
         "env":
           GITHUB_SHA: override
+        run: echo
+      - "if": \${{ inputs.dry_run_only }}
+        run: echo
+  spaced:
+    if : \${{ failure() }}
+    steps :
+      - name : Spaced
+        env :
+          KEY : v
         run: echo
 `;
 
@@ -116,19 +126,45 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     // apostrophe is text and `issues` is still seen.
     assert.deepEqual(read("apostrophe"), { note: "don't", issues: "write" });
     assert.deepEqual(read("closer"), { x: "a)", y: "z" });
-    assert.equal(read("escaped").b, "z");
-    assert.equal(read("doubled").b, "z");
+    // The depth never goes below zero, so a stray `]` doesn't stop the split.
+    assert.deepEqual(read("bracket"), { x: "a]", y: "z" });
+    // The escaped quote doesn't end the scalar, so its comma isn't a split.
+    // Values keep their escapes: the helper strips the quotes, not the escapes.
+    assert.deepEqual(read("escaped"), { a: 'x\\", y', b: "z" });
+    assert.deepEqual(read("doubled"), { a: "it''s, ok", b: "z" });
   });
 
   it("reads quoted structural keys: a job's if and steps, and a step's name, if and env", () => {
     const job = workflowJobs(file).find((j) => j.jobId === "quoted-structure");
     assert.equal(job.if, "${{ always() }}");
     const quoted = workflowSteps(file).filter((s) => s.jobId === "quoted-structure");
-    assert.equal(quoted.length, 1, "a quoted steps: must not hide the job's steps");
+    assert.equal(quoted.length, 2, "a quoted steps: must not hide the job's steps");
     assert.equal(quoted[0].name, "Quoted");
     assert.equal(quoted[0].if, "${{ success() }}");
     // The override a guard looks for must be visible behind a quoted env:.
     assert.equal(quoted[0].env.get("GITHUB_SHA"), "override");
+    // A step that LEADS with a quoted `- "if":` must not read as ungated.
+    assert.equal(quoted[1].if, "${{ inputs.dry_run_only }}");
+  });
+
+  it("reads structural keys written with a space before the colon", () => {
+    const job = workflowJobs(file).find((j) => j.jobId === "spaced");
+    assert.equal(job.if, "${{ failure() }}");
+    const spaced = workflowSteps(file).filter((s) => s.jobId === "spaced");
+    assert.equal(spaced.length, 1, "`steps :` must not hide the job's steps");
+    assert.equal(spaced[0].name, "Spaced");
+    assert.equal(spaced[0].env.get("KEY"), "v");
+  });
+
+  it("finds the jobs of a file whose jobs: key is quoted or carries a comment", () => {
+    // Every job vanishing is how a guard that loops over all workflows would
+    // silently drop a file while its floor stays met.
+    for (const header of ['"jobs":', "jobs: # all of them"]) {
+      const variant = join(dir, "variant.yml");
+      writeFileSync(variant, WORKFLOW.replace(/^jobs:$/m, header));
+      assert.ok(workflowJobs(variant).length > 0, `${header}: no jobs`);
+      assert.ok(workflowSteps(variant).length > 0, `${header}: no steps`);
+    }
   });
 
   it("reads step env keys quoted or bare, and a comment-only value as empty", () => {
