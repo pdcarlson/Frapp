@@ -53,8 +53,8 @@ concurrency:
 jobs:
   verify-render-api:
     runs-on: ubuntu-latest
-    # Secrets belong to the `staging` environment, `main` only once the owner's
-    # #2583 sets that rule and moves them there (#2518). `deployment: false`: a
+    # Secrets belong to the `staging` environment, `main` only (#2518, #2583).
+    # `deployment: false`: a
     # check, not a deploy, so no deployment record. See
     # docs/internal/ci-cd/AGENT_INFRA.md § GitHub environments and bootstrap secrets.
     environment:

@@ -403,10 +403,10 @@ test("buildAlertIssueBody omits the run line entirely when there is no run URL",
 
 // ── runMigrationDriftCheck ──────────────────────────────────────────────────
 
+const SB_TOKEN = "sb-token";
 const baseRun = {
   token: "gh-token",
   repo: "pdcarlson/Frapp",
-  accessToken: "sb-token",
   nowMs: NOW,
   graceHours: 24,
   runUrl: "https://github.com/pdcarlson/Frapp/actions/runs/1",
@@ -423,7 +423,7 @@ test("a clean run exits 0 and closes an open alert issue", async () => {
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "staging", ref: "stg" }],
+    targets: [{ label: "staging", ref: "stg", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -437,6 +437,43 @@ test("a clean run exits 0 and closes an open alert issue", async () => {
   assert.deepEqual(JSON.parse(closing.body), { state: "closed", state_reason: "completed" });
 });
 
+test("each target is read with its own token (#2583)", async () => {
+  // Each Infisical environment's Supabase token reads only its own project, so
+  // main() hands each target its own (supabaseAccessTokenFor).
+  const local = localFixture(3);
+  const { fetchImpl: routed } = makeFetchMock([
+    supabaseRoute("stg", local),
+    supabaseRoute("prod", local),
+    ...githubRoutes({ issues: [] }),
+  ]);
+  const seen = [];
+  const fetchImpl = async (url, init = {}) => {
+    const ref = url.match(/\/projects\/([^/]+)\/database\/migrations$/)?.[1];
+    if (ref) seen.push([ref, init.headers?.Authorization]);
+    return routed(url, init);
+  };
+
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [
+      { label: "staging", ref: "stg", accessToken: "staging-token" },
+      { label: "production", ref: "prod", accessToken: "production-token" },
+    ],
+    local,
+    fetchImpl,
+  });
+
+  assert.equal(result.status, "clean");
+  assert.deepEqual(seen, [
+    ["stg", "Bearer staging-token"],
+    ["prod", "Bearer production-token"],
+  ]);
+  assert.ok(
+    result.results.every((r) => !("accessToken" in r)),
+    "a token never reaches the results the summary and alert issue are built from",
+  );
+});
+
 test("a clean run with no open alert touches nothing", async () => {
   const local = localFixture(3);
   const { fetchImpl, calls } = makeFetchMock([
@@ -446,7 +483,7 @@ test("a clean run with no open alert touches nothing", async () => {
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "staging", ref: "stg" }],
+    targets: [{ label: "staging", ref: "stg", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -465,7 +502,7 @@ test("drift creates the alert issue when none exists, and exits 1", async () => 
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "production", ref: "prod" }],
+    targets: [{ label: "production", ref: "prod", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -492,7 +529,7 @@ test("drift comments on an already-open alert rather than filing a second one", 
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "production", ref: "prod" }],
+    targets: [{ label: "production", ref: "prod", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -513,7 +550,7 @@ test("drift reopens a closed alert", async () => {
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "production", ref: "prod" }],
+    targets: [{ label: "production", ref: "prod", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -535,7 +572,7 @@ test("an unreadable target neither raises nor closes an alert, and exits 1", asy
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "staging", ref: "stg" }],
+    targets: [{ label: "staging", ref: "stg", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -557,8 +594,8 @@ test("one unreadable target does not mask drift on another", async () => {
   const result = await runMigrationDriftCheck({
     ...baseRun,
     targets: [
-      { label: "staging", ref: "stg" },
-      { label: "production", ref: "prod" },
+      { label: "staging", ref: "stg", accessToken: SB_TOKEN },
+      { label: "production", ref: "prod", accessToken: SB_TOKEN },
     ],
     local,
     fetchImpl,
@@ -583,8 +620,8 @@ test("every target is checked, and each appears in the run summary", async () =>
   const result = await runMigrationDriftCheck({
     ...baseRun,
     targets: [
-      { label: "staging", ref: "stg" },
-      { label: "production", ref: "prod" },
+      { label: "staging", ref: "stg", accessToken: SB_TOKEN },
+      { label: "production", ref: "prod", accessToken: SB_TOKEN },
     ],
     local,
     fetchImpl,
@@ -608,7 +645,7 @@ test("a failed issue-create is reported without throwing", async () => {
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "production", ref: "prod" }],
+    targets: [{ label: "production", ref: "prod", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
