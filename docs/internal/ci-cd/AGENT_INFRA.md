@@ -935,12 +935,11 @@ the alert as backlog work (§0.2 treats that label as never-claimable).
 `deploy-alert.mjs` is **not** specific to `deploy-api.yml`. Since #1674 it also serves
 `deploy-vercel-staging.yml`, which shipped in #1578 with no alerting at all. Since #2431 it also
 serves `verify-deployments.yml`, the push-triggered observer that polls Render for the staging API
-deploy's outcome. That observer went red on at least ten straight pushes while `Deploy API`, which
-sees only the trigger, stayed green and nothing alerted. Which workflow a run is
+deploy's outcome. That observer went red on at least ten straight pushes and nothing alerted. Which workflow a run is
 reporting on is chosen by the **`ALERT_CONFIG`** env var, set explicitly in each workflow's
 `deploy-outcome` step and resolved against the `ALERT_CONFIGS` table in the script. There is **no
 default**: an absent or unknown value throws, because resolving to the wrong config would report one
-workflow's job results into the other's alert issue — or reopen the live P1 Deploy API alert from an
+workflow's job results into another's alert issue — or reopen the live P1 Deploy API alert from an
 unrelated failure.
 
 Consequences worth knowing before editing the script:
@@ -969,8 +968,6 @@ Consequences worth knowing before editing the script:
   workflows count a cancel as a failure. Cancelling the observer stops the watching, not the
   Render deploy, so it is no verdict: `always()` there would file a false P1 on every manual
   cancel.
-- **The observer's Render reads retry.** `verify-render-deploy.mjs` reads through
-  `lib/http.mjs`'s `resilientFetch`, because any read error is a failure verdict and so a P1.
 
 The full roster of GitHub-issue watchdogs, with what each one means and when it clears, is
 [`ALERT_ROUTING.md`](../ops/ALERT_ROUTING.md) § Automated GitHub-issue alerts — that table is the

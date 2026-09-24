@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// Polls the Render deploy-list API until a deploy matching the commit (DEPLOY_SHA,
-// else GITHUB_SHA) reaches a terminal state. Fails on build_failed / update_failed / pre_deploy_failed
-// and on "no deploy for this SHA after the grace window" (autoDeploy wiring
-// red flag). Treats `canceled` / `deactivated` as neutral (superseded by a
-// newer deploy).
+// Polls the Render deploy-list API until a deploy matching the commit
+// (DEPLOY_SHA, else GITHUB_SHA) reaches a terminal state. Fails on
+// build_failed / update_failed / pre_deploy_failed, on "no deploy for this SHA
+// after the grace window" (autoDeploy wiring red flag), and on a Render read
+// that is permanently refused (401/403/404) or fails on
+// RENDER_MAX_CONSECUTIVE_READ_ERRORS polls in a row. Treats `canceled` /
+// `deactivated` as neutral (superseded by a newer deploy).
 //
 // Env inputs:
 //   RENDER_API_KEY     — required
@@ -49,6 +51,21 @@ export const RENDER_NO_DEPLOY_GRACE_MS = 5 * 60 * 1000;
 export const RENDER_POLL_INTERVAL_MS = 20 * 1000;
 export const RENDER_OVERALL_TIMEOUT_MS = 20 * 60 * 1000;
 
+// ── Read errors ─────────────────────────────────────────────────────────────
+// Since #2431 a failure verdict files a P1 alert, so one bad read must not be
+// one. `resilientFetch` re-sends a 429, a 5xx or a connection failure within a
+// read, for a few seconds; what outlasts that, or fails after the headers (a
+// body that resets or stalls, which it never retries), is re-asked on the next
+// poll instead. Only this many failed reads IN A ROW end the run, about a
+// minute of Render being unreadable at the default interval.
+export const RENDER_MAX_CONSECUTIVE_READ_ERRORS = 3;
+
+/** A 4xx other than 429 means a dead key or a wrong id: re-asking can't help. */
+export function isPermanentReadError(error) {
+  const status = error?.status;
+  return typeof status === "number" && status >= 400 && status < 500 && status !== 429;
+}
+
 /**
  * Pure verifier. Returns `{ status, message }` where status is one of
  * "success" | "failure" | "neutral". The CLI wrapper translates that to an
@@ -60,17 +77,20 @@ export async function verifyRenderDeploy({
   sha,
   label = serviceId,
   clock = createClock(),
-  // Retrying, not bare `fetch`: a single 429, 5xx or reset read is a failure
-  // verdict (see `classify`), and since #2431 a failure files a P1 alert, so
-  // one blip on one poll would page for a deploy that went live a minute
-  // later. `resilientFetch` retries exactly those, and a 401 or 404 not at all.
+  // Retrying, not bare `fetch`: the first layer of "one bad read is not a
+  // verdict". The second is `classify` re-asking on the next poll; see
+  // RENDER_MAX_CONSECUTIVE_READ_ERRORS.
   fetchImpl = resilientFetch,
   pollIntervalMs = RENDER_POLL_INTERVAL_MS,
   noDeployGraceMs = RENDER_NO_DEPLOY_GRACE_MS,
   overallTimeoutMs = RENDER_OVERALL_TIMEOUT_MS,
+  maxConsecutiveReadErrors = RENDER_MAX_CONSECUTIVE_READ_ERRORS,
   logger = console,
 }) {
   let lastObservedStatus = null;
+  // Failed reads since the last good one, and the latest one's message.
+  let readErrors = 0;
+  let lastReadError = null;
 
   return pollUntilTerminal({
     clock,
@@ -92,11 +112,22 @@ export async function verifyRenderDeploy({
     },
     classify: (state, { elapsedMs }) => {
       if (state.error) {
-        return {
-          status: "failure",
-          message: `Render API error for ${label}: ${state.error.message}`,
-        };
+        readErrors += 1;
+        lastReadError = state.error.message;
+        if (isPermanentReadError(state.error) || readErrors >= maxConsecutiveReadErrors) {
+          const repeated = readErrors > 1 ? ` (${readErrors} failed reads in a row)` : "";
+          return {
+            status: "failure",
+            message: `Render API error for ${label}: ${state.error.message}${repeated}`,
+          };
+        }
+        logger.log?.(
+          `[${label}] Render API read failed (${state.error.message}); re-asking on the next poll ` +
+            `(${readErrors}/${maxConsecutiveReadErrors}).`,
+        );
+        return null;
       }
+      readErrors = 0;
 
       if (!state.match) {
         if (elapsedMs >= noDeployGraceMs) {
@@ -152,7 +183,8 @@ export async function verifyRenderDeploy({
       status: "failure",
       message:
         `Timed out after ${Math.round(overallTimeoutMs / 1000)}s waiting for ` +
-        `Render deploy on ${label}. Last observed status: ${lastObservedStatus ?? "none"}.`,
+        `Render deploy on ${label}. Last observed status: ${lastObservedStatus ?? "none"}.` +
+        (readErrors > 0 ? ` Last Render read failed: ${lastReadError}.` : ""),
     }),
   });
 }

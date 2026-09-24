@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { VERIFY_DEPLOYMENTS_CONFIG } from "../deploy-alert.mjs";
-import { workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 // Pins the wiring that makes a failed staging API deploy raise an alert
 // (#2431), and rehearses it.
@@ -29,8 +29,10 @@ import { workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
 // replace the live drill (#2505's paging drill: a deliberately broken staging
 // deploy reaching the owner's phone).
 //
-// Read through `helpers/workflow-yaml.mjs`, not ad hoc regexes, so a quoted
-// value or an inline comment on a correct workflow cannot fail a guard.
+// Read through `helpers/workflow-yaml.mjs` rather than regexes over the text,
+// so a quoted value, an inline comment or a flow mapping on a correct workflow
+// cannot fail a guard, and a guard on a whole block (`permissions:`) cannot
+// pass on its first line alone.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO, ".github", "workflows", "verify-deployments.yml");
@@ -43,6 +45,7 @@ const significant = text
   .filter((line) => line.trim() !== "" && !/^\s*#/.test(line))
   .join("\n");
 
+const top = workflowKeys(WORKFLOW);
 const jobs = new Map(workflowJobs(WORKFLOW).map((job) => [job.jobId, job]));
 const steps = workflowSteps(WORKFLOW);
 
@@ -73,13 +76,15 @@ describe("verify-deployments.yml", () => {
   it("reads the workflow at all", () => {
     // A path typo would make every assertion below pass vacuously.
     assert.ok(text.length > 500, "expected the workflow file, got something too short");
-    assert.match(significant, /^name: Verify deployments$/m);
+    assert.equal(top.get("name"), "Verify deployments");
     assert.deepEqual([...jobs.keys()].sort(), ["deploy-outcome", "verify-render-api"]);
   });
 
   it("still observes pushes to main, so HEAD_BRANCH and HEAD_SHA come from the push", () => {
-    assert.match(significant, /^on:\n {2}push:\n {4}branches: \[main\]$/m);
-    assert.doesNotMatch(significant, /workflow_run/);
+    // Only `push`: a `workflow_run` or `pull_request` trigger would change
+    // what `github.sha` and `github.ref_name` name.
+    assert.deepEqual([...top.get("on").keys()], ["push"]);
+    assert.match(significant, /^ {2}push:\n {4}branches:\s*\[\s*["']?main["']?\s*\]\s*$/m);
   });
 
   it("the config reads the job this workflow actually runs", () => {
@@ -125,8 +130,10 @@ describe("verify-deployments.yml", () => {
     // It needs only its own GITHUB_TOKEN. Naming `staging` would put it
     // behind that environment's rules for no secret it uses.
     assert.ok(!job.keys.has("environment"), "deploy-outcome names an environment");
+    // The verifier holds RENDER_API_KEY and inherits the workflow-level token,
+    // so that block is asserted whole: a write scope added under it is caught.
     assert.ok(!jobs.get(VERIFY_JOB).keys.has("permissions"), "the verifier gained a permissions block");
-    assert.match(significant, /^permissions:\n {2}contents: read$/m);
+    assert.deepEqual(Object.fromEntries(top.get("permissions")), { contents: "read" });
   });
 
   it("calls deploy-alert.mjs with this workflow's configuration", () => {

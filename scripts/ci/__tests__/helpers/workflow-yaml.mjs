@@ -87,7 +87,8 @@ function envMapAt(lines, headerIndex) {
     if (indent !== childIndent) continue;
 
     const match = lines[i].match(/^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
-    if (match) map.set(match[1], scalarValue(match[2]));
+    // A comment-only value is YAML null, not the comment's text.
+    if (match) map.set(match[1], opensMapping(match[2]) ? "" : scalarValue(match[2]));
   }
   return map;
 }
@@ -314,25 +315,62 @@ export function workflowSteps(workflowPath) {
 }
 
 /**
- * A job's own keys (the ones at indent 4), read the way `env:` is.
+ * Does this raw value open a nested mapping? Empty, or only a comment
+ * (`outputs: # the verdict`). `scalarValue` can't be asked: it strips a `#`
+ * only after whitespace, and the key regex has already consumed that, so the
+ * comment would come back as the value.
+ */
+function opensMapping(raw) {
+  return /^\s*(#.*)?$/.test(raw);
+}
+
+/** `{ contents: read, issues: write }` as a Map, or null for any other value. */
+function flowMapping(value) {
+  const body = /^\{(.*)\}$/.exec(value)?.[1];
+  if (body === undefined) return null;
+  const map = new Map();
+  for (const pair of body.split(",")) {
+    const match = pair.match(/^\s*([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
+    if (match) map.set(match[1], scalarValue(match[2]));
+  }
+  return map;
+}
+
+/**
+ * The keys at exactly `indent` within `[from, to)`, read the way `env:` is.
  *
  * An inline value comes back as a scalar (`needs: [a, b]` → `"[a, b]"`, quotes
- * and a trailing comment removed); a nested mapping comes back as a flat Map of
+ * and a trailing comment removed); a mapping, block (`outputs:`, with or
+ * without an inline comment) or flow (`{ a: b }`), comes back as a flat Map of
  * its immediate children, so `outputs:`, `permissions:` and `environment:` can
- * be asserted key by key rather than by a regex over the job's text, which a
- * quoted value or an inline comment would break. A block sequence or a block
- * scalar reads as an empty Map or its indicator; this is not a YAML parser.
+ * be asserted key by key rather than by a regex over the text, which a quoted
+ * value or a comment would break. A block sequence or a block scalar reads as
+ * an empty Map or its indicator; this is not a YAML parser.
  */
-function jobKeys(lines, jobStart, jobEnd) {
+function keysAt(lines, from, to, indent) {
   const keys = new Map();
-  for (let i = jobStart + 1; i < jobEnd; i += 1) {
-    if (indentOf(lines[i]) !== 4) continue;
-    const match = lines[i].match(/^\s*([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
+  for (let i = from; i < to; i += 1) {
+    if (indentOf(lines[i]) !== indent) continue;
+    const match = lines[i].match(/^\s*([A-Za-z_][\w-]*)\s*:(.*)$/);
     if (!match) continue;
-    const value = scalarValue(match[2]);
-    keys.set(match[1], value === "" ? envMapAt(lines, i) : value);
+    if (opensMapping(match[2])) {
+      keys.set(match[1], envMapAt(lines, i));
+    } else {
+      const value = scalarValue(match[2]);
+      keys.set(match[1], flowMapping(value) ?? value);
+    }
   }
   return keys;
+}
+
+/**
+ * The workflow's top-level keys (`name`, `on`, `permissions`, …), as
+ * `keysAt` reads them. `permissions` is the one worth asserting whole: a regex
+ * anchored on its first scope passes when a write scope follows it.
+ */
+export function workflowKeys(workflowPath) {
+  const lines = significantLines(readFileSync(workflowPath, "utf8"));
+  return keysAt(lines, 0, lines.length, 0);
 }
 
 /**
@@ -343,8 +381,8 @@ function jobKeys(lines, jobStart, jobEnd) {
  * not see the one thing standing between a dry run and a version tag naming a
  * commit that was never deployed.
  *
- * Returns `{ jobId, if: <raw expression|null>, keys: Map }` per job; `keys` is
- * described at `jobKeys`.
+ * Returns `{ jobId, if: <raw expression|null>, keys: Map }` per job; `keys`
+ * holds the job's own keys (indent 4), as described at `keysAt`.
  */
 export function workflowJobs(workflowPath) {
   const lines = significantLines(readFileSync(workflowPath, "utf8"));
@@ -375,7 +413,7 @@ export function workflowJobs(workflowPath) {
       }
       break;
     }
-    jobs.push({ jobId: jobIdFrom(lines[from]), if: condition, keys: jobKeys(lines, from, to) });
+    jobs.push({ jobId: jobIdFrom(lines[from]), if: condition, keys: keysAt(lines, from + 1, to, 4) });
   }
   return jobs;
 }

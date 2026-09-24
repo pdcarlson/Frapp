@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import {
   verifyRenderDeploy,
   writeOutcomeOutput,
+  isPermanentReadError,
   VERIFY_OUTCOMES,
+  RENDER_MAX_CONSECUTIVE_READ_ERRORS,
   RENDER_NO_DEPLOY_GRACE_MS,
   RENDER_POLL_INTERVAL_MS,
   RENDER_OVERALL_TIMEOUT_MS,
@@ -206,6 +208,83 @@ describe("verifyRenderDeploy", () => {
     assert.equal(result.status, "failure");
     assert.match(result.message, /Render API/);
     assert.match(result.message, /500/);
+  });
+
+  // Since #2431 a failure verdict files a P1, so a read error is re-asked on
+  // the next poll, and only a permanent refusal or several failures in a row
+  // end the run.
+  const httpError = (status) => ({ ok: false, status, json: async () => ({}) });
+
+  it("fails on the first poll when Render refuses the key (401), since re-asking can't help", async () => {
+    const { fetchImpl, calls } = makeFetchStub([httpError(401)]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /HTTP 401/);
+    assert.equal(calls.length, 1);
+  });
+
+  it("re-asks after a 5xx and succeeds when the next read works", async () => {
+    const { fetchImpl, calls } = makeFetchStub([
+      httpError(502),
+      okJson([renderDeploy({ status: "live" })]),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "success");
+    assert.equal(calls.length, 2);
+  });
+
+  it("re-asks after a body that fails mid-read, which the HTTP retry never covers", async () => {
+    const { fetchImpl } = makeFetchStub([
+      { ok: true, status: 200, json: async () => Promise.reject(new TypeError("terminated")) },
+      okJson([renderDeploy({ status: "live" })]),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "success");
+  });
+
+  it("fails after the maximum number of failed reads in a row, naming the count", async () => {
+    const { fetchImpl, calls } = makeFetchStub([httpError(503)]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "failure");
+    assert.equal(calls.length, RENDER_MAX_CONSECUTIVE_READ_ERRORS);
+    assert.match(result.message, new RegExp(`${RENDER_MAX_CONSECUTIVE_READ_ERRORS} failed reads in a row`));
+  });
+
+  it("counts failed reads in a row, so a good read in between resets the count", async () => {
+    const inProgress = okJson([renderDeploy({ status: "build_in_progress" })]);
+    const { fetchImpl } = makeFetchStub([
+      httpError(502),
+      httpError(502),
+      inProgress,
+      httpError(502),
+      httpError(502),
+      okJson([renderDeploy({ status: "live" })]),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "success");
+  });
+
+  it("classifies only a 4xx other than 429 as a permanent read error", () => {
+    for (const status of [401, 403, 404]) assert.equal(isPermanentReadError({ status }), true, `${status}`);
+    for (const status of [429, 500, 502, 503]) assert.equal(isPermanentReadError({ status }), false, `${status}`);
+    // A network or body error carries no status and is always re-asked.
+    assert.equal(isPermanentReadError(new TypeError("fetch failed")), false);
+    assert.equal(isPermanentReadError(undefined), false);
   });
 
   it("fails on overall timeout while deploys keep coming back as in-progress", async () => {
