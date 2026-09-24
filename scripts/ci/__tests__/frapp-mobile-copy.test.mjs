@@ -15,11 +15,11 @@
 // WHAT IT CHECKS.
 // - A walk of apps/mobile's non-spec sources (app.json included): no whole
 //   word "Signet" and no signet- download filename anywhere but the comment
-//   a line starts with (the note above LINE_BREAK says why, and names the one
-//   blind spot). A design-system note that names Signet goes on its own
-//   comment line, not after code. The walk is what makes the pinned sites
-//   below not the whole story: a new screen that says Signet fails here
-//   without anyone listing it.
+//   a line starts with (the note on LINE_BREAK in ../lib/copy-lines.mjs
+//   says why, and names the one blind spot). A design-system note that names
+//   Signet goes on its own comment line, not after code. The walk is what
+//   makes the pinned sites below not the whole story: a new screen that says
+//   Signet fails here without anyone listing it.
 // - The two `Settings → <name> → Location` recovery paths (the study screen
 //   and the location primer) are in code and name `expo.name` from app.json,
 //   because iOS Settings lists the app under that name (ADR-25 step 2). iOS
@@ -36,8 +36,9 @@
 // decision 2026-09-22). Put the brand line back on mobile in the slice that
 // ships Ask.
 //
-// SCOPE. apps/mobile only. The web, API and landing surfaces rename in
-// ADR-25 steps 3 to 5, and their locks still pin what they ship today. The
+// SCOPE. apps/mobile only. The API renamed in ADR-25 step 3 and has its own
+// walk (frapp-api-copy.test.mjs). The web and landing surfaces rename in
+// steps 4 and 5, and their locks still pin what they ship today. The
 // binary's permanent identifiers are not copy and are not this lock's:
 // mobile-permanent-identifiers.test.mjs lists and pins them. Nor is the
 // @frapp.live ICS UID host.
@@ -47,6 +48,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { copyMatches, inLeadingComment, LINE_BREAK } from "../lib/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const MOBILE_ROOT = join(REPO_ROOT, "apps/mobile");
@@ -98,56 +101,6 @@ function walkMobile(dir = MOBILE_ROOT, { specs = false } = {}) {
     out.push(path);
   }
   return out;
-}
-
-/**
- * Why lines and not a scanner. Telling a comment from a string, a regex or
- * JSX text takes a parser, and this job runs with node built-ins only (no
- * `npm ci`). A hand-rolled scanner was tried first, and each of seven review
- * rounds found another way for one misread (a `/*` in JSX text, a stray
- * backtick, a regex read as division, a lone `\r`) to hide copy many lines
- * below it. So the rule reads each line on its own and trusts only the
- * comment a line starts with:
- * - a `//` line is comment to its end;
- * - a line starting `/*`, `{/*` or `*` (a block comment, a JSX comment, a
- *   JSDoc continuation) is comment up to its first `*\/`, code after.
- * Anything else counts as copy, including a comment after code (`x(); //
- * Signet`) and a block comment's star-less continuation line: those report,
- * so the rule fails closed there. Lines break where JavaScript breaks them
- * (`\r\n`, `\n`, `\r`, U+2028, U+2029), so a lone `\r` can't join a comment
- * line to the code after it.
- *
- * The blind spot: copy on a line that itself starts with `//`, `*`, `/*` or
- * `{/*`, such as a template literal line beginning `* ` or JSX text beginning
- * `//`. The last fixture pins it, so widening or closing it is deliberate.
- */
-const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
-const LEADING_COMMENT = /^\s*(?:\/\/|\{?\/\*|\*)/;
-
-/** Whether `column` of `line` sits in the comment the line starts with. */
-function inLeadingComment(line, column) {
-  const lead = line.match(LEADING_COMMENT);
-  if (!lead) return false;
-  if (lead[0].endsWith("//")) return true;
-  // A `*` line may be the `*\/` that closes the block, so search from the star.
-  const from = lead[0].endsWith("/*") ? lead[0].length : lead[0].length - 1;
-  const close = line.indexOf("*/", from);
-  return close === -1 || column < close;
-}
-
-/** Every match of `pattern`, by file and line, that isn't in its line's leading comment. */
-function copyMatches(files, pattern) {
-  const found = [];
-  for (const { rel, source } of files) {
-    for (const [index, line] of source.split(LINE_BREAK).entries()) {
-      for (const match of line.matchAll(pattern)) {
-        if (!inLeadingComment(line, match.index)) {
-          found.push({ rel, line: index + 1, text: line, match });
-        }
-      }
-    }
-  }
-  return found;
 }
 
 /** `Signet` as a whole word; `SignetTokens` is not a hit. */

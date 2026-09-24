@@ -560,6 +560,28 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-24: System actor display_name becomes Frapp System (#2578)
+
+- **Migration**: `20260924190000_rename_system_actor_to_frapp.sql`
+- **Purpose**: ADR-25 names the product Frapp, so step 3 reverses the
+  2026-09-09 rename below. The well-known system actor
+  (`users.id = 00000000-0000-0000-0000-000000000000`) reads `Signet System` on
+  every project that applied `20260909120000`. This is a one-row `UPDATE`
+  matched on id, back to `Frapp System`, the name the historical seed inserted.
+  Both earlier migrations stay as the record. Email (`system@frapp.local`),
+  `SYSTEM_SENDER_ID`, and `frapp://` identifiers are untouched.
+- **Checks**: After `db push`,
+  `select display_name from users where id = '00000000-0000-0000-0000-000000000000'`
+  returns `Frapp System`. Re-running the migration changes nothing.
+- **Promoter notes**: Data only. No schema change, no lock beyond the single
+  row, no client dependency. Staging applies on merge to `main`. Production
+  applies with Deploy production, which the owner dispatches the same day as
+  part of ADR-25 step 3's console order
+  ([`supabase.md` § ADR-25 step 3](deployment/supabase.md#adr-25-step-3-the-sender-becomes-frapp)).
+  No agent session dispatches it.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-the-frapp-system-display_name) § Rollback the Frapp System display_name.
+
 ## 2026-09-24: Hide a blocked member's reactions from the member who blocked them (#2494)
 
 ### 20260924170000_chat_message_actions_hide_blocked_reactions.sql
@@ -701,6 +723,11 @@ the same run). Hosted projects are not applied from a cloud-agent session.
 - **Checks**: After `db push`,
   `select display_name from users where id = '00000000-0000-0000-0000-000000000000'`
   returns `Signet System`. Re-running the migration changes nothing.
+  *2026-09-24: true only until `20260924190000` applies. A push that applies
+  both migrations ends on `Frapp System`, which is correct, not a failed
+  #1935; the check to run is the one in
+  [the 2026-09-24 entry](#2026-09-24-system-actor-display_name-becomes-frapp-system-2578)
+  above.*
 - **Promoter notes**: Data only — no schema change, no lock beyond the single
   row, no client dependency. Staging applies on merge to `main`. Production
   waits for Deploy production; do not dispatch that workflow from this change.

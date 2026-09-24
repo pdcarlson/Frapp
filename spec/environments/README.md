@@ -326,7 +326,7 @@ secrets.
 
 **Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge — as two workflows both gated on CI success (`deploy-vercel-staging.yml` and `deploy-api.yml`) since #1578 restored the Vercel half; see §6 **Web and Landing (Vercel)**. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
 
-**Exception — breaking API changes:** Use the split-PR flow in `docs/internal/quality/PR_REVIEW_PROCESS.md` when compatibility is not maintained:
+**Exception — breaking API changes:** When compatibility is not maintained, split the change into PRs and ship them in this order:
 
 1. Merge/deploy the backward-compatible API PR first.
 2. Verify the API health check passes.

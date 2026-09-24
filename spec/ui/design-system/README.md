@@ -219,7 +219,7 @@ Minimum release requirements:
 - A hidden "Skip to main content" link that becomes visible on focus and jumps to the page's main landmark — a route whose main landmark hides real content behind its own sub-navigation (chat's channel rail before the timeline) should carry a second, route-scoped skip link to the content past that sub-navigation (`#396`)
 - Dialogs are announced as modal (`aria-modal="true"`) — Radix's `DialogContent` does not set this itself (verified against `@radix-ui/react-dialog@1.1.23`; only `role="dialog"` comes for free even in its default modal variant), so `apps/web/components/ui/dialog.tsx` sets it explicitly on every consumer (`#396`)
 
-Execution protocol and evidence requirements: [`../../../docs/internal/quality/ACCESSIBILITY_TESTING_PROTOCOL.md`](../../../docs/internal/quality/ACCESSIBILITY_TESTING_PROTOCOL.md).
+Execution protocol and evidence requirements: [`docs/guides/accessibility-testing.md`](../../../docs/guides/accessibility-testing.md).
 
 ---
 

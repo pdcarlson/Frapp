@@ -261,6 +261,14 @@ test("placeholderPdf encodes the seed's dashes and escapes PDF string delimiters
   assert.ok(bytes.includes(Buffer.from("\\(c\\) \\\\ d", "latin1")));
 });
 
+test("the seed names the product Frapp, never Signet (ADR-25 step 3)", () => {
+  // App Review opens these PDFs and reads this chapter; nothing else pins the brand in them.
+  const text = placeholderPdf("x", "Chapter").toString("latin1");
+  assert.ok(text.includes("This is a sample document in Frapp's demo chapter."), "placeholder PDF must name Frapp");
+  assert.doesNotMatch(text, /Signet/i);
+  assert.doesNotMatch(TEMPLATE, /\bSignet\b/);
+});
+
 // ── auth ────────────────────────────────────────────────────────────────────
 
 const listUsers = (users) => [on("GET", "/auth/v1/admin/users?"), () => ({ json: { users } })];

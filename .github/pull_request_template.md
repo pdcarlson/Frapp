@@ -40,7 +40,7 @@
 - [ ] Token-only styling for colors/spacing/radius/motion (no ad hoc visual values).
 - [ ] One clear primary action per touched screen/section.
 - [ ] Async states complete (loading, empty, error, success, and offline/degraded when network-dependent).
-- [ ] Accessibility baseline verified (focus visibility, labels for icon-only controls, contrast checks, keyboard flow).
+- [ ] Accessibility baseline verified (focus visibility, labels for icon-only controls, contrast checks, keyboard flow), per `docs/guides/accessibility-testing.md`.
 - [ ] Responsive/adaptive behavior checked for impacted surfaces.
 - [ ] Microcopy uses production-grade language (no placeholder/vibe-coded copy).
 - [ ] No dead-end controls: every actionable-looking control has behavior or explicit disabled rationale.

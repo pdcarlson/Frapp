@@ -428,6 +428,16 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the Frapp System display_name
+
+* **Migration**: `20260924190000_rename_system_actor_to_frapp.sql`
+* **Action**: `update public.users set display_name = 'Signet System' where id = '00000000-0000-0000-0000-000000000000';` restores the name `20260909120000` wrote. Nothing else on the row changes.
+* **Note**: Data only, one row, idempotent. There is rarely a reason to roll it
+  back: ADR-25 names the product Frapp, and `Signet System` is the leftover
+  this change removes. Chat cards do not print `users.display_name` for the
+  system sender today, so a rollback is invisible on those surfaces. Do not
+  edit either earlier migration to undo this.
+
 ## Rollback the Signet System display_name
 
 * **Migration**: `20260909120000_rename_system_user_display_name.sql`
@@ -436,6 +446,10 @@ After any rollback event:
   back — the old name is the leftover this change removes. Chat cards do not
   print `users.display_name` for the system sender today, so a rollback is
   invisible on those surfaces. Do not edit the historical seed to undo this.
+* *2026-09-24: ADR-25 named the product Frapp, and `20260924190000` renamed the
+  actor back to `Frapp System` (#2578). `Signet System` is now the leftover; to
+  undo that newer migration, use [§ Rollback the Frapp System
+  display_name](#rollback-the-frapp-system-display_name) above.*
 
 ## Rollback the chapter directory seed rows
 

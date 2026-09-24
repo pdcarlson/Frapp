@@ -1,4 +1,5 @@
-// Locks customer-facing calendar ICS branding on Signet, surface by surface.
+// Locks the web ICS filename fallback on Signet until ADR-25 step 4, and the
+// @frapp.live UID host on every surface.
 //
 // WHY THIS EXISTS. Leftover 1929 renamed ICS PRODID and the empty-title
 // .ics fallback from Frapp to Signet. Those strings sit next to the UID
@@ -8,13 +9,14 @@
 //
 // ADR-25 NAMES THE PRODUCT FRAPP and renames it one surface at a time, so
 // each surface leaves this lock with its own step. Step 2 took the mobile
-// PRODID and filename fallback to frapp-mobile-copy.test.mjs. The API
-// PRODID flips with step 3 and the web fallback with step 4. The UID host
-// is a permanent identifier on every surface and stays here.
+// PRODID and filename fallback to frapp-mobile-copy.test.mjs, and step 3
+// took the API PRODID to frapp-api-copy.test.mjs. The web fallback flips
+// with step 4. The UID host is a permanent identifier on every surface and
+// stays here.
 //
-// SCOPE. PRODID lines, the empty-title filename fallback, and the UID
-// host. Do not assert scheme or bundle id. Export CSV/PDF prefixes stay
-// on their own lock (signet-export-filenames).
+// SCOPE. The web empty-title filename fallback, and the UID host. Do not
+// assert scheme or bundle id. Export CSV/PDF prefixes stay on their own
+// lock (signet-export-filenames).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -23,14 +25,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-
-const SITES = [
-  {
-    rel: "apps/api/src/application/services/event.service.ts",
-    prodid: "PRODID:-//Signet//Events//EN",
-    banned: "PRODID:-//Frapp//Events//EN",
-  },
-];
 
 const FILENAME_SITES = [
   {
@@ -43,18 +37,6 @@ const FILENAME_SITES = [
 function readRepo(rel) {
   return readFileSync(join(REPO_ROOT, rel), "utf8");
 }
-
-test("ICS PRODID sites ship Signet, not Frapp", () => {
-  for (const site of SITES) {
-    const source = readRepo(site.rel);
-    assert.match(source, new RegExp(site.prodid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), site.rel);
-    assert.doesNotMatch(
-      source,
-      new RegExp(site.banned.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-      `${site.rel} must not keep ${site.banned}`,
-    );
-  }
-});
 
 test("empty-title ICS fallback filename is signet-event, not frapp-event", () => {
   for (const site of FILENAME_SITES) {
