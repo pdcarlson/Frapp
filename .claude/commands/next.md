@@ -239,10 +239,14 @@ with the next candidate.
 `in-review` is never swept.
 
 - Live claim: leave it alone.
-- A `routine-state` or `incident` issue with no live claim is never reclaimed or flagged as
-  backlog, whatever its claim history: remove `in-progress` (read-modify-write, nothing else) and
-  comment one line saying the label was stray because the issue is never work. It counts toward the
-  demotion cap below.
+- A `routine-state` or `incident` issue is never reclaimed or stale-flagged, because it is never
+  work. If it carries a dead claim (no live claim, no branch pushed within `LEASE`, no open linked
+  PR), post `AGENT-RELEASE` for that claim id, reason `out-of-scope`, `Labels:` reading
+  "`in-progress` removed — never work", and remove `in-progress` (read-modify-write, nothing else).
+  That release is also why this fires only once per claim. An open linked PR on one goes in your
+  run report instead, since merging it would close the alert by hand. Leave an `in-progress` with no
+  claim comment alone: nothing leaked, and the label may be the owner's. A release here counts
+  toward the demotion cap below.
 - Expired lease, no linked PR in any state but closed-unmerged, and no branch pushed within `LEASE`
   (`git ls-remote --heads origin`; a push counts as a heartbeat): reclaimable. It enters §0.3 at the
   top and must still clear §0.2 conditions 3, 4, and 5, so a dead session's claim can't launder a
