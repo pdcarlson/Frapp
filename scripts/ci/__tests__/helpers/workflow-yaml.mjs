@@ -32,9 +32,9 @@
 // The shapes read here are the ones GitHub's workflow schema fixes: `env` is a
 // flat map of scalars, and steps are a list of mappings under `steps:`. That
 // makes an indentation reader sufficient; it is not a general YAML parser and
-// should not be used as one. A flow mapping (`{ a: b }`) where it reads keys
-// throws instead of being guessed at (see `keysAt`), because a guard over a
-// misread value passes. Known gaps: #2629.
+// should not be used as one. A flow mapping (`{ a: b }`) as a key's value, and
+// a flow `env:`, throw instead of being guessed at (see `keysAt`), because a
+// guard over a misread value passes. Known gaps: #2629.
 
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -114,6 +114,24 @@ function envMapAt(lines, headerIndex) {
 }
 
 /**
+ * Does this raw value (the text after a key's colon, before quotes are
+ * stripped) open a flow mapping? A node property may come first
+ * (`&p { … }`, `!!map { … }`). A quoted `'{ … }'` is a string, so the test runs
+ * on the raw text.
+ */
+function isFlowMapping(raw) {
+  return /^\s*(?:[&!]\S*\s+)*\{/.test(raw);
+}
+
+/** The refusal `keysAt` and `findEnvHeader` share; see `keysAt`. */
+function refuseFlowMapping(key, raw) {
+  return new Error(
+    `workflow-yaml: \`${key}:\` is a flow mapping (${raw.trim()}), which this reader ` +
+      "refuses rather than guesses at. Write it in block form, one key per line.",
+  );
+}
+
+/**
  * The index of an `env:` header at exactly `indent`, within `[from, to)`.
  *
  * The trailing `(\s*#.*)?` is not decoration: `significantLines` drops lines
@@ -122,7 +140,12 @@ function envMapAt(lines, headerIndex) {
  * variable in it silently stops being seen. That fails toward green.
  */
 function findEnvHeader(lines, from, to, indent) {
+  // A flow-form `env: { … }` would otherwise read as no env at all, and an
+  // absence guard (no GITHUB_SHA override) would pass on the override itself.
+  const flowEnv = new RegExp(String.raw`^\s*${named("env")}\s*:(.*)$`);
   for (let i = from; i < to; i += 1) {
+    const flow = indentOf(lines[i]) === indent ? flowEnv.exec(lines[i]) : null;
+    if (flow && isFlowMapping(flow[1])) throw refuseFlowMapping("env", flow[1]);
     if (indentOf(lines[i]) === indent && new RegExp(String.raw`^\s*${named("env")}\s*:(\s*#.*)?\s*$`).test(lines[i])) {
       return i;
     }
@@ -366,7 +389,8 @@ function opensMapping(raw) {
  * pass on a scope it never saw. No committed workflow writes one, so the
  * guarded files use the block form and the reader says so when they don't.
  * Decided on the RAW value, before quotes are stripped, so `'{ Nightly }'`
- * stays the string it is.
+ * stays the string it is (`isFlowMapping`). `findEnvHeader` refuses a flow
+ * `env:` the same way, for the step env `workflowSteps` reads.
  */
 function keysAt(lines, from, to, indent) {
   const keys = new Map();
@@ -377,11 +401,8 @@ function keysAt(lines, from, to, indent) {
     const key = keyOf(match);
     if (opensMapping(match[4])) {
       keys.set(key, envMapAt(lines, i));
-    } else if (/^\s*\{/.test(match[4])) {
-      throw new Error(
-        `workflow-yaml: \`${key}:\` is a flow mapping (${match[4].trim()}), which this reader ` +
-          "refuses rather than guesses at. Write it in block form, one key per line.",
-      );
+    } else if (isFlowMapping(match[4])) {
+      throw refuseFlowMapping(key, match[4]);
     } else {
       keys.set(key, scalarValue(match[4]));
     }

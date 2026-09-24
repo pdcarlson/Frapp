@@ -11,7 +11,7 @@ import { workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-ya
 // their plain form, and were once read differently: a guard that reads one
 // wrong either fails a correct workflow (and gets deleted) or passes one that
 // grants more than it asserts. A flow mapping is the exception by design: the
-// reader refuses it (see the last tests) rather than guess at it.
+// reader refuses it (see "refuses any flow mapping …") rather than guess at it.
 
 const WORKFLOW = `name: Example
 on:
@@ -163,6 +163,9 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
       "{ contents: &r read, issues: write }",
       "{ contents: read,\n      issues: write }",
       "{\n      contents: read\n    }",
+      // A node property in front is still a flow mapping.
+      "&p { contents: read, issues: write }",
+      "!!map { contents: write }",
     ]) {
       const variant = join(dir, "flow.yml");
       writeFileSync(
@@ -173,6 +176,20 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
       assert.throws(() => workflowJobs(variant)[0].keys, /is a flow mapping/, `job level: ${flow}`);
       // A caller reading only the job id and condition is never refused.
       assert.equal(workflowJobs(variant)[0].jobId, "j");
+    }
+  });
+
+  it("refuses a flow-form env at workflow, job or step level, not read it as empty", () => {
+    // An empty env would pass an absence guard on the override it hides.
+    const shapes = {
+      workflow: "name: X\nenv: { GITHUB_SHA: o }\njobs:\n  j:\n    steps:\n      - run: echo\n",
+      job: "name: X\njobs:\n  j:\n    env: { GITHUB_SHA: o }\n    steps:\n      - run: echo\n",
+      step: "name: X\njobs:\n  j:\n    steps:\n      - name: S\n        env: &e { GITHUB_SHA: o }\n        run: echo\n",
+    };
+    for (const [level, text] of Object.entries(shapes)) {
+      const variant = join(dir, `flow-env-${level}.yml`);
+      writeFileSync(variant, text);
+      assert.throws(() => workflowSteps(variant), /`env:` is a flow mapping/, level);
     }
   });
 
