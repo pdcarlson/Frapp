@@ -277,8 +277,8 @@ const PUBLIC_SUPABASE_SECRET_KEY_ERROR = [
  * base64url segment after a dot that opens with `eyJ` (`{"`), which is where a
  * JWT's claims sit wherever it was pasted (after a URL, a stray dot or another
  * JWT). A segment after a dot can also be a header, when JWTs are joined by a
- * dot, so there only one carrying a `role` counts. One anchored match per
- * part keeps the scan linear however long the value is.
+ * dot, so one that looks like a header (an `alg` and no `role`) is skipped.
+ * One anchored match per part keeps the scan linear however long the value is.
  */
 function jwtClaims(key) {
   const parts = key.replace(/\s+/g, "").split(".");
@@ -286,7 +286,7 @@ function jwtClaims(key) {
   for (const part of parts.slice(1)) {
     const segment = /^eyJ[A-Za-z0-9_-]*/.exec(part);
     const claims = segment ? decodeJwtSegment(segment[0]) : undefined;
-    if (claims && "role" in claims) found.push(claims);
+    if (claims && !("alg" in claims && !("role" in claims))) found.push(claims);
   }
   return found.filter(Boolean);
 }

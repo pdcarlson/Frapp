@@ -719,11 +719,17 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     ["a secret key appended to an anon JWT", `${LEGACY_ANON_JWT_FIXTURE}${SECRET_KEY_FIXTURE}`],
     ["a URL-encoded secret key", `%22${SECRET_KEY_FIXTURE}%22`],
     // A JWT among other dotted text doesn't split into three parts, so its
-    // claims are found by their `eyJ` header-and-claims pair instead.
+    // claims are found as an `eyJ` segment after a dot instead; one that
+    // looks like a header (an `alg` and no `role`) is skipped.
     ["a service_role JWT appended to an anon JWT", `${LEGACY_ANON_JWT_FIXTURE}${SERVICE_ROLE_JWT_FIXTURE}`],
     ["a service_role JWT after an anon JWT and a space", `${LEGACY_ANON_JWT_FIXTURE} ${SERVICE_ROLE_JWT_FIXTURE}`],
     ["a service_role JWT with a trailing period", `${SERVICE_ROLE_JWT_FIXTURE}.`],
     ["a service_role JWT after the project URL", `https://ref.supabase.co ${SERVICE_ROLE_JWT_FIXTURE}`],
+    // Claims with no role aren't anon either, wherever they sit.
+    [
+      "a JWT with no role after the project URL",
+      "https://ref.supabase.co eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.not-a-real-signature", // gitleaks:allow
+    ],
     // Wrapped across lines by a terminal, after other dotted text.
     [
       "a line-wrapped service_role JWT after the project URL",
@@ -770,6 +776,9 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
       // Three parts, but the middle is `[]`: JWT claims are an object, so this
       // is a placeholder, not a credential to tell anyone to rotate.
       "x.W10.y",
+      // The second JWT's header follows a dot; it is skipped, not read as
+      // role-less claims.
+      `${LEGACY_ANON_JWT_FIXTURE}.${LEGACY_ANON_JWT_FIXTURE}`,
       undefined,
     ]) {
       expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).not.toThrow();
