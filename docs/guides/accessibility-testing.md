@@ -48,7 +48,7 @@ Use only relevant commands for changed areas.
 
 - [ ] Tab/Shift+Tab traversal follows visual order.
 - [ ] Focus ring remains visible on all interactive controls.
-- [ ] Dialogs and sheets meet every § 6 dialog rule (focus on open, trap, return on close, `aria-modal`), and the skip link reaches the main landmark. These are the § 6 items most often missed.
+- [ ] Dialogs and sheets meet every § 6 dialog rule (focus on open, trap, return on close, `aria-modal`), and the skip link reaches the main landmark.
 - [ ] Dropdowns/menus can be fully operated without a mouse.
 - [ ] Error and offline states include non-color explanatory copy.
 - [ ] Core responsive breakpoints validated (desktop, tablet, narrow/mobile width).
