@@ -8,6 +8,7 @@ import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { readDeployedCommit } from '../../infrastructure/observability/deployed-commit';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { StripePriceConsistencyService } from '../../infrastructure/billing/stripe-price-consistency.service';
 import { StripePriceAccountMismatchError } from '../../infrastructure/billing/stripe-price-consistency';
 import { HealthPayloadDto, type DependencyStatus } from '../dtos/health.dto';
@@ -73,10 +74,13 @@ export class HealthController {
       await this.stripePriceConsistency.assertConfiguredPrice();
     } catch (err) {
       if (err instanceof StripePriceAccountMismatchError) {
-        throw new ServiceUnavailableException({
-          code: 'DEGRADED',
-          message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${err.message}`,
-        });
+        throw new ServiceUnavailableException(
+          {
+            code: 'DEGRADED',
+            message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${err.message}`,
+          },
+          { cause: toReportableError(err) },
+        );
       }
       throw err;
     }

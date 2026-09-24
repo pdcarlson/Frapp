@@ -26,6 +26,7 @@ import {
 } from '../../infrastructure/observability/security-events';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { errorFingerprint } from '../../infrastructure/observability/error-fingerprint';
 import { httpStatusClass } from '../../infrastructure/analytics/http-status-class';
 import {
   captureSentryErrorCorrelated,
@@ -301,7 +302,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const path = pathOnly(request.url);
         if (path) scope.setTag('route', path);
 
-        const eventId = Sentry.captureException(toReportableError(exception));
+        const reported = toReportableError(exception);
+        const fingerprint = errorFingerprint(reported);
+        if (fingerprint) scope.setFingerprint(fingerprint);
+
+        const eventId = Sentry.captureException(reported);
         this.emitSentryErrorCorrelated(
           request,
           status,
