@@ -72,12 +72,14 @@ export interface PrimerVisibilityInput {
  * Hidden once permission is granted (there is nothing left to ask), and once
  * the member has declined (that was an answer, not a deferral).
  *
- * It stays **visible when push is unavailable**, explaining why instead of
- * disappearing — `spec/ui/design-system/components.md` §5's rule for a control
- * that cannot act. That case is not hypothetical: it is the state of every
- * build until #938 provisions an EAS project. Permission cannot be read at all
- * without the native module, so `permissionGranted` stays `null` there and the
- * availability check has to come first.
+ * Also **hidden when push is unavailable** (#2299): `isPushAvailable()` is
+ * false, for any of the causes `spec/ui/mobile/patterns.md` § Push
+ * notifications lists. The card's only function is "Turn on", and nothing on
+ * s03 can make the build able to push, so a card there could only disable
+ * itself and apologise, which is the placeholder App Review Guideline 2.1
+ * rejects. `spec/ui/design-system/README.md` §5 rule 4 hides it, like the
+ * ✦ Ask pill in a build without Ask. Settings (s16) still states the reason on
+ * its push row, which is where a member who wonders why goes.
  */
 export function shouldOfferPrimer({
   isAvailable,
@@ -85,8 +87,11 @@ export function shouldOfferPrimer({
   decision,
 }: PrimerVisibilityInput): boolean {
   if (decision !== "unasked") return false;
-  // Unavailable: no permission to read, and the card's job is to say so.
-  if (!isAvailable) return true;
+  // Not implied by the permission read below. A build that loads the native
+  // module but has no EAS project id can still read permission as not
+  // granted, and would offer a "Turn on" that grants permission but can never
+  // register a token.
+  if (!isAvailable) return false;
   // Available but not yet read — do not flash a card that may be about to
   // resolve to "already granted".
   if (permissionGranted === null) return false;

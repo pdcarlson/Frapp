@@ -25,7 +25,6 @@ import {
 import {
   getPushPermission,
   isPushAvailable,
-  pushUnavailableReason,
   requestPushPermission,
 } from "@/lib/notifications/push";
 import {
@@ -39,7 +38,8 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * s03 — First-run + notification primer (`spec/ui/mobile/screens.md`).
  *
- * Hosts the auto-joined public channels and the C7 push primer card. Completing
+ * Hosts the auto-joined public channels and, when this build can push, the C7
+ * push primer card (`shouldOfferPrimer`, #2299). Completing
  * or skipping PATCHes `has_completed_onboarding` so the gate will not send the
  * member here again.
  */
@@ -167,7 +167,6 @@ export default function Welcome() {
         {showPrimer ? (
           <View style={styles.primerWrap}>
             <PushPrimerCard
-              unavailableReason={pushUnavailableReason()}
               isRequesting={isRequesting}
               onTurnOn={handleTurnOn}
               onNotNow={handleNotNow}

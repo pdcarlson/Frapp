@@ -61,9 +61,9 @@ const ON_VALUES: readonly string[] = ["1", "true"];
  * function is to announce that its feature is off is a placeholder under App
  * Review Guideline 2.1, and no member can switch Ask on, so the pill is hidden
  * rather than disabled. `spec/ui/design-system/README.md` §5 rule 4 ("Disable,
- * don't hide, for recoverable states") names the Ask pill as a case to hide,
- * and only that pill: it is not a rule for every build-time gap, and the push
- * primer, gated the same way, still disables (#2299).
+ * don't hide, for recoverable states") names the Ask pill as a case to hide.
+ * It is not a rule for every build-time gap. The s03 push primer, gated the
+ * same way, has since followed it (#2299, `lib/notifications/primer.ts`).
  * `spec/ui/mobile/navigation.md` § Global entries records the reversal and why
  * the disabled Pay control in `lib/payments/stripe.ts` stays disabled rather
  * than following it.

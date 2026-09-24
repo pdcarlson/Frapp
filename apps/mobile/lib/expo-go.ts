@@ -26,10 +26,15 @@ export function isExpoGo(): boolean {
  * No native target here: the web/SSR bundle, or Expo Go.
  *
  * The guard `lib/notifications/push.ts` and `lib/payments/stripe.ts` share.
- * The web clause is belt and braces on both: their `*-module.ts` half already
- * returns `null` there, so it cannot be the thing that saves the export. It
- * makes the intent legible at the one place a reader looks, and it is simply
- * true — neither remote push nor Stripe's native sheet has a web target.
+ * For loading, the web clause is belt and braces on both: their `*-module.ts`
+ * half already returns `null` there, so it cannot be the thing that saves the
+ * export. It makes the intent legible at the one place a reader looks, and it
+ * is simply true — neither remote push nor Stripe's native sheet has a web
+ * target. It is **not** redundant for the reason sentence, though:
+ * `pushUnavailableReason()` reads this guard to tell "no native target" apart
+ * from a native module that threw in an installed build, which caches the
+ * same `null`, so dropping the web clause would tell a web visitor to update
+ * the app. `push.spec.ts` pins the web sentence.
  *
  * One predicate rather than two, because this one is genuinely shared: if what
  * counts as "no native target" ever changes, it must change for both, and a

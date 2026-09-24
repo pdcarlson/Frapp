@@ -526,6 +526,22 @@ client cannot read (`GET /v1/invoices/overdue` is `billing:view`-only). §Status
 labels reserves the backend's own labels for states the client can actually
 confirm.
 
+### Push availability (mobile, s16)
+
+The reason Settings states on its push row, in place of On/Off, when this build
+can't push (`pushUnavailableReason()` in `apps/mobile/lib/notifications/push.ts`).
+One sentence per cause, because each cause has a different remedy
+([`../mobile/patterns.md`](../mobile/patterns.md#push-notifications) § Push
+notifications). The s03 primer card never shows these: it isn't drawn when push
+is unavailable ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)).
+
+| State | Title | Description |
+|---|---|---|
+| Expo Go | `Unavailable` (row value) | `Notifications need the installed Frapp build — Expo Go can't receive them. You'll still see everything here in the app.` |
+| Web | `Unavailable` (row value) | `Notifications come to the phone app, not the web. You'll still see everything here.` |
+| Installed build, module failed to load | `Unavailable` (row value) | `Notifications couldn't start in this version of the app. Updating the app may fix it. You'll still see everything here in the app.` |
+| No EAS project id | `Unavailable` (row value) | `Notifications aren't switched on for this build yet. You'll still see everything here in the app.` |
+
 ### Report and block (mobile, s05 / s13 / s16)
 
 Member-safety copy (#2257). The behavior each string describes is owned by
