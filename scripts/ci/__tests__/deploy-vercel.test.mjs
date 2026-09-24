@@ -2,9 +2,13 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  APP_CONFIG_AMBIENT,
+  APP_CONFIG_FROM_INFISICAL,
   DEPLOY_PHASE_ALL,
   DEPLOY_PHASE_BUILD,
   DEPLOY_PHASE_UPLOAD,
+  appConfigSourceFor,
+  buildEnvsFor,
   buildVercelProjects,
   classifyVercelState,
   createVercelDeployment,
@@ -930,6 +934,167 @@ describe("fail-fast distinguishes shipped from not-shipped", () => {
     assert.doesNotMatch(
       outcome.results.find((r) => r.label === "frapp-web").message,
       /Not attempted/,
+    );
+  });
+});
+
+// ── Staging's app config from Infisical (#834 option b, #2672) ─────────────
+
+describe("appConfigSourceFor", () => {
+  it("builds staging from the Infisical injection", () =>
+    assert.equal(appConfigSourceFor(VERCEL_TARGET_PREVIEW), APP_CONFIG_FROM_INFISICAL));
+
+  // Production has not moved yet (#2673): the whole job env, as before.
+  it("builds production on the ambient env, as before", () =>
+    assert.equal(appConfigSourceFor(VERCEL_TARGET_PRODUCTION), APP_CONFIG_AMBIENT));
+});
+
+describe("buildEnvsFor", () => {
+  const projects = [
+    { projectId: "prj_web", label: "frapp-web" },
+    { projectId: "prj_landing", label: "frapp-landing" },
+  ];
+  const env = {
+    PATH: "/usr/bin",
+    HOME: "/home/runner",
+    NEXT_PUBLIC_API_URL: "https://api-staging.example",
+    NEXT_PUBLIC_SUPABASE_URL: "https://ref.supabase.co",
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
+    NEXT_PUBLIC_APP_URL: "https://app.staging.example",
+    STRIPE_SECRET_KEY: "sk_test_backend",
+  };
+  const baseline = () => JSON.stringify(["HOME", "PATH"]);
+
+  it("gives production no build env and never reads a baseline", () => {
+    const out = buildEnvsFor({
+      target: VERCEL_TARGET_PRODUCTION,
+      projects,
+      env,
+      readBaseline: () => {
+        throw new Error("production must not need a baseline");
+      },
+    });
+    assert.deepEqual(
+      out.map((p) => p.buildEnv),
+      [null, null],
+    );
+  });
+
+  it("gives each staging project its own app keys", () => {
+    const [web, landing] = buildEnvsFor({ target: VERCEL_TARGET_PREVIEW, projects, env, readBaseline: baseline });
+    assert.deepEqual(Object.keys(web.buildEnv.appEnv).sort(), [
+      "NEXT_PUBLIC_API_URL",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      "NEXT_PUBLIC_SUPABASE_URL",
+    ]);
+    assert.deepEqual(Object.keys(landing.buildEnv.appEnv), ["NEXT_PUBLIC_APP_URL"]);
+    assert.deepEqual(web.buildEnv.baseEnv, { HOME: "/home/runner", PATH: "/usr/bin" });
+  });
+
+  it("reports every project's missing keys at once, before anything is built", () => {
+    // Checking landing only after web had built would spend a whole build to
+    // learn what one read of the environment already knew.
+    assert.throws(
+      () =>
+        buildEnvsFor({
+          target: VERCEL_TARGET_PREVIEW,
+          projects,
+          env: { PATH: "/usr/bin", HOME: "/home/runner" },
+          readBaseline: baseline,
+        }),
+      /\[frapp-web\].*NEXT_PUBLIC_API_URL[\s\S]*\[frapp-landing\].*NEXT_PUBLIC_APP_URL/,
+    );
+  });
+
+  it("refuses a baseline that is not a job environment", () => {
+    assert.throws(
+      () => buildEnvsFor({ target: VERCEL_TARGET_PREVIEW, projects, env, readBaseline: () => "[]" }),
+      /no PATH/,
+    );
+  });
+});
+
+describe("deployVercel on the staging path", () => {
+  it("builds each project on its own app keys, with the rest of the store out of every step", async () => {
+    const env = {
+      PATH: "/usr/bin",
+      HOME: "/home/runner",
+      NEXT_PUBLIC_API_URL: "https://api-staging.example",
+      NEXT_PUBLIC_SUPABASE_URL: "https://ref.supabase.co",
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
+      NEXT_PUBLIC_APP_URL: "https://app.staging.example",
+      STRIPE_SECRET_KEY: "sk_test_backend",
+    };
+    const projects = buildEnvsFor({
+      target: VERCEL_TARGET_PREVIEW,
+      projects: [
+        { projectId: "prj_web", label: "frapp-web" },
+        { projectId: "prj_landing", label: "frapp-landing" },
+      ],
+      env,
+      readBaseline: () => JSON.stringify(["HOME", "PATH"]),
+    });
+
+    const stash = makeStashFs([vercelDirFor(CWD)]);
+    // Every project's pull writes the same stale row for both apps' keys; what
+    // each build may keep of it depends on which app it is.
+    const envFile = `${vercelDirFor(CWD)}/.env.preview.local`;
+    const files = new Map();
+    const stripped = [];
+    const envFileFs = {
+      read: async (p) => files.get(p) ?? null,
+      write: async (p, text) => {
+        stripped.push(text);
+        files.set(p, text);
+      },
+    };
+    const steps = [];
+    const runCommand = async ({ args, env: stepEnv }) => {
+      steps.push({ project: stepEnv.VERCEL_PROJECT_ID, step: args[0], env: stepEnv });
+      if (args[0] === "pull") {
+        files.set(envFile, 'NEXT_PUBLIC_API_URL="stale"\nNEXT_PUBLIC_APP_URL="stale"\nVERCEL_ENV="preview"\n');
+      }
+      return { code: 0, stdout: args[0] === "deploy" ? `https://${HOST}\n` : "", stderr: "" };
+    };
+    const { fetchImpl } = makeFetchStub([
+      okJson({ id: "dpl_x", target: null, state: "READY", meta: { githubCommitSha: SHA } }),
+    ]);
+
+    const outcome = await deployVercel({
+      apiKey: API_KEY,
+      projects,
+      sha: SHA,
+      target: VERCEL_TARGET_PREVIEW,
+      teamId: TEAM_ID,
+      cwd: CWD,
+      clock: makeFakeClock(),
+      runCommand,
+      stashFs: stash.fs,
+      envFileFs,
+      fetchImpl,
+      logger: quiet,
+    });
+
+    assert.equal(outcome.ok, true, JSON.stringify(outcome.failures));
+    // Each project removes its OWN app's keys from the pulled file.
+    assert.deepEqual(stripped, [
+      'NEXT_PUBLIC_APP_URL="stale"\nVERCEL_ENV="preview"\n',
+      'NEXT_PUBLIC_API_URL="stale"\nVERCEL_ENV="preview"\n',
+    ]);
+    const build = (project) => steps.find((s) => s.project === project && s.step === "build").env;
+    assert.equal(build("prj_web").NEXT_PUBLIC_API_URL, "https://api-staging.example");
+    assert.equal(build("prj_landing").NEXT_PUBLIC_APP_URL, "https://app.staging.example");
+    assert.equal(build("prj_landing").NEXT_PUBLIC_API_URL, undefined, "landing got web's config");
+    for (const { project, step, env: stepEnv } of steps) {
+      assert.equal(stepEnv.STRIPE_SECRET_KEY, undefined, `${project} ${step} saw a backend secret`);
+    }
+    // Each project's pull started from an empty `.vercel`.
+    assert.deepEqual(
+      stash.ops.filter(([op]) => op === "remove"),
+      [
+        ["remove", vercelDirFor(CWD)],
+        ["remove", vercelDirFor(CWD)],
+      ],
     );
   });
 });

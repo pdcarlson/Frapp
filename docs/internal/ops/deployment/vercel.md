@@ -11,7 +11,7 @@ neither asks Vercel to fetch a commit.
 
 | Channel | Workflow | Path |
 | --- | --- | --- |
-| Staging (web + landing) | `deploy-vercel-staging.yml`, after CI succeeds on `main` | `vercel pull --environment=preview` → `vercel build` → `vercel deploy --prebuilt` → alias the staging hostnames |
+| Staging (web + landing) | `deploy-vercel-staging.yml`, after CI succeeds on `main` | inject Infisical `staging` → `vercel pull --environment=preview` → `vercel build` on each app's own keys → `vercel deploy --prebuilt` → alias the staging hostnames |
 | Production (web + landing) | `deploy-production.yml`, on a dispatched SHA | `vercel pull --environment=production` → `vercel build --prod` → `vercel deploy --prebuilt --prod` |
 
 **Uploads are one archive per deploy, not one request per file (`--archive=tgz`, since
@@ -29,15 +29,22 @@ Both run [`scripts/ci/deploy-vercel.mjs`](../../../../scripts/ci/deploy-vercel.m
 
 ### 4.2 Environment Variables per Project
 
-Vercel scopes env vars to **Production** and **Preview**. Staging deploys consume Preview vars
-(`vercel pull --environment=preview` in `deploy-vercel-staging.yml`). Production deploys consume
-Production vars (`vercel pull --environment=production` in `deploy-production.yml`) — the
-workflow rebuilds a named commit rather than promoting a preview. Unlinking did not delete those
-scopes or their Infisical syncs; `vercel pull` inlines whatever the matching scope currently holds.
+Vercel scopes env vars to **Production** and **Preview**. Production deploys pull Production vars
+(`vercel pull --environment=production` in `deploy-production.yml`), but the build runs in a job that
+has already injected Infisical `prod`, so a key Infisical holds beats the Production row and the rows
+fill only keys it lacks ([#2673](https://github.com/pdcarlson/Frapp/issues/2673)). The workflow
+rebuilds a named commit rather than promoting a preview. **Staging deploys do not consume Preview vars for app
+config** (since #2672): `deploy-vercel-staging.yml` injects Infisical `staging`, gives each app's
+build exactly the keys it reads, and removes those keys from the Preview env `vercel pull` writes.
+The pull still supplies the project settings and `VERCEL_ENV=preview`
+([`SECRETS_MANAGEMENT.md` § Staging web and landing](../../environment/SECRETS_MANAGEMENT.md#staging-web-and-landing-injected-at-build-not-synced)).
 
-**These values are not typed into the Vercel dashboard.** Infisical is the canonical store and its
-syncs push the values into each project's Production and Preview scopes (the four `vercel-*` syncs); the
-dashboard is the destination, not the place a human enters anything. The authoritative sync map and
+**These values are not typed into the Vercel dashboard.** Infisical is the canonical store. The two
+production `vercel-*` syncs push the values into each project's Production scope, and the staging job
+reads Infisical `staging` directly; the dashboard is a destination, not the place a human enters
+anything. A Preview row can no longer supply a key an app reads, though a row under any other name
+still reaches the staging build's environment; delete the stale rows once a staging deploy on this
+path is green ([#834](https://github.com/pdcarlson/Frapp/issues/834)). The authoritative sync map and
 the setup procedure live in
 [`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md), and the complete
 variable list in [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md). The tables
@@ -46,7 +53,7 @@ change one, change it in Infisical.
 
 #### `frapp-web` (Web Dashboard)
 
-| Variable                        | Production                       | Preview (Staging)                   |
+| Variable                        | Production                       | Staging (Infisical `staging`)       |
 | ------------------------------- | -------------------------------- | ----------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`      | `https://<PROD_REF>.supabase.co` | `https://<STAGING_REF>.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `<prod anon key>`                | `<staging anon key>`                |
@@ -55,13 +62,13 @@ change one, change it in Infisical.
 > ⚠️ **`NEXT_PUBLIC_API_URL` is the bare origin — no `/v1`.** The SDK's generated
 > paths already include it, so a value ending in `/v1` yields `/v1/v1/...` and
 > 404s every dashboard request. This table previously showed the `/v1` form, so
-> **check the value currently set in Vercel for both environments** and drop the
-> suffix if it is there. It is a build-time inlined variable: changing it
-> requires a redeploy to take effect.
+> **check the value in Infisical `prod` and `staging`** and drop the suffix if it is
+> there. It is a build-time inlined variable: changing it requires a redeploy to
+> take effect.
 
 #### `frapp-landing` (Marketing Site)
 
-| Variable              | Production               | Preview (Staging)                |
+| Variable              | Production               | Staging (Infisical `staging`)    |
 | --------------------- | ------------------------ | -------------------------------- |
 | `NEXT_PUBLIC_APP_URL` | `https://app.frapp.live` | `https://app.staging.frapp.live` |
 

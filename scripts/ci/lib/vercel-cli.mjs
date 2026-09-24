@@ -68,12 +68,32 @@
 // one checkout without the second `vercel build` overwriting the first's
 // output — which is the reason the builds were sequential to begin with.
 //
+// ── Where a build's app config comes from ───────────────────────────────────
+// A staging build is handed its app config: `deploy-vercel.mjs` passes a
+// `buildEnv` built from Infisical `staging`, and `buildVercelProject` removes
+// those keys from the pulled file so no Vercel row can supply one. The pull
+// still runs for the project settings and the Vercel system variables. Rules and
+// evidence: the header of `lib/vercel-build-env.mjs`.
+//
+// A production build has no `buildEnv` yet (#2673). It runs on the whole job
+// environment, which holds the Infisical `prod` injection, so a key that
+// injection holds beats the Production row `vercel pull` writes, and the rows
+// fill only the keys it lacks.
+//
+// That build also starts from an empty `.vercel`. `vercel pull` MERGES into an
+// env file it finds there, keeping keys the new project does not have, so in
+// the single-phase staging path landing used to build with web's pulled rows
+// (run 36053129347: "Kept NEXT_PUBLIC_API_URL, … (defined locally, not found
+// in the preview Environment)"). The two-phase production path already starts
+// each pull clean, because it stashes each build's `.vercel` away.
+//
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/vercel-cli.test.mjs`.
 
 import { spawn } from "node:child_process";
-import { cp, mkdir, rename, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { withoutEnvKeys } from "./vercel-build-env.mjs";
 
 /**
  * The Vercel deployment target this repo understands.
@@ -89,11 +109,13 @@ export const VERCEL_TARGET_PREVIEW = "preview";
  * Which Vercel *environment* a target pulls its env vars from.
  *
  * This is the load-bearing line for correctness of the built artifact.
- * `NEXT_PUBLIC_*` values are inlined at build time, and the Infisical→Vercel
- * syncs are split Production / Preview, so pulling the wrong environment
- * produces a bundle that points at the wrong API and the wrong Supabase project
- * while every status page reports success. See the header of
- * `deploy-vercel.mjs`.
+ * `NEXT_PUBLIC_*` values are inlined at build time, and whatever key the job's
+ * injection lacks is filled from the pulled env, so pulling the wrong
+ * environment can produce a bundle that points at the wrong API and the wrong
+ * Supabase project while every status page reports success. It also sets
+ * `VERCEL_ENV`, which the production config fences and the Sentry environment
+ * tag read. A preview build takes its app config from Infisical `staging`
+ * instead (header above). See also the header of `deploy-vercel.mjs`.
  */
 export function vercelEnvironmentFor(target) {
   return target === VERCEL_TARGET_PRODUCTION ? "production" : "preview";
@@ -250,10 +272,22 @@ export function normalizeGitSha(raw) {
  * `withSentryConfig`); without the injection, staging/production events would
  * have an empty release while source maps, if uploaded, would sit on a
  * git-detected name the envelope does not carry.
+ *
+ * `extraEnv` is the project's app config on a build whose config comes from
+ * Infisical. It sits under the CLI's own variables, so an app key can never
+ * override the token or the project the CLI deploys to.
  */
-export function vercelCliEnv({ token, orgId, projectId, gitSha, baseEnv = process.env }) {
+export function vercelCliEnv({
+  token,
+  orgId,
+  projectId,
+  gitSha,
+  baseEnv = process.env,
+  extraEnv = {},
+}) {
   const env = {
     ...baseEnv,
+    ...extraEnv,
     VERCEL_TOKEN: token,
     VERCEL_ORG_ID: orgId,
     VERCEL_PROJECT_ID: projectId,
@@ -267,6 +301,26 @@ export function vercelCliEnv({ token, orgId, projectId, gitSha, baseEnv = proces
 export function vercelDirFor(cwd) {
   return path.join(cwd ?? process.cwd(), ".vercel");
 }
+
+/** The env file `vercel pull` writes and `vercel build` loads, for a target. */
+export function pulledEnvFileFor(cwd, target) {
+  return path.join(vercelDirFor(cwd), `.env.${vercelEnvironmentFor(target)}.local`);
+}
+
+/** Reading and rewriting the pulled env file, injectable for tests. */
+export const defaultEnvFileFs = {
+  async read(p) {
+    try {
+      return await readFile(p, "utf8");
+    } catch (error) {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    }
+  },
+  async write(p, text) {
+    await writeFile(p, text);
+  },
+};
 
 /**
  * The filesystem operations the stash needs, injectable for tests.
@@ -321,6 +375,40 @@ async function runVercelStep({ label, args, env, cwd, cliCommand, runCommand, lo
 }
 
 /**
+ * Remove `keys` from the env file `vercel pull` just wrote, so the build can
+ * only get them from the injected environment. Logs names, never values.
+ *
+ * A missing file is a failure, not "nothing to remove". `.vercel` was emptied
+ * just before the pull, so a missing file means this CLI writes it somewhere
+ * `pulledEnvFileFor` does not look, and `vercel build` would then load a file
+ * nobody stripped: a Vercel row could fill any app key Infisical left empty,
+ * with the log still saying the config came from Infisical. That is the strip
+ * that silently matches nothing, which `deploy-production.yml`'s build step
+ * declines to write for exactly this reason; here it fails instead.
+ */
+async function dropPulledAppKeys({ label, cwd, target, keys, envFileFs, logger }) {
+  const file = pulledEnvFileFor(cwd, target);
+  const text = await envFileFs.read(file);
+  if (text === null) {
+    throw new Error(
+      `[${label}] \`vercel pull\` exited 0 but wrote no ${file}. This CLI keeps the pulled ` +
+        `env somewhere else, so the app keys could not be removed from it and a Vercel row ` +
+        `could reach the build. Refusing to build; update \`pulledEnvFileFor\` for this CLI.`,
+    );
+  }
+  const { text: kept, removed } = withoutEnvKeys(text, keys);
+  if (removed.length === 0) {
+    logger.log?.(`[${label}] The pulled ${vercelEnvironmentFor(target)} env holds no app config keys.`);
+    return;
+  }
+  await envFileFs.write(file, kept);
+  logger.log?.(
+    `[${label}] Removed ${removed.join(", ")} from the pulled ${vercelEnvironmentFor(target)} env. ` +
+      `This build takes app config from Infisical only; those Vercel rows are unused.`,
+  );
+}
+
+/**
  * Pull and build ONE project. Uploads nothing.
  *
  * With `stashDir` set, the whole `.vercel` directory the build produced is moved
@@ -328,6 +416,12 @@ async function runVercelStep({ label, args, env, cwd, cliCommand, runCommand, lo
  * this output — after other projects have built, and after other steps have run
  * in between. Without it the output is left in place for an immediate deploy,
  * which is what `buildAndDeployVercelProject` does.
+ *
+ * With `buildEnv` (from `infisicalBuildEnv`), `.vercel` is emptied first,
+ * every step runs on its `baseEnv`, its `appKeys` are removed from the pulled
+ * env file, and `vercel build` alone gets its `appEnv`. Without it the build
+ * compiles against the pulled env and the ambient environment, which is the
+ * production path.
  *
  * A non-zero exit from either step throws: a failed pull produces a build with
  * the wrong environment variables, and a failed build has nothing to upload.
@@ -341,16 +435,38 @@ export async function buildVercelProject({
   label = projectId,
   cwd,
   stashDir = null,
+  buildEnv = null,
   cliCommand = "vercel",
   runCommand = runCommandCapturing,
   stashFs = defaultStashFs,
+  envFileFs = defaultEnvFileFs,
   logger = console,
 }) {
-  const env = vercelCliEnv({ token, orgId, projectId, gitSha: sha });
-  const common = { label, env, cwd, cliCommand, runCommand, logger };
+  const identity = { token, orgId, projectId, gitSha: sha };
+  const baseEnv = buildEnv?.baseEnv ?? process.env;
+  const common = { label, cwd, cliCommand, runCommand, logger };
 
-  await runVercelStep({ ...common, args: vercelPullArgs({ target }) });
-  await runVercelStep({ ...common, args: vercelBuildArgs({ target }) });
+  // A build whose config comes from Infisical starts from an empty `.vercel`,
+  // so the pull cannot merge in the previous project's rows (header above).
+  // The production path needs no such step: each build is stashed away before
+  // the next one pulls.
+  if (buildEnv) await stashFs.remove(vercelDirFor(cwd));
+
+  await runVercelStep({
+    ...common,
+    env: vercelCliEnv({ ...identity, baseEnv }),
+    args: vercelPullArgs({ target }),
+  });
+
+  if (buildEnv) {
+    await dropPulledAppKeys({ label, cwd, target, keys: buildEnv.appKeys, envFileFs, logger });
+  }
+
+  await runVercelStep({
+    ...common,
+    env: vercelCliEnv({ ...identity, baseEnv, extraEnv: buildEnv?.appEnv ?? {} }),
+    args: vercelBuildArgs({ target }),
+  });
 
   if (stashDir) {
     const vercelDir = vercelDirFor(cwd);
@@ -390,6 +506,7 @@ export async function deployPrebuiltVercelProject({
   label = projectId,
   cwd,
   stashDir = null,
+  buildEnv = null,
   cliCommand = "vercel",
   runCommand = runCommandCapturing,
   stashFs = defaultStashFs,
@@ -408,7 +525,14 @@ export async function deployPrebuiltVercelProject({
     logger.log?.(`[${label}] Restored the built output from ${stashDir}.`);
   }
 
-  const env = vercelCliEnv({ token, orgId, projectId, gitSha: sha });
+  // The upload needs no app config, so it runs on the base environment alone.
+  const env = vercelCliEnv({
+    token,
+    orgId,
+    projectId,
+    gitSha: sha,
+    baseEnv: buildEnv?.baseEnv ?? process.env,
+  });
   const result = await runVercelStep({
     label,
     env,

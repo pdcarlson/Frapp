@@ -21,8 +21,10 @@
 //   2. The guard named ONE variable. The other five were unguarded, and
 //      `VERCEL_BUILD_STASH_DIR` — required by exactly the two phases that have
 //      one — was never asserted anywhere. The required set is now read from
-//      `requiredEnvForPhase`, the same table `main()` reads, so a `requireEnv`
-//      added to the script tightens this guard in the same commit.
+//      `requiredEnvFor`, the same table `main()` reads, so a `requireEnv`
+//      added to the script tightens this guard in the same commit. It is keyed
+//      on the target as well as the phase since #2672: a staging call site
+//      also needs `VERCEL_BUILD_ENV_BASELINE`, and a production one does not.
 //   3. No rehearsal reached the step, because the dry run skipped it by `if:`.
 //      That half is fixed in the workflow, not here.
 //
@@ -50,8 +52,10 @@ import {
   DEPLOY_PHASE_UPLOAD,
   REQUIRED_ENV_ALWAYS,
   parseDeployPhase,
-  requiredEnvForPhase,
+  parseDeployTarget,
+  requiredEnvFor,
 } from "../deploy-vercel.mjs";
+import { VERCEL_TARGET_PREVIEW, VERCEL_TARGET_PRODUCTION } from "../lib/vercel-cli.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW_DIR = join(REPO_ROOT, ".github", "workflows");
@@ -59,14 +63,18 @@ const SCRIPT = "scripts/ci/deploy-vercel.mjs";
 
 /**
  * Every step across every workflow whose `run:` invokes `script`, with the env
- * Actions would give it and the DEPLOY_PHASE it runs in.
+ * Actions would give it and the DEPLOY_PHASE and DEPLOY_TARGET it runs with.
  */
 function allCallSites(script) {
   return readdirSync(WORKFLOW_DIR)
     .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
     .flatMap((f) => workflowSteps(join(WORKFLOW_DIR, f)))
     .filter((step) => step.body.includes(script))
-    .map((step) => ({ ...step, phase: parseDeployPhase(step.env.get("DEPLOY_PHASE")) }));
+    .map((step) => ({
+      ...step,
+      phase: parseDeployPhase(step.env.get("DEPLOY_PHASE")),
+      target: parseDeployTarget(step.env.get("DEPLOY_TARGET")),
+    }));
 }
 
 describe("every deploy-vercel.mjs call site satisfies the script's env contract", () => {
@@ -101,17 +109,24 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
       sites().some((s) => s.workflowFile === "deploy-vercel-staging.yml" && s.phase === DEPLOY_PHASE_ALL),
       "the staging caller should run the unphased (all) path",
     );
+    // The target half of the contract only bites if the sites really differ in
+    // target; a staging caller read as production would be held to the smaller
+    // set and pass without its baseline.
+    assert.deepEqual(
+      [...new Set(sites().map((s) => `${s.workflowFile}:${s.target}`))].sort(),
+      [`deploy-production.yml:${VERCEL_TARGET_PRODUCTION}`, `deploy-vercel-staging.yml:${VERCEL_TARGET_PREVIEW}`],
+    );
   });
 
   // The generalisation of the #2265 guard: not `DEPLOY_SHA` alone, and not
   // production alone.
   it("supplies every variable the call site's phase requires", () => {
     for (const site of sites()) {
-      for (const name of requiredEnvForPhase(site.phase)) {
+      for (const name of requiredEnvFor(site)) {
         assert.ok(
           site.env.has(name),
           `${site.workflowFile} step "${site.name}" (job ${site.jobId}) runs ${SCRIPT} in ` +
-            `phase '${site.phase}' without ${name}. requireEnv("${name}") would kill the run.`,
+            `phase '${site.phase}' for '${site.target}' without ${name}. requireEnv("${name}") would kill the run.`,
         );
       }
     }
@@ -122,7 +137,7 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
   // present to the assertion above and fails identically at runtime.
   it("declares no required variable as an empty value", () => {
     for (const site of sites()) {
-      for (const name of requiredEnvForPhase(site.phase)) {
+      for (const name of requiredEnvFor(site)) {
         assert.notEqual(
           site.env.get(name),
           "",
@@ -167,26 +182,46 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
 
 
 describe("the env contract table", () => {
+  const forPhase = (phase) => requiredEnvFor({ phase, target: VERCEL_TARGET_PRODUCTION });
+
   it("covers every phase parseDeployPhase can return", () => {
     for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD, DEPLOY_PHASE_ALL]) {
-      assert.doesNotThrow(() => requiredEnvForPhase(phase));
+      for (const target of [VERCEL_TARGET_PRODUCTION, VERCEL_TARGET_PREVIEW]) {
+        assert.doesNotThrow(() => requiredEnvFor({ phase, target }));
+      }
     }
   });
 
   it("refuses an unrecorded phase rather than requiring nothing", () => {
-    assert.throws(() => requiredEnvForPhase("rehearse"), /No environment contract recorded/);
+    assert.throws(() => forPhase("rehearse"), /No environment contract recorded/);
+  });
+
+  it("refuses an unrecognised target rather than holding it to production's set", () => {
+    assert.throws(() => requiredEnvFor({ phase: DEPLOY_PHASE_ALL, target: "staging" }), /DEPLOY_TARGET/);
   });
 
   it("requires the stash directory in exactly the two phases that have one", () => {
-    assert.ok(requiredEnvForPhase(DEPLOY_PHASE_BUILD).includes("VERCEL_BUILD_STASH_DIR"));
-    assert.ok(requiredEnvForPhase(DEPLOY_PHASE_UPLOAD).includes("VERCEL_BUILD_STASH_DIR"));
-    assert.ok(!requiredEnvForPhase(DEPLOY_PHASE_ALL).includes("VERCEL_BUILD_STASH_DIR"));
+    assert.ok(forPhase(DEPLOY_PHASE_BUILD).includes("VERCEL_BUILD_STASH_DIR"));
+    assert.ok(forPhase(DEPLOY_PHASE_UPLOAD).includes("VERCEL_BUILD_STASH_DIR"));
+    assert.ok(!forPhase(DEPLOY_PHASE_ALL).includes("VERCEL_BUILD_STASH_DIR"));
   });
 
   it("requires DEPLOY_SHA in every phase, the build included", () => {
     assert.ok(REQUIRED_ENV_ALWAYS.includes("DEPLOY_SHA"));
     for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD, DEPLOY_PHASE_ALL]) {
-      assert.ok(requiredEnvForPhase(phase).includes("DEPLOY_SHA"));
+      assert.ok(forPhase(phase).includes("DEPLOY_SHA"));
+    }
+  });
+
+  // Without the baseline a staging run would have no way to keep the rest of
+  // the injected Infisical store out of the CLI processes, so its absence must
+  // stop the run, not fall back to the ambient environment (#2672).
+  it("requires the env baseline for preview in every phase, and never for production", () => {
+    for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD, DEPLOY_PHASE_ALL]) {
+      assert.ok(
+        requiredEnvFor({ phase, target: VERCEL_TARGET_PREVIEW }).includes("VERCEL_BUILD_ENV_BASELINE"),
+      );
+      assert.ok(!forPhase(phase).includes("VERCEL_BUILD_ENV_BASELINE"));
     }
   });
 });

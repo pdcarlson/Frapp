@@ -8,8 +8,8 @@
 
 > **`frapp-web` exists but is not receiving events yet.** The project was created during #865
 > (`javascript-nextjs`, team `frapp-live`). What remains is adding `NEXT_PUBLIC_SENTRY_DSN` to
-> **Infisical** (Staging + Production), which the `vercel-web-staging` / `vercel-web-production`
-> syncs then carry into Vercel — tracked in
+> **Infisical** (Staging + Production), which the staging deploy job injects into the staging build
+> and the `vercel-web-production` sync carries into Vercel — tracked in
 > [#970](https://github.com/pdcarlson/Frapp/issues/970). Until that lands, `apps/web` initializes
 > Sentry not at all, so a silent `frapp-web` means "not configured", not "no errors".
 >

@@ -68,7 +68,7 @@ When adding new env vars:
 > **Warning:** Never commit real secrets. Never use placeholder secrets in CI/CD workflows.
 
 - Use `.env.local` for **local only** values (never committed).
-- All staging/production secrets live in Infisical and are synced to providers.
+- All staging/production secrets live in Infisical. Render and Vercel Production receive them through syncs; the staging web and landing builds, and the deploy workflows, read Infisical at job time.
 - Rotate keys immediately if they are ever exposed.
 - See `docs/internal/environment/SECRETS_MANAGEMENT.md` for the rotation policy.
 

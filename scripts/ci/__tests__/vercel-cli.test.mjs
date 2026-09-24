@@ -9,6 +9,7 @@ import {
   deployPrebuiltVercelProject,
   normalizeGitSha,
   parseDeploymentHost,
+  pulledEnvFileFor,
   vercelBuildArgs,
   vercelCliEnv,
   vercelDeployArgs,
@@ -247,6 +248,37 @@ describe("vercelCliEnv", () => {
       baseEnv: { PATH: "/usr/bin" },
     });
     assert.equal(garbage.VERCEL_GIT_COMMIT_SHA, undefined);
+  });
+});
+
+describe("vercelCliEnv extraEnv", () => {
+  // The app config sits UNDER the CLI's own variables. A store that ever held a
+  // key named VERCEL_TOKEN or VERCEL_PROJECT_ID must not be able to redirect the
+  // upload to another project or authenticate as someone else.
+  it("layers app config over the base env and under the CLI's identity", () => {
+    const env = vercelCliEnv({
+      token: TOKEN,
+      orgId: TEAM_ID,
+      projectId: PROJECT_ID,
+      gitSha: SHA,
+      baseEnv: { PATH: "/usr/bin", NEXT_PUBLIC_API_URL: "from-base" },
+      extraEnv: {
+        NEXT_PUBLIC_API_URL: "https://api-staging.example",
+        VERCEL_TOKEN: "hijack",
+        VERCEL_PROJECT_ID: "prj_other",
+      },
+    });
+    assert.equal(env.NEXT_PUBLIC_API_URL, "https://api-staging.example");
+    assert.equal(env.VERCEL_TOKEN, TOKEN);
+    assert.equal(env.VERCEL_PROJECT_ID, PROJECT_ID);
+    assert.equal(env.PATH, "/usr/bin");
+  });
+});
+
+describe("pulledEnvFileFor", () => {
+  it("names the file `vercel pull` writes for the target's Vercel environment", () => {
+    assert.equal(pulledEnvFileFor(CWD, VERCEL_TARGET_PREVIEW), `${VERCEL_DIR}/.env.preview.local`);
+    assert.equal(pulledEnvFileFor(CWD, VERCEL_TARGET_PRODUCTION), `${VERCEL_DIR}/.env.production.local`);
   });
 });
 
@@ -546,5 +578,202 @@ describe("deployPrebuiltVercelProject", () => {
       ["deploy"],
     );
     assert.equal(stash.ops.length, 0);
+  });
+});
+
+// The staging path since #2672: app config from Infisical, handed in as a
+// `buildEnv`, and the pulled Preview env stripped of every key the app reads.
+describe("buildVercelProject with an Infisical build env", () => {
+  const ENV_FILE = pulledEnvFileFor(CWD, VERCEL_TARGET_PREVIEW);
+  const INJECTED_SECRET = "sk_live_should_never_reach_the_cli";
+
+  // What `infisicalBuildEnv` would return: the pre-injection names only, and
+  // the project's app keys. The backend secret is in NEITHER, which is the
+  // point — it was in the job env, and nothing below may carry it.
+  const buildEnv = {
+    baseEnv: { PATH: "/usr/bin", HOME: "/home/runner", CI: "true" },
+    appEnv: {
+      NEXT_PUBLIC_API_URL: "https://api-staging.example",
+      NEXT_PUBLIC_SUPABASE_URL: "https://staging-ref.supabase.co",
+    },
+    appKeys: ["NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_POSTHOG_KEY"],
+  };
+
+  // The shape the CLI writes: sorted `KEY="value"` lines under a header, with
+  // Vercel's system variables alongside the project's rows.
+  const PULLED = [
+    "# Created by Vercel CLI",
+    'NEXT_PUBLIC_API_URL="https://stale.example"',
+    'NEXT_PUBLIC_API_URL_V2="kept, a different key"',
+    'NEXT_PUBLIC_POSTHOG_KEY="phc_stale"',
+    'VERCEL_ENV="preview"',
+    'VERCEL_OIDC_TOKEN="oidc"',
+    "",
+  ].join("\n");
+
+  function makeEnvFileFs() {
+    const files = new Map();
+    const writes = [];
+    return {
+      files,
+      writes,
+      fs: {
+        read: async (p) => (files.has(p) ? files.get(p) : null),
+        write: async (p, text) => {
+          writes.push(p);
+          files.set(p, text);
+        },
+      },
+    };
+  }
+
+  /** A run stub whose pull writes PULLED, as the real CLI would. */
+  function setup({ pulled = PULLED } = {}) {
+    const stash = makeStashFs([VERCEL_DIR]);
+    const envFiles = makeEnvFileFs();
+    const events = [];
+    const origRemove = stash.fs.remove;
+    stash.fs.remove = async (p) => {
+      events.push(`remove ${p}`);
+      return origRemove(p);
+    };
+    const { runCommand, calls } = makeRunStub({
+      pull: () => {
+        events.push("pull");
+        if (pulled !== null) envFiles.files.set(ENV_FILE, pulled);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      build: () => {
+        events.push("build");
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      deploy: READY_DEPLOY,
+    });
+    const logged = [];
+    const logger = { log: (line) => logged.push(line) };
+    const options = {
+      target: VERCEL_TARGET_PREVIEW,
+      sha: SHA,
+      token: TOKEN,
+      orgId: TEAM_ID,
+      projectId: PROJECT_ID,
+      label: "frapp-web",
+      cwd: CWD,
+      buildEnv,
+      runCommand,
+      stashFs: stash.fs,
+      envFileFs: envFiles.fs,
+      logger,
+    };
+    return { options, calls, stash, envFiles, events, logged };
+  }
+
+  const inAmbient = (fn) => {
+    // The injected secret is in the ambient env the way the workflow's
+    // Infisical step puts it there. A CLI env built from process.env would
+    // carry it; one built from `buildEnv` cannot.
+    process.env.FRAPP_TEST_INJECTED_SECRET = INJECTED_SECRET;
+    return fn().finally(() => {
+      delete process.env.FRAPP_TEST_INJECTED_SECRET;
+    });
+  };
+
+  it("empties .vercel before pulling, so the previous project's rows cannot merge in", async () => {
+    const t = setup();
+    await buildVercelProject(t.options);
+    assert.deepEqual(t.events, [`remove ${VERCEL_DIR}`, "pull", "build"]);
+  });
+
+  it("runs every CLI step on the base env: nothing else the job injected reaches it", async () => {
+    await inAmbient(async () => {
+      const t = setup();
+      await buildAndDeployVercelProject(t.options);
+      assert.deepEqual(
+        t.calls.map((c) => c.args[0]),
+        ["pull", "build", "deploy"],
+      );
+      for (const call of t.calls) {
+        assert.equal(call.env.FRAPP_TEST_INJECTED_SECRET, undefined, `${call.args[0]} saw the injected store`);
+        assert.equal(call.env.PATH, "/usr/bin");
+        assert.equal(call.env.VERCEL_TOKEN, TOKEN);
+        assert.equal(call.env.VERCEL_PROJECT_ID, PROJECT_ID);
+        assert.equal(call.env.VERCEL_GIT_COMMIT_SHA, SHA);
+      }
+    });
+  });
+
+  it("gives the app config to `vercel build` only", async () => {
+    const t = setup();
+    await buildAndDeployVercelProject(t.options);
+    const byStep = Object.fromEntries(t.calls.map((c) => [c.args[0], c.env]));
+    assert.equal(byStep.build.NEXT_PUBLIC_API_URL, "https://api-staging.example");
+    assert.equal(byStep.build.NEXT_PUBLIC_SUPABASE_URL, "https://staging-ref.supabase.co");
+    assert.equal(byStep.pull.NEXT_PUBLIC_API_URL, undefined);
+    assert.equal(byStep.deploy.NEXT_PUBLIC_API_URL, undefined);
+  });
+
+  it("removes every app key from the pulled env, set in Infisical or not, and keeps the rest", async () => {
+    // NEXT_PUBLIC_POSTHOG_KEY is not in appEnv (Infisical had no value). Left in
+    // the file, dotenv would load it and the bundle would carry Vercel's stale
+    // value while the log said the config came from Infisical.
+    const t = setup();
+    await buildVercelProject(t.options);
+    const after = t.envFiles.files.get(ENV_FILE);
+    assert.doesNotMatch(after, /^NEXT_PUBLIC_API_URL=/m);
+    assert.doesNotMatch(after, /^NEXT_PUBLIC_POSTHOG_KEY=/m);
+    assert.match(after, /^NEXT_PUBLIC_API_URL_V2=/m, "a longer key sharing a prefix is a different key");
+    assert.match(after, /^VERCEL_ENV="preview"$/m, "next.config.js derives the Sentry environment from it");
+    assert.match(after, /^VERCEL_OIDC_TOKEN=/m);
+    assert.match(after, /^# Created by Vercel CLI$/m);
+  });
+
+  it("strips the file after the pull and before the build", async () => {
+    const t = setup();
+    const origWrite = t.envFiles.fs.write;
+    t.envFiles.fs.write = async (p, text) => {
+      t.events.push("strip");
+      return origWrite(p, text);
+    };
+    await buildVercelProject(t.options);
+    assert.deepEqual(t.events, [`remove ${VERCEL_DIR}`, "pull", "strip", "build"]);
+  });
+
+  it("logs the names it removed and never a value", async () => {
+    const t = setup();
+    await buildVercelProject(t.options);
+    const text = t.logged.join("\n");
+    assert.match(text, /Removed NEXT_PUBLIC_API_URL, NEXT_PUBLIC_POSTHOG_KEY from the pulled preview env/);
+    for (const value of ["https://stale.example", "phc_stale", "oidc", "https://api-staging.example"]) {
+      assert.ok(!text.includes(value), `the log printed a value: ${value}`);
+    }
+  });
+
+  it("leaves the file untouched when it holds no app key", async () => {
+    const t = setup({ pulled: '# Created by Vercel CLI\nVERCEL_ENV="preview"\n' });
+    await buildVercelProject(t.options);
+    assert.deepEqual(t.envFiles.writes, []);
+  });
+
+  it("refuses to build when the pull left no env file where the strip looks", async () => {
+    // `.vercel` was emptied first, so a missing file means the CLI wrote it
+    // elsewhere. Building anyway would load an unstripped file: the strip that
+    // silently matches nothing and cannot fail.
+    const t = setup({ pulled: null });
+    await assert.rejects(buildVercelProject(t.options), /wrote no .*\.env\.preview\.local.*Refusing to build/s);
+    assert.deepEqual(t.envFiles.writes, []);
+    assert.deepEqual(
+      t.calls.map((c) => c.args[0]),
+      ["pull"],
+      "nothing was built",
+    );
+  });
+
+  it("does none of this without a build env: the production path is unchanged", async () => {
+    const t = setup();
+    await buildVercelProject({ ...t.options, target: VERCEL_TARGET_PRODUCTION, buildEnv: null });
+    assert.deepEqual(t.stash.ops, [], ".vercel is not emptied on the production path");
+    assert.deepEqual(t.envFiles.writes, []);
+    const build = t.calls.find((c) => c.args[0] === "build");
+    assert.equal(build.env.PATH, process.env.PATH, "production builds on the ambient env, as before");
   });
 });

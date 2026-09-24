@@ -20,12 +20,22 @@
 // against and whether the deployment takes production traffic — both carried by
 // `target`, so the two channels cannot drift apart into two implementations.
 //
+// Where those variables come from differs by target too, and `appConfigSourceFor`
+// holds that one fact. Staging's syncs died with the Git link, and the owner
+// chose (#834, 2026-09-24) to have the staging job inject Infisical `staging` and
+// hand each build exactly the keys its app reads (`lib/vercel-build-env.mjs`).
+// Production has not moved yet (#2673): its CLI processes run on the whole job
+// environment, which `deploy-production.yml` has already filled with Infisical
+// `prod`, so a key that injection holds beats the Production row `vercel pull`
+// writes, and the rows only fill keys it lacks. Same code path, one more
+// per-project input.
+//
 // ── Why a fresh build and not `promote` ────────────────────────────────────
 // Vercel's `POST /v10/projects/{id}/promote/{deploymentId}` re-points production
 // traffic at an existing deployment WITHOUT rebuilding it, and `NEXT_PUBLIC_*`
-// values are inlined at build time — the Infisical syncs are split Production /
-// Preview (see SECRETS_MANAGEMENT.md), so a staging build carries the staging
-// API URL and the staging Supabase keys. Promoting one would put the production
+// values are inlined at build time, and a staging build compiles against
+// Infisical `staging` (see above), so it carries the staging API URL and the
+// staging Supabase keys. Promoting one would put the production
 // dashboard on staging infrastructure while every status page said "deployed".
 // `apps/web/lib/sentry/options.ts` derives its environment tag from `VERCEL_ENV`
 // at build time too, so a promoted preview would also tag production errors
@@ -89,6 +99,12 @@
 //                               phase reads it back from (one subdirectory per
 //                               project label). Required for those two phases,
 //                               ignored by `all`
+//   VERCEL_BUILD_ENV_BASELINE — required for `preview`: the file
+//                               `record-env-baseline.mjs` wrote before the job
+//                               injected Infisical `staging`. Every CLI process
+//                               runs on those names alone, and `vercel build`
+//                               also gets its project's app keys
+//                               (`lib/vercel-build-env.mjs`)
 //   DEPLOY_REF                — optional, the BRANCH stamped as
 //                               `meta.githubCommitRef` (default `main`). Both
 //                               current callers deploy `main` and leave it
@@ -99,6 +115,7 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/deploy-vercel.test.mjs`.
 
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import {
@@ -115,6 +132,7 @@ import {
   buildVercelProject,
   deployPrebuiltVercelProject,
 } from "./lib/vercel-cli.mjs";
+import { infisicalBuildEnv, parseEnvBaseline } from "./lib/vercel-build-env.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
@@ -223,8 +241,10 @@ export async function createVercelDeployment({
   teamId,
   cwd,
   stashDir = null,
+  buildEnv = null,
   runCommand,
   stashFs,
+  envFileFs,
   fetchImpl = resilientFetch,
   logger = console,
 }) {
@@ -245,11 +265,16 @@ export async function createVercelDeployment({
     projectId,
     label,
     cwd,
+    buildEnv,
     runCommand,
+    // Passed on both paths. The single-phase path used to drop it, which was
+    // harmless while that path touched no files; it now empties `.vercel`.
+    stashFs,
+    envFileFs,
     logger,
   };
   const { host } = stashDir
-    ? await deployPrebuiltVercelProject({ ...cliOptions, stashDir, stashFs })
+    ? await deployPrebuiltVercelProject({ ...cliOptions, stashDir })
     : await buildAndDeployVercelProject(cliOptions);
 
   try {
@@ -432,7 +457,7 @@ export function stashDirFor(stashRoot, label) {
  * one `.vercel` in the working tree. The stash is what lets the second build
  * start without destroying the first's output.
  *
- * @param {{projects: Array<{projectId: string, label: string}>}} input
+ * @param {{projects: Array<{projectId: string, label: string, buildEnv?: object}>}} input
  */
 export async function buildVercelProjects({
   apiKey,
@@ -444,6 +469,7 @@ export async function buildVercelProjects({
   stashRoot,
   runCommand,
   stashFs,
+  envFileFs,
   logger = console,
 }) {
   if (!stashRoot) {
@@ -466,8 +492,10 @@ export async function buildVercelProjects({
         label: project.label,
         cwd,
         stashDir,
+        buildEnv: project.buildEnv ?? null,
         runCommand,
         stashFs,
+        envFileFs,
         logger,
       });
       results.push({ label: project.label, status: "success", stashDir });
@@ -509,7 +537,10 @@ export async function buildVercelProjects({
  * expected to have been built and stashed by `buildVercelProjects` earlier, and
  * only the upload runs here.
  *
- * @param {{projects: Array<{projectId: string, label: string}>}} input
+ * `project.buildEnv`, when set, is that project's `infisicalBuildEnv` result: the
+ * source of its app config and of every CLI step's environment.
+ *
+ * @param {{projects: Array<{projectId: string, label: string, buildEnv?: object}>}} input
  */
 export async function deployVercel({
   apiKey,
@@ -522,6 +553,7 @@ export async function deployVercel({
   stashRoot = null,
   runCommand,
   stashFs,
+  envFileFs,
   clock = createClock(),
   fetchImpl = resilientFetch,
   pollIntervalMs = VERCEL_POLL_INTERVAL_MS,
@@ -569,8 +601,10 @@ export async function deployVercel({
         teamId,
         cwd,
         stashDir: stashRoot ? stashDirFor(stashRoot, project.label) : null,
+        buildEnv: project.buildEnv ?? null,
         runCommand,
         stashFs,
+        envFileFs,
         fetchImpl,
         logger,
       });
@@ -658,6 +692,25 @@ export function parseDeployPhase(raw) {
   );
 }
 
+/**
+ * App config comes from the whole job environment, with the env `vercel pull`
+ * writes filling whatever that lacks. Production today (#2673).
+ */
+export const APP_CONFIG_AMBIENT = "ambient";
+/** App config comes from an Infisical injection earlier in the job. */
+export const APP_CONFIG_FROM_INFISICAL = "infisical";
+
+/**
+ * Where a target's build takes its app config from.
+ *
+ * Production is still ambient: every CLI process sees the whole `prod` store
+ * the job injected. Moving it (#2673) means recording a baseline before
+ * `deploy-production.yml`'s `prod` injection and flipping this line.
+ */
+export function appConfigSourceFor(target) {
+  return target === VERCEL_TARGET_PREVIEW ? APP_CONFIG_FROM_INFISICAL : APP_CONFIG_AMBIENT;
+}
+
 // ── The environment contract, as data ───────────────────────────────────────
 //
 // `main()` below is the only consumer at RUNTIME, and it reads perfectly well
@@ -692,7 +745,7 @@ export const REQUIRED_ENV_ALWAYS = Object.freeze([
 /**
  * Required on top of the above, per phase.
  *
- * Keyed by every value `parseDeployPhase` can return, so `requiredEnvForPhase`
+ * Keyed by every value `parseDeployPhase` can return, so `requiredEnvFor`
  * can treat an unknown phase as a programming error rather than as "nothing
  * extra required" — the fail-open reading that would let a new phase ship with
  * no guard at all.
@@ -703,8 +756,20 @@ const REQUIRED_ENV_BY_PHASE = Object.freeze({
   [DEPLOY_PHASE_ALL]: Object.freeze([]),
 });
 
-/** Every environment variable this script requires when run in `phase`. */
-export function requiredEnvForPhase(phase) {
+/**
+ * Required on top of the above, per app-config source.
+ *
+ * The baseline is what keeps the rest of the injected store out of every CLI
+ * process, so a staging run without one must stop rather than fall back to the
+ * ambient environment.
+ */
+const REQUIRED_ENV_BY_SOURCE = Object.freeze({
+  [APP_CONFIG_AMBIENT]: Object.freeze([]),
+  [APP_CONFIG_FROM_INFISICAL]: Object.freeze(["VERCEL_BUILD_ENV_BASELINE"]),
+});
+
+/** Every environment variable this script requires when run in `phase` for `target`. */
+export function requiredEnvFor({ phase, target }) {
   const extra = REQUIRED_ENV_BY_PHASE[phase];
   if (!extra) {
     throw new Error(
@@ -712,7 +777,36 @@ export function requiredEnvForPhase(phase) {
         `REQUIRED_ENV_BY_PHASE rather than letting the phase run unguarded.`,
     );
   }
-  return [...REQUIRED_ENV_ALWAYS, ...extra];
+  return [
+    ...REQUIRED_ENV_ALWAYS,
+    ...extra,
+    ...REQUIRED_ENV_BY_SOURCE[appConfigSourceFor(parseDeployTarget(target))],
+  ];
+}
+
+/**
+ * Each project's `buildEnv`: from the Infisical injection when the target's
+ * app config comes from there, else `null` (the ambient env).
+ *
+ * Every project is checked before any is returned, so a missing required key
+ * in landing stops the run before web has built, rather than after.
+ */
+export function buildEnvsFor({ target, projects, env, readBaseline }) {
+  if (appConfigSourceFor(target) !== APP_CONFIG_FROM_INFISICAL) {
+    return projects.map((project) => ({ ...project, buildEnv: null }));
+  }
+  const baselineNames = parseEnvBaseline(readBaseline());
+  const errors = [];
+  const withEnv = projects.map((project) => {
+    try {
+      return { ...project, buildEnv: infisicalBuildEnv({ label: project.label, env, baselineNames }) };
+    } catch (error) {
+      errors.push(error.message);
+      return project;
+    }
+  });
+  if (errors.length > 0) throw new Error(errors.join("\n"));
+  return withEnv;
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
@@ -726,12 +820,25 @@ async function main() {
   // calls used to be in, which keeps "which variable is missing" stable for
   // anyone reading a failed run.
   const env = {};
-  for (const name of requiredEnvForPhase(phase)) env[name] = requireEnv(name);
+  for (const name of requiredEnvFor({ phase, target })) env[name] = requireEnv(name);
 
-  const projects = [
-    { projectId: env.VERCEL_WEB_PROJECT_ID, label: "frapp-web" },
-    { projectId: env.VERCEL_LANDING_PROJECT_ID, label: "frapp-landing" },
-  ];
+  const projects = buildEnvsFor({
+    target,
+    projects: [
+      { projectId: env.VERCEL_WEB_PROJECT_ID, label: "frapp-web" },
+      { projectId: env.VERCEL_LANDING_PROJECT_ID, label: "frapp-landing" },
+    ],
+    env: process.env,
+    readBaseline: () => readFileSync(env.VERCEL_BUILD_ENV_BASELINE, "utf8"),
+  });
+  for (const { label, buildEnv } of projects) {
+    if (!buildEnv) continue;
+    // Names only. The values are masked in the log anyway, but a list of names
+    // is what tells a reader which keys this build actually compiled against.
+    console.log(
+      `[${label}] App config from Infisical: ${Object.keys(buildEnv.appEnv).sort().join(", ") || "none"}.`,
+    );
+  }
 
   const apiKey = env.VERCEL_API_KEY;
   const teamId = env.VERCEL_TEAM_ID;
