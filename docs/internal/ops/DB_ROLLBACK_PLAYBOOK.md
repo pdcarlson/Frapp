@@ -446,6 +446,10 @@ After any rollback event:
   back — the old name is the leftover this change removes. Chat cards do not
   print `users.display_name` for the system sender today, so a rollback is
   invisible on those surfaces. Do not edit the historical seed to undo this.
+* *2026-09-24: ADR-25 named the product Frapp, and `20260924170000` renamed the
+  actor back to `Frapp System` (#2578). `Signet System` is now the leftover; to
+  undo that newer migration, use [§ Rollback the Frapp System
+  display_name](#rollback-the-frapp-system-display_name) above.*
 
 ## Rollback the chapter directory seed rows
 

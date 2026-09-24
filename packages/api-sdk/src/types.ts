@@ -3122,7 +3122,7 @@ export interface components {
             donation_url?: string;
         };
         FailedContrastCheckDto: {
-            /** @description The Signet role that failed, e.g. `--signet-accent-text` or `--signet-accent-on-primary`. */
+            /** @description The accent role that failed, e.g. `--signet-accent-text` or `--signet-accent-on-primary`. */
             role: string;
             /** @description What it was measured against — a hex background color, or another `--signet-*` role name. */
             against: string;
@@ -3162,7 +3162,7 @@ export interface components {
             analytics_opt_out?: boolean;
             /** @description Set when the chapter has lost its President outside a voluntary transfer (spec/behavior/rbac.md § Presidency Transfer). Every member reads this, not just `roles:manage` holders — see `PresidencyClaimBanner`. */
             needs_president?: boolean;
-            /** @description Signet §8 contrast checks below AA for this save’s generated accent. Empty in the normal case; the save still succeeds when non-empty — this is disclosure, never a rejection. */
+            /** @description Accent contrast checks (design system §8) below AA for this save’s generated accent. Empty in the normal case; the save still succeeds when non-empty — this is disclosure, never a rejection. */
             failedContrastChecks: components["schemas"]["FailedContrastCheckDto"][];
         };
         LogoUploadUrlDto: {

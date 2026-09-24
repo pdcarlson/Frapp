@@ -3,8 +3,9 @@ import './instrument';
 import { NestFactory } from '@nestjs/core';
 import * as Sentry from '@sentry/nestjs';
 import { Logger } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { buildOpenApiConfig } from './openapi-config';
 import { configureApp } from './bootstrap';
 
 async function bootstrap() {
@@ -17,20 +18,7 @@ async function bootstrap() {
   // x-request-id. See bootstrap.ts.
   configureApp(app);
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Frapp API')
-    .setDescription(
-      'The HTTP API behind the Frapp mobile app and web dashboard.',
-    )
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addApiKey(
-      { type: 'apiKey', name: 'x-chapter-id', in: 'header' },
-      'chapter-id',
-    )
-    .build();
-
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  const document = SwaggerModule.createDocument(app, buildOpenApiConfig());
   SwaggerModule.setup('docs', app, document);
 
   const port = process.env.PORT || 3001;

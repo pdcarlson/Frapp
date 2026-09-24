@@ -609,6 +609,10 @@ export function leftoverSignetMailerSubjectKeys(data) {
  * `checkAuthSmtp` makes. Never put `smtp_pass` or the full template HTML in
  * the detail string.
  *
+ * It also holds the product name (ADR-25): the subject must be
+ * {@link AUTH_MAGIC_LINK_SUBJECT}, no `mailer_subjects_*` may say Signet, and
+ * neither may the body's visible text.
+ *
  * `whenSmtpUnset`:
  * - `"fail"` (default, staging): empty `smtp_host` does not skip this check.
  *   Staging SMTP is on; a ConfirmationURL template is a FAIL.
@@ -708,7 +712,10 @@ export async function checkAuthMagicLink({
   }
   // The subject is compared exactly, but the body is free text: a heading or
   // link text left on the old name would reach every inbox with nothing red.
-  if (/Signet/i.test(content)) {
+  // Only the text a reader sees counts. Tags are stripped first, so an image
+  // of the crest served under its design-system file name
+  // (`/brand/signet-emblem-B.png`) is not a leftover.
+  if (/\bSignet\b/i.test(content.replace(/<[^>]*>/g, " "))) {
     return result(
       "auth-magic-link",
       label,

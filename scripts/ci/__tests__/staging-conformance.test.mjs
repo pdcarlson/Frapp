@@ -490,6 +490,19 @@ test("a Magic Link body still saying Signet fails, even with the Frapp subject a
   assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
 });
 
+test("a crest image served under its design-system file name is not a Signet leftover", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      magicLinkConfig({
+        mailer_templates_magic_link_content:
+          '<img src="https://frapp.live/brand/signet-emblem-B.png" alt="Frapp"><h2>Sign in to Frapp</h2><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a>',
+      }),
+  });
+  assert.equal(result.status, PASS);
+});
+
 test("hosted Magic Link subject fails", async () => {
   const result = await checkAuthMagicLink({
     accessToken: "t",

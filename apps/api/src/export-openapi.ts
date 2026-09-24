@@ -1,9 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { VersioningType } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { AppModule } from './app.module';
+import { buildOpenApiConfig } from './openapi-config';
 
 // No Supabase placeholders here, deliberately: assigning to `process.env` in this
 // file's body is always too late. `import { AppModule }` is hoisted above every
@@ -42,20 +43,7 @@ async function exportOpenApi() {
   });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
-  const config = new DocumentBuilder()
-    .setTitle('Frapp API')
-    .setDescription(
-      'The HTTP API behind the Frapp mobile app and web dashboard.',
-    )
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addApiKey(
-      { type: 'apiKey', name: 'x-chapter-id', in: 'header' },
-      'chapter-id',
-    )
-    .build();
-
-  const document = SwaggerModule.createDocument(app, config);
+  const document = SwaggerModule.createDocument(app, buildOpenApiConfig());
   const outPath = join(__dirname, '..', 'openapi.json');
   writeFileSync(outPath, JSON.stringify(document, null, 2), 'utf-8');
   console.log(`[OpenAPIExport] wrote ${outPath}`);

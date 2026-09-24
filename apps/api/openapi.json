@@ -7823,7 +7823,7 @@
         "properties": {
           "role": {
             "type": "string",
-            "description": "The Signet role that failed, e.g. `--signet-accent-text` or `--signet-accent-on-primary`."
+            "description": "The accent role that failed, e.g. `--signet-accent-text` or `--signet-accent-on-primary`."
           },
           "against": {
             "type": "string",
@@ -7915,7 +7915,7 @@
             "description": "Set when the chapter has lost its President outside a voluntary transfer (spec/behavior/rbac.md § Presidency Transfer). Every member reads this, not just `roles:manage` holders — see `PresidencyClaimBanner`."
           },
           "failedContrastChecks": {
-            "description": "Signet §8 contrast checks below AA for this save’s generated accent. Empty in the normal case; the save still succeeds when non-empty — this is disclosure, never a rejection.",
+            "description": "Accent contrast checks (design system §8) below AA for this save’s generated accent. Empty in the normal case; the save still succeeds when non-empty — this is disclosure, never a rejection.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/FailedContrastCheckDto"

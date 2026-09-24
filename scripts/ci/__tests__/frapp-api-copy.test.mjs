@@ -15,14 +15,20 @@
 //   outside the comment a line starts with (the note on LINE_BREAK in
 //   ../lib/copy-lines.mjs says why). Two things pass:
 //   - DESIGN_SYSTEM_PHRASE. "Signet" stays the design system's name until the
-//     internals series after the beta. The palette engine's log lines and the
-//     contrast-check descriptions name its roles and sections ("Signet §8",
-//     "Signet accent contrast"), and those phrases are allowed.
-//   - STEP_4_FILES. The Discord error messages name the Discord application
-//     and bot, and ADR-25 moves them with step 4. Step 4 empties the list; an
-//     entry whose file no longer says Signet fails, so it can't go stale.
+//     internals series after the beta, and the palette engine's server log
+//     lines name its accent ("Signet accent contrast below AA"). Only that
+//     phrase passes. The OpenAPI descriptions of the same checks say "accent
+//     role" and "design system §8" instead, because /docs is public; the
+//     `--signet-*` role names in them are identifiers, not the word.
+//   - STEP_4_FILES. ADR-25 moves the API's Discord error messages with step
+//     4, file by file, together with the web import screens they appear on
+//     and the Discord application and bot they name. Some of them name only
+//     the product ("Pick a Signet channel"), and they wait too, so the error
+//     reads like the screen around it until step 4. Step 4 empties the list;
+//     an entry whose file no longer says Signet fails, so it can't go stale.
 // - The report PDF filename and the ICS PRODID, pinned by value. A rename
-//   that dropped the brand altogether would pass the walk.
+//   that dropped the brand altogether would pass the walk. The Jest specs
+//   assert the same values, but only this ratchet runs without `npm ci`.
 //
 // SCOPE. apps/api only. Identifiers are not copy and stay: the
 // `signet_role_key` field, the `--signet-*` roles, `SIGNET_ENGINE_VERSION`,
@@ -42,13 +48,13 @@ const OPENAPI = "apps/api/openapi.json";
 const REPORT_EXPORT = "apps/api/src/application/services/report-export.service.ts";
 const EVENT_SERVICE = "apps/api/src/application/services/event.service.ts";
 
-const REPORT_FILENAME = "`frapp-${kind}-report-${day}.pdf`";
+const REPORT_FILENAME = "`frapp-${kind}-report-";
 const PRODID = "PRODID:-//Frapp//Events//EN";
 
-/** Where a design-system "Signet" starts: a section, an accent role, a role check. */
-export const DESIGN_SYSTEM_PHRASE = /^Signet (?:§\d|accent (?:contrast|fill)\b|role that failed\b)/;
+/** Where a design-system "Signet" starts: the palette engine's accent log lines. */
+export const DESIGN_SYSTEM_PHRASE = /^Signet accent (?:contrast|fill)\b/;
 
-/** ADR-25 step 4 renames these: they name the Discord application or bot. */
+/** ADR-25 step 4 renames these files' Discord error messages. */
 export const STEP_4_FILES = [
   "apps/api/src/application/services/discord-import.service.ts",
   "apps/api/src/domain/utils/discord-api-message.ts",
@@ -107,10 +113,10 @@ export function staleStep4Problems(files) {
 
 export function pinnedSiteProblems({ reportExport, eventService }) {
   const problems = [];
-  if (!reportExport.includes(`const filename = ${REPORT_FILENAME};`)) {
+  if (!reportExport.includes(REPORT_FILENAME)) {
     problems.push(`${REPORT_EXPORT} must name the download ${REPORT_FILENAME}`);
   }
-  if (!eventService.includes(`'${PRODID}',`)) {
+  if (!eventService.includes(PRODID)) {
     problems.push(`${EVENT_SERVICE} must ship ${PRODID}`);
   }
   return problems;
@@ -157,8 +163,6 @@ test("design-system phrases and comments pass; the product name after them does 
         source: [
           "logger.warn(`Signet accent contrast below AA ${where}`);",
           "logger.warn(`Signet accent fill below 3:1 ${where}`);",
-          "description: 'Signet §8 contrast checks below AA for this save.',",
-          "description: 'The Signet role that failed, e.g. `--signet-accent-text`.',",
           "// Signet is the design system; this comment is not copy.",
           " * The Signet accent engine derives every role.",
         ].join("\n"),
@@ -168,9 +172,17 @@ test("design-system phrases and comments pass; the product name after them does 
   );
   assert.deepEqual(
     signetCopyProblems([
-      { rel, source: "const a = 'Signet accent';\nconst b = 'Signet support will reply';\n" },
+      {
+        rel,
+        source: [
+          "const a = 'Signet accent';",
+          "const b = 'Signet support will reply';",
+          "description: 'Signet §8 contrast checks below AA for this save.',",
+          "description: 'The Signet role that failed.',",
+        ].join("\n"),
+      },
     ]),
-    [`${rel}:1`, `${rel}:2`],
+    [`${rel}:1`, `${rel}:2`, `${rel}:3`, `${rel}:4`],
   );
 });
 
