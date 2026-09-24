@@ -88,7 +88,7 @@ open/closed + `state_reason` fields:
 | **Triage** (intake) | open + **`triage`** label |
 | **Backlog** (accepted, ready) | open, no state label. A priority label is the *expected* state (promotion requires setting one), but unprioritized Backlog issues exist (e.g. migrated ones) — `/next` ranks them last and the triage routine's grooming pass is what fixes them; never "fix" one by re-adding `triage` |
 | **In Progress** | open + **`in-progress`** label — a projection of a live `AGENT-CLAIM` comment (the claim protocol in [`next.md`](../../../.claude/commands/next.md) is authoritative) |
-| **In Review** | open + **`in-review`** label + a linked open PR |
+| **In Review** | open + **`in-review`** label + a linked open PR that **closes** it. A parent whose open PR only says `Part of #N` stays in Backlog: `/next` releases its claim when that PR opens, and the open PR keeps other sessions off it ([`next.md`](../../../.claude/commands/next.md) Phase 4, #2663) |
 | **Done** | closed as **`completed`** (usually by `Fixes #N` on merge) |
 | **Canceled** | closed as **`not_planned`** |
 | **Duplicate** | closed as **`duplicate`** with `duplicate_of` naming the canonical issue |
