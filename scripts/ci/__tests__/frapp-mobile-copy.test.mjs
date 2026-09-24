@@ -193,16 +193,18 @@ function blockOpenBefore(source, index) {
  * code. The path is matched over the whole source, so one Prettier wraps
  * after an arrow still counts. It counts only when it is certainly code: not
  * in its line's leading comment, not after a `//` or `/*` on its line, and
- * not below a `/*` left open, so a comment can't stand in for a deleted path.
- * That last check is naive: any `/*` above the path with no `*\/` after it
- * (in a string, a regex, a `//` comment, JSX text) makes the pin report, so
- * look for one when the pin fails on copy that reads right. It fails closed.
- * `Settings`, `Location` and quotes around the name may vary; the name may not.
+ * not below an open `/*`, so a comment can't stand in for a deleted path.
+ * That last check is naive: it takes the nearest `/*` above the path, wherever
+ * it sits (a string, a regex, a `//` comment, JSX text), and reports when that
+ * opener's first `*\/` comes after the path or never. It fails closed, so when
+ * the pin fails on copy that reads right, look at the nearest `/*` above it.
+ * The case of `Settings`, `Apps` and `Location` may vary, and so may quotes
+ * around the name, escaped or not; the name itself may not.
  */
 export function settingsPathProblems(files, expoName) {
   const problems = [];
   const pin = new RegExp(
-    `[Ss]ettings\\s*→\\s*(?:Apps\\s*→\\s*)?["'“‘]?${literal(expoName)}["'”’]?\\s*→\\s*[Ll]ocation\\b`,
+    `[Ss]ettings\\s*→\\s*(?:[Aa]pps\\s*→\\s*)?\\\\?["'“‘]?${literal(expoName)}\\\\?["'”’]?\\s*→\\s*[Ll]ocation\\b`,
     "g",
   );
   for (const site of SETTINGS_SITES) {
@@ -448,6 +450,8 @@ test("both pinned Settings paths must be in code and name expo.name", () => {
     "<Text>\n  Turn it on in Settings →\n  Frapp → Location.\n</Text>\n",
     "<Text>Turn it on in Settings → Apps → Frapp → Location.</Text>\n",
     "<Text>Turn it on in settings → “Frapp” → location.</Text>\n",
+    "<Text>Turn it on in settings → apps → Frapp → location.</Text>\n",
+    'const m = "Turn it on in Settings → \\"Frapp\\" → Location.";\n',
   ]) {
     assert.deepEqual(settingsPathProblems([recovery(STUDY), { rel: PRIMER, source }], "Frapp"), []);
   }
