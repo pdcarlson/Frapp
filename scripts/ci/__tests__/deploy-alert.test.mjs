@@ -1562,11 +1562,35 @@ test("an unreadable branch tip lets the verdict stand, with a warning", async ()
   assert.ok(lines.some((line) => /^::warning::.*could not read the tip of `main`/.test(line)));
 });
 
+test("a run with no commit to compare lets its verdict stand, with a warning", async () => {
+  // Any tip differs from "", so without this a workflow that forgot HEAD_SHA
+  // would drop every verdict.
+  const { fetchImpl, calls } = makeFetchStub({ issues: [], tip: "b0b0b0b" });
+  const { logger, lines } = capturingLogger();
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: verifyNeeds("failure", "failure"),
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "",
+    fetchImpl,
+    writeSummary: () => {},
+    logger,
+    config: VERIFY_DEPLOYMENTS_CONFIG,
+  });
+  assert.equal(result.alert.action, "created");
+  assert.ok(!calls.some((c) => c.path.includes("/git/ref/")));
+  assert.ok(lines.some((line) => /^::warning::.*could not read the tip/.test(line)));
+});
+
 test("readBranchTip reads the ref, and returns null for no branch or a bad reply", async () => {
   const { fetchImpl, calls } = makeFetchStub({ tip: "c0ffee1" });
   assert.equal(await readBranchTip({ token: "t", repo: "o/r", branch: "main", fetchImpl }), "c0ffee1");
   assert.equal(calls[0].path, "/repos/o/r/git/ref/heads/main");
   assert.equal(await readBranchTip({ token: "t", repo: "o/r", branch: "", fetchImpl }), null);
+  await readBranchTip({ token: "t", repo: "o/r", branch: "release/2.0", fetchImpl });
+  assert.equal(calls.at(-1).path, "/repos/o/r/git/ref/heads/release/2.0");
   const { fetchImpl: noRoute } = makeFetchStub({});
   assert.equal(await readBranchTip({ token: "t", repo: "o/r", branch: "main", fetchImpl: noRoute }), null);
 });

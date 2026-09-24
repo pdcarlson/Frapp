@@ -884,7 +884,9 @@ export async function runDeployAlert({
   }
 
   if (config.verdictAtBranchTipOnly && (outcome === "failed" || outcome === "deployed")) {
-    const tip = await readBranchTip({ token, repo, branch: headBranch, fetchImpl });
+    // No commit to compare counts as unreadable too: `"" !== tip` would drop
+    // every verdict of a workflow that forgot to pass HEAD_SHA.
+    const tip = headSha ? await readBranchTip({ token, repo, branch: headBranch, fetchImpl }) : null;
     if (tip === null) {
       // Proceed on the verdict: a failed read must not drop an alert.
       logger.log?.(
@@ -969,7 +971,8 @@ export async function readBranchTip({ token, repo, branch, fetchImpl }) {
   const { ok, data } = await ghRequest({
     token,
     fetchImpl,
-    path: `/repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`,
+    // Segment by segment: `release/x` is two path segments, not `release%2Fx`.
+    path: `/repos/${repo}/git/ref/heads/${branch.split("/").map(encodeURIComponent).join("/")}`,
     retry: true,
   });
   const sha = ok ? data?.object?.sha : null;
