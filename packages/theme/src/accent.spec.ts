@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { resolveChapterAccentColor } from "./accent";
-import { frappLightTokens, frappDarkTokens } from "./tokens";
+import { signetDarkTokens } from "./signet";
+import { frappLightTokens } from "./tokens";
 
 /**
  * Covers the shared `@repo/theme/accent` helper.
@@ -14,9 +15,10 @@ import { frappLightTokens, frappDarkTokens } from "./tokens";
  */
 
 const LIGHT_SURFACE = frappLightTokens.color.surface.card;
-const DARK_SURFACE = frappDarkTokens.color.surface.card;
 const LIGHT_BRAND = frappLightTokens.color.brand.bronze;
-const DARK_BRAND = frappDarkTokens.color.brand.bronze;
+/** The dark card and house gold both real callers pass (web settings, mobile branding). */
+const DARK_SURFACE = signetDarkTokens.color.surface.card;
+const DARK_BRAND = signetDarkTokens.color.gold.house;
 
 /** The crimson `spec/behavior/branding.md` uses as its worked example. */
 const CRIMSON = "#8B0000";
@@ -102,8 +104,13 @@ describe("resolveChapterAccentColor — per-surface resolution", () => {
     });
     const onWhite = resolveChapterAccentColor(DARK_BRAND);
 
-    // Bone-bronze is legible on ink and illegible on white; one number cannot
-    // describe both, which is why the field is no longer "contrastOnWhite".
+    // House gold is legible on the dark card and illegible on white; one
+    // number cannot describe both, which is why the field is no longer
+    // "contrastOnWhite".
+    expect(onDark).toMatchObject({
+      resolvedAccent: DARK_BRAND,
+      fallbackApplied: false,
+    });
     expect(onDark.contrastOnBackground).toBeGreaterThanOrEqual(4.5);
     expect(onWhite.fallbackApplied).toBe(true);
   });

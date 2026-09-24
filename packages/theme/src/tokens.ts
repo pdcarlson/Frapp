@@ -179,63 +179,9 @@ const LIGHT_COLORS: FrappColorPalette = {
   },
 };
 
-const DARK_COLORS: FrappColorPalette = {
-  brand: brandPalette("#1A1611", "#D6B988", "#7DB58E"),
-  surface: {
-    canvas: "#181410",
-    card: "#221E18",
-    muted: "#1E1A15",
-    border: "#363028",
-  },
-  text: {
-    primary: "#F4F0E8",
-    secondary: "#C7BFB1",
-    muted: "#9B9388",
-    inverse: "#1F1A15",
-  },
-  sidebar: {
-    background: "#0F0C09",
-    backgroundHi: "#181410",
-    foreground: "#B8B1A4",
-    foregroundHi: "#F4F0E8",
-    muted: "#85796B",
-    divider: "#181410",
-    accent: "#D6B988",
-  },
-  feedback: {
-    successBackground: "#1A2A1E",
-    successBorder: "#2D4D38",
-    successText: "#9BCBA7",
-    infoBackground: "#2A241B",
-    infoBorder: "#4A3E2D",
-    infoText: "#D6BD93",
-    infoTextStrong: "#E8D4AF",
-    infoBackgroundStrong: "#3A2F1F",
-    infoBorderStrong: "#7A5F38",
-    infoTextInteractive: "#D6B988",
-    warningBackground: "#2A1F11",
-    warningBorder: "#4A3818",
-    warningText: "#E8C68E",
-    errorBackground: "#2A1812",
-    errorBorder: "#5A2A1E",
-    errorText: "#E8A88E",
-  },
-};
-
 export const frappLightTokens: FrappTokens = {
   color: LIGHT_COLORS,
   ...SHARED_TOKENS,
 };
-
-export const frappDarkTokens: FrappTokens = {
-  color: DARK_COLORS,
-  ...SHARED_TOKENS,
-};
-
-export type FrappColorMode = "light" | "dark";
-
-export function getFrappTokens(mode: FrappColorMode): FrappTokens {
-  return mode === "dark" ? frappDarkTokens : frappLightTokens;
-}
 
 export const frappTokens = frappLightTokens;
