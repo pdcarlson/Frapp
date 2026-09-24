@@ -307,6 +307,42 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     assert.equal(workflowJobs(comments)[0].if, "github.event_name == 'push'");
   });
 
+  it("names an unnamed step by its first key, not by a comment after its dash", () => {
+    const unnamed = join(dir, "unnamed.yml");
+    writeFileSync(unnamed, "name: X\njobs:\n  j:\n    steps:\n      - # note\n        run: echo hi\n");
+    assert.deepEqual(
+      workflowSteps(unnamed).map((s) => s.name),
+      ["<unnamed: run>"],
+    );
+  });
+
+  it("keeps a # inside a quoted value: only an unquoted # starts a comment", () => {
+    // `if:` is often quoted (a leading `!` is a YAML tag), and a ` #` inside
+    // the quotes is part of the condition. Cutting there drops the clause
+    // after it, and a `doesNotMatch(/dry_run_only/)` guard passes on a step
+    // that is gated.
+    const quoted = join(dir, "quoted.yml");
+    writeFileSync(
+      quoted,
+      "name: X\njobs:\n  j:\n" +
+        "    if: \"!contains(github.event.head_commit.message, 'skip #release') && !inputs.dry_run_only\" # note\n" +
+        "    steps:\n" +
+        "      - if: \"github.event.head_commit.message != 'wip #' && inputs.dry_run_only\"\n        run: echo\n" +
+        "      - name: 'B #2' # say \"hi\"\n        if: 'x != ''a #b'' && inputs.dry_run_only' # note\n" +
+        "        env:\n          TAG: \"v1 #beta\" # it's \"quoted\"\n          SAY: \"say \\\"hi #1\\\"\" # c\n",
+    );
+    const [a, b] = workflowSteps(quoted);
+    assert.equal(a.if, "\"github.event.head_commit.message != 'wip #' && inputs.dry_run_only\"");
+    assert.equal(b.name, "B #2");
+    assert.equal(b.if, "'x != ''a #b'' && inputs.dry_run_only'");
+    assert.equal(b.env.get("TAG"), "v1 #beta");
+    assert.equal(b.env.get("SAY"), 'say \\"hi #1\\"');
+    assert.equal(
+      workflowJobs(quoted)[0].if,
+      "\"!contains(github.event.head_commit.message, 'skip #release') && !inputs.dry_run_only\"",
+    );
+  });
+
   it("reads an empty flow mapping as an empty mapping: {} can hide nothing", () => {
     const empty = join(dir, "empty.yml");
     writeFileSync(

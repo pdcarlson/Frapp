@@ -49,9 +49,23 @@ function indentOf(line) {
   return line.match(/^\s*/)[0].length;
 }
 
-/** A raw value with a comment removed: a leading `#`, or a `#` after whitespace. */
+/**
+ * A raw value with its comment removed, a quoted scalar kept whole, quotes and
+ * all.
+ *
+ * YAML starts a comment at a `#` that opens the value or follows whitespace,
+ * but never inside quotes. `if:` is often quoted (a leading `!` is a YAML tag),
+ * and `if: "contains(msg, ' #skip') && inputs.dry_run_only"` is one condition:
+ * cutting it at the ` #` drops the clause a `doesNotMatch` guard is looking
+ * for. The quoted forms are matched to their real closing quote (`\"` escapes
+ * one in double quotes, `''` in single), so a quote inside the trailing comment
+ * can't extend the value either.
+ */
 function withoutComment(raw) {
-  return raw.trim().replace(/(^|\s+)#.*$/, "").trim();
+  const trimmed = raw.trim();
+  const quoted = trimmed.match(/^("(?:[^"\\]|\\.)*"|'(?:[^']|'')*')(?:\s+#.*)?$/);
+  if (quoted) return quoted[1];
+  return trimmed.replace(/(^|\s+)#.*$/, "").trim();
 }
 
 /**
@@ -65,14 +79,14 @@ function withoutComment(raw) {
  * file where roughly every other line is a comment, both are likely edits — and
  * a guard that cries wolf is one someone deletes.
  *
- * Only whitespace-preceded `#` counts, per YAML, so a `#` inside a value (a URL
- * fragment, an expression) survives. A quoted scalar is taken whole.
+ * Only a `#` that opens the value or follows whitespace counts, per YAML, so a
+ * `#` inside a value (a URL fragment, an expression) survives. A quoted scalar
+ * is taken whole, then unquoted (`withoutComment`).
  */
 function scalarValue(raw) {
-  const trimmed = raw.trim();
-  const quoted = trimmed.match(/^(["'])(.*)\1\s*(?:#.*)?$/);
-  if (quoted) return quoted[2];
-  return trimmed.replace(/\s+#.*$/, "").trim();
+  const value = withoutComment(raw);
+  const quoted = value.match(/^(["'])([\s\S]*)\1$/);
+  return quoted ? quoted[2] : value;
 }
 
 /**
@@ -437,9 +451,8 @@ export function workflowSteps(workflowPath) {
 
 /**
  * Does this raw value open a nested mapping? Empty, or only a comment
- * (`outputs: # the verdict`). `scalarValue` can't be asked: it strips a `#`
- * only after whitespace, and the key regex has already consumed that, so the
- * comment would come back as the value.
+ * (`outputs: # the verdict`). `scalarValue(raw) === ""` can't be asked: a
+ * quoted empty string (`key: ""`) reads as `""` too, and opens nothing.
  */
 function opensMapping(raw) {
   return /^\s*(#.*)?$/.test(raw);
