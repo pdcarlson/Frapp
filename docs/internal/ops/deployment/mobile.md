@@ -92,8 +92,11 @@ cd apps/mobile
 for ENV in preview production; do
   eas env:set --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_SUPABASE_URL --value "https://<ref for this env>.supabase.co"
+  # The project's PUBLISHABLE key (`sb_publishable_…`), not the legacy JWT anon key:
+  # a production build refuses anything else (#2526), and every profile refuses a
+  # secret key. Name kept for history; see ENV_REFERENCE.md § apps/mobile (Expo — EAS).
   eas env:set --environment $ENV --scope project --visibility plaintext \
-    --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "<anon key for this env>"
+    --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "<sb_publishable_… key for this env>"
   # STOP before the production limb of this one. The App Store listing
   # (`apps/mobile/store/README.md` § Identity and § Review notes) tells Apple the app
   # takes no payment of any kind, and that is only true while `production` holds no
@@ -113,11 +116,12 @@ done
 
 Optional: `EXPO_PUBLIC_POSTHOG_HOST` (defaults to `https://us.i.posthog.com` in `lib/posthog/config.ts`). Neither PostHog name is Infisical-synced — EAS dashboard only, like the DSN.
 
-The refs are in [`.github/environments.json`](../../../../.github/environments.json); the anon keys
-come from each project's dashboard → Settings → API (or `GET /v1/projects/<ref>/api-keys`).
+The refs are in [`.github/environments.json`](../../../../.github/environments.json); the publishable
+keys come from each project's dashboard → Project Settings → API Keys (or `GET /v1/projects/<ref>/api-keys`).
+Why production refuses the legacy anon key: [`ENV_REFERENCE.md` § apps/mobile (Expo — EAS)](../../environment/ENV_REFERENCE.md#appsmobile-expo--eas).
 `development` needs nothing here — a development build talks to the local stack through
 `apps/mobile/.env.local`, and `getSupabaseClient()` returns `null` with a visible sign-in notice
-when the pair is missing rather than crashing (`ENV_REFERENCE.md` § Mobile).
+when the pair is missing rather than crashing ([`ENV_REFERENCE.md` § apps/mobile (Expo — EAS)](../../environment/ENV_REFERENCE.md#appsmobile-expo--eas)).
 
 **`SENTRY_AUTH_TOKEN` is the one variable here that is not `EXPO_PUBLIC_*`, and the one whose
 absence fails the build rather than degrading.** Everything above is inlined into the bundle and

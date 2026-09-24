@@ -44,6 +44,22 @@
 // `EXPO_PUBLIC_APP_URL` must be `https://app.frapp.live`; unset still
 // falls back at runtime.
 //
+// Every EAS **production** build also refuses a Supabase key that is not a
+// publishable key (`sb_publishable_…`, #2526), or that carries whitespace
+// around it. Supabase keeps the legacy JWT `anon` key working only "until the
+// end of 2026", and a store binary outlives that: every install keeps the key
+// it was built with until its owner updates from the store, so a legacy key
+// would go dead in the field. Expo inlines the value verbatim and
+// `lib/supabase.ts` doesn't trim it, so a pasted trailing newline would ship
+// too. The variable keeps its `ANON_KEY` name because EAS and every doc already
+// use it; renaming it is a separate change.
+//
+// And the config refuses a **secret** key on every profile, and whenever it is
+// evaluated, not only for production: a `sb_secret_…` key, or a JWT whose role
+// isn't `anon` (`service_role` bypasses RLS), and anything in an
+// `EXPO_PUBLIC_*` variable is inlined into the bundle. A preview build is still
+// an installable binary anyone can unpack.
+//
 // Every EAS **production** build also refuses when `EXPO_PUBLIC_ASK_ENABLED`
 // switches Ask on (#2259). Ask answers from a synthetic corpus
 // (`lib/ask/corpus.ts`), and the App Store listing and review notes describe
@@ -60,7 +76,7 @@
 // `eas build -p ios` against the Apple account.
 //
 // Source of truth for the credential inventory:
-// docs/internal/environment/ENV_REFERENCE.md § Mobile.
+// docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).
 const fs = require("node:fs");
 const path = require("node:path");
 const easJson = require("./eas.json");
@@ -71,7 +87,7 @@ const PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR = [
   "(scoped to the production environment this profile binds to), or place",
   "apps/mobile/google-services.json.",
   "Without it the APK compiles, getExpoPushTokenAsync throws, and members never receive push.",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile and GitHub issue #1826.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS) and GitHub issue #1826.",
 ].join(" ");
 
 function resolveGoogleServicesFile({
@@ -117,7 +133,7 @@ const PRODUCTION_API_URL_ERROR = [
   "(the origin in apps/mobile/eas.json → build.production.env, trailing slash ignored).",
   "A store binary pointed at staging, localhost, or an empty value signs",
   "members into the wrong API. Do not override it in the EAS dashboard.",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 const PRODUCTION_SUPABASE_PUBLIC_ERROR = [
@@ -125,7 +141,7 @@ const PRODUCTION_SUPABASE_PUBLIC_ERROR = [
   "EXPO_PUBLIC_SUPABASE_ANON_KEY (EAS dashboard per environment; there is",
   "no Infisical→EAS sync). Without them getSupabaseClient() returns null and",
   "the store binary shows sign-in as unavailable. See",
-  "docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 // Same file `scripts/ci/lib/environments.mjs` reads. A project ref is not a
@@ -153,7 +169,7 @@ const PRODUCTION_SUPABASE_URL_ERROR = [
   "(the frapp-prod origin from .github/environments.json).",
   "A store binary pointed at staging, localhost, or another project signs",
   "members into the wrong database. Do not override it in the EAS dashboard.",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 // Same origin @repo/validation exports as PRODUCTION_APP_ORIGIN. This file
@@ -166,7 +182,7 @@ const PRODUCTION_APP_URL_ERROR = [
   "(trailing slash ignored) when the variable is set.",
   "A store binary that inlines https://app.staging.frapp.live shares first-officer",
   "invite links into staging. Unset still falls back to the production origin at runtime.",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 function assertProductionApiUrl({ easBuildProfile, apiUrl } = {}) {
@@ -204,6 +220,65 @@ function assertProductionSupabasePublic({
   }
 }
 
+const SUPABASE_PUBLISHABLE_KEY_PREFIX = "sb_publishable_";
+
+const PRODUCTION_SUPABASE_KEY_ERROR = [
+  "EAS production builds require EXPO_PUBLIC_SUPABASE_ANON_KEY to be the",
+  `frapp-prod publishable key (${SUPABASE_PUBLISHABLE_KEY_PREFIX}…), not the legacy`,
+  "JWT anon key, and with no whitespace around it. Supabase supports legacy keys only until the",
+  "end of 2026, and a store binary keeps its key until it is updated from the",
+  "store. Copy it from Supabase → frapp-prod → Project Settings → API Keys and",
+  "set it on the EAS production environment (eas env:list --environment production).",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
+].join(" ");
+
+function assertProductionSupabasePublishableKey({
+  easBuildProfile,
+  supabaseAnonKey,
+} = {}) {
+  if (easBuildProfile !== "production") return;
+  const raw = String(supabaseAnonKey || "");
+  // Untrimmed on purpose: the binary gets exactly this string.
+  if (raw === raw.trim() && raw.startsWith(SUPABASE_PUBLISHABLE_KEY_PREFIX)) {
+    return;
+  }
+  throw new Error(PRODUCTION_SUPABASE_KEY_ERROR);
+}
+
+const PUBLIC_SUPABASE_SECRET_KEY_ERROR = [
+  "EXPO_PUBLIC_SUPABASE_ANON_KEY holds a credential a client must not carry: a",
+  "Supabase secret key (sb_secret_…) or a JWT whose role isn't anon (service_role,",
+  "or a user's access token). Every EXPO_PUBLIC_* value is inlined into the app",
+  "bundle, so any build would hand it to whoever unpacks the binary. Use the",
+  "project's publishable key instead, and rotate the credential if a build",
+  "already carried it.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
+].join(" ");
+
+/** The claims of a JWT-shaped key, or undefined for anything else. */
+function jwtClaims(key) {
+  const parts = key.split(".");
+  if (parts.length !== 3) return undefined;
+  try {
+    const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    return claims && typeof claims === "object" ? claims : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Allows only what a client may hold, as the web fence does
+// (apps/web/lib/assert-production-public-env.js): a JWT must be the `anon`
+// role. Anything else, service_role or a user's `authenticated` access token,
+// is a credential that doesn't belong in a bundle.
+function assertNoSupabaseSecretKey({ supabaseAnonKey } = {}) {
+  const key = String(supabaseAnonKey || "").trim();
+  const claims = jwtClaims(key);
+  if (key.startsWith("sb_secret_") || (claims && claims.role !== "anon")) {
+    throw new Error(PUBLIC_SUPABASE_SECRET_KEY_ERROR);
+  }
+}
+
 function productionAppOrigin(url) {
   try {
     const parsed = new URL(String(url || "").trim());
@@ -238,7 +313,7 @@ const PRODUCTION_ASK_ENABLED_ERROR = [
   "Ask answers from a synthetic corpus, and the App Store listing and review",
   "notes describe a store binary with no Ask (#2259). Remove it from the EAS",
   "production environment (eas env:list --environment production).",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 function assertProductionAskDisabled({ easBuildProfile, askEnabled } = {}) {
@@ -264,6 +339,14 @@ function applyMobileConfig(
   assertProductionSupabasePublic({
     easBuildProfile: env.EAS_BUILD_PROFILE,
     supabaseUrl: env.EXPO_PUBLIC_SUPABASE_URL,
+    supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  });
+  assertNoSupabaseSecretKey({
+    supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  });
+  // After the presence check above, so an empty key reports as missing.
+  assertProductionSupabasePublishableKey({
+    easBuildProfile: env.EAS_BUILD_PROFILE,
     supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   });
   assertProductionAppUrl({
@@ -299,6 +382,9 @@ applyExpoConfig.assertProductionAndroidGoogleServices =
   assertProductionAndroidGoogleServices;
 applyExpoConfig.assertProductionApiUrl = assertProductionApiUrl;
 applyExpoConfig.assertProductionSupabasePublic = assertProductionSupabasePublic;
+applyExpoConfig.assertProductionSupabasePublishableKey =
+  assertProductionSupabasePublishableKey;
+applyExpoConfig.assertNoSupabaseSecretKey = assertNoSupabaseSecretKey;
 applyExpoConfig.assertProductionAppUrl = assertProductionAppUrl;
 applyExpoConfig.assertProductionAskDisabled = assertProductionAskDisabled;
 applyExpoConfig.isAskEnabledValue = isAskEnabledValue;
@@ -309,6 +395,9 @@ applyExpoConfig.PRODUCTION_API_URL_ERROR = PRODUCTION_API_URL_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_PUBLIC_ERROR =
   PRODUCTION_SUPABASE_PUBLIC_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_URL_ERROR = PRODUCTION_SUPABASE_URL_ERROR;
+applyExpoConfig.PRODUCTION_SUPABASE_KEY_ERROR = PRODUCTION_SUPABASE_KEY_ERROR;
+applyExpoConfig.PUBLIC_SUPABASE_SECRET_KEY_ERROR =
+  PUBLIC_SUPABASE_SECRET_KEY_ERROR;
 applyExpoConfig.PRODUCTION_APP_URL_ERROR = PRODUCTION_APP_URL_ERROR;
 applyExpoConfig.PRODUCTION_ASK_ENABLED_ERROR = PRODUCTION_ASK_ENABLED_ERROR;
 applyExpoConfig.PRODUCTION_API_ORIGIN = PRODUCTION_API_ORIGIN;

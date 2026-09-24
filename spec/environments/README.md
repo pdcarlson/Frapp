@@ -317,7 +317,8 @@ secrets.
 
 - **Production build:** `eas build --platform all --profile production`.
 - **Preview build (staging):** `eas build --platform all --profile preview`.
-- **OTA updates:** For JS-only changes, use `eas update` to push directly to users without App Store review.
+- **OTA updates: the client is installed, and nothing publishes to it yet** (#2526, ADR-24 decision 8). Every build carries `expo-updates` with `runtimeVersion: { policy: "appVersion" }`, a `channel` named after its build profile (`apps/mobile/eas.json`), and `checkAutomatically: "ON_LOAD"` with no wait, so with nothing published an app runs the bundle it was built with. There is no `eas update` pipeline and no `EXPO_TOKEN` in CI. Don't run `eas update` by hand before one exists: it ignores `eas.json`'s build `env`, so the published bundle would fall back to `http://localhost:3001` and tag Sentry `development` (#2504 digest 06, which lists the other traps).
+- **Minimum version:** every native build sends `X-Client-Version` and asks `GET /v1/client-policy` at launch and on return to the foreground; a build below the API's `MOBILE_MIN_VERSION_*` sees a blocking update screen. That, not OTA, is how an old binary is retired. Setting a minimum: [`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) § API-Only Settings; behaviour: [`spec/ui/mobile/patterns.md`](../ui/mobile/patterns.md) § Minimum version.
 - **Native changes:** Full build + App Store / Google Play submission via `eas submit`.
 
 ### Deploy Ordering

@@ -5,9 +5,20 @@ export interface FrappClientConfig {
   baseUrl: string;
   getAuthToken?: () => string | null | Promise<string | null>;
   getChapterId?: () => string | null;
+  /**
+   * The calling build, sent as {@link CLIENT_VERSION_HEADER} on every request
+   * (#2526): `<ios|android>/<version>+<build>`. A store binary can't be
+   * updated from here, so this header is how the API tells builds apart, and
+   * `GET /v1/client-policy` reads it to decide whether a build is still
+   * served. Mobile native builds set it; web and Expo Go leave it unset.
+   */
+  clientVersion?: string;
 }
 
 export const REQUEST_ID_HEADER = "x-request-id";
+
+/** Matches the API's `CLIENT_VERSION_HEADER` (`#domain/constants/client-version`). */
+export const CLIENT_VERSION_HEADER = "x-client-version";
 
 type CryptoLike = {
   randomUUID?: () => string;
@@ -121,6 +132,10 @@ export const createFrappClient = (config: FrappClientConfig) => {
         if (chapterId) {
           request.headers.set('x-chapter-id', chapterId);
         }
+      }
+
+      if (config.clientVersion) {
+        request.headers.set(CLIENT_VERSION_HEADER, config.clientVersion);
       }
 
       ensureRequestIdHeader(request.headers);
