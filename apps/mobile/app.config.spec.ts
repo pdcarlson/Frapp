@@ -746,6 +746,9 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
       PUBLISHABLE_KEY_FIXTURE,
       LEGACY_ANON_JWT_FIXTURE,
       "not-a-jwt",
+      // Three parts, but the middle is `[]`: JWT claims are an object, so this
+      // is a placeholder, not a credential to tell anyone to rotate.
+      "x.W10.y",
       undefined,
     ]) {
       expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).not.toThrow();
