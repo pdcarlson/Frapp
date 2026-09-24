@@ -18,23 +18,26 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * push (C7, issue #998). Exported from here so s03 renders it rather than
  * reimplementing the copy.
  *
- * ## It renders when push is unavailable, rather than disappearing
+ * ## It is drawn only when push can be turned on
  *
- * Remote push does not run in Expo Go, and no EAS project exists yet (#938), so
- * "unavailable" is the state of every build that can currently be produced. A
- * card that vanished there would leave s03 with a hole and tell the member
- * nothing. Instead the CTA disables and states the reason —
- * `spec/ui/design-system/components.md` §5, the same ruling the dues Pay CTA
- * follows.
+ * `shouldOfferPrimer()` omits it whenever `isPushAvailable()` is false (#2299;
+ * `spec/ui/mobile/patterns.md` § Push notifications lists the causes). This
+ * card used to render there anyway, with "Turn on" disabled and the reason
+ * printed under it. But its only function is "Turn on", and nothing on s03 can
+ * make the build able to push, so that was a placeholder, not a gate
+ * (`spec/ui/design-system/README.md` §5 rule 4, the ✦ Ask pill's ruling). So
+ * the card takes no reason: while it is on screen, "Turn on" works.
  *
  * Signet gold throughout, not the chapter accent: this is Signet asking for a
  * device permission on its own behalf, not chapter chrome.
  */
 
 export interface PushPrimerCardProps {
-  /** `pushUnavailableReason()` — `null` when push can actually be enabled. */
-  unavailableReason: string | null;
-  /** True while the OS dialog is in flight, so the CTA cannot double-fire. */
+  /**
+   * True from the tap until the host hides the card, so a double tap cannot
+   * fire twice. s03 records the decision, which unmounts the card, before it
+   * opens the OS dialog, so there this covers only that storage write.
+   */
   isRequesting?: boolean;
   onTurnOn: () => void;
   onNotNow: () => void;
@@ -70,14 +73,13 @@ function BellGlyph({ color }: { color: string }) {
 }
 
 export function PushPrimerCard({
-  unavailableReason,
   isRequesting = false,
   onTurnOn,
   onNotNow,
 }: PushPrimerCardProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const disabled = unavailableReason !== null || isRequesting;
+  const disabled = isRequesting;
 
   return (
     <View style={styles.card}>
@@ -87,17 +89,10 @@ export function PushPrimerCard({
         Get pinged for mandatory events, dues deadlines, and mentions. Nothing
         else.
       </Text>
-      {unavailableReason ? (
-        <Text style={styles.reason}>{unavailableReason}</Text>
-      ) : null}
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Turn on notifications"
-          // The reason is wired to the control, not merely printed beside it —
-          // a screen reader lands on a disabled button and needs to be told why
-          // here, not two elements earlier.
-          accessibilityHint={unavailableReason ?? undefined}
           accessibilityState={{ disabled }}
           disabled={disabled}
           onPress={onTurnOn}
@@ -144,10 +139,6 @@ function createStyles(tokens: SignetTokens) {
     body: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
-    },
-    reason: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
     },
     actions: {
       flexDirection: "row",
