@@ -102,7 +102,7 @@ summary before running anything from this family.
 | Production backup environment | `.github/workflows/production-backup-env.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. GETs GitHub environment `production-backup` and fails if `protection_rules` contains `required_reviewers` or `wait_timer`. Unreadable or missing is FAIL. `deployment_branch_policy` is not checked: the `main`-only rule is [#2583](https://github.com/pdcarlson/Frapp/issues/2583)'s (set 2026-09-23), and watching it is [#2585](https://github.com/pdcarlson/Frapp/issues/2585). Does **not** name `environment: production` or `environment: production-backup` (#1435): a schedule job that named the env it watches would hang on the same trap. Never PUTs the environment. Logic in `scripts/ci/production-backup-env.mjs`. **Not** a required check. |
 | Production backup freshness | `.github/workflows/production-backup-freshness.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. GETs recent `db-backup.yml` runs on `main` and fails if `backup-production` is missing, not success, hung more than 3h, or last success older than 36h. In-flight under 3h is pass (the job stays green; an open alert stays open). Unreadable Actions responses are FAIL. Does **not** name `environment: production` or `environment: production-backup` (#1435). Never PUTs. Reads with `GITHUB_TOKEN`. The script retries with `GITHUB_PAT` on 401/403 only when one is in its environment, which means a local run: the workflow passes none, because a PAT there could only be a repository secret (#2518). The hosted restore leftover stays on its own issue (1861); the reviewer watch stays on its own issue (1956). Logic in `scripts/ci/production-backup-freshness.mjs`. **Not** a required check. |
 | Production backup storage freshness | `.github/workflows/production-backup-storage-freshness.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. GETs recent `db-backup.yml` runs on `main` and fails if `backup-production-storage` is missing, not success, hung more than 3h, or last success older than 36h. In-flight under 3h is pass (the job stays green; an open alert stays open). Unreadable Actions responses are FAIL. Does **not** name `environment: production` or `environment: production-backup` (#1435). Never PUTs. Reads with `GITHUB_TOKEN`. The script retries with `GITHUB_PAT` on 401/403 only when one is in its environment, which means a local run: the workflow passes none, because a PAT there could only be a repository secret (#2518). The Postgres dump watch stays on its own issue (1963); the hosted restore leftover stays on its own issue (1861). Logic in `scripts/ci/production-backup-storage-freshness.mjs`. **Not** a required check. |
-| Deploy outcome      | Terminal `deploy-outcome` job in **both** `.github/workflows/deploy-api.yml` and `.github/workflows/deploy-vercel-staging.yml` — in each, the only job with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `incident` alert issue on failure, closing it on the next successful deploy. Shared logic in `scripts/ci/deploy-alert.mjs`, selected per workflow by the required `ALERT_CONFIG` env var (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`, `…/deploy-vercel-staging-workflow.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
+| Deploy outcome      | Terminal `deploy-outcome` job in each workflow `scripts/ci/deploy-alert.mjs` has a config for (its `ALERT_CONFIGS` table; the alerts they raise are listed in [`ALERT_ROUTING.md`](../ops/ALERT_ROUTING.md#automated-github-issue-alerts)). In each it's the only job with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed**, **declined to deploy** or, for the observer, **confirmed** a deploy live. Upserts one `incident` alert issue on failure, and closes it on the next successful deploy. The config is selected per workflow by the required `ALERT_CONFIG` env var (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`; `grep -l ALERT_CONFIG scripts/ci/__tests__` finds the ones that pin each workflow's wiring). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render state polling, **staging only**. Its two Vercel jobs (`verify-vercel-web`, `verify-vercel-landing`) were **removed on 2026-09-02** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)): ADR-21's unlink means no push produces a Vercel deployment, so polling for one was guaranteed to fail rather than able to detect anything, and both had been red on every push (landing since run #428, 2026-09-01T20:28Z; web since run #437, 2026-09-02T03:04Z — roughly six and a half hours apart, not together). [#1578](https://github.com/pdcarlson/Frapp/issues/1578) (2026-09-04) built the CI-driven deploys: `deploy-vercel-staging.yml` creates the staging deployments after green CI and verifies them **by deployment id**, so the Vercel jobs were not re-added here — an observer keyed on a pushed SHA is strictly worse than the workflow that holds the id, and it could not stay CI-gated. `ensure-vercel-staging-alias.mjs` is referenced again, from that workflow; `verify-vercel-deploy.mjs` is called by no workflow, but is **not** dead code — `deploy-vercel.mjs` imports its terminal-state sets, so it is on the production deploy path and must not be deleted or narrowed as unused. The Render half still polls. Production verifies itself inline inside `deploy-production.yml`, polling the deploy/deployment IDs it created, with stricter semantics: a `CANCELED` Vercel deployment is a failure there, never neutral. |
 | Migration drift     | `.github/workflows/check-migration-drift.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Compares each deployed database's `schema_migrations` against `supabase/migrations/` and upserts one `incident` alert issue, closing it when every environment is back in sync. Job-scoped `issues: write`; workflow-level grant stays `contents: read`. Logic in `scripts/ci/check-migration-drift.mjs` (tests: `scripts/ci/__tests__/check-migration-drift.test.mjs`). **Not** a required check. See "Schema drift detection" below. |
 | Staging conformance | `.github/workflows/staging-conformance.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, the auth redirect allow list carrying `<site_url>/**` and `frapp://**` (a bare origin matches only itself, so without the wildcard GoTrue drops every web `emailRedirectTo` path — and any invite token in it — onto the Site URL; both projects were in that state until 2026-09-06), custom Auth SMTP on Resend at `Frapp <no-reply@mail.staging.frapp.live>` (`smtp_sender_name=Frapp`) with `rate_limit_email_sent` at least 300/hour (the hosted mailer is 2/hour; a revert is the first-user cap on the only host that can prove mail before production), the Magic Link template subject `Sign in to Frapp` and body carrying `token_hash` + `type=magiclink` (a revert to `{{ .ConfirmationURL }}` puts the href back on `*.supabase.co`), with no mailer subject and no Magic Link body still saying Signet, Render `frapp-api-staging` `serviceDetails.healthCheckPath` `/health` (empty is TCP-only) and `autoDeploy: "yes"` tracking `main` (the inverse of production-guardrails; a dashboard click that turns auto-deploy off freezes staging while this job stays green on a stale host), every Infisical secret sync succeeded, and an end-to-end sign-in whose JWT carries `active_chapter_id`. **Migration parity is deliberately NOT checked here** — `check-migration-drift.yml` above owns it end to end; see "Scheduled conformance" below. Upserts its own `incident` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. |
@@ -912,8 +912,9 @@ first and third are what the `deploy-outcome` job fixes:
 3. **No notification of any kind.** A failed staging migration was indistinguishable from a quiet
    afternoon.
 
-The terminal `deploy-outcome` job `needs` every prior job and runs `if: always()`, so it sees the
-whole run's shape. Per run it does two things:
+In `deploy-api.yml` the terminal `deploy-outcome` job `needs` every prior job and runs under
+`always()`, so it sees the whole run's shape. (Each workflow sets its own condition; the observer's
+differs, below.) Per run it does two things:
 
 - **Says what happened.** A step summary and a `::notice::`/`::error::` annotation state plainly
   whether the run **deployed** something, **failed**, or **declined to deploy**, with a per-job
@@ -929,35 +930,56 @@ A **no-op run never closes an open alert** — skipping every job proves nothing
 deploys work, and no-op runs are the majority. `incident` is what keeps `/next` from claiming
 the alert as backlog work (§0.2 treats that label as never-claimable).
 
-### Two workflows, one script (#1674)
+### Several workflows, one script (#1674, #2431)
 
 `deploy-alert.mjs` is **not** specific to `deploy-api.yml`. Since #1674 it also serves
-`deploy-vercel-staging.yml`, which shipped in #1578 with no alerting at all. Which workflow a run is
+`deploy-vercel-staging.yml`, which shipped in #1578 with no alerting at all. Since #2431 it also
+serves `verify-deployments.yml`, the push-triggered observer that polls Render for the staging API
+deploy's outcome. That observer went red on at least ten straight pushes and nothing alerted. Which workflow a run is
 reporting on is chosen by the **`ALERT_CONFIG`** env var, set explicitly in each workflow's
 `deploy-outcome` step and resolved against the `ALERT_CONFIGS` table in the script. There is **no
 default**: an absent or unknown value throws, because resolving to the wrong config would report one
-workflow's job results into the other's alert issue — or reopen the live P1 Deploy API alert from an
+workflow's job results into another's alert issue — or reopen the live P1 Deploy API alert from an
 unrelated failure.
 
 Consequences worth knowing before editing the script:
 
-- **Each config owns its alert title, and the two must never match.** The title is the lookup key, so
+- **Each config owns its alert title, and no two may match.** The title is the lookup key, so
   a shared one would let a recovered Deploy API run close a live Vercel outage's alert. A test pins
-  their uniqueness; renaming either orphans whatever alert is open under the old title, which can
+  their uniqueness; renaming any orphans whatever alert is open under the old title, which can
   then never be found or self-closed.
 - **`gateJob` may be null.** `deploy-vercel-staging.yml` has one job and no changed-path gate, so any
   code assuming a gate exists is wrong for that config.
 - **A no-op means different things per config.** For Deploy API it is benign and the majority case.
   For a config with no path gate it is a defect — nothing ran that could have — so
   `noOpIsUnexpected` escalates it to a failure rather than an annotation, which on a `workflow_run`
-  run page would be exactly as invisible as the gap this closes.
+  run page would be exactly as invisible as the gap this closes. For `verify-deployments` it is
+  benign again: a superseded Render deploy gives no verdict.
+- **`kind` picks the copy.** `deploy` configs say "nothing was deployed by this run"; the observer
+  (`kind: "observer"`) deploys nothing itself, so its copy says "not confirmed live". The sentences
+  live in `OUTCOME_COPY`, and an unknown kind throws.
+- **A green job need not be a deploy.** `verify-render-api` exits 0 on a live deploy *and* on a
+  superseded one (`canceled` / `deactivated`). Its config's `deployedOutput` names the job output
+  (`outcome`, written by `verify-render-deploy.mjs`) whose `success` value alone counts as a
+  deploy. A `neutral` verdict is a no-op. A green job with no recognised verdict gets a
+  `::warning::`: it means the output wiring broke, and such a run can never close an alert.
+- **A cancelled observer run reports nothing.** `verify-deployments.yml`'s `deploy-outcome` runs
+  on `!cancelled()`, not `always()`. Cancelling a deploy leaves nothing deployed, so the deploy
+  workflows count a cancel as a failure. Cancelling the observer stops the watching, not the
+  Render deploy, so it is no verdict: `always()` there would file a false P1 on every manual
+  cancel.
+- **Only the newest commit's observer run decides.** A deploy workflow's verdict is about what it
+  just deployed, but the observer's is about one commit, which may be old by the time it lands: a
+  re-run of an old failed run, or a slow run finishing after a newer one. `verdictAtBranchTipOnly`
+  makes such a run read the branch's tip and, if the branch has moved on, neither raise nor close.
+  An unreadable tip lets the verdict stand, since dropping an alert is the worse failure.
 
 The full roster of GitHub-issue watchdogs, with what each one means and when it clears, is
 [`ALERT_ROUTING.md`](../ops/ALERT_ROUTING.md) § Automated GitHub-issue alerts — that table is the
 one home for the list; this section covers only the mechanics of this script.
 
 Channel choice matches the sibling watchdogs: GitHub itself, via a dependency-free `.mjs` on
-`GITHUB_TOKEN` with an injectable `fetch`. Both watched workflows are push-driven with no PR to
+`GITHUB_TOKEN` with an injectable `fetch`. Every watched workflow is push-driven with no PR to
 comment on, so an issue is the equivalent of their PR comment — no new service and no new token. In
 each workflow the job holds the only write scope, job-scoped, leaving every other job on
 `contents: read`. Like the other watchdogs it is best-effort and **exits 0 on every handled
