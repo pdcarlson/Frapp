@@ -27,7 +27,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * `spec/ui/design-system/components.md` §5, the same ruling the dues Pay CTA
  * follows.
  *
- * Signet gold throughout, not the chapter accent: this is Signet asking for a
+ * Signet gold throughout, not the chapter accent: this is Frapp asking for a
  * device permission on its own behalf, not chapter chrome.
  */
 

@@ -1,23 +1,21 @@
-// Locks the customer-visible auth wordmark and tagline on Signet.
+// Locks the customer-visible web auth wordmark and tagline on Signet.
 //
-// WHY THIS EXISTS. Mobile sign-in and the web pre-auth column already say
-// Signet under a locked tagline. #1950 locks metadata titles only.
-// A leftover sweep can put Frapp back in the visible wordmark, switch the
-// title to single quotes the first lock used to miss, add a third
-// AuthScreen title=Signet site the hardcoded paths would miss, or walk
-// landing (copy is Signet; visual tokens still frozen). #1955.
+// WHY THIS EXISTS. The web pre-auth column says Signet under a locked
+// tagline. #1950 locks metadata titles only. A leftover sweep can change the
+// visible wordmark, switch the title to single quotes the first lock used to
+// miss, add a third AuthScreen title=Signet site the hardcoded paths would
+// miss, or walk landing. #1955.
 //
-// TWO TAGLINES. The web pre-auth column keeps the brand tagline. Mobile sign-in
-// carries the landing's D8 line instead, because a build without Ask must not
-// open on "Ask your chapter anything." for App Review (#2298, owner decision
-// 2026-09-22). Put the brand line back on mobile in the slice that ships Ask.
+// ADR-25 NAMES THE PRODUCT FRAPP, and renames it one surface at a time. Step
+// 2 moved mobile sign-in to Frapp and split its half of this lock out into
+// frapp-mobile-copy.test.mjs, along with the mobile tagline note. This lock
+// is the web half until step 4 moves the dashboard, which flips it: the
+// title becomes Frapp and Signet becomes the banned word.
 //
-// SCOPE. Rendered title/subtitle props (web) and title/subtitle Text
-// nodes (mobile). Do not scan whole web auth files for Frapp — those files
-// keep historical Frapp comments. Mobile sign-in has none, so a file-wide
-// Frapp ban is safe there. Leave app.json slug / scheme / bundle id on the
-// deferred rename. Landing copy is Signet (1954). Do not lock join / sign-up / no-access
-// titles (those are not the product wordmark).
+// SCOPE. Rendered title/subtitle props on apps/web/app. Do not scan whole
+// web auth files for Frapp — those files keep historical Frapp comments.
+// Do not lock join / sign-up / no-access titles (those are not the product
+// wordmark).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -28,27 +26,20 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const LOCK = fileURLToPath(import.meta.url);
 const WEB_APP = join(REPO_ROOT, "apps/web/app");
-const MOBILE_AUTH = join(REPO_ROOT, "apps/mobile/app/(auth)");
 
-const MOBILE_SIGN_IN = "apps/mobile/app/(auth)/sign-in.tsx";
 const WEB_HOME = "apps/web/app/page.tsx";
 const WEB_SIGN_IN = "apps/web/app/sign-in/page.tsx";
 const TAGLINE = "Ask your chapter anything.";
-const MOBILE_TAGLINE = "Everything your chapter needs is already in chat.";
 
 /** Home has one wordmark. Sign-in keeps the form and Suspense fallback. */
 const MIN_HOME_WORDMARKS = 1;
 const MIN_SIGN_IN_WORDMARKS = 2;
 
-const EXPECTED_SITES = [MOBILE_SIGN_IN, WEB_HOME, WEB_SIGN_IN].sort();
+const EXPECTED_SITES = [WEB_HOME, WEB_SIGN_IN].sort();
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next", "coverage"]);
 
 function readRepo(rel) {
   return readFileSync(join(REPO_ROOT, rel), "utf8");
-}
-
-function literal(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function walk(dir) {
@@ -85,20 +76,13 @@ export function collectWebTaglines(source) {
   return found;
 }
 
-export function collectMobileWordmark(source) {
-  const match = source.match(/<Text style=\{styles\.title\}>([^<]*)<\/Text>/);
-  return match ? match[1] : null;
-}
-
 export function isAuthWordmarkSite(source) {
   const webTitles = collectWebWordmarks(source);
-  if (webTitles.includes("Signet") || webTitles.includes("Frapp")) return true;
-  const mobile = collectMobileWordmark(source);
-  return mobile === "Signet" || mobile === "Frapp";
+  return webTitles.includes("Signet") || webTitles.includes("Frapp");
 }
 
 export function authWordmarkSites() {
-  return [...walk(WEB_APP), ...walk(MOBILE_AUTH)]
+  return walk(WEB_APP)
     .filter((path) => isAuthWordmarkSite(readFileSync(path, "utf8")))
     .map((path) => relative(REPO_ROOT, path).replaceAll("\\", "/"))
     .sort();
@@ -113,33 +97,12 @@ export function walkedWordmarkProblems(files) {
     for (const subtitle of collectWebTaglines(source)) {
       if (/\bFrapp\b/.test(subtitle)) problems.push(`${rel}:subtitle`);
     }
-    const mobile = collectMobileWordmark(source);
-    if (mobile === "Frapp") problems.push(`${rel}:mobile-title`);
   }
   return problems;
 }
 
-export function authWordmarkLockProblems({ mobile, home, signIn }) {
+export function authWordmarkLockProblems({ home, signIn }) {
   const problems = [];
-  if (!/<Text style=\{styles\.title\}>Signet<\/Text>/.test(mobile)) {
-    problems.push("mobile sign-in title must be Signet");
-  }
-  // `\s*` because Prettier moves a long JSX text child onto its own line, and
-  // JSX drops that surrounding whitespace, so both spellings render the same.
-  if (
-    !new RegExp(
-      `<Text style=\\{styles\\.subtitle\\}>\\s*${literal(MOBILE_TAGLINE)}\\s*</Text>`,
-    ).test(mobile)
-  ) {
-    problems.push("mobile sign-in subtitle must be the mobile tagline");
-  }
-  if (/<Text style=\{styles\.title\}>Frapp<\/Text>/.test(mobile)) {
-    problems.push("mobile sign-in title must not be Frapp");
-  }
-  if (/\bFrapp\b/.test(mobile)) {
-    problems.push("mobile sign-in must not name Frapp");
-  }
-
   const homeTitles = collectWebWordmarks(home).filter((title) => title === "Signet");
   const signInTitles = collectWebWordmarks(signIn).filter(
     (title) => title === "Signet",
@@ -193,12 +156,6 @@ export function lockSelfProblems(source) {
   if (webApp && webApp[1].startsWith("apps/landing")) {
     problems.push("must not walk apps/landing");
   }
-  const mobileAuth = source.match(
-    /^const MOBILE_AUTH = join\(REPO_ROOT, "([^"]+)"\);?$/m,
-  );
-  if (!mobileAuth || mobileAuth[1] !== "apps/mobile/app/(auth)") {
-    problems.push("walker must stay on apps/mobile/app/(auth)");
-  }
   if (!/title=\(\?:\["'\]/.test(source)) {
     problems.push("must collect single-quoted and double-quoted titles");
   }
@@ -209,16 +166,15 @@ export function lockSelfProblems(source) {
 }
 
 function liveWordmarkFiles() {
-  return [...walk(WEB_APP), ...walk(MOBILE_AUTH)].map((path) => ({
+  return walk(WEB_APP).map((path) => ({
     rel: relative(REPO_ROOT, path).replaceAll("\\", "/"),
     source: readFileSync(path, "utf8"),
   }));
 }
 
-test("auth wordmarks stay Signet", () => {
+test("web auth wordmarks stay Signet", () => {
   assert.deepEqual(
     authWordmarkLockProblems({
-      mobile: readRepo(MOBILE_SIGN_IN),
       home: readRepo(WEB_HOME),
       signIn: readRepo(WEB_SIGN_IN),
     }),
@@ -228,36 +184,8 @@ test("auth wordmarks stay Signet", () => {
   assert.deepEqual(walkedWordmarkProblems(liveWordmarkFiles()), []);
 });
 
-test("putting Frapp in the mobile wordmark fails", () => {
-  const problems = authWordmarkLockProblems({
-    mobile: readRepo(MOBILE_SIGN_IN).replace(
-      "<Text style={styles.title}>Signet</Text>",
-      "<Text style={styles.title}>Frapp</Text>",
-    ),
-    home: readRepo(WEB_HOME),
-    signIn: readRepo(WEB_SIGN_IN),
-  });
-  assert.ok(
-    problems.some((problem) => problem.includes("mobile sign-in title")),
-    problems.join("; "),
-  );
-});
-
-test("putting the brand tagline back on mobile sign-in fails", () => {
-  const problems = authWordmarkLockProblems({
-    mobile: readRepo(MOBILE_SIGN_IN).replace(MOBILE_TAGLINE, TAGLINE),
-    home: readRepo(WEB_HOME),
-    signIn: readRepo(WEB_SIGN_IN),
-  });
-  assert.ok(
-    problems.some((problem) => problem.includes("mobile sign-in subtitle")),
-    problems.join("; "),
-  );
-});
-
 test("putting Frapp in a web AuthScreen title fails", () => {
   const problems = authWordmarkLockProblems({
-    mobile: readRepo(MOBILE_SIGN_IN),
     home: readRepo(WEB_HOME).replace('title="Signet"', 'title="Frapp"'),
     signIn: readRepo(WEB_SIGN_IN),
   });
@@ -269,7 +197,6 @@ test("putting Frapp in a web AuthScreen title fails", () => {
 
 test("dropping a sign-in Suspense fallback wordmark fails", () => {
   const problems = authWordmarkLockProblems({
-    mobile: readRepo(MOBILE_SIGN_IN),
     home: readRepo(WEB_HOME),
     signIn: readRepo(WEB_SIGN_IN).replace(
       'title="Signet"',
@@ -295,7 +222,7 @@ test("a single-quoted Frapp title is collected", () => {
   ]);
 });
 
-test("walker stays on web app + mobile auth and keeps the floors", () => {
+test("walker stays on the web app and keeps the floors", () => {
   assert.deepEqual(lockSelfProblems(readFileSync(LOCK, "utf8")), []);
 });
 

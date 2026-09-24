@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Signet",
+    "name": "Frapp",
     "slug": "frapp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -55,7 +55,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Signet uses the camera to scan the check-in code at chapter events.",
+          "cameraPermission": "Frapp uses the camera to scan the check-in code at chapter events.",
           "recordAudioAndroid": false,
           "microphonePermission": false
         }
@@ -63,7 +63,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Signet uses your photo library so you can send photos in chapter chat.",
+          "photosPermission": "Frapp uses your photo library so you can send photos in chapter chat.",
           "microphonePermission": false
         }
       ],
@@ -77,7 +77,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Signet confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
+          "locationWhenInUsePermission": "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false,
           "locationAlwaysAndWhenInUsePermission": false,

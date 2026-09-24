@@ -62,7 +62,7 @@ describe("calendar-export", () => {
       const expectedLines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        "PRODID:-//Signet//Chapter Events//EN",
+        "PRODID:-//Frapp//Chapter Events//EN",
         "CALSCALE:GREGORIAN",
         "BEGIN:VEVENT",
         "UID:20240215T140000Z-Team Meeting@frapp.live",
@@ -211,7 +211,7 @@ describe("calendar-export", () => {
       expect(global.URL.revokeObjectURL).toHaveBeenCalledWith("blob:fake-url");
     });
 
-    it("falls back to signet-event.ics when the title sanitizes empty", async () => {
+    it("falls back to frapp-event.ics when the title sanitizes empty", async () => {
       const { Platform } = await import("react-native");
       Platform.OS = "web";
 
@@ -229,7 +229,7 @@ describe("calendar-export", () => {
       const result = await exportEventToCalendar(input);
 
       expect(result).toBe(true);
-      expect(mockAnchor.download).toBe("signet-event.ics");
+      expect(mockAnchor.download).toBe("frapp-event.ics");
     });
 
     it("saves and shares calendar on native platform", async () => {
