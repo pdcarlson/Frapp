@@ -76,6 +76,9 @@ vi.mock("react-native", () => ({
   // asserting on it clears it itself (`clearMocks` is off, see the config).
   AccessibilityInfo: {
     announceForAccessibility: vi.fn(),
+    // An overlay moves a screen reader's focus onto itself as it appears
+    // (spec/ui/mobile/patterns.md § Overlays).
+    sendAccessibilityEvent: vi.fn(),
   },
   // Enough of the styling/layout surface for Signet token factories and
   // component tests; string stand-ins render fine under react-test-renderer.
