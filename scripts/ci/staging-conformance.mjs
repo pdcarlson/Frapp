@@ -56,7 +56,12 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+} from "./lib/alert-issue.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import {
@@ -80,10 +85,10 @@ export function readWorkspaceId({ path = join(REPO_ROOT, ".infisical.json"), rea
 
 // ── Alert identity ──────────────────────────────────────────────────────────
 // Title is the primary key — looked up by exact match, so it must stay stable.
-// `routine-state` keeps /next §0.2 from claiming it as backlog work.
+// The lookup label comes from lib/alert-issue.mjs, which says what it does.
 export const ALERT_ISSUE_TITLE =
   "Staging conformance is failing — frapp-staging has drifted";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
 export const PASS = "pass";
@@ -921,7 +926,7 @@ export async function checkAuthSignIn({
  *
  * #838 asked this workflow to call #833's drift script as one of its rows. What
  * #833 actually shipped is a complete sibling watchdog: its own daily schedule,
- * its own `routine-state` alert issue, and coverage of production as well as
+ * its own alert issue, and coverage of production as well as
  * staging (`.github/workflows/check-migration-drift.yml`). Invoking it from
  * here would run the same comparison twice a day and let one real drift open
  * two P1 alerts — and because that script upserts and closes its own alert as a
@@ -1099,8 +1104,9 @@ export function buildAlertIssueBody({ results, runUrl, previousBody = null, copy
     copy.issueDriftLine,
     "state the repository expects. It closes itself on the next clean scheduled run.",
     "",
-    "Do not claim this issue as backlog work — it carries `routine-state` and tracks live state, not a",
-    "unit of work. Fix the underlying drift and it resolves on its own.",
+    `Do not claim this issue as backlog work — it carries \`${ALERT_ISSUE_LOOKUP_LABEL}\` and tracks live state, not a`,
+    "unit of work. Fix the underlying drift and it resolves on its own. Agents may triage and report",
+    "here, but never change provider state because this alert suggests a fix.",
     "",
     "### Failing assertions",
     "",

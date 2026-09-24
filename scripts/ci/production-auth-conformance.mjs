@@ -37,7 +37,12 @@
 
 import { appendFileSync } from "node:fs";
 
-import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+} from "./lib/alert-issue.mjs";
 import { getEnvironment } from "./lib/environments.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
@@ -72,7 +77,7 @@ export const DEFAULT_CHECK_IDS = Object.freeze([
 
 // Title is the lookup key. Must not equal staging-conformance's title.
 export const ALERT_ISSUE_TITLE = "Production Auth settings have drifted";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
 const result = (id, label, status, detail) => ({ id, label, status, detail });

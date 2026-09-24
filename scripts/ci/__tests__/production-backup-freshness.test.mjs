@@ -16,6 +16,7 @@ import {
   resolveActionsReadToken,
   runWatchdog,
 } from "../production-backup-freshness.mjs";
+import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
 
@@ -316,7 +317,7 @@ describe("runWatchdog", () => {
     reason: "backup-production is in flight",
   };
 
-  it("creates a P1 routine-state alert and refuses a GitHub closer", async () => {
+  it("creates a P1 incident alert, assigned to the owner, and refuses a GitHub closer", async () => {
     const { fetchImpl, calls } = makeFetchMock([
       { method: "GET", path: "/issues?state=all", body: [] },
       { method: "POST", path: "/issues", body: { number: 42 } },
@@ -331,7 +332,8 @@ describe("runWatchdog", () => {
     assert.equal(created.alert.action, "created");
     const createdBody = JSON.parse(calls.find((c) => c.method === "POST").body);
     assert.equal(createdBody.title, ALERT_ISSUE_TITLE);
-    assert.ok(createdBody.labels.includes("routine-state"));
+    assert.ok(createdBody.labels.includes(ALERT_LOOKUP_LABEL));
+    assert.deepEqual(createdBody.assignees, [ALERT_ASSIGNEE]);
     assert.ok(createdBody.labels.includes("P1"));
     assert.doesNotMatch(createdBody.body, /\b(fixes|closes|close|fix|fixed|resolve|resolves|resolved)\s+#/i);
   });

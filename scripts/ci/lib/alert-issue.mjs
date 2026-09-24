@@ -12,16 +12,52 @@
 // GitHub UI detaches it and the next failure files a fresh issue rather than
 // silently writing to a human-renamed thread.
 //
-// `routine-state` is the lookup label for every alert: `/next` §0.2 treats it as
-// never-claimable, which is what stops agent sessions picking an alert up as if
-// it were backlog work.
+// This module is the one place an alert's label and assignee are set
+// (ADR-24 decision 2). Every watchdog derives its lookup label from here rather
+// than repeating the literal, because the label is half of each alert's
+// identity. A watchdog left on the old label would stop finding its own open
+// alert, file a duplicate, and never close the original.
+//
+// - `incident` is the lookup label for every alert. `/next` §0.2 treats it as
+//   never-claimable, which stops agent sessions picking an alert up as if it
+//   were backlog work. Agents may triage and report on an incident, but never
+//   change provider state because an alert suggested it (#1564's suggested fix
+//   was wrong).
+// - Every new or reopened alert is assigned to the owner. Assignment is a
+//   participating notification, so it reaches the owner under every
+//   repo-watch setting except Ignore; an unassigned issue reached them only if
+//   their watch setting happened to cover new issues.
 
 import { ghRequest } from "./github.mjs";
 
-export const DEFAULT_LOOKUP_LABEL = "routine-state";
+export const ALERT_LOOKUP_LABEL = "incident";
+export const ALERT_ASSIGNEE = "pdcarlson";
 
 // Pages of issues to scan when locating an alert.
 const MAX_ISSUE_PAGES = 5;
+
+/**
+ * A create or reopen that assigns the owner, retried once without the assignee
+ * if GitHub rejects it as unassignable (422).
+ *
+ * A missing assignee is the lesser failure. The alert itself is the thing this
+ * module exists to deliver, so an assignee GitHub won't accept (a renamed
+ * account, the repo moved to an org the login isn't in) must not stop every
+ * alert from being filed. Only a 422 retries: a 5xx is not about the assignee,
+ * and the suites count calls against 5xx fixtures.
+ */
+async function writeAssigned({ token, fetchImpl, method, path, body }) {
+  const first = await ghRequest({ token, fetchImpl, method, path, body });
+  if (first.ok || first.status !== 422 || !body.assignees) return first;
+  const { assignees: _unassignable, ...unassigned } = body;
+  return ghRequest({ token, fetchImpl, method, path, body: unassigned });
+}
+
+/** The owner added to an issue's current assignees; PATCH replaces the whole set. */
+function withOwnerAssigned(issue) {
+  const current = (issue.assignees ?? []).map((user) => user?.login).filter(Boolean);
+  return [...new Set([...current, ALERT_ASSIGNEE])];
+}
 
 /**
  * Every issue (open or closed) that is this alert, newest first.
@@ -48,7 +84,7 @@ export async function findAlertIssuesDetailed({
   repo,
   fetchImpl,
   title,
-  lookupLabel = DEFAULT_LOOKUP_LABEL,
+  lookupLabel = ALERT_LOOKUP_LABEL,
 }) {
   const found = [];
   let lookupOk = true;
@@ -89,7 +125,7 @@ export async function raiseAlert({
   fetchImpl,
   title,
   labels,
-  lookupLabel = DEFAULT_LOOKUP_LABEL,
+  lookupLabel = ALERT_LOOKUP_LABEL,
   buildIssueBody,
   buildCommentBody,
   // When true, an existing alert's BODY is rewritten to `buildIssueBody()` on
@@ -105,13 +141,14 @@ export async function raiseAlert({
   const target = open ?? existing[0];
 
   if (!target) {
-    const { ok, data } = await ghRequest({
+    const { ok, data } = await writeAssigned({
       token,
       fetchImpl,
       method: "POST",
       path: `/repos/${repo}/issues`,
       body: {
         title,
+        assignees: [ALERT_ASSIGNEE],
         // Labels that do not exist yet are created by this call.
         //
         // `lookupLabel` is forced in rather than trusted from `labels`: this
@@ -133,7 +170,14 @@ export async function raiseAlert({
   const reopened = target.state !== "open";
   let bodyRefreshFailed = false;
   const patch = {};
-  if (reopened) patch.state = "open";
+  // A reopen is a new incident, so it is assigned like a new alert. A comment
+  // on an alert that is already open leaves its assignees alone: if the owner
+  // dropped the assignment mid-incident, re-adding it on every run would
+  // override that choice.
+  if (reopened) {
+    patch.state = "open";
+    patch.assignees = withOwnerAssigned(target);
+  }
   // The previous body is handed to the builder so a caller can merge state it
   // keeps there (see staging-conformance.mjs's failing-assertion marker)
   // instead of clobbering it with only what is true this run.
@@ -145,7 +189,7 @@ export async function raiseAlert({
   // new alert open forever.
   if (refreshBodyOnRaise) patch.body = buildIssueBody(reopened ? null : (target.body ?? null));
   if (Object.keys(patch).length > 0) {
-    const { ok: patchOk } = await ghRequest({
+    const { ok: patchOk } = await writeAssigned({
       token,
       fetchImpl,
       method: "PATCH",
@@ -190,7 +234,7 @@ export async function resolveAlert({
   repo,
   fetchImpl,
   title,
-  lookupLabel = DEFAULT_LOOKUP_LABEL,
+  lookupLabel = ALERT_LOOKUP_LABEL,
   buildRecoveryBody,
 }) {
   const openIssues = (
