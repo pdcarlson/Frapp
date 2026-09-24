@@ -107,8 +107,8 @@ const PUBLISHABLE_KEY_FIXTURE = "sb_publishable_not-a-real-key"; // gitleaks:all
 const SECRET_KEY_FIXTURE = "sb_secret_not-a-real-key"; // gitleaks:allow
 const USER_TOKEN_JWT_FIXTURE =
   "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCIsInN1YiI6IngifQ.not-a-real-signature"; // gitleaks:allow
-// Values from the wrong field: neither is a key, and neither has a shape the
-// secret-key denylist could refuse.
+// Values from the wrong field, neither of them a key. The JWT secret has no
+// shape the secret-key denylist could refuse; a personal access token does.
 const JWT_SECRET_FIXTURE = "not-a-real-jwt-secret-0123456789abcdef"; // gitleaks:allow
 const ACCESS_TOKEN_FIXTURE = "sbp_not-a-real-token"; // gitleaks:allow
 const SERVICE_ROLE_JWT_FIXTURE =
@@ -704,10 +704,37 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     ["a secret key", SECRET_KEY_FIXTURE],
     ["a service_role JWT", SERVICE_ROLE_JWT_FIXTURE],
     ["a user's access token", USER_TOKEN_JWT_FIXTURE],
-    // With no profile this is the only key check, so a pasted secret is
-    // found wherever it sits: trim() leaves quotes and a zero-width space.
+    // With no profile this is the only key check, so a pasted secret prefix
+    // or JWT is found wherever it sits: trim() leaves quotes and a zero-width
+    // space.
     ["a secret key in quotes", `"${SECRET_KEY_FIXTURE}"`],
     ["a secret key behind a zero-width space", `\u200b${SECRET_KEY_FIXTURE}`],
+    ["a personal access token", ACCESS_TOKEN_FIXTURE],
+    ["a personal access token in quotes", `"${ACCESS_TOKEN_FIXTURE}"`],
+    // Pasted onto the end of a real key: the allowlist patterns accept key
+    // characters to the end, so this check is the one that sees it, and a
+    // production build would otherwise ship it.
+    ["a secret key appended to a publishable key", `${PUBLISHABLE_KEY_FIXTURE}${SECRET_KEY_FIXTURE}`],
+    ["an access token appended to a publishable key", `${PUBLISHABLE_KEY_FIXTURE}${ACCESS_TOKEN_FIXTURE}`],
+    ["a secret key appended to an anon JWT", `${LEGACY_ANON_JWT_FIXTURE}${SECRET_KEY_FIXTURE}`],
+    ["a URL-encoded secret key", `%22${SECRET_KEY_FIXTURE}%22`],
+    // A JWT among other dotted text doesn't split into three parts, so its
+    // claims are found as an `eyJ` segment after a dot instead; one that
+    // looks like a header (an `alg` and no `role`) is skipped.
+    ["a service_role JWT appended to an anon JWT", `${LEGACY_ANON_JWT_FIXTURE}${SERVICE_ROLE_JWT_FIXTURE}`],
+    ["a service_role JWT after an anon JWT and a space", `${LEGACY_ANON_JWT_FIXTURE} ${SERVICE_ROLE_JWT_FIXTURE}`],
+    ["a service_role JWT with a trailing period", `${SERVICE_ROLE_JWT_FIXTURE}.`],
+    ["a service_role JWT after the project URL", `https://ref.supabase.co ${SERVICE_ROLE_JWT_FIXTURE}`],
+    // Claims with no role aren't anon either, wherever they sit.
+    [
+      "a JWT with no role after the project URL",
+      "https://ref.supabase.co eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.not-a-real-signature", // gitleaks:allow
+    ],
+    // Wrapped across lines by a terminal, after other dotted text.
+    [
+      "a line-wrapped service_role JWT after the project URL",
+      `https://ref.supabase.co ${SERVICE_ROLE_JWT_FIXTURE.slice(0, 30)}\n${SERVICE_ROLE_JWT_FIXTURE.slice(30)}`,
+    ],
   ])("refuses %s on any profile, or none", (_label, supabaseAnonKey) => {
     const {
       applyMobileConfig,
@@ -749,6 +776,9 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
       // Three parts, but the middle is `[]`: JWT claims are an object, so this
       // is a placeholder, not a credential to tell anyone to rotate.
       "x.W10.y",
+      // The second JWT's header follows a dot; it is skipped, not read as
+      // role-less claims.
+      `${LEGACY_ANON_JWT_FIXTURE}.${LEGACY_ANON_JWT_FIXTURE}`,
       undefined,
     ]) {
       expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).not.toThrow();
@@ -762,7 +792,6 @@ describe("assertEasSupabaseClientKey (#2526)", () => {
   // deny, so an EAS build allows only the two client keys.
   it.each([
     ["the legacy JWT secret", JWT_SECRET_FIXTURE],
-    ["an access token", ACCESS_TOKEN_FIXTURE],
     ["an unresolved reference", "${SUPABASE_ANON_KEY}"],
     // Expo inlines the value verbatim and lib/supabase.ts doesn't trim it.
     ["a publishable key with a trailing newline", `${PUBLISHABLE_KEY_FIXTURE}\n`],
