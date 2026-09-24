@@ -2,7 +2,11 @@ name: Verify deployments
 
 # STAGING observer. After a push to `main`, confirm that the Render API deploy
 # for the pushed SHA reached a healthy terminal state. Failure surfaces as a red
-# GitHub check.
+# GitHub check AND as an alert issue, filed by the `deploy-outcome` job below.
+# The red check alone notified nobody: it went red on at least ten straight
+# pushes (2026-09-18 to 09-22, every one a Render `build_failed`) while
+# `Deploy API`, which triggers the deploy but cannot see its outcome, stayed
+# green (#2431).
 #
 # It no longer watches production. Production is not pushed to: since #1340 it
 # is deployed by `deploy-production.yml`, which creates each deploy through the
@@ -60,6 +64,11 @@ jobs:
     environment:
       name: staging
       deployment: false
+    # The verifier's verdict: success | neutral | failure. The job result can't
+    # carry it, because a superseded deploy (`neutral`) exits 0 like a live
+    # one, and only a live one may close the alert. `deploy-outcome` reads it.
+    outputs:
+      outcome: ${{ steps.verify.outputs.outcome }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,9 +79,63 @@ jobs:
           node-version: 24
 
       - name: Verify Render API deploy
+        id: verify
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: srv-d6lqsq75r7bs73c2fdc0
           SERVICE_LABEL: frapp-api-staging
-          GITHUB_SHA: ${{ github.sha }}
+          # DEPLOY_SHA, not GITHUB_SHA: `GITHUB_` is a reserved prefix, so a
+          # step-level `GITHUB_SHA:` is ignored. It happened to be harmless
+          # here (on a push the ambient value is this SHA), but it read as an
+          # override that did nothing.
+          DEPLOY_SHA: ${{ github.sha }}
         run: node scripts/ci/verify-render-deploy.mjs
+
+  # ── Deploy outcome: alert on failure (#2431) ────────────────────────────────
+  # Files, comments on, or closes ONE tracking issue through the shared
+  # `scripts/ci/deploy-alert.mjs`, as `deploy-api.yml` and
+  # `deploy-vercel-staging.yml` do. `ALERT_CONFIG` selects this workflow's
+  # configuration; an unknown value is a hard error, not a silent fallback.
+  #
+  #   verify-render-api failed      → raise (build/update/pre-deploy failed, no
+  #                                   deploy for this SHA, timeout, or Render
+  #                                   unreadable; the run log says which)
+  #   succeeded, outcome `success`  → close: the deploy is live
+  #   succeeded, outcome `neutral`  → leave the alert as it is: a superseded
+  #                                   deploy proves nothing, and the run for
+  #                                   the newer commit gives the verdict
+  deploy-outcome:
+    needs: [verify-render-api]
+    # `!cancelled()`, not `always()`, and deliberately unlike the two deploy
+    # workflows. Cancelling a DEPLOY leaves nothing deployed, so there a cancel
+    # is a failure. Cancelling this OBSERVER stops the watching, not the Render
+    # deploy, so it is no verdict at all: filing a P1 "not confirmed live" for
+    # it would be false, and closing on it would be worse. Every other outcome
+    # of `verify-render-api`, a failure included, still reaches this job.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The ONLY job here with any write scope, job-scoped so the
+      # workflow-level `contents: read` stays exactly as narrow as it was.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # deploy-alert.mjs is dependency-free (global fetch + node:fs on the
+      # runner's preinstalled Node): no setup-node, no npm ci, matching the
+      # same step in deploy-api.yml.
+      - name: Report deploy outcome and alert on failure
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALERT_CONFIG: verify-deployments
+          DEPLOY_NEEDS: ${{ toJSON(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # A push event: the pushed branch and commit, not `workflow_run.*`.
+          HEAD_BRANCH: ${{ github.ref_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: node scripts/ci/deploy-alert.mjs

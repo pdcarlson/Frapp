@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 
 import {
   verifyRenderDeploy,
+  writeOutcomeOutput,
+  VERIFY_OUTCOMES,
   RENDER_NO_DEPLOY_GRACE_MS,
   RENDER_POLL_INTERVAL_MS,
   RENDER_OVERALL_TIMEOUT_MS,
 } from "../verify-render-deploy.mjs";
+import { VERIFY_DEPLOYMENTS_CONFIG } from "../deploy-alert.mjs";
 
 const SHA = "abc1234def5678";
 const SERVICE_ID = "srv-test";
@@ -226,5 +229,67 @@ describe("verifyRenderDeploy", () => {
     assert.ok(RENDER_NO_DEPLOY_GRACE_MS > 0);
     assert.ok(RENDER_POLL_INTERVAL_MS > 0);
     assert.ok(RENDER_OVERALL_TIMEOUT_MS > RENDER_NO_DEPLOY_GRACE_MS);
+  });
+});
+
+// `verify-deployments.yml`'s `deploy-outcome` job closes the staging deploy
+// alert only on this output's `success` (#2431), because `neutral` exits 0 too.
+describe("writeOutcomeOutput", () => {
+  function recorder() {
+    const writes = [];
+    return { writes, append: (path, text) => writes.push({ path, text }) };
+  }
+
+  it("appends exactly `outcome=<status>` for every verdict the verifier returns", () => {
+    for (const status of ["success", "neutral", "failure"]) {
+      const { writes, append } = recorder();
+      writeOutcomeOutput(status, { outputPath: "/tmp/out", append });
+      assert.deepEqual(writes, [{ path: "/tmp/out", text: `outcome=${status}\n` }]);
+    }
+  });
+
+  it("is a no-op outside Actions", () => {
+    const { writes, append } = recorder();
+    writeOutcomeOutput("success", { outputPath: undefined, append });
+    writeOutcomeOutput("success", { outputPath: "", append });
+    assert.deepEqual(writes, []);
+  });
+
+  it("refuses to publish a status outside the closed set, even outside Actions", () => {
+    // Free text (a provider error message) must never reach the output: it
+    // lands in an issue body, which GitHub does not mask.
+    const { writes, append } = recorder();
+    for (const bad of ["Render API error: 401", "SUCCESS", "", undefined]) {
+      assert.throws(
+        () => writeOutcomeOutput(bad, { outputPath: "/tmp/out", append }),
+        /Unknown verify outcome/,
+      );
+      assert.throws(() => writeOutcomeOutput(bad, { outputPath: undefined, append }));
+    }
+    assert.deepEqual(writes, []);
+  });
+
+  it("publishes the vocabulary deploy-alert.mjs reads", () => {
+    // The two files meet only through a string. If the verifier renamed its
+    // success verdict, a live deploy could never close the alert again.
+    const { value, neutral } = VERIFY_DEPLOYMENTS_CONFIG.deployedOutput;
+    assert.ok(VERIFY_OUTCOMES.has(value));
+    for (const n of neutral) assert.ok(VERIFY_OUTCOMES.has(n));
+    assert.ok(!neutral.includes("failure"), "a failure must never read as neutral");
+  });
+
+  it("each verdict the verifier returns is one it may publish", async () => {
+    const cases = [
+      [okJson([renderDeploy({ status: "live" })]), "success"],
+      [okJson([renderDeploy({ status: "canceled" })]), "neutral"],
+      [okJson([renderDeploy({ status: "build_failed" })]), "failure"],
+    ];
+    for (const [response, expected] of cases) {
+      const { fetchImpl } = makeFetchStub([response]);
+      const { clock } = makeFakeClock();
+      const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+      assert.equal(result.status, expected);
+      assert.ok(VERIFY_OUTCOMES.has(result.status));
+    }
   });
 });

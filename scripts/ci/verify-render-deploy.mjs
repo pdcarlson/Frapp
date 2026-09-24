@@ -10,8 +10,14 @@
 //   RENDER_SERVICE_ID  — required
 //   GITHUB_SHA         — required
 //   SERVICE_LABEL      — optional, used only for logs
+//   GITHUB_OUTPUT      — set by Actions; receives the step output `outcome`
 //
 // Exits 0 on success/neutral, 1 on terminal failure or overall timeout.
+//
+// The exit code cannot tell success from neutral, so the verdict is also
+// published as the step output `outcome` (see `writeOutcomeOutput`).
+
+import { appendFileSync } from "node:fs";
 
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import { findRenderDeployBySha } from "./lib/providers.mjs";
@@ -144,6 +150,37 @@ export async function verifyRenderDeploy({
   });
 }
 
+// ── Step output ─────────────────────────────────────────────────────────────
+
+/** Every verdict `verifyRenderDeploy` can return. */
+export const VERIFY_OUTCOMES = new Set(["success", "neutral", "failure"]);
+
+/**
+ * Appends `outcome=<status>` to `$GITHUB_OUTPUT`, for `verify-deployments.yml`'s
+ * `deploy-outcome` job (#2431). That job closes the staging deploy alert, and
+ * it must close it only on `success`: `neutral` also exits 0, but a superseded
+ * deploy proves nothing about whether deploys work, so the exit code alone
+ * would read a cancel mid-outage as a recovery.
+ *
+ * Only the closed-set status is written, never `message`. The output reaches an
+ * issue body, which GitHub does not mask the way it masks a log, so free text
+ * built from a provider error has no business there.
+ *
+ * A no-op outside Actions (no `GITHUB_OUTPUT`). Throws on a status outside the
+ * set rather than publishing it: the reader matches exact strings, so an
+ * unknown value would silently read as "not confirmed".
+ */
+export function writeOutcomeOutput(
+  status,
+  { outputPath = process.env.GITHUB_OUTPUT, append = appendFileSync } = {},
+) {
+  if (!VERIFY_OUTCOMES.has(status)) {
+    throw new Error(`Unknown verify outcome ${JSON.stringify(status)}`);
+  }
+  if (!outputPath) return;
+  append(outputPath, `outcome=${status}\n`);
+}
+
 // ── CLI entry ───────────────────────────────────────────────────────────────
 
 async function main() {
@@ -159,6 +196,7 @@ async function main() {
   const label = process.env.SERVICE_LABEL ?? serviceId;
 
   const result = await verifyRenderDeploy({ apiKey, serviceId, sha, label });
+  writeOutcomeOutput(result.status);
 
   if (result.status === "success") {
     console.log(`✅ ${result.message}`);
