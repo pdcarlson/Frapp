@@ -45,14 +45,14 @@
 // falls back at runtime.
 //
 // Every EAS **production** build also refuses a Supabase key that is not a
-// publishable key (`sb_publishable_…`, #2526), or that carries whitespace
-// around it. Supabase keeps the legacy JWT `anon` key working only "until the
-// end of 2026", and a store binary outlives that: every install keeps the key
-// it was built with until its owner updates from the store, so a legacy key
-// would go dead in the field. Expo inlines the value verbatim and
-// `lib/supabase.ts` doesn't trim it, so the whole value must be the key: a
-// pasted newline, quote or zero-width space would ship too. The variable keeps its `ANON_KEY` name because EAS and every doc already
-// use it; renaming it is a separate change.
+// publishable key (`sb_publishable_…`, #2526), or that has anything around
+// it. Supabase keeps the legacy JWT `anon` key working only "until the end of
+// 2026", and a store binary outlives that: every install keeps the key it was
+// built with until its owner updates from the store, so a legacy key would go
+// dead in the field. Expo inlines the value verbatim and `lib/supabase.ts`
+// doesn't trim it, so the whole value must be the key: a pasted newline, quote
+// or zero-width space would ship too. The variable keeps its `ANON_KEY` name
+// because EAS and every doc already use it; renaming it is a separate change.
 //
 // And the config refuses a **secret** key on every profile, and whenever it is
 // evaluated, not only for production: a `sb_secret_…` key, or a JWT whose role
@@ -270,13 +270,7 @@ const PUBLIC_SUPABASE_SECRET_KEY_ERROR = [
 /** The claims of a JWT-shaped key, or undefined for anything else. */
 function jwtClaims(key) {
   const parts = key.split(".");
-  if (parts.length !== 3) return undefined;
-  try {
-    const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    return claims && typeof claims === "object" ? claims : undefined;
-  } catch {
-    return undefined;
-  }
+  return parts.length === 3 ? decodeJwtSegment(parts[1]) : undefined;
 }
 
 // Refuses the shapes that are known credentials, on every evaluation: a secret

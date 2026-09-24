@@ -676,7 +676,7 @@ describe("assertProductionSupabasePublishableKey (#2526)", () => {
   });
 
   // The legacy key goes dead in the field after 2026; a secret key would ship
-  // an RLS bypass inside every binary. Both are refused by one prefix test.
+  // an RLS bypass inside every binary. One pattern refuses both.
   it.each([
     ["the legacy JWT anon key", LEGACY_ANON_JWT_FIXTURE],
     ["a secret key", SECRET_KEY_FIXTURE],
