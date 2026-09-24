@@ -95,11 +95,13 @@ export function isPushAvailable(): boolean {
  * Why push is unavailable, or `null` when it is available.
  *
  * Each cause gets its own sentence, because each has a different remedy: Expo
- * Go and web are fixed by installing the real build, a module that failed to
- * load in an installed build is a broken build (the case `isolated-module.ts`
- * warns about), and a missing project id is a deployment setting the member
- * cannot do anything about. `spec/ui/design-system/README.md` §5: "A disabled
- * control with no explanation is its own dead end."
+ * Go is fixed by installing the real build, web by using the phone app, a
+ * module that failed to load in an installed build is a broken build that an
+ * update may fix (the case `isolated-module.ts` warns about), and a missing
+ * project id is a deployment setting the member cannot do anything about.
+ * `spec/ui/design-system/README.md` §5: "A disabled control with no
+ * explanation is its own dead end." The strings are tabled in
+ * `spec/ui/design-system/writing.md` § Push availability.
  *
  * Its one reader is Settings (s16), which keeps a push row in every build and
  * states this in place of On/Off. The s03 primer card is not drawn at all when
@@ -111,7 +113,10 @@ export function pushUnavailableReason(): string | null {
     // build whose native module threw, and telling that member to install the
     // build they are running would be false.
     if (!isWebOrExpoGo()) {
-      return "Notifications couldn't start in this version of the app. You'll still see everything here in the app.";
+      return "Notifications couldn't start in this version of the app. Updating the app may fix it. You'll still see everything here in the app.";
+    }
+    if (Platform.OS === "web") {
+      return "Notifications come to the phone app, not the web. You'll still see everything here.";
     }
     return "Notifications need the installed Signet build — Expo Go can't receive them. You'll still see everything here in the app.";
   }

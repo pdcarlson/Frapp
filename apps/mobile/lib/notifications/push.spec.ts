@@ -131,7 +131,25 @@ describe("push isolation module", () => {
     expect(reason).toBeTruthy();
     expect(reason).not.toMatch(/Expo Go/);
     expect(reason).not.toMatch(/installed/);
+    // It names a next step (README §5 rule 2), unlike a dead-end apology.
+    expect(reason).toMatch(/Updating the app/);
     warn.mockRestore();
+  });
+
+  it("does not blame Expo Go on the web target", async () => {
+    const { Platform } = await import("react-native");
+    const os = Platform.OS;
+    Platform.OS = "web";
+    try {
+      const push = await importPush();
+      const reason = push.pushUnavailableReason();
+
+      expect(push.isPushAvailable()).toBe(false);
+      expect(reason).toBeTruthy();
+      expect(reason).not.toMatch(/Expo Go/);
+    } finally {
+      Platform.OS = os;
+    }
   });
 
   it("has no token to register while no EAS project is configured (#938)", async () => {
