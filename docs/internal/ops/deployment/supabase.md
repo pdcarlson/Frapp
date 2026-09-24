@@ -164,8 +164,8 @@ conformance and Production Auth conformance runs both appear under Actions (a sc
 run tests the `main` commit of the moment GitHub queued it, which is often late), and
 deploy production the same day. A slip opens alerts that close on the first run that
 passes: Staging conformance or Production Auth drift for a console not yet retyped, and
-Migration drift for `20260924170000` if production hasn't deployed by the 07:00 UTC check
-more than 24 hours after 2026-09-24 17:00 UTC:
+Migration drift for `20260924190000` if production hasn't deployed by the 07:00 UTC check
+more than 24 hours after 2026-09-24 19:00 UTC:
 
 1. **Staging.** Just before merging, set Infisical `staging` `RESEND_FROM_EMAIL` to
    `Frapp <invites@mail.staging.frapp.live>`. The API reads it only at boot, so the merge's

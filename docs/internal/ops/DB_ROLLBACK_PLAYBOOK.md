@@ -430,7 +430,7 @@ After any rollback event:
 
 ## Rollback the Frapp System display_name
 
-* **Migration**: `20260924170000_rename_system_actor_to_frapp.sql`
+* **Migration**: `20260924190000_rename_system_actor_to_frapp.sql`
 * **Action**: `update public.users set display_name = 'Signet System' where id = '00000000-0000-0000-0000-000000000000';` restores the name `20260909120000` wrote. Nothing else on the row changes.
 * **Note**: Data only, one row, idempotent. There is rarely a reason to roll it
   back: ADR-25 names the product Frapp, and `Signet System` is the leftover
@@ -446,7 +446,7 @@ After any rollback event:
   back — the old name is the leftover this change removes. Chat cards do not
   print `users.display_name` for the system sender today, so a rollback is
   invisible on those surfaces. Do not edit the historical seed to undo this.
-* *2026-09-24: ADR-25 named the product Frapp, and `20260924170000` renamed the
+* *2026-09-24: ADR-25 named the product Frapp, and `20260924190000` renamed the
   actor back to `Frapp System` (#2578). `Signet System` is now the leftover; to
   undo that newer migration, use [§ Rollback the Frapp System
   display_name](#rollback-the-frapp-system-display_name) above.*
@@ -2004,3 +2004,41 @@ Re-landing #2302 after a drop needs its own new migration that re-adds the colum
 ```sql
 SELECT id, legal_accepted_at, legal_policy_version FROM users WHERE legal_accepted_at IS NOT NULL;
 ```
+
+## Rollback hiding blocked members' reactions (20260924170000)
+
+* **Migration**: `20260924170000_chat_message_actions_hide_blocked_reactions.sql`
+
+A policy and a function (#2494). It re-creates `chat_message_actions_select` with one more conjunct and adds `chat_viewer_has_blocked`. No data changes, and no API or client code depends on it: clients read the table the same way under either policy and just receive fewer rows under this one.
+
+**Roll back with a new forward migration, not by hand.** It is the same rule as [§ Rollback per-user Terms acceptance](#rollback-per-user-terms-acceptance-20260923190000): hand DDL leaves production's ledger recording `20260924170000` as applied, so a later re-land would apply nothing. Put the following in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). The policy goes back to exactly what `20260803150000` wrote. It is re-created before the function is dropped, because the current policy references the function.
+
+```sql
+drop policy if exists "chat_message_actions_select" on public.chat_message_actions;
+
+do $$
+declare
+  v_role_clause text := '';
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    v_role_clause := 'to authenticated';
+  end if;
+
+  execute format($p$
+    create policy "chat_message_actions_select"
+      on public.chat_message_actions for select
+      %s
+      using (
+        auth.role() = 'authenticated'
+        and public.can_read_chat_message(message_id)
+      )
+  $p$, v_role_clause);
+end
+$$;
+
+drop function if exists public.chat_viewer_has_blocked(uuid, uuid);
+```
+
+That migration re-creates a policy, so the same PR bumps the entry's `creates` count in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` and sets the entry back to `open`. It also removes the PGlite block-enforcement tier and the two `chat_viewer_has_blocked` landmarks from `scripts/check-pglite-migrations.mjs`, which would fail against the old policy.
+
+**This is a safety regression, not a neutral rollback.** Afterwards a blocker's clients again receive every reaction the blocked member leaves, live as well. Web renders them all, since it has no block list (#2313). Mobile still hides them in every list state, but against its own list, so a ready list that predates a block made on another device shows them until it is re-read. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.

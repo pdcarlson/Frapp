@@ -562,7 +562,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-09-24: System actor display_name becomes Frapp System (#2578)
 
-- **Migration**: `20260924170000_rename_system_actor_to_frapp.sql`
+- **Migration**: `20260924190000_rename_system_actor_to_frapp.sql`
 - **Purpose**: ADR-25 names the product Frapp, so step 3 reverses the
   2026-09-09 rename below. The well-known system actor
   (`users.id = 00000000-0000-0000-0000-000000000000`) reads `Signet System` on
@@ -581,6 +581,19 @@ date — is welcome; inventing a date to turn the gate green is not.
   No agent session dispatches it.
 
 **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-the-frapp-system-display_name) § Rollback the Frapp System display_name.
+
+## 2026-09-24: Hide a blocked member's reactions from the member who blocked them (#2494)
+
+### 20260924170000_chat_message_actions_hide_blocked_reactions.sql
+
+- **Purpose**: Adds `public.chat_viewer_has_blocked(p_actor uuid, p_message_id uuid)`: `security definer`, `stable`, `search_path = public, pg_temp`, no blocker parameter, and false for any message the caller can't read. It re-creates `chat_message_actions_select` with a third conjunct, `not (starts_with(action_type, 'reaction:') and chat_viewer_has_blocked(user_id, message_id))`. After it, a member who blocked someone in a chapter no longer receives that member's reaction rows there, over PostgREST or the Realtime echo. Votes and the blocked member's own reads are unchanged. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#what-a-block-does-and-does-not-hide) § What a block does and does not hide.
+- **Checks**: After `db push`,
+  `select polroles::regrole[], pg_get_expr(polqual, polrelid) from pg_policy p join pg_class c on c.oid = p.polrelid where c.relname = 'chat_message_actions' and p.polpermissive and p.polcmd in ('r','*');` returns **exactly one** row: `{authenticated}`, with an expression containing both `can_read_chat_message(message_id)` and `chat_viewer_has_blocked(user_id, message_id)`. The FRA-38 check further down still holds as written.
+  `select has_function_privilege('anon', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | true`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
+  `select prosecdef, proconfig from pg_proc where proname = 'chat_viewer_has_blocked';` returns `true | {"search_path=public, pg_temp"}`.
+- **Promoter notes**: Nothing needs to ship with it, and either order with any API or web deploy is safe, because no code calls the helper and clients read the table the same way under both policies. The web dashboard stops showing a blocked member's reaction chips to the blocker on its next reaction read. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-hiding-blocked-members-reactions-20260924170000) § Rollback hiding blocked members' reactions.
 
 ## 2026-09-23: Stamp every chapter palette with its engine, and sweep the stale ones (#1165)
 

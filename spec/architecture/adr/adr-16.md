@@ -99,7 +99,7 @@ five-minute fixes on the day they were filed, and several had never been touched
 **Corrected 2026-09-05:** `check-our-docs` was retired. The paragraph above records what was true
 on 2026-08-21; that responsibility now sits in the documentation standard
 ([`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md)) and in the
-docs angle of [`diff-review`](../../../.claude/skills/diff-review/SKILL.md).
+docs angle of [`diff-review`](../../../.claude/skills/diff-review/angles.md).
 
 **Decision:** add a fourth Routine, **Docs Upkeep** (`.claude/skills/docs-upkeep/`), weekly on
 Wednesday. It sweeps a calendar-derived rotating fifth of `docs/` and `spec/`, verifies the claims

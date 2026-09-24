@@ -33,8 +33,8 @@ import { HELD_QUOTE_TEXT } from "./reply-quote";
  *   blocked member's poll is their authored text like any other message, and a
  *   votable card would put it on screen.
  * - **Reactions** go through `visibleReactions` on every message, the viewer's
- *   own included: a reaction is its author's own text, and nothing masks the
- *   chips server-side (#2494).
+ *   own included: a reaction is its author's own text, and the server's mask
+ *   (#2494) does not reach reaction rows cached before a block.
  * - **A quoted parent** the list hides is never handed down. The bubble gets
  *   `replyParent: null` and the placeholder to draw instead (#2312 §1).
  */

@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { resolveScope, writeMarker } from "../../diff-review-scope.mjs";
+import { INLINE_MAX_LINES, checkCommit, resolveScope, writeMarker } from "../../diff-review-scope.mjs";
 
 // Each test builds a throwaway repo: `main` is the fork point, mirrored to refs/remotes/origin/main
 // so the default baseRef resolves, and the feature branch adds commits on top.
@@ -22,87 +22,97 @@ function repo() {
     git("commit", "-q", "-m", `edit ${file}`);
     return git("rev-parse", "HEAD");
   };
+  // Lands a commit on main and publishes it as origin/main, leaving the feature branch checked out.
+  const advanceMain = (file, body) => {
+    git("checkout", "-q", "main");
+    const sha = commit(file, body);
+    git("update-ref", "refs/remotes/origin/main", sha);
+    git("checkout", "-q", "feature");
+    return sha;
+  };
+  const mark = (sha = git("rev-parse", "HEAD")) => {
+    mkdirSync(path.join(dir, ".cache", "diff-review"), { recursive: true });
+    writeFileSync(path.join(dir, ".cache", "diff-review", sha), "reviewed\n");
+    return sha;
+  };
   writeFileSync(path.join(dir, ".gitignore"), ".cache/\n"); // as in the real repo: markers are never committed
   const base = commit("README.md", "base\n");
   git("update-ref", "refs/remotes/origin/main", base);
   git("checkout", "-q", "-b", "feature");
-  return { dir, git, commit, base, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return { dir, git, commit, advanceMain, mark, base, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-const mark = (dir, sha, kind) => {
-  mkdirSync(path.join(dir, ".cache", "diff-review"), { recursive: true });
-  writeFileSync(path.join(dir, ".cache", "diff-review", sha), kind);
-};
+const lines = (n) => Array.from({ length: n }, (_, i) => `${i}\n`).join("");
 
-test("a branch with no markers gets a full review from its fork point", (t) => {
+test("a branch with no marker gets a full workflow review from its fork point", (t) => {
   const r = repo();
   t.after(r.cleanup);
   r.commit("a.txt", "1\n2\n3\n");
   const head = r.commit("b.txt", "x\n");
   const scope = resolveScope({ cwd: r.dir });
   assert.equal(scope.mode, "full");
+  assert.equal(scope.review, "workflow");
   assert.equal(scope.base, r.base);
   assert.equal(scope.head, head);
+  assert.equal(scope.reviewed, null);
   assert.equal(scope.files, 2);
   assert.equal(scope.changedLines, 4);
   assert.equal(scope.dirty, false);
 });
 
-test("commits after a full or delta marker get a delta review of just those commits", (t) => {
+test("a small fix after a review is an inline delta of just the new commits", (t) => {
   const r = repo();
   t.after(r.cleanup);
   r.commit("a.txt", "1\n");
-  const reviewed = r.commit("b.txt", "1\n2\n");
-  mark(r.dir, reviewed, "full\n");
+  const reviewed = r.mark(r.commit("b.txt", "1\n2\n"));
   r.commit("a.txt", "1\nfix\n");
   const scope = resolveScope({ cwd: r.dir });
   assert.equal(scope.mode, "delta");
+  assert.equal(scope.review, "inline");
   assert.equal(scope.base, reviewed);
+  assert.equal(scope.reviewed, reviewed);
   assert.equal(scope.branchBase, r.base);
   assert.equal(scope.files, 1);
   assert.equal(scope.changedLines, 1);
 
-  const fixed = r.git("rev-parse", "HEAD");
-  mark(r.dir, fixed, "delta\n");
+  const fixed = r.mark();
   r.commit("b.txt", "1\n2\n3\n");
-  assert.equal(resolveScope({ cwd: r.dir }).base, fixed, "a delta marker chains");
+  assert.equal(resolveScope({ cwd: r.dir }).base, fixed, "the newest marker wins");
 });
 
-test("only full and delta markers count; other kinds and legacy empty markers don't", (t) => {
+test(`a re-review of ${INLINE_MAX_LINES} lines or more goes back to the workflow`, (t) => {
   const r = repo();
   t.after(r.cleanup);
-  const first = r.commit("a.txt", "1\n");
-  mark(r.dir, first, "target\n");
-  const second = r.commit("b.txt", "1\n");
-  mark(r.dir, second, "");
-  r.commit("c.txt", "1\n");
+  r.mark(r.commit("a.txt", "1\n"));
+  r.commit("big.txt", lines(INLINE_MAX_LINES - 1));
+  assert.equal(resolveScope({ cwd: r.dir }).review, "inline");
+  r.commit("big.txt", lines(INLINE_MAX_LINES));
   const scope = resolveScope({ cwd: r.dir });
+  assert.equal(scope.mode, "delta");
+  assert.equal(scope.review, "workflow");
+});
+
+test("generated files count as files but not toward changedLines", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.mark(r.commit("a.txt", "1\n"));
+  r.commit("package-lock.json", lines(2000));
+  r.commit("apps/api/openapi.json", lines(2000));
+  r.commit("a.txt", "1\n2\n");
+  const scope = resolveScope({ cwd: r.dir });
+  assert.equal(scope.files, 3);
+  assert.equal(scope.changedLines, 1);
+  assert.equal(scope.review, "inline");
+});
+
+test("a marked HEAD needs no review, and --full overrides the marker", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.mark(r.commit("a.txt", "1\n"));
+  assert.equal(resolveScope({ cwd: r.dir }).mode, "none");
+  const scope = resolveScope({ cwd: r.dir, full: true });
   assert.equal(scope.mode, "full");
   assert.equal(scope.base, r.base);
-});
-
-test("markers on commits outside <merge-base>..HEAD (a rebase) don't count", (t) => {
-  const r = repo();
-  t.after(r.cleanup);
-  const old = r.commit("a.txt", "1\n");
-  mark(r.dir, old, "full\n");
-  r.git("checkout", "-q", "main");
-  const newMain = r.commit("main.txt", "m\n");
-  r.git("update-ref", "refs/remotes/origin/main", newMain);
-  r.git("checkout", "-q", "-b", "rebased");
-  r.commit("a.txt", "1\n");
-  const scope = resolveScope({ cwd: r.dir });
-  assert.equal(scope.mode, "full");
-  assert.equal(scope.base, newMain);
-});
-
-test("a marked HEAD needs no review, and --full overrides a marker", (t) => {
-  const r = repo();
-  t.after(r.cleanup);
-  const head = r.commit("a.txt", "1\n");
-  mark(r.dir, head, "full\n");
-  assert.equal(resolveScope({ cwd: r.dir }).mode, "none");
-  assert.equal(resolveScope({ cwd: r.dir, full: true }).mode, "full");
 });
 
 test("a branch with no commits of its own is empty, and dirty tracks uncommitted edits", (t) => {
@@ -113,44 +123,190 @@ test("a branch with no commits of its own is empty, and dirty tracks uncommitted
   assert.equal(resolveScope({ cwd: r.dir }).dirty, true);
 });
 
-test("writeMarker records the kind for HEAD and rejects anything else", (t) => {
+test("a clean merge of main after a review leaves nothing to review", (t) => {
   const r = repo();
   t.after(r.cleanup);
-  const head = r.commit("a.txt", "1\n");
-  const file = writeMarker({ cwd: r.dir, kind: "delta" });
-  assert.equal(path.basename(file), head);
-  assert.equal(readFileSync(file, "utf8"), "delta\n");
-  assert.throws(() => writeMarker({ cwd: r.dir, kind: "" }), /marker kind/);
-  assert.throws(() => writeMarker({ cwd: r.dir, kind: "skip" }), /marker kind/);
-  assert.throws(() => writeMarker({ cwd: r.dir, kind: "target" }), /marker kind/, "a partial review is never push evidence");
+  r.mark(r.commit("a.txt", "1\n2\n3\n"));
+  const newMain = r.advanceMain("m.txt", "main\n");
+  r.git("merge", "-q", "--no-edit", "origin/main");
+  const scope = resolveScope({ cwd: r.dir });
+  assert.equal(scope.mode, "none");
+  assert.equal(scope.branchBase, newMain);
 });
 
-test("a merge since the last review means a full review again", (t) => {
+test("after a clean merge, only the branch's own later change is reviewed", (t) => {
   const r = repo();
   t.after(r.cleanup);
-  r.commit("shared.txt", "1\nbranch\n3\n");
-  mark(r.dir, r.git("rev-parse", "HEAD"), "full\n");
-  r.git("checkout", "-q", "main");
-  const newMain = r.commit("README.md", "base\nmain edit\n");
-  r.git("update-ref", "refs/remotes/origin/main", newMain);
-  r.git("checkout", "-q", "feature");
-  r.git("merge", "-q", "--no-edit", "main");
-  r.commit("fix.txt", "fix\n");
+  r.mark(r.commit("a.txt", "1\n2\n3\n"));
+  r.advanceMain("m.txt", lines(500));
+  r.git("merge", "-q", "--no-edit", "origin/main");
+  r.commit("a.txt", "1\n2\nfix\n");
+  const scope = resolveScope({ cwd: r.dir });
+  assert.equal(scope.mode, "delta");
+  assert.equal(scope.review, "inline");
+  assert.equal(scope.files, 1, "main's 500-line file is not in the delta");
+  assert.equal(scope.changedLines, 2);
+  const diff = execFileSync("git", ["-C", r.dir, "diff", "--name-only", scope.base, scope.head], { encoding: "utf8" }).trim();
+  assert.equal(diff, "a.txt", "base is a tree the reviewer can diff against");
+});
+
+test("an edit hidden inside a merge commit is still reviewed", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.mark(r.commit("a.txt", "1\n"));
+  r.advanceMain("m.txt", "main\n");
+  r.git("merge", "-q", "--no-commit", "origin/main");
+  writeFileSync(path.join(r.dir, "a.txt"), "1\nsneaky\n");
+  r.git("add", "-A");
+  r.git("commit", "-q", "--no-edit");
+  const scope = resolveScope({ cwd: r.dir });
+  assert.equal(scope.mode, "delta");
+  assert.equal(scope.files, 1);
+  assert.equal(scope.changedLines, 1);
+});
+
+test("when the reviewed work conflicts with main, the whole branch is reviewed again", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.mark(r.commit("README.md", "branch\n"));
+  const newMain = r.advanceMain("README.md", "main\n");
+  assert.throws(() => r.git("merge", "-q", "--no-edit", "origin/main"));
+  writeFileSync(path.join(r.dir, "README.md"), "main\n"); // resolved by taking main's side whole
+  r.git("add", "-A");
+  r.git("commit", "-q", "--no-edit");
   const scope = resolveScope({ cwd: r.dir });
   assert.equal(scope.mode, "full");
   assert.equal(scope.base, newMain);
-  assert.equal(scope.files, 2, "the branch's net change against the merged main");
 });
 
-test("`merged` marks only a commit already on origin/main, and never counts as a branch review", (t) => {
+test("a modify/delete conflict resolved to main's side is not waved through", (t) => {
   const r = repo();
   t.after(r.cleanup);
   r.git("checkout", "-q", "main");
-  assert.equal(readFileSync(writeMarker({ cwd: r.dir, kind: "merged" }), "utf8"), "merged\n");
-  r.git("checkout", "-q", "feature");
-  const own = r.commit("a.txt", "1\n");
-  assert.throws(() => writeMarker({ cwd: r.dir, kind: "merged" }), /only for a commit already on origin\/main/);
-  mark(r.dir, own, "merged\n");
+  const withF = r.commit("f.txt", "1\n");
+  r.git("update-ref", "refs/remotes/origin/main", withF);
+  r.git("checkout", "-q", "-B", "feature", withF);
+  r.git("rm", "-q", "f.txt");
+  r.git("commit", "-q", "-m", "delete f");
+  r.mark();
+  r.advanceMain("f.txt", "1\nmain edit\n");
+  assert.throws(() => r.git("merge", "-q", "--no-edit", "origin/main"));
+  r.git("checkout", "origin/main", "--", "f.txt"); // restores the file the branch deleted
+  r.git("commit", "-q", "--no-edit");
+  assert.equal(resolveScope({ cwd: r.dir }).mode, "full");
+  assert.equal(checkCommit({ cwd: r.dir, sha: r.git("rev-parse", "HEAD") }).ok, false);
+});
+
+test("a git without merge-tree --write-tree fails loudly instead of going full", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.mark(r.commit("a.txt", "1\n"));
+  r.advanceMain("m.txt", "main\n");
+  r.git("merge", "-q", "--no-edit", "origin/main");
+  // Stands in for git < 2.38, whose merge-tree takes `--write-tree` as a revision and dies.
+  const bin = mkdtempSync(path.join(tmpdir(), "old-git-"));
+  const realGit = execFileSync("bash", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  writeFileSync(
+    path.join(bin, "git"),
+    `#!/bin/sh\ncase " $* " in *" merge-tree "*) echo "fatal: unknown rev --write-tree" >&2; exit 128;; esac\nexec "${realGit}" "$@"\n`,
+  );
+  chmodSync(path.join(bin, "git"), 0o755);
+  const saved = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${saved}`;
+  t.after(() => {
+    process.env.PATH = saved;
+    rmSync(bin, { recursive: true, force: true });
+  });
+  assert.throws(() => resolveScope({ cwd: r.dir }), /merge-tree --write-tree failed .*--full/);
+  assert.equal(resolveScope({ cwd: r.dir, full: true }).mode, "full", "--full still works");
+});
+
+test("markers on commits outside <merge-base>..HEAD (a rebase) don't count", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.mark(r.commit("a.txt", "1\n"));
+  const newMain = r.advanceMain("main.txt", "m\n");
+  r.git("checkout", "-q", "-b", "rebased", "origin/main");
+  r.commit("a.txt", "1\n");
+  const scope = resolveScope({ cwd: r.dir });
+  assert.equal(scope.mode, "full");
+  assert.equal(scope.base, newMain);
+});
+
+test("empty legacy markers are not evidence; the 2026-09-23 kinds are", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  const first = r.commit("a.txt", "1\n");
+  r.mark(first);
+  writeFileSync(path.join(r.dir, ".cache", "diff-review", first), "");
   r.commit("b.txt", "1\n");
   assert.equal(resolveScope({ cwd: r.dir }).mode, "full");
+  writeFileSync(path.join(r.dir, ".cache", "diff-review", first), "delta\n");
+  assert.equal(resolveScope({ cwd: r.dir }).mode, "delta");
+});
+
+test("a marker on another branch merged in doesn't count as this branch's review", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.git("checkout", "-q", "-b", "other");
+  r.mark(r.commit("other.txt", "reviewed there\n"));
+  r.git("checkout", "-q", "feature");
+  r.commit("mine.txt", "never reviewed\n");
+  r.git("merge", "-q", "--no-edit", "other");
+  const scope = resolveScope({ cwd: r.dir });
+  assert.equal(scope.mode, "full");
+  assert.equal(scope.reviewed, null);
+});
+
+test("a local branch named origin/main can't stand in for the real one", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.git("checkout", "-q", "-b", "origin/main");
+  const own = r.commit("a.txt", "unreviewed\n");
+  const verdict = checkCommit({ cwd: r.dir, sha: own });
+  assert.equal(verdict.ok, false);
+  assert.equal(resolveScope({ cwd: r.dir }).branchBase, r.base);
+});
+
+test("the scope is of the commit named, not of whatever HEAD is", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  const pushed = r.commit("a.txt", "1\n");
+  r.git("checkout", "-q", "-b", "elsewhere", r.base);
+  r.mark(r.commit("b.txt", "reviewed\n"));
+  const scope = resolveScope({ cwd: r.dir, head: pushed });
+  assert.equal(scope.head, pushed);
+  assert.equal(scope.mode, "full");
+  assert.equal(checkCommit({ cwd: r.dir, sha: pushed }).ok, false);
+  assert.throws(() => checkCommit({ cwd: r.dir, sha: undefined }), /needs the SHA/);
+});
+
+test("writeMarker records HEAD", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  const head = r.commit("a.txt", "1\n");
+  const file = writeMarker({ cwd: r.dir });
+  assert.equal(path.basename(file), head);
+  assert.equal(readFileSync(file, "utf8"), "reviewed\n");
+  assert.equal(resolveScope({ cwd: r.dir }).mode, "none");
+});
+
+test("checkCommit passes commits on main and clean merges, and refuses unreviewed work", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  assert.equal(checkCommit({ cwd: r.dir, sha: r.base }).ok, true, "already on origin/main");
+
+  const own = r.commit("a.txt", "1\n");
+  assert.equal(checkCommit({ cwd: r.dir, sha: own }).ok, false, "a first review is owed");
+  r.mark(own);
+
+  r.advanceMain("m.txt", "main\n");
+  r.git("merge", "-q", "--no-edit", "origin/main");
+  const merge = r.git("rev-parse", "HEAD");
+  assert.equal(checkCommit({ cwd: r.dir, sha: merge }).ok, true, "a clean merge of main carries the review");
+
+  const fix = r.commit("a.txt", "1\n2\n");
+  const verdict = checkCommit({ cwd: r.dir, sha: fix });
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.reason, /1 file\(s\), 1 line\(s\) unreviewed/);
 });

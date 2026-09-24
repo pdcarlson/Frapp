@@ -32,7 +32,7 @@ owner's call, in the UI.
 
 ## Shared ownership boundary (all routines)
 
-The routine skills and the tracker angle of [`diff-review`](../../../.claude/skills/diff-review/SKILL.md)
+The routine skills and the tracker angle of [`diff-review`](../../../.claude/skills/diff-review/angles.md)
 point here instead of restating these rules. Policy detail:
 [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
 

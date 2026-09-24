@@ -158,6 +158,6 @@ Whether a change owes a doc edit: [`AGENTS.md` § Documentation discipline](../.
 
 ### What CI checks
 
-No check requires you to touch a doc — the one that did was deleted in #1597 because it could only see that *some* doc moved, not whether it was the right one, so it was cheapest to satisfy with filler. What CI does check is narrow: [`DOCS_CI.md` § What runs](../internal/ci-cd/DOCS_CI.md#what-runs). Whether a doc's claims are *true* is reviewed, not gated — by the docs angle in [`diff-review`](../../.claude/skills/diff-review/SKILL.md), against the standard.
+No check requires you to touch a doc — the one that did was deleted in #1597 because it could only see that *some* doc moved, not whether it was the right one, so it was cheapest to satisfy with filler. What CI does check is narrow: [`DOCS_CI.md` § What runs](../internal/ci-cd/DOCS_CI.md#what-runs). Whether a doc's claims are *true* is reviewed, not gated — by the docs angle in [`diff-review`](../../.claude/skills/diff-review/angles.md), against the standard.
 
 See [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md).
