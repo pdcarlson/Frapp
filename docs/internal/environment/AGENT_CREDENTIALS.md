@@ -19,12 +19,28 @@ APIs before proposing changes. Usage policy for `GITHUB_PAT` lives in
 | Env var | Typical use |
 | ------- | ----------- |
 | `GITHUB_PAT` | GitHub PAT — branch-protection script, agent-owned PRs/issues; export as `GH_TOKEN` for `gh` |
-| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI / management |
 | `INFISICAL_SERVICE_TOKEN` | Infisical service token (`st.*` format — scoped at mint time; per [#1279](https://github.com/pdcarlson/Frapp/issues/1279) minted `dev` + `staging` **read-only**, never `prod`, and confirmed so against `GET /api/v2/service-token` on 2026-08-27). The Infisical CLI reads it as `INFISICAL_TOKEN`: `export INFISICAL_TOKEN="$INFISICAL_SERVICE_TOKEN"` |
 | `INFISICAL_PROJECT_ID` | Infisical project (workspace) id — same value as `workspaceId` in `.infisical.json` |
-| `RENDER_API_KEY` | Render API |
-| `VERCEL_API_KEY` | Vercel API |
-| `SUPABASE_API_KEY` | Supabase Management API |
+
+**Render, Vercel and Supabase go through their MCP connectors, not a key.** A session reads
+them with the `mcp__Render__*`, `mcp__Vercel__*` and `mcp__Supabase__*` tools, which don't pass
+through the sandbox allowlist. A key would buy nothing: Render's and Vercel's APIs are off the
+allowlist, and on 2026-09-24 the Supabase Management API answered `000` through the proxy and
+`403` direct. The Render MCP starts with no workspace selected, so pass `workspaceId` on each
+call. Frapp's services (`frapp-api-staging`, `frapp-api-prod`) are in **Paul's workspace**
+(`tea-d6lqqdpaae7s73f60uj0`), and `list_workspaces` also returns an unrelated one (checked
+2026-09-24 with `list_workspaces` and `list_services`). Recipes:
+[`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md).
+
+**Retired.** Don't use these from a session. If one is still set, tell Paul so he can remove it
+from the Claude Code environment.
+
+| Env var | Status |
+| ------- | ------ |
+| `RENDER_API_KEY` | Removed 2026-09-23 and the agent's Render key revoked ([#2583](https://github.com/pdcarlson/Frapp/issues/2583)). The same name is still a GitHub Actions environment secret: [`AGENT_INFRA.md` § No repository secrets](../ci-cd/AGENT_INFRA.md#no-repository-secrets-2518). |
+| `VERCEL_API_KEY` | Removed 2026-09-24; no live Vercel token matched it. Same Actions caveat as `RENDER_API_KEY`. |
+| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Absent from a session started 2026-09-24T15:43Z. |
+| `SUPABASE_API_KEY`, `SUPABASE_ACCESS_TOKEN` | Still set in a session started 2026-09-24T15:43Z. No script reads `SUPABASE_API_KEY`, and the Management API they authenticate to is unreachable from the sandbox. Remove both. |
 | `LINEAR_API_KEY` | Linear personal API key — **dead**: Linear was retired 2026-08-08 (work tracking moved to GitHub Issues, see [`../ci-cd/GITHUB_PM.md`](../ci-cd/GITHUB_PM.md) and [#680](https://github.com/pdcarlson/Frapp/issues/680)). Revoke it. |
 
 > **Infisical naming.** Older docs said `INFISICAL_API_KEY`; cloud-sandbox sessions don't

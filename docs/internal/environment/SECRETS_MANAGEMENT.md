@@ -400,6 +400,6 @@ When running infrastructure automation (agents/scripts), validate provider API c
 
 Important:
 
-- Keep provider API keys distinct (`VERCEL_API_KEY`, `RENDER_API_KEY`, `SUPABASE_API_KEY`, `INFISICAL_SERVICE_TOKEN`).
-- In hosted agent VMs, legacy aliases may still appear in older docs or sessions (`RENDER_APIKEY`, `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`), but prefer the current names `RENDER_API_KEY` and `GITHUB_PAT` when present. (`GITHUB_TOKEN` is also the GitHub Actions runtime token — distinct from the PAT.) For `gh`/git, `export GH_TOKEN="$GITHUB_PAT"`.
+- Keep provider API keys distinct (`VERCEL_API_KEY`, `RENDER_API_KEY`, `SUPABASE_ACCESS_TOKEN`, `INFISICAL_SERVICE_TOKEN`).
+- Hosted agent sessions read Render, Vercel and Supabase through the MCP connectors, not a key. The names a session carries, the retired ones, and their legacy aliases: [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md).
 - Do not reuse one provider's token in another provider variable.
