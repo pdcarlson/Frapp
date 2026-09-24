@@ -7,10 +7,11 @@ import { join } from "node:path";
 import { workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 // The key readers `helpers/workflow-yaml.mjs` added for #2431's workflow test.
-// Each case is a shape that is valid YAML, means the same thing to Actions as
-// its plain form, and once read differently: a guard that reads it wrong
-// either fails a correct workflow (and gets deleted) or passes one that grants
-// more than it asserts.
+// The fixture's shapes are valid YAML that mean the same thing to Actions as
+// their plain form, and were once read differently: a guard that reads one
+// wrong either fails a correct workflow (and gets deleted) or passes one that
+// grants more than it asserts. A flow mapping is the exception by design: the
+// reader refuses it (see the last tests) rather than guess at it.
 
 const WORKFLOW = `name: Example
 on:
@@ -25,7 +26,11 @@ jobs:
     outputs: # the verdict
       outcome: \${{ steps.verify.outputs.outcome }}
       'quoted-out': x
-    permissions: { contents: read, "id-token": write }
+    permissions:
+      contents: read
+      "id-token": write
+    name: '{ Nightly }'
+    concurrency: "deploy #1"
     environment:
       name: staging  # credentials
       deployment:
@@ -38,21 +43,6 @@ jobs:
           "QUOTED": "a, b"
           EMPTY: # nothing
         run: echo
-  flow:
-    outputs: { joined: "\${{ format('{0}, {1}', a, b) }}", other: 'x, y' }
-    steps:
-      - run: echo
-  edges:
-    nested: { a: [x, y], b: c }
-    apostrophe: { note: don't, issues: write }
-    closer: { x: a), y: z }
-    anchored: { contents: &r "read]", issues: write }
-    tagged: { contents: !!str "read]", issues: write }
-    verbatim: { contents: !<tag:yaml.org,2002:str> "read]", issues: write }
-    escaped: { a: "x\\", y", b: z }
-    doubled: { a: 'it''s, ok', b: z }
-    steps:
-      - run: echo
   "quoted-structure":
     "if": \${{ always() }}
     "steps":
@@ -117,34 +107,9 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
       "id-token": "write",
     });
     assert.deepEqual(asObject(build.keys.get("environment")), { name: "staging", deployment: "" });
-  });
-
-  it("splits a flow mapping only on its top-level commas", () => {
-    const flow = workflowJobs(file).find((job) => job.jobId === "flow");
-    assert.deepEqual(asObject(flow.keys.get("outputs")), {
-      joined: "${{ format('{0}, {1}', a, b) }}",
-      other: "x, y",
-    });
-  });
-
-  it("keeps a flow mapping's entries whole through nesting, apostrophes, parentheses and escapes", () => {
-    const edges = workflowJobs(file).find((job) => job.jobId === "edges");
-    const read = (key) => asObject(edges.keys.get(key));
-    assert.deepEqual(read("nested"), { a: "[x, y]", b: "c" });
-    // A quote only opens a quoted scalar where a scalar starts, so the
-    // apostrophe is text and `issues` is still seen.
-    assert.deepEqual(read("apostrophe"), { note: "don't", issues: "write" });
-    assert.deepEqual(read("closer"), { x: "a)", y: "z" });
-    // A node property before a quoted value must not hide what follows it:
-    // `issues: write` here is a scope a permissions guard has to see.
-    assert.deepEqual([...edges.keys.get("anchored").keys()], ["contents", "issues"]);
-    assert.equal(read("anchored").issues, "write");
-    assert.deepEqual([...edges.keys.get("tagged").keys()], ["contents", "issues"]);
-    assert.deepEqual([...edges.keys.get("verbatim").keys()], ["contents", "issues"]);
-    // The escaped quote doesn't end the scalar, so its comma isn't a split.
-    // Values keep their escapes: the helper strips the quotes, not the escapes.
-    assert.deepEqual(read("escaped"), { a: 'x\\", y', b: "z" });
-    assert.deepEqual(read("doubled"), { a: "it''s, ok", b: "z" });
+    // Quoted, these are strings, not a flow mapping and not a comment.
+    assert.equal(build.keys.get("name"), "{ Nightly }");
+    assert.equal(build.keys.get("concurrency"), "deploy #1");
   });
 
   it("reads quoted structural keys: a job's if and steps, and a step's name, if and env", () => {
@@ -189,20 +154,25 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     }
   });
 
-  it("refuses a flow mapping it can't read with confidence, rather than guess", () => {
-    // Each is valid YAML (or, for the last two, not) that this reader doesn't
-    // model. A silent misread could hide a scope; a thrown error can't.
+  it("refuses any flow mapping where it reads keys, on one line or several", () => {
+    // Hand-splitting one misread a new valid shape every round (#2431), and a
+    // misread can hide a scope. Refusing can't.
     for (const flow of [
-      '{ ? "contents]" : read, issues: write }',
-      "{ contents, issues: write }",
-      '{ a: "unclosed, b: c }',
-      "{ a: x], b: c }",
-      // Re-balanced by a later opener: only the in-loop check sees it.
-      "{ a: x], b: [c }",
+      "{ contents: read, issues: write }",
+      '{ contents: read, note: "x #y", issues: write }',
+      "{ contents: &r read, issues: write }",
+      "{ contents: read,\n      issues: write }",
+      "{\n      contents: read\n    }",
     ]) {
-      const variant = join(dir, "unreadable.yml");
-      writeFileSync(variant, `name: X\njobs:\n  j:\n    permissions: ${flow}\n    steps:\n      - run: echo\n`);
-      assert.throws(() => workflowJobs(variant), /can't read the flow collection/, flow);
+      const variant = join(dir, "flow.yml");
+      writeFileSync(
+        variant,
+        `name: X\npermissions: ${flow}\njobs:\n  j:\n    permissions: ${flow}\n    steps:\n      - run: echo\n`,
+      );
+      assert.throws(() => workflowKeys(variant), /is a flow mapping/, `workflow level: ${flow}`);
+      assert.throws(() => workflowJobs(variant)[0].keys, /is a flow mapping/, `job level: ${flow}`);
+      // A caller reading only the job id and condition is never refused.
+      assert.equal(workflowJobs(variant)[0].jobId, "j");
     }
   });
 

@@ -30,9 +30,10 @@ import { workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-ya
 // deploy reaching the owner's phone).
 //
 // Read through `helpers/workflow-yaml.mjs` rather than regexes over the text,
-// so a quoted value, an inline comment or a flow mapping on a correct workflow
-// cannot fail a guard, and a guard on a whole block (`permissions:`) cannot
-// pass on its first line alone.
+// so a quoted value or an inline comment on a correct workflow cannot fail a
+// guard, and a guard on a whole block (`permissions:`) cannot pass on its
+// first line alone. A flow mapping (`{ a: b }`) in this workflow makes the
+// reader throw, by design: write those keys in block form.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO, ".github", "workflows", "verify-deployments.yml");

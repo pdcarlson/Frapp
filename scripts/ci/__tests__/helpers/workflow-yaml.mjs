@@ -32,9 +32,9 @@
 // The shapes read here are the ones GitHub's workflow schema fixes: `env` is a
 // flat map of scalars, and steps are a list of mappings under `steps:`. That
 // makes an indentation reader sufficient; it is not a general YAML parser and
-// should not be used as one. Where it reads a flow collection (`{ a: b }`) it
-// can't split with confidence, it throws instead of guessing, because a guard
-// over a misread value passes. Known gaps: #2629.
+// should not be used as one. A flow mapping (`{ a: b }`) where it reads keys
+// throws instead of being guessed at (see `keysAt`), because a guard over a
+// misread value passes. Known gaps: #2629.
 
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -351,107 +351,22 @@ function opensMapping(raw) {
 }
 
 /**
- * Thrown for a flow collection this reader can't split with confidence. A
- * guard over a misread value fails open (a write scope it never sees), so
- * refusing is the safe answer: the test errors and names the value.
- */
-function unreadableFlow(body, why) {
-  return new Error(
-    `workflow-yaml: can't read the flow collection { ${body.trim()} } (${why}). ` +
-      "This reader handles a subset of YAML; write the mapping in block form, or extend " +
-      "scripts/ci/__tests__/helpers/workflow-yaml.mjs (see #2629).",
-  );
-}
-
-/**
- * A flow collection's body split on its top-level commas: not a comma inside a
- * quoted scalar or a nested collection (`{ a: [x, y], b: "c, d" }` is two
- * entries). Like YAML, a quote opens a quoted scalar only where a scalar
- * starts (after `{`, `[`, `,` or `:`, or after a node property: an `&anchor`,
- * a `!tag` or a verbatim `!<tag>`), so the apostrophe in `note: don't` is
- * plain text. `\"` inside double quotes and `''` inside single quotes are
- * escapes, not the end. Parentheses aren't flow indicators and aren't tracked.
- *
- * It is not a parser. Where the brackets or quotes don't balance, which on
- * valid YAML means a shape it doesn't model, it throws rather than guess.
- */
-function splitFlow(body) {
-  const parts = [];
-  let depth = 0;
-  let quote = null;
-  let start = 0;
-  let scalarStart = true;
-  for (let i = 0; i < body.length; i += 1) {
-    const ch = body[i];
-    if (quote === '"') {
-      if (ch === "\\") i += 1;
-      else if (ch === '"') quote = null;
-      continue;
-    }
-    if (quote === "'") {
-      if (ch === "'" && body[i + 1] === "'") i += 1;
-      else if (ch === "'") quote = null;
-      continue;
-    }
-    if ((ch === "&" || ch === "!") && scalarStart) {
-      // A node property: skip the token and stay at the scalar's start, so a
-      // quoted value after it (`&r "read]"`) is still read as quoted. A
-      // verbatim tag runs to its `>` and may contain commas.
-      if (ch === "!" && body[i + 1] === "<") {
-        const close = body.indexOf(">", i);
-        if (close === -1) throw unreadableFlow(body, "unterminated verbatim tag");
-        i = close;
-      } else {
-        while (i + 1 < body.length && !/[\s,{}[\]]/.test(body[i + 1])) i += 1;
-      }
-      continue;
-    }
-    if ((ch === '"' || ch === "'") && scalarStart) {
-      quote = ch;
-    } else if (ch === "{" || ch === "[") {
-      depth += 1;
-    } else if (ch === "}" || ch === "]") {
-      depth -= 1;
-      if (depth < 0) throw unreadableFlow(body, `unmatched "${ch}"`);
-    } else if (ch === "," && depth === 0) {
-      parts.push(body.slice(start, i));
-      start = i + 1;
-    }
-    if (ch === "{" || ch === "[" || ch === "," || ch === ":") scalarStart = true;
-    else if (!/\s/.test(ch)) scalarStart = false;
-  }
-  if (quote) throw unreadableFlow(body, `unclosed ${quote} quote`);
-  if (depth !== 0) throw unreadableFlow(body, "unclosed bracket");
-  parts.push(body.slice(start));
-  return parts;
-}
-
-/** `{ contents: read, issues: write }` as a Map, or null for any other value. */
-function flowMapping(value) {
-  const body = /^\{(.*)\}$/.exec(value)?.[1];
-  if (body === undefined) return null;
-  const map = new Map();
-  for (const pair of splitFlow(body)) {
-    if (pair.trim() === "") continue;
-    const match = pair.match(new RegExp(String.raw`^\s*${KEY}\s*:\s*(.*)$`));
-    // An entry that isn't `key: value` (an explicit `? key`, a bare key, a
-    // fragment of a misread split) would otherwise vanish silently.
-    if (!match) throw unreadableFlow(body, `entry ${JSON.stringify(pair.trim())} is not "key: value"`);
-    map.set(keyOf(match), scalarValue(match[4]));
-  }
-  return map;
-}
-
-/**
  * The keys at exactly `indent` within `[from, to)`, read the way `env:` is.
  *
- * An inline value comes back as a scalar (`needs: [a, b]` → `"[a, b]"`, quotes
- * and a trailing comment removed); a mapping, block (`outputs:`, with or
- * without an inline comment) or flow (`{ a: b }`), comes back as a flat Map of
- * its immediate children, so `outputs:`, `permissions:` and `environment:` can
- * be asserted key by key rather than by a regex over the text, which a quoted
- * value or a comment would break. A block sequence or a block scalar reads as
- * an empty Map or its indicator; this is not a YAML parser.
+ * An inline scalar comes back as a string (`needs: [a, b]` → `"[a, b]"`, quotes
+ * and a trailing comment removed); a block mapping (`outputs:`, with or
+ * without an inline comment) comes back as a flat Map of its immediate
+ * children, so `outputs:`, `permissions:` and `environment:` can be asserted
+ * key by key rather than by a regex over the text.
+ *
+ * A flow mapping (`permissions: { contents: read }`) THROWS. Splitting one by
+ * hand is a YAML parser by accretion: #2431's review found a new valid shape
+ * it misread in every round (quoted `#`, anchors, tags, verbatim tags,
+ * explicit keys, values spanning lines), and a misread value lets a guard
+ * pass on a scope it never saw. No committed workflow writes one, so the
+ * guarded files use the block form and the reader says so when they don't.
+ * Decided on the RAW value, before quotes are stripped, so `'{ Nightly }'`
+ * stays the string it is.
  */
 function keysAt(lines, from, to, indent) {
   const keys = new Map();
@@ -459,11 +374,16 @@ function keysAt(lines, from, to, indent) {
     if (indentOf(lines[i]) !== indent) continue;
     const match = lines[i].match(new RegExp(String.raw`^\s*${KEY}\s*:(.*)$`));
     if (!match) continue;
+    const key = keyOf(match);
     if (opensMapping(match[4])) {
-      keys.set(keyOf(match), envMapAt(lines, i));
+      keys.set(key, envMapAt(lines, i));
+    } else if (/^\s*\{/.test(match[4])) {
+      throw new Error(
+        `workflow-yaml: \`${key}:\` is a flow mapping (${match[4].trim()}), which this reader ` +
+          "refuses rather than guesses at. Write it in block form, one key per line.",
+      );
     } else {
-      const value = scalarValue(match[4]);
-      keys.set(keyOf(match), flowMapping(value) ?? value);
+      keys.set(key, scalarValue(match[4]));
     }
   }
   return keys;
@@ -520,7 +440,15 @@ export function workflowJobs(workflowPath) {
       }
       break;
     }
-    jobs.push({ jobId: jobIdFrom(lines[from]), if: condition, keys: keysAt(lines, from + 1, to, 4) });
+    jobs.push({
+      jobId: jobIdFrom(lines[from]),
+      if: condition,
+      // Lazy, so a caller that reads only `jobId` and `if` is never refused
+      // over a flow mapping it doesn't look at.
+      get keys() {
+        return keysAt(lines, from + 1, to, 4);
+      },
+    });
   }
   return jobs;
 }
