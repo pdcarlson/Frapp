@@ -51,6 +51,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG_PATH = join(ROOT, ".gitleaks.toml");
@@ -526,6 +527,6 @@ function main() {
 }
 
 // Run only when invoked directly, so tests can import buildGitleaksArgs cleanly.
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isInvokedDirectly(import.meta.url)) {
   main();
 }

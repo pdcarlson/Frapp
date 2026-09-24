@@ -43,6 +43,7 @@
 import { findVercelDeploymentBySha, vercelDeploymentCreatedAt } from "./lib/providers.mjs";
 import { VERCEL_NEUTRAL_TERMINAL_STATES } from "./verify-vercel-deploy.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 const LIST_ALIASES_URL = (deploymentId) =>
   `https://api.vercel.com/v2/deployments/${deploymentId}/aliases`;
@@ -269,8 +270,7 @@ async function main() {
   process.exit(1);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);

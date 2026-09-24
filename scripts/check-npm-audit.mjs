@@ -84,9 +84,10 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ALLOWLIST_PATH = join(ROOT, "scripts", "npm-audit-allowlist.json");
@@ -631,20 +632,6 @@ async function main() {
   console.log("\n✅ npm audit gate passed: no unallowlisted high/critical advisories.");
 }
 
-// realpathSync BOTH sides: Node symlink-resolves the ESM entry's
-// `import.meta.url` by default but never `process.argv[1]`, and with
-// --preserve-symlinks-main it resolves neither — either asymmetry would make
-// the comparison fail and silently skip main(), the gate exiting 0 having
-// checked nothing (observed with checkouts reached through symlinked paths).
-function isInvokedDirectly() {
-  if (!process.argv[1]) return false;
-  try {
-    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
-  } catch {
-    return false;
-  }
-}
-
 /**
  * The exit-code split, as a function so it can be tested (pure — unit-tested).
  * Inlined in the entry guard it was unreachable from a test, and flipping it
@@ -667,7 +654,7 @@ export function noVerdictHint(error) {
     : "   Re-running will reprint this: fix what the message names first.";
 }
 
-if (isInvokedDirectly()) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     const code = exitCodeFor(error);
     console.error(`❌ npm audit gate: ${error.message}`);

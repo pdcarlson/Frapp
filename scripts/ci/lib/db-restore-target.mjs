@@ -19,10 +19,9 @@
 // password. Resolution goes through `getEnvironment`, not a copy of the ref,
 // so a renamed production project updates one file.
 
-import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 import { getEnvironment } from "./environments.mjs";
+import { isInvokedDirectly } from "./invoked-directly.mjs";
 
 /**
  * Strip password material so a staging URL whose password happens to contain
@@ -123,16 +122,7 @@ export function assertDbRestoreTarget({
   };
 }
 
-function invokedDirectly() {
-  if (!process.argv[1]) return false;
-  try {
-    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
-  } catch {
-    return process.argv[1].endsWith("db-restore-target.mjs");
-  }
-}
-
-if (invokedDirectly()) {
+if (isInvokedDirectly(import.meta.url)) {
   try {
     assertDbRestoreTarget({ dbUrl: process.env.DB_URL });
   } catch (error) {

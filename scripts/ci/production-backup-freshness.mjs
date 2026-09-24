@@ -33,6 +33,7 @@ import {
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const WORKFLOW_FILE = "db-backup.yml";
 export const DEFAULT_BRANCH = "main";
@@ -357,8 +358,7 @@ async function main() {
   process.exit(watchdog.outcome === "pass" ? 0 : 1);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);

@@ -39,6 +39,7 @@ import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { fetchWithRetry } from "./lib/http.mjs";
 import { fetchJson, fetchRenderDeploys } from "./lib/providers.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 export const V_TAG_REF = /^refs\/tags\/v\d+\.\d+\.\d+$/;
@@ -481,8 +482,7 @@ async function main() {
   process.exit(watchdog.outcome === "pass" ? 0 : 1);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);

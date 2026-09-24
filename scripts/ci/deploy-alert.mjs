@@ -75,6 +75,7 @@ import {
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 // ── Alert issue identity ────────────────────────────────────────────────────
 // Title is the primary key: it is looked up by exact match, so it must stay
@@ -1001,8 +1002,7 @@ async function main() {
   });
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);
