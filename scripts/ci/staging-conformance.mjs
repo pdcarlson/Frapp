@@ -601,20 +601,25 @@ export function leftoverSignetMailerSubjectKeys(data) {
 }
 
 /**
- * What a reader of the Magic Link email can see: the text between tags, plus
- * `alt` and `title` values, which a mail client shows when it blocks images.
- * Style and script blocks and HTML comments are dropped, as are the other
- * attributes, so a crest served under its design-system file name
+ * The Magic Link template with the markup that never renders taken out:
+ * style and script blocks, and the values of attributes that only address or
+ * style something (`src`, `srcset`, `href`, `class`, `id`, `style`,
+ * `data-*`). So a crest served under its design-system file name
  * (`/brand/signet-emblem-B.png`) or a `.signet-*` class is not copy.
+ *
+ * Everything else stays, and the check fails closed on it: text, `alt` and
+ * `title` in any quoting (a mail client shows them when it blocks images),
+ * Outlook's conditional blocks, and ordinary comments too. Telling a
+ * comment no one renders from one Outlook does isn't worth a parser, and a
+ * Signet left in a comment is one more line to retype.
  */
 export function magicLinkReadableText(html) {
   return String(html)
-    .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<(style|script)\b[\s\S]*?<\/\1\s*>/gi, " ")
-    .replace(/<[^>]*>/g, (tag) => {
-      const shown = [...tag.matchAll(/\b(?:alt|title)\s*=\s*("[^"]*"|'[^']*')/gi)];
-      return ` ${shown.map((match) => match[1].slice(1, -1)).join(" ")} `;
-    });
+    .replace(
+      /(^|[\s<"'/])(?:src|srcset|href|class|id|style|data-[\w-]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+)/gi,
+      "$1",
+    );
 }
 
 /**
@@ -734,7 +739,7 @@ export async function checkAuthMagicLink({
       "auth-magic-link",
       label,
       FAIL,
-      "mailer_templates_magic_link_content still says Signet (retype the heading and link text as Frapp; keep the token_hash href)",
+      "mailer_templates_magic_link_content still says Signet outside src/href/class (retype it as Frapp wherever a reader can meet it: heading, link text, an image's alt or title, an Outlook-only block; keep the token_hash href)",
     );
   }
   return result("auth-magic-link", label, PASS, `subject=${subject}; token_hash href`);

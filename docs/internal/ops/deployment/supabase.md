@@ -157,9 +157,12 @@ step 3, `auth-smtp` and `auth-magic-link` expect Frapp: the sender name, the Mag
 subject, no `mailer_subjects_*` that says Signet, and no Signet in the Magic Link body's
 text. The consoles are the owner's to change, in this order, before the next scheduled run
 (staging 07:30 UTC, production 07:45 UTC). Production's step waits on Deploy production,
-which is dispatched by hand, so merge after 07:45 UTC and deploy production the same day;
-until both are done, the Production Auth drift alert is expected, and it closes on the
-first run that passes:
+which is dispatched by hand, so merge once that day's Production Auth conformance run has
+started (scheduled runs often start late, and each checks out `main` as it starts), and
+deploy production the same day. A slip opens alerts that close on the first run that
+passes: Staging conformance or Production Auth drift for a console not yet retyped, and
+Migration drift for `20260924170000` if production hasn't deployed by the 07:00 UTC check
+more than 24 hours after 2026-09-24 17:00 UTC:
 
 1. **Staging, once the merge has deployed there.** In `frapp-staging` → Authentication:
    SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the subject and

@@ -504,15 +504,32 @@ test("a crest image served under its design-system file name is not a Signet lef
   assert.equal(result.status, PASS);
 });
 
-test("magicLinkReadableText keeps what a reader sees and drops markup", () => {
+test("magicLinkReadableText drops only markup that never renders", () => {
   const text = magicLinkReadableText(
-    '<style>.signet-emblem{width:1px}</style><!-- Signet crest -->' +
-      '<img src="/brand/signet-emblem-B.png" alt="Frapp crest" title=\'Frapp\' class="signet-mark">' +
-      '<h2>Sign in to Frapp</h2><a href="{{ .RedirectTo }}">Sign in</a>',
+    '<style>.signet-emblem{width:1px}</style>' +
+      '<img src="/brand/signet-emblem-B.png" srcset=/brand/signet-emblem-B@2x.png data-alt="signet-emblem" alt="Frapp crest" class=\'signet-mark\'>' +
+      '<h2>Sign in to Frapp</h2><a href="https://frapp.live/signet-guide">Sign in</a>',
   );
   assert.doesNotMatch(text, /signet/i);
-  assert.match(text, /Frapp crest/);
+  assert.match(text, /alt="Frapp crest"/);
   assert.match(text, /Sign in to Frapp/);
+});
+
+test("the body check fails closed: Outlook blocks, comments and unquoted alt still count", async () => {
+  const link = '<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a>';
+  for (const leftover of [
+    "<!--[if mso]><center>Sign in to Signet</center><![endif]-->",
+    "<!-- Signet crest -->",
+    '<img src="/brand/crest.png" alt=Signet>',
+  ]) {
+    const result = await checkAuthMagicLink({
+      accessToken: "t",
+      projectRef: "ref",
+      fetchImpl: async () => magicLinkConfig({ mailer_templates_magic_link_content: `${leftover}<h2>Sign in to Frapp</h2>${link}` }),
+    });
+    assert.equal(result.status, FAIL, leftover);
+    assert.match(result.detail, /alt or title/);
+  }
 });
 
 test("a Magic Link image whose alt or title says Signet fails; a style block naming signet- does not", async () => {

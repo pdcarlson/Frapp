@@ -575,7 +575,10 @@ date — is welcome; inventing a date to turn the gate green is not.
   returns `Frapp System`. Re-running the migration changes nothing.
 - **Promoter notes**: Data only. No schema change, no lock beyond the single
   row, no client dependency. Staging applies on merge to `main`. Production
-  waits for Deploy production; do not dispatch that workflow from this change.
+  applies with Deploy production, which the owner dispatches the same day as
+  part of ADR-25 step 3's console order
+  ([`supabase.md` § ADR-25 step 3](deployment/supabase.md#adr-25-step-3-the-sender-becomes-frapp)).
+  No agent session dispatches it.
 
 **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-the-frapp-system-display_name) § Rollback the Frapp System display_name.
 
