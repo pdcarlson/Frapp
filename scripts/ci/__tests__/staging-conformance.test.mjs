@@ -20,7 +20,7 @@ import {
   AUTH_SMTP_SENDER_NAME,
   checkAuthMagicLink,
   leftoverSignetMailerSubjectKeys,
-  magicLinkReadableText,
+  SIGNET_PRODUCT_NAME,
   checkInfisicalSyncs,
   checkProjectStatus,
   checkRenderAutoDeploy,
@@ -504,25 +504,29 @@ test("a crest image served under its design-system file name is not a Signet lef
   assert.equal(result.status, PASS);
 });
 
-test("magicLinkReadableText drops only the design system's lowercase signet- identifiers", () => {
-  const text = magicLinkReadableText(
-    '<style>.signet-mark{color:var(--signet-accent-text)}</style>' +
-      '<td background="https://frapp.live/brand/signet-emblem-B.png"><img class="x"src="/brand/signet-emblem-B.png" data-alt="signet-emblem" alt="Frapp crest">' +
-      '<svg><use xlink:href="#signet-emblem"/></svg><h2 aria-labelledby="signet-heading">Sign in to Frapp</h2>',
-  );
-  assert.doesNotMatch(text, /signet/i);
-  assert.match(text, /alt="Frapp crest"/);
-  assert.match(text, /Sign in to Frapp/);
+test("SIGNET_PRODUCT_NAME matches the product name, never the design system's lowercase identifiers", () => {
+  for (const identifier of [
+    '<td background="https://frapp.live/brand/signet-emblem-B.png">',
+    '<img class="x"src="https://img.example/?u=https%3A%2F%2Ffrapp.live%2Fbrand%2Fsignet-emblem-B.png">',
+    '<svg><use xlink:href="#signet-emblem"/></svg><h2 aria-labelledby="signet-heading">',
+    '<p style="color:var(--signet-accent-text)" data-alt="signet-emblem" class="signet-mark">',
+  ]) {
+    assert.doesNotMatch(identifier, SIGNET_PRODUCT_NAME, identifier);
+  }
+  for (const name of ["Sign in to Signet", 'alt="SignetCrest"', "SIGNET", "signet-Signet"]) {
+    assert.match(name, SIGNET_PRODUCT_NAME, name);
+  }
 });
 
-test("the body check fails closed: comments, Outlook blocks, style content and unquoted alt still count", async () => {
+test("the body check fails closed on the product name: comments, Outlook blocks, style content and alt", async () => {
   const link = '<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a>';
   for (const leftover of [
     "<!--[if mso]><center>Sign in to Signet</center><![endif]-->",
     "<!-- Signet crest -->",
     '<img src="/brand/crest.png" alt=Signet>',
+    '<img src="/brand/crest.png" alt="SignetCrest">',
     '<style>.brand::before{content:"Signet"}</style>',
-    "<p>sign in to signet</p>",
+    "<h1>SIGNET</h1>",
   ]) {
     const result = await checkAuthMagicLink({
       accessToken: "t",
@@ -530,7 +534,7 @@ test("the body check fails closed: comments, Outlook blocks, style content and u
       fetchImpl: async () => magicLinkConfig({ mailer_templates_magic_link_content: `${leftover}<h2>Sign in to Frapp</h2>${link}` }),
     });
     assert.equal(result.status, FAIL, leftover);
-    assert.match(result.detail, /paste the body from supabase\.md/);
+    assert.match(result.detail, /supabase\.md § Auth settings/);
   }
 });
 

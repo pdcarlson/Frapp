@@ -48,7 +48,10 @@ export function mailerSubjectLockProblems(source) {
   if (!/mailer_subjects contain Signet/.test(source)) {
     problems.push("fail detail must name leftover keys, not subject text");
   }
-  if (!/if \(\/\\bSignet\\b\/i\.test\(magicLinkReadableText\(content\)\)\) \{/.test(source)) {
+  if (!/export const SIGNET_PRODUCT_NAME = \/Signet\|SIGNET\/;/.test(source)) {
+    problems.push("SIGNET_PRODUCT_NAME must stay the case-sensitive /Signet|SIGNET/");
+  }
+  if (!/if \(SIGNET_PRODUCT_NAME\.test\(content\)\) \{/.test(source)) {
     problems.push("checkAuthMagicLink must fail a Magic Link body that says Signet");
   }
   const skipAt = source.indexOf('!host && whenSmtpUnset === "skip"');
@@ -103,7 +106,7 @@ test("dropping the /Signet/i leftover match fails", () => {
 
 test("dropping the Magic Link body's Signet check fails", () => {
   const source = readRepo(CONFORMANCE).replace(
-    "if (/\\bSignet\\b/i.test(magicLinkReadableText(content))) {",
+    "if (SIGNET_PRODUCT_NAME.test(content)) {",
     "if (false) {",
   );
   const problems = mailerSubjectLockProblems(source);

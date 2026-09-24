@@ -601,18 +601,16 @@ export function leftoverSignetMailerSubjectKeys(data) {
 }
 
 /**
- * The Magic Link template with the design system's identifiers taken out:
- * lowercase `signet-…` tokens, which is how its file names, classes and
- * custom properties are spelled (`/brand/signet-emblem-B.png`, `signet-mark`,
- * `--signet-accent-text`). Nothing else is removed, so the check fails closed
- * on the product name anywhere in the body (text, `alt` and `title`,
- * comments, Outlook-only blocks, style and script content), however the
- * markup around it is written. The known gap is a name split by markup or
- * an entity (`Sig<span>net</span>`, `&#83;ignet`), which no one types.
+ * The product name as copy spells it: `Signet`, or `SIGNET` in a heading.
+ * ADR-25 keeps "signet" only as the design system's name, and its
+ * identifiers are always lowercase (`/brand/signet-emblem-B.png`,
+ * `signet-mark`, `--signet-accent-text`), so matching case-sensitively
+ * leaves them alone without parsing the HTML. It matches anywhere in the
+ * Magic Link body (text, `alt` and `title`, comments, Outlook-only blocks,
+ * style content), glued to another word or not. The gap is the name in
+ * lowercase, which the product's copy never used.
  */
-export function magicLinkReadableText(html) {
-  return String(html).replace(/(?<!\w)signet-[\w.-]*/g, " ");
-}
+export const SIGNET_PRODUCT_NAME = /Signet|SIGNET/;
 
 /**
  * Magic Link template stays on the app host via `token_hash`.
@@ -625,8 +623,7 @@ export function magicLinkReadableText(html) {
  *
  * It also holds the product name (ADR-25): the subject must be
  * {@link AUTH_MAGIC_LINK_SUBJECT}, no `mailer_subjects_*` may say Signet, and
- * neither may the body outside the design system's lowercase `signet-…`
- * identifiers ({@link magicLinkReadableText}).
+ * the body may not spell the product name ({@link SIGNET_PRODUCT_NAME}).
  *
  * `whenSmtpUnset`:
  * - `"fail"` (default, staging): empty `smtp_host` does not skip this check.
@@ -727,12 +724,12 @@ export async function checkAuthMagicLink({
   }
   // The subject is compared exactly, but the body is free text: a heading or
   // link text left on the old name would reach every inbox with nothing red.
-  if (/\bSignet\b/i.test(magicLinkReadableText(content))) {
+  if (SIGNET_PRODUCT_NAME.test(content)) {
     return result(
       "auth-magic-link",
       label,
       FAIL,
-      "mailer_templates_magic_link_content still says Signet outside a lowercase signet-… file or class name (heading, link text, an image's alt or title, a comment or an Outlook-only block; paste the body from supabase.md § ADR-25 step 3 and keep the token_hash href)",
+      "mailer_templates_magic_link_content still says Signet (a heading, link text, an image's alt or title, a comment or an Outlook-only block; paste the Magic Link body documented in docs/internal/ops/deployment/supabase.md § Auth settings, which keeps the token_hash href)",
     );
   }
   return result("auth-magic-link", label, PASS, `subject=${subject}; token_hash href`);
