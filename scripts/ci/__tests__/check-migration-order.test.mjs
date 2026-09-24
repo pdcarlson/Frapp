@@ -659,7 +659,7 @@ test("no snapshot and no token is an invocation error once a read is needed", as
   const base = [m("20260101000000", "a")];
   const code = await runOrderGate({
     // "" rather than undefined: undefined takes the parameter default, which
-    // reads this process's SUPABASE_ACCESS_TOKEN (set in agent sandboxes).
+    // reads this process's SUPABASE_ACCESS_TOKEN(_<ENV>) if any is set.
     accessToken: "",
     baseRef: "origin/main",
     environments: ENVIRONMENTS,
@@ -669,4 +669,61 @@ test("no snapshot and no token is an invocation error once a read is needed", as
     ...quiet,
   });
   assert.equal(code, 2);
+});
+
+test("a live read takes each environment's own token (#2583)", async () => {
+  // Each Infisical environment's token reads only its own project, so a live
+  // run from a laptop passes SUPABASE_ACCESS_TOKEN_<ENV>; one token for both
+  // would be refused by whichever project it doesn't belong to.
+  const base = [m("20260101000000", "a")];
+  const tokens = { staging: "staging-token", production: "production-token" };
+  const byRef = {
+    [ENVIRONMENTS.staging.supabaseProjectRef]: tokens.staging,
+    [ENVIRONMENTS.production.supabaseProjectRef]: tokens.production,
+  };
+  const seen = [];
+  const fetchImpl = async (url, init = {}) => {
+    const ref = url.match(/\/v1\/projects\/([^/]+)\/database\/migrations$/)?.[1];
+    const token = String(init.headers?.Authorization ?? "").replace(/^Bearer /, "");
+    seen.push([ref, token]);
+    const ok = byRef[ref] === token;
+    return {
+      ok,
+      status: ok ? 200 : 403,
+      text: async () => JSON.stringify(ok ? [{ version: "20260101000000", name: "a" }] : { message: "Forbidden" }),
+    };
+  };
+  const code = await runOrderGate({
+    tokenFor: (label) => tokens[label],
+    baseRef: "origin/main",
+    environments: ENVIRONMENTS,
+    readHead: () => [...base, m("20260901000000", "new")],
+    readBase: () => base,
+    fetchImpl,
+    ...quiet,
+  });
+  assert.equal(code, 0);
+  assert.deepEqual(seen, [
+    [ENVIRONMENTS.staging.supabaseProjectRef, tokens.staging],
+    [ENVIRONMENTS.production.supabaseProjectRef, tokens.production],
+  ]);
+});
+
+test("a live read with no token for one environment names that environment's variable", async () => {
+  const base = [m("20260101000000", "a")];
+  const errors = [];
+  const code = await runOrderGate({
+    tokenFor: (label) => (label === "production" ? "production-token" : ""),
+    baseRef: "origin/main",
+    environments: ENVIRONMENTS,
+    readHead: () => [...base, m("20260901000000", "new")],
+    readBase: () => base,
+    fetchImpl: async () => {
+      throw new Error("must not fetch");
+    },
+    ...quiet,
+    error: (line) => errors.push(line),
+  });
+  assert.equal(code, 2);
+  assert.ok(errors.some((line) => line.includes("SUPABASE_ACCESS_TOKEN_STAGING")), errors.join("\n"));
 });

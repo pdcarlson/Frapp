@@ -109,7 +109,7 @@ describe("infisical-secrets composite action", () => {
   it("passes every input the hand-written call sites used to pass", () => {
     // The extraction is only lossless if the constants the call sites carried
     // are still carried. `include-imports: true` in particular was written at
-    // every site (sixteen at the time; fifteen since #2518) and is NOT the
+    // every site (sixteen at the time; fourteen after #2518, fifteen since #2583) and is NOT the
     // action's default.
     for (const [key, value] of [
       ["method", '"universal"'],

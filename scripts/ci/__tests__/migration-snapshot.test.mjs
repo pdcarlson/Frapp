@@ -386,3 +386,34 @@ test("only the required gates off main wait on a stale snapshot", () => {
   const calls = workflow.match(/uses: \.\/\.github\/actions\/download-migration-snapshot/g) ?? [];
   assert.equal(calls.length, settings.length, "every call site sets on-stale explicitly");
 });
+
+// ── The workflows that inject two Infisical environments ────────────────────
+
+test("each two-environment workflow clears staging's values before the prod injection", () => {
+  // Infisical/secrets-action exports only the keys an environment returns, so
+  // a key missing from `prod` would otherwise keep staging's value and pass
+  // the prod capture's empty-check as production's (a staging token recorded
+  // as production's, or the drift check reading staging twice).
+  const cases = [
+    [".github/workflows/migration-snapshot.yml", ["SUPABASE_ACCESS_TOKEN"]],
+    [".github/workflows/check-migration-drift.yml", ["SUPABASE_ACCESS_TOKEN", "SUPABASE_PROJECT_REF"]],
+  ];
+  for (const [path, names] of cases) {
+    const text = readFileSync(path, "utf8");
+    const staging = text.indexOf('env-slug: "staging"');
+    const prod = text.indexOf('env-slug: "prod"');
+    assert.ok(staging !== -1 && prod > staging, `${path}: staging is injected before prod`);
+    const between = text.slice(staging, prod);
+    for (const name of names) {
+      assert.ok(
+        between.includes(`echo "${name}_STAGING=$${name}" >> "$GITHUB_ENV"`) ||
+          between.includes(`echo "STAGING_PROJECT_REF=$${name}" >> "$GITHUB_ENV"`),
+        `${path}: ${name} is kept under a staging name`,
+      );
+      assert.ok(
+        between.includes(`echo "${name}=" >> "$GITHUB_ENV"`),
+        `${path}: ${name} is cleared before the prod injection`,
+      );
+    }
+  }
+});

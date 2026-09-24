@@ -97,6 +97,10 @@ jobs:
             exit 1
           fi
           echo "SUPABASE_ACCESS_TOKEN_STAGING=$SUPABASE_ACCESS_TOKEN" >> "$GITHUB_ENV"
+          # An injection exports only the keys its environment has, so without
+          # this a token missing from `prod` would keep staging's value and pass
+          # the next check as production's.
+          echo "SUPABASE_ACCESS_TOKEN=" >> "$GITHUB_ENV"
 
       # NOTE: the Infisical slug for production is `prod`, not `production`.
       - name: Inject production secrets from Infisical

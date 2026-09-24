@@ -94,6 +94,11 @@ jobs:
           done
           echo "STAGING_PROJECT_REF=$SUPABASE_PROJECT_REF" >> "$GITHUB_ENV"
           echo "SUPABASE_ACCESS_TOKEN_STAGING=$SUPABASE_ACCESS_TOKEN" >> "$GITHUB_ENV"
+          # An injection exports only the keys its environment has, so without
+          # this a key missing from `prod` would keep staging's value and pass
+          # the next step's check as production's.
+          echo "SUPABASE_PROJECT_REF=" >> "$GITHUB_ENV"
+          echo "SUPABASE_ACCESS_TOKEN=" >> "$GITHUB_ENV"
 
       - name: Inject production secrets from Infisical
         uses: ./.github/actions/infisical-secrets

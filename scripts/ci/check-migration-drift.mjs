@@ -585,7 +585,6 @@ function defaultWriteSummary(summary) {
 export async function runMigrationDriftCheck({
   token,
   repo,
-  accessToken,
   targets,
   local,
   nowMs,
@@ -600,8 +599,7 @@ export async function runMigrationDriftCheck({
 
   for (const target of targets) {
     const remote = await fetchAppliedMigrations({
-      // A target's own token wins; `accessToken` serves every target without one.
-      accessToken: target.accessToken ?? accessToken,
+      accessToken: target.accessToken,
       projectRef: target.ref,
       fetchImpl,
     });
