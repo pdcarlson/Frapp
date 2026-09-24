@@ -46,7 +46,8 @@ export function ReplyQuote({
   /** Drawn instead of the parent when the block list hides it. */
   hiddenText?: string;
   nameFor: (userId: string) => string | null;
-  viewerId: string | null;
+  /** Resolved, like every row surface's (#2250): a null viewer mislabels the member's own quote. */
+  viewerId: string;
   borderColor: string;
   textColor: string;
 }) {

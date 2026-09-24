@@ -68,6 +68,7 @@
        - set the Sign in with Apple Services ID `live.frapp.mobile.web` Description (Apple Developer → Identifiers → Services IDs) to Frapp, because it shows on the web consent sheet;
        - if they say Signet, change the Stripe account's public business name and statement descriptor (Settings → Business → Public details), which checkout, the billing portal and receipts show;
        - and the app name on the Google Cloud OAuth consent screen. No doc records that one, so check it.
+     - *2026-09-24: code, specs and docs done in step 4 ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)). The step's grep found sites inside the list's categories that it doesn't name one by one, all moved with it, among them the analytics sentences, the Accent card's mark sentence and the Discord connect messages in `packages/hooks`. The owner's console steps are tracked in [#2669](https://github.com/pdcarlson/Frapp/issues/2669). The web CSV and ICS names now sit in `frapp-web-copy.test.mjs`, a walk of the dashboard's copy, which replaced `signet-export-filenames`. `signet-calendar-prodid` kept only the UID host and became `ics-uid-host`.*
   5. **Landing and legal.**
      - *Code:*
        - Metadata, the generated OG image, JSON-LD, the hero and footer copy, and the lockup wordmark.

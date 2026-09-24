@@ -2,9 +2,10 @@
 //
 // WHY THIS EXISTS. ADR-25 names the product Frapp, and step 3 moved the
 // server off "Signet": error messages, the report PDF (producer, creator,
-// footer) and its download name, the ICS PRODID, and the OpenAPI text. The
-// invite email, the OpenAPI title, the system actor and the Auth conformance
-// constants keep their own locks (frapp-invite-from, frapp-public-title,
+// footer) and its download name, the ICS PRODID, and the OpenAPI text. Step
+// 4 moved the Discord error messages, with the web import screens they appear
+// on. The invite email, the OpenAPI title, the system actor and the Auth
+// conformance constants keep their own locks (frapp-invite-from, frapp-public-title,
 // frapp-system-display-name, frapp-smtp-sender-name, frapp-mailer-subjects).
 // The walk here is what makes those pinned sites not the whole story: a new
 // error message that says Signet fails without anyone listing it.
@@ -13,26 +14,21 @@
 // - A walk of apps/api/src's non-spec .ts files and the committed
 //   openapi.json: no whole word "Signet" and no signet- download filename
 //   outside the comment a line starts with (the note on LINE_BREAK in
-//   ../lib/copy-lines.mjs says why). Two things pass:
-//   - DESIGN_SYSTEM_PHRASE. "Signet" stays the design system's name until the
-//     internals series after the beta, and the palette engine's server log
-//     lines name its accent ("Signet accent contrast below AA"). Only that
-//     phrase passes. The OpenAPI descriptions of the same checks say "accent
-//     role" and "design system §8" instead, because /docs is public; the
-//     `--signet-*` role names in them are identifiers, not the word.
-//   - STEP_4_FILES. ADR-25 moves the API's Discord error messages with step
-//     4, file by file, together with the web import screens they appear on
-//     and the Discord application and bot they name. Some of them name only
-//     the product ("Pick a Signet channel"), and they wait too, so the error
-//     reads like the screen around it until step 4. Step 4 empties the list;
-//     an entry whose file no longer says Signet fails, so it can't go stale.
+//   ../lib/copy-lines.mjs says why). One thing passes, DESIGN_SYSTEM_PHRASE.
+//   "Signet" stays the design system's name until the internals series after
+//   the beta, and the palette engine's server log lines name its accent
+//   ("Signet accent contrast below AA"). Only that phrase passes. The OpenAPI
+//   descriptions of the same checks say "accent role" and "design system §8"
+//   instead, because /docs is public; the `--signet-*` role names in them are
+//   identifiers, not the word. The three Discord files were exempt until
+//   step 4 renamed them.
 // - The report PDF filename and the ICS PRODID, pinned by value. A rename
 //   that dropped the brand altogether would pass the walk. The Jest specs
 //   assert the same values, but only this ratchet runs without `npm ci`.
 //
 // SCOPE. apps/api only. Identifiers are not copy and stay: the
 // `signet_role_key` field, the `--signet-*` roles, `SIGNET_ENGINE_VERSION`,
-// and the @frapp.live ICS UID host (signet-calendar-prodid keeps that).
+// and the @frapp.live ICS UID host (ics-uid-host keeps that).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -40,7 +36,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { copyMatches } from "../lib/copy-lines.mjs";
+import { copyMatches, SIGNET_DOWNLOAD_NAME } from "../lib/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const API_SRC = join(REPO_ROOT, "apps/api/src");
@@ -53,15 +49,6 @@ const PRODID = "PRODID:-//Frapp//Events//EN";
 
 /** Where a design-system "Signet" starts: the palette engine's accent log lines. */
 export const DESIGN_SYSTEM_PHRASE = /^Signet accent (?:contrast|fill)\b/;
-
-/** ADR-25 step 4 renames these files' Discord error messages. */
-export const STEP_4_FILES = [
-  "apps/api/src/application/services/discord-import.service.ts",
-  "apps/api/src/domain/utils/discord-api-message.ts",
-  "apps/api/src/infrastructure/discord/discord-bot-gateway.service.ts",
-];
-
-const SIGNET_DOWNLOAD_NAME = /\bsignet-[\w-]*(?=[^\n]{0,80}?\.(?:ics|csv|pdf)\b)/gi;
 
 function readRepo(rel) {
   return readFileSync(join(REPO_ROOT, rel), "utf8");
@@ -94,21 +81,12 @@ function liveFiles() {
 
 export function signetCopyProblems(files) {
   return copyMatches(files, /\bSignet\b/g)
-    .filter(({ rel }) => !STEP_4_FILES.includes(rel))
     .filter(({ text, match }) => !DESIGN_SYSTEM_PHRASE.test(text.slice(match.index)))
     .map(({ rel, line }) => `${rel}:${line}`);
 }
 
 export function signetDownloadNameProblems(files) {
   return copyMatches(files, SIGNET_DOWNLOAD_NAME).map(({ rel, line }) => `${rel}:${line}`);
-}
-
-/** A STEP_4 entry must still need step 4, or the exemption outlives its reason. */
-export function staleStep4Problems(files) {
-  return STEP_4_FILES.filter((rel) => {
-    const file = files.find((candidate) => candidate.rel === rel);
-    return !file || copyMatches([file], /\bSignet\b/g).length === 0;
-  }).map((rel) => `${rel} no longer says Signet; take it off STEP_4_FILES`);
 }
 
 export function pinnedSiteProblems({ reportExport, eventService }) {
@@ -128,7 +106,6 @@ test("the API says Frapp, never Signet", () => {
   assert.ok(files.some((file) => file.rel === REPORT_EXPORT), "walk must reach the report export");
   assert.deepEqual(signetCopyProblems(files), []);
   assert.deepEqual(signetDownloadNameProblems(files), []);
-  assert.deepEqual(staleStep4Problems(files), []);
   assert.deepEqual(
     pinnedSiteProblems({
       reportExport: readRepo(REPORT_EXPORT),
@@ -186,22 +163,15 @@ test("design-system phrases and comments pass; the product name after them does 
   );
 });
 
-test("a Signet string passes only in a step-4 Discord file", () => {
+test("a Signet Discord error message fails like any other", () => {
   const source = "throw new Error('Signet could not read that Discord server.');\n";
-  assert.deepEqual(signetCopyProblems([{ rel: STEP_4_FILES[0], source }]), []);
-  assert.deepEqual(
-    signetCopyProblems([{ rel: "apps/api/src/application/services/chat.service.ts", source }]),
-    ["apps/api/src/application/services/chat.service.ts:1"],
-  );
-});
-
-test("a step-4 entry whose file no longer says Signet fails", () => {
-  const files = STEP_4_FILES.map((rel) => ({ rel, source: "throw new Error('Signet bot');\n" }));
-  assert.deepEqual(staleStep4Problems(files), []);
-  files[1] = { rel: STEP_4_FILES[1], source: "// The Signet bot, in a comment only.\nthrow new Error('Frapp bot');\n" };
-  assert.deepEqual(staleStep4Problems(files), [
-    `${STEP_4_FILES[1]} no longer says Signet; take it off STEP_4_FILES`,
-  ]);
+  for (const rel of [
+    "apps/api/src/application/services/discord-import.service.ts",
+    "apps/api/src/domain/utils/discord-api-message.ts",
+    "apps/api/src/infrastructure/discord/discord-bot-gateway.service.ts",
+  ]) {
+    assert.deepEqual(signetCopyProblems([{ rel, source }]), [`${rel}:1`]);
+  }
 });
 
 test("putting signet- back on the report PDF or Signet on the PRODID fails", () => {

@@ -41,7 +41,7 @@ const REQUIRED_ENV_VARS = [
 // All four are needed together; three of the four are not enough to run the
 // flow, which is why `DiscordOAuthService.isAvailable()` checks all of them
 // rather than degrading:
-//   - DISCORD_BOT_TOKEN      ONE global Signet bot token (not per-tenant — the
+//   - DISCORD_BOT_TOKEN      ONE global Frapp bot token (not per-tenant — the
 //                            per-chapter value is a guild id, in the database).
 //   - DISCORD_CLIENT_ID      the Discord application's client id, for the
 //                            authorize URL.

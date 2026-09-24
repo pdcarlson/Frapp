@@ -1,9 +1,10 @@
 // Which lines of a source file are copy, for the name locks.
 //
-// frapp-mobile-copy.test.mjs and frapp-api-copy.test.mjs both walk a surface
-// for a product name that must not ship, and neither may count a comment that
-// names the design system. This is the one rule both read by, so a fix to it
-// reaches both.
+// frapp-mobile-copy, frapp-api-copy and frapp-web-copy each walk a surface
+// for a product name that must not ship, and none may count a comment that
+// names the design system; frapp-web-titles judges the root layout the same
+// way. This is the one rule all four read by, so a fix to it reaches all four,
+// and so is the download-name pattern the three walks share.
 
 /**
  * Why lines and not a scanner. Telling a comment from a string, a regex or
@@ -29,6 +30,14 @@
  */
 export const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
 export const LEADING_COMMENT = /^\s*(?:\/\/|\{?\/\*|\*)/;
+
+/**
+ * A `signet-` token with a `.ics`, `.csv` or `.pdf` later on its line: a
+ * Save-as name. Each token is judged where it stands, so a comment's
+ * `signet-` can't vouch for one in the code after it. Design-system files
+ * (`signet-emblem-B.png`) are not downloads.
+ */
+export const SIGNET_DOWNLOAD_NAME = /\bsignet-[\w-]*(?=[^\n]{0,80}?\.(?:ics|csv|pdf)\b)/gi;
 
 /** Whether `column` of `line` sits in the comment the line starts with. */
 export function inLeadingComment(line, column) {

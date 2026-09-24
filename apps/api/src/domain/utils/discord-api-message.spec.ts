@@ -145,7 +145,7 @@ describe('toExportShapeMessage', () => {
     expect(row!.reply_to_id).toBe('signet-msg-999');
   });
 
-  it('records a Discord pin as a fact without spending a Signet pin slot', () => {
+  it('records a Discord pin as a fact without spending a Frapp pin slot', () => {
     const row = toImportedMessage({
       message: toExportShapeMessage(apiMessage({ pinned: true })),
       channelId: CHANNEL,

@@ -43,7 +43,7 @@ const CREST = /signet-emblem-B\.png/;
  * The walk stays: it is shared with the two sibling walkers below, and the
  * value is one collection strategy across them, not the four lines.
  *
- * `scripts/ci/__tests__/signet-web-titles.test.mjs` walks the same corpus with
+ * `scripts/ci/__tests__/frapp-web-titles.test.mjs` walks the same corpus with
  * `readdirSync` for the same reason. This is that walker, and every API it uses
  * predates Node 20 by several majors.
  */

@@ -34,7 +34,7 @@ const READABLE_CHANNEL_TYPES = new Set<number>([
  * itself has no message list — `GET /channels/{id}/messages` answers 400
  * (`50024`, "Cannot execute action on this channel type"). Offering one as a
  * mappable destination therefore fails the whole import the moment the worker
- * reaches it, after it has already minted a Signet channel for it.
+ * reaches it, after it has already minted a Frapp channel for it.
  *
  * So a forum is enumerated as a thread PARENT and never as an importable
  * channel: its posts import, each inheriting the mapping the admin gave — and
@@ -267,7 +267,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       const rest =
         privateDenied.length > 5 ? ` and ${privateDenied.length - 5} more` : '';
       warnings.push(
-        `Private archived threads were not read in ${privateDenied.length} channel(s) (${shown}${rest}): the Signet bot is installed read-only, and Discord requires the "Manage Threads" permission to list them. Everything else in those channels — including public archived threads — was imported.`,
+        `Private archived threads were not read in ${privateDenied.length} channel(s) (${shown}${rest}): the Frapp bot is installed read-only, and Discord requires the "Manage Threads" permission to list them. Everything else in those channels — including public archived threads — was imported.`,
       );
     }
 
@@ -361,7 +361,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
 
       if (page === MAX_ARCHIVED_THREAD_PAGES - 1) {
         warnings.push(
-          `#${parent.name} has more archived ${visibility} threads than Signet enumerates in one import (${MAX_ARCHIVED_THREAD_PAGES * 100}); the oldest were not imported.`,
+          `#${parent.name} has more archived ${visibility} threads than Frapp enumerates in one import (${MAX_ARCHIVED_THREAD_PAGES * 100}); the oldest were not imported.`,
         );
       }
     }

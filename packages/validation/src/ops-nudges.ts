@@ -60,13 +60,13 @@ export interface OpsNudgeModule {
 export const OPS_NUDGE_MODULES = [
   {
     key: "dues",
-    headline: "Collect dues in Signet",
+    headline: "Collect dues in Frapp",
     description:
       "Invoices, payment plans, and card or ACH payments, tracked against your roster.",
   },
   {
     key: "events",
-    headline: "Run your calendar in Signet",
+    headline: "Run your calendar in Frapp",
     description:
       "RSVPs, QR check-in, and attendance that grants points automatically.",
   },

@@ -18,6 +18,7 @@ import {
   useActiveChapterId,
   useChannel,
   useChannelNotificationPreferences,
+  useCurrentUser,
   useMarkChannelRead,
   useMemberDisplayNames,
   useRequestChatUploadUrl,
@@ -38,6 +39,7 @@ import {
   useNotificationLevelMenu,
 } from "@/components/chat/notification-level-control";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
+import { ErrorState } from "@/components/state-block";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
 import {
   confirmUnblockMember,
@@ -136,6 +138,12 @@ export default function ChatThreadScreen() {
     retry,
     discard,
   } = useChatChannel(channelId);
+
+  // `viewerId` is `null` both while `/v1/users/me` is in flight and after it
+  // failed, and a row can't be drawn in either case (#2250): self and incoming
+  // are the only two bubble shapes, and a null viewer reads every message as
+  // incoming. The query's own status tells the two apart, as on tasks.tsx.
+  const viewerQuery = useCurrentUser();
 
   // One cached roster fetch per chapter names every author in the thread.
   // Resolving by `sender_id` is what makes it work for a message that arrived
@@ -401,6 +409,9 @@ export default function ChatThreadScreen() {
 
   const renderItem = useCallback(
     ({ item }: { item: ThreadRow }) => {
+      // Unreachable while the gate below withholds the list, and here so the
+      // row's non-nullable `viewerId` is narrowed rather than asserted.
+      if (!viewerId) return null;
       const replyParent = item.message.reply_to_id
         ? (byId.get(item.message.reply_to_id) ?? null)
         : undefined;
@@ -608,15 +619,31 @@ export default function ChatThreadScreen() {
                 Open a channel from Chat to see its messages.
               </Text>
             </View>
-          ) : isLoading ? (
-            <View style={styles.stateBlock}>
-              <ActivityIndicator color={tokens.color.text.muted} />
-              <Text style={styles.stateBody}>Loading messages…</Text>
-            </View>
           ) : loadError ? (
+            // Ahead of the identity gate, as on web (#2243): a failed read
+            // must not hide behind "Loading messages…" while `/users/me` is
+            // still in flight.
             <View style={styles.stateBlock}>
               <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
               <Text style={styles.stateBody}>{loadError.message}</Text>
+            </View>
+          ) : !viewerId && viewerQuery.isError ? (
+            <View style={styles.stateBlock}>
+              <ErrorState
+                title="Couldn't load your account"
+                body="Chat needs to know which messages are yours before it can show them."
+                onRetry={() => void viewerQuery.refetch()}
+                isRetrying={viewerQuery.isFetching}
+              />
+            </View>
+          ) : isLoading || !viewerId ? (
+            // An unresolved viewer is "not readable yet", the same as messages
+            // still loading (#2250). Rendering rows now would paint the
+            // member's own messages as incoming, then flip them when identity
+            // lands; messages can arrive from cache well before `/users/me`.
+            <View style={styles.stateBlock}>
+              <ActivityIndicator color={tokens.color.text.muted} />
+              <Text style={styles.stateBody}>Loading messages…</Text>
             </View>
           ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
             // Counted after the block list, held rows included: a channel whose

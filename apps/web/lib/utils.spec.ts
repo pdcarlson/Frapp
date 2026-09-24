@@ -80,12 +80,12 @@ describe("downloadCsv", () => {
     URL.revokeObjectURL = vi.fn();
   });
 
-  it("names the download signet-<prefix>-<date>.csv", () => {
+  it("names the download frapp-<prefix>-<date>.csv", () => {
     const clickSpy = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(function (this: HTMLAnchorElement) {
-        expect(this.download).toMatch(/^signet-invoices-\d{4}-\d{2}-\d{2}\.csv$/);
-        expect(this.download).not.toMatch(/^frapp-/);
+        expect(this.download).toMatch(/^frapp-invoices-\d{4}-\d{2}-\d{2}\.csv$/);
+        expect(this.download).not.toMatch(/^signet-/);
       });
 
     downloadCsv([{ amount: "10" }], "invoices");

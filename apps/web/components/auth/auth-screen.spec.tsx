@@ -138,13 +138,14 @@ describe("the redirect chain survives the rebuild", () => {
 });
 
 describe("the copy is the product's, not the milestone's", () => {
-  it.each(SCREENS)("$name says Signet and nothing about staging", ({ render: renderScreen }) => {
+  it.each(SCREENS)("$name never says Signet or anything about staging", ({ render: renderScreen }) => {
     // These four screens shipped "Frapp staging", "Sign in to manage your
     // chapter in staging", "This milestone enables real staging usage" and
     // "Invite redemption writes directly to the chapter membership table" —
-    // to the first screen a member ever sees.
+    // to the first screen a member ever sees. The product is Frapp (ADR-25),
+    // so the retired name is the one banned here.
     const { container } = renderScreen();
-    expect(container.textContent).not.toMatch(/frapp/i);
+    expect(container.textContent).not.toMatch(/signet/i);
     expect(container.textContent).not.toMatch(/staging/i);
     expect(container.textContent).not.toMatch(/milestone/i);
     expect(container.textContent).not.toMatch(/supabase/i);

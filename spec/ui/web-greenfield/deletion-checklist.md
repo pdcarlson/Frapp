@@ -273,8 +273,11 @@ rewrite stating more than the evidence verified. A truncated grep is not a sweep
 And ticking a box records that the ban held **on the date this lane ran**, which is what a checklist
 can assert — none of these five has a CI check behind it, so a later reintroduction would not be
 caught by anything but the next reader. The one exception is now the title lock,
-`scripts/ci/__tests__/signet-web-titles.test.mjs`, which lane 7 re-specified and which does gate the
-"Frapp" half for `apps/web/app/layout.tsx` in CI.
+`scripts/ci/__tests__/frapp-web-titles.test.mjs`, which lane 7 re-specified and which does gate the
+retired product name for `apps/web/app/layout.tsx` in CI. *2026-09-24: it was
+`signet-web-titles.test.mjs` until ADR-25 step 4 ([#2579](https://github.com/pdcarlson/Frapp/issues/2579))
+renamed the product Frapp. The retired name it bans is now Signet, not Frapp, and it is no longer
+the only gate on that row: `frapp-web-copy.test.mjs` walks every copy line in `apps/web` for it.*
 
 ## 8. Resources: Documents and Backwork — lane 4
 
@@ -962,6 +965,11 @@ replays the same failed render against the same cache.
       without it the template change left that tab reading a bare `"Signet"` next to sixteen siblings
       reading `<Page> · Signet`. The other metadata-less routes under `(dashboard)` are `redirect()`
       shims and paint no tab
+- [x] *2026-09-24, ADR-25 step 4 ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)):* the
+      product is Frapp, so the template is now `"%s · Frapp"` and the default `"Frapp"`. The two items
+      above record lane 7 as it landed. The lock was renamed `frapp-web-titles.test.mjs` and flipped:
+      it pins the Frapp template and default, and bans Signet from route titles and the root
+      layout's copy
 - [x] `settings-modules-tab.tsx` shipped "Per-feature toggles arrive with Settings customization
       (Chunk 07)." — the same anachronism as the Accent card's, one tab over on the same page, and
       missed by the first pass because the sweep was scoped to the card being rewritten

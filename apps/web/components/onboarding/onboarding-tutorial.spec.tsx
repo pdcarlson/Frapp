@@ -75,7 +75,7 @@ describe("the slides", () => {
     render(<OnboardingTutorial />);
 
     const titles = [
-      "Welcome to Signet",
+      "Welcome to Frapp",
       "Chat",
       "Events",
       "Backwork",
@@ -102,12 +102,12 @@ describe("the slides", () => {
     expect(screen.queryByText(/theme/i)).not.toBeInTheDocument();
   });
 
-  it("says Signet, not Frapp", () => {
-    // Prose says Signet; only code identifiers, package names, domains and
-    // bundle ids stay `frapp`.
+  it("says Frapp, not Signet", () => {
+    // ADR-25 names the product Frapp. Signet is the design system's internal
+    // name and never reaches a member.
     render(<OnboardingTutorial />);
-    expect(screen.queryByText(/frapp/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/Welcome to Tau Nu on Signet\./)).toBeInTheDocument();
+    expect(screen.queryByText(/signet/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Welcome to Tau Nu on Frapp\./)).toBeInTheDocument();
   });
 });
 

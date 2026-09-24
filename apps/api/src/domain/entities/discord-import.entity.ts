@@ -8,9 +8,9 @@
  * infrastructure: the API image is Node-on-Alpine with no .NET, and Render
  * hosts only web services with ephemeral disk.
  *
- * **`source: 'bot'`** (phase 3) — the chapter installs one Signet-owned bot
+ * **`source: 'bot'`** (phase 3) — the chapter installs one Frapp-owned bot
  * through Discord's ordinary "Add to Server" OAuth flow and the API reads the
- * history itself over the REST API. The bot token is a single global Signet
+ * history itself over the REST API. The bot token is a single global Frapp
  * secret; the only per-chapter value is a guild id, which is public and inert
  * without an install behind it.
  *
@@ -49,21 +49,21 @@ export type DiscordImportChannelStatus =
   'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 
 /**
- * One Discord role as the export recorded it, paired with the Signet role the
+ * One Discord role as the export recorded it, paired with the Frapp role the
  * admin intends for its members.
  *
  * **This grants nothing.** Nothing reads `signet_role_key` to assign a role, and
  * the importer never touches a `members` row — every imported author is a name
  * on a message, not an account. It is a worksheet the admin fills in during the
  * wizard and reads back later when promoting people by hand, which is the
- * model Signet's onboarding already uses. If a future change wants Discord data
+ * model Frapp's onboarding already uses. If a future change wants Discord data
  * to actually grant a permission, that is a new decision and a new review, not
  * a matter of wiring up a field that is already here.
  */
 export interface DiscordRoleMapping {
   discord_role_id: string;
   discord_role_name: string;
-  /** A Signet system-role key. Defaults to the member role for every entry. */
+  /** A Frapp system-role key. Defaults to the member role for every entry. */
   signet_role_key: string;
 }
 
@@ -126,7 +126,7 @@ export interface DiscordImportChannel {
   discord_channel_name: string;
   discord_category: string | null;
   mapping_action: DiscordChannelMappingAction;
-  /** The Signet channel this maps onto. Null until the mapping step runs. */
+  /** The Frapp channel this maps onto. Null until the mapping step runs. */
   target_channel_id: string | null;
   new_channel_name: string | null;
   new_channel_is_read_only: boolean;
