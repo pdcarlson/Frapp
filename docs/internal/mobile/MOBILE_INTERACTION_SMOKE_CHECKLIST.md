@@ -109,7 +109,7 @@ Availability and local-notification checks:
 | Screen | Control | Expected outcome |
 |---|---|---|
 | Settings (`/(tabs)/preferences`) | Push notifications row, Expo Go | Reads "Unavailable" with the Expo Go sentence — not "Off", which would imply a switch the member could flip |
-| First-run (`/(auth)/welcome`, s03) | Push primer card, Expo Go | Not drawn: the screen shows the channels and "Go to chat" only, with no disabled "Turn on" and no apology ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)) |
+| First-run (`/(auth)/welcome`, s03) | Push primer card, Expo Go | Not drawn: the screen shows the channels, then "Go to chat" and "Skip", with no primer card, no disabled "Turn on" and no apology ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)) |
 | Study hours | Background the app mid-session (installed build) | A local "Study session paused" notification appears; returning clears it. **Local** notifications need the native module but no project id and can be tested independently of remote-push setup — this does nothing in Expo Go |
 | Study hours | End a session while paused | The paused notification is cleared rather than left inviting the member back to a session that no longer exists |
 

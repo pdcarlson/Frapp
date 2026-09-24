@@ -72,11 +72,12 @@ export interface PrimerVisibilityInput {
  * Hidden once permission is granted (there is nothing left to ask), and once
  * the member has declined (that was an answer, not a deferral).
  *
- * Also **hidden when push is unavailable** (#2299): Expo Go, web, or a build
- * whose native module did not load. The card's only function is "Turn on", and
- * no member can make their build able to push, so a card there could only
- * disable itself and apologise, which is the placeholder App Review Guideline
- * 2.1 rejects. `spec/ui/design-system/README.md` §5 rule 4 hides it, like the
+ * Also **hidden when push is unavailable** (#2299): `isPushAvailable()` is
+ * false, for any of the causes `spec/ui/mobile/patterns.md` § Push
+ * notifications lists. The card's only function is "Turn on", and nothing on
+ * s03 can make the build able to push, so a card there could only disable
+ * itself and apologise, which is the placeholder App Review Guideline 2.1
+ * rejects. `spec/ui/design-system/README.md` §5 rule 4 hides it, like the
  * ✦ Ask pill in a build without Ask. Settings (s16) still states the reason on
  * its push row, which is where a member who wonders why goes.
  */
@@ -87,8 +88,9 @@ export function shouldOfferPrimer({
 }: PrimerVisibilityInput): boolean {
   if (decision !== "unasked") return false;
   // Not implied by the permission read below. A build that loads the native
-  // module but has no EAS project id reads permission as `false`, and would
-  // offer a "Turn on" that can grant permission but never register a token.
+  // module but has no EAS project id can still read permission as not
+  // granted, and would offer a "Turn on" that grants permission but can never
+  // register a token.
   if (!isAvailable) return false;
   // Available but not yet read — do not flash a card that may be about to
   // resolve to "already granted".

@@ -20,20 +20,24 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## It is drawn only when push can be turned on
  *
- * `shouldOfferPrimer()` omits it in Expo Go, on web, and in any build whose
- * native module did not load (#2299). This card used to render there anyway,
- * with "Turn on" disabled and the reason printed under it. But its only
- * function is "Turn on", and no member can make their build able to push, so
- * that was a placeholder, not a gate (`spec/ui/design-system/README.md` §5
- * rule 4, the ✦ Ask pill's ruling). So the card takes no reason: while it is
- * on screen, "Turn on" works, and it disables only while the OS dialog is up.
+ * `shouldOfferPrimer()` omits it whenever `isPushAvailable()` is false (#2299;
+ * `spec/ui/mobile/patterns.md` § Push notifications lists the causes). This
+ * card used to render there anyway, with "Turn on" disabled and the reason
+ * printed under it. But its only function is "Turn on", and nothing on s03 can
+ * make the build able to push, so that was a placeholder, not a gate
+ * (`spec/ui/design-system/README.md` §5 rule 4, the ✦ Ask pill's ruling). So
+ * the card takes no reason: while it is on screen, "Turn on" works.
  *
  * Signet gold throughout, not the chapter accent: this is Signet asking for a
  * device permission on its own behalf, not chapter chrome.
  */
 
 export interface PushPrimerCardProps {
-  /** True while the OS dialog is in flight, so the CTA cannot double-fire. */
+  /**
+   * True from the tap until the host hides the card, so a double tap cannot
+   * fire twice. s03 records the decision, which unmounts the card, before it
+   * opens the OS dialog, so there this covers only that storage write.
+   */
   isRequesting?: boolean;
   onTurnOn: () => void;
   onNotNow: () => void;
