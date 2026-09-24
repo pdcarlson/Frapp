@@ -143,12 +143,10 @@ function splitTextNode(value: string, addressed: ReadonlySet<string>): MdastNode
  * **Iterative, with an explicit stack, rather than recursive.** mdast nesting
  * is attacker-controlled: a 10,000-character body of `"> "` — inside the
  * `CHAT_MESSAGE_CONTENT_MAX_LENGTH` cap — parses to some five thousand nested
- * blockquotes. A recursive walk is one more deep call chain over that tree. It
- * is *not* the one that breaks first: remark's own parse and
- * `mdast-util-to-hast`'s walk already throw `RangeError: Maximum call stack
- * size exceeded` on such a body with this plugin removed entirely, so the
- * crash is older than this file and is filed separately. This costs nothing,
- * and there is no reason to add a second way to hit it.
+ * blockquotes. A recursive walk is one more deep call chain over that tree.
+ * `remarkDepthCap` runs before this plugin and flattens any tree past its cap
+ * (#2209), so today this walk never sees that depth; iterating anyway costs
+ * nothing and keeps this file safe if the plugin order ever changes.
  */
 function transform(root: MdastNode, addressed: ReadonlySet<string>): void {
   const stack: Array<{ node: MdastNode; opaque: boolean }> = [
