@@ -8,7 +8,7 @@
     "scheme": "frapp",
     "userInterfaceStyle": "dark",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://u.expo.dev/4ba05e35-7d91-4bb4-9597-be754127de95",

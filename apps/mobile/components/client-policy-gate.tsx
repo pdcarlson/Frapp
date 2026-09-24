@@ -3,6 +3,7 @@ import {
   AccessibilityInfo,
   BackHandler,
   Keyboard,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -81,6 +82,11 @@ function UpdateRequiredScreen({ updateUrl }: { updateUrl: string | null }) {
       await Linking.openURL(url);
     } catch {
       setLinkFailed(true);
+      // The line below speaks through its live region on Android. VoiceOver
+      // has no live regions and focus stays on the button, so say it on iOS.
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(UPDATE_REQUIRED_COPY.linkFailed);
+      }
     }
   }
 

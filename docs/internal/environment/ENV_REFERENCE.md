@@ -443,7 +443,11 @@ is unavailable in that state and the sign-in screen says so.
 > development build with the legacy anon key still evaluates. **No** profile may carry a secret key:
 > a `sb_secret_…` key, or a JWT whose role isn't `anon` (`service_role`, or a user's
 > access token), fails config evaluation everywhere, because every `EXPO_PUBLIC_*` value
-> ships inside the bundle.
+> ships inside the bundle. Every EAS profile also refuses anything that isn't one of the
+> two client keys (the publishable key or the legacy anon JWT), such as the legacy JWT
+> secret or an access token pasted from the wrong field, since its binary goes to testers
+> or the store. A local `expo start` or CI prebuild, with no EAS profile, keeps only the
+> secret-key check, so placeholder values still run.
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of

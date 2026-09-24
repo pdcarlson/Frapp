@@ -267,16 +267,42 @@ function jwtClaims(key) {
   }
 }
 
-// Allows only what a client may hold, as the web fence does
-// (apps/web/lib/assert-production-public-env.js): a JWT must be the `anon`
-// role. Anything else, service_role or a user's `authenticated` access token,
-// is a credential that doesn't belong in a bundle.
+// Refuses the shapes that are known credentials, on every evaluation (a local
+// `expo start` or CI prebuild included): a secret key, or a JWT whose role
+// isn't `anon` (service_role, or a user's `authenticated` access token). It is
+// a denylist, so placeholder values keep working locally; an EAS build also
+// has to pass assertEasSupabaseClientKey, the allowlist.
 function assertNoSupabaseSecretKey({ supabaseAnonKey } = {}) {
   const key = String(supabaseAnonKey || "").trim();
   const claims = jwtClaims(key);
   if (key.startsWith("sb_secret_") || (claims && claims.role !== "anon")) {
     throw new Error(PUBLIC_SUPABASE_SECRET_KEY_ERROR);
   }
+}
+
+const EAS_SUPABASE_CLIENT_KEY_ERROR = [
+  "EAS builds require EXPO_PUBLIC_SUPABASE_ANON_KEY to be a key a client may",
+  "carry: the project's publishable key (sb_publishable_…) or its legacy anon",
+  "JWT. An EAS build inlines the value into a binary that goes to testers or the",
+  "store, and a value pasted from the wrong field (the legacy JWT secret, an",
+  "access token) has no shape to refuse, so only those two are allowed. Rotate",
+  "the value if a build already carried it.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
+].join(" ");
+
+// Allows only a client key on every EAS profile, since each one produces a
+// binary that leaves this machine. Unset is allowed: nothing is inlined.
+// Production goes further (assertProductionSupabasePublishableKey), and runs
+// first so its error names the publishable key. The web fence
+// (apps/web/lib/assert-production-public-env.js) is the same allowlist, applied
+// only when VERCEL_ENV is production.
+function assertEasSupabaseClientKey({ easBuildProfile, supabaseAnonKey } = {}) {
+  if (!easBuildProfile) return;
+  const key = String(supabaseAnonKey || "").trim();
+  if (!key || key.startsWith(SUPABASE_PUBLISHABLE_KEY_PREFIX)) return;
+  const claims = jwtClaims(key);
+  if (claims && claims.role === "anon") return;
+  throw new Error(EAS_SUPABASE_CLIENT_KEY_ERROR);
 }
 
 function productionAppOrigin(url) {
@@ -349,6 +375,10 @@ function applyMobileConfig(
     easBuildProfile: env.EAS_BUILD_PROFILE,
     supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   });
+  assertEasSupabaseClientKey({
+    easBuildProfile: env.EAS_BUILD_PROFILE,
+    supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  });
   assertProductionAppUrl({
     easBuildProfile: env.EAS_BUILD_PROFILE,
     appUrl: env.EXPO_PUBLIC_APP_URL,
@@ -385,6 +415,7 @@ applyExpoConfig.assertProductionSupabasePublic = assertProductionSupabasePublic;
 applyExpoConfig.assertProductionSupabasePublishableKey =
   assertProductionSupabasePublishableKey;
 applyExpoConfig.assertNoSupabaseSecretKey = assertNoSupabaseSecretKey;
+applyExpoConfig.assertEasSupabaseClientKey = assertEasSupabaseClientKey;
 applyExpoConfig.assertProductionAppUrl = assertProductionAppUrl;
 applyExpoConfig.assertProductionAskDisabled = assertProductionAskDisabled;
 applyExpoConfig.isAskEnabledValue = isAskEnabledValue;
@@ -398,6 +429,7 @@ applyExpoConfig.PRODUCTION_SUPABASE_URL_ERROR = PRODUCTION_SUPABASE_URL_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_KEY_ERROR = PRODUCTION_SUPABASE_KEY_ERROR;
 applyExpoConfig.PUBLIC_SUPABASE_SECRET_KEY_ERROR =
   PUBLIC_SUPABASE_SECRET_KEY_ERROR;
+applyExpoConfig.EAS_SUPABASE_CLIENT_KEY_ERROR = EAS_SUPABASE_CLIENT_KEY_ERROR;
 applyExpoConfig.PRODUCTION_APP_URL_ERROR = PRODUCTION_APP_URL_ERROR;
 applyExpoConfig.PRODUCTION_ASK_ENABLED_ERROR = PRODUCTION_ASK_ENABLED_ERROR;
 applyExpoConfig.PRODUCTION_API_ORIGIN = PRODUCTION_API_ORIGIN;
