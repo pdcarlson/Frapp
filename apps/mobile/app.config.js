@@ -45,13 +45,20 @@
 // falls back at runtime.
 //
 // Every EAS **production** build also refuses a Supabase key that is not a
-// publishable key (`sb_publishable_…`, #2526). Supabase keeps the legacy JWT
-// `anon` key working only "until the end of 2026", and a store binary outlives
-// that: every install keeps the key it was built with until its owner updates
-// from the store, so a legacy key would go dead in the field. A secret key
-// (`sb_secret_…`) is refused by the same test, which matters more: it bypasses
-// RLS and would ship inside the binary. The variable keeps its `ANON_KEY` name
-// because EAS and every doc already use it; renaming it is a separate change.
+// publishable key (`sb_publishable_…`, #2526), or that carries whitespace
+// around it. Supabase keeps the legacy JWT `anon` key working only "until the
+// end of 2026", and a store binary outlives that: every install keeps the key
+// it was built with until its owner updates from the store, so a legacy key
+// would go dead in the field. Expo inlines the value verbatim and
+// `lib/supabase.ts` doesn't trim it, so a pasted trailing newline would ship
+// too. The variable keeps its `ANON_KEY` name because EAS and every doc already
+// use it; renaming it is a separate change.
+//
+// And the config refuses a **secret** key on every profile, and whenever it is
+// evaluated, not only for production: a `sb_secret_…` key, or a legacy JWT
+// whose role is `service_role`, bypasses RLS, and anything in an
+// `EXPO_PUBLIC_*` variable is inlined into the bundle. A preview build is still
+// an installable binary anyone can unpack.
 //
 // Every EAS **production** build also refuses when `EXPO_PUBLIC_ASK_ENABLED`
 // switches Ask on (#2259). Ask answers from a synthetic corpus
@@ -218,7 +225,7 @@ const SUPABASE_PUBLISHABLE_KEY_PREFIX = "sb_publishable_";
 const PRODUCTION_SUPABASE_KEY_ERROR = [
   "EAS production builds require EXPO_PUBLIC_SUPABASE_ANON_KEY to be the",
   `frapp-prod publishable key (${SUPABASE_PUBLISHABLE_KEY_PREFIX}…), not the legacy`,
-  "JWT anon key or a secret key. Supabase supports legacy keys only until the",
+  "JWT anon key, and with no whitespace around it. Supabase supports legacy keys only until the",
   "end of 2026, and a store binary keeps its key until it is updated from the",
   "store. Copy it from Supabase → frapp-prod → Project Settings → API Keys and",
   "set it on the EAS production environment (eas env:list --environment production).",
@@ -230,10 +237,40 @@ function assertProductionSupabasePublishableKey({
   supabaseAnonKey,
 } = {}) {
   if (easBuildProfile !== "production") return;
-  if (String(supabaseAnonKey || "").trim().startsWith(SUPABASE_PUBLISHABLE_KEY_PREFIX)) {
+  const raw = String(supabaseAnonKey || "");
+  // Untrimmed on purpose: the binary gets exactly this string.
+  if (raw === raw.trim() && raw.startsWith(SUPABASE_PUBLISHABLE_KEY_PREFIX)) {
     return;
   }
   throw new Error(PRODUCTION_SUPABASE_KEY_ERROR);
+}
+
+const PUBLIC_SUPABASE_SECRET_KEY_ERROR = [
+  "EXPO_PUBLIC_SUPABASE_ANON_KEY holds a Supabase SECRET key (sb_secret_… or a",
+  "service_role JWT). Every EXPO_PUBLIC_* value is inlined into the app bundle,",
+  "and this key bypasses row-level security, so any build would hand it to",
+  "whoever unpacks the binary. Use the project's publishable key instead, and",
+  "rotate the secret key if a build already carried it.",
+  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+].join(" ");
+
+/** The role claim of a legacy Supabase JWT key, or undefined for anything else. */
+function legacyJwtRole(key) {
+  const parts = key.split(".");
+  if (parts.length !== 3) return undefined;
+  try {
+    const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    return typeof claims?.role === "string" ? claims.role : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function assertNoSupabaseSecretKey({ supabaseAnonKey } = {}) {
+  const key = String(supabaseAnonKey || "").trim();
+  if (key.startsWith("sb_secret_") || legacyJwtRole(key) === "service_role") {
+    throw new Error(PUBLIC_SUPABASE_SECRET_KEY_ERROR);
+  }
 }
 
 function productionAppOrigin(url) {
@@ -298,6 +335,9 @@ function applyMobileConfig(
     supabaseUrl: env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   });
+  assertNoSupabaseSecretKey({
+    supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  });
   // After the presence check above, so an empty key reports as missing.
   assertProductionSupabasePublishableKey({
     easBuildProfile: env.EAS_BUILD_PROFILE,
@@ -338,6 +378,7 @@ applyExpoConfig.assertProductionApiUrl = assertProductionApiUrl;
 applyExpoConfig.assertProductionSupabasePublic = assertProductionSupabasePublic;
 applyExpoConfig.assertProductionSupabasePublishableKey =
   assertProductionSupabasePublishableKey;
+applyExpoConfig.assertNoSupabaseSecretKey = assertNoSupabaseSecretKey;
 applyExpoConfig.assertProductionAppUrl = assertProductionAppUrl;
 applyExpoConfig.assertProductionAskDisabled = assertProductionAskDisabled;
 applyExpoConfig.isAskEnabledValue = isAskEnabledValue;
@@ -349,6 +390,8 @@ applyExpoConfig.PRODUCTION_SUPABASE_PUBLIC_ERROR =
   PRODUCTION_SUPABASE_PUBLIC_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_URL_ERROR = PRODUCTION_SUPABASE_URL_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_KEY_ERROR = PRODUCTION_SUPABASE_KEY_ERROR;
+applyExpoConfig.PUBLIC_SUPABASE_SECRET_KEY_ERROR =
+  PUBLIC_SUPABASE_SECRET_KEY_ERROR;
 applyExpoConfig.PRODUCTION_APP_URL_ERROR = PRODUCTION_APP_URL_ERROR;
 applyExpoConfig.PRODUCTION_ASK_ENABLED_ERROR = PRODUCTION_ASK_ENABLED_ERROR;
 applyExpoConfig.PRODUCTION_API_ORIGIN = PRODUCTION_API_ORIGIN;

@@ -11,8 +11,9 @@ import {
  * The minimum mobile build this deployment serves, per platform (#2526).
  *
  * Optional, like `EVENT_CHECK_IN_TOKEN_SECRET`: unset means no minimum, so
- * every binary is supported and local dev, tests and CI need nothing. Set one
- * in Infisical for the environment, and Render restarts the API with it. The
+ * every binary is supported and local dev, tests and CI need nothing. How to
+ * set one, and what has to happen before a running API sees it:
+ * `docs/internal/environment/ENV_REFERENCE.md` § API-Only Settings. The
  * format is `<version>[+<build>]` (`0.9.1`, or `0.9.0+14` to retire earlier
  * builds of one version); `validateClientPolicyEnv` refuses anything else at
  * boot, because a typo that parsed as "no minimum" would switch the gate off
@@ -58,7 +59,14 @@ function envValue(env: Env, name: string): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+/**
+ * Literally `https://…`, and parseable. The prefix test is the one the app
+ * applies (`apps/mobile/lib/client-policy.ts`): WHATWG URL parsing alone would
+ * accept `https:host/path`, which the app then drops, leaving a blocked member
+ * with no button.
+ */
 function isHttpsUrl(value: string): boolean {
+  if (!/^https:\/\//i.test(value)) return false;
   try {
     return new URL(value).protocol === 'https:';
   } catch {

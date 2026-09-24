@@ -55,7 +55,7 @@ describe('resolveClientPolicy', () => {
   it('treats a malformed minimum as none, and a non-https link as unset', () => {
     const env = {
       MOBILE_MIN_VERSION_IOS: 'latest',
-      MOBILE_UPDATE_URL_IOS: 'javascript:alert(1)',
+      MOBILE_UPDATE_URL_IOS: 'https:testflight.apple.com/join/abc123',
     };
     expect(resolveClientPolicy('ios/0.0.1', env)).toEqual({
       updateRequired: false,
@@ -79,6 +79,17 @@ describe('resolveClientPolicy', () => {
 describe('validateClientPolicyEnv', () => {
   it('passes an empty environment', () => {
     expect(validateClientPolicyEnv({})).toEqual([]);
+  });
+
+  // WHATWG URL parsing fills in the missing `//` for special schemes, so this
+  // parses as https. The app keeps only a literal `https://` link, so the
+  // server has to refuse it rather than serve a link the app will drop.
+  it('refuses an https link without its slashes', () => {
+    expect(
+      validateClientPolicyEnv({
+        MOBILE_UPDATE_URL_IOS: 'https:testflight.apple.com/join/abc123',
+      }),
+    ).toEqual([expect.stringContaining('MOBILE_UPDATE_URL_IOS')]);
   });
 
   it('reports each bad value once', () => {

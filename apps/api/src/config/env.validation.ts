@@ -95,17 +95,17 @@ export function validateEnv(config: Record<string, unknown>) {
     );
   }
 
+  const clientPolicyProblems = validateClientPolicyEnv(config);
+  if (clientPolicyProblems.length > 0) {
+    throw new Error(clientPolicyProblems.join(' '));
+  }
+
   // Production invite emails are built from APP_URL. https: alone still
   // allows https://app.staging.frapp.live, which would send the first cohort
   // to staging. Unset APP_URL keeps the production-origin fallback in
   // invite-link.util.ts. The Docker image does not copy .github/, so the
   // production Supabase host is identified by @repo/validation (pinned to
   // environments.json in that package's tests).
-  const clientPolicyProblems = validateClientPolicyEnv(config);
-  if (clientPolicyProblems.length > 0) {
-    throw new Error(clientPolicyProblems.join(' '));
-  }
-
   const supabaseUrl = config.SUPABASE_URL;
   const appUrl = config.APP_URL;
   if (

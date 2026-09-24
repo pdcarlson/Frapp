@@ -102,7 +102,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 
 > `EVENT_CHECK_IN_TOKEN_SECRET` is **optional** and signs the rotating event check-in codes (`spec/behavior/events.md` § Check-In). Unset, `GET /v1/events/:eventId/attendance/check-in-token` returns 503 and the mobile host screen (s22) says the feature is not configured; a supplied token is rejected rather than accepted. The mint route is **GET**, not POST — minting writes nothing (the code is derived from the event id, the clock, and this secret), and GET keeps the host screen's polling on the read throttle bucket (`attendance.controller.ts`). Plain self check-in and the check-in geofence are unaffected, so local dev, tests, and CI run without it. **Use a different value per environment** — sharing one would make a staging code redeemable in production.
 
-> The four `MOBILE_*` variables are **optional** and drive the mobile minimum-version check (#2526): `GET /v1/client-policy` compares the `X-Client-Version` header every native build sends (`ios/0.9.0+12`) with the minimum for its platform and answers `update_required`, and a build below it shows a blocking update screen until it is updated from the store. Unset, no build is ever told to update, so local dev, tests and CI run without them. The `+build` half compares native build numbers (iOS `CFBundleVersion`, Android `versionCode`) within one version, which is how one beta build of `0.9.0` retires another. A **set** value is validated at boot (`validateEnv` → `validateClientPolicyEnv`): a minimum that isn't `x.y.z[+build]`, or a link that isn't `https://`, stops the API from starting, because a typo read as "no minimum" would switch the gate off silently. The update URLs default to the App Store listing (`id6812025642`) and the Play listing for `live.frapp.mobile`; set one only when the member should go somewhere else, such as TestFlight during the beta. The service reads them per request, but a running process only sees a value it started with, so redeploy the API after changing one; each app then picks the answer up on its next launch, or its next return to the foreground once the last answer is a minute old. The check fails open whenever the API can't be reached.
+> The four `MOBILE_*` variables are **optional** and set the mobile minimum-version check (#2526): `GET /v1/client-policy` compares the `X-Client-Version` header every native build sends (`ios/0.9.0+12`) with the minimum for its platform, and a build below it is blocked until it is updated from the store. What the app does with the answer (when it asks, how it fails open, the blocking screen) is [`spec/ui/mobile/patterns.md`](../../../spec/ui/mobile/patterns.md) § Minimum version. Unset, no build is ever told to update, so local dev, tests and CI run without them. The `+build` half compares native build numbers (iOS `CFBundleVersion`, Android `versionCode`) within one version, which is how one beta build of `0.9.0` retires another. A **set** value is validated at boot (`validateEnv` → `validateClientPolicyEnv`): a minimum that isn't `x.y.z[+build]`, or a link that isn't literally `https://…`, stops the API from starting, because a typo read as "no minimum" would switch the gate off silently. The update URLs default to the App Store listing (`id6812025642`) and the Play listing for `live.frapp.mobile`; set one only when the member should go somewhere else, such as TestFlight during the beta. The API reads them per request, but a running process only sees the environment it started with, so **redeploy the API after changing one**.
 
 > The three `DISCORD_*` variables are **optional, and all-or-nothing**. They power the "Connect
 > Discord" path of the archive importer (`spec/behavior/chat/README.md` § Imported archive
@@ -432,13 +432,15 @@ is unavailable in that state and the sign-in screen says so.
 > vars stay optional at boot for the reasons in the table.
 >
 > **2026-09-24 (#2526):** an EAS production build also refuses an
-> `EXPO_PUBLIC_SUPABASE_ANON_KEY` that isn't the publishable key (`sb_publishable_…`).
+> `EXPO_PUBLIC_SUPABASE_ANON_KEY` that isn't exactly the publishable key
+> (`sb_publishable_…`, with no whitespace around it; Expo inlines the value verbatim).
 > Supabase supports the legacy JWT `anon` key only until the end of 2026, and a store
-> binary keeps the key it was built with until its owner updates from the store; a
-> secret key (`sb_secret_…`) is refused by the same prefix test. Set the `frapp-prod`
-> publishable key (Supabase → Project Settings → API Keys) on the EAS `production`
-> environment before the first production build. Preview and development builds may
-> still carry the legacy key.
+> binary keeps the key it was built with until its owner updates from the store. Set
+> the `frapp-prod` publishable key (Supabase → Project Settings → API Keys) on the EAS
+> `production` environment before the first production build. Preview and development
+> builds may still carry the legacy anon key, but **no** profile may carry a secret key:
+> a `sb_secret_…` key or a `service_role` JWT fails config evaluation everywhere,
+> because it bypasses RLS and every `EXPO_PUBLIC_*` value ships inside the bundle.
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of

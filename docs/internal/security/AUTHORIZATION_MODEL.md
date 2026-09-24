@@ -95,6 +95,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | --- | --- | --- |
 | `GET /health` | none | Liveness only; no tenant data |
 | `GET /health/ready` | none | Readiness probe for deploy smoke checks; no tenant data |
+| `GET /v1/client-policy` | none (read throttle bucket, keyed by IP) | Mobile minimum-version check (#2526). The app asks before anyone signs in, so it can't require a token. It reads only the `X-Client-Version` header and the `MOBILE_*` env, and returns whether that build is still served plus a store link: no user, chapter or row data. `Cache-Control: no-store`, because the answer varies by header. [`spec/ui/mobile/patterns.md`](../../../spec/ui/mobile/patterns.md) § Minimum version |
 | `GET /v1/discord/connect/callback` | none | OAuth redirect target, so it cannot carry a bearer token. Its capability is the single-use `state` row it consumes, which binds the chapter. `code` and `state` never reach a log — `LoggingInterceptor` strips the query string via `pathOnly` — though `error` / `error_description` are logged through `logSafe`, which caps and strips control characters rather than redacting |
 | `POST /webhooks/stripe` | none (throttler skipped) | **HMAC signature** verified against `STRIPE_WEBHOOK_SECRET` before the body is parsed; an invalid signature is `401` (`webhook.controller.ts:52-66`). Not user-authenticated by design |
 | `GET /chapter-directory/search` | A | Public reference dataset (Greek orgs + universities). Contains no chapter-owned data |

@@ -63,6 +63,8 @@ function loadConfig() {
       supabaseAnonKey?: string;
     }) => void;
     PRODUCTION_SUPABASE_KEY_ERROR: string;
+    assertNoSupabaseSecretKey: (opts?: { supabaseAnonKey?: string }) => void;
+    PUBLIC_SUPABASE_SECRET_KEY_ERROR: string;
     assertProductionAppUrl: (opts?: {
       easBuildProfile?: string;
       appUrl?: string;
@@ -98,6 +100,8 @@ const LEGACY_ANON_JWT_FIXTURE =
   "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.not-a-real-signature"; // gitleaks:allow
 const PUBLISHABLE_KEY_FIXTURE = "sb_publishable_not-a-real-key"; // gitleaks:allow
 const SECRET_KEY_FIXTURE = "sb_secret_not-a-real-key"; // gitleaks:allow
+const SERVICE_ROLE_JWT_FIXTURE =
+  "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.not-a-real-signature"; // gitleaks:allow
 
 const productionPublicEnv = {
   EXPO_PUBLIC_API_URL: easProductionApiUrl,
@@ -630,14 +634,32 @@ describe("assertProductionSupabasePublishableKey (#2526)", () => {
     }
   });
 
-  it("allows a publishable key in production, ignoring surrounding whitespace", () => {
+  it("allows a publishable key in production", () => {
     const { assertProductionSupabasePublishableKey } = loadConfig();
     expect(() =>
       assertProductionSupabasePublishableKey({
         easBuildProfile: "production",
-        supabaseAnonKey: ` ${PUBLISHABLE_KEY_FIXTURE} `,
+        supabaseAnonKey: PUBLISHABLE_KEY_FIXTURE,
       }),
     ).not.toThrow();
+  });
+
+  // Expo inlines the value verbatim and lib/supabase.ts doesn't trim it, so a
+  // pasted newline would reach every request the binary makes.
+  it.each([
+    ["a trailing newline", `${PUBLISHABLE_KEY_FIXTURE}\n`],
+    ["a leading space", ` ${PUBLISHABLE_KEY_FIXTURE}`],
+  ])("refuses a publishable key with %s", (_label, supabaseAnonKey) => {
+    const {
+      assertProductionSupabasePublishableKey,
+      PRODUCTION_SUPABASE_KEY_ERROR,
+    } = loadConfig();
+    expect(() =>
+      assertProductionSupabasePublishableKey({
+        easBuildProfile: "production",
+        supabaseAnonKey,
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_KEY_ERROR);
   });
 
   // The legacy key goes dead in the field after 2026; a secret key would ship
@@ -658,6 +680,50 @@ describe("assertProductionSupabasePublishableKey (#2526)", () => {
         supabaseAnonKey,
       }),
     ).toThrow(PRODUCTION_SUPABASE_KEY_ERROR);
+  });
+});
+
+describe("assertNoSupabaseSecretKey (#2526)", () => {
+  // Every EXPO_PUBLIC_* value is inlined into the bundle, so a key that
+  // bypasses RLS is refused whatever the profile: a preview build is an
+  // installable binary too.
+  it.each([
+    ["a secret key", SECRET_KEY_FIXTURE],
+    ["a service_role JWT", SERVICE_ROLE_JWT_FIXTURE],
+  ])("refuses %s on any profile, or none", (_label, supabaseAnonKey) => {
+    const {
+      applyMobileConfig,
+      assertNoSupabaseSecretKey,
+      PUBLIC_SUPABASE_SECRET_KEY_ERROR,
+    } = loadConfig();
+    expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).toThrow(
+      PUBLIC_SUPABASE_SECRET_KEY_ERROR,
+    );
+    for (const EAS_BUILD_PROFILE of ["preview", "development", "production"]) {
+      expect(() =>
+        applyMobileConfig(androidConfig, {
+          env: {
+            ...productionPublicEnv,
+            EAS_BUILD_PROFILE,
+            EAS_BUILD_PLATFORM: "ios",
+            EXPO_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
+          },
+          existsSync: missing,
+        }),
+      ).toThrow(PUBLIC_SUPABASE_SECRET_KEY_ERROR);
+    }
+  });
+
+  it("allows the keys a client is meant to hold, and no key at all", () => {
+    const { assertNoSupabaseSecretKey } = loadConfig();
+    for (const supabaseAnonKey of [
+      PUBLISHABLE_KEY_FIXTURE,
+      LEGACY_ANON_JWT_FIXTURE,
+      "not-a-jwt",
+      undefined,
+    ]) {
+      expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).not.toThrow();
+    }
   });
 });
 
