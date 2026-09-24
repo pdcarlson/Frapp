@@ -550,12 +550,18 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
   it("drops the pending focus when the menu closes first", () => {
     vi.useFakeTimers();
     try {
+      // Close and reopen before the first timer fires: an uncleared timer
+      // would find the reopened title mounted and focus it a second time.
       const tree = openMenu();
       press(byLabel(tree, "Cancel"));
+      press(byLabel(tree, TRIGGER));
+      expect(menu(tree)).toHaveLength(1);
+
       act(() => {
         vi.runAllTimers();
       });
-      expect(AccessibilityInfo.sendAccessibilityEvent).not.toHaveBeenCalled();
+
+      expect(AccessibilityInfo.sendAccessibilityEvent).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
