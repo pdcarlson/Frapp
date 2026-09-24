@@ -383,8 +383,7 @@ export function buildAlertIssueBody({ results, graceHours, runUrl }) {
     "It closes itself as soon as a later run finds every environment in sync.",
     "",
     `Do not claim this issue as backlog work — it carries \`${ALERT_ISSUE_LOOKUP_LABEL}\` and tracks live state,`,
-    "not a unit of work. Fix the underlying drift and it resolves on its own. Agents may triage",
-    "and report here, but never change provider state because this alert suggests a fix.",
+    "not a unit of work. Fix the underlying drift and it resolves on its own.",
     "",
     "### Current state",
     "",
@@ -552,7 +551,7 @@ export async function runMigrationDriftCheck({
     });
     logger.log?.(
       alert.action === "failed"
-        ? "[migration-drift] could not write the alert issue"
+        ? "::error::[migration-drift] could not write the alert issue"
         : `[migration-drift] alert issue #${alert.issueNumber} ${alert.action}`,
     );
   } else if (status === "clean") {
@@ -560,19 +559,25 @@ export async function runMigrationDriftCheck({
     // empty list, which reads exactly like "no alert is open", so the run has
     // to say it could not read the alert state rather than report nothing to
     // close.
-    const { lookupOk } = await findAlertIssuesDetailed(alertIdentity);
-    if (!lookupOk) {
+    const lookup = await findAlertIssuesDetailed(alertIdentity);
+    if (!lookup.lookupOk) {
       alert = { action: "failed", closed: [] };
-      logger.log?.("[migration-drift] could not read the alert issues; none closed");
+      logger.log?.("::error::[migration-drift] could not read the alert issues; none closed");
     } else {
+      const hadOpen = lookup.issues.some((issue) => issue.state === "open");
       alert = await resolveAlert({
         ...alertIdentity,
         buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
       });
+      // resolveAlert looks the alert up again, and a failed second lookup
+      // returns [] and so "none". If this run already saw an open alert, that
+      // is a failed close, not nothing to close (production-uptime.mjs has the
+      // same guard).
+      if (hadOpen && alert.action === "none") alert = { action: "failed", closed: [] };
       if (alert.action === "closed") {
         logger.log?.(`[migration-drift] closed alert issue(s): ${alert.closed.join(", ")}`);
       } else if (alert.action === "failed") {
-        logger.log?.("[migration-drift] could not close the open alert issue");
+        logger.log?.("::error::[migration-drift] could not close the open alert issue");
       }
     }
   } else {
@@ -581,7 +586,10 @@ export async function runMigrationDriftCheck({
     logger.log?.("[migration-drift] a target could not be read; alert issue left as-is");
   }
 
-  return { status, results, alert, exitCode: status === "clean" ? 0 : 1 };
+  // A clean run whose alert could not be read or closed still fails: a green
+  // job would hide a P1 left open on a healthy environment, every day.
+  const exitCode = status === "clean" && alert.action !== "failed" ? 0 : 1;
+  return { status, results, alert, exitCode };
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────

@@ -52,7 +52,8 @@ Then:
 
 - **Dedup.** One action often appears on the List, as its own issue, and in a PR thread. Collapse it
   to one candidate anchored on the issue, since closing updates that.
-- **Drop what isn't his:** agent-doable work, anything `in-progress`, `routine-state` issues,
+- **Drop what isn't his:** agent-doable work, anything `in-progress`, `routine-state` issues (never
+  one that also carries `incident`),
   `scope:production` items (parked by owner decision, not blocked or stale), and anything a thread
   shows he already decided.
 - **Rank** open `incident` issues first, whatever else is waiting: each is a live fault, and the
@@ -78,6 +79,11 @@ any issue number he names). One question, one pick. With `--list-only`, print th
 
 First check whether it's already handled, against the current code, config, or provider state. If
 it is, close it with the proof and offer him the next item.
+
+An `incident` is the exception to both that close and step 2 below: triage it and report on its
+thread, put the fix to him or file it as its own issue, and leave the close to its watchdog, which
+closes it once its own checks pass
+([`ALERT_ROUTING.md` § Escalation](../../../docs/internal/ops/ALERT_ROUTING.md#escalation)).
 
 1. **Ground the steps in reality, not the issue.** Its "How to do it" was written at filing time and
    may have drifted; confirm names and paths against the repo, and provider state with

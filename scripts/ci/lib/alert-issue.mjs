@@ -20,9 +20,8 @@
 //
 // - `incident` is the lookup label for every alert. `/next` §0.2 treats it as
 //   never-claimable, which stops agent sessions picking an alert up as if it
-//   were backlog work. Agents may triage and report on an incident, but never
-//   change provider state because an alert suggested it (#1564's suggested fix
-//   was wrong).
+//   were backlog work. What an agent may do with one is in
+//   docs/internal/ops/ALERT_ROUTING.md § Escalation.
 // - Every new or reopened alert is assigned to the owner. Assignment is a
 //   participating notification, so it reaches the owner under every
 //   repo-watch setting except Ignore; an unassigned issue reached them only if
@@ -45,12 +44,34 @@ const MAX_ISSUE_PAGES = 5;
  * account, the repo moved to an org the login isn't in) must not stop every
  * alert from being filed. Only a 422 retries: a 5xx is not about the assignee,
  * and the suites count calls against 5xx fixtures.
+ *
+ * Either way a lost assignee is annotated on the run, because nothing else
+ * would show it: the alert still reads as created or reopened. That covers the
+ * 422 retry, and a 2xx whose issue comes back without the owner (GitHub drops
+ * assignees it won't accept from some callers rather than rejecting them).
  */
 async function writeAssigned({ token, fetchImpl, method, path, body }) {
   const first = await ghRequest({ token, fetchImpl, method, path, body });
-  if (first.ok || first.status !== 422 || !body.assignees) return first;
+  if (first.ok) {
+    const assignees = first.data?.assignees;
+    if (body.assignees && Array.isArray(assignees) && !assignees.some((u) => u?.login === ALERT_ASSIGNEE)) {
+      warnUnassigned(first.data?.number, "GitHub accepted the write but did not assign them");
+    }
+    return first;
+  }
+  if (first.status !== 422 || !body.assignees) return first;
   const { assignees: _unassignable, ...unassigned } = body;
-  return ghRequest({ token, fetchImpl, method, path, body: unassigned });
+  const retry = await ghRequest({ token, fetchImpl, method, path, body: unassigned });
+  if (retry.ok) {
+    const reason = typeof first.data?.message === "string" ? `: ${first.data.message}` : "";
+    warnUnassigned(retry.data?.number, `GitHub refused the assignee (422${reason})`);
+  }
+  return retry;
+}
+
+function warnUnassigned(issueNumber, why) {
+  const which = issueNumber ? `#${issueNumber}` : "the alert issue";
+  console.log(`::warning::${which} is not assigned to ${ALERT_ASSIGNEE}: ${why}. It was still filed.`);
 }
 
 /** The owner added to an issue's current assignees; PATCH replaces the whole set. */

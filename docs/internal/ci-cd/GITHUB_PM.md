@@ -39,10 +39,9 @@ GitHub Issues (canonical: planning, status, Triage intake)
   - **`routine-state`** infrastructure issues (e.g. the "PR Follow-ups — Human Action List"
     tracking issue) carry `routine-state` instead, and `/next` and the routines skip them entirely.
   - **`incident`** issues are the watchdogs' live alerts (`scripts/ci/lib/alert-issue.mjs`), filed
-    by CI and assigned to the owner. `/next` never claims one, because it closes itself when the
-    fault is fixed. Agents may triage and report on an incident, but never change provider state
-    because an alert suggested it (#1564's suggested fix was wrong). Issue-triage leaves their
-    labels alone, and `/needs-me` lists the open ones first.
+    by CI and assigned to the owner. `/next` never claims one, in any mode, because it closes itself
+    when the fault is fixed. What agents may do with one:
+    [`ALERT_ROUTING.md` § Escalation](../ops/ALERT_ROUTING.md#escalation).
 - **Work is closed by the PR that does it** (`Fixes #N` in the PR **body** — native GitHub
   close-on-merge, one line per issue the PR closes; GitHub ignores closing keywords in the PR
   *title*, so the body is load-bearing). GitHub matches the closing keywords (`close` /

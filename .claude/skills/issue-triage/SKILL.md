@@ -36,8 +36,8 @@ organizes the whole inbox, whoever filed it, but destroys only what agents own.
   labels plus your change.
 - Leave `in-progress` and `in-review` issues alone (claims and sweeps belong to `/next`), and
   `routine-state` issues too (routine infrastructure, never work). Leave `incident` issues'
-  labels and priority alone, since the watchdog that filed one also closes it; a comment
-  reporting what you found is fine, a provider change because an alert suggested it isn't.
+  labels and priority alone, since the watchdog that filed one also closes it (what agents may do
+  with one: [`ALERT_ROUTING.md` § Escalation](../../../docs/internal/ops/ALERT_ROUTING.md#escalation)).
 - Never print secret values. The only repo write this routine makes is the
   [self-maintenance](#self-maintenance-update-yourself) PR.
 

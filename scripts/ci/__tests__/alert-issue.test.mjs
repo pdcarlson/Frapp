@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
@@ -116,7 +116,13 @@ test("an assignee GitHub rejects (422) still files the alert, unassigned", async
     }
     return response;
   };
-  const out = await raiseAlert({ ...args(routed), labels: LABELS, ...builders });
+  const log = mock.method(console, "log", () => {});
+  let out;
+  try {
+    out = await raiseAlert({ ...args(routed), labels: LABELS, ...builders });
+  } finally {
+    log.mock.restore();
+  }
   assert.deepEqual(out, { action: "created", issueNumber: 7 });
   const creates = calls.filter((c) => c.method === "POST" && c.url.endsWith("/issues"));
   assert.equal(creates.length, 2);
@@ -124,6 +130,28 @@ test("an assignee GitHub rejects (422) still files the alert, unassigned", async
   assert.equal("assignees" in retry, false);
   assert.equal(retry.title, TITLE);
   assert.ok(retry.labels.includes(ALERT_LOOKUP_LABEL));
+  // The return reads as a normal create, so the run annotation is the only
+  // place the missing assignee shows.
+  const lines = log.mock.calls.map((call) => call.arguments.join(" "));
+  assert.equal(lines.filter((line) => line.startsWith("::warning::#7 is not assigned")).length, 1);
+});
+
+test("a 2xx that comes back without the owner assigned is annotated", async () => {
+  const warned = async (assignees) => {
+    const { fetchImpl } = makeFetchMock([
+      { method: "GET", path: "/issues?state=all", body: [] },
+      { method: "POST", path: "/issues", body: { number: 7, assignees } },
+    ]);
+    const log = mock.method(console, "log", () => {});
+    try {
+      await raiseAlert({ ...args(fetchImpl), labels: LABELS, ...builders });
+    } finally {
+      log.mock.restore();
+    }
+    return log.mock.calls.some((call) => String(call.arguments[0]).startsWith("::warning::"));
+  };
+  assert.equal(await warned([]), true, "assignee silently dropped");
+  assert.equal(await warned([{ login: ALERT_ASSIGNEE }]), false, "owner assigned");
 });
 
 test("a 5xx create is not retried as an assignee problem", async () => {
@@ -165,8 +193,15 @@ test("a reopen whose assignee GitHub rejects (422) still reopens", async () => {
     if (init.method === "PATCH" && sent.assignees) return { ...response, ok: false, status: 422 };
     return response;
   };
-  const out = await raiseAlert({ ...args(routed), labels: LABELS, ...builders });
+  const log = mock.method(console, "log", () => {});
+  let out;
+  try {
+    out = await raiseAlert({ ...args(routed), labels: LABELS, ...builders });
+  } finally {
+    log.mock.restore();
+  }
   assert.equal(out.action, "reopened");
+  assert.equal(log.mock.callCount(), 1);
   const patches = calls.filter((c) => c.method === "PATCH").map((c) => JSON.parse(c.body));
   assert.deepEqual(patches, [{ state: "open", assignees: [ALERT_ASSIGNEE] }, { state: "open" }]);
 });

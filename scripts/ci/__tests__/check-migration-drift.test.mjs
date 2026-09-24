@@ -573,6 +573,38 @@ test("a close that fails is reported as failed, never as closed-with-nothing", a
 
   assert.equal(result.alert.action, "failed");
   assert.deepEqual(result.alert.closed, []);
+  // The databases match, but the P1 is still open: the run must not go green.
+  assert.equal(result.exitCode, 1);
+});
+
+test("a clean run whose second alert lookup fails reports a failed close, not nothing to close", async () => {
+  // resolveAlert looks the alert up again. When that second GET fails it sees
+  // nothing and returns "none", which must not read as "nothing was open"
+  // once the first lookup already saw the open alert.
+  const local = localFixture(3);
+  const { fetchImpl, calls } = makeFetchMock([
+    supabaseRoute("stg", local),
+    { method: "GET", path: "issues?state=all", body: [{ number: 42, state: "open", title: ALERT_ISSUE_TITLE }] },
+  ]);
+  let lookups = 0;
+  const secondFails = async (url, init = {}) => {
+    const response = await fetchImpl(url, init);
+    if (!url.includes("issues?state=all")) return response;
+    lookups += 1;
+    return lookups === 1 ? response : { ...response, ok: false, status: 502 };
+  };
+
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [{ label: "staging", ref: "stg" }],
+    local,
+    fetchImpl: secondFails,
+  });
+
+  assert.equal(result.status, "clean");
+  assert.equal(result.alert.action, "failed");
+  assert.equal(result.exitCode, 1);
+  assert.equal(calls.some((c) => c.method !== "GET"), false);
 });
 
 test("a failed alert lookup on a clean run is reported, not read as nothing open", async () => {
@@ -594,6 +626,7 @@ test("a failed alert lookup on a clean run is reported, not read as nothing open
 
   assert.equal(result.status, "clean");
   assert.equal(result.alert.action, "failed");
+  assert.equal(result.exitCode, 1);
   assert.equal(calls.some((c) => c.method !== "GET"), false);
 });
 

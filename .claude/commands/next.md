@@ -112,8 +112,9 @@ obligates the whole batch (§0.7).
   issue, since it may already be held. Several numbers claim as one batch under the same caps and
   coherence test; if the set doesn't honestly batch, say so and ask rather than silently splitting
   it or shipping an incoherent PR. `triage` issues are never claimable in any mode (except the
-  record-keeping claim above), and §0.2 condition 5 applies here too: a human naming a `[human]`
-  item doesn't make it agent-doable. If you lose the race on a named issue, report who holds it and
+  record-keeping claim above), and §0.2 conditions 1 and 5 apply here too: a human naming a
+  `routine-state` or `incident` issue, or a `[human]` item, doesn't make it agent-doable. Say so,
+  and for an `incident` offer to file the underlying fault as its own issue. If you lose the race on a named issue, report who holds it and
   don't fall back to ranking; the human picked issues, not a category. Losing one member of a named
   batch doesn't abandon the rest: proceed with what you won (subject to §0.5's coherence escape)
   and report the loss.
