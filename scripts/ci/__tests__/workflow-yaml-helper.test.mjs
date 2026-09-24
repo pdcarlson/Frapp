@@ -362,6 +362,24 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     assert.equal(k.if, "'always()'");
   });
 
+  it("folds a plain if: continued on deeper lines into one condition", () => {
+    // YAML folds the lines of a plain scalar. Reading only the first dropped
+    // every clause after the break. A continuation line is plain text: its
+    // quotes quote nothing, and ` #` still starts a comment.
+    const folded = join(dir, "folded.yml");
+    writeFileSync(
+      folded,
+      "name: X\njobs:\n  j:\n    if: inputs.scope != 'x'\n      && !inputs.dry_run_only # gated\n    steps:\n" +
+        "      - name: A\n        if: github.actor == 'bot' &&\n          'c' == inputs.dry_run_only # note\n        run: echo\n" +
+        "      - if: always() &&\n          inputs.dry_run_only\n        name: B\n",
+    );
+    const [a, b] = workflowSteps(folded);
+    assert.equal(a.if, "github.actor == 'bot' && 'c' == inputs.dry_run_only");
+    assert.equal(b.if, "always() && inputs.dry_run_only");
+    assert.equal(b.name, "B");
+    assert.equal(workflowJobs(folded)[0].if, "inputs.scope != 'x' && !inputs.dry_run_only");
+  });
+
   it("reads the condition below an if: that holds only a comment", () => {
     const below = join(dir, "below.yml");
     writeFileSync(
@@ -388,7 +406,13 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
         '          EMPTY: ""#unset',
         "          PLAIN: say 'hi'",
         "          SINGLE: 'don''t # x'",
-        String.raw`          UNICODE: "caf\u00e9"`,
+        String.raw`          UNICODE: "caf\u00e9 \U0001F600"`,
+        String.raw`          YAML_ONLY: "\x41\ \_\e\N"`,
+        '          RAW_TAB: "a\tb"',
+        String.raw`          ESCAPED_TAB: "a\	b"`,
+        String.raw`          SLASHES: "a\\b\/c"`,
+        String.raw`          NOT_UNICODE: "a\\u0041"`,
+        "          PAIRS: 'a ''b'' c'",
         "",
       ].join("\n"),
     );
@@ -397,10 +421,16 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     assert.equal(env.get("EMPTY"), "");
     assert.equal(env.get("PLAIN"), "say 'hi'");
     assert.equal(env.get("SINGLE"), "don't # x");
-    assert.equal(env.get("UNICODE"), "café");
+    assert.equal(env.get("UNICODE"), "café 😀");
+    assert.equal(env.get("YAML_ONLY"), "A \u00a0\u001b\u0085");
+    assert.equal(env.get("RAW_TAB"), "a\tb");
+    assert.equal(env.get("ESCAPED_TAB"), "a\tb");
+    assert.equal(env.get("SLASHES"), "a\\b/c");
+    assert.equal(env.get("NOT_UNICODE"), String.raw`a\u0041`);
+    assert.equal(env.get("PAIRS"), "a 'b' c");
   });
 
-  it("refuses a quoted value that spans lines, or an escape it does not decode", () => {
+  it("refuses a quoted value that spans lines, or an escape YAML does not have", () => {
     // Read line by line, a quoted `if:` split across lines would come back as
     // its first line, and the clause after the break would be invisible.
     const spanning = (at) => {
@@ -412,10 +442,60 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     };
     assert.throws(() => workflowSteps(spanning("step")), /does not close on its line/);
     assert.throws(() => workflowJobs(spanning("job")), /does not close on its line/);
+    for (const opening of ["'inputs.scope != ''x''", `'github.actor != "bot"`]) {
+      const single = join(dir, "spanning-single.yml");
+      writeFileSync(
+        single,
+        `name: X\njobs:\n  j:\n    steps:\n      - name: A\n        if: ${opening}\n          && !inputs.dry_run_only'\n        run: echo\n`,
+      );
+      assert.throws(() => workflowSteps(single), /does not close on its line/, opening);
+    }
 
     const escaped = join(dir, "escaped.yml");
-    writeFileSync(escaped, "name: X\njobs:\n  j:\n    steps:\n      - run: echo\n        env:\n          A: \"\\x41\"\n");
-    assert.throws(() => workflowSteps(escaped), /escape this reader does not decode/);
+    writeFileSync(escaped, "name: X\njobs:\n  j:\n    steps:\n      - run: echo\n        env:\n          A: \"\\q\"\n");
+    assert.throws(() => workflowSteps(escaped), /is not a YAML escape/);
+  });
+
+  it("reads a CRLF file exactly as its LF form", () => {
+    // A Windows checkout leaves `\r` on every line. Unhandled, every env and
+    // key map read as empty, so an absence guard passed on any content.
+    const lf = join(dir, "lf.yml");
+    const crlf = join(dir, "crlf.yml");
+    writeFileSync(lf, WORKFLOW);
+    writeFileSync(crlf, WORKFLOW.replaceAll("\n", "\r\n"));
+    const plain = (value) => (value instanceof Map ? [...value].map(([k, v]) => [k, plain(v)]) : value);
+    const read = (file) => ({
+      steps: workflowSteps(file).map((step) => ({ ...step, env: plain(step.env), stepEnv: plain(step.stepEnv) })),
+      jobs: workflowJobs(file).map((job) => ({ jobId: job.jobId, if: job.if, keys: plain(job.keys) })),
+      keys: plain(workflowKeys(file)),
+    });
+    const expected = read(lf);
+    assert.ok(expected.steps.some((step) => step.env.length > 0));
+    assert.deepEqual(read(crlf), { ...expected, steps: expected.steps.map((step) => ({ ...step, workflowFile: "crlf.yml" })) });
+  });
+
+  it("ends the last job where jobs: ends, not at a top-level block written after it", () => {
+    const after = join(dir, "after.yml");
+    writeFileSync(
+      after,
+      "name: X\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo\n" +
+        "on:\n  workflow_dispatch:\n    inputs:\n      dry_run_only:\n        type: boolean\n  push:\n    branches: [main]\n",
+    );
+    assert.deepEqual([...workflowJobs(after)[0].keys.keys()], ["runs-on", "steps"]);
+    assert.deepEqual([...workflowKeys(after).keys()], ["name", "jobs", "on"]);
+
+    // Worse when the last job has no steps of its own: the trailing block's
+    // indent-4 `steps:`, `env:` and `if:` became a phantom step and job gate.
+    const phantom = join(dir, "phantom.yml");
+    writeFileSync(
+      phantom,
+      "name: X\njobs:\n  a:\n    uses: ./.github/workflows/b.yml\n" +
+        "on:\n  push:\n    if: phantom\n    env:\n      Z: phantom\n    steps:\n      - name: phantom\n",
+    );
+    assert.deepEqual(workflowSteps(phantom), []);
+    const [job] = workflowJobs(phantom);
+    assert.equal(job.if, null);
+    assert.deepEqual([...job.keys.keys()], ["uses"]);
   });
 
   it("reads an empty flow mapping as an empty mapping: {} can hide nothing", () => {

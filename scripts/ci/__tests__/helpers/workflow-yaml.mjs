@@ -41,9 +41,13 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 
-/** Whole-line comments and blank lines dropped; indentation preserved. */
+/**
+ * Whole-line comments and blank lines dropped; indentation preserved. Split on
+ * CRLF too: a Windows checkout leaves a `\r` on every line, which `.` in the key
+ * regexes does not match, so every env and key map would read as empty.
+ */
 function significantLines(text) {
-  return text.split("\n").filter((line) => line.trim() !== "" && !/^\s*#/.test(line));
+  return text.split(/\r?\n/).filter((line) => line.trim() !== "" && !/^\s*#/.test(line));
 }
 
 function indentOf(line) {
@@ -77,7 +81,12 @@ function withoutComment(raw) {
         "reader refuses rather than reads in part. Keep a quoted value on one line, or use a block scalar.",
     );
   }
-  return trimmed.replace(/(^|\s+)#.*$/, "").trim();
+  return withoutPlainComment(trimmed);
+}
+
+/** A plain (unquoted) text with its comment removed. Quotes in it quote nothing. */
+function withoutPlainComment(raw) {
+  return raw.trim().replace(/(^|\s+)#.*$/, "").trim();
 }
 
 /**
@@ -94,22 +103,45 @@ function withoutComment(raw) {
  * Only a `#` that opens the value or follows whitespace counts, per YAML, so a
  * `#` inside a value (a URL fragment, an expression) survives. A quoted scalar
  * is taken whole (`withoutComment`), then unquoted and decoded: `'don''t'` is
- * `don't`, and `"say \"hi\""` is `say "hi"`. A double-quoted escape JSON does
- * not share (`\x41`, `\e`, `\N`) throws rather than come back as the wrong text.
+ * `don't`, and `"say \"hi\""` is `say "hi"`.
  */
 function scalarValue(raw) {
   const value = withoutComment(raw);
   if (value.startsWith("'")) return value.slice(1, -1).replaceAll("''", "'");
   if (!value.startsWith('"')) return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    throw new Error(
-      `workflow-yaml: a double-quoted value with an escape this reader does not decode (${value}). ` +
-        "Use a JSON-style escape, or a single-quoted or plain value.",
-    );
-  }
+  return value.slice(1, -1).replace(/\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)/g, (escape, code) => {
+    if (code.length > 1) return String.fromCodePoint(Number.parseInt(code.slice(1), 16));
+    if (code in DOUBLE_QUOTED_ESCAPES) return DOUBLE_QUOTED_ESCAPES[code];
+    throw new Error(`workflow-yaml: \`${escape}\` in ${value} is not a YAML escape.`);
+  });
 }
+
+/**
+ * YAML's double-quoted escapes, less the numeric ones `scalarValue` decodes
+ * itself (`\xXX`, `\uXXXX`, `\UXXXXXXXX`). Decoded by this table, not by
+ * `JSON.parse`, which lacks half of them and rejects the raw tab YAML allows
+ * inside quotes.
+ */
+const DOUBLE_QUOTED_ESCAPES = {
+  0: "\0",
+  a: "\x07",
+  b: "\b",
+  t: "\t",
+  "\t": "\t",
+  n: "\n",
+  v: "\v",
+  f: "\f",
+  r: "\r",
+  e: "\x1b",
+  " ": " ",
+  '"': '"',
+  "/": "/",
+  "\\": "\\",
+  N: "\x85",
+  _: "\xa0",
+  L: "\u2028",
+  P: "\u2029",
+};
 
 /**
  * A mapping key: bare, or quoted. `"issues": write` and `issues: write` are the
@@ -133,9 +165,10 @@ function keyOf(match) {
  * The flat `KEY: value` map whose `env:` header is at `lines[headerIndex]`.
  *
  * Reads only keys at the mapping's own child indent, so a nested or multi-line
- * value cannot contribute phantom keys. Values come back trimmed with
- * surrounding quotes removed: `DEPLOY_PHASE: build` and `DEPLOY_PHASE: "build"`
- * are the same instruction to Actions and must be the same here.
+ * value cannot contribute phantom keys. Values come back as `scalarValue` reads
+ * them, unquoted and decoded: `DEPLOY_PHASE: build` and `DEPLOY_PHASE: "build"`
+ * are the same instruction to Actions and must be the same here. A plain value
+ * continued on deeper lines reads as its first line (#2639).
  */
 function envMapAt(lines, headerIndex, floor = indentOf(lines[headerIndex])) {
   // `floor`: the indent at or above which the mapping has ended. The header's
@@ -227,6 +260,25 @@ function jobIdFrom(line) {
     .trim()
     .replace(/\s*:$/, "")
     .replace(/^["'](.*)["']$/, "$1");
+}
+
+/**
+ * Each job's lines, `[start, end)`, under the `jobs:` key at `jobsIndex`. The
+ * last job ends where `jobs:` does, at the next column-0 key, not at the end of
+ * the file: key order is free, and a top-level block written after `jobs:`
+ * (`on:` with its triggers) would otherwise be read as the last job's keys.
+ */
+function jobRanges(lines, jobsIndex) {
+  const starts = [];
+  let jobsEnd = lines.length;
+  for (let i = jobsIndex + 1; i < lines.length; i += 1) {
+    if (indentOf(lines[i]) === 0) {
+      jobsEnd = i;
+      break;
+    }
+    if (indentOf(lines[i]) === 2 && isJobHeader(lines[i])) starts.push(i);
+  }
+  return starts.map((start, j) => ({ start, end: j + 1 < starts.length ? starts[j + 1] : jobsEnd }));
 }
 
 /**
@@ -342,27 +394,40 @@ function stepIf(lines, stepStart, stepEnd, keyIndent) {
         : indentOf(lines[i]) === keyIndent && new RegExp(String.raw`^\s*${named("if")}\s*:\s*`).test(lines[i]);
     if (!atStepKeyIndent) continue;
 
-    // A trailing `# …` is a comment, including after a block indicator
-    // (`if: >- # note`), which would otherwise be returned as the condition.
-    const inline = withoutComment(lines[i].replace(new RegExp(String.raw`^\s*-?\s*${named("if")}\s*:\s*`), ""));
-    if (inline !== "" && !isBlockScalarHeader(inline)) return inline;
-
-    // Block scalar: the condition is the deeper-indented lines beneath it.
-    //
     // The base is the step's key indent, not the line's own. For the
     // FIRST-key form (`- if: >-`) the dash sits left of the step's sibling
     // keys, so using the dash's indent as the base never breaks and folds
     // `name:`, `env:` and `run:` into the condition — which makes a correct
     // REHEARSED step fail and lets a swallowed line satisfy a SHIPPING match.
-    const base = keyIndent;
-    const parts = [];
-    for (let j = i + 1; j < stepEnd; j += 1) {
-      if (indentOf(lines[j]) <= base) break;
-      parts.push(lines[j].trim());
-    }
-    return parts.join(" ").trim() || null;
+    return conditionAt(lines, i, stepEnd, keyIndent);
   }
   return null;
+}
+
+/**
+ * The condition held by the `if:` key at `lines[i]`, whose siblings sit at
+ * `base`: the inline value plus every deeper line below it, up to `end`.
+ *
+ * Deeper lines are the condition's own in every form. After a block indicator
+ * (`if: >-`) they are the whole condition, kept as written. After an inline
+ * value, or a comment alone, they continue a plain scalar
+ * (`if: inputs.scope != 'x'` then `  && !inputs.dry_run_only`), which YAML
+ * folds into one condition. Stopping at the first line lost every clause after
+ * the break, and a `doesNotMatch` guard passed on a gated step. A trailing
+ * `# …` is a comment, including after a block indicator (`if: >- # note`),
+ * which would otherwise be returned as the condition. Only the line the value
+ * starts on can open a quoted scalar; a continuation line is plain text, so
+ * `'c' == d` there is not a quoted value.
+ */
+function conditionAt(lines, i, end, base) {
+  const inline = withoutComment(lines[i].replace(new RegExp(String.raw`^\s*-?\s*${named("if")}\s*:\s*`), ""));
+  const block = isBlockScalarHeader(inline);
+  const parts = block || inline === "" ? [] : [inline];
+  for (let j = i + 1; j < end && indentOf(lines[j]) > base; j += 1) {
+    if (block) parts.push(lines[j].trim());
+    else parts.push(parts.length === 0 ? withoutComment(lines[j]) : withoutPlainComment(lines[j]));
+  }
+  return parts.join(" ").trim() || null;
 }
 
 /**
@@ -412,15 +477,7 @@ export function workflowSteps(workflowPath) {
   const steps = [];
   if (jobsIndex === -1) return steps;
 
-  const jobStarts = [];
-  for (let i = jobsIndex + 1; i < lines.length; i += 1) {
-    if (indentOf(lines[i]) === 0) break;
-    if (indentOf(lines[i]) === 2 && isJobHeader(lines[i])) jobStarts.push(i);
-  }
-
-  for (let j = 0; j < jobStarts.length; j += 1) {
-    const jobStart = jobStarts[j];
-    const jobEnd = j + 1 < jobStarts.length ? jobStarts[j + 1] : lines.length;
+  for (const { start: jobStart, end: jobEnd } of jobRanges(lines, jobsIndex)) {
     const jobId = jobIdFrom(lines[jobStart]);
 
     const jobEnvIndex = findEnvHeader(lines, jobStart + 1, jobEnd, 4);
@@ -547,30 +604,11 @@ export function workflowJobs(workflowPath) {
   if (jobsIndex === -1) return [];
 
   const jobs = [];
-  const starts = [];
-  for (let i = jobsIndex + 1; i < lines.length; i += 1) {
-    if (indentOf(lines[i]) === 0) break;
-    if (indentOf(lines[i]) === 2 && isJobHeader(lines[i])) starts.push(i);
-  }
+  for (const { start: from, end: to } of jobRanges(lines, jobsIndex)) {
 
-  for (let j = 0; j < starts.length; j += 1) {
-    const from = starts[j];
-    const to = j + 1 < starts.length ? starts[j + 1] : lines.length;
-
-    let condition = null;
-    for (let i = from + 1; i < to; i += 1) {
-      const ifKey = new RegExp(String.raw`^\s*${named("if")}\s*:\s*`);
-      if (indentOf(lines[i]) !== 4 || !ifKey.test(lines[i])) continue;
-      const inline = withoutComment(lines[i].replace(ifKey, ""));
-      if (inline !== "" && !isBlockScalarHeader(inline)) {
-        condition = inline;
-      } else {
-        const parts = [];
-        for (let k = i + 1; k < to && indentOf(lines[k]) > 4; k += 1) parts.push(lines[k].trim());
-        condition = parts.join(" ").trim() || null;
-      }
-      break;
-    }
+    const ifKey = new RegExp(String.raw`^\s*${named("if")}\s*:`);
+    const ifIndex = lines.findIndex((line, i) => i > from && i < to && indentOf(line) === 4 && ifKey.test(line));
+    const condition = ifIndex === -1 ? null : conditionAt(lines, ifIndex, to, 4);
     jobs.push({
       jobId: jobIdFrom(lines[from]),
       if: condition,
