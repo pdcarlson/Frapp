@@ -1,120 +1,142 @@
 #!/usr/bin/env node
-// Resolves /diff-review's scope to pinned SHAs, and writes its gate marker.
+// Resolves /diff-review's scope to pinned SHAs, writes its gate marker, and tells the pre-push hook
+// whether a commit carries anything nobody has reviewed.
 //
-//   node scripts/diff-review-scope.mjs [--full]          print the scope as one JSON line
-//   node scripts/diff-review-scope.mjs --mark <kind>     write the marker for HEAD (kind: full | delta | merged)
+//   node scripts/diff-review-scope.mjs [--full]       print the scope as one JSON line
+//   node scripts/diff-review-scope.mjs --mark         write the marker for HEAD, once its review is done
+//   node scripts/diff-review-scope.mjs --check <sha>  exit 0 when <sha> needs no review (.githooks/pre-push)
 //
-// The rules live in .claude/skills/diff-review/SKILL.md (Phase 0 and Phase 4); this script only
-// applies them. A branch counts as reviewed up to the newest commit in <merge-base>..HEAD whose
-// marker says `full` or `delta`. Nothing else is trusted: not the upstream tip (a push can skip the
-// hook), and not an empty marker from an older review. A delta covers the commits since then; if
-// one of them is a merge, the whole branch is reviewed again, because a merge can hide a change
-// (a conflict resolved by taking one side whole shows up in no diff of the merge). `merged` marks a
-// commit already on origin/main: it is public already, so the gate has nothing left to protect. It
-// is not evidence of a review, and never counts as one for branch commits.
+// What each scope means for the reviewer is in .claude/skills/diff-review/SKILL.md; this script
+// only applies the rules. A branch is reviewed up to the newest marked commit R on its own
+// first-parent line since it left main. What is left is the difference between HEAD and R with the
+// current main merged in cleanly (`git merge-tree`). So merging main adds nothing to review, while a
+// fix commit or an edit hidden in a merge commit does. A branch with no marked commit (its first
+// review, or after a rebase) is reviewed whole, and so is one whose reviewed work conflicts with main:
+// a resolution can leave no trace in any diff (keep main's side of a modify/delete conflict, and
+// merge-tree's tree already holds that file, with no markers).
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const REVIEW_KINDS = new Set(["full", "delta"]);
-const MARK_KINDS = new Set([...REVIEW_KINDS, "merged"]);
+// A re-review this size or larger is new work, so it gets the workflow; below it, the agent
+// reviews inline.
+export const INLINE_MAX_LINES = 300;
+
+// Spelled out because a local branch or tag named `origin/main` would otherwise win the lookup.
+const MAIN = "refs/remotes/origin/main";
+
+// Regenerated wholesale by tooling; their churn says nothing about how much there is to review.
+const GENERATED = new Set(["package-lock.json", "openapi.json"]);
+
+// What --mark writes. `full` and `delta` are what the 2026-09-23 script wrote for the same kind of
+// review. Empty markers predate both and were written by `touch`, after reviews that could have
+// covered only part of the branch, so they are not evidence of one.
+const TRUSTED = new Set(["reviewed", "full", "delta"]);
 
 function git(cwd, ...args) {
-  return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
+  return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
-function lines(text) {
-  return text ? text.split("\n").filter(Boolean) : [];
+function succeeds(cwd, ...args) {
+  try {
+    git(cwd, ...args);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function markerDir(root) {
-  return path.join(root, ".cache", "diff-review");
+function markerPath(root, sha) {
+  return path.join(root, ".cache", "diff-review", sha);
 }
 
-function markerKind(root, sha) {
-  const file = path.join(markerDir(root), sha);
-  return existsSync(file) ? readFileSync(file, "utf8").trim() : null;
+function trusted(root, sha) {
+  const file = markerPath(root, sha);
+  return existsSync(file) && TRUSTED.has(readFileSync(file, "utf8").trim());
 }
 
-// Files and insertions plus deletions in `git diff --numstat` or `git log --numstat` output.
-function tally(numstat) {
-  const files = new Set();
-  let changed = 0;
-  for (const row of lines(numstat)) {
+// Files, and insertions plus deletions outside the generated files.
+function size(root, from, to) {
+  let files = 0;
+  let changedLines = 0;
+  for (const row of git(root, "diff", "--numstat", "--no-renames", from, to).split("\n").filter(Boolean)) {
     const [added, deleted, file] = row.split("\t");
-    files.add(file);
-    changed += (Number(added) || 0) + (Number(deleted) || 0); // binary files report "-"
+    files++;
+    if (!GENERATED.has(path.basename(file))) changedLines += (Number(added) || 0) + (Number(deleted) || 0); // binary: "-"
   }
-  return { files: files.size, changedLines: changed };
+  return { files, changedLines };
 }
 
-export function resolveScope({ cwd = process.cwd(), full = false, baseRef = "origin/main" } = {}) {
+// R with main merged in, as a tree: what HEAD would be if nothing but main had landed since R.
+// Null when the two conflict.
+function reviewedOnMain(root, reviewed, branchBase) {
+  if (succeeds(root, "merge-base", "--is-ancestor", branchBase, reviewed)) return reviewed;
+  try {
+    return git(root, "merge-tree", "--write-tree", reviewed, branchBase).split("\n")[0];
+  } catch (err) {
+    if (err.status === 1) return null; // conflicts
+    throw new Error(`git merge-tree --write-tree failed (it needs git 2.38 or newer; pass --full to review the whole branch): ${String(err.stderr).trim()}`);
+  }
+}
+
+export function resolveScope({ cwd = process.cwd(), full = false, head: headRef = "HEAD", baseRef = MAIN } = {}) {
   const root = git(cwd, "rev-parse", "--show-toplevel");
-  const head = git(root, "rev-parse", "HEAD");
-  const branchBase = git(root, "merge-base", baseRef, "HEAD");
+  const head = git(root, "rev-parse", "--verify", `${headRef}^{commit}`);
+  const branchBase = git(root, "merge-base", baseRef, head);
   const dirty = git(root, "status", "--porcelain", "--untracked-files=no") !== "";
+  // First parents only: a marker on another branch merged in reviewed that branch, not this one.
+  const reviewed = git(root, "rev-list", "--first-parent", `${branchBase}..${head}`).split("\n").find((sha) => sha && trusted(root, sha)) ?? null;
+  const scope = (mode, review, base, counts = { files: 0, changedLines: 0 }) => ({ mode, review, base, head, branchBase, reviewed, root, ...counts, dirty });
 
-  let reviewed = null;
-  for (const sha of lines(git(root, "rev-list", `${branchBase}..HEAD`))) {
-    if (REVIEW_KINDS.has(markerKind(root, sha))) {
-      reviewed = sha;
-      break;
-    }
-  }
-
-  let mode;
-  let base;
-  if (head === branchBase) {
-    mode = "empty";
-    base = branchBase;
-  } else if (full || !reviewed) {
-    mode = "full";
-    base = branchBase;
-  } else if (reviewed === head) {
-    mode = "none";
-    base = head;
-  } else if (Number(git(root, "rev-list", "--count", "--merges", `${reviewed}..HEAD`)) > 0) {
-    mode = "full";
-    base = branchBase;
-  } else {
-    mode = "delta";
-    base = reviewed;
-  }
-
-  const size =
-    mode === "full" || mode === "delta" ? tally(git(root, "diff", "--numstat", "--no-renames", base, head)) : { files: 0, changedLines: 0 };
-  return { mode, base, head, branchBase, root, ...size, dirty };
+  if (head === branchBase) return scope("empty", null, head);
+  if (reviewed === head && !full) return scope("none", null, head);
+  const base = reviewed && !full ? reviewedOnMain(root, reviewed, branchBase) : null;
+  if (!base) return scope("full", "workflow", branchBase, size(root, branchBase, head));
+  if (succeeds(root, "diff", "--quiet", base, head)) return scope("none", null, head);
+  const counts = size(root, base, head);
+  return scope("delta", counts.changedLines >= INLINE_MAX_LINES ? "workflow" : "inline", base, counts);
 }
 
-export function writeMarker({ cwd = process.cwd(), kind, baseRef = "origin/main" }) {
-  if (!MARK_KINDS.has(kind)) {
-    throw new Error(`marker kind must be one of ${[...MARK_KINDS].join(", ")}; got ${JSON.stringify(kind)}`);
-  }
+export function writeMarker({ cwd = process.cwd() } = {}) {
   const root = git(cwd, "rev-parse", "--show-toplevel");
-  const head = git(root, "rev-parse", "HEAD");
-  if (kind === "merged" && git(root, "merge-base", baseRef, "HEAD") !== head) {
-    throw new Error(`\`merged\` is only for a commit already on ${baseRef}; ${head} is not (if it merged recently, run \`git fetch origin main\` first)`);
-  }
-  mkdirSync(markerDir(root), { recursive: true });
-  const file = path.join(markerDir(root), head);
-  writeFileSync(file, `${kind}\n`);
+  const file = markerPath(root, git(root, "rev-parse", "HEAD"));
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, "reviewed\n");
   return file;
 }
 
+// The pre-push hook's question for each pushed tip. It passes a commit this review marked, one
+// already on main, and one with nothing new since a reviewed commit but clean merges of main.
+export function checkCommit({ cwd = process.cwd(), sha, baseRef = MAIN }) {
+  if (!sha) throw new Error("--check needs the SHA of the commit being pushed");
+  const root = git(cwd, "rev-parse", "--show-toplevel");
+  if (trusted(root, git(root, "rev-parse", "--verify", `${sha}^{commit}`))) return { ok: true, reason: "reviewed" };
+  const scope = resolveScope({ cwd, head: sha, baseRef });
+  if (scope.mode === "empty") return { ok: true, reason: `already on ${baseRef}` };
+  if (scope.mode === "none") return { ok: true, reason: `nothing but clean merges of ${baseRef} since reviewed ${scope.reviewed}` };
+  return { ok: false, reason: `${scope.files} file(s), ${scope.changedLines} line(s) unreviewed (${scope.mode})` };
+}
+
 function main(argv) {
-  const markAt = argv.indexOf("--mark");
-  if (markAt !== -1) {
-    console.log(writeMarker({ kind: argv[markAt + 1] }));
-    return;
+  if (argv.includes("--mark")) {
+    console.log(writeMarker());
+    return 0;
+  }
+  const checkAt = argv.indexOf("--check");
+  if (checkAt !== -1) {
+    const { ok, reason } = checkCommit({ sha: argv[checkAt + 1] });
+    console.error(`review-gate: ${argv[checkAt + 1]}: ${reason}`);
+    return ok ? 0 : 1;
   }
   console.log(JSON.stringify(resolveScope({ full: argv.includes("--full") })));
+  return 0;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    main(process.argv.slice(2));
+    process.exit(main(process.argv.slice(2)));
   } catch (err) {
     console.error(`diff-review-scope: ${err.message}`);
     process.exit(1);
