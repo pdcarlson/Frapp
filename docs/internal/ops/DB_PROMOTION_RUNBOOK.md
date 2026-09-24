@@ -983,7 +983,7 @@ enabled with no client policies).
 
 ## 2026-08-24: Discord bot connection — two migrations
 
-The second way in: a single Signet-owned bot a chapter installs through
+The second way in: a single Frapp-owned bot a chapter installs through
 Discord's ordinary "Add to Server" OAuth flow, after which the API reads the
 history itself. Promotes after `20260824120000` below, which owns the job tables
 these extend.
@@ -1057,7 +1057,7 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
   token exchange, Manage Server was read under the authorizing human's own token
   — but together they prove only that _a human with Manage Server installed the
   bot into guild G_, never that they intended _chapter X_ to read it. Discord's
-  consent screen names Signet; it does not name the chapter. These columns park
+  consent screen names the application (Frapp); it does not name the chapter. These columns park
   the guild as pending and mint a second one-time token, delivered only to the
   browser that completed the OAuth, which activation requires alongside a session
   whose active chapter matches.

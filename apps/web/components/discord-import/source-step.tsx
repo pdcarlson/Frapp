@@ -55,9 +55,9 @@ export function SourceStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        There are two ways to bring your Discord history into Frapp. Both end
-        up in the same place, and both ask you the same questions about where
-        each channel should land.
+        There are two ways to bring your Discord history into Frapp. Both end up
+        in the same place, and both ask you the same questions about where each
+        channel should land.
       </p>
 
       <div className="space-y-3">

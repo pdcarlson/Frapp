@@ -131,8 +131,8 @@ export function ConnectStep({
             {connection.data?.connected_discord_username
               ? `Authorized by ${connection.data.connected_discord_username}.`
               : "Authorized."}{" "}
-            Frapp can read channel history in this server. It cannot post,
-            edit, or delete anything.
+            Frapp can read channel history in this server. It cannot post, edit,
+            or delete anything.
           </p>
         </div>
 

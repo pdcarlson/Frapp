@@ -114,8 +114,8 @@ Authentication sits in front of the hostname. Second, Signet/Supabase auth runs 
 ### Vercel Authentication
 
 Unauthenticated requests to `https://app.staging.frapp.live` and `https://staging.frapp.live`
-return a 302 to `https://vercel.com/sso-api` (`Login – Vercel`), not the Signet app. That redirect
-is Vercel Authentication. It isn't Password Protection and it isn't a Signet 401.
+return a 302 to `https://vercel.com/sso-api` (`Login – Vercel`), not the Frapp page. That redirect
+is Vercel Authentication. It isn't Password Protection and it isn't a Frapp 401.
 
 Both projects store `ssoProtection.deploymentType = all_except_custom_domains`. On this Hobby plan,
 that setting still gates Preview deployments, and both staging hosts are Preview custom domains on
@@ -133,7 +133,7 @@ a `_vercel_share` link, and the second fetches with the principal's access), and
 through the sandbox allowlist, so a production hostname wouldn't fail closed. Anything only they
 could show you stays `blocked`.
 
-#1951 is done when `curl -I https://app.staging.frapp.live/sign-in` returns the Signet app instead
+#1951 is done when `curl -I https://app.staging.frapp.live/sign-in` returns the Frapp sign-in page instead
 of `Login – Vercel`. Until then, these are all `blocked`, never passed:
 
 - a correlated web+API walkthrough,

@@ -267,7 +267,10 @@ machine that downloaded it.
    Apple's domain-association file does not apply here — that belongs to the
    Email Communication service, and a `supabase.co` host could not serve it in
    any case. The Services ID **Description** is member-facing on the web
-   consent sheet, so it reads `Signet`, not an internal label. Saving is four
+   consent sheet, so it reads the product name, `Frapp`, not an internal label.
+   *2026-09-24: it was set to `Signet`. ADR-25 step 4
+   ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)) moves it to
+   `Frapp`, an owner step on the day that step merges.* Saving is four
    clicks deep (Next → Done → Continue → Save); stopping at Done loses the
    configuration silently.
 3. **Key** — Keys → new key with Sign in with Apple → Primary App ID
