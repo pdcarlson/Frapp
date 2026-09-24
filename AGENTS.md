@@ -123,6 +123,7 @@ When the user gives you a durable environment hint or tool workaround not docume
 - `Skill(skill: "code-review")` is invocable only when this turn's prompt carries `/code-review` as a whitespace-delimited token; backticks, quotes and trailing punctuation defeat it. `/diff-review` is always invocable and is the pre-push gate. Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 - Branch protection sets `enforce_admins: true`, so admin credentials don't bypass it.
 - Never `pkill -f` or `pgrep -f` a pattern from Bash: it also matches the calling shell's own command line, so the kill takes out the shell running it. Kill by explicit PID.
+- Git Bash on Windows rewrites a path-looking argument, `--path=/` included, into a Windows path before `npx` sees it, so `npx infisical run --env=<slug> --path=/ -- …` fails with `Invalid secret path` (`secretPath=C:/Program Files/Git/`). Prefix the command with `MSYS_NO_PATHCONV=1`.
 
 ## Claude Code web sandbox
 
