@@ -37,10 +37,10 @@ step 2 merged still says Signet. Before submitting, check that `expo.name` is
 `Frapp` in `app.json` at the build's commit, or that the installed TestFlight
 build's home-screen name reads Frapp.
 [`frapp-mobile-copy.test.mjs`](../../../scripts/ci/__tests__/frapp-mobile-copy.test.mjs)
-fails CI when it finds a string in `apps/mobile`'s source that says Signet. It
-reads the source with a heuristic comment scanner, not the built binary, and
-text the server sends (API messages, the system actor's name) moves with
-ADR-25's later steps, so look at the build itself too. Bundle id
+fails CI when a line of `apps/mobile`'s source says Signet outside the comment
+the line starts with. It reads the source, not the built binary, and text the
+server sends (API messages, the system actor's name) moves with ADR-25's later
+steps, so look at the build itself too. Bundle id
 (`live.frapp.mobile`), slug, scheme, and every public URL are **frapp**
 permanently. The trademark record is on #1901; this file is the listing paste.
 

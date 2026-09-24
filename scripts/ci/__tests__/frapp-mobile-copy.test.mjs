@@ -14,15 +14,15 @@
 //
 // WHAT IT CHECKS.
 // - A walk of apps/mobile's non-spec sources (app.json included): no whole
-//   word "Signet" and no signet- download filename anywhere but a comment
-//   that starts its line with `//`, `*`, `/*` or `{/*`. A design-system note
-//   that names Signet goes on such a line, not after code. The walk is what
+//   word "Signet" and no signet- download filename anywhere but the comment
+//   a line starts with (see copyMatches). A design-system note that names
+//   Signet goes on its own comment line, not after code. The walk is what
 //   makes the pinned sites below not the whole story: a new screen that says
 //   Signet fails here without anyone listing it.
-// - Every `Settings → <name>` recovery path in code names `expo.name` from
-//   app.json, because iOS Settings lists the app under that name (ADR-25
-//   step 2), and at least two exist. A path in any comment is not a recovery
-//   path and counts for neither.
+// - The two `Settings → <name> → Location` recovery paths (the study screen
+//   and the location primer) name `expo.name` from app.json, because iOS
+//   Settings lists the app under that name (ADR-25 step 2), and no other
+//   `Settings → X` path in code names anything else.
 // - The sign-in wordmark and tagline, the calendar ICS PRODID and filename
 //   fallback, and the spec fixtures for the payment copy.
 //
@@ -57,8 +57,11 @@ export const APP_NAME = "Frapp";
 const MOBILE_TAGLINE = "Everything your chapter needs is already in chat.";
 const PRODID = "PRODID:-//Frapp//Chapter Events//EN";
 
-/** study.tsx and the location primer. A path dropped to pass must fail. */
-const MIN_SETTINGS_PATHS = 2;
+/** Where the location recovery path lives. A path dropped to pass must fail. */
+const SETTINGS_SITES = [
+  "apps/mobile/app/(tabs)/study.tsx",
+  "apps/mobile/components/study/location-primer-sheet.tsx",
+];
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", "coverage", "ios", "android"]);
 const SOURCE_EXT = /\.(?:json|js|ts|tsx)$/;
@@ -93,222 +96,91 @@ function walkMobile(dir = MOBILE_ROOT, { specs = false } = {}) {
 }
 
 /**
- * The comment spans of one file, as `[start, end)` pairs. JSON has none, so a
- * `"**\/*"` glob in app.json can't hide the keys after it. For code, one pass
- * tracks strings, template literals (with `${…}` nesting) and regex literals,
- * so the `/*` in `"image/*"` or `/\/*$/`, the `//` in `"PRODID:-//…"` or
- * `/^https?:\/\//`, and a backtick in `/`/` all stay code.
+ * Why lines and not a scanner. Telling a comment from a string, a regex or
+ * JSX text takes a parser, and this job runs with node built-ins only (no
+ * `npm ci`). A hand-rolled scanner was tried first, and each of seven review
+ * rounds found another way for one misread (a `/*` in JSX text, a stray
+ * backtick, a regex read as division, a lone `\r`) to hide copy many lines
+ * below it. So the rule reads each line on its own and trusts only the
+ * comment a line starts with:
+ * - a `//` line is comment to its end;
+ * - a line starting `/*`, `{/*` or `*` (a block comment, a JSX comment, a
+ *   JSDoc continuation) is comment up to its first `*\/`, code after.
+ * Anything else counts as copy, including a comment after code (`x(); //
+ * Signet`) and a block comment's star-less continuation line: those report,
+ * so the rule fails closed there. Lines break where JavaScript breaks them
+ * (`\r\n`, `\n`, `\r`, U+2028, U+2029), so a lone `\r` can't join a comment
+ * line to the code after it.
  *
- * Comment openers are also judged by where they sit. A `//` opens a comment
- * anywhere except right after `:`, so a URL in JSX text stays code. A `/*`
- * opens one only first on its line, right after `{` (the JSX `{/* … *\/}`
- * form), or when `*\/` closes it later on the same line and the character
- * before it isn't a word character, `*`, `/`, `.` or `\`. So `image/*` and
- * `**\/*` stay code.
- *
- * It is a heuristic, not a parser, and on its own a misread can hide lines:
- * - A `//` in unquoted JSX text (`and//or`) reads as a comment to its line end,
- *   and swallows a backtick that opens a template on that line.
- * - A `/*` that starts a line of JSX text or of a misread template opens a
- *   block comment that runs to the next `*\/`.
- * - Whether a `/` starts a regex or divides is judged by what precedes it on
- *   its line (or, first on its line, by the line above unless that is a
- *   comment), which an unusual expression can defeat.
- * - A raw `'` or `"` in JSX text would miscount strings. Lint keeps them out
- *   (react/no-unescaped-entities, and `lint` runs with --max-warnings 0).
- * - A stray backtick in JSX text, which that rule allows, flips template
- *   tracking: template bodies read as code and code as template text.
- * So copyMatches doesn't take the scanner's word alone: a match counts as a
- * comment only when the comment holding it starts its line (`//`, `/*`, `{/*`,
- * or a `*` continuation line). Hiding copy then needs a misread and a line
- * that itself starts with `//`, `*`, `/*` or `{/*`: copy there, or code such
- * as a `*[Symbol.iterator]` method or a `* rate` continuation line.
- * Checked 2026-09-24 against the TypeScript compiler's comment ranges over
- * every js/ts/tsx file under apps/mobile, specs included: identical.
+ * The blind spot: copy on a line that itself starts with `//`, `*`, `/*` or
+ * `{/*`, such as a template literal line beginning `* ` or JSX text beginning
+ * `//`. The last fixture pins it, so widening or closing it is deliberate.
  */
-export function commentRanges(rel, source) {
-  if (rel.endsWith(".json")) return [];
-  const ranges = [];
-  const braces = []; // open-brace depth inside each `${`, so `}` knows when the template resumes
-  let state = "code"; // code | line | block | ' | " | `
-  let start = 0;
-  for (let i = 0; i < source.length; i += 1) {
-    const char = source[i];
-    const next = source[i + 1];
-    if (state === "line") {
-      if (char === "\n") {
-        ranges.push([start, i]);
-        state = "code";
-      }
-    } else if (state === "block") {
-      if (char === "*" && next === "/") {
-        ranges.push([start, i + 2]);
-        state = "code";
-        i += 1;
-      }
-    } else if (state === "'" || state === '"') {
-      if (char === "\\") i += 1;
-      else if (char === state || char === "\n") state = "code";
-    } else if (state === "`") {
-      if (char === "\\") i += 1;
-      else if (char === "`") state = "code";
-      else if (char === "$" && next === "{") {
-        braces.push(0);
-        state = "code";
-        i += 1;
-      }
-    } else if (char === "/" && next === "/" && source[i - 1] !== ":") {
-      state = "line";
-      start = i;
-      i += 1;
-    } else if (char === "/" && next === "*" && opensBlock(source, i)) {
-      state = "block";
-      start = i;
-      i += 1;
-    } else if (char === "/") {
-      i = regexEnd(source, i) ?? i;
-    } else if (char === "'" || char === '"' || char === "`") {
-      state = char;
-    } else if (braces.length > 0 && char === "{") {
-      braces[braces.length - 1] += 1;
-    } else if (braces.length > 0 && char === "}") {
-      if (braces[braces.length - 1] === 0) {
-        braces.pop();
-        state = "`";
-      } else {
-        braces[braces.length - 1] -= 1;
-      }
-    }
-  }
-  if (state === "line" || state === "block") ranges.push([start, source.length]);
-  return ranges;
+const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
+const LEADING_COMMENT = /^\s*(?:\/\/|\{?\/\*|\*)/;
+
+/** Whether `column` of `line` sits in the comment the line starts with. */
+function inLeadingComment(line, column) {
+  const lead = line.match(LEADING_COMMENT);
+  if (!lead) return false;
+  if (lead[0].endsWith("//")) return true;
+  // A `*` line may be the `*\/` that closes the block, so search from the star.
+  const from = lead[0].endsWith("/*") ? lead[0].length : lead[0].length - 1;
+  const close = line.indexOf("*/", from);
+  return close === -1 || column < close;
 }
 
-/** Whether the `/*` at `at` opens a block comment (see commentRanges). */
-function opensBlock(source, at) {
-  const lineStart = source.lastIndexOf("\n", at - 1) + 1;
-  if (/^\s*$/.test(source.slice(lineStart, at)) || source[at - 1] === "{") return true;
-  const lineEnd = source.indexOf("\n", at);
-  const rest = source.slice(at + 2, lineEnd === -1 ? source.length : lineEnd);
-  return rest.includes("*/") && !/[\w*/.\\]/.test(source[at - 1]);
-}
-
-// `<` is left out on purpose: `</Text>` is a closing tag, not a regex.
-const REGEX_AFTER = /(?:^|[(,=:[!&|?{};+\-*%>~^]|\b(?:return|typeof|case|do|else|in|of|new|delete|void|throw|yield|await))\s*$/;
-
-/**
- * The index of the `/` closing a regex literal that opens at `at`, or null
- * when that `/` is division (judged by what precedes it) or no close follows
- * on the same line.
- */
-function regexEnd(source, at) {
-  const lineStart = source.lastIndexOf("\n", at - 1) + 1;
-  let before = source.slice(lineStart, at);
-  if (/^\s*$/.test(before) && lineStart > 0) {
-    // First on its line: the line above decides (`(a + b)` then `/ 2` is
-    // division), unless it is a comment line, whose last words say nothing.
-    const above = source.slice(source.lastIndexOf("\n", lineStart - 2) + 1, lineStart - 1);
-    before = /^\s*(?:\/\/|\*|\/\*)/.test(above) ? "" : above;
-  }
-  if (!REGEX_AFTER.test(before.slice(-12))) return null;
-  let inClass = false;
-  for (let i = at + 1; i < source.length; i += 1) {
-    const char = source[i];
-    if (char === "\n") return null;
-    if (char === "\\") i += 1;
-    else if (char === "[") inClass = true;
-    else if (char === "]") inClass = false;
-    else if (char === "/" && !inClass) return i;
-  }
-  return null;
-}
-
-function inRanges(ranges, index) {
-  return ranges.some(([from, to]) => index >= from && index < to);
-}
-
-/**
- * Whether `index` sits in a comment that starts its line: the comment range
- * holding it opens at the line's first non-blank character (or right after a
- * leading `{`), or opened on an earlier line and this line continues it with
- * `*`. A comment that opens later on the line, after code, doesn't count.
- */
-function inLineComment(ranges, source, index) {
-  const range = ranges.find(([from, to]) => index >= from && index < to);
-  if (!range) return false;
-  const lineStart = source.lastIndexOf("\n", index - 1) + 1;
-  const lead = source.slice(lineStart).match(/^\s*\{?/);
-  const first = lineStart + lead[0].length;
-  if (range[0] < lineStart) return /^\s*\*/.test(source.slice(lineStart, index));
-  return range[0] === first;
-}
-
-/** Matches of `pattern` that count as copy: everything but a comment that starts its line. */
+/** Every match of `pattern`, by file and line, that isn't in its line's leading comment. */
 function copyMatches(files, pattern) {
   const found = [];
   for (const { rel, source } of files) {
-    const comments = commentRanges(rel, source);
-    for (const match of source.matchAll(pattern)) {
-      if (!inLineComment(comments, source, match.index)) found.push({ rel, source, match });
+    for (const [index, line] of source.split(LINE_BREAK).entries()) {
+      for (const match of line.matchAll(pattern)) {
+        if (!inLeadingComment(line, match.index)) {
+          found.push({ rel, line: index + 1, text: line, match });
+        }
+      }
     }
   }
   return found;
 }
 
-/** Matches of `pattern` outside every comment the scanner found: code for certain. */
-function certainCodeMatches(files, pattern) {
-  const found = [];
-  for (const { rel, source } of files) {
-    const comments = commentRanges(rel, source);
-    for (const match of source.matchAll(pattern)) {
-      if (!inRanges(comments, match.index)) found.push({ rel, source, match });
-    }
-  }
-  return found;
-}
-
-function lineOf(source, index) {
-  return source.slice(0, index).split("\n").length;
-}
-
-/** `Signet` as a whole word anywhere but a comment that starts its line; `SignetTokens` is not a hit. */
+/** `Signet` as a whole word; `SignetTokens` is not a hit. */
 export function signetCopyProblems(files) {
-  return copyMatches(files, /\bSignet\b/g).map(
-    ({ rel, source, match }) => `${rel}:${lineOf(source, match.index)}`,
-  );
-}
-
-/** A Save-as name that still starts signet-. Design-system files are not downloads. */
-export const SIGNET_DOWNLOAD_NAME = /\bsignet-[^\n]{0,80}?\.(?:ics|csv|pdf)\b/gi;
-
-export function signetDownloadNameProblems(files) {
-  return copyMatches(files, SIGNET_DOWNLOAD_NAME).map(
-    ({ rel, source, match }) => `${rel}:${lineOf(source, match.index)}`,
-  );
+  return copyMatches(files, /\bSignet\b/g).map(({ rel, line }) => `${rel}:${line}`);
 }
 
 /**
- * Every `Settings → X` path in code, with X the word iOS Settings must list.
- * Only code outside every comment counts, so a misread can only drop a path,
- * which the floor then reports, never supply one.
+ * A `signet-` token with a `.ics`, `.csv` or `.pdf` later on its line: a
+ * Save-as name. Each token is judged where it stands, so a comment's
+ * `signet-` can't vouch for one in the code after it. Design-system files
+ * (`signet-emblem-B.png`) are not downloads.
  */
-export function collectSettingsPaths(files) {
-  return certainCodeMatches(files, /Settings → ([A-Za-z][\w-]*)/g).map(({ rel, source, match }) => ({
-    rel,
-    line: lineOf(source, match.index),
-    name: match[1],
-  }));
+export const SIGNET_DOWNLOAD_NAME = /\bsignet-[\w-]*(?=[^\n]{0,80}?\.(?:ics|csv|pdf)\b)/gi;
+
+export function signetDownloadNameProblems(files) {
+  return copyMatches(files, SIGNET_DOWNLOAD_NAME).map(({ rel, line }) => `${rel}:${line}`);
 }
 
+/**
+ * The pinned recovery paths must be in code, and every other `Settings → X`
+ * in code must name `expoName` too. A path after a `//` or `/*` on its line
+ * is a note, not a recovery path, so it is skipped rather than judged. That
+ * lets a wrong name hide behind a URL earlier on its line; a wrong name that
+ * is Signet is still caught by the Signet walk.
+ */
 export function settingsPathProblems(files, expoName) {
   const problems = [];
-  const paths = collectSettingsPaths(files);
-  if (paths.length < MIN_SETTINGS_PATHS) {
-    problems.push(`must keep at least ${MIN_SETTINGS_PATHS} Settings → ${expoName} paths`);
+  const path = `Settings → ${expoName} → Location`;
+  for (const site of SETTINGS_SITES) {
+    const file = files.find((candidate) => candidate.rel === site);
+    const kept = file && copyMatches([file], new RegExp(literal(path), "g")).length > 0;
+    if (!kept) problems.push(`${site} must keep its ${path} path`);
   }
-  for (const path of paths) {
-    if (path.name !== expoName) {
-      problems.push(`${path.rel}:${path.line} names Settings → ${path.name}, not ${expoName}`);
+  for (const { rel, line, text, match } of copyMatches(files, /Settings → ([A-Za-z][\w-]*)/g)) {
+    if (/\/\/|\/\*/.test(text.slice(0, match.index))) continue;
+    if (match[1] !== expoName) {
+      problems.push(`${rel}:${line} names Settings → ${match[1]}, not ${expoName}`);
     }
   }
   return problems;
@@ -382,9 +254,12 @@ export function lockSelfProblems(source) {
   if (!mobileRoot || mobileRoot[1] !== "apps/mobile") {
     problems.push("walker must stay on apps/mobile");
   }
-  const floor = source.match(/^const MIN_SETTINGS_PATHS = (\d+);?$/m);
-  if (!floor || floor[1] !== "2") {
-    problems.push("MIN_SETTINGS_PATHS must stay 2");
+  if (
+    !/^const SETTINGS_SITES = \[\n  "apps\/mobile\/app\/\(tabs\)\/study\.tsx",\n  "apps\/mobile\/components\/study\/location-primer-sheet\.tsx",\n\];$/m.test(
+      source,
+    )
+  ) {
+    problems.push("SETTINGS_SITES must keep both recovery paths");
   }
   if (!/SOURCE_EXT = \/\\\.\(\?:json\|/.test(source)) {
     problems.push("walker must read app.json, not only code");
@@ -432,138 +307,64 @@ test("a Signet string, JSX text or JSON value fails the walk", () => {
   assert.deepEqual(signetCopyProblems(files), ["a.ts:1", "b.tsx:2", "c.json:1", "d.ts:1"]);
 });
 
-test("a comment opener inside a string, JSON or JSX text hides nothing", () => {
+// Every input below hid real copy from the scanner this lock used to have.
+// Each line is judged alone now, so what came before it can't matter.
+test("nothing on an earlier line can hide copy on a code line", () => {
   const files = [
-    { rel: "a.ts", source: 'const accept = "image/*";\nconst reason = "Signet needs your photos.";\n' },
-    {
-      rel: "b.json",
-      source: '{ "assetBundlePatterns": ["**/*"], "infoPlist": { "X": "Signet reads it." } }\n',
-    },
-    { rel: "c.tsx", source: "<Text>\n  Help lives at https://frapp.live/help. Return to Signet.\n</Text>\n" },
-    { rel: "d.ts", source: "const s = `line one\n see https://frapp.live and Signet`;\n" },
-    { rel: "e.ts", source: 'const s = `${fn({ a: 1 })} Signet`;\n' },
-    { rel: "f.tsx", source: "<Text>Don't</Text>\n// Signet gold\nconst t = \"Signet\";\n" },
+    { rel: "a.ts", source: 'const accept = "image/*";\nconst r = "Signet needs your photos.";\n' },
+    { rel: "b.json", source: '{\n  "assetBundlePatterns": ["**/*"],\n  "x": "Signet reads it."\n}\n' },
+    { rel: "c.ts", source: 'const clean = url.replace(/\\/*$/, "");\nconst r = "Signet";\n/** doc */\n' },
+    { rel: "d.ts", source: 'const re = /`/;\nconst g = `**/*.ts`;\nconst t = "Signet";\n' },
+    { rel: "e.tsx", source: "<Text>\n  Upload files matching\n  /* or pick one\n</Text>\n<Text>Return to Signet.</Text>\n" },
+    { rel: "f.tsx", source: "<Text>Press ` then</Text>\nconst css = `\n  /* all\n`;\n<Text>Return to Signet.</Text>\n" },
+    { rel: "g.tsx", source: "<Text>Don't worry</Text><Picker accept={'image/*'} />\n<Text>Return to Signet.</Text>\n" },
+    { rel: "h.ts", source: 'const accept = x//TODO: restore /* glob\nexport const r = "Signet";\n' },
+    { rel: "i.ts", source: 'const pats = [\n  /x/, // plain\n  /`/g,\n];\nconst t = "Signet";\n' },
   ];
   assert.deepEqual(signetCopyProblems(files), [
     "a.ts:2",
-    "b.json:1",
-    "c.tsx:2",
-    "d.ts:2",
-    "e.ts:1",
-    "f.tsx:3",
+    "b.json:3",
+    "c.ts:2",
+    "d.ts:3",
+    "e.tsx:5",
+    "f.tsx:5",
+    "g.tsx:2",
+    "h.ts:2",
+    "i.ts:5",
   ]);
 });
 
-test("a regex literal opens no comment, template or string", () => {
-  const files = [
-    { rel: "a.ts", source: 'const clean = url.replace(/\\/*$/, "");\nconst r = "Signet needs your photos.";\n/** doc */\n' },
-    { rel: "b.ts", source: 'const glob = /[/*]/;\nconst r = "Signet";\n/** doc */\n' },
-    { rel: "c.ts", source: 'const re = /`/;\nconst a = `image/*`;\nconst t = "Signet";\n' },
-    { rel: "d.ts", source: 'const ok = /^https?:\\/\\//.test(u) ? "Signet" : "x";\n' },
-    { rel: "e.ts", source: 's.replace(/`/g, "");\nconst label = `${n} // Signet ${m}`;\n' },
-    { rel: "f.ts", source: 'const a = `${s.replace(/{/g, "")} done`;\nconst t = "Signet";\n' },
-    { rel: "g.ts", source: 'const t = x.replace(\n  // drop inline-code ticks\n  /`/g,\n  "",\n);\n// Signet gold ring\n' },
-    { rel: "i.ts", source: 'const re = /`/;\nconst g = `**/*.ts`;\nconst t = "Signet";\n' },
-    { rel: "j.ts", source: 'const a = `${s.replace(/{/g, "")}`;\nconst b = `a/*b`;\nconst t = "Signet";\n' },
-  ];
-  assert.deepEqual(signetCopyProblems(files), [
-    "a.ts:2",
-    "b.ts:2",
-    "c.ts:3",
-    "d.ts:1",
-    "e.ts:2",
-    "f.ts:2",
-    "i.ts:3",
-    "j.ts:3",
-  ]);
-});
-
-test("a miscounted quote can't open a comment over the lines below", () => {
-  // A raw apostrophe in JSX text (lint refuses it, but a lock can't lean on
-  // lint) pairs with the quote before image/, so the glob's `/*` is read as
-  // code. It follows a word character, so it opens no comment, and the lines
-  // below stay code even when they carry a URL.
-  const source = [
-    "<Text>Don't worry</Text><Picker accept={'image/*'} />",
-    "<Text>Return to Signet.</Text>",
-    '<Link href="https://frapp.live">Open Settings → Signet</Link>',
-    "",
-  ].join("\n");
-  const backtick = "<Text>Press ` then</Text>\nconst g = `**/*.ts`;\n<Text>See https://frapp.live, Signet</Text>\n";
-  assert.deepEqual(signetCopyProblems([{ rel: "b.tsx", source: backtick }]), ["b.tsx:3"]);
-  assert.deepEqual(signetCopyProblems([{ rel: "a.tsx", source }]), ["a.tsx:2", "a.tsx:3"]);
-  assert.deepEqual(settingsPathProblems([{ rel: "a.tsx", source }], "Frapp"), [
-    "must keep at least 2 Settings → Frapp paths",
-    "a.tsx:3 names Settings → Signet, not Frapp",
-  ]);
-});
-
-test("a misread `/*` can't hide the lines below it", () => {
-  const files = [
-    { rel: "a.tsx", source: "<Text>\n  Files /* here\n  Return to Signet.\n</Text>\n" },
-    { rel: "b.tsx", source: "<Text>Use and/or /* here</Text>\n<Text>Settings → Signet</Text>\n/** doc */\n" },
-    { rel: "c.tsx", source: "<Text>{a}/*{b}</Text>\n<Text>Signet</Text>\n{/* x */}\n" },
-    {
-      rel: "d.tsx",
-      source: "<Text>Press ` then</Text>\nconst g = `Files /* all`;\n<Text>Return to Signet.</Text>\n/** doc */\n",
-    },
-    { rel: "e.ts", source: 'const accept = x//TODO: restore /* glob\nexport const r = "Signet";\n/** doc */\n' },
-    { rel: "f.ts", source: 'const n = x//count of `items\nconst label = `${n} // total`; const t = "Signet";\n' },
-  ];
-  assert.deepEqual(signetCopyProblems(files), ["a.tsx:3", "b.tsx:2", "c.tsx:2", "d.tsx:3", "e.ts:2", "f.ts:2"]);
-});
-
-test("a misread `/*` or backtick can't hide copy on a line that isn't a comment line", () => {
-  const files = [
-    { rel: "a.tsx", source: "<Text>\n  Upload files matching\n  /* or pick one\n</Text>\n<Text>Return to Signet.</Text>\n" },
-    { rel: "b.tsx", source: "<Text>Press ` then</Text>\nconst css = `\n  /* all\n`;\n<Text>Return to Signet.</Text>\n" },
-    { rel: "c.tsx", source: "<Text>and//or</Text>{`x\n  /* y\n`}\n<Text>Signet</Text>\n" },
-    { rel: "d.tsx", source: "const re = [\n  // backtick\n  /`/,\n];\nconst css = `\n  /* all\n`;\n<Text>Signet</Text>\n" },
-  ];
-  assert.deepEqual(signetCopyProblems(files), ["a.tsx:5", "b.tsx:5", "c.tsx:4", "d.tsx:8"]);
-});
-
-test("a comment that opens after code on a line exempts nothing after a misread", () => {
+test("a comment earlier on the same line exempts nothing after it closes", () => {
   const files = [
     { rel: "a.tsx", source: "<Text>\n  {/* keep on one line */}Tap and//or hold to open Signet.\n</Text>\n" },
     { rel: "b.tsx", source: "/* x */ <Text>Type // to reply in Signet</Text>\n" },
+    { rel: "c.ts", source: " * end of doc */ const t = \"Signet\";\n" },
+    { rel: "d.tsx", source: "<Text>\n  Help lives at https://frapp.live/help. Return to Signet.\n</Text>\n" },
   ];
-  assert.deepEqual(signetCopyProblems(files), ["a.tsx:2", "b.tsx:1"]);
+  assert.deepEqual(signetCopyProblems(files), ["a.tsx:2", "b.tsx:1", "c.ts:1", "d.tsx:2"]);
 });
 
-test("a Settings path in a comment is no recovery path, either way", () => {
-  const code = (rel, text) => ({ rel, source: `const reason = "${text}";\n` });
-  const study = code("study.tsx", "Turn it on in Settings → Frapp → Location.");
-  const primer = code("primer.tsx", "Turn it on in Settings → Frapp → Location.");
-  const noted = [
-    study,
-    primer,
-    { rel: "c.tsx", source: "Linking.openSettings(); // iOS: Settings → Privacy → Location\n" },
-    { rel: "d.tsx", source: "{/* Undo lives in\n    Settings → Blocked members. */}\n" },
-  ];
-  assert.deepEqual(settingsPathProblems(noted, "Frapp"), []);
-  const dropped = [study, { rel: "e.tsx", source: "Linking.openSettings(); // lands on Settings → Frapp\n" }];
-  assert.deepEqual(settingsPathProblems(dropped, "Frapp"), ["must keep at least 2 Settings → Frapp paths"]);
+test("a lone carriage return ends a comment line, as it does in JavaScript", () => {
+  assert.deepEqual(
+    signetCopyProblems([{ rel: "a.tsx", source: "// design note\r<Text>Welcome to Signet</Text>\n" }]),
+    ["a.tsx:2"],
+  );
+  assert.deepEqual(
+    signetDownloadNameProblems([{ rel: "a.ts", source: '// note const f = "signet-events.ics";\n' }]),
+    ["a.ts:2"],
+  );
 });
 
-test("a `/` first on its line after code divides, after a comment it starts a regex", () => {
-  const files = [
-    { rel: "a.ts", source: "const x = (a + b)\n  / 2 + `${c}/d`;\n// Signet gold\n" },
-    { rel: "b.ts", source: 'const t = x.replace(\n  // drop inline-code ticks\n  /`/g,\n  "",\n);\n// Signet gold ring\n' },
-  ];
-  assert.deepEqual(signetCopyProblems(files), []);
-});
-
-test("a design-system note names Signet only on a comment line", () => {
+test("a design-system note names Signet only in the comment its line starts with", () => {
   const allowed = [
-    { rel: "a.ts", source: "// Signet gold\n" },
-    { rel: "b.ts", source: "/**\n * Signet is dark-only.\n */\n" },
-    { rel: "c.tsx", source: "{/* Signet gold, never the chapter accent */}\n" },
-    { rel: "d.ts", source: "/* Signet tokens */\n" },
+    { rel: "a.ts", source: 'import { SignetTokens } from "@repo/theme/signet";\n' },
+    { rel: "b.ts", source: "// Signet gold, never the chapter accent.\n" },
+    { rel: "c.ts", source: "/**\n * Signet is dark-only by design.\n */\n" },
+    { rel: "d.tsx", source: "{/* Static: Signet is dark-only */}\n" },
+    { rel: "e.ts", source: "/* Signet tokens */\n" },
   ];
   assert.deepEqual(signetCopyProblems(allowed), []);
-  // After code, or on a comment's star-less continuation line, it reports:
-  // the rule fails closed rather than trust the scanner there.
+  // After code, or on a star-less continuation line, it reports: fail closed.
   const reported = [
     { rel: "a.ts", source: "x; // Signet gold\n" },
     { rel: "b.ts", source: "foo(); /* Signet gold */ bar();\n" },
@@ -572,49 +373,54 @@ test("a design-system note names Signet only on a comment line", () => {
   assert.deepEqual(signetCopyProblems(reported), ["a.ts:1", "b.ts:1", "c.tsx:2"]);
 });
 
-test("design-system names and comments are not copy", () => {
-  const files = [
-    { rel: "a.ts", source: 'import { SignetTokens } from "@repo/theme/signet";\n' },
-    { rel: "b.ts", source: "// Signet gold, never the chapter accent.\n" },
-    { rel: "c.ts", source: "/**\n * Signet is dark-only by design.\n */\n" },
-    { rel: "d.tsx", source: "{/* Static: Signet is dark-only,\n   so no toggle. */}\n" },
-    { rel: "e.ts", source: 'const url = "https://frapp.live";\n// Signet tokens below\n' },
-    { rel: "f.ts", source: 'const s = `${"}"} b`;\n// Signet gold\n' },
-    { rel: "g.tsx", source: "<Text>a</Text>\n{/* Signet gold */}\n" },
-  ];
-  assert.deepEqual(signetCopyProblems(files), []);
-});
-
 test("a signet- download filename fails, a design-system file name does not", () => {
   assert.deepEqual(
     signetDownloadNameProblems([
       { rel: "a.ts", source: 'const name = `${slug || "signet-event"}.ics`;\n' },
       { rel: "b.ts", source: 'const icon = require("./signet-emblem-B.png");\n' },
+      { rel: "c.ts", source: '/* was signet-events */ const name = "signet-dues.ics";\n' },
+      { rel: "d.ts", source: "// the old fallback was signet-event.ics\n" },
     ]),
-    ["a.ts:1"],
+    ["a.ts:1", "c.ts:1"],
   );
 });
 
-test("a Settings path that does not name expo.name fails", () => {
-  const files = [
-    { rel: "a.tsx", source: "Turn it on in Settings → Frapp → Location.\n" },
-    { rel: "b.ts", source: '"Turn it on in Settings → Signet → Location."\n' },
-  ];
-  assert.deepEqual(settingsPathProblems(files, "Frapp"), [
-    "b.ts:1 names Settings → Signet, not Frapp",
+const STUDY = SETTINGS_SITES[0];
+const PRIMER = SETTINGS_SITES[1];
+const recovery = (rel, name = "Frapp") => ({
+  rel,
+  source: `const r = "Turn it on in Settings → ${name} → Location.";\n`,
+});
+
+test("both pinned Settings paths must be in code and name expo.name", () => {
+  assert.deepEqual(settingsPathProblems([recovery(STUDY), recovery(PRIMER)], "Frapp"), []);
+  assert.deepEqual(settingsPathProblems([recovery(STUDY)], "Frapp"), [
+    `${PRIMER} must keep its Settings → Frapp → Location path`,
   ]);
+  const commented = { rel: PRIMER, source: "// Settings → Frapp → Location\n" };
+  assert.deepEqual(settingsPathProblems([recovery(STUDY), commented], "Frapp"), [
+    `${PRIMER} must keep its Settings → Frapp → Location path`,
+  ]);
+  assert.deepEqual(settingsPathProblems([recovery(STUDY), recovery(PRIMER, "Signet")], "Frapp"), [
+    `${PRIMER} must keep its Settings → Frapp → Location path`,
+    `${PRIMER}:1 names Settings → Signet, not Frapp`,
+  ]);
+});
+
+test("any other Settings path in code must name expo.name; a note after // is skipped", () => {
+  const files = [
+    recovery(STUDY),
+    recovery(PRIMER),
+    { rel: "a.tsx", source: "<Text>Allow it in Settings → Frap → Photos.</Text>\n" },
+    { rel: "b.tsx", source: "Linking.openSettings(); // iOS: Settings → Privacy → Location\n" },
+    { rel: "c.ts", source: " * Undo lives in Settings → Blocked members.\n" },
+  ];
+  assert.deepEqual(settingsPathProblems(files, "Frapp"), ["a.tsx:1 names Settings → Frap, not Frapp"]);
 });
 
 test("renaming the binary without its Settings paths fails", () => {
-  const files = liveFiles();
-  const problems = settingsPathProblems(files, "Signet");
-  assert.ok(problems.length >= MIN_SETTINGS_PATHS, problems.join("; "));
-});
-
-test("dropping the Settings paths below the floor fails", () => {
-  assert.deepEqual(settingsPathProblems([], "Frapp"), [
-    `must keep at least ${MIN_SETTINGS_PATHS} Settings → Frapp paths`,
-  ]);
+  const problems = settingsPathProblems(liveFiles(), "Signet");
+  assert.ok(problems.length >= SETTINGS_SITES.length, problems.join("; "));
 });
 
 test("putting Signet back on expo.name fails", () => {
@@ -683,19 +489,19 @@ test("a third Signet payment fixture fails the spec walk", () => {
   );
 });
 
-test("the lock keeps its name, root, floor and app.json", () => {
+test("the lock keeps its name, root, recovery sites and app.json", () => {
   assert.deepEqual(lockSelfProblems(readFileSync(LOCK, "utf8")), []);
   const problems = lockSelfProblems(
     readFileSync(LOCK, "utf8")
       .replace('export const APP_NAME = "Frapp"', 'export const APP_NAME = "Signet"')
       .replace('const MOBILE_ROOT = join(REPO_ROOT, "apps/mobile")', 'const MOBILE_ROOT = join(REPO_ROOT, "apps/landing")')
-      .replace("const MIN_SETTINGS_PATHS = 2", "const MIN_SETTINGS_PATHS = 0")
+      .replace('  "apps/mobile/components/study/location-primer-sheet.tsx",\n', "")
       .replace("SOURCE_EXT = /\\.(?:json|js|ts|tsx)$/", "SOURCE_EXT = /\\.(?:js|ts|tsx)$/"),
   );
   assert.deepEqual(problems, [
     "APP_NAME must stay Frapp",
     "walker must stay on apps/mobile",
-    "MIN_SETTINGS_PATHS must stay 2",
+    "SETTINGS_SITES must keep both recovery paths",
     "walker must read app.json, not only code",
   ]);
 });
@@ -704,5 +510,16 @@ test("refuses a GitHub closer next to an issue number", () => {
   assert.doesNotMatch(
     readFileSync(LOCK, "utf8"),
     /\b(fixes|closes|close|fix|fixed|resolve|resolves|resolved)\s+#/i,
+  );
+});
+
+test("the blind spot: copy on a line that starts with comment punctuation", () => {
+  // Pinned so that closing or widening it is a deliberate change.
+  assert.deepEqual(
+    signetCopyProblems([
+      { rel: "a.ts", source: "const help = `\n* Signet reads your calendar\n`;\n" },
+      { rel: "b.tsx", source: "<Text>\n  // Signet, in JSX text\n</Text>\n" },
+    ]),
+    [],
   );
 });
