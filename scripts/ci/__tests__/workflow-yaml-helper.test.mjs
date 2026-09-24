@@ -42,6 +42,22 @@ jobs:
     outputs: { joined: "\${{ format('{0}, {1}', a, b) }}", other: 'x, y' }
     steps:
       - run: echo
+  edges:
+    nested: { a: [x, y], b: c }
+    apostrophe: { note: don't, issues: write }
+    closer: { x: a), y: z }
+    escaped: { a: "x\\", y", b: z }
+    doubled: { a: 'it''s, ok', b: z }
+    steps:
+      - run: echo
+  "quoted-structure":
+    "if": \${{ always() }}
+    "steps":
+      - "name": Quoted
+        "if": \${{ success() }}
+        "env":
+          GITHUB_SHA: override
+        run: echo
 `;
 
 describe("helpers/workflow-yaml.mjs key readers", () => {
@@ -90,6 +106,29 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
       joined: "${{ format('{0}, {1}', a, b) }}",
       other: "x, y",
     });
+  });
+
+  it("keeps a flow mapping's entries whole through nesting, apostrophes, stray closers and escapes", () => {
+    const edges = workflowJobs(file).find((job) => job.jobId === "edges");
+    const read = (key) => asObject(edges.keys.get(key));
+    assert.deepEqual(read("nested"), { a: "[x, y]", b: "c" });
+    // A quote only opens a quoted scalar where a scalar starts, so the
+    // apostrophe is text and `issues` is still seen.
+    assert.deepEqual(read("apostrophe"), { note: "don't", issues: "write" });
+    assert.deepEqual(read("closer"), { x: "a)", y: "z" });
+    assert.equal(read("escaped").b, "z");
+    assert.equal(read("doubled").b, "z");
+  });
+
+  it("reads quoted structural keys: a job's if and steps, and a step's name, if and env", () => {
+    const job = workflowJobs(file).find((j) => j.jobId === "quoted-structure");
+    assert.equal(job.if, "${{ always() }}");
+    const quoted = workflowSteps(file).filter((s) => s.jobId === "quoted-structure");
+    assert.equal(quoted.length, 1, "a quoted steps: must not hide the job's steps");
+    assert.equal(quoted[0].name, "Quoted");
+    assert.equal(quoted[0].if, "${{ success() }}");
+    // The override a guard looks for must be visible behind a quoted env:.
+    assert.equal(quoted[0].env.get("GITHUB_SHA"), "override");
   });
 
   it("reads step env keys quoted or bare, and a comment-only value as empty", () => {

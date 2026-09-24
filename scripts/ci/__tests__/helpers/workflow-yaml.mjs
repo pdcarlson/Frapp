@@ -75,6 +75,11 @@ function scalarValue(raw) {
  */
 const KEY = String.raw`(?:"([^"]*)"|'([^']*)'|([A-Za-z_][\w-]*))`;
 
+/** One fixed key, bare or quoted, as a regex fragment: `named("env")`. */
+function named(key) {
+  return `(?:${key}|"${key}"|'${key}')`;
+}
+
 /** The key from a match whose first three groups are KEY's alternatives. */
 function keyOf(match) {
   return match[1] ?? match[2] ?? match[3];
@@ -116,7 +121,9 @@ function envMapAt(lines, headerIndex) {
  */
 function findEnvHeader(lines, from, to, indent) {
   for (let i = from; i < to; i += 1) {
-    if (indentOf(lines[i]) === indent && /^\s*env:(\s*#.*)?\s*$/.test(lines[i])) return i;
+    if (indentOf(lines[i]) === indent && new RegExp(String.raw`^\s*${named("env")}:(\s*#.*)?\s*$`).test(lines[i])) {
+      return i;
+    }
   }
   return -1;
 }
@@ -167,7 +174,7 @@ function isBlockScalarHeader(value) {
 function stepIndices(lines, jobStart, jobEnd) {
   let stepsKey = -1;
   for (let i = jobStart + 1; i < jobEnd; i += 1) {
-    if (indentOf(lines[i]) === 4 && /^\s*steps:\s*(#.*)?$/.test(lines[i])) {
+    if (indentOf(lines[i]) === 4 && new RegExp(String.raw`^\s*${named("steps")}:\s*(#.*)?$`).test(lines[i])) {
       stepsKey = i;
       break;
     }
@@ -196,10 +203,11 @@ function stepIndices(lines, jobStart, jobEnd) {
  */
 function stepName(lines, stepStart, stepEnd) {
   const first = lines[stepStart].trim().replace(/^-\s*/, "");
-  if (/^name:\s*/.test(first)) return scalarValue(first.replace(/^name:\s*/, ""));
+  const nameKey = new RegExp(String.raw`^${named("name")}:\s*`);
+  if (nameKey.test(first)) return scalarValue(first.replace(nameKey, ""));
   for (let i = stepStart + 1; i < stepEnd; i += 1) {
-    if (indentOf(lines[i]) === 8 && /^\s*name:\s*/.test(lines[i])) {
-      return scalarValue(lines[i].trim().replace(/^name:\s*/, ""));
+    if (indentOf(lines[i]) === 8 && nameKey.test(lines[i].trim())) {
+      return scalarValue(lines[i].trim().replace(nameKey, ""));
     }
   }
   return `<unnamed: ${first.split(":")[0]}>`;
@@ -216,10 +224,13 @@ function stepName(lines, stepStart, stepEnd) {
  */
 function stepIf(lines, stepStart, stepEnd) {
   for (let i = stepStart; i < stepEnd; i += 1) {
-    const atStepKeyIndent = i === stepStart ? /^\s{6}- if:\s*/.test(lines[i]) : indentOf(lines[i]) === 8 && /^\s*if:\s*/.test(lines[i]);
+    const atStepKeyIndent =
+      i === stepStart
+        ? new RegExp(String.raw`^\s{6}- ${named("if")}:\s*`).test(lines[i])
+        : indentOf(lines[i]) === 8 && new RegExp(String.raw`^\s*${named("if")}:\s*`).test(lines[i]);
     if (!atStepKeyIndent) continue;
 
-    const inline = lines[i].replace(/^\s*-?\s*if:\s*/, "").trim();
+    const inline = lines[i].replace(new RegExp(String.raw`^\s*-?\s*${named("if")}:\s*`), "").trim();
     if (inline !== "" && !isBlockScalarHeader(inline)) return inline;
 
     // Block scalar: the condition is the deeper-indented lines beneath it.
@@ -338,29 +349,44 @@ function opensMapping(raw) {
 }
 
 /**
- * A flow collection's body split on its top-level commas: not a comma inside
- * quotes, `${{ }}`, parentheses or a nested collection, so a value such as
- * `"${{ format('{0}, {1}', a, b) }}"` stays one entry.
+ * A flow collection's body split on its top-level commas: not a comma inside a
+ * quoted scalar or a nested collection (`{ a: [x, y], b: "c, d" }` is two
+ * entries). Like YAML, a quote opens a quoted scalar only where a scalar
+ * starts (after `{`, `[`, `,` or `:`), so the apostrophe in `note: don't` is
+ * plain text; `\"` inside double quotes and `''` inside single quotes are
+ * escapes, not the end. A stray closer never drives the depth below zero, so
+ * one `)` in a value can't stop the splitting for the rest of the body.
  */
 function splitFlow(body) {
   const parts = [];
   let depth = 0;
   let quote = null;
   let start = 0;
+  let scalarStart = true;
   for (let i = 0; i < body.length; i += 1) {
     const ch = body[i];
-    if (quote) {
-      if (ch === quote) quote = null;
-    } else if (ch === '"' || ch === "'") {
+    if (quote === '"') {
+      if (ch === "\\") i += 1;
+      else if (ch === '"') quote = null;
+      continue;
+    }
+    if (quote === "'") {
+      if (ch === "'" && body[i + 1] === "'") i += 1;
+      else if (ch === "'") quote = null;
+      continue;
+    }
+    if ((ch === '"' || ch === "'") && scalarStart) {
       quote = ch;
-    } else if ("{[(".includes(ch)) {
+    } else if (ch === "{" || ch === "[") {
       depth += 1;
-    } else if ("}])".includes(ch)) {
-      depth -= 1;
+    } else if (ch === "}" || ch === "]") {
+      depth = Math.max(0, depth - 1);
     } else if (ch === "," && depth === 0) {
       parts.push(body.slice(start, i));
       start = i + 1;
     }
+    if (ch === "{" || ch === "[" || ch === "," || ch === ":") scalarStart = true;
+    else if (!/\s/.test(ch)) scalarStart = false;
   }
   parts.push(body.slice(start));
   return parts;
@@ -444,8 +470,9 @@ export function workflowJobs(workflowPath) {
 
     let condition = null;
     for (let i = from + 1; i < to; i += 1) {
-      if (indentOf(lines[i]) !== 4 || !/^\s*if:\s*/.test(lines[i])) continue;
-      const inline = lines[i].replace(/^\s*if:\s*/, "").trim();
+      const ifKey = new RegExp(String.raw`^\s*${named("if")}:\s*`);
+      if (indentOf(lines[i]) !== 4 || !ifKey.test(lines[i])) continue;
+      const inline = lines[i].replace(ifKey, "").trim();
       if (inline !== "" && !isBlockScalarHeader(inline)) {
         condition = inline;
       } else {

@@ -66,7 +66,10 @@ export const RENDER_MAX_CONSECUTIVE_READ_ERRORS = 3;
  * The refusals re-asking can't fix: a dead or unscoped key (401, 403) or a
  * wrong service id (404). Deliberately a closed list rather than "any 4xx":
  * a 408, 409 or 425 is a statement about this request, not about the key, and
- * failing on it would page for a blip. Those are re-asked like a 5xx.
+ * failing on it would page for a blip. Those count toward
+ * RENDER_MAX_CONSECUTIVE_READ_ERRORS and are re-asked on the next poll. They
+ * get no retry inside the read, though: `resilientFetch` re-sends only a 429,
+ * a 5xx or a connection failure, so each such read is a single attempt.
  */
 export const RENDER_PERMANENT_READ_STATUSES = new Set([401, 403, 404]);
 
