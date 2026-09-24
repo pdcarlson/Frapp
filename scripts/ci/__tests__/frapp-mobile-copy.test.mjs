@@ -166,18 +166,15 @@ export function signetDownloadNameProblems(files) {
   return copyMatches(files, SIGNET_DOWNLOAD_NAME).map(({ rel, line }) => `${rel}:${line}`);
 }
 
-/** The line holding `index` in `source`: its number (from 1), text and `index`'s column. */
+/** The line holding `index` in `source`, and `index`'s column in it. */
 function lineAt(source, index) {
-  let number = 1;
   let start = 0;
-  for (const brk of source.matchAll(new RegExp(LINE_BREAK.source, "g"))) {
-    if (brk.index >= index) break;
-    number += 1;
+  for (const brk of source.slice(0, index).matchAll(new RegExp(LINE_BREAK.source, "g"))) {
     start = brk.index + brk[0].length;
   }
   const rest = source.slice(start);
   const end = rest.search(LINE_BREAK);
-  return { number, text: end === -1 ? rest : rest.slice(0, end), column: index - start };
+  return { text: end === -1 ? rest : rest.slice(0, end), column: index - start };
 }
 
 /**
@@ -197,12 +194,15 @@ function blockOpenBefore(source, index) {
  * after an arrow still counts. It counts only when it is certainly code: not
  * in its line's leading comment, not after a `//` or `/*` on its line, and
  * not below a `/*` left open, so a comment can't stand in for a deleted path.
- * A `/*` inside a string above it makes the pin report, which fails closed.
+ * That last check is naive: any `/*` above the path with no `*\/` after it
+ * (in a string, a regex, a `//` comment, JSX text) makes the pin report, so
+ * look for one when the pin fails on copy that reads right. It fails closed.
+ * `Settings`, `Location` and quotes around the name may vary; the name may not.
  */
 export function settingsPathProblems(files, expoName) {
   const problems = [];
   const pin = new RegExp(
-    `Settings\\s*→\\s*(?:Apps\\s*→\\s*)?${literal(expoName)}\\s*→\\s*Location\\b`,
+    `[Ss]ettings\\s*→\\s*(?:Apps\\s*→\\s*)?["'“‘]?${literal(expoName)}["'”’]?\\s*→\\s*[Ll]ocation\\b`,
     "g",
   );
   for (const site of SETTINGS_SITES) {
@@ -447,6 +447,7 @@ test("both pinned Settings paths must be in code and name expo.name", () => {
   for (const source of [
     "<Text>\n  Turn it on in Settings →\n  Frapp → Location.\n</Text>\n",
     "<Text>Turn it on in Settings → Apps → Frapp → Location.</Text>\n",
+    "<Text>Turn it on in settings → “Frapp” → location.</Text>\n",
   ]) {
     assert.deepEqual(settingsPathProblems([recovery(STUDY), { rel: PRIMER, source }], "Frapp"), []);
   }
