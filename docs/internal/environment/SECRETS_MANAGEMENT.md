@@ -277,7 +277,7 @@ branch rule each environment needs first, is the roster in
 | `INFISICAL_CLIENT_SECRET`       | From the same Universal Auth panel → **Add Client Secret** (shown once)      |
 
 `INFISICAL_PROJECT_ID` is no longer needed: no workflow reads it (the action pins `project-slug`),
-and deleting the repository copy is #1587.
+and its repository copy was deleted on 2026-09-23 (#1587).
 
 **Optional — staging conformance smoke user (`staging` environment):**
 
