@@ -146,11 +146,11 @@ export function useNotificationLevelMenu({
 }
 
 /**
- * The header trigger. The menu it opens is {@link NotificationLevelMenu}. It
- * still toggles: a second touch lands on the menu's backdrop, which covers the
- * trigger, but TalkBack activates the trigger directly, since the overlay's
- * `accessibilityViewIsModal` is iOS-only and the trigger stays in Android's
- * accessibility tree.
+ * The header trigger. The menu it opens is {@link NotificationLevelMenu}. A
+ * second touch lands on the menu's backdrop, which covers the trigger, but the
+ * trigger still toggles: an activation that bypasses hit-testing (TalkBack's,
+ * when a caller leaves the trigger in Android's accessibility tree) must close
+ * the menu, not re-open it.
  */
 export function NotificationLevelControl({
   menu,
@@ -195,7 +195,9 @@ export function NotificationLevelControl({
  * overlay's own bounds. It relies on neither `zIndex` nor overflow
  * hit-testing, the two things that failed before (#2033). A transparent
  * backdrop fills the rest: a tap anywhere outside the menu, the trigger
- * included, closes it and never reaches the thread.
+ * included, closes it and never reaches the thread. Hit-testing stops touch
+ * only, so the caller also hides what the menu covers from accessibility
+ * while it is visible (`accessibilityViewIsModal` below is iOS-only).
  *
  * Not a React Native `Modal`, which would draw over the update gate
  * (`spec/ui/mobile/patterns.md` § Minimum version).

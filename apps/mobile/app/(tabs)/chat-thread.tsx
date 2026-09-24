@@ -518,48 +518,62 @@ export default function ChatThreadScreen() {
         enabled={getKeyboardPath() === "fallback" || Platform.OS === "ios"}
       >
         {/*
+          Everything the mute menu covers. The open menu takes every tap over
+          it, and this takes it out of the accessibility tree the same way
+          `ClientPolicyGate` does, because the overlay's
+          `accessibilityViewIsModal` is iOS-only: without it TalkBack could
+          still reach the thread, and the composer's keyboard, under the menu.
+        */}
+        <View
+          style={styles.flex}
+          accessibilityElementsHidden={muteMenu.visible}
+          importantForAccessibility={
+            muteMenu.visible ? "no-hide-descendants" : "auto"
+          }
+        >
+          {/*
           The rewrite dropped the old screen's "Back to chat overview" link, and
           a tab-registered route gets no header back button of its own — on iOS
           that left no way out but the Chat tab. The Canvas draws a `‹` here
           (s05, canvas-screens.dc.html:163), so this is the specced affordance
           rather than a reinstated stopgap.
         */}
-        <View
-          style={styles.header}
-          onLayout={(event) => {
-            const { y, height, width } = event.nativeEvent.layout;
-            setHeaderFrame({ bottom: y + height, width });
-          }}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Back to chat"
-            hitSlop={12}
-            onPress={() => router.push("/")}
-            style={({ pressed }) => (pressed ? styles.pressed : null)}
+          <View
+            style={styles.header}
+            onLayout={(event) => {
+              const { y, height, width } = event.nativeEvent.layout;
+              setHeaderFrame({ bottom: y + height, width });
+            }}
           >
-            <Text style={styles.backChevron}>‹</Text>
-          </Pressable>
-          <Text numberOfLines={1} style={styles.headerTitle}>
-            Thread
-          </Text>
-          {channelId ? (
-            <NotificationLevelControl
-              menu={muteMenu}
-              onLayout={(event) => {
-                const { x, width } = event.nativeEvent.layout;
-                setMuteTriggerRight(x + width);
-              }}
-            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back to chat"
+              hitSlop={12}
+              onPress={() => router.push("/")}
+              style={({ pressed }) => (pressed ? styles.pressed : null)}
+            >
+              <Text style={styles.backChevron}>‹</Text>
+            </Pressable>
+            <Text numberOfLines={1} style={styles.headerTitle}>
+              Thread
+            </Text>
+            {channelId ? (
+              <NotificationLevelControl
+                menu={muteMenu}
+                onLayout={(event) => {
+                  const { x, width } = event.nativeEvent.layout;
+                  setMuteTriggerRight(x + width);
+                }}
+              />
+            ) : null}
+          </View>
+          {channelId && failedChannelId === channelId ? (
+            <Text accessibilityRole="alert" style={styles.saveError}>
+              Notification level not saved
+            </Text>
           ) : null}
-        </View>
-        {channelId && failedChannelId === channelId ? (
-          <Text accessibilityRole="alert" style={styles.saveError}>
-            Notification level not saved
-          </Text>
-        ) : null}
 
-        {/*
+          {/*
           Reconciled with the global banner rather than duplicating it (#998).
           The two answer different questions — this pill is the *realtime
           transport*, the banner is whether the API is reachable at all — but
@@ -569,71 +583,71 @@ export default function ChatThreadScreen() {
           `polling` in particular must survive: it is a working degraded mode,
           and `spec/ui/resilience/message-delivery.md#receiving-messages-realtime` declares its string normative.
         */}
-        {pillMessage ? (
-          <View style={styles.connectionPill}>
-            <Text style={styles.connectionText}>{pillMessage}</Text>
-          </View>
-        ) : null}
+          {pillMessage ? (
+            <View style={styles.connectionPill}>
+              <Text style={styles.connectionText}>{pillMessage}</Text>
+            </View>
+          ) : null}
 
-        {channelId ? (
-          <BlockListNotice
-            status={blockList.status}
-            heldCount={thread.heldCount}
-            onRetry={blockList.retry}
-            isRetrying={blockList.isRetrying}
-            isPaused={blockList.isPaused}
-          />
-        ) : null}
+          {channelId ? (
+            <BlockListNotice
+              status={blockList.status}
+              heldCount={thread.heldCount}
+              onRetry={blockList.retry}
+              isRetrying={blockList.isRetrying}
+              isPaused={blockList.isPaused}
+            />
+          ) : null}
 
-        {!channelId ? (
-          <View style={styles.stateBlock}>
-            <Text style={styles.stateTitle}>No channel selected</Text>
-            <Text style={styles.stateBody}>
-              Open a channel from Chat to see its messages.
+          {!channelId ? (
+            <View style={styles.stateBlock}>
+              <Text style={styles.stateTitle}>No channel selected</Text>
+              <Text style={styles.stateBody}>
+                Open a channel from Chat to see its messages.
+              </Text>
+            </View>
+          ) : isLoading ? (
+            <View style={styles.stateBlock}>
+              <ActivityIndicator color={tokens.color.text.muted} />
+              <Text style={styles.stateBody}>Loading messages…</Text>
+            </View>
+          ) : loadError ? (
+            <View style={styles.stateBlock}>
+              <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
+              <Text style={styles.stateBody}>{loadError.message}</Text>
+            </View>
+          ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
+            // Counted after the block list, held rows included: a channel whose
+            // only messages are being held is not an empty channel, and the
+            // notice above is what explains the gap.
+            <View style={styles.stateBlock}>
+              <Text style={styles.stateTitle}>No messages yet</Text>
+              <Text style={styles.stateBody}>
+                Say something to start the conversation.
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={inverted}
+              renderItem={renderItem}
+              // `client_message_id` is always present and is stable across the
+              // optimistic → confirmed transition, which the server id is not.
+              keyExtractor={(item) => item.message.client_message_id}
+              inverted
+              contentContainerStyle={styles.listContent}
+              style={styles.flex}
+            />
+          )}
+
+          {typingUsers.length > 0 ? (
+            <Text style={styles.typing}>
+              {typingUsers.length === 1
+                ? "Someone is typing…"
+                : `${typingUsers.length} people are typing…`}
             </Text>
-          </View>
-        ) : isLoading ? (
-          <View style={styles.stateBlock}>
-            <ActivityIndicator color={tokens.color.text.muted} />
-            <Text style={styles.stateBody}>Loading messages…</Text>
-          </View>
-        ) : loadError ? (
-          <View style={styles.stateBlock}>
-            <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
-            <Text style={styles.stateBody}>{loadError.message}</Text>
-          </View>
-        ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
-          // Counted after the block list, held rows included: a channel whose
-          // only messages are being held is not an empty channel, and the
-          // notice above is what explains the gap.
-          <View style={styles.stateBlock}>
-            <Text style={styles.stateTitle}>No messages yet</Text>
-            <Text style={styles.stateBody}>
-              Say something to start the conversation.
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={inverted}
-            renderItem={renderItem}
-            // `client_message_id` is always present and is stable across the
-            // optimistic → confirmed transition, which the server id is not.
-            keyExtractor={(item) => item.message.client_message_id}
-            inverted
-            contentContainerStyle={styles.listContent}
-            style={styles.flex}
-          />
-        )}
+          ) : null}
 
-        {typingUsers.length > 0 ? (
-          <Text style={styles.typing}>
-            {typingUsers.length === 1
-              ? "Someone is typing…"
-              : `${typingUsers.length} people are typing…`}
-          </Text>
-        ) : null}
-
-        {/*
+          {/*
           react/unreact and inline card actions (poll votes, #528) have no
           failed-bubble equivalent to render inline — chat-core's rollback of
           the optimistic state is silent — so this banner is the only report
@@ -641,27 +655,27 @@ export default function ChatThreadScreen() {
           priority since the two can't fire from the same tap; dismissible
           because, unlike `sendError`, there is nothing to retry or discard.
         */}
-        {reactionError || actionError ? (
-          <View
-            style={styles.reactionErrorBanner}
-            accessibilityLiveRegion="polite"
-          >
-            <Text style={styles.reactionErrorText}>
-              {reactionError ?? actionError}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss"
-              hitSlop={8}
-              onPress={reactionError ? clearReactionError : clearActionError}
-              style={({ pressed }) => (pressed ? styles.pressed : null)}
+          {reactionError || actionError ? (
+            <View
+              style={styles.reactionErrorBanner}
+              accessibilityLiveRegion="polite"
             >
-              <Text style={styles.reactionErrorDismiss}>Dismiss</Text>
-            </Pressable>
-          </View>
-        ) : null}
+              <Text style={styles.reactionErrorText}>
+                {reactionError ?? actionError}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss"
+                hitSlop={8}
+                onPress={reactionError ? clearReactionError : clearActionError}
+                style={({ pressed }) => (pressed ? styles.pressed : null)}
+              >
+                <Text style={styles.reactionErrorDismiss}>Dismiss</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
-        {/*
+          {/*
           The composer stays enabled offline **on purpose**. `sendMessage`
           enqueues to the outbox and returns before it ever touches the network
           (`chat-client.ts` — "the row is safely queued; the reconnect flush
@@ -670,61 +684,62 @@ export default function ChatThreadScreen() {
           impossible, which is the whole failure the outbox exists to prevent,
           and would contradict the banner directly above it.
         */}
-        <ChatComposer
-          value={draft}
-          onChangeText={handleChangeText}
-          onSend={handleSend}
-          canSend={canSend && channelCanPost}
-          placeholder="Message"
-          // A send that never reached the outbox has no failed bubble to show
-          // (nothing was queued), so this line is the only report of it.
-          //
-          // The offline label is #501's "blocked **or clearly labeled**" half:
-          // this surface has a queue, so it labels. `lib/connection/state.ts`
-          // holds the rule for the surfaces that have to block instead.
-          disabledHint={
-            attachError ??
-            sendError ??
-            // `canSend` first. It is false until `ctx` resolves, and
-            // `ChatComposer` keys `editable` on it — so leading with the
-            // offline branch promised "messages send when you reconnect" over
-            // an input the member cannot type into, which is the one state
-            // where nothing will be queued and nothing will send. The
-            // channel-level `can_post` gate (#704) comes next, ahead of
-            // offline: a channel the caller cannot post in stays not-postable
-            // whether or not they're connected, so offline is not the more
-            // relevant fact to lead with there.
-            (!canSend
-              ? "Connecting to chat…"
-              : !channelCanPost
-                ? channelIsReadOnly
-                  ? "This channel is read-only. Posting requires the announcements:post permission."
-                  : "Alumni can read this channel but not post. Alumni may post in #alumni and direct messages."
+          <ChatComposer
+            value={draft}
+            onChangeText={handleChangeText}
+            onSend={handleSend}
+            canSend={canSend && channelCanPost}
+            placeholder="Message"
+            // A send that never reached the outbox has no failed bubble to show
+            // (nothing was queued), so this line is the only report of it.
+            //
+            // The offline label is #501's "blocked **or clearly labeled**" half:
+            // this surface has a queue, so it labels. `lib/connection/state.ts`
+            // holds the rule for the surfaces that have to block instead.
+            disabledHint={
+              attachError ??
+              sendError ??
+              // `canSend` first. It is false until `ctx` resolves, and
+              // `ChatComposer` keys `editable` on it — so leading with the
+              // offline branch promised "messages send when you reconnect" over
+              // an input the member cannot type into, which is the one state
+              // where nothing will be queued and nothing will send. The
+              // channel-level `can_post` gate (#704) comes next, ahead of
+              // offline: a channel the caller cannot post in stays not-postable
+              // whether or not they're connected, so offline is not the more
+              // relevant fact to lead with there.
+              (!canSend
+                ? "Connecting to chat…"
+                : !channelCanPost
+                  ? channelIsReadOnly
+                    ? "This channel is read-only. Posting requires the announcements:post permission."
+                    : "Alumni can read this channel but not post. Alumni may post in #alumni and direct messages."
+                  : appOffline
+                    ? "You're offline — messages send when you reconnect, but photos need a connection."
+                    : null)
+            }
+            hintTone={sendError || attachError ? "error" : "muted"}
+            attachments={attachments}
+            onAttach={handleAttach}
+            onRemoveAttachment={removeAttachment}
+            isUploading={isUploading}
+            // An upload is a live PUT with no outbox behind it, unlike a send —
+            // so unlike the composer itself, the attach control does have to go
+            // dark offline. It stays visible and states why rather than
+            // disappearing.
+            // Gates the control only; the member-facing reason rides the single
+            // `disabledHint` above rather than competing with it for the one
+            // hint slot. Two hints for one composer is how the offline case
+            // ended up promising delivery for a photo that would not be sent.
+            attachDisabledReason={
+              !channelCanPost
+                ? "You can't post in this channel."
                 : appOffline
-                  ? "You're offline — messages send when you reconnect, but photos need a connection."
-                  : null)
-          }
-          hintTone={sendError || attachError ? "error" : "muted"}
-          attachments={attachments}
-          onAttach={handleAttach}
-          onRemoveAttachment={removeAttachment}
-          isUploading={isUploading}
-          // An upload is a live PUT with no outbox behind it, unlike a send —
-          // so unlike the composer itself, the attach control does have to go
-          // dark offline. It stays visible and states why rather than
-          // disappearing.
-          // Gates the control only; the member-facing reason rides the single
-          // `disabledHint` above rather than competing with it for the one
-          // hint slot. Two hints for one composer is how the offline case
-          // ended up promising delivery for a photo that would not be sent.
-          attachDisabledReason={
-            !channelCanPost
-              ? "You can't post in this channel."
-              : appOffline
-                ? "offline"
-                : null
-          }
-        />
+                  ? "offline"
+                  : null
+            }
+          />
+        </View>
         {/*
           Last, so it is above the header, the inverted list and the composer
           in paint order and in hit-testing (#2033). The menu used to hang off

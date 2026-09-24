@@ -58,6 +58,23 @@ describe("chat thread mute menu wiring", () => {
     );
   });
 
+  it("hides what the menu covers from accessibility while it is open", () => {
+    // `accessibilityViewIsModal` is iOS-only; without this TalkBack reaches
+    // the thread and the composer under the open menu.
+    expect(THREAD).toMatch(
+      /<View\s+style=\{styles\.flex\}\s+accessibilityElementsHidden=\{muteMenu\.visible\}\s+importantForAccessibility=\{\s*muteMenu\.visible \? "no-hide-descendants" : "auto"\s*\}\s*>/,
+    );
+    const wrapper = THREAD.indexOf(
+      "accessibilityElementsHidden={muteMenu.visible}",
+    );
+    const wrapperEnd = THREAD.indexOf(
+      "</View>",
+      THREAD.indexOf("<ChatComposer"),
+    );
+    expect(wrapper).toBeLessThan(THREAD.indexOf("style={styles.header}"));
+    expect(wrapperEnd).toBeLessThan(THREAD.indexOf("<NotificationLevelMenu"));
+  });
+
   it("drops the overflow half-measure from the header style", () => {
     const style = THREAD.slice(
       THREAD.indexOf("    header: {"),
