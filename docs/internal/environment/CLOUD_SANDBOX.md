@@ -269,9 +269,10 @@ bit. Before this, `prepare` was the only thing that set it, so a checkout whose 
 run, which is exactly what a `(dependencies)` sentinel leaves behind, pushed with no review
 gate at all ([#2488](https://github.com/pdcarlson/Frapp/issues/2488)). The hooks need no
 installed packages: `pre-push` is bash and git around `scripts/diff-review-scope.mjs`, and
-that script and `pre-commit`'s secret scan import only node builtins (the scan runs with
-`--soft-missing`). Laptop sessions are left alone, so a developer's
-own hooks directory, or an opt-out, survives session start.
+that script and `pre-commit`'s secret scan import only node builtins and
+`scripts/ci/lib/invoked-directly.mjs`, which does too (the scan runs with `--soft-missing`).
+Laptop sessions are left alone, so a developer's own hooks directory, or an opt-out, survives
+session start.
 
 `.claude/hooks/session-start.sh` launches `cloud-sandbox-up.sh` in the background when
 the `/etc/frapp-cloud-sandbox` marker exists **or** `FRAPP_CLOUD_SANDBOX=1`. A `/tmp`

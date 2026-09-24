@@ -87,11 +87,23 @@ test("a symlinked checkout: the old literal is false, the helper is true", () =>
   });
 });
 
-test("when realpath throws, the fallback errs toward running", () => {
+test("an entry that doesn't resolve is not this module, even with its name", () => {
   withTempDir((dir) => {
-    const url = pathToFileURL(join(dir, "gone", "script.mjs")).href;
-    assert.equal(isInvokedDirectly(url, join(dir, "elsewhere", "script.mjs")), true);
-    assert.equal(isInvokedDirectly(url, join(dir, "elsewhere", "other.mjs")), false);
+    const script = join(dir, "script.mjs");
+    writeFileSync(script, "");
+    // `node -e 'import("./script.mjs")' script.mjs` from another directory.
+    assert.equal(isInvokedDirectly(pathToFileURL(script).href, "script.mjs"), false);
+  });
+});
+
+test("an unresolved import.meta.url (--preserve-symlinks-main) is resolved too", () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, "real"));
+    writeFileSync(join(dir, "real", "script.mjs"), "");
+    symlinkSync(join(dir, "real"), join(dir, "link"));
+    const linked = join(dir, "link", "script.mjs");
+    assert.equal(isInvokedDirectly(pathToFileURL(linked).href, linked), true);
+    assert.equal(isInvokedDirectly(pathToFileURL(linked).href, join(dir, "real", "script.mjs")), true);
   });
 });
 
@@ -106,19 +118,24 @@ test("under real node, a script run through a space and a symlink still runs", (
     );
     symlinkSync(join(dir, "real dir"), join(dir, "linked dir"));
 
-    for (const entry of [script, join(dir, "linked dir", "entry.mjs")]) {
-      const run = spawnSync(process.execPath, [entry], { encoding: "utf8" });
+    const linked = join(dir, "linked dir", "entry.mjs");
+    for (const argv of [[script], [linked], ["--preserve-symlinks-main", linked]]) {
+      const run = spawnSync(process.execPath, argv, { encoding: "utf8" });
       assert.equal(run.status, 0, run.stderr);
-      assert.equal(run.stdout.trim(), "ran", `${entry} ran nothing`);
+      assert.equal(run.stdout.trim(), "ran", `node ${argv.join(" ")} ran nothing`);
     }
 
-    const imported = spawnSync(
-      process.execPath,
-      ["--input-type=module", "-e", `await import(${JSON.stringify(pathToFileURL(script).href)});`],
-      { encoding: "utf8" },
-    );
-    assert.equal(imported.status, 0, imported.stderr);
-    assert.equal(imported.stdout, "", "importing the module must not run it");
+    // Imported, never run: bare, and with an extra argument spelled like the
+    // module's own file name, from a directory that has no such file.
+    for (const extra of [[], ["entry.mjs"]]) {
+      const imported = spawnSync(
+        process.execPath,
+        ["--input-type=module", "-e", `await import(${JSON.stringify(pathToFileURL(script).href)});`, ...extra],
+        { encoding: "utf8", cwd: dir },
+      );
+      assert.equal(imported.status, 0, imported.stderr);
+      assert.equal(imported.stdout, "", `importing the module ran it (extra argv: ${extra.join(" ")})`);
+    }
   });
 });
 
@@ -141,6 +158,19 @@ test("a deploy-path script reached through a symlinked checkout runs its CLI", (
   });
 });
 
+/**
+ * What a hand-rolled entry guard looks like: reading argv[1] (indexed, `.at`
+ * or destructured), or comparing `import.meta.url` or a path derived from it.
+ * A text search, so an alias (`const a = process.argv; a[1]`) gets past it;
+ * it catches the spellings the tree has actually used.
+ */
+const HAND_ROLLED = [
+  /process\.argv\s*(?:\[\s*1\s*\]|\.at\(\s*1\s*\))/,
+  /\[\s*,\s*\w+[^\]]*\]\s*=\s*process\.argv\b/,
+  /import\.meta\.url\)?\s*[!=]==?/,
+  /[!=]==?\s*(?:\w+\()?import\.meta\.url/,
+];
+
 function scriptFiles(dir) {
   const out = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -158,13 +188,29 @@ test("every script decides its entry point through isInvokedDirectly", () => {
 
   const handRolled = files
     .filter((file) => file !== helperPath)
-    .filter((file) => readFileSync(file, "utf8").includes("process.argv[1]"))
+    .filter((file) => HAND_ROLLED.some((pattern) => pattern.test(readFileSync(file, "utf8"))))
     .map((file) => relative(repoRoot, file));
   assert.deepEqual(
     handRolled,
     [],
-    "These scripts read process.argv[1] themselves. Use isInvokedDirectly(import.meta.url) " +
+    "These scripts decide their own entry point. Use isInvokedDirectly(import.meta.url) " +
       "from scripts/ci/lib/invoked-directly.mjs: its JSDoc says why every hand-rolled form " +
       "silently runs nothing on a path with a space or through a symlink.",
   );
+});
+
+test("the lock's patterns catch each hand-rolled spelling, and not a flag lookup", () => {
+  const caught = (source) => HAND_ROLLED.some((pattern) => pattern.test(source));
+  for (const source of [
+    "const x = import.meta.url === `file://${process.argv[1]}`;",
+    "if (process.argv[ 1 ] && process.argv[ 1 ].endsWith('x.mjs')) {}",
+    "if (import.meta.url === pathToFileURL(process.argv.at(1)).href) {}",
+    "const [, entry] = process.argv;",
+    "if (fileURLToPath(import.meta.url) === entry) {}",
+    "if (entry == import.meta.url) {}",
+  ]) {
+    assert.equal(caught(source), true, source);
+  }
+  assert.equal(caught("const value = process.argv[index + 1];"), false);
+  assert.equal(caught("const dir = dirname(fileURLToPath(import.meta.url));"), false);
 });

@@ -369,8 +369,7 @@ export function runMigrationCli({
 // outcome the working-tree fence in deploy-production.yml exists to prevent,
 // arriving by a different door. The documented laptop recovery would no-op the
 // same way. isInvokedDirectly's JSDoc says why its body can't be falsely false
-// on a path with a space or through a symlink, and why its fallback errs
-// toward running.
+// on a path with a space or through a symlink.
 if (isInvokedDirectly(import.meta.url)) {
   process.exit(runMigrationCli());
 }

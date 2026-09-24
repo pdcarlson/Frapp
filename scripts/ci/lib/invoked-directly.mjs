@@ -2,11 +2,11 @@
 // script under scripts/ uses before running its CLI, so tests can import its
 // helpers without executing it.
 //
-// invoked-directly.test.mjs locks the tree to this helper: no other file under
-// scripts/ may read `process.argv[1]`, so a hand-rolled guard can't come back.
+// invoked-directly.test.mjs locks the tree to this helper: no file under
+// scripts/ may read argv[1] or compare import.meta.url itself. It is a text
+// search, so it catches the spellings people write, not every alias.
 
 import { realpathSync } from "node:fs";
-import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -32,23 +32,26 @@ import { fileURLToPath } from "node:url";
  * says the migrations applied, and the deploy then ships new code against the
  * old schema.
  *
- * So a false negative is the catastrophic direction, and a false positive
- * (a same-named file importing this one) is harmless by comparison. That is
- * why, if realpath throws, the fallback compares basenames rather than
- * returning false. It errs toward running. The `endsWith("<name>.mjs")`
- * guards this helper replaced took the same side for the same reason; this
- * body keeps it without their looseness when both paths resolve.
+ * Why a failed realpath means false, with no looser fallback. On a real
+ * `node path/to/script.mjs` run, Node rewrites `process.argv[1]` to the
+ * absolute path of the file it just loaded, so realpath on both sides
+ * succeeds. It throws only when argv[1] names something other than the
+ * entry, as in `node -e 'import("./x.mjs")' x.mjs`. There the module is not
+ * the entry, and running its CLI would be the false positive: a live
+ * branch-protection write from `configure-branch-protection.mjs`, or a
+ * production deploy. The `endsWith("<name>.mjs")` guards this replaced were
+ * loose to avoid the false negatives above; realpath removes those without
+ * the looseness.
  *
  * @param {string} importMetaUrl the caller's `import.meta.url`
- * @param {string | undefined} [entry] the entry path, `process.argv[1]` by default
+ * @param {string | null | undefined} [entry] the entry path, `process.argv[1]` by default
  * @returns {boolean}
  */
 export function isInvokedDirectly(importMetaUrl, entry = process.argv[1]) {
   if (!entry) return false;
-  const modulePath = fileURLToPath(importMetaUrl);
   try {
-    return realpathSync(entry) === realpathSync(modulePath);
+    return realpathSync(entry) === realpathSync(fileURLToPath(importMetaUrl));
   } catch {
-    return basename(entry) === basename(modulePath);
+    return false;
   }
 }
