@@ -44,6 +44,15 @@
 // `EXPO_PUBLIC_APP_URL` must be `https://app.frapp.live`; unset still
 // falls back at runtime.
 //
+// Every EAS **production** build also refuses a Supabase key that is not a
+// publishable key (`sb_publishable_…`, #2526). Supabase keeps the legacy JWT
+// `anon` key working only "until the end of 2026", and a store binary outlives
+// that: every install keeps the key it was built with until its owner updates
+// from the store, so a legacy key would go dead in the field. A secret key
+// (`sb_secret_…`) is refused by the same test, which matters more: it bypasses
+// RLS and would ship inside the binary. The variable keeps its `ANON_KEY` name
+// because EAS and every doc already use it; renaming it is a separate change.
+//
 // Every EAS **production** build also refuses when `EXPO_PUBLIC_ASK_ENABLED`
 // switches Ask on (#2259). Ask answers from a synthetic corpus
 // (`lib/ask/corpus.ts`), and the App Store listing and review notes describe
@@ -204,6 +213,29 @@ function assertProductionSupabasePublic({
   }
 }
 
+const SUPABASE_PUBLISHABLE_KEY_PREFIX = "sb_publishable_";
+
+const PRODUCTION_SUPABASE_KEY_ERROR = [
+  "EAS production builds require EXPO_PUBLIC_SUPABASE_ANON_KEY to be the",
+  `frapp-prod publishable key (${SUPABASE_PUBLISHABLE_KEY_PREFIX}…), not the legacy`,
+  "JWT anon key or a secret key. Supabase supports legacy keys only until the",
+  "end of 2026, and a store binary keeps its key until it is updated from the",
+  "store. Copy it from Supabase → frapp-prod → Project Settings → API Keys and",
+  "set it on the EAS production environment (eas env:list --environment production).",
+  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+].join(" ");
+
+function assertProductionSupabasePublishableKey({
+  easBuildProfile,
+  supabaseAnonKey,
+} = {}) {
+  if (easBuildProfile !== "production") return;
+  if (String(supabaseAnonKey || "").trim().startsWith(SUPABASE_PUBLISHABLE_KEY_PREFIX)) {
+    return;
+  }
+  throw new Error(PRODUCTION_SUPABASE_KEY_ERROR);
+}
+
 function productionAppOrigin(url) {
   try {
     const parsed = new URL(String(url || "").trim());
@@ -266,6 +298,11 @@ function applyMobileConfig(
     supabaseUrl: env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   });
+  // After the presence check above, so an empty key reports as missing.
+  assertProductionSupabasePublishableKey({
+    easBuildProfile: env.EAS_BUILD_PROFILE,
+    supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  });
   assertProductionAppUrl({
     easBuildProfile: env.EAS_BUILD_PROFILE,
     appUrl: env.EXPO_PUBLIC_APP_URL,
@@ -299,6 +336,8 @@ applyExpoConfig.assertProductionAndroidGoogleServices =
   assertProductionAndroidGoogleServices;
 applyExpoConfig.assertProductionApiUrl = assertProductionApiUrl;
 applyExpoConfig.assertProductionSupabasePublic = assertProductionSupabasePublic;
+applyExpoConfig.assertProductionSupabasePublishableKey =
+  assertProductionSupabasePublishableKey;
 applyExpoConfig.assertProductionAppUrl = assertProductionAppUrl;
 applyExpoConfig.assertProductionAskDisabled = assertProductionAskDisabled;
 applyExpoConfig.isAskEnabledValue = isAskEnabledValue;
@@ -309,6 +348,7 @@ applyExpoConfig.PRODUCTION_API_URL_ERROR = PRODUCTION_API_URL_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_PUBLIC_ERROR =
   PRODUCTION_SUPABASE_PUBLIC_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_URL_ERROR = PRODUCTION_SUPABASE_URL_ERROR;
+applyExpoConfig.PRODUCTION_SUPABASE_KEY_ERROR = PRODUCTION_SUPABASE_KEY_ERROR;
 applyExpoConfig.PRODUCTION_APP_URL_ERROR = PRODUCTION_APP_URL_ERROR;
 applyExpoConfig.PRODUCTION_ASK_ENABLED_ERROR = PRODUCTION_ASK_ENABLED_ERROR;
 applyExpoConfig.PRODUCTION_API_ORIGIN = PRODUCTION_API_ORIGIN;
