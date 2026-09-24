@@ -86,8 +86,8 @@ in eas-cli 21.1.0 (see the install note at the top of § 6).
 
 ```bash
 # Once per environment, on the EAS project app.json already links (never a new `eas init`).
-# Values are public by design (the anon key and the
-# publishable key ship inside the binary) — `--visibility plaintext` is the honest setting;
+# Values are public by design (the anon key and the publishable key ship inside the
+# binary) — `--visibility plaintext` is the honest setting;
 # `sensitive` only hides them in the dashboard.
 cd apps/mobile
 for ENV in preview production; do
