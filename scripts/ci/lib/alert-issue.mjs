@@ -267,11 +267,12 @@ export async function raiseAlert({
  * Closes every open issue matching this alert. Closing them all (not just the
  * first) is what makes a duplicate created during an API blip self-heal.
  *
- * "none" means the lookup worked and nothing was open. A lookup that failed is
- * "failed", never "none": this is a close path, so "I could not read the
- * alerts" must not read as "there were none to close" (see
- * findAlertIssuesDetailed). A close that left any match open is "failed" too,
- * with `closed` listing the ones that did close.
+ * A close that left any match open is "failed", with `closed` listing the ones
+ * that did close. A failed lookup still reads as "none" (see
+ * findAlertIssuesDetailed), so a caller that must not read "I could not look"
+ * as "nothing was open" pre-checks with findAlertIssuesDetailed and treats
+ * `hadOpen && action === "none"` as a failed close. Making resolveAlert report
+ * the failed lookup itself changes every caller at once, which is #2627.
  */
 export async function resolveAlert({
   token,
@@ -281,9 +282,9 @@ export async function resolveAlert({
   lookupLabel = ALERT_LOOKUP_LABEL,
   buildRecoveryBody,
 }) {
-  const lookup = await findAlertIssuesDetailed({ token, repo, fetchImpl, title, lookupLabel });
-  if (!lookup.lookupOk) return { action: "failed", closed: [] };
-  const openIssues = lookup.issues.filter((issue) => issue.state === "open");
+  const openIssues = (
+    await findAlertIssues({ token, repo, fetchImpl, title, lookupLabel })
+  ).filter((issue) => issue.state === "open");
   if (openIssues.length === 0) return { action: "none", closed: [] };
 
   const closed = [];

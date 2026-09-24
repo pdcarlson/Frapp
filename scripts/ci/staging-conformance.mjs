@@ -1420,7 +1420,7 @@ export async function runStagingConformance({
     // healthy environment, collecting one duplicate "recovered" comment a day,
     // while the run reports conformant.
     logger.log?.(
-      "::error::Staging is conformant but the alert issue could not be read or closed. " +
+      "::error::Staging is conformant but the alert issue could not be closed. " +
         "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
     );
   }

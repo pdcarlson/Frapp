@@ -60,7 +60,12 @@ import { readdirSync } from "node:fs";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ALERT_LOOKUP_LABEL, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+} from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -552,16 +557,30 @@ export async function runMigrationDriftCheck({
         : `[migration-drift] alert issue #${alert.issueNumber} ${alert.action}`,
     );
   } else if (status === "clean") {
-    // resolveAlert reports a lookup it could not read, or a close that left an
-    // alert open, as "failed", never as "none" (lib/alert-issue.mjs).
-    alert = await resolveAlert({
-      ...alertIdentity,
-      buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
-    });
-    if (alert.action === "closed") {
-      logger.log?.(`[migration-drift] closed alert issue(s): ${alert.closed.join(", ")}`);
-    } else if (alert.action === "failed") {
-      logger.log?.("::error::[migration-drift] could not read or close the open alert issue");
+    // Resolve only on a lookup that actually worked. A failed lookup returns an
+    // empty list, which reads exactly like "no alert is open", so the run has
+    // to say it could not read the alert state rather than report nothing to
+    // close.
+    const lookup = await findAlertIssuesDetailed(alertIdentity);
+    if (!lookup.lookupOk) {
+      alert = { action: "failed", closed: [] };
+      logger.log?.("::error::[migration-drift] could not read the alert issues; none closed");
+    } else {
+      const hadOpen = lookup.issues.some((issue) => issue.state === "open");
+      alert = await resolveAlert({
+        ...alertIdentity,
+        buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
+      });
+      // resolveAlert looks the alert up again, and a failed second lookup
+      // returns [] and so "none". If this run already saw an open alert, that
+      // is a failed close, not nothing to close (production-uptime.mjs has the
+      // same guard; #2627 moves it into the lib).
+      if (hadOpen && alert.action === "none") alert = { action: "failed", closed: [] };
+      if (alert.action === "closed") {
+        logger.log?.(`[migration-drift] closed alert issue(s): ${alert.closed.join(", ")}`);
+      } else if (alert.action === "failed") {
+        logger.log?.("::error::[migration-drift] could not close the open alert issue");
+      }
     }
   } else {
     // unknown: never raise (nothing was observed to be drifting) and never

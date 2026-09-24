@@ -100,7 +100,7 @@ These watchdogs alert through GitHub Issues rather than a provider channel — n
 token, and the issue thread doubles as the incident log. Each upserts **one** tracking issue (created
 if absent, reopened if closed, otherwise commented). All of them carry `incident`, which
 `/next` §0.2 treats as never-claimable — they track live state, not a unit of work, so do not pick
-them up as backlog. What agents may do with one is under [Escalation](#escalation), and the lib ends every alert body with a link there. Each is assigned to the owner when it is created or reopened; a comment on an alert that is already open leaves its assignees alone.
+them up as backlog. What agents may do with one is under [Escalation](#escalation), and every alert body the lib writes ends with a link there. Each is assigned to the owner when it is created or reopened; a comment on an alert that is already open leaves its assignees alone.
 
 `scripts/ci/lib/alert-issue.mjs` is the one place the label and the assignee are set, and every watchdog derives its lookup label from it. The label is part of each alert's lookup key, like the title, so changing it orphans an open alert the same way a title rename does. `scripts/ci/__tests__/alert-identity.test.mjs` checks that every watchdog agrees on it. Changing it takes three steps, because code on `main` keeps looking up the old label until the change merges:
 

@@ -315,16 +315,6 @@ test("a close that fails is reported as failed, never as closed-with-nothing", a
   assert.deepEqual(out.closed, []);
 });
 
-test("a failed lookup on the close path is failed, never none", async () => {
-  // "none" would tell the caller nothing was open; the alert may well be open.
-  const { fetchImpl, calls } = makeFetchMock([
-    { method: "GET", path: "/issues?state=all", status: 502, body: {} },
-  ]);
-  const out = await resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered" });
-  assert.deepEqual(out, { action: "failed", closed: [] });
-  assert.equal(calls.filter((c) => c.method !== "GET").length, 0);
-});
-
 test("a close that leaves one duplicate open is failed, listing what did close", async () => {
   const { fetchImpl } = makeFetchMock([
     {

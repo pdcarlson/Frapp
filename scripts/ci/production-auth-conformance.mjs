@@ -346,7 +346,7 @@ export async function runProductionAuthConformance({
     logger.log?.(`[production-auth-conformance] closed alert issue(s): ${alert.closed.join(", ")}`);
   } else if (alert.action === "failed") {
     logger.log?.(
-      "::error::Production Auth settings are conformant but the alert issue could not be read or closed. " +
+      "::error::Production Auth settings are conformant but the alert issue could not be closed. " +
         "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
     );
   }

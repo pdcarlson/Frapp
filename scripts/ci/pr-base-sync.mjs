@@ -485,6 +485,15 @@ async function reconcileTokenAlert({
       `[pr-base-sync] auto-update proven working — closed alert issue(s) ` +
         recovery.closed.map((n) => `#${n}`).join(", "),
     );
+  } else if (recovery.action === "failed") {
+    // A close that left an alert open, including a duplicate beside one that
+    // did close. Surfaced so the one still open shows in the run.
+    const closed = recovery.closed.length
+      ? ` (closed ${recovery.closed.map((n) => `#${n}`).join(", ")})`
+      : "";
+    logger.log?.(
+      `::warning::[pr-base-sync] auto-update proven working, but an alert issue could not be closed${closed}`,
+    );
   }
 }
 

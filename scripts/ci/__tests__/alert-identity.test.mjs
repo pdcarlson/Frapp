@@ -113,7 +113,11 @@ test("every call site passes the lib-derived label, and nothing else", () => {
       ["ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;"],
       `${script} declares its lookup label once, from the lib`,
     );
-    const uses = code.match(/\blookupLabel\b.*$/gm) ?? [];
+    // Every occurrence, not the first on each line, so two calls on one line
+    // are both checked.
+    const uses = [...code.matchAll(/\blookupLabel\b/g)].map((m) =>
+      code.slice(m.index).split("\n")[0],
+    );
     assert.ok(uses.length > 0, `${script} passes its lookup label`);
     for (const use of uses) {
       assert.match(use, /^lookupLabel: ALERT_ISSUE_LOOKUP_LABEL\b/, `${script}: ${use}`);
