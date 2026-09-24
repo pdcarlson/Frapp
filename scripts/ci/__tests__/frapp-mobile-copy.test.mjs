@@ -23,8 +23,12 @@
 // - The two `Settings → <name> → Location` recovery paths (the study screen
 //   and the location primer) are in code and name `expo.name` from app.json,
 //   because iOS Settings lists the app under that name (ADR-25 step 2). Any
-//   other `Settings → X` in code names it too, unless a `//` or `/*` comes
-//   before it on its line: that reads as a note, and a URL reads the same.
+//   other iOS Settings path in code (`Settings → X → Location`, `Photos`,
+//   `Camera`, `Notifications` or `Microphone`, in any spacing or case) names
+//   it too. In-app paths such as `Settings → Blocked members` are not iOS
+//   paths and aren't checked. A path is skipped as a note when it sits in its
+//   line's leading comment (so also on a line starting `*` or `//`, the blind
+//   spot above) or after a `//` or `/*` on its line, which a URL looks like.
 // - The sign-in wordmark and tagline, the calendar ICS PRODID and filename
 //   fallback, and the spec fixtures for the payment copy.
 //
@@ -188,39 +192,59 @@ function settingsPaths(file, pattern) {
   return [...file.source.matchAll(pattern)].map((match) => {
     const { number, text, column } = lineAt(file.source, match.index);
     const note = inLeadingComment(text, column) || /\/\/|\/\*/.test(text.slice(0, column));
-    return { rel: file.rel, line: number, name: match[1], note, index: match.index };
+    const name = appNameOf(match[1]);
+    return { rel: file.rel, line: number, name, section: match[2], note, index: match.index };
   });
 }
 
-/** Whether a `/*` before `index` is still open, read naively (a `"image/*"` counts too). */
+/**
+ * Whether a `/*` before `index` is still open, read naively (a `"image/*"`
+ * counts too). The close is searched from after the opener, so `/*\/` opens.
+ */
 function blockOpenBefore(source, index) {
-  return source.lastIndexOf("/*", index) > source.lastIndexOf("*/", index);
+  const open = source.lastIndexOf("/*", index);
+  if (open === -1) return false;
+  const close = source.indexOf("*/", open + 2);
+  return close === -1 || close > index;
+}
+
+/** An iOS Settings path: the app's name, then a permission section iOS lists under it. */
+const IOS_SETTINGS_PATH =
+  /settings\s*→\s*([^→\n\r\u2028\u2029]*?)\s*→\s*(location|photos|camera|notifications|microphone)\b/gi;
+
+/** A path's app name, without the quotes copy may put around it. */
+function appNameOf(raw) {
+  return raw.replace(/^["'“‘]|["'”’]$/g, "").trim();
 }
 
 /**
- * Each pinned site must keep its recovery path in code, and every other
- * `Settings → X` in code must name `expoName` too. A pinned path counts only
- * when it is certainly code: not a note, and not below a `/*` left open, so
- * a comment can't stand in for a deleted path (a `/*` inside a string above
- * it makes the pin report, which fails closed). A note is skipped by the
- * name check rather than judged, which lets a wrong name hide behind a URL
- * earlier on its line; a wrong name that is Signet is still caught by the
- * Signet walk.
+ * Each pinned site must keep its `Settings → <expoName> → Location` path in
+ * code, and every other iOS Settings path in code must name `expoName` too.
+ * A pinned path counts only when it is not a note and not below a `/*` left
+ * open, so a comment can't stand in for a deleted path (a `/*` inside a
+ * string above it makes the pin report, which fails closed). The name check
+ * skips notes rather than judge them, which lets a wrong name hide behind a
+ * URL earlier on its line; a wrong name that is Signet is still caught by the
+ * Signet walk. It does judge a star-less line inside a block comment, as the
+ * Signet walk does, so such a line fails closed.
  */
 export function settingsPathProblems(files, expoName) {
   const problems = [];
-  const pin = new RegExp(`Settings\\s+→\\s+${literal(expoName)}\\s+→\\s+Location`, "g");
   for (const site of SETTINGS_SITES) {
     const file = files.find((candidate) => candidate.rel === site);
     const kept =
       file &&
-      settingsPaths(file, pin).some(
-        (path) => !path.note && !blockOpenBefore(file.source, path.index),
+      settingsPaths(file, IOS_SETTINGS_PATH).some(
+        (path) =>
+          path.name === expoName &&
+          path.section.toLowerCase() === "location" &&
+          !path.note &&
+          !blockOpenBefore(file.source, path.index),
       );
     if (!kept) problems.push(`${site} must keep its Settings → ${expoName} → Location path`);
   }
   for (const file of files) {
-    for (const path of settingsPaths(file, /Settings\s+→\s+([A-Za-z][\w-]*)/g)) {
+    for (const path of settingsPaths(file, IOS_SETTINGS_PATH)) {
       if (!path.note && path.name !== expoName) {
         problems.push(`${path.rel}:${path.line} names Settings → ${path.name}, not ${expoName}`);
       }
@@ -449,6 +473,8 @@ test("both pinned Settings paths must be in code and name expo.name", () => {
     "// Settings → Frapp → Location\n",
     "Linking.openSettings(); // was: Settings → Frapp → Location\n<Text>Turn location on.</Text>\n",
     "/*\n  old copy: Settings → Frapp → Location\n*/\n<Text>Turn location on.</Text>\n",
+    "/*/\n  old copy: Settings → Frapp → Location\n*/\n<Text>Turn location on.</Text>\n",
+    '<Text>Turn it on in Settings → Frapp → Photos.</Text>\n',
   ]) {
     assert.deepEqual(settingsPathProblems([recovery(STUDY), { rel: PRIMER, source }], "Frapp"), [lost]);
   }
@@ -460,20 +486,26 @@ test("both pinned Settings paths must be in code and name expo.name", () => {
   ]);
 });
 
-test("any other Settings path in code must name expo.name; a note after // is skipped", () => {
+test("any other iOS Settings path in code must name expo.name; in-app paths and notes are skipped", () => {
   const files = [
     recovery(STUDY),
     recovery(PRIMER),
     { rel: "a.tsx", source: "<Text>Allow it in Settings → Frap → Photos.</Text>\n" },
     { rel: "b.tsx", source: "Linking.openSettings(); // iOS: Settings → Privacy → Location\n" },
-    { rel: "c.ts", source: " * Undo lives in Settings → Blocked members.\n" },
+    { rel: "c.tsx", source: "<Text>You can undo this in Settings → Blocked members.</Text>\n" },
     { rel: "d.tsx", source: "<Text>\n  Turn it on in Settings →\n  Frap → Location.\n</Text>\n" },
     // Skipped, as documented: the `//` of a URL reads as a note's.
     { rel: "e.tsx", source: "<Text>See https://frapp.live, then Settings → Frap → Photos.</Text>\n" },
+    { rel: "f.tsx", source: "<Text>Open settings→Frap→Camera</Text>\n" },
+    { rel: "g.tsx", source: "<Text>Open Settings → “Frap” → Notifications</Text>\n" },
+    { rel: "h.tsx", source: "<Text>Open Settings → Frapp Beta → Microphone</Text>\n" },
   ];
   assert.deepEqual(settingsPathProblems(files, "Frapp"), [
     "a.tsx:1 names Settings → Frap, not Frapp",
     "d.tsx:2 names Settings → Frap, not Frapp",
+    "f.tsx:1 names Settings → Frap, not Frapp",
+    "g.tsx:1 names Settings → Frap, not Frapp",
+    "h.tsx:1 names Settings → Frapp Beta, not Frapp",
   ]);
 });
 
