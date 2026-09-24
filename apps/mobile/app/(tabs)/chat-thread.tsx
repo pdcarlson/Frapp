@@ -463,13 +463,17 @@ export default function ChatThreadScreen() {
 
   // The mute trigger lives in the header, but its menu is drawn by
   // `NotificationLevelMenu` as the last child below, over the thread (#2033).
-  // `headerBottom` is where the menu hangs from.
+  // It hangs under the header, right-aligned with the trigger: the trigger's
+  // frame is relative to the header, which spans the same width as the
+  // overlay, so the header's width minus the trigger's right edge is the
+  // overlay's `right`.
   const muteMenu = useNotificationLevelMenu({
     level: notificationLevel,
     disabled: !channelId,
     writeBlockedReason,
   });
-  const [headerBottom, setHeaderBottom] = useState(0);
+  const [headerFrame, setHeaderFrame] = useState({ bottom: 0, width: 0 });
+  const [muteTriggerRight, setMuteTriggerRight] = useState(0);
   // The open menu takes every tap on this screen, and the screen stays
   // mounted across a blur and a channel switch. Left open, it would come back
   // over the next channel and swallow that thread's taps.
@@ -523,8 +527,8 @@ export default function ChatThreadScreen() {
         <View
           style={styles.header}
           onLayout={(event) => {
-            const { y, height } = event.nativeEvent.layout;
-            setHeaderBottom(y + height);
+            const { y, height, width } = event.nativeEvent.layout;
+            setHeaderFrame({ bottom: y + height, width });
           }}
         >
           <Pressable
@@ -541,9 +545,11 @@ export default function ChatThreadScreen() {
           </Text>
           {channelId ? (
             <NotificationLevelControl
-              level={notificationLevel}
               menu={muteMenu}
-              writeBlockedReason={writeBlockedReason}
+              onLayout={(event) => {
+                const { x, width } = event.nativeEvent.layout;
+                setMuteTriggerRight(x + width);
+              }}
             />
           ) : null}
         </View>
@@ -726,11 +732,12 @@ export default function ChatThreadScreen() {
           but its taps landed on the list.
         */}
         <NotificationLevelMenu
-          level={notificationLevel}
           menu={muteMenu}
           isSaving={setNotificationLevel.isPending}
-          writeBlockedReason={writeBlockedReason}
-          anchor={{ top: headerBottom, right: tokens.spacing.lg }}
+          anchor={{
+            top: headerFrame.bottom,
+            right: Math.max(0, headerFrame.width - muteTriggerRight),
+          }}
           onChange={(level) => {
             if (channelId) setNotificationLevel.mutate({ channelId, level });
           }}

@@ -44,6 +44,20 @@ describe("chat thread mute menu wiring", () => {
     expect(header).not.toContain("<NotificationLevelMenu");
   });
 
+  it("hangs the menu from the measured trigger, not a restated header padding", () => {
+    const element = THREAD.slice(
+      THREAD.indexOf("<NotificationLevelMenu"),
+      THREAD.indexOf("</KeyboardAvoidingView>"),
+    );
+    expect(element).toMatch(
+      /right:\s*Math\.max\(0,\s*headerFrame\.width - muteTriggerRight\)/,
+    );
+    expect(element).not.toMatch(/right:\s*tokens\./);
+    expect(THREAD).toMatch(
+      /<NotificationLevelControl\s+menu=\{muteMenu\}\s+onLayout=/,
+    );
+  });
+
   it("drops the overflow half-measure from the header style", () => {
     const style = THREAD.slice(
       THREAD.indexOf("    header: {"),

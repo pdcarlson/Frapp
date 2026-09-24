@@ -2,9 +2,10 @@
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
-import { BackHandler } from "react-native";
+import { BackHandler, Keyboard } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import type { ChatNotificationLevel } from "@repo/hooks";
 import {
   NotificationLevelControl,
   NotificationLevelMenu,
@@ -25,8 +26,8 @@ import {
  */
 
 type ControlProps = {
-  level: React.ComponentProps<typeof NotificationLevelMenu>["level"];
-  onChange: (level: "all" | "mentions" | "off") => void;
+  level: ChatNotificationLevel | null;
+  onChange: (level: ChatNotificationLevel) => void;
   disabled?: boolean;
   isSaving?: boolean;
   writeBlockedReason?: string | null;
@@ -40,6 +41,8 @@ const View = "View" as unknown as React.ComponentType<{
   testID?: string;
   children?: React.ReactNode;
 }>;
+
+const onTriggerLayout = vi.fn();
 
 /**
  * The trigger and the menu wired the way `app/(tabs)/chat-thread.tsx` wires
@@ -61,18 +64,12 @@ function Thread({
   return (
     <>
       <View testID="header">
-        <NotificationLevelControl
-          level={level}
-          menu={menu}
-          writeBlockedReason={writeBlockedReason}
-        />
+        <NotificationLevelControl menu={menu} onLayout={onTriggerLayout} />
       </View>
       <NotificationLevelMenu
-        level={level}
         menu={menu}
         onChange={onChange}
         isSaving={isSaving}
-        writeBlockedReason={writeBlockedReason}
         anchor={ANCHOR}
       />
     </>
@@ -89,6 +86,16 @@ function renderControl(props: Partial<ControlProps> = {}) {
     );
   });
   return tree;
+}
+
+function rerender(tree: ReactTestRenderer, props: ControlProps) {
+  act(() => {
+    tree.update(
+      <FrappThemeProvider>
+        <Thread {...props} />
+      </FrappThemeProvider>,
+    );
+  });
 }
 
 /** Style arrays flattened the way React Native would, for the mocked StyleSheet. */
@@ -312,6 +319,45 @@ describe("NotificationLevelControl", () => {
     expect(menu(tree)).toHaveLength(0);
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  // #2034: the menu used to be hidden rather than closed while blocked, and the
+  // trigger is disabled then, so nothing could dismiss it and it came back by
+  // itself on reconnect.
+  it("stays closed once writes unblock, until the member opens it again", () => {
+    const onChange = vi.fn();
+    const trigger = "Notifications: only @mentions. Change notification level";
+    const tree = renderControl({ level: "mentions", onChange });
+    press(byLabel(tree, trigger));
+    expect(menu(tree)).toHaveLength(1);
+
+    rerender(tree, {
+      level: "mentions",
+      onChange,
+      writeBlockedReason: "Reconnect to make changes.",
+    });
+    expect(menu(tree)).toHaveLength(0);
+
+    rerender(tree, { level: "mentions", onChange, writeBlockedReason: null });
+    expect(menu(tree)).toHaveLength(0);
+
+    press(byLabel(tree, trigger));
+    expect(menu(tree)).toHaveLength(1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("stays closed once an unknown level resolves again", () => {
+    const onChange = vi.fn();
+    const tree = renderControl({ level: "mentions", onChange });
+    press(
+      byLabel(tree, "Notifications: only @mentions. Change notification level"),
+    );
+    expect(menu(tree)).toHaveLength(1);
+
+    rerender(tree, { level: null, onChange });
+    expect(menu(tree)).toHaveLength(0);
+    rerender(tree, { level: "mentions", onChange });
+    expect(menu(tree)).toHaveLength(0);
+  });
 });
 
 /**
@@ -327,6 +373,8 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
 
   beforeEach(() => {
     vi.mocked(BackHandler.addEventListener).mockClear();
+    vi.mocked(Keyboard.dismiss).mockClear();
+    onTriggerLayout.mockClear();
   });
 
   function openMenu(onChange = vi.fn()) {
@@ -435,6 +483,25 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
   it("does not hold the back button while the menu is closed", () => {
     renderControl({ level: "mentions" });
     expect(BackHandler.addEventListener).not.toHaveBeenCalled();
+  });
+
+  it("dismisses the keyboard as it opens, so the keyboard can't cover the lower rows", () => {
+    openMenu();
+    expect(Keyboard.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the keyboard alone when the trigger is blocked", () => {
+    const tree = renderControl({
+      level: "mentions",
+      writeBlockedReason: "Reconnect to make changes.",
+    });
+    press(byLabel(tree, TRIGGER));
+    expect(Keyboard.dismiss).not.toHaveBeenCalled();
+  });
+
+  it("reports the trigger's frame, so the caller can hang the menu under it", () => {
+    const tree = renderControl({ level: "mentions" });
+    expect(byLabel(tree, TRIGGER).props.onLayout).toBe(onTriggerLayout);
   });
 
   it("still writes the picked level from inside the overlay", () => {

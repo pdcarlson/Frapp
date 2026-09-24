@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  BackHandler,
+  Keyboard,
+  type LayoutChangeEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -75,13 +83,19 @@ export function selectChannelNotificationLevel(
   return rows.find((row) => row.channel_id === channelId)?.level ?? null;
 }
 
-/** What the trigger and the menu share. */
+/**
+ * What the trigger and the menu share, so the screen hands both one value
+ * rather than restating the level and the write-blocked reason at each.
+ */
 export type NotificationLevelMenuState = {
+  level: ChatNotificationLevel | null;
+  /** Queueless-write reason from connection-state.md; `null` when the control may write. */
+  writeBlockedReason: string | null;
   /** The control cannot write: disabled, level unknown, or writes blocked. */
   blocked: boolean;
   /** The menu is on screen. */
   visible: boolean;
-  toggle: () => void;
+  open: () => void;
   close: () => void;
 };
 
@@ -92,15 +106,17 @@ export function useNotificationLevelMenu({
 }: {
   level: ChatNotificationLevel | null;
   disabled?: boolean;
-  /** Queueless-write reason from connection-state.md; `null` when the control may write. */
   writeBlockedReason?: string | null;
 }): NotificationLevelMenuState {
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   const blocked = disabled || level === null || Boolean(writeBlockedReason);
-  // Hidden while blocked, but `open` survives it, so the menu comes back by
-  // itself once writes unblock. That is #2034, tracked separately.
-  const visible = open && !blocked;
+  // Close, don't just hide (#2034). The trigger is disabled while blocked, so a
+  // menu merely hidden then could not be dismissed, and it came back by itself
+  // once writes unblocked: over the whole screen, taking the member's next tap.
+  // Reset during render, so no frame draws it.
+  if (blocked && isOpen) setIsOpen(false);
+  const visible = isOpen && !blocked;
 
   // The overlay takes every tap on the screen while it is up, so Android's
   // back button has to close it rather than pop the navigator underneath.
@@ -109,36 +125,43 @@ export function useNotificationLevelMenu({
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
-        setOpen(false);
+        setIsOpen(false);
         return true;
       },
     );
     return () => subscription.remove();
   }, [visible]);
 
-  const toggle = useCallback(() => {
+  const open = useCallback(() => {
     if (blocked) return;
-    setOpen((current) => !current);
+    // With the composer focused, the keyboard leaves too little of a small
+    // phone for the menu: its lower rows would fall outside the overlay, where
+    // Android delivers no taps, or behind the keyboard on iOS.
+    Keyboard.dismiss();
+    setIsOpen(true);
   }, [blocked]);
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => setIsOpen(false), []);
 
-  return { blocked, visible, toggle, close };
+  return { level, writeBlockedReason, blocked, visible, open, close };
 }
 
-/** The header trigger. The menu it opens is {@link NotificationLevelMenu}. */
+/**
+ * The header trigger. The menu it opens is {@link NotificationLevelMenu}, which
+ * covers the trigger while it is up, so a second tap there lands on the
+ * menu's backdrop and closes it.
+ */
 export function NotificationLevelControl({
-  level,
   menu,
-  writeBlockedReason = null,
+  onLayout,
 }: {
-  level: ChatNotificationLevel | null;
   menu: NotificationLevelMenuState;
-  writeBlockedReason?: string | null;
+  /** The trigger's frame, for the caller to hang the menu under it. */
+  onLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  const isMuted = level === "off";
+  const isMuted = menu.level === "off";
   const glyphColor = menu.blocked
     ? tokens.color.text.muted
     : tokens.color.text.foreground;
@@ -146,12 +169,13 @@ export function NotificationLevelControl({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={triggerAccessibilityLabel(level)}
-      accessibilityHint={writeBlockedReason ?? undefined}
+      accessibilityLabel={triggerAccessibilityLabel(menu.level)}
+      accessibilityHint={menu.writeBlockedReason ?? undefined}
       accessibilityState={{ disabled: menu.blocked }}
       disabled={menu.blocked}
       hitSlop={12}
-      onPress={menu.toggle}
+      onLayout={onLayout}
+      onPress={menu.open}
       style={({ pressed }) => [styles.trigger, pressed ? styles.pressed : null]}
     >
       <MuteGlyph color={glyphColor} active={isMuted} size={24} />
@@ -171,23 +195,18 @@ export function NotificationLevelControl({
  * backdrop fills the rest: a tap anywhere outside the menu, the trigger
  * included, closes it and never reaches the thread.
  *
- * Not a React Native `Modal`: that is a separate native window, and it would
- * draw over `ClientPolicyGate`'s update prompt, which has to cover everything.
- * This overlay stays inside the gate's `pointerEvents="none"` subtree.
+ * Not a React Native `Modal`, which would draw over the update gate
+ * (`spec/ui/mobile/patterns.md` § Minimum version).
  */
 export function NotificationLevelMenu({
-  level,
   menu,
   onChange,
   isSaving = false,
-  writeBlockedReason = null,
   anchor,
 }: {
-  level: ChatNotificationLevel | null;
   menu: NotificationLevelMenuState;
   onChange: (level: ChatNotificationLevel) => void;
   isSaving?: boolean;
-  writeBlockedReason?: string | null;
   /** Where the menu's top-right corner goes, in the overlay's coordinates. */
   anchor: { top: number; right: number };
 }) {
@@ -211,22 +230,15 @@ export function NotificationLevelMenu({
       >
         <Text style={styles.menuTitle}>Notify me about</Text>
         {NOTIFICATION_LEVEL_OPTIONS.map((option) => {
-          const selected = option.level === level;
+          const selected = option.level === menu.level;
           return (
             <Pressable
               key={option.level}
               accessibilityRole="button"
               accessibilityLabel={`${option.label}. ${option.description}`}
-              accessibilityState={{
-                selected,
-                disabled: isSaving || Boolean(writeBlockedReason),
-              }}
-              disabled={isSaving || Boolean(writeBlockedReason)}
+              accessibilityState={{ selected, disabled: isSaving }}
+              disabled={isSaving}
               onPress={() => {
-                if (writeBlockedReason) {
-                  menu.close();
-                  return;
-                }
                 if (!selected) onChange(option.level);
                 menu.close();
               }}
