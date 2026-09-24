@@ -40,7 +40,12 @@ import { HELD_QUOTE_TEXT } from "./reply-quote";
  */
 export interface ThreadMessageRowProps {
   row: ThreadRow;
-  viewerId: string | null;
+  /**
+   * Resolved before any row mounts (#2250): `chat-thread.tsx` withholds the
+   * list while `/v1/users/me` is in flight, because a null viewer would paint
+   * the member's own messages as incoming ones.
+   */
+  viewerId: string;
   nameFor: (userId: string) => string | null;
   replyParent: ChatMessage | null | undefined;
   blockState: BlockState;

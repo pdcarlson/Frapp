@@ -126,13 +126,16 @@ describe("groupReactions", () => {
     expect(groups[0]?.mine).toBe(false);
   });
 
-  it("never marks a reaction mine when there is no viewer id", () => {
-    // The wrong id here is the documented C1 trap: using the Supabase auth uid
-    // instead of `users.id` renders fine but silently breaks own-reaction
-    // state and the RLS-scoped delete behind `unreact`.
+  it("never marks a reaction mine for an id that isn't the viewer's users.id", () => {
+    // The documented C1 trap: using the Supabase auth uid instead of
+    // `users.id` renders fine but silently breaks own-reaction state and the
+    // RLS-scoped delete behind `unreact`. (A null viewer is no longer
+    // representable here: the thread withholds rows until identity lands,
+    // #2250.)
+    const authUid = "99999999-9999-4999-8999-999999999999";
     const groups = groupReactions(
-      message({ reactions: { [reactionActionType("🔥")]: [OTHER] } }),
-      null,
+      message({ reactions: { [reactionActionType("🔥")]: [VIEWER] } }),
+      authUid,
     );
 
     expect(groups[0]?.mine).toBe(false);

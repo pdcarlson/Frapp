@@ -54,8 +54,13 @@ import { ReplyQuote } from "./reply-quote";
 
 export interface MessageBubbleProps {
   message: ChatMessage;
-  /** `users.id` of the viewer — never the Supabase auth uid. */
-  viewerId: string | null;
+  /**
+   * `users.id` of the viewer — never the Supabase auth uid. Non-nullable on
+   * purpose (#2250): an unresolved viewer has no bubble shape to draw, so the
+   * thread withholds its rows until identity lands rather than handing a row
+   * `null` to read as "not mine".
+   */
+  viewerId: string;
   /**
    * Resolves a `users.id` to a display name, or `null` when it cannot be
    * resolved. Required rather than optional: an optional resolver would let a
@@ -159,7 +164,7 @@ interface ReactionGroup {
  */
 export function groupReactions(
   message: ChatMessage,
-  viewerId: string | null,
+  viewerId: string,
 ): ReactionGroup[] {
   return Object.entries(message.reactions ?? {})
     .map(([actionType, userIds]) => {
@@ -171,7 +176,7 @@ export function groupReactions(
         emoji,
         actionType,
         count: userIds.length,
-        mine: !!viewerId && userIds.includes(viewerId),
+        mine: userIds.includes(viewerId),
       };
     })
     .filter((group): group is ReactionGroup => !!group);
@@ -191,7 +196,7 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const isMine = !!viewerId && message.sender_id === viewerId;
+  const isMine = message.sender_id === viewerId;
   // Reactions address a server id, so a message still in flight has nothing to
   // address. Web gates the same affordance on the same condition.
   const isConfirmed = message._status === "confirmed";
@@ -354,7 +359,7 @@ function MineMessageBubble({
   message: ChatMessage;
   replyParent: ChatMessage | null | undefined;
   replyParentHidden: string | undefined;
-  viewerId: string | null;
+  viewerId: string;
   nameFor: (userId: string) => string | null;
   time: string;
   isConfirmed: boolean;
