@@ -42,9 +42,10 @@ the line starts with. It can't see Signet on a line that itself starts like a
 comment (a template or JSX text line beginning `*` or `//`), it reads the
 source rather than the built binary, and text the server sends (API messages,
 the system actor's name) moves with ADR-25's later steps, so look at the build
-itself too. Bundle id
-(`live.frapp.mobile`), slug, scheme, and every public URL are **frapp**
-permanently. The trademark record is on #1901; this file is the listing paste.
+itself too. The bundle id and Android package (`live.frapp.mobile`), slug,
+scheme, and every public URL are **frapp** permanently; the full list is
+[`brand-identity.md` § 1](../../../spec/ui/brand-identity.md#1-identity). The
+trademark record is on #1901; this file is the listing paste.
 
 ## Identity
 
