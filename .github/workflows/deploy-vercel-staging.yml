@@ -34,6 +34,15 @@ name: Deploy Vercel staging
 # and its own `npm ci`, which is several minutes of duplicated install to avoid
 # a sequencing constraint the script already handles. See the header of
 # `scripts/ci/deploy-vercel.mjs`.
+#
+# ── Where staging's app config comes from (#834, #2672) ─────────────────────
+# From Infisical `staging`, injected below, not from Vercel's Preview env. The
+# two Infisical→Vercel staging syncs died with the Git link and pushed the whole
+# backend store into both frontend projects; the owner chose on 2026-09-24 to
+# retire them. The injection exports the whole store to this job, so each build
+# gets only the keys its app reads (`scripts/ci/lib/vercel-build-env.mjs`), and
+# the names recorded just before the injection are the only other variables any
+# Vercel CLI process sees.
 
 on:
   workflow_run:
@@ -105,6 +114,25 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@59.11.7
 
+      # Names only, never values. `deploy-vercel.mjs` gives every Vercel CLI
+      # process these names plus its project's app keys, so the rest of the
+      # store the next step injects stays out of them. It must run BEFORE the
+      # injection: a baseline taken after it holds the whole store, and the
+      # script refuses one that contains an app key.
+      - name: Record the job's environment names before Infisical adds to them
+        env:
+          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
+        run: node scripts/ci/record-env-baseline.mjs
+
+      # After `npm ci` and the CLI install on purpose, so no package's install
+      # script runs with the staging store in its environment.
+      - name: Inject staging secrets from Infisical
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "staging"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
       # The deployment ids are captured from stdout, the same shape
       # `deploy-production.yml` uses for `render_deploy_id=`. They are what the
       # alias step below keys on — see its comment.
@@ -114,6 +142,7 @@ jobs:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           DEPLOY_TARGET: preview
           DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
         run: |
           set -euo pipefail
           node scripts/ci/deploy-vercel.mjs | tee "${RUNNER_TEMP:-/tmp}/vercel.log"

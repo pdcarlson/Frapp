@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 
 // Pins the second and third cutover of stage 4's composite-action work (#1382):
-// the Infisical preamble+injection (15 call sites across 7 workflows) and the
+// the Infisical preamble+injection (16 call sites across 8 workflows since #2672) and the
 // Supabase CLI version pin (4 sites).
 //
 // Why this file has teeth beyond "the copies stayed gone": NONE of the
@@ -36,7 +36,7 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 // in `.github/workflows` and `.github/actions`. Inside the action the value is
 // `${{ inputs.env-slug }}`, which that scan cannot match -- by design, because
 // the real literals survive as the `with:` values at the call sites. Rename the
-// action's input and all fifteen literals leave the gate's reach at once: it
+// action's input and all sixteen literals leave the gate's reach at once: it
 // then scans zero bytes and passes. That is the vacuous green its own section 0
 // exists to refuse, and nothing else in the repo would notice.
 
@@ -102,14 +102,14 @@ describe("infisical-secrets composite action", () => {
       /^ {2}env-slug:$/m,
       "the input must be named `env-slug`: check-env-slugs.mjs matches the literal " +
         "`env-slug: \"<slug>\"` at the call sites, and renaming this input moves all " +
-        "fifteen slugs out of that gate's reach while it keeps exiting 0.",
+        "sixteen slugs out of that gate's reach while it keeps exiting 0.",
     );
   });
 
   it("passes every input the hand-written call sites used to pass", () => {
     // The extraction is only lossless if the constants the call sites carried
     // are still carried. `include-imports: true` in particular was written at
-    // every site (sixteen at the time; fourteen after #2518, fifteen since #2583) and is NOT the
+    // every site (sixteen at the time; fourteen after #2518, fifteen since #2583, sixteen since #2672) and is NOT the
     // action's default.
     for (const [key, value] of [
       ["method", '"universal"'],
@@ -155,7 +155,7 @@ describe("infisical-secrets composite action", () => {
   });
 
   it("defaults `on-missing-credentials` to `error`", () => {
-    // Thirteen of the fifteen call sites pass nothing and rely entirely on this
+    // Fourteen of the sixteen call sites pass nothing and rely entirely on this
     // default. Nothing asserted it, so flipping it to `warn` made every site —
     // deploy-production's `prod` injection included — continue past absent
     // credentials into `supabase db push`, with the suite green. The shell
@@ -305,6 +305,10 @@ describe("Infisical call sites", () => {
       ["deploy-api.yml", "migrate-staging", "staging"],
       ["deploy-api.yml", "deploy-staging", "staging"],
       ["deploy-production.yml", "deploy", "prod"],
+      // Staging's app config for the web and landing builds (#834 option b,
+      // #2672). The job hands each build only its app's keys; the rest of the
+      // store stays out of the Vercel CLI (`lib/vercel-build-env.mjs`).
+      ["deploy-vercel-staging.yml", "deploy", "staging"],
       // The migration gates on pull_request read the published snapshot and
       // inject nothing (#2518). This is the read that publishes it, in the
       // `automation` environment (main-only, #2583). It injects both, because
@@ -337,7 +341,7 @@ describe("Infisical call sites", () => {
       "the Infisical call-site roster changed. Each entry is file / job / slug; " +
         "update this list deliberately if a site legitimately moved.",
     );
-    assert.equal(actual.length, 15);
+    assert.equal(actual.length, 16);
   });
 
   it("leaves no hand-written injection or preflight anywhere", () => {

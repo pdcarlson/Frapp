@@ -26,7 +26,7 @@ Change SUPABASE_URL → both references update instantly.
 | UI name     | **Slug**      | When it's used                                                                                                                                                                                                                                                                                          | Maps to                                                                                  |
 | ----------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Development | **`dev`**     | Running the app on your machine against local Docker Supabase                                                                                                                                                                                                                                           | `npm run dev:stack` (API + web + landing); per-app: see [`LOCAL_DEV.md`](./LOCAL_DEV.md) |
-| Staging     | **`staging`** | Deployed to Render staging when code merges to `main` branch. The **Vercel half ended 2026-09-02** — `frapp-landing` unlinked from Git 2026-09-01, `frapp-web` 2026-09-02, so no merge deploys web or landing (ADR-21 in [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md)) | Vercel Preview, Render staging, Supabase staging project                                 |
+| Staging     | **`staging`** | Deployed to Render staging when code merges to `main` branch. Web and landing deploy from CI since the Git unlink (ADR-21 in [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md)): `deploy-vercel-staging.yml` injects this environment and builds each app against the keys it reads ([`SECRETS_MANAGEMENT.md` § Staging web and landing](./SECRETS_MANAGEMENT.md#staging-web-and-landing-injected-at-build-not-synced)) | Vercel Preview builds (at build time, no sync), Render staging, Supabase staging project |
 | Production  | **`prod`**    | Deployed to production infra when a commit is dispatched through `deploy-production.yml`                                                                                                                                                                                                                | Vercel Production, Render production, Supabase production project                        |
 
 > **Always use the slug, never the UI name.** Two of the three differ: the environment shown as
@@ -216,11 +216,13 @@ column is filled — see the `prod` cells. Empty `prod` values for these names a
 restored from that staging inject (`preserve-nonempty` on the `prod` call in
 `db-backup.yml`) so a documented "leave empty" cell cannot blank the destination. The bucket name, account endpoint, and key values are deliberately
 not written into this public repo — read them from Infisical or the Cloudflare
-dashboard. They do not live _only_ there, though: the path-`/` staging syncs
-([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5) push every Staging
-secret onward, so copies also sit in the Render staging service env and both
-Vercel projects' Preview envs — the #834 blast radius. Count those three
-destinations in any compromise assessment of this credential.
+dashboard. They do not live _only_ there, though: the path-`/` `render-api-staging`
+sync ([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5) pushes every Staging
+secret onward, so a copy also sits in the Render staging service env. The two
+retired staging Vercel syncs failed from 2026-09-01 on, so both Vercel projects'
+Preview envs hold a copy only if the credential existed before then, until those
+rows are deleted (#834). Count every destination that applies in any compromise
+assessment of this credential.
 
 | Variable                      | `dev`           | `staging`                                                                                                                                                 | `prod`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ----------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -320,10 +322,11 @@ Reads the `NEXT_PUBLIC_*` references:
 > client bundle) — it authorizes _writing_ events, not reading them.
 >
 > **It still goes in Infisical, not in Vercel's dashboard.** Infisical is the canonical store and
-> Vercel is a sync _destination_; a value set directly on the Vercel project lives outside the one
+> Vercel only receives from it; a value set directly on the Vercel project lives outside the one
 > place that is supposed to hold it and is invisible to every other environment. Add it to the
-> **Staging** and **Production** Infisical environments and let `vercel-web-staging` /
-> `vercel-web-production` carry it (inventory: [`SECRETS_MANAGEMENT.md` §5](./SECRETS_MANAGEMENT.md#5-configure-secret-syncs)).
+> **Staging** and **Production** Infisical environments. The staging deploy job injects it into the
+> staging build and `vercel-web-production` carries it to production
+> ([`SECRETS_MANAGEMENT.md` §5](./SECRETS_MANAGEMENT.md#5-configure-secret-syncs)).
 > Leave the **local** environment unset — no DSN means `Sentry.init` is never called, which is what
 > keeps local dev, tests, and CI reporting nowhere.
 >
@@ -334,7 +337,8 @@ Reads the `NEXT_PUBLIC_*` references:
 > event with nothing to catch it.
 >
 > Note the blast radius (#834): every sync reads path `/` and pushes its **whole** source
-> environment, so `frapp-landing` receives `NEXT_PUBLIC_SENTRY_DSN` too. It is inert there —
+> environment, so `frapp-landing`'s Production env receives `NEXT_PUBLIC_SENTRY_DSN` too (the
+> staging build hands each app only its own keys). It is inert there —
 > `apps/landing` never reads it (it reads `NEXT_PUBLIC_LANDING_SENTRY_DSN` instead) — but it is
 > one more key riding a sync that cannot filter. The reverse is also true: the landing DSN is
 > synced onto `frapp-web` and is inert there because web never reads that name.
@@ -656,10 +660,11 @@ failure rather than a missing-env one.
 1. Add to code (`process.env.YOUR_VAR` or `ConfigService`).
 2. Add its row to the grid above, then set the value in each Infisical environment whose cell gives one. A cell marked _(leave empty)_ or _not yet set_ gets no value — never a placeholder to make the row look complete.
 3. If it needs a framework prefix → add an Infisical reference (`NEXT_PUBLIC_YOUR_VAR = ${YOUR_VAR}`).
-4. Update this document.
+4. If `apps/web` or `apps/landing` reads it, add it to `APP_CONFIG_KEYS` in [`scripts/ci/lib/vercel-build-env.mjs`](../../../scripts/ci/lib/vercel-build-env.mjs), as required or optional. A staging build receives only the keys listed there, and `vercel-build-env.test.mjs` fails until the list matches the code.
+5. Update this document.
 
 ## Removing a Variable
 
-1. Remove from code.
+1. Remove from code, and from `APP_CONFIG_KEYS` if a frontend read it (the same test fails on a stale entry).
 2. Remove from Infisical (all environments, canonical + references).
 3. Update this document.

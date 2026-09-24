@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { workflowSteps } from "./helpers/workflow-yaml.mjs";
+
 // Pins the properties of `deploy-vercel-staging.yml` that are load-bearing and
 // invisible in a diff (#1578).
 //
@@ -131,6 +133,45 @@ describe("deploy-vercel-staging.yml", () => {
     // An empty id must be a failure, not a silently skipped alias.
     assert.match(uncommented, /if \[ -z "\$\{WEB_DEPLOYMENT_ID:-\}" \]/);
     assert.match(uncommented, /Refusing to alias a staging hostname/);
+  });
+
+  // ── Staging's app config from Infisical (#834 option b, #2672) ─────────
+  // The order is the whole mechanism, and no pull request runs this job, so
+  // nothing but this test sees a reordering before a staging deploy does.
+  const deploySteps = () => workflowSteps(WORKFLOW).filter((step) => step.jobId === "deploy");
+  const indexOf = (predicate, what) => {
+    const index = deploySteps().findIndex(predicate);
+    assert.ok(index >= 0, `the deploy job has no step that ${what}`);
+    return index;
+  };
+  const USES_INFISICAL = /uses:\s*\.\/\.github\/actions\/infisical-secrets/;
+
+  it("injects Infisical staging, after every install and before the build", () => {
+    const npmCi = indexOf((s) => /\bnpm ci\b/.test(s.body), "runs npm ci");
+    const cli = indexOf((s) => /npm install --global vercel@/.test(s.body), "installs the Vercel CLI");
+    const inject = indexOf((s) => USES_INFISICAL.test(s.body), "injects Infisical");
+    const deploy = indexOf((s) => s.body.includes("scripts/ci/deploy-vercel.mjs"), "runs deploy-vercel.mjs");
+    assert.ok(npmCi < inject && cli < inject, "no package install script may run with the store in its env");
+    assert.ok(inject < deploy, "the build needs the injected app config");
+    assert.match(deploySteps()[inject].body, /env-slug:\s*"staging"/);
+  });
+
+  it("records the env baseline immediately before the injection", () => {
+    // A baseline recorded after the injection holds the whole store.
+    // `infisicalBuildEnv` refuses one at runtime; this catches it in review.
+    const record = indexOf((s) => s.body.includes("scripts/ci/record-env-baseline.mjs"), "records the baseline");
+    const inject = indexOf((s) => USES_INFISICAL.test(s.body), "injects Infisical");
+    assert.equal(record, inject - 1);
+  });
+
+  it("reads the baseline from the same file it was written to", () => {
+    const steps = deploySteps();
+    const record = steps.find((s) => s.body.includes("scripts/ci/record-env-baseline.mjs"));
+    const deploy = steps.find((s) => s.body.includes("scripts/ci/deploy-vercel.mjs"));
+    const written = record.env.get("VERCEL_BUILD_ENV_BASELINE");
+    assert.ok(written, "the record step names no VERCEL_BUILD_ENV_BASELINE");
+    assert.equal(deploy.env.get("VERCEL_BUILD_ENV_BASELINE"), written);
+    assert.match(written, /^\$\{\{ runner\.temp \}\}\//, "outside the checkout, so nothing uploads it");
   });
 
   it("installs workspace dependencies before building", () => {
