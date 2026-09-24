@@ -9,9 +9,9 @@ Rule: **if a control looks interactive, it must do something** (navigate, mutate
 
 Auth is real Supabase auth (#698) — these rows need a build carrying
 `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` and a real member
-account. Without them the sign-in card reports "EXPO_PUBLIC_SUPABASE_URL and
-EXPO_PUBLIC_SUPABASE_ANON_KEY are not set for this build, so sign-in is
-unavailable." and every row below is expected to fail.
+account. Without them sign-in is unavailable and every row below is expected
+to fail; [`testing.md` § 1](testing.md#1-provide-the-environment) quotes what
+the sign-in card says.
 
 | Screen | Control | Expected outcome |
 |---|---|---|
@@ -47,7 +47,7 @@ in the S2 nav restructure (#957) — see
 | Chat (`/(tabs)`) | Open #general thread preview | Opens `chat-thread` route |
 | Events (`/(tabs)/events`) | Open event details | Opens `event-details` route |
 | Tasks (`/(tabs)/tasks`) | New task (+), shown only with `tasks:manage` | Opens the new-task sheet |
-| More (`/(tabs)/more`) | Each row | Opens selected route |
+| More (`/(tabs)/more`) | Each row | Opens selected route. The exception is Host check-in (shown with `events:update`): with no upcoming event it reads "No upcoming event to host right now." and is disabled |
 
 ## 3) Detail routes with action controls
 

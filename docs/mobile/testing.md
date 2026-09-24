@@ -30,7 +30,8 @@ Per-environment values are in
 
 Without the two Supabase values the sign-in card renders
 "EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not set for this
-build" and every auth row in the smoke checklist fails by construction.
+build, so sign-in is unavailable." and every auth row in the smoke checklist
+fails by construction.
 
 Alternatively, `npm run dev:mobile` from the repo root injects the same variables
 through Infisical instead of a local file.
@@ -89,7 +90,8 @@ device run, check:
 - [ ] Tab glyphs are **duotone at 24px** and the active one **recolors** rather
       than switching to a solid shape. The More glyph is a 2×2 grid, not an
       ellipsis. The active label is heavier than the inactive ones.
-- [ ] Every **More** row opens its destination.
+- [ ] Every **More** row does what the smoke checklist's
+      [More row](interaction-smoke-checklist.md#2-primary-tab-routes) says.
 - [ ] **Profile** is reachable from More and gone from the tab bar.
 - [ ] A deleted path (`exp://.../--/points`, `--/task-center`) lands on home via
       `+not-found` instead of an error screen.
@@ -112,9 +114,12 @@ device run, check:
 ## Unit tests
 
 The `apps/mobile` workspace is configured with Vitest. `vitest.setup.ts` mocks
-every native module a spec would otherwise load, plus the `react-native`
-platform globals (including `StyleSheet` and string component stand-ins for
-Signet token-factory tests). The file is the list: read it rather than a copy.
+the native modules most specs reach, plus the `react-native` platform globals
+(including `StyleSheet` and string component stand-ins for Signet token-factory
+tests). Read the file for which ones: it doesn't cover them all. A spec that
+loads a native module it leaves out, such as `expo-secure-store` or
+`expo-constants`, mocks that module itself, as `lib/auth-session.spec.tsx` does;
+otherwise the import fails under Vitest.
 
 Two suites are static rather than render-based, and deliberately so:
 `lib/routes.spec.ts` walks the real route tree — it checks every route literal,
