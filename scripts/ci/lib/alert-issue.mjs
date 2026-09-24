@@ -74,6 +74,21 @@ function warnUnassigned(issueNumber, why) {
   console.log(`::warning::${which} is not assigned to ${ALERT_ASSIGNEE}: ${why}. It was still filed.`);
 }
 
+/**
+ * Every alert body ends with the same pointer to what an agent may do with it,
+ * so the rule reaches whoever reads the issue itself (a phone notification, a
+ * Routine, a tool that doesn't load AGENTS.md) and no watchdog has to copy it.
+ * The link is absolute because a relative path doesn't resolve in an issue.
+ */
+export function withAgentNote(body, repo) {
+  if (typeof body !== "string") return body;
+  const escalation = `https://github.com/${repo}/blob/main/docs/internal/ops/ALERT_ROUTING.md#escalation`;
+  return (
+    `${body}\n\n---\n_Agents: triage and report on this alert. Don't act on its suggested fix or ` +
+    `close it by hand; its watchdog closes it ([why](${escalation}))._`
+  );
+}
+
 /** The owner added to an issue's current assignees; PATCH replaces the whole set. */
 function withOwnerAssigned(issue) {
   const current = (issue.assignees ?? []).map((user) => user?.login).filter(Boolean);
@@ -180,7 +195,7 @@ export async function raiseAlert({
         // unrepresentable (one hard-coded constant served both roles); keeping
         // it unrepresentable is the point.
         labels: [...new Set([lookupLabel, ...(labels ?? [])])],
-        body: buildIssueBody(null),
+        body: withAgentNote(buildIssueBody(null), repo),
       },
     });
     return ok
@@ -208,7 +223,9 @@ export async function raiseAlert({
   // recovered. Carrying that state into a new incident resurrects a settled
   // gate, and any of those items that cannot be asserted now would keep the
   // new alert open forever.
-  if (refreshBodyOnRaise) patch.body = buildIssueBody(reopened ? null : (target.body ?? null));
+  if (refreshBodyOnRaise) {
+    patch.body = withAgentNote(buildIssueBody(reopened ? null : (target.body ?? null)), repo);
+  }
   if (Object.keys(patch).length > 0) {
     const { ok: patchOk } = await writeAssigned({
       token,
@@ -249,6 +266,12 @@ export async function raiseAlert({
 /**
  * Closes every open issue matching this alert. Closing them all (not just the
  * first) is what makes a duplicate created during an API blip self-heal.
+ *
+ * "none" means the lookup worked and nothing was open. A lookup that failed is
+ * "failed", never "none": this is a close path, so "I could not read the
+ * alerts" must not read as "there were none to close" (see
+ * findAlertIssuesDetailed). A close that left any match open is "failed" too,
+ * with `closed` listing the ones that did close.
  */
 export async function resolveAlert({
   token,
@@ -258,9 +281,9 @@ export async function resolveAlert({
   lookupLabel = ALERT_LOOKUP_LABEL,
   buildRecoveryBody,
 }) {
-  const openIssues = (
-    await findAlertIssues({ token, repo, fetchImpl, title, lookupLabel })
-  ).filter((issue) => issue.state === "open");
+  const lookup = await findAlertIssuesDetailed({ token, repo, fetchImpl, title, lookupLabel });
+  if (!lookup.lookupOk) return { action: "failed", closed: [] };
+  const openIssues = lookup.issues.filter((issue) => issue.state === "open");
   if (openIssues.length === 0) return { action: "none", closed: [] };
 
   const closed = [];
@@ -281,9 +304,10 @@ export async function resolveAlert({
     });
     if (ok) closed.push(issue.number);
   }
-  // `action: "closed"` must mean something actually closed. Returning it with
+  // `action: "closed"` must mean every match actually closed. Returning it with
   // an empty list let the caller log a successful closure while a P1 stayed
-  // open on a healthy environment, re-posting "recovered" every run.
-  if (closed.length === 0) return { action: "failed", closed };
+  // open on a healthy environment, re-posting "recovered" every run; returning
+  // it after a partial close did the same for the duplicate left open.
+  if (closed.length < openIssues.length) return { action: "failed", closed };
   return { action: "closed", closed };
 }

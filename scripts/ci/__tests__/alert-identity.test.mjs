@@ -35,6 +35,14 @@ import { makeFetchMock } from "./helpers.mjs";
 
 const SCRIPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+/** A source file without its comment lines: prose may name a label, code may not. */
+function codeLines(source) {
+  return source
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join("\n");
+}
+
 // One row per alert. deploy-alert.mjs serves two workflows from one table.
 const FLAT = {
   "check-migration-drift": checkMigrationDrift,
@@ -94,19 +102,21 @@ test("every call site passes the lib-derived label, and nothing else", () => {
   // The exported alias is checked above, but a call site could still pass a
   // literal or a local variable of its own, and the label-strict tests below
   // use the export, so they would never see it. Each script declares the alias
-  // once, from the lib, and every `lookupLabel:` it writes is that alias.
+  // once, from the lib, and every `lookupLabel` it writes in code is exactly
+  // `lookupLabel: ALERT_ISSUE_LOOKUP_LABEL`: a shorthand `{ lookupLabel }`, a
+  // local `lookupLabel = …` or any other value fails.
   for (const script of new Set(ALERTS.map((alert) => alert.script))) {
-    const source = readFileSync(join(SCRIPTS_DIR, `${script}.mjs`), "utf8");
-    const declarations = source.match(/\bALERT_ISSUE_LOOKUP_LABEL\s*=[^=].*$/gm) ?? [];
+    const code = codeLines(readFileSync(join(SCRIPTS_DIR, `${script}.mjs`), "utf8"));
+    const declarations = code.match(/\bALERT_ISSUE_LOOKUP_LABEL\s*=[^=].*$/gm) ?? [];
     assert.deepEqual(
       declarations,
       ["ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;"],
       `${script} declares its lookup label once, from the lib`,
     );
-    const passed = [...source.matchAll(/\blookupLabel\s*:\s*([^,}\n]+)/g)].map((m) => m[1].trim());
-    assert.ok(passed.length > 0, `${script} passes its lookup label`);
-    for (const value of passed) {
-      assert.equal(value, "ALERT_ISSUE_LOOKUP_LABEL", `${script} passes lookupLabel: ${value}`);
+    const uses = code.match(/\blookupLabel\b.*$/gm) ?? [];
+    assert.ok(uses.length > 0, `${script} passes its lookup label`);
+    for (const use of uses) {
+      assert.match(use, /^lookupLabel: ALERT_ISSUE_LOOKUP_LABEL\b/, `${script}: ${use}`);
     }
   }
 });
@@ -121,15 +131,11 @@ test("no two alerts share an identity", () => {
 test("no script outside the lib names an alert label itself", () => {
   // The old label as a literal is how a watchdog gets left behind. The ledger
   // and state issues that still carry `routine-state` are written by the
-  // routines through the MCP, never by these scripts. Comment lines are
-  // skipped: prose may name a label in backticks.
+  // routines through the MCP, never by these scripts.
   const offenders = [];
   for (const dir of [SCRIPTS_DIR, join(SCRIPTS_DIR, "lib")]) {
     for (const file of readdirSync(dir).filter((name) => name.endsWith(".mjs"))) {
-      const code = readFileSync(join(dir, file), "utf8")
-        .split("\n")
-        .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-        .join("\n");
+      const code = codeLines(readFileSync(join(dir, file), "utf8"));
       if (/["'`]routine-state["'`]/.test(code)) offenders.push(`${file}: routine-state`);
       if (file !== "alert-issue.mjs" && /["'`]incident["'`]/.test(code)) offenders.push(`${file}: incident`);
     }

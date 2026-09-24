@@ -7,6 +7,7 @@ import {
   findAlertIssues,
   raiseAlert,
   resolveAlert,
+  withAgentNote,
 } from "../lib/alert-issue.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
@@ -250,7 +251,19 @@ test("refreshBodyOnRaise rewrites an open alert's body; default leaves it alone"
   });
   const patch = on.calls.find((c) => c.method === "PATCH");
   assert.ok(patch, "body refresh must issue a PATCH");
-  assert.deepEqual(JSON.parse(patch.body), { body: "issue body" });
+  assert.deepEqual(JSON.parse(patch.body), { body: withAgentNote("issue body", "o/r") });
+});
+
+test("every alert body ends with one pointer to what agents may do with it", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [] },
+    { method: "POST", path: "/issues", body: { number: 7 } },
+  ]);
+  await raiseAlert({ ...args(fetchImpl), labels: LABELS, ...builders });
+  const { body } = JSON.parse(calls.find((c) => c.method === "POST").body);
+  assert.ok(body.startsWith("issue body\n\n---\n"), "the watchdog's own body comes first");
+  const link = "https://github.com/o/r/blob/main/docs/internal/ops/ALERT_ROUTING.md#escalation";
+  assert.equal(body.split(link).length - 1, 1, "exactly one pointer");
 });
 
 // ── resolveAlert ────────────────────────────────────────────────────────────
@@ -300,6 +313,34 @@ test("a close that fails is reported as failed, never as closed-with-nothing", a
   const out = await resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered" });
   assert.equal(out.action, "failed");
   assert.deepEqual(out.closed, []);
+});
+
+test("a failed lookup on the close path is failed, never none", async () => {
+  // "none" would tell the caller nothing was open; the alert may well be open.
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", status: 502, body: {} },
+  ]);
+  const out = await resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered" });
+  assert.deepEqual(out, { action: "failed", closed: [] });
+  assert.equal(calls.filter((c) => c.method !== "GET").length, 0);
+});
+
+test("a close that leaves one duplicate open is failed, listing what did close", async () => {
+  const { fetchImpl } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/issues?state=all",
+      body: [
+        { number: 7, title: TITLE, state: "open" },
+        { number: 8, title: TITLE, state: "open" },
+      ],
+    },
+    { method: "POST", path: "/comments", body: {} },
+    { method: "PATCH", path: "/issues/8", status: 502, body: {} },
+    { method: "PATCH", path: "/issues/7", body: {} },
+  ]);
+  const out = await resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered" });
+  assert.deepEqual(out, { action: "failed", closed: [7] });
 });
 
 test("resolveAlert is a no-op when nothing is open", async () => {

@@ -80,9 +80,9 @@ any issue number he names). One question, one pick. With `--list-only`, print th
 First check whether it's already handled, against the current code, config, or provider state. If
 it is, close it with the proof and offer him the next item.
 
-An `incident` is the exception to both that close and step 2 below: triage it and report on its
-thread, put the fix to him or file it as its own issue, and leave the close to its watchdog, which
-closes it once its own checks pass
+An `incident` is the exception to that close and to steps 2 and 5 below: triage it and report on
+its thread, put the fix to him or file it as its own issue, and leave the close to its watchdog,
+which closes it once its own checks pass
 ([`ALERT_ROUTING.md` § Escalation](../../../docs/internal/ops/ALERT_ROUTING.md#escalation)).
 
 1. **Ground the steps in reality, not the issue.** Its "How to do it" was written at filing time and

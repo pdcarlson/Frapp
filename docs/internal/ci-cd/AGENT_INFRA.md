@@ -1005,7 +1005,8 @@ stay silent).
 `unknown` — a target the Management API could not be read — does **neither**. An API blip must not
 close a live alert (that is how a real outage gets silenced) and must not open one either (nothing
 was observed to be drifting). `unknown` still exits non-zero, so a check that cannot run is a red
-run rather than a quiet pass. Every scheduled watchdog in
+run rather than a quiet pass. So does a `clean` run whose open alert could not be read or closed,
+since a green run would hide a P1 left open on a healthy environment. Every scheduled watchdog in
 `scripts/ci/` exits non-zero on a bad verdict, and for all but two of them green additionally means
 "it was checked and it matched" — they *are* the check. The two that do **not** carry that second
 meaning are `staging-conformance` and `production-auth-conformance`, which

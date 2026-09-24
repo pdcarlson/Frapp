@@ -61,6 +61,7 @@ import {
   findAlertIssuesDetailed,
   raiseAlert,
   resolveAlert,
+  withAgentNote,
 } from "./lib/alert-issue.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { requireEnv } from "./lib/env.mjs";
@@ -1382,7 +1383,14 @@ export async function runStagingConformance({
         fetchImpl,
         method: "PATCH",
         path: `/repos/${repo}/issues/${issue.number}`,
-        body: { body: buildAlertIssueBody({ results, runUrl, previousBody: issue.body }) },
+        // The lib appends the agent note to every body it writes; this is
+        // the one body write outside it, so it adds the note itself.
+        body: {
+          body: withAgentNote(
+            buildAlertIssueBody({ results, runUrl, previousBody: issue.body }),
+            repo,
+          ),
+        },
       });
     }
     logger.log?.(
@@ -1412,8 +1420,8 @@ export async function runStagingConformance({
     // healthy environment, collecting one duplicate "recovered" comment a day,
     // while the run reports conformant.
     logger.log?.(
-      "::error::Staging is conformant but the alert issue could not be closed. " +
-        "It is still open; close it by hand if this persists.",
+      "::error::Staging is conformant but the alert issue could not be read or closed. " +
+        "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
     );
   }
   return { outcome, results, alert };
