@@ -619,13 +619,23 @@ export default function ChatThreadScreen() {
                 Open a channel from Chat to see its messages.
               </Text>
             </View>
+          ) : loadError ? (
+            // Ahead of the identity gate, as on web (#2243): a failed read
+            // must not hide behind "Loading messages…" while `/users/me` is
+            // still in flight.
+            <View style={styles.stateBlock}>
+              <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
+              <Text style={styles.stateBody}>{loadError.message}</Text>
+            </View>
           ) : !viewerId && viewerQuery.isError ? (
-            <ErrorState
-              title="Couldn't load your account"
-              body="Chat needs to know which messages are yours before it can show them."
-              onRetry={() => void viewerQuery.refetch()}
-              isRetrying={viewerQuery.isFetching}
-            />
+            <View style={styles.stateBlock}>
+              <ErrorState
+                title="Couldn't load your account"
+                body="Chat needs to know which messages are yours before it can show them."
+                onRetry={() => void viewerQuery.refetch()}
+                isRetrying={viewerQuery.isFetching}
+              />
+            </View>
           ) : isLoading || !viewerId ? (
             // An unresolved viewer is "not readable yet", the same as messages
             // still loading (#2250). Rendering rows now would paint the
@@ -634,11 +644,6 @@ export default function ChatThreadScreen() {
             <View style={styles.stateBlock}>
               <ActivityIndicator color={tokens.color.text.muted} />
               <Text style={styles.stateBody}>Loading messages…</Text>
-            </View>
-          ) : loadError ? (
-            <View style={styles.stateBlock}>
-              <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
-              <Text style={styles.stateBody}>{loadError.message}</Text>
             </View>
           ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
             // Counted after the block list, held rows included: a channel whose

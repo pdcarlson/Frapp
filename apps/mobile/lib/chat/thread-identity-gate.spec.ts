@@ -26,6 +26,10 @@ const ROW = readFileSync(
   join(MOBILE_ROOT, "components/chat/thread-message-row.tsx"),
   "utf8",
 );
+const QUOTE = readFileSync(
+  join(MOBILE_ROOT, "components/chat/reply-quote.tsx"),
+  "utf8",
+);
 const BUBBLE = readFileSync(
   join(MOBILE_ROOT, "components/chat/message-bubble.tsx"),
   "utf8",
@@ -58,6 +62,18 @@ describe("chat thread identity gate (#2250)", () => {
     );
   });
 
+  it("shows a messages load failure rather than burying it behind the gate", () => {
+    // Web's order (#2243): a read that failed while `/users/me` is still in
+    // flight says so, instead of spinning until identity lands.
+    const gate = renderGate();
+    const loadError = gate.indexOf(") : loadError ? (");
+    expect(loadError).toBeGreaterThan(-1);
+    expect(loadError).toBeLessThan(
+      gate.indexOf("!viewerId && viewerQuery.isError"),
+    );
+    expect(loadError).toBeLessThan(gate.indexOf("isLoading || !viewerId"));
+  });
+
   it("never hands a row a null or placeholder viewer", () => {
     expect(THREAD).toMatch(/if \(!viewerId\) return null;/);
     expect(THREAD).not.toMatch(/viewerId=\{viewerId \?\?/);
@@ -69,6 +85,7 @@ describe("chat thread identity gate (#2250)", () => {
     expect(ROW).not.toMatch(
       /export interface ThreadMessageRowProps \{[^}]*viewerId: string \| null/s,
     );
+    expect(QUOTE).not.toMatch(/viewerId: string \| null/);
     expect(BUBBLE).not.toMatch(/!!viewerId &&/);
     expect(BUBBLE).toMatch(/const isMine = message\.sender_id === viewerId;/);
   });
