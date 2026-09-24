@@ -53,6 +53,7 @@ import {
   type IDiscordBotGateway,
 } from '#domain/adapters/discord.interface';
 import { DiscordOAuthService } from './discord-oauth.service';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /** How many files one mint request may register. */
 export const MAX_UPLOAD_URL_BATCH = 100;
@@ -361,6 +362,7 @@ export class DiscordImportService {
       if (error instanceof DiscordNotConfiguredError) {
         throw new ServiceUnavailableException(
           'Reading Discord is not configured in this environment. The DiscordChatExporter upload flow still works.',
+          { cause: toReportableError(error) },
         );
       }
       if (error instanceof DiscordApiError) {

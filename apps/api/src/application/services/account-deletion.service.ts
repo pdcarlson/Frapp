@@ -30,6 +30,8 @@ import {
   REPORT_RETENTION_HOURS,
   ReportRetentionService,
 } from './report-retention.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
  * Individual account deletion (spec/behavior/data-retention.md).
@@ -96,12 +98,15 @@ export class AccountDeletionService {
       memberships = await this.memberRepo.findByUser(user.id);
       await this.purgeStorageObjects(user, memberships);
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `Storage PII purge failed for user ${userId}; aborting before any ACCOUNT DATA was changed (objects swept before the failure are already gone) — client should retry`,
-        error instanceof Error ? error.stack : String(error),
+        error,
       );
       throw new BadGatewayException(
         'Stored file cleanup did not complete; no account data was changed. Please retry.',
+        { cause: toReportableError(error) },
       );
     }
 
@@ -128,12 +133,15 @@ export class AccountDeletionService {
     try {
       await this.authAdmin.deleteAuthUser(tombstone.supabase_auth_id);
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `Supabase Auth deletion failed for user ${userId}; database is already anonymized — client should retry`,
-        error instanceof Error ? error.stack : String(error),
+        error,
       );
       throw new BadGatewayException(
         'Account data was anonymized but the sign-in account could not be deleted. Please retry.',
+        { cause: toReportableError(error) },
       );
     }
 

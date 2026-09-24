@@ -160,18 +160,19 @@ describe('HealthController', () => {
     });
 
     it('throws ServiceUnavailableException when the configured Stripe Price is missing', async () => {
-      stripePriceConsistency.assertConfiguredPrice.mockRejectedValue(
-        new StripePriceAccountMismatchError(
-          'price_missing',
-          'resource_missing: No such price',
-        ),
+      const mismatch = new StripePriceAccountMismatchError(
+        'price_missing',
+        'resource_missing: No such price',
       );
+      stripePriceConsistency.assertConfiguredPrice.mockRejectedValue(mismatch);
 
       try {
         await controller.ready();
         throw new Error('expected ready() to throw');
       } catch (err) {
         expect(err).toBeInstanceOf(ServiceUnavailableException);
+        // Sentry reads the mismatch off `cause` (#2131).
+        expect((err as Error).cause).toBe(mismatch);
         const response = (err as ServiceUnavailableException).getResponse();
         expect(response).toMatchObject({
           code: 'DEGRADED',

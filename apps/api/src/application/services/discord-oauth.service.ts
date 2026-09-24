@@ -23,6 +23,7 @@ import {
 } from '#domain/repositories/discord-connection.repository.interface';
 import type { DiscordOAuthState } from '#domain/entities/discord-connection.entity';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { errorFingerprint } from '../../infrastructure/observability/error-fingerprint';
 
 /**
  * The callback path, fixed in code.
@@ -107,17 +108,23 @@ function describeError(error: unknown): string {
  * So a swallowed failure has to report itself. `new Error(String(error))` would
  * not do — on the plain object PostgREST throws, `String` yields
  * `[object Object]` — hence the shared normalizer here too, which is the same
- * one `AllExceptionsFilter` reports every other 5xx through.
+ * one `AllExceptionsFilter` reports every other 5xx through. The fingerprint
+ * is shared for the same reason: the normalizer's stack is identical for every
+ * fault it builds, so without one a missing table and a statement timeout
+ * swallowed here would be one Sentry issue (#2131).
  */
 function captureSwallowed(
   error: unknown,
   sweptUnder: DiscordConnectCode,
 ): void {
-  Sentry.captureException(toReportableError(error), {
+  const reported = toReportableError(error);
+  const fingerprint = errorFingerprint(reported);
+  Sentry.captureException(reported, {
     tags: {
       route: 'discord/connect/callback',
       swallowed_as: sweptUnder,
     },
+    ...(fingerprint ? { fingerprint } : {}),
   });
 }
 
