@@ -37,8 +37,8 @@
 -- holds a block row, including a DM they are not in, and block rows outlive
 -- leaving the chapter. Inside the policy the check changes no row's
 -- visibility, because the row is already filtered on it, and it runs only
--- once a block row has matched, so a viewer who has blocked nobody pays one
--- indexed lookup per reaction row.
+-- once a block row has matched, so a viewer who has blocked nobody never
+-- repeats the policy's channel check.
 --
 -- It is `security definer` because `users`, `chat_messages`, `chat_channels`
 -- and `chat_member_blocks` are default-deny to the `authenticated` role, and a
@@ -64,10 +64,11 @@ security definer
 set search_path = public, pg_temp
 as $$
   -- The read check sits in the select list so it runs only for the row a
-  -- block matched. As a WHERE filter on `m` the planner applies it at the
-  -- chat_messages scan, repeating the policy's own channel check on every
-  -- readable reaction row whether or not the viewer has blocked anyone. Every
-  -- join is on a unique key, so there is at most one row.
+  -- block matched. As a WHERE filter on `m` the planner may apply it at the
+  -- chat_messages scan, before the block join. PGlite did: reading three
+  -- action rows (two reactions) with no block made five channel checks, where
+  -- the policy alone makes three. Every join is on a unique key, so there is
+  -- at most one row.
   select coalesce((
     select public.can_read_chat_channel(m.channel_id)
     from public.chat_messages      m
