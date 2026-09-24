@@ -156,16 +156,16 @@ or git. Auth SMTP itself is proven on staging and production.
 step 3, `auth-smtp` and `auth-magic-link` expect Frapp: the sender name, the Magic Link
 subject, no `mailer_subjects_*` that says Signet, and no `Signet` or `SIGNET` anywhere in
 the Magic Link body, comments and `alt` text included. The match is case-sensitive: the
-design system's names are lowercase (`signet-emblem-B.png`, `--signet-*`) and pass. The
-consoles are the owner's to change, in this order, before the next scheduled run (staging
-07:30 UTC, production 07:45 UTC). Production's step waits on Deploy production, which is
-dispatched by hand, so merge once that day's Staging conformance and Production Auth
-conformance runs both appear under Actions (a scheduled run tests the `main` commit of the
-moment GitHub queued it, which is often late), and deploy production the same day. A slip
-opens alerts that close on the first run that passes: Staging conformance or Production
-Auth drift for a console not yet retyped, and Migration drift for `20260924170000` if
-production hasn't deployed by the 07:00 UTC check more than 24 hours after 2026-09-24
-17:00 UTC:
+design system's file, class and CSS variable names are lowercase (`signet-emblem-B.png`,
+`--signet-*`) and pass. The consoles are the owner's to change, in this order, before the
+next scheduled run (staging 07:30 UTC, production 07:45 UTC). Production's step waits on
+Deploy production, which is dispatched by hand, so merge once that day's Staging
+conformance and Production Auth conformance runs both appear under Actions (a scheduled
+run tests the `main` commit of the moment GitHub queued it, which is often late), and
+deploy production the same day. A slip opens alerts that close on the first run that
+passes: Staging conformance or Production Auth drift for a console not yet retyped, and
+Migration drift for `20260924170000` if production hasn't deployed by the 07:00 UTC check
+more than 24 hours after 2026-09-24 17:00 UTC:
 
 1. **Staging, once the merge has deployed there.** In `frapp-staging` → Authentication:
    SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the subject above,

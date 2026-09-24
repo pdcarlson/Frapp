@@ -602,13 +602,19 @@ export function leftoverSignetMailerSubjectKeys(data) {
 
 /**
  * The product name as copy spells it: `Signet`, or `SIGNET` in a heading.
- * ADR-25 keeps "signet" only as the design system's name, and its
- * identifiers are always lowercase (`/brand/signet-emblem-B.png`,
- * `signet-mark`, `--signet-accent-text`), so matching case-sensitively
- * leaves them alone without parsing the HTML. It matches anywhere in the
- * Magic Link body (text, `alt` and `title`, comments, Outlook-only blocks,
- * style content), glued to another word or not. The gap is the name in
- * lowercase, which the product's copy never used.
+ * ADR-25 keeps "signet" only as the design system's name. What of it can
+ * reach an email is lowercase: file names, class names and CSS custom
+ * properties (`/brand/signet-emblem-B.png`, `signet-mark`,
+ * `--signet-accent-text`). So a case-sensitive match leaves them alone
+ * without parsing the HTML. The design system's TypeScript names
+ * (`SignetTokens`) and an inlined brand SVG's own text are capitalized and
+ * would match, but neither belongs in a Magic Link template.
+ *
+ * It matches anywhere in the body (text, `alt` and `title`, comments,
+ * Outlook-only blocks, style content), glued to another word or not. The
+ * gaps: the name in lowercase, which the copy never used, and the name split
+ * by markup or an entity (`Sig<span>net</span>`, `&#83;ignet`), which no one
+ * types.
  */
 export const SIGNET_PRODUCT_NAME = /Signet|SIGNET/;
 
