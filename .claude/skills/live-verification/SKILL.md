@@ -242,8 +242,8 @@ session.
   delivery needs service-account credentials and a real device token, so don't report FCM as
   network-blocked. End-to-end push stays under the "Runtime checks BLOCKED" protocol in
   [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md).
-- **Provider APIs (Render, Vercel, Sentry, PostHog).** Direct `fetch` is blocked. Reach them
-  through MCP, which bypasses the allowlist, per
+- **Provider APIs (Render, Vercel, Sentry, PostHog, Supabase's Management API).** Direct `fetch` is
+  blocked. Reach them through MCP, which bypasses the allowlist, per
   [`infrastructure-research`](../infrastructure-research/SKILL.md).
   - The bare `vercel.com` allowlist line is unexplained drift, not a sanctioned path
     ([`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md#whats-configured-in-the-web-ui)).
