@@ -6,9 +6,9 @@
  * `CHAT_MESSAGE_CONTENT_MAX_LENGTH` is 10,000 characters. A body of
  * `"> ".repeat(4999) + "hi"` fits that cap and parses to about five thousand
  * nested blockquotes; nested lists and emphasis runs get there too. remark's
- * parse builds that tree without overflowing (though not always quickly: see
- * `opensTooManyContainers`), but every pass after it recurses once per level — `remark-breaks`' walk, `mdast-util-to-hast`, react-markdown's own
- * element filter and `hast-util-to-jsx-runtime` — and one of them throws
+ * parse builds that tree without overflowing, but every pass after it recurses
+ * once per level — `remark-breaks`' walk, `mdast-util-to-hast`, react-markdown's
+ * own element filter and `hast-util-to-jsx-runtime` — and one of them throws
  * `RangeError: Maximum call stack size exceeded`. The throw happens during
  * render, and the nearest error boundary is `(dashboard)/error.tsx`, so one
  * message replaced the whole `/chat` content column, composer included, for
@@ -22,7 +22,16 @@
  * It is also the honest rendering: a body nested that deep carries no
  * formatting a reader could follow, and showing the source says what was sent.
  * Mention chips still paint, because `remarkMentionChips` tokenizes the raw
- * body and walks `text` nodes, and this leaves exactly one.
+ * body and walks `text` nodes, and this leaves exactly one. That one node also
+ * holds any code span or link label, so a handle written inside backticks is
+ * chipped here although a normally rendered message leaves it plain. The chip
+ * is still true: the API's tokenizer ignores markdown, so that member was
+ * notified.
+ *
+ * **Parse time is a separate exposure.** remark's parse is super-linear on some
+ * bodies. `opensTooManyContainers` below skips the parse for the worst of them,
+ * lines of container markers. Emphasis runs and nested brackets or images still
+ * take over a second at the length cap, once per mount; that is #2664.
  *
  * **Why the render path, not only send-time validation.** Messages already
  * stored have whatever depth they have, so a send-time rule alone would leave
@@ -79,25 +88,42 @@ function exceedsDepth(root: MdastNode, limit: number): boolean {
  * leading run of block-quote and list markers is already longer than the cap
  * skips the parse and renders as raw text straight away: each marker opens at
  * least one mdast level, so the tree would have been over the cap anyway and
- * the outcome is the one `remarkDepthCap` would have reached.
+ * the outcome is the one `remarkDepthCap` would have reached. It covers
+ * container markers only; see the header for what it leaves to #2664.
  *
- * The scan is linear and deliberately loose. It counts `>`, `-`, `+`, `*` and
- * `1.`/`1)` markers, each separated by optional spaces or tabs, from the start
- * of each line, and ignores the finer CommonMark rules (four-space indents,
- * thematic breaks). Those can only make it count a line as deeper than it
- * would parse, and the cost of that is one message shown as its raw text.
+ * It splits lines where CommonMark does, at `\n`, `\r` or both, and skips the
+ * byte-order mark micromark drops from the start of a document. Missing either
+ * would let a crafted body hide its marker line from the scan and still pay the
+ * full parse.
+ *
+ * It counts `>`, `-`, `+`, `*` and `1.`/`1)` markers, each separated by
+ * optional spaces or tabs, from the start of each line. A line made only of
+ * `-` markers, or only of `*` markers, is exempt: CommonMark reads it as a
+ * thematic break, one level deep, and it parses in linear time. Beyond that the
+ * scan is deliberately loose. It also counts marker lines that CommonMark
+ * reads as something shallower: a line indented four spaces, a line inside a
+ * fenced code block, or a block quote around a thematic break. Such a message
+ * renders as its raw text. Tracking fences here instead would open a hole,
+ * because a fence opened inside a list item closes when the item does, and a
+ * body could use that to hide a marker line from the scan. Over-counting costs
+ * one message's formatting; under-counting costs every reader seconds.
  */
 export function opensTooManyContainers(content: string): boolean {
   let count = 0;
-  let atLineStart = true;
-  for (let i = 0; i < content.length; i += 1) {
+  let inPrefix = true;
+  // The one marker character a thematic break could be made of: null before
+  // the line's first marker, false once the line can't be a thematic break.
+  let thematic: string | null | false = null;
+  for (let i = content.startsWith("\uFEFF") ? 1 : 0; i <= content.length; i += 1) {
     const char = content[i];
-    if (char === "\n") {
+    if (char === undefined || char === "\n" || char === "\r") {
+      if (count > MAX_MESSAGE_MARKDOWN_DEPTH && !(inPrefix && thematic)) return true;
       count = 0;
-      atLineStart = true;
+      inPrefix = true;
+      thematic = null;
       continue;
     }
-    if (!atLineStart || char === " " || char === "\t") continue;
+    if (!inPrefix || char === " " || char === "\t") continue;
 
     let markerEnd = -1;
     if (char === ">") {
@@ -114,11 +140,13 @@ export function opensTooManyContainers(content: string): boolean {
     }
 
     if (markerEnd === -1) {
-      atLineStart = false;
+      // Content follows the markers, so the line is not a thematic break.
+      if (count > MAX_MESSAGE_MARKDOWN_DEPTH) return true;
+      inPrefix = false;
       continue;
     }
     count += 1;
-    if (count > MAX_MESSAGE_MARKDOWN_DEPTH) return true;
+    thematic = (char === "-" || char === "*") && (thematic === null || thematic === char) ? char : false;
     i = markerEnd - 1;
   }
   return false;
@@ -131,7 +159,7 @@ function isDigit(char: string | undefined): boolean {
 /** A list marker needs a space, a tab or the end of the line after it. */
 function isMarkerBoundary(content: string, index: number): boolean {
   const next = content[index];
-  return next === undefined || next === " " || next === "\t" || next === "\n";
+  return next === undefined || next === " " || next === "\t" || next === "\n" || next === "\r";
 }
 
 export interface DepthCapOptions {

@@ -31,6 +31,38 @@ describe("opensTooManyContainers", () => {
     expect(opensTooManyContainers(`${line}\n${line}\n${line}`)).toBe(false);
   });
 
+  it.each([
+    ["a lone CR", "\r"],
+    ["CRLF", "\r\n"],
+  ])("ends a line at %s, as CommonMark does", (_label, eol) => {
+    const deep = "- ".repeat(cap + 1) + "hi";
+    expect(opensTooManyContainers(`hi${eol}${deep}`)).toBe(true);
+    const line = "- ".repeat(cap) + "hi";
+    expect(opensTooManyContainers(`${line}${eol}${line}`)).toBe(false);
+  });
+
+  it("skips a leading byte-order mark, which the parser drops", () => {
+    expect(opensTooManyContainers("\uFEFF" + "- ".repeat(cap + 1) + "hi")).toBe(true);
+  });
+
+  it.each([
+    ["dashes", "- "],
+    ["stars", "* "],
+  ])("exempts a divider line of spaced %s, a thematic break", (_label, marker) => {
+    expect(opensTooManyContainers(`**bold** above\n${marker.repeat(cap + 8)}\nand below`)).toBe(false);
+  });
+
+  it("does not exempt a marker line that mixes dashes and stars, or ends in text", () => {
+    expect(opensTooManyContainers("- * ".repeat(cap))).toBe(true);
+    expect(opensTooManyContainers("- ".repeat(cap + 1) + "-x")).toBe(true);
+  });
+
+  it("counts a marker line inside a fenced code block, deliberately", () => {
+    // Over-counting costs this message its formatting. Tracking fences from the
+    // source would let a fence the parser closes early hide a marker line.
+    expect(opensTooManyContainers("```\n" + "> ".repeat(cap + 1) + "\n```")).toBe(true);
+  });
+
   it("stops counting at the first character that is not a marker", () => {
     expect(opensTooManyContainers("hi " + "- ".repeat(cap + 1))).toBe(false);
   });
