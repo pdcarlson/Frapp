@@ -14,10 +14,12 @@ Review is a **repository-managed Git `pre-push` gate**, not a CI job or an agent
 scan. Once installed, the same Git hook runs for local Codex, cloud agents, and humans.
 
 Git gives the hook every proposed ref update. Each non-deletion update must have evidence at
-`.cache/diff-review/<PUSHED_COMMIT_SHA>`; annotated tags are peeled to their commit. This is stronger
-than checking the currently checked-out HEAD: explicit refspecs and multi-ref pushes cannot borrow a
-marker from another commit. `/diff-review` writes the marker for the reviewed HEAD. Address every
-finding, commit any fixes, review the new commit, then push.
+`.cache/diff-review/<PUSHED_COMMIT_SHA>`, or publish nothing unreviewed: a commit already on
+`origin/main`, or one that adds nothing but merges of `main` since a reviewed commit. Annotated tags
+are peeled to their commit. This is stronger than checking the currently checked-out HEAD: explicit
+refspecs and multi-ref pushes cannot borrow a marker from another commit. `/diff-review` writes the
+marker for the reviewed HEAD. Address every finding, commit any fixes, review the new commit, then
+push.
 
 **Why not Codex project hooks?** Verified against the installed Codex CLI 0.144.0-alpha.4 on
 2026-09-16: `PreToolUse` hooks can block Codex-issued shell commands when they return a valid block
@@ -124,14 +126,15 @@ deliberately bypasses the repository hook and leaves no review evidence. Whether
 generic angles should retire in favor of the bundled command is
 [#706](https://github.com/pdcarlson/Frapp/issues/706).
 
-`/diff-review` runs scope → bundled finder subagents → dedup → one independent verifier per
-candidate, plus a second only when the first refutes → a single `ReportFindings` call, through the
-saved workflow `frapp-review` (shape and reasons:
+`/diff-review` reviews a branch thoroughly once: scope → bundled finder subagents → one
+independent verifier per flagged line, plus a second only when the first refutes → a single
+`ReportFindings` call, through the saved workflow `frapp-review`. Later rounds review only the
+commits since, inline, unless they add 300 lines or more (shape and reasons:
 [ADR-23](../../../spec/architecture/adr/adr-23.md)). It also encodes Frapp's own invariants as
 review angles: `chapter_id` scoping and chapter-scoped role lookups, permission decorators, the
 PGlite migration gate, broken doc pointers, the tracker rule (GitHub Issues), and verification
-honesty. The per-candidate verifier pass is what makes an agent-run review trustworthy rather than
-the agent agreeing with its own work — do not weaken it.
+honesty. The first round's per-candidate verifier pass is what makes an agent-run review
+trustworthy rather than the agent agreeing with its own work — do not weaken it.
 
 ## How the gate enforces
 
@@ -139,8 +142,13 @@ the agent agreeing with its own work — do not weaken it.
   deletion and publishes no object, so it is exempt.
 - Every other local object must peel to a commit and have a repository-root
   `.cache/diff-review/<commit SHA>` marker. Every ref in a multi-ref push is checked.
+- A commit with no marker of its own passes only if `node scripts/diff-review-scope.mjs --check
+  <sha>` finds nothing unreviewed in it: it is already on `origin/main`, or it differs from its
+  branch's last reviewed commit, with the current `main` merged in cleanly, by nothing at all. So a
+  base-branch sync needs no review; a conflict resolution or an edit inside a merge commit does.
 - The hook exits nonzero when any evidence is absent or an object cannot resolve to a commit. Git
-  then aborts the push. Hook failure is denial because `set -euo pipefail` produces a nonzero exit.
+  then aborts the push. Hook failure is denial because `set -euo pipefail` produces a nonzero exit,
+  and so is a check that can't run (no `node`, no `origin/main`).
 - A new commit has a new SHA and therefore needs a new review. Retrying does not mutate the marker
   directory and never changes the verdict; the former four-attempt escape was removed.
 - The deliberate emergency bypass is Git's standard `git push --no-verify`. It is auditable in the
@@ -163,9 +171,10 @@ the agent agreeing with its own work — do not weaken it.
 - **An explicit ref or tag is denied although HEAD was reviewed:** the hook checks the commit
   actually named by each ref update, and a HEAD marker can't authorize a different object. Check out
   that commit and run `/diff-review` there; it marks the commit it reviewed. A commit already on
-  `origin/main` (a tag on main, say) is already public, so the gate has nothing left to protect:
-  run `git fetch origin main`, check the commit out, and run
-  `node scripts/diff-review-scope.mjs --mark merged`, which refuses any commit not on `origin/main`.
+  `origin/main` (a tag on main, say) needs no marker, but the hook sees only the local
+  `origin/main`: run `git fetch origin main` and push again.
+- **Denied right after merging `main`:** the hook compares against the local `origin/main`, so a
+  merge of a newer `main` than it names looks like new work. `git fetch origin main` and push again.
 - **`/diff-review` is unavailable:** its frontmatter must not contain `disable-model-invocation`.
   Skills load at session start, so start a fresh session after fixing it.
 - **`Skill(skill: "code-review")` returns `disable-model-invocation`:** expected unless the current
@@ -173,9 +182,10 @@ the agent agreeing with its own work — do not weaken it.
 
 ## Testing the gate
 
-`node --test scripts/ci/__tests__/review-gate.test.mjs scripts/ci/__tests__/review-gate-hooks.test.mjs scripts/ci/__tests__/code-review-invocation-rule.test.mjs`
+`node --test scripts/ci/__tests__/review-gate.test.mjs scripts/ci/__tests__/review-gate-hooks.test.mjs scripts/ci/__tests__/diff-review-scope.test.mjs scripts/ci/__tests__/code-review-invocation-rule.test.mjs`
 exercises nonzero denial, repeated retries, exact-SHA and multi-ref evidence, deletions, annotated
-tags, installer wiring, provider-hook removal, and the `/code-review` invocation rule. Each behavior
+tags, commits that need no marker (on `main`, or a clean merge of it), the review scope, installer
+wiring, provider-hook removal, and the `/code-review` invocation rule. Each behavior
 test uses a throwaway repository and never touches live evidence.
 
 ## Rationale & history

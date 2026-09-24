@@ -5,7 +5,9 @@
 - **`/diff-review` is the only fan-out allowed to be big.** It is the review gate on every push, so
   it runs through the saved workflow [`frapp-review`](../../../.claude/workflows/frapp-review.js),
   whose shape is fixed in code. No other review (a `/next` lens pass, an ad-hoc adversarial
-  re-review of a fix) is layered on top of it.
+  re-review of a fix) is layered on top of it. **Corrected 2026-09-24:** only a branch's first
+  review, and a re-review of 300 lines or more, runs the workflow now; see
+  [amendment 1](#adr-23-amendment-1--the-first-round-is-the-thorough-one-2026-09-24).
 - **Finders bundle angles.** One `diff-finder` holds two or more angles: 4 finders at `high` instead
   of one per angle, 2 on a small diff or a re-review of fix commits.
 - **One verifier per deduped candidate, a second only on REFUTED.** The first `claim-verifier`
@@ -15,6 +17,8 @@
   the last reviewed one, with two finders. `scripts/diff-review-scope.mjs` decides, trusting only
   markers the gate wrote with a kind (`full` or `delta`) on commits of this branch. A merge since
   the last review means a full review again, because a merge can hide a change from any diff.
+  **Corrected 2026-09-24:** a re-review under 300 lines is now inline, with no finders; a clean merge
+  of `main` no longer forces a full review, and markers no longer carry a kind (amendment 1).
 - **Everything else stays small.** `workflowSizeGuideline: "medium"` in `.claude/settings.json`
   tells the model to keep workflows under 10 agents; it is advisory text, not a cap. The repo adds
   at most 5 agents per fan-out step, which nothing enforces. Verification outside the gate is one
@@ -87,10 +91,69 @@ the rest:
   angle definitions and reporting.
 - `/next` under ultracode drops its separate five-lens pass. Acceptance criteria and test adequacy
   became one extra finder inside the gate, run in its own worktree so it can mutate source to prove
-  a test bites (#2414).
+  a test bites (#2414). **Corrected 2026-09-24:** that finder now runs in every first review, not
+  only under ultracode (amendment 1).
 - `skipWorkflowUsageWarning` was removed from `.claude/settings.json`. The CLI reads it only from
   user, local, flag and policy settings, so the project value never did anything.
 
 **Trigger to revisit:** A review that follows these rules misses a defect that the old shape would
 have caught, or a Claude Code release changes how effort, the size guideline or saved workflows
 behave. Tracking: #2482.
+
+#### ADR-23 amendment 1 — the first round is the thorough one (2026-09-24)
+
+**Decision:** A branch gets one thorough review. Every later round reviews only what changed, and a
+small round is reviewed inline.
+
+- **First round (`mode: full`):** one shape, with no effort levels and no ultracode variant. It runs
+  4 bundled finders (2 under 150 changed lines) and the acceptance-and-tests finder in its own
+  worktree. Each flagged line then gets one `claim-verifier`, and a second lens only on REFUTED. The
+  gap sweep, which ran only at `xhigh`, is gone.
+- **Later rounds (`mode: delta`):** under 300 changed lines since the last reviewed commit, the agent
+  reviews the delta inline against the same angles, with no subagents. At 300 lines or more it is new
+  work, and it gets the workflow with 2 finders. `package-lock.json` and `openapi.json` don't count
+  toward the 300.
+- **Merges of `main` carry the review.** The delta is HEAD against the last reviewed commit with the
+  current `main` merged in cleanly (`git merge-tree --write-tree`). It holds fix commits and any hand
+  edit or conflict resolution inside a merge commit, and none of `main`'s own changes. If the reviewed
+  commit conflicts with `main`, the branch gets a full review.
+- **The hook accepts a commit that adds nothing unreviewed.** With no marker, `.githooks/pre-push`
+  asks `scripts/diff-review-scope.mjs --check`, which passes a commit already on `origin/main` or one
+  whose delta is empty. A base sync then needs no review at all. That replaces the `merged` marker
+  kind, so markers no longer carry a kind.
+- **Candidates at one line are verified together**, by one verifier returning a verdict per finding.
+  That replaces the streaming dedup chain and the workflow's verify-only mode.
+
+**Rationale:** On 2026-09-24 Paul reported that the gate burned usage before every PR and re-ran
+when it didn't need to. The marker is per commit, so every fix commit launched a workflow re-review:
+about 18 agents and ~1.2M subagent tokens per round in the table above. Every merge of `main` reset
+the branch to a full review, at 25 to 40 agents. Babysitting one PR through CI fixes, review comments
+and base syncs could run the workflow half a dozen times. Most of those runs reviewed code that had
+already passed a review, or a few lines written to answer one. #2490 also recorded that #2487's own
+review rounds went mostly to the machinery it added (marker kinds, merge semantics, dedup edge
+cases), so this amendment removes more machinery than it adds.
+
+**What it gives up:**
+
+- A fix round loses its independent verifier. The agent reviews its own fix. That is acceptable
+  because the fix answers a finding that was already verified, is under 300 lines by construction,
+  and still has to pass CI. The independent pass stays where it decides the most, on the first round.
+- A clean merge of `main` is trusted. A semantic break between `main` and a branch that merges
+  cleanly as text is left to CI (types and tests), as it already was for any PR that `main` moved
+  under.
+- Sessions without ultracode now run the acceptance-and-tests finder on every first review (one more
+  finder). Ultracode sessions lose the gap sweep (one fewer finder, plus its verifiers).
+
+**Alternatives rejected:**
+
+- *#2490 option 2: delete the workflow and keep a one-line heuristic.* Paul asked to keep a thorough
+  first round.
+- *Cheaper workflow re-reviews (one finder per fix round).* Every push would still launch an agent
+  fan-out. The cost lay in how many rounds ran, not how big each one was.
+- *Comparing the branch's patch-id before and after a merge.* It says only whether the branch's net
+  change moved, not what moved, so a merge with any fix on top would fall back to a full review.
+  `merge-tree` gives the diff to review.
+
+**Trigger to revisit:** a defect that reaches `main` through a commit reviewed inline, and that a
+workflow round would plausibly have caught, or a break that hid in a clean merge of `main` and that
+CI missed. Tracking: #2490.

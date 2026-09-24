@@ -64,7 +64,7 @@ tracker.** The opt-in is `ultracode` in this command's arguments or a session-le
 reminder; the harness never emits that reminder on a slash-command turn, so the argument alone
 counts. When opted in, run the named fan-out points with the Workflow tool: §1.1, §1.2, and Phase 2's
 narrow exception, sized and set up by the [`multi-agent`](../skills/multi-agent/SKILL.md) skill.
-Phase 3's `/diff-review` runs its ultracode review. Everything else stays inline, and without the opt-in the fan-out points
+Phase 3's `/diff-review` runs its workflow rounds with the Workflow tool. Everything else stays inline, and without the opt-in the fan-out points
 run inline in the same order. A Workflow launch that prompts or is refused is tool
 unavailability, not an opt-out: run that step inline instead of waiting on an approval. A subagent
 that errors or returns nothing is a check not run; redo it inline. Fan-outs are for independent,
@@ -359,25 +359,21 @@ Verify end to end: run the tests and the app.
 
 Run [`/diff-review`](../skills/diff-review/SKILL.md), always and unreduced. The pre-push hook
 ([`.githooks/pre-push`](../../.githooks/pre-push)), the only pre-PR review gate, refuses a push
-until `.cache/diff-review/<PUSHED_COMMIT_SHA>` exists, and `/diff-review` writes it. Don't try
+of unreviewed work until `.cache/diff-review/<PUSHED_COMMIT_SHA>` exists, and `/diff-review`
+writes it. Don't try
 `/code-review`: a `/next` turn is a slash-command expansion, which its invocation scan skips, so it
 is always refused here.
 
 Address every finding: fix it, or file a self-contained `triage` follow-up with a reason. A
 post-review commit changes HEAD and invalidates the marker, so re-run `/diff-review` after it. The
-skill decides how much to review again: usually just the commits since the last reviewed one, but
-the whole branch after any merge. Either way every commit you push has been reviewed. Never push around the gate (`--no-verify`), and never
+skill decides how much to review again: usually an inline review of just the commits since the last
+reviewed one, and nothing for a clean merge of `main`. Either way every commit you push has been
+reviewed. Never push around the gate (`--no-verify`), and never
 delete, revert, stash, or gitignore a file to make it pass. If the gate objects to a file, review the
 file.
 
-A batch of 2 or more runs every full review at `xhigh`, so pass `xhigh` whenever the skill's scope
-says `full` (a fix round is usually a re-review, which ignores the level): a full review
-concentrates several issues' surface under one fixed findings cap, and batching must not dilute
-per-issue depth.
-
-Under ultracode, run `/diff-review ultracode` and pass the unit's acceptance criteria as
-`acceptance`: its full review runs at `xhigh`, plus a finder that checks those criteria and test
-adequacy. No second review
+Pass every member's acceptance criteria as `acceptance`, so the first review's acceptance-and-tests
+finder checks them. No second review
 goes on top of it ([ADR-23](../../spec/architecture/adr/adr-23.md)): no human reads the diff before
 the PR, so the gate is where the depth goes. A `PLAUSIBLE` finding you can't settle here goes in the
 PR body under *Flagged for review*; that valve is what lets a run finish instead of stopping to ask.
@@ -440,8 +436,8 @@ for the suffixed branch. Never branch B from A.
   into a dirty-tree review or lands on the wrong branch.
 - Migrations in both PRs: pick non-colliding version prefixes up front. Branch protection's
   `strict: true` re-runs the checks after the first merge, so expect an
-  `update_pull_request_branch` and fresh CI on the surviving PR. Once you pull that merge, your next
-  `/diff-review` is a full review of the branch, not a re-review.
+  `update_pull_request_branch` and fresh CI on the surviving PR. That merge needs no review of its
+  own; pull it before your next fix, and `/diff-review` reviews only the fix.
 - The [`AGENTS.md`](../../AGENTS.md) babysit obligations read plural: subscribe per PR, read wake
   comments per PR, and evaluate stop conditions over the set.
 

@@ -78,4 +78,4 @@ is caught by nothing.
 What closes that is [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) — one
 canonical place per fact, and verify a claim against whatever owns it before you act on it — read
 when you rely on a doc, and applied to a diff by the docs angle in
-[`diff-review`](../../../.claude/skills/diff-review/SKILL.md) before a push.
+[`diff-review`](../../../.claude/skills/diff-review/angles.md) before a push.

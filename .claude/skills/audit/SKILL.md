@@ -191,7 +191,7 @@ finding.
 neither validates a doc's claims. The old gates for cited paths, filename references, rosters and
 placement were removed on purpose; don't propose them back. The repo relies on
 [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the
-docs angle in [`diff-review`](../diff-review/SKILL.md), and
+docs angle in [`diff-review`](../diff-review/angles.md), and
 [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md) says what runs and what nothing checks.
 
 **Workflow secrets.** Secrets only via `${{ secrets.* }}`, never echoed or logged; minimal
