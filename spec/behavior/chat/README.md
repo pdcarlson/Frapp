@@ -52,6 +52,8 @@ Chat is not a module — it is the spine of the app, and every other capability 
 
 **Text formatting:** Messages support Markdown-like formatting — bold (`**text**`), italic (`*text*`), inline code (`` `code` ``), code blocks, and links. The client renders this; the server stores raw text.
 
+A message nested more than 32 levels deep (block quotes, lists or emphasis inside one another) renders as its raw text, exactly as typed, with no formatting. Message bodies are capped by length, not by depth, and a renderer that recursed through thousands of levels would crash for everyone who opens the channel ([#2209](https://github.com/pdcarlson/Frapp/issues/2209)). The web renderer applies this cap; mobile shows `content` as plain text already.
+
 **Reactions:**
 
 - Any member in the channel can add emoji reactions to a message.
