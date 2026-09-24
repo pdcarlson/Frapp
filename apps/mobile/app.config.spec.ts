@@ -710,6 +710,13 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     ["a secret key behind a zero-width space", `\u200b${SECRET_KEY_FIXTURE}`],
     ["a personal access token", ACCESS_TOKEN_FIXTURE],
     ["a personal access token in quotes", `"${ACCESS_TOKEN_FIXTURE}"`],
+    // Pasted onto the end of a real key: the allowlist patterns accept key
+    // characters to the end, so this check is the one that sees it, and a
+    // production build would otherwise ship it.
+    ["a secret key appended to a publishable key", `${PUBLISHABLE_KEY_FIXTURE}${SECRET_KEY_FIXTURE}`],
+    ["an access token appended to a publishable key", `${PUBLISHABLE_KEY_FIXTURE}${ACCESS_TOKEN_FIXTURE}`],
+    ["a secret key appended to an anon JWT", `${LEGACY_ANON_JWT_FIXTURE}${SECRET_KEY_FIXTURE}`],
+    ["a URL-encoded secret key", `%22${SECRET_KEY_FIXTURE}%22`],
   ])("refuses %s on any profile, or none", (_label, supabaseAnonKey) => {
     const {
       applyMobileConfig,
@@ -751,8 +758,6 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
       // Three parts, but the middle is `[]`: JWT claims are an object, so this
       // is a placeholder, not a credential to tell anyone to rotate.
       "x.W10.y",
-      // The prefixes only count where a token starts, never inside a key.
-      "sb_publishable_xxsbp_yysb_secret_zz",
       undefined,
     ]) {
       expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).not.toThrow();

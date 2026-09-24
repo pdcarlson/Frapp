@@ -277,24 +277,23 @@ function jwtClaims(key) {
   return parts.length === 3 ? decodeJwtSegment(parts[1]) : undefined;
 }
 
-// A secret key or a personal access token wherever one starts: at the
-// beginning, or after anything that can't be part of a key (a quote, a
-// zero-width space, which trim() leaves). Never inside a run of key
-// characters, so a real publishable key or JWT can't trip it by chance.
-const SUPABASE_CREDENTIAL_PATTERN = /(?:^|[^A-Za-z0-9_-])(?:sb_secret_|sbp_)/;
-
 // Refuses the shapes that are known credentials, on every evaluation: a secret
 // key, a personal access token, or a JWT whose role isn't `anon` (service_role,
 // or a user's `authenticated` access token). It is a denylist, so placeholder
 // values keep working locally; an EAS build also has to pass
 // assertEasSupabaseClientKey, the allowlist. This is the only key check on the
 // one path with no EAS profile whose bundle leaves the machine, the export
-// `eas update` publishes, so it finds a credential however it was pasted.
+// `eas update` publishes, and the only one that sees a credential pasted onto
+// the end of a real key (the allowlist patterns accept key characters to the
+// end), so a prefix anywhere in the value counts. A real key's random part can
+// contain `sbp_` by chance, in fewer than one key in 100,000; rotating it gives
+// one that doesn't.
 function assertNoSupabaseSecretKey({ supabaseAnonKey } = {}) {
   const key = String(supabaseAnonKey || "").trim();
   const claims = jwtClaims(key);
   if (
-    SUPABASE_CREDENTIAL_PATTERN.test(key) ||
+    key.includes("sb_secret_") ||
+    key.includes("sbp_") ||
     (claims && claims.role !== "anon")
   ) {
     throw new Error(PUBLIC_SUPABASE_SECRET_KEY_ERROR);
