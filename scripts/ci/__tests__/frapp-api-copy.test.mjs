@@ -36,7 +36,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { copyMatches } from "../lib/copy-lines.mjs";
+import { copyMatches, SIGNET_DOWNLOAD_NAME } from "../lib/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const API_SRC = join(REPO_ROOT, "apps/api/src");
@@ -50,7 +50,6 @@ const PRODID = "PRODID:-//Frapp//Events//EN";
 /** Where a design-system "Signet" starts: the palette engine's accent log lines. */
 export const DESIGN_SYSTEM_PHRASE = /^Signet accent (?:contrast|fill)\b/;
 
-const SIGNET_DOWNLOAD_NAME = /\bsignet-[\w-]*(?=[^\n]{0,80}?\.(?:ics|csv|pdf)\b)/gi;
 
 function readRepo(rel) {
   return readFileSync(join(REPO_ROOT, rel), "utf8");

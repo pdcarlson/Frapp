@@ -276,7 +276,8 @@ caught by anything but the next reader. The one exception is now the title lock,
 `scripts/ci/__tests__/frapp-web-titles.test.mjs`, which lane 7 re-specified and which does gate the
 retired product name for `apps/web/app/layout.tsx` in CI. *2026-09-24: it was
 `signet-web-titles.test.mjs` until ADR-25 step 4 ([#2579](https://github.com/pdcarlson/Frapp/issues/2579))
-renamed the product Frapp. The retired name it bans is now Signet, not Frapp.*
+renamed the product Frapp. The retired name it bans is now Signet, not Frapp, and it is no longer
+the only gate on that row: `frapp-web-copy.test.mjs` walks every copy line in `apps/web` for it.*
 
 ## 8. Resources: Documents and Backwork — lane 4
 

@@ -108,7 +108,7 @@ the owner.
 ## Authentication
 
 Egress only proves the socket works. Staging web and landing have two more gates. First, Vercel
-Authentication sits in front of the hostname. Second, Signet/Supabase auth runs inside the app.
+Authentication sits in front of the hostname. Second, the app's own Supabase auth runs inside it.
 `api-staging.frapp.live` is on Render, so the Vercel gate doesn't apply to it.
 
 ### Vercel Authentication
@@ -144,7 +144,7 @@ A preflight result of `reachable` with `http_code: 302` is this redirect.
 
 ### Staging smoke credentials
 
-Authenticated Signet probes follow the convention in `scripts/ci/staging-conformance.mjs`:
+Authenticated app probes follow the convention in `scripts/ci/staging-conformance.mjs`:
 `STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`, plus a staging project URL and anon key.
 In CI, the smoke pair are GitHub Actions secrets (`.github/workflows/staging-conformance.yml`).
 `SUPABASE_URL` / `SUPABASE_ANON_KEY` come from the Infisical step

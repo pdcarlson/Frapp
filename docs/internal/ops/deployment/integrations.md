@@ -65,7 +65,8 @@ page nor the setting.
    it was last observed (the 2026-09-15 note in step 4 below). Renaming it and its bot to Frapp is the
    owner's step on the day ADR-25 step 4
    ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)) merges: General
-   Information → Name, and Bot → Username.* A separate application per
+   Information → Name, and Bot → Username. Tracked in
+   [#2669](https://github.com/pdcarlson/Frapp/issues/2669).* A separate application per
    environment is recommended so a staging mistake cannot read production
    chapters' servers. **That recommendation is not currently followed** —
    staging and production were observed sharing one application, so the staging

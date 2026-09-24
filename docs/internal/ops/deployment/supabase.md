@@ -270,7 +270,8 @@ machine that downloaded it.
    consent sheet, so it reads the product name, `Frapp`, not an internal label.
    *2026-09-24: it was set to `Signet`. ADR-25 step 4
    ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)) moves it to
-   `Frapp`, an owner step on the day that step merges.* Saving is four
+   `Frapp`, an owner step on the day that step merges
+   ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)).* Saving is four
    clicks deep (Next → Done → Continue → Save); stopping at Done loses the
    configuration silently.
 3. **Key** — Keys → new key with Sign in with Apple → Primary App ID

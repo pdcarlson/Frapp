@@ -11,8 +11,10 @@
 // that says Signet fails without anyone listing it.
 //
 // WHAT IT CHECKS.
-// - A walk of apps/web's non-spec sources, and of packages/hooks/src and
-//   packages/validation/src: no whole word "Signet" and no signet- download
+// - A walk of apps/web's non-spec sources, and of every packages/*/src (the
+//   dashboard renders copy from @repo/hooks, @repo/validation, @repo/chat-core,
+//   @repo/org-archetypes and more, and a package added later is walked without
+//   anyone listing it): no whole word "Signet" and no signet- download
 //   filename outside the comment a line starts with (the note on LINE_BREAK
 //   in ../lib/copy-lines.mjs says why, and names the one blind spot). A
 //   design-system note that names Signet goes on its own comment line, not
@@ -20,12 +22,13 @@
 //   passes: unlike the API, the dashboard ships no design-system phrase.
 // - The CSV download template, the empty-title .ics fallback and the invite
 //   share header, pinned by value. A rename that dropped the brand
-//   altogether would pass the walk. The unit specs assert the same values,
-//   but only this ratchet runs without `npm ci`. This replaces the web half
-//   of signet-calendar-prodid and all of signet-export-filenames, which
-//   pinned the same sites on Signet until step 4.
+//   altogether would pass the walk. Only the CSV name also has a unit spec
+//   (apps/web/lib/utils.spec.ts), so for the other two this pin is the only
+//   check. This replaces the web half of signet-calendar-prodid and all of
+//   signet-export-filenames, which pinned the same sites on Signet until
+//   step 4.
 //
-// SCOPE. apps/web and the two packages it renders copy from. apps/web/tests
+// SCOPE. apps/web and the shared packages' sources. apps/web/tests
 // holds test fixtures, not shipped code, and is skipped with the specs.
 // Identifiers are not copy and stay: the `--signet-*` tokens, `SignetMark`,
 // `signet-emblem-B.png`, `@repo/theme/signet.css` and the `signet-accent-cache`
@@ -34,17 +37,18 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { copyMatches } from "../lib/copy-lines.mjs";
+import { copyMatches, SIGNET_DOWNLOAD_NAME } from "../lib/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const LOCK = fileURLToPath(import.meta.url);
 
-/** Where the walk starts. The two packages are the dashboard's copy too. */
-const WALK_ROOTS = ["apps/web", "packages/hooks/src", "packages/validation/src"];
+/** Where the walk starts. Every package's `src` joins it; see liveFiles. */
+const WALK_ROOTS = ["apps/web"];
+const PACKAGES_ROOT = "packages";
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next", ".turbo", "coverage", "tests"]);
 const SOURCE_EXT = /\.(?:json|js|mjs|ts|tsx)$/;
 
@@ -57,12 +61,6 @@ export const PINNED_SITES = [
   { rel: EVENT_SHEET, wanted: '|| "frapp-event"' },
   { rel: INVITE_DIALOG, wanted: '"Frapp member invite",' },
 ];
-
-/**
- * A `signet-` token with a `.ics`, `.csv` or `.pdf` later on its line: a
- * Save-as name. Design-system files (`signet-emblem-B.png`) are not downloads.
- */
-export const SIGNET_DOWNLOAD_NAME = /\bsignet-[\w$-]*(?=[^\n]{0,80}?\.(?:ics|csv|pdf)\b)/gi;
 
 function readRepo(rel) {
   return readFileSync(join(REPO_ROOT, rel), "utf8");
@@ -88,8 +86,15 @@ function walk(dir) {
   return out;
 }
 
+/** Each `packages/<name>/src`; a package's manifest and assets are not copy. */
+function packageSources() {
+  return readdirSync(join(REPO_ROOT, PACKAGES_ROOT), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(join(REPO_ROOT, PACKAGES_ROOT, entry.name, "src")))
+    .map((entry) => `${PACKAGES_ROOT}/${entry.name}/src`);
+}
+
 function liveFiles() {
-  return WALK_ROOTS.flatMap((root) => walk(join(REPO_ROOT, root))).map((path) => ({
+  return [...WALK_ROOTS, ...packageSources()].flatMap((root) => walk(join(REPO_ROOT, root))).map((path) => ({
     rel: relOf(path),
     source: readFileSync(path, "utf8"),
   }));
@@ -114,8 +119,9 @@ export function lockSelfProblems(source) {
   const problems = [];
   const roots = source.match(/^const WALK_ROOTS = \[([^\]]*)\];$/m);
   const listed = roots ? [...roots[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]) : [];
-  for (const wanted of ["apps/web", "packages/hooks/src", "packages/validation/src"]) {
-    if (!listed.includes(wanted)) problems.push(`the walk must start at ${wanted}`);
+  if (!listed.includes("apps/web")) problems.push("the walk must start at apps/web");
+  if (!/^const PACKAGES_ROOT = "packages";$/m.test(source)) {
+    problems.push("the walk must cover every packages/*/src");
   }
   if (listed.some((root) => root.startsWith("apps/landing"))) {
     problems.push("must not walk apps/landing (step 5 has its own lock)");
@@ -130,6 +136,8 @@ test("the web dashboard says Frapp, never Signet", () => {
     "apps/web/components/discord-import/connect-step.tsx",
     "packages/hooks/src/use-discord-connection.ts",
     "packages/validation/src/ops-nudges.ts",
+    "packages/chat-core/src/index.ts",
+    "packages/org-archetypes/src/index.ts",
   ]) {
     assert.ok(files.some((file) => file.rel === rel), `walk must reach ${rel}`);
   }
@@ -224,11 +232,15 @@ test("dropping the brand from a pinned site fails the pin", () => {
 test("the walk can't drop a root or move onto landing", () => {
   const lock = readFileSync(LOCK, "utf8");
   assert.deepEqual(
-    lockSelfProblems(lock.replace(', "packages/hooks/src"', "")),
-    ["the walk must start at packages/hooks/src"],
+    lockSelfProblems(lock.replace('const WALK_ROOTS = ["apps/web"];', "const WALK_ROOTS = [];")),
+    ["the walk must start at apps/web"],
   );
   assert.deepEqual(
-    lockSelfProblems(lock.replace('["apps/web",', '["apps/web", "apps/landing",')),
+    lockSelfProblems(lock.replace('const PACKAGES_ROOT = "packages";', 'const PACKAGES_ROOT = "packages/hooks";')),
+    ["the walk must cover every packages/*/src"],
+  );
+  assert.deepEqual(
+    lockSelfProblems(lock.replace('const WALK_ROOTS = ["apps/web"];', 'const WALK_ROOTS = ["apps/web", "apps/landing"];')),
     ["must not walk apps/landing (step 5 has its own lock)"],
   );
 });

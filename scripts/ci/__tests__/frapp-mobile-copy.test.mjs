@@ -49,7 +49,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { copyMatches, inLeadingComment, LINE_BREAK } from "../lib/copy-lines.mjs";
+import { copyMatches, inLeadingComment, LINE_BREAK, SIGNET_DOWNLOAD_NAME } from "../lib/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const MOBILE_ROOT = join(REPO_ROOT, "apps/mobile");
@@ -107,14 +107,6 @@ function walkMobile(dir = MOBILE_ROOT, { specs = false } = {}) {
 export function signetCopyProblems(files) {
   return copyMatches(files, /\bSignet\b/g).map(({ rel, line }) => `${rel}:${line}`);
 }
-
-/**
- * A `signet-` token with a `.ics`, `.csv` or `.pdf` later on its line: a
- * Save-as name. Each token is judged where it stands, so a comment's
- * `signet-` can't vouch for one in the code after it. Design-system files
- * (`signet-emblem-B.png`) are not downloads.
- */
-export const SIGNET_DOWNLOAD_NAME = /\bsignet-[\w-]*(?=[^\n]{0,80}?\.(?:ics|csv|pdf)\b)/gi;
 
 export function signetDownloadNameProblems(files) {
   return copyMatches(files, SIGNET_DOWNLOAD_NAME).map(({ rel, line }) => `${rel}:${line}`);

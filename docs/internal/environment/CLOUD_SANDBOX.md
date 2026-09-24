@@ -547,10 +547,10 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
 
 ### What this does not unlock
 
-- **Authentication.** Egress gets you an unauthenticated socket. Reaching Signet HTML on
+- **Authentication.** Egress gets you an unauthenticated socket. Reaching the app's HTML on
   staging web/landing is a separate gate — read
   [live-verification § Vercel Authentication](../../../.claude/skills/live-verification/SKILL.md#vercel-authentication)
-  before treating `app.staging.frapp.live` / `staging.frapp.live` as the app. Signet-authenticated
+  before treating `app.staging.frapp.live` / `staging.frapp.live` as the app. Authenticated app
   probes then need a staging user; `scripts/ci/staging-conformance.mjs` already defines the
   convention (`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`). Use a dedicated
   smoke account, never a real member's.

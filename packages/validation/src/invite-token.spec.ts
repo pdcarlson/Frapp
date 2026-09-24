@@ -68,9 +68,9 @@ describe("extractInviteToken", () => {
     );
   });
 
-  it("still extracts from an older Frapp-named clipboard payload", () => {
+  it("still extracts from an older Signet-named clipboard payload", () => {
     const pasted = [
-      "Frapp member invite",
+      "Signet member invite",
       "Role: Member",
       "https://app.frapp.live/join?token=550e8400-e29b-41d4-a716-446655440000",
     ].join("\n");
