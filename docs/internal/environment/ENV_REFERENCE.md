@@ -439,8 +439,9 @@ is unavailable in that state and the sign-in screen says so.
 > the `frapp-prod` publishable key (Supabase → Project Settings → API Keys) on the EAS
 > `production` environment before the first production build. Preview and development
 > builds may still carry the legacy anon key, but **no** profile may carry a secret key:
-> a `sb_secret_…` key or a `service_role` JWT fails config evaluation everywhere,
-> because it bypasses RLS and every `EXPO_PUBLIC_*` value ships inside the bundle.
+> a `sb_secret_…` key, or a JWT whose role isn't `anon` (`service_role`, or a user's
+> access token), fails config evaluation everywhere, because every `EXPO_PUBLIC_*` value
+> ships inside the bundle.
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of

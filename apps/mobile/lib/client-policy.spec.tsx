@@ -59,16 +59,18 @@ type Reply = { status?: number; data?: unknown } | Error;
 
 describe("useClientPolicy", () => {
   function setup(replies: Reply[]) {
+    // Shaped like openapi-fetch 0.17's result: a 2xx puts the body in `data`;
+    // a non-2xx puts it in `error` (undefined when the body is empty) and
+    // never sets `data`.
     const GET = vi.fn(async () => {
       const next = replies.shift();
       if (next instanceof Error) throw next;
       const status = next?.status ?? 200;
+      const ok = status >= 200 && status < 300;
       return {
-        data: next?.data,
-        // openapi-fetch leaves `error` undefined for an empty-bodied non-2xx,
-        // so the hook has to read the status; the stand-in mirrors that.
-        error: undefined,
-        response: { ok: status >= 200 && status < 300, status },
+        data: ok ? next?.data : undefined,
+        error: ok ? undefined : next?.data,
+        response: { ok, status },
       };
     });
     const policyClient = new QueryClient({
@@ -129,8 +131,8 @@ describe("useClientPolicy", () => {
     ["an empty-bodied 502", { status: 502 }],
     ["a thrown network failure", new Error("offline")],
     ["a 200 in the wrong shape", { data: { hello: "portal" } }],
-    // A proxy or error page that happens to carry the right keys is still not
-    // an answer: only a 2xx is.
+    // An error page that happens to carry the right keys is still not an
+    // answer: only a 2xx is.
     ["a 503 whose body looks like an answer", {
       status: 503,
       data: { update_required: false, update_url: null },

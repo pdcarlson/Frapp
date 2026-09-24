@@ -25,7 +25,12 @@ import { QueryClient } from "@tanstack/react-query";
  * stops a member returning after an hour to hour-old channels and tasks.
  */
 /**
- * The app's single `QueryClient`.
+ * The app's product `QueryClient`: every product query lives here, and
+ * sign-out, an account swap and a chapter switch clear it wholesale.
+ *
+ * It is not the only one. The minimum-version answer lives in
+ * `clientPolicyQueryClient` (`lib/client-policy.ts`) precisely so those clears
+ * can't erase an update block (#2526). Don't fold it back in.
  *
  * It lives here, rather than beside `FrappProvider`, so that
  * `lib/auth-session.tsx` can clear it on sign-out **and** on auth-uid swap

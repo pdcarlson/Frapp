@@ -32,6 +32,10 @@ export const CLIENT_POLICY_QUERY_KEY = ["client-policy"] as const;
 /** How old an answer may be before a return to the foreground asks again. */
 export const CLIENT_POLICY_STALE_MS = 60_000;
 
+// These defaults are this client's own, not a copy to keep in step with
+// `lib/query-client.ts`: the check has no spinner and fails open, so it only
+// needs to ask on focus, retry once, and try even when connectivity detection
+// says offline.
 export const clientPolicyQueryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -90,9 +94,11 @@ export function useClientPolicy(
       queryKey: CLIENT_POLICY_QUERY_KEY,
       queryFn: async () => {
         const { data: body, response } = await client.GET("/v1/client-policy");
-        // Thrown, not returned, so TanStack keeps the previous answer. The
-        // status is checked rather than `error`, which openapi-fetch leaves
-        // undefined for an empty-bodied non-2xx.
+        // Thrown, not returned, so TanStack keeps the previous answer. A
+        // non-2xx is never an answer, whatever its body. openapi-fetch 0.17
+        // already leaves `data` undefined there, so the shape check below
+        // would throw too; checking the status means this doesn't rest on that.
+        // (`error` can't be the test: it is undefined for an empty-bodied 5xx.)
         if (!response.ok) {
           throw new Error(`client-policy answered ${response.status}`);
         }

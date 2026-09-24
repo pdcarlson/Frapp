@@ -100,6 +100,8 @@ const LEGACY_ANON_JWT_FIXTURE =
   "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.not-a-real-signature"; // gitleaks:allow
 const PUBLISHABLE_KEY_FIXTURE = "sb_publishable_not-a-real-key"; // gitleaks:allow
 const SECRET_KEY_FIXTURE = "sb_secret_not-a-real-key"; // gitleaks:allow
+const USER_TOKEN_JWT_FIXTURE =
+  "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCIsInN1YiI6IngifQ.not-a-real-signature"; // gitleaks:allow
 const SERVICE_ROLE_JWT_FIXTURE =
   "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.not-a-real-signature"; // gitleaks:allow
 
@@ -690,6 +692,7 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
   it.each([
     ["a secret key", SECRET_KEY_FIXTURE],
     ["a service_role JWT", SERVICE_ROLE_JWT_FIXTURE],
+    ["a user's access token", USER_TOKEN_JWT_FIXTURE],
   ])("refuses %s on any profile, or none", (_label, supabaseAnonKey) => {
     const {
       applyMobileConfig,

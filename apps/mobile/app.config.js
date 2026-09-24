@@ -55,8 +55,8 @@
 // use it; renaming it is a separate change.
 //
 // And the config refuses a **secret** key on every profile, and whenever it is
-// evaluated, not only for production: a `sb_secret_…` key, or a legacy JWT
-// whose role is `service_role`, bypasses RLS, and anything in an
+// evaluated, not only for production: a `sb_secret_…` key, or a JWT whose role
+// isn't `anon` (`service_role` bypasses RLS), and anything in an
 // `EXPO_PUBLIC_*` variable is inlined into the bundle. A preview build is still
 // an installable binary anyone can unpack.
 //
@@ -246,29 +246,35 @@ function assertProductionSupabasePublishableKey({
 }
 
 const PUBLIC_SUPABASE_SECRET_KEY_ERROR = [
-  "EXPO_PUBLIC_SUPABASE_ANON_KEY holds a Supabase SECRET key (sb_secret_… or a",
-  "service_role JWT). Every EXPO_PUBLIC_* value is inlined into the app bundle,",
-  "and this key bypasses row-level security, so any build would hand it to",
-  "whoever unpacks the binary. Use the project's publishable key instead, and",
-  "rotate the secret key if a build already carried it.",
+  "EXPO_PUBLIC_SUPABASE_ANON_KEY holds a credential a client must not carry: a",
+  "Supabase secret key (sb_secret_…) or a JWT whose role isn't anon (service_role,",
+  "or a user's access token). Every EXPO_PUBLIC_* value is inlined into the app",
+  "bundle, so any build would hand it to whoever unpacks the binary. Use the",
+  "project's publishable key instead, and rotate the credential if a build",
+  "already carried it.",
   "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
 ].join(" ");
 
-/** The role claim of a legacy Supabase JWT key, or undefined for anything else. */
-function legacyJwtRole(key) {
+/** The claims of a JWT-shaped key, or undefined for anything else. */
+function jwtClaims(key) {
   const parts = key.split(".");
   if (parts.length !== 3) return undefined;
   try {
     const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    return typeof claims?.role === "string" ? claims.role : undefined;
+    return claims && typeof claims === "object" ? claims : undefined;
   } catch {
     return undefined;
   }
 }
 
+// Allows only what a client may hold, as the web fence does
+// (apps/web/lib/assert-production-public-env.js): a JWT must be the `anon`
+// role. Anything else, service_role or a user's `authenticated` access token,
+// is a credential that doesn't belong in a bundle.
 function assertNoSupabaseSecretKey({ supabaseAnonKey } = {}) {
   const key = String(supabaseAnonKey || "").trim();
-  if (key.startsWith("sb_secret_") || legacyJwtRole(key) === "service_role") {
+  const claims = jwtClaims(key);
+  if (key.startsWith("sb_secret_") || (claims && claims.role !== "anon")) {
     throw new Error(PUBLIC_SUPABASE_SECRET_KEY_ERROR);
   }
 }
