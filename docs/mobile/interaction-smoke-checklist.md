@@ -11,7 +11,8 @@ Auth is real Supabase auth (#698) — these rows need a build carrying
 `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` and a real member
 account. Without them sign-in is unavailable and every row below is expected
 to fail; [`testing.md` § 1](testing.md#1-provide-the-environment) quotes what
-the sign-in card says.
+the sign-in card says. The Terms rows, and the Terms checkbox in the Join rows,
+came with #2302 (PR #2611).
 
 | Screen | Control | Expected outcome |
 |---|---|---|
