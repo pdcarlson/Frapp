@@ -18,8 +18,9 @@ and how hard each one thinks. Decision and evidence: [ADR-23](../../../spec/arch
 
 ## Budget
 
-- **`/diff-review` is the one review allowed to be big.** It gates every push and runs through the
-  saved workflow `frapp-review`, whose shape is fixed in code. Don't hand-write a review workflow
+- **`/diff-review` is the one review allowed to be big.** It gates every push. A branch's first
+  review runs through the saved workflow `frapp-review`, whose shape is fixed in code; later rounds
+  are inline unless they are large enough to count as new work. Don't hand-write a review workflow
   for a diff, and don't layer another review on top of the gate (a lens pass, an "adversarial"
   re-review of a fix).
 - **Everything else stays small.** `workflowSizeGuideline: "medium"` in `.claude/settings.json` has
@@ -32,7 +33,7 @@ and how hard each one thinks. Decision and evidence: [ADR-23](../../../spec/arch
   verdict, batch up to 5 claims into one `claim-verifier` and don't add a second verifier. Don't
   spawn subagents to re-check your own work.
 - **A fix round is a fix plus the gate.** Fix inline, or with one agent, then run `/diff-review`,
-  which decides how much to review again (Phase 0 of its skill). Don't add a review of your own.
+  which decides how much to review again (§1 of its skill). Don't add a review of your own.
 
 ## Effort
 

@@ -42,8 +42,11 @@ export function ClientPolicyGate({ children }: { children: ReactNode }) {
 
   return (
     <View style={gateStyles.fill}>
+      {/* One native view either way; toggling these props on a flattened
+          wrapper would re-parent the whole app (patterns.md § Overlays). */}
       <View
         style={gateStyles.fill}
+        collapsable={false}
         pointerEvents={updateRequired ? "none" : "auto"}
         accessibilityElementsHidden={updateRequired}
         importantForAccessibility={

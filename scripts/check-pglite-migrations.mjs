@@ -680,6 +680,38 @@ const RLS_SMOKE = [
     },
   },
   {
+    name: "chat_message_actions SELECT withholds a blocked member's reactions via chat_viewer_has_blocked (#2494)",
+    // The same smoke-test caveat as the assertion above: this says the policy
+    // still carries the block clause, and the block-enforcement tier below is
+    // what proves the clause hides the right rows. Kept separate from the
+    // FRA-38 assertion so a lost block clause fails with its own name.
+    sql: `select pg_get_expr(polqual, polrelid) as using_expr
+            from pg_policy p join pg_class c on c.oid = p.polrelid
+           where c.relname = 'chat_message_actions'
+             and p.polpermissive
+             and p.polcmd in ('r', '*')`,
+    ok: (rows) => {
+      if (rows.length !== 1) return false;
+      const e = String(rows[0].using_expr);
+      return (
+        /\bnot\b/i.test(e) &&
+        /starts_with\s*\(\s*(?:\w+\.)?action_type\s*,\s*'reaction:'/i.test(e) &&
+        /chat_viewer_has_blocked\s*\(\s*(?:\w+\.)?user_id\s*,\s*(?:\w+\.)?message_id\s*\)/i.test(e)
+      );
+    },
+  },
+  {
+    name: "chat_viewer_has_blocked() EXECUTE is revoked from PUBLIC",
+    // Same reasoning, and the same PUBLIC-only limitation, as the
+    // can_read_chat_message() assertion below. The helper answers only about
+    // the caller's own block list, so an RPC call leaks nothing today; the
+    // revoke keeps it that way if a later edit adds a parameter.
+    sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec
+            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'chat_viewer_has_blocked'`,
+    ok: (rows) => rows.length === 1 && rows[0].public_exec === false,
+  },
+  {
     name: "users stays default-deny to client roles (the invariant that closes the action-write path)",
     // chat_message_actions' INSERT/DELETE policies gate on
     // `user_id in (select id from users where supabase_auth_id = auth.uid())`.
@@ -1603,6 +1635,191 @@ if (readSeeded) {
             (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(label).join(", ")}` : ""),
         );
       }
+    }
+
+
+    // ─── chat_message_actions: a block hides the blocked member's reactions (#2494)
+    //
+    // `spec/behavior/chat/README.md` § What a block does and does not hide: a
+    // blocked member's reactions are hidden from the blocker on every message,
+    // and their poll votes are counted, not hidden. Both clients read reaction
+    // chips straight from this table, so the policy is the only place that can
+    // enforce it for PostgREST and for the Realtime echo alike.
+    //
+    // userC blocks userA in chapter A. Every expectation is an exact set over
+    // the rows this tier inserts, read as `rls_probe`:
+    //   - userC loses userA's `reaction:*` rows in chapter A, on userA's own
+    //     message and on userC's;
+    //   - userC keeps userA's `vote`, userA's reaction in chapter B (both are
+    //     members there, and the block is chapter A's), and other members'
+    //     reactions. The last is the control: a clause that hid every reaction
+    //     would pass the first check;
+    //   - userA still reads every row. The block must not be observable from
+    //     the blocked side.
+    //
+    // Runs in a savepoint that is always rolled back, so the chat_messages tier
+    // below still sees exactly the six seeded messages it counts.
+    //
+    // Scenario names are cited by `chat-read-surface-ledger.spec.ts` as the
+    // proof for `chat_message_actions_select`, which that spec checks is still
+    // a `name:` here. Rename one there too.
+    console.log("\n=== chat_message_actions block enforcement (black-box, SET ROLE) — #2494 ===");
+    await db.exec("savepoint block_tier;");
+    try {
+      const K = {
+        blockerMsg: "10000008-0000-0000-0000-000000000001", // userC's message in chapter A's PUBLIC channel
+        blockedOnOwn: "30000001-0000-0000-0000-000000000001", // userA reaction on userA's message
+        blockedOnBlockers: "30000002-0000-0000-0000-000000000001", // userA reaction on userC's message
+        blockedVote: "30000003-0000-0000-0000-000000000001", // userA vote, chapter A
+        blockedInChapB: "30000004-0000-0000-0000-000000000001", // userA reaction, chapter B
+        otherReaction: "30000005-0000-0000-0000-000000000001", // userD reaction, chapter A
+        blockerReaction: "30000006-0000-0000-0000-000000000001", // userC's own reaction
+      };
+      const ROW_LABEL = {
+        [K.blockedOnOwn]: "userA reaction on userA's message",
+        [K.blockedOnBlockers]: "userA reaction on userC's message",
+        [K.blockedVote]: "userA vote",
+        [K.blockedInChapB]: "userA reaction in chapter B",
+        [K.otherReaction]: "userD reaction",
+        [K.blockerReaction]: "userC reaction",
+      };
+      const ROW_IDS = Object.keys(ROW_LABEL);
+      const rowLabel = (id) => ROW_LABEL[id] ?? id;
+
+      await db.exec(`
+        insert into members (user_id, chapter_id) values
+          ('${F.userAId}', '${F.chapB}'),
+          ('${F.userCId}', '${F.chapB}');
+        insert into chat_messages (id, channel_id, sender_id) values
+          ('${K.blockerMsg}', '${F.chPublic}', '${F.userCId}');
+        insert into chat_message_actions (id, message_id, user_id, action_type) values
+          ('${K.blockedOnOwn}',      '${F.msgPublic}',  '${F.userAId}', 'reaction:👍'),
+          ('${K.blockedOnBlockers}', '${K.blockerMsg}', '${F.userAId}', 'reaction:👎'),
+          ('${K.blockedVote}',       '${F.msgPublic}',  '${F.userAId}', 'vote'),
+          ('${K.blockedInChapB}',    '${F.msgPublicB}', '${F.userAId}', 'reaction:👍'),
+          ('${K.otherReaction}',     '${F.msgPublic}',  '${F.userDId}', 'reaction:👍'),
+          ('${K.blockerReaction}',   '${F.msgPublic}',  '${F.userCId}', 'reaction:🎉');
+      `);
+
+      const setUid = (uid) =>
+        db.exec(
+          `create or replace function auth.uid() returns uuid language sql as $$ select '${uid}'::uuid $$;`,
+        );
+      async function readRowsAs(uid) {
+        await setUid(uid);
+        await db.exec("set role rls_probe;");
+        try {
+          const res = await db.query(
+            `select id::text as id from public.chat_message_actions
+              where id in (${ROW_IDS.map((id) => `'${id}'`).join(", ")})`,
+          );
+          return res.rows.map((r) => r.id).sort();
+        } finally {
+          try {
+            await db.exec("reset role;");
+          } catch {
+            /* keep the original error */
+          }
+        }
+      }
+      function expectRows(name, got, visible) {
+        const want = [...visible].sort();
+        const leaked = got.filter((g) => !want.includes(g));
+        const absent = want.filter((w) => !got.includes(w));
+        if (leaked.length === 0 && absent.length === 0) {
+          console.log(`OK    ${name}`);
+        } else {
+          missing += 1;
+          console.log(
+            `MISS  ${name}` +
+              (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(rowLabel).join(", ")}` : "") +
+              (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(rowLabel).join(", ")}` : ""),
+          );
+        }
+      }
+
+      // Read before the block, so "unchanged" has something to compare with.
+      const blockedBefore = await readRowsAs(F.userAAuth);
+      const blockerBefore = await readRowsAs(F.userCAuth);
+
+      await db.exec(`
+        insert into chat_member_blocks (chapter_id, blocker_user_id, blocked_user_id)
+        values ('${F.chapA}', '${F.userCId}', '${F.userAId}');
+      `);
+
+      const blockerAfter = await readRowsAs(F.userCAuth);
+      const blockedAfter = await readRowsAs(F.userAAuth);
+
+      // Both members can read every channel these rows sit in, so before the
+      // block each reads all six. Those two are the positive controls: without
+      // them, a fixture that never landed would pass the "unchanged" check.
+      const BLOCK_SCENARIOS = [
+        {
+          name: "before any block, the blocker-to-be reads every reaction and vote in both chapters",
+          got: blockerBefore,
+          visible: ROW_IDS,
+        },
+        {
+          name: "before any block, the member about to be blocked reads every reaction and vote in both chapters",
+          got: blockedBefore,
+          visible: ROW_IDS,
+        },
+        {
+          name: "a blocker reads none of a blocked member's reaction rows in that chapter, and keeps everything else",
+          got: blockerAfter,
+          visible: [K.blockedVote, K.blockedInChapB, K.otherReaction, K.blockerReaction],
+        },
+        {
+          name: "the blocked member still reads every row after being blocked (no oracle)",
+          got: blockedAfter,
+          visible: ROW_IDS,
+        },
+      ];
+      for (const s of BLOCK_SCENARIOS) expectRows(s.name, s.got, s.visible);
+
+      // The helper takes no blocker parameter. Called over RPC it must answer
+      // only about the caller's own list: userA learns nothing about userC's
+      // block, and userC's answer stays inside chapter A.
+      const HELPER_SCENARIOS = [
+        {
+          name: "chat_viewer_has_blocked answers true for the caller's own block in the message's chapter",
+          uid: F.userCAuth, actor: F.userAId, msg: F.msgPublic, expect: true,
+        },
+        {
+          name: "chat_viewer_has_blocked answers false in another chapter (blocks are per chapter)",
+          uid: F.userCAuth, actor: F.userAId, msg: F.msgPublicB, expect: false,
+        },
+        {
+          name: "chat_viewer_has_blocked answers false to the blocked member asking about their blocker",
+          uid: F.userAAuth, actor: F.userCId, msg: F.msgPublic, expect: false,
+        },
+        {
+          // userC holds the block in chapter A but is not in the DM. A true
+          // here would tell them the message exists.
+          name: "chat_viewer_has_blocked answers false for a message the caller cannot read (no existence oracle)",
+          uid: F.userCAuth, actor: F.userAId, msg: F.msgDM, expect: false,
+        },
+      ];
+      for (const s of HELPER_SCENARIOS) {
+        await setUid(s.uid);
+        const res = await db.query(
+          `select public.chat_viewer_has_blocked('${s.actor}'::uuid, '${s.msg}'::uuid) as ok`,
+        );
+        const got = res.rows[0].ok === true;
+        if (got === s.expect) {
+          console.log(`OK    ${s.name}`);
+        } else {
+          missing += 1;
+          console.log(`MISS  ${s.name}\n        ↳ expected ${s.expect}, got ${got}`);
+        }
+      }
+    } catch (e) {
+      missing += 1;
+      console.log(
+        `ERR   chat_message_actions block enforcement\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+      );
+    } finally {
+      await db.exec("rollback to savepoint block_tier; release savepoint block_tier;");
     }
 
 

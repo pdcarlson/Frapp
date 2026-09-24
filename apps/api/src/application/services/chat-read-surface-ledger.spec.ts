@@ -45,19 +45,22 @@ import * as ts from 'typescript';
  * - a policy or table written through dynamic SQL assembled from parts.
  *
  * A `masked` entry names the test that proves it, and that test must be live:
- * present, not commented out, in a spec that skips and focuses nothing. That
- * cannot prove the test asserts the right thing, but it stops a renamed,
- * deleted or disabled proof leaving the ledger vouching for nothing. An `open`
- * entry is a known gap, and names the issue tracking it; one that is masked in
- * part also names the proof of that part, checked the same way. The ledger's
- * job is to keep gaps visible, not to pretend there are none.
+ * present, not commented out, in a spec that skips and focuses nothing. A
+ * policy's proof can instead be a scenario in the PGlite harness, which reads
+ * the table as a non-owner role and is the only tier that runs RLS; it must
+ * still be a `name:` in that file. That cannot prove the test asserts the
+ * right thing, but it stops a renamed, deleted or disabled proof leaving the
+ * ledger vouching for nothing. An `open` entry is a known gap, and names the
+ * issue tracking it; one that is masked in part also names the proof of that
+ * part, checked the same way. The ledger's job is to keep gaps visible, not
+ * to pretend there are none.
  */
 
-/** Paths are relative to `apps/api/src`. */
-interface Proof {
-  spec: string;
-  test: string;
-}
+/**
+ * A Jest test (`spec` relative to `apps/api/src`, `test` its title), or a
+ * scenario `name` in `scripts/check-pglite-migrations.mjs`.
+ */
+type Proof = { spec: string; test: string } | { pglite: string };
 
 type Entry =
   | { status: 'masked'; proof: Proof }
@@ -74,6 +77,13 @@ type Entry =
 const API_SRC = join(__dirname, '..', '..');
 const API_ROOT = join(API_SRC, '..');
 const MIGRATIONS = join(API_ROOT, '..', '..', 'supabase', 'migrations');
+const PGLITE_HARNESS = join(
+  API_ROOT,
+  '..',
+  '..',
+  'scripts',
+  'check-pglite-migrations.mjs',
+);
 
 const CHAT_SERVICE_SPEC = 'application/services/chat.service.spec.ts';
 
@@ -182,7 +192,7 @@ const HTTP_LEDGER: Record<string, Entry> = {
   //
   // These are the API's reaction routes. The reaction chips both clients
   // render come from `chat_message_actions`, read directly. That surface is in
-  // DIRECT_READ_LEDGER below, and it is still open.
+  // DIRECT_READ_LEDGER below, masked at its policy.
   ChatController_recordMessageAction_v1: {
     status: 'no-foreign-content',
     why: "Returns the caller's own action row.",
@@ -331,13 +341,18 @@ const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
     creates: 2,
     status: 'open',
     issues: [2313],
-    why: 'The Realtime echo carries no viewer and cannot be masked by the server; § The masking contract makes each client apply its own list. Mobile does (#2493, #2315); web does not yet.',
+    why: "Realtime filters the echo through the subscriber's policy, but a policy can only drop a row, not carry the API's tombstone, and this one has no block clause; § The masking contract makes each client apply its own list. Mobile does (#2493, #2315); web does not yet.",
   },
   'public.chat_message_actions chat_message_actions_select': {
-    creates: 2,
-    status: 'open',
-    issues: [2494],
-    why: "Reaction chips: a blocked member's `reaction:*` rows reach the blocker over PostgREST and Realtime. `vote` rows are counted, not hidden, by design.",
+    // Reaction chips, over PostgREST and the Realtime echo. The policy drops a
+    // blocked member's `reaction:*` rows for the member who blocked them;
+    // `vote` rows are counted, not hidden (20260924170000, #2494).
+    creates: 3,
+    status: 'masked',
+    proof: {
+      pglite:
+        "a blocker reads none of a blocked member's reaction rows in that chapter, and keeps everything else",
+    },
   },
   'public.chat_notification_preferences chat_notification_preferences_select_own':
     {
@@ -624,7 +639,7 @@ function parse(file: string): ts.SourceFile {
       readFileSync(file, 'utf8'),
       ts.ScriptTarget.Latest,
       true,
-      ts.ScriptKind.TS,
+      file.endsWith('.mjs') ? ts.ScriptKind.JS : ts.ScriptKind.TS,
     );
     parsed.set(file, source);
   }
@@ -740,8 +755,23 @@ function isNameOnly(node: ts.Identifier): boolean {
  * rather than on the test body cannot prove the test asserts the right thing;
  * it stops a renamed, deleted, commented-out or skipped proof leaving the
  * ledger vouching for nothing.
+ *
+ * A PGlite proof is a `name: '…'` property somewhere in the harness, read from
+ * its syntax tree, so a name left only in a comment does not count. The
+ * harness has no skip or focus to look for: every scenario it declares runs.
  */
 function proofProblem(proof: Proof): string | null {
+  if ('pglite' in proof) {
+    const live = everyNode(parse(PGLITE_HARNESS)).some(
+      (node) =>
+        ts.isPropertyAssignment(node) &&
+        node.name.getText() === 'name' &&
+        literalText(node.initializer) === proof.pglite,
+    );
+    return live
+      ? null
+      : `scripts/check-pglite-migrations.mjs has no scenario named '${proof.pglite}'`;
+  }
   const file = parse(join(API_SRC, proof.spec));
   if (skipsOrFocuses(file)) return `${proof.spec} skips or focuses a test`;
   const live = everyNode(file).some(
@@ -855,10 +885,12 @@ describe('chat read-surface ledger (#2324)', () => {
     // With RLS off, PostgREST serves a table to any client under the default
     // grants and no policy is involved, so the check above would never see it.
     // `check:pglite-migrations` asserts the same thing against a replayed
-    // database, but it is advisory; this one is not. Statements are replayed
-    // in order, so a table dropped and re-created without its `enable` is off,
-    // while `create table if not exists` on a table that already exists is the
-    // no-op Postgres makes it. A `disable` fails in any schema, since
+    // database (a required check since #2538); this one reads the migration
+    // text, so it fails in the unit suite before any replay runs. Statements
+    // are replayed in order, so a table dropped and re-created without its
+    // `enable` is off, while `create table if not exists` on a table that
+    // already exists is the no-op Postgres makes it. A `disable` fails in any
+    // schema, since
     // `realtime.messages` and `storage.objects` are exactly the tables whose
     // RLS the chat surfaces depend on.
     const rls = new Map<string, 'on' | 'off'>();
