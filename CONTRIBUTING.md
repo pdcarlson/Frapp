@@ -102,7 +102,7 @@ Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled
 
 ## PR Workflow
 
-For infrastructure-heavy work (CI/CD, branch protection, release automation), follow `docs/internal/quality/PR_REVIEW_PROCESS.md` and split into small, single-concern PRs.
+For infrastructure-heavy work (CI/CD, branch protection, release automation), split the change into small, single-concern PRs, so each has one failure domain. A PR that renames a required check follows [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Updating Check Names](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#updating-check-names).
 
 ### 1. Create a feature branch
 

@@ -11,6 +11,7 @@ These markdown files are the **source of truth** for Frapp developer-facing guid
 | API architecture        | [api-architecture.md](api-architecture.md) |
 | Database & Supabase     | [database.md](database.md)                 |
 | Testing                 | [testing.md](testing.md)                   |
+| Accessibility testing   | [accessibility-testing.md](accessibility-testing.md) |
 | Demo data & screenshots | [demo-data.md](demo-data.md)               |
 | Contributing            | [contributing.md](contributing.md)         |
 

@@ -36,14 +36,13 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Landing-site UI requirements | `spec/ui/landing/` |
 | Design-system (tokens, typography, icons, microcopy, accent engine) | `spec/ui/design-system/` |
 | Visual design reference (committed design exports) | `spec/ui/design-system/reference/` |
-| How to run locally / test / contribute | `docs/guides/` |
+| How to run locally / test / contribute, including the UI accessibility protocol | `docs/guides/` |
 | Documentation conventions and internal reference that is not a runbook | `docs/internal/` |
 | CI / agent infra / automations | `docs/internal/ci-cd/` — wake/babysit facts: [`pr-babysitting.md`](ci-cd/pr-babysitting.md) |
 | Ops runbooks (DB, incidents, branch protection) | `docs/internal/ops/` |
 | Deploy runbook (providers, CI/CD gate, launch) | `docs/internal/ops/deployment/` — folder-as-index; cite a named leaf and heading, never `§N` |
 | Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |
 | Security implementation notes / fixes log | `docs/internal/security/` |
-| Accessibility / PR-review process | `docs/internal/quality/` |
 | Mobile testing / smoke | `docs/internal/mobile/` |
 | Per-service performance notes | `docs/internal/services/` |
 | Per-optimization performance notes (one file per optimization) | `docs/performance/` |
