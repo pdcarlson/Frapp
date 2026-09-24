@@ -7358,6 +7358,38 @@
           "Discord Connection"
         ]
       }
+    },
+    "/v1/client-policy": {
+      "get": {
+        "operationId": "ClientPolicyController_get_v1",
+        "parameters": [
+          {
+            "name": "x-client-version",
+            "required": false,
+            "in": "header",
+            "description": "The calling build, as `<ios|android>/<version>+<build>` (for example `ios/0.9.0+12`). Mobile sends it on every request.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientPolicyDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Whether the calling mobile build is still supported",
+        "tags": [
+          "Client policy"
+        ]
+      }
     }
   },
   "info": {
@@ -11779,6 +11811,25 @@
         },
         "required": [
           "handshake"
+        ]
+      },
+      "ClientPolicyDto": {
+        "type": "object",
+        "properties": {
+          "update_required": {
+            "type": "boolean",
+            "description": "True when the build named in X-Client-Version is below this deployment's minimum for its platform. The app then shows a blocking update screen. False whenever the header is missing, malformed, or names an unknown platform, and whenever no minimum is set."
+          },
+          "update_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "Where the update screen sends the member: the store listing, or a per-platform override such as a TestFlight link. Null when the header does not name a known platform.",
+            "example": "https://apps.apple.com/app/id6812025642"
+          }
+        },
+        "required": [
+          "update_required",
+          "update_url"
         ]
       }
     }

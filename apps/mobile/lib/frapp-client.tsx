@@ -3,6 +3,7 @@ import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
 import { useEffect, useMemo, useRef } from "react";
 import { readAuthToken } from "./auth-token";
+import { readClientVersion } from "./client-version";
 import { useAuthSession } from "./auth-session";
 import { queryClient } from "./query-client";
 
@@ -75,6 +76,8 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
         baseUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001",
         getAuthToken: readAuthToken,
         getChapterId: () => chapterIdRef.current,
+        // Read once: a running process never changes its native build.
+        clientVersion: readClientVersion(),
       }),
     [],
   );

@@ -134,4 +134,49 @@ describe('validateEnv', () => {
       }),
     ).not.toThrow();
   });
+
+  // #2526. Unset is the normal state and must stay silent; a SET value that
+  // doesn't parse must stop boot, because the policy would otherwise read it
+  // as "no minimum" and quietly stop asking old builds to update.
+  describe('mobile client policy', () => {
+    it('accepts the four variables unset, blank, or well-formed', () => {
+      expect(() =>
+        validateEnv({
+          ...complete,
+          MOBILE_MIN_VERSION_IOS: '0.9.1',
+          MOBILE_MIN_VERSION_ANDROID: '0.9.0+14',
+          MOBILE_UPDATE_URL_IOS: 'https://testflight.apple.com/join/abc123',
+          MOBILE_UPDATE_URL_ANDROID: '  ',
+        }),
+      ).not.toThrow();
+    });
+
+    it('refuses a minimum that does not parse, naming the variable', () => {
+      expect(() =>
+        validateEnv({ ...complete, MOBILE_MIN_VERSION_IOS: 'v0.9.1' }),
+      ).toThrow(/MOBILE_MIN_VERSION_IOS/);
+      expect(() =>
+        validateEnv({ ...complete, MOBILE_MIN_VERSION_ANDROID: '0.9.0-beta' }),
+      ).toThrow(/MOBILE_MIN_VERSION_ANDROID/);
+    });
+
+    it('refuses an update link that is not https', () => {
+      expect(() =>
+        validateEnv({
+          ...complete,
+          MOBILE_UPDATE_URL_IOS: 'http://apps.apple.com/app/id6812025642',
+        }),
+      ).toThrow(/MOBILE_UPDATE_URL_IOS/);
+    });
+
+    it('names every bad value in one error', () => {
+      expect(() =>
+        validateEnv({
+          ...complete,
+          MOBILE_MIN_VERSION_IOS: 'latest',
+          MOBILE_UPDATE_URL_ANDROID: 'market://details?id=live.frapp.mobile',
+        }),
+      ).toThrow(/MOBILE_MIN_VERSION_IOS[\s\S]*MOBILE_UPDATE_URL_ANDROID/);
+    });
+  });
 });

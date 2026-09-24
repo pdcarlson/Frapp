@@ -58,6 +58,13 @@ function loadConfig() {
       supabaseUrl?: string;
       supabaseAnonKey?: string;
     }) => void;
+    assertProductionSupabasePublishableKey: (opts?: {
+      easBuildProfile?: string;
+      supabaseAnonKey?: string;
+    }) => void;
+    PRODUCTION_SUPABASE_KEY_ERROR: string;
+    assertNoSupabaseSecretKey: (opts?: { supabaseAnonKey?: string }) => void;
+    PUBLIC_SUPABASE_SECRET_KEY_ERROR: string;
     assertProductionAppUrl: (opts?: {
       easBuildProfile?: string;
       appUrl?: string;
@@ -87,10 +94,22 @@ const environmentsJson = requireConfig("../../.github/environments.json") as {
 };
 const easProductionSupabaseOrigin = `https://${environmentsJson.environments.production.supabaseProjectRef}.supabase.co`;
 const easStagingSupabaseOrigin = `https://${environmentsJson.environments.staging.supabaseProjectRef}.supabase.co`;
+// Fixtures shaped like each kind of Supabase key, so the prefix fence sees
+// the real shapes. None is a key.
+const LEGACY_ANON_JWT_FIXTURE =
+  "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.not-a-real-signature"; // gitleaks:allow
+const PUBLISHABLE_KEY_FIXTURE = "sb_publishable_not-a-real-key"; // gitleaks:allow
+const SECRET_KEY_FIXTURE = "sb_secret_not-a-real-key"; // gitleaks:allow
+const USER_TOKEN_JWT_FIXTURE =
+  "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCIsInN1YiI6IngifQ.not-a-real-signature"; // gitleaks:allow
+const SERVICE_ROLE_JWT_FIXTURE =
+  "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.not-a-real-signature"; // gitleaks:allow
+
 const productionPublicEnv = {
   EXPO_PUBLIC_API_URL: easProductionApiUrl,
   EXPO_PUBLIC_SUPABASE_URL: easProductionSupabaseOrigin,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY: "test-anon-key",
+  // A publishable key: production refuses anything else (#2526).
+  EXPO_PUBLIC_SUPABASE_ANON_KEY: PUBLISHABLE_KEY_FIXTURE,
 };
 
 const restoredEnvKeys = [
@@ -360,6 +379,31 @@ describe("applyMobileConfig", () => {
     ).toThrow(PRODUCTION_SUPABASE_URL_ERROR);
   });
 
+  it("refuses iOS production with a legacy anon key, but reports an empty key as missing", () => {
+    const {
+      applyMobileConfig,
+      PRODUCTION_SUPABASE_KEY_ERROR,
+      PRODUCTION_SUPABASE_PUBLIC_ERROR,
+    } = loadConfig();
+    const env = {
+      ...productionPublicEnv,
+      EAS_BUILD_PROFILE: "production",
+      EAS_BUILD_PLATFORM: "ios",
+    };
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: { ...env, EXPO_PUBLIC_SUPABASE_ANON_KEY: LEGACY_ANON_JWT_FIXTURE },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_KEY_ERROR);
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: { ...env, EXPO_PUBLIC_SUPABASE_ANON_KEY: "" },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_PUBLIC_ERROR);
+  });
+
   it("refuses iOS production when EXPO_PUBLIC_APP_URL is staging", () => {
     const { applyMobileConfig, PRODUCTION_APP_URL_ERROR } = loadConfig();
     expect(() =>
@@ -578,6 +622,172 @@ describe("assertProductionSupabasePublic", () => {
   });
 });
 
+describe("assertProductionSupabasePublishableKey (#2526)", () => {
+  it("allows CI, and preview or development builds on a legacy key", () => {
+    const { assertProductionSupabasePublishableKey } = loadConfig();
+    expect(() => assertProductionSupabasePublishableKey({})).not.toThrow();
+    for (const easBuildProfile of ["preview", "development"]) {
+      expect(() =>
+        assertProductionSupabasePublishableKey({
+          easBuildProfile,
+          supabaseAnonKey: LEGACY_ANON_JWT_FIXTURE,
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("allows a publishable key in production", () => {
+    const { assertProductionSupabasePublishableKey } = loadConfig();
+    expect(() =>
+      assertProductionSupabasePublishableKey({
+        easBuildProfile: "production",
+        supabaseAnonKey: PUBLISHABLE_KEY_FIXTURE,
+      }),
+    ).not.toThrow();
+  });
+
+  // Expo inlines the value verbatim and lib/supabase.ts doesn't trim it, so a
+  // pasted newline would reach every request the binary makes.
+  it.each([
+    ["a trailing newline", `${PUBLISHABLE_KEY_FIXTURE}\n`],
+    ["a leading space", ` ${PUBLISHABLE_KEY_FIXTURE}`],
+  ])("refuses a publishable key with %s", (_label, supabaseAnonKey) => {
+    const {
+      assertProductionSupabasePublishableKey,
+      PRODUCTION_SUPABASE_KEY_ERROR,
+    } = loadConfig();
+    expect(() =>
+      assertProductionSupabasePublishableKey({
+        easBuildProfile: "production",
+        supabaseAnonKey,
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_KEY_ERROR);
+  });
+
+  // The legacy key goes dead in the field after 2026; a secret key would ship
+  // an RLS bypass inside every binary. Both are refused by one prefix test.
+  it.each([
+    ["the legacy JWT anon key", LEGACY_ANON_JWT_FIXTURE],
+    ["a secret key", SECRET_KEY_FIXTURE],
+    ["an unresolved reference", "${SUPABASE_ANON_KEY}"],
+    ["a prefix typo", "sb_publishable"],
+  ])("refuses %s in production", (_label, supabaseAnonKey) => {
+    const {
+      assertProductionSupabasePublishableKey,
+      PRODUCTION_SUPABASE_KEY_ERROR,
+    } = loadConfig();
+    expect(() =>
+      assertProductionSupabasePublishableKey({
+        easBuildProfile: "production",
+        supabaseAnonKey,
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_KEY_ERROR);
+  });
+});
+
+describe("assertNoSupabaseSecretKey (#2526)", () => {
+  // Every EXPO_PUBLIC_* value is inlined into the bundle, so a key that
+  // bypasses RLS is refused whatever the profile: a preview build is an
+  // installable binary too.
+  it.each([
+    ["a secret key", SECRET_KEY_FIXTURE],
+    ["a service_role JWT", SERVICE_ROLE_JWT_FIXTURE],
+    ["a user's access token", USER_TOKEN_JWT_FIXTURE],
+  ])("refuses %s on any profile, or none", (_label, supabaseAnonKey) => {
+    const {
+      applyMobileConfig,
+      assertNoSupabaseSecretKey,
+      PUBLIC_SUPABASE_SECRET_KEY_ERROR,
+    } = loadConfig();
+    expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).toThrow(
+      PUBLIC_SUPABASE_SECRET_KEY_ERROR,
+    );
+    // `undefined` is `expo start` / `expo export` / CI prebuild: no EAS
+    // profile at all, and the key must still be refused.
+    for (const EAS_BUILD_PROFILE of [
+      undefined,
+      "preview",
+      "development",
+      "production",
+    ]) {
+      expect(() =>
+        applyMobileConfig(androidConfig, {
+          env: {
+            ...productionPublicEnv,
+            ...(EAS_BUILD_PROFILE
+              ? { EAS_BUILD_PROFILE, EAS_BUILD_PLATFORM: "ios" }
+              : {}),
+            EXPO_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
+          },
+          existsSync: missing,
+        }),
+      ).toThrow(PUBLIC_SUPABASE_SECRET_KEY_ERROR);
+    }
+  });
+
+  it("allows the keys a client is meant to hold, and no key at all", () => {
+    const { assertNoSupabaseSecretKey } = loadConfig();
+    for (const supabaseAnonKey of [
+      PUBLISHABLE_KEY_FIXTURE,
+      LEGACY_ANON_JWT_FIXTURE,
+      "not-a-jwt",
+      undefined,
+    ]) {
+      expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).not.toThrow();
+    }
+  });
+});
+
+/**
+ * Dormant `expo-updates` (#2526). The first store binary is the only chance to
+ * ship an OTA client: every install keeps the native code it was built with,
+ * so a build without one can never take an over-the-air fix. "Dormant" means
+ * installed and configured, with nothing published: an app that checks
+ * `ON_LOAD` and finds no update for its channel and runtime runs the bundle
+ * it was built with.
+ */
+describe("expo-updates, installed dormant (#2526)", () => {
+  const appJson = requireConfig("./app.json") as {
+    expo: {
+      runtimeVersion?: unknown;
+      updates?: Record<string, unknown>;
+      extra: { eas: { projectId: string } };
+    };
+  };
+  const easJson = requireConfig("./eas.json") as {
+    build: Record<string, { channel?: string }>;
+  };
+  const packageJson = requireConfig("./package.json") as {
+    dependencies: Record<string, string>;
+  };
+
+  it("is a dependency, so its native module is in every build", () => {
+    expect(packageJson.dependencies["expo-updates"]).toBeDefined();
+  });
+
+  // appVersion ties an update to `expo.version`: an update published for
+  // 0.9.x reaches only binaries built at 0.9.x. `fingerprint` is still marked
+  // experimental in Expo's docs, which is not a policy to freeze into a binary.
+  it("keys the runtime version to the app version", () => {
+    expect(appJson.expo.runtimeVersion).toEqual({ policy: "appVersion" });
+  });
+
+  it("points at this project's EAS Update URL and checks at launch without waiting", () => {
+    expect(appJson.expo.updates).toEqual({
+      url: `https://u.expo.dev/${appJson.expo.extra.eas.projectId}`,
+      checkAutomatically: "ON_LOAD",
+      fallbackToCacheTimeout: 0,
+    });
+  });
+
+  it("gives every build profile its own channel, named after the profile", () => {
+    for (const [profile, config] of Object.entries(easJson.build)) {
+      expect(config.channel, profile).toBe(profile);
+    }
+    expect(easJson.build.production?.channel).toBe("production");
+  });
+});
+
 describe("PRODUCTION_SUPABASE_ORIGIN", () => {
   it("is the frapp-prod origin from .github/environments.json", () => {
     const { PRODUCTION_SUPABASE_ORIGIN } = loadConfig();
@@ -769,7 +979,8 @@ describe("assertProductionAskDisabled", () => {
  * `app.json` can see that, here or in
  * `scripts/ci/__tests__/signet-mobile-permissions.test.mjs`, which also reads the
  * file rather than the built binary. Nor is the *bundled-SDK* side of #2294
- * encoded: the audit behind the two declared categories was run by hand, so a
+ * encoded: the audit behind the declared categories was run by hand (#2294,
+ * then again for #2526 with expo-updates), so a
  * future native dependency that uses a required-reason API without shipping its
  * own manifest would be an ITMS-91053 rejection with every test green. Both gaps
  * want the introspected config in CI, and both are filed as #2343 — which also
@@ -825,21 +1036,50 @@ describe("iOS privacy manifest (#2294)", () => {
     expect(manifests?.NSPrivacyTrackingDomains).toEqual([]);
   });
 
-  it("declares exactly the two required-reason categories app.json is meant to carry", () => {
-    // UserDefaults / CA92.1 is the load-bearing row, and its basis is
-    // @stripe/stripe-react-native alone: StripeSdkImpl.swift reads and writes
-    // `UserDefaults.standard` (app-local, which is what CA92.1 covers) and ships
-    // no manifest of its own. expo-sharing also uses UserDefaults, but via
-    // `UserDefaults(suiteName:)` — the app-group case, whose reason is 1C8F.1,
-    // not CA92.1. That path is unreachable today because this app configures no
-    // app group; if a share extension or app group is ever added, 1C8F.1 has to
-    // be declared rather than assumed covered by this row.
+  it("declares exactly the four required-reason categories app.json is meant to carry", () => {
+    // HOW THE SHIPPED MANIFEST IS BUILT, which is what every row below rests
+    // on. Prebuild writes `PrivacyInfo.xcprivacy` from this key
+    // (`withPrivacyInfo`, a default plugin). `pod install` then merges in
+    // react-native's hard-coded core list (C617.1, CA92.1, 35F9.1) and every
+    // pod's own manifest that is wired in as a `resource_bundles` entry
+    // (`react-native/scripts/cocoapods/privacy_manifest_utils.rb`, on unless
+    // `apple.privacyManifestAggregationEnabled` is "false"). Two things fall
+    // through that net, and they are why this list is not just "what the pods
+    // don't already say":
     //
-    // FileTimestamp / C617.1 is required by #2296's acceptance criteria and is
-    // harmless, but it is NOT what averts ITMS-91053: react-native, cxxreact,
-    // expo-application and @react-native-async-storage all already declare
-    // C617.1 in their own pod manifests. It stands for the app target's own
-    // container reads.
+    //  - sentry-cocoa is linked as a static xcframework through
+    //    FRAMEWORK_SEARCH_PATHS and `-force_load` (RNSentry.podspec), with no
+    //    resource bundle, so its own manifest never ships while its code sits
+    //    in the app binary.
+    //  - Expo's template precompiles modules by default
+    //    (EXPO_USE_PRECOMPILED_MODULES), and the prebuilt expo-file-system
+    //    tarball carries no manifest, so its declaration is dropped too.
+    //
+    // UserDefaults / CA92.1 is the load-bearing row for
+    // @stripe/stripe-react-native: StripeSdkImpl.swift reads and writes
+    // `UserDefaults.standard` (app-local, which is what CA92.1 covers).
+    // expo-updates (#2526) and its EASClient do the same. expo-sharing also
+    // uses UserDefaults, but via `UserDefaults(suiteName:)`, the app-group
+    // case, whose reason is 1C8F.1, not CA92.1. That path is unreachable today
+    // because this app configures no app group; if a share extension or app
+    // group is ever added, 1C8F.1 has to be declared rather than assumed
+    // covered by this row.
+    //
+    // FileTimestamp / C617.1 was required by #2296's acceptance criteria. It
+    // covers the app's own container reads, and sentry-cocoa's and the
+    // prebuilt SDWebImage's timestamp reads, neither of which ships a manifest.
+    // 0A2A.1 is NOT added: Apple reserves it for a third-party SDK wrapping
+    // timestamp APIs, so it is a reason for an SDK's manifest, not the app's.
+    //
+    // SystemBootTime / 35F9.1 (#2526): sentry-cocoa reads `systemUptime` to
+    // time in-app events, and its manifest doesn't ship (above). RN's
+    // aggregation adds this row too; declaring it here keeps it from depending
+    // on that staying on.
+    //
+    // DiskSpace / E174.1 (#2526): expo-file-system reads free and total space
+    // (FileSystemModule.swift, FileSystemLegacyModule.swift), and its own
+    // manifest is dropped when it is precompiled (above). E174.1, "check there
+    // is enough space to write files", is the reason Expo's own manifest gives.
     //
     // Pinned as the whole array rather than per-category lookups: a keyed lookup
     // is last-wins, so a duplicate category or an extra entry carrying an
@@ -853,6 +1093,14 @@ describe("iOS privacy manifest (#2294)", () => {
         {
           NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
           NSPrivacyAccessedAPITypeReasons: ["C617.1"],
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategorySystemBootTime",
+          NSPrivacyAccessedAPITypeReasons: ["35F9.1"],
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryDiskSpace",
+          NSPrivacyAccessedAPITypeReasons: ["E174.1"],
         },
       ],
     );

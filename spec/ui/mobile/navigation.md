@@ -225,3 +225,22 @@ writes the file. That makes it load-bearing that `app.config.js`'s `applyMobileC
 keeps spreading `config` and overriding only `extra` and `android` — `app.config.spec.ts`
 asserts the resolved config to pin exactly that. Recorded here rather than glossed,
 per this section's practice; the nutrition-label half stays owner work on #2196 §4.
+
+*Corrected 2026-09-24 (#2526):* "two required-reason categories" is now four, and the
+`C617.1` basis above was incomplete. Pod manifests reach the shipped file only through
+react-native's `pod install` aggregation, and two pods' never do: sentry-cocoa is
+force-loaded as a static xcframework with no resource bundle, and Expo's precompiled
+`expo-file-system` tarball carries none. So `C617.1` also covers Sentry's timestamp reads,
+and the manifest gained `SystemBootTime`/`35F9.1` (Sentry's `systemUptime`) and
+`DiskSpace`/`E174.1` (`expo-file-system`'s free-space reads). `FileTimestamp`/`0A2A.1`,
+which #2526 also listed, was left out: Apple reserves it for an SDK's own manifest. The
+per-row basis is in `app.config.spec.ts`, which pins the whole array.
+
+**#2526 touched three of the seven, as an integrator change.** `package.json` gained
+`expo-updates`, and `app.json` gained its `runtimeVersion` and `updates` keys (no plugin
+entry: prebuild applies `expo-updates`' plugin by default) plus the two manifest rows
+above. The first store binary is the only chance to ship an OTA client at all. `app/_layout.tsx`
+gained `ClientPolicyGate` around `BottomSheetModalProvider`. That is a real edit to a
+frozen file, and it can't live in `components/app-runtime.tsx`: the gate has to wrap the
+sheet provider, or an open sheet draws over the update prompt. See
+[`patterns.md`](patterns.md) § Minimum version.

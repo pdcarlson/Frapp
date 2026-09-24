@@ -14,6 +14,7 @@ import {
 } from "@expo-google-fonts/figtree";
 import * as SplashScreen from "expo-splash-screen";
 import { AppRuntime } from "@/components/app-runtime";
+import { ClientPolicyGate } from "@/components/client-policy-gate";
 import { NetworkBanner } from "@/components/network-banner";
 import { FrappProvider } from "@/lib/frapp-client";
 import { AnalyticsProvider } from "@/lib/analytics-provider";
@@ -125,9 +126,15 @@ function RootLayout() {
               <ObservabilityIdentityProvider>
                 <AnalyticsProvider>
                   <KeyboardProviderGuarded>
-                    <BottomSheetModalProvider>
-                      <RootLayoutContent />
-                    </BottomSheetModalProvider>
+                    {/*
+                      Outside the sheet provider so no open sheet can draw over
+                      the update prompt (#2526); see the component.
+                    */}
+                    <ClientPolicyGate>
+                      <BottomSheetModalProvider>
+                        <RootLayoutContent />
+                      </BottomSheetModalProvider>
+                    </ClientPolicyGate>
                   </KeyboardProviderGuarded>
                 </AnalyticsProvider>
               </ObservabilityIdentityProvider>
