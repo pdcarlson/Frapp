@@ -253,8 +253,8 @@ Per-user dismissal wants `chat_message_actions`: already per-user, unique on
 ([`AUTHORIZATION_MODEL.md`](../../../docs/internal/security/AUTHORIZATION_MODEL.md) § The policies
 that do exist) lets every member who can read the channel read every action row on the message —
 `user_id` and `action_type` included — except a reaction, which is withheld from a member who
-blocked its author. And the web client already holds a global Realtime subscription on the table,
-so each dismissal broadcasts live. "Who dismissed the chapter-health card" would become chapter-public and
+blocked its author in that chapter. And both clients already hold a global Realtime subscription on
+the table, so each dismissal broadcasts live. "Who dismissed the chapter-health card" would become chapter-public and
 attributable by name. That is the opposite of the posture [`README.md`](./README.md) takes for
 personal gestures, where bookmarks are private to the bookmarker, not visible even to admins.
 

@@ -35,8 +35,10 @@
 -- same predicate the policy's second conjunct reaches). Without that, an RPC
 -- call would say whether a message id exists in a chapter where the caller
 -- holds a block row, including a DM they are not in, and block rows outlive
--- leaving the chapter. Inside the policy the check changes nothing, because
--- the row is already filtered on it.
+-- leaving the chapter. Inside the policy the check changes no row's
+-- visibility, because the row is already filtered on it, and it runs only
+-- once a block row has matched, so a viewer who has blocked nobody pays one
+-- indexed lookup per reaction row.
 --
 -- It is `security definer` because `users`, `chat_messages`, `chat_channels`
 -- and `chat_member_blocks` are default-deny to the `authenticated` role, and a
@@ -61,8 +63,13 @@ stable
 security definer
 set search_path = public, pg_temp
 as $$
-  select exists (
-    select 1
+  -- The read check sits in the select list so it runs only for the row a
+  -- block matched. As a WHERE filter on `m` the planner applies it at the
+  -- chat_messages scan, repeating the policy's own channel check on every
+  -- readable reaction row whether or not the viewer has blocked anyone. Every
+  -- join is on a unique key, so there is at most one row.
+  select coalesce((
+    select public.can_read_chat_channel(m.channel_id)
     from public.chat_messages      m
     join public.chat_channels      c on c.id = m.channel_id
     join public.users              u on u.supabase_auth_id = auth.uid()
@@ -70,8 +77,8 @@ as $$
                                     and b.blocker_user_id = u.id
                                     and b.blocked_user_id = p_actor
     where m.id = p_message_id
-      and public.can_read_chat_channel(m.channel_id)
-  );
+    limit 1
+  ), false);
 $$;
 
 -- Same lockdown as can_read_chat_channel (20260906203000): Postgres grants
