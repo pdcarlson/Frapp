@@ -33,7 +33,9 @@ import {
 } from "@/components/chat/message-actions-sheet";
 import {
   NotificationLevelControl,
+  NotificationLevelMenu,
   selectChannelNotificationLevel,
+  useNotificationLevelMenu,
 } from "@/components/chat/notification-level-control";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
@@ -459,6 +461,26 @@ export default function ChatThreadScreen() {
   // Scoped to the channel the failed write was for. Do not `reset()` when
   // `isError` flips true — that hid this alert on the channel that failed.
 
+  // The mute trigger lives in the header, but its menu is drawn by
+  // `NotificationLevelMenu` as the last child below, over the thread (#2033).
+  // `headerBottom` is where the menu hangs from.
+  const muteMenu = useNotificationLevelMenu({
+    level: notificationLevel,
+    disabled: !channelId,
+    writeBlockedReason,
+  });
+  const [headerBottom, setHeaderBottom] = useState(0);
+  // The open menu takes every tap on this screen, and the screen stays
+  // mounted across a blur and a channel switch. Left open, it would come back
+  // over the next channel and swallow that thread's taps.
+  const closeMuteMenu = muteMenu.close;
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      return () => closeMuteMenu();
+    }, [channelId, closeMuteMenu]),
+  );
+
   /**
    * What the in-thread pill says, or `null` when it has nothing to add.
    *
@@ -498,7 +520,13 @@ export default function ChatThreadScreen() {
           (s05, canvas-screens.dc.html:163), so this is the specced affordance
           rather than a reinstated stopgap.
         */}
-        <View style={styles.header}>
+        <View
+          style={styles.header}
+          onLayout={(event) => {
+            const { y, height } = event.nativeEvent.layout;
+            setHeaderBottom(y + height);
+          }}
+        >
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Back to chat"
@@ -514,12 +542,8 @@ export default function ChatThreadScreen() {
           {channelId ? (
             <NotificationLevelControl
               level={notificationLevel}
-              disabled={!channelId}
-              isSaving={setNotificationLevel.isPending}
+              menu={muteMenu}
               writeBlockedReason={writeBlockedReason}
-              onChange={(level) => {
-                setNotificationLevel.mutate({ channelId, level });
-              }}
             />
           ) : null}
         </View>
@@ -695,6 +719,22 @@ export default function ChatThreadScreen() {
                 : null
           }
         />
+        {/*
+          Last, so it is above the header, the inverted list and the composer
+          in paint order and in hit-testing (#2033). The menu used to hang off
+          the header as an overflowing absolute child: it drew over the list,
+          but its taps landed on the list.
+        */}
+        <NotificationLevelMenu
+          level={notificationLevel}
+          menu={muteMenu}
+          isSaving={setNotificationLevel.isPending}
+          writeBlockedReason={writeBlockedReason}
+          anchor={{ top: headerBottom, right: tokens.spacing.lg }}
+          onChange={(level) => {
+            if (channelId) setNotificationLevel.mutate({ channelId, level });
+          }}
+        />
       </KeyboardAvoidingView>
       <MessageActionsSheet
         ref={actionsSheetRef}
@@ -727,11 +767,6 @@ function createStyles(tokens: SignetTokens) {
       paddingBottom: tokens.spacing.md,
       borderBottomWidth: 1,
       borderBottomColor: tokens.color.border.hairline,
-      // The mute menu is `position: "absolute"` just below the trigger. Keep
-      // the header above the thread and do not clip that overflow — otherwise
-      // the menu draws under the message list (or vanishes on Android).
-      zIndex: 1,
-      overflow: "visible",
     },
     backChevron: {
       ...typeRole(tokens.typography.role.title),
