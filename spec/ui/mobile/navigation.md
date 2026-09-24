@@ -203,9 +203,10 @@ key at all**. Each of those three is load-bearing:
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
 check that would have caught #1045 shipping the dependency a month ahead of any
-surface. `scripts/ci/__tests__/signet-mobile-permissions.test.mjs` raised its prompt
-floor from two to three with this slice, which is exactly what that file's WHY block
-said the raise was for.
+surface. `scripts/ci/__tests__/frapp-mobile-permissions.test.mjs` (then
+`signet-mobile-permissions.test.mjs`; ADR-25 renamed it with the copy it locks) raised its
+prompt floor from two to three with this slice, which is exactly what that file's block on
+the floor going three to two (#2296) and back to three (#2464) said the raise was for.
 
 **`app.json` also gained `ios.privacyManifests`** (#2294, same PR as the removal above) —
 the iOS privacy manifest, without which App Store Connect returns an automated

@@ -86,7 +86,7 @@ export function SessionCard({
 
       {isPaused ? (
         <Text style={styles.pausedNote}>
-          Paused while Signet was in the background. It resumes on its own — your
+          Paused while Frapp was in the background. It resumes on its own — your
           credited time is safe until the grace window runs out.
         </Text>
       ) : null}
@@ -97,7 +97,7 @@ export function SessionCard({
           (`creditedSeconds`); this is what says so. */}
       {!isPaused && isReportingStale ? (
         <Text style={styles.staleNote}>
-          Signet hasn&apos;t been able to confirm your location for a few minutes.
+          Frapp hasn&apos;t been able to confirm your location for a few minutes.
           Move somewhere with signal — sessions that stop reporting for 10
           minutes are closed without points.
         </Text>

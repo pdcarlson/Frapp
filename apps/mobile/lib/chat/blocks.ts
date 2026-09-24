@@ -73,7 +73,7 @@ type ClassifiedFields = Pick<
 /**
  * Whether a sender can be on anyone's block list at all.
  *
- * `null` is an imported archive row (no Signet user behind it — blocks are
+ * `null` is an imported archive row (no Frapp user behind it — blocks are
  * keyed on `users.id`), and the system actor is refused by the API: blocking it
  * would silently mask the welcome post, the audit bridge and invite DMs.
  */

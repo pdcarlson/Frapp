@@ -1083,14 +1083,14 @@ describe("assertProductionAskDisabled", () => {
  * **omitted** inherits the plugin's own default string (e.g. "Allow
  * $(PRODUCT_NAME) to access your microphone") and still ships. No assertion over
  * `app.json` can see that, here or in
- * `scripts/ci/__tests__/signet-mobile-permissions.test.mjs`, which also reads the
+ * `scripts/ci/__tests__/frapp-mobile-permissions.test.mjs`, which also reads the
  * file rather than the built binary. Nor is the *bundled-SDK* side of #2294
  * encoded: the audit behind the declared categories was run by hand (#2294,
  * then again for #2526 with expo-updates), so a
  * future native dependency that uses a required-reason API without shipping its
  * own manifest would be an ITMS-91053 rejection with every test green. Both gaps
  * want the introspected config in CI, and both are filed as #2343 — which also
- * owns collapsing this roster and the Signet copy lock's into one home.
+ * owns collapsing this roster and the permission copy lock's into one home.
  */
 describe("iOS privacy manifest (#2294)", () => {
   function resolved() {
@@ -1319,7 +1319,7 @@ describe("native permission declarations (#2296)", () => {
     expect(permissionOptions()).toEqual([
       [
         "expo-camera:cameraPermission",
-        "Signet uses the camera to scan the check-in code at chapter events.",
+        "Frapp uses the camera to scan the check-in code at chapter events.",
       ],
       ["expo-camera:microphonePermission", false],
       // `expo-image-picker` carries NO `cameraPermission` key, deliberately, and
@@ -1347,13 +1347,13 @@ describe("native permission declarations (#2296)", () => {
       ["expo-image-picker:microphonePermission", false],
       [
         "expo-image-picker:photosPermission",
-        "Signet uses your photo library so you can send photos in chapter chat.",
+        "Frapp uses your photo library so you can send photos in chapter chat.",
       ],
       ["expo-location:locationAlwaysAndWhenInUsePermission", false],
       ["expo-location:locationAlwaysPermission", false],
       [
         "expo-location:locationWhenInUsePermission",
-        "Signet confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
+        "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
       ],
       ["expo-location:motionUsagePermission", false],
       ["expo-secure-store:faceIDPermission", false],

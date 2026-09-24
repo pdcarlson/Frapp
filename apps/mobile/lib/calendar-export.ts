@@ -49,7 +49,7 @@ export function buildIcsContent(input: CalendarExportInput): string {
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Signet//Chapter Events//EN",
+    "PRODID:-//Frapp//Chapter Events//EN",
     "CALSCALE:GREGORIAN",
     "BEGIN:VEVENT",
     `UID:${uid}`,
@@ -83,7 +83,7 @@ export async function exportEventToCalendar(
 ): Promise<boolean> {
   try {
     const icsContent = buildIcsContent(input);
-    const filename = `${input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "signet-event"}.ics`;
+    const filename = `${input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "frapp-event"}.ics`;
 
     if (Platform.OS === "web" && typeof document !== "undefined") {
       downloadCalendarOnWeb(icsContent, filename);
