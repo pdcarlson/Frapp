@@ -104,8 +104,13 @@ describe("resolveChapterAccentColor — per-surface resolution", () => {
     });
     const onWhite = resolveChapterAccentColor(DARK_BRAND);
 
-    // House gold is legible on the dark card and illegible on white; one number cannot
-    // describe both, which is why the field is no longer "contrastOnWhite".
+    // House gold is legible on the dark card and illegible on white; one
+    // number cannot describe both, which is why the field is no longer
+    // "contrastOnWhite".
+    expect(onDark).toMatchObject({
+      resolvedAccent: DARK_BRAND,
+      fallbackApplied: false,
+    });
     expect(onDark.contrastOnBackground).toBeGreaterThanOrEqual(4.5);
     expect(onWhite.fallbackApplied).toBe(true);
   });
