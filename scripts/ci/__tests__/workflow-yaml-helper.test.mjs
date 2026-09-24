@@ -371,12 +371,15 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
       folded,
       "name: X\njobs:\n  j:\n    if: inputs.scope != 'x'\n      && !inputs.dry_run_only # gated\n    steps:\n" +
         "      - name: A\n        if: github.actor == 'bot' &&\n          'c' == inputs.dry_run_only # note\n        run: echo\n" +
-        "      - if: always() &&\n          inputs.dry_run_only\n        name: B\n",
+        "      - if: always() &&\n          inputs.dry_run_only\n        name: B\n" +
+        "      - name: C\n        if: always() &&\n         inputs.dry_run_only\n",
     );
-    const [a, b] = workflowSteps(folded);
+    const [a, b, c] = workflowSteps(folded);
     assert.equal(a.if, "github.actor == 'bot' && 'c' == inputs.dry_run_only");
     assert.equal(b.if, "always() && inputs.dry_run_only");
     assert.equal(b.name, "B");
+    // One column deeper than the key is enough to continue it.
+    assert.equal(c.if, "always() && inputs.dry_run_only");
     assert.equal(workflowJobs(folded)[0].if, "inputs.scope != 'x' && !inputs.dry_run_only");
   });
 
@@ -389,6 +392,29 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     );
     assert.equal(workflowSteps(below)[0].if, "inputs.dry_run_only");
     assert.equal(workflowJobs(below)[0].if, "inputs.dry_run_only");
+
+    // The line below may open a quoted value, whose ` #` is not a comment.
+    const quotedBelow = join(dir, "quoted-below.yml");
+    const quotedCondition = `"contains(github.event.head_commit.message, ' #skip') && inputs.dry_run_only"`;
+    writeFileSync(
+      quotedBelow,
+      `name: X\njobs:\n  j:\n    if: # gated\n      ${quotedCondition}\n    steps:\n` +
+        `      - name: A\n        if:\n          ${quotedCondition}\n        run: echo\n`,
+    );
+    assert.equal(workflowSteps(quotedBelow)[0].if, quotedCondition);
+    assert.equal(workflowJobs(quotedBelow)[0].if, quotedCondition);
+
+    // A block indicator on the next line opens a block, whose ` #` is content:
+    // read as plain text, it cut the condition at `' #skip'`.
+    const blockBelow = join(dir, "block-below.yml");
+    const condition = "contains(github.event.head_commit.message, ' #skip') && !inputs.dry_run_only";
+    writeFileSync(
+      blockBelow,
+      `name: X\njobs:\n  j:\n    if:\n      >-\n        ${condition}\n    steps:\n` +
+        `      - name: A\n        if: # gated\n          >-\n            ${condition}\n        run: echo\n`,
+    );
+    assert.equal(workflowSteps(blockBelow)[0].if, condition);
+    assert.equal(workflowJobs(blockBelow)[0].if, condition);
   });
 
   it("decodes a quoted value as Actions sees it, and leaves a plain one as written", () => {
@@ -413,6 +439,7 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
         String.raw`          SLASHES: "a\\b\/c"`,
         String.raw`          NOT_UNICODE: "a\\u0041"`,
         "          PAIRS: 'a ''b'' c'",
+        String.raw`          CONTROL: "\0\a\b\t\n\v\f\r\L\P"`,
         "",
       ].join("\n"),
     );
@@ -428,6 +455,7 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     assert.equal(env.get("SLASHES"), "a\\b/c");
     assert.equal(env.get("NOT_UNICODE"), String.raw`a\u0041`);
     assert.equal(env.get("PAIRS"), "a 'b' c");
+    assert.equal(env.get("CONTROL"), "\0\x07\b\t\n\v\f\r\u2028\u2029");
   });
 
   it("refuses a quoted value that spans lines, or an escape YAML does not have", () => {
@@ -454,6 +482,13 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     const escaped = join(dir, "escaped.yml");
     writeFileSync(escaped, "name: X\njobs:\n  j:\n    steps:\n      - run: echo\n        env:\n          A: \"\\q\"\n");
     assert.throws(() => workflowSteps(escaped), /is not a YAML escape/);
+  });
+
+  it("reads a file with a byte-order mark exactly as without one", () => {
+    const bom = join(dir, "bom.yml");
+    writeFileSync(bom, "\uFEFFenv:\n  A: b\nname: X\njobs:\n  j:\n    steps:\n      - run: echo\n");
+    assert.deepEqual([...workflowKeys(bom).keys()], ["env", "name", "jobs"]);
+    assert.equal(workflowSteps(bom)[0].env.get("A"), "b");
   });
 
   it("reads a CRLF file exactly as its LF form", () => {
@@ -496,6 +531,22 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     const [job] = workflowJobs(phantom);
     assert.equal(job.if, null);
     assert.deepEqual([...job.keys.keys()], ["uses"]);
+
+    // Only a key ends `jobs:`. A flow sequence continued at column 0 is
+    // accepted by lenient parsers; ending there hid the job's gate and steps.
+    const flow = join(dir, "flow-column-0.yml");
+    writeFileSync(
+      flow,
+      "name: X\njobs:\n  a:\n    steps:\n      - run: echo\n  b:\n    needs: [a,\nb]\n" +
+        "    if: always()\n    runs-on: ubuntu-latest\n    steps:\n      - name: B\n",
+    );
+    const b = workflowJobs(flow)[1];
+    assert.equal(b.if, "always()");
+    assert.deepEqual([...b.keys.keys()], ["needs", "if", "runs-on", "steps"]);
+    assert.deepEqual(
+      workflowSteps(flow).map((step) => step.name),
+      ["<unnamed: run>", "B"],
+    );
   });
 
   it("reads an empty flow mapping as an empty mapping: {} can hide nothing", () => {

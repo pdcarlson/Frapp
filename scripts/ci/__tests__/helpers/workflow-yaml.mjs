@@ -36,7 +36,11 @@
 // value, and a non-empty flow `env:`, throw instead of being guessed at (see
 // `keysAt`), because a guard over a misread value passes; `{}` reads as empty.
 // A quoted value spanning lines throws for the same reason (`withoutComment`).
-// Known gap: anchors, tags and aliases in a value are returned as text (#2639).
+// Known gaps (#2639), none of them in a committed workflow: anchors, tags and
+// aliases in a value are returned as text; an env or key value that starts on
+// the line below its key reads as empty (a key's, as an empty mapping); and a
+// plain value continued on deeper lines reads as its first line. Only `if:`
+// reads those two forms (`conditionAt`), since it is what the fence guards match.
 
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -44,10 +48,15 @@ import { basename } from "node:path";
 /**
  * Whole-line comments and blank lines dropped; indentation preserved. Split on
  * CRLF too: a Windows checkout leaves a `\r` on every line, which `.` in the key
- * regexes does not match, so every env and key map would read as empty.
+ * regexes does not match, so every env and key map would read as empty. A
+ * leading byte-order mark goes too: `\s` matches it, so the first line would
+ * sit at indent 1 and a top-level key there (`env:`) would vanish.
  */
 function significantLines(text) {
-  return text.split(/\r?\n/).filter((line) => line.trim() !== "" && !/^\s*#/.test(line));
+  return text
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "" && !/^\s*#/.test(line));
 }
 
 function indentOf(line) {
@@ -167,8 +176,9 @@ function keyOf(match) {
  * Reads only keys at the mapping's own child indent, so a nested or multi-line
  * value cannot contribute phantom keys. Values come back as `scalarValue` reads
  * them, unquoted and decoded: `DEPLOY_PHASE: build` and `DEPLOY_PHASE: "build"`
- * are the same instruction to Actions and must be the same here. A plain value
- * continued on deeper lines reads as its first line (#2639).
+ * are the same instruction to Actions and must be the same here. A value that
+ * starts on the line below its key reads as empty, and a plain one continued on
+ * deeper lines as its first line (the header's known gaps, #2639).
  */
 function envMapAt(lines, headerIndex, floor = indentOf(lines[headerIndex])) {
   // `floor`: the indent at or above which the mapping has ended. The header's
@@ -185,7 +195,7 @@ function envMapAt(lines, headerIndex, floor = indentOf(lines[headerIndex])) {
     if (indent !== childIndent) continue;
 
     const match = lines[i].match(new RegExp(String.raw`^\s*${KEY}\s*:\s*(.*)$`));
-    // A comment-only value is YAML null, not the comment's text.
+    // Empty, or only a comment: read as empty, never as the comment's text.
     if (match) map.set(keyOf(match), opensMapping(match[4]) ? "" : scalarValue(match[4]));
   }
   return map;
@@ -267,12 +277,18 @@ function jobIdFrom(line) {
  * last job ends where `jobs:` does, at the next column-0 key, not at the end of
  * the file: key order is free, and a top-level block written after `jobs:`
  * (`on:` with its triggers) would otherwise be read as the last job's keys.
+ *
+ * A key or a document marker, not any column-0 line: lenient parsers (libyaml,
+ * so likely Actions) accept a flow collection continued at column 0
+ * (`    needs: [a,` then `b]`), and ending there silently dropped the rest of
+ * the job, its `if:` and its steps included.
  */
 function jobRanges(lines, jobsIndex) {
   const starts = [];
   let jobsEnd = lines.length;
+  const topLevel = new RegExp(String.raw`^(?:${KEY}\s*:|---|\.\.\.)`);
   for (let i = jobsIndex + 1; i < lines.length; i += 1) {
-    if (indentOf(lines[i]) === 0) {
+    if (topLevel.test(lines[i])) {
       jobsEnd = i;
       break;
     }
@@ -416,16 +432,23 @@ function stepIf(lines, stepStart, stepEnd, keyIndent) {
  * the break, and a `doesNotMatch` guard passed on a gated step. A trailing
  * `# …` is a comment, including after a block indicator (`if: >- # note`),
  * which would otherwise be returned as the condition. Only the line the value
- * starts on can open a quoted scalar; a continuation line is plain text, so
- * `'c' == d` there is not a quoted value.
+ * starts on can open a quoted scalar or a block; a continuation line is plain
+ * text, so `'c' == d` there is not a quoted value.
  */
 function conditionAt(lines, i, end, base) {
-  const inline = withoutComment(lines[i].replace(new RegExp(String.raw`^\s*-?\s*${named("if")}\s*:\s*`), ""));
+  let inline = withoutComment(lines[i].replace(new RegExp(String.raw`^\s*-?\s*${named("if")}\s*:\s*`), ""));
+  let j = i + 1;
+  // A value may start on the next line (`if:` then `  >-`, or `if:` then the
+  // expression). Read that line as the value's first, quote-aware and with its
+  // block indicator recognised, so a block's content is kept as written.
+  if (inline === "" && j < end && indentOf(lines[j]) > base) {
+    inline = withoutComment(lines[j]);
+    j += 1;
+  }
   const block = isBlockScalarHeader(inline);
-  const parts = block || inline === "" ? [] : [inline];
-  for (let j = i + 1; j < end && indentOf(lines[j]) > base; j += 1) {
-    if (block) parts.push(lines[j].trim());
-    else parts.push(parts.length === 0 ? withoutComment(lines[j]) : withoutPlainComment(lines[j]));
+  const parts = block ? [] : [inline];
+  for (; j < end && indentOf(lines[j]) > base; j += 1) {
+    parts.push(block ? lines[j].trim() : withoutPlainComment(lines[j]));
   }
   return parts.join(" ").trim() || null;
 }
@@ -556,6 +579,9 @@ function opensMapping(raw) {
  * Decided on the RAW value, before quotes are stripped, so `'{ Nightly }'`
  * stays the string it is (`isFlowMapping`). `findEnvHeader` refuses a flow
  * `env:` the same way, for the step env `workflowSteps` reads.
+ *
+ * A scalar that starts on the line below its key reads as an empty Map, and a
+ * plain one continued below as its first line (the header's known gaps).
  */
 function keysAt(lines, from, to, indent) {
   const keys = new Map();
