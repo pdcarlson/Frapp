@@ -162,9 +162,13 @@ when all hold:
 3. No open blocker surviving §1.1 — a `Blocked by #N` body line whose #N is still open.
 4. No linked PR in any state other than closed-unmerged (`search_pull_requests` for the issue
    number; a PR counts only when it names the issue number). An open PR means the work is in flight:
-   note the drift, suggest `in-review`, skip. A merged PR on a still-open issue means it already
-   shipped: report it, change nothing. A closed, unmerged PR doesn't disqualify: claim it and record
-   `Prior art: PR #NNN (closed, unmerged)` in the claim comment.
+   note the drift, suggest `in-review`, skip. A merged PR that should have closed the still-open
+   issue means it already shipped: report it, change nothing. Such a PR shows up in `issue_read get`'s
+   `closed_by_pull_requests`, or its body uses a closing keyword for the issue. A merged PR that only
+   says `Part of #N` shipped one slice and doesn't disqualify, or every parent with a shipped slice
+   would drop out of the backlog for good (#2663). Neither does a closed, unmerged PR. Claim either
+   and record it in the claim comment: `Prior art: PR #NNN (merged slice)` or
+   `Prior art: PR #NNN (closed, unmerged)`.
 5. No human-action hold: no `[human]` tag anywhere in the title's leading run of `[...]` tags,
    matched case-insensitively (`[pr-followup][human] …` is held), and no body opening
    `**Human action required — hold in triage`. No agent session can do these. The forms are defined
@@ -178,11 +182,22 @@ shortlist as sizing context; neither is a filter.
 priority label (`P1`→`P4`, no priority label last), tie-broken by lower issue number. Never skip an
 issue for being unestimated, small, or large; prefer the most valuable viable work, including large,
 high-impact issues. The order is deterministic so concurrent agents agree on it and the claim
-resolves collisions. To keep sessions from colliding in lockstep, start at the candidate whose index
-is the first hex digit of your `CLAIM_ID` modulo 3 (0, 1, or 2) and walk from there, wrapping to the
-top.
+resolves collisions.
 
-**0.4 — Auto-pick.** Take the candidate your walk starts at and go. Then scan the remaining candidates for members that
+**Walk your lane, not the list.** Every session agrees on the order, so sessions must not walk it in
+step. Split the ranked list into 4 lanes by index modulo 4. Your lane is `CLAIM_ID`'s first two hex
+digits, read as one byte, modulo 4. Walk your lane top-down (indices lane, lane + 4, lane + 8, …).
+After a lost race, switch to the lane given by the next two hex digits (digits 3–4, then 5–6, then
+7–8) and walk that lane from its top, skipping anything already tried. Once those run out, take
+whatever remains in rank order. A lane walk keeps sessions off each other's candidates until a lane
+runs dry, and a fresh byte after each loss splits two sessions that shared a lane.
+
+The rule this replaces started everyone at `first hex digit mod 3` and then walked the same list.
+Six of the sixteen digits land in one bucket, and a shared start meant a shared walk: sessions that
+collided once stayed adjacent and collided again on the next viable candidate. That happened twice
+in one run on 2026-08-14 (#892), and four sessions claimed #2579 within five seconds on 2026-09-24.
+
+**0.4 — Auto-pick.** Take the first candidate of your lane walk and go. Then scan the remaining candidates for members that
 batch with it under the invariant's test, within the caps, and compose the batch now. A batch is
 fixed at claim time and only shrinks (lost races, per-member vetoes); it grows only through the
 record-keeping claim. Don't ask which issue to work: the ranking is the answer. Ask only when the
@@ -192,13 +207,13 @@ and the runners-up without waiting for permission.
 
 **0.5 — Claim it.** GitHub has no compare-and-swap (`issue_write` is last-write-wins), so the claim
 is the comment, the only append-only, server-ordered record, and the `in-progress` label is a
-projection of it. For each candidate in order:
+projection of it. For each candidate in lane-walk order (§0.3):
 
 1. `issue_read get_comments`; skip it if a live claim exists.
 2. Post the claim comment (`add_issue_comment` with `AGENT-CLAIM`, or `AGENT-RECLAIM` for a §0.7
    takeover).
 3. Then add the `in-progress` label (read-modify-write the full set).
-4. Verify (§0.6). Lost: yield and take the next candidate.
+4. Verify (§0.6). Lost: yield, switch lanes per §0.3, and take that lane's next untried candidate.
 
 Comment before label, always: if the session dies between the two writes, the issue keeps a live
 claim that the §0.2 filter honours. Walk until you win or the list is exhausted (cap 8). If every
@@ -206,7 +221,7 @@ attempt lost to a live claim, report "backlog saturated with active agents"; if 
 candidates, say that instead. They are different problems with different fixes.
 
 A batch claims sequentially in global rank order: the §0.3 order every session agrees on, not your
-staggered walk, which only chose the first member. Total-order acquisition keeps two batching
+lane walk, which only chose the first member. Total-order acquisition keeps two batching
 sessions from deadlocking over opposite ends of the same set. Post every member's claim before
 implementing anything; both §0.6 verifies cover every member. A lost race yields that member only:
 release it `lost-race` with labels untouched, shrink the batch, continue. Never abandon won members
@@ -425,6 +440,11 @@ each `Fixes`-named issue as `completed`; where it didn't, close it yourself (`is
 closed + `completed`) and remove any leftover `in-review` label. The issue's state is the status;
 there are no manual board moves.
 
+A `Part of` member stays open after the merge, and its claim is still live until you release it. For
+each one, remove `in-review` and post `AGENT-RELEASE` `shipped`, naming the merged PR and the slices
+left. That returns it to Backlog for the next slice. A prose "back to Backlog" note releases
+nothing: until the lease expires, §0.2 condition 2 hides the issue from every session (#2663).
+
 **After a merge, the run may loop.** When a PR merges, or the whole unit exits as `superseded` or
 `blocked-discovered`, and your context is still healthy (roughly under two-thirds spent, no
 compaction yet), return to Phase 0 with a fresh `CLAIM_ID`. Reset the branch whose PR just merged
@@ -481,10 +501,11 @@ and the run ends only when every still-held member has its exit action.
 | Context nearly exhausted, work exists | `AGENT-HANDOFF` `session-ending`, labels untouched, claim left live |
 | GitHub MCP unavailable | Stop and report. No claim, no work, no fallback tracker |
 | PR opened | Neither — **every member** → `in-review`, babysit to merge; the run may then loop or pipeline per Phase 4 |
+| PR merged, member still open (`Part of`) | `AGENT-RELEASE` `shipped`, remove `in-review` (→ Backlog for its next slice) |
 | Session ending, PR open **and** pipelined unit claimed | PR'd members stay `in-review`; each unshipped member exits per its own row (work exists → handoff) |
 
 `Reason` is a closed set: `plan-rejected` · `user-aborted` · `lost-race` · `blocked-discovered` ·
-`out-of-scope` · `superseded` · `session-ending`.
+`out-of-scope` · `superseded` · `session-ending` · `shipped`.
 
 ## Comment templates
 
