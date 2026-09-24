@@ -108,12 +108,12 @@ api.frapp.live           CNAME  <frapp-api-prod>.onrender.com
 api-staging.frapp.live   CNAME  <frapp-api-staging>.onrender.com
 ```
 
-The zone also carries records this list doesn't create. Any edit or DNS move (#2508) must keep them exactly:
+This list is not the whole zone. The zone also holds mail records, and not all of them are written down or have been read back, so a DNS move (#2508) starts from an export of the live zone, not from this list. Known so far:
 
-- **Mail:** `frapp.live MX 1 smtp.google.com` (read back 2026-09-24). It routes `@frapp.live` mail to the Google Workspace on this domain, where `team@frapp.live` (the published support address) is an alias of the one user, `pdcarlson@frapp.live`. Business Starter was added on 2026-09-24. Before that the domain had no Workspace licence, so no `@frapp.live` address had a mailbox. Drop this record and mail to those addresses stops arriving.
-- **Resend:** the `mail.` and `mail.staging.` sending records ([`ENV_REFERENCE.md` § Invite Email](../../environment/ENV_REFERENCE.md#invite-email-optional--api-only)).
+- **Google Workspace mail:** `frapp.live MX 1 smtp.google.com` (read back 2026-09-24). Business Starter was added that day. `team@frapp.live`, the published support address, is an alias of its one user, `pdcarlson@frapp.live`. Before that, no `@frapp.live` address had a mailbox. Delivery to the new mailbox was still unproven when this was written (#2556). Any Workspace SPF, DKIM or site-verification TXT records at the apex have not been read back.
+- **Resend:** the sending domains `mail.frapp.live` and `mail.staging.frapp.live` carry Supabase Auth SMTP (Magic Link sign-in) and invite mail. The older apex `frapp.live` Resend domain also stays until nothing uses it. Those domains and `_dmarc.frapp.live` (`v=DMARC1; p=none;`) are covered in [`supabase.md` § Auth settings](supabase.md#auth-settings-hosted-dashboard-or-management-api). The record names and values are in the Resend dashboard and aren't copied here.
 
-The registration itself was bought through Google and shows in Squarespace as a Google-resold domain. Its renewal is billed in Google Admin → Billing → Subscriptions → **Domain Registration**, not in Squarespace. `pdcarlson@frapp.live` is the only login to both consoles (#2527).
+The registration was bought through Google. Google Admin → Billing → Subscriptions lists it as **Domain Registration** (Active, annual plan), and Squarespace's help says Google Workspace manages the billing of a domain it resells. Nobody has yet checked whether Squarespace's own billing view carries a renewal for it too (#2527). `pdcarlson@frapp.live` is the only login to both consoles.
 
 ### Retired: `frapp-docs` and docs.frapp.live
 
