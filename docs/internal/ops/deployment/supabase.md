@@ -167,15 +167,17 @@ passes: Staging conformance or Production Auth drift for a console not yet retyp
 Migration drift for `20260924170000` if production hasn't deployed by the 07:00 UTC check
 more than 24 hours after 2026-09-24 17:00 UTC:
 
-1. **Staging, once the merge has deployed there.** In `frapp-staging` → Authentication:
-   SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the subject above,
-   and the body above pasted whole (it keeps the `token_hash` href); any other template
-   subject that says Signet. Then set Infisical `staging` `RESEND_FROM_EMAIL` to
-   `Frapp <invites@mail.staging.frapp.live>`.
-2. **Production, after Deploy production of the merge commit.** The same three Auth
-   settings on `frapp-prod`, and `RESEND_FROM_EMAIL` in Infisical `prod` only if it is set
-   there (unset, the API default is already Frapp). Renaming Auth before that deploy would
-   send Frapp sign-in mail beside Signet invite mail from the older build.
+1. **Staging.** Just before merging, set Infisical `staging` `RESEND_FROM_EMAIL` to
+   `Frapp <invites@mail.staging.frapp.live>`. The API reads it only at boot, so the merge's
+   staging deploy is what picks it up. Once that deploy is live, in `frapp-staging` →
+   Authentication: SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the
+   subject above, and the body above pasted whole (it keeps the `token_hash` href); any
+   other template subject that says Signet.
+2. **Production.** If `RESEND_FROM_EMAIL` is set in Infisical `prod`, set it to
+   `Frapp <invites@mail.frapp.live>` before dispatching Deploy production of the merge
+   commit (unset, the new API default is already Frapp). After that deploy, the same three
+   Auth settings on `frapp-prod`. Renaming Auth before the deploy would send Frapp sign-in
+   mail beside Signet invite mail from the older build.
 3. **Confirm.** Dispatch Staging conformance and Production Auth conformance, then update
    the table above with the values read and the date.
 
