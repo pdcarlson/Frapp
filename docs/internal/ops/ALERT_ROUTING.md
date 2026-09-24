@@ -112,6 +112,7 @@ tree held five, because a count is a second copy of a fact the rows already stat
 | --- | --- | --- | --- |
 | *Deploy API is failing — pushes are not reaching the environment* | `deploy-outcome` job, `deploy-api.yml` | the last `Deploy API` run that tried to deploy did not succeed | a later run deploys successfully |
 | *Deploy Vercel staging is failing — web and landing are not reaching staging* | `deploy-outcome` job, `deploy-vercel-staging.yml` | the last `Deploy Vercel staging` run that tried to deploy did not succeed, so at least one of `app.staging.frapp.live` / `staging.frapp.live` is serving an older commit. The job builds and aliases **web first, landing second**, so a late failure can leave web current and landing stale — the alert is per-run, not per-host, and does not say which. Check the run before assuming both. **P2, not P1:** staging only — the production frontends deploy through `deploy-production.yml`, which reports separately in its own `report` job | a later run deploys successfully |
+| *Render staging deploy is failing — frapp-api-staging is not confirmed live on main* | `deploy-outcome` job, `verify-deployments.yml` (every push to `main`) | the last `Verify deployments` run to reach a verdict did not find the pushed commit's `frapp-api-staging` deploy live on Render: it ended in `build_failed` / `update_failed` / `pre_deploy_failed`, no deploy appeared for the commit within 5 minutes, it didn't finish within 20, or Render couldn't be read. The run log says which. **P1.** `Deploy API` can't see this, because it goes green once Render accepts the hook ([#2431](https://github.com/pdcarlson/Frapp/issues/2431)). A superseded deploy (`canceled` / `deactivated`) is no verdict and leaves the alert as it is. So does a cancelled run | a later push's deploy is confirmed `live` |
 | *Staging conformance is failing — frapp-staging has drifted* | `staging-conformance.yml` (daily 07:30 UTC) | at least one assertion about live `frapp-staging` **failed** — paused project, disabled auth hook, Auth SMTP reverted to the hosted 2/hour cap, Magic Link template lost `token_hash`, empty or non-`/health` `healthCheckPath` on `frapp-api-staging`, auto-deploy off or not tracking `main` on `frapp-api-staging`, or a failing secret sync | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
 | *Production Auth settings have drifted* | `production-auth-conformance.yml` (daily 07:45 UTC) | at least one assertion about live `frapp-prod` Auth **failed** — paused project, disabled auth hook, missing `https://app.frapp.live/**` / `frapp://**`, Site URL pointed at the staging origin, or Auth SMTP on with a From other than `Signet <no-reply@mail.frapp.live>` / send cap under 300/hour, or SMTP on with a Magic Link template that still uses ConfirmationURL. Empty SMTP is SKIPPED, not a fail (hosted 2/hour cap until [#1824](https://github.com/[REDACTED]/Frapp/issues/1824)). **P1.** Does not name `environment: production` (#1435) | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
 | *Database schema drift — a deployed database no longer matches supabase/migrations/* | `check-migration-drift.yml` (daily 07:00 UTC) | a deployed database's `schema_migrations` does not match `supabase/migrations/` — behind, or carrying a version that exists nowhere in the repo | every environment is back in sync |
@@ -127,13 +128,20 @@ Unlike the others, two alerts comment only on a state *change*, not on every run
 open one that has gone quiet is still live, not stale. Setup for the App the base-sync alert depends on is human-only
 and tracked in [#689](https://github.com/pdcarlson/Frapp/issues/689).
 
-**The two deploy watchdogs are one script, two configurations.** `scripts/ci/deploy-alert.mjs` serves
-both `deploy-api.yml` and `deploy-vercel-staging.yml`; which one it is reporting on is chosen by the
-`ALERT_CONFIG` env var set in each workflow's `deploy-outcome` job, and an unknown value is a hard
+**The three deploy watchdogs are one script, three configurations.** `scripts/ci/deploy-alert.mjs` serves
+`deploy-api.yml`, `deploy-vercel-staging.yml` and `verify-deployments.yml`. The `ALERT_CONFIG` env var
+set in each workflow's `deploy-outcome` job chooses which one it's reporting on, and an unknown value is a hard
 error rather than a silent fallback to the default. They are deliberately **separate alert issues**
 with separate titles: the title is the lookup key, so a shared one would let a recovered API deploy
-close a live Vercel outage's alert. Renaming either title orphans whatever alert is open under the old
+close a live Vercel outage's alert. Renaming any title orphans whatever alert is open under the old
 one — it could never be found again, and so would never self-close.
+
+The API has two of them because they watch different things. `Deploy API` watches the *trigger*: it
+fires the Render deploy hook and polls `/health`, which the old instance keeps answering. `Verify
+deployments` watches the *outcome*: it polls Render until the pushed commit's deploy is terminal.
+A Render build failure opens only the second. Its green job can mean a live deploy or a superseded
+one, so the verifier publishes its verdict as the job output `outcome`, and only `success` closes
+the alert.
 
 `production-guardrails.mjs` is also `deploy-production.yml`'s preflight, but that invocation
 (`--preflight`) **files nothing** — it exits non-zero on a violation and lets the deploy fail. So an
