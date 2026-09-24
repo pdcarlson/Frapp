@@ -468,7 +468,7 @@ export async function checkAuthRedirects({
  */
 export const AUTH_SMTP_HOST = "smtp.resend.com";
 export const AUTH_SMTP_ADMIN_EMAIL = "no-reply@mail.staging.frapp.live";
-export const AUTH_SMTP_SENDER_NAME = "Signet";
+export const AUTH_SMTP_SENDER_NAME = "Frapp";
 export const AUTH_EMAIL_SENT_PER_HOUR_MIN = 300;
 
 /**
@@ -502,7 +502,7 @@ export async function checkAuthSmtp({
   whenUnset = "fail",
 } = {}) {
   const label =
-    "Custom SMTP is Resend, the sender is Signet, and the send cap is at least 300/hour";
+    "Custom SMTP is Resend, the sender is Frapp, and the send cap is at least 300/hour";
   const expectedFrom =
     typeof expectedAdminEmail === "string" && expectedAdminEmail.trim()
       ? expectedAdminEmail.trim().toLowerCase()
@@ -584,35 +584,58 @@ export async function checkAuthSmtp({
   );
 }
 
-export const AUTH_MAGIC_LINK_SUBJECT = "Sign in to Signet";
+export const AUTH_MAGIC_LINK_SUBJECT = "Sign in to Frapp";
 
 /**
- * Inbox titles (`mailer_subjects_*`) must not say Frapp. Magic Link is already
- * pinned to {@link AUTH_MAGIC_LINK_SUBJECT}; this catches sibling subjects
- * (invite, recovery, confirmation, …) a leftover sweep can still revert.
- * Returns field keys only — never the subject text, `smtp_pass`, or HTML.
+ * Inbox titles (`mailer_subjects_*`) must not say Signet, the product's name
+ * before ADR-25. Magic Link is already pinned to {@link AUTH_MAGIC_LINK_SUBJECT};
+ * this catches sibling subjects (invite, recovery, confirmation, …) the console
+ * rename can miss. Returns field keys only — never the subject text,
+ * `smtp_pass`, or HTML.
  */
-export function leftoverFrappMailerSubjectKeys(data) {
+export function leftoverSignetMailerSubjectKeys(data) {
   if (!data || typeof data !== "object") return [];
   return Object.entries(data)
     .filter(
       ([key, value]) =>
         key.startsWith("mailer_subjects_") &&
         typeof value === "string" &&
-        /Frapp/i.test(value),
+        /Signet/i.test(value),
     )
     .map(([key]) => key)
     .sort();
 }
 
 /**
+ * The product name as copy spells it: `Signet`, or `SIGNET` in a heading.
+ * ADR-25 keeps "signet" only as the design system's name. What of it can
+ * reach an email is lowercase: file names, class names and CSS custom
+ * properties (`/brand/signet-emblem-B.png`, `signet-mark`,
+ * `--signet-accent-text`). So a case-sensitive match leaves them alone
+ * without parsing the HTML. The design system's TypeScript names
+ * (`SignetTokens`) and an inlined brand SVG's own text are capitalized and
+ * would match, but neither belongs in a Magic Link template.
+ *
+ * It matches anywhere in the body (text, `alt` and `title`, comments,
+ * Outlook-only blocks, style content), glued to another word or not. The
+ * gaps: the name in lowercase, which the copy never used, and the name split
+ * by markup or an entity (`Sig<span>net</span>`, `&#83;ignet`), which no one
+ * types.
+ */
+export const SIGNET_PRODUCT_NAME = /Signet|SIGNET/;
+
+/**
  * Magic Link template stays on the app host via `token_hash`.
  *
  * The hosted default href is `{{ .ConfirmationURL }}` → `*.supabase.co/auth/v1/verify`.
  * That From/link-domain mismatch is the leftover all-users spam shape after
- * SMTP and copy were already Signet (#1824, #1916). Dashboard-only; same GET
+ * SMTP and copy were already branded (#1824, #1916). Dashboard-only; same GET
  * `checkAuthSmtp` makes. Never put `smtp_pass` or the full template HTML in
  * the detail string.
+ *
+ * It also holds the product name (ADR-25): the subject must be
+ * {@link AUTH_MAGIC_LINK_SUBJECT}, no `mailer_subjects_*` may say Signet, and
+ * the body may not spell the product name ({@link SIGNET_PRODUCT_NAME}).
  *
  * `whenSmtpUnset`:
  * - `"fail"` (default, staging): empty `smtp_host` does not skip this check.
@@ -654,13 +677,13 @@ export async function checkAuthMagicLink({
       "smtp_host is empty; Magic Link template not asserted until SMTP is on. See #1824.",
     );
   }
-  const leftoverSubjects = leftoverFrappMailerSubjectKeys(data);
+  const leftoverSubjects = leftoverSignetMailerSubjectKeys(data);
   if (leftoverSubjects.length > 0) {
     return result(
       "auth-magic-link",
       label,
       FAIL,
-      `mailer_subjects contain Frapp: ${leftoverSubjects.join(", ")}`,
+      `mailer_subjects contain Signet: ${leftoverSubjects.join(", ")}`,
     );
   }
   const subject =
@@ -709,6 +732,16 @@ export async function checkAuthMagicLink({
       label,
       FAIL,
       "mailer_templates_magic_link_content is missing type=magiclink",
+    );
+  }
+  // The subject is compared exactly, but the body is free text: a heading or
+  // link text left on the old name would reach every inbox with nothing red.
+  if (SIGNET_PRODUCT_NAME.test(content)) {
+    return result(
+      "auth-magic-link",
+      label,
+      FAIL,
+      "mailer_templates_magic_link_content still says Signet (a heading, link text, an image's alt or title, a comment or an Outlook-only block; paste the Magic Link body documented in docs/internal/ops/deployment/supabase.md § Auth settings, which keeps the token_hash href)",
     );
   }
   return result("auth-magic-link", label, PASS, `subject=${subject}; token_hash href`);
@@ -1232,7 +1265,7 @@ export async function runStagingConformance({
         projectRef: env.SUPABASE_PROJECT_REF,
         fetchImpl,
       }) },
-    { id: "auth-smtp", label: "Custom SMTP is Resend, the sender is Signet, and the send cap is at least 300/hour", run: () =>
+    { id: "auth-smtp", label: "Custom SMTP is Resend, the sender is Frapp, and the send cap is at least 300/hour", run: () =>
       checkAuthSmtp({
         accessToken: env.SUPABASE_ACCESS_TOKEN,
         projectRef: env.SUPABASE_PROJECT_REF,

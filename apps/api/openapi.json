@@ -6908,7 +6908,7 @@
             "bearer": []
           }
         ],
-        "summary": "Map each Discord channel onto a Signet channel",
+        "summary": "Map each Discord channel onto a Frapp channel",
         "tags": [
           "Discord Import"
         ]
@@ -7067,7 +7067,7 @@
             "bearer": []
           }
         ],
-        "summary": "Record the Discord role → Signet role worksheet",
+        "summary": "Record the Discord role → Frapp role worksheet",
         "tags": [
           "Discord Import"
         ]
@@ -7393,8 +7393,8 @@
     }
   },
   "info": {
-    "title": "Signet API",
-    "description": "The Operating System for Greek Life",
+    "title": "Frapp API",
+    "description": "The HTTP API behind the Frapp mobile app and web dashboard.",
     "version": "1.0",
     "contact": {}
   },
@@ -7823,7 +7823,7 @@
         "properties": {
           "role": {
             "type": "string",
-            "description": "The Signet role that failed, e.g. `--signet-accent-text` or `--signet-accent-on-primary`."
+            "description": "The accent role that failed, e.g. `--signet-accent-text` or `--signet-accent-on-primary`."
           },
           "against": {
             "type": "string",
@@ -7915,7 +7915,7 @@
             "description": "Set when the chapter has lost its President outside a voluntary transfer (spec/behavior/rbac.md § Presidency Transfer). Every member reads this, not just `roles:manage` holders — see `PresidencyClaimBanner`."
           },
           "failedContrastChecks": {
-            "description": "Signet §8 contrast checks below AA for this save’s generated accent. Empty in the normal case; the save still succeeds when non-empty — this is disclosure, never a rejection.",
+            "description": "Accent contrast checks (design system §8) below AA for this save’s generated accent. Empty in the normal case; the save still succeeds when non-empty — this is disclosure, never a rejection.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/FailedContrastCheckDto"
@@ -8557,7 +8557,7 @@
           "next_role_name": {
             "type": "string",
             "nullable": true,
-            "description": "Name of the eligible role, or null when no role below President has any member at all (the \"Signet support intervenes\" case)."
+            "description": "Name of the eligible role, or null when no role below President has any member at all (the \"Frapp support intervenes\" case)."
           }
         },
         "required": [
@@ -11485,7 +11485,7 @@
         "properties": {
           "consent_acknowledged": {
             "type": "boolean",
-            "description": "The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Signet. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this."
+            "description": "The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this."
           },
           "guild_name": {
             "type": "string",
@@ -11660,7 +11660,7 @@
           },
           "signet_role_key": {
             "type": "string",
-            "description": "Signet role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role."
+            "description": "Frapp role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role."
           }
         },
         "required": [

@@ -98,7 +98,7 @@ export class CurrentChapterResponseDto {
 export class FailedContrastCheckDto {
   @ApiProperty({
     description:
-      'The Signet role that failed, e.g. `--signet-accent-text` or `--signet-accent-on-primary`.',
+      'The accent role that failed, e.g. `--signet-accent-text` or `--signet-accent-on-primary`.',
   })
   role: string;
 
@@ -196,7 +196,7 @@ export class UpdateChapterResponseDto {
   @ApiProperty({
     type: [FailedContrastCheckDto],
     description:
-      'Signet §8 contrast checks below AA for this save’s generated accent. Empty in the normal case; the save still succeeds when non-empty — this is disclosure, never a rejection.',
+      'Accent contrast checks (design system §8) below AA for this save’s generated accent. Empty in the normal case; the save still succeeds when non-empty — this is disclosure, never a rejection.',
   })
   failedContrastChecks: FailedContrastCheckDto[];
 }
