@@ -39,9 +39,9 @@
 // SCOPE. apps/mobile only. The API renamed in ADR-25 step 3 and the web
 // dashboard in step 4, and each has its own walk (frapp-api-copy.test.mjs,
 // frapp-web-copy.test.mjs). Landing renames in step 5, and its lock still
-// pins what it ships today. The
-// permanent identifiers (bundle id live.frapp.mobile, slug and scheme frapp,
-// the @frapp.live ICS UID host) are not copy and are not this lock's.
+// pins what it ships today. The binary's permanent identifiers are not copy
+// and are not this lock's: mobile-permanent-identifiers.test.mjs lists and
+// pins them. Nor is the @frapp.live ICS UID host (ics-uid-host keeps that).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

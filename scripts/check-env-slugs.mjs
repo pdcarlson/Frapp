@@ -26,7 +26,7 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 /**
  * The real slugs, mirrored from Infisical → Project Settings → Environments.
@@ -120,8 +120,7 @@ export function canonicalSection(docText) {
   return docText?.split("## Infisical Environments")[1]?.split("\n---")[0] ?? null;
 }
 
-const IS_ENTRYPOINT =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const IS_ENTRYPOINT = isInvokedDirectly(import.meta.url);
 
 function main() {
   const violations = [];

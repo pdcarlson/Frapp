@@ -28,7 +28,7 @@ import {
  *
  * It renders `app/(auth)/join.tsx` but lives here, not beside it: a spec under
  * `app/` is a route module and ships in the production bundle, which is what
- * broke the iOS build after #2347. `docs/internal/mobile/MOBILE_TESTING.md`
+ * broke the iOS build after #2347. `docs/mobile/testing.md`
  * § Gotchas has the mechanism; `lib/routes.spec.ts` enforces it.
  */
 

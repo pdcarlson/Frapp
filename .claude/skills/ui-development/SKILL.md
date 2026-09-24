@@ -141,7 +141,7 @@ constraints web habits most often break:
   or fixture beside a screen pulls `vitest` into Metro and breaks `expo export`. `routes.spec.ts`
   fails on one. Put testable logic, and whole-screen render specs, in `lib/` (for example
   `lib/onboarding/join-screen.spec.tsx`). See
-  [`MOBILE_TESTING.md`](../../../docs/internal/mobile/MOBILE_TESTING.md) § Gotchas.
+  [`docs/mobile/testing.md`](../../../docs/mobile/testing.md) § Gotchas.
 
 ## Data layer for UI
 

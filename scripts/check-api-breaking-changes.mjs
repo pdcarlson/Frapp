@@ -44,6 +44,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SPEC_PATH = "apps/api/openapi.json";
@@ -171,6 +172,6 @@ function main() {
   return failOnBreaking ? 1 : 0;
 }
 
-if (process.argv[1] && process.argv[1].endsWith("check-api-breaking-changes.mjs")) {
+if (isInvokedDirectly(import.meta.url)) {
   process.exit(main());
 }

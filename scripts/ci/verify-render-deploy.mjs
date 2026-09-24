@@ -27,6 +27,7 @@ import { resilientFetch } from "./lib/http.mjs";
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import { findRenderDeployBySha } from "./lib/providers.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 // ── State semantics ─────────────────────────────────────────────────────────
 // Any of these means the deploy we were watching is now the running deploy
@@ -260,8 +261,7 @@ async function main() {
   process.exit(1);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);

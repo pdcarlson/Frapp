@@ -2,7 +2,7 @@
 // exit gate. Proves on a real device that: the app boots with the new provider
 // stack, Figtree renders at every role/weight, the gorhom v5 sheet opens,
 // drags, and dismisses with the §9 chrome, and the keyboard path falls back
-// cleanly in Expo Go. Checklist: docs/internal/mobile/MOBILE_TESTING.md.
+// cleanly in Expo Go. Checklist: docs/mobile/testing.md.
 import { useCallback, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {

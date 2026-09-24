@@ -45,6 +45,7 @@
 import { readFileSync } from "node:fs";
 import { ghRequest } from "./lib/github.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 // ── Classification semantics ────────────────────────────────────────────────
 // Steps the Actions runner itself owns. A job whose only failed step is one of
@@ -583,8 +584,7 @@ async function main() {
   await processCompletedRun({ token, repo, run });
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);

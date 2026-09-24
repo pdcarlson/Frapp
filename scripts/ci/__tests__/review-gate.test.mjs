@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 
 const HOOK = fileURLToPath(new URL("../../../.githooks/pre-push", import.meta.url));
 const SCOPE = fileURLToPath(new URL("../../diff-review-scope.mjs", import.meta.url));
+// The scope script's one local import, copied beside it.
+const INVOKED_DIRECTLY = fileURLToPath(new URL("../lib/invoked-directly.mjs", import.meta.url));
 let repo;
 let head;
 let tagObject;
@@ -25,8 +27,9 @@ before(() => {
   git("tag", "-am", "release", "v1");
   tagObject = git("rev-parse", "v1");
   // The hook falls back to the checkout's own scope script. It stays untracked here, as .cache/ does.
-  mkdirSync(path.join(repo, "scripts"));
+  mkdirSync(path.join(repo, "scripts", "ci", "lib"), { recursive: true });
   copyFileSync(SCOPE, path.join(repo, "scripts", "diff-review-scope.mjs"));
+  copyFileSync(INVOKED_DIRECTLY, path.join(repo, "scripts", "ci", "lib", "invoked-directly.mjs"));
   writeFileSync(path.join(repo, ".git", "info", "exclude"), "scripts/\n.cache/\n");
 });
 

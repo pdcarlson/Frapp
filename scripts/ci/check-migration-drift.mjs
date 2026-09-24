@@ -73,6 +73,7 @@ import {
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { supabaseAccessTokenFor } from "./lib/environments.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -656,8 +657,7 @@ async function main() {
   process.exit(exitCode);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);
