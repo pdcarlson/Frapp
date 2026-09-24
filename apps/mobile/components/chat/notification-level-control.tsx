@@ -219,10 +219,18 @@ export function NotificationLevelMenu({
   const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
 
   // Opening hides the trigger that had a screen reader's focus, which clears
-  // that focus rather than moving it, so put it on the menu.
+  // that focus rather than moving it, so put it on the menu. From the next
+  // task, not this effect: on Android the effect runs before this commit's
+  // views are mounted, and a focus event for a view that isn't there yet is
+  // dropped (#2641 tracks confirming it on a device).
   useEffect(() => {
-    if (!menu.visible || !titleRef.current) return;
-    AccessibilityInfo.sendAccessibilityEvent(titleRef.current, "focus");
+    if (!menu.visible) return;
+    const timer = setTimeout(() => {
+      if (titleRef.current) {
+        AccessibilityInfo.sendAccessibilityEvent(titleRef.current, "focus");
+      }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [menu.visible]);
 
   if (!menu.visible) return null;

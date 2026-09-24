@@ -84,8 +84,9 @@ function renderControl(props: Partial<ControlProps> = {}) {
       <FrappThemeProvider>
         <Thread level="mentions" onChange={vi.fn()} {...props} />
       </FrappThemeProvider>,
-      // Host refs resolve to a stand-in, so the menu can move focus.
-      { createNodeMock: () => ({}) },
+      // Host refs resolve to a stand-in that remembers its element, so a spec
+      // can tell which node the menu moved focus to.
+      { createNodeMock: (element) => ({ element }) },
     );
   });
   return tree;
@@ -520,21 +521,44 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
     expect(byLabel(tree, TRIGGER).props.onLayout).toBe(onTriggerLayout);
   });
 
-  it("moves a screen reader's focus onto the menu as it opens", () => {
-    // Opening hides the focused trigger, which clears focus rather than
-    // moving it.
-    const tree = openMenu();
-    const title = tree.root.find(
-      (node) =>
-        typeof node.type === "string" &&
-        node.props.children === "Notify me about",
-    );
-    expect(AccessibilityInfo.sendAccessibilityEvent).toHaveBeenCalledTimes(1);
-    expect(AccessibilityInfo.sendAccessibilityEvent).toHaveBeenCalledWith(
-      expect.anything(),
-      "focus",
-    );
-    expect(title).toBeTruthy();
+  it("moves a screen reader's focus onto the menu title, once it is mounted", () => {
+    vi.useFakeTimers();
+    try {
+      openMenu();
+      // Not from the opening commit's effect: on Android that runs before the
+      // title's view exists, and the event would be dropped.
+      expect(AccessibilityInfo.sendAccessibilityEvent).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(AccessibilityInfo.sendAccessibilityEvent).toHaveBeenCalledTimes(1);
+      const [target, eventType] = vi.mocked(
+        AccessibilityInfo.sendAccessibilityEvent,
+      ).mock.calls[0] as unknown as [
+        { element: { props: { children?: unknown } } },
+        string,
+      ];
+      expect(eventType).toBe("focus");
+      expect(target.element.props.children).toBe("Notify me about");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops the pending focus when the menu closes first", () => {
+    vi.useFakeTimers();
+    try {
+      const tree = openMenu();
+      press(byLabel(tree, "Cancel"));
+      act(() => {
+        vi.runAllTimers();
+      });
+      expect(AccessibilityInfo.sendAccessibilityEvent).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("still writes the picked level from inside the overlay", () => {
