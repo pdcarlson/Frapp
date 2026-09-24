@@ -184,8 +184,9 @@ chapter, and a read-only archiver has no business holding a permission that can
 change anything in someone's server.
 
 **One thing the portal cannot express, so it is worth knowing here.** Discord's
-consent screen names the application (_Frapp_) — it does not name the chapter the
-connection will be bound to, and it cannot. Frapp closes that gap on its own side:
+consent screen names the Discord application (_Signet_ until the owner renames it
+to _Frapp_, [#2669](https://github.com/pdcarlson/Frapp/issues/2669)) — it does not
+name the chapter the connection will be bound to, and it cannot. Frapp closes that gap on its own side:
 the callback parks the server and links nothing, and an authenticated request
 scoped to the chapter is what activates it. So a Frapp officer cannot send their authorize
 link to somebody else's Discord admin and end up reading that server. Do not

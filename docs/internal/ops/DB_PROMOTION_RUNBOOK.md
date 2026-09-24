@@ -1014,7 +1014,7 @@ catalog query detects.
   sees it. A guild id is a public snowflake and is worthless without the install
   behind it — which is why `guild_id` is deliberately **not** globally unique.
   Two chapters legitimately connecting one server (an umbrella org, a chapter
-  re-created in Signet) is a real case, and uniqueness would prevent nothing an
+  re-created in Frapp) is a real case, and uniqueness would prevent nothing an
   attacker can do: the tenant control is that the guild is read _through_
   `chapter_id` and never supplied by a caller. Do not add a unique constraint
   under the impression it is a tenant control.
@@ -1057,7 +1057,7 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
   token exchange, Manage Server was read under the authorizing human's own token
   — but together they prove only that _a human with Manage Server installed the
   bot into guild G_, never that they intended _chapter X_ to read it. Discord's
-  consent screen names the application (Frapp); it does not name the chapter. These columns park
+  consent screen names the Discord application; it does not name the chapter. These columns park
   the guild as pending and mint a second one-time token, delivered only to the
   browser that completed the OAuth, which activation requires alongside a session
   whose active chapter matches.

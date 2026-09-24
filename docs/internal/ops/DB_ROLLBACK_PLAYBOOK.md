@@ -889,8 +889,9 @@ After any rollback event:
   independently — which, under `create_new`, mints one identically-named channel
   per thread (`chat_channels` has no unique `(chapter_id, name)`). **Do not drop
   it while a bot import is mid-flight.**
-* **The bot itself is not rolled back by any of this.** The Frapp Discord
-  application stays installed in every chapter's server until someone removes it
+* **The bot itself is not rolled back by any of this.** The Discord application
+  (named Signet until the owner's rename in
+  [#2669](https://github.com/pdcarlson/Frapp/issues/2669), Frapp after) stays installed in every chapter's server until someone removes it
   there, and `DISCORD_BOT_TOKEN` keeps working. If the rollback is a response to
   a security incident, rotate the token in Infisical — that is what actually
   revokes access, not this migration.
