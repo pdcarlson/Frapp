@@ -52,8 +52,8 @@ Then:
 
 - **Dedup.** One action often appears on the List, as its own issue, and in a PR thread. Collapse it
   to one candidate anchored on the issue, since closing updates that.
-- **Drop what isn't his:** agent-doable work, anything `in-progress`, `routine-state` issues (never
-  one that also carries `incident`),
+- **Drop what isn't his:** agent-doable work, anything `in-progress`, `routine-state` issues (neither
+  drop applies to an issue that carries `incident`, which is always his),
   `scope:production` items (parked by owner decision, not blocked or stale), and anything a thread
   shows he already decided.
 - **Rank** open `incident` issues first, whatever else is waiting: each is a live fault, and the
