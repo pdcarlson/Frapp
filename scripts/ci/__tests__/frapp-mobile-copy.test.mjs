@@ -39,7 +39,8 @@
 // SCOPE. apps/mobile only. The web, API and landing surfaces rename in
 // ADR-25 steps 3 to 5, and their locks still pin what they ship today. The
 // permanent identifiers (bundle id live.frapp.mobile, slug and scheme frapp,
-// the @frapp.live ICS UID host) are not copy and are not this lock's.
+// the @frapp.live ICS UID host) are not copy and are not this lock's;
+// mobile-permanent-identifiers.test.mjs pins the first three.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
