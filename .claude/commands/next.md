@@ -241,8 +241,9 @@ with the next candidate.
 - Live claim: leave it alone.
 - Expired lease, no linked PR in any state but closed-unmerged, and no branch pushed within `LEASE`
   (`git ls-remote --heads origin`; a push counts as a heartbeat): reclaimable. It enters §0.3 at the
-  top and must still clear §0.2 conditions 3, 4, and 5, so a dead session's claim can't launder a
-  `[human]` item past the hold. Take it with `AGENT-RECLAIM`, then wait a full read cycle and re-read
+  top and must still clear §0.2 conditions 3, 4, and 5, and condition 1's `routine-state` /
+  `incident` clause, so a dead session's claim can't launder a `[human]` item past the hold or turn
+  a live alert into backlog. Take it with `AGENT-RECLAIM`, then wait a full read cycle and re-read
   before mutating anything.
 - No claim comment at all, no linked PR, `updated_at` older than `ORPHAN_AGE`: post
   `AGENT-STALE-FLAG` and remove the `in-progress` label (back to Backlog). Don't pick it up this run.
