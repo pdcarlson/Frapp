@@ -12,8 +12,8 @@ description: >
 # same-repository PR runs its own branch's workflow definitions, so any secret a
 # PR job can read, any branch can read. The gates used to inject Infisical for
 # one Management API read. `migration-snapshot.yml` now makes that read, in a
-# job meant to run from `main` only (its environment's rule is the owner's
-# #2583), and PR jobs fetch the result here.
+# job that runs from `main` only (its environment's rule, #2583), and PR jobs
+# fetch the result here.
 #
 # ── Which run is trusted ────────────────────────────────────────────────────
 # A successful run of THIS repository's publisher, triggered by `workflow_run`,

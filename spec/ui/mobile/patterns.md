@@ -1,6 +1,6 @@
 # Mobile Interaction Patterns
 
-> Client-side mechanics behind the screens: bottom sheets, QR check-in, study sessions, dues payment, chat, and push notifications. Server-side rules stay in [`../../behavior/`](../../behavior/README.md) — this doc links, never restates.
+> Client-side mechanics behind the screens: bottom sheets, QR check-in, study sessions, dues payment, chat, push notifications, and the minimum-version check. Server-side rules stay in [`../../behavior/`](../../behavior/README.md) — this doc links, never restates.
 
 Screen ids reference [`screens.md`](screens.md); surface rules (native-feel, Expo Go isolation, styling) are in [`README.md`](README.md).
 

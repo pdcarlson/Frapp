@@ -153,8 +153,7 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. The workflows
 that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` with
 `method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
-`INFISICAL_CLIENT_SECRET` secrets, read through the GitHub environment each job names (§6; until #2583
-moves them they are still repository secrets, which such a job also sees). This is universal
+`INFISICAL_CLIENT_SECRET` secrets, read through the GitHub environment each job names (§6). This is universal
 auth, not OIDC. Every workflow that calls the composite action below does this — today
 `deploy-api.yml`, `deploy-production.yml`, `db-backup.yml`, `check-migration-drift.yml`,
 `migration-snapshot.yml`, `staging-conformance.yml` and `production-auth-conformance.yml`
@@ -206,10 +205,13 @@ Staging is not spared, and this is the part that is easy to miss: the staging sy
 them reach browsers — Next.js only inlines `NEXT_PUBLIC_*` into the client bundle — but any SSRF or
 RCE in the staging web app reads through to the staging database and the Supabase account.
 
-`SUPABASE_ACCESS_TOKEN` deserves separate mention: it is a Supabase **Management API** token, scoped
-to the account rather than one project, and therefore strictly more powerful than
-`SUPABASE_SERVICE_ROLE_KEY`. It is the first thing to rotate if any of this is ever believed
-compromised.
+`SUPABASE_ACCESS_TOKEN` deserves separate mention: it is a Supabase **Management API** token. The
+one these syncs delivered was scoped to the whole account, and therefore strictly more powerful than
+`SUPABASE_SERVICE_ROLE_KEY`. **Corrected 2026-09-24 ([#2583](https://github.com/pdcarlson/Frapp/issues/2583)):**
+that token is revoked, and each Infisical environment now holds its own read-only token scoped to
+its own project (`ENV_REFERENCE.md` § CD Secrets). The Vercel copies still hold a revoked value,
+because the Vercel syncs have failed since the projects were unlinked from Git (#2106). Still the
+first thing to rotate if any of this is ever believed compromised.
 
 An earlier misreading is worth recording so it is not repeated. Because the staging syncs once failed
 with `Branch "preview" not found in the connected Git repository`, this document previously claimed
@@ -274,7 +276,7 @@ branch rule each environment needs first, is the roster in
 | `INFISICAL_CLIENT_SECRET`       | From the same Universal Auth panel → **Add Client Secret** (shown once)      |
 
 `INFISICAL_PROJECT_ID` is no longer needed: no workflow reads it (the action pins `project-slug`),
-and deleting the repository copy is #1587.
+and its repository copy was deleted on 2026-09-23 (#1587).
 
 **Optional — staging conformance smoke user (`staging` environment):**
 
@@ -311,7 +313,7 @@ The deploy workflows inject these from Infisical at runtime through [`infisical-
 
 | Secret                   | Staging value                           | Production value                |
 | ------------------------ | --------------------------------------- | ------------------------------- |
-| `SUPABASE_ACCESS_TOKEN`  | Account-level token (same for both)     | (same)                          |
+| `SUPABASE_ACCESS_TOKEN`  | Read-only token, `frapp-staging` only   | Read-only token, `frapp-prod` only |
 | `SUPABASE_PROJECT_REF`   | Staging project ref                     | Production project ref          |
 | `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL                 | _(none — production deploys by commit through the Render API, never a hook)_ |
 | `API_HEALTHCHECK_URL`    | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |

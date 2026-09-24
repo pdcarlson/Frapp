@@ -6,6 +6,7 @@ import {
   getEnvironment,
   loadEnvironments,
   parseEnvironments,
+  supabaseAccessTokenFor,
 } from "../lib/environments.mjs";
 
 const VALID = JSON.stringify({
@@ -126,4 +127,19 @@ test("an injected reader is honoured even after the real config is cached", () =
 
   // And the injected read must not poison the cache for real callers.
   assert.equal(loadEnvironments().staging.supabaseProjectRef, "hnoyzpidbmizhbqaiity");
+});
+
+test("each environment's Supabase token wins over the shared fallback (#2583)", () => {
+  // Each Infisical environment's token reads only its own project, so a job
+  // reading both keeps them apart; the unsuffixed name is only a fallback.
+  const env = {
+    SUPABASE_ACCESS_TOKEN: "shared",
+    SUPABASE_ACCESS_TOKEN_STAGING: "staging-only",
+  };
+  assert.equal(supabaseAccessTokenFor("staging", env), "staging-only");
+  assert.equal(supabaseAccessTokenFor("production", env), "shared");
+  assert.equal(supabaseAccessTokenFor("production", { SUPABASE_ACCESS_TOKEN_PRODUCTION: "p" }), "p");
+  // An empty per-environment value falls back rather than reading as a token.
+  assert.equal(supabaseAccessTokenFor("staging", { SUPABASE_ACCESS_TOKEN_STAGING: "", SUPABASE_ACCESS_TOKEN: "x" }), "x");
+  assert.equal(supabaseAccessTokenFor("staging", {}), "");
 });

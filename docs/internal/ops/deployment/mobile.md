@@ -63,8 +63,8 @@ eas build --profile development --platform ios
 > `SENTRY_AUTH_TOKEN` ([#2415](https://github.com/pdcarlson/Frapp/issues/2415), owner's
 > `env:list` 2026-09-18), so a `preview` build has no `EXPO_PUBLIC_SUPABASE_URL` /
 > `_ANON_KEY` and `getSupabaseClient()` returns `null` — it installs and then reports
-> sign-in unavailable. Nothing fails at build time, because the fences in
-> `apps/mobile/app.config.js` all return early unless the profile is `production`. Run
+> sign-in unavailable. Nothing fails at build time: outside `production`, the key fences
+> in `apps/mobile/app.config.js` check a value only when one is set. Run
 > § 6.3 for `preview` first, or you will pay for a build you cannot sign into.
 
 ```bash
@@ -93,8 +93,9 @@ for ENV in preview production; do
   eas env:set --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_SUPABASE_URL --value "https://<ref for this env>.supabase.co"
   # The project's PUBLISHABLE key (`sb_publishable_…`), not the legacy JWT anon key:
-  # a production build refuses anything else (#2526), and every profile refuses a
-  # secret key. Name kept for history; see ENV_REFERENCE.md § apps/mobile (Expo — EAS).
+  # a production build refuses anything else (#2526), and every EAS build refuses a
+  # value that isn't a client key. Name kept for history; see ENV_REFERENCE.md
+  # § apps/mobile (Expo — EAS).
   eas env:set --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "<sb_publishable_… key for this env>"
   # STOP before the production limb of this one. The App Store listing

@@ -847,14 +847,10 @@ jobs:
       contents: write
       pull-requests: read
       issues: read
-    secrets:
-      # The called job names the `automation` environment, and GitHub hands it
-      # that environment's RELEASE_GITHUB_TOKEN in preference to this one. This
-      # pass-through only matters while the PAT is still a repository secret,
-      # before the owner's #2583 move. Empty falls back to GITHUB_TOKEN inside
-      # release.yml. A user PAT is what actually creates refs/tags when the
-      # live SHA's workflow tree differs from main (run 34254679932).
-      RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}
+    # No `secrets:` pass-through. The called job names the `automation`
+    # environment and reads RELEASE_GITHUB_TOKEN from it; this job can name no
+    # environment, and no repository copy exists (#2518), so a pass-through
+    # could only ever be empty (#2630).
     with:
       sha: ${{ needs.deploy.outputs.sha }}
       bump: ${{ inputs.bump }}
