@@ -240,9 +240,11 @@ with the next candidate.
 
 - Live claim: leave it alone.
 - A `routine-state` or `incident` issue is never reclaimed or stale-flagged, because it is never
-  work, whatever claim or linked PR it carries. Change nothing on it: name it in your run report so
-  the owner can decide what its `in-progress` means (the label may be his). A dead `Batch:` claim
-  that lists one can't be taken over all-or-nothing (below), so report that batch the same way.
+  work, whatever claim or linked PR it carries. Change nothing on it and name it in your run report;
+  every run keeps naming it until the owner decides what its `in-progress` means (the label may be
+  his). If an open PR says `Fixes #N` for it, say that merging the PR closes a live alert by hand. A
+  dead `Batch:` claim that lists one can't be taken over all-or-nothing (below): report the batch
+  and its other members, which stay `in-progress` until the owner releases them.
 - Expired lease, no linked PR in any state but closed-unmerged, and no branch pushed within `LEASE`
   (`git ls-remote --heads origin`; a push counts as a heartbeat): reclaimable. It enters §0.3 at the
   top and must still clear §0.2 conditions 3, 4, and 5, so a dead session's claim can't launder a

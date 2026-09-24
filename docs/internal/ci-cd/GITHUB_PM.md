@@ -37,7 +37,7 @@ GitHub Issues (canonical: planning, status, Triage intake)
 - **All issues are opened on GitHub with the `triage` label.** Never in Linear (retired), never in
   a scratch file. Two carve-outs, neither of them work:
   - **`routine-state`** infrastructure issues (e.g. the "PR Follow-ups — Human Action List"
-    tracking issue) carry `routine-state` instead, and `/next` and the routines skip them entirely.
+    tracking issue) carry `routine-state` instead, and `/next` and the routines skip them as work.
   - **`incident`** issues are the watchdogs' live alerts (`scripts/ci/lib/alert-issue.mjs`), filed
     by CI and assigned to the owner. `/next` never claims one, in any mode, because it closes itself
     when the fault is fixed. What agents may do with one:
