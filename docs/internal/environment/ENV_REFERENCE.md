@@ -433,7 +433,8 @@ is unavailable in that state and the sign-in screen says so.
 >
 > **2026-09-24 (#2526):** an EAS production build also refuses an
 > `EXPO_PUBLIC_SUPABASE_ANON_KEY` that isn't exactly the publishable key
-> (`sb_publishable_…`, with no whitespace around it; Expo inlines the value verbatim).
+> (`sb_publishable_…`, with nothing around it, not even whitespace or quotes; Expo inlines
+> the value verbatim).
 > Supabase supports the legacy JWT `anon` key only until the end of 2026, and a store
 > binary keeps the key it was built with until its owner updates from the store. Set
 > the `frapp-prod` publishable key (Supabase → Project Settings → API Keys) on the EAS
@@ -444,11 +445,13 @@ is unavailable in that state and the sign-in screen says so.
 > a `sb_secret_…` key, or a JWT whose role isn't `anon` (`service_role`, or a user's
 > access token), fails config evaluation everywhere, because every `EXPO_PUBLIC_*` value
 > ships inside the bundle. On every EAS profile, a set value must also be one of the two
-> client keys (the publishable key or the legacy anon JWT) with no whitespace around it,
+> client keys (the publishable key or the legacy anon JWT) with nothing around it,
 > which refuses the legacy JWT secret or an access token pasted from the wrong field,
 > since the binary goes to testers or the store. An unset key still builds on `preview`
-> and `development`. A local `expo start` or CI prebuild, with no EAS profile, keeps only
-> the secret-key check, so placeholder values still run.
+> and `development`. A run with no EAS profile keeps only the secret-key check: a local
+> `expo start` or CI prebuild, where placeholder values still run, and also `eas update`,
+> whose bundle is published over the air, which is why no update may be published before
+> its pipeline sets a profile ([`spec/environments/README.md` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas)).
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of

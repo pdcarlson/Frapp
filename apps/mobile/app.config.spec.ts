@@ -660,6 +660,8 @@ describe("assertProductionSupabasePublishableKey (#2526)", () => {
   it.each([
     ["a trailing newline", `${PUBLISHABLE_KEY_FIXTURE}\n`],
     ["a leading space", ` ${PUBLISHABLE_KEY_FIXTURE}`],
+    ["a trailing quote", `${PUBLISHABLE_KEY_FIXTURE}"`],
+    ["a zero-width space", `${PUBLISHABLE_KEY_FIXTURE}\u200b`],
   ])("refuses a publishable key with %s", (_label, supabaseAnonKey) => {
     const {
       assertProductionSupabasePublishableKey,
@@ -763,6 +765,14 @@ describe("assertEasSupabaseClientKey (#2526)", () => {
     ["a publishable key with a trailing newline", `${PUBLISHABLE_KEY_FIXTURE}\n`],
     ["an anon JWT with a leading space", ` ${LEGACY_ANON_JWT_FIXTURE}`],
     ["only whitespace", "   "],
+    // Nor anything else a paste leaves around a key, which trim() can't see.
+    ["an anon JWT in quotes", `"${LEGACY_ANON_JWT_FIXTURE}"`],
+    ["an anon JWT behind a zero-width space", `\u200b${LEGACY_ANON_JWT_FIXTURE}`],
+    ["a publishable key with a trailing quote", `${PUBLISHABLE_KEY_FIXTURE}"`],
+    [
+      "anon claims between segments that aren't a JWT",
+      `junk.${LEGACY_ANON_JWT_FIXTURE.split(".")[1]}.junk`,
+    ],
   ])("refuses %s on every EAS profile", (_label, supabaseAnonKey) => {
     const {
       applyMobileConfig,
@@ -859,12 +869,8 @@ describe("expo-updates, installed dormant (#2526)", () => {
   });
 
   // Keyed to `expo.version`, which is only safe because every build whose
-  // native code changes gets a new version: `spec/environments/README.md`
-  // § Mobile (EAS) owns that rule and why `fingerprint` was rejected. In
-  // short, the fingerprint hashes the resolved config, which carries per-build
-  // values (`extra.gitSha` from EAS_BUILD_GIT_COMMIT_HASH, the contents of
-  // google-services.json), so an update published anywhere but the build
-  // worker would never match a shipped binary.
+  // native code changes gets a new version. `spec/environments/README.md`
+  // § Mobile (EAS) owns that rule and why `fingerprint` was rejected.
   it("keys the runtime version to the app version", () => {
     expect(appJson.expo.runtimeVersion).toEqual({ policy: "appVersion" });
   });

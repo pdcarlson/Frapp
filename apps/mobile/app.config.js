@@ -50,8 +50,8 @@
 // end of 2026", and a store binary outlives that: every install keeps the key
 // it was built with until its owner updates from the store, so a legacy key
 // would go dead in the field. Expo inlines the value verbatim and
-// `lib/supabase.ts` doesn't trim it, so a pasted trailing newline would ship
-// too. The variable keeps its `ANON_KEY` name because EAS and every doc already
+// `lib/supabase.ts` doesn't trim it, so the whole value must be the key: a
+// pasted newline, quote or zero-width space would ship too. The variable keeps its `ANON_KEY` name because EAS and every doc already
 // use it; renaming it is a separate change.
 //
 // And the config refuses a **secret** key on every profile, and whenever it is
@@ -61,11 +61,12 @@
 // an installable binary anyone can unpack.
 //
 // Every EAS build, whatever its profile, also allows only a client key once the
-// Supabase key is set: the publishable key or an anon JWT, with no whitespace
-// around it. Its binary goes to testers or the store, and a value pasted from
+// Supabase key is set: the publishable key or an anon JWT, with nothing around
+// it. Its binary goes to testers or the store, and a value pasted from
 // the wrong field (the legacy JWT secret, an access token) has no shape the
 // secret check could refuse. Unset still builds (nothing is inlined), and a run
-// with no EAS profile keeps only the secret check, so local placeholders work.
+// with no EAS profile keeps only the secret check, so local placeholders work;
+// `eas update` is such a run too (spec/environments/README.md § Mobile (EAS)).
 //
 // Every EAS **production** build also refuses when `EXPO_PUBLIC_ASK_ENABLED`
 // switches Ask on (#2259). Ask answers from a synthetic corpus
@@ -228,11 +229,16 @@ function assertProductionSupabasePublic({
 }
 
 const SUPABASE_PUBLISHABLE_KEY_PREFIX = "sb_publishable_";
+// The whole value, so nothing a paste leaves around a key (whitespace, quotes,
+// a zero-width space) passes: Expo inlines the string verbatim and
+// `lib/supabase.ts` doesn't trim it.
+const SUPABASE_PUBLISHABLE_KEY_PATTERN = /^sb_publishable_[A-Za-z0-9_-]+$/;
+const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 const PRODUCTION_SUPABASE_KEY_ERROR = [
   "EAS production builds require EXPO_PUBLIC_SUPABASE_ANON_KEY to be the",
   `frapp-prod publishable key (${SUPABASE_PUBLISHABLE_KEY_PREFIX}…), not the legacy`,
-  "JWT anon key, and with no whitespace around it. Supabase supports legacy keys only until the",
+  "JWT anon key, with nothing around it. Supabase supports legacy keys only until the",
   "end of 2026, and a store binary keeps its key until it is updated from the",
   "store. Copy it from Supabase → frapp-prod → Project Settings → API Keys and",
   "set it on the EAS production environment (eas env:list --environment production).",
@@ -244,9 +250,8 @@ function assertProductionSupabasePublishableKey({
   supabaseAnonKey,
 } = {}) {
   if (easBuildProfile !== "production") return;
-  const raw = String(supabaseAnonKey || "");
   // Untrimmed on purpose: the binary gets exactly this string.
-  if (raw === raw.trim() && raw.startsWith(SUPABASE_PUBLISHABLE_KEY_PREFIX)) {
+  if (SUPABASE_PUBLISHABLE_KEY_PATTERN.test(String(supabaseAnonKey || ""))) {
     return;
   }
   throw new Error(PRODUCTION_SUPABASE_KEY_ERROR);
@@ -292,7 +297,7 @@ function assertNoSupabaseSecretKey({ supabaseAnonKey } = {}) {
 
 const EAS_SUPABASE_CLIENT_KEY_ERROR = [
   "EAS builds require a set EXPO_PUBLIC_SUPABASE_ANON_KEY to be a key a client",
-  "may carry, with no whitespace around it: the project's publishable key",
+  "may carry, with nothing around it: the project's publishable key",
   "(sb_publishable_…) or its legacy anon JWT. An EAS build inlines the value",
   "verbatim into a binary that goes to testers or the store, and a value",
   "pasted from the wrong field (the legacy JWT secret, an access token) has no",
@@ -311,14 +316,36 @@ const EAS_SUPABASE_CLIENT_KEY_ERROR = [
 function assertEasSupabaseClientKey({ easBuildProfile, supabaseAnonKey } = {}) {
   if (!easBuildProfile) return;
   const raw = String(supabaseAnonKey || "");
-  if (!raw) return;
   // Untrimmed, as in production: the binary gets exactly this string.
-  if (raw === raw.trim()) {
-    if (raw.startsWith(SUPABASE_PUBLISHABLE_KEY_PREFIX)) return;
-    const claims = jwtClaims(raw);
-    if (claims && claims.role === "anon") return;
-  }
+  if (!raw || isSupabaseClientKey(raw)) return;
   throw new Error(EAS_SUPABASE_CLIENT_KEY_ERROR);
+}
+
+/** A JSON object decoded from one base64url segment, or undefined. */
+function decodeJwtSegment(segment) {
+  try {
+    const value = JSON.parse(Buffer.from(segment, "base64url").toString("utf8"));
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The publishable key, or a well-formed JWT (a header naming its `alg`, and
+ * claims) whose role is `anon`, as the whole string. Stricter than
+ * `jwtClaims`, which reads only the claims so the denylist can find a secret
+ * however it was pasted.
+ */
+function isSupabaseClientKey(raw) {
+  if (SUPABASE_PUBLISHABLE_KEY_PATTERN.test(raw)) return true;
+  if (!JWT_PATTERN.test(raw)) return false;
+  const [header, claims] = raw.split(".").map(decodeJwtSegment);
+  return Boolean(
+    header && typeof header.alg === "string" && claims && claims.role === "anon",
+  );
 }
 
 function productionAppOrigin(url) {
