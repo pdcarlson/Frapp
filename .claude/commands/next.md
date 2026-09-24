@@ -149,11 +149,12 @@ requesting the `title`, `labels`, `updated_at`, and `body` fields and paging as 
 reads the title; if it's missing, that condition silently passes everything. An issue is a candidate
 when all hold:
 
-1. No state label (`triage`, `in-progress`, `in-review`) and no `routine-state` label. `triage`
-   items need promotion and a priority first (who may promote them:
+1. No state label (`triage`, `in-progress`, `in-review`), and no `routine-state` or `incident`
+   label. `triage` items need promotion and a priority first (who may promote them:
    [`GITHUB_PM.md` → Ownership boundary](../../docs/internal/ci-cd/GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly));
    `in-review` means a PR is waiting on a human; `routine-state` issues are routine infrastructure,
-   never work.
+   never work; `incident` issues are live watchdog alerts that close themselves once the fault is
+   fixed, so the work is the fault, filed as its own issue.
 2. No live claim comment (`issue_read get_comments`; skip the read for issues not updated within
    `LEASE`).
 3. No open blocker surviving §1.1 — a `Blocked by #N` body line whose #N is still open.

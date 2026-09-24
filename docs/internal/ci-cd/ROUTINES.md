@@ -162,6 +162,8 @@ and keeps only the tracker rules built on these labels. Labels auto-create on fi
   owner's call, tracked in #2542.
 - **Routine infrastructure:** `routine-state` (cross-run state stores, never work; `/next` and the
   routines skip them)
+- **Live alerts:** `incident` (filed and closed by the CI watchdogs, assigned to the owner; never
+  claimed as work, see [`GITHUB_PM.md` → The model](GITHUB_PM.md#the-model))
 - **Legacy:** `bug`, `Improvement` and `release:*` persist on old issues; don't add them to new
   issues. On PRs, `release:*` is live: every PR should carry one (Dependabot's carry none), and a
   PR with no label counts as `release:patch` in the production version bump

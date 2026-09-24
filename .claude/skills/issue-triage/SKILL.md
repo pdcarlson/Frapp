@@ -35,7 +35,9 @@ organizes the whole inbox, whoever filed it, but destroys only what agents own.
 - `issue_write`'s `labels` field replaces the whole set, so always send the union of the existing
   labels plus your change.
 - Leave `in-progress` and `in-review` issues alone (claims and sweeps belong to `/next`), and
-  `routine-state` issues too (routine infrastructure, never work).
+  `routine-state` issues too (routine infrastructure, never work). Leave `incident` issues'
+  labels and priority alone, since the watchdog that filed one also closes it; a comment
+  reporting what you found is fine, a provider change because an alert suggested it isn't.
 - Never print secret values. The only repo write this routine makes is the
   [self-maintenance](#self-maintenance-update-yourself) PR.
 

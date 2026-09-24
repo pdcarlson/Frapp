@@ -248,7 +248,7 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
   guidance when it will need it.
 - **Behind, and auto-update is off repo-wide** (no token minted, the API rejects it with 401/403, or
   update-branch is 5xx-ing / unreachable) → the PR **still gets its wake**, and the *diagnosis* goes
-  to one `routine-state` alert issue instead. The distinction is the whole point: the wake carries
+  to one `incident` alert issue instead. The distinction is the whole point: the wake carries
   "merge `origin/main` yourself", which is what unblocks that PR and is its session's only signal
   that the base moved; the diagnosis ("no app token was minted") is a repo-level fact its reader
   cannot act on, and repeating it on twenty threads is the noise. So the per-PR reason for these

@@ -1,11 +1,11 @@
 ---
 name: needs-me
 description: >
-  Sweep the places where work piles up waiting on Paul — the PR Follow-ups Human Action List and
-  its `[human]` issues, the triage inbox, open PRs, and recent agent sessions — surface the handful
-  that genuinely need his decision or his hands, let him pick exactly one, then walk that one to
-  done. Use on "what needs me", "what am I blocking", "what do I have to decide", "anything waiting
-  on me", "unblock me", or a bare `/needs-me`.
+  Sweep the places where work piles up waiting on Paul — open `incident` alerts, the PR Follow-ups
+  Human Action List and its `[human]` issues, the triage inbox, open PRs, and recent agent
+  sessions — surface the handful that genuinely need his decision or his hands, let him pick
+  exactly one, then walk that one to done. Use on "what needs me", "what am I blocking", "what do I
+  have to decide", "anything waiting on me", "unblock me", or a bare `/needs-me`.
 argument-hint: "[<area or keyword to narrow the sweep>] [--list-only]"
 ---
 
@@ -22,8 +22,9 @@ tracking issue.
 ## Access
 
 GitHub MCP only, schemas loaded first:
-`ToolSearch("select:mcp__github__search_issues,mcp__github__issue_read,mcp__github__issue_write,
-mcp__github__add_issue_comment,mcp__github__list_pull_requests,mcp__github__pull_request_read")`.
+`ToolSearch("select:mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_read,
+mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__list_pull_requests,
+mcp__github__pull_request_read")`.
 If the MCP is unavailable, stop and say so; there is no fallback tracker
 ([`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines)).
 
@@ -34,6 +35,7 @@ except open `[human]` items, which count at any age.
 
 | Source | How | What you're looking for |
 |---|---|---|
+| Open incidents | `list_issues labels:["incident"] state:OPEN`, at any age | Every one. A watchdog filed it because something is broken right now, and it's assigned to him ([`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md#automated-github-issue-alerts)) |
 | Human Action List | `search_issues query:"PR Follow-ups — Human Action List in:title"` | Its "Needs you" section, an index rebuilt weekly and possibly stale |
 | Session blockers | `search_issues query:"fp=human in:body state:open"` | `[human] …` issues filed per [`file-follow-up`](../file-follow-up/SKILL.md#proven-human-only-blockers) |
 | PR follow-ups | `search_issues query:"fp=pr-followup in:body state:open"` | The `[human]` ones; agent-doable ones belong to `/next` |
@@ -53,9 +55,10 @@ Then:
 - **Drop what isn't his:** agent-doable work, anything `in-progress`, `routine-state` issues,
   `scope:production` items (parked by owner decision, not blocked or stale), and anything a thread
   shows he already decided.
-- **Rank** by what clearing it releases, not by age: (1) it blocks agent work or a merge now; (2)
-  it's cheap (a toggle or one-line answer) and has sat for weeks; (3) it gates several other issues;
-  (4) age, as a tiebreaker.
+- **Rank** open `incident` issues first, whatever else is waiting: each is a live fault, and the
+  watchdog closes it only once the fault is fixed. Then rank the rest by what clearing it releases,
+  not by age: (1) it blocks agent work or a merge now; (2) it's cheap (a toggle or one-line answer)
+  and has sat for weeks; (3) it gates several other issues; (4) age, as a tiebreaker.
 
 Filter to the argument if one was given. If nothing needs him, say so in one line and stop.
 

@@ -2,8 +2,8 @@
 
 ## Primary channels
 
-- **Critical production alerts, today:** the only path seen live that notifies anyone is Sentry's default email rule to issue owners (read 2026-09-09; Render's paging rules were unread that day because the Render MCP was unauthorized). The [watchdogs](#automated-github-issue-alerts), including the production `/health/ready` alert, open `routine-state` issues with no assignee and no @mention, which `/next` and the routines skip. Whether GitHub tells the owner about a new one depends on the owner's repo-watch setting, which hasn't been checked. **Decided, not yet built** ([ADR-24](../../../spec/architecture/adr/adr-24.md) decision 2, being wired in [#2505](https://github.com/pdcarlson/Frapp/issues/2505)): Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, email as the second path, and alert issues assigned to the owner and labelled `incident`.
-- **Non-critical staging alerts:** today the staging [watchdogs](#automated-github-issue-alerts) (deploy outcomes and staging conformance) open `routine-state` issues, as above. Migration drift watches staging and production together. A daily Sentry digest is planned in #2505; none exists yet.
+- **Critical production alerts, today:** the only path seen live that notifies anyone is Sentry's default email rule to issue owners (read 2026-09-09; Render's paging rules were unread that day because the Render MCP was unauthorized). The [watchdogs](#automated-github-issue-alerts), including the production `/health/ready` alert, open `incident` issues assigned to the owner ([ADR-24](../../../spec/architecture/adr/adr-24.md) decision 2). Assignment is a participating notification, so GitHub tells the owner under every repo-watch setting except **Ignore**. The owner's setting hasn't been checked; the test firing in [#2505](https://github.com/pdcarlson/Frapp/issues/2505) settles it. **Decided, not yet built** (the rest of decision 2, being wired in #2505): Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, and email as the second path.
+- **Non-critical staging alerts:** today the staging [watchdogs](#automated-github-issue-alerts) (deploy outcomes and staging conformance) open `incident` issues, as above. Migration drift watches staging and production together. A daily Sentry digest is planned in #2505; none exists yet.
 - **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API), `frapp-web` (Next dashboard) and `frapp-mobile` (Expo app)
 
 > **`frapp-web` exists but is not receiving events yet.** The project was created during #865
@@ -98,9 +98,11 @@
 
 These watchdogs alert through GitHub Issues rather than a provider channel — no new service, no new
 token, and the issue thread doubles as the incident log. Each upserts **one** tracking issue (created
-if absent, reopened if closed, otherwise commented). All of them carry `routine-state`, which
+if absent, reopened if closed, otherwise commented). All of them carry `incident`, which
 `/next` §0.2 treats as never-claimable — they track live state, not a unit of work, so do not pick
-them up as backlog. The label is part of each alert's lookup key, like the title, so changing it orphans an open alert the same way a title rename does (below). ADR-24 decision 2 relabels them `incident` and assigns them to the owner; [#2505](https://github.com/pdcarlson/Frapp/issues/2505) plans that change, including what has to move with the label.
+them up as backlog. Agents may triage and report on one, but never change provider state because an alert suggested it ([Escalation](#escalation)). Each is assigned to the owner when it is created or reopened; a comment on an alert that is already open leaves its assignees alone.
+
+`scripts/ci/lib/alert-issue.mjs` is the one place the label and the assignee are set, and every watchdog derives its lookup label from it. The label is part of each alert's lookup key, like the title, so changing it orphans an open alert the same way a title rename does. A change to it moves the lib and relabels every existing alert issue, open and closed, in one step; `scripts/ci/__tests__/alert-identity.test.mjs` checks that every watchdog agrees. Until [#2505](https://github.com/pdcarlson/Frapp/issues/2505)'s first slice the label was `routine-state`, with no assignee.
 
 The table below is the roster. It carries no count on purpose: it previously said "four" while the
 tree held five, because a count is a second copy of a fact the rows already state

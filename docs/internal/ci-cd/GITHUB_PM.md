@@ -35,9 +35,14 @@ GitHub Issues (canonical: planning, status, Triage intake)
 - **GitHub Issues is canonical** for what to work on and its status. There is **no fallback
   tracker** — if the GitHub MCP is down, `/next` and the routines stop rather than guessing.
 - **All issues are opened on GitHub with the `triage` label.** Never in Linear (retired), never in
-  a scratch file. Sole carve-out: **`routine-state`** infrastructure issues (e.g. the
-  "PR Follow-ups — Human Action List" tracking issue) are not work and carry `routine-state`
-  instead — `/next` and the routines skip them entirely.
+  a scratch file. Two carve-outs, neither of them work:
+  - **`routine-state`** infrastructure issues (e.g. the "PR Follow-ups — Human Action List"
+    tracking issue) carry `routine-state` instead, and `/next` and the routines skip them entirely.
+  - **`incident`** issues are the watchdogs' live alerts (`scripts/ci/lib/alert-issue.mjs`), filed
+    by CI and assigned to the owner. `/next` never claims one, because it closes itself when the
+    fault is fixed. Agents may triage and report on an incident, but never change provider state
+    because an alert suggested it (#1564's suggested fix was wrong). Issue-triage leaves their
+    labels alone, and `/needs-me` lists the open ones first.
 - **Work is closed by the PR that does it** (`Fixes #N` in the PR **body** — native GitHub
   close-on-merge, one line per issue the PR closes; GitHub ignores closing keywords in the PR
   *title*, so the body is load-bearing). GitHub matches the closing keywords (`close` /
