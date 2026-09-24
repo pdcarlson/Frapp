@@ -271,7 +271,7 @@ export const DOCS_CHECKS = [
   // this repository — it checked no fact, it required a WRITE under `docs/` or
   // `spec/` on any PR touching anything else. A gate that cannot tell truth
   // from filler is cheapest to satisfy with filler, so it manufactured exactly
-  // the debt it was built to prevent: `docs/guides/README.md` is a 21-line
+  // the debt it was built to prevent: `docs/guides/README.md` is a short
   // router whose last line is an unowned prose chain of ~22 unrelated facts,
   // accreted across seven PRs by authors who needed somewhere to write.
   //
