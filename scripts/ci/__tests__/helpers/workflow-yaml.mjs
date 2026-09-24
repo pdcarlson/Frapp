@@ -307,10 +307,21 @@ const WORKFLOW_KEYS = ["name", "run-name", "on", "permissions", "env", "defaults
  * included; reading on would take a continuation for a key. So the only lines
  * that end `jobs:` are a workflow's own top-level keys, an explicit key (`?`)
  * and a document marker.
+ *
+ * Jobs must sit at column 2, and the readers below expect their keys at 4.
+ * A workflow nested any other way THROWS: read at the wrong columns it had no
+ * jobs and no steps, and every guard looping over them passed.
  */
 function jobRanges(lines, jobsIndex) {
   const starts = [];
   let jobsEnd = lines.length;
+  const firstChild = lines[jobsIndex + 1];
+  if (firstChild !== undefined && indentOf(firstChild) > 0 && indentOf(firstChild) !== 2) {
+    throw new Error(
+      `workflow-yaml: \`jobs:\` is nested ${indentOf(firstChild)} columns deep (${firstChild.trim()}); ` +
+        "this reader expects job ids at column 2 and their keys at 4.",
+    );
+  }
   const topLevel = new RegExp(String.raw`^(?:(?:${WORKFLOW_KEYS.map(named).join("|")})\s*:|\?(?:\s|$)|---|\.\.\.)`);
   for (let i = jobsIndex + 1; i < lines.length; i += 1) {
     if (indentOf(lines[i]) === 0) {

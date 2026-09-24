@@ -320,6 +320,38 @@ describe("verifyRenderDeploy", () => {
     assert.match(result.message, /build_in_progress/);
   });
 
+  it("names the last failed read when it times out between failed reads", async () => {
+    // Reads failing on and off, never enough in a row to stop early: the
+    // timeout message is all the alert's run log has, and without this line
+    // it would point at a stuck deploy rather than an unreadable Render.
+    let call = 0;
+    const fetchImpl = async () => {
+      call += 1;
+      return call % 2 === 0 ? httpError(502) : okJson([renderDeploy({ status: "build_in_progress" })]);
+    };
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({
+      ...defaults,
+      clock,
+      fetchImpl,
+      overallTimeoutMs: TEST_POLL_INTERVAL_MS * 6,
+    });
+
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /Timed out/);
+    assert.match(result.message, /Last Render read failed: .*HTTP 502/);
+
+    // And a clean timeout says nothing about reads.
+    const clean = await verifyRenderDeploy({
+      ...defaults,
+      clock: makeFakeClock().clock,
+      fetchImpl: async () => okJson([renderDeploy({ status: "build_in_progress" })]),
+      overallTimeoutMs: TEST_POLL_INTERVAL_MS * 3,
+    });
+    assert.doesNotMatch(clean.message, /Last Render read failed/);
+  });
+
   it("exposes sane default constants", () => {
     assert.ok(RENDER_NO_DEPLOY_GRACE_MS > 0);
     assert.ok(RENDER_POLL_INTERVAL_MS > 0);
@@ -343,11 +375,32 @@ describe("writeOutcomeOutput", () => {
     }
   });
 
-  it("is a no-op outside Actions", () => {
+  // The default reads `GITHUB_OUTPUT`, which Actions sets for every step,
+  // this suite's own CI run included. So both cases set it explicitly: a test
+  // that left it to the environment passed locally and failed on the runner.
+  function withGithubOutput(value, fn) {
+    const saved = process.env.GITHUB_OUTPUT;
+    if (value === undefined) delete process.env.GITHUB_OUTPUT;
+    else process.env.GITHUB_OUTPUT = value;
+    try {
+      fn();
+    } finally {
+      if (saved === undefined) delete process.env.GITHUB_OUTPUT;
+      else process.env.GITHUB_OUTPUT = saved;
+    }
+  }
+
+  it("is a no-op outside Actions, where GITHUB_OUTPUT is unset or empty", () => {
     const { writes, append } = recorder();
-    writeOutcomeOutput("success", { outputPath: undefined, append });
-    writeOutcomeOutput("success", { outputPath: "", append });
+    withGithubOutput(undefined, () => writeOutcomeOutput("success", { append }));
+    withGithubOutput("", () => writeOutcomeOutput("success", { append }));
     assert.deepEqual(writes, []);
+  });
+
+  it("writes to GITHUB_OUTPUT by default", () => {
+    const { writes, append } = recorder();
+    withGithubOutput("/tmp/runner-output", () => writeOutcomeOutput("neutral", { append }));
+    assert.deepEqual(writes, [{ path: "/tmp/runner-output", text: "outcome=neutral\n" }]);
   });
 
   it("refuses to publish a status outside the closed set, even outside Actions", () => {

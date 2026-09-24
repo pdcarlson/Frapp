@@ -21,6 +21,7 @@ import {
   findAlertIssues,
   raiseAlert,
   outcomeCopy,
+  readBranchTip,
   readJobOutputs,
   readJobResults,
   resolveAlert,
@@ -87,13 +88,18 @@ const CLOSED_ALERT = {
  * Minimal GitHub API stub. `routes` maps "METHOD /path-prefix" to a response
  * body (or a function of the request). Records every call for assertions.
  */
-function makeFetchStub({ issues = [], failCreate = false } = {}) {
+function makeFetchStub({ issues = [], failCreate = false, tip } = {}) {
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
     const method = options.method ?? "GET";
     const path = url.replace("https://api.github.com", "");
     const body = options.body ? JSON.parse(options.body) : null;
     calls.push({ method, path, body });
+
+    // `tip`: the commit the branch points at, for the observer's tip check.
+    if (method === "GET" && path.startsWith("/repos/o/r/git/ref/heads/") && tip !== undefined) {
+      return jsonResponse(200, { object: { sha: tip } });
+    }
 
     if (method === "GET" && path.startsWith("/repos/o/r/issues?")) {
       return jsonResponse(200, issues);
@@ -737,6 +743,8 @@ test("runDeployAlert files the Vercel alert under the Vercel title", async () =>
 
   assert.equal(result.outcome, "failed");
   assert.equal(result.alert.action, "created");
+  // A deploy workflow's verdict is about what it just deployed: no tip check.
+  assert.ok(!calls.some((call) => call.path.includes("/git/ref/")), "a deploy config read the branch tip");
 
   const created = calls.find((call) => call.method === "POST" && call.path === "/repos/o/r/issues");
   assert.equal(created.body.title, DEPLOY_VERCEL_STAGING_CONFIG.alertTitle);
@@ -1396,7 +1404,7 @@ test("the deploy configs' copy is unchanged by the observer split", () => {
 
 test("a failed verify files the Verify deployments alert, as an error, with no gate rows", async () => {
   const config = VERIFY_DEPLOYMENTS_CONFIG;
-  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
+  const { fetchImpl, calls } = makeFetchStub({ issues: [], tip: "4de96af" });
   const { logger, lines } = capturingLogger();
   let summary = "";
 
@@ -1432,7 +1440,7 @@ test("a failed verify files the Verify deployments alert, as an error, with no g
 test("a confirmed live deploy closes only the Verify deployments alert", async () => {
   const config = VERIFY_DEPLOYMENTS_CONFIG;
   const deployApiAlert = { number: 900, state: "open", title: ALERT_ISSUE_TITLE };
-  const { fetchImpl, calls } = makeFetchStub({ issues: [VERIFY_OPEN_ALERT, deployApiAlert] });
+  const { fetchImpl, calls } = makeFetchStub({ issues: [VERIFY_OPEN_ALERT, deployApiAlert], tip: "4de96af" });
   let summary = "";
 
   const result = await runDeployAlert({
@@ -1498,6 +1506,77 @@ test("a superseded deploy leaves an open alert exactly as it was", async () => {
   // A recognised verdict: no wiring warning, and no error annotation.
   assert.ok(!lines.some((line) => line.startsWith("::warning::")));
   assert.ok(!lines.some((line) => line.startsWith("::error::")));
+});
+
+// An observer's verdict is about one commit. A re-run of an old failed run, or
+// a slow run finishing after a newer one, must not reopen the alert while the
+// newest deploy is live, or close it while the newest deploy is failing.
+test("a verdict on a commit main has moved past neither raises nor closes the alert", async () => {
+  for (const [needs, issues] of [
+    [verifyNeeds("failure", "failure"), []],
+    [verifyNeeds("success", "success"), [VERIFY_OPEN_ALERT]],
+  ]) {
+    const { fetchImpl, calls } = makeFetchStub({ issues, tip: "b0b0b0b" });
+    const { logger, lines } = capturingLogger();
+    const result = await runDeployAlert({
+      token: "t",
+      repo: "o/r",
+      needs,
+      runUrl: "https://example.test/run/1",
+      headBranch: "main",
+      headSha: "4de96af",
+      fetchImpl,
+      writeSummary: () => {},
+      logger,
+      config: VERIFY_DEPLOYMENTS_CONFIG,
+    });
+    assert.deepEqual(result.alert, { action: "superseded", tip: "b0b0b0b" });
+    assert.deepEqual(
+      calls.map((c) => `${c.method} ${c.path}`),
+      ["GET /repos/o/r/git/ref/heads/main"],
+      "a superseded verdict reads the tip and nothing else",
+    );
+    assert.ok(lines.some((line) => /^::notice::.*moved on to b0b0b0b/.test(line)));
+  }
+});
+
+test("an unreadable branch tip lets the verdict stand, with a warning", async () => {
+  // A failed read must not drop an alert: the stub has no tip route, so the
+  // read gets a 404.
+  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
+  const { logger, lines } = capturingLogger();
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: verifyNeeds("failure", "failure"),
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger,
+    config: VERIFY_DEPLOYMENTS_CONFIG,
+  });
+  assert.equal(result.alert.action, "created");
+  assert.ok(calls.some((c) => c.method === "POST" && c.path === "/repos/o/r/issues"));
+  assert.ok(lines.some((line) => /^::warning::.*could not read the tip of `main`/.test(line)));
+});
+
+test("readBranchTip reads the ref, and returns null for no branch or a bad reply", async () => {
+  const { fetchImpl, calls } = makeFetchStub({ tip: "c0ffee1" });
+  assert.equal(await readBranchTip({ token: "t", repo: "o/r", branch: "main", fetchImpl }), "c0ffee1");
+  assert.equal(calls[0].path, "/repos/o/r/git/ref/heads/main");
+  assert.equal(await readBranchTip({ token: "t", repo: "o/r", branch: "", fetchImpl }), null);
+  const { fetchImpl: noRoute } = makeFetchStub({});
+  assert.equal(await readBranchTip({ token: "t", repo: "o/r", branch: "main", fetchImpl: noRoute }), null);
+});
+
+test("the deploy configs speak for the branch they deployed and never read its tip", async () => {
+  // A deploy workflow deploys what it verifies, so its verdict is current.
+  for (const config of [DEPLOY_API_CONFIG, DEPLOY_VERCEL_STAGING_CONFIG]) {
+    assert.ok(!config.verdictAtBranchTipOnly, config.name);
+  }
+  assert.equal(VERIFY_DEPLOYMENTS_CONFIG.verdictAtBranchTipOnly, true);
 });
 
 test("a green verify with no published verdict warns and still cannot close the alert", async () => {

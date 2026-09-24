@@ -209,6 +209,7 @@ globalThis.fetch = async (input, init = {}) => {
       : json(r.status, { message: "stub " + r.status });
   }
   const path = url.replace("https://api.github.com", "");
+  if (method === "GET" && path.includes("/git/ref/heads/")) return json(200, { object: { sha: process.env.STUB_TIP } });
   if (method === "GET" && path.startsWith("/repos/")) return json(200, JSON.parse(process.env.STUB_ISSUES ?? "[]"));
   if (method === "POST" && /\\/issues$/.test(path)) return json(201, { number: 4343 });
   if (method === "POST" && /\\/comments$/.test(path)) return json(201, { id: 1 });
@@ -256,7 +257,9 @@ describe("rehearsal: verify-render-api then deploy-outcome, as Actions would run
    * Runs the verifier step, derives `needs` from what it wrote and how it
    * exited (through the job's own `outputs:` mapping), then the report step.
    */
-  function rehearse({ render, issues = [] }) {
+  // `tip`: the commit `main` points at when deploy-outcome runs; by default
+  // the one this run verified.
+  function rehearse({ render, issues = [], tip = SHA }) {
     run += 1;
     const verifierLog = join(dir, `verifier-${run}.jsonl`);
     const alertLog = join(dir, `alert-${run}.jsonl`);
@@ -292,6 +295,7 @@ describe("rehearsal: verify-render-api then deploy-outcome, as Actions would run
       GITHUB_STEP_SUMMARY: summaryFile,
       STUB_FETCH_LOG: alertLog,
       STUB_ISSUES: JSON.stringify(issues),
+      STUB_TIP: tip,
     });
 
     return {
@@ -361,6 +365,23 @@ describe("rehearsal: verify-render-api then deploy-outcome, as Actions would run
     assert.ok(close, `alert not closed; requests: ${JSON.stringify(out.githubRequests)}`);
     assert.equal(close.body.state, "closed");
     assert.ok(!out.alert.stdout.includes("::warning::"), out.alert.stdout);
+  });
+
+  it("a failed deploy of a commit main has moved past files nothing", () => {
+    // A re-run of an old failed run, or a slow run finishing after a newer
+    // one: the verdict is true of its commit, and says nothing about main now.
+    const out = rehearse({
+      render: [{ status: 200, deploys: [renderDeploy("build_failed")] }],
+      tip: "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0",
+    });
+    assert.deepEqual(out.written, { outcome: "failure" });
+    assert.equal(out.alert.status, 0, out.alert.stderr);
+    assert.deepEqual(
+      out.githubRequests.map((r) => r.method),
+      ["GET"],
+      `only the tip read; requests: ${JSON.stringify(out.githubRequests)}`,
+    );
+    assert.match(out.alert.stdout, /::notice::.*moved on to b0b0b0b/);
   });
 
   it("a superseded deploy publishes `neutral` and leaves the open alert alone", () => {

@@ -24,18 +24,13 @@ name: Verify deployments
 # to ignore a red `main`.
 #
 # Removed rather than `if: false`-ed, so the workflow describes what it does.
-# The SCRIPTS both jobs called are deliberately KEPT — nothing else references
-# them today:
-#   scripts/ci/verify-vercel-deploy.mjs
-#   scripts/ci/ensure-vercel-staging-alias.mjs
-# They are not broken; they have nothing to observe. #1578 (CI/CD stage 7)
-# builds the CI-driven `vercel build` + `vercel deploy --prebuilt` path, which
-# creates deployments again — at which point verification is wanted, and
-# `ensure-vercel-staging-alias.mjs` in particular mitigates a REAL Vercel
-# behaviour that returns with it (the staging hostname lagging a READY
-# deployment). Deleting them would mean rewriting both from scratch for #1578.
-# Re-add the jobs there, keyed on the deployment id that workflow created rather
-# than on the pushed SHA.
+# The scripts both jobs called were kept, and both are in use again since #1578
+# built the CI-driven Vercel deploys: `deploy-vercel-staging.yml` runs
+# `scripts/ci/ensure-vercel-staging-alias.mjs`, and `deploy-vercel.mjs` imports
+# `scripts/ci/verify-vercel-deploy.mjs`. #1578 did not re-add the jobs here: that
+# workflow verifies each deployment by the id it created, which an observer
+# keyed on the pushed SHA can't do as well (docs/internal/ci-cd/AGENT_INFRA.md,
+# the Deploy verification row).
 #
 # Semantics live in:
 #   scripts/ci/verify-render-deploy.mjs
@@ -106,7 +101,7 @@ jobs:
   #                                   the newer commit gives the verdict
   deploy-outcome:
     needs: [verify-render-api]
-    # `!cancelled()`, not `always()`, and deliberately unlike the two deploy
+    # `!cancelled()`, not `always()`, and deliberately unlike the deploy
     # workflows. Cancelling a DEPLOY leaves nothing deployed, so there a cancel
     # is a failure. Cancelling this OBSERVER stops the watching, not the Render
     # deploy, so it is no verdict at all: filing a P1 "not confirmed live" for

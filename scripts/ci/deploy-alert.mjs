@@ -74,6 +74,7 @@ import {
   resolveAlert as resolveAlertIssue,
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { ghRequest } from "./lib/github.mjs";
 
 // ── Alert issue identity ────────────────────────────────────────────────────
 // Title is the primary key: it is looked up by exact match, so it must stay
@@ -213,10 +214,18 @@ export const DEPLOY_VERCEL_STAGING_CONFIG = {
  *
  * P1, like the Deploy API alert: same service, and a staging build failure is
  * the same Dockerfile a production deploy of that commit would build.
+ *
+ * `verdictAtBranchTipOnly`: a deploy workflow's run speaks for the branch it
+ * just deployed, but an observer's verdict is about one fixed commit, which
+ * can be old by the time it lands. A re-run of an old failed run, or a slow
+ * run finishing after a newer one, would otherwise reopen the alert while the
+ * newest deploy is live. So only the run for the branch's current tip raises
+ * or closes it (`runDeployAlert`).
  */
 export const VERIFY_DEPLOYMENTS_CONFIG = {
   name: "verify-deployments",
   kind: "observer",
+  verdictAtBranchTipOnly: true,
   workflowLabel: "Verify deployments",
   workflowFile: ".github/workflows/verify-deployments.yml",
   gateJob: null,
@@ -264,7 +273,7 @@ export const ALERT_CONFIGS = {
  * NOT CONFIRMED live, which also covers a verifier that could not read the
  * provider, so the copy says that and points at the run log for which.
  *
- * `deploy` holds the wording both deploy configs have always used, verbatim.
+ * `deploy` holds the wording the deploy configs have always used, verbatim.
  */
 export const OUTCOME_COPY = {
   deploy: {
@@ -874,6 +883,23 @@ export async function runDeployAlert({
     );
   }
 
+  if (config.verdictAtBranchTipOnly && (outcome === "failed" || outcome === "deployed")) {
+    const tip = await readBranchTip({ token, repo, branch: headBranch, fetchImpl });
+    if (tip === null) {
+      // Proceed on the verdict: a failed read must not drop an alert.
+      logger.log?.(
+        `::warning::[deploy-alert] could not read the tip of \`${headBranch}\`, so this run's verdict ` +
+          "stands even if a newer commit has landed",
+      );
+    } else if (tip !== headSha) {
+      logger.log?.(
+        `::notice::[deploy-alert] \`${headBranch}\` has moved on to ${tip.slice(0, 7)}, so this verdict on ` +
+          `${String(headSha).slice(0, 7)} neither raises nor closes the alert; the run for the newest commit does.`,
+      );
+      return { outcome, failed, deployed, alert: { action: "superseded", tip } };
+    }
+  }
+
   if (outcome === "failed") {
     const alert = await raiseAlert({
       token,
@@ -932,6 +958,22 @@ export async function runDeployAlert({
   // whether deploys work, and closing on a no-op would silence a live outage.
   logger.log?.("[deploy-alert] nothing deployed; alert issue left as-is");
   return { outcome, failed, deployed, alert: { action: "none" } };
+}
+
+/**
+ * The commit `branch` points at now, or null when it can't be read (an empty
+ * branch name counts, since there is nothing to compare against).
+ */
+export async function readBranchTip({ token, repo, branch, fetchImpl }) {
+  if (!branch) return null;
+  const { ok, data } = await ghRequest({
+    token,
+    fetchImpl,
+    path: `/repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`,
+    retry: true,
+  });
+  const sha = ok ? data?.object?.sha : null;
+  return typeof sha === "string" && sha ? sha : null;
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────

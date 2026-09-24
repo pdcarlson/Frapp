@@ -269,6 +269,8 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
         // 4-space style: dash at 4, keys at 6.
         "  four:\n    steps:\n    - name: F\n      if: always()\n      env:\n        GITHUB_SHA: o\n" +
         "      run: |\n        if : ; then echo; fi\n" +
+        // 4-space style, leading with `- if:` (#2629 names this form too).
+        "    - if: inputs.dry_run_only\n      name: G\n      env:\n        B: '2'\n" +
         // Extra spaces: dash at 6, keys at 10, a first-key env then a sibling mapping.
         "  wide:\n    steps:\n      -   env:\n            A: '1'\n          with:\n            ref: x\n" +
         "      -   if: success()\n          name: W\n" +
@@ -280,6 +282,10 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     assert.equal(four.name, "F");
     assert.equal(four.if, "always()", "a run-body `if :` must not be read as the condition");
     assert.equal(four.env.get("GITHUB_SHA"), "o");
+    const fourIf = steps.filter((s) => s.jobId === "four")[1];
+    assert.equal(fourIf.if, "inputs.dry_run_only");
+    assert.equal(fourIf.name, "G");
+    assert.equal(fourIf.stepEnv.get("B"), "2");
     const wide = steps.filter((s) => s.jobId === "wide");
     assert.deepEqual(Object.fromEntries(wide[0].stepEnv), { A: "1" }, "`with:` is a sibling, not env");
     assert.equal(wide[1].if, "success()");
@@ -617,6 +623,19 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
       workflowJobs(explicit).map((job) => job.jobId),
       ["a"],
     );
+  });
+
+  it("refuses jobs nested at any column but 2, rather than read none", () => {
+    // Read at the wrong columns, this had no jobs and no steps, so a guard that
+    // loops over every workflow's steps skipped the file without a word.
+    const nested = join(dir, "nested-4.yml");
+    writeFileSync(
+      nested,
+      "name: X\non: push\njobs:\n    deploy:\n        runs-on: ubuntu-latest\n        steps:\n" +
+        "            - name: Deploy\n              run: node scripts/ci/deploy-vercel.mjs\n",
+    );
+    assert.throws(() => workflowSteps(nested), /nested 4 columns deep/);
+    assert.throws(() => workflowJobs(nested), /nested 4 columns deep/);
   });
 
   it("refuses a value continued at column 0 inside jobs:, however it looks", () => {
