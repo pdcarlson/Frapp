@@ -13,6 +13,7 @@ import {
   probeReady,
   runWatchdog,
 } from "../production-uptime.mjs";
+import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
 
@@ -197,7 +198,8 @@ describe("runWatchdog", () => {
     assert.equal(out.alert.action, "created");
     const created = JSON.parse(calls.find((c) => c.method === "POST").body);
     assert.equal(created.title, ALERT_ISSUE_TITLE);
-    assert.ok(created.labels.includes("routine-state"));
+    assert.ok(created.labels.includes(ALERT_LOOKUP_LABEL));
+    assert.deepEqual(created.assignees, [ALERT_ASSIGNEE]);
     assert.ok(created.labels.includes("P1"));
     assert.match(created.body, /\/health\/ready/);
     assert.doesNotMatch(created.body, /Fixes #/);

@@ -113,7 +113,9 @@ obligates the whole batch (§0.7).
   coherence test; if the set doesn't honestly batch, say so and ask rather than silently splitting
   it or shipping an incoherent PR. `triage` issues are never claimable in any mode (except the
   record-keeping claim above), and §0.2 condition 5 applies here too: a human naming a `[human]`
-  item doesn't make it agent-doable. If you lose the race on a named issue, report who holds it and
+  item doesn't make it agent-doable. Nor does naming a `routine-state` or `incident` issue
+  (condition 1's clause for them): say so, and for an `incident` offer to file the underlying fault
+  as its own issue. If you lose the race on a named issue, report who holds it and
   don't fall back to ranking; the human picked issues, not a category. Losing one member of a named
   batch doesn't abandon the rest: proceed with what you won (subject to §0.5's coherence escape)
   and report the loss.
@@ -149,11 +151,12 @@ requesting the `title`, `labels`, `updated_at`, and `body` fields and paging as 
 reads the title; if it's missing, that condition silently passes everything. An issue is a candidate
 when all hold:
 
-1. No state label (`triage`, `in-progress`, `in-review`) and no `routine-state` label. `triage`
-   items need promotion and a priority first (who may promote them:
+1. No state label (`triage`, `in-progress`, `in-review`), and no `routine-state` or `incident`
+   label. `triage` items need promotion and a priority first (who may promote them:
    [`GITHUB_PM.md` → Ownership boundary](../../docs/internal/ci-cd/GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly));
    `in-review` means a PR is waiting on a human; `routine-state` issues are routine infrastructure,
-   never work.
+   never work; `incident` issues are live watchdog alerts that close themselves once the fault is
+   fixed, so the work is the fault, filed as its own issue.
 2. No live claim comment (`issue_read get_comments`; skip the read for issues not updated within
    `LEASE`).
 3. No open blocker surviving §1.1 — a `Blocked by #N` body line whose #N is still open.
@@ -236,6 +239,13 @@ with the next candidate.
 `in-review` is never swept.
 
 - Live claim: leave it alone.
+- A `routine-state` or `incident` issue is never reclaimed or stale-flagged, because it is never
+  work, whatever claim or linked PR it carries. Change nothing on it and name it in your run report;
+  every run does so while it carries `in-progress`, and the owner removing the label is what stops
+  it. If an open PR says `Fixes #N` for it, also say that merging the PR closes it by hand: a live
+  alert for an `incident`, a routine's state store for `routine-state`. A dead `Batch:` claim that
+  lists one can't be taken over all-or-nothing (below): report the batch and its other members,
+  which stay `in-progress` until the owner releases them.
 - Expired lease, no linked PR in any state but closed-unmerged, and no branch pushed within `LEASE`
   (`git ls-remote --heads origin`; a push counts as a heartbeat): reclaimable. It enters §0.3 at the
   top and must still clear §0.2 conditions 3, 4, and 5, so a dead session's claim can't launder a

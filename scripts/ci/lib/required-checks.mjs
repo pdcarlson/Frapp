@@ -323,7 +323,7 @@ export const DRIFT_CHECKS = [
   // Detection is NOT lost, which is what makes the demotion safe rather than a
   // retreat: `.github/workflows/check-migration-drift.yml` runs the same
   // comparison daily across staging AND production and files a P1
-  // `routine-state` issue that closes itself on recovery. The job also keeps
+  // `incident` issue that closes itself on recovery. The job also keeps
   // running and reporting on every PR — it stays visible, it just stops
   // blocking. What replaces it as a GATE is `migration-order` below: the same
   // failure class, scoped so a PR can actually answer it.

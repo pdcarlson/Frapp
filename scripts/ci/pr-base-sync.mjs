@@ -50,6 +50,7 @@
 import { ghRequest } from "./lib/github.mjs";
 import { clearMarkedComments, upsertWakeComment } from "./ci-wake.mjs";
 import {
+  ALERT_LOOKUP_LABEL,
   findAlertIssuesDetailed,
   raiseAlert as raiseAlertIssue,
   resolveAlert as resolveAlertIssue,
@@ -63,15 +64,14 @@ export const BASE_SYNC_MARKER = "<!-- frapp-base-sync -->";
 
 // ── Alert issue identity ────────────────────────────────────────────────────
 // Same contract as deploy-alert.mjs: the title is the primary key, looked up by
-// exact match, so it must stay stable across releases. `routine-state` marks it
-// as routine infrastructure — `/next` §0.2 treats that label as never-claimable,
-// which keeps agent sessions from picking the alert up as backlog work.
+// exact match, so it must stay stable across releases. The lookup label comes
+// from lib/alert-issue.mjs, which owns it for every watchdog.
 //
 // P2, not P1: the sweep degrades rather than breaks. PRs still merge; they just
 // need a human or an agent to press Update branch, which is where this repo was
 // before the sweep existed.
 export const ALERT_ISSUE_TITLE = "PR base sync cannot auto-update PR branches";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P2"];
 
 const SETUP_STEPS = [
@@ -480,10 +480,22 @@ async function reconcileTokenAlert({
     proven: updated,
     fetchImpl,
   });
+  // Say "proven" only when this sweep updated a branch; otherwise the token
+  // merely hit no failure, which is what `proven` tells the closing comment.
+  const why = updated ? "auto-update proven working" : "auto-update hit no failure";
   if (recovery.action === "closed") {
     logger.log?.(
-      `[pr-base-sync] auto-update proven working — closed alert issue(s) ` +
+      `[pr-base-sync] ${why} — closed alert issue(s) ` +
         recovery.closed.map((n) => `#${n}`).join(", "),
+    );
+  } else if (recovery.action === "failed") {
+    // A close that left an alert open, including a duplicate beside one that
+    // did close. Surfaced so the one still open shows in the run.
+    const closed = recovery.closed.length
+      ? ` (closed ${recovery.closed.map((n) => `#${n}`).join(", ")})`
+      : "";
+    logger.log?.(
+      `::warning::[pr-base-sync] ${why}, but an alert issue could not be closed${closed}`,
     );
   }
 }
