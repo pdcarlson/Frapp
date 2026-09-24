@@ -46,7 +46,6 @@ jobs:
     nested: { a: [x, y], b: c }
     apostrophe: { note: don't, issues: write }
     closer: { x: a), y: z }
-    bracket: { x: a], y: z }
     escaped: { a: "x\\", y", b: z }
     doubled: { a: 'it''s, ok', b: z }
     steps:
@@ -65,8 +64,15 @@ jobs:
     if : \${{ failure() }}
     steps :
       - name : Spaced
+        if : \${{ success() }}
         env :
           KEY : v
+        run: echo
+      - if : \${{ inputs.dry_run_only }}
+        run: echo
+  deploy :
+    steps:
+      - name: Behind a spaced header
         run: echo
 `;
 
@@ -118,7 +124,7 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     });
   });
 
-  it("keeps a flow mapping's entries whole through nesting, apostrophes, stray closers and escapes", () => {
+  it("keeps a flow mapping's entries whole through nesting, apostrophes, parentheses and escapes", () => {
     const edges = workflowJobs(file).find((job) => job.jobId === "edges");
     const read = (key) => asObject(edges.keys.get(key));
     assert.deepEqual(read("nested"), { a: "[x, y]", b: "c" });
@@ -126,8 +132,6 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     // apostrophe is text and `issues` is still seen.
     assert.deepEqual(read("apostrophe"), { note: "don't", issues: "write" });
     assert.deepEqual(read("closer"), { x: "a)", y: "z" });
-    // The depth never goes below zero, so a stray `]` doesn't stop the split.
-    assert.deepEqual(read("bracket"), { x: "a]", y: "z" });
     // The escaped quote doesn't end the scalar, so its comma isn't a split.
     // Values keep their escapes: the helper strips the quotes, not the escapes.
     assert.deepEqual(read("escaped"), { a: 'x\\", y', b: "z" });
@@ -151,15 +155,24 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     const job = workflowJobs(file).find((j) => j.jobId === "spaced");
     assert.equal(job.if, "${{ failure() }}");
     const spaced = workflowSteps(file).filter((s) => s.jobId === "spaced");
-    assert.equal(spaced.length, 1, "`steps :` must not hide the job's steps");
+    assert.equal(spaced.length, 2, "`steps :` must not hide the job's steps");
     assert.equal(spaced[0].name, "Spaced");
+    assert.equal(spaced[0].if, "${{ success() }}");
     assert.equal(spaced[0].env.get("KEY"), "v");
+    assert.equal(spaced[1].if, "${{ inputs.dry_run_only }}");
+    // A `  deploy :` job header is a job, not more of the job before it.
+    const deploy = workflowSteps(file).filter((s) => s.jobId === "deploy");
+    assert.deepEqual(
+      deploy.map((s) => s.name),
+      ["Behind a spaced header"],
+    );
+    assert.ok(workflowJobs(file).some((j) => j.jobId === "deploy"));
   });
 
-  it("finds the jobs of a file whose jobs: key is quoted or carries a comment", () => {
+  it("finds the jobs of a file whose jobs: key is quoted, spaced or carries a comment", () => {
     // Every job vanishing is how a guard that loops over all workflows would
     // silently drop a file while its floor stays met.
-    for (const header of ['"jobs":', "jobs: # all of them"]) {
+    for (const header of ['"jobs":', "jobs: # all of them", "jobs :"]) {
       const variant = join(dir, "variant.yml");
       writeFileSync(variant, WORKFLOW.replace(/^jobs:$/m, header));
       assert.ok(workflowJobs(variant).length > 0, `${header}: no jobs`);

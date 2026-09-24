@@ -141,7 +141,7 @@ function findEnvHeader(lines, from, to, indent) {
  * two tolerances for the same reasons.
  */
 function isJobHeader(line) {
-  return /^ {2}["']?[A-Za-z_][\w-]*["']?:(\s*#.*)?\s*$/.test(line);
+  return /^ {2}["']?[A-Za-z_][\w-]*["']?\s*:(\s*#.*)?\s*$/.test(line);
 }
 
 /** The job id from a header line, with quotes and any inline comment removed. */
@@ -149,7 +149,7 @@ function jobIdFrom(line) {
   return line
     .replace(/\s*#.*$/, "")
     .trim()
-    .replace(/:$/, "")
+    .replace(/\s*:$/, "")
     .replace(/^["'](.*)["']$/, "$1");
 }
 
@@ -354,9 +354,7 @@ function opensMapping(raw) {
  * entries). Like YAML, a quote opens a quoted scalar only where a scalar
  * starts (after `{`, `[`, `,` or `:`), so the apostrophe in `note: don't` is
  * plain text; `\"` inside double quotes and `''` inside single quotes are
- * escapes, not the end. A stray `]` or `}` in a plain value never drives the
- * depth below zero, so it can't stop the splitting for the rest of the body.
- * Parentheses aren't flow indicators and aren't tracked.
+ * escapes, not the end. Parentheses aren't flow indicators and aren't tracked.
  */
 function splitFlow(body) {
   const parts = [];
@@ -381,7 +379,7 @@ function splitFlow(body) {
     } else if (ch === "{" || ch === "[") {
       depth += 1;
     } else if (ch === "}" || ch === "]") {
-      depth = Math.max(0, depth - 1);
+      depth -= 1;
     } else if (ch === "," && depth === 0) {
       parts.push(body.slice(start, i));
       start = i + 1;
