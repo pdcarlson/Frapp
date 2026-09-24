@@ -130,6 +130,8 @@ steps below need production access that agent sessions do not have
 values first, keeping the password out of shell history, in a terminal you close
 when you are done: `setup-demo.sh` and the capture scripts read the same two
 variables, so a later local run in that shell would pick up the production login.
+From Git Bash on Windows, prefix each `npx infisical run` below with `MSYS_NO_PATHCONV=1`
+([why](../internal/environment/LOCAL_DEV.md#git-bash-on-windows)).
 
 ```bash
 export DEMO_EMAIL=<the App Review login's email>
