@@ -15,14 +15,16 @@
 // WHAT IT CHECKS.
 // - A walk of apps/mobile's non-spec sources (app.json included): no whole
 //   word "Signet" and no signet- download filename anywhere but the comment
-//   a line starts with (see copyMatches). A design-system note that names
-//   Signet goes on its own comment line, not after code. The walk is what
-//   makes the pinned sites below not the whole story: a new screen that says
-//   Signet fails here without anyone listing it.
+//   a line starts with (the note above LINE_BREAK says why, and names the one
+//   blind spot). A design-system note that names Signet goes on its own
+//   comment line, not after code. The walk is what makes the pinned sites
+//   below not the whole story: a new screen that says Signet fails here
+//   without anyone listing it.
 // - The two `Settings → <name> → Location` recovery paths (the study screen
-//   and the location primer) name `expo.name` from app.json, because iOS
-//   Settings lists the app under that name (ADR-25 step 2), and no other
-//   `Settings → X` path in code names anything else.
+//   and the location primer) are in code and name `expo.name` from app.json,
+//   because iOS Settings lists the app under that name (ADR-25 step 2). Any
+//   other `Settings → X` in code names it too, unless a `//` or `/*` comes
+//   before it on its line: that reads as a note, and a URL reads the same.
 // - The sign-in wordmark and tagline, the calendar ICS PRODID and filename
 //   fallback, and the spec fixtures for the payment copy.
 //
@@ -162,25 +164,66 @@ export function signetDownloadNameProblems(files) {
   return copyMatches(files, SIGNET_DOWNLOAD_NAME).map(({ rel, line }) => `${rel}:${line}`);
 }
 
+/** The line holding `index` in `source`: its number (from 1), text and `index`'s column. */
+function lineAt(source, index) {
+  let number = 1;
+  let start = 0;
+  for (const brk of source.matchAll(new RegExp(LINE_BREAK.source, "g"))) {
+    if (brk.index >= index) break;
+    number += 1;
+    start = brk.index + brk[0].length;
+  }
+  const rest = source.slice(start);
+  const end = rest.search(LINE_BREAK);
+  return { number, text: end === -1 ? rest : rest.slice(0, end), column: index - start };
+}
+
 /**
- * The pinned recovery paths must be in code, and every other `Settings → X`
- * in code must name `expoName` too. A path after a `//` or `/*` on its line
- * is a note, not a recovery path, so it is skipped rather than judged. That
- * lets a wrong name hide behind a URL earlier on its line; a wrong name that
- * is Signet is still caught by the Signet walk.
+ * Settings paths, matched over the whole source so a path Prettier wraps
+ * after an arrow still counts, and judged on the line where it starts. A
+ * path is a note, not a recovery path, when it sits in its line's leading
+ * comment or after a `//` or `/*` on that line.
+ */
+function settingsPaths(file, pattern) {
+  return [...file.source.matchAll(pattern)].map((match) => {
+    const { number, text, column } = lineAt(file.source, match.index);
+    const note = inLeadingComment(text, column) || /\/\/|\/\*/.test(text.slice(0, column));
+    return { rel: file.rel, line: number, name: match[1], note, index: match.index };
+  });
+}
+
+/** Whether a `/*` before `index` is still open, read naively (a `"image/*"` counts too). */
+function blockOpenBefore(source, index) {
+  return source.lastIndexOf("/*", index) > source.lastIndexOf("*/", index);
+}
+
+/**
+ * Each pinned site must keep its recovery path in code, and every other
+ * `Settings → X` in code must name `expoName` too. A pinned path counts only
+ * when it is certainly code: not a note, and not below a `/*` left open, so
+ * a comment can't stand in for a deleted path (a `/*` inside a string above
+ * it makes the pin report, which fails closed). A note is skipped by the
+ * name check rather than judged, which lets a wrong name hide behind a URL
+ * earlier on its line; a wrong name that is Signet is still caught by the
+ * Signet walk.
  */
 export function settingsPathProblems(files, expoName) {
   const problems = [];
-  const path = `Settings → ${expoName} → Location`;
+  const pin = new RegExp(`Settings\\s+→\\s+${literal(expoName)}\\s+→\\s+Location`, "g");
   for (const site of SETTINGS_SITES) {
     const file = files.find((candidate) => candidate.rel === site);
-    const kept = file && copyMatches([file], new RegExp(literal(path), "g")).length > 0;
-    if (!kept) problems.push(`${site} must keep its ${path} path`);
+    const kept =
+      file &&
+      settingsPaths(file, pin).some(
+        (path) => !path.note && !blockOpenBefore(file.source, path.index),
+      );
+    if (!kept) problems.push(`${site} must keep its Settings → ${expoName} → Location path`);
   }
-  for (const { rel, line, text, match } of copyMatches(files, /Settings → ([A-Za-z][\w-]*)/g)) {
-    if (/\/\/|\/\*/.test(text.slice(0, match.index))) continue;
-    if (match[1] !== expoName) {
-      problems.push(`${rel}:${line} names Settings → ${match[1]}, not ${expoName}`);
+  for (const file of files) {
+    for (const path of settingsPaths(file, /Settings\s+→\s+([A-Za-z][\w-]*)/g)) {
+      if (!path.note && path.name !== expoName) {
+        problems.push(`${path.rel}:${path.line} names Settings → ${path.name}, not ${expoName}`);
+      }
     }
   }
   return problems;
@@ -344,15 +387,19 @@ test("a comment earlier on the same line exempts nothing after it closes", () =>
   assert.deepEqual(signetCopyProblems(files), ["a.tsx:2", "b.tsx:1", "c.ts:1", "d.tsx:2"]);
 });
 
-test("a lone carriage return ends a comment line, as it does in JavaScript", () => {
-  assert.deepEqual(
-    signetCopyProblems([{ rel: "a.tsx", source: "// design note\r<Text>Welcome to Signet</Text>\n" }]),
-    ["a.tsx:2"],
-  );
-  assert.deepEqual(
-    signetDownloadNameProblems([{ rel: "a.ts", source: '// note const f = "signet-events.ics";\n' }]),
-    ["a.ts:2"],
-  );
+test("every JavaScript line break ends a comment line", () => {
+  for (const brk of ["\r", "\r\n", "\u2028", "\u2029"]) {
+    assert.deepEqual(
+      signetCopyProblems([{ rel: "a.tsx", source: `// design note${brk}<Text>Welcome to Signet</Text>\n` }]),
+      ["a.tsx:2"],
+      JSON.stringify(brk),
+    );
+    assert.deepEqual(
+      signetDownloadNameProblems([{ rel: "a.ts", source: `// note${brk}const f = "signet-events.ics";\n` }]),
+      ["a.ts:2"],
+      JSON.stringify(brk),
+    );
+  }
 });
 
 test("a design-system note names Signet only in the comment its line starts with", () => {
@@ -397,10 +444,16 @@ test("both pinned Settings paths must be in code and name expo.name", () => {
   assert.deepEqual(settingsPathProblems([recovery(STUDY)], "Frapp"), [
     `${PRIMER} must keep its Settings → Frapp → Location path`,
   ]);
-  const commented = { rel: PRIMER, source: "// Settings → Frapp → Location\n" };
-  assert.deepEqual(settingsPathProblems([recovery(STUDY), commented], "Frapp"), [
-    `${PRIMER} must keep its Settings → Frapp → Location path`,
-  ]);
+  const lost = `${PRIMER} must keep its Settings → Frapp → Location path`;
+  for (const source of [
+    "// Settings → Frapp → Location\n",
+    "Linking.openSettings(); // was: Settings → Frapp → Location\n<Text>Turn location on.</Text>\n",
+    "/*\n  old copy: Settings → Frapp → Location\n*/\n<Text>Turn location on.</Text>\n",
+  ]) {
+    assert.deepEqual(settingsPathProblems([recovery(STUDY), { rel: PRIMER, source }], "Frapp"), [lost]);
+  }
+  const wrapped = { rel: PRIMER, source: "<Text>\n  Turn it on in Settings →\n  Frapp → Location.\n</Text>\n" };
+  assert.deepEqual(settingsPathProblems([recovery(STUDY), wrapped], "Frapp"), []);
   assert.deepEqual(settingsPathProblems([recovery(STUDY), recovery(PRIMER, "Signet")], "Frapp"), [
     `${PRIMER} must keep its Settings → Frapp → Location path`,
     `${PRIMER}:1 names Settings → Signet, not Frapp`,
@@ -414,8 +467,14 @@ test("any other Settings path in code must name expo.name; a note after // is sk
     { rel: "a.tsx", source: "<Text>Allow it in Settings → Frap → Photos.</Text>\n" },
     { rel: "b.tsx", source: "Linking.openSettings(); // iOS: Settings → Privacy → Location\n" },
     { rel: "c.ts", source: " * Undo lives in Settings → Blocked members.\n" },
+    { rel: "d.tsx", source: "<Text>\n  Turn it on in Settings →\n  Frap → Location.\n</Text>\n" },
+    // Skipped, as documented: the `//` of a URL reads as a note's.
+    { rel: "e.tsx", source: "<Text>See https://frapp.live, then Settings → Frap → Photos.</Text>\n" },
   ];
-  assert.deepEqual(settingsPathProblems(files, "Frapp"), ["a.tsx:1 names Settings → Frap, not Frapp"]);
+  assert.deepEqual(settingsPathProblems(files, "Frapp"), [
+    "a.tsx:1 names Settings → Frap, not Frapp",
+    "d.tsx:2 names Settings → Frap, not Frapp",
+  ]);
 });
 
 test("renaming the binary without its Settings paths fails", () => {
