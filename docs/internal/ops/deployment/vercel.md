@@ -108,6 +108,13 @@ api.frapp.live           CNAME  <frapp-api-prod>.onrender.com
 api-staging.frapp.live   CNAME  <frapp-api-staging>.onrender.com
 ```
 
+The zone also carries records this list doesn't create. Any edit or DNS move (#2508) must keep them exactly:
+
+- **Mail:** `frapp.live MX 1 smtp.google.com` (read back 2026-09-24). It routes `@frapp.live` mail to the Google Workspace on this domain, where `team@frapp.live` (the published support address) is an alias of the one user, `pdcarlson@frapp.live`. Business Starter was added on 2026-09-24. Before that the domain had no Workspace licence, so no `@frapp.live` address had a mailbox. Drop this record and mail to those addresses stops arriving.
+- **Resend:** the `mail.` and `mail.staging.` sending records ([`ENV_REFERENCE.md` § Invite Email](../../environment/ENV_REFERENCE.md#invite-email-optional--api-only)).
+
+The registration itself was bought through Google and shows in Squarespace as a Google-resold domain. Its renewal is billed in Google Admin → Billing → Subscriptions → **Domain Registration**, not in Squarespace. `pdcarlson@frapp.live` is the only login to both consoles (#2527).
+
 ### Retired: `frapp-docs` and docs.frapp.live
 
 The monorepo **no longer contains** `apps/docs`. Developer documentation is markdown under `docs/guides/` in GitHub.
