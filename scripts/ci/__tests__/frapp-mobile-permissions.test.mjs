@@ -36,9 +36,9 @@
 // Settings → <expo.name> recovery paths are frapp-mobile-copy's: its walk
 // exempts a design-system note on its own comment line, which a file-wide
 // ban here would not.
-// app.json's permanent identifiers (slug, scheme, bundle id, package, EAS
-// project id) are not copy and not this lock's:
-// mobile-permanent-identifiers.test.mjs pins them. Do not run eas init.
+// app.json's permanent identifiers are not copy and not this lock's:
+// mobile-permanent-identifiers.test.mjs lists and pins them. Do not run
+// eas init.
 // Do not walk landing. Skip spec fixtures (frapp-mobile-copy pins the
 // payment ones).
 

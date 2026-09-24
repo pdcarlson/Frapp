@@ -11,36 +11,47 @@
 // tidy that renames one ships a binary that can't reach what the old ones
 // left behind, with nothing failing until a member taps a dead link.
 //
-// WHERE EACH ONE COMES FROM.
-// - ADR-25 names the bundle id `live.frapp.mobile`, the `frapp://` scheme,
-//   the Expo slug `frapp` and the Sentry org `frapp-live` as permanent.
-// - The Android package is the same `live.frapp.mobile`, which Play fixes on
-//   the first upload (#2526).
-// - The EAS project id became permanent when #2622 baked it into every binary
-//   through `updates.url` (`https://u.expo.dev/<id>`).
-// Renaming any of them strands shipped installs, so record the decision first
-// (an ADR-25 amendment, or a new ADR), then change this lock.
+// WHERE EACH ONE IS DECIDED. spec/ui/brand-identity.md § 1 (the naming rule
+// ADR-25 set) makes the `frapp://` scheme, the iOS bundle id and Android
+// package `live.frapp.mobile`, and the frapp.live domains permanent. ADR-25
+// adds the Expo slug `frapp` and the Sentry org `frapp-live`.
+// spec/environments/README.md § Mobile (EAS) says why the EAS project id is
+// permanent. Change the spec first, then this lock.
 //
 // WHAT IT CHECKS.
 // - `apps/mobile/app.json` carries each name above, and `updates.url` points
 //   at the pinned EAS project.
 // - `apps/mobile/app.config.js`, called the way Expo calls it (its default
-//   export, reading `process.env`), with no EAS profile, as a preview build,
-//   and as a production build on each platform: it leaves every one of them,
-//   and `expo.name`, exactly as app.json has them.
+//   export with `{ config }`, reading `process.env`), leaves every one of them,
+//   and `expo.name`, exactly as app.json has them. It runs once with no EAS
+//   profile (`expo start`, `eas update`), then for every `eas.json` build
+//   profile on each platform, with that profile's `env` block and the
+//   `EAS_BUILD*` values a cloud build sets. Variables that live only in the EAS
+//   dashboard never pass through the repo: the lock supplies the ones
+//   app.config.js requires (the Supabase URL and key, the Google services
+//   file) and can't see a rename keyed on any other.
 // - The `.ics` deep link: the calendar export still writes
 //   `frapp://event-details?id=…`, and the screen still declares the `id`
 //   param that URL carries.
+// - Every `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_APP_URL` in `eas.json`, on
+//   every profile, is an https frapp.live origin (development may use a
+//   loopback http origin).
 // - No hosting-platform hostname (Render, Vercel, Cloud Run: ADR-24's current
-//   and planned hosts), however it is spelled, in the non-spec sources of
-//   apps/mobile and of every workspace package it bundles, comments included.
+//   and planned hosts) in the non-spec sources of apps/mobile and of every
+//   workspace package it bundles, comments included. The scan is textual: it
+//   catches a hostname written out, templated (`${svc}.run.app`) or
+//   suffix-concatenated (`svc + ".onrender.com"`), and a platform domain held
+//   in a string literal of its own ("onrender.com"). A hostname split further
+//   than that (".onrender" + ".com") is beyond a text scan.
 //
-// WHAT OTHER LOCKS OWN. Not restated here, so each fact has one pin:
+// WHAT OTHER LOCKS OWN. Not restated here:
 // - `expo.name` is `Frapp`: frapp-mobile-copy.test.mjs. This lock checks only
 //   that app.config.js doesn't change it.
-// - The API origin each EAS profile bakes in: eas-production-profile.test.mjs
-//   pins `eas.json`, and `app.config.js` refuses a production build whose
-//   `EXPO_PUBLIC_API_URL` differs.
+// - The exact API origin production and preview bake in:
+//   eas-production-profile.test.mjs pins it, and `app.config.js` refuses a
+//   production build whose `EXPO_PUBLIC_API_URL` differs. This lock's eas.json
+//   rule is wider and weaker (any https frapp.live origin), so those two URLs
+//   are checked both ways.
 // - The rest of app.json's `updates` block: apps/mobile/app.config.spec.ts.
 // - `/event-details` resolves to a route file: apps/mobile/lib/routes.spec.ts.
 // - The magic-link callback (`frapp:///?`) needs `frapp://**` on both hosted
@@ -56,13 +67,14 @@
 // (`GET /v1/client-policy` on api.frapp.live, #2622), which is why the API
 // must stay on a name this repo owns.
 //
-// The assignment lines are pinned below, because a lock that reads its own
-// constants passes when the constant and app.json are renamed together.
+// The assignment lines and the walker are pinned below, because a lock that
+// reads its own constants passes when the constant and app.json are renamed
+// together, and a walk that quietly skips a directory passes everything in it.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,13 +99,18 @@ export const EAS_PROJECT_ID = "4ba05e35-7d91-4bb4-9597-be754127de95";
 
 const SENTRY_PLUGIN = "@sentry/react-native/expo";
 const WORKSPACE_SCOPE = "@repo/";
+const PLATFORMS = ["ios", "android"];
 
 /** ADR-24's hosts for the API and web, today and planned. */
 export const HOSTING_PLATFORM_DOMAINS = ["onrender.com", "vercel.app", "run.app"];
+/** The eas.json keys that address this repo's own services. */
+const OWN_SERVICE_URL_KEYS = ["EXPO_PUBLIC_API_URL", "EXPO_PUBLIC_APP_URL"];
+const OWN_DOMAIN = "frapp.live";
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /** apps/mobile has well over this many sources; fewer means the walk broke. */
 const MIN_MOBILE_SOURCES = 150;
-const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", ".turbo", "coverage", "ios", "android"]);
+const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", ".turbo", "coverage", "ios", "android", "__tests__"]);
 const SOURCE_EXT = /\.(?:json|js|mjs|cjs|ts|tsx)$/;
 const TEST_FILE = /\.(?:spec|test)\.[^.]+$/;
 
@@ -188,26 +205,62 @@ export function eventDetailsDeepLinkProblems(source) {
 }
 
 /**
- * A platform domain with a dot in front of it: a hostname under the platform,
- * whether its labels are written out, come from a template (`${svc}.run.app`)
- * or are concatenated on (`svc + ".onrender.com"`). The bare domain in prose
- * ("Cloud Run's run.app domain") has no dot in front and passes.
+ * Two shapes. A platform domain with a dot in front of it is a hostname under
+ * the platform, whether its labels are written out, templated or concatenated
+ * on. A platform domain that is a whole string literal ("onrender.com") is a
+ * hostname about to be assembled. The bare domain in prose ("Cloud Run's
+ * run.app domain", "Deployed on vercel.app") is neither, and passes.
  */
-function hostingPlatformPattern(domains = HOSTING_PLATFORM_DOMAINS) {
-  const alternatives = domains.map((domain) => domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  return new RegExp(`([a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.(?:${alternatives.join("|")}))\\b`, "gi");
+function hostingPlatformPatterns(domains = HOSTING_PLATFORM_DOMAINS) {
+  const alternatives = domains.map((domain) => domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  return [
+    new RegExp(`([a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.(?:${alternatives}))\\b`, "gi"),
+    new RegExp(`(["'\`]\\.?(?:${alternatives})["'\`])`, "gi"),
+  ];
 }
 
 /** `files` is `[{ rel, source }]`. */
 export function hostingPlatformProblems(files) {
-  const pattern = hostingPlatformPattern();
+  const patterns = hostingPlatformPatterns();
   const problems = [];
   for (const { rel, source } of files) {
     source.split("\n").forEach((line, index) => {
-      for (const match of line.matchAll(pattern)) {
-        problems.push(`${rel}:${index + 1}: ${match[1]}`);
+      for (const pattern of patterns) {
+        for (const match of line.matchAll(pattern)) {
+          problems.push(`${rel}:${index + 1}: ${match[1]}`);
+        }
       }
     });
+  }
+  return problems;
+}
+
+function isOwnHttpsOrigin(url) {
+  return url.protocol === "https:" && (url.hostname === OWN_DOMAIN || url.hostname.endsWith(`.${OWN_DOMAIN}`));
+}
+
+/** Every own-service URL in every eas.json profile is ours: https on frapp.live, or loopback on development. */
+export function easOwnServiceUrlProblems(eas) {
+  const problems = [];
+  for (const [profile, config] of Object.entries(eas?.build ?? {})) {
+    const env = config?.env;
+    if (env == null || typeof env !== "object") continue;
+    for (const key of OWN_SERVICE_URL_KEYS) {
+      if (!(key in env)) continue;
+      const value = env[key];
+      let url;
+      try {
+        url = new URL(String(value));
+      } catch {
+        problems.push(`build.${profile}.env.${key} is not a URL: ${describe(value)}`);
+        continue;
+      }
+      if (isOwnHttpsOrigin(url)) continue;
+      if (profile === "development" && url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)) {
+        continue;
+      }
+      problems.push(`build.${profile}.env.${key} must be an https ${OWN_DOMAIN} origin, not ${value}`);
+    }
   }
   return problems;
 }
@@ -237,6 +290,37 @@ export function bundledPackageDirs(mobilePackageJson, workspacePackages) {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * The environment each kind of build evaluates app.config.js with: no EAS
+ * profile, then every eas.json profile on each platform. A cloud build puts
+ * the profile's `env` block and its `EAS_BUILD*` values (the set
+ * @sentry/react-native's EAS hooks read) in `process.env`. `dashboard` adds
+ * what only the EAS dashboard holds.
+ */
+export function easBuildEnvs(eas, dashboard = () => ({})) {
+  const out = [{ kind: "no EAS profile", env: {} }];
+  for (const [profile, config] of Object.entries(eas?.build ?? {})) {
+    for (const platform of PLATFORMS) {
+      out.push({
+        kind: `${profile} ${platform}`,
+        env: {
+          EAS_BUILD: "true",
+          EAS_BUILD_ID: "00000000-0000-0000-0000-000000000001",
+          EAS_BUILD_PROFILE: profile,
+          EAS_BUILD_PLATFORM: platform,
+          EAS_BUILD_PROJECT_ID: EAS_PROJECT_ID,
+          EAS_BUILD_GIT_COMMIT_HASH: "0".repeat(40),
+          EAS_BUILD_USERNAME: "permanent-identifiers-lock",
+          EAS_BUILD_WORKINGDIR: "/build",
+          ...(config?.env ?? {}),
+          ...dashboard(profile, platform),
+        },
+      });
+    }
+  }
+  return out;
+}
+
 export function lockSelfProblems(source) {
   const problems = [];
   const pins = [
@@ -255,14 +339,23 @@ export function lockSelfProblems(source) {
     ['const MOBILE_ROOT = join(REPO_ROOT, "apps/mobile");', "the hostname walk must start at apps/mobile"],
     ['const PACKAGES_ROOT = join(REPO_ROOT, "packages");', "bundled packages must resolve under packages/"],
     [
-      'const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", ".turbo", "coverage", "ios", "android"]);',
-      "SKIP_DIRS must stay the build-output and generated-native directories only",
+      'const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", ".turbo", "coverage", "ios", "android", "__tests__"]);',
+      "SKIP_DIRS must stay the build-output, generated-native and test directories only",
     ],
     ["const SOURCE_EXT = /\\.(?:json|js|mjs|cjs|ts|tsx)$/;", "SOURCE_EXT must keep every source extension"],
     ["const TEST_FILE = /\\.(?:spec|test)\\.[^.]+$/;", "TEST_FILE must skip only spec and test files"],
+    [
+      "if (!SKIP_DIRS.has(entry.name)) out.push(...walkSources(path));",
+      "walkSources must skip only SKIP_DIRS",
+    ],
+    [
+      "if (!entry.isFile() || !SOURCE_EXT.test(entry.name) || TEST_FILE.test(entry.name)) continue;",
+      "walkSources must skip only non-sources and test files",
+    ],
   ];
+  const trimmed = new Set(source.split("\n").map((line) => line.trim()));
   for (const [line, problem] of lines) {
-    if (!source.split("\n").includes(line)) problems.push(problem);
+    if (!trimmed.has(line)) problems.push(problem);
   }
   const domains = source.match(/^export const HOSTING_PLATFORM_DOMAINS = \[([^\]]*)\];?$/m);
   const listed = domains ? [...domains[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
@@ -282,7 +375,7 @@ function walkSources(dir) {
     if (entry.name.startsWith(".")) continue;
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name) && entry.name !== "__tests__") out.push(...walkSources(path));
+      if (!SKIP_DIRS.has(entry.name)) out.push(...walkSources(path));
       continue;
     }
     if (!entry.isFile() || !SOURCE_EXT.test(entry.name) || TEST_FILE.test(entry.name)) continue;
@@ -294,11 +387,12 @@ function walkSources(dir) {
   return out;
 }
 
-function workspacePackages() {
-  return readdirSync(PACKAGES_ROOT, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+/** Workspace packages under `root`. A directory with no package.json (a branch's leftover dist/) isn't one. */
+export function workspacePackages(root = PACKAGES_ROOT) {
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(join(root, entry.name, "package.json")))
     .map((entry) => {
-      const dir = join(PACKAGES_ROOT, entry.name);
+      const dir = join(root, entry.name);
       const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
       return { name: pkg.name, dir, dependencies: pkg.dependencies };
     });
@@ -308,9 +402,15 @@ function liveAppJson() {
   return JSON.parse(readRepo(APP_JSON));
 }
 
+function liveEas() {
+  return JSON.parse(readRepo(EAS_JSON));
+}
+
 /** Runs `fn` with only `env`'s build variables in `process.env`, then restores it. */
 function withBuildEnv(env, fn) {
-  const isBuildVar = (key) => /^(?:EAS_BUILD_|EXPO_PUBLIC_)/.test(key) || key === "GOOGLE_SERVICES_JSON";
+  const easEnvKeys = new Set(Object.values(liveEas().build ?? {}).flatMap((config) => Object.keys(config?.env ?? {})));
+  const isBuildVar = (key) =>
+    /^(?:EAS_|EXPO_PUBLIC_)/.test(key) || key === "GOOGLE_SERVICES_JSON" || easEnvKeys.has(key) || key in env;
   const saved = Object.fromEntries(
     Object.keys(process.env)
       .filter(isBuildVar)
@@ -337,39 +437,30 @@ function loadAppConfig() {
   return requireCjs(resolved);
 }
 
-/** Env sets `app.config.js` accepts, one per kind of build that can ship. */
-function buildEnvs(appConfig, googleServicesFile) {
-  const productionEnv = {
-    EAS_BUILD_PROFILE: "production",
-    EXPO_PUBLIC_API_URL: JSON.parse(readRepo(EAS_JSON)).build.production.env.EXPO_PUBLIC_API_URL,
-    EXPO_PUBLIC_SUPABASE_URL: appConfig.PRODUCTION_SUPABASE_ORIGIN,
-    EXPO_PUBLIC_SUPABASE_ANON_KEY: "sb_publishable_permanentidentifierslock",
-  };
-  return {
-    "no EAS profile": {},
-    preview: { EAS_BUILD_PROFILE: "preview" },
-    "production iOS": { ...productionEnv, EAS_BUILD_PLATFORM: "ios" },
-    "production Android": {
-      ...productionEnv,
-      EAS_BUILD_PLATFORM: "android",
-      GOOGLE_SERVICES_JSON: googleServicesFile,
-    },
-  };
-}
-
 test("app.json carries every permanent identifier", () => {
   assert.deepEqual(identityProblems(liveAppJson().expo), []);
 });
 
-test("app.config.js, as Expo calls it, leaves every permanent identifier alone on every kind of build", () => {
+test("app.config.js, as Expo calls it, leaves every permanent identifier alone on every build", () => {
   const appConfig = loadAppConfig();
   const staticExpo = liveAppJson().expo;
-  // A production Android build refuses unless Firebase's client config exists on disk.
+  // An Android build refuses on production unless Firebase's client config exists on disk.
   const scratch = mkdtempSync(join(tmpdir(), "permanent-identifiers-"));
   const googleServicesFile = join(scratch, "google-services.json");
   writeFileSync(googleServicesFile, "{}\n");
+  const dashboard = (profile, platform) => ({
+    ...(profile === "production"
+      ? {
+          EXPO_PUBLIC_SUPABASE_URL: appConfig.PRODUCTION_SUPABASE_ORIGIN,
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: "sb_publishable_permanentidentifierslock",
+        }
+      : {}),
+    ...(platform === "android" ? { GOOGLE_SERVICES_JSON: googleServicesFile } : {}),
+  });
   try {
-    for (const [kind, env] of Object.entries(buildEnvs(appConfig, googleServicesFile))) {
+    const builds = easBuildEnvs(liveEas(), dashboard);
+    assert.ok(builds.length >= 7, `expected no-profile plus 3 profiles × 2 platforms, got ${builds.length}`);
+    for (const { kind, env } of builds) {
       const resolved = resolveExpoConfig(appConfig, staticExpo, env);
       assert.deepEqual(dynamicLayerProblems(staticExpo, resolved), [], kind);
     }
@@ -380,6 +471,10 @@ test("app.config.js, as Expo calls it, leaves every permanent identifier alone o
 
 test("the calendar export still writes the event-details deep link the screen reads", () => {
   assert.deepEqual(eventDetailsDeepLinkProblems(readRepo(EVENT_DETAILS)), []);
+});
+
+test("every eas.json URL for our own services is a frapp.live origin", () => {
+  assert.deepEqual(easOwnServiceUrlProblems(liveEas()), []);
 });
 
 test("apps/mobile and every package it bundles name no hosting-platform hostname", () => {
@@ -402,8 +497,12 @@ test("apps/mobile and every package it bundles name no hosting-platform hostname
   const files = [...mobile];
   for (const { name, dir } of bundled) {
     assert.ok(dir, `${name} is a ${MOBILE_PACKAGE_JSON} dependency with no packages/ directory`);
+    const root = relative(REPO_ROOT, dir).replaceAll("\\", "/");
     const sources = walkSources(dir);
-    assert.ok(sources.length > 0, `walked no sources in ${relative(REPO_ROOT, dir)} (${name})`);
+    assert.ok(
+      sources.some((file) => file.rel.slice(root.length + 1).includes("/")),
+      `walked no sources below ${root}/ (${name}); its top-level config files alone don't count`,
+    );
     files.push(...sources);
   }
   assert.deepEqual(hostingPlatformProblems(files), []);
@@ -462,32 +561,63 @@ for (const [label, mutate, expected] of [
   });
 }
 
-for (const [label, override, expected] of [
+// A config function standing in for an edited app.config.js, run through the
+// same harness as the real one, against one of the build environments it sees.
+const renameOn = (predicate, field) => ({ config }) =>
+  predicate(process.env) ? { ...config, ...field(config) } : config;
+
+for (const [label, override, expected, envFrom] of [
   [
-    "a config function that renames the scheme and bundle id",
-    ({ config }) => ({ ...config, scheme: "signet", ios: { ...config.ios, bundleIdentifier: "live.signet.mobile" } }),
+    "renames the scheme and bundle id",
+    renameOn(() => true, (config) => ({ scheme: "signet", ios: { ...config.ios, bundleIdentifier: "live.signet.mobile" } })),
     ["expo.scheme", "expo.ios.bundleIdentifier"],
+    "no EAS profile",
   ],
+  ["renames the app", renameOn(() => true, () => ({ name: "Chapter" })), ["expo.name"], "no EAS profile"],
   [
-    "a config function that renames the app",
-    ({ config }) => ({ ...config, name: "Chapter" }),
-    ["expo.name"],
-  ],
-  [
-    "a config function that repoints updates.url",
-    ({ config }) => ({ ...config, updates: { ...config.updates, url: "https://u.expo.dev/other" } }),
+    "repoints updates.url",
+    renameOn(() => true, (config) => ({ updates: { ...config.updates, url: "https://u.expo.dev/other" } })),
     ["expo.updates.url"],
+    "no EAS profile",
   ],
   [
-    "a config function that renames only on a production build, from process.env",
-    ({ config }) => (process.env.EAS_BUILD_PROFILE === "production" ? { ...config, slug: "signet" } : config),
+    "renames only on a production build",
+    renameOn((env) => env.EAS_BUILD_PROFILE === "production", () => ({ slug: "signet" })),
     ["expo.slug"],
+    "production ios",
+  ],
+  [
+    "renames only on an EAS build",
+    renameOn((env) => env.EAS_BUILD === "true", () => ({ slug: "signet" })),
+    ["expo.slug"],
+    "preview android",
+  ],
+  [
+    "renames on a value from the profile's eas.json env",
+    renameOn((env) => env.EXPO_PUBLIC_SENTRY_ENVIRONMENT === "production", () => ({ slug: "signet" })),
+    ["expo.slug"],
+    "production android",
+  ],
+  [
+    "renames only on the development profile",
+    renameOn((env) => env.EAS_BUILD_PROFILE === "development", () => ({ slug: "signet" })),
+    ["expo.slug"],
+    "development ios",
+  ],
+  [
+    "renames only on preview for iOS",
+    renameOn((env) => env.EAS_BUILD_PROFILE === "preview" && env.EAS_BUILD_PLATFORM === "ios", () => ({
+      slug: "signet",
+    })),
+    ["expo.slug"],
+    "preview ios",
   ],
 ]) {
-  test(`${label} fails the dynamic-layer check`, () => {
+  test(`a config function that ${label} fails the dynamic-layer check`, () => {
     const staticExpo = liveAppJson().expo;
-    const resolved = resolveExpoConfig(override, staticExpo, { EAS_BUILD_PROFILE: "production" });
-    const problems = dynamicLayerProblems(staticExpo, resolved);
+    const build = easBuildEnvs(liveEas()).find((candidate) => candidate.kind === envFrom);
+    assert.ok(build, `no ${envFrom} build in easBuildEnvs`);
+    const problems = dynamicLayerProblems(staticExpo, resolveExpoConfig(override, staticExpo, build.env));
     for (const field of expected) {
       assert.ok(
         problems.some((problem) => problem.includes(`changes ${field} `)),
@@ -497,10 +627,45 @@ for (const [label, override, expected] of [
   });
 }
 
-test("resolveExpoConfig restores process.env", () => {
-  const before = process.env.EAS_BUILD_PROFILE;
-  resolveExpoConfig(({ config }) => config, liveAppJson().expo, { EAS_BUILD_PROFILE: "production" });
-  assert.equal(process.env.EAS_BUILD_PROFILE, before);
+test("the simulated builds carry each profile's eas.json env and the EAS build values", () => {
+  const eas = {
+    build: {
+      production: { env: { APP_VARIANT: "store", EXPO_PUBLIC_API_URL: "https://api.frapp.live" } },
+      preview: {},
+    },
+  };
+  const builds = easBuildEnvs(eas, (profile) => (profile === "production" ? { DASHBOARD_ONLY: "1" } : {}));
+  assert.deepEqual(
+    builds.map((build) => build.kind),
+    ["no EAS profile", "production ios", "production android", "preview ios", "preview android"],
+  );
+  const production = builds.find((build) => build.kind === "production android").env;
+  assert.equal(production.APP_VARIANT, "store");
+  assert.equal(production.EAS_BUILD, "true");
+  assert.equal(production.EAS_BUILD_PLATFORM, "android");
+  assert.equal(production.DASHBOARD_ONLY, "1");
+  assert.deepEqual(builds[0].env, {});
+});
+
+test("resolveExpoConfig clears ambient build variables and restores process.env", () => {
+  const before = { EAS_BUILD: process.env.EAS_BUILD, EXPO_PUBLIC_X: process.env.EXPO_PUBLIC_X };
+  process.env.EAS_BUILD = "true";
+  process.env.EXPO_PUBLIC_X = "ambient";
+  try {
+    const seen = resolveExpoConfig(
+      ({ config }) => ({ ...config, seen: [process.env.EAS_BUILD, process.env.EXPO_PUBLIC_X] }),
+      liveAppJson().expo,
+      {},
+    ).seen;
+    assert.deepEqual(seen, [undefined, undefined]);
+    assert.equal(process.env.EAS_BUILD, "true");
+    assert.equal(process.env.EXPO_PUBLIC_X, "ambient");
+  } finally {
+    for (const [key, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 for (const [label, find, replace, expected] of [
@@ -529,7 +694,7 @@ for (const [label, find, replace, expected] of [
   });
 }
 
-test("a hosting-platform hostname fails however it is spelled, in code or in a comment", () => {
+test("a hosting-platform hostname fails when written out, templated, concatenated or held as a domain", () => {
   assert.deepEqual(
     hostingPlatformProblems([
       { rel: "apps/mobile/lib/a.ts", source: 'const api = "https://frapp-api-prod.onrender.com";' },
@@ -538,6 +703,8 @@ test("a hosting-platform hostname fails however it is spelled, in code or in a c
       { rel: "apps/mobile/lib/d.ts", source: "const u = `https://${svc}.onrender.com`;" },
       { rel: "apps/mobile/lib/e.ts", source: 'const u = "frapp-api" + ".onrender.com";' },
       { rel: "packages/observability/src/f.ts", source: 'const u = svc + ".run.app";' },
+      { rel: "packages/observability/src/g.ts", source: 'const RENDER_DOMAIN = "onrender.com";' },
+      { rel: "packages/observability/src/h.ts", source: "const u = [name, 'vercel.app'].join('.');" },
     ]),
     [
       "apps/mobile/lib/a.ts:1: frapp-api-prod.onrender.com",
@@ -545,7 +712,11 @@ test("a hosting-platform hostname fails however it is spelled, in code or in a c
       "apps/mobile/lib/c.ts:1: frapp-api-abc123-uc.a.run.app",
       "apps/mobile/lib/d.ts:1: .onrender.com",
       "apps/mobile/lib/e.ts:1: .onrender.com",
+      'apps/mobile/lib/e.ts:1: ".onrender.com"',
       "packages/observability/src/f.ts:1: .run.app",
+      'packages/observability/src/f.ts:1: ".run.app"',
+      'packages/observability/src/g.ts:1: "onrender.com"',
+      "packages/observability/src/h.ts:1: 'vercel.app'",
     ],
   );
 });
@@ -558,6 +729,34 @@ test("a platform or bare domain name without a hostname passes", () => {
       { rel: "apps/mobile/lib/c.ts", source: 'const other = "https://api.frapp.live/run.application";' },
     ]),
     [],
+  );
+});
+
+test("pointing an eas.json profile at a platform or unowned host fails", () => {
+  const eas = liveEas();
+  eas.build.preview.env.EXPO_PUBLIC_API_URL = "https://frapp-api-staging.onrender.com";
+  eas.build.preview.env.EXPO_PUBLIC_APP_URL = "https://frapp-staging.netlify.app";
+  eas.build.development.env.EXPO_PUBLIC_APP_URL = "https://api.example.com";
+  assert.deepEqual(easOwnServiceUrlProblems(eas), [
+    "build.development.env.EXPO_PUBLIC_APP_URL must be an https frapp.live origin, not https://api.example.com",
+    "build.preview.env.EXPO_PUBLIC_API_URL must be an https frapp.live origin, not https://frapp-api-staging.onrender.com",
+    "build.preview.env.EXPO_PUBLIC_APP_URL must be an https frapp.live origin, not https://frapp-staging.netlify.app",
+  ]);
+});
+
+test("a look-alike or plain-http frapp.live host fails; loopback passes only on development", () => {
+  const eas = liveEas();
+  eas.build.preview.env.EXPO_PUBLIC_API_URL = "https://api.frapp.live.example.com";
+  eas.build.production.env.EXPO_PUBLIC_APP_URL = "http://app.frapp.live";
+  eas.build.development.env.EXPO_PUBLIC_APP_URL = "http://127.0.0.1:3000";
+  assert.deepEqual(easOwnServiceUrlProblems(eas), [
+    "build.preview.env.EXPO_PUBLIC_API_URL must be an https frapp.live origin, not https://api.frapp.live.example.com",
+    "build.production.env.EXPO_PUBLIC_APP_URL must be an https frapp.live origin, not http://app.frapp.live",
+  ]);
+  eas.build.preview.env.EXPO_PUBLIC_API_URL = "http://localhost:3001";
+  assert.deepEqual(
+    easOwnServiceUrlProblems(eas).filter((problem) => problem.startsWith("build.preview")),
+    ["build.preview.env.EXPO_PUBLIC_API_URL must be an https frapp.live origin, not http://localhost:3001"],
   );
 });
 
@@ -581,6 +780,21 @@ test("bundled packages follow workspace dependencies transitively, and ignore de
   assert.deepEqual(bundledPackageDirs({ dependencies: { "@repo/gone": "*" } }, packages), [
     { name: "@repo/gone", dir: null },
   ]);
+});
+
+test("a packages/ directory with no package.json is skipped, not read", () => {
+  const root = mkdtempSync(join(tmpdir(), "permanent-identifiers-packages-"));
+  try {
+    mkdirSync(join(root, "real"));
+    writeFileSync(join(root, "real", "package.json"), JSON.stringify({ name: "@repo/real" }));
+    mkdirSync(join(root, "leftover", "dist"), { recursive: true });
+    assert.deepEqual(
+      workspacePackages(root).map((pkg) => pkg.name),
+      ["@repo/real"],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 for (const [label, find, replace, expected] of [
@@ -610,10 +824,22 @@ for (const [label, find, replace, expected] of [
     "start at apps/mobile",
   ],
   [
-    "skipping a source directory",
-    '"coverage", "ios", "android"]);',
-    '"coverage", "ios", "android", "components"]);',
+    "skipping a source directory in SKIP_DIRS",
+    '"ios", "android", "__tests__"]);',
+    '"ios", "android", "__tests__", "components"]);',
     "SKIP_DIRS",
+  ],
+  [
+    "skipping a source directory inside walkSources",
+    "      if (!SKIP_DIRS.has(entry.name)) out.push(...walkSources(path));",
+    '      if (!SKIP_DIRS.has(entry.name) && entry.name !== "chat") out.push(...walkSources(path));',
+    "walkSources must skip only SKIP_DIRS",
+  ],
+  [
+    "skipping a file kind inside walkSources",
+    "    if (!entry.isFile() || !SOURCE_EXT.test(entry.name) || TEST_FILE.test(entry.name)) continue;",
+    '    if (!entry.isFile() || !SOURCE_EXT.test(entry.name) || TEST_FILE.test(entry.name) || entry.name.endsWith(".tsx")) continue;',
+    "walkSources must skip only non-sources",
   ],
   ["dropping an extension", "(?:json|js|mjs|cjs|ts|tsx)$/;", "(?:json|js|mjs|cjs|ts)$/;", "SOURCE_EXT"],
   [
