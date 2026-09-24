@@ -1,18 +1,29 @@
 #!/usr/bin/env node
-// Polls the Render deploy-list API until a deploy matching $GITHUB_SHA reaches
-// a terminal state. Fails on build_failed / update_failed / pre_deploy_failed
-// and on "no deploy for this SHA after the grace window" (autoDeploy wiring
-// red flag). Treats `canceled` / `deactivated` as neutral (superseded by a
-// newer deploy).
+// Polls the Render deploy-list API until a deploy matching the commit
+// (DEPLOY_SHA, else GITHUB_SHA) reaches a terminal state. Fails on
+// build_failed / update_failed / pre_deploy_failed, on "no deploy for this SHA
+// after the grace window" (autoDeploy wiring red flag), and on a Render read
+// that is permanently refused (401/403/404) or fails on
+// RENDER_MAX_CONSECUTIVE_READ_ERRORS polls in a row. Treats `canceled` /
+// `deactivated` as neutral (superseded by a newer deploy).
 //
 // Env inputs:
 //   RENDER_API_KEY     — required
 //   RENDER_SERVICE_ID  — required
-//   GITHUB_SHA         — required
+//   DEPLOY_SHA         — the commit to verify. Set this one: a step-level
+//                        `GITHUB_SHA:` is ignored (reserved prefix; see main())
+//   GITHUB_SHA         — the fallback when DEPLOY_SHA is unset (Actions sets it)
 //   SERVICE_LABEL      — optional, used only for logs
+//   GITHUB_OUTPUT      — set by Actions; receives the step output `outcome`
 //
 // Exits 0 on success/neutral, 1 on terminal failure or overall timeout.
+//
+// The exit code cannot tell success from neutral, so the verdict is also
+// published as the step output `outcome` (see `writeOutcomeOutput`).
 
+import { appendFileSync } from "node:fs";
+
+import { resilientFetch } from "./lib/http.mjs";
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import { findRenderDeployBySha } from "./lib/providers.mjs";
 import { requireEnv } from "./lib/env.mjs";
@@ -40,6 +51,33 @@ export const RENDER_NO_DEPLOY_GRACE_MS = 5 * 60 * 1000;
 export const RENDER_POLL_INTERVAL_MS = 20 * 1000;
 export const RENDER_OVERALL_TIMEOUT_MS = 20 * 60 * 1000;
 
+// ── Read errors ─────────────────────────────────────────────────────────────
+// Since #2431 a failure verdict files a P1 alert, so one bad read must not be
+// one. `resilientFetch` re-sends a 429, a 5xx, a network-level failure or its
+// own 15s per-attempt timeout within a read (three attempts); what outlasts that,
+// or fails after the headers (a body that resets or stalls, which it never
+// retries), is re-asked on the next poll instead. Only this many failed reads
+// IN A ROW end the run. At the default interval that is about a minute when
+// Render answers fast with a 5xx, and about three when every attempt hangs to
+// its timeout, since the interval is slept after each read, not counted from it.
+export const RENDER_MAX_CONSECUTIVE_READ_ERRORS = 3;
+
+/**
+ * The refusals re-asking can't fix: a dead or unscoped key (401, 403) or a
+ * wrong service id (404). Deliberately a closed list rather than "any 4xx":
+ * a 408, 409 or 425 is a statement about this request, not about the key, and
+ * failing on it would page for a blip. Those count toward
+ * RENDER_MAX_CONSECUTIVE_READ_ERRORS and are re-asked on the next poll. They
+ * get no retry inside the read, though: `resilientFetch` re-sends only a 429,
+ * a 5xx, a network-level failure or its own per-attempt timeout, so each such
+ * read is a single attempt.
+ */
+export const RENDER_PERMANENT_READ_STATUSES = new Set([401, 403, 404]);
+
+export function isPermanentReadError(error) {
+  return RENDER_PERMANENT_READ_STATUSES.has(error?.status);
+}
+
 /**
  * Pure verifier. Returns `{ status, message }` where status is one of
  * "success" | "failure" | "neutral". The CLI wrapper translates that to an
@@ -51,13 +89,20 @@ export async function verifyRenderDeploy({
   sha,
   label = serviceId,
   clock = createClock(),
-  fetchImpl,
+  // Retrying, not bare `fetch`: the first layer of "one bad read is not a
+  // verdict". The second is `classify` re-asking on the next poll; see
+  // RENDER_MAX_CONSECUTIVE_READ_ERRORS.
+  fetchImpl = resilientFetch,
   pollIntervalMs = RENDER_POLL_INTERVAL_MS,
   noDeployGraceMs = RENDER_NO_DEPLOY_GRACE_MS,
   overallTimeoutMs = RENDER_OVERALL_TIMEOUT_MS,
+  maxConsecutiveReadErrors = RENDER_MAX_CONSECUTIVE_READ_ERRORS,
   logger = console,
 }) {
   let lastObservedStatus = null;
+  // Failed reads since the last good one, and the latest one's message.
+  let readErrors = 0;
+  let lastReadError = null;
 
   return pollUntilTerminal({
     clock,
@@ -79,11 +124,22 @@ export async function verifyRenderDeploy({
     },
     classify: (state, { elapsedMs }) => {
       if (state.error) {
-        return {
-          status: "failure",
-          message: `Render API error for ${label}: ${state.error.message}`,
-        };
+        readErrors += 1;
+        lastReadError = state.error.message;
+        if (isPermanentReadError(state.error) || readErrors >= maxConsecutiveReadErrors) {
+          const repeated = readErrors > 1 ? ` (${readErrors} failed reads in a row)` : "";
+          return {
+            status: "failure",
+            message: `Render API error for ${label}: ${state.error.message}${repeated}`,
+          };
+        }
+        logger.log?.(
+          `[${label}] Render API read failed (${state.error.message}); re-asking on the next poll ` +
+            `(${readErrors}/${maxConsecutiveReadErrors}).`,
+        );
+        return null;
       }
+      readErrors = 0;
 
       if (!state.match) {
         if (elapsedMs >= noDeployGraceMs) {
@@ -139,9 +195,42 @@ export async function verifyRenderDeploy({
       status: "failure",
       message:
         `Timed out after ${Math.round(overallTimeoutMs / 1000)}s waiting for ` +
-        `Render deploy on ${label}. Last observed status: ${lastObservedStatus ?? "none"}.`,
+        `Render deploy on ${label}. Last observed status: ${lastObservedStatus ?? "none"}.` +
+        (readErrors > 0 ? ` Last Render read failed: ${lastReadError}.` : ""),
     }),
   });
+}
+
+// ── Step output ─────────────────────────────────────────────────────────────
+
+/** Every verdict `verifyRenderDeploy` can return. */
+export const VERIFY_OUTCOMES = new Set(["success", "neutral", "failure"]);
+
+/**
+ * Appends `outcome=<status>` to `$GITHUB_OUTPUT`, for `verify-deployments.yml`'s
+ * `deploy-outcome` job (#2431). That job closes the staging deploy alert, and
+ * it must close it only on `success`: `neutral` also exits 0, but a superseded
+ * deploy proves nothing about whether deploys work, so the exit code alone
+ * would read a cancel mid-outage as a recovery.
+ *
+ * Only the closed-set status is written, never `message`, which can carry a
+ * provider's error text. The output leaves this job: `deploy-alert.mjs`
+ * classifies on it and prints it in the `deploy-outcome` step summary. A closed
+ * set keeps anything a provider said confined to this job's own log.
+ *
+ * A no-op outside Actions (no `GITHUB_OUTPUT`). Throws on a status outside the
+ * set rather than publishing it: the reader matches exact strings, so an
+ * unknown value would silently read as "not confirmed".
+ */
+export function writeOutcomeOutput(
+  status,
+  { outputPath = process.env.GITHUB_OUTPUT, append = appendFileSync } = {},
+) {
+  if (!VERIFY_OUTCOMES.has(status)) {
+    throw new Error(`Unknown verify outcome ${JSON.stringify(status)}`);
+  }
+  if (!outputPath) return;
+  append(outputPath, `outcome=${status}\n`);
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
@@ -149,16 +238,15 @@ export async function verifyRenderDeploy({
 async function main() {
   const apiKey = requireEnv("RENDER_API_KEY");
   const serviceId = requireEnv("RENDER_SERVICE_ID");
-  // DEPLOY_SHA wins over GITHUB_SHA so a `workflow_dispatch` caller can name the
-  // commit it is deploying. `github.sha` on a dispatch is the tip of the ref the
-  // workflow was dispatched on, which is NOT the commit being shipped — and
-  // overriding GITHUB_SHA in a step-level `env:` collides with GitHub's reserved
-  // prefix rule, so it reads correct and is undefined. An explicit variable does
-  // not have that problem.
+  // DEPLOY_SHA wins over GITHUB_SHA so a caller can name the commit explicitly.
+  // A step-level `GITHUB_SHA:` override can't: `GITHUB_` is a reserved prefix,
+  // so Actions ignores it and the step sees the ambient `github.sha`, which on a
+  // `workflow_dispatch` is the tip of the dispatched ref, not a chosen commit.
   const sha = process.env.DEPLOY_SHA || requireEnv("GITHUB_SHA");
   const label = process.env.SERVICE_LABEL ?? serviceId;
 
   const result = await verifyRenderDeploy({ apiKey, serviceId, sha, label });
+  writeOutcomeOutput(result.status);
 
   if (result.status === "success") {
     console.log(`✅ ${result.message}`);

@@ -260,7 +260,7 @@ const LANDMARKS = [
       /author_name IS NOT NULL/i.test(rows[0].def ?? ""),
   },
   {
-    name: "chat_messages.sender_id is nullable (archive rows have no Signet user)",
+    name: "chat_messages.sender_id is nullable (archive rows have no Frapp user)",
     sql: `select is_nullable from information_schema.columns
            where table_schema = 'public' and table_name = 'chat_messages'
              and column_name = 'sender_id'`,
@@ -419,13 +419,14 @@ const LANDMARKS = [
     ok: (rows) => rows.length === 1 && rows[0].missing === 0,
   },
   {
-    // The historical seed still inserts 'Frapp System'. The forward migration
-    // (#1935) must leave the well-known actor as Signet System after replay.
-    name: "seeded system actor display_name is Signet System (#1935)",
+    // The historical seed inserts 'Frapp System', #1935 renamed it to Signet
+    // System, and ADR-25 step 3 (#2578) renamed it back, so replay must end on
+    // Frapp System.
+    name: "seeded system actor display_name is Frapp System (#2578)",
     sql: `select display_name from public.users
            where id = '00000000-0000-0000-0000-000000000000'`,
     ok: (rows) =>
-      rows.length === 1 && rows[0].display_name === "Signet System",
+      rows.length === 1 && rows[0].display_name === "Frapp System",
   },
   {
     name: "chapter_directory has GENERATED search_vector column",

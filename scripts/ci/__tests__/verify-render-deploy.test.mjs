@@ -3,10 +3,15 @@ import assert from "node:assert/strict";
 
 import {
   verifyRenderDeploy,
+  writeOutcomeOutput,
+  isPermanentReadError,
+  VERIFY_OUTCOMES,
+  RENDER_MAX_CONSECUTIVE_READ_ERRORS,
   RENDER_NO_DEPLOY_GRACE_MS,
   RENDER_POLL_INTERVAL_MS,
   RENDER_OVERALL_TIMEOUT_MS,
 } from "../verify-render-deploy.mjs";
+import { VERIFY_DEPLOYMENTS_CONFIG } from "../deploy-alert.mjs";
 
 const SHA = "abc1234def5678";
 const SERVICE_ID = "srv-test";
@@ -205,6 +210,99 @@ describe("verifyRenderDeploy", () => {
     assert.match(result.message, /500/);
   });
 
+  // Since #2431 a failure verdict files a P1, so a read error is re-asked on
+  // the next poll, and only a permanent refusal or several failures in a row
+  // end the run.
+  const httpError = (status) => ({ ok: false, status, json: async () => ({}) });
+
+  it("fails on the first poll when Render refuses the key (401), since re-asking can't help", async () => {
+    const { fetchImpl, calls } = makeFetchStub([httpError(401)]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /HTTP 401/);
+    assert.equal(calls.length, 1);
+  });
+
+  it("re-asks after a 408, which is about the request rather than the key", async () => {
+    const { fetchImpl, calls } = makeFetchStub([
+      httpError(408),
+      okJson([renderDeploy({ status: "live" })]),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "success");
+    assert.equal(calls.length, 2);
+  });
+
+  it("re-asks after a 5xx and succeeds when the next read works", async () => {
+    const { fetchImpl, calls } = makeFetchStub([
+      httpError(502),
+      okJson([renderDeploy({ status: "live" })]),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "success");
+    assert.equal(calls.length, 2);
+  });
+
+  it("re-asks after a body that fails mid-read, which the HTTP retry never covers", async () => {
+    const { fetchImpl } = makeFetchStub([
+      { ok: true, status: 200, json: async () => Promise.reject(new TypeError("terminated")) },
+      okJson([renderDeploy({ status: "live" })]),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "success");
+  });
+
+  it("fails after the maximum number of failed reads in a row, naming the count", async () => {
+    const { fetchImpl, calls } = makeFetchStub([httpError(503)]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "failure");
+    assert.equal(calls.length, RENDER_MAX_CONSECUTIVE_READ_ERRORS);
+    assert.match(result.message, new RegExp(`${RENDER_MAX_CONSECUTIVE_READ_ERRORS} failed reads in a row`));
+  });
+
+  it("counts failed reads in a row, so a good read in between resets the count", async () => {
+    const inProgress = okJson([renderDeploy({ status: "build_in_progress" })]);
+    const { fetchImpl } = makeFetchStub([
+      httpError(502),
+      httpError(502),
+      inProgress,
+      httpError(502),
+      httpError(502),
+      okJson([renderDeploy({ status: "live" })]),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "success");
+  });
+
+  it("classifies only 401, 403 and 404 as permanent read errors", () => {
+    for (const status of [401, 403, 404]) assert.equal(isPermanentReadError({ status }), true, `${status}`);
+    // A 408, 409 or 425 is about this request, not the key: re-asked, not paged.
+    for (const status of [400, 408, 409, 422, 425, 429, 500, 502, 503]) {
+      assert.equal(isPermanentReadError({ status }), false, `${status}`);
+    }
+    // A network or body error carries no status and is always re-asked.
+    assert.equal(isPermanentReadError(new TypeError("fetch failed")), false);
+    assert.equal(isPermanentReadError(undefined), false);
+  });
+
   it("fails on overall timeout while deploys keep coming back as in-progress", async () => {
     const fetchImpl = async () => okJson([renderDeploy({ status: "build_in_progress" })]);
     const shortTimeout = TEST_POLL_INTERVAL_MS * 3;
@@ -222,9 +320,124 @@ describe("verifyRenderDeploy", () => {
     assert.match(result.message, /build_in_progress/);
   });
 
+  it("names the last failed read when it times out between failed reads", async () => {
+    // Reads failing on and off, never enough in a row to stop early: the
+    // timeout message is all the alert's run log has, and without this line
+    // it would point at a stuck deploy rather than an unreadable Render.
+    let call = 0;
+    const fetchImpl = async () => {
+      call += 1;
+      return call % 2 === 0 ? httpError(502) : okJson([renderDeploy({ status: "build_in_progress" })]);
+    };
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({
+      ...defaults,
+      clock,
+      fetchImpl,
+      overallTimeoutMs: TEST_POLL_INTERVAL_MS * 6,
+    });
+
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /Timed out/);
+    assert.match(result.message, /Last Render read failed: .*HTTP 502/);
+
+    // And a clean timeout says nothing about reads.
+    const clean = await verifyRenderDeploy({
+      ...defaults,
+      clock: makeFakeClock().clock,
+      fetchImpl: async () => okJson([renderDeploy({ status: "build_in_progress" })]),
+      overallTimeoutMs: TEST_POLL_INTERVAL_MS * 3,
+    });
+    assert.doesNotMatch(clean.message, /Last Render read failed/);
+  });
+
   it("exposes sane default constants", () => {
     assert.ok(RENDER_NO_DEPLOY_GRACE_MS > 0);
     assert.ok(RENDER_POLL_INTERVAL_MS > 0);
     assert.ok(RENDER_OVERALL_TIMEOUT_MS > RENDER_NO_DEPLOY_GRACE_MS);
+  });
+});
+
+// `verify-deployments.yml`'s `deploy-outcome` job closes the staging deploy
+// alert only on this output's `success` (#2431), because `neutral` exits 0 too.
+describe("writeOutcomeOutput", () => {
+  function recorder() {
+    const writes = [];
+    return { writes, append: (path, text) => writes.push({ path, text }) };
+  }
+
+  it("appends exactly `outcome=<status>` for every verdict the verifier returns", () => {
+    for (const status of ["success", "neutral", "failure"]) {
+      const { writes, append } = recorder();
+      writeOutcomeOutput(status, { outputPath: "/tmp/out", append });
+      assert.deepEqual(writes, [{ path: "/tmp/out", text: `outcome=${status}\n` }]);
+    }
+  });
+
+  // The default reads `GITHUB_OUTPUT`, which Actions sets for every step,
+  // this suite's own CI run included. So both cases set it explicitly: a test
+  // that left it to the environment passed locally and failed on the runner.
+  function withGithubOutput(value, fn) {
+    const saved = process.env.GITHUB_OUTPUT;
+    if (value === undefined) delete process.env.GITHUB_OUTPUT;
+    else process.env.GITHUB_OUTPUT = value;
+    try {
+      fn();
+    } finally {
+      if (saved === undefined) delete process.env.GITHUB_OUTPUT;
+      else process.env.GITHUB_OUTPUT = saved;
+    }
+  }
+
+  it("is a no-op outside Actions, where GITHUB_OUTPUT is unset or empty", () => {
+    const { writes, append } = recorder();
+    withGithubOutput(undefined, () => writeOutcomeOutput("success", { append }));
+    withGithubOutput("", () => writeOutcomeOutput("success", { append }));
+    assert.deepEqual(writes, []);
+  });
+
+  it("writes to GITHUB_OUTPUT by default", () => {
+    const { writes, append } = recorder();
+    withGithubOutput("/tmp/runner-output", () => writeOutcomeOutput("neutral", { append }));
+    assert.deepEqual(writes, [{ path: "/tmp/runner-output", text: "outcome=neutral\n" }]);
+  });
+
+  it("refuses to publish a status outside the closed set, even outside Actions", () => {
+    // Free text (a provider error message) must never reach the output: it
+    // leaves this job, into deploy-alert.mjs's step summary.
+    const { writes, append } = recorder();
+    for (const bad of ["Render API error: 401", "SUCCESS", "", undefined]) {
+      assert.throws(
+        () => writeOutcomeOutput(bad, { outputPath: "/tmp/out", append }),
+        /Unknown verify outcome/,
+      );
+      assert.throws(() => writeOutcomeOutput(bad, { outputPath: undefined, append }));
+    }
+    assert.deepEqual(writes, []);
+  });
+
+  it("publishes the vocabulary deploy-alert.mjs reads", () => {
+    // The two files meet only through a string. If the verifier renamed its
+    // success verdict, a live deploy could never close the alert again.
+    const { value, neutral } = VERIFY_DEPLOYMENTS_CONFIG.deployedOutput;
+    assert.ok(VERIFY_OUTCOMES.has(value));
+    for (const n of neutral) assert.ok(VERIFY_OUTCOMES.has(n));
+    assert.ok(!neutral.includes("failure"), "a failure must never read as neutral");
+  });
+
+  it("each verdict the verifier returns is one it may publish", async () => {
+    const cases = [
+      [okJson([renderDeploy({ status: "live" })]), "success"],
+      [okJson([renderDeploy({ status: "canceled" })]), "neutral"],
+      [okJson([renderDeploy({ status: "build_failed" })]), "failure"],
+    ];
+    for (const [response, expected] of cases) {
+      const { fetchImpl } = makeFetchStub([response]);
+      const { clock } = makeFakeClock();
+      const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+      assert.equal(result.status, expected);
+      assert.ok(VERIFY_OUTCOMES.has(result.status));
+    }
   });
 });

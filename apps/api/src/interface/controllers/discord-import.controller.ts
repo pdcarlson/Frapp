@@ -162,7 +162,7 @@ export class DiscordImportController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({
-    summary: 'Map each Discord channel onto a Signet channel',
+    summary: 'Map each Discord channel onto a Frapp channel',
     description:
       'Every channel needs an explicit choice — create new, merge into an existing one, or skip.',
   })
@@ -178,7 +178,7 @@ export class DiscordImportController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({
-    summary: 'Record the Discord role → Signet role worksheet',
+    summary: 'Record the Discord role → Frapp role worksheet',
     description:
       'Informational only. Nothing reads this to grant a permission and the importer never assigns a role; everyone imports as a name on a message, and the admin promotes people by hand afterwards.',
   })

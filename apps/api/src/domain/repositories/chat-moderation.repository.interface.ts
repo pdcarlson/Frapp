@@ -106,7 +106,7 @@ export interface IChatMessageReportRepository {
    * The officer queue for one chapter as `reviewerUserId` may see it, newest
    * first, filtered to one status. Reports whose `reported_sender_id` is the
    * reviewer are left out, for the reason {@link findById} gives; a report on
-   * an imported archive message (`reported_sender_id` NULL) names no Signet
+   * an imported archive message (`reported_sender_id` NULL) names no Frapp
    * member and is always included.
    *
    * Status is required rather than optional so the read always matches

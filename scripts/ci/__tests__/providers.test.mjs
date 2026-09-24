@@ -45,6 +45,16 @@ describe("fetchJson", () => {
       /Example API returned HTTP 404/,
     );
   });
+
+  it("carries the HTTP status on the thrown error", async () => {
+    // verify-render-deploy.mjs fails fast on a 401/403/404 and re-asks on
+    // anything else; it reads this field, not the message.
+    const { fetchImpl } = recorder({ ok: false, status: 403, json: async () => ({}) });
+    await assert.rejects(
+      () => fetchJson({ url: "https://example.com/x", headers: {}, what: "Example API", fetchImpl }),
+      (error) => error.status === 403,
+    );
+  });
 });
 
 describe("fetchRenderDeploys", () => {
