@@ -27,6 +27,7 @@ import {
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { DEFAULT_ATTEMPTS, fetchWithRetry } from "./lib/http.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const DEFAULT_READY_URL = "https://api.frapp.live/health/ready";
 export const READY_PATH = "/health/ready";
@@ -276,8 +277,7 @@ async function main() {
   process.exit(watchdog.outcome === "pass" ? 0 : 1);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);

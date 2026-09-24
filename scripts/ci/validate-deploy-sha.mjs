@@ -55,6 +55,7 @@ import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { ghRequest } from "./lib/github.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
@@ -447,8 +448,7 @@ async function main() {
   process.exit(1);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);

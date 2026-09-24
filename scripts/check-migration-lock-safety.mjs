@@ -36,6 +36,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 const MIGRATIONS_PREFIX = "supabase/migrations/";
@@ -290,8 +291,7 @@ function main() {
   return 0;
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   try {
     process.exit(main());
   } catch (error) {

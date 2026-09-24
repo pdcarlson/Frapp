@@ -106,6 +106,7 @@ jobs:
               - 'scripts/ci/lib/env.mjs'
               - 'scripts/ci/lib/environments.mjs'
               - 'scripts/ci/lib/http.mjs'
+              - 'scripts/ci/lib/invoked-directly.mjs'
               - 'scripts/storage-backup.mjs'
               - '.github/environments.json'
               # The search-column landmark reads the API's search source.

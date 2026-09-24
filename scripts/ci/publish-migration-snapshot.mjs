@@ -59,6 +59,7 @@ import { fetchAppliedWithRetry } from "./check-migration-drift-gate.mjs";
 import { newestVersion, VERSION_PATTERN } from "./check-migration-order.mjs";
 import { ENVIRONMENTS, loadEnvironments, supabaseAccessTokenFor } from "./lib/environments.mjs";
 import { buildSnapshot, SNAPSHOT_ARTIFACT_NAME } from "./lib/migration-snapshot.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 function defaultWriteSummary(text) {
   const path = process.env.GITHUB_STEP_SUMMARY;
@@ -210,7 +211,6 @@ function getArg(name) {
   return v;
 }
 
-const isDirectRun = process.argv[1] && process.argv[1].endsWith("publish-migration-snapshot.mjs");
-if (isDirectRun) {
+if (isInvokedDirectly(import.meta.url)) {
   process.exit(await publishSnapshot({ outPath: getArg("--out") }));
 }
