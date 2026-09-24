@@ -15,12 +15,14 @@
 // WHAT IT CHECKS.
 // - A walk of apps/mobile's non-spec sources (app.json included): no whole
 //   word "Signet" and no signet- download filename anywhere but a comment
-//   line, one that starts with `//`, `*`, `/*` or `{/*`. A design-system note
+//   that starts its line with `//`, `*`, `/*` or `{/*`. A design-system note
 //   that names Signet goes on such a line, not after code. The walk is what
 //   makes the pinned sites below not the whole story: a new screen that says
 //   Signet fails here without anyone listing it.
-// - Every `Settings → <name>` recovery path names `expo.name` from app.json,
-//   because iOS Settings lists the app under that name (ADR-25 step 2).
+// - Every `Settings → <name>` recovery path in code names `expo.name` from
+//   app.json, because iOS Settings lists the app under that name (ADR-25
+//   step 2), and at least two exist. A path in any comment is not a recovery
+//   path and counts for neither.
 // - The sign-in wordmark and tagline, the calendar ICS PRODID and filename
 //   fallback, and the spec fixtures for the payment copy.
 //
@@ -110,14 +112,17 @@ function walkMobile(dir = MOBILE_ROOT, { specs = false } = {}) {
  * - A `/*` that starts a line of JSX text or of a misread template opens a
  *   block comment that runs to the next `*\/`.
  * - Whether a `/` starts a regex or divides is judged by what precedes it on
- *   its line, which an unusual expression can defeat.
+ *   its line (or, first on its line, by the line above unless that is a
+ *   comment), which an unusual expression can defeat.
  * - A raw `'` or `"` in JSX text would miscount strings. Lint keeps them out
  *   (react/no-unescaped-entities, and `lint` runs with --max-warnings 0).
  * - A stray backtick in JSX text, which that rule allows, flips template
  *   tracking: template bodies read as code and code as template text.
- * So codeMatches doesn't take the scanner's word alone: a match counts as a
- * comment only when its line also starts like one. Hiding copy then needs a
- * misread and copy that itself starts its line with `//`, `*`, `/*` or `{/*`.
+ * So copyMatches doesn't take the scanner's word alone: a match counts as a
+ * comment only when the comment holding it starts its line (`//`, `/*`, `{/*`,
+ * or a `*` continuation line). Hiding copy then needs a misread and a line
+ * that itself starts with `//`, `*`, `/*` or `{/*`: copy there, or code such
+ * as a `*[Symbol.iterator]` method or a `* rate` continuation line.
  * Checked 2026-09-24 against the TypeScript compiler's comment ranges over
  * every js/ts/tsx file under apps/mobile, specs included: identical.
  */
@@ -197,10 +202,15 @@ const REGEX_AFTER = /(?:^|[(,=:[!&|?{};+\-*%>~^]|\b(?:return|typeof|case|do|else
  * on the same line.
  */
 function regexEnd(source, at) {
-  // Only this line counts: a regex that starts its own line after a comment
-  // line must not be judged by the comment's last words.
   const lineStart = source.lastIndexOf("\n", at - 1) + 1;
-  if (!REGEX_AFTER.test(source.slice(Math.max(lineStart, at - 12), at))) return null;
+  let before = source.slice(lineStart, at);
+  if (/^\s*$/.test(before) && lineStart > 0) {
+    // First on its line: the line above decides (`(a + b)` then `/ 2` is
+    // division), unless it is a comment line, whose last words say nothing.
+    const above = source.slice(source.lastIndexOf("\n", lineStart - 2) + 1, lineStart - 1);
+    before = /^\s*(?:\/\/|\*|\/\*)/.test(above) ? "" : above;
+  }
+  if (!REGEX_AFTER.test(before.slice(-12))) return null;
   let inClass = false;
   for (let i = at + 1; i < source.length; i += 1) {
     const char = source[i];
@@ -217,20 +227,41 @@ function inRanges(ranges, index) {
   return ranges.some(([from, to]) => index >= from && index < to);
 }
 
-/** Whether the line holding `index` starts as a comment line does. */
-function onCommentLine(source, index) {
+/**
+ * Whether `index` sits in a comment that starts its line: the comment range
+ * holding it opens at the line's first non-blank character (or right after a
+ * leading `{`), or opened on an earlier line and this line continues it with
+ * `*`. A comment that opens later on the line, after code, doesn't count.
+ */
+function inLineComment(ranges, source, index) {
+  const range = ranges.find(([from, to]) => index >= from && index < to);
+  if (!range) return false;
   const lineStart = source.lastIndexOf("\n", index - 1) + 1;
-  return /^\s*(?:\/\/|\*|\/\*|\{\/\*)/.test(source.slice(lineStart, index));
+  const lead = source.slice(lineStart).match(/^\s*\{?/);
+  const first = lineStart + lead[0].length;
+  if (range[0] < lineStart) return /^\s*\*/.test(source.slice(lineStart, index));
+  return range[0] === first;
 }
 
-/** Every match of `pattern` in each file that isn't in a comment on a comment line. */
-function codeMatches(files, pattern) {
+/** Matches of `pattern` that count as copy: everything but a comment that starts its line. */
+function copyMatches(files, pattern) {
   const found = [];
   for (const { rel, source } of files) {
     const comments = commentRanges(rel, source);
     for (const match of source.matchAll(pattern)) {
-      const comment = inRanges(comments, match.index) && onCommentLine(source, match.index);
-      if (!comment) found.push({ rel, source, match });
+      if (!inLineComment(comments, source, match.index)) found.push({ rel, source, match });
+    }
+  }
+  return found;
+}
+
+/** Matches of `pattern` outside every comment the scanner found: code for certain. */
+function certainCodeMatches(files, pattern) {
+  const found = [];
+  for (const { rel, source } of files) {
+    const comments = commentRanges(rel, source);
+    for (const match of source.matchAll(pattern)) {
+      if (!inRanges(comments, match.index)) found.push({ rel, source, match });
     }
   }
   return found;
@@ -240,9 +271,9 @@ function lineOf(source, index) {
   return source.slice(0, index).split("\n").length;
 }
 
-/** `Signet` as a whole word outside comments; `SignetTokens` is not a hit. */
+/** `Signet` as a whole word anywhere but a comment that starts its line; `SignetTokens` is not a hit. */
 export function signetCopyProblems(files) {
-  return codeMatches(files, /\bSignet\b/g).map(
+  return copyMatches(files, /\bSignet\b/g).map(
     ({ rel, source, match }) => `${rel}:${lineOf(source, match.index)}`,
   );
 }
@@ -251,14 +282,18 @@ export function signetCopyProblems(files) {
 export const SIGNET_DOWNLOAD_NAME = /\bsignet-[^\n]{0,80}?\.(?:ics|csv|pdf)\b/gi;
 
 export function signetDownloadNameProblems(files) {
-  return codeMatches(files, SIGNET_DOWNLOAD_NAME).map(
+  return copyMatches(files, SIGNET_DOWNLOAD_NAME).map(
     ({ rel, source, match }) => `${rel}:${lineOf(source, match.index)}`,
   );
 }
 
-/** Every `Settings → X` path, with X the word iOS Settings must list. */
+/**
+ * Every `Settings → X` path in code, with X the word iOS Settings must list.
+ * Only code outside every comment counts, so a misread can only drop a path,
+ * which the floor then reports, never supply one.
+ */
 export function collectSettingsPaths(files) {
-  return codeMatches(files, /Settings → ([A-Za-z][\w-]*)/g).map(({ rel, source, match }) => ({
+  return certainCodeMatches(files, /Settings → ([A-Za-z][\w-]*)/g).map(({ rel, source, match }) => ({
     rel,
     line: lineOf(source, match.index),
     name: match[1],
@@ -486,6 +521,37 @@ test("a misread `/*` or backtick can't hide copy on a line that isn't a comment 
     { rel: "d.tsx", source: "const re = [\n  // backtick\n  /`/,\n];\nconst css = `\n  /* all\n`;\n<Text>Signet</Text>\n" },
   ];
   assert.deepEqual(signetCopyProblems(files), ["a.tsx:5", "b.tsx:5", "c.tsx:4", "d.tsx:8"]);
+});
+
+test("a comment that opens after code on a line exempts nothing after a misread", () => {
+  const files = [
+    { rel: "a.tsx", source: "<Text>\n  {/* keep on one line */}Tap and//or hold to open Signet.\n</Text>\n" },
+    { rel: "b.tsx", source: "/* x */ <Text>Type // to reply in Signet</Text>\n" },
+  ];
+  assert.deepEqual(signetCopyProblems(files), ["a.tsx:2", "b.tsx:1"]);
+});
+
+test("a Settings path in a comment is no recovery path, either way", () => {
+  const code = (rel, text) => ({ rel, source: `const reason = "${text}";\n` });
+  const study = code("study.tsx", "Turn it on in Settings → Frapp → Location.");
+  const primer = code("primer.tsx", "Turn it on in Settings → Frapp → Location.");
+  const noted = [
+    study,
+    primer,
+    { rel: "c.tsx", source: "Linking.openSettings(); // iOS: Settings → Privacy → Location\n" },
+    { rel: "d.tsx", source: "{/* Undo lives in\n    Settings → Blocked members. */}\n" },
+  ];
+  assert.deepEqual(settingsPathProblems(noted, "Frapp"), []);
+  const dropped = [study, { rel: "e.tsx", source: "Linking.openSettings(); // lands on Settings → Frapp\n" }];
+  assert.deepEqual(settingsPathProblems(dropped, "Frapp"), ["must keep at least 2 Settings → Frapp paths"]);
+});
+
+test("a `/` first on its line after code divides, after a comment it starts a regex", () => {
+  const files = [
+    { rel: "a.ts", source: "const x = (a + b)\n  / 2 + `${c}/d`;\n// Signet gold\n" },
+    { rel: "b.ts", source: 'const t = x.replace(\n  // drop inline-code ticks\n  /`/g,\n  "",\n);\n// Signet gold ring\n' },
+  ];
+  assert.deepEqual(signetCopyProblems(files), []);
 });
 
 test("a design-system note names Signet only on a comment line", () => {
