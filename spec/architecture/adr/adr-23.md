@@ -126,10 +126,11 @@ small round is reviewed inline.
   conflicts with `main`, the branch gets a full review, as before.
 - **The hook accepts a commit that adds nothing unreviewed.** `.githooks/pre-push` asks
   `scripts/diff-review-scope.mjs --check` about every pushed tip, which passes a marked commit, one
-  already on `origin/main`, or one whose delta is empty. A base sync then needs no review at all. That replaces the `merged` marker
-  kind; a marker now records only that a review ran. The script trusts a marker only on the
-  branch's own first-parent line, and never an empty one: those predate kinds and were written by
-  `touch` after reviews that could cover part of the branch.
+  already on `origin/main`, or one whose delta is empty. A clean base sync then needs no review at
+  all. That replaces the `merged` marker kind; a marker now records only that a review ran. The
+  script trusts a marker as a review base only on the branch's own first-parent line, and never an
+  empty one: those predate kinds and were written by `touch` after reviews that could cover part of
+  the branch.
 - **Candidates at one line are verified together**, by one verifier returning a verdict per finding.
   That replaces the streaming dedup chain and the workflow's verify-only mode.
 
