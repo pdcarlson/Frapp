@@ -29,7 +29,12 @@ const DEFAULT_MAX_PAGES = 5;
 export async function fetchJson({ url, headers, what, fetchImpl = fetch }) {
   const response = await fetchImpl(url, { headers });
   if (!response.ok) {
-    throw new Error(`${what} returned HTTP ${response.status}`);
+    // `status` rides on the error so a caller can tell a dead key or a wrong
+    // id (a 401/403/404, which re-asking can't fix) from a provider blip
+    // without parsing the message. `verify-render-deploy.mjs` relies on it.
+    const error = new Error(`${what} returned HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }
