@@ -6,7 +6,7 @@ import { EYEBROW } from "@/components/ui/typography";
 import type { StagedRole } from "./upload-step";
 
 /**
- * Signet's seeded system roles, in the order the onboarding wizard shows them.
+ * Frapp's seeded system roles, in the order the onboarding wizard shows them.
  *
  * Keys mirror `SystemRoleKeys` in the API's permission constants.
  */
@@ -23,13 +23,13 @@ const SIGNET_ROLES: { key: string; label: string; hint: string }[] = [
 export const DEFAULT_SIGNET_ROLE = "MEMBER";
 
 /**
- * Discord role → Signet role, as a note to the admin's future self.
+ * Discord role → Frapp role, as a note to the admin's future self.
  *
  * **This grants nothing.** The importer never touches a `members` row and never
  * assigns a role; every imported author is a name on a message, not an account,
  * so there is nobody to grant anything to. What the mapping is for is the step
  * that comes after the import: an admin looking at who used to be Exec, so they
- * can promote the right people by hand. That matches how Signet's onboarding
+ * can promote the right people by hand. That matches how Frapp's onboarding
  * already works — everyone starts as a Member and is promoted deliberately —
  * and it means a compromised or careless Discord export cannot hand anyone
  * permissions here.
@@ -49,7 +49,7 @@ export function RoleMappingStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Note which Signet role each Discord role corresponds to. This does not
+        Note which Frapp role each Discord role corresponds to. This does not
         grant anything, since imported messages have no accounts behind them. It
         is a worksheet for promoting people yourself once the archive is in.
       </p>
@@ -78,7 +78,7 @@ export function RoleMappingStep({
 
                 <div
                   role="radiogroup"
-                  aria-label={`Signet role for ${role.roleName}`}
+                  aria-label={`Frapp role for ${role.roleName}`}
                   className="grid grid-cols-2 gap-2 lg:grid-cols-4"
                 >
                   {SIGNET_ROLES.map((signetRole) => {

@@ -31,7 +31,7 @@ export default async function Home() {
   return (
     <AuthScreen
       mark
-      title="Signet"
+      title="Frapp"
       subtitle="Ask your chapter anything."
       footer={
         <>

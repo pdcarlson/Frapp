@@ -624,7 +624,7 @@ export function ProfilePanel() {
             The Theme select that used to live here is gone, and the copy that
             promised "theme controls the whole dashboard" with it.
             `next-themes` and the header toggle were deleted in the #920 shell
-            slice — Signet is dark-only and `foundations.md` defines no light
+            slice — the design system is dark-only and `foundations.md` defines no light
             values — so the control had been writing `user_settings.theme` with
             nothing on any surface reading it. `spec/ui/web-dashboard/README.md`
             has asserted "no user-facing theme switch" since that slice; this is

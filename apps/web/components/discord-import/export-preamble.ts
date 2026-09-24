@@ -8,7 +8,7 @@
  * This is a **hint**, not a decision. The server re-reads the real preamble from
  * the bytes it is importing and keys the mapping on the channel id it read
  * there — so a wrong or tampered value here cannot redirect a Discord channel's
- * history into a Signet channel the admin did not choose.
+ * history into a Frapp channel the admin did not choose.
  */
 
 import { parseExportPreamble as parseDiscordExportPreamble } from "@repo/validation";

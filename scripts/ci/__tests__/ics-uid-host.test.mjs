@@ -1,22 +1,19 @@
-// Locks the web ICS filename fallback on Signet until ADR-25 step 4, and the
-// @frapp.live UID host on every surface.
+// Locks the @frapp.live ICS UID host on every surface that writes an .ics.
 //
-// WHY THIS EXISTS. Leftover 1929 renamed ICS PRODID and the empty-title
-// .ics fallback from Frapp to Signet. Those strings sit next to the UID
-// host `@frapp.live`, which must stay. A later leftover sweep can flip
-// the host to `@signet.live`, or a merge can put the wrong PRODID back,
-// without a product-copy test noticing.
+// WHY THIS EXISTS. Leftover 1929 renamed the ICS PRODID and the empty-title
+// .ics fallback from Frapp to Signet. Those strings sit next to the UID host
+// `@frapp.live`, which must stay. A later sweep can flip the host to
+// `@signet.live` without a product-copy test noticing.
 //
-// ADR-25 NAMES THE PRODUCT FRAPP and renames it one surface at a time, so
-// each surface leaves this lock with its own step. Step 2 took the mobile
-// PRODID and filename fallback to frapp-mobile-copy.test.mjs, and step 3
-// took the API PRODID to frapp-api-copy.test.mjs. The web fallback flips
-// with step 4. The UID host is a permanent identifier on every surface and
-// stays here.
+// ADR-25 NAMES THE PRODUCT FRAPP and renamed it one surface at a time. This
+// lock was signet-calendar-prodid, and each step took its surface's PRODID
+// and filename fallback to that surface's own copy lock: step 2 to
+// frapp-mobile-copy, step 3 to frapp-api-copy, and step 4 (the web fallback)
+// to frapp-web-copy. The UID host is a permanent identifier (ADR-25), not
+// copy, so it is all that stays here.
 //
-// SCOPE. The web empty-title filename fallback, and the UID host. Do not
-// assert scheme or bundle id. Export CSV/PDF prefixes stay on their own
-// lock (signet-export-filenames).
+// SCOPE. The UID host only. Do not assert the scheme, the bundle id, a PRODID
+// or a download name.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -26,25 +23,9 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-const FILENAME_SITES = [
-  {
-    rel: "apps/web/components/events/event-detail-sheet.tsx",
-    wanted: '"signet-event"',
-    banned: '"frapp-event"',
-  },
-];
-
 function readRepo(rel) {
   return readFileSync(join(REPO_ROOT, rel), "utf8");
 }
-
-test("empty-title ICS fallback filename is signet-event, not frapp-event", () => {
-  for (const site of FILENAME_SITES) {
-    const source = readRepo(site.rel);
-    assert.match(source, new RegExp(site.wanted), site.rel);
-    assert.doesNotMatch(source, new RegExp(site.banned), `${site.rel} must not fall back to ${site.banned}`);
-  }
-});
 
 export const UID_HOST = "@frapp.live";
 export const UID_SITES = [

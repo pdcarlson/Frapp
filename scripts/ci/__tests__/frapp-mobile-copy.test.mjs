@@ -36,9 +36,10 @@
 // decision 2026-09-22). Put the brand line back on mobile in the slice that
 // ships Ask.
 //
-// SCOPE. apps/mobile only. The API renamed in ADR-25 step 3 and has its own
-// walk (frapp-api-copy.test.mjs). The web and landing surfaces rename in
-// steps 4 and 5, and their locks still pin what they ship today. The
+// SCOPE. apps/mobile only. The API renamed in ADR-25 step 3 and the web
+// dashboard in step 4, and each has its own walk (frapp-api-copy.test.mjs,
+// frapp-web-copy.test.mjs). Landing renames in step 5, and its lock still
+// pins what it ships today. The
 // permanent identifiers (bundle id live.frapp.mobile, slug and scheme frapp,
 // the @frapp.live ICS UID host) are not copy and are not this lock's.
 

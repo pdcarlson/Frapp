@@ -461,7 +461,7 @@ describe('DiscordImportService — channel mapping', () => {
           mapping_action: 'use_existing',
         },
       ]),
-    ).rejects.toThrow(/Pick a Signet channel/);
+    ).rejects.toThrow(/Pick a Frapp channel/);
   });
 
   it('refuses a target channel from another chapter', async () => {

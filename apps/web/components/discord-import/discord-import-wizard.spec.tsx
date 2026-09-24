@@ -154,7 +154,7 @@ describe("ImportWizard — the consent gate", () => {
   });
 
   it("blocks Continue until the notice is acknowledged", () => {
-    // The friction point. It is not enforced technically — Signet cannot see
+    // The friction point. It is not enforced technically — Frapp cannot see
     // someone else's Discord server — but it must be deliberate.
     render(<ImportWizard onStarted={() => {}} onCancel={() => {}} />);
     chooseUploadPath();
@@ -389,7 +389,7 @@ describe("ChannelMappingStep — ask, never guess", () => {
   ];
 
   it("starts every channel with no selection", () => {
-    // chat_channels has no unique (chapter_id, name), so a same-name Signet
+    // chat_channels has no unique (chapter_id, name), so a same-name Frapp
     // channel is not evidence of anything. Nothing may be pre-selected.
     render(
       <ChannelMappingStep

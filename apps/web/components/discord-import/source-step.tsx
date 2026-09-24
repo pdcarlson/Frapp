@@ -39,7 +39,7 @@ export function SourceStep({
       title: "Connect Discord",
       hint: "Recommended",
       detail: botAvailable
-        ? "Add the Signet bot to your server and we read the history for you. Nothing to download, nothing to upload. You will need the Manage Server permission in Discord."
+        ? "Add the Frapp bot to your server and we read the history for you. Nothing to download, nothing to upload. You will need the Manage Server permission in Discord."
         : "Not available in this environment. Use the export upload instead, which does the same job.",
       disabled: !botAvailable,
     },
@@ -55,7 +55,7 @@ export function SourceStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        There are two ways to bring your Discord history into Signet. Both end
+        There are two ways to bring your Discord history into Frapp. Both end
         up in the same place, and both ask you the same questions about where
         each channel should land.
       </p>

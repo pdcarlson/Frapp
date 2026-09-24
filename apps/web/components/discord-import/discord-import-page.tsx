@@ -252,7 +252,7 @@ function DiscordImportBody({
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div>
             <p className="text-sm text-muted-foreground">
-              Bring your chapter’s Discord history into Signet as read-only
+              Bring your chapter’s Discord history into Frapp as read-only
               archive messages.
             </p>
           </div>

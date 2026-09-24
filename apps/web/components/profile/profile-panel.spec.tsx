@@ -504,9 +504,9 @@ describe("ProfilePanel — the theme control is gone, not hidden", () => {
     expect(lastSettingsBody()).not.toHaveProperty("theme");
   });
 
-  it("says Signet, not Frapp", () => {
+  it("never says Signet", () => {
     render(<ProfilePanel />);
-    expect(screen.queryByText(/frapp/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/signet/i)).not.toBeInTheDocument();
   });
 });
 

@@ -1,20 +1,20 @@
-// Locks the ops-nudge catalog copy on Signet.
+// Locks the ops-nudge catalog copy on Frapp.
 //
-// WHY THIS EXISTS. The nudge catalog says Signet, and the catalog spec bans
-// trial language but not a brand. A leftover sweep that changes the brand in
-// the catalog would ship the wrong name.
+// WHY THIS EXISTS. The nudge catalog names the product, and the catalog spec
+// bans trial language but not a brand. A leftover sweep that changes the
+// brand in the catalog would ship the wrong name.
 //
-// ADR-25 NAMES THE PRODUCT FRAPP and renames it one surface at a time. This
-// lock also held the mobile payment-copy fixtures until step 2 moved the
-// mobile binary to Frapp and split them out into frapp-mobile-copy.test.mjs.
-// The catalog is rendered by the web dashboard (ops-setup-nudge.tsx), so it
-// flips with step 4: the headlines become Frapp and Signet becomes the
-// banned word.
+// ADR-25 NAMES THE PRODUCT FRAPP and renamed it one surface at a time. This
+// lock was signet-ops-nudge-copy. It also held the mobile payment-copy
+// fixtures until step 2 moved the mobile binary to Frapp and split them out
+// into frapp-mobile-copy.test.mjs. The catalog is rendered by the web
+// dashboard (ops-setup-nudge.tsx), so it flipped with step 4: the headlines
+// became Frapp and Signet the banned word.
 //
 // SCOPE. Nudge headlines/descriptions. Do not run eas init.
 //
 // The first lock imported DUES_HEADLINE into every assert, so rewriting
-// the const and the catalog together off Signet would still pass. Pin
+// the const and the catalog together off Frapp would still pass. Pin
 // the assignment lines. Walk packages/validation for a second
 // ops-nudges.ts.
 
@@ -34,8 +34,8 @@ const MIN_OPS_NUDGE_FILES = 1;
 const EXPECTED_OPS_NUDGE_FILES = [NUDGES];
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next", "coverage"]);
 
-export const DUES_HEADLINE = "Collect dues in Signet";
-export const EVENTS_HEADLINE = "Run your calendar in Signet";
+export const DUES_HEADLINE = "Collect dues in Frapp";
+export const EVENTS_HEADLINE = "Run your calendar in Frapp";
 
 export function nudgeCopyProblems(source) {
   const problems = [];
@@ -45,11 +45,11 @@ export function nudgeCopyProblems(source) {
   if (!new RegExp(`headline:\\s*"${EVENTS_HEADLINE}"`).test(source)) {
     problems.push(`events headline must be ${EVENTS_HEADLINE}`);
   }
-  if (/headline:\s*"[^"]*\bFrapp\b/.test(source)) {
-    problems.push("nudge headline must not name Frapp");
+  if (/headline:\s*"[^"]*\bSignet\b/.test(source)) {
+    problems.push("nudge headline must not name Signet");
   }
-  if (/description:\s*"[^"]*\bFrapp\b/.test(source)) {
-    problems.push("nudge description must not name Frapp");
+  if (/description:\s*"[^"]*\bSignet\b/.test(source)) {
+    problems.push("nudge description must not name Signet");
   }
   return problems;
 }
@@ -96,12 +96,12 @@ export function walkedCatalogProblems(files) {
 export function lockSelfProblems(source) {
   const problems = [];
   const dues = source.match(/^export const DUES_HEADLINE = "([^"]+)";?$/m);
-  if (!dues || dues[1] !== "Collect dues in Signet") {
-    problems.push("DUES_HEADLINE must stay Collect dues in Signet");
+  if (!dues || dues[1] !== "Collect dues in Frapp") {
+    problems.push("DUES_HEADLINE must stay Collect dues in Frapp");
   }
   const events = source.match(/^export const EVENTS_HEADLINE = "([^"]+)";?$/m);
-  if (!events || events[1] !== "Run your calendar in Signet") {
-    problems.push("EVENTS_HEADLINE must stay Run your calendar in Signet");
+  if (!events || events[1] !== "Run your calendar in Frapp") {
+    problems.push("EVENTS_HEADLINE must stay Run your calendar in Frapp");
   }
   const nudges = source.match(/^const NUDGES = "([^"]+)";?$/m);
   if (!nudges || nudges[1] !== "packages/validation/src/ops-nudges.ts") {
@@ -139,25 +139,25 @@ function readRepo(rel) {
   return readFileSync(join(REPO_ROOT, rel), "utf8");
 }
 
-test("live ops-nudge catalog stays Signet", () => {
+test("live ops-nudge catalog says Frapp", () => {
   assert.deepEqual(nudgeCopyProblems(readRepo(NUDGES)), []);
   assert.deepEqual(catalogSites(liveCatalogFiles()), EXPECTED_OPS_NUDGE_FILES);
   assert.deepEqual(walkedCatalogProblems(liveCatalogFiles()), []);
 });
 
-test("putting Frapp in a nudge headline fails", () => {
+test("putting Signet back in a nudge headline fails", () => {
   const source = readRepo(NUDGES).replace(
     DUES_HEADLINE,
-    "Collect dues in Frapp",
+    "Collect dues in Signet",
   );
   const problems = nudgeCopyProblems(source);
   assert.ok(
-    problems.some((problem) => problem.includes("Frapp")),
+    problems.some((problem) => problem.includes("Signet")),
     problems.join("; "),
   );
 });
 
-test("renaming a Signet headline fails", () => {
+test("renaming a Frapp headline fails", () => {
   const source = readRepo(NUDGES).replace(
     EVENTS_HEADLINE,
     "Run your calendar in the app",
@@ -177,15 +177,15 @@ test("a second ops-nudges.ts site fails the walk", () => {
   );
 });
 
-test("lock pins the Signet headline assignment and refuses a projectId require", () => {
+test("lock pins the Frapp headline assignment and refuses a projectId require", () => {
   assert.deepEqual(lockSelfProblems(readFileSync(LOCK, "utf8")), []);
 });
 
-test("rewriting DUES_HEADLINE off Signet fails", () => {
+test("rewriting DUES_HEADLINE off Frapp fails", () => {
   const problems = lockSelfProblems(
     readFileSync(LOCK, "utf8").replace(
-      'export const DUES_HEADLINE = "Collect dues in Signet"',
       'export const DUES_HEADLINE = "Collect dues in Frapp"',
+      'export const DUES_HEADLINE = "Collect dues in Signet"',
     ),
   );
   assert.ok(

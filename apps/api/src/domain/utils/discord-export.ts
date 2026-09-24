@@ -196,7 +196,7 @@ export interface DiscordImportPayload {
   /**
    * Discord had this message pinned.
    *
-   * Recorded rather than imported as `is_pinned`. Signet caps a channel at
+   * Recorded rather than imported as `is_pinned`. Frapp caps a channel at
    * `MAX_PINNED_MESSAGES` (50) as a service rule with no database constraint
    * behind it, so importing a channel with 200 pins would silently blow past a
    * limit the product enforces on every other surface — and would bury whatever
@@ -274,12 +274,12 @@ export interface ImportedMessageRow {
 
 export interface ToImportedMessageArgs {
   message: DiscordExportMessage;
-  /** The Signet channel, resolved from the preamble the WORKER read. */
+  /** The Frapp channel, resolved from the preamble the WORKER read. */
   channelId: string;
   importId: string;
   /** Resolves an export-relative asset path to a stored object path. */
   resolveAssetPath: (relativePath: string) => string | null;
-  /** Resolves a Discord snowflake to an already-imported Signet message id. */
+  /** Resolves a Discord snowflake to an already-imported Frapp message id. */
   resolveReplyTarget: (externalMessageId: string) => string | null;
   attachmentCount: number;
 }
