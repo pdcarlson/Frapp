@@ -46,6 +46,8 @@ jobs:
     nested: { a: [x, y], b: c }
     apostrophe: { note: don't, issues: write }
     closer: { x: a), y: z }
+    anchored: { contents: &r "read]", issues: write }
+    tagged: { a: !!str "x, y", b: c }
     escaped: { a: "x\\", y", b: z }
     doubled: { a: 'it''s, ok', b: z }
     steps:
@@ -132,6 +134,11 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     // apostrophe is text and `issues` is still seen.
     assert.deepEqual(read("apostrophe"), { note: "don't", issues: "write" });
     assert.deepEqual(read("closer"), { x: "a)", y: "z" });
+    // A node property before a quoted value must not hide what follows it:
+    // `issues: write` here is a scope a permissions guard has to see.
+    assert.deepEqual([...edges.keys.get("anchored").keys()], ["contents", "issues"]);
+    assert.equal(read("anchored").issues, "write");
+    assert.equal(read("tagged").b, "c");
     // The escaped quote doesn't end the scalar, so its comma isn't a split.
     // Values keep their escapes: the helper strips the quotes, not the escapes.
     assert.deepEqual(read("escaped"), { a: 'x\\", y', b: "z" });

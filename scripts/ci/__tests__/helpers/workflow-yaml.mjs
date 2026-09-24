@@ -352,8 +352,8 @@ function opensMapping(raw) {
  * A flow collection's body split on its top-level commas: not a comma inside a
  * quoted scalar or a nested collection (`{ a: [x, y], b: "c, d" }` is two
  * entries). Like YAML, a quote opens a quoted scalar only where a scalar
- * starts (after `{`, `[`, `,` or `:`), so the apostrophe in `note: don't` is
- * plain text; `\"` inside double quotes and `''` inside single quotes are
+ * starts (after `{`, `[`, `,` or `:`, and after a node property such as an
+ * `&anchor` or a `!!tag`), so the apostrophe in `note: don't` is plain text; `\"` inside double quotes and `''` inside single quotes are
  * escapes, not the end. Parentheses aren't flow indicators and aren't tracked.
  */
 function splitFlow(body) {
@@ -372,6 +372,12 @@ function splitFlow(body) {
     if (quote === "'") {
       if (ch === "'" && body[i + 1] === "'") i += 1;
       else if (ch === "'") quote = null;
+      continue;
+    }
+    if ((ch === "&" || ch === "!") && scalarStart) {
+      // A node property: skip the token and stay at the scalar's start, so a
+      // quoted value after it (`&r "read]"`) is still read as quoted.
+      while (i + 1 < body.length && !/[\s,{}[\]]/.test(body[i + 1])) i += 1;
       continue;
     }
     if ((ch === '"' || ch === "'") && scalarStart) {
