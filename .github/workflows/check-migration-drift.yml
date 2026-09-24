@@ -46,8 +46,8 @@ concurrency:
 jobs:
   check-drift:
     runs-on: ubuntu-latest
-    # Secrets belong to the `automation` environment: `main` only once the owner's
-    # #2583 sets that rule and moves them there, no required reviewers (#2518).
+    # Secrets belong to the `automation` environment: `main` only, no required
+    # reviewers (#2518, #2583).
     # See docs/internal/ci-cd/AGENT_INFRA.md § GitHub environments and bootstrap secrets.
     environment:
       name: automation
@@ -74,6 +74,8 @@ jobs:
       # Both environments are needed in one
       # job so a single alert issue can speak for the whole fleet, so the
       # injection runs twice and each ref is captured before being overwritten.
+      # So is each SUPABASE_ACCESS_TOKEN: each environment's reads only its own
+      # project (#2583).
       # NOTE: the Infisical slug for production is `prod`, not `production`.
       - name: Inject staging secrets from Infisical
         uses: ./.github/actions/infisical-secrets
@@ -82,13 +84,21 @@ jobs:
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
 
-      - name: Capture staging project ref
+      - name: Capture staging project ref and token
         run: |
-          if [ -z "$SUPABASE_PROJECT_REF" ]; then
-            echo "::error::SUPABASE_PROJECT_REF is not set in the Infisical 'staging' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
+          for name in SUPABASE_PROJECT_REF SUPABASE_ACCESS_TOKEN; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is not set in the Infisical 'staging' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+              exit 1
+            fi
+          done
           echo "STAGING_PROJECT_REF=$SUPABASE_PROJECT_REF" >> "$GITHUB_ENV"
+          echo "SUPABASE_ACCESS_TOKEN_STAGING=$SUPABASE_ACCESS_TOKEN" >> "$GITHUB_ENV"
+          # An injection exports only the keys its environment has, so without
+          # this a key missing from `prod` would keep staging's value and pass
+          # the next step's check as production's.
+          echo "SUPABASE_PROJECT_REF=" >> "$GITHUB_ENV"
+          echo "SUPABASE_ACCESS_TOKEN=" >> "$GITHUB_ENV"
 
       - name: Inject production secrets from Infisical
         uses: ./.github/actions/infisical-secrets
@@ -97,20 +107,23 @@ jobs:
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
 
-      - name: Capture production project ref
+      - name: Capture production project ref and token
         run: |
-          if [ -z "$SUPABASE_PROJECT_REF" ]; then
-            echo "::error::SUPABASE_PROJECT_REF is not set in the Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
+          for name in SUPABASE_PROJECT_REF SUPABASE_ACCESS_TOKEN; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is not set in the Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+              exit 1
+            fi
+          done
           echo "PRODUCTION_PROJECT_REF=$SUPABASE_PROJECT_REF" >> "$GITHUB_ENV"
+          echo "SUPABASE_ACCESS_TOKEN_PRODUCTION=$SUPABASE_ACCESS_TOKEN" >> "$GITHUB_ENV"
 
       - name: Check migration drift
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # SUPABASE_ACCESS_TOKEN is account-level, so either injection supplies
-          # the same value; the production one is in scope here.
+          # Each label reads with its own SUPABASE_ACCESS_TOKEN_<LABEL>,
+          # captured above.
           DRIFT_TARGETS: "staging=${{ env.STAGING_PROJECT_REF }},production=${{ env.PRODUCTION_PROJECT_REF }}"
           PENDING_GRACE_HOURS: ${{ inputs.grace_hours || '24' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

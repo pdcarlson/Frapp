@@ -25,14 +25,11 @@ name: Nightly Backup
 # writes nothing. #1435 records the trap. The production jobs run under a separate
 # `production-backup` environment instead, which GitHub created on the first run
 # that referenced it, with no protection rules. It must never gain REQUIRED
-# REVIEWERS — that would reintroduce the trap — but it SHOULD get a deployment
-# branch policy of `main` only (Settings → Environments → production-backup →
-# Deployment branches → Selected → main; still unset, tracked on #1827): without one, anyone with
-# write access can dispatch a modified copy of this workflow from a branch and
-# run it under this environment. (Until the owner moves the Infisical machine
-# identity from repository scope into this environment's secrets, the policy
-# narrows the environment rather than the secret: #2518.) The deploy gate on
-# `production` is untouched.
+# REVIEWERS — that would reintroduce the trap. It does have a deployment branch
+# policy of `main` only (set 2026-09-23 by #2583, after #1827 tracked it), so a
+# modified copy of this workflow dispatched from a branch cannot run under this
+# environment, and its only secrets, the Infisical pair, live there rather than
+# at repository scope (#2518). The deploy gate on `production` is untouched.
 #
 # ── Why the production jobs inject TWO Infisical environments ────────────────
 # The source credentials (SUPABASE_PROJECT_REF, SUPABASE_DB_PASSWORD, SUPABASE_URL,

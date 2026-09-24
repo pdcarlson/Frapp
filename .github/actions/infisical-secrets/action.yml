@@ -138,7 +138,7 @@ runs:
     # when this step was written inline. That is the one property the whole
     # extraction rests on. No pull request exercises it any more: since #2518 no
     # PR-triggered job holds a credential, and every call site sits in a job only
-    # `main` is meant to run (the environment rule, #2583). `migration-snapshot.yml` exercises it after every staging deploy,
+    # `main` can run (the environment rule, #2583). `migration-snapshot.yml` exercises it after every staging deploy,
     # and its very next step reads SUPABASE_ACCESS_TOKEN from the job env.
     #
     # `include-imports: true` is not a default -- it was written at every original

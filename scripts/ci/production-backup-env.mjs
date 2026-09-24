@@ -12,8 +12,8 @@
 //
 // This script GETs the environment and fails if `protection_rules` contains
 // `required_reviewers` or `wait_timer`. Unreadable or missing is FAIL, not
-// pass. `deployment_branch_policy: null` is not a failure — locking branches
-// to `main` stays on #1827 and must not trip this watch.
+// pass. `deployment_branch_policy` is not checked here: the `main`-only rule
+// is #2583's (set 2026-09-23), and watching it is #2585.
 //
 // It does not name any GitHub `environment:` itself. A schedule job that
 // named `production-backup` would hang on the same trap it is watching for.

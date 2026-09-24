@@ -71,12 +71,16 @@
 // Management API read from `main` instead, and the job downloads the result.
 // `lib/migration-snapshot.mjs` serves it back through the same `fetchImpl` seam
 // the live read uses, so every clause below is identical either way. The live
-// read (`SUPABASE_ACCESS_TOKEN`, one GET per environment to the migration-history
-// endpoint, no SQL) remains for a manual run from a laptop.
+// read (one GET per environment to the migration-history endpoint, no SQL)
+// remains for a manual run from a laptop. Each environment is read with its own
+// token (`supabaseAccessTokenFor`): each Infisical environment's reads only its
+// own project (#2583).
 //
 // Env inputs:
 //   ORDER_GATE_BASE_REF     — required, the ref this change is measured against
-//   SUPABASE_ACCESS_TOKEN   — for a live read only; ignored with --snapshot
+//   SUPABASE_ACCESS_TOKEN_STAGING, SUPABASE_ACCESS_TOKEN_PRODUCTION
+//                           — for a live read only, ignored with --snapshot;
+//                             SUPABASE_ACCESS_TOKEN stands in for a missing one
 //   GITHUB_STEP_SUMMARY     — optional, written when present
 //
 // Flags:
@@ -100,7 +104,7 @@ import {
   fetchAppliedWithRetry,
   MIGRATIONS_PREFIX,
 } from "./check-migration-drift-gate.mjs";
-import { ENVIRONMENTS, loadEnvironments } from "./lib/environments.mjs";
+import { ENVIRONMENTS, loadEnvironments, supabaseAccessTokenFor } from "./lib/environments.mjs";
 import { openSnapshot, SNAPSHOT_WORKFLOW } from "./lib/migration-snapshot.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
@@ -440,7 +444,10 @@ function defaultWriteSummary(text) {
 }
 
 export async function runOrderGate({
-  accessToken = process.env.SUPABASE_ACCESS_TOKEN,
+  // One token for every environment (tests, `--applied-from`). Omitted, a live
+  // read takes each environment's own from the env.
+  accessToken,
+  tokenFor = accessToken === undefined ? (label) => supabaseAccessTokenFor(label) : () => accessToken,
   snapshotPath,
   nowMs = Date.now(),
   baseRef = process.env.ORDER_GATE_BASE_REF,
@@ -527,16 +534,6 @@ export async function runOrderGate({
   // The script is the only place that knows whether the read is needed. The
   // snapshot is loaded past the same line for the same reason: a stale one
   // must not redden a change that introduces nothing.
-  if (!snapshotPath && !accessToken) {
-    error(
-      "::error::This change adds or removes migrations, so the deployed databases must be " +
-        "read, and there is nothing to read them with. In CI, pass --snapshot <file> (the " +
-        "migration snapshot migration-drift-gate.yml downloads). From a laptop, set " +
-        "SUPABASE_ACCESS_TOKEN for a live read.",
-    );
-    return 2;
-  }
-
   let resolved;
   try {
     resolved = environments ?? loadEnvironments();
@@ -545,8 +542,21 @@ export async function runOrderGate({
     return 2;
   }
 
+  const untokened = ENVIRONMENTS.filter((label) => resolved[label] && !tokenFor(label));
+  if (!snapshotPath && untokened.length > 0) {
+    error(
+      "::error::This change adds or removes migrations, so the deployed databases must be " +
+        `read, and there is nothing to read ${untokened.join(" and ")} with. In CI, pass ` +
+        "--snapshot <file> (the migration snapshot migration-drift-gate.yml downloads). From a " +
+        "laptop, set each environment's token for a live read (" +
+        untokened.map((label) => `SUPABASE_ACCESS_TOKEN_${label.toUpperCase()}`).join(", ") +
+        "), or SUPABASE_ACCESS_TOKEN to one token that reads every project.",
+    );
+    return 2;
+  }
+
   let readFetch = fetchImpl;
-  let readToken = accessToken;
+  let readToken = null;
   if (snapshotPath) {
     try {
       const opened = openSnapshot(
@@ -585,7 +595,7 @@ export async function runOrderGate({
     const target = resolved[label];
     if (!target) continue;
     const applied = await fetchAppliedWithRetry({
-      accessToken: readToken,
+      accessToken: readToken ?? tokenFor(label),
       projectRef: target.supabaseProjectRef,
       fetchImpl: readFetch,
       log,
@@ -684,7 +694,7 @@ if (isDirectRun) {
       baseRef: getArg("--base") ?? process.env.ORDER_GATE_BASE_REF,
       snapshotPath: getArg("--snapshot"),
       fetchImpl: appliedFrom ? fetchFromFile(appliedFrom) : fetch,
-      accessToken: appliedFrom ? "offline" : process.env.SUPABASE_ACCESS_TOKEN,
+      ...(appliedFrom ? { accessToken: "offline" } : {}),
     }),
   );
 }
