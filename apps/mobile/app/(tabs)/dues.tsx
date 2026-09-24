@@ -57,7 +57,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * ## Copy discipline
  *
  * "Chapter dues", never "subscription" (`spec/ui/mobile/patterns.md`). The
- * chapter's own Signet subscription is a different bill with a different payer,
+ * chapter's own Frapp subscription is a different bill with a different payer,
  * and `useBillingStatus` is deliberately not read here.
  *
  * ## No entitlement gate, deliberately
@@ -151,7 +151,7 @@ export default function DuesScreen() {
 
       const outcome = await presentPaymentSheet({
         clientSecret,
-        merchantDisplayName: chapterName ?? "Signet",
+        merchantDisplayName: chapterName ?? "Frapp",
       });
       // Dismissing the sheet is a decision, not a failure. Nothing is said.
       if (outcome.kind === "canceled") return;

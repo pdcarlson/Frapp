@@ -1,11 +1,14 @@
-// Locks mobile OS permission dialogs and Expo Go pay/push copy on Signet.
+// Locks mobile OS permission dialogs and Expo Go pay/push copy on Frapp.
 //
-// WHY THIS EXISTS. The two app.json permission strings, the Expo Go
-// pay/push sentences, and the PaymentSheet merchant default are already
-// Signet. A leftover sweep can put Frapp back in the OS dialog, add a
-// third *Permission string on app.config.js the first lock would miss,
-// drop a prompt so the hardcoded list still passes, or treat Settings →
-// Signet / the store display name as out of this lock's scope. #1952.
+// WHY THIS EXISTS. ADR-25 names the product Frapp, and step 2 moved the
+// mobile binary to it: the app.json permission strings, the Expo Go
+// pay/push sentences, and the PaymentSheet merchant default. A leftover
+// sweep can put Signet back in the OS dialog, add a third *Permission
+// string on app.config.js the first lock would miss, or drop a prompt so
+// the hardcoded list still passes. This lock was signet-mobile-permissions
+// (#1952), which pinned the same sites on Signet until ADR-25 reversed the
+// name; "Signet" now names only the design system, never a string a member
+// reads.
 //
 // THE FLOOR WENT THREE -> TWO (#2296) -> THREE AGAIN (#2464). The third
 // prompt is expo-image-picker's photosPermission. #2296 removed it because
@@ -28,10 +31,15 @@
 //
 // SCOPE. String-valued *Permission prompts under apps/mobile, the
 // stripeUnavailableReason / pushUnavailableReason definitions, and the
-// dues merchantDisplayName default. Leave app.json slug / scheme /
-// bundle id on the deferred rename. Do not add a must-exist assert
-// for the EAS project id. Do not run eas init. Do not walk landing.
-// Skip spec fixtures (1968 retires the Frapp pay-copy ones).
+// dues merchantDisplayName default. The ban on Signet anywhere else in the
+// mobile surface's copy, stripe.ts and push.ts included, and the
+// Settings → <expo.name> recovery paths are frapp-mobile-copy's: its walk
+// exempts a design-system note on its own comment line, which a file-wide
+// ban here would not.
+// app.json slug / scheme / bundle id are permanent identifiers (ADR-25),
+// not copy, and not this lock's. Do not add a must-exist assert for the
+// EAS project id. Do not run eas init. Do not walk landing. Skip spec
+// fixtures (frapp-mobile-copy pins the payment ones).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -55,19 +63,15 @@ const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", "coverage"]);
 const SOURCE_EXT = /\.(?:json|js|ts|tsx)$/;
 
 const PERMISSIONS = [
-  "Signet uses the camera to scan the check-in code at chapter events.",
-  "Signet confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
-  "Signet uses your photo library so you can send photos in chapter chat.",
+  "Frapp uses the camera to scan the check-in code at chapter events.",
+  "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
+  "Frapp uses your photo library so you can send photos in chapter chat.",
 ];
 
 const EXPECTED_SITES = [APP_JSON, DUES, PUSH, STRIPE].sort();
 
 function readRepo(rel) {
   return readFileSync(join(REPO_ROOT, rel), "utf8");
-}
-
-function literal(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function walkMobile(dir = MOBILE_ROOT) {
@@ -118,7 +122,7 @@ export function walkedPermissionCopyProblems(files) {
   const problems = [];
   for (const { rel, source } of files) {
     for (const prompt of collectPermissionStrings(source)) {
-      if (!/Signet/.test(prompt.value) || /\bFrapp\b/.test(prompt.value)) {
+      if (!/\bFrapp\b/.test(prompt.value) || /\bSignet\b/.test(prompt.value)) {
         problems.push(`${rel}:${prompt.key}`);
       }
     }
@@ -152,42 +156,36 @@ export function mobilePermissionLockProblems({ appJson, stripe, push, dues }) {
     }
   }
   for (const prompt of prompts) {
-    if (!/Signet/.test(prompt.value)) {
-      problems.push(`${prompt.key} must name Signet`);
+    if (!/\bFrapp\b/.test(prompt.value)) {
+      problems.push(`${prompt.key} must name Frapp`);
     }
-    if (/\bFrapp\b/.test(prompt.value)) {
-      problems.push(`${prompt.key} must not name Frapp`);
+    if (/\bSignet\b/.test(prompt.value)) {
+      problems.push(`${prompt.key} must not name Signet`);
     }
   }
 
   if (!/export function stripeUnavailableReason/.test(stripe)) {
     problems.push("must keep stripeUnavailableReason");
   }
-  if (!/installed Signet build/.test(stripe)) {
-    problems.push("stripeUnavailableReason must name the installed Signet build");
+  if (!/installed Frapp build/.test(stripe)) {
+    problems.push("stripeUnavailableReason must name the installed Frapp build");
   }
-  if (!/Signet mobile app/.test(stripe)) {
-    problems.push("stripeUnavailableReason must name the Signet mobile app");
-  }
-  if (/\bFrapp\b/.test(stripe)) {
-    problems.push("stripe.ts must not name Frapp");
+  if (!/Frapp mobile app/.test(stripe)) {
+    problems.push("stripeUnavailableReason must name the Frapp mobile app");
   }
 
   if (!/export function pushUnavailableReason/.test(push)) {
     problems.push("must keep pushUnavailableReason");
   }
-  if (!/installed Signet build/.test(push)) {
-    problems.push("pushUnavailableReason must name the installed Signet build");
-  }
-  if (/\bFrapp\b/.test(push)) {
-    problems.push("push.ts must not name Frapp");
+  if (!/installed Frapp build/.test(push)) {
+    problems.push("pushUnavailableReason must name the installed Frapp build");
   }
 
-  if (!/merchantDisplayName:\s*chapterName \?\? "Signet"/.test(dues)) {
-    problems.push('merchantDisplayName default must be chapterName ?? "Signet"');
+  if (!/merchantDisplayName:\s*chapterName \?\? "Frapp"/.test(dues)) {
+    problems.push('merchantDisplayName default must be chapterName ?? "Frapp"');
   }
-  if (/merchantDisplayName:\s*chapterName \?\? "Frapp"/.test(dues)) {
-    problems.push("merchantDisplayName default must not be Frapp");
+  if (/merchantDisplayName:\s*chapterName \?\? "Signet"/.test(dues)) {
+    problems.push("merchantDisplayName default must not be Signet");
   }
   return problems;
 }
@@ -226,7 +224,7 @@ export function lockSelfProblems(source) {
   return problems;
 }
 
-test("OS permission, Expo Go, and merchant copy stay Signet", () => {
+test("OS permission, Expo Go, and merchant copy say Frapp", () => {
   assert.deepEqual(
     mobilePermissionLockProblems({
       appJson: readRepo(APP_JSON),
@@ -240,11 +238,11 @@ test("OS permission, Expo Go, and merchant copy stay Signet", () => {
   assert.deepEqual(walkedPermissionCopyProblems(livePermissionFiles()), []);
 });
 
-test("putting Frapp in a camera permission string fails", () => {
+test("putting Signet in a camera permission string fails", () => {
   const problems = mobilePermissionLockProblems({
     appJson: readRepo(APP_JSON).replace(
-      "Signet uses the camera",
       "Frapp uses the camera",
+      "Signet uses the camera",
     ),
     stripe: readRepo(STRIPE),
     push: readRepo(PUSH),
@@ -259,7 +257,7 @@ test("putting Frapp in a camera permission string fails", () => {
 test("dropping cameraPermission fails", () => {
   const problems = mobilePermissionLockProblems({
     appJson: readRepo(APP_JSON).replace(
-      '"cameraPermission": "Signet uses the camera to scan the check-in code at chapter events."',
+      '"cameraPermission": "Frapp uses the camera to scan the check-in code at chapter events."',
       '"cameraPermission": false',
     ),
     stripe: readRepo(STRIPE),
@@ -275,18 +273,18 @@ test("dropping cameraPermission fails", () => {
 test("a third JS-style *Permission site fails the walk", () => {
   const rel = "apps/mobile/app.config.js";
   const source =
-    'module.exports = { cameraPermission: "Frapp uses the camera." };\n';
+    'module.exports = { cameraPermission: "Signet uses the camera." };\n';
   assert.equal(isPermissionCopySite(source), true);
   assert.deepEqual(walkedPermissionCopyProblems([{ rel, source }]), [
     `${rel}:cameraPermission`,
   ]);
 });
 
-test("turning a disabled microphonePermission into a Frapp prompt fails", () => {
+test("turning a disabled microphonePermission into a Signet prompt fails", () => {
   const problems = mobilePermissionLockProblems({
     appJson: readRepo(APP_JSON).replace(
       '"microphonePermission": false',
-      '"microphonePermission": "Frapp uses the microphone."',
+      '"microphonePermission": "Signet uses the microphone."',
     ),
     stripe: readRepo(STRIPE),
     push: readRepo(PUSH),
@@ -298,15 +296,15 @@ test("turning a disabled microphonePermission into a Frapp prompt fails", () => 
   );
 });
 
-test("putting Frapp back in stripeUnavailableReason fails", () => {
+test("putting Signet back in stripeUnavailableReason fails", () => {
   const problems = mobilePermissionLockProblems({
     appJson: readRepo(APP_JSON),
-    stripe: readRepo(STRIPE).replaceAll("Signet", "Frapp"),
+    stripe: readRepo(STRIPE).replaceAll("Frapp", "Signet"),
     push: readRepo(PUSH),
     dues: readRepo(DUES),
   });
   assert.ok(
-    problems.some((problem) => /stripe|Frapp/.test(problem)),
+    problems.some((problem) => problem.includes("installed Frapp build")),
     problems.join("; "),
   );
 });
@@ -327,18 +325,18 @@ test("dropping stripeUnavailableReason fails", () => {
   );
 });
 
-test("pinning the merchant default to Frapp fails", () => {
+test("pinning the merchant default to Signet fails", () => {
   const problems = mobilePermissionLockProblems({
     appJson: readRepo(APP_JSON),
     stripe: readRepo(STRIPE),
     push: readRepo(PUSH),
     dues: readRepo(DUES).replace(
-      'merchantDisplayName: chapterName ?? "Signet"',
       'merchantDisplayName: chapterName ?? "Frapp"',
+      'merchantDisplayName: chapterName ?? "Signet"',
     ),
   });
   assert.ok(
-    problems.some((problem) => problem.includes("must not be Frapp")),
+    problems.some((problem) => problem.includes("must not be Signet")),
     problems.join("; "),
   );
 });

@@ -143,11 +143,11 @@ describe("MessageActionsSheet — menu", () => {
     const tree = render({
       messageId: "m1",
       blockUserId: null,
-      senderName: "Signet",
+      senderName: "Frapp",
       senderInDirectory: false,
     });
     expect(text(tree)).toContain("Report message");
-    expect(text(tree)).not.toContain("Block Signet");
+    expect(text(tree)).not.toContain("Block Frapp");
   });
 
   it("confirms before blocking, and blocks only on the destructive choice", async () => {

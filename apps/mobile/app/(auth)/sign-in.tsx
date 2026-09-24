@@ -169,7 +169,7 @@ export default function SignIn() {
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         />
-        <Text style={styles.title}>Signet</Text>
+        <Text style={styles.title}>Frapp</Text>
         {/*
         The landing's closing line (D8, `spec/ui/landing/README.md`), not the
         brand tagline "Ask your chapter anything.": this is the first screen

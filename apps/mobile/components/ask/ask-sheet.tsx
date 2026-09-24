@@ -213,7 +213,7 @@ export const AskSheet = forwardRef<BottomSheetModal>(
             foreground, with a trailing caption where Cancel would sit. */}
           <View style={styles.headerRow}>
             <Text style={styles.headerGlyph}>✦</Text>
-            <Text style={styles.headerTitle}>Ask Signet</Text>
+            <Text style={styles.headerTitle}>Ask Frapp</Text>
             <Text style={styles.headerCaption} numberOfLines={2}>
               answers from your chapter&apos;s records
             </Text>

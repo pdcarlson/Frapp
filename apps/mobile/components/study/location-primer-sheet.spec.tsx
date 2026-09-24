@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import appJson from "../../app.json";
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
@@ -17,9 +18,11 @@ vi.mock("@/lib/chapter-branding", () => ({
 import { LocationPrimerSheet } from "./location-primer-sheet";
 
 /**
- * Pins the product name on the study-zone primer. iOS Settings lists
- * `expo.name` (Signet), so the recovery path must keep `Settings → Signet`.
+ * Pins the product name on the study-zone primer. iOS Settings lists the app
+ * under `expo.name`, so the recovery path is read from `app.json` rather than
+ * restated: renaming the binary without the copy fails here (ADR-25).
  */
+const APP_NAME = appJson.expo.name;
 
 function render(node: React.ReactElement): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -40,7 +43,7 @@ function texts(tree: ReactTestRenderer): string[] {
 }
 
 describe("LocationPrimerSheet", () => {
-  it("names Signet for the zone check, not Frapp", () => {
+  it("names the app for the zone check, never Signet", () => {
     const rendered = texts(
       render(
         <LocationPrimerSheet
@@ -51,15 +54,17 @@ describe("LocationPrimerSheet", () => {
       ),
     );
     expect(
-      rendered.some((line) => line.includes("Signet confirms you're in the study zone")),
+      rendered.some((line) =>
+        line.includes(`${APP_NAME} confirms you're in the study zone`),
+      ),
     ).toBe(true);
-    expect(rendered.some((line) => line.includes("while Signet is open"))).toBe(
-      true,
-    );
-    expect(rendered.some((line) => /\bFrapp\b/.test(line))).toBe(false);
+    expect(
+      rendered.some((line) => line.includes(`while ${APP_NAME} is open`)),
+    ).toBe(true);
+    expect(rendered.some((line) => /\bSignet\b/.test(line))).toBe(false);
   });
 
-  it("keeps Settings → Signet when iOS will not ask again", () => {
+  it("points at Settings → expo.name when iOS will not ask again", () => {
     const rendered = texts(
       render(
         <LocationPrimerSheet
@@ -70,10 +75,14 @@ describe("LocationPrimerSheet", () => {
       ),
     );
     expect(
-      rendered.some((line) => line.includes("Location is turned off for Signet")),
+      rendered.some((line) =>
+        line.includes(`Location is turned off for ${APP_NAME}`),
+      ),
     ).toBe(true);
     expect(
-      rendered.some((line) => line.includes("Settings → Signet → Location")),
+      rendered.some((line) =>
+        line.includes(`Settings → ${APP_NAME} → Location`),
+      ),
     ).toBe(true);
   });
 });

@@ -142,6 +142,8 @@ All live in `interface/decorators/`.
 ### Special cases
 
 - `/health` has no guards. `HealthController` injects `SUPABASE_CLIENT` itself.
+- `GET /v1/client-policy` has no guards: the mobile app asks it before sign-in whether its build is still
+  served (#2526). It reads `X-Client-Version` and returns no chapter or user data.
 - `POST /v1/chapters` and the other pre-chapter routes use `SupabaseAuthGuard` +
   `AuthSyncInterceptor` only, because no chapter exists yet.
 - `POST /v1/webhooks/stripe` has no guard. `WebhookController.handleStripeWebhook` verifies the

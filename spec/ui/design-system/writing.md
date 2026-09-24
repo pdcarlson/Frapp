@@ -387,10 +387,10 @@ different", the member surface gets its own rows rather than inline strings.
 | No zones | `No study zones yet` | `Sessions are tracked inside a zone. An officer with geofences:manage can add one.` |
 | Error (sessions) | `Couldn't load study hours` | `Your sessions are still recorded — this was a problem fetching them.` |
 | Error (zones) | `Couldn't load study zones` | `A session has to start inside a zone, so this has to load first.` |
-| Paused (backgrounded) | `<zone> · paused` (status row) | `Paused while Signet was in the background. It resumes on its own — your credited time is safe until the grace window runs out.` |
+| Paused (backgrounded) | `<zone> · paused` (status row) | `Paused while Frapp was in the background. It resumes on its own — your credited time is safe until the grace window runs out.` |
 | Session closed by grace | — (notice) | `Session closed while the app was in the background. You kept the time you studied before it paused.` |
 | Session expired | — (notice) | `Session ended: you left the study zone, or the app stopped reporting for 10 minutes. No points were awarded.` |
-| Location primer | `Location check` | `Signet confirms you're in the study zone when you start, and again every five minutes while you study. That check is what turns your time into chapter points.` Declining is `Not now`. |
+| Location primer | `Location check` | `Frapp confirms you're in the study zone when you start, and again every five minutes while you study. That check is what turns your time into chapter points.` Declining is `Not now`. |
 
 A close that **awards** points (`COMPLETED`, `PAUSED_EXPIRED`) must never read as
 a loss, and one that awards nothing (`EXPIRED`, `LOCATION_INVALID`) must say so —
@@ -516,7 +516,7 @@ word "subscription"**, which is the chapter's own bill with a different payer
 | Nothing owed | `You're all paid up` (balance label) | — |
 | Payment captured, unsettled | — (notice) | `Payment received, confirmation pending. This updates as soon as your chapter's records catch up.` |
 | Payment settled | — (notice) | `Paid. Your chapter has it — thanks.` |
-| Stripe unavailable (Expo Go) | — (disabled CTA reason) | `Paying in the app needs the installed Signet build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.` |
+| Stripe unavailable (Expo Go) | — (disabled CTA reason) | `Paying in the app needs the installed Frapp build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.` |
 | No publishable key | — (disabled CTA reason) | `Card payments aren't switched on for this build yet. Ask your treasurer how to pay this invoice.` |
 | Trust footer | — | `Payments run through your chapter's Stripe account.` |
 
@@ -537,7 +537,7 @@ is unavailable ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)).
 
 | State | Title | Description |
 |---|---|---|
-| Expo Go | `Unavailable` (row value) | `Notifications need the installed Signet build — Expo Go can't receive them. You'll still see everything here in the app.` |
+| Expo Go | `Unavailable` (row value) | `Notifications need the installed Frapp build — Expo Go can't receive them. You'll still see everything here in the app.` |
 | Web | `Unavailable` (row value) | `Notifications come to the phone app, not the web. You'll still see everything here.` |
 | Installed build, module failed to load | `Unavailable` (row value) | `Notifications couldn't start in this version of the app. Updating the app may fix it. You'll still see everything here in the app.` |
 | No EAS project id | `Unavailable` (row value) | `Notifications aren't switched on for this build yet. You'll still see everything here in the app.` |
@@ -621,7 +621,8 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 
 | State | Title | Description |
 |---|---|---|
-| Idle | `Signet` | `Everything your chapter needs is already in chat.` — s01's wordmark and tagline are the screen's heading and body, not decoration above one. Not the brand tagline "Ask your chapter anything." ([`../brand-identity.md`](../brand-identity.md) §1): Ask is off by default (`EXPO_PUBLIC_ASK_ENABLED`), and this is the first screen App Review opens, so leading with it would advertise a feature the binary does not have (Guidelines 2.1 and 2.3). The line is the landing's closing line, held there for the same reason (landing D8, [`../landing/README.md`](../landing/README.md)). Owner decision 2026-09-22, [#2298](https://github.com/pdcarlson/Frapp/issues/2298). Mobile only: the web pre-auth column keeps the brand tagline, which App Review never sees. It returns to mobile in the slice that ships Ask. |
+| Idle (mobile s01) | `Frapp` | `Everything your chapter needs is already in chat.` — s01's wordmark and tagline are the screen's heading and body, not decoration above one. Not the brand tagline "Ask your chapter anything." ([`../brand-identity.md`](../brand-identity.md) §1): Ask is off by default (`EXPO_PUBLIC_ASK_ENABLED`), and this is the first screen App Review opens, so leading with it would advertise a feature the binary does not have (Guidelines 2.1 and 2.3). The line is the landing's closing line, held there for the same reason (landing D8, [`../landing/README.md`](../landing/README.md)). Owner decision 2026-09-22, [#2298](https://github.com/pdcarlson/Frapp/issues/2298). Mobile only: the web pre-auth column keeps the brand tagline, which App Review never sees. It returns to mobile in the slice that ships Ask. |
+| Idle (web `/sign-in`) | `Signet` | `Ask your chapter anything.` The brand tagline ([`../brand-identity.md`](../brand-identity.md) §1). The wordmark moves to `Frapp` with ADR-25 step 4 ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)); until then it is the one row here that still names Signet, and `scripts/ci/__tests__/signet-auth-wordmark.test.mjs` pins it. |
 | Submitting | — | The primary reads `Continue` throughout and disables; no separate copy. |
 | Auth error | `Unable to sign in` | The Supabase message, verbatim. It is deliberately non-enumerating ("Invalid login credentials" whether or not the address exists), so passing it through leaks nothing and says more than a generic line would. |
 | Magic link sent | `Magic link sent` | `Check your inbox to continue signing in.` |
@@ -678,6 +679,17 @@ A member who hasn't accepted the Terms version the server enforces (#2302): mobi
 | Ways out | — | `Sign out` and `Delete account` on both: the prompt keeps a member from Settings on mobile and covers `/profile` on web, where deletion otherwise lives (Apple 5.1.1(v); `spec/behavior/data-retention.md`). Web's button reads `Delete account…` and uses `/profile`'s confirmation. |
 | Deletion didn't finish (web) | — | `Deletion didn't finish. Part of it may already have gone through, and running it again is safe. Try once more in a moment.` `/profile`'s toast, from the same `DELETE_ACCOUNT_FAILED`, as one inline line because the prompt covers the page. |
 | Sign-out threw (web) | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` Rare: only a thrown failure reaches it. auth-js returns most sign-out failures as `{ error }` rather than throwing, and `signOutCurrentSession` ignores that, so those navigate to /sign-in as if they had worked, sometimes with the local session still stored ([#2610](https://github.com/pdcarlson/Frapp/issues/2610)). The controls come back so the member can retry, and stay locked while a successful sign-out navigates away. |
+
+### Update required (mobile, global)
+
+The minimum-version gate (#2526, [`../mobile/patterns.md`](../mobile/patterns.md) § Minimum version): a full-screen prompt over the whole app when the API says this build is below the minimum. It names Frapp rather than a store because the link may be the App Store, Google Play, or a TestFlight link during the beta. Implemented in `apps/mobile/components/client-policy-gate.tsx` (`UPDATE_REQUIRED_COPY`).
+
+| State | Title | Description |
+|---|---|---|
+| Below the minimum | `This version of Frapp is out of date` | `It's no longer supported. Update to the latest version to keep using Frapp.` |
+| Primary | — | `Update Frapp` |
+| No usable link | — | `Open your app store and update Frapp from there.` in place of the button |
+| The link didn't open | — | `Couldn't open the update link. Open your app store and update Frapp from there.` |
 
 ### No access (pre-auth)
 

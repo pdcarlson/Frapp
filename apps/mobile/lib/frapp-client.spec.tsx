@@ -11,6 +11,10 @@ vi.mock("./auth-session", () => ({
   useAuthSession: () => ({ chapterId: mockState.chapterId }),
 }));
 
+// `expo-constants`, which Expo Go detection reads, needs native modules this
+// environment doesn't have. The header value itself is `client-version.spec.ts`'s.
+vi.mock("./expo-go", () => ({ isExpoGo: () => false }));
+
 vi.mock("./auth-token", () => ({
   AUTH_TOKEN_STORAGE_KEY: "frapp.auth.token",
   readAuthToken: vi.fn(async () => null),

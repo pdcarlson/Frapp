@@ -103,6 +103,14 @@ vi.mock("react-native", () => ({
   Share: {
     share: vi.fn().mockResolvedValue({ action: "sharedAction" }),
   },
+  // The update gate (#2526) holds Android's back button while it blocks and
+  // dismisses any open keyboard when it appears.
+  BackHandler: {
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+  },
+  Keyboard: {
+    dismiss: vi.fn(),
+  },
 }));
 
 // expo-router ships untranspiled source, so importing any screen or any
@@ -168,6 +176,19 @@ vi.mock("expo-linking", () => ({
   useURL: vi.fn(() => null),
   createURL: vi.fn((path: string) => `frapp://${path}`),
   parse: vi.fn(),
+  // The update gate (#2526) hands the store link to the OS rather than an
+  // in-app browser, so the App Store or Play app opens on the listing.
+  openURL: vi.fn().mockResolvedValue(true),
+}));
+
+// `lib/client-version.ts` reads the native build on every API client, so any
+// spec that mounts the client reaches this. Null is what a build with no
+// native version reports, which sends no X-Client-Version header; a spec that
+// wants a version mocks its own (`lib/client-version.spec.ts`).
+vi.mock("expo-application", () => ({
+  applicationId: null,
+  nativeApplicationVersion: null,
+  nativeBuildVersion: null,
 }));
 
 vi.mock("expo-network", () => ({
