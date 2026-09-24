@@ -59,16 +59,21 @@ describe("shouldOfferPrimer", () => {
     ).toBe(false);
   });
 
-  it("still renders when push is unavailable, to say why", () => {
-    // This is the state of every build until #938 provisions an EAS project,
-    // and permission cannot even be read there — so `permissionGranted` is
-    // null and the availability check has to come first.
-    expect(
-      shouldOfferPrimer({
-        isAvailable: false,
-        permissionGranted: null,
-        decision: "unasked",
-      }),
-    ).toBe(true);
+  // #2299. The card's only function is "Turn on", so in a build that cannot
+  // push it would render dead: a disabled CTA and an apology, on the first
+  // screen after joining. It is omitted instead, like the Ask pill.
+  it("is omitted when push is unavailable, whatever permission reads", () => {
+    // `null`: Expo Go or web, where the module (and so permission) is absent.
+    // `false`: the module loads but no EAS project id is configured, so
+    // permission reads fine while no token could ever register.
+    for (const permissionGranted of [null, false] as const) {
+      expect(
+        shouldOfferPrimer({
+          isAvailable: false,
+          permissionGranted,
+          decision: "unasked",
+        }),
+      ).toBe(false);
+    }
   });
 });
