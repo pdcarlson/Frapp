@@ -45,7 +45,7 @@ on:
 
 permissions:
   contents: read
-  # The script upserts a single `routine-state` alert issue and closes it on
+  # The script upserts a single `incident` alert issue and closes it on
   # recovery. Nothing else here writes.
   issues: write
 

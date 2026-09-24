@@ -22,6 +22,7 @@ import {
   resolveAlertConfig,
   runDeployAlert,
 } from "../deploy-alert.mjs";
+import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Modeled on the two real shapes measured in #763 over 90 runs on main:
@@ -330,7 +331,7 @@ const raiseArgs = {
   runUrl: "https://example.test/run/1",
 };
 
-test("raiseAlert creates the issue when none exists, with the routine-state label", async () => {
+test("raiseAlert creates the issue when none exists, with the incident label and the owner assigned", async () => {
   const { fetchImpl, calls } = makeFetchStub({ issues: [] });
   const result = await raiseAlert({ ...raiseArgs, fetchImpl });
 
@@ -338,8 +339,9 @@ test("raiseAlert creates the issue when none exists, with the routine-state labe
   const create = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
   assert.equal(create.body.title, ALERT_ISSUE_TITLE);
   assert.deepEqual(create.body.labels, ALERT_ISSUE_LABELS);
-  // routine-state is what keeps /next from claiming this as backlog work.
-  assert.ok(create.body.labels.includes("routine-state"));
+  // The lookup label is what keeps /next from claiming this as backlog work.
+  assert.ok(create.body.labels.includes(ALERT_LOOKUP_LABEL));
+  assert.deepEqual(create.body.assignees, [ALERT_ASSIGNEE]);
 });
 
 test("raiseAlert comments instead of filing a second issue when one is open", async () => {
@@ -363,7 +365,7 @@ test("raiseAlert reopens a previously resolved alert", async () => {
 
   assert.deepEqual(result, { action: "reopened", issueNumber: 900 });
   const patch = calls.find((c) => c.method === "PATCH");
-  assert.deepEqual(patch.body, { state: "open" });
+  assert.deepEqual(patch.body, { state: "open", assignees: [ALERT_ASSIGNEE] });
   const comment = calls.find((c) => c.path === "/repos/o/r/issues/900/comments");
   assert.match(comment.body.body, /failing again/);
 });
@@ -612,7 +614,7 @@ test("the two configurations never share an alert issue identity", () => {
   // assertion — is what guarantees an alert can be found again. Do not read
   // this test as making that belt-and-braces redundant.
   for (const config of Object.values(ALERT_CONFIGS)) {
-    assert.ok(config.alertLabels.includes("routine-state"), `${config.name} lookup label`);
+    assert.ok(config.alertLabels.includes(ALERT_LOOKUP_LABEL), `${config.name} lookup label`);
   }
 });
 
@@ -699,7 +701,7 @@ test("the Vercel alert issue body names its own workflow and issue numbers", () 
   assert.doesNotMatch(body, /deploy-api\.yml/);
   assert.doesNotMatch(body, /#763/);
   // Still tells a reader not to claim it as backlog work.
-  assert.match(body, /routine-state/);
+  assert.ok(body.includes(`carries \`${ALERT_LOOKUP_LABEL}\``));
 });
 
 test("runDeployAlert files the Vercel alert under the Vercel title", async () => {
@@ -728,7 +730,7 @@ test("runDeployAlert files the Vercel alert under the Vercel title", async () =>
   const created = calls.find((call) => call.method === "POST" && call.path === "/repos/o/r/issues");
   assert.equal(created.body.title, DEPLOY_VERCEL_STAGING_CONFIG.alertTitle);
   assert.notEqual(created.body.title, ALERT_ISSUE_TITLE);
-  assert.ok(created.body.labels.includes("routine-state"));
+  assert.ok(created.body.labels.includes(ALERT_LOOKUP_LABEL));
   assert.ok(created.body.labels.includes("P2"));
   assert.match(summary, /Deploy Vercel staging/);
 

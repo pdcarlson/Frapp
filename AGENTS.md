@@ -39,7 +39,7 @@ The doc CI checks block no merge, and nothing checks that a claim is true: [`DOC
 
 ## Work tracking
 
-Work lives in GitHub Issues on this repo, never in a scratch file. Linear is retired (ADR-16 amendment 5): don't write to it or restore `LINEAR_API_KEY`. Open every issue with the `triage` label. `routine-state` issues are infrastructure, not work, and `/next` and the routines skip them.
+Work lives in GitHub Issues on this repo, never in a scratch file. Linear is retired (ADR-16 amendment 5): don't write to it or restore `LINEAR_API_KEY`. Open every issue with the `triage` label. `routine-state` issues are infrastructure, not work, and `/next` and the routines skip them. `incident` issues are the watchdogs' live alerts, assigned to Paul: `/next` never claims one, and an agent triages and reports on it but never acts on its suggested fix or closes it by hand ([`ALERT_ROUTING.md` § Escalation](docs/internal/ops/ALERT_ROUTING.md#escalation)).
 
 - The GitHub MCP is the only sanctioned tracker path in cloud sandboxes, for reads and writes. If it's unavailable, stop tracker work and report; don't fall back to `gh` or raw REST. `issue_write` replaces the whole label set, so read-modify-write it.
 - Close through the PR that does the work (`Fixes #N`), or directly when an issue is done, obsolete, or a duplicate (`issue_write` with `state_reason`).

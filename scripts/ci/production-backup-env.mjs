@@ -24,7 +24,12 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/production-backup-env.test.mjs`.
 
-import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+} from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 
@@ -32,7 +37,7 @@ export const ENV_NAME = "production-backup";
 
 export const ALERT_ISSUE_TITLE =
   "production-backup has required reviewers — nightly dumps will expire";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
 /**

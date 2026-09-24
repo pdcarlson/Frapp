@@ -19,7 +19,12 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/production-uptime.test.mjs`.
 
-import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+} from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { DEFAULT_ATTEMPTS, fetchWithRetry } from "./lib/http.mjs";
 
@@ -29,7 +34,7 @@ export const READY_PATH = "/health/ready";
 // Title is the lookup key. Rename only in a change that also closes every
 // open alert carrying the old wording.
 export const ALERT_ISSUE_TITLE = "Production /health/ready is failing";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:infra", "P1"];
 
 const BODY_SNIPPET_CHARS = 500;

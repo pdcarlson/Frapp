@@ -23,6 +23,7 @@ import {
   tagNameFromRef,
   tagsMatchingSha,
 } from "../production-release-pin.mjs";
+import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
 
@@ -555,7 +556,8 @@ describe("runWatchdog", () => {
     assert.equal(created.alert.action, "created");
     const createdBody = JSON.parse(calls.find((c) => c.method === "POST").body);
     assert.equal(createdBody.title, ALERT_ISSUE_TITLE);
-    assert.ok(createdBody.labels.includes("routine-state"));
+    assert.ok(createdBody.labels.includes(ALERT_LOOKUP_LABEL));
+    assert.deepEqual(createdBody.assignees, [ALERT_ASSIGNEE]);
     assert.ok(createdBody.labels.includes("P1"));
     assert.doesNotMatch(createdBody.body, /\b(fixes|closes|close)\s+#/i);
 

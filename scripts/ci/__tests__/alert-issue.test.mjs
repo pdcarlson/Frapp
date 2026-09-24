@@ -1,11 +1,13 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  DEFAULT_LOOKUP_LABEL,
+  ALERT_ASSIGNEE,
+  ALERT_LOOKUP_LABEL,
   findAlertIssues,
   raiseAlert,
   resolveAlert,
+  withAgentNote,
 } from "../lib/alert-issue.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
@@ -16,7 +18,7 @@ import { makeFetchMock } from "./helpers.mjs";
 // extraction, relied on behaviour nothing tested at this level.
 
 const TITLE = "Test alert";
-const LABELS = [DEFAULT_LOOKUP_LABEL, "area:ci", "P1"];
+const LABELS = [ALERT_LOOKUP_LABEL, "area:ci", "P1"];
 const args = (fetchImpl) => ({ token: "t", repo: "o/r", fetchImpl, title: TITLE });
 
 const builders = {
@@ -71,7 +73,7 @@ test("a created alert always carries the label its own lookup filters on", async
   });
   assert.equal(out.action, "created");
   const created = JSON.parse(calls.find((c) => c.method === "POST").body);
-  assert.ok(created.labels.includes(DEFAULT_LOOKUP_LABEL));
+  assert.ok(created.labels.includes(ALERT_LOOKUP_LABEL));
 });
 
 test("raiseAlert comments instead of filing a second issue when one is open", async () => {
@@ -82,6 +84,127 @@ test("raiseAlert comments instead of filing a second issue when one is open", as
   const out = await raiseAlert({ ...args(fetchImpl), labels: LABELS, ...builders });
   assert.equal(out.action, "commented");
   assert.equal(calls.filter((c) => c.url.endsWith("/issues")).length, 0);
+  // An open alert keeps whatever assignees it has: the owner may have dropped
+  // the assignment mid-incident, and a run must not override that.
+  assert.equal(calls.filter((c) => c.method === "PATCH").length, 0);
+});
+
+// ── Assignment (ADR-24 decision 2) ──────────────────────────────────────────
+
+test("a created alert is assigned to the owner", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [] },
+    { method: "POST", path: "/issues", body: { number: 7 } },
+  ]);
+  await raiseAlert({ ...args(fetchImpl), labels: LABELS, ...builders });
+  const created = JSON.parse(calls.find((c) => c.method === "POST").body);
+  assert.deepEqual(created.assignees, [ALERT_ASSIGNEE]);
+});
+
+test("an assignee GitHub rejects (422) still files the alert, unassigned", async () => {
+  // Losing the alert is the failure this module exists to prevent; a missing
+  // assignee is the lesser one.
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [] },
+    { method: "POST", path: "/issues", body: { number: 7 } },
+  ]);
+  // makeFetchMock takes one status per route, so reject by request body here.
+  const routed = async (url, init = {}) => {
+    const response = await fetchImpl(url, init);
+    const sent = init.body ? JSON.parse(init.body) : {};
+    if (init.method === "POST" && url.endsWith("/issues") && sent.assignees) {
+      return { ...response, ok: false, status: 422 };
+    }
+    return response;
+  };
+  const log = mock.method(console, "log", () => {});
+  let out;
+  try {
+    out = await raiseAlert({ ...args(routed), labels: LABELS, ...builders });
+  } finally {
+    log.mock.restore();
+  }
+  assert.deepEqual(out, { action: "created", issueNumber: 7 });
+  const creates = calls.filter((c) => c.method === "POST" && c.url.endsWith("/issues"));
+  assert.equal(creates.length, 2);
+  const retry = JSON.parse(creates[1].body);
+  assert.equal("assignees" in retry, false);
+  assert.equal(retry.title, TITLE);
+  assert.ok(retry.labels.includes(ALERT_LOOKUP_LABEL));
+  // The return reads as a normal create, so the run annotation is the only
+  // place the missing assignee shows.
+  const lines = log.mock.calls.map((call) => call.arguments.join(" "));
+  assert.equal(lines.filter((line) => line.startsWith("::warning::#7 is not assigned")).length, 1);
+});
+
+test("a 2xx that comes back without the owner assigned is annotated", async () => {
+  const warned = async (assignees) => {
+    const { fetchImpl } = makeFetchMock([
+      { method: "GET", path: "/issues?state=all", body: [] },
+      { method: "POST", path: "/issues", body: { number: 7, assignees } },
+    ]);
+    const log = mock.method(console, "log", () => {});
+    try {
+      await raiseAlert({ ...args(fetchImpl), labels: LABELS, ...builders });
+    } finally {
+      log.mock.restore();
+    }
+    return log.mock.calls.some((call) => String(call.arguments[0]).startsWith("::warning::"));
+  };
+  assert.equal(await warned([]), true, "assignee silently dropped");
+  assert.equal(await warned([{ login: ALERT_ASSIGNEE }]), false, "owner assigned");
+});
+
+test("a 5xx create is not retried as an assignee problem", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [] },
+    { method: "POST", path: "/issues", status: 502, body: {} },
+  ]);
+  const out = await raiseAlert({ ...args(fetchImpl), labels: LABELS, ...builders });
+  assert.deepEqual(out, { action: "failed", issueNumber: null });
+  assert.equal(calls.filter((c) => c.method === "POST").length, 1);
+});
+
+test("a reopen assigns the owner and keeps anyone already assigned", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/issues?state=all",
+      body: [{ number: 7, title: TITLE, state: "closed", assignees: [{ login: "someone" }] }],
+    },
+    { method: "PATCH", path: "/issues/7", body: {} },
+    { method: "POST", path: "/comments", body: {} },
+  ]);
+  const out = await raiseAlert({ ...args(fetchImpl), labels: LABELS, ...builders });
+  assert.equal(out.action, "reopened");
+  const patch = JSON.parse(calls.find((c) => c.method === "PATCH").body);
+  // PATCH replaces the assignee set, so the existing one must be carried.
+  assert.deepEqual(patch, { state: "open", assignees: ["someone", ALERT_ASSIGNEE] });
+});
+
+test("a reopen whose assignee GitHub rejects (422) still reopens", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [{ number: 7, title: TITLE, state: "closed" }] },
+    { method: "PATCH", path: "/issues/7", body: {} },
+    { method: "POST", path: "/comments", body: {} },
+  ]);
+  const routed = async (url, init = {}) => {
+    const response = await fetchImpl(url, init);
+    const sent = init.body ? JSON.parse(init.body) : {};
+    if (init.method === "PATCH" && sent.assignees) return { ...response, ok: false, status: 422 };
+    return response;
+  };
+  const log = mock.method(console, "log", () => {});
+  let out;
+  try {
+    out = await raiseAlert({ ...args(routed), labels: LABELS, ...builders });
+  } finally {
+    log.mock.restore();
+  }
+  assert.equal(out.action, "reopened");
+  assert.equal(log.mock.callCount(), 1);
+  const patches = calls.filter((c) => c.method === "PATCH").map((c) => JSON.parse(c.body));
+  assert.deepEqual(patches, [{ state: "open", assignees: [ALERT_ASSIGNEE] }, { state: "open" }]);
 });
 
 test("a FAILED reopen is reported as failed, not as reopened", async () => {
@@ -128,7 +251,19 @@ test("refreshBodyOnRaise rewrites an open alert's body; default leaves it alone"
   });
   const patch = on.calls.find((c) => c.method === "PATCH");
   assert.ok(patch, "body refresh must issue a PATCH");
-  assert.deepEqual(JSON.parse(patch.body), { body: "issue body" });
+  assert.deepEqual(JSON.parse(patch.body), { body: withAgentNote("issue body", "o/r") });
+});
+
+test("every alert body ends with one pointer to what agents may do with it", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [] },
+    { method: "POST", path: "/issues", body: { number: 7 } },
+  ]);
+  await raiseAlert({ ...args(fetchImpl), labels: LABELS, ...builders });
+  const { body } = JSON.parse(calls.find((c) => c.method === "POST").body);
+  assert.ok(body.startsWith("issue body\n\n---\n"), "the watchdog's own body comes first");
+  const link = "https://github.com/o/r/blob/main/docs/internal/ops/ALERT_ROUTING.md#escalation";
+  assert.equal(body.split(link).length - 1, 1, "exactly one pointer");
 });
 
 // ── resolveAlert ────────────────────────────────────────────────────────────
@@ -178,6 +313,24 @@ test("a close that fails is reported as failed, never as closed-with-nothing", a
   const out = await resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered" });
   assert.equal(out.action, "failed");
   assert.deepEqual(out.closed, []);
+});
+
+test("a close that leaves one duplicate open is failed, listing what did close", async () => {
+  const { fetchImpl } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/issues?state=all",
+      body: [
+        { number: 7, title: TITLE, state: "open" },
+        { number: 8, title: TITLE, state: "open" },
+      ],
+    },
+    { method: "POST", path: "/comments", body: {} },
+    { method: "PATCH", path: "/issues/8", status: 502, body: {} },
+    { method: "PATCH", path: "/issues/7", body: {} },
+  ]);
+  const out = await resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered" });
+  assert.deepEqual(out, { action: "failed", closed: [7] });
 });
 
 test("resolveAlert is a no-op when nothing is open", async () => {
