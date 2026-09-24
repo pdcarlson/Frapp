@@ -12,11 +12,9 @@
 // left behind, with nothing failing until a member taps a dead link.
 //
 // WHERE EACH ONE IS DECIDED. spec/ui/brand-identity.md § 1 (the naming rule
-// ADR-25 set) makes the `frapp://` scheme, the iOS bundle id and Android
-// package `live.frapp.mobile`, and the frapp.live domains permanent. ADR-25
-// adds the Expo slug `frapp` and the Sentry org `frapp-live`.
+// ADR-25 set) lists the permanent identifiers, and
 // spec/environments/README.md § Mobile (EAS) says why the EAS project id is
-// permanent. Change the spec first, then this lock.
+// one. Change the spec first, then this lock.
 //
 // WHAT IT CHECKS.
 // - `apps/mobile/app.json` carries each name above, and `updates.url` points
@@ -25,11 +23,12 @@
 //   export with `{ config }`, reading `process.env`), leaves every one of them,
 //   and `expo.name`, exactly as app.json has them. It runs once with no EAS
 //   profile (`expo start`, `eas update`), then for every `eas.json` build
-//   profile on each platform, with that profile's `env` block and the
-//   `EAS_BUILD*` values a cloud build sets. Variables that live only in the EAS
-//   dashboard never pass through the repo: the lock supplies the ones
-//   app.config.js requires (the Supabase URL and key, the Google services
-//   file) and can't see a rename keyed on any other.
+//   profile on each platform, with that profile's `env` block (and any profile
+//   it `extends`) and the `EAS_BUILD*` values easBuildEnvs lists. The lock
+//   can't see a rename keyed on a variable it doesn't set: one that lives only
+//   in the EAS dashboard (it supplies just the ones app.config.js requires: the
+//   Supabase URL and key, the Google services file), or an `EAS_BUILD*` value
+//   outside that list.
 // - The `.ics` deep link: the calendar export still writes
 //   `frapp://event-details?id=…`, and the screen still declares the `id`
 //   param that URL carries.
@@ -38,7 +37,10 @@
 //   loopback http origin).
 // - No hosting-platform hostname (Render, Vercel, Cloud Run: ADR-24's current
 //   and planned hosts) in the non-spec sources of apps/mobile and of every
-//   workspace package it bundles, comments included. The scan is textual: it
+//   workspace package it bundles, comments included. Git lists the files
+//   (tracked, or untracked and not ignored), so there is no skip list to
+//   narrow, and the function that reads them is pinned by the hash of its
+//   text. The scan is textual: it
 //   catches a hostname written out, templated (`${svc}.run.app`) or
 //   suffix-concatenated (`svc + ".onrender.com"`), and a platform domain held
 //   in a string literal of its own ("onrender.com"). A hostname split further
@@ -67,12 +69,14 @@
 // (`GET /v1/client-policy` on api.frapp.live, #2622), which is why the API
 // must stay on a name this repo owns.
 //
-// The assignment lines and the walker are pinned below, because a lock that
+// The assignment lines and the file scan are pinned below, because a lock that
 // reads its own constants passes when the constant and app.json are renamed
-// together, and a walk that quietly skips a directory passes everything in it.
+// together, and a scan that quietly skips a directory passes everything in it.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -81,7 +85,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const LOCK = fileURLToPath(import.meta.url);
-const MOBILE_ROOT = join(REPO_ROOT, "apps/mobile");
+const MOBILE_DIR = "apps/mobile";
 const PACKAGES_ROOT = join(REPO_ROOT, "packages");
 const requireCjs = createRequire(import.meta.url);
 
@@ -108,9 +112,8 @@ const OWN_SERVICE_URL_KEYS = ["EXPO_PUBLIC_API_URL", "EXPO_PUBLIC_APP_URL"];
 const OWN_DOMAIN = "frapp.live";
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-/** apps/mobile has well over this many sources; fewer means the walk broke. */
+/** apps/mobile has well over this many sources; fewer means the scan broke. */
 const MIN_MOBILE_SOURCES = 150;
-const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", ".turbo", "coverage", "ios", "android", "__tests__"]);
 const SOURCE_EXT = /\.(?:json|js|mjs|cjs|ts|tsx)$/;
 const TEST_FILE = /\.(?:spec|test)\.[^.]+$/;
 
@@ -290,16 +293,26 @@ export function bundledPackageDirs(mobilePackageJson, workspacePackages) {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** A profile's `env`, merged over the `env` of every profile it `extends`, as eas.json resolves it. */
+export function profileEnv(eas, profile, seen = new Set()) {
+  const config = eas?.build?.[profile];
+  if (config == null || seen.has(profile)) return {};
+  seen.add(profile);
+  const inherited = typeof config.extends === "string" ? profileEnv(eas, config.extends, seen) : {};
+  return { ...inherited, ...(config.env ?? {}) };
+}
+
 /**
  * The environment each kind of build evaluates app.config.js with: no EAS
  * profile, then every eas.json profile on each platform. A cloud build puts
- * the profile's `env` block and its `EAS_BUILD*` values (the set
- * @sentry/react-native's EAS hooks read) in `process.env`. `dashboard` adds
- * what only the EAS dashboard holds.
+ * the profile's resolved `env` and its `EAS_BUILD*` values in `process.env`.
+ * The list below is every one @sentry/react-native's EAS hooks read
+ * (`getEASBuildEnv` in its tools/easBuildHooks.js), plus EAS_BUILD_RUNNER.
+ * `dashboard` adds what only the EAS dashboard holds.
  */
 export function easBuildEnvs(eas, dashboard = () => ({})) {
   const out = [{ kind: "no EAS profile", env: {} }];
-  for (const [profile, config] of Object.entries(eas?.build ?? {})) {
+  for (const profile of Object.keys(eas?.build ?? {})) {
     for (const platform of PLATFORMS) {
       out.push({
         kind: `${profile} ${platform}`,
@@ -310,9 +323,14 @@ export function easBuildEnvs(eas, dashboard = () => ({})) {
           EAS_BUILD_PLATFORM: platform,
           EAS_BUILD_PROJECT_ID: EAS_PROJECT_ID,
           EAS_BUILD_GIT_COMMIT_HASH: "0".repeat(40),
+          EAS_BUILD_RUN_FROM_CI: "0",
+          EAS_BUILD_STATUS: "in-progress",
+          EAS_BUILD_APP_VERSION: "0.0.0",
+          EAS_BUILD_APP_BUILD_VERSION: "1",
           EAS_BUILD_USERNAME: "permanent-identifiers-lock",
           EAS_BUILD_WORKINGDIR: "/build",
-          ...(config?.env ?? {}),
+          EAS_BUILD_RUNNER: "eas-build",
+          ...profileEnv(eas, profile),
           ...dashboard(profile, platform),
         },
       });
@@ -336,26 +354,21 @@ export function lockSelfProblems(source) {
   }
   const lines = [
     ['const APP_JSON = "apps/mobile/app.json";', "must read apps/mobile/app.json"],
-    ['const MOBILE_ROOT = join(REPO_ROOT, "apps/mobile");', "the hostname walk must start at apps/mobile"],
+    ['const MOBILE_DIR = "apps/mobile";', "the hostname scan must start at apps/mobile"],
     ['const PACKAGES_ROOT = join(REPO_ROOT, "packages");', "bundled packages must resolve under packages/"],
-    [
-      'const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", ".turbo", "coverage", "ios", "android", "__tests__"]);',
-      "SKIP_DIRS must stay the build-output, generated-native and test directories only",
-    ],
     ["const SOURCE_EXT = /\\.(?:json|js|mjs|cjs|ts|tsx)$/;", "SOURCE_EXT must keep every source extension"],
     ["const TEST_FILE = /\\.(?:spec|test)\\.[^.]+$/;", "TEST_FILE must skip only spec and test files"],
-    [
-      "if (!SKIP_DIRS.has(entry.name)) out.push(...walkSources(path));",
-      "walkSources must skip only SKIP_DIRS",
-    ],
-    [
-      "if (!entry.isFile() || !SOURCE_EXT.test(entry.name) || TEST_FILE.test(entry.name)) continue;",
-      "walkSources must skip only non-sources and test files",
-    ],
   ];
-  const trimmed = new Set(source.split("\n").map((line) => line.trim()));
+  const sourceLines = source.replace(/\r\n/g, "\n").split("\n");
   for (const [line, problem] of lines) {
-    if (!trimmed.has(line)) problems.push(problem);
+    if (!sourceLines.includes(line)) problems.push(problem);
+  }
+  // Any edit inside the scan (a new skip, dead code, a narrower git call)
+  // changes this hash. Update it only as a deliberate change to what is scanned.
+  const scan = source.replace(/\r\n/g, "\n").match(/^function trackedSources\(dirs\) \{\n[\s\S]*?\n\}$/m);
+  const scanHash = scan ? createHash("sha256").update(scan[0]).digest("hex") : "missing";
+  if (scanHash !== "b81e359d7764a330fc8d7c8cf874b68f2dd06395dc097e61074f89dc62198cb7") {
+    problems.push(`trackedSources changed (sha256 ${scanHash}): the file scan must stay as reviewed`);
   }
   const domains = source.match(/^export const HOSTING_PLATFORM_DOMAINS = \[([^\]]*)\];?$/m);
   const listed = domains ? [...domains[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
@@ -369,22 +382,17 @@ export function lockSelfProblems(source) {
   return problems;
 }
 
-function walkSources(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith(".")) continue;
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) out.push(...walkSources(path));
-      continue;
-    }
-    if (!entry.isFile() || !SOURCE_EXT.test(entry.name) || TEST_FILE.test(entry.name)) continue;
-    out.push({
-      rel: relative(REPO_ROOT, path).replaceAll("\\", "/"),
-      source: readFileSync(path, "utf8"),
-    });
-  }
-  return out;
+/** Every source git lists under `dirs` (tracked, or untracked and not ignored), minus spec and test files. */
+function trackedSources(dirs) {
+  const listed = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...dirs], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return [...new Set(listed.split("\0"))]
+    .filter((rel) => SOURCE_EXT.test(rel) && !TEST_FILE.test(rel) && !rel.split("/").includes("__tests__"))
+    .filter((rel) => existsSync(join(REPO_ROOT, rel)))
+    .map((rel) => ({ rel, source: readFileSync(join(REPO_ROOT, rel), "utf8") }));
 }
 
 /** Workspace packages under `root`. A directory with no package.json (a branch's leftover dist/) isn't one. */
@@ -478,18 +486,18 @@ test("every eas.json URL for our own services is a frapp.live origin", () => {
 });
 
 test("apps/mobile and every package it bundles name no hosting-platform hostname", () => {
-  const mobile = walkSources(MOBILE_ROOT);
+  const mobile = trackedSources([MOBILE_DIR]);
   assert.ok(
     mobile.length >= MIN_MOBILE_SOURCES,
-    `walked only ${mobile.length} apps/mobile sources; expected at least ${MIN_MOBILE_SOURCES}`,
+    `scanned only ${mobile.length} apps/mobile sources; expected at least ${MIN_MOBILE_SOURCES}`,
   );
   for (const rel of [APP_JSON, EAS_JSON, APP_CONFIG]) {
-    assert.ok(mobile.some((file) => file.rel === rel), `the walk must include ${rel}`);
+    assert.ok(mobile.some((file) => file.rel === rel), `the scan must include ${rel}`);
   }
   for (const top of ["app", "components", "lib"]) {
     assert.ok(
       mobile.some((file) => file.rel.startsWith(`apps/mobile/${top}/`)),
-      `the walk must include apps/mobile/${top}/`,
+      `the scan must include apps/mobile/${top}/`,
     );
   }
   const bundled = bundledPackageDirs(JSON.parse(readRepo(MOBILE_PACKAGE_JSON)), workspacePackages());
@@ -498,17 +506,17 @@ test("apps/mobile and every package it bundles name no hosting-platform hostname
   for (const { name, dir } of bundled) {
     assert.ok(dir, `${name} is a ${MOBILE_PACKAGE_JSON} dependency with no packages/ directory`);
     const root = relative(REPO_ROOT, dir).replaceAll("\\", "/");
-    const sources = walkSources(dir);
+    const sources = trackedSources([root]);
     assert.ok(
       sources.some((file) => file.rel.slice(root.length + 1).includes("/")),
-      `walked no sources below ${root}/ (${name}); its top-level config files alone don't count`,
+      `scanned no sources below ${root}/ (${name}); its top-level config files alone don't count`,
     );
     files.push(...sources);
   }
   assert.deepEqual(hostingPlatformProblems(files), []);
 });
 
-test("the lock pins its own identifiers, reader and walk", () => {
+test("the lock pins its own identifiers, reader and file scan", () => {
   assert.deepEqual(lockSelfProblems(readFileSync(LOCK, "utf8")), []);
 });
 
@@ -599,6 +607,12 @@ for (const [label, override, expected, envFrom] of [
     "production android",
   ],
   [
+    "renames only when EAS names its runner",
+    renameOn((env) => env.EAS_BUILD_RUNNER === "eas-build", () => ({ slug: "signet" })),
+    ["expo.slug"],
+    "preview ios",
+  ],
+  [
     "renames only on the development profile",
     renameOn((env) => env.EAS_BUILD_PROFILE === "development", () => ({ slug: "signet" })),
     ["expo.slug"],
@@ -645,6 +659,30 @@ test("the simulated builds carry each profile's eas.json env and the EAS build v
   assert.equal(production.EAS_BUILD_PLATFORM, "android");
   assert.equal(production.DASHBOARD_ONLY, "1");
   assert.deepEqual(builds[0].env, {});
+});
+
+test("a profile that extends another is simulated with the env it inherits", () => {
+  const eas = {
+    build: {
+      production: { env: { EXPO_PUBLIC_SENTRY_ENVIRONMENT: "production", APP_VARIANT: "store" } },
+      "store-internal": { extends: "production", env: { APP_VARIANT: "internal" } },
+      loop: { extends: "loop" },
+    },
+  };
+  assert.deepEqual(profileEnv(eas, "store-internal"), {
+    EXPO_PUBLIC_SENTRY_ENVIRONMENT: "production",
+    APP_VARIANT: "internal",
+  });
+  assert.deepEqual(profileEnv(eas, "loop"), {});
+  const staticExpo = liveAppJson().expo;
+  const override = renameOn(
+    (env) => env.EXPO_PUBLIC_SENTRY_ENVIRONMENT === "production" && env.EAS_BUILD_PROFILE !== "production",
+    () => ({ slug: "signet" }),
+  );
+  const problems = easBuildEnvs(eas).flatMap(({ env }) =>
+    dynamicLayerProblems(staticExpo, resolveExpoConfig(override, staticExpo, env)),
+  );
+  assert.ok(problems.some((problem) => problem.includes("changes expo.slug ")), problems.join("; ") || "no problems");
 });
 
 test("resolveExpoConfig clears ambient build variables and restores process.env", () => {
@@ -818,28 +856,28 @@ for (const [label, find, replace, expected] of [
     "apps/mobile/app.json",
   ],
   [
-    "narrowing the walk's root",
-    'const MOBILE_ROOT = join(REPO_ROOT, "apps/mobile")',
-    'const MOBILE_ROOT = join(REPO_ROOT, "apps/mobile/lib")',
+    "narrowing the scan's root",
+    'const MOBILE_DIR = "apps/mobile"',
+    'const MOBILE_DIR = "apps/mobile/lib"',
     "start at apps/mobile",
   ],
   [
-    "skipping a source directory in SKIP_DIRS",
-    '"ios", "android", "__tests__"]);',
-    '"ios", "android", "__tests__", "components"]);',
-    "SKIP_DIRS",
+    "adding a skip to the file scan",
+    "    .filter((rel) => existsSync(join(REPO_ROOT, rel)))\n",
+    '    .filter((rel) => existsSync(join(REPO_ROOT, rel)))\n    .filter((rel) => !rel.includes("/notifications/"))\n',
+    "trackedSources changed",
   ],
   [
-    "skipping a source directory inside walkSources",
-    "      if (!SKIP_DIRS.has(entry.name)) out.push(...walkSources(path));",
-    '      if (!SKIP_DIRS.has(entry.name) && entry.name !== "chat") out.push(...walkSources(path));',
-    "walkSources must skip only SKIP_DIRS",
+    "excluding a path from git's listing",
+    '"--exclude-standard", "--", ...dirs]',
+    '"--exclude-standard", "--", ...dirs, ":!apps/mobile/lib/chat"]',
+    "trackedSources changed",
   ],
   [
-    "skipping a file kind inside walkSources",
-    "    if (!entry.isFile() || !SOURCE_EXT.test(entry.name) || TEST_FILE.test(entry.name)) continue;",
-    '    if (!entry.isFile() || !SOURCE_EXT.test(entry.name) || TEST_FILE.test(entry.name) || entry.name.endsWith(".tsx")) continue;',
-    "walkSources must skip only non-sources",
+    "dropping untracked files from the scan",
+    '["ls-files", "-z", "--cached", "--others", "--exclude-standard"',
+    '["ls-files", "-z", "--cached", "--exclude-standard"',
+    "trackedSources changed",
   ],
   ["dropping an extension", "(?:json|js|mjs|cjs|ts|tsx)$/;", "(?:json|js|mjs|cjs|ts)$/;", "SOURCE_EXT"],
   [
@@ -849,7 +887,7 @@ for (const [label, find, replace, expected] of [
     "onrender.com",
   ],
   [
-    "lowering the walk floor",
+    "lowering the scan floor",
     "const MIN_MOBILE_SOURCES = 150",
     "const MIN_MOBILE_SOURCES = 0",
     "MIN_MOBILE_SOURCES",
