@@ -23,6 +23,10 @@ Root scripts wrap apps with `npx infisical run --env=dev --path=/` so secrets co
 
 If `infisical run` fails (no session, wrong project, or API key without `dev` access), use the **fallback** below.
 
+### Git Bash on Windows
+
+Git Bash rewrites an argument that looks like a POSIX path into a Windows path before `npx` sees it, and `--path=/` qualifies. A command you type, such as `npx infisical run --env=prod --path=/ -- …`, then fails with `Invalid secret path` and `secretPath=C:/Program Files/Git/` in the request. Prefix it with `MSYS_NO_PATHCONV=1`. A value passed on the command line needs the prefix too: `infisical secrets set NAME=$(openssl rand -base64 48)` can produce a value starting with `/`, which would be rewritten without an error. The root `npm run dev:*` scripts are unaffected, because npm runs scripts through `cmd.exe` on Windows by default.
+
 ## Ports and URLs
 
 | Service         | Port  | URL                        |
