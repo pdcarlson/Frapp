@@ -117,10 +117,6 @@ function isUnknownStripeCustomerError(error: unknown): boolean {
   );
 }
 
-function asErrorCause(error: unknown): Error {
-  return error instanceof Error ? error : toReportableError(error);
-}
-
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
@@ -263,7 +259,7 @@ export class BillingService {
       // `captureException` would be dropped by `beforeSend` (allowlist).
       throw new ServiceUnavailableException(
         'Billing service is temporarily unavailable',
-        { cause: asErrorCause(error) },
+        { cause: toReportableError(error) },
       );
     }
 
@@ -326,6 +322,7 @@ export class BillingService {
       );
       throw new ServiceUnavailableException(
         'Billing service is temporarily unavailable',
+        { cause: toReportableError(error) },
       );
     }
   }

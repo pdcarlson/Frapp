@@ -6,6 +6,7 @@ import {
   shouldSkipStripePriceConsistency,
   StripePriceAccountMismatchError,
 } from './stripe-price-consistency';
+import { toReportableError } from '../observability/reportable-error';
 
 const PRICE_RETRIEVE_TIMEOUT_MS = 8_000;
 
@@ -37,6 +38,7 @@ export class StripePriceConsistencyService implements OnModuleInit {
       const err = new StripePriceAccountMismatchError(
         '(empty)',
         'STRIPE_PRICE_ID is empty',
+        { code: 'price_id_empty' },
       );
       this.logger.error(err.message);
       throw err;
@@ -52,6 +54,7 @@ export class StripePriceConsistencyService implements OnModuleInit {
         const err = new StripePriceAccountMismatchError(
           priceId,
           'configured Price is inactive',
+          { code: 'price_inactive' },
         );
         this.logger.error(err.message);
         throw err;
@@ -62,7 +65,11 @@ export class StripePriceConsistencyService implements OnModuleInit {
       }
       if (isStripePriceMisconfigurationError(error)) {
         const reason = stripeReason(error);
-        const err = new StripePriceAccountMismatchError(priceId, reason);
+        // The Stripe error rides along as `cause`, so a missing Price and a
+        // revoked key stay two Sentry issues when the readiness check 503s.
+        const err = new StripePriceAccountMismatchError(priceId, reason, {
+          cause: toReportableError(error),
+        });
         this.logger.error(err.message);
         throw err;
       }

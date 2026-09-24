@@ -23,6 +23,8 @@ import type {
 } from '#domain/entities/financial-invoice.entity';
 import { NotificationService } from './notification.service';
 import { ChapterWorkflowsService } from './chapter-workflows.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 export interface CreateInvoiceInput {
   chapter_id: string;
@@ -340,11 +342,15 @@ export class FinancialInvoiceService {
           'A payment attempt for this invoice is already in progress. Please retry in a moment.',
         );
       }
-      this.logger.error(
-        `Stripe PaymentIntent request failed for invoice ${invoiceId}: ${error instanceof Error ? error.message : error}`,
+      logThrowable(
+        this.logger,
+        'error',
+        `Stripe PaymentIntent request failed for invoice ${invoiceId}`,
+        error,
       );
       throw new ServiceUnavailableException(
         'Payment provider is unavailable. Please try again.',
+        { cause: toReportableError(error) },
       );
     }
 

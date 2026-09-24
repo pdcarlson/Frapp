@@ -44,14 +44,12 @@ export function toReportableError(exception: unknown): Error {
 
   if (typeof exception === 'object' && exception !== null) {
     const record = exception as Record<string, unknown>;
-    // `code` leads, because it is the stable half. PostgREST varies the prose
-    // around a fault but not its code, and the message is what Sentry groups
-    // on — leading with the code keeps one fault as one issue.
-    const described = [
-      text(record.code),
-      text(record.message),
-      text(record.hint),
-    ].filter((part): part is string => part !== undefined);
+    // `code` leads, because it is the stable half: PostgREST varies the prose
+    // around a fault but not its code.
+    const code = text(record.code);
+    const described = [code, text(record.message), text(record.hint)].filter(
+      (part): part is string => part !== undefined,
+    );
 
     const error = new Error(
       described.length > 0 ? described.join(': ') : describeOpaque(record),
@@ -60,6 +58,11 @@ export function toReportableError(exception: unknown): Error {
     // accurate but the stack still points at the normalizer rather than at the
     // throw site, and this is what explains why.
     error.name = 'NonErrorThrowable';
+    // Kept as a field too, because the message is not what Sentry groups on:
+    // this error's stack is the normalizer's, the same for every fault at one
+    // site, so `errorFingerprint` keys on `code` to keep faults apart (#2131).
+    // The value allowlist drops the field itself from the event.
+    if (code !== undefined) Object.assign(error, { code });
     return error;
   }
 

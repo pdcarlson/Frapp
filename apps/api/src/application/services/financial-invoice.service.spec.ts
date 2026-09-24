@@ -873,22 +873,64 @@ describe('FinancialInvoiceService', () => {
 
     it('should throw ServiceUnavailableException when the provider fails', async () => {
       mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
-      mockBillingProvider.createPaymentIntent.mockRejectedValue(
-        new Error('stripe is down'),
-      );
+      const stripeError = new Error('stripe is down');
+      mockBillingProvider.createPaymentIntent.mockRejectedValue(stripeError);
       const loggerErrorSpy = jest
         .spyOn(service['logger'], 'error')
         .mockImplementation(() => {});
 
-      await expect(
-        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
-      ).rejects.toThrow(ServiceUnavailableException);
+      const thrown: unknown = await service
+        .createPaymentIntent('inv-1', 'ch-1', 'user-1')
+        .then(() => null)
+        .catch((error: unknown) => error);
 
+      expect(thrown).toBeInstanceOf(ServiceUnavailableException);
+      // The client message stays generic; the provider error rides on `cause`,
+      // which is what Sentry's LinkedErrors reports (#2131).
+      expect((thrown as Error).message).toBe(
+        'Payment provider is unavailable. Please try again.',
+      );
+      expect(thrown).toMatchObject({ cause: stripeError });
       // A genuine outage is the page-on-call case, so it keeps the ERROR log.
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Stripe PaymentIntent request failed'),
+        'Stripe PaymentIntent request failed for invoice inv-1: stripe is down',
+        stripeError.stack,
       );
       expect(mockInvoiceRepo.setPaymentIntentIfOpen).not.toHaveBeenCalled();
+
+      loggerErrorSpy.mockRestore();
+    });
+
+    it('reports a non-Error provider failure through toReportableError, without its details', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockBillingProvider.createPaymentIntent.mockRejectedValue({
+        code: 'rate_limit',
+        message: 'Too many requests',
+        details: 'Key (email)=(member@example.com)',
+      });
+      const loggerErrorSpy = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => {});
+
+      const thrown: unknown = await service
+        .createPaymentIntent('inv-1', 'ch-1', 'user-1')
+        .then(() => null)
+        .catch((error: unknown) => error);
+
+      expect(thrown).toBeInstanceOf(ServiceUnavailableException);
+      const cause = (thrown as Error).cause;
+      expect(cause).toBeInstanceOf(Error);
+      expect(cause).toMatchObject({
+        name: 'NonErrorThrowable',
+        message: 'rate_limit: Too many requests',
+      });
+      // Printed `[object Object]` before it went through logThrowable.
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        'Stripe PaymentIntent request failed for invoice inv-1: rate_limit: Too many requests',
+      );
+      expect(JSON.stringify(loggerErrorSpy.mock.calls)).not.toContain(
+        'member@example.com',
+      );
 
       loggerErrorSpy.mockRestore();
     });

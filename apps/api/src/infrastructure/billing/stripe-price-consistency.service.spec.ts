@@ -81,9 +81,17 @@ describe('StripePriceConsistencyService', () => {
     });
     const service = serviceWith({ secret: REAL_SECRET, priceId: PRICE_ID });
 
-    await expect(service.onModuleInit()).rejects.toThrow(
-      StripePriceAccountMismatchError,
-    );
+    const thrown = await service
+      .onModuleInit()
+      .catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(StripePriceAccountMismatchError);
+    // The Stripe error rides on `cause`, normalized, so the readiness 503 can
+    // tell this fault from a revoked key in Sentry (#2131).
+    expect((thrown as Error).cause).toMatchObject({
+      name: 'NonErrorThrowable',
+      code: 'resource_missing',
+    });
     expect(errorLog).toHaveBeenCalled();
   });
 
@@ -91,9 +99,14 @@ describe('StripePriceConsistencyService', () => {
     retrieve.mockResolvedValue({ id: PRICE_ID, active: false });
     const service = serviceWith({ secret: REAL_SECRET, priceId: PRICE_ID });
 
-    await expect(service.assertConfiguredPrice()).rejects.toBeInstanceOf(
-      StripePriceAccountMismatchError,
-    );
+    const thrown = await service
+      .assertConfiguredPrice()
+      .catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(StripePriceAccountMismatchError);
+    // No Stripe error to carry, so the variant is named by `code` instead.
+    expect(thrown).toMatchObject({ code: 'price_inactive' });
+    expect((thrown as Error).cause).toBeUndefined();
     expect(errorLog).toHaveBeenCalled();
   });
 
