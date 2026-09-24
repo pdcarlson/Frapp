@@ -299,7 +299,7 @@ The one deliberately distinct surface in the system, and the only one that **nev
 | Slot | Spec |
 | ---- | ---- |
 | Container | radius 20, surface `#1A1A1A`, 1px border `rgba(239,182,59,.35)` (house gold @ 35%), padding 16 |
-| Header | ✦ glyph + "Ask Signet" 13px / 700 `#F4CB63`, trailing caption 12.5px `#78716A` |
+| Header | ✦ glyph + "Ask Frapp" 13px / 700 `#F4CB63`, trailing caption 12.5px `#78716A` |
 | Answer | 16px / 24px `#EDEAE3`; the answer's key figure bolded in `#F4CB63`, any secondary emphasis bold in `#EDEAE3` |
 | Sources | wrapping chip row, gap 7, 12px above; chips per §5 geometry (height 27–28, radius 9), fill `#251E0E`, 1px `#6B5619`, text 12.5px / 600 `#F4CB63`, leading duotone source glyph ([iconography.md](iconography.md)) |
 | Footer | caption 12.5px `#78716A` |

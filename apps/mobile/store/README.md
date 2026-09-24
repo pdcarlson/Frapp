@@ -28,20 +28,23 @@ Hub`. The listing needs a suffix because listing names are globally unique, and
 plain `Frapp` is already taken (app id `1540087188`), as plain `Signet` was (app
 id `1483581287`).
 
-**The home screen still says Signet.** Chrome (home screen, iOS Settings) comes
-from `expo.name` in [`apps/mobile/app.json`](../app.json), and that string, the
-iOS permission prompts and the in-app copy say **Signet** until ADR-25's step 2
-lands. That step must land before the first production build. The listing text
-below (description, review notes) is also still the Signet paste until then.
-Bundle id (`live.frapp.mobile`), slug, scheme, and every public URL are **frapp**
-permanently. The trademark record is on #1901; this file is the listing paste.
+**The home screen says Frapp.** Chrome (home screen, iOS Settings) comes from
+`expo.name` in [`apps/mobile/app.json`](../app.json). ADR-25's step 2 moved that
+string, the iOS permission prompts and the in-app copy from Signet to **Frapp**,
+and the listing text below (description, review notes) with them, so every build
+from that commit on matches this paste. A build from an earlier commit still says
+Signet, so check the build's commit before submitting it.
+[`frapp-mobile-copy.test.mjs`](../../../scripts/ci/__tests__/frapp-mobile-copy.test.mjs)
+fails CI if the binary says Signet again. Bundle id (`live.frapp.mobile`), slug,
+scheme, and every public URL are **frapp** permanently. The trademark record is on
+#1901; this file is the listing paste.
 
 ## Identity
 
 | Field | Value |
 | --- | --- |
 | Name (App Store listing, 30 chars) | Frapp: Chapter Hub (claimed 2026-09-23; was Signet: Chapter Hub) |
-| Display name (home screen, from `expo.name`) | Signet until ADR-25 step 2, then Frapp |
+| Display name (home screen, from `expo.name`) | Frapp (Signet until ADR-25 step 2) |
 | Subtitle (iOS, 30 chars) / Short description (Android, 80 chars) | Your chapter, in one place |
 | Bundle id / package | `live.frapp.mobile` |
 | Category | Productivity (primary); Social Networking (secondary, iOS) |
@@ -135,8 +138,8 @@ answer that caused it rather than re-derived.
 **EU Digital Services Act — declared non-trader / no EU distribution.** The
 dialog's second option reads "I'm not a trader under the DSA **or I don't plan to
 distribute in the EU**"; the declaration was made on the *second* limb, which is
-true — Signet targets US Greek life. It was **not** a claim of non-trader status:
-Signet charges chapters a paid subscription ([`spec/product/positioning.md` § Paid tier (Chapter Pro)](../../../spec/product/positioning.md#paid-tier-chapter-pro)),
+true — Frapp targets US Greek life. It was **not** a claim of non-trader status:
+Frapp charges chapters a paid subscription ([`spec/product/positioning.md` § Paid tier (Chapter Pro)](../../../spec/product/positioning.md#paid-tier-chapter-pro)),
 which is trading under Apple's test. The consequence is that Apple withholds the
 app from the 27 EU storefronts; availability follows the viewer's Apple Account
 country, not their physical location, so a member travelling in Europe on a US
@@ -177,7 +180,7 @@ The questionnaire **calculated 4+**; it was **overridden to 13+**. Answers given
 
 **Social Media = No** is defensible on Apple's own wording — "redistribution,
 amplification, or interaction with user-generated content through a social feed or
-similar discovery method that visibly spreads content to many users." Signet has
+similar discovery method that visibly spreads content to many users." Frapp has
 no followers, no discovery and no resharing, and the activity feed has no client
 surface at all (see the surface note at the top of
 [`spec/behavior/activity-feed.md`](../../../spec/behavior/activity-feed.md)).
@@ -235,7 +238,7 @@ the work; the detail lives there, not here.
 ## Description
 
 > Deliberately omits Ask. [`spec/ui/brand-identity.md`](../../../spec/ui/brand-identity.md)
-> gives the tagline as "Ask your chapter anything." and positions Signet as the
+> gives the tagline as "Ask your chapter anything." and positions Frapp as the
 > AI-first operating system for Greek life, but Ask is gated behind
 > `EXPO_PUBLIC_ASK_ENABLED` (default off, and set by no `eas.json` profile — which alone
 > is *not* proof it is off in a build, as the dues note below explains, so an EAS
@@ -252,7 +255,7 @@ the work; the detail lives there, not here.
 > The copy lives in [`spec/ui/design-system/writing.md`](../../../spec/ui/design-system/writing.md)
 > § 7, Sign in. When Ask ships, move the listing subtitle and the sign-in line together.
 
-Signet is the app your chapter actually runs on.
+Frapp is the app your chapter actually runs on.
 
 Members get one place for the things that used to live in six group chats: chapter announcements and channels, upcoming events with a check-in code at the door, study hours tracked inside your chapter's study zones, points and your house rank, dues and payment history, and the member directory.
 
@@ -278,7 +281,7 @@ Officers get what they need on their feet: take attendance at the door with a QR
 >
 > Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-entry-scoping.spec.ts` pins the fix.
 
-Signet is invite-only. Your chapter's officers create the chapter on the web and send you an invite link; open it on your phone and you are in.
+Frapp is invite-only. Your chapter's officers create the chapter on the web and send you an invite link; open it on your phone and you are in.
 
 Features
 - Chapter channels, and direct messages your chapter has started
@@ -352,7 +355,7 @@ states what a reviewer will actually be shown.
 - **Report and block (Guideline 1.2).** Tell App Review where they are: "Long-press any message from another member to report it or block them; Settings → Blocked members lists and removes blocks." A member's profile in the directory also has Block / Unblock. *Not for the note itself:* this is true only of a binary built from `main` after the #2257 member-side change merged; it needs the message § Seed the reviewer's chapter asks for, because a system post offers Report only; and a filed report still lands in an officer queue that nothing renders yet (§ Open before submitting), so do not describe reports being reviewed in the app.
 - Camera is used only to scan a chapter's event check-in QR code. Location is used only while the app is open, to confirm the member is inside a chapter study zone or at the event being checked in to; there is no background location.
 - Sign in with Apple and Sign in with Google are offered on the sign-in screen (Guideline 4.8: Apple is required once Google is offered). Password and magic-link remain. **Tell App Review to sign in with the email and password supplied above — and smoke-test that exact route on the TestFlight build first.** No sign-in of any kind has been exercised against `frapp-prod`, which still has no demo user (#2309), and [#2334](https://github.com/pdcarlson/Frapp/issues/2334) records that the Apple button can abort the app outright on the sign-in screen. An OAuth identity joins the seeded account **only when its email matches the seeded address** (GoTrue Automatic linking, [`deployment/supabase.md`](../../../docs/internal/ops/deployment/supabase.md)); a reviewer who signs in with their own Apple or Google account — or with Hide My Email, whose relay address can never match — becomes a *new* user in no chapter. That is not a blank app: `resolveAuthGate` routes a member-less account to the **join** screen, which asks for an invite they were never given and offers *Create a chapter*, and a chapter founded there is `incomplete`, which refuses paid-ops **writes** on three surfaces (#2297) while every screen still loads. Do not plan to rescue that with an invite — the first bullet's arithmetic holds here too: a token minted mid-review is usually dead before the reply lands. (Corrected 2026-09-22; this clause used to end "a reviewer still joins with the invite token after signing in". That is a real member's route — `redeem` binds whoever is signed in rather than matching the invite email, which is why the sign-in screen's Hide My Email promise is correct — and it is simply not the reviewer's, who is handed credentials rather than an invite. Do not delete that hint on the strength of this note.)
-- No in-app purchases and no digital goods. **The app takes no payment of any kind.** `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is not set in the EAS `production` environment ([#2415](https://github.com/pdcarlson/Frapp/issues/2415)), so `isStripeAvailable()` is false and PaymentSheet never opens. Do not tell App Review the app takes dues by card, and do not argue guideline 3.1.5 from it — the beta chapter is not collecting dues by card (decided 2026-09-21). **That decision is the only thing making the two sentences above true, and reversing it needs no repo change** — `eas env:set` reaches the bundle server-side. If the key ever ships, this bullet and § Identity's Price row become false statements to App Review: change both in the same sitting as the privacy rows below. Chapter *subscriptions* to Signet itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
+- No in-app purchases and no digital goods. **The app takes no payment of any kind.** `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is not set in the EAS `production` environment ([#2415](https://github.com/pdcarlson/Frapp/issues/2415)), so `isStripeAvailable()` is false and PaymentSheet never opens. Do not tell App Review the app takes dues by card, and do not argue guideline 3.1.5 from it — the beta chapter is not collecting dues by card (decided 2026-09-21). **That decision is the only thing making the two sentences above true, and reversing it needs no repo change** — `eas env:set` reaches the bundle server-side. If the key ever ships, this bullet and § Identity's Price row become false statements to App Review: change both in the same sitting as the privacy rows below. Chapter *subscriptions* to Frapp itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
   > **Seed no OPEN invoice for the reviewer and the question never arises.** Recorded
   > 2026-09-21, when the dues sentence came out of this note. What follows is the part
   > worth keeping: the code does not behave the way "no card payments" makes it sound.
