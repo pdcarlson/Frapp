@@ -193,6 +193,42 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     }
   });
 
+  it("reads an env that is the step's first key, and refuses it in flow form", () => {
+    const block = join(dir, "first-key-env.yml");
+    writeFileSync(
+      block,
+      "name: X\njobs:\n  j:\n    steps:\n      - env:\n          GITHUB_SHA: o\n        run: echo\n",
+    );
+    assert.equal(workflowSteps(block)[0].env.get("GITHUB_SHA"), "o");
+    const flow = join(dir, "first-key-flow-env.yml");
+    writeFileSync(flow, "name: X\njobs:\n  j:\n    steps:\n      - env: { GITHUB_SHA: o }\n        run: echo\n");
+    assert.throws(() => workflowSteps(flow), /`env:` is a flow mapping/);
+  });
+
+  it("ends the last step where the steps sequence ends, not at the end of the job", () => {
+    // A service container's env after `steps:` belongs to the service: it is
+    // neither the last step's env nor a step env to refuse.
+    const services = join(dir, "services.yml");
+    const text = (env) =>
+      "name: X\njobs:\n  j:\n    steps:\n      - name: Test\n        run: npm test\n" +
+      `    services:\n      postgres:\n        image: postgres:16\n        env: ${env}\n`;
+    writeFileSync(services, text("{ POSTGRES_PASSWORD: postgres }"));
+    assert.deepEqual([...workflowSteps(services)[0].env], []);
+    writeFileSync(services, text("\n          POSTGRES_PASSWORD: postgres"));
+    assert.deepEqual([...workflowSteps(services)[0].env], []);
+  });
+
+  it("reads an empty flow mapping as an empty mapping: {} can hide nothing", () => {
+    const empty = join(dir, "empty.yml");
+    writeFileSync(
+      empty,
+      "name: X\npermissions: {}\nenv: {}\njobs:\n  j:\n    permissions: { }\n    steps:\n      - env: {}\n        run: echo\n",
+    );
+    assert.deepEqual([...workflowKeys(empty).get("permissions")], []);
+    assert.deepEqual([...workflowJobs(empty)[0].keys.get("permissions")], []);
+    assert.deepEqual([...workflowSteps(empty)[0].env], []);
+  });
+
   it("reads step env keys quoted or bare, and a comment-only value as empty", () => {
     const report = workflowSteps(file).find((s) => s.name === "Report");
     assert.equal(report.jobId, "build");

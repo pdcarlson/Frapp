@@ -95,8 +95,11 @@ function keyOf(match) {
  * surrounding quotes removed: `DEPLOY_PHASE: build` and `DEPLOY_PHASE: "build"`
  * are the same instruction to Actions and must be the same here.
  */
-function envMapAt(lines, headerIndex) {
-  const headerIndent = indentOf(lines[headerIndex]);
+function envMapAt(lines, headerIndex, floor = indentOf(lines[headerIndex])) {
+  // `floor`: the indent at or above which the mapping has ended. The header's
+  // own indent, except for a step's first key (`- env:`), whose siblings sit
+  // deeper than its dash.
+  const headerIndent = floor;
   const map = new Map();
   let childIndent = null;
 
@@ -123,6 +126,11 @@ function isFlowMapping(raw) {
   return /^\s*(?:[&!]\S*\s+)*\{/.test(raw);
 }
 
+/** `{}`: a flow mapping with nothing in it, which hides nothing to refuse. */
+function isEmptyFlowMapping(raw) {
+  return /^\s*(?:[&!]\S*\s+)*\{\s*\}\s*(#.*)?$/.test(raw);
+}
+
 /** The refusal `keysAt` and `findEnvHeader` share; see `keysAt`. */
 function refuseFlowMapping(key, raw) {
   return new Error(
@@ -145,6 +153,7 @@ function findEnvHeader(lines, from, to, indent) {
   const flowEnv = new RegExp(String.raw`^\s*${named("env")}\s*:(.*)$`);
   for (let i = from; i < to; i += 1) {
     const flow = indentOf(lines[i]) === indent ? flowEnv.exec(lines[i]) : null;
+    if (flow && isEmptyFlowMapping(flow[1])) continue;
     if (flow && isFlowMapping(flow[1])) throw refuseFlowMapping("env", flow[1]);
     if (indentOf(lines[i]) === indent && new RegExp(String.raw`^\s*${named("env")}\s*:(\s*#.*)?\s*$`).test(lines[i])) {
       return i;
@@ -204,19 +213,25 @@ function stepIndices(lines, jobStart, jobEnd) {
       break;
     }
   }
-  if (stepsKey === -1) return [];
+  if (stepsKey === -1) return { starts: [], end: jobEnd };
 
   const first = lines.slice(stepsKey + 1, jobEnd).find((line) => /^\s*- \S/.test(line));
-  if (!first) return [];
+  if (!first) return { starts: [], end: jobEnd };
   const seqIndent = indentOf(first);
 
+  // `end` is where the sequence stops: a job key written after `steps:`
+  // (`services:`, `outputs:`) is not part of the last step.
   const starts = [];
+  let end = jobEnd;
   for (let i = stepsKey + 1; i < jobEnd; i += 1) {
     const indent = indentOf(lines[i]);
-    if (indent < seqIndent) break;
+    if (indent < seqIndent) {
+      end = i;
+      break;
+    }
     if (indent === seqIndent && /^\s*- \S/.test(lines[i])) starts.push(i);
   }
-  return starts;
+  return { starts, end };
 }
 
 /**
@@ -277,6 +292,22 @@ function stepIf(lines, stepStart, stepEnd) {
 }
 
 /**
+ * A step's own `env:`, wherever it sits: as a later key (indent 8), or as the
+ * step's first key (`- env:`), which a scan from the line after the dash never
+ * sees and which would otherwise read as no env at all.
+ */
+function stepEnvAt(lines, stepStart, stepEnd) {
+  const firstKey = new RegExp(String.raw`^\s*-\s+${named("env")}\s*:(.*)$`).exec(lines[stepStart]);
+  if (firstKey) {
+    if (isEmptyFlowMapping(firstKey[1])) return new Map();
+    if (isFlowMapping(firstKey[1])) throw refuseFlowMapping("env", firstKey[1]);
+    if (opensMapping(firstKey[1])) return envMapAt(lines, stepStart, 8);
+  }
+  const index = findEnvHeader(lines, stepStart + 1, stepEnd, 8);
+  return index === -1 ? new Map() : envMapAt(lines, index);
+}
+
+/**
  * Every step in a workflow file, with the environment Actions would actually
  * give it.
  *
@@ -334,16 +365,15 @@ export function workflowSteps(workflowPath) {
     // `    steps:` / `    - name:` style, which is valid YAML and which the old
     // form parsed as zero steps — dropping a whole workflow out of the contract
     // check while the floor stayed green.
-    const stepStarts = stepIndices(lines, jobStart, jobEnd);
+    const { starts: stepStarts, end: stepsEnd } = stepIndices(lines, jobStart, jobEnd);
 
     for (let s = 0; s < stepStarts.length; s += 1) {
       const stepStart = stepStarts[s];
-      // Bounded by the JOB, not by the file: the last step of a job must not
-      // absorb the next one.
-      const stepEnd = s + 1 < stepStarts.length ? stepStarts[s + 1] : jobEnd;
+      // Bounded by the steps SEQUENCE, not by the job or the file: the last
+      // step must absorb neither the next job nor a job key after `steps:`.
+      const stepEnd = s + 1 < stepStarts.length ? stepStarts[s + 1] : stepsEnd;
 
-      const stepEnvIndex = findEnvHeader(lines, stepStart + 1, stepEnd, 8);
-      const stepEnv = stepEnvIndex === -1 ? new Map() : envMapAt(lines, stepEnvIndex);
+      const stepEnv = stepEnvAt(lines, stepStart, stepEnd);
 
       steps.push({
         workflowFile,
@@ -401,6 +431,8 @@ function keysAt(lines, from, to, indent) {
     const key = keyOf(match);
     if (opensMapping(match[4])) {
       keys.set(key, envMapAt(lines, i));
+    } else if (isEmptyFlowMapping(match[4])) {
+      keys.set(key, new Map());
     } else if (isFlowMapping(match[4])) {
       throw refuseFlowMapping(key, match[4]);
     } else {
