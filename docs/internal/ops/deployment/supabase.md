@@ -123,15 +123,15 @@ The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`
 (`token_hash`, #1916). Gmail trained the apex From `invites@frapp.live` on the first
 generic hosted templates, so sending now uses mail subdomains (Resend domains
 `mail.staging.frapp.live` and `mail.frapp.live`, created 2026-09-08, tracking off)
-and staging tests cannot burn production reputation. Do not send From the apex:
+and staging tests cannot burn production reputation. Do not send From the apex. These
+are the senders [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) sets. Each
+console, and `RESEND_FROM_EMAIL` wherever it is set, still says `Signet` until the owner
+makes that change (the table above has the last read, 2026-09-09):
 
 - Staging Auth: `Frapp <no-reply@mail.staging.frapp.live>`
 - Prod Auth: `Frapp <no-reply@mail.frapp.live>`
-- API invite default: `Frapp <invites@mail.frapp.live>` (staging API sets
-  `RESEND_FROM_EMAIL` to `Frapp <invites@mail.staging.frapp.live>`)
-
-Each of these said `Signet` until [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp),
-the last read on 2026-09-09.
+- API invite default: `Frapp <invites@mail.frapp.live>`, with staging's
+  `RESEND_FROM_EMAIL` set to `Frapp <invites@mail.staging.frapp.live>`
 
 Leave the existing `frapp.live` Resend domain in place until nothing uses it.
 
