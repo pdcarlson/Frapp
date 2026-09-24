@@ -95,7 +95,7 @@ export type NotificationLevelMenuState = {
   blocked: boolean;
   /** The menu is on screen. */
   visible: boolean;
-  open: () => void;
+  toggle: () => void;
   close: () => void;
 };
 
@@ -132,23 +132,25 @@ export function useNotificationLevelMenu({
     return () => subscription.remove();
   }, [visible]);
 
-  const open = useCallback(() => {
+  const toggle = useCallback(() => {
     if (blocked) return;
     // With the composer focused, the keyboard leaves too little of a small
     // phone for the menu: its lower rows would fall outside the overlay, where
     // Android delivers no taps, or behind the keyboard on iOS.
-    Keyboard.dismiss();
-    setIsOpen(true);
-  }, [blocked]);
+    if (!isOpen) Keyboard.dismiss();
+    setIsOpen(!isOpen);
+  }, [blocked, isOpen]);
   const close = useCallback(() => setIsOpen(false), []);
 
-  return { level, writeBlockedReason, blocked, visible, open, close };
+  return { level, writeBlockedReason, blocked, visible, toggle, close };
 }
 
 /**
- * The header trigger. The menu it opens is {@link NotificationLevelMenu}, which
- * covers the trigger while it is up, so a second tap there lands on the
- * menu's backdrop and closes it.
+ * The header trigger. The menu it opens is {@link NotificationLevelMenu}. It
+ * still toggles: a second touch lands on the menu's backdrop, which covers the
+ * trigger, but TalkBack activates the trigger directly, since the overlay's
+ * `accessibilityViewIsModal` is iOS-only and the trigger stays in Android's
+ * accessibility tree.
  */
 export function NotificationLevelControl({
   menu,
@@ -175,7 +177,7 @@ export function NotificationLevelControl({
       disabled={menu.blocked}
       hitSlop={12}
       onLayout={onLayout}
-      onPress={menu.open}
+      onPress={menu.toggle}
       style={({ pressed }) => [styles.trigger, pressed ? styles.pressed : null]}
     >
       <MuteGlyph color={glyphColor} active={isMuted} size={24} />

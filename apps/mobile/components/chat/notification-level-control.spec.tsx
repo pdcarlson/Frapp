@@ -450,6 +450,17 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
     expect(menu(tree)).toHaveLength(1);
   });
 
+  it("closes when the trigger itself is activated again, as TalkBack does under the overlay", () => {
+    const onChange = vi.fn();
+    const tree = openMenu(onChange);
+    // A screen reader's click reaches the trigger's handler directly; only a
+    // touch is stopped by the backdrop.
+    press(byLabel(tree, TRIGGER));
+    expect(menu(tree)).toHaveLength(0);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(Keyboard.dismiss).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the backdrop out of the accessibility tree; Cancel is the spoken dismissal", () => {
     const tree = openMenu();
     const node = backdrop(tree);
