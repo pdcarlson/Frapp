@@ -12,7 +12,7 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 | --- | ------- |
 | [`screens.md`](screens.md) | The s01–s23 screen inventory and its expo-router route map |
 | [`navigation.md`](navigation.md) | 4-tab IA, More hub, global entries, deep links, typed routes |
-| [`patterns.md`](patterns.md) | Bottom sheets, QR check-in, study sessions, dues payment, push |
+| [`patterns.md`](patterns.md) | Bottom sheets, QR check-in, study sessions, dues payment, chat, push, minimum version |
 
 Tokens, components, icons, and copy shared across Signet surfaces live in [`../design-system/`](../design-system/README.md) — this tree never restates them. Network, optimistic-update, and loading/empty/error delivery rules live in [`../resilience/`](../resilience/README.md).
 

@@ -259,6 +259,86 @@ test("the publisher's invocation guards", async () => {
   assert.equal(await publishSnapshot({ accessToken: "", outPath: "/tmp/x.json", ...quiet }), 2);
 });
 
+// A token that, like each Infisical environment's since #2583, answers only for
+// its own project: anything else is the Management API's 403.
+function scopedFetch(tokenByRef) {
+  const seen = [];
+  const fetchImpl = async (url, init = {}) => {
+    const ref = url.match(/\/v1\/projects\/([^/]+)\/database\/migrations$/)?.[1];
+    const token = String(init.headers?.Authorization ?? "").replace(/^Bearer /, "");
+    seen.push({ ref, token });
+    const allowed = ref && tokenByRef[ref] === token;
+    const body = ref === STAGING_REF ? STAGING_APPLIED : PRODUCTION_APPLIED;
+    return {
+      ok: allowed,
+      status: allowed ? 200 : 403,
+      text: async () => JSON.stringify(allowed ? body : { message: "Forbidden" }),
+    };
+  };
+  return { fetchImpl, seen };
+}
+
+test("each project is read with its own token, since neither can read the other (#2583)", async () => {
+  const tokens = { staging: "staging-token", production: "production-token" };
+  const { fetchImpl, seen } = scopedFetch({ [STAGING_REF]: tokens.staging, [PRODUCTION_REF]: tokens.production });
+  const code = await publishSnapshot({
+    tokenFor: (name) => tokens[name],
+    outPath: "/tmp/out/x.json",
+    environments: ENVIRONMENTS,
+    fetchImpl,
+    nowMs: NOW,
+    writeFile: () => {},
+    ...quiet,
+  });
+  assert.equal(code, 0);
+  assert.deepEqual(
+    seen.map(({ ref, token }) => [ref, token]),
+    [
+      [STAGING_REF, tokens.staging],
+      [PRODUCTION_REF, tokens.production],
+    ],
+  );
+});
+
+test("production's token alone cannot publish: staging answers 403 and nothing is written", async () => {
+  // The failure run 36022850155 hit on 2026-09-24, before the workflow kept
+  // each environment's token.
+  const { fetchImpl } = scopedFetch({ [STAGING_REF]: "staging-token", [PRODUCTION_REF]: "production-token" });
+  let wrote = false;
+  const code = await publishSnapshot({
+    accessToken: "production-token",
+    outPath: "/tmp/out/x.json",
+    environments: ENVIRONMENTS,
+    fetchImpl,
+    nowMs: NOW,
+    writeFile: () => {
+      wrote = true;
+    },
+    ...quiet,
+  });
+  assert.equal(code, 1);
+  assert.equal(wrote, false);
+});
+
+test("a project with no token is an invocation error that names its variable", async () => {
+  const errors = [];
+  let fetched = false;
+  const code = await publishSnapshot({
+    tokenFor: (name) => (name === "production" ? "production-token" : ""),
+    outPath: "/tmp/out/x.json",
+    environments: ENVIRONMENTS,
+    fetchImpl: async () => {
+      fetched = true;
+      throw new Error("must not fetch");
+    },
+    ...quiet,
+    error: (line) => errors.push(line),
+  });
+  assert.equal(code, 2);
+  assert.equal(fetched, false, "nothing is read until every project has a token");
+  assert.ok(errors.some((line) => line.includes("SUPABASE_ACCESS_TOKEN_STAGING")), errors.join("\n"));
+});
+
 // ── openSnapshot ────────────────────────────────────────────────────────────
 
 test("openSnapshot resolves refs by environment name and reports the capture time", () => {
@@ -305,4 +385,35 @@ test("only the required gates off main wait on a stale snapshot", () => {
   ]);
   const calls = workflow.match(/uses: \.\/\.github\/actions\/download-migration-snapshot/g) ?? [];
   assert.equal(calls.length, settings.length, "every call site sets on-stale explicitly");
+});
+
+// ── The workflows that inject two Infisical environments ────────────────────
+
+test("each two-environment workflow clears staging's values before the prod injection", () => {
+  // Infisical/secrets-action exports only the keys an environment returns, so
+  // a key missing from `prod` would otherwise keep staging's value and pass
+  // the prod capture's empty-check as production's (a staging token recorded
+  // as production's, or the drift check reading staging twice).
+  const cases = [
+    [".github/workflows/migration-snapshot.yml", ["SUPABASE_ACCESS_TOKEN"]],
+    [".github/workflows/check-migration-drift.yml", ["SUPABASE_ACCESS_TOKEN", "SUPABASE_PROJECT_REF"]],
+  ];
+  for (const [path, names] of cases) {
+    const text = readFileSync(path, "utf8");
+    const staging = text.indexOf('env-slug: "staging"');
+    const prod = text.indexOf('env-slug: "prod"');
+    assert.ok(staging !== -1 && prod > staging, `${path}: staging is injected before prod`);
+    const between = text.slice(staging, prod);
+    for (const name of names) {
+      assert.ok(
+        between.includes(`echo "${name}_STAGING=$${name}" >> "$GITHUB_ENV"`) ||
+          between.includes(`echo "STAGING_PROJECT_REF=$${name}" >> "$GITHUB_ENV"`),
+        `${path}: ${name} is kept under a staging name`,
+      );
+      assert.ok(
+        between.includes(`echo "${name}=" >> "$GITHUB_ENV"`),
+        `${path}: ${name} is cleared before the prod injection`,
+      );
+    }
+  }
 });

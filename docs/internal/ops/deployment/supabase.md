@@ -42,9 +42,11 @@ From each project's dashboard → Settings → API, note:
 ### Auth settings (hosted, dashboard or Management API)
 
 These live on the project, not in this repo, so they are recorded here with the date they were
-read. Read them back with `GET https://api.supabase.com/v1/projects/<ref>/config/auth` (a
-`SUPABASE_ACCESS_TOKEN` is enough); write with `PATCH` on the same path, or in the dashboard under
-Authentication → URL Configuration / SMTP Settings.
+read. Read them back with `GET https://api.supabase.com/v1/projects/<ref>/config/auth`: each
+Infisical environment's `SUPABASE_ACCESS_TOKEN` reads its own project's (read-only, one project
+each since [#2583](https://github.com/pdcarlson/Frapp/issues/2583)). Write in the dashboard under
+Authentication → URL Configuration / SMTP Settings, or with `PATCH` on the same path using a
+personal token that can write; no stored CI token can.
 
 | Setting | `frapp-prod` | `frapp-staging` |
 | --- | --- | --- |

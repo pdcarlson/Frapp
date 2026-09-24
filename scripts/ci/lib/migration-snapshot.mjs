@@ -8,11 +8,10 @@
 // credential a PR job can read, any branch can read, by editing the workflow or
 // adding a new one. The three migration gates used to inject Infisical `prod`
 // for one thing: `GET /v1/projects/{ref}/database/migrations`. The account-level
-// Supabase token that answered it also drives production.
+// Supabase token that answered it then also drove production.
 //
 // Now `publish-migration-snapshot.mjs` makes that read instead, under a GitHub
-// environment meant to admit `main` only (the owner's #2583 sets that rule;
-// until then a branch dispatch can still run it), and uploads the answer as a
+// environment that admits `main` only (#2583), and uploads the answer as a
 // workflow artifact. The PR jobs download it with `GITHUB_TOKEN` and
 // `actions: read`, and serve it back to the unchanged gate logic through
 // `snapshotFetch` below, which answers exactly the one URL shape

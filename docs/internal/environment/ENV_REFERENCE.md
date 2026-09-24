@@ -201,10 +201,10 @@ These are only used by GitHub Actions. Leave them empty in the `dev` environment
 | `RENDER_DEPLOY_HOOK_URL` | _(leave empty)_ | Copy from Render dashboard → frapp-api-staging → Settings → Deploy Hook → copy URL                                                                            | _(leave empty)_ — `deploy-production.yml` deploys by commit through the Render API (`RENDER_API_KEY`), never a hook. A production hook stored here is a credential nothing uses that deploys `main`'s tip past the SHA and green-CI gate |
 | `API_HEALTHCHECK_URL`    | _(leave empty)_ | `https://api-staging.frapp.live/health`                                                                                                                       | `https://api.frapp.live/health`                                                 |
 | `SUPABASE_PROJECT_REF`   | _(leave empty)_ | Copy from Supabase staging dashboard → Settings → General → Reference ID (looks like `abcdefghijklmnop`)                                                      | Copy from Supabase production dashboard → Settings → General → Reference ID     |
-| `SUPABASE_ACCESS_TOKEN`  | _(leave empty)_ | Go to https://supabase.com/dashboard/account/tokens → Generate token → copy it. **Same token for both staging and production** — it's an account-level token. | _(same token as staging)_                                                       |
+| `SUPABASE_ACCESS_TOKEN`  | _(leave empty)_ | https://supabase.com/dashboard/account/tokens → **Generate new token** → Resource access **Project** → `Frapp Live` → **`frapp-staging` only** → Permissions **Preset · Read-only** → copy it. A read-only token for this one project; every CI use is a read, and `supabase link` works with it ([#2583](https://github.com/pdcarlson/Frapp/issues/2583)). Supabase caps the expiry; the current one expires 2027-09-01. | A **separate** token, the same way but **`frapp-prod` only**. `migration-snapshot.yml` and `check-migration-drift.yml` read each project with its own environment's token |
 | `SUPABASE_DB_PASSWORD`   | _(leave empty)_ | The **frapp-staging** database password (Supabase dashboard → project → database settings; reset it there if unknown).                                        | The **frapp-prod** database password — a _different_ value from staging.        |
 
-> **`SUPABASE_DB_PASSWORD` is required, not optional.** The Supabase CLI pinned in [`.github/actions/supabase-cli`](../../../.github/actions/supabase-cli/action.yml) cannot initialise its `cli_login_postgres` login role — it issues that role's password with an already-expired validity window and fails with `permission denied to alter role`, which reads like a permissions problem but is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), tracked here as #835). With `SUPABASE_DB_PASSWORD` set, `supabase link` / `db push` connect directly and skip login-role initialisation. Without it, **every** migration job fails. Unlike `SUPABASE_ACCESS_TOKEN`, this value is per-project — staging and production have different passwords.
+> **`SUPABASE_DB_PASSWORD` is required, not optional.** The Supabase CLI pinned in [`.github/actions/supabase-cli`](../../../.github/actions/supabase-cli/action.yml) cannot initialise its `cli_login_postgres` login role — it issues that role's password with an already-expired validity window and fails with `permission denied to alter role`, which reads like a permissions problem but is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), tracked here as #835). With `SUPABASE_DB_PASSWORD` set, `supabase link` / `db push` connect directly and skip login-role initialisation. Without it, **every** migration job fails. Like `SUPABASE_ACCESS_TOKEN`, this value is per-project — staging and production have different passwords.
 
 ### Offsite Backup Secrets (`db-backup.yml` only)
 
@@ -433,7 +433,8 @@ is unavailable in that state and the sign-in screen says so.
 >
 > **2026-09-24 (#2526):** an EAS production build also refuses an
 > `EXPO_PUBLIC_SUPABASE_ANON_KEY` that isn't exactly the publishable key
-> (`sb_publishable_…`, with no whitespace around it; Expo inlines the value verbatim).
+> (`sb_publishable_…`, with nothing around it, not even whitespace or quotes; Expo inlines
+> the value verbatim).
 > Supabase supports the legacy JWT `anon` key only until the end of 2026, and a store
 > binary keeps the key it was built with until its owner updates from the store. Set
 > the `frapp-prod` publishable key (Supabase → Project Settings → API Keys) on the EAS
@@ -443,7 +444,14 @@ is unavailable in that state and the sign-in screen says so.
 > development build with the legacy anon key still evaluates. **No** profile may carry a secret key:
 > a `sb_secret_…` key, or a JWT whose role isn't `anon` (`service_role`, or a user's
 > access token), fails config evaluation everywhere, because every `EXPO_PUBLIC_*` value
-> ships inside the bundle.
+> ships inside the bundle. On every EAS profile, a set value must also be one of the two
+> client keys (the publishable key or the legacy anon JWT) with nothing around it,
+> which refuses the legacy JWT secret or an access token pasted from the wrong field,
+> since the binary goes to testers or the store. An unset key still builds on `preview`
+> and `development`. A run with no EAS profile keeps only the secret-key check: a local
+> `expo start` or CI prebuild, where placeholder values still run, and also `eas update`,
+> whose bundle is published over the air, which is why no update may be published before
+> its pipeline sets a profile ([`spec/environments/README.md` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas)).
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of
@@ -563,8 +571,7 @@ provider state in a second file has no mechanism to stay true.
 ## GitHub Secrets
 
 Every GitHub secret belongs in an **environment** restricted to `main`, never in repository scope,
-because a repository secret is readable from any branch (#2518). Moving them there is the owner's
-#2583; until it lands they are all still repository secrets. The Infisical pair below is not the
+because a repository secret is readable from any branch (#2518). The Infisical pair below is not the
 only GitHub secret. The provider API keys, the release PAT and the base-sync App pair live there
 too. Which secrets exist, which environment holds each, and the state today:
 [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
@@ -577,7 +584,7 @@ too. Which secrets exist, which environment holds each, and the state today:
 | `INFISICAL_CLIENT_SECRET`       | Same **Universal Auth** panel → **Add Client Secret**. The value is shown once, at creation — if it was not saved, issue a new one rather than hunting for the old.                                                                                                                                                                                                            |
 
 `INFISICAL_PROJECT_ID` used to be listed here. No workflow reads it (the `infisical-secrets` action
-pins `project-slug: frapp-live-ej-ls`), and deleting the repository copy is #1587.
+pins `project-slug: frapp-live-ej-ls`), and its repository copy was deleted on 2026-09-23 (#1587).
 
 **Deploy-time values come from Infisical at job time.** Every workflow that needs them
 (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `API_HEALTHCHECK_URL` and the rest) pulls them

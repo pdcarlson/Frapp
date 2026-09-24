@@ -90,8 +90,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    # Secrets belong to the `automation` environment: `main` only once the owner's
-    # #2583 sets that rule and moves them there, no required reviewers (#2518).
+    # Secrets belong to the `automation` environment: `main` only, no required
+    # reviewers (#2518, #2583).
     # See docs/internal/ci-cd/AGENT_INFRA.md § GitHub environments and bootstrap secrets.
     environment:
       name: automation

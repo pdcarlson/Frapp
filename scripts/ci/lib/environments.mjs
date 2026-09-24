@@ -124,6 +124,20 @@ export function loadEnvironments(options = {}) {
   return parsed;
 }
 
+/**
+ * The Supabase Management API token for one environment.
+ *
+ * Each Infisical environment holds a token that reads only its own project
+ * (#2583). A job that reads both projects injects both environments, and the
+ * second injection overwrites the first, so it keeps each token under its own
+ * name first: `SUPABASE_ACCESS_TOKEN_STAGING`, `SUPABASE_ACCESS_TOKEN_PRODUCTION`.
+ * `SUPABASE_ACCESS_TOKEN` is the fallback, for one token that reads every
+ * project, such as a person's own when running a script by hand.
+ */
+export function supabaseAccessTokenFor(name, env = process.env) {
+  return env[`SUPABASE_ACCESS_TOKEN_${name.toUpperCase()}`] || env.SUPABASE_ACCESS_TOKEN || "";
+}
+
 /** One environment by name. Throws on an unknown name rather than returning undefined. */
 export function getEnvironment(name, options = {}) {
   const all = loadEnvironments(options);
