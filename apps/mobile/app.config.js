@@ -272,16 +272,21 @@ const PUBLIC_SUPABASE_SECRET_KEY_ERROR = [
 ].join(" ");
 
 /**
- * The claims of every JWT in the value, wherever it sits: the whole value when
- * it has three parts, and every header-and-claims pair anywhere else in it (a
- * JWT's header and claims both open with `eyJ`, which is `{"` in base64url),
- * so one pasted after a URL, a stray dot or another JWT is still read.
+ * Claims to check, read with whitespace removed so a JWT wrapped across lines
+ * still decodes: the whole value's when it has three parts, and every
+ * base64url segment after a dot that opens with `eyJ` (`{"`), which is where a
+ * JWT's claims sit wherever it was pasted (after a URL, a stray dot or another
+ * JWT). A segment after a dot can also be a header, when JWTs are joined by a
+ * dot, so there only one carrying a `role` counts. One anchored match per
+ * part keeps the scan linear however long the value is.
  */
 function jwtClaims(key) {
-  const parts = key.split(".");
+  const parts = key.replace(/\s+/g, "").split(".");
   const found = parts.length === 3 ? [decodeJwtSegment(parts[1])] : [];
-  for (const [, claims] of key.matchAll(/eyJ[A-Za-z0-9_-]*\.(eyJ[A-Za-z0-9_-]*)/g)) {
-    found.push(decodeJwtSegment(claims));
+  for (const part of parts.slice(1)) {
+    const segment = /^eyJ[A-Za-z0-9_-]*/.exec(part);
+    const claims = segment ? decodeJwtSegment(segment[0]) : undefined;
+    if (claims && "role" in claims) found.push(claims);
   }
   return found.filter(Boolean);
 }

@@ -724,6 +724,11 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     ["a service_role JWT after an anon JWT and a space", `${LEGACY_ANON_JWT_FIXTURE} ${SERVICE_ROLE_JWT_FIXTURE}`],
     ["a service_role JWT with a trailing period", `${SERVICE_ROLE_JWT_FIXTURE}.`],
     ["a service_role JWT after the project URL", `https://ref.supabase.co ${SERVICE_ROLE_JWT_FIXTURE}`],
+    // Wrapped across lines by a terminal, after other dotted text.
+    [
+      "a line-wrapped service_role JWT after the project URL",
+      `https://ref.supabase.co ${SERVICE_ROLE_JWT_FIXTURE.slice(0, 30)}\n${SERVICE_ROLE_JWT_FIXTURE.slice(30)}`,
+    ],
   ])("refuses %s on any profile, or none", (_label, supabaseAnonKey) => {
     const {
       applyMobileConfig,
