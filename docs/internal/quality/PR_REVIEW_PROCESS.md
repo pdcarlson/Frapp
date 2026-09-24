@@ -38,7 +38,7 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - Required checks pass.
    - Code review happens before the push through the repository-managed
      [`.githooks/pre-push`](../../../.githooks/pre-push). The root `prepare` script installs it for
-     agents and humans, and every pushed commit that adds unreviewed work needs exact-SHA
+     agents and humans, and each pushed ref's tip that adds unreviewed work needs exact-SHA
      evidence. There is no CI Claude review or `claude-review-gate` check. Details:
      [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 3. **Human review pass** — a convention, **not a merge gate**

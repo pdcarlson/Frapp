@@ -69,6 +69,13 @@ test("allows the exact pushed commit when its marker exists", () => {
   assert.equal(run([`refs/heads/work ${head} refs/heads/work ${"0".repeat(40)}`]).status, 0);
 });
 
+test("an empty legacy marker on the pushed commit is not evidence", () => {
+  clear();
+  mark();
+  writeFileSync(path.join(repo, ".cache", "diff-review", head), "");
+  assert.equal(run([`refs/heads/work ${head} refs/heads/work ${"0".repeat(40)}`]).status, 1);
+});
+
 test("one reviewed ref cannot mask another unreviewed ref in an atomic push", () => {
   clear();
   mark();

@@ -80,9 +80,9 @@ Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled
 
 - Code review is a **local Git pre-push gate**, not CI. The checked-in
   [`.githooks/pre-push`](.githooks/pre-push) is enabled by `npm install` / `npm ci` and applies to
-  agents and humans alike. It requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for every commit a
-  push publishes, unless the commit adds nothing unreviewed (it is on `main`, or only cleanly merges
-  `main` into reviewed work); `/diff-review` writes that evidence. Retrying never releases a denied push. Git's
+  agents and humans alike. It requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for the commit each
+  pushed ref points at, unless that commit adds nothing unreviewed (it is on `main`, or only cleanly
+  merges `main` into reviewed work); `/diff-review` writes that evidence. Retrying never releases a denied push. Git's
   explicit `--no-verify` option and an uninstalled/changed hooks path remain bypasses, so this is not
   described as an unconditional server-side gate. Details:
   [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).

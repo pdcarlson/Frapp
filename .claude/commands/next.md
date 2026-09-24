@@ -372,8 +372,8 @@ reviewed. Never push around the gate (`--no-verify`), and never
 delete, revert, stash, or gitignore a file to make it pass. If the gate objects to a file, review the
 file.
 
-Pass every member's acceptance criteria as `acceptance`, so the first review's acceptance-and-tests
-finder checks them. No second review
+Pass every member's acceptance criteria as `acceptance` to every workflow round, so its
+acceptance-and-tests finder checks them. No second review
 goes on top of it ([ADR-23](../../spec/architecture/adr/adr-23.md)): no human reads the diff before
 the PR, so the gate is where the depth goes. A `PLAUSIBLE` finding you can't settle here goes in the
 PR body under *Flagged for review*; that valve is what lets a run finish instead of stopping to ask.

@@ -119,7 +119,7 @@ function finderPrompt(b) {
   const criteria = b.worktree
     ? A.acceptance
       ? `\n\nAcceptance criteria to check the diff against:\n${A.acceptance}`
-      : '\n\nNo acceptance criteria were passed: check the diff against what its commit messages say it does.'
+      : `\n\nNo acceptance criteria were passed: check the diff against what its commit messages (\`git log ${A.branchBase || A.base}..${A.head}\`) say it does.`
     : ''
   return (
     `Review ${SCOPE}. ${PINNED}\n\n` +

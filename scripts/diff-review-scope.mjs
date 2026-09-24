@@ -9,9 +9,11 @@
 // What each scope means for the reviewer is in .claude/skills/diff-review/SKILL.md; this script
 // only applies the rules. A branch is reviewed up to the newest marked commit R on its own
 // first-parent line since it left main. What is left is the difference between HEAD and R with the
-// current main merged in (`git merge-tree`, conflict markers and all). So merging main adds nothing
-// to review, while a fix commit, a conflict resolution or an edit hidden in a merge commit does. A
-// branch with no marked commit (its first review, or after a rebase) is reviewed whole.
+// current main merged in cleanly (`git merge-tree`). So merging main adds nothing to review, while a
+// fix commit or an edit hidden in a merge commit does. A branch with no marked commit (its first
+// review, or after a rebase) is reviewed whole, and so is one whose reviewed work conflicts with main:
+// a resolution can leave no trace in any diff (keep main's side of a modify/delete conflict, and
+// merge-tree's tree already holds that file, with no markers).
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -67,14 +69,14 @@ function size(root, from, to) {
   return { files, changedLines };
 }
 
-// R with main merged in, as a tree: what HEAD would be if nothing but main had landed since R. Where
-// the two conflict, the tree holds git's conflict markers, so the diff to HEAD shows the resolution.
+// R with main merged in, as a tree: what HEAD would be if nothing but main had landed since R.
+// Null when the two conflict.
 function reviewedOnMain(root, reviewed, branchBase) {
   if (succeeds(root, "merge-base", "--is-ancestor", branchBase, reviewed)) return reviewed;
   try {
     return git(root, "merge-tree", "--write-tree", reviewed, branchBase).split("\n")[0];
   } catch (err) {
-    if (err.status === 1) return String(err.stdout).split("\n")[0]; // conflicts: the tree is still written
+    if (err.status === 1) return null; // conflicts
     throw new Error(`git merge-tree --write-tree failed (it needs git 2.38 or newer; pass --full to review the whole branch): ${String(err.stderr).trim()}`);
   }
 }
@@ -90,8 +92,8 @@ export function resolveScope({ cwd = process.cwd(), full = false, head: headRef 
 
   if (head === branchBase) return scope("empty", null, head);
   if (reviewed === head && !full) return scope("none", null, head);
-  if (!reviewed || full) return scope("full", "workflow", branchBase, size(root, branchBase, head));
-  const base = reviewedOnMain(root, reviewed, branchBase);
+  const base = reviewed && !full ? reviewedOnMain(root, reviewed, branchBase) : null;
+  if (!base) return scope("full", "workflow", branchBase, size(root, branchBase, head));
   if (succeeds(root, "diff", "--quiet", base, head)) return scope("none", null, head);
   const counts = size(root, base, head);
   return scope("delta", counts.changedLines >= INLINE_MAX_LINES ? "workflow" : "inline", base, counts);
@@ -105,10 +107,12 @@ export function writeMarker({ cwd = process.cwd() } = {}) {
   return file;
 }
 
-// The pre-push hook's fallback when <sha> has no marker of its own: a commit already on main, or
-// one with nothing new since a reviewed commit but merges of main, publishes nothing unreviewed.
+// The pre-push hook's question for each pushed tip. It passes a commit this review marked, one
+// already on main, and one with nothing new since a reviewed commit but clean merges of main.
 export function checkCommit({ cwd = process.cwd(), sha, baseRef = MAIN }) {
   if (!sha) throw new Error("--check needs the SHA of the commit being pushed");
+  const root = git(cwd, "rev-parse", "--show-toplevel");
+  if (trusted(root, git(root, "rev-parse", "--verify", `${sha}^{commit}`))) return { ok: true, reason: "reviewed" };
   const scope = resolveScope({ cwd, head: sha, baseRef });
   if (scope.mode === "empty") return { ok: true, reason: `already on ${baseRef}` };
   if (scope.mode === "none") return { ok: true, reason: `nothing but clean merges of ${baseRef} since reviewed ${scope.reviewed}` };

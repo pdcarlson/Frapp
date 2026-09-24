@@ -25,11 +25,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     continue
   fi
 
-  # /diff-review's marker is the evidence. Without one, a commit already on
-  # origin/main, or one that adds nothing but merges of main since a reviewed
-  # commit, publishes nothing unreviewed; the scope script decides, and any
-  # failure to run it (no node, no origin/main) denies.
-  [ -f "$ROOT/.cache/diff-review/$pushed_commit" ] && continue
+  # The scope script owns the rule: /diff-review's marker on this commit, or
+  # nothing unreviewed in it (already on origin/main, or only clean merges of
+  # main since a reviewed commit). Any failure to run it (no node, no
+  # origin/main) denies.
   if ! node "$ROOT/scripts/diff-review-scope.mjs" --check "$pushed_commit"; then
     printf 'review-gate: no review evidence for %s (%s).\n' "$local_ref" "$pushed_commit" >&2
     printf 'Run /diff-review on that commit; it records the evidence at %s once its findings are handled.\n' \

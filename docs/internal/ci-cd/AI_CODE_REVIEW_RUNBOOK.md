@@ -142,15 +142,17 @@ trustworthy rather than the agent agreeing with its own work — do not weaken i
 
 - Git invokes `.githooks/pre-push` with proposed updates on standard input. A zero local SHA is a
   deletion and publishes no object, so it is exempt.
-- Every other local object must peel to a commit, and that commit needs a repository-root
-  `.cache/diff-review/<commit SHA>` marker unless it adds nothing unreviewed (next bullet). Every
-  ref in a multi-ref push is checked.
-- A commit with no marker of its own passes only if `node scripts/diff-review-scope.mjs --check
-  <sha>` finds nothing unreviewed in it: it is already on `origin/main`, or it differs from its
-  branch's last reviewed commit, with the current `main` merged in, by nothing at all. So a
-  base-branch sync needs no review; a conflict resolution or an edit inside a merge commit does. The
-  script trusts only markers `/diff-review` wrote (`reviewed`, or the older `full` and `delta`) on
-  the branch's own first-parent line, never an empty legacy marker or one on a branch merged in.
+- Every other local object must peel to a commit, and the hook asks
+  `node scripts/diff-review-scope.mjs --check <sha>` about it. Every ref in a multi-ref push is
+  checked. The commit passes when it has a repository-root `.cache/diff-review/<commit SHA>`
+  marker, or when it adds nothing unreviewed: it is already on `origin/main`, or it differs from its
+  branch's last reviewed commit, with the current `main` merged in cleanly, by nothing at all. So a
+  clean base-branch sync needs no review, and an edit inside a merge commit does. A merge that
+  conflicted with the reviewed work needs a full review, because a resolution can leave no trace in
+  any diff.
+- The script trusts only markers `/diff-review` wrote (`reviewed`, or the older `full` and `delta`),
+  and as the base of a later review only on the branch's own first-parent line. An empty legacy
+  marker, or a marker on a branch merged in, is not evidence.
 - The hook exits nonzero when any evidence is absent or an object cannot resolve to a commit. Git
   then aborts the push. Hook failure is denial because `set -euo pipefail` produces a nonzero exit,
   and so is a check that can't run (no `node`, no `origin/main`).

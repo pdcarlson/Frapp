@@ -21,8 +21,8 @@
   the last reviewed one, with two finders. `scripts/diff-review-scope.mjs` decides, trusting only
   markers the gate wrote with a kind (`full` or `delta`) on commits of this branch. A merge since
   the last review means a full review again, because a merge can hide a change from any diff.
-  **Corrected 2026-09-24:** a small re-review is now inline, with no finders; a merge of `main` no
-  longer forces a full review, and a marker records only that a review ran (amendment 1).
+  **Corrected 2026-09-24:** a small re-review is now inline, with no finders; a clean merge of
+  `main` no longer forces a full review, and a marker records only that a review ran (amendment 1).
 - **Everything else stays small.** `workflowSizeGuideline: "medium"` in `.claude/settings.json`
   tells the model to keep workflows under 10 agents; it is advisory text, not a cap. The repo adds
   at most 5 agents per fan-out step, which nothing enforces. Verification outside the gate is one
@@ -120,14 +120,13 @@ small round is reviewed inline.
   work, and it gets the workflow with 2 finders plus the acceptance-and-tests finder.
   `package-lock.json` and `openapi.json` don't count toward the 300. The number lives in
   `INLINE_MAX_LINES` in `scripts/diff-review-scope.mjs`.
-- **Merges of `main` carry the review.** The delta is HEAD against the last reviewed commit with the
-  current `main` merged in (`git merge-tree --write-tree`). It holds fix commits and any hand edit
-  inside a merge commit, and none of `main`'s own changes. Where the two conflict, the merged tree
-  keeps git's conflict markers, so the delta shows the resolution itself, including one that took a
-  side whole. A merge never forces a full review.
-- **The hook accepts a commit that adds nothing unreviewed.** With no marker, `.githooks/pre-push`
-  asks `scripts/diff-review-scope.mjs --check`, which passes a commit already on `origin/main` or one
-  whose delta is empty. A base sync then needs no review at all. That replaces the `merged` marker
+- **Clean merges of `main` carry the review.** The delta is HEAD against the last reviewed commit
+  with the current `main` merged in cleanly (`git merge-tree --write-tree`). It holds fix commits and
+  any hand edit inside a merge commit, and none of `main`'s own changes. If the reviewed commit
+  conflicts with `main`, the branch gets a full review, as before.
+- **The hook accepts a commit that adds nothing unreviewed.** `.githooks/pre-push` asks
+  `scripts/diff-review-scope.mjs --check` about every pushed tip, which passes a marked commit, one
+  already on `origin/main`, or one whose delta is empty. A base sync then needs no review at all. That replaces the `merged` marker
   kind; a marker now records only that a review ran. The script trusts a marker only on the
   branch's own first-parent line, and never an empty one: those predate kinds and were written by
   `touch` after reviews that could cover part of the branch.
@@ -166,6 +165,11 @@ cases), so this amendment removes more machinery than it adds.
   first round.
 - *Cheaper workflow re-reviews (one finder per fix round).* Every push would still launch an agent
   fan-out. The cost lay in how many rounds ran, not how big each one was.
+- *Reviewing a conflicted merge as its resolution*, diffed against the tree `merge-tree` writes with
+  conflict markers in it. A modify/delete conflict leaves no markers: the tree already holds the
+  modified file, so a resolution that restores a file the reviewed branch deleted shows up in no
+  diff. Reproduced 2026-09-24 in this amendment's own review, so a conflict still means a full
+  review.
 - *Comparing the branch's patch-id before and after a merge.* It says only whether the branch's net
   change moved, not what moved, so a merge with any fix on top would fall back to a full review.
   `merge-tree` gives the diff to review.

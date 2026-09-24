@@ -38,16 +38,15 @@ background fetch can move it mid-review. State the scope in one line, then:
 
 | `mode` / `review` | Means | Do |
 |---|---|---|
-| `full` / `workflow` | No reviewed commit on this branch yet (or after a rebase) | §2 |
+| `full` / `workflow` | No reviewed commit on this branch yet, a rebase, or a merge that conflicted with the reviewed work | §2 |
 | `delta` / `inline` | Fewer changed lines since the last review than `INLINE_MAX_LINES` (300) in the script: a fix round | §3 |
 | `delta` / `workflow` | That many or more: new work | §2 |
 | `none` | Nothing unreviewed: HEAD has a marker, or only clean merges of `main` landed since the last review | Push; the hook accepts it |
 | `empty` | The branch has no commits of its own | Stop |
 
-A delta is HEAD against the last reviewed commit with the current `main` merged in, so it holds
-your fix commits and anything a merge commit changed by hand, but none of `main`'s changes. Where
-the two conflicted, it shows your resolution against git's conflict markers. `base` may name a
-tree rather than a commit: use it with `git diff`, never `git log`. Generated files
+A delta is HEAD against the last reviewed commit with the current `main` merged in cleanly, so it
+holds your fix commits and anything a merge commit changed by hand, but none of `main`'s changes.
+`base` may name a tree rather than a commit: use it with `git diff`, never `git log`. Generated files
 (`package-lock.json`, `openapi.json`) count toward `files` but not `changedLines`.
 
 If you must review a dirty tree (`dirty: true`), say so. An explicit `<target>` (a ref or range)

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -165,22 +165,60 @@ test("an edit hidden inside a merge commit is still reviewed", (t) => {
   assert.equal(scope.changedLines, 1);
 });
 
-test("a conflict with main is reviewed as its resolution, not as the whole branch", (t) => {
+test("when the reviewed work conflicts with main, the whole branch is reviewed again", (t) => {
   const r = repo();
   t.after(r.cleanup);
-  r.commit("other.txt", lines(400)); // reviewed branch work that must not come back
   r.mark(r.commit("README.md", "branch\n"));
-  r.advanceMain("README.md", "main\n");
+  const newMain = r.advanceMain("README.md", "main\n");
   assert.throws(() => r.git("merge", "-q", "--no-edit", "origin/main"));
   writeFileSync(path.join(r.dir, "README.md"), "main\n"); // resolved by taking main's side whole
   r.git("add", "-A");
   r.git("commit", "-q", "--no-edit");
   const scope = resolveScope({ cwd: r.dir });
-  assert.equal(scope.mode, "delta");
-  assert.equal(scope.review, "inline");
-  const diff = execFileSync("git", ["-C", r.dir, "diff", scope.base, scope.head], { encoding: "utf8" });
-  assert.match(diff, /^-<<<<<<< /m, "the resolution shows against git's conflict markers");
-  assert.doesNotMatch(diff, /other\.txt/);
+  assert.equal(scope.mode, "full");
+  assert.equal(scope.base, newMain);
+});
+
+test("a modify/delete conflict resolved to main's side is not waved through", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.git("checkout", "-q", "main");
+  const withF = r.commit("f.txt", "1\n");
+  r.git("update-ref", "refs/remotes/origin/main", withF);
+  r.git("checkout", "-q", "-B", "feature", withF);
+  r.git("rm", "-q", "f.txt");
+  r.git("commit", "-q", "-m", "delete f");
+  r.mark();
+  r.advanceMain("f.txt", "1\nmain edit\n");
+  assert.throws(() => r.git("merge", "-q", "--no-edit", "origin/main"));
+  r.git("checkout", "origin/main", "--", "f.txt"); // restores the file the branch deleted
+  r.git("commit", "-q", "--no-edit");
+  assert.equal(resolveScope({ cwd: r.dir }).mode, "full");
+  assert.equal(checkCommit({ cwd: r.dir, sha: r.git("rev-parse", "HEAD") }).ok, false);
+});
+
+test("a git without merge-tree --write-tree fails loudly instead of going full", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.mark(r.commit("a.txt", "1\n"));
+  r.advanceMain("m.txt", "main\n");
+  r.git("merge", "-q", "--no-edit", "origin/main");
+  // Stands in for git < 2.38, whose merge-tree takes `--write-tree` as a revision and dies.
+  const bin = mkdtempSync(path.join(tmpdir(), "old-git-"));
+  const realGit = execFileSync("bash", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  writeFileSync(
+    path.join(bin, "git"),
+    `#!/bin/sh\ncase " $* " in *" merge-tree "*) echo "fatal: unknown rev --write-tree" >&2; exit 128;; esac\nexec "${realGit}" "$@"\n`,
+  );
+  chmodSync(path.join(bin, "git"), 0o755);
+  const saved = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${saved}`;
+  t.after(() => {
+    process.env.PATH = saved;
+    rmSync(bin, { recursive: true, force: true });
+  });
+  assert.throws(() => resolveScope({ cwd: r.dir }), /merge-tree --write-tree failed .*--full/);
+  assert.equal(resolveScope({ cwd: r.dir, full: true }).mode, "full", "--full still works");
 });
 
 test("markers on commits outside <merge-base>..HEAD (a rebase) don't count", (t) => {
