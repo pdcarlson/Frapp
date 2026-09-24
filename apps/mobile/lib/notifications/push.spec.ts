@@ -145,8 +145,11 @@ describe("push isolation module", () => {
       const reason = push.pushUnavailableReason();
 
       expect(push.isPushAvailable()).toBe(false);
-      expect(reason).toBeTruthy();
-      expect(reason).not.toMatch(/Expo Go/);
+      // The web sentence itself, not merely "not Expo Go": the load-failure
+      // sentence would pass that too, and tells a web visitor to update an
+      // app that can never push there.
+      expect(reason).toMatch(/not the web/);
+      expect(reason).not.toMatch(/Expo Go|Updating the app/);
     } finally {
       Platform.OS = os;
     }
