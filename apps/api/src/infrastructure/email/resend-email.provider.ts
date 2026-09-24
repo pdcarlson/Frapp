@@ -7,7 +7,7 @@ import { logThrowable } from '../observability/log-throwable';
 
 export interface ResendProviderOptions {
   apiKey: string;
-  /** e.g. `"Signet <invites@mail.frapp.live>"`. Must be on a domain verified with Resend. */
+  /** e.g. `"Frapp <invites@mail.frapp.live>"`. Must be on a domain verified with Resend. */
   fromAddress: string;
 }
 
@@ -15,14 +15,14 @@ const RESEND_API_URL = 'https://api.resend.com/emails';
 
 function inviteEmailHtml(joinUrl: string, role: string): string {
   return (
-    `<p>You've been invited to join a chapter on Signet as <strong>${escapeHtml(role)}</strong>.</p>` +
+    `<p>You've been invited to join a chapter on Frapp as <strong>${escapeHtml(role)}</strong>.</p>` +
     `<p><a href="${joinUrl}">Accept the invite</a></p>` +
     `<p>Or copy this link into your browser:<br>${joinUrl}</p>`
   );
 }
 
 function inviteEmailText(joinUrl: string, role: string): string {
-  return `You've been invited to join a chapter on Signet as ${role}.\n\nAccept the invite: ${joinUrl}`;
+  return `You've been invited to join a chapter on Frapp as ${role}.\n\nAccept the invite: ${joinUrl}`;
 }
 
 function escapeHtml(value: string): string {
@@ -68,7 +68,7 @@ export class ResendEmailProvider implements IEmailProvider {
         body: JSON.stringify({
           from: this.fromAddress,
           to: params.to,
-          subject: "You're invited to join a chapter on Signet",
+          subject: "You're invited to join a chapter on Frapp",
           html: inviteEmailHtml(params.joinUrl, params.role),
           text: inviteEmailText(params.joinUrl, params.role),
         }),

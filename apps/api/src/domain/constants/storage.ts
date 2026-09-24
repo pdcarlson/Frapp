@@ -53,9 +53,9 @@ export function reportsFolderPrefix(chapterId: string): string {
  *
  * **This layout supersedes the one that migration's header declared.** It wrote
  * `chapters/{chapter}/chat-archive/{channel_id}/{message_id}/{basename}`, which
- * assumed every object would be placed once the Signet ids existed. On the
+ * assumed every object would be placed once the Frapp ids existed. On the
  * upload path they are not: the admin's browser uploads the files directly,
- * before any Signet channel or message id has been assigned, so a
+ * before any Frapp channel or message id has been assigned, so a
  * message-derived key is unknowable at upload time. (The bot path does fetch
  * from Discord's CDN server-side, and shares this key via
  * `archiveMediaObjectPath` below.) Keying on the import

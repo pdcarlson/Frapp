@@ -27,7 +27,7 @@ import { logThrowable } from '../../infrastructure/observability/log-throwable';
 interface ChatMessageRow {
   id: string;
   channel_id: string;
-  /** Null for a message with no Signet user behind it (an imported archive row). */
+  /** Null for a message with no Frapp user behind it (an imported archive row). */
   sender_id: string | null;
   content: string | null;
   kind: string;

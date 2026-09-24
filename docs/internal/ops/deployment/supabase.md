@@ -53,7 +53,7 @@ personal token that can write; no stored CI token can.
 | Site URL | `https://app.frapp.live` (read 2026-09-07) | `https://app.staging.frapp.live` (read 2026-09-07) |
 | Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** (read 2026-09-07) | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** (read 2026-09-07) |
 | Email confirmations | required (`mailer_autoconfirm: false`) | required |
-| Custom SMTP | **on** — Resend `smtp.resend.com:465`, user `resend`, From `Signet <no-reply@mail.frapp.live>` (owner send proof 2026-09-09 ~23:07Z from `https://app.frapp.live`) | **on** — Resend `smtp.resend.com:465`, From `Signet <no-reply@mail.staging.frapp.live>` (owner send proof 2026-09-09 from `https://app.staging.frapp.live`) |
+| Custom SMTP | **on** — Resend `smtp.resend.com:465`, user `resend`, From `Signet <no-reply@mail.frapp.live>` (owner send proof 2026-09-09 ~23:07Z from `https://app.frapp.live`). Target sender name `Frapp`: [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) | **on** — Resend `smtp.resend.com:465`, From `Signet <no-reply@mail.staging.frapp.live>` (owner send proof 2026-09-09 from `https://app.staging.frapp.live`). Target sender name `Frapp`: [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) |
 | Auth email rate limit | **300 per hour** (owner dashboard toast 2026-09-09) | **300 per hour** (owner dashboard 2026-09-09; asserted daily as `auth-smtp`) |
 | Password minimum length | 6 | 6 |
 | Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
@@ -104,16 +104,17 @@ names only; never paste values into Slack or git):
   templates were **intentionally not copied**.
 - Both projects are at **300/hour**. `_dmarc.frapp.live` is `v=DMARC1; p=none;`.
 
-`staging-conformance.mjs` asserts the host, that live From, `smtp_sender_name=Signet`,
+`staging-conformance.mjs` asserts the host, that live From, `smtp_sender_name=Frapp`,
 and the send cap daily (`auth-smtp`) so a revert to the hosted 2/hour mailer, a leftover
-Frapp sender, or the burned apex From cannot sit green. It also asserts the Magic Link
+Signet sender, or the burned apex From cannot sit green. It also asserts the Magic Link
 subject and `token_hash` href daily (`auth-magic-link`) so a dashboard reset to
-`{{ .ConfirmationURL }}` cannot sit green.
+`{{ .ConfirmationURL }}` cannot sit green, and fails any `mailer_subjects_*` or a Magic
+Link body that still says Signet.
 
 Because production SMTP is now on, the 07:45 `production-auth-conformance.yml`
 watchdog no longer skip-asserts an empty host. Empty SMTP is still SKIPPED *if* the
 host is empty; with SMTP on, the same check requires
-`Signet <no-reply@mail.frapp.live>` at ≥300/hour and fails a burned apex From. Magic
+`Frapp <no-reply@mail.frapp.live>` at ≥300/hour and fails a burned apex From. Magic
 Link is the same: ConfirmationURL is SKIPPED only while SMTP is unset; with SMTP on,
 the href must carry `token_hash` + `type=magiclink` or the 07:45 job fails. The
 Magic Link body is now on prod; confirm and invite were intentionally left uncopied.
@@ -122,21 +123,25 @@ The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`
 (`token_hash`, #1916). Gmail trained the apex From `invites@frapp.live` on the first
 generic hosted templates, so sending now uses mail subdomains (Resend domains
 `mail.staging.frapp.live` and `mail.frapp.live`, created 2026-09-08, tracking off)
-and staging tests cannot burn production reputation. Do not send From the apex:
+and staging tests cannot burn production reputation. Do not send From the apex. These
+are the senders [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) sets. Each
+console, and `RESEND_FROM_EMAIL` wherever it is set, still says `Signet` until the owner
+makes that change (the table above has the last read, 2026-09-09):
 
-- Staging Auth: `Signet <no-reply@mail.staging.frapp.live>`
-- Prod Auth: `Signet <no-reply@mail.frapp.live>`
-- API invite default: `Signet <invites@mail.frapp.live>` (staging API sets
-  `RESEND_FROM_EMAIL` to `Signet <invites@mail.staging.frapp.live>`)
+- Staging Auth: `Frapp <no-reply@mail.staging.frapp.live>`
+- Prod Auth: `Frapp <no-reply@mail.frapp.live>`
+- API invite default: `Frapp <invites@mail.frapp.live>`, with staging's
+  `RESEND_FROM_EMAIL` set to `Frapp <invites@mail.staging.frapp.live>`
 
 Leave the existing `frapp.live` Resend domain in place until nothing uses it.
 
-The Magic Link template (on staging and prod as of 2026-09-09; confirm and invite
-were **intentionally not copied**):
+The Magic Link template, as ADR-25 step 3 sets it. The one on staging and prod as of
+2026-09-09 is the same with Signet in the subject, heading and link text. Confirm and
+invite were **intentionally not copied**:
 
-Subject: `Sign in to Signet`
+Subject: `Sign in to Frapp`
 
-Body: `<h2>Sign in to Signet</h2><p>Use this one-time link to sign in. It expires soon.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Signet</a></p><p>If you did not ask to sign in, you can ignore this email.</p>`
+Body: `<h2>Sign in to Frapp</h2><p>Use this one-time link to sign in. It expires soon.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a></p><p>If you did not ask to sign in, you can ignore this email.</p>`
 
 Paste this only on the **Magic Link** template. Confirm signup / invite / recovery keep their
 own `type` (`signup`, `invite`, `recovery`) — copying this body onto those breaks them.
@@ -144,6 +149,37 @@ Do **not** paste that on a host whose web deploy does not yet include the `token
 Leave Resend open/click tracking off (single-use links). Production SMTP uses the prod
 mail subdomain From above, then 300/hour — dashboard-only; do not put the key in Slack
 or git. Auth SMTP itself is proven on staging and production.
+
+#### ADR-25 step 3: the sender becomes Frapp
+
+*2026-09-24 ([#2578](https://github.com/pdcarlson/Frapp/issues/2578)).* From the merge of
+step 3, `auth-smtp` and `auth-magic-link` expect Frapp: the sender name, the Magic Link
+subject, no `mailer_subjects_*` that says Signet, and no `Signet` or `SIGNET` anywhere in
+the Magic Link body, comments and `alt` text included. The match is case-sensitive: the
+design system's file, class and CSS variable names are lowercase (`signet-emblem-B.png`,
+`--signet-*`) and pass. The consoles are the owner's to change, in this order, before the
+next scheduled run (staging 07:30 UTC, production 07:45 UTC). Production's step waits on
+Deploy production, which is dispatched by hand, so merge once that day's Staging
+conformance and Production Auth conformance runs both appear under Actions (a scheduled
+run tests the `main` commit of the moment GitHub queued it, which is often late), and
+deploy production the same day. A slip opens alerts that close on the first run that
+passes: Staging conformance or Production Auth drift for a console not yet retyped, and
+Migration drift for `20260924190000` if production hasn't deployed by the 07:00 UTC check
+more than 24 hours after 2026-09-24 19:00 UTC:
+
+1. **Staging.** Just before merging, set Infisical `staging` `RESEND_FROM_EMAIL` to
+   `Frapp <invites@mail.staging.frapp.live>`. The API reads it only at boot, so the merge's
+   staging deploy is what picks it up. Once that deploy is live, in `frapp-staging` →
+   Authentication: SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the
+   subject above, and the body above pasted whole (it keeps the `token_hash` href); any
+   other template subject that says Signet.
+2. **Production.** If `RESEND_FROM_EMAIL` is set in Infisical `prod`, set it to
+   `Frapp <invites@mail.frapp.live>` before dispatching Deploy production of the merge
+   commit (unset, the new API default is already Frapp). After that deploy, the same three
+   Auth settings on `frapp-prod`. Renaming Auth before the deploy would send Frapp sign-in
+   mail beside Signet invite mail from the older build.
+3. **Confirm.** Dispatch Staging conformance and Production Auth conformance, then update
+   the table above with the values read and the date.
 
 ### Invite mail (API, Render)
 
@@ -195,7 +231,7 @@ Observation 2026-09-10 for the Google rows, **2026-09-13 for the Apple rows** (o
 | Skip nonce (Google provider) | **Off** |
 | Allow users without email — **Google** | **Off** |
 | Allow users without email — **Apple** | **On** (2026-09-13). Apple may omit the email claim on a later native grant; AuthSync then stores the `noreply+<auth-id>@users.invalid` placeholder ([`spec/architecture/README.md`](../../../../spec/architecture/README.md)). With this **Off**, GoTrue rejects that sign-in outright and the placeholder path is unreachable. Not an App Store requirement — Apple requires that a member be able to *hide* an address, and Hide My Email still returns a real `@privaterelay.appleid.com` relay address (deliverable **once the sending domain is registered** — see **Still open** below). |
-| Magic Link templates | **Untouched** — do not change them |
+| Magic Link templates | **Untouched** by the OAuth work: don't change them for a provider. *2026-09-24: ADR-25 step 3 retypes them for the product name; see [§ ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp).* |
 | Apple Developer: App ID `live.frapp.mobile` + Sign in with Apple; Services ID `live.frapp.mobile.web`; Sign in with Apple key | **Done** (2026-09-13) |
 | Apple provider enabled on hosted `frapp-staging` and `frapp-prod` | **Done** (2026-09-13) |
 | Apple **Sign in with Apple for Email Communication** source domains | **Not done** — #2191. Until both sending domains are registered, mail to a Hide My Email member is refused by Apple's relay. |
