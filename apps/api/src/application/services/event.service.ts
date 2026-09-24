@@ -1195,7 +1195,7 @@ export class EventService {
     const lines = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Signet//Events//EN',
+      'PRODID:-//Frapp//Events//EN',
       'BEGIN:VEVENT',
       `DTSTART:${formatDate(event.start_time)}`,
       `DTEND:${formatDate(event.end_time)}`,

@@ -2701,7 +2701,7 @@ export interface paths {
         /** Channel mapping and per-channel progress */
         get: operations["DiscordImportController_getChannels_v1"];
         /**
-         * Map each Discord channel onto a Signet channel
+         * Map each Discord channel onto a Frapp channel
          * @description Every channel needs an explicit choice — create new, merge into an existing one, or skip.
          */
         put: operations["DiscordImportController_setChannelMapping_v1"];
@@ -2778,7 +2778,7 @@ export interface paths {
         };
         get?: never;
         /**
-         * Record the Discord role → Signet role worksheet
+         * Record the Discord role → Frapp role worksheet
          * @description Informational only. Nothing reads this to grant a permission and the importer never assigns a role; everyone imports as a name on a message, and the admin promotes people by hand afterwards.
          */
         put: operations["DiscordImportController_setRoleMapping_v1"];
@@ -3371,7 +3371,7 @@ export interface components {
             needs_president: boolean;
             /** @description Whether the caller holds the chapter's next-highest-ranked role with a live member, and may call POST /v1/roles/claim-presidency right now. */
             eligible: boolean;
-            /** @description Name of the eligible role, or null when no role below President has any member at all (the "Signet support intervenes" case). */
+            /** @description Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case). */
             next_role_name: string | null;
         };
         MemberCustomFieldValueDto: {
@@ -4399,7 +4399,7 @@ export interface components {
             target_id: string;
         };
         CreateDiscordImportDto: {
-            /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Signet. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
+            /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
             consent_acknowledged: boolean;
             /** @description Discord server name, for display only. */
             guild_name?: string;
@@ -4461,7 +4461,7 @@ export interface components {
         DiscordRoleMappingDto: {
             discord_role_id: string;
             discord_role_name: string;
-            /** @description Signet role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role. */
+            /** @description Frapp role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role. */
             signet_role_key: string;
         };
         SetDiscordRoleMappingDto: {

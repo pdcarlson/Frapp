@@ -18,8 +18,10 @@ async function bootstrap() {
   configureApp(app);
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Signet API')
-    .setDescription('The Operating System for Greek Life')
+    .setTitle('Frapp API')
+    .setDescription(
+      'The HTTP API behind the Frapp mobile app and web dashboard.',
+    )
     .setVersion('1.0')
     .addBearerAuth()
     .addApiKey(
@@ -33,7 +35,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3001;
   await app.listen(port);
-  Logger.log(`Signet API running on http://localhost:${port}`, 'Bootstrap');
+  Logger.log(`Frapp API running on http://localhost:${port}`, 'Bootstrap');
   Logger.log(`Swagger docs at http://localhost:${port}/docs`, 'Bootstrap');
 }
 

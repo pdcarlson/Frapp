@@ -560,6 +560,25 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-24: System actor display_name becomes Frapp System (#2578)
+
+- **Migration**: `20260924170000_rename_system_actor_to_frapp.sql`
+- **Purpose**: ADR-25 names the product Frapp, so step 3 reverses the
+  2026-09-09 rename below. The well-known system actor
+  (`users.id = 00000000-0000-0000-0000-000000000000`) reads `Signet System` on
+  every project that applied `20260909120000`. This is a one-row `UPDATE`
+  matched on id, back to `Frapp System`, the name the historical seed inserted.
+  Both earlier migrations stay as the record. Email (`system@frapp.local`),
+  `SYSTEM_SENDER_ID`, and `frapp://` identifiers are untouched.
+- **Checks**: After `db push`,
+  `select display_name from users where id = '00000000-0000-0000-0000-000000000000'`
+  returns `Frapp System`. Re-running the migration changes nothing.
+- **Promoter notes**: Data only. No schema change, no lock beyond the single
+  row, no client dependency. Staging applies on merge to `main`. Production
+  waits for Deploy production; do not dispatch that workflow from this change.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-the-frapp-system-display_name) § Rollback the Frapp System display_name.
+
 ## 2026-09-23: Stamp every chapter palette with its engine, and sweep the stale ones (#1165)
 
 Two migrations, plus a data rewrite that the **API** performs, not SQL. The migrations make it safe; the rewrite is the point. Why it exists: the accent engine's output is cached in `chapters.theme_palette` and nothing regenerated it, so the #2541 fill floor reached no existing chapter, and a dark-accent chapter kept painting a sub-3:1 `accent-primary` (crimson at 1.50:1). Canon: [`accent-engine.md` § 4](../../../spec/ui/design-system/accent-engine.md#4-caching-and-persistence).

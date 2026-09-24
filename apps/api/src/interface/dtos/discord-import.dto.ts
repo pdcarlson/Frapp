@@ -19,7 +19,7 @@ import { RawValue } from './raw-value.transform';
 export class CreateDiscordImportDto {
   @ApiProperty({
     description:
-      'The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Signet. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this.',
+      'The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this.',
   })
   @RawValue()
   @IsBoolean()
@@ -199,7 +199,7 @@ export class DiscordRoleMappingDto {
 
   @ApiProperty({
     description:
-      'Signet role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role.',
+      'Frapp role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role.',
   })
   @IsString()
   @MaxLength(64)

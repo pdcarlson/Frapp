@@ -38,10 +38,10 @@ const WORKFLOWS_DIR = join(REPO_ROOT, ".github", "workflows");
 const PRODUCTION_REF = getEnvironment("production").supabaseProjectRef;
 const STAGING_REF = getEnvironment("staging").supabaseProjectRef;
 
-const SIGNET_MAGIC_LINK = {
-  mailer_subjects_magic_link: "Sign in to Signet",
+const FRAPP_MAGIC_LINK = {
+  mailer_subjects_magic_link: "Sign in to Frapp",
   mailer_templates_magic_link_content:
-    '<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Signet</a>',
+    '<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a>',
 };
 
 const HEALTHY_AUTH = {
@@ -118,7 +118,7 @@ describe("identity", () => {
   });
 
   it("pins the Auth SMTP sender display name both projects must keep", () => {
-    assert.equal(AUTH_SMTP_SENDER_NAME, "Signet");
+    assert.equal(AUTH_SMTP_SENDER_NAME, "Frapp");
   });
 
   it("reads the production ref from environments.json, never from the argument name", () => {
@@ -170,7 +170,7 @@ describe("default assertions", () => {
     assert.equal(smtp.status, SKIPPED);
     assert.match(smtp.detail, /2\/hour cap/);
     assert.match(smtp.detail, /no-reply@mail\.frapp\.live/);
-    assert.match(smtp.detail, /smtp_sender_name=Signet/);
+    assert.match(smtp.detail, /smtp_sender_name=Frapp/);
     assert.doesNotMatch(smtp.detail, /must-never-appear-in-detail/);
     const magic = results.find((r) => r.id === "auth-magic-link");
     assert.equal(magic.status, SKIPPED);
@@ -189,11 +189,11 @@ describe("default assertions", () => {
     );
   });
 
-  it("skips leftover Frapp inbox titles while production SMTP is still off", async () => {
+  it("skips leftover Signet inbox titles while production SMTP is still off", async () => {
     const { fetchImpl } = combinedFetch({
       auth: {
         ...HEALTHY_AUTH,
-        mailer_subjects_invite: "Join Frapp",
+        mailer_subjects_invite: "Join Signet",
       },
       githubRoutes: [{ method: "GET", path: "/issues?state=all", body: [] }],
     });
@@ -210,7 +210,7 @@ describe("default assertions", () => {
     assert.equal(magic.status, SKIPPED);
     assert.match(magic.detail, /smtp_host is empty/);
     assert.doesNotMatch(magic.detail, /mailer_subjects_invite/);
-    assert.doesNotMatch(magic.detail, /Join Frapp/);
+    assert.doesNotMatch(magic.detail, /Join Signet/);
     assert.doesNotMatch(magic.detail, /must-never-appear-in-detail/);
   });
 
@@ -334,9 +334,9 @@ describe("default assertions", () => {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "invites@frapp.live",
-        smtp_sender_name: "Signet",
+        smtp_sender_name: "Frapp",
         rate_limit_email_sent: 300,
-        ...SIGNET_MAGIC_LINK,
+        ...FRAPP_MAGIC_LINK,
       },
       githubRoutes: [
         { method: "GET", path: "/issues?state=all", body: [] },
@@ -365,9 +365,9 @@ describe("default assertions", () => {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.staging.frapp.live",
-        smtp_sender_name: "Signet",
+        smtp_sender_name: "Frapp",
         rate_limit_email_sent: 300,
-        ...SIGNET_MAGIC_LINK,
+        ...FRAPP_MAGIC_LINK,
       },
       githubRoutes: [
         { method: "GET", path: "/issues?state=all", body: [] },
@@ -389,15 +389,15 @@ describe("default assertions", () => {
     assert.match(smtp.detail, /no-reply@mail\.frapp\.live/);
   });
 
-  it("fails the run when production SMTP is on with a leftover Frapp sender", async () => {
+  it("fails the run when production SMTP is on with a leftover Signet sender", async () => {
     const { fetchImpl } = combinedFetch({
       auth: {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
-        smtp_sender_name: "Frapp",
+        smtp_sender_name: "Signet",
         rate_limit_email_sent: 300,
-        ...SIGNET_MAGIC_LINK,
+        ...FRAPP_MAGIC_LINK,
       },
       githubRoutes: [
         { method: "GET", path: "/issues?state=all", body: [] },
@@ -415,20 +415,20 @@ describe("default assertions", () => {
     assert.equal(outcome, "failed");
     const smtp = results.find((r) => r.id === "auth-smtp");
     assert.equal(smtp.status, FAIL);
-    assert.match(smtp.detail, /smtp_sender_name is "Frapp"/);
-    assert.match(smtp.detail, /Signet/);
+    assert.match(smtp.detail, /smtp_sender_name is "Signet"/);
+    assert.match(smtp.detail, /Frapp/);
     assert.doesNotMatch(smtp.detail, /must-never-appear-in-detail/);
   });
 
-  it("passes auth-smtp when production SMTP is Resend, mail.frapp.live, Signet sender, and 300/hour", async () => {
+  it("passes auth-smtp when production SMTP is Resend, mail.frapp.live, Frapp sender, and 300/hour", async () => {
     const { fetchImpl } = combinedFetch({
       auth: {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
-        smtp_sender_name: "Signet",
+        smtp_sender_name: "Frapp",
         rate_limit_email_sent: 300,
-        ...SIGNET_MAGIC_LINK,
+        ...FRAPP_MAGIC_LINK,
       },
       githubRoutes: [{ method: "GET", path: "/issues?state=all", body: [] }],
     });
@@ -455,9 +455,9 @@ describe("default assertions", () => {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
-        smtp_sender_name: "Signet",
+        smtp_sender_name: "Frapp",
         rate_limit_email_sent: 2,
-        ...SIGNET_MAGIC_LINK,
+        ...FRAPP_MAGIC_LINK,
       },
       githubRoutes: [
         { method: "GET", path: "/issues?state=all", body: [] },
@@ -478,15 +478,15 @@ describe("default assertions", () => {
     assert.match(smtp.detail, /2\/hour/);
   });
 
-  it("fails the run when production SMTP is on with a leftover Frapp inbox title", async () => {
+  it("fails the run when production SMTP is on with a leftover Signet inbox title", async () => {
     const { fetchImpl } = combinedFetch({
       auth: {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
         rate_limit_email_sent: 300,
-        ...SIGNET_MAGIC_LINK,
-        mailer_subjects_invite: "Join Frapp",
+        ...FRAPP_MAGIC_LINK,
+        mailer_subjects_invite: "Join Signet",
       },
       githubRoutes: [
         { method: "GET", path: "/issues?state=all", body: [] },
@@ -505,8 +505,8 @@ describe("default assertions", () => {
     const magic = results.find((r) => r.id === "auth-magic-link");
     assert.equal(magic.status, FAIL);
     assert.match(magic.detail, /mailer_subjects_invite/);
-    assert.match(magic.detail, /Frapp/);
-    assert.doesNotMatch(magic.detail, /Join Frapp/);
+    assert.match(magic.detail, /Signet/);
+    assert.doesNotMatch(magic.detail, /Join Signet/);
     assert.doesNotMatch(magic.detail, /must-never-appear-in-detail/);
   });
 
@@ -516,11 +516,11 @@ describe("default assertions", () => {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
-        smtp_sender_name: "Signet",
+        smtp_sender_name: "Frapp",
         rate_limit_email_sent: 300,
-        // Signet subject so this FAIL is the leftover ConfirmationURL href,
+        // Frapp subject so this FAIL is the leftover ConfirmationURL href,
         // not the hosted "Your Magic Link" subject failing first.
-        ...SIGNET_MAGIC_LINK,
+        ...FRAPP_MAGIC_LINK,
         mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
       },
       githubRoutes: [
@@ -552,9 +552,9 @@ describe("default assertions", () => {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
-        smtp_sender_name: "Signet",
+        smtp_sender_name: "Frapp",
         rate_limit_email_sent: 300,
-        ...SIGNET_MAGIC_LINK,
+        ...FRAPP_MAGIC_LINK,
       },
       githubRoutes: [{ method: "GET", path: "/issues?state=all", body: [] }],
     });

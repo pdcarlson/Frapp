@@ -1,18 +1,19 @@
-// Locks the seeded system actor display_name on Signet.
+// Locks the seeded system actor display_name on Frapp.
 //
-// WHY THIS EXISTS. Leftover 1935 adds a forward UPDATE so
-// users.id = 00000000-0000-0000-0000-000000000000 reads `Signet System`.
-// The historical seed still inserts `Frapp System` on purpose. A later
-// leftover sweep can "fix" the seed, rename system@frapp.local, drop the
-// UPDATE, or change the PGlite landmark without a product-copy test
-// noticing. Chat cards do not print this name today, so a revert is
-// silent on the UI.
+// WHY THIS EXISTS. The actor at users.id = 00000000-0000-0000-0000-000000000000
+// has had three names. The historical seed inserts `Frapp System`, leftover
+// 1935 renamed it `Signet System` with a forward UPDATE, and ADR-25 step 3
+// renamed it back with a second forward UPDATE. A later sweep can "fix" a
+// migration that already ran, drop the newest UPDATE, rename
+// system@frapp.local, or change the PGlite landmark without a product-copy
+// test noticing. Chat cards do not print this name today, so a revert is
+// silent on the UI. Until step 3 this lock was signet-system-display-name.
 //
-// SCOPE. Forward migration SET, historical seed INSERT, the PGlite
-// landmark, the rollback restore name, and the identifiers that must
-// stay Frapp (system@frapp.local, SYSTEM_SENDER_ID). Walk apps/ and
-// packages/ so a live `Frapp System` string cannot sneak in. Export
-// filenames stay on leftover 1937. Calendar ICS stays on leftover 1929.
+// SCOPE. The three migrations as written, the PGlite landmark, the newest
+// rollback recipe, and the identifiers that stay Frapp (system@frapp.local,
+// SYSTEM_SENDER_ID). Walk apps/ and packages/ so a live `Signet System`
+// string cannot sneak in. Export filenames and the ICS PRODID are
+// frapp-api-copy's.
 //
 // SYSTEM_SENDER_ID has one home: `@repo/validation` owns the literal so the
 // mobile and web clients can hide Block on a system message, and the API's
@@ -29,7 +30,8 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-const MIGRATION = "supabase/migrations/20260909120000_rename_system_user_display_name.sql";
+const SIGNET_MIGRATION = "supabase/migrations/20260909120000_rename_system_user_display_name.sql";
+const MIGRATION = "supabase/migrations/20260924170000_rename_system_actor_to_frapp.sql";
 const SEED = "supabase/migrations/20260524120000_chapter_directory_requests.sql";
 const LANDMARK = "scripts/check-pglite-migrations.mjs";
 const ROLLBACK = "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md";
@@ -100,19 +102,38 @@ export function systemIdentityProblems({
   return problems;
 }
 
-export function productFrappSystemProblems(files) {
+export function productSignetSystemProblems(files) {
   return files
-    .filter(({ source }) => /Frapp System/.test(source))
+    .filter(({ source }) => /Signet System/.test(source))
     .map(({ rel }) => rel);
 }
 
-test("forward migration sets Signet System, not Frapp System", () => {
+/** The body of one `## Rollback …` recipe, up to the next `## ` heading. */
+export function rollbackSection(source, heading) {
+  const start = source.indexOf(`## ${heading}\n`);
+  if (start === -1) return "";
+  const next = source.indexOf("\n## ", start + 3);
+  return next === -1 ? source.slice(start) : source.slice(start, next);
+}
+
+test("the newest forward migration sets Frapp System, not Signet System", () => {
   const sql = readRepo(MIGRATION);
+  assert.match(sql, /set display_name = 'Frapp System'/);
+  assert.match(sql, /where id = '00000000-0000-0000-0000-000000000000'/);
+  assert.doesNotMatch(
+    sql,
+    /set display_name = 'Signet System'/,
+    `${MIGRATION} must not write the leftover name`,
+  );
+});
+
+test("the 2026-09-09 migration still sets Signet System, as it ran", () => {
+  const sql = readRepo(SIGNET_MIGRATION);
   assert.match(sql, /set display_name = 'Signet System'/);
   assert.doesNotMatch(
     sql,
     /set display_name = 'Frapp System'/,
-    `${MIGRATION} must not write the leftover name`,
+    `${SIGNET_MIGRATION} already ran on hosted projects; rename with a new migration, not by editing it`,
   );
 });
 
@@ -126,10 +147,11 @@ test("historical seed still inserts Frapp System", () => {
   );
 });
 
-test("PGlite landmark requires Signet System after replay", () => {
+test("PGlite landmark requires Frapp System after replay", () => {
   const source = readRepo(LANDMARK);
-  assert.match(source, /display_name === "Signet System"/);
-  assert.match(source, /seeded system actor display_name is Signet System/);
+  assert.match(source, /display_name === "Frapp System"/);
+  assert.match(source, /seeded system actor display_name is Frapp System/);
+  assert.doesNotMatch(source, /display_name === "Signet System"/);
 });
 
 test("system actor email and sender id stay Frapp identifiers", () => {
@@ -189,29 +211,34 @@ test("renaming the system email to system@signet.local fails", () => {
   );
 });
 
-test("rollback playbook restores Frapp System, not Signet System", () => {
-  const source = readRepo(ROLLBACK);
+test("the Frapp System rollback recipe restores Signet System and names its migration", () => {
+  const recipe = rollbackSection(readRepo(ROLLBACK), "Rollback the Frapp System display_name");
+  assert.ok(recipe, `${ROLLBACK} must keep § Rollback the Frapp System display_name`);
+  assert.match(recipe, new RegExp(`\\* \\*\\*Migration\\*\\*: \`${MIGRATION.split("/").pop()}\``));
   assert.match(
-    source,
-    /set display_name = 'Frapp System' where id = '00000000-0000-0000-0000-000000000000'/,
+    recipe,
+    /set display_name = 'Signet System' where id = '00000000-0000-0000-0000-000000000000'/,
   );
-  assert.doesNotMatch(
-    source,
-    /set display_name = 'Signet System' where id =/,
-    `${ROLLBACK} undo must restore the historical name`,
-  );
+  assert.doesNotMatch(recipe, /set display_name = 'Frapp System' where id =/);
 });
 
-test("apps and packages have no live Frapp System copy", () => {
+test("rollbackSection stops at the next recipe", () => {
+  const source = "## Rollback a\n* one\n## Rollback b\n* two\n";
+  assert.equal(rollbackSection(source, "Rollback a"), "## Rollback a\n* one");
+  assert.equal(rollbackSection(source, "Rollback b"), "## Rollback b\n* two\n");
+  assert.equal(rollbackSection(source, "Rollback c"), "");
+});
+
+test("apps and packages have no live Signet System copy", () => {
   const files = walkProductSources().map((rel) => ({ rel, source: readRepo(rel) }));
-  assert.deepEqual(productFrappSystemProblems(files), []);
+  assert.deepEqual(productSignetSystemProblems(files), []);
 });
 
-test("a live Frapp System string in product code fails the walk", () => {
-  const problems = productFrappSystemProblems([
+test("a live Signet System string in product code fails the walk", () => {
+  const problems = productSignetSystemProblems([
     {
       rel: "apps/api/src/application/services/chat.service.ts",
-      source: "const label = 'Frapp System';\n",
+      source: "const label = 'Signet System';\n",
     },
   ]);
   assert.deepEqual(problems, ["apps/api/src/application/services/chat.service.ts"]);

@@ -43,8 +43,10 @@ async function exportOpenApi() {
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   const config = new DocumentBuilder()
-    .setTitle('Signet API')
-    .setDescription('The Operating System for Greek Life')
+    .setTitle('Frapp API')
+    .setDescription(
+      'The HTTP API behind the Frapp mobile app and web dashboard.',
+    )
     .setVersion('1.0')
     .addBearerAuth()
     .addApiKey(

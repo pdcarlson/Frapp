@@ -1,4 +1,4 @@
-// Locks customer-facing CSV/PDF download filenames on Signet.
+// Locks the web CSV download filename on Signet until ADR-25 step 4.
 //
 // WHY THIS EXISTS. Leftover 1937 renames the browser Save-as prefix from
 // frapp- to signet-. Those strings sit next to storage object keys that
@@ -10,12 +10,13 @@
 // `frapp-*.pdf` download site would have passed.
 //
 // ADR-25 NAMES THE PRODUCT FRAPP and renames it one surface at a time, so a
-// surface leaves this walk with its own step. Step 2 moved the mobile binary
-// to Frapp, where a frapp- download name is correct, so apps/mobile left the
-// walk; frapp-mobile-copy.test.mjs bans a signet- one there instead. The API
-// report name flips with step 3 and the web CSV prefix with step 4.
+// surface leaves this walk with its own step. A frapp- download name is
+// correct on a renamed surface, and that surface's own lock bans a signet-
+// one instead: step 2 moved apps/mobile out (frapp-mobile-copy.test.mjs), and
+// step 3 moved apps/api and its report PDF name out (frapp-api-copy.test.mjs).
+// The web CSV prefix flips with step 4.
 //
-// SCOPE. Download filename templates and a walk of apps/{web,api} for
+// SCOPE. The web download filename template and a walk of apps/web for
 // leftover frapp- CSV/PDF names. Do not assert storage paths, OpenAPI
 // title (1930), calendar ICS PRODID / `frapp-event` fallbacks (1929), or
 // the unprefixed API CSV `filename="${kind}-report.csv"`.
@@ -34,14 +35,9 @@ const SITES = [
     wanted: "`signet-${filenamePrefix}-",
     banned: "`frapp-${filenamePrefix}-",
   },
-  {
-    rel: "apps/api/src/application/services/report-export.service.ts",
-    wanted: "`signet-${kind}-report-",
-    banned: "`frapp-${kind}-report-",
-  },
 ];
 
-const APP_ROOTS = ["apps/web", "apps/api"];
+const APP_ROOTS = ["apps/web"];
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next", "coverage"]);
 const SOURCE_EXT = /\.(?:ts|tsx|js|mjs)$/;
 
@@ -91,7 +87,7 @@ function liveAppSources() {
   return walkAppSources().map((rel) => ({ rel, source: readRepo(rel) }));
 }
 
-test("CSV and PDF download filenames ship signet-, not frapp-", () => {
+test("the web CSV download filename ships signet-, not frapp-", () => {
   for (const site of SITES) {
     const source = readRepo(site.rel);
     assert.match(source, new RegExp(escapeRegExp(site.wanted)), site.rel);
@@ -103,7 +99,7 @@ test("CSV and PDF download filenames ship signet-, not frapp-", () => {
   }
 });
 
-test("apps/{web,api} have no leftover frapp- CSV/PDF download names", () => {
+test("apps/web has no leftover frapp- CSV/PDF download names", () => {
   assert.deepEqual(frappDownloadFilenameProblems(liveAppSources()), []);
 });
 
@@ -122,19 +118,6 @@ test("putting frapp- back on downloadCsv fails the walk", () => {
   const source = readRepo(rel).replaceAll(
     "`signet-${filenamePrefix}-",
     "`frapp-${filenamePrefix}-",
-  );
-  const problems = frappDownloadFilenameProblems([{ rel, source }]);
-  assert.ok(
-    problems.some((problem) => problem.startsWith(`${rel}:`)),
-    problems.join("; "),
-  );
-});
-
-test("putting frapp- back on the report PDF filename fails the walk", () => {
-  const rel = "apps/api/src/application/services/report-export.service.ts";
-  const source = readRepo(rel).replaceAll(
-    "`signet-${kind}-report-",
-    "`frapp-${kind}-report-",
   );
   const problems = frappDownloadFilenameProblems([{ rel, source }]);
   assert.ok(
