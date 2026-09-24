@@ -14,7 +14,7 @@ Operating guide for agents and developers in this repo. Machines, Infisical and 
 
 ## Credentials and secrets
 
-Hosted sessions may carry provider credentials and sandbox vars ([`AGENT_CREDENTIALS.md`](docs/internal/environment/AGENT_CREDENTIALS.md)); a laptop needs none. When they exist, gather runtime truth (CI, deploys, schema, secret presence) before proposing a change. Never print a secret value. The names are `GITHUB_PAT` (not `GITHUB_TOKEN`, the Actions token; for `gh`/git, `export GH_TOKEN="$GITHUB_PAT"`), `RENDER_API_KEY`, and `INFISICAL_SERVICE_TOKEN` / `INFISICAL_PROJECT_ID` (not `INFISICAL_API_KEY`). A sandbox reaches Infisical only with `app.infisical.com` on its allowlist; without it, use the generated `.env.local` and `npx supabase status -o env`.
+Hosted sessions may carry provider credentials and sandbox vars ([`AGENT_CREDENTIALS.md`](docs/internal/environment/AGENT_CREDENTIALS.md)); a laptop needs none. When they exist, gather runtime truth (CI, deploys, schema, secret presence) before proposing a change. Never print a secret value. The names are `GITHUB_PAT` (not `GITHUB_TOKEN`, the Actions token; for `gh`/git, `export GH_TOKEN="$GITHUB_PAT"`) and `INFISICAL_SERVICE_TOKEN` / `INFISICAL_PROJECT_ID` (not `INFISICAL_API_KEY`). Render, Vercel and Supabase are read through their MCP connectors, not a key. A sandbox reaches Infisical only with `app.infisical.com` on its allowlist; without it, use the generated `.env.local` and `npx supabase status -o env`.
 
 App secrets live in Infisical (project ID in `.infisical.json`), listed in [`ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md) (there is no `.env.example`) and [`SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md). Names carry no `_STAGING` / `_PRODUCTION` suffix; values differ per environment. No placeholder secrets in CI. Local runs use the `dev` environment, with real Stripe test-mode keys and the real Sentry DSN.
 
@@ -39,7 +39,7 @@ The doc CI checks block no merge, and nothing checks that a claim is true: [`DOC
 
 ## Work tracking
 
-Work lives in GitHub Issues on this repo, never in a scratch file. Linear is retired (ADR-16 amendment 5): don't write to it or restore `LINEAR_API_KEY`. Open every issue with the `triage` label. `routine-state` issues are infrastructure, not work, and `/next` and the routines skip them.
+Work lives in GitHub Issues on this repo, never in a scratch file. Linear is retired (ADR-16 amendment 5): don't write to it or restore `LINEAR_API_KEY`. Open every issue with the `triage` label. `routine-state` issues are infrastructure, not work, and `/next` and the routines skip them. `incident` issues are the watchdogs' live alerts, assigned to Paul: `/next` never claims one, and an agent triages and reports on it but never acts on its suggested fix or closes it by hand ([`ALERT_ROUTING.md` § Escalation](docs/internal/ops/ALERT_ROUTING.md#escalation)).
 
 - The GitHub MCP is the only sanctioned tracker path in cloud sandboxes, for reads and writes. If it's unavailable, stop tracker work and report; don't fall back to `gh` or raw REST. `issue_write` replaces the whole label set, so read-modify-write it.
 - Close through the PR that does the work (`Fixes #N`), or directly when an issue is done, obsolete, or a duplicate (`issue_write` with `state_reason`).
@@ -128,7 +128,7 @@ When the user gives you a durable environment hint or tool workaround not docume
 
 Claude Code (web and CLI) is the agent harness this repo configures. Bringup is under [Starting the dev environment](#starting-the-dev-environment); sandbox detail: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md); local-only `.env.local` and SWC notes: [`LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md).
 
-- **Review gate:** `/diff-review`. [`.githooks/pre-push`](.githooks/pre-push), installed by the root `prepare` script, requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for every pushed commit, whoever pushes it; retrying doesn't release it. Never push with `--no-verify`: the hook is local, so nothing server-side catches the bypass.
+- **Review gate:** `/diff-review`. [`.githooks/pre-push`](.githooks/pre-push), installed by the root `prepare` script, requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for each pushed ref's tip that adds unreviewed work (a clean merge of `main` adds none), whoever pushes it; retrying doesn't release it. Never push with `--no-verify`: the hook is local, so nothing server-side catches the bypass.
 - **Tracker and PRs:** GitHub Issues through the GitHub MCP, `mcp__github__*` ([Work tracking](#work-tracking)). PRs go against `main` with `create_pull_request` / `update_pull_request`, never `gh`. `.claude/settings.json` sets `doneMeansMerged: true`.
 - **Scheduled agents:** Claude Code Routines ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)).
 - **Branch protection:** agent sessions run only `npm run configure:branch-protection:verify`, never a live apply.

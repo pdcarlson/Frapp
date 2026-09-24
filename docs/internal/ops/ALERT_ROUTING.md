@@ -2,8 +2,8 @@
 
 ## Primary channels
 
-- **Critical production alerts, today:** the only path seen live that notifies anyone is Sentry's default email rule to issue owners (read 2026-09-09; Render's paging rules were unread that day because the Render MCP was unauthorized). The [watchdogs](#automated-github-issue-alerts), including the production `/health/ready` alert, open `routine-state` issues with no assignee and no @mention, which `/next` and the routines skip. Whether GitHub tells the owner about a new one depends on the owner's repo-watch setting, which hasn't been checked. **Decided, not yet built** ([ADR-24](../../../spec/architecture/adr/adr-24.md) decision 2, being wired in [#2505](https://github.com/pdcarlson/Frapp/issues/2505)): Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, email as the second path, and alert issues assigned to the owner and labelled `incident`.
-- **Non-critical staging alerts:** today the staging [watchdogs](#automated-github-issue-alerts) (deploy outcomes and staging conformance) open `routine-state` issues, as above. Migration drift watches staging and production together. A daily Sentry digest is planned in #2505; none exists yet.
+- **Critical production alerts, today:** the only path seen live that notifies anyone is Sentry's default email rule to issue owners (read 2026-09-09; Render's paging rules were unread that day because the Render MCP was unauthorized). The [watchdogs](#automated-github-issue-alerts), including the production `/health/ready` alert, open `incident` issues assigned to the owner ([ADR-24](../../../spec/architecture/adr/adr-24.md) decision 2). Assignment is a participating notification, so GitHub tells the owner under every repo-watch setting except **Ignore**. The owner's setting hasn't been checked; the test firing in [#2505](https://github.com/pdcarlson/Frapp/issues/2505) settles it. **Decided, not yet built** (the rest of decision 2, being wired in #2505): Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on, and email as the second path.
+- **Non-critical staging alerts:** today the staging [watchdogs](#automated-github-issue-alerts) (deploy outcomes and staging conformance) open `incident` issues, as above. Migration drift watches staging and production together. A daily Sentry digest is planned in #2505; none exists yet.
 - **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API), `frapp-web` (Next dashboard) and `frapp-mobile` (Expo app)
 
 > **`frapp-web` exists but is not receiving events yet.** The project was created during #865
@@ -98,9 +98,17 @@
 
 These watchdogs alert through GitHub Issues rather than a provider channel — no new service, no new
 token, and the issue thread doubles as the incident log. Each upserts **one** tracking issue (created
-if absent, reopened if closed, otherwise commented). All of them carry `routine-state`, which
+if absent, reopened if closed, otherwise commented). All of them carry `incident`, which
 `/next` §0.2 treats as never-claimable — they track live state, not a unit of work, so do not pick
-them up as backlog. The label is part of each alert's lookup key, like the title, so changing it orphans an open alert the same way a title rename does (below). ADR-24 decision 2 relabels them `incident` and assigns them to the owner; [#2505](https://github.com/pdcarlson/Frapp/issues/2505) plans that change, including what has to move with the label.
+them up as backlog. What agents may do with one is under [Escalation](#escalation), and every alert body the lib writes ends with a link there. Each is assigned to the owner when it is created or reopened; a comment on an alert that is already open leaves its assignees alone.
+
+`scripts/ci/lib/alert-issue.mjs` is the one place the label and the assignee are set, and every watchdog derives its lookup label from it. The label is part of each alert's lookup key, like the title, so changing it orphans an open alert the same way a title rename does. `scripts/ci/__tests__/alert-identity.test.mjs` checks that every watchdog agrees on it. Changing it takes three steps, because code on `main` keeps looking up the old label until the change merges:
+
+1. Before merge, add the new label (and, on an open one, the assignee) to every issue that is an alert: an issue under the old label whose title is in the roster below. Keep the old label; a repo-wide rename would also move issues that aren't alerts.
+2. Merge the change to the lib.
+3. Sweep again for alert-titled issues that carry only the old label, which `main` may have filed in between, add the new label to them, then remove the old label from every alert issue.
+
+Until [#2505](https://github.com/pdcarlson/Frapp/issues/2505)'s first slice the label was `routine-state`, with no assignee; that migration is recorded on #2505.
 
 The table below is the roster. It carries no count on purpose: it previously said "four" while the
 tree held five, because a count is a second copy of a fact the rows already state
@@ -255,5 +263,5 @@ Signet has one on-call human: the owner. There is no second responder or rota ye
 
 1. **Where the page lands**, today and once #2505 lands: [Primary channels](#primary-channels).
 2. **Acknowledgement.** The owner acknowledges where the page arrived: on the GitHub alert issue for a watchdog, or on the Sentry issue (assign it or comment) for a Sentry page. No response target is set yet: ADR-24's rule I4 bounds how fast a failure pages (15 minutes), not how fast anyone answers. Setting one is part of #2505.
-3. **Agents.** Agent sessions may triage an alert, from a watchdog issue or a Sentry issue, and report what they find. They never change provider state because an alert suggested it (ADR-24 decision 2).
+3. **Agents.** Agent sessions may triage an alert, from a watchdog issue or a Sentry issue, and report what they find. They never change provider state because an alert suggested it (ADR-24 decision 2; #1564's suggested fix was wrong), and they don't close a watchdog's issue by hand: the watchdog closes it once its own checks pass, which is the only proof of recovery it accepts. The fix for the underlying fault is its own issue, or the owner's call. The one exception is an alert its watchdog can't close (a close that keeps failing, or an issue orphaned by a title or label change): the owner closes it by hand once recovery is shown, and an agent that finds one reports it rather than closing it.
 4. **Chapters.** If a production incident affects chapters for 30 minutes or more, the owner tells the affected chapters what is broken and when to expect a fix, then updates them every 15 minutes until it's resolved. Signet has no status page yet, so this goes to the chapters directly.

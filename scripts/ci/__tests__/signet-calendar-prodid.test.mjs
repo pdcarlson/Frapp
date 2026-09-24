@@ -1,15 +1,20 @@
-// Locks customer-facing calendar ICS branding on Signet.
+// Locks customer-facing calendar ICS branding on Signet, surface by surface.
 //
-// WHY THIS EXISTS. Leftover 1929 renames ICS PRODID and the empty-title
+// WHY THIS EXISTS. Leftover 1929 renamed ICS PRODID and the empty-title
 // .ics fallback from Frapp to Signet. Those strings sit next to the UID
 // host `@frapp.live`, which must stay. A later leftover sweep can flip
-// the host to `@signet.live`, or a merge can put `PRODID:-//Frapp` back,
+// the host to `@signet.live`, or a merge can put the wrong PRODID back,
 // without a product-copy test noticing.
 //
+// ADR-25 NAMES THE PRODUCT FRAPP and renames it one surface at a time, so
+// each surface leaves this lock with its own step. Step 2 took the mobile
+// PRODID and filename fallback to frapp-mobile-copy.test.mjs. The API
+// PRODID flips with step 3 and the web fallback with step 4. The UID host
+// is a permanent identifier on every surface and stays here.
+//
 // SCOPE. PRODID lines, the empty-title filename fallback, and the UID
-// host. Do not assert scheme or bundle id. OpenAPI title stays on its
-// own leftover (1930). Export CSV/PDF prefixes stay on their own
-// leftover (1937).
+// host. Do not assert scheme or bundle id. Export CSV/PDF prefixes stay
+// on their own lock (signet-export-filenames).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -25,19 +30,9 @@ const SITES = [
     prodid: "PRODID:-//Signet//Events//EN",
     banned: "PRODID:-//Frapp//Events//EN",
   },
-  {
-    rel: "apps/mobile/lib/calendar-export.ts",
-    prodid: "PRODID:-//Signet//Chapter Events//EN",
-    banned: "PRODID:-//Frapp//Chapter Events//EN",
-  },
 ];
 
 const FILENAME_SITES = [
-  {
-    rel: "apps/mobile/lib/calendar-export.ts",
-    wanted: '"signet-event"',
-    banned: '"frapp-event"',
-  },
   {
     rel: "apps/web/components/events/event-detail-sheet.tsx",
     wanted: '"signet-event"',

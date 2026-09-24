@@ -41,14 +41,21 @@
 // Env inputs:
 //   GITHUB_TOKEN           — required (issues: write)
 //   GITHUB_REPOSITORY      — required, owner/repo
-//   SUPABASE_ACCESS_TOKEN  — required, Supabase Management API token
 //   DRIFT_TARGETS          — required, `label=ref` pairs, comma-separated
+//   SUPABASE_ACCESS_TOKEN_<LABEL>
+//                          — each target's Supabase Management API token, e.g.
+//                            SUPABASE_ACCESS_TOKEN_STAGING. Each Infisical
+//                            environment's token reads only its own project
+//                            (#2583). SUPABASE_ACCESS_TOKEN stands in for a
+//                            missing one; every target needs one of the two
 //   PENDING_GRACE_HOURS    — optional, default 24
 //   RUN_URL                — optional, html_url of this run
 //
 // Exit codes:
 //   0 — every target matched the repo (or pending only within the grace window)
-//   1 — drift found, or a target could not be read
+//       and any open drift alert was closed
+//   1 — drift found, a target could not be read, or every target matched but
+//       the open alert issue could not be read or closed (annotated ::error::)
 //
 // Unlike the sibling watchdogs (`ci-wake.mjs`, `deploy-alert.mjs`) this one DOES
 // exit non-zero. Those annotate a run that is already red; this script *is* the
@@ -58,20 +65,26 @@ import { readdirSync } from "node:fs";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ghRequest } from "./lib/github.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+} from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { supabaseAccessTokenFor } from "./lib/environments.mjs";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
 export const SUPABASE_API_BASE = "https://api.supabase.com";
 
 // Title is the primary key: it is looked up by exact match, so it must stay
-// stable across releases. `routine-state` marks it as routine infrastructure —
-// `/next` §0.2 treats that label as never-claimable, which is what keeps agent
-// sessions from picking the alert up as if it were backlog work.
+// stable across releases. The lookup label, the assignee, and the create /
+// reopen / close upsert all come from lib/alert-issue.mjs (#909), like every
+// other watchdog's.
 export const ALERT_ISSUE_TITLE =
   "Database schema drift — a deployed database no longer matches supabase/migrations/";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:db", "P1"];
 
 // A migration merged minutes ago is legitimately not applied yet. The grace
@@ -80,9 +93,6 @@ export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:db", "P1"];
 // round-trip. A migration back-dated below this window alerts immediately —
 // deliberately conservative: this check may cry wolf, it may not stay silent.
 export const DEFAULT_PENDING_GRACE_HOURS = 24;
-
-// Pages of issues to scan when locating the alert issue.
-const MAX_ISSUE_PAGES = 5;
 
 const MIGRATION_FILENAME_PATTERN = /^(\d{14})_(.+)\.sql$/;
 
@@ -380,7 +390,7 @@ export function buildAlertIssueBody({ results, graceHours, runUrl }) {
     "While it is open, at least one deployed database is drifting from this repository right now.",
     "It closes itself as soon as a later run finds every environment in sync.",
     "",
-    "Do not claim this issue as backlog work — it carries `routine-state` and tracks live state,",
+    `Do not claim this issue as backlog work — it carries \`${ALERT_ISSUE_LOOKUP_LABEL}\` and tracks live state,`,
     "not a unit of work. Fix the underlying drift and it resolves on its own.",
     "",
     "### Current state",
@@ -460,110 +470,6 @@ export function buildRecoveryCommentBody({ results, runUrl }) {
   return lines.join("\n");
 }
 
-// ── Issue lookup / mutation ─────────────────────────────────────────────────
-// Same shape as scripts/ci/deploy-alert.mjs: exact-title lookup within the
-// `routine-state` label, prefer an open issue, otherwise reopen the most recent
-// closed one. Kept as a separate implementation rather than shared because the
-// two alerts have independent titles, labels and bodies, and coupling them
-// would mean a change to one alert's copy could silently move the other's.
-
-export async function findAlertIssues({ token, repo, fetchImpl }) {
-  const found = [];
-  for (let page = 1; page <= MAX_ISSUE_PAGES; page += 1) {
-    const { ok, data } = await ghRequest({
-      token,
-      fetchImpl,
-      path:
-        `/repos/${repo}/issues?state=all&labels=${encodeURIComponent(ALERT_ISSUE_LOOKUP_LABEL)}` +
-        `&sort=created&direction=desc&per_page=100&page=${page}`,
-    });
-    if (!ok || !Array.isArray(data)) break;
-    for (const issue of data) {
-      // The issues endpoint returns PRs too; they are never this alert.
-      if (!issue.pull_request && issue.title === ALERT_ISSUE_TITLE) found.push(issue);
-    }
-    if (data.length < 100) break;
-  }
-  return found;
-}
-
-export async function raiseAlert({ token, repo, fetchImpl, results, graceHours, runUrl }) {
-  const existing = await findAlertIssues({ token, repo, fetchImpl });
-  const open = existing.find((issue) => issue.state === "open");
-  const target = open ?? existing[0];
-
-  if (!target) {
-    const { ok, data } = await ghRequest({
-      token,
-      fetchImpl,
-      method: "POST",
-      path: `/repos/${repo}/issues`,
-      body: {
-        title: ALERT_ISSUE_TITLE,
-        labels: ALERT_ISSUE_LABELS,
-        body: buildAlertIssueBody({ results, graceHours, runUrl }),
-      },
-    });
-    return ok
-      ? { action: "created", issueNumber: data?.number ?? null }
-      : { action: "failed", issueNumber: null };
-  }
-
-  const reopened = target.state !== "open";
-  if (reopened) {
-    await ghRequest({
-      token,
-      fetchImpl,
-      method: "PATCH",
-      path: `/repos/${repo}/issues/${target.number}`,
-      body: { state: "open" },
-    });
-  }
-
-  const { ok } = await ghRequest({
-    token,
-    fetchImpl,
-    method: "POST",
-    path: `/repos/${repo}/issues/${target.number}/comments`,
-    body: { body: buildAlertCommentBody({ results, graceHours, runUrl, reopened }) },
-  });
-
-  if (!ok) return { action: "failed", issueNumber: target.number };
-  return { action: reopened ? "reopened" : "commented", issueNumber: target.number };
-}
-
-/**
- * Closes every open drift alert once all targets are in sync. Closing them all
- * (not just the first) is what makes a duplicate created during an API blip
- * self-heal.
- */
-export async function resolveAlert({ token, repo, fetchImpl, results, runUrl }) {
-  const openIssues = (await findAlertIssues({ token, repo, fetchImpl })).filter(
-    (issue) => issue.state === "open",
-  );
-  if (openIssues.length === 0) return { action: "none", closed: [] };
-
-  const closed = [];
-  for (const issue of openIssues) {
-    await ghRequest({
-      token,
-      fetchImpl,
-      method: "POST",
-      path: `/repos/${repo}/issues/${issue.number}/comments`,
-      body: { body: buildRecoveryCommentBody({ results, runUrl }) },
-    });
-    const { ok } = await ghRequest({
-      token,
-      fetchImpl,
-      method: "PATCH",
-      path: `/repos/${repo}/issues/${issue.number}`,
-      body: { state: "closed", state_reason: "completed" },
-    });
-    if (ok) closed.push(issue.number);
-  }
-  return { action: "closed", closed };
-}
-
 // ── Orchestration ───────────────────────────────────────────────────────────
 
 function defaultWriteSummary(summary) {
@@ -579,7 +485,6 @@ function defaultWriteSummary(summary) {
 export async function runMigrationDriftCheck({
   token,
   repo,
-  accessToken,
   targets,
   local,
   nowMs,
@@ -594,7 +499,7 @@ export async function runMigrationDriftCheck({
 
   for (const target of targets) {
     const remote = await fetchAppliedMigrations({
-      accessToken,
+      accessToken: target.accessToken,
       projectRef: target.ref,
       fetchImpl,
     });
@@ -635,18 +540,52 @@ export async function runMigrationDriftCheck({
     logger.log?.(result.status === "clean" ? `::notice::${line}` : `::error::${line}`);
   }
 
+  const alertIdentity = {
+    token,
+    repo,
+    fetchImpl,
+    title: ALERT_ISSUE_TITLE,
+    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+  };
   let alert = { action: "none" };
   if (status === "drift") {
-    alert = await raiseAlert({ token, repo, fetchImpl, results, graceHours, runUrl });
+    alert = await raiseAlert({
+      ...alertIdentity,
+      labels: ALERT_ISSUE_LABELS,
+      buildIssueBody: () => buildAlertIssueBody({ results, graceHours, runUrl }),
+      buildCommentBody: ({ reopened }) =>
+        buildAlertCommentBody({ results, graceHours, runUrl, reopened }),
+    });
     logger.log?.(
       alert.action === "failed"
-        ? "[migration-drift] could not write the alert issue"
+        ? "::error::[migration-drift] could not write the alert issue"
         : `[migration-drift] alert issue #${alert.issueNumber} ${alert.action}`,
     );
   } else if (status === "clean") {
-    alert = await resolveAlert({ token, repo, fetchImpl, results, runUrl });
-    if (alert.action === "closed") {
-      logger.log?.(`[migration-drift] closed alert issue(s): ${alert.closed.join(", ")}`);
+    // Resolve only on a lookup that actually worked. A failed lookup returns an
+    // empty list, which reads exactly like "no alert is open", so the run has
+    // to say it could not read the alert state rather than report nothing to
+    // close.
+    const lookup = await findAlertIssuesDetailed(alertIdentity);
+    if (!lookup.lookupOk) {
+      alert = { action: "failed", closed: [] };
+      logger.log?.("::error::[migration-drift] could not read the alert issues; none closed");
+    } else {
+      const hadOpen = lookup.issues.some((issue) => issue.state === "open");
+      alert = await resolveAlert({
+        ...alertIdentity,
+        buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
+      });
+      // resolveAlert looks the alert up again, and a failed second lookup
+      // returns [] and so "none". If this run already saw an open alert, that
+      // is a failed close, not nothing to close (production-uptime.mjs has the
+      // same guard; #2627 moves it into the lib).
+      if (hadOpen && alert.action === "none") alert = { action: "failed", closed: [] };
+      if (alert.action === "closed") {
+        logger.log?.(`[migration-drift] closed alert issue(s): ${alert.closed.join(", ")}`);
+      } else if (alert.action === "failed") {
+        logger.log?.("::error::[migration-drift] could not close the open alert issue");
+      }
     }
   } else {
     // unknown: never raise (nothing was observed to be drifting) and never
@@ -654,7 +593,10 @@ export async function runMigrationDriftCheck({
     logger.log?.("[migration-drift] a target could not be read; alert issue left as-is");
   }
 
-  return { status, results, alert, exitCode: status === "clean" ? 0 : 1 };
+  // A clean run whose alert could not be read or closed still fails: a green
+  // job would hide a P1 left open on a healthy environment, every day.
+  const exitCode = status === "clean" && alert.action !== "failed" ? 0 : 1;
+  return { status, results, alert, exitCode };
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
@@ -662,11 +604,23 @@ export async function runMigrationDriftCheck({
 async function main() {
   const token = requireEnv("GITHUB_TOKEN");
   const repo = requireEnv("GITHUB_REPOSITORY");
-  const accessToken = requireEnv("SUPABASE_ACCESS_TOKEN");
-  const targets = parseTargets(requireEnv("DRIFT_TARGETS"));
+  const targets = parseTargets(requireEnv("DRIFT_TARGETS")).map((target) => ({
+    ...target,
+    accessToken: supabaseAccessTokenFor(target.label),
+  }));
 
   if (targets.length === 0) {
     console.error("Error: DRIFT_TARGETS parsed to zero targets. Expected `label=ref` pairs.");
+    process.exit(1);
+  }
+  const untokened = targets.filter((target) => !target.accessToken);
+  if (untokened.length > 0) {
+    for (const { label } of untokened) {
+      console.error(
+        `Error: no Supabase token for ${label}: set SUPABASE_ACCESS_TOKEN_${label.toUpperCase()} ` +
+          "or SUPABASE_ACCESS_TOKEN.",
+      );
+    }
     process.exit(1);
   }
 
@@ -692,7 +646,6 @@ async function main() {
   const { exitCode } = await runMigrationDriftCheck({
     token,
     repo,
-    accessToken,
     targets,
     local,
     nowMs: Date.now(),

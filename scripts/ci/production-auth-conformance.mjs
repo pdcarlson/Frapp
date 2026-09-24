@@ -32,12 +32,18 @@
 // Env inputs:
 //   GITHUB_TOKEN          — required (issues: write) for the alert upsert
 //   GITHUB_REPOSITORY     — required, owner/repo
-//   SUPABASE_ACCESS_TOKEN — Management API token (account-scoped)
+//   SUPABASE_ACCESS_TOKEN — Management API token, read-only, production project only
 //   RUN_URL               — html_url of this run, for the alert body
 
 import { appendFileSync } from "node:fs";
 
-import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+  withAgentNote,
+} from "./lib/alert-issue.mjs";
 import { getEnvironment } from "./lib/environments.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
@@ -72,7 +78,7 @@ export const DEFAULT_CHECK_IDS = Object.freeze([
 
 // Title is the lookup key. Must not equal staging-conformance's title.
 export const ALERT_ISSUE_TITLE = "Production Auth settings have drifted";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
 const result = (id, label, status, detail) => ({ id, label, status, detail });
@@ -306,7 +312,14 @@ export async function runProductionAuthConformance({
         fetchImpl,
         method: "PATCH",
         path: `/repos/${repo}/issues/${issue.number}`,
-        body: { body: buildAlertIssueBody({ results, runUrl, previousBody: issue.body }) },
+        // The lib appends the agent note to every body it writes; this is
+        // the one body write outside it, so it adds the note itself.
+        body: {
+          body: withAgentNote(
+            buildAlertIssueBody({ results, runUrl, previousBody: issue.body }),
+            repo,
+          ),
+        },
       });
     }
     logger.log?.(
@@ -334,7 +347,7 @@ export async function runProductionAuthConformance({
   } else if (alert.action === "failed") {
     logger.log?.(
       "::error::Production Auth settings are conformant but the alert issue could not be closed. " +
-        "It is still open; close it by hand if this persists.",
+        "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
     );
   }
   return { outcome, results, alert };

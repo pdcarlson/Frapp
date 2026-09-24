@@ -203,9 +203,10 @@ key at all**. Each of those three is load-bearing:
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
 check that would have caught #1045 shipping the dependency a month ahead of any
-surface. `scripts/ci/__tests__/signet-mobile-permissions.test.mjs` raised its prompt
-floor from two to three with this slice, which is exactly what that file's WHY block
-said the raise was for.
+surface. `scripts/ci/__tests__/frapp-mobile-permissions.test.mjs` (then
+`signet-mobile-permissions.test.mjs`; ADR-25 renamed it with the copy it locks) raised its
+prompt floor from two to three with this slice, which is exactly what that file's block on
+the floor going three to two (#2296) and back to three (#2464) said the raise was for.
 
 **`app.json` also gained `ios.privacyManifests`** (#2294, same PR as the removal above) —
 the iOS privacy manifest, without which App Store Connect returns an automated
@@ -225,3 +226,22 @@ writes the file. That makes it load-bearing that `app.config.js`'s `applyMobileC
 keeps spreading `config` and overriding only `extra` and `android` — `app.config.spec.ts`
 asserts the resolved config to pin exactly that. Recorded here rather than glossed,
 per this section's practice; the nutrition-label half stays owner work on #2196 §4.
+
+*Corrected 2026-09-24 (#2526):* "two required-reason categories" is now four, and two
+bases above no longer hold. `CA92.1` rests on `expo-updates` as well as Stripe, so it is
+not Stripe's alone. `C617.1` also covers the timestamp reads of pods whose own manifests
+never ship: pod manifests reach the shipped file only through react-native's `pod install`
+aggregation, which a static or precompiled pod skips. The same gap is why the manifest
+gained `SystemBootTime`/`35F9.1` and `DiskSpace`/`E174.1`. `FileTimestamp`/`0A2A.1`, which
+#2526 also listed, was left out: Apple reserves it for an SDK's own manifest. Which pods
+fall through, and the basis for every row, are in `app.config.spec.ts`, which pins the
+whole array; this note doesn't restate them.
+
+**#2526 touched three of the seven, as an integrator change.** `package.json` gained
+`expo-updates`, and `app.json` gained its `runtimeVersion` and `updates` keys (no plugin
+entry: prebuild applies `expo-updates`' plugin by default) plus the two manifest rows
+above. The first store binary is the only chance to ship an OTA client at all. `app/_layout.tsx`
+gained `ClientPolicyGate` around `BottomSheetModalProvider`. That is a real edit to a
+frozen file, and it can't live in `components/app-runtime.tsx`: the gate has to wrap the
+sheet provider, or an open sheet draws over the update prompt. See
+[`patterns.md`](patterns.md) § Minimum version.

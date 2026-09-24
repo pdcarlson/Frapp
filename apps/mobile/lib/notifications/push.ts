@@ -118,7 +118,7 @@ export function pushUnavailableReason(): string | null {
     if (Platform.OS === "web") {
       return "Notifications come to the phone app, not the web. You'll still see everything here.";
     }
-    return "Notifications need the installed Signet build — Expo Go can't receive them. You'll still see everything here in the app.";
+    return "Notifications need the installed Frapp build — Expo Go can't receive them. You'll still see everything here in the app.";
   }
   if (easProjectId() === null) {
     return "Notifications aren't switched on for this build yet. You'll still see everything here in the app.";

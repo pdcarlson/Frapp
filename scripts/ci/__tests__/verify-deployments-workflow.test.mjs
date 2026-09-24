@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { VERIFY_DEPLOYMENTS_CONFIG } from "../deploy-alert.mjs";
+import { ALERT_ISSUE_LOOKUP_LABEL, VERIFY_DEPLOYMENTS_CONFIG } from "../deploy-alert.mjs";
 import { workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 // Pins the wiring that makes a failed staging API deploy raise an alert
@@ -309,7 +309,7 @@ describe("rehearsal: verify-render-api then deploy-outcome, as Actions would run
     number: 960,
     state: "open",
     title: VERIFY_DEPLOYMENTS_CONFIG.alertTitle,
-    labels: [{ name: "routine-state" }],
+    labels: [{ name: ALERT_ISSUE_LOOKUP_LABEL }],
   };
 
   it("a build_failed deploy files the alert issue, and prints neither credential anywhere", () => {
@@ -323,7 +323,7 @@ describe("rehearsal: verify-render-api then deploy-outcome, as Actions would run
     );
     assert.ok(create, `no issue created; requests: ${JSON.stringify(out.githubRequests)}`);
     assert.equal(create.body.title, VERIFY_DEPLOYMENTS_CONFIG.alertTitle);
-    assert.ok(create.body.labels.includes("routine-state"));
+    assert.ok(create.body.labels.includes(ALERT_ISSUE_LOOKUP_LABEL));
     assert.match(create.body.body, new RegExp(SHA));
     assert.match(create.body.body, new RegExp(`https://github\\.com/${REPOSITORY}/actions/runs/${RUN_ID}`));
     assert.match(out.alert.stdout, /::error::Verify deployments FAILED on `main`/);

@@ -12,8 +12,8 @@
 //
 // This script GETs the environment and fails if `protection_rules` contains
 // `required_reviewers` or `wait_timer`. Unreadable or missing is FAIL, not
-// pass. `deployment_branch_policy: null` is not a failure — locking branches
-// to `main` stays on #1827 and must not trip this watch.
+// pass. `deployment_branch_policy` is not checked here: the `main`-only rule
+// is #2583's (set 2026-09-23), and watching it is #2585.
 //
 // It does not name any GitHub `environment:` itself. A schedule job that
 // named `production-backup` would hang on the same trap it is watching for.
@@ -24,7 +24,12 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/production-backup-env.test.mjs`.
 
-import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+} from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 
@@ -32,7 +37,7 @@ export const ENV_NAME = "production-backup";
 
 export const ALERT_ISSUE_TITLE =
   "production-backup has required reviewers — nightly dumps will expire";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
 /**

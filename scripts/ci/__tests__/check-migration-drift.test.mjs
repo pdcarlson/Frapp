@@ -18,6 +18,7 @@ import {
   runMigrationDriftCheck,
   versionToEpochMs,
 } from "../check-migration-drift.mjs";
+import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 import { makeFetchMock, quiet } from "./helpers.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -403,10 +404,10 @@ test("buildAlertIssueBody omits the run line entirely when there is no run URL",
 
 // ── runMigrationDriftCheck ──────────────────────────────────────────────────
 
+const SB_TOKEN = "sb-token";
 const baseRun = {
   token: "gh-token",
   repo: "pdcarlson/Frapp",
-  accessToken: "sb-token",
   nowMs: NOW,
   graceHours: 24,
   runUrl: "https://github.com/pdcarlson/Frapp/actions/runs/1",
@@ -423,7 +424,7 @@ test("a clean run exits 0 and closes an open alert issue", async () => {
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "staging", ref: "stg" }],
+    targets: [{ label: "staging", ref: "stg", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -437,6 +438,43 @@ test("a clean run exits 0 and closes an open alert issue", async () => {
   assert.deepEqual(JSON.parse(closing.body), { state: "closed", state_reason: "completed" });
 });
 
+test("each target is read with its own token (#2583)", async () => {
+  // Each Infisical environment's Supabase token reads only its own project, so
+  // main() hands each target its own (supabaseAccessTokenFor).
+  const local = localFixture(3);
+  const { fetchImpl: routed } = makeFetchMock([
+    supabaseRoute("stg", local),
+    supabaseRoute("prod", local),
+    ...githubRoutes({ issues: [] }),
+  ]);
+  const seen = [];
+  const fetchImpl = async (url, init = {}) => {
+    const ref = url.match(/\/projects\/([^/]+)\/database\/migrations$/)?.[1];
+    if (ref) seen.push([ref, init.headers?.Authorization]);
+    return routed(url, init);
+  };
+
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [
+      { label: "staging", ref: "stg", accessToken: "staging-token" },
+      { label: "production", ref: "prod", accessToken: "production-token" },
+    ],
+    local,
+    fetchImpl,
+  });
+
+  assert.equal(result.status, "clean");
+  assert.deepEqual(seen, [
+    ["stg", "Bearer staging-token"],
+    ["prod", "Bearer production-token"],
+  ]);
+  assert.ok(
+    result.results.every((r) => !("accessToken" in r)),
+    "a token never reaches the results the summary and alert issue are built from",
+  );
+});
+
 test("a clean run with no open alert touches nothing", async () => {
   const local = localFixture(3);
   const { fetchImpl, calls } = makeFetchMock([
@@ -446,7 +484,7 @@ test("a clean run with no open alert touches nothing", async () => {
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "staging", ref: "stg" }],
+    targets: [{ label: "staging", ref: "stg", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -465,7 +503,7 @@ test("drift creates the alert issue when none exists, and exits 1", async () => 
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "production", ref: "prod" }],
+    targets: [{ label: "production", ref: "prod", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -477,6 +515,8 @@ test("drift creates the alert issue when none exists, and exits 1", async () => 
   const created = JSON.parse(calls.find((c) => c.method === "POST").body);
   assert.equal(created.title, ALERT_ISSUE_TITLE);
   assert.deepEqual(created.labels, ALERT_ISSUE_LABELS);
+  assert.ok(created.labels.includes(ALERT_LOOKUP_LABEL));
+  assert.deepEqual(created.assignees, [ALERT_ASSIGNEE]);
   // The body must name both drift modes and warn off the destructive repair.
   assert.match(created.body, /Foreign \(1\)/);
   assert.match(created.body, /Pending \(37\)/);
@@ -492,7 +532,7 @@ test("drift comments on an already-open alert rather than filing a second one", 
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "production", ref: "prod" }],
+    targets: [{ label: "production", ref: "prod", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -513,14 +553,149 @@ test("drift reopens a closed alert", async () => {
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "production", ref: "prod" }],
+    targets: [{ label: "production", ref: "prod", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
 
   assert.equal(result.alert.action, "reopened");
   const reopen = calls.find((c) => c.method === "PATCH");
-  assert.deepEqual(JSON.parse(reopen.body), { state: "open" });
+  // A reopen is a new incident, so it is assigned to the owner like a new one.
+  assert.deepEqual(JSON.parse(reopen.body), { state: "open", assignees: [ALERT_ASSIGNEE] });
+});
+
+// The three defects #909 found in this script's old private copy of the alert
+// upsert, each already fixed in lib/alert-issue.mjs. They failed against that
+// copy and pass now that the script uses the lib.
+
+test("a FAILED reopen is reported as failed, not as reopened", async () => {
+  // Reporting "reopened" while the PATCH failed leaves live drift with its
+  // alert still closed.
+  const local = localFixture(38);
+  const { fetchImpl } = makeFetchMock([
+    supabaseRoute("prod", [INITIAL, FOREIGN_FEB]),
+    { method: "GET", path: "issues?state=all", body: [{ number: 42, state: "closed", title: ALERT_ISSUE_TITLE }] },
+    { method: "PATCH", path: "/issues/42", status: 502, body: {} },
+    { method: "POST", path: "/comments", body: {} },
+  ]);
+
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [{ label: "production", ref: "prod" }],
+    local,
+    fetchImpl,
+  });
+
+  assert.equal(result.alert.action, "failed");
+  assert.equal(result.exitCode, 1);
+});
+
+test("a close that fails is reported as failed, never as closed-with-nothing", async () => {
+  // `{action: "closed", closed: []}` logged a successful closure while the P1
+  // stayed open on a healthy environment, re-posting "recovered" every run.
+  const local = localFixture(3);
+  const { fetchImpl } = makeFetchMock([
+    supabaseRoute("stg", local),
+    { method: "GET", path: "issues?state=all", body: [{ number: 42, state: "open", title: ALERT_ISSUE_TITLE }] },
+    { method: "POST", path: "/comments", body: {} },
+    { method: "PATCH", path: "/issues/42", status: 502, body: {} },
+  ]);
+
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [{ label: "staging", ref: "stg" }],
+    local,
+    fetchImpl,
+  });
+
+  assert.equal(result.alert.action, "failed");
+  assert.deepEqual(result.alert.closed, []);
+  // The databases match, but the P1 is still open: the run must not go green.
+  assert.equal(result.exitCode, 1);
+});
+
+test("a clean run whose second alert lookup fails reports a failed close, not nothing to close", async () => {
+  // resolveAlert looks the alert up again. When that second GET fails it sees
+  // nothing and returns "none", which must not read as "nothing was open"
+  // once the first lookup already saw the open alert.
+  const local = localFixture(3);
+  const { fetchImpl, calls } = makeFetchMock([
+    supabaseRoute("stg", local),
+    { method: "GET", path: "issues?state=all", body: [{ number: 42, state: "open", title: ALERT_ISSUE_TITLE }] },
+  ]);
+  let lookups = 0;
+  const secondFails = async (url, init = {}) => {
+    const response = await fetchImpl(url, init);
+    if (!url.includes("issues?state=all")) return response;
+    lookups += 1;
+    return lookups === 1 ? response : { ...response, ok: false, status: 502 };
+  };
+
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [{ label: "staging", ref: "stg" }],
+    local,
+    fetchImpl: secondFails,
+  });
+
+  assert.equal(result.status, "clean");
+  assert.equal(result.alert.action, "failed");
+  assert.equal(result.exitCode, 1);
+  assert.equal(calls.some((c) => c.method !== "GET"), false);
+});
+
+test("a clean run that closes one open duplicate but not another still fails", async () => {
+  // A duplicate left open is still a P1 on a healthy environment; "closed" has
+  // to mean every match closed.
+  const local = localFixture(3);
+  const { fetchImpl } = makeFetchMock([
+    supabaseRoute("stg", local),
+    {
+      method: "GET",
+      path: "issues?state=all",
+      body: [
+        { number: 41, state: "open", title: ALERT_ISSUE_TITLE },
+        { number: 42, state: "open", title: ALERT_ISSUE_TITLE },
+      ],
+    },
+    { method: "POST", path: "/comments", body: {} },
+    { method: "PATCH", path: "/issues/42", status: 502, body: {} },
+    { method: "PATCH", path: "/issues/41", body: {} },
+  ]);
+
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [{ label: "staging", ref: "stg" }],
+    local,
+    fetchImpl,
+  });
+
+  assert.equal(result.status, "clean");
+  assert.deepEqual(result.alert, { action: "failed", closed: [41] });
+  assert.equal(result.exitCode, 1);
+});
+
+test("a failed alert lookup on a clean run is reported, not read as nothing open", async () => {
+  // An empty list from a failed lookup is indistinguishable from "no alert is
+  // open". The run must say it could not read the alert state rather than
+  // report that there was nothing to close.
+  const local = localFixture(3);
+  const { fetchImpl, calls } = makeFetchMock([
+    supabaseRoute("stg", local),
+    { method: "GET", path: "issues?state=all", status: 502, body: {} },
+  ]);
+
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [{ label: "staging", ref: "stg" }],
+    local,
+    fetchImpl,
+  });
+
+  assert.equal(result.status, "clean");
+  assert.equal(result.alert.action, "failed");
+  assert.equal(result.exitCode, 1);
+  assert.equal(calls.some((c) => c.method !== "GET"), false);
 });
 
 test("an unreadable target neither raises nor closes an alert, and exits 1", async () => {
@@ -535,7 +710,7 @@ test("an unreadable target neither raises nor closes an alert, and exits 1", asy
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "staging", ref: "stg" }],
+    targets: [{ label: "staging", ref: "stg", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });
@@ -557,8 +732,8 @@ test("one unreadable target does not mask drift on another", async () => {
   const result = await runMigrationDriftCheck({
     ...baseRun,
     targets: [
-      { label: "staging", ref: "stg" },
-      { label: "production", ref: "prod" },
+      { label: "staging", ref: "stg", accessToken: SB_TOKEN },
+      { label: "production", ref: "prod", accessToken: SB_TOKEN },
     ],
     local,
     fetchImpl,
@@ -583,8 +758,8 @@ test("every target is checked, and each appears in the run summary", async () =>
   const result = await runMigrationDriftCheck({
     ...baseRun,
     targets: [
-      { label: "staging", ref: "stg" },
-      { label: "production", ref: "prod" },
+      { label: "staging", ref: "stg", accessToken: SB_TOKEN },
+      { label: "production", ref: "prod", accessToken: SB_TOKEN },
     ],
     local,
     fetchImpl,
@@ -608,7 +783,7 @@ test("a failed issue-create is reported without throwing", async () => {
 
   const result = await runMigrationDriftCheck({
     ...baseRun,
-    targets: [{ label: "production", ref: "prod" }],
+    targets: [{ label: "production", ref: "prod", accessToken: SB_TOKEN }],
     local,
     fetchImpl,
   });

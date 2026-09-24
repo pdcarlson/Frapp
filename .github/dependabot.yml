@@ -207,6 +207,7 @@ updates:
       - dependency-name: "expo-sharing"
       - dependency-name: "expo-splash-screen"
       - dependency-name: "expo-status-bar"
+      - dependency-name: "expo-updates"
       - dependency-name: "expo-web-browser"
 
       # ── The vendored-generator pins ──────────────────────────────────────

@@ -25,7 +25,12 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/production-backup-freshness.test.mjs`.
 
-import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+} from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 
@@ -37,7 +42,7 @@ export const HUNG_AFTER_MS = 3 * 60 * 60 * 1000;
 
 export const ALERT_ISSUE_TITLE =
   "Nightly production dump is stale or failed — recoverability is unproven";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
 const IN_FLIGHT_STATUSES = new Set([

@@ -120,7 +120,8 @@ constraints web habits most often break:
 - Provider chain in `app/_layout.tsx`, outer to inner: `GestureHandlerRootView` >
   `SafeAreaProvider` > `FrappThemeProvider` > `AuthSessionProvider` > `FrappProvider` >
   `ObservabilityIdentityProvider` > `AnalyticsProvider` > `KeyboardProviderGuarded` >
-  `BottomSheetModalProvider`. Figtree loads there behind a splash hold.
+  `ClientPolicyGate` > `BottomSheetModalProvider`. The gate is the minimum-version prompt and
+  must stay outside the sheet provider, or an open sheet draws over it. Figtree loads there behind a splash hold.
 - Expo Go is the local run path (`npm run start -w apps/mobile`, then scan from a device or
   emulator). It can't be verified headless. Native modules that crash Go at launch or break
   `expo export --platform web` (Stripe React Native, `expo-notifications`,

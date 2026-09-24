@@ -69,7 +69,12 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/production-guardrails.test.mjs`.
 
-import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+} from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { fetchJson } from "./lib/providers.mjs";
@@ -89,7 +94,7 @@ export { EXPECTED_HEALTH_CHECK_PATH, readHealthCheckPath };
 // every open alert carrying the old title.
 export const ALERT_ISSUE_TITLE =
   "Production deploy guardrails have drifted — auto-deploy or production branch is wrong";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
 // Provider identifiers are NOT defaulted here, deliberately. Every sibling

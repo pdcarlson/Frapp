@@ -68,6 +68,7 @@
 import { appendFileSync } from "node:fs";
 
 import {
+  ALERT_LOOKUP_LABEL,
   findAlertIssues as findAlertIssuesByTitle,
   raiseAlert as raiseAlertIssue,
   resolveAlert as resolveAlertIssue,
@@ -76,10 +77,9 @@ import { requireEnv } from "./lib/env.mjs";
 
 // ── Alert issue identity ────────────────────────────────────────────────────
 // Title is the primary key: it is looked up by exact match, so it must stay
-// stable across releases. `routine-state` marks it as routine infrastructure —
-// `/next` §0.2 treats that label as never-claimable, which is what keeps agent
-// sessions from picking the alert up as if it were backlog work.
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+// stable across releases. The lookup label comes from lib/alert-issue.mjs,
+// which owns it for every watchdog and says what it does.
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 
 // ── Alert configurations ────────────────────────────────────────────────────
 // One entry per watched deploy workflow. A config is the complete answer to
@@ -618,7 +618,7 @@ export function buildAlertIssueBody({
         ]
       : outcomeCopy(config).brokenLines(config.workflowLabel)),
     "",
-    "Do not claim this issue as backlog work — it carries `routine-state` and tracks live state,",
+    `Do not claim this issue as backlog work — it carries \`${ALERT_ISSUE_LOOKUP_LABEL}\` and tracks live state,`,
     "not a unit of work. Fix the underlying failure and it resolves on its own.",
     "",
     "### Latest failure",
@@ -698,7 +698,7 @@ export function buildRecoveryCommentBody({
 
 /**
  * Every issue (open or closed) that is this alert. Matched on exact title within
- * the `routine-state` label, so a human renaming the issue detaches it rather
+ * the lookup label, so a human renaming the issue detaches it rather
  * than causing surprise writes. Returns [] when the lookup fails — a failed
  * lookup then falls through to "create", because a duplicate alert is a better
  * failure mode than silence, and the resolve path closes every match.

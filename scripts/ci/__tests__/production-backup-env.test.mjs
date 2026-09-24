@@ -13,6 +13,7 @@ import {
   resolveEnvReadToken,
   runWatchdog,
 } from "../production-backup-env.mjs";
+import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
 
@@ -59,7 +60,7 @@ describe("evaluateBackupEnv", () => {
     });
   });
 
-  it("passes when a main-only branch policy is set — that leftover is not this watch", () => {
+  it("passes when a main-only branch policy is set — watching that rule is #2585, not this watch", () => {
     const verdict = evaluateBackupEnv({
       status: 200,
       body: {
@@ -255,7 +256,7 @@ describe("runWatchdog", () => {
     reason: `${ENV_NAME} has no required reviewers or wait timer`,
   };
 
-  it("creates a P1 routine-state alert and refuses a GitHub closer", async () => {
+  it("creates a P1 incident alert, assigned to the owner, and refuses a GitHub closer", async () => {
     const { fetchImpl, calls } = makeFetchMock([
       { method: "GET", path: "/issues?state=all", body: [] },
       { method: "POST", path: "/issues", body: { number: 42 } },
@@ -270,7 +271,8 @@ describe("runWatchdog", () => {
     assert.equal(created.alert.action, "created");
     const createdBody = JSON.parse(calls.find((c) => c.method === "POST").body);
     assert.equal(createdBody.title, ALERT_ISSUE_TITLE);
-    assert.ok(createdBody.labels.includes("routine-state"));
+    assert.ok(createdBody.labels.includes(ALERT_LOOKUP_LABEL));
+    assert.deepEqual(createdBody.assignees, [ALERT_ASSIGNEE]);
     assert.ok(createdBody.labels.includes("P1"));
     assert.doesNotMatch(createdBody.body, /\b(fixes|closes|close)\s+#/i);
   });

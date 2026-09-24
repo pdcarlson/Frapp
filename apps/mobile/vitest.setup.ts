@@ -76,6 +76,9 @@ vi.mock("react-native", () => ({
   // asserting on it clears it itself (`clearMocks` is off, see the config).
   AccessibilityInfo: {
     announceForAccessibility: vi.fn(),
+    // An overlay moves a screen reader's focus onto itself as it appears
+    // (spec/ui/mobile/patterns.md § Overlays).
+    sendAccessibilityEvent: vi.fn(),
   },
   // Enough of the styling/layout surface for Signet token factories and
   // component tests; string stand-ins render fine under react-test-renderer.
@@ -102,6 +105,14 @@ vi.mock("react-native", () => ({
   KeyboardAvoidingView: "KeyboardAvoidingView",
   Share: {
     share: vi.fn().mockResolvedValue({ action: "sharedAction" }),
+  },
+  // The update gate (#2526) holds Android's back button while it blocks and
+  // dismisses any open keyboard when it appears.
+  BackHandler: {
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+  },
+  Keyboard: {
+    dismiss: vi.fn(),
   },
 }));
 
@@ -168,6 +179,19 @@ vi.mock("expo-linking", () => ({
   useURL: vi.fn(() => null),
   createURL: vi.fn((path: string) => `frapp://${path}`),
   parse: vi.fn(),
+  // The update gate (#2526) hands the store link to the OS rather than an
+  // in-app browser, so the App Store or Play app opens on the listing.
+  openURL: vi.fn().mockResolvedValue(true),
+}));
+
+// `lib/client-version.ts` reads the native build on every API client, so any
+// spec that mounts the client reaches this. Null is what a build with no
+// native version reports, which sends no X-Client-Version header; a spec that
+// wants a version mocks its own (`lib/client-version.spec.ts`).
+vi.mock("expo-application", () => ({
+  applicationId: null,
+  nativeApplicationVersion: null,
+  nativeBuildVersion: null,
 }));
 
 vi.mock("expo-network", () => ({

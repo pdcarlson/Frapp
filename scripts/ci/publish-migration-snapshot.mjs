@@ -8,14 +8,20 @@
 // `pull_request`. A same-repository PR runs its own branch's workflow
 // definitions, so any credential those jobs can read, any branch can read. They
 // used to inject Infisical `prod` for one read, and the account-level
-// `SUPABASE_ACCESS_TOKEN` that answered it also manages production. This
+// `SUPABASE_ACCESS_TOKEN` that answered it then also managed production. This
 // script makes that read instead, in `migration-snapshot.yml`, whose job names
-// the `automation` environment. That environment is to admit `main` only, set
-// by the owner's #2583; until then its secrets are repository-level. The PR
-// jobs download what it writes, with `GITHUB_TOKEN` and no secret.
+// the `automation` environment, which admits `main` only (#2583). The PR jobs
+// download what it writes, with `GITHUB_TOKEN` and no secret.
+//
+// ── One token per project ───────────────────────────────────────────────────
+// Since #2583 each Infisical environment's `SUPABASE_ACCESS_TOKEN` is a
+// read-only token for its own project, so production's cannot read staging.
+// The workflow injects both environments and keeps each token under its own
+// name; `supabaseAccessTokenFor` (`lib/environments.mjs`) picks the one for
+// each project.
 //
 // It also replaces `check-migration-order.mjs --probe`. That probe existed to
-// prove the CI credential reaches BOTH projects, which a green gate run cannot
+// prove the CI credentials reach BOTH projects, which a green gate run cannot
 // show. Every run of this script is that proof: it fails unless both projects
 // answer, and its step summary is the probe's table.
 //
@@ -24,7 +30,10 @@
 // ever. Project refs come from `.github/environments.json`.
 //
 // Env inputs:
-//   SUPABASE_ACCESS_TOKEN  — required, Supabase Management API token
+//   SUPABASE_ACCESS_TOKEN_STAGING, SUPABASE_ACCESS_TOKEN_PRODUCTION
+//                          — each project's Supabase Management API token;
+//                            SUPABASE_ACCESS_TOKEN stands in for a missing one.
+//                            Every project needs one of the two
 //   GITHUB_SHA, RUN_URL    — optional, recorded as the snapshot's source
 //   GITHUB_STEP_SUMMARY    — optional, written when present
 //
@@ -38,7 +47,8 @@
 //       a deploy outdates it for the gates off main (the download
 //       action waits, then refuses one read before the latest deploy on
 //       main) or it ages out
-//   2 — the invocation itself is wrong (no token, no --out, unreadable config)
+//   2 — the invocation itself is wrong (a project with no token, no --out,
+//       unreadable config)
 //
 // Unit tests: scripts/ci/__tests__/migration-snapshot.test.mjs.
 
@@ -47,7 +57,7 @@ import { dirname } from "node:path";
 
 import { fetchAppliedWithRetry } from "./check-migration-drift-gate.mjs";
 import { newestVersion, VERSION_PATTERN } from "./check-migration-order.mjs";
-import { ENVIRONMENTS, loadEnvironments } from "./lib/environments.mjs";
+import { ENVIRONMENTS, loadEnvironments, supabaseAccessTokenFor } from "./lib/environments.mjs";
 import { buildSnapshot, SNAPSHOT_ARTIFACT_NAME } from "./lib/migration-snapshot.mjs";
 
 function defaultWriteSummary(text) {
@@ -66,7 +76,9 @@ function defaultWriteFile(path, text) {
 }
 
 export async function publishSnapshot({
-  accessToken = process.env.SUPABASE_ACCESS_TOKEN,
+  // One token for every project. Omitted, each project's comes from the env.
+  accessToken,
+  tokenFor = accessToken === undefined ? (name) => supabaseAccessTokenFor(name) : () => accessToken,
   outPath,
   environments,
   fetchImpl = fetch,
@@ -83,19 +95,23 @@ export async function publishSnapshot({
     error("::error::--out <path> is required: where to write the snapshot.");
     return 2;
   }
-  if (!accessToken) {
-    error(
-      "::error::SUPABASE_ACCESS_TOKEN is required. migration-snapshot.yml injects it from " +
-        "Infisical `prod`. See docs/internal/environment/SECRETS_MANAGEMENT.md.",
-    );
-    return 2;
-  }
-
   let resolved;
   try {
     resolved = environments ?? loadEnvironments();
   } catch (thrown) {
     error(`::error::Could not resolve environment identity: ${thrown.message}`);
+    return 2;
+  }
+
+  const untokened = ENVIRONMENTS.filter((name) => resolved[name] && !tokenFor(name));
+  if (untokened.length > 0) {
+    for (const name of untokened) {
+      error(
+        `::error::No Supabase token for ${name}: set SUPABASE_ACCESS_TOKEN_${name.toUpperCase()} ` +
+          "(migration-snapshot.yml keeps it from that environment's Infisical injection) or " +
+          "SUPABASE_ACCESS_TOKEN. See docs/internal/environment/SECRETS_MANAGEMENT.md.",
+      );
+    }
     return 2;
   }
 
@@ -107,7 +123,7 @@ export async function publishSnapshot({
     if (!target) continue;
     const ref = target.supabaseProjectRef;
     const applied = await fetchAppliedWithRetry({
-      accessToken,
+      accessToken: tokenFor(name),
       projectRef: ref,
       fetchImpl,
       log,

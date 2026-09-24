@@ -167,8 +167,8 @@ async function pickAndUploadPhotoUnguarded(
     return {
       status: "refused",
       reason: permission.canAskAgain
-        ? "Signet needs access to your photos to send one."
-        : "Allow photo access for Signet in Settings to send a photo.",
+        ? "Frapp needs access to your photos to send one."
+        : "Allow photo access for Frapp in Settings to send a photo.",
     };
   }
 

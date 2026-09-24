@@ -108,7 +108,7 @@ export default function JoinChapter() {
 
   /**
    * Apple 5.1.1(v): an account that can be created in-app must be deletable
-   * in-app. Signet creates the account implicitly on first sign-in, and a user
+   * in-app. Frapp creates the account implicitly on first sign-in, and a user
    * with zero memberships is pinned to this screen — `useOnboardingRedirect`
    * (mounted app-wide by `components/app-runtime.tsx`) replaces any other path
    * with `/join` while the gate reads `join`, and this group's own layout

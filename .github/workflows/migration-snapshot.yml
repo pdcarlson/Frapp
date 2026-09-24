@@ -9,20 +9,24 @@ name: Migration snapshot
 # PR job can read, anyone who can push a branch can read, by editing that
 # workflow or adding one. Its three jobs used to inject Infisical `prod` for a
 # single read, `GET /v1/projects/{ref}/database/migrations`, and the
-# account-level `SUPABASE_ACCESS_TOKEN` that answered it also drives
+# account-level `SUPABASE_ACCESS_TOKEN` that answered it then also drove
 # production. Now this workflow makes the read, and the PR jobs download what
 # it uploads (`.github/actions/download-migration-snapshot`) with GITHUB_TOKEN.
 #
-# ── Why the credential is meant to be safe here ─────────────────────────────
+# ── Why the credential is safe here ─────────────────────────────────────────
 # `workflow_run` and `schedule` always run the default branch's copy of this
 # file. A dispatch can target any branch, and it runs that branch's copy.
 # What stops that copy reaching the secret is the `automation` environment the
-# job names, whose deployment-branch rule is to admit `main` only. A branch can
-# edit this file but not that rule, and an environment releases its secrets
-# only to a job that passed it. That rule is the owner's #2583 and is not set
-# yet. Until it is, the secrets are repository-level, and a branch dispatch of
-# an edited copy can read them. Whatever such a run uploads, the download
-# action trusts only a run whose commit is on `main`.
+# job names, whose deployment-branch rule admits `main` only (#2583). A branch
+# can edit this file but not that rule, and an environment releases its
+# secrets only to a job that passed it. Whatever a branch run uploads anyway,
+# the download action trusts only a run whose commit is on `main`.
+#
+# ── Two injections, one token each ──────────────────────────────────────────
+# Each Infisical environment's SUPABASE_ACCESS_TOKEN is a read-only token for
+# its own project (#2583), so production's cannot read staging. The job injects
+# both environments and keeps each token under its own name before the next
+# injection overwrites it.
 #
 # ── When it runs ────────────────────────────────────────────────────────────
 # After every `Deploy API` and `Deploy production` run, the only workflows that
@@ -77,15 +81,42 @@ jobs:
         with:
           node-version: 24
 
-      # `prod`, the same slug the replaced PR-side read used. Only
-      # SUPABASE_ACCESS_TOKEN is read; project refs come from
+      # Only SUPABASE_ACCESS_TOKEN is read from each; project refs come from
       # .github/environments.json.
+      - name: Inject staging secrets from Infisical
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "staging"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Keep the staging token
+        run: |
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is not set in the Infisical 'staging' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          echo "SUPABASE_ACCESS_TOKEN_STAGING=$SUPABASE_ACCESS_TOKEN" >> "$GITHUB_ENV"
+          # An injection exports only the keys its environment has, so without
+          # this a token missing from `prod` would keep staging's value and pass
+          # the next check as production's.
+          echo "SUPABASE_ACCESS_TOKEN=" >> "$GITHUB_ENV"
+
+      # NOTE: the Infisical slug for production is `prod`, not `production`.
       - name: Inject production secrets from Infisical
         uses: ./.github/actions/infisical-secrets
         with:
           env-slug: "prod"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Keep the production token
+        run: |
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is not set in the Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          echo "SUPABASE_ACCESS_TOKEN_PRODUCTION=$SUPABASE_ACCESS_TOKEN" >> "$GITHUB_ENV"
 
       - name: Read both projects' applied migrations
         env:

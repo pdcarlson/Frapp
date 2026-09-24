@@ -35,9 +35,13 @@ GitHub Issues (canonical: planning, status, Triage intake)
 - **GitHub Issues is canonical** for what to work on and its status. There is **no fallback
   tracker** — if the GitHub MCP is down, `/next` and the routines stop rather than guessing.
 - **All issues are opened on GitHub with the `triage` label.** Never in Linear (retired), never in
-  a scratch file. Sole carve-out: **`routine-state`** infrastructure issues (e.g. the
-  "PR Follow-ups — Human Action List" tracking issue) are not work and carry `routine-state`
-  instead — `/next` and the routines skip them entirely.
+  a scratch file. Two carve-outs, neither of them work:
+  - **`routine-state`** infrastructure issues (e.g. the "PR Follow-ups — Human Action List"
+    tracking issue) carry `routine-state` instead, and `/next` and the routines skip them as work.
+  - **`incident`** issues are the watchdogs' live alerts (`scripts/ci/lib/alert-issue.mjs`), filed
+    by CI and assigned to the owner. `/next` never claims one, in any mode, because it closes itself
+    when the fault is fixed. What agents may do with one:
+    [`ALERT_ROUTING.md` § Escalation](../ops/ALERT_ROUTING.md#escalation).
 - **Work is closed by the PR that does it** (`Fixes #N` in the PR **body** — native GitHub
   close-on-merge, one line per issue the PR closes; GitHub ignores closing keywords in the PR
   *title*, so the body is load-bearing). GitHub matches the closing keywords (`close` /
@@ -192,7 +196,9 @@ document wins** and `next.md` is the bug — fix the command, don't fork policy 
   named in one, or a linked PR.
 - **Leases and leaked claims:** 4-hour lease renewed per heartbeat; expired-lease takeover via
   `AGENT-RECLAIM`; an `in-progress` issue with no claim comment and no linked PR for 72h is
-  swept back to Backlog (label removed) with an `AGENT-STALE-FLAG`.
+  swept back to Backlog (label removed) with an `AGENT-STALE-FLAG`. A `routine-state` or
+  `incident` issue is never reclaimed or stale-flagged: a sweep that finds `in-progress` on one
+  changes nothing and names it in the run report (`/next` §0.7).
 - **Closing:** on merge, `Fixes #N` closes each named issue as `completed` natively — no tool call
   needed. Leftover-issue wording that does not trigger a closer lives in
   [The model](#the-model). Direct closes use

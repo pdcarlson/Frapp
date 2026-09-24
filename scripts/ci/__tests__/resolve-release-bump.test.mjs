@@ -371,9 +371,17 @@ describe("the workflows that run this script grant the scope it needs", () => {
       join(repoRoot, ".github/workflows/deploy-production.yml"),
       "utf8",
     );
+    // The release job reads the PAT from its own `automation` environment. A
+    // caller pass-through could only be empty: the calling job can name no
+    // environment, and no repository copy exists (#2518, #2630).
+    assert.match(
+      text,
+      /environment:\s*\n\s*name: automation/,
+      "release.yml's job must name the `automation` environment, where RELEASE_GITHUB_TOKEN lives",
+    );
     assert.ok(
-      deploy.includes("RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}"),
-      "deploy-production.yml must pass RELEASE_GITHUB_TOKEN into the reusable Release workflow",
+      !deploy.includes("RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}"),
+      "deploy-production.yml must not pass RELEASE_GITHUB_TOKEN; the called job reads the environment's copy",
     );
   });
 });

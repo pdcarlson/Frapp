@@ -28,7 +28,7 @@ name: Migration drift gate
 # PR's own branch, so a secret any job here can read is a secret every branch
 # can read, by editing this file or adding a new one. All three jobs once
 # injected Infisical (`prod` for two of them) for a single Management API read,
-# and the account-level token behind it also drives production.
+# and the account-level token behind it then also drove production.
 #
 # They now read the migration snapshot that `migration-snapshot.yml` publishes
 # from `main`, downloaded by `.github/actions/download-migration-snapshot` with

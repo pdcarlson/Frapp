@@ -59,7 +59,7 @@ const compareRoute = (headSha, behindBy) => ({
 });
 const emptyCommentsRoute = { method: "GET", path: "/comments", body: [] };
 
-function sweep({ routes, updateToken = null, fetchWrapper = (f) => f }) {
+function sweep({ routes, updateToken = null, fetchWrapper = (f) => f, logger = quiet }) {
   const { fetchImpl, calls } = makeFetchMock(routes);
   const run = processBaseMove({
     token: "t",
@@ -69,7 +69,7 @@ function sweep({ routes, updateToken = null, fetchWrapper = (f) => f }) {
     baseSha: BASE_SHA,
     fetchImpl: fetchWrapper(fetchImpl),
     sleep: makeSleep().sleep,
-    logger: quiet,
+    logger,
   });
   return run.then((results) => ({ results, calls }));
 }
@@ -318,6 +318,34 @@ test("a rate-limit 403 is NOT a dead token: skip fail-safe, no alert, no comment
     "accusing a healthy credential is worse than waiting for the next sweep",
   );
   assert.ok(!calls.some((c) => c.method === "POST" && c.url.includes("/comments")));
+});
+
+test("a close that leaves a duplicate alert open is surfaced, not dropped", async () => {
+  // resolveAlert reports a partial close as "failed" with what did close; a
+  // sweep that logged only "closed" would hide the one left open.
+  const openAlerts = [
+    { number: 900, state: "open", title: ALERT_ISSUE_TITLE },
+    { number: 901, state: "open", title: ALERT_ISSUE_TITLE },
+  ];
+  const lines = [];
+  const pr = makePr(16);
+  await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      compareRoute(pr.head.sha, 1),
+      { method: "PUT", path: "/pulls/16/update-branch", status: 202, body: {} },
+      { method: "GET", path: "/issues?state=all", body: openAlerts },
+      { method: "PATCH", path: "/issues/901", status: 502, body: {} },
+      { method: "PATCH", path: "/issues/900", status: 200, body: {} },
+      emptyCommentsRoute,
+    ],
+    updateToken: "app-token",
+    logger: { log: (line) => lines.push(line) },
+  });
+  const warning = lines.find((line) => line.startsWith("::warning::[pr-base-sync]"));
+  assert.ok(warning, "a failed close must reach the run log");
+  assert.match(warning, /could not be closed \(closed #900\)/);
 });
 
 test("a successful update closes an open alert; a quiet sweep does not", async () => {

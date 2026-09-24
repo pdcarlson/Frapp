@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 // deployment-branch policy admits `main` only. GitHub matches that policy
 // against the run's ref and releases the environment's secrets only to a job
 // that passed it. So the secrets belong there, and every consumer names one of
-// those environments. Moving them and setting the policies is the owner's #2583;
-// until then they are repository secrets and this boundary does not exist yet.
+// those environments. The owner's #2583 set the policies and moved the secrets;
+// the live state is in AGENT_INFRA.md § No repository secrets.
 //
 // This file cannot check the live settings (the policies, and whether the
 // repository-level copies are gone). They are an owner step, and the doc
@@ -48,9 +48,8 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOWS = join(REPO, ".github", "workflows");
 
 /**
- * The environments secrets may live in. Each must admit `main` only, which is
- * the owner's #2583 (not yet done on 2026-09-23). A new one gets that rule
- * before its first secret.
+ * The environments secrets may live in. Each admits `main` only (the owner's
+ * #2583, set 2026-09-23). A new one gets that rule before its first secret.
  */
 export const CREDENTIAL_ENVIRONMENTS = ["automation", "production", "production-backup", "staging"];
 

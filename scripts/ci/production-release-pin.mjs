@@ -29,7 +29,12 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/production-release-pin.test.mjs`.
 
-import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import {
+  ALERT_LOOKUP_LABEL,
+  findAlertIssuesDetailed,
+  raiseAlert,
+  resolveAlert,
+} from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { fetchWithRetry } from "./lib/http.mjs";
@@ -42,7 +47,7 @@ export const DEFAULT_HEALTH_URL = "https://api.frapp.live/health";
 export const HEALTH_FETCH_TIMEOUT_MS = 10_000;
 
 export const ALERT_ISSUE_TITLE = "Production hosts are not on the same tagged commit";
-export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
 export function isFullSha(value) {

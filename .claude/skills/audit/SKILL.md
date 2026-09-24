@@ -67,7 +67,8 @@ warnings don't fail CI, so count them as debt rather than as passing.
 ### Auth and authorization
 
 1. Controllers carry `@UseGuards(SupabaseAuthGuard, ChapterGuard)` unless there is no chapter
-   context to check: `/health` (no auth), webhooks (signature verification only), and user-scoped
+   context to check: `/health` and the mobile `GET /v1/client-policy` (no auth, no tenant data),
+   webhooks (signature verification only), and user-scoped
    routes that come before or outside membership (chapter creation, `chapter-directory`,
    `analytics`). A new exception needs a stated reason.
 2. Every endpoint that reads or writes protected user or chapter data, GET and list included, also
@@ -190,7 +191,7 @@ finding.
 neither validates a doc's claims. The old gates for cited paths, filename references, rosters and
 placement were removed on purpose; don't propose them back. The repo relies on
 [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the
-docs angle in [`diff-review`](../diff-review/SKILL.md), and
+docs angle in [`diff-review`](../diff-review/angles.md), and
 [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md) says what runs and what nothing checks.
 
 **Workflow secrets.** Secrets only via `${{ secrets.* }}`, never echoed or logged; minimal

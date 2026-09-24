@@ -33,6 +33,7 @@ import {
   redactSecrets,
   runStagingConformance,
 } from "../staging-conformance.mjs";
+import { ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
 import { readFileSync } from "node:fs";
 
@@ -1156,7 +1157,7 @@ test("the alert body lists only the failing assertions and warns off claiming it
   });
   assert.match(body, /auth hook/);
   assert.doesNotMatch(body, /healthy thing/);
-  assert.match(body, /routine-state/);
+  assert.ok(body.includes(`carries \`${ALERT_LOOKUP_LABEL}\``));
 });
 
 // ── Orchestration ───────────────────────────────────────────────────────────

@@ -73,7 +73,7 @@ type ClassifiedFields = Pick<
 /**
  * Whether a sender can be on anyone's block list at all.
  *
- * `null` is an imported archive row (no Signet user behind it — blocks are
+ * `null` is an imported archive row (no Frapp user behind it — blocks are
  * keyed on `users.id`), and the system actor is refused by the API: blocking it
  * would silently mask the welcome post, the audit bridge and invite DMs.
  */
@@ -251,9 +251,11 @@ export function contradictingRows(
  * The reactions a viewer may see on any message, as a fresh `ReactionState`.
  *
  * A reaction is its author's own text (`reaction:` plus up to 41 characters),
- * and nothing masks the chips server-side (#2494), so the block list applies
- * to every reactor on every message — the reactions row of
- * `spec/behavior/chat/README.md` § What a block does and does not hide.
+ * so the block list applies to every reactor on every message — the reactions
+ * row of `spec/behavior/chat/README.md` § What a block does and does not hide.
+ * The `chat_message_actions` read policy withholds a blocked member's reaction
+ * rows too (#2494), but only as of each read: rows this client cached before a
+ * block, made here or on another device, are still in the cache.
  *
  * - **Ready:** every reactor except the ones on the list.
  * - **Loading or unavailable:** the viewer's own reactions, and those of

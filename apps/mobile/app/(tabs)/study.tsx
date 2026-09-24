@@ -114,7 +114,7 @@ const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const MIRROR_RETRY_MS = 15 * 1000;
 
 const LOCATION_REQUIRED_COPY =
-  "Signet confirms you're in the study zone, so it needs location while you study. Turn it on in Settings → Signet → Location.";
+  "Frapp confirms you're in the study zone, so it needs location while you study. Turn it on in Settings → Frapp → Location.";
 
 export default function StudyScreen() {
   const { tokens } = useFrappTheme();
@@ -339,7 +339,7 @@ export default function StudyScreen() {
       // the screen offering and denying the same action at once.
       clearRefusalState();
       // A session that ended while paused would otherwise leave its "return to
-      // Signet to resume" notice in the tray, inviting the member back to a
+      // Frapp to resume" notice in the tray, inviting the member back to a
       // session that no longer exists (#1065).
       void clearStudyPausedNotification();
       // The closed session belongs in the history list below, which is served

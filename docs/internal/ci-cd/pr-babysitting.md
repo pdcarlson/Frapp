@@ -248,7 +248,7 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
   guidance when it will need it.
 - **Behind, and auto-update is off repo-wide** (no token minted, the API rejects it with 401/403, or
   update-branch is 5xx-ing / unreachable) → the PR **still gets its wake**, and the *diagnosis* goes
-  to one `routine-state` alert issue instead. The distinction is the whole point: the wake carries
+  to one `incident` alert issue instead. The distinction is the whole point: the wake carries
   "merge `origin/main` yourself", which is what unblocks that PR and is its session's only signal
   that the base moved; the diagnosis ("no app token was minted") is a repo-level fact its reader
   cannot act on, and repeating it on twenty threads is the noise. So the per-PR reason for these
@@ -280,9 +280,8 @@ runs on the updated head, and a failure there reaches the watching session throu
 
 `PR_BASE_SYNC_TOKEN` is a **GitHub App installation token**, minted per run by
 `actions/create-github-app-token@v3` in `pr-base-sync.yml` from two secrets that belong in the
-`automation` environment: `PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY` (#2518).
-They are still repository secrets until the owner's #2583 moves them
-([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](AGENT_INFRA.md#github-environments-and-bootstrap-secrets)). An App was chosen over the
+`automation` environment: `PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY` (#2518,
+#2583; [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](AGENT_INFRA.md#github-environments-and-bootstrap-secrets)). An App was chosen over the
 fine-grained PAT this originally specified for two reasons: an installation token has no expiry
 for a human to renew on a calendar reminder (it is minted fresh each run and expires in an hour),
 and it is not tied to one person's account, so it survives that person's PAT policy, their token
@@ -385,10 +384,10 @@ this compares against a design, not against something that ran.) What makes it s
   a property of the code.
 
 The residual risk is the private key. One protection is GitHub not passing secrets to
-fork-triggered `pull_request` runs. The other, once #2583 lands, is the `automation`
-environment's `main`-only branch rule. Until then the key is a repository secret, so adding a
-workflow that simply echoes it needs only write access, which, per the paragraph below, needs no
-approval. **Four
+fork-triggered `pull_request` runs. The other is the `automation`
+environment's `main`-only branch rule (#2583, set 2026-09-23): a workflow added on a branch to echo
+the key is refused the environment. Before that the key was a repository secret, which any such
+workflow could read. **Four
 changes would break the first, and none should ever be made:**
 
 1. Adding a `pull_request_target` workflow that checks out PR-head code.

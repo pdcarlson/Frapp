@@ -217,11 +217,11 @@ array; the comment on that array in
 [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs) records the trade,
 and what replaced them is the standard in
 [`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the docs
-angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus for documentation
+angle in `.claude/skills/diff-review/angles.md`. No gate reads the docs corpus for documentation
 defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
 `.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
-**Code review is a repository-managed Git pre-push gate, not a CI check.** Frapp's gate is **`/diff-review`**. The root `prepare` script (and, in a Claude Code cloud session, the SessionStart hook) installs [`.githooks/pre-push`](../../.githooks/pre-push) through `core.hooksPath`, so local Codex, cloud agents, and humans share one mechanism. Every non-deletion ref update requires evidence for its exact pushed commit at `.cache/diff-review/<PUSHED_COMMIT_SHA>`; retrying cannot satisfy it. Git guarantees that the hook's nonzero exit aborts the push when installed, but `--no-verify`, a changed hooks path, or skipped installation bypass it, so it is not an unconditional server-side gate. Details live in the [review runbook](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+**Code review is a repository-managed Git pre-push gate, not a CI check.** Frapp's gate is **`/diff-review`**. The root `prepare` script (and, in a Claude Code cloud session, the SessionStart hook) installs [`.githooks/pre-push`](../../.githooks/pre-push) through `core.hooksPath`, so local Codex, cloud agents, and humans share one mechanism. Every non-deletion ref update that publishes unreviewed work requires evidence for its exact pushed commit at `.cache/diff-review/<PUSHED_COMMIT_SHA>`; retrying cannot satisfy it. Git guarantees that the hook's nonzero exit aborts the push when installed, but `--no-verify`, a changed hooks path, or skipped installation bypass it, so it is not an unconditional server-side gate. Details live in the [review runbook](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 - Merge-time review requirements on `main` (approving reviews, conversation resolution), and why no branch is stricter: [`CONTRIBUTING.md` § PR review requirement policy](../../CONTRIBUTING.md#pr-review-requirement-policy).
 - Full runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
@@ -317,8 +317,9 @@ secrets.
 
 - **Production build:** `eas build --platform all --profile production`.
 - **Preview build (staging):** `eas build --platform all --profile preview`.
-- **OTA updates:** For JS-only changes, use `eas update` to push directly to users without App Store review.
-- **Native changes:** Full build + App Store / Google Play submission via `eas submit`.
+- **OTA updates: the client is installed, and nothing publishes to it yet** (#2526, ADR-24 decision 8). Every build carries `expo-updates` with `runtimeVersion: { policy: "appVersion" }`, a `channel` named after its build profile (`apps/mobile/eas.json`), and `checkAutomatically: "ON_LOAD"` with no wait, so with nothing published an app runs the bundle it was built with. An update published for runtime `0.9.0` reaches every build of `0.9.0`, so every build whose native code changes needs a new `expo.version` (see **Native changes** below). Two builds of one version with different native code would both take an update built against the newer one, and the older would crash on a missing module; if that has already happened, raise `MOBILE_MIN_VERSION_*` past the older build before publishing. The `fingerprint` policy was considered and rejected (2026-09-24): it hashes the resolved config, which carries per-build values (`extra.gitSha` from `EAS_BUILD_GIT_COMMIT_HASH`, and the contents of `google-services.json` on Android), so an update published anywhere but the build worker would silently never match a shipped binary. A `fingerprint.config.js` could drop both (`SourceSkips.ExpoConfigExtraSection` for `extra`, an `ignorePaths` entry for the Android file), but that is a hand-kept list of every config input that varies by environment: miss one later and the match breaks, with nothing to show it until an update fails to reach a binary that can't be changed. A version bump is a rule a pipeline can check (#2511). There is no `eas update` pipeline and no `EXPO_TOKEN` in CI. Don't run `eas update` by hand before one exists: it ignores `eas.json`'s build `env`, so the published bundle would fall back to `http://localhost:3001` and tag Sentry `development` (#2504 digest 06, which lists the other traps). It also evaluates `apps/mobile/app.config.js` with no `EAS_BUILD_PROFILE`, so every fence there that keys on a profile (production URLs and keys, the Android google-services check, the client-key allowlist, Ask) is skipped and only the secret-key check runs. The pipeline (#2511) has to set a profile, and then supply what those fences expect: a `production` profile counts as Android unless `EAS_BUILD_PLATFORM` is `ios`, so an Android or platform-less run also needs the google-services file, or config evaluation stops.
+- **Minimum version:** every native build sends `X-Client-Version` and asks `GET /v1/client-policy` at launch and on return to the foreground; a build below the API's `MOBILE_MIN_VERSION_*` sees a blocking update screen. That, not OTA, is how an old binary is retired. Setting a minimum: [`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) § API-Only Settings; behaviour: [`spec/ui/mobile/patterns.md`](../ui/mobile/patterns.md) § Minimum version.
+- **Native changes:** bump `expo.version` in `apps/mobile/app.json` first (the OTA runtime is keyed to it), then a full build + App Store / Google Play submission via `eas submit`.
 
 ### Deploy Ordering
 
@@ -378,8 +379,8 @@ Two GitHub secrets bootstrap the Infisical connection:
 Other GitHub secrets (the provider API keys, the release PAT, the base-sync App pair) sit beside
 them. Every GitHub secret belongs to an **environment** restricted to `main`, never to repository scope. A
 repository secret is readable from any branch, because a branch's own workflow definitions run on
-its pushes and pull requests (#2518). Nothing a pull request triggers reads a secret. Moving the
-secrets is the owner's #2583. Roster, environments and current state:
+its pushes and pull requests (#2518). Nothing a pull request triggers reads a secret. Roster,
+environments and current state:
 `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.
 
 ### Local Development

@@ -12,16 +12,88 @@
 // GitHub UI detaches it and the next failure files a fresh issue rather than
 // silently writing to a human-renamed thread.
 //
-// `routine-state` is the lookup label for every alert: `/next` §0.2 treats it as
-// never-claimable, which is what stops agent sessions picking an alert up as if
-// it were backlog work.
+// This module is the one place an alert's label and assignee are set
+// (ADR-24 decision 2). Every watchdog derives its lookup label from here rather
+// than repeating the literal, because the label is half of each alert's
+// identity. A watchdog left on the old label would stop finding its own open
+// alert, file a duplicate, and never close the original.
+//
+// - `incident` is the lookup label for every alert. `/next` §0.2 treats it as
+//   never-claimable, which stops agent sessions picking an alert up as if it
+//   were backlog work. What an agent may do with one is in
+//   docs/internal/ops/ALERT_ROUTING.md § Escalation.
+// - Every new or reopened alert is assigned to the owner. Assignment is a
+//   participating notification, so it reaches the owner under every
+//   repo-watch setting except Ignore; an unassigned issue reached them only if
+//   their watch setting happened to cover new issues.
 
 import { ghRequest } from "./github.mjs";
 
-export const DEFAULT_LOOKUP_LABEL = "routine-state";
+export const ALERT_LOOKUP_LABEL = "incident";
+export const ALERT_ASSIGNEE = "pdcarlson";
 
 // Pages of issues to scan when locating an alert.
 const MAX_ISSUE_PAGES = 5;
+
+/**
+ * A create or reopen that assigns the owner, retried once without the assignee
+ * if GitHub rejects it as unassignable (422).
+ *
+ * A missing assignee is the lesser failure. The alert itself is the thing this
+ * module exists to deliver, so an assignee GitHub won't accept (a renamed
+ * account, the repo moved to an org the login isn't in) must not stop every
+ * alert from being filed. Only a 422 retries: a 5xx is not about the assignee,
+ * and the suites count calls against 5xx fixtures.
+ *
+ * Either way a lost assignee is annotated on the run, because nothing else
+ * would show it: the alert still reads as created or reopened. That covers the
+ * 422 retry, and a 2xx whose issue comes back without the owner (GitHub drops
+ * assignees it won't accept from some callers rather than rejecting them).
+ */
+async function writeAssigned({ token, fetchImpl, method, path, body }) {
+  const first = await ghRequest({ token, fetchImpl, method, path, body });
+  if (first.ok) {
+    const assignees = first.data?.assignees;
+    if (body.assignees && Array.isArray(assignees) && !assignees.some((u) => u?.login === ALERT_ASSIGNEE)) {
+      warnUnassigned(first.data?.number, "GitHub accepted the write but did not assign them");
+    }
+    return first;
+  }
+  if (first.status !== 422 || !body.assignees) return first;
+  const { assignees: _unassignable, ...unassigned } = body;
+  const retry = await ghRequest({ token, fetchImpl, method, path, body: unassigned });
+  if (retry.ok) {
+    const reason = typeof first.data?.message === "string" ? `: ${first.data.message}` : "";
+    warnUnassigned(retry.data?.number, `GitHub refused the assignee (422${reason})`);
+  }
+  return retry;
+}
+
+function warnUnassigned(issueNumber, why) {
+  const which = issueNumber ? `#${issueNumber}` : "the alert issue";
+  console.log(`::warning::${which} is not assigned to ${ALERT_ASSIGNEE}: ${why}. It was still filed.`);
+}
+
+/**
+ * Every alert body ends with the same pointer to what an agent may do with it,
+ * so the rule reaches whoever reads the issue itself (a phone notification, a
+ * Routine, a tool that doesn't load AGENTS.md) and no watchdog has to copy it.
+ * The link is absolute because a relative path doesn't resolve in an issue.
+ */
+export function withAgentNote(body, repo) {
+  if (typeof body !== "string") return body;
+  const escalation = `https://github.com/${repo}/blob/main/docs/internal/ops/ALERT_ROUTING.md#escalation`;
+  return (
+    `${body}\n\n---\n_Agents: triage and report on this alert. Don't act on its suggested fix or ` +
+    `close it by hand; its watchdog closes it ([why](${escalation}))._`
+  );
+}
+
+/** The owner added to an issue's current assignees; PATCH replaces the whole set. */
+function withOwnerAssigned(issue) {
+  const current = (issue.assignees ?? []).map((user) => user?.login).filter(Boolean);
+  return [...new Set([...current, ALERT_ASSIGNEE])];
+}
 
 /**
  * Every issue (open or closed) that is this alert, newest first.
@@ -48,7 +120,7 @@ export async function findAlertIssuesDetailed({
   repo,
   fetchImpl,
   title,
-  lookupLabel = DEFAULT_LOOKUP_LABEL,
+  lookupLabel = ALERT_LOOKUP_LABEL,
 }) {
   const found = [];
   let lookupOk = true;
@@ -89,7 +161,7 @@ export async function raiseAlert({
   fetchImpl,
   title,
   labels,
-  lookupLabel = DEFAULT_LOOKUP_LABEL,
+  lookupLabel = ALERT_LOOKUP_LABEL,
   buildIssueBody,
   buildCommentBody,
   // When true, an existing alert's BODY is rewritten to `buildIssueBody()` on
@@ -105,13 +177,14 @@ export async function raiseAlert({
   const target = open ?? existing[0];
 
   if (!target) {
-    const { ok, data } = await ghRequest({
+    const { ok, data } = await writeAssigned({
       token,
       fetchImpl,
       method: "POST",
       path: `/repos/${repo}/issues`,
       body: {
         title,
+        assignees: [ALERT_ASSIGNEE],
         // Labels that do not exist yet are created by this call.
         //
         // `lookupLabel` is forced in rather than trusted from `labels`: this
@@ -122,7 +195,7 @@ export async function raiseAlert({
         // unrepresentable (one hard-coded constant served both roles); keeping
         // it unrepresentable is the point.
         labels: [...new Set([lookupLabel, ...(labels ?? [])])],
-        body: buildIssueBody(null),
+        body: withAgentNote(buildIssueBody(null), repo),
       },
     });
     return ok
@@ -133,7 +206,14 @@ export async function raiseAlert({
   const reopened = target.state !== "open";
   let bodyRefreshFailed = false;
   const patch = {};
-  if (reopened) patch.state = "open";
+  // A reopen is a new incident, so it is assigned like a new alert. A comment
+  // on an alert that is already open leaves its assignees alone: if the owner
+  // dropped the assignment mid-incident, re-adding it on every run would
+  // override that choice.
+  if (reopened) {
+    patch.state = "open";
+    patch.assignees = withOwnerAssigned(target);
+  }
   // The previous body is handed to the builder so a caller can merge state it
   // keeps there (see staging-conformance.mjs's failing-assertion marker)
   // instead of clobbering it with only what is true this run.
@@ -143,9 +223,11 @@ export async function raiseAlert({
   // recovered. Carrying that state into a new incident resurrects a settled
   // gate, and any of those items that cannot be asserted now would keep the
   // new alert open forever.
-  if (refreshBodyOnRaise) patch.body = buildIssueBody(reopened ? null : (target.body ?? null));
+  if (refreshBodyOnRaise) {
+    patch.body = withAgentNote(buildIssueBody(reopened ? null : (target.body ?? null)), repo);
+  }
   if (Object.keys(patch).length > 0) {
-    const { ok: patchOk } = await ghRequest({
+    const { ok: patchOk } = await writeAssigned({
       token,
       fetchImpl,
       method: "PATCH",
@@ -184,13 +266,20 @@ export async function raiseAlert({
 /**
  * Closes every open issue matching this alert. Closing them all (not just the
  * first) is what makes a duplicate created during an API blip self-heal.
+ *
+ * A close that left any match open is "failed", with `closed` listing the ones
+ * that did close. A failed lookup still reads as "none" (see
+ * findAlertIssuesDetailed), so a caller that must not read "I could not look"
+ * as "nothing was open" pre-checks with findAlertIssuesDetailed and treats
+ * `hadOpen && action === "none"` as a failed close. Making resolveAlert report
+ * the failed lookup itself changes every caller at once, which is #2627.
  */
 export async function resolveAlert({
   token,
   repo,
   fetchImpl,
   title,
-  lookupLabel = DEFAULT_LOOKUP_LABEL,
+  lookupLabel = ALERT_LOOKUP_LABEL,
   buildRecoveryBody,
 }) {
   const openIssues = (
@@ -216,9 +305,10 @@ export async function resolveAlert({
     });
     if (ok) closed.push(issue.number);
   }
-  // `action: "closed"` must mean something actually closed. Returning it with
+  // `action: "closed"` must mean every match actually closed. Returning it with
   // an empty list let the caller log a successful closure while a P1 stayed
-  // open on a healthy environment, re-posting "recovered" every run.
-  if (closed.length === 0) return { action: "failed", closed };
+  // open on a healthy environment, re-posting "recovered" every run; returning
+  // it after a partial close did the same for the duplicate left open.
+  if (closed.length < openIssues.length) return { action: "failed", closed };
   return { action: "closed", closed };
 }

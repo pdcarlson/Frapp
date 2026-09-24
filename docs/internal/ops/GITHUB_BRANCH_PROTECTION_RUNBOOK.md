@@ -272,7 +272,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 > `doc-paths`, clear it via **Stale required check reference** under **Troubleshooting** below.
 > What replaced the gates is the standard in
 > [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) plus the docs angle in
-> [`diff-review`](../../../.claude/skills/diff-review/SKILL.md); the reasoning, and what is now
+> [`diff-review`](../../../.claude/skills/diff-review/angles.md); the reasoning, and what is now
 > checked by nothing, are in [`DOCS_CI.md`](../ci-cd/DOCS_CI.md).
 
 **Migration checks (from `.github/workflows/migration-drift-gate.yml`):**
@@ -339,7 +339,7 @@ blocking `main` churn.
 
 There is **no AI-review required check.** Code review is a **repository-managed Git pre-push gate**
 ([`.githooks/pre-push`](../../../.githooks/pre-push), installed by the root `prepare` script; requires
-exact-pushed-commit evidence from `/diff-review` before publication) — the former `claude-review-gate` CI check was removed (2026-06-04). See [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+exact-pushed-commit evidence from `/diff-review` before it publishes unreviewed work) — the former `claude-review-gate` CI check was removed (2026-06-04). See [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 
