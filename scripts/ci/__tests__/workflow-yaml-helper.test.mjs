@@ -500,13 +500,19 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
         "            l1",
         "            l2",
         "          AFTER: z",
+        "      - id: sha",
+        "        name: >-",
+        "          Deploy the commit",
+        "          to Render",
         "",
       ].join("\n"),
     );
     assert.equal(workflowKeys(blocks).get("description"), "one two");
     assert.equal(workflowJobs(blocks)[0].keys.get("if"), "a &&\nb");
-    const [step] = workflowSteps(blocks);
+    const [step, later] = workflowSteps(blocks);
     assert.equal(step.name, "Deploy the commit");
+    // A block `name:` after the step's first key, too.
+    assert.equal(later.name, "Deploy the commit to Render");
     assert.deepEqual(Object.fromEntries(step.stepEnv), { FOLDED: "x y", LITERAL: "l1\nl2", AFTER: "z" });
   });
 

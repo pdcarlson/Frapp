@@ -192,9 +192,10 @@ function keyOf(match) {
  * The flat `KEY: value` map whose `env:` header is at `lines[headerIndex]`.
  *
  * Reads only keys at the mapping's own child indent, so a nested or multi-line
- * value cannot contribute phantom keys. Values come back as `scalarValue` reads
- * them, unquoted and decoded: `DEPLOY_PHASE: build` and `DEPLOY_PHASE: "build"`
- * are the same instruction to Actions and must be the same here. A value that
+ * value cannot contribute phantom keys. Values come back as `scalarAt` reads
+ * them, unquoted and decoded, and a block scalar as its content:
+ * `DEPLOY_PHASE: build` and `DEPLOY_PHASE: "build"` are the same instruction to
+ * Actions and must be the same here. A value that
  * starts on the line below its key reads as empty, and a plain one continued on
  * deeper lines as its first line (the header's known gaps, #2639).
  */
