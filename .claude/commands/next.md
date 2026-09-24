@@ -78,8 +78,8 @@ brief or `depth:` field means `deep`, the widest verification and review you can
 each step's floor suffices. `model:` and `ultracode:` are spin-up hints for whoever launches
 sessions, which `--plan-only` carries into its prompts.
 
-**Evidence of live work** is a live claim comment, a branch named in one, or a linked PR
-(`search_pull_requests` for the issue number / `Fixes #N`), never assignees or labels: migrated
+**Evidence of live work** is a live claim comment, a branch named in one, or an open PR that holds
+the work (§0.2 condition 4), never assignees or labels: migrated
 issues carry stale assignees, and an `in-progress` label can outlive its session.
 
 **Label writes replace the whole set.** `issue_write`'s `labels` field overwrites the issue's labels,
@@ -93,7 +93,7 @@ back the full union.
 | `CLAIM_ID` | 8 hex chars (`openssl rand -hex 4`), generated **once** per run, reused in every comment you post |
 | `MAX_BATCH` | **3 elective members** per claimed unit, combined estimate **≤ 8**; any single issue ≥ 5 runs solo. Inseparable parent+sub-issue units are exempt from the member cap (not the ceiling); record-keeping claims sit outside both |
 | `LEASE` | **4 hours**, renewed by every heartbeat |
-| `ORPHAN_AGE` | **72 hours** — an `in-progress` issue with *no* claim comment, no linked PR and no activity this long is abandoned |
+| `ORPHAN_AGE` | **72 hours** — an `in-progress` issue with *no* claim comment, no PR that §0.2 condition 4 disqualifies on, and no activity this long is abandoned |
 | Sentinels | `AGENT-CLAIM` `AGENT-RECLAIM` `AGENT-HEARTBEAT` `AGENT-RELEASE` `AGENT-HANDOFF` `AGENT-STALE-FLAG` — always the comment's first line |
 
 A claim is **live** when its `claim_id` has no later `AGENT-RELEASE` carrying the same id and its
@@ -160,11 +160,21 @@ when all hold:
 2. No live claim comment (`issue_read get_comments`; skip the read for issues not updated within
    `LEASE`).
 3. No open blocker surviving §1.1 — a `Blocked by #N` body line whose #N is still open.
-4. No linked PR in any state other than closed-unmerged (`search_pull_requests` for the issue
-   number; a PR counts only when it names the issue number). An open PR means the work is in flight:
-   note the drift, suggest `in-review`, skip. A merged PR on a still-open issue means it already
-   shipped: report it, change nothing. A closed, unmerged PR doesn't disqualify: claim it and record
-   `Prior art: PR #NNN (closed, unmerged)` in the claim comment.
+4. No PR that holds or already shipped the work (`search_pull_requests` for the issue number,
+   plus `issue_read get`'s `closed_by_pull_requests`). Only two kinds of PR disqualify:
+   - **An open PR that closes the issue or says `Part of #N`:** the work is in flight. Skip it, and
+     if a closing PR's issue lacks `in-review`, note the drift and suggest the label.
+   - **A merged PR that closes the issue** (it appears in `closed_by_pull_requests`, or its body
+     uses a closing keyword for it) **and landed on `main`:** it already shipped. Report it and
+     change nothing. A PR merged into another branch shows MERGED but shipped nothing
+     ([`pr-babysitting.md`](../../docs/internal/ci-cd/pr-babysitting.md)), so report that one as
+     drift instead.
+
+   Any other PR doesn't disqualify. That covers a merged `Part of #N` slice, a PR that only
+   mentions the issue (as a PR naming its filed follow-ups does), and a closed, unmerged PR.
+   Excluding them would take every parent with a shipped slice, and every follow-up a PR named,
+   out of the backlog for good (#2663). Claim the issue and record the PR in the claim comment:
+   `Prior art: PR #NNN (merged slice | mention | closed, unmerged)`.
 5. No human-action hold: no `[human]` tag anywhere in the title's leading run of `[...]` tags,
    matched case-insensitively (`[pr-followup][human] …` is held), and no body opening
    `**Human action required — hold in triage`. No agent session can do these. The forms are defined
@@ -178,11 +188,31 @@ shortlist as sizing context; neither is a filter.
 priority label (`P1`→`P4`, no priority label last), tie-broken by lower issue number. Never skip an
 issue for being unestimated, small, or large; prefer the most valuable viable work, including large,
 high-impact issues. The order is deterministic so concurrent agents agree on it and the claim
-resolves collisions. To keep sessions from colliding in lockstep, start at the candidate whose index
-is the first hex digit of your `CLAIM_ID` modulo 3 (0, 1, or 2) and walk from there, wrapping to the
-top.
+resolves collisions.
 
-**0.4 — Auto-pick.** Take the candidate your walk starts at and go. Then scan the remaining candidates for members that
+**Walk your lane, not the list.** Every session agrees on the order, so sessions must not walk it in
+step.
+- **Lanes.** There are 4 lanes, keyed on the **issue number** modulo 4, never on its index in your
+  list. Each session builds its candidate set at a slightly different moment, and one claim landing
+  in between shifts every index, which would put two lanes on the same issues.
+- **Your lane** is `CLAIM_ID`'s first two hex digits, read as one byte, modulo 4. Walk your lane's
+  candidates in rank order.
+- **Switching.** When you lose a race, or your lane is empty or runs dry, move to the lane given by
+  the next two hex digits (digits 3–4, then 5–6, then 7–8). Walk it from its top, skipping anything
+  already tried.
+- **Fallback.** Once all four bytes are spent, take whatever remains in rank order.
+
+This lowers collisions; it doesn't prevent them. Two of four concurrent sessions share a lane about
+90% of the time, and they collide on that lane's top candidate. But only the loser moves, and it
+moves to a freshly drawn lane, so a pair that collides once doesn't walk on together and collide
+again.
+
+The rule this replaces started everyone at `first hex digit mod 3` and then walked the same list.
+Six of the sixteen digits land in one bucket, and a shared start meant a shared walk: sessions that
+collided once stayed adjacent and collided again on the next viable candidate. That happened twice
+in one run on 2026-08-14 (#892), and four sessions claimed #2579 within five seconds on 2026-09-24.
+
+**0.4 — Auto-pick.** Take the first candidate of your lane walk and go. Then scan the remaining candidates for members that
 batch with it under the invariant's test, within the caps, and compose the batch now. A batch is
 fixed at claim time and only shrinks (lost races, per-member vetoes); it grows only through the
 record-keeping claim. Don't ask which issue to work: the ranking is the answer. Ask only when the
@@ -192,13 +222,14 @@ and the runners-up without waiting for permission.
 
 **0.5 — Claim it.** GitHub has no compare-and-swap (`issue_write` is last-write-wins), so the claim
 is the comment, the only append-only, server-ordered record, and the `in-progress` label is a
-projection of it. For each candidate in order:
+projection of it. For each candidate in lane-walk order (§0.3):
 
 1. `issue_read get_comments`; skip it if a live claim exists.
 2. Post the claim comment (`add_issue_comment` with `AGENT-CLAIM`, or `AGENT-RECLAIM` for a §0.7
    takeover).
 3. Then add the `in-progress` label (read-modify-write the full set).
-4. Verify (§0.6). Lost: yield and take the next candidate.
+4. Verify (§0.6). Lost a solo pick: yield, switch lanes per §0.3, and take that lane's next untried
+   candidate. A lost batch member follows the batch paragraph below instead.
 
 Comment before label, always: if the session dies between the two writes, the issue keeps a live
 claim that the §0.2 filter honours. Walk until you win or the list is exhausted (cap 8). If every
@@ -206,7 +237,7 @@ attempt lost to a live claim, report "backlog saturated with active agents"; if 
 candidates, say that instead. They are different problems with different fixes.
 
 A batch claims sequentially in global rank order: the §0.3 order every session agrees on, not your
-staggered walk, which only chose the first member. Total-order acquisition keeps two batching
+lane walk, which only chose the first member. Total-order acquisition keeps two batching
 sessions from deadlocking over opposite ends of the same set. Post every member's claim before
 implementing anything; both §0.6 verifies cover every member. A lost race yields that member only:
 release it `lost-race` with labels untouched, shrink the batch, continue. Never abandon won members
@@ -233,7 +264,7 @@ Then:
 Yield only to a strictly earlier live claim; "yield whenever another claim exists" deadlocks, since
 both agents see both comments and both back off. On a loss, post the `lost-race` release, leave the
 labels alone (the winner wants `in-progress` on), skip that issue for this run, and return to §0.5
-with the next candidate.
+for the next candidate of your lane walk.
 
 **0.7 — Sweep leaked claims (after your own claim is verified).** Over `in-progress` issues only;
 `in-review` is never swept.
@@ -246,12 +277,13 @@ with the next candidate.
   alert for an `incident`, a routine's state store for `routine-state`. A dead `Batch:` claim that
   lists one can't be taken over all-or-nothing (below): report the batch and its other members,
   which stay `in-progress` until the owner releases them.
-- Expired lease, no linked PR in any state but closed-unmerged, and no branch pushed within `LEASE`
+- Expired lease, no PR that §0.2 condition 4 disqualifies on, and no branch pushed within `LEASE`
   (`git ls-remote --heads origin`; a push counts as a heartbeat): reclaimable. It enters §0.3 at the
   top and must still clear §0.2 conditions 3, 4, and 5, so a dead session's claim can't launder a
   `[human]` item past the hold. Take it with `AGENT-RECLAIM`, then wait a full read cycle and re-read
   before mutating anything.
-- No claim comment at all, no linked PR, `updated_at` older than `ORPHAN_AGE`: post
+- No claim comment at all, no PR that §0.2 condition 4 disqualifies on, `updated_at` older than
+  `ORPHAN_AGE`: post
   `AGENT-STALE-FLAG` and remove the `in-progress` label (back to Backlog). Don't pick it up this run.
 - Batch reclaim is all-or-nothing. A claim carrying a `Batch:` line marks a shared branch. To take
   over any member, post `AGENT-RECLAIM` on every listed member (global rank order, one fresh claim
@@ -279,7 +311,8 @@ hand them to [`claim-verifier`](../agents/claim-verifier.md) agents in batches o
 still blocks this issue", one `{blockerId, resolved, evidence, confidence}` per blocker. Otherwise run the
 same checks inline and stop at the first confirmed live blocker. A blocker is resolved only
 on evidence (a REFUTED verdict); PLAUSIBLE is still blocked. Still blocked: release
-`blocked-discovered`, remove `in-progress` (back to Backlog), take the next rank.
+`blocked-discovered`, remove `in-progress` (back to Backlog), and take the next candidate of your
+lane walk (§0.3).
 
 **1.2 — Spec-vs-code verification.** The most expensive autonomous failure is building something
 already built, or building against a spec that no longer describes the code. Three checks, all
@@ -418,9 +451,20 @@ when `sub_issues_summary` shows `completed >= total`, or when every open child i
 PR. Gate on `has_children`: `sub_issues_summary` is returned only when children exist, so a
 `total > completed` check on a missing summary fails open.
 
-Move every member to In Review: swap `in-progress` for `in-review` (read-modify-write) and comment
-the PR link on each, naming any step you reduced or skipped. Don't post `AGENT-RELEASE`; the open PR is the marker now. Babysit the PR to
-merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR lifecycle. On merge, GitHub closes
+Move every `Fixes` member to In Review: swap `in-progress` for `in-review` (read-modify-write) and
+comment the PR link on each, naming any step you reduced or skipped. Don't post `AGENT-RELEASE` on
+them; the open PR is the marker now.
+
+Release every `Part of` member now, at PR open, not after the merge:
+- Remove `in-progress`, add no `in-review`, and post `AGENT-RELEASE` `slice-in-pr` naming the PR and
+  the slices left.
+- While the PR is open, §0.2 condition 4 keeps other sessions off the issue. Once it merges, the
+  same condition lets the next slice be claimed. Nothing waits on a session being alive at merge.
+- Waiting doesn't work. Sessions stop at merge-ready and Paul merges later, so a post-merge step
+  runs in no session, and nothing sweeps `in-review`. A `Part of` parent left `in-review`, or left
+  under a claim that only a prose "back to Backlog" note ended, drops out of the backlog (#2663).
+
+Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR lifecycle. On merge, GitHub closes
 each `Fixes`-named issue as `completed`; where it didn't, close it yourself (`issue_write` state
 closed + `completed`) and remove any leftover `in-review` label. The issue's state is the status;
 there are no manual board moves.
@@ -463,7 +507,8 @@ report: each PR link, each held issue's exit, anything reduced or skipped, and e
 for Paul.
 
 Act before you respond. Releasing an issue that has committed work is worse than leaving it claimed,
-because the next agent restarts from zero on top of it: work exists → hand off, never release. Under
+because the next agent restarts from zero on top of it: work exists → hand off, never release. (A
+slice in an open `Part of` PR isn't left behind; it is released `slice-in-pr`.) Under
 a batch every row applies per member; a release or handoff on one member never speaks for another,
 and the run ends only when every still-held member has its exit action.
 
@@ -480,11 +525,12 @@ and the run ends only when every still-held member has its exit action.
 | Batch member superseded by a live `AGENT-RECLAIM` | Excise per §0.5's coherence rule — its commits stay out of your push; if the batch no longer coheres, release the rest per their rows |
 | Context nearly exhausted, work exists | `AGENT-HANDOFF` `session-ending`, labels untouched, claim left live |
 | GitHub MCP unavailable | Stop and report. No claim, no work, no fallback tracker |
-| PR opened | Neither — **every member** → `in-review`, babysit to merge; the run may then loop or pipeline per Phase 4 |
-| Session ending, PR open **and** pipelined unit claimed | PR'd members stay `in-review`; each unshipped member exits per its own row (work exists → handoff) |
+| PR opened | Each `Fixes` member → `in-review`, no release; babysit to merge. The run may then loop or pipeline per Phase 4 |
+| PR opened, member named `Part of` | `AGENT-RELEASE` `slice-in-pr`, remove `in-progress`, add no `in-review`; the open PR holds it via §0.2 condition 4 |
+| Session ending, PR open **and** pipelined unit claimed | PR'd `Fixes` members stay `in-review` (`Part of` members were released at PR open); each unshipped member exits per its own row (work exists → handoff) |
 
 `Reason` is a closed set: `plan-rejected` · `user-aborted` · `lost-race` · `blocked-discovered` ·
-`out-of-scope` · `superseded` · `session-ending`.
+`out-of-scope` · `superseded` · `session-ending` · `slice-in-pr`.
 
 ## Comment templates
 
@@ -501,8 +547,8 @@ Post literally, substituting bracketed values; the sentinel is always the first 
 **Prior art:** none
 **Heartbeat:** 2026-08-03T14:22:07Z — lease 4h, renewed by AGENT-HEARTBEAT comments
 
-_Other agents: taken while this lease is live. If it has expired AND there is no linked
-PR AND no branch pushed within the lease, post an AGENT-RECLAIM before starting._
+_Other agents: taken while this lease is live. If it has expired AND no open
+PR holds the work AND no branch was pushed within the lease, post an AGENT-RECLAIM before starting._
 ```
 
 **AGENT-HEARTBEAT** — the lease renewal; the newest one with this claim id is the lease clock.
@@ -511,7 +557,9 @@ PR AND no branch pushed within the lease, post an AGENT-RECLAIM before starting.
 🤖 AGENT-HEARTBEAT `claim:a3f19c2e` — still working #100. Branch `claude/fix-signup-redirect` @ `9f2a1c0`.
 ```
 
-**AGENT-RELEASE** — `Labels:` reads `NOT CHANGED — claim <id> holds it` for `lost-race`.
+**AGENT-RELEASE** — `Labels:` reads `NOT CHANGED — claim <id> holds it` for `lost-race`. For
+`slice-in-pr`, the `Labels:` line reads `` `in-progress` removed; PR #NNN holds this slice `` and the
+`Work left behind:` line reads `PR #NNN (Part of) — remaining: <slices>`.
 
 ```text
 🤖 AGENT-RELEASE `claim:a3f19c2e`
@@ -530,7 +578,7 @@ PR AND no branch pushed within the lease, post an AGENT-RECLAIM before starting.
 🤖 AGENT-RECLAIM `claim:c1d90a55`
 
 **Reclaiming from:** claim `a3f19c2e`, last heartbeat 2026-06-11T09:14Z — or: no AGENT-CLAIM found
-**Evidence:** lease expired; no linked PR; no branch pushed; no activity since 2026-06-11
+**Evidence:** lease expired; no open PR holds the work; no branch pushed; no activity since 2026-06-11
 **Batch:** taking the whole batch #100 · #101 · #102 per §0.7 (this comment posted on every member) — omit when solo
 **Continuing from:** nothing on disk — starting fresh — or: branch `claude/<slug>` @ `9f2a1c0`
 
@@ -556,7 +604,7 @@ nothing but labels changed.
 ```text
 🤖 AGENT-STALE-FLAG
 
-**`in-progress`** since 2026-06-11 with no agent claim, no linked PR, and no activity for 53
+**`in-progress`** since 2026-06-11 with no agent claim, no open PR, and no activity for 53
 days. Under the /next claim protocol that is an abandoned claim, so I am removing the label and
 returning it to the **Backlog** to be picked up normally.
 
