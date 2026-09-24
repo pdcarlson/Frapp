@@ -106,6 +106,7 @@ import {
 } from "./check-migration-drift-gate.mjs";
 import { ENVIRONMENTS, loadEnvironments, supabaseAccessTokenFor } from "./lib/environments.mjs";
 import { openSnapshot, SNAPSHOT_WORKFLOW } from "./lib/migration-snapshot.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
@@ -680,8 +681,7 @@ function fetchFromFile(path) {
   });
 }
 
-const isDirectRun = process.argv[1] && process.argv[1].endsWith("check-migration-order.mjs");
-if (isDirectRun) {
+if (isInvokedDirectly(import.meta.url)) {
   const appliedFrom = getArg("--applied-from");
   if (appliedFrom && getArg("--snapshot")) {
     // Same refusal as check-migration-replay.mjs: the snapshot would silently

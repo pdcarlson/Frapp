@@ -79,6 +79,7 @@ import { join } from "node:path";
 import { fetchAppliedMigrations, readLocalMigrations } from "./check-migration-drift.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { openSnapshot } from "./lib/migration-snapshot.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 // Files are moved here, not copied and deleted: a rename inside one filesystem
@@ -582,7 +583,6 @@ export async function runCli({ argv = process.argv, env = process.env, runGate =
   });
 }
 
-const isDirectRun = process.argv[1] && process.argv[1].endsWith("check-migration-replay.mjs");
-if (isDirectRun) {
+if (isInvokedDirectly(import.meta.url)) {
   process.exit(await runCli());
 }

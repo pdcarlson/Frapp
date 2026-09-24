@@ -16,7 +16,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 // Resolved from this file, not the cwd — the same pattern scan-secrets.mjs uses,
 // so the check works from a subdirectory instead of reporting a missing workflow.
@@ -111,5 +112,4 @@ function main() {
   return run.status ?? 1;
 }
 
-const isEntry = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isEntry) process.exit(main());
+if (isInvokedDirectly(import.meta.url)) process.exit(main());

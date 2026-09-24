@@ -48,6 +48,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { getEnvironment, SUPABASE_PROJECT_REF_PATTERN } from "./ci/lib/environments.mjs";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
@@ -361,27 +362,15 @@ export function runMigrationCli({
 // Only when executed directly, so tests can import the pure helpers without
 // running a migration as a side effect of the import.
 //
-// The suffix form, NOT `import.meta.url === \`file://${process.argv[1]}\``,
-// which several sibling scripts use. That comparison is string equality between
-// two things that are not always spelled the same:
-//
-//   * a repo path containing a space gives `file:///…/my%20repo/x.mjs` on the
-//     left and `/…/my repo/x.mjs` on the right — percent-encoded vs not;
-//   * a checkout reached through a symlink gives a realpath-resolved
-//     `import.meta.url` and an unresolved `argv[1]`.
-//
-// Either way the guard is false, this file runs nothing, and node exits 0. For
-// a script whose whole job is applying migrations that is the worst available
-// failure: the workflow step records `success`, the run summary says the
-// migrations applied, and Render then deploys new code against the old schema —
-// the precise "reports migrations applied having applied zero" outcome the
-// working-tree fence in deploy-production.yml exists to prevent, arriving by a
-// different door. The documented laptop recovery would no-op the same way.
-//
-// A false POSITIVE here is harmless by comparison (a file named
-// `…run-migration.mjs` importing this one, which does not exist), so the guard
-// is deliberately the loose one.
-const invokedDirectly = process.argv[1] && process.argv[1].endsWith("run-migration.mjs");
-if (invokedDirectly) {
+// A guard that is falsely false here is the worst available failure: this file
+// runs nothing and exits 0, the workflow step records `success`, the run
+// summary says the migrations applied, and Render then deploys new code against
+// the old schema — the precise "reports migrations applied having applied zero"
+// outcome the working-tree fence in deploy-production.yml exists to prevent,
+// arriving by a different door. The documented laptop recovery would no-op the
+// same way. isInvokedDirectly's JSDoc says why its body can't be falsely false
+// on a path with a space or through a symlink, and why its fallback errs
+// toward running.
+if (isInvokedDirectly(import.meta.url)) {
   process.exit(runMigrationCli());
 }

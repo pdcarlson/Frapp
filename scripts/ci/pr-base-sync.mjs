@@ -56,6 +56,7 @@ import {
   resolveAlert as resolveAlertIssue,
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 // One live comment per PR. No workflow-name suffix (unlike ci-wake's per-workflow
 // markers): this sweep owns exactly one verdict per PR and each new base move
@@ -690,8 +691,7 @@ async function main() {
   await processBaseMove({ token, updateToken, repo, baseRef, baseSha });
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);

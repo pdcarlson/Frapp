@@ -119,6 +119,7 @@ import {
 import { requireEnv, SECRETS_RUNBOOK } from "./lib/env.mjs";
 import { DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_MS } from "./lib/http.mjs";
 import { openSnapshot } from "./lib/migration-snapshot.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const DEFAULT_MAIN_REF = "origin/main";
 export const DEFAULT_GRACE_MINUTES = 30;
@@ -662,8 +663,7 @@ async function main() {
 
 // Only run when executed directly, so tests can import the pure helpers.
 // Same guard form as check-migration-drift.mjs — keep them identical.
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((err) => {
     console.error(`::error::Migration drift gate crashed: ${err.stack ?? err.message}`);
     process.exit(1);
