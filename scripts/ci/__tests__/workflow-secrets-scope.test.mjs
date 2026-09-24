@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 // deployment-branch policy admits `main` only. GitHub matches that policy
 // against the run's ref and releases the environment's secrets only to a job
 // that passed it. So the secrets belong there, and every consumer names one of
-// those environments. The owner's #2583 set the policies and moved the secrets
-// (no repository secret remains since 2026-09-24).
+// those environments. The owner's #2583 set the policies and moved the secrets;
+// the live state is in AGENT_INFRA.md § No repository secrets.
 //
 // This file cannot check the live settings (the policies, and whether the
 // repository-level copies are gone). They are an owner step, and the doc

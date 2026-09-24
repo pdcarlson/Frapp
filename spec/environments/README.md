@@ -378,8 +378,8 @@ Two GitHub secrets bootstrap the Infisical connection:
 Other GitHub secrets (the provider API keys, the release PAT, the base-sync App pair) sit beside
 them. Every GitHub secret belongs to an **environment** restricted to `main`, never to repository scope. A
 repository secret is readable from any branch, because a branch's own workflow definitions run on
-its pushes and pull requests (#2518). Nothing a pull request triggers reads a secret, and since
-#2583 no repository secret exists. Roster, environments and current state:
+its pushes and pull requests (#2518). Nothing a pull request triggers reads a secret. Roster,
+environments and current state:
 `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.
 
 ### Local Development
