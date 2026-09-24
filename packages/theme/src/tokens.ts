@@ -232,10 +232,4 @@ export const frappDarkTokens: FrappTokens = {
   ...SHARED_TOKENS,
 };
 
-export type FrappColorMode = "light" | "dark";
-
-export function getFrappTokens(mode: FrappColorMode): FrappTokens {
-  return mode === "dark" ? frappDarkTokens : frappLightTokens;
-}
-
 export const frappTokens = frappLightTokens;
