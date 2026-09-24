@@ -198,8 +198,9 @@ function blockOpenBefore(source, index) {
  * it sits (a string, a regex, a `//` comment, JSX text), and reports when that
  * opener's first `*\/` comes after the path or never. It fails closed, so when
  * the pin fails on copy that reads right, look at the nearest `/*` above it.
- * The case of `Settings`, `Apps` and `Location` may vary, and so may quotes
- * around the name, escaped or not; the name itself may not.
+ * The first letter of `Settings`, `Apps` and `Location` may be either case,
+ * and quotes around the name, escaped or not, are optional; the name itself
+ * must match exactly.
  */
 export function settingsPathProblems(files, expoName) {
   const problems = [];
