@@ -205,8 +205,8 @@ picker is depended on **only while a non-spec source file imports one**, which i
 check that would have caught #1045 shipping the dependency a month ahead of any
 surface. `scripts/ci/__tests__/frapp-mobile-permissions.test.mjs` (then
 `signet-mobile-permissions.test.mjs`; ADR-25 renamed it with the copy it locks) raised its
-prompt floor from two to three with this slice, which is exactly what that file's WHY block
-said the raise was for.
+prompt floor from two to three with this slice, which is exactly what that file's floor
+block ("THE FLOOR WENT THREE -> TWO -> THREE AGAIN") said the raise was for.
 
 **`app.json` also gained `ios.privacyManifests`** (#2294, same PR as the removal above) —
 the iOS privacy manifest, without which App Store Connect returns an automated

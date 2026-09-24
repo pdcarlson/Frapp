@@ -74,10 +74,6 @@ function readRepo(rel) {
   return readFileSync(join(REPO_ROOT, rel), "utf8");
 }
 
-function literal(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function walkMobile(dir = MOBILE_ROOT) {
   const out = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
