@@ -95,21 +95,27 @@ function walkMobile(dir = MOBILE_ROOT, { specs = false } = {}) {
  * so the `/*` in `"image/*"` or `/\/*$/`, the `//` in `"PRODID:-//…"` or
  * `/^https?:\/\//`, and a backtick in `/`/` all stay code.
  *
- * A `//` or `/*` also opens a comment only where a comment can start in this
- * code: at the start of the file, or after whitespace, a bracket, `,`, `;` or
- * `=`. So even when string tracking goes wrong, `https://`, `image/*` and
- * `**\/*` can't open one: a miscounted quote can't start a comment that runs
- * over the lines below it.
+ * Comment openers are also judged by where they sit, so that no misread can
+ * hide more than the rest of one line:
+ * - A `//` opens a comment anywhere except right after `:`, so a URL in JSX
+ *   text stays code. It ends at the line end whatever happens.
+ * - A `/*` opens a comment only where the codebase writes one: first on its
+ *   line (JSDoc, `/* … *\/` blocks), right after `{` (the JSX `{/* … *\/}`
+ *   form), or closed by `*\/` later on the same line. Anywhere else (`image/*`,
+ *   `**\/*`, `and/or /* x` in JSX text, text a misread turned into code) it
+ *   is read as code, so it can't open a comment that runs over the lines below.
  *
- * It is a heuristic, not a parser. What it still gets wrong:
- * - A `//` or `/*` after a space in unquoted JSX text (`and/or // this`) reads
- *   as a comment opener.
+ * It is a heuristic, not a parser. What it still gets wrong, each costing at
+ * most the rest of one line:
+ * - A `//` in unquoted JSX text (`and//or`) reads as a comment.
  * - Whether a `/` starts a regex or divides is decided by the character
  *   before it, which an unusual expression can defeat.
  * - A raw `'` or `"` in JSX text would miscount strings. Lint keeps them out
  *   (react/no-unescaped-entities, and `lint` runs with --max-warnings 0).
  * - A stray backtick in JSX text, which that rule allows, flips template
- *   tracking, so a later template's ` //` reads as a comment to its line end.
+ *   tracking, so a later template's `//` reads as a comment.
+ * And one that fails closed: a block comment that opens after code and runs
+ * over several lines is read as code, so a design-system note in it reports.
  * Checked 2026-09-24 against the TypeScript compiler's comment ranges over
  * every file this lock walks in apps/mobile: identical at every letter.
  */
@@ -144,11 +150,11 @@ export function commentRanges(rel, source) {
         state = "code";
         i += 1;
       }
-    } else if (char === "/" && next === "/" && COMMENT_AFTER.test(source[i - 1] ?? " ")) {
+    } else if (char === "/" && next === "/" && source[i - 1] !== ":") {
       state = "line";
       start = i;
       i += 1;
-    } else if (char === "/" && next === "*" && COMMENT_AFTER.test(source[i - 1] ?? " ")) {
+    } else if (char === "/" && next === "*" && opensBlock(source, i)) {
       state = "block";
       start = i;
       i += 1;
@@ -171,8 +177,14 @@ export function commentRanges(rel, source) {
   return ranges;
 }
 
-/** What may sit right before a comment opener. Not `:` (a URL), a word character or `*` (a glob). */
-const COMMENT_AFTER = /[\s{}()[\],;=]/;
+/** Whether the `/*` at `at` opens a block comment (see commentRanges). */
+function opensBlock(source, at) {
+  const lineStart = source.lastIndexOf("\n", at - 1) + 1;
+  if (/^\s*$/.test(source.slice(lineStart, at)) || source[at - 1] === "{") return true;
+  const lineEnd = source.indexOf("\n", at);
+  const rest = source.slice(at + 2, lineEnd === -1 ? source.length : lineEnd);
+  return rest.includes("*/") && !/[\w*/.\\]/.test(source[at - 1]);
+}
 
 // `<` is left out on purpose: `</Text>` is a closing tag, not a regex.
 const REGEX_AFTER = /(?:^|[(,=:[!&|?{};+\-*%>~^]|\b(?:return|typeof|case|do|else|in|of|new|delete|void|throw|yield|await))\s*$/;
@@ -438,6 +450,31 @@ test("a miscounted quote can't open a comment over the lines below", () => {
     "must keep at least 2 Settings → Frapp paths",
     "a.tsx:3 names Settings → Signet, not Frapp",
   ]);
+});
+
+test("a misread `/*` can't hide the lines below it", () => {
+  const files = [
+    { rel: "a.tsx", source: "<Text>\n  Files /* here\n  Return to Signet.\n</Text>\n" },
+    { rel: "b.tsx", source: "<Text>Use and/or /* here</Text>\n<Text>Settings → Signet</Text>\n/** doc */\n" },
+    { rel: "c.tsx", source: "<Text>{a}/*{b}</Text>\n<Text>Signet</Text>\n{/* x */}\n" },
+    {
+      rel: "d.tsx",
+      source: "<Text>Press ` then</Text>\nconst g = `Files /* all`;\n<Text>Return to Signet.</Text>\n/** doc */\n",
+    },
+    { rel: "e.ts", source: 'const accept = x//TODO: restore /* glob\nexport const r = "Signet";\n/** doc */\n' },
+    { rel: "f.ts", source: 'const n = x//count of `items\nconst label = `${n} // total`; const t = "Signet";\n' },
+  ];
+  assert.deepEqual(signetCopyProblems(files), ["a.tsx:3", "b.tsx:2", "c.tsx:2", "d.tsx:3", "e.ts:2", "f.ts:2"]);
+});
+
+test("comments open where the codebase writes them", () => {
+  const files = [
+    { rel: "a.ts", source: "const a = 'x'// Signet gold\n" },
+    { rel: "b.ts", source: "const c = b ?/* Signet */ c : d;\n" },
+    { rel: "c.ts", source: "foo(); /* Signet gold */ bar();\n" },
+    { rel: "d.ts", source: "x;//Signet gold\n" },
+  ];
+  assert.deepEqual(signetCopyProblems(files), []);
 });
 
 test("a multi-line JSX or block comment stays a comment on every line", () => {
