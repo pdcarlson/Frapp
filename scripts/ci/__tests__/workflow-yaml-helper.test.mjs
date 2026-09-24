@@ -47,7 +47,8 @@ jobs:
     apostrophe: { note: don't, issues: write }
     closer: { x: a), y: z }
     anchored: { contents: &r "read]", issues: write }
-    tagged: { a: !!str "x, y", b: c }
+    tagged: { contents: !!str "read]", issues: write }
+    verbatim: { contents: !<tag:yaml.org,2002:str> "read]", issues: write }
     escaped: { a: "x\\", y", b: z }
     doubled: { a: 'it''s, ok', b: z }
     steps:
@@ -138,7 +139,8 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     // `issues: write` here is a scope a permissions guard has to see.
     assert.deepEqual([...edges.keys.get("anchored").keys()], ["contents", "issues"]);
     assert.equal(read("anchored").issues, "write");
-    assert.equal(read("tagged").b, "c");
+    assert.deepEqual([...edges.keys.get("tagged").keys()], ["contents", "issues"]);
+    assert.deepEqual([...edges.keys.get("verbatim").keys()], ["contents", "issues"]);
     // The escaped quote doesn't end the scalar, so its comma isn't a split.
     // Values keep their escapes: the helper strips the quotes, not the escapes.
     assert.deepEqual(read("escaped"), { a: 'x\\", y', b: "z" });
@@ -184,6 +186,23 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
       writeFileSync(variant, WORKFLOW.replace(/^jobs:$/m, header));
       assert.ok(workflowJobs(variant).length > 0, `${header}: no jobs`);
       assert.ok(workflowSteps(variant).length > 0, `${header}: no steps`);
+    }
+  });
+
+  it("refuses a flow mapping it can't read with confidence, rather than guess", () => {
+    // Each is valid YAML (or, for the last two, not) that this reader doesn't
+    // model. A silent misread could hide a scope; a thrown error can't.
+    for (const flow of [
+      '{ ? "contents]" : read, issues: write }',
+      "{ contents, issues: write }",
+      '{ a: "unclosed, b: c }',
+      "{ a: x], b: c }",
+      // Re-balanced by a later opener: only the in-loop check sees it.
+      "{ a: x], b: [c }",
+    ]) {
+      const variant = join(dir, "unreadable.yml");
+      writeFileSync(variant, `name: X\njobs:\n  j:\n    permissions: ${flow}\n    steps:\n      - run: echo\n`);
+      assert.throws(() => workflowJobs(variant), /can't read the flow collection/, flow);
     }
   });
 

@@ -32,7 +32,9 @@
 // The shapes read here are the ones GitHub's workflow schema fixes: `env` is a
 // flat map of scalars, and steps are a list of mappings under `steps:`. That
 // makes an indentation reader sufficient; it is not a general YAML parser and
-// should not be used as one.
+// should not be used as one. Where it reads a flow collection (`{ a: b }`) it
+// can't split with confidence, it throws instead of guessing, because a guard
+// over a misread value passes. Known gaps: #2629.
 
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -349,12 +351,29 @@ function opensMapping(raw) {
 }
 
 /**
+ * Thrown for a flow collection this reader can't split with confidence. A
+ * guard over a misread value fails open (a write scope it never sees), so
+ * refusing is the safe answer: the test errors and names the value.
+ */
+function unreadableFlow(body, why) {
+  return new Error(
+    `workflow-yaml: can't read the flow collection { ${body.trim()} } (${why}). ` +
+      "This reader handles a subset of YAML; write the mapping in block form, or extend " +
+      "scripts/ci/__tests__/helpers/workflow-yaml.mjs (see #2629).",
+  );
+}
+
+/**
  * A flow collection's body split on its top-level commas: not a comma inside a
  * quoted scalar or a nested collection (`{ a: [x, y], b: "c, d" }` is two
  * entries). Like YAML, a quote opens a quoted scalar only where a scalar
- * starts (after `{`, `[`, `,` or `:`, and after a node property such as an
- * `&anchor` or a `!!tag`), so the apostrophe in `note: don't` is plain text; `\"` inside double quotes and `''` inside single quotes are
+ * starts (after `{`, `[`, `,` or `:`, or after a node property: an `&anchor`,
+ * a `!tag` or a verbatim `!<tag>`), so the apostrophe in `note: don't` is
+ * plain text. `\"` inside double quotes and `''` inside single quotes are
  * escapes, not the end. Parentheses aren't flow indicators and aren't tracked.
+ *
+ * It is not a parser. Where the brackets or quotes don't balance, which on
+ * valid YAML means a shape it doesn't model, it throws rather than guess.
  */
 function splitFlow(body) {
   const parts = [];
@@ -376,8 +395,15 @@ function splitFlow(body) {
     }
     if ((ch === "&" || ch === "!") && scalarStart) {
       // A node property: skip the token and stay at the scalar's start, so a
-      // quoted value after it (`&r "read]"`) is still read as quoted.
-      while (i + 1 < body.length && !/[\s,{}[\]]/.test(body[i + 1])) i += 1;
+      // quoted value after it (`&r "read]"`) is still read as quoted. A
+      // verbatim tag runs to its `>` and may contain commas.
+      if (ch === "!" && body[i + 1] === "<") {
+        const close = body.indexOf(">", i);
+        if (close === -1) throw unreadableFlow(body, "unterminated verbatim tag");
+        i = close;
+      } else {
+        while (i + 1 < body.length && !/[\s,{}[\]]/.test(body[i + 1])) i += 1;
+      }
       continue;
     }
     if ((ch === '"' || ch === "'") && scalarStart) {
@@ -386,6 +412,7 @@ function splitFlow(body) {
       depth += 1;
     } else if (ch === "}" || ch === "]") {
       depth -= 1;
+      if (depth < 0) throw unreadableFlow(body, `unmatched "${ch}"`);
     } else if (ch === "," && depth === 0) {
       parts.push(body.slice(start, i));
       start = i + 1;
@@ -393,6 +420,8 @@ function splitFlow(body) {
     if (ch === "{" || ch === "[" || ch === "," || ch === ":") scalarStart = true;
     else if (!/\s/.test(ch)) scalarStart = false;
   }
+  if (quote) throw unreadableFlow(body, `unclosed ${quote} quote`);
+  if (depth !== 0) throw unreadableFlow(body, "unclosed bracket");
   parts.push(body.slice(start));
   return parts;
 }
@@ -403,8 +432,12 @@ function flowMapping(value) {
   if (body === undefined) return null;
   const map = new Map();
   for (const pair of splitFlow(body)) {
+    if (pair.trim() === "") continue;
     const match = pair.match(new RegExp(String.raw`^\s*${KEY}\s*:\s*(.*)$`));
-    if (match) map.set(keyOf(match), scalarValue(match[4]));
+    // An entry that isn't `key: value` (an explicit `? key`, a bare key, a
+    // fragment of a misread split) would otherwise vanish silently.
+    if (!match) throw unreadableFlow(body, `entry ${JSON.stringify(pair.trim())} is not "key: value"`);
+    map.set(keyOf(match), scalarValue(match[4]));
   }
   return map;
 }
