@@ -577,7 +577,7 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   permission. Note the boundary is quiet about itself — an out-of-scope environment returns
   `200` with **zero** secrets rather than a 403, so never read scope off a listing
   (see [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md)). Only raw-`fetch` scripts
-  like `staging-conformance.mjs` notice the difference for the other four, and those run in
+  like `staging-conformance.mjs` notice the difference for the other five, and those run in
   CI, where the allowlist does not apply.
 - **Per-deployment Vercel URLs.** Of the deployment surfaces, only the aliased staging
   hostnames are allowlisted, not the unique `*.vercel.app` URL each deployment also gets.
