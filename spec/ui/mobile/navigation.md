@@ -227,15 +227,15 @@ keeps spreading `config` and overriding only `extra` and `android` — `app.conf
 asserts the resolved config to pin exactly that. Recorded here rather than glossed,
 per this section's practice; the nutrition-label half stays owner work on #2196 §4.
 
-*Corrected 2026-09-24 (#2526):* "two required-reason categories" is now four, and the
-`C617.1` basis above was incomplete. Pod manifests reach the shipped file only through
-react-native's `pod install` aggregation, and two pods' never do: sentry-cocoa is
-force-loaded as a static xcframework with no resource bundle, and Expo's precompiled
-`expo-file-system` tarball carries none. So `C617.1` also covers Sentry's timestamp reads,
-and the manifest gained `SystemBootTime`/`35F9.1` (Sentry's `systemUptime`) and
-`DiskSpace`/`E174.1` (`expo-file-system`'s free-space reads). `FileTimestamp`/`0A2A.1`,
-which #2526 also listed, was left out: Apple reserves it for an SDK's own manifest. The
-per-row basis is in `app.config.spec.ts`, which pins the whole array.
+*Corrected 2026-09-24 (#2526):* "two required-reason categories" is now four, and two
+bases above no longer hold. `CA92.1` rests on `expo-updates` as well as Stripe, so it is
+not Stripe's alone. `C617.1` also covers the timestamp reads of pods whose own manifests
+never ship: pod manifests reach the shipped file only through react-native's `pod install`
+aggregation, which a static or precompiled pod skips. The same gap is why the manifest
+gained `SystemBootTime`/`35F9.1` and `DiskSpace`/`E174.1`. `FileTimestamp`/`0A2A.1`, which
+#2526 also listed, was left out: Apple reserves it for an SDK's own manifest. Which pods
+fall through, and the basis for every row, are in `app.config.spec.ts`, which pins the
+whole array; this note doesn't restate them.
 
 **#2526 touched three of the seven, as an integrator change.** `package.json` gained
 `expo-updates`, and `app.json` gained its `runtimeVersion` and `updates` keys (no plugin
