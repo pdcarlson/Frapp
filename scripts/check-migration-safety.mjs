@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import { execSync } from "node:child_process";
-import { readFileSync, readdirSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 // Resolved from this file, never `process.cwd()`. Every path this gate reasons
 // about is repo-root-relative — `git diff --name-only` emits them that way, and
@@ -677,20 +678,6 @@ function main() {
 
 // Import-safe: `main()` runs only as a CLI entry point, so the unit tests can
 // import MIGRATION_DOCS and the two predicates without executing the gate.
-//
-// realpathSync BOTH sides, per scripts/check-npm-audit.mjs: Node symlink-resolves
-// the ESM entry's `import.meta.url` by default but never `process.argv[1]`, and
-// with --preserve-symlinks-main it resolves neither — either asymmetry would
-// silently skip main(), this REQUIRED gate exiting 0 having checked nothing.
-function isInvokedDirectly() {
-  if (!process.argv[1]) return false;
-  try {
-    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
-  } catch {
-    return false;
-  }
-}
-
-if (isInvokedDirectly()) {
+if (isInvokedDirectly(import.meta.url)) {
   main();
 }

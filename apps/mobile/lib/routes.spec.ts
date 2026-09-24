@@ -162,7 +162,7 @@ describe("route literals", () => {
  *
  * It lives here because this file already walks `app/`, and it is why
  * `isRouteFile` no longer skips `.spec.` files: nothing to skip.
- * `docs/internal/mobile/MOBILE_TESTING.md` § Gotchas owns the rule itself and
+ * `docs/mobile/testing.md` § Gotchas owns the rule itself and
  * says where a screen-adjacent spec goes instead.
  */
 describe("app/ is the shipped route graph", () => {
@@ -178,7 +178,7 @@ describe("app/ is the shipped route graph", () => {
         .map((t) => `  app/${t}`)
         .join(
           "\n",
-        )}\n\nMove each one under lib/ or components/ and reach the screen through the "@/" alias — lib/onboarding/join-screen.spec.tsx is the pattern. See docs/internal/mobile/MOBILE_TESTING.md § Gotchas.`,
+        )}\n\nMove each one under lib/ or components/ and reach the screen through the "@/" alias — lib/onboarding/join-screen.spec.tsx is the pattern. See docs/mobile/testing.md § Gotchas.`,
     ).toEqual([]);
   });
 });

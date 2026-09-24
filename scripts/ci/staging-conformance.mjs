@@ -69,6 +69,7 @@ import {
   EXPECTED_HEALTH_CHECK_PATH,
   readHealthCheckPath,
 } from "./lib/render-health-check-path.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -1482,8 +1483,7 @@ async function main() {
   if (outcome === "failed") process.exit(1);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);

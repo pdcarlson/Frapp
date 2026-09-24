@@ -25,7 +25,8 @@ fi
 # `(dependencies)` bringup sentinel leaves a cloud session in, with a push one
 # command away. The hooks need nothing npm installs: pre-push is bash and git around
 # scripts/diff-review-scope.mjs, and that and pre-commit's secret scan import only node
-# builtins (the scan runs `--soft-missing`).
+# builtins and scripts/ci/lib/invoked-directly.mjs, which does too (the scan runs
+# `--soft-missing`).
 #
 # Cloud sessions only. A laptop keeps the rule SECRET_SCANNING.md documents: `npm install`
 # sets the path and `git config --unset core.hooksPath` undoes it, and rewriting it at every

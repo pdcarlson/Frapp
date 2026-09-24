@@ -44,6 +44,7 @@ import { requireEnv } from "../ci/lib/env.mjs";
 import { getEnvironment } from "../ci/lib/environments.mjs";
 import { IDEMPOTENT_METHODS, fetchWithRetry } from "../ci/lib/http.mjs";
 import { listBucketObjects, listBuckets } from "../storage-backup.mjs";
+import { isInvokedDirectly } from "../ci/lib/invoked-directly.mjs";
 
 export const TEMPLATE_PATH = fileURLToPath(new URL("./demo-seed.sql", import.meta.url));
 
@@ -914,11 +915,7 @@ export async function main(argv, env = process.env, io = { out: process.stdout, 
   }
 }
 
-// The loose suffix form, for the reason scripts/run-migration.mjs gives: an
-// exact-path comparison silently runs nothing from a path with a space or a
-// symlink, and exits 0.
-const invokedDirectly = process.argv[1] && process.argv[1].endsWith("seed-demo.mjs");
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main(process.argv.slice(2)).catch((error) => {
     if (!(error instanceof ReportedError)) process.stderr.write(`seed-demo: ${error.message}\n`);
     process.exit(1);

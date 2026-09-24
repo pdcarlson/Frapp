@@ -27,7 +27,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 /** Artifacts that must stay in sync with API source. */
 const CONTRACT_ARTIFACTS = [
@@ -211,9 +211,6 @@ function main() {
 // `isApiRelated` would do all of that as a side effect of the import. The same
 // trap is documented at length in scripts/configure-branch-protection.mjs, which
 // once reconfigured branch protection because something read it.
-const isDirectRun =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-
-if (isDirectRun) {
+if (isInvokedDirectly(import.meta.url)) {
   main();
 }

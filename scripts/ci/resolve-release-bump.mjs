@@ -41,6 +41,7 @@
 import { appendFileSync } from "node:fs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 const MERGE_SUBJECT = /^Merge pull request #(\d+)\b/;
 const SQUASH_SUBJECT = /\(#(\d+)\)\s*$/;
@@ -265,8 +266,7 @@ async function main() {
   appendOutput([`bump=${result.bump}`, `version=${result.version}`]);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`::error::Could not resolve the release bump: ${error.message}`);
     process.exit(1);
