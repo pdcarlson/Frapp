@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { extractMentionTokens } from "@repo/validation";
+import { CHAT_MESSAGE_CONTENT_MAX_LENGTH, extractMentionTokens } from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { MAX_MESSAGE_MARKDOWN_DEPTH } from "./remark-depth-cap";
 import { TextRenderer } from "./text-renderer";
 
 // #369: the timeline used to render `message.content` as plain text, so a
@@ -296,5 +297,70 @@ describe("TextRenderer mention chips", () => {
     // typed — `unwrapDisallowed` cannot promote authored text to an element.
     expect(chips(container).map((c) => c.textContent)).toEqual(["@Alice"]);
     expect(container.textContent).toContain("<mark>hi</mark>");
+  });
+});
+
+/**
+ * #2209. A body within the length cap can still nest thousands of levels deep,
+ * and every markdown pass after the parse recurses once per level. Before the
+ * depth cap, `"> ".repeat(4999) + "hi"` threw `RangeError: Maximum call stack
+ * size exceeded` during render, which took down the whole `/chat` content
+ * column for everyone who opened the channel. These pin the deliberate
+ * replacement: a body past the cap renders as its raw text, and one inside it
+ * formats as before.
+ */
+describe("TextRenderer over-nested bodies", () => {
+  function fillToCap(prefix: string, tail: string): string {
+    return prefix.repeat(Math.floor((CHAT_MESSAGE_CONTENT_MAX_LENGTH - tail.length) / prefix.length)) + tail;
+  }
+
+  it.each([
+    ["nested blockquotes", fillToCap("> ", "hi")],
+    ["nested list items", fillToCap("- ", "hi")],
+  ])("renders a cap-length body of %s as its raw text instead of throwing", (_label, body) => {
+    expect(body.length).toBeLessThanOrEqual(CHAT_MESSAGE_CONTENT_MAX_LENGTH);
+    expect(body.length).toBeGreaterThan(CHAT_MESSAGE_CONTENT_MAX_LENGTH - 2);
+
+    const { container } = render(<TextRenderer message={message(body)} isSelf={false} />);
+
+    const bubble = container.querySelector('[data-slot="bubble"]');
+    expect(bubble?.textContent).toBe(body);
+  });
+
+  it("renders a deep emphasis run as its raw text instead of throwing", () => {
+    const run = "*".repeat(4999);
+    const body = `${run}a${run}`;
+
+    const { container } = render(<TextRenderer message={message(body)} isSelf={false} />);
+
+    expect(container.querySelector("strong, em")).toBeNull();
+    expect(container.querySelector('[data-slot="bubble"]')?.textContent).toBe(body);
+  });
+
+  it("formats a body nested exactly to the cap, and flattens one level past it", () => {
+    // root → blockquote × n → paragraph → strong → text is n + 3 deep.
+    const atCap = "> ".repeat(MAX_MESSAGE_MARKDOWN_DEPTH - 3) + "**bold**";
+    const pastCap = "> " + atCap;
+
+    const formatted = render(<TextRenderer message={message(atCap)} isSelf={false} />);
+    expect(formatted.container.querySelector("strong")).toHaveTextContent("bold");
+    expect(formatted.container.textContent).not.toContain("**");
+    formatted.unmount();
+
+    const flattened = render(<TextRenderer message={message(pastCap)} isSelf={false} />);
+    expect(flattened.container.querySelector("strong")).toBeNull();
+    expect(flattened.container.textContent).toBe(pastCap);
+  });
+
+  it("still chips a mention and renders no raw HTML in a flattened body", () => {
+    const body = fillToCap("> ", '@Alice <img src=x onerror="alert(1)">');
+
+    const { container } = render(<TextRenderer message={message(body)} isSelf={false} />);
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(Array.from(container.querySelectorAll("mark")).map((m) => m.textContent)).toEqual([
+      "@Alice",
+    ]);
+    expect(container.textContent).toBe(body);
   });
 });

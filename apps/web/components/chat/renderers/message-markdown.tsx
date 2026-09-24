@@ -1,7 +1,9 @@
 "use client";
 
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
+import { opensTooManyContainers, remarkDepthCap } from "./remark-depth-cap";
 import { remarkMentionChips } from "./remark-mention-chips";
 import { cn } from "@/lib/utils";
 
@@ -59,14 +61,31 @@ const ALLOWED_ELEMENTS = ["p", "strong", "em", "code", "pre", "a", "br", "mark"]
  * carry `<script>` or an `onerror=` attribute verbatim and it renders as
  * inert text, not a tag. The one thing react-markdown does *not* vet on its
  * own is a link's scheme, which `isSafeHref` covers below.
+ *
+ * **Memoized on `content`.** Nothing above this memoizes a timeline row, so
+ * without it every re-render of the timeline parsed every visible message
+ * again. The parse is linear for ordinary text but super-linear for some
+ * adversarial bodies (#2209), so a message now costs its parse once per mount.
  */
-export function MessageMarkdown({ content }: { content: string }) {
+export const MessageMarkdown = memo(function MessageMarkdown({ content }: { content: string }) {
+  // Decided from the source, before remark sees it: a body that opens this
+  // many containers on one line is one remark would take seconds to parse,
+  // and it would render as raw text anyway. See `opensTooManyContainers`.
+  const flatten = opensTooManyContainers(content);
   return (
     <ReactMarkdown
+      // The depth cap goes first: every pass after it recurses once per
+      // nesting level, so it has to see the tree before any of them do. See
+      // `remark-depth-cap.ts` (#2209).
+      //
       // The mention plugin needs the RAW body, not the decoded text remark
       // hands it — `&#64;Jane` is a mention to the renderer and to nobody
       // else. See `remark-mention-chips.ts`.
-      remarkPlugins={[remarkBreaks, [remarkMentionChips, { content }]]}
+      remarkPlugins={[
+        [remarkDepthCap, { content, flatten }],
+        remarkBreaks,
+        [remarkMentionChips, { content }],
+      ]}
       allowedElements={ALLOWED_ELEMENTS}
       unwrapDisallowed
       components={{
@@ -116,7 +135,7 @@ export function MessageMarkdown({ content }: { content: string }) {
         pre: ({ children }) => <>{children}</>,
       }}
     >
-      {content}
+      {flatten ? "" : content}
     </ReactMarkdown>
   );
-}
+});
