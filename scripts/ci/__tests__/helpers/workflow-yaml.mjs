@@ -68,6 +68,19 @@ function scalarValue(raw) {
 }
 
 /**
+ * A mapping key: bare, or quoted. `"issues": write` and `issues: write` are the
+ * same key to YAML and so to Actions. A reader that skipped the quoted form
+ * would let a guard on a whole block (`permissions:`) pass while the file
+ * grants a scope the guard never saw. Use with `keyOf`.
+ */
+const KEY = String.raw`(?:"([^"]*)"|'([^']*)'|([A-Za-z_][\w-]*))`;
+
+/** The key from a match whose first three groups are KEY's alternatives. */
+function keyOf(match) {
+  return match[1] ?? match[2] ?? match[3];
+}
+
+/**
  * The flat `KEY: value` map whose `env:` header is at `lines[headerIndex]`.
  *
  * Reads only keys at the mapping's own child indent, so a nested or multi-line
@@ -86,9 +99,9 @@ function envMapAt(lines, headerIndex) {
     if (childIndent === null) childIndent = indent;
     if (indent !== childIndent) continue;
 
-    const match = lines[i].match(/^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
+    const match = lines[i].match(new RegExp(String.raw`^\s*${KEY}\s*:\s*(.*)$`));
     // A comment-only value is YAML null, not the comment's text.
-    if (match) map.set(match[1], opensMapping(match[2]) ? "" : scalarValue(match[2]));
+    if (match) map.set(keyOf(match), opensMapping(match[4]) ? "" : scalarValue(match[4]));
   }
   return map;
 }
@@ -324,14 +337,43 @@ function opensMapping(raw) {
   return /^\s*(#.*)?$/.test(raw);
 }
 
+/**
+ * A flow collection's body split on its top-level commas: not a comma inside
+ * quotes, `${{ }}`, parentheses or a nested collection, so a value such as
+ * `"${{ format('{0}, {1}', a, b) }}"` stays one entry.
+ */
+function splitFlow(body) {
+  const parts = [];
+  let depth = 0;
+  let quote = null;
+  let start = 0;
+  for (let i = 0; i < body.length; i += 1) {
+    const ch = body[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if ("{[(".includes(ch)) {
+      depth += 1;
+    } else if ("}])".includes(ch)) {
+      depth -= 1;
+    } else if (ch === "," && depth === 0) {
+      parts.push(body.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(body.slice(start));
+  return parts;
+}
+
 /** `{ contents: read, issues: write }` as a Map, or null for any other value. */
 function flowMapping(value) {
   const body = /^\{(.*)\}$/.exec(value)?.[1];
   if (body === undefined) return null;
   const map = new Map();
-  for (const pair of body.split(",")) {
-    const match = pair.match(/^\s*([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
-    if (match) map.set(match[1], scalarValue(match[2]));
+  for (const pair of splitFlow(body)) {
+    const match = pair.match(new RegExp(String.raw`^\s*${KEY}\s*:\s*(.*)$`));
+    if (match) map.set(keyOf(match), scalarValue(match[4]));
   }
   return map;
 }
@@ -351,13 +393,13 @@ function keysAt(lines, from, to, indent) {
   const keys = new Map();
   for (let i = from; i < to; i += 1) {
     if (indentOf(lines[i]) !== indent) continue;
-    const match = lines[i].match(/^\s*([A-Za-z_][\w-]*)\s*:(.*)$/);
+    const match = lines[i].match(new RegExp(String.raw`^\s*${KEY}\s*:(.*)$`));
     if (!match) continue;
-    if (opensMapping(match[2])) {
-      keys.set(match[1], envMapAt(lines, i));
+    if (opensMapping(match[4])) {
+      keys.set(keyOf(match), envMapAt(lines, i));
     } else {
-      const value = scalarValue(match[2]);
-      keys.set(match[1], flowMapping(value) ?? value);
+      const value = scalarValue(match[4]);
+      keys.set(keyOf(match), flowMapping(value) ?? value);
     }
   }
   return keys;

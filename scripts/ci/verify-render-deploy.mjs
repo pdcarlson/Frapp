@@ -54,16 +54,24 @@ export const RENDER_OVERALL_TIMEOUT_MS = 20 * 60 * 1000;
 // ── Read errors ─────────────────────────────────────────────────────────────
 // Since #2431 a failure verdict files a P1 alert, so one bad read must not be
 // one. `resilientFetch` re-sends a 429, a 5xx or a connection failure within a
-// read, for a few seconds; what outlasts that, or fails after the headers (a
-// body that resets or stalls, which it never retries), is re-asked on the next
-// poll instead. Only this many failed reads IN A ROW end the run, about a
-// minute of Render being unreadable at the default interval.
+// read (three attempts, each bounded by its 15s timeout); what outlasts that,
+// or fails after the headers (a body that resets or stalls, which it never
+// retries), is re-asked on the next poll instead. Only this many failed reads
+// IN A ROW end the run. At the default interval that is about a minute when
+// Render answers fast with a 5xx, and about three when every attempt hangs to
+// its timeout, since the interval is slept after each read, not counted from it.
 export const RENDER_MAX_CONSECUTIVE_READ_ERRORS = 3;
 
-/** A 4xx other than 429 means a dead key or a wrong id: re-asking can't help. */
+/**
+ * The refusals re-asking can't fix: a dead or unscoped key (401, 403) or a
+ * wrong service id (404). Deliberately a closed list rather than "any 4xx":
+ * a 408, 409 or 425 is a statement about this request, not about the key, and
+ * failing on it would page for a blip. Those are re-asked like a 5xx.
+ */
+export const RENDER_PERMANENT_READ_STATUSES = new Set([401, 403, 404]);
+
 export function isPermanentReadError(error) {
-  const status = error?.status;
-  return typeof status === "number" && status >= 400 && status < 500 && status !== 429;
+  return RENDER_PERMANENT_READ_STATUSES.has(error?.status);
 }
 
 /**

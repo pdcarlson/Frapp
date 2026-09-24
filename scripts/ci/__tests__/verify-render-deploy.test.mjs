@@ -226,6 +226,19 @@ describe("verifyRenderDeploy", () => {
     assert.equal(calls.length, 1);
   });
 
+  it("re-asks after a 408, which is about the request rather than the key", async () => {
+    const { fetchImpl, calls } = makeFetchStub([
+      httpError(408),
+      okJson([renderDeploy({ status: "live" })]),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyRenderDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "success");
+    assert.equal(calls.length, 2);
+  });
+
   it("re-asks after a 5xx and succeeds when the next read works", async () => {
     const { fetchImpl, calls } = makeFetchStub([
       httpError(502),
@@ -279,9 +292,12 @@ describe("verifyRenderDeploy", () => {
     assert.equal(result.status, "success");
   });
 
-  it("classifies only a 4xx other than 429 as a permanent read error", () => {
+  it("classifies only 401, 403 and 404 as permanent read errors", () => {
     for (const status of [401, 403, 404]) assert.equal(isPermanentReadError({ status }), true, `${status}`);
-    for (const status of [429, 500, 502, 503]) assert.equal(isPermanentReadError({ status }), false, `${status}`);
+    // A 408, 409 or 425 is about this request, not the key: re-asked, not paged.
+    for (const status of [400, 408, 409, 422, 425, 429, 500, 502, 503]) {
+      assert.equal(isPermanentReadError({ status }), false, `${status}`);
+    }
     // A network or body error carries no status and is always re-asked.
     assert.equal(isPermanentReadError(new TypeError("fetch failed")), false);
     assert.equal(isPermanentReadError(undefined), false);
