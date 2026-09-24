@@ -116,6 +116,45 @@ describe("push isolation module", () => {
     expect(goReason).not.toBe(projectReason);
   });
 
+  it("does not tell an installed build whose module threw to install the build", async () => {
+    // Outside Expo Go and web the loader runs, and a throw is cached as the
+    // same `null` Go gets. Settings is where this sentence shows (#2299).
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const push = await importPush();
+    push.setPushLoaderForTests(() => {
+      throw new Error("native module missing");
+    });
+
+    const reason = push.pushUnavailableReason();
+
+    expect(push.isPushAvailable()).toBe(false);
+    expect(reason).toBeTruthy();
+    expect(reason).not.toMatch(/Expo Go/);
+    expect(reason).not.toMatch(/installed/);
+    // It names a next step (README §5 rule 2), unlike a dead-end apology.
+    expect(reason).toMatch(/Updating the app/);
+    warn.mockRestore();
+  });
+
+  it("does not blame Expo Go on the web target", async () => {
+    const { Platform } = await import("react-native");
+    const os = Platform.OS;
+    Platform.OS = "web";
+    try {
+      const push = await importPush();
+      const reason = push.pushUnavailableReason();
+
+      expect(push.isPushAvailable()).toBe(false);
+      // The web sentence itself, not merely "not Expo Go": the load-failure
+      // sentence would pass that too, and tells a web visitor to update an
+      // app that can never push there.
+      expect(reason).toMatch(/not the web/);
+      expect(reason).not.toMatch(/Expo Go|Updating the app/);
+    } finally {
+      Platform.OS = os;
+    }
+  });
+
   it("has no token to register while no EAS project is configured (#938)", async () => {
     constantsState.projectId = undefined;
     const push = await importPush();

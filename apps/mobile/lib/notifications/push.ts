@@ -29,11 +29,12 @@ import type {
  * The native module has to exist, an EAS `projectId` has to be configured, and
  * the member has to have granted permission. The first two are build facts and
  * are what `isPushAvailable()` answers; the third is a runtime state the primer
- * owns. `getExpoPushTokenAsync()` requires the `projectId` outside Expo Go, and
- * **no EAS project exists yet** (#938 is open and `[human]`), so today this
- * returns false in every build that can be produced. That is reported, not
- * papered over: `pushUnavailableReason()` says which of the two is missing, and
- * a placeholder id is never invented.
+ * owns. `getExpoPushTokenAsync()` requires the `projectId` outside Expo Go.
+ * `app.json` carries it under `extra.eas.projectId` (#2325), so an installed
+ * build passes both checks and Expo Go and web fail the first. Passing them
+ * says nothing about APNs/FCM credentials or delivery, which only a device
+ * proves (#938). When a check fails, `pushUnavailableReason()` says which one,
+ * and a placeholder id is never invented.
  *
  * The in-app notification centre (s14) does not depend on any of this. Push is
  * an enhancement over a history that already renders.
@@ -67,8 +68,8 @@ const loadNotifications = notifications.load;
  * The EAS project id `getExpoPushTokenAsync` needs outside Expo Go.
  *
  * Read from the resolved app config rather than hardcoded, and treated as
- * optional for the same reason `publishableKey()` is: local dev, CI and Expo Go
- * all run without it and none of them can receive a push anyway.
+ * optional: `app.json` commits it, but a config without it (a fork, or a test
+ * that stubs `expo-constants`) has to degrade to "unavailable", not crash.
  */
 export function easProjectId(): string | null {
   const extra = Constants.expoConfig?.extra as
@@ -93,13 +94,30 @@ export function isPushAvailable(): boolean {
 /**
  * Why push is unavailable, or `null` when it is available.
  *
- * The two causes need different sentences: one is fixed by installing a real
- * build, the other is a deployment configuration the member cannot do anything
- * about. `spec/ui/design-system/components.md` §5 — "A disabled control with no
- * explanation is its own dead end."
+ * Each cause gets its own sentence, because each has a different remedy: Expo
+ * Go is fixed by installing the real build, web by using the phone app, a
+ * module that failed to load in an installed build is a broken build that an
+ * update may fix (the case `isolated-module.ts` warns about), and a missing
+ * project id is a deployment setting the member cannot do anything about.
+ * `spec/ui/design-system/README.md` §5: "A disabled control with no
+ * explanation is its own dead end." The strings are tabled in
+ * `spec/ui/design-system/writing.md` § Push availability.
+ *
+ * Its one reader is Settings (s16), which keeps a push row in every build and
+ * states this in place of On/Off. The s03 primer card is not drawn at all when
+ * push is unavailable (`primer.ts`, #2299), so it never needs a reason.
  */
 export function pushUnavailableReason(): string | null {
   if (loadNotifications() === null) {
+    // Both cache `null`. Only the guard tells Expo Go apart from an installed
+    // build whose native module threw, and telling that member to install the
+    // build they are running would be false.
+    if (!isWebOrExpoGo()) {
+      return "Notifications couldn't start in this version of the app. Updating the app may fix it. You'll still see everything here in the app.";
+    }
+    if (Platform.OS === "web") {
+      return "Notifications come to the phone app, not the web. You'll still see everything here.";
+    }
     return "Notifications need the installed Signet build — Expo Go can't receive them. You'll still see everything here in the app.";
   }
   if (easProjectId() === null) {
@@ -124,7 +142,7 @@ export const ANDROID_CHANNEL_ID = "default";
  *
  * **Call this before requesting permission.** On Android 13+ the prompt and
  * delivery behave correctly only when the channel already exists
- * (`patterns.md` § Push notifications, first bullet) — the ordering is the
+ * (`patterns.md` § Push notifications, "Android channel before permission") — the ordering is the
  * whole rule, so `requestPushPermission()` calls this itself rather than
  * trusting every caller to remember.
  *
@@ -150,7 +168,7 @@ export async function getPushPermission() {
  * Requests OS permission, creating the Android channel first.
  *
  * Only ever called from the primer's "Turn on" — never at launch
- * (`patterns.md` § Push notifications, second bullet).
+ * (`patterns.md` § Push notifications, "Contextual primer, never at launch").
  */
 export async function requestPushPermission(): Promise<boolean> {
   const mod = localOnlyModule();
@@ -174,7 +192,7 @@ export async function getExpoPushToken(): Promise<string | null> {
  *
  * The clear is not optional: without it the same response is returned on every
  * remount of the handler and the member is re-navigated each time
- * (`patterns.md` § Push notifications, third bullet).
+ * (`patterns.md` § Push notifications, "Cold-start dedup").
  */
 export function takeLastNotificationResponse(): PushNotificationResponse | null {
   const mod = localOnlyModule();
