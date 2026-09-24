@@ -493,7 +493,7 @@ Twenty-five variables, enumerated above. Each `NEXT_PUBLIC_`/`EXPO_PUBLIC_` pair
 shares a canonical is an Infisical reference to the same value — exceptions are the Sentry
 DSN names (different projects: `frapp-web`, `frapp-mobile`, `frapp-landing`), the PostHog
 key/host pair on mobile (EAS dashboard; there is no Infisical→EAS sync), and the Supabase key in
-EAS, which is not the legacy `anon` JWT the web half carries ([apps/mobile (Expo — EAS)](#appsmobile-expo--eas), #2526). No secret belongs
+EAS, which in `production` must be the publishable key rather than the legacy `anon` JWT the web half carries (enforced only there; [apps/mobile (Expo — EAS)](#appsmobile-expo--eas), #2526). No secret belongs
 in this set; `ANALYTICS_HMAC_SALT` is the worked example of why, above.
 
 Six names were missing from this enumeration until #1167 — the five Sentry ones and

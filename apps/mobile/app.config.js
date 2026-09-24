@@ -76,7 +76,7 @@
 // `eas build -p ios` against the Apple account.
 //
 // Source of truth for the credential inventory:
-// docs/internal/environment/ENV_REFERENCE.md § Mobile.
+// docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).
 const fs = require("node:fs");
 const path = require("node:path");
 const easJson = require("./eas.json");
@@ -87,7 +87,7 @@ const PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR = [
   "(scoped to the production environment this profile binds to), or place",
   "apps/mobile/google-services.json.",
   "Without it the APK compiles, getExpoPushTokenAsync throws, and members never receive push.",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile and GitHub issue #1826.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS) and GitHub issue #1826.",
 ].join(" ");
 
 function resolveGoogleServicesFile({
@@ -133,7 +133,7 @@ const PRODUCTION_API_URL_ERROR = [
   "(the origin in apps/mobile/eas.json → build.production.env, trailing slash ignored).",
   "A store binary pointed at staging, localhost, or an empty value signs",
   "members into the wrong API. Do not override it in the EAS dashboard.",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 const PRODUCTION_SUPABASE_PUBLIC_ERROR = [
@@ -141,7 +141,7 @@ const PRODUCTION_SUPABASE_PUBLIC_ERROR = [
   "EXPO_PUBLIC_SUPABASE_ANON_KEY (EAS dashboard per environment; there is",
   "no Infisical→EAS sync). Without them getSupabaseClient() returns null and",
   "the store binary shows sign-in as unavailable. See",
-  "docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 // Same file `scripts/ci/lib/environments.mjs` reads. A project ref is not a
@@ -169,7 +169,7 @@ const PRODUCTION_SUPABASE_URL_ERROR = [
   "(the frapp-prod origin from .github/environments.json).",
   "A store binary pointed at staging, localhost, or another project signs",
   "members into the wrong database. Do not override it in the EAS dashboard.",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 // Same origin @repo/validation exports as PRODUCTION_APP_ORIGIN. This file
@@ -182,7 +182,7 @@ const PRODUCTION_APP_URL_ERROR = [
   "(trailing slash ignored) when the variable is set.",
   "A store binary that inlines https://app.staging.frapp.live shares first-officer",
   "invite links into staging. Unset still falls back to the production origin at runtime.",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 function assertProductionApiUrl({ easBuildProfile, apiUrl } = {}) {
@@ -229,7 +229,7 @@ const PRODUCTION_SUPABASE_KEY_ERROR = [
   "end of 2026, and a store binary keeps its key until it is updated from the",
   "store. Copy it from Supabase → frapp-prod → Project Settings → API Keys and",
   "set it on the EAS production environment (eas env:list --environment production).",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 function assertProductionSupabasePublishableKey({
@@ -252,7 +252,7 @@ const PUBLIC_SUPABASE_SECRET_KEY_ERROR = [
   "bundle, so any build would hand it to whoever unpacks the binary. Use the",
   "project's publishable key instead, and rotate the credential if a build",
   "already carried it.",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 /** The claims of a JWT-shaped key, or undefined for anything else. */
@@ -313,7 +313,7 @@ const PRODUCTION_ASK_ENABLED_ERROR = [
   "Ask answers from a synthetic corpus, and the App Store listing and review",
   "notes describe a store binary with no Ask (#2259). Remove it from the EAS",
   "production environment (eas env:list --environment production).",
-  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
 function assertProductionAskDisabled({ easBuildProfile, askEnabled } = {}) {
