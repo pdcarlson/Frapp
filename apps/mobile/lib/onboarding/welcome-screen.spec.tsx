@@ -8,11 +8,11 @@ import { FrappThemeProvider } from "@/lib/theme";
 
 /**
  * #2299. s03 is the first screen after joining a chapter, for a new member and
- * for an App Reviewer alike. In a build that cannot push (Expo Go, web, a build
- * whose native module did not load) it used to show the push primer with
- * "Turn on" disabled and a build-status apology under it. These pin that the
- * card is not drawn there, and that it still is, with a working "Turn on",
- * when push can be turned on. `lib/notifications/primer.spec.ts` covers the
+ * for an App Reviewer alike. In a build that cannot push (`isPushAvailable()`
+ * false; `spec/ui/mobile/patterns.md` § Push notifications lists the causes)
+ * it used to show the push primer with "Turn on" disabled and a build-status
+ * apology under it. These pin that the card is not drawn there, and that it
+ * still is, with a working "Turn on", when push can be turned on. `lib/notifications/primer.spec.ts` covers the
  * rule itself; this covers the screen wiring it.
  *
  * It renders `app/(auth)/welcome.tsx` but lives here: a spec under `app/`

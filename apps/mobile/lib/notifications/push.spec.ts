@@ -116,6 +116,24 @@ describe("push isolation module", () => {
     expect(goReason).not.toBe(projectReason);
   });
 
+  it("does not tell an installed build whose module threw to install the build", async () => {
+    // Outside Expo Go and web the loader runs, and a throw is cached as the
+    // same `null` Go gets. Settings is where this sentence shows (#2299).
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const push = await importPush();
+    push.setPushLoaderForTests(() => {
+      throw new Error("native module missing");
+    });
+
+    const reason = push.pushUnavailableReason();
+
+    expect(push.isPushAvailable()).toBe(false);
+    expect(reason).toBeTruthy();
+    expect(reason).not.toMatch(/Expo Go/);
+    expect(reason).not.toMatch(/installed/);
+    warn.mockRestore();
+  });
+
   it("has no token to register while no EAS project is configured (#938)", async () => {
     constantsState.projectId = undefined;
     const push = await importPush();
