@@ -1793,6 +1793,12 @@ if (readSeeded) {
           name: "chat_viewer_has_blocked answers false to the blocked member asking about their blocker",
           uid: F.userAAuth, actor: F.userCId, msg: F.msgPublic, expect: false,
         },
+        {
+          // userC holds the block in chapter A but is not in the DM. A true
+          // here would tell them the message exists.
+          name: "chat_viewer_has_blocked answers false for a message the caller cannot read (no existence oracle)",
+          uid: F.userCAuth, actor: F.userAId, msg: F.msgDM, expect: false,
+        },
       ];
       for (const s of HELPER_SCENARIOS) {
         await setUid(s.uid);

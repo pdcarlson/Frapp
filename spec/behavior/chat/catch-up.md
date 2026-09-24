@@ -249,11 +249,12 @@ the viewer can act. The destination screen still enforces its own permissions.
 Per-user dismissal wants `chat_message_actions`: already per-user, unique on
 `(message_id, user_id, action_type)`, upsertable like a poll vote (ADR-07), no new table.
 
-**But it is not private, and that matters here.** That table's `SELECT` policy is
-`auth.role() = 'authenticated' AND can_read_chat_message(message_id)`, so every member who can read
-the channel can read every action row on the message — `user_id` and `action_type` included — and
-the web client already holds a global Realtime subscription on the table, so each dismissal
-broadcasts live. "Who dismissed the chapter-health card" would become chapter-public and
+**But it is not private, and that matters here.** That table's `SELECT` policy
+([`AUTHORIZATION_MODEL.md`](../../../docs/internal/security/AUTHORIZATION_MODEL.md) § The policies
+that do exist) lets every member who can read the channel read every action row on the message —
+`user_id` and `action_type` included — except a reaction, which is withheld from a member who
+blocked its author. And the web client already holds a global Realtime subscription on the table,
+so each dismissal broadcasts live. "Who dismissed the chapter-health card" would become chapter-public and
 attributable by name. That is the opposite of the posture [`README.md`](./README.md) takes for
 personal gestures, where bookmarks are private to the bookmarker, not visible even to admins.
 

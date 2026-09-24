@@ -30,9 +30,16 @@
 --
 -- The helper takes no blocker parameter. It resolves the viewer from
 -- `auth.uid()`, so over RPC it only ever answers "have I blocked this member
--- in this message's chapter", which the caller already knows. It is `security
--- definer` because `users`, `chat_messages`, `chat_channels` and
--- `chat_member_blocks` are default-deny to the `authenticated` role, and a
+-- in this message's chapter", which the caller already knows. It also answers
+-- false for a message the caller cannot read (`can_read_chat_channel`, the
+-- same predicate the policy's second conjunct reaches). Without that, an RPC
+-- call would say whether a message id exists in a chapter where the caller
+-- holds a block row, including a DM they are not in, and block rows outlive
+-- leaving the chapter. Inside the policy the check changes nothing, because
+-- the row is already filtered on it.
+--
+-- It is `security definer` because `users`, `chat_messages`, `chat_channels`
+-- and `chat_member_blocks` are default-deny to the `authenticated` role, and a
 -- plain subselect inside a policy would see no rows (#724). For the same reason
 -- a helper that cannot read the table fails the select, which is fail-closed.
 -- The search_path is `public, pg_temp` with pg_temp last (20260827190000,
@@ -63,6 +70,7 @@ as $$
                                     and b.blocker_user_id = u.id
                                     and b.blocked_user_id = p_actor
     where m.id = p_message_id
+      and public.can_read_chat_channel(m.channel_id)
   );
 $$;
 

@@ -341,7 +341,7 @@ const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
     creates: 2,
     status: 'open',
     issues: [2313],
-    why: 'The Realtime echo carries no viewer and cannot be masked by the server; § The masking contract makes each client apply its own list. Mobile does (#2493, #2315); web does not yet.',
+    why: "Realtime filters the echo through the subscriber's policy, but a policy can only drop a row, not carry the API's tombstone, and this one has no block clause; § The masking contract makes each client apply its own list. Mobile does (#2493, #2315); web does not yet.",
   },
   'public.chat_message_actions chat_message_actions_select': {
     // Reaction chips, over PostgREST and the Realtime echo. The policy drops a
