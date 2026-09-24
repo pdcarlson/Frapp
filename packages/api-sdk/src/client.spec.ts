@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CLIENT_VERSION_HEADER,
   REQUEST_ID_HEADER,
   createFrappClient,
   mintRequestId,
@@ -124,5 +125,40 @@ describe("createFrappClient request id", () => {
     expect(headers.get(REQUEST_ID_HEADER)).toMatch(/^req_[0-9a-f-]{36}$/i);
     expect(headers.get(REQUEST_ID_HEADER)).not.toBe("token-abc");
     expect(headers.get(REQUEST_ID_HEADER)).not.toBe("chapter-1");
+  });
+});
+
+describe("createFrappClient client version", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function stubFetch() {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 200 })),
+    );
+  }
+
+  it("sends the configured build on every request", async () => {
+    stubFetch();
+    const client = createFrappClient({
+      baseUrl: "http://api.test",
+      clientVersion: "ios/0.9.0+12",
+    });
+
+    await client.GET("/v1/client-policy");
+
+    expect(sentRequest().headers.get(CLIENT_VERSION_HEADER)).toBe("ios/0.9.0+12");
+  });
+
+  it("sends no header when none is configured, as on web", async () => {
+    stubFetch();
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    await client.GET("/v1/client-policy");
+
+    expect(sentRequest().headers.has(CLIENT_VERSION_HEADER)).toBe(false);
   });
 });

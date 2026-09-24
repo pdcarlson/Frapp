@@ -680,6 +680,17 @@ A member who hasn't accepted the Terms version the server enforces (#2302): mobi
 | Deletion didn't finish (web) | — | `Deletion didn't finish. Part of it may already have gone through, and running it again is safe. Try once more in a moment.` `/profile`'s toast, from the same `DELETE_ACCOUNT_FAILED`, as one inline line because the prompt covers the page. |
 | Sign-out threw (web) | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` Rare: only a thrown failure reaches it. auth-js returns most sign-out failures as `{ error }` rather than throwing, and `signOutCurrentSession` ignores that, so those navigate to /sign-in as if they had worked, sometimes with the local session still stored ([#2610](https://github.com/pdcarlson/Frapp/issues/2610)). The controls come back so the member can retry, and stay locked while a successful sign-out navigates away. |
 
+### Update required (mobile, global)
+
+The minimum-version gate (#2526, [`../mobile/patterns.md`](../mobile/patterns.md) § Minimum version): a full-screen prompt over the whole app when the API says this build is below the minimum. It names Frapp rather than a store because the link may be the App Store, Google Play, or a TestFlight link during the beta. Implemented in `apps/mobile/components/client-policy-gate.tsx` (`UPDATE_REQUIRED_COPY`).
+
+| State | Title | Description |
+|---|---|---|
+| Below the minimum | `This version of Frapp is out of date` | `It's no longer supported. Update to the latest version to keep using Frapp.` |
+| Primary | — | `Update Frapp` |
+| No usable link | — | `Open your app store and update Frapp from there.` in place of the button |
+| The link didn't open | — | `Couldn't open the update link. Open your app store and update Frapp from there.` |
+
 ### No access (pre-auth)
 
 | State | Title | Description |
