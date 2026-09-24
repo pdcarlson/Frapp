@@ -91,15 +91,19 @@ function walkMobile(dir = MOBILE_ROOT, { specs = false } = {}) {
 /**
  * The comment spans of one file, as `[start, end)` pairs. JSON has none, so a
  * `"**\/*"` glob in app.json can't hide the keys after it. For code, one pass
- * tracks strings and template literals (with `${…}` nesting), so a `/*` in
- * `"image/*"` or a `//` in `"PRODID:-//…"` stays code.
+ * tracks strings, template literals (with `${…}` nesting) and regex literals,
+ * so the `/*` in `"image/*"` or `/\/*$/`, the `//` in `"PRODID:-//…"` or
+ * `/^https?:\/\//`, and a backtick in `/`/` all stay code. A `//` right after
+ * `:` never opens a comment, so a URL in JSX text stays code too.
  *
- * Every misread this scanner can make errs toward reporting too much. Quoted
- * strings close at a newline, so an apostrophe in JSX text or a quote in a
- * regex literal miscounts one line at most, and a stray backtick only turns
- * comments into code. The misses are narrower: a `//` preceded by `:` never
- * opens a comment, so a URL in JSX text stays code, but a bare `//` or `/*`
- * in unquoted JSX text is still read as a comment opener.
+ * It is a heuristic, not a parser. What it still gets wrong:
+ * - A bare `//` or `/*` in unquoted JSX text reads as a comment opener.
+ * - Whether a `/` starts a regex or divides is decided by the character
+ *   before it, which an unusual expression can defeat.
+ * - A raw `'` or `"` in JSX text would miscount strings. Lint keeps them out
+ *   (react/no-unescaped-entities, and `lint` runs with --max-warnings 0).
+ * codeMatches below backs it with a line-shape check, so a comment state that
+ * runs away across lines reports copy instead of hiding it.
  */
 export function commentRanges(rel, source) {
   if (rel.endsWith(".json")) return [];
@@ -140,6 +144,8 @@ export function commentRanges(rel, source) {
       state = "block";
       start = i;
       i += 1;
+    } else if (char === "/") {
+      i = regexEnd(source, i) ?? i;
     } else if (char === "'" || char === '"' || char === "`") {
       state = char;
     } else if (braces.length > 0 && char === "{") {
@@ -157,17 +163,52 @@ export function commentRanges(rel, source) {
   return ranges;
 }
 
+// `<` is left out on purpose: `</Text>` is a closing tag, not a regex.
+const REGEX_AFTER = /(?:^|[(,=:[!&|?{};+\-*%>~^]|\b(?:return|typeof|case|do|else|in|of|new|delete|void|throw|yield|await))\s*$/;
+
+/**
+ * The index of the `/` closing a regex literal that opens at `at`, or null
+ * when that `/` is division (judged by what precedes it) or no close follows
+ * on the same line.
+ */
+function regexEnd(source, at) {
+  if (!REGEX_AFTER.test(source.slice(Math.max(0, at - 12), at))) return null;
+  let inClass = false;
+  for (let i = at + 1; i < source.length; i += 1) {
+    const char = source[i];
+    if (char === "\n") return null;
+    if (char === "\\") i += 1;
+    else if (char === "[") inClass = true;
+    else if (char === "]") inClass = false;
+    else if (char === "/" && !inClass) return i;
+  }
+  return null;
+}
+
 function inRanges(ranges, index) {
   return ranges.some(([from, to]) => index >= from && index < to);
 }
 
-/** Every match of `pattern` in each file that sits outside a comment. */
+/**
+ * Whether the line holding `index` looks like a comment there in this repo's
+ * style: the comment opens earlier on that line, or the line continues a
+ * JSDoc block with `*`. A block comment the scanner opened by mistake runs on
+ * over lines of code, and those lines fail this shape, so they are reported.
+ */
+function commentShaped(source, index) {
+  const lineStart = source.lastIndexOf("\n", index - 1) + 1;
+  const before = source.slice(lineStart, index);
+  return /^\s*\*/.test(before) || before.includes("//") || before.includes("/*");
+}
+
+/** Every match of `pattern` in each file that the scanner and the line shape don't both call a comment. */
 function codeMatches(files, pattern) {
   const found = [];
   for (const { rel, source } of files) {
     const comments = commentRanges(rel, source);
     for (const match of source.matchAll(pattern)) {
-      if (!inRanges(comments, match.index)) found.push({ rel, source, match });
+      const comment = inRanges(comments, match.index) && commentShaped(source, match.index);
+      if (!comment) found.push({ rel, source, match });
     }
   }
   return found;
@@ -354,6 +395,40 @@ test("a comment opener inside a string, JSON or JSX text hides nothing", () => {
     "e.ts:1",
     "f.tsx:3",
   ]);
+});
+
+test("a regex literal opens no comment, template or string", () => {
+  const files = [
+    { rel: "a.ts", source: 'const clean = url.replace(/\\/*$/, "");\nconst r = "Signet needs your photos.";\n/** doc */\n' },
+    { rel: "b.ts", source: 'const glob = /[/*]/;\nconst r = "Signet";\n/** doc */\n' },
+    { rel: "c.ts", source: 'const re = /`/;\nconst a = `image/*`;\nconst t = "Signet";\n' },
+    { rel: "d.ts", source: 'const ok = /^https?:\\/\\//.test(u) ? "Signet" : "x";\n' },
+    { rel: "e.ts", source: 's.replace(/`/g, "");\nconst label = `${n} // Signet ${m}`;\n' },
+    { rel: "f.ts", source: 'const a = `${s.replace(/{/g, "")} done`;\nconst t = "Signet";\n' },
+    { rel: "g.ts", source: "const half = total / 2; // Signet gold\n" },
+    { rel: "h.tsx", source: "<Text>a</Text> {/* Signet gold */}\n" },
+    { rel: "i.ts", source: 'const re = /`/;\nconst g = `**/*.ts`;\nconst t = "Signet";\n' },
+    { rel: "j.ts", source: 'const a = `${s.replace(/{/g, "")}`;\nconst b = `a/*b`;\nconst t = "Signet";\n' },
+  ];
+  assert.deepEqual(signetCopyProblems(files), [
+    "a.ts:2",
+    "b.ts:2",
+    "c.ts:3",
+    "d.ts:1",
+    "e.ts:2",
+    "f.ts:2",
+    "i.ts:3",
+    "j.ts:3",
+  ]);
+});
+
+test("a comment that runs away over code is reported, not trusted", () => {
+  // A raw apostrophe in JSX text (lint refuses it, but a lock can't lean on
+  // lint) pairs with the quote before image/, so the scanner opens a block
+  // comment at the glob. The next line is JSX, not a comment line, so it's
+  // reported anyway.
+  const source = "<Text>Don't worry</Text><Picker accept={'image/*'} />\n<Text>Return to Signet.</Text>\n";
+  assert.deepEqual(signetCopyProblems([{ rel: "a.tsx", source }]), ["a.tsx:2"]);
 });
 
 test("design-system names and comments are not copy", () => {
