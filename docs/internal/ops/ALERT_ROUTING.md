@@ -128,20 +128,19 @@ Unlike the others, two alerts comment only on a state *change*, not on every run
 open one that has gone quiet is still live, not stale. Setup for the App the base-sync alert depends on is human-only
 and tracked in [#689](https://github.com/pdcarlson/Frapp/issues/689).
 
-**The three deploy watchdogs are one script, three configurations.** `scripts/ci/deploy-alert.mjs` serves
-`deploy-api.yml`, `deploy-vercel-staging.yml` and `verify-deployments.yml`. The `ALERT_CONFIG` env var
-set in each workflow's `deploy-outcome` job chooses which one it's reporting on, and an unknown value is a hard
+**The deploy watchdogs are one script, one configuration each.** Every alert above that a
+`deploy-outcome` job raises comes from `scripts/ci/deploy-alert.mjs`. The `ALERT_CONFIG` env var set in each
+workflow's `deploy-outcome` job chooses which one it's reporting on, and an unknown value is a hard
 error rather than a silent fallback to the default. They are deliberately **separate alert issues**
 with separate titles: the title is the lookup key, so a shared one would let a recovered API deploy
 close a live Vercel outage's alert. Renaming any title orphans whatever alert is open under the old
-one — it could never be found again, and so would never self-close.
+one — it could never be found again, and so would never self-close. How the script works is in
+[`AGENT_INFRA.md` § Deploy visibility](../ci-cd/AGENT_INFRA.md#deploy-visibility-scriptscideploy-alertmjs).
 
-The API has two of them because they watch different things. `Deploy API` watches the *trigger*: it
-fires the Render deploy hook and polls `/health`, which the old instance keeps answering. `Verify
-deployments` watches the *outcome*: it polls Render until the pushed commit's deploy is terminal.
-A Render build failure opens only the second. Its green job can mean a live deploy or a superseded
-one, so the verifier publishes its verdict as the job output `outcome`, and only `success` closes
-the alert.
+The staging API has two of these alerts because they watch different things. `Deploy API` watches
+the *trigger*: it fires the Render deploy hook and polls `/health/ready`, which the old instance
+keeps answering. `Verify deployments` watches the *outcome*: it polls Render until the pushed
+commit's deploy is terminal. A Render build failure opens only the second.
 
 `production-guardrails.mjs` is also `deploy-production.yml`'s preflight, but that invocation
 (`--preflight`) **files nothing** — it exits non-zero on a violation and lets the deploy fail. So an

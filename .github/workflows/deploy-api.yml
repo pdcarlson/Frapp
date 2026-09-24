@@ -309,11 +309,10 @@ jobs:
       - name: Report deploy outcome and alert on failure
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Required. deploy-alert.mjs serves this workflow and
-          # deploy-vercel-staging.yml, and refuses to guess: an absent or
-          # unknown value is a hard error, because resolving to the wrong
-          # config would report one workflow's job results into the other's
-          # alert issue.
+          # Required. deploy-alert.mjs serves several workflows (its
+          # ALERT_CONFIGS table) and refuses to guess: an absent or unknown
+          # value is a hard error, because resolving to the wrong config would
+          # report one workflow's job results into another's alert issue.
           ALERT_CONFIG: deploy-api
           DEPLOY_NEEDS: ${{ toJSON(needs) }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -557,10 +557,11 @@ test("a network-level throw is absorbed, not propagated", async () => {
 });
 
 // ── The Vercel staging configuration (#1674) ────────────────────────────────
-// `deploy-alert.mjs` watches two workflows now. These cover the second one and,
-// more importantly, the two ways the generalisation could quietly break the
-// first: a shared alert title (which would make the two watchdogs close each
-// other's issues) and a gate job the second workflow does not have.
+// #1674 made `deploy-alert.mjs` watch a second workflow (#2431 added a third;
+// its section is at the end). These cover the Vercel one and, more
+// importantly, the two ways the generalisation could quietly break the first:
+// a shared alert title (which would make two watchdogs close each other's
+// issues) and a gate job the second workflow does not have.
 
 /** `toJSON(needs)` for a failed `Deploy Vercel staging` run. */
 function vercelFailedNeeds() {

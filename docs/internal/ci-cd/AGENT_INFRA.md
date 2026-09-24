@@ -912,8 +912,9 @@ first and third are what the `deploy-outcome` job fixes:
 3. **No notification of any kind.** A failed staging migration was indistinguishable from a quiet
    afternoon.
 
-The terminal `deploy-outcome` job `needs` every prior job and runs `if: always()`, so it sees the
-whole run's shape. Per run it does two things:
+In `deploy-api.yml` the terminal `deploy-outcome` job `needs` every prior job and runs under
+`always()`, so it sees the whole run's shape. (Each workflow sets its own condition; the observer's
+differs, below.) Per run it does two things:
 
 - **Says what happened.** A step summary and a `::notice::`/`::error::` annotation state plainly
   whether the run **deployed** something, **failed**, or **declined to deploy**, with a per-job
@@ -929,7 +930,7 @@ A **no-op run never closes an open alert** — skipping every job proves nothing
 deploys work, and no-op runs are the majority. `routine-state` is what keeps `/next` from claiming
 the alert as backlog work (§0.2 treats that label as never-claimable).
 
-### Three workflows, one script (#1674, #2431)
+### Several workflows, one script (#1674, #2431)
 
 `deploy-alert.mjs` is **not** specific to `deploy-api.yml`. Since #1674 it also serves
 `deploy-vercel-staging.yml`, which shipped in #1578 with no alerting at all. Since #2431 it also
@@ -963,6 +964,13 @@ Consequences worth knowing before editing the script:
   (`outcome`, written by `verify-render-deploy.mjs`) whose `success` value alone counts as a
   deploy. A `neutral` verdict is a no-op. A green job with no recognised verdict gets a
   `::warning::`: it means the output wiring broke, and such a run can never close an alert.
+- **A cancelled observer run reports nothing.** `verify-deployments.yml`'s `deploy-outcome` runs
+  on `!cancelled()`, not `always()`. Cancelling a deploy leaves nothing deployed, so the deploy
+  workflows count a cancel as a failure. Cancelling the observer stops the watching, not the
+  Render deploy, so it is no verdict: `always()` there would file a false P1 on every manual
+  cancel.
+- **The observer's Render reads retry.** `verify-render-deploy.mjs` reads through
+  `lib/http.mjs`'s `resilientFetch`, because any read error is a failure verdict and so a P1.
 
 The full roster of GitHub-issue watchdogs, with what each one means and when it clears, is
 [`ALERT_ROUTING.md`](../ops/ALERT_ROUTING.md) § Automated GitHub-issue alerts — that table is the

@@ -257,7 +257,7 @@ describe("writeOutcomeOutput", () => {
 
   it("refuses to publish a status outside the closed set, even outside Actions", () => {
     // Free text (a provider error message) must never reach the output: it
-    // lands in an issue body, which GitHub does not mask.
+    // leaves this job, into deploy-alert.mjs's step summary.
     const { writes, append } = recorder();
     for (const bad of ["Render API error: 401", "SUCCESS", "", undefined]) {
       assert.throws(

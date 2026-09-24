@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Polls the Render deploy-list API until a deploy matching $GITHUB_SHA reaches
-// a terminal state. Fails on build_failed / update_failed / pre_deploy_failed
+// Polls the Render deploy-list API until a deploy matching the commit (DEPLOY_SHA,
+// else GITHUB_SHA) reaches a terminal state. Fails on build_failed / update_failed / pre_deploy_failed
 // and on "no deploy for this SHA after the grace window" (autoDeploy wiring
 // red flag). Treats `canceled` / `deactivated` as neutral (superseded by a
 // newer deploy).
@@ -8,7 +8,9 @@
 // Env inputs:
 //   RENDER_API_KEY     — required
 //   RENDER_SERVICE_ID  — required
-//   GITHUB_SHA         — required
+//   DEPLOY_SHA         — the commit to verify. Set this one: a step-level
+//                        `GITHUB_SHA:` is ignored (reserved prefix; see main())
+//   GITHUB_SHA         — the fallback when DEPLOY_SHA is unset (Actions sets it)
 //   SERVICE_LABEL      — optional, used only for logs
 //   GITHUB_OUTPUT      — set by Actions; receives the step output `outcome`
 //
@@ -19,6 +21,7 @@
 
 import { appendFileSync } from "node:fs";
 
+import { resilientFetch } from "./lib/http.mjs";
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import { findRenderDeployBySha } from "./lib/providers.mjs";
 import { requireEnv } from "./lib/env.mjs";
@@ -57,7 +60,11 @@ export async function verifyRenderDeploy({
   sha,
   label = serviceId,
   clock = createClock(),
-  fetchImpl,
+  // Retrying, not bare `fetch`: a single 429, 5xx or reset read is a failure
+  // verdict (see `classify`), and since #2431 a failure files a P1 alert, so
+  // one blip on one poll would page for a deploy that went live a minute
+  // later. `resilientFetch` retries exactly those, and a 401 or 404 not at all.
+  fetchImpl = resilientFetch,
   pollIntervalMs = RENDER_POLL_INTERVAL_MS,
   noDeployGraceMs = RENDER_NO_DEPLOY_GRACE_MS,
   overallTimeoutMs = RENDER_OVERALL_TIMEOUT_MS,
@@ -162,9 +169,10 @@ export const VERIFY_OUTCOMES = new Set(["success", "neutral", "failure"]);
  * deploy proves nothing about whether deploys work, so the exit code alone
  * would read a cancel mid-outage as a recovery.
  *
- * Only the closed-set status is written, never `message`. The output reaches an
- * issue body, which GitHub does not mask the way it masks a log, so free text
- * built from a provider error has no business there.
+ * Only the closed-set status is written, never `message`, which can carry a
+ * provider's error text. The output leaves this job: `deploy-alert.mjs`
+ * classifies on it and prints it in the `deploy-outcome` step summary. A closed
+ * set keeps anything a provider said confined to this job's own log.
  *
  * A no-op outside Actions (no `GITHUB_OUTPUT`). Throws on a status outside the
  * set rather than publishing it: the reader matches exact strings, so an

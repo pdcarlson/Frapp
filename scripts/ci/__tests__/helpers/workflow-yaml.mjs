@@ -314,12 +314,37 @@ export function workflowSteps(workflowPath) {
 }
 
 /**
- * Every job in a workflow, with its `if:` expression.
+ * A job's own keys (the ones at indent 4), read the way `env:` is.
+ *
+ * An inline value comes back as a scalar (`needs: [a, b]` → `"[a, b]"`, quotes
+ * and a trailing comment removed); a nested mapping comes back as a flat Map of
+ * its immediate children, so `outputs:`, `permissions:` and `environment:` can
+ * be asserted key by key rather than by a regex over the job's text, which a
+ * quoted value or an inline comment would break. A block sequence or a block
+ * scalar reads as an empty Map or its indicator; this is not a YAML parser.
+ */
+function jobKeys(lines, jobStart, jobEnd) {
+  const keys = new Map();
+  for (let i = jobStart + 1; i < jobEnd; i += 1) {
+    if (indentOf(lines[i]) !== 4) continue;
+    const match = lines[i].match(/^\s*([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
+    if (!match) continue;
+    const value = scalarValue(match[2]);
+    keys.set(match[1], value === "" ? envMapAt(lines, i) : value);
+  }
+  return keys;
+}
+
+/**
+ * Every job in a workflow, with its `if:` expression and its own keys.
  *
  * Steps are not the whole story: `release` — the job that mints and pushes the
  * `vX.Y.Z` tag — is gated at JOB level, so a guard that only walked steps could
  * not see the one thing standing between a dry run and a version tag naming a
  * commit that was never deployed.
+ *
+ * Returns `{ jobId, if: <raw expression|null>, keys: Map }` per job; `keys` is
+ * described at `jobKeys`.
  */
 export function workflowJobs(workflowPath) {
   const lines = significantLines(readFileSync(workflowPath, "utf8"));
@@ -350,7 +375,7 @@ export function workflowJobs(workflowPath) {
       }
       break;
     }
-    jobs.push({ jobId: jobIdFrom(lines[from]), if: condition });
+    jobs.push({ jobId: jobIdFrom(lines[from]), if: condition, keys: jobKeys(lines, from, to) });
   }
   return jobs;
 }

@@ -190,8 +190,9 @@ export const DEPLOY_VERCEL_STAGING_CONFIG = {
  * `.github/workflows/verify-deployments.yml` — added by #2431.
  *
  * The one workflow that sees the staging API deploy's OUTCOME. `Deploy API`
- * fires the Render deploy hook and polls `/health`, which the old instance
- * keeps answering, so it goes green whether or not the new build ever ships.
+ * fires the Render deploy hook and polls `/health/ready`, which the old
+ * instance keeps answering, so it goes green whether or not the new build ever
+ * ships.
  * This workflow polls Render until the pushed commit's deploy reaches a
  * terminal state. It went red on at least ten straight pushes to `main`
  * between 2026-09-18 and 2026-09-22, every one a `build_failed`, and staging
@@ -240,7 +241,7 @@ export const VERIFY_DEPLOYMENTS_CONFIG = {
     "**A green run of this shape is not evidence that the staging API deployed.**",
   whyLines: [
     "`Deploy API` goes green once Render accepts its deploy hook and the old instance still answers",
-    "`/health`, so it cannot see a build that fails afterwards. `Verify deployments` polls Render until",
+    "`/health/ready`, so it cannot see a build that fails afterwards. `Verify deployments` polls Render until",
     "the pushed commit's deploy reaches a terminal state, but a red check on a `main` commit notifies",
     "nobody. It went red on at least ten straight pushes from 2026-09-18 to 2026-09-22, every one a",
     "`build_failed`, and staging served a four-day-old image while nothing alerted (#2431). This issue",
@@ -353,9 +354,10 @@ export function alertJobNames(config = DEFAULT_ALERT_CONFIG) {
 }
 
 // The Deploy API alert's identity, re-exported under the names this module used
-// before #1674 parameterised it. `deploy-alert.test.mjs` imports both to assert
-// that the two watchdogs never share an alert title — a shared one would let a
-// recovered Deploy API run close a live Vercel outage's alert.
+// before #1674 parameterised it. `deploy-alert.test.mjs` imports both, and
+// asserts across every ALERT_CONFIGS entry that no two watchdogs share an alert
+// title: a shared one would let a recovered Deploy API run close a live Vercel
+// outage's alert.
 //
 // `GATE_JOB_NAME` and `DEPLOY_JOB_NAMES` were re-exported here too and are
 // gone: nothing imported them, and a dead export that looks like an API is how
