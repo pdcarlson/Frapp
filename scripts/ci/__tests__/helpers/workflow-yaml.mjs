@@ -49,6 +49,11 @@ function indentOf(line) {
   return line.match(/^\s*/)[0].length;
 }
 
+/** A raw value with a comment removed: a leading `#`, or a `#` after whitespace. */
+function withoutComment(raw) {
+  return raw.trim().replace(/(^|\s+)#.*$/, "").trim();
+}
+
 /**
  * One `env:` value, as Actions would see it.
  *
@@ -257,7 +262,8 @@ function stepIndices(lines, jobStart, jobEnd) {
  * (#2629): a gated step read as ungated, an env override as no env.
  */
 function stepKeyIndent(lines, stepStart, stepEnd) {
-  const onDashLine = /^(\s*-\s+)\S/.exec(lines[stepStart]);
+  // A `#` after the dash starts a comment, not a key: `- # note` is a bare `-`.
+  const onDashLine = /^(\s*-\s+)[^\s#]/.exec(lines[stepStart]);
   if (onDashLine) return onDashLine[1].length;
   return stepStart + 1 < stepEnd ? indentOf(lines[stepStart + 1]) : indentOf(lines[stepStart]) + 2;
 }
@@ -270,7 +276,7 @@ function stepKeyIndent(lines, stepStart, stepEnd) {
  * a failure message still points somewhere real.
  */
 function stepName(lines, stepStart, stepEnd, keyIndent) {
-  const first = lines[stepStart].trim().replace(/^-\s*/, "");
+  const first = lines[stepStart].trim().replace(/^-\s*/, "").replace(/^#.*$/, "");
   const nameKey = new RegExp(String.raw`^${named("name")}\s*:\s*`);
   if (nameKey.test(first)) return scalarValue(first.replace(nameKey, ""));
   for (let i = stepStart + 1; i < stepEnd; i += 1) {
@@ -300,7 +306,9 @@ function stepIf(lines, stepStart, stepEnd, keyIndent) {
         : indentOf(lines[i]) === keyIndent && new RegExp(String.raw`^\s*${named("if")}\s*:\s*`).test(lines[i]);
     if (!atStepKeyIndent) continue;
 
-    const inline = lines[i].replace(new RegExp(String.raw`^\s*-?\s*${named("if")}\s*:\s*`), "").trim();
+    // A trailing `# …` is a comment, including after a block indicator
+    // (`if: >- # note`), which would otherwise be returned as the condition.
+    const inline = withoutComment(lines[i].replace(new RegExp(String.raw`^\s*-?\s*${named("if")}\s*:\s*`), ""));
     if (inline !== "" && !isBlockScalarHeader(inline)) return inline;
 
     // Block scalar: the condition is the deeper-indented lines beneath it.
@@ -322,7 +330,8 @@ function stepIf(lines, stepStart, stepEnd, keyIndent) {
 }
 
 /**
- * A step's own `env:`, wherever it sits: as a later key (indent 8), or as the
+ * A step's own `env:`, wherever it sits: as a later key (at the step's key
+ * indent, see `stepKeyIndent`), or as the
  * step's first key (`- env:`), which a scan from the line after the dash never
  * sees and which would otherwise read as no env at all.
  */
@@ -517,7 +526,7 @@ export function workflowJobs(workflowPath) {
     for (let i = from + 1; i < to; i += 1) {
       const ifKey = new RegExp(String.raw`^\s*${named("if")}\s*:\s*`);
       if (indentOf(lines[i]) !== 4 || !ifKey.test(lines[i])) continue;
-      const inline = lines[i].replace(ifKey, "").trim();
+      const inline = withoutComment(lines[i].replace(ifKey, ""));
       if (inline !== "" && !isBlockScalarHeader(inline)) {
         condition = inline;
       } else {

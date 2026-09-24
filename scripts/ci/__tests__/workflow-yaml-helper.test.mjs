@@ -287,6 +287,26 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     assert.equal(steps.find((s) => s.jobId === "bare").name, "<unnamed: run>");
   });
 
+  it("reads a comment after the dash, or after an if:'s indicator, as a comment", () => {
+    // `- # note` is a bare `-`: its keys start on the line below. And
+    // `if: >- # note` is a block-scalar header; the condition is below it.
+    const comments = join(dir, "comments.yml");
+    writeFileSync(
+      comments,
+      "name: X\njobs:\n  j:\n    if: >- # push only\n      github.event_name == 'push'\n    steps:\n" +
+        "      -   # note\n        name: A\n        if: always()\n        env:\n          GITHUB_SHA: o\n" +
+        "      - name: B\n        if: >- # dry runs only\n          inputs.dry_run_only\n" +
+        "      - name: C\n        if: success() # inline note\n",
+    );
+    const [a, b, c] = workflowSteps(comments);
+    assert.equal(a.name, "A");
+    assert.equal(a.if, "always()");
+    assert.equal(a.env.get("GITHUB_SHA"), "o");
+    assert.equal(b.if, "inputs.dry_run_only");
+    assert.equal(c.if, "success()");
+    assert.equal(workflowJobs(comments)[0].if, "github.event_name == 'push'");
+  });
+
   it("reads an empty flow mapping as an empty mapping: {} can hide nothing", () => {
     const empty = join(dir, "empty.yml");
     writeFileSync(
