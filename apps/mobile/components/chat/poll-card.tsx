@@ -69,7 +69,7 @@ import { ReplyQuote } from "./reply-quote";
 
 export interface PollCardProps {
   message: ChatMessage;
-  viewerId: string | null;
+  viewerId: string;
   /** Confirmed messages can be voted on; pending optimistic rows cannot. */
   isConfirmed: boolean;
   /**
@@ -199,7 +199,7 @@ export function PollCard({
 
   const closesAt = parseInstant(payload.closes_at);
   const isClosed = closesAt ? closesAt.getTime() < now : false;
-  const canVote = isConfirmed && !isClosed && viewerId !== null;
+  const canVote = isConfirmed && !isClosed;
 
   const cast = (option: PollOption) => {
     if (!canVote) return;
