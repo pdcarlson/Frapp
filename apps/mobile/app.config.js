@@ -2,8 +2,9 @@
 // function as `config`; everything static stays in app.json (which is what
 // `expo-doctor`'s schema check and #1801 validate). This file exists for the
 // fields that cannot be static: Firebase's Android client config path, and
-// the EAS production fences on public env that is inlined into the store
-// binary. `extra.gitSha` is the EAS git SHA (`EAS_BUILD_GIT_COMMIT_HASH`)
+// the fences on public env that is inlined into the binary (production-only
+// checks, a client-key allowlist on every EAS profile, and a secret-key
+// denylist on every evaluation). `extra.gitSha` is the EAS git SHA (`EAS_BUILD_GIT_COMMIT_HASH`)
 // for Sentry metadata — it is never the Sentry `release` name.
 //
 // Push on Android goes through FCM, and `expo-notifications` reads FCM's
@@ -55,18 +56,20 @@
 // because EAS and every doc already use it; renaming it is a separate change.
 //
 // And the config refuses a **secret** key on every profile, and whenever it is
-// evaluated, not only for production: a `sb_secret_…` key, or a JWT whose role
-// isn't `anon` (`service_role` bypasses RLS), and anything in an
+// evaluated, not only for production: a `sb_secret_…` key, a personal access
+// token (`sbp_…`, which controls the owner's Supabase projects), or a JWT whose
+// role isn't `anon` (`service_role` bypasses RLS), and anything in an
 // `EXPO_PUBLIC_*` variable is inlined into the bundle. A preview build is still
 // an installable binary anyone can unpack.
 //
 // Every EAS build, whatever its profile, also allows only a client key once the
 // Supabase key is set: the publishable key or an anon JWT, with nothing around
-// it. Its binary goes to testers or the store, and a value pasted from
-// the wrong field (the legacy JWT secret, an access token) has no shape the
-// secret check could refuse. Unset still builds (nothing is inlined), and a run
-// with no EAS profile keeps only the secret check, so local placeholders work;
-// `eas update` is such a run too (spec/environments/README.md § Mobile (EAS)).
+// it. Its binary goes to testers or the store, and some values pasted from the
+// wrong field (the legacy JWT secret) have no shape the secret check could
+// refuse. Unset still builds on preview and development (nothing is inlined;
+// production's presence check refuses it), and a run with no EAS profile keeps
+// only the secret check, so local placeholders work; `eas update` is such a run
+// too (spec/environments/README.md § Mobile (EAS)).
 //
 // Every EAS **production** build also refuses when `EXPO_PUBLIC_ASK_ENABLED`
 // switches Ask on (#2259). Ask answers from a synthetic corpus
@@ -259,32 +262,53 @@ function assertProductionSupabasePublishableKey({
 
 const PUBLIC_SUPABASE_SECRET_KEY_ERROR = [
   "EXPO_PUBLIC_SUPABASE_ANON_KEY holds a credential a client must not carry: a",
-  "Supabase secret key (sb_secret_…) or a JWT whose role isn't anon (service_role,",
-  "or a user's access token). Every EXPO_PUBLIC_* value is inlined into the app",
-  "bundle, so any build would hand it to whoever unpacks the binary. Use the",
+  "Supabase secret key (sb_secret_…), a personal access token (sbp_…), or a JWT",
+  "whose role isn't anon (service_role, or a user's access token). Every",
+  "EXPO_PUBLIC_* value is inlined into the app bundle, so any build would hand",
+  "it to whoever unpacks the binary. Use the",
   "project's publishable key instead, and rotate the credential if a build",
   "already carried it.",
   "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
-/** The claims of a JWT-shaped key, or undefined for anything else. */
+/**
+ * Claims to check, read with whitespace removed so a JWT wrapped across lines
+ * still decodes: the whole value's when it has three parts, and every
+ * base64url segment after a dot that opens with `eyJ` (`{"`), which is where a
+ * JWT's claims sit wherever it was pasted (after a URL, a stray dot or another
+ * JWT). A segment after a dot can also be a header, when JWTs are joined by a
+ * dot, so one that looks like a header (an `alg` and no `role`) is skipped.
+ * One anchored match per part keeps the scan linear however long the value is.
+ */
 function jwtClaims(key) {
-  const parts = key.split(".");
-  return parts.length === 3 ? decodeJwtSegment(parts[1]) : undefined;
+  const parts = key.replace(/\s+/g, "").split(".");
+  const found = parts.length === 3 ? [decodeJwtSegment(parts[1])] : [];
+  for (const part of parts.slice(1)) {
+    const segment = /^eyJ[A-Za-z0-9_-]*/.exec(part);
+    const claims = segment ? decodeJwtSegment(segment[0]) : undefined;
+    if (claims && !("alg" in claims && !("role" in claims))) found.push(claims);
+  }
+  return found.filter(Boolean);
 }
 
 // Refuses the shapes that are known credentials, on every evaluation: a secret
-// key, or a JWT whose role isn't `anon` (service_role, or a user's
-// `authenticated` access token). It is a denylist, so placeholder values keep
-// working locally; an EAS build also has to pass assertEasSupabaseClientKey,
-// the allowlist. This is the only key check on the one path with no EAS
-// profile whose bundle leaves the machine, the export `eas update` publishes,
-// so it looks for `sb_secret_` anywhere: a pasted key can arrive wrapped in
-// quotes or behind a zero-width space, which trim() leaves.
+// key, a personal access token, or a JWT whose role isn't `anon` (service_role,
+// or a user's `authenticated` access token). It is a denylist, so placeholder
+// values keep working locally; an EAS build also has to pass
+// assertEasSupabaseClientKey, the allowlist. This is the only key check on the
+// one path with no EAS profile whose bundle leaves the machine, the export
+// `eas update` publishes, and the only one that sees a credential pasted onto
+// the end of a real key (the allowlist patterns accept key characters to the
+// end), so a prefix anywhere in the value counts, and so does any JWT in it. A
+// real key's random part can contain `sbp_` by chance, in fewer than one key
+// in 100,000; rotating it gives one that doesn't.
 function assertNoSupabaseSecretKey({ supabaseAnonKey } = {}) {
   const key = String(supabaseAnonKey || "").trim();
-  const claims = jwtClaims(key);
-  if (key.includes("sb_secret_") || (claims && claims.role !== "anon")) {
+  if (
+    key.includes("sb_secret_") ||
+    key.includes("sbp_") ||
+    jwtClaims(key).some((claims) => claims.role !== "anon")
+  ) {
     throw new Error(PUBLIC_SUPABASE_SECRET_KEY_ERROR);
   }
 }
@@ -293,10 +317,10 @@ const EAS_SUPABASE_CLIENT_KEY_ERROR = [
   "EAS builds require a set EXPO_PUBLIC_SUPABASE_ANON_KEY to be a key a client",
   "may carry, with nothing around it: the project's publishable key",
   "(sb_publishable_…) or its legacy anon JWT. An EAS build inlines the value",
-  "verbatim into a binary that goes to testers or the store, and a value",
-  "pasted from the wrong field (the legacy JWT secret, an access token) has no",
-  "shape to refuse, so only those two are allowed. Rotate the value if a build",
-  "already carried it.",
+  "verbatim into a binary that goes to testers or the store, and some values",
+  "pasted from the wrong field (the legacy JWT secret) have no shape to refuse,",
+  "so only those two are allowed. Rotate the value if a build already carried",
+  "it.",
   "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
@@ -330,8 +354,8 @@ function decodeJwtSegment(segment) {
 /**
  * The publishable key, or a well-formed JWT (a header naming its `alg`, and
  * claims) whose role is `anon`, as the whole string. Stricter than
- * `jwtClaims`, which reads only the claims so the denylist can find a secret
- * however it was pasted.
+ * `jwtClaims`, which reads claims wherever they sit so the denylist can find a
+ * JWT inside anything else that was pasted.
  */
 function isSupabaseClientKey(raw) {
   if (SUPABASE_PUBLISHABLE_KEY_PATTERN.test(raw)) return true;

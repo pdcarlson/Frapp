@@ -442,11 +442,11 @@ is unavailable in that state and the sign-in screen says so.
 > ([`mobile.md` § 6.3 Environment Configuration](../ops/deployment/mobile.md#63-environment-configuration))
 > sets the publishable key on `preview` too, but only `production` enforces it: a preview or
 > development build with the legacy anon key still evaluates. **No** profile may carry a secret key:
-> a `sb_secret_…` key, or a JWT whose role isn't `anon` (`service_role`, or a user's
-> access token), fails config evaluation everywhere, because every `EXPO_PUBLIC_*` value
+> a `sb_secret_…` key, a personal access token (`sbp_…`), or a JWT whose role isn't
+> `anon` (`service_role`, or a user's access token), fails config evaluation everywhere, because every `EXPO_PUBLIC_*` value
 > ships inside the bundle. On every EAS profile, a set value must also be one of the two
 > client keys (the publishable key or the legacy anon JWT) with nothing around it,
-> which refuses the legacy JWT secret or an access token pasted from the wrong field,
+> which also refuses the legacy JWT secret pasted from the wrong field,
 > since the binary goes to testers or the store. An unset key still builds on `preview`
 > and `development`. A run with no EAS profile keeps only the secret-key check: a local
 > `expo start` or CI prebuild, where placeholder values still run, and also `eas update`,
