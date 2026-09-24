@@ -723,6 +723,11 @@ the same run). Hosted projects are not applied from a cloud-agent session.
 - **Checks**: After `db push`,
   `select display_name from users where id = '00000000-0000-0000-0000-000000000000'`
   returns `Signet System`. Re-running the migration changes nothing.
+  *2026-09-24: true only until `20260924190000` applies. A push that applies
+  both migrations ends on `Frapp System`, which is correct, not a failed
+  #1935; the check to run is the one in
+  [the 2026-09-24 entry](#2026-09-24-system-actor-display_name-becomes-frapp-system-2578)
+  above.*
 - **Promoter notes**: Data only — no schema change, no lock beyond the single
   row, no client dependency. Staging applies on merge to `main`. Production
   waits for Deploy production; do not dispatch that workflow from this change.
