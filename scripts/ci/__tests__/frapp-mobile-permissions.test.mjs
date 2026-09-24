@@ -31,8 +31,11 @@
 //
 // SCOPE. String-valued *Permission prompts under apps/mobile, the
 // stripeUnavailableReason / pushUnavailableReason definitions, and the
-// dues merchantDisplayName default. The rest of the mobile surface's copy,
-// and the Settings → <expo.name> recovery paths, are frapp-mobile-copy's.
+// dues merchantDisplayName default. The ban on Signet anywhere else in the
+// mobile surface's copy, stripe.ts and push.ts included, and the
+// Settings → <expo.name> recovery paths are frapp-mobile-copy's: its walk
+// knows a design-system comment from a string, which a file-wide ban here
+// would not.
 // app.json slug / scheme / bundle id are permanent identifiers (ADR-25),
 // not copy, and not this lock's. Do not add a must-exist assert for the
 // EAS project id. Do not run eas init. Do not walk landing. Skip spec
@@ -174,18 +177,12 @@ export function mobilePermissionLockProblems({ appJson, stripe, push, dues }) {
   if (!/Frapp mobile app/.test(stripe)) {
     problems.push("stripeUnavailableReason must name the Frapp mobile app");
   }
-  if (/\bSignet\b/.test(stripe)) {
-    problems.push("stripe.ts must not name Signet");
-  }
 
   if (!/export function pushUnavailableReason/.test(push)) {
     problems.push("must keep pushUnavailableReason");
   }
   if (!/installed Frapp build/.test(push)) {
     problems.push("pushUnavailableReason must name the installed Frapp build");
-  }
-  if (/\bSignet\b/.test(push)) {
-    problems.push("push.ts must not name Signet");
   }
 
   if (!/merchantDisplayName:\s*chapterName \?\? "Frapp"/.test(dues)) {
@@ -311,7 +308,7 @@ test("putting Signet back in stripeUnavailableReason fails", () => {
     dues: readRepo(DUES),
   });
   assert.ok(
-    problems.some((problem) => /stripe|Signet/.test(problem)),
+    problems.some((problem) => problem.includes("installed Frapp build")),
     problems.join("; "),
   );
 });

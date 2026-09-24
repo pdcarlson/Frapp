@@ -4,9 +4,10 @@
 // put Frapp back in metadata titles, JSON-LD, or the lockup aria-label,
 // switch a title to single quotes the first lock used to miss, or add a
 // third metadata site the hardcoded paths would miss. USPTO stay on
-// 1901. Leave store-name uniqueness on 1829. Landing visual tokens are
-// Signet since the token cutover (#2366) — Figtree and the signet.css
-// ladder — so there are no legacy tokens left for this lock to protect.
+// 1901. The store listing name is ADR-25's, not this lock's. Landing
+// visual tokens are Signet since the token cutover (#2366) — Figtree and
+// the signet.css ladder — so there are no legacy tokens left for this
+// lock to protect.
 //
 // SCOPE. Landing metadata titles, JSON-LD SoftwareApplication / brand
 // names, the lockup aria-label, and the spec's status banner. This lock is

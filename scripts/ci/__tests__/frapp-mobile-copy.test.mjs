@@ -6,10 +6,11 @@
 // import, and comments about the design system. Each binary stays exactly as
 // shipped until its user updates from the store, so a string that slips back
 // is a store update to fix, not a deploy. Five earlier locks pinned slices of
-// this surface on Signet; the three that spanned surfaces had their mobile
-// halves split out into this file (auth wordmark, calendar ICS, the ops-nudge
-// payment fixtures), and signet-mobile-permissions became
-// frapp-mobile-permissions.
+// this surface on Signet. Four spanned surfaces, and their mobile halves moved
+// here: the auth wordmark, the calendar ICS, the ops-nudge payment fixtures,
+// and the export-filename walk (apps/mobile left it, and the signet- download
+// ban below replaces it). The fifth, signet-mobile-permissions, was mobile
+// only and became frapp-mobile-permissions.
 //
 // WHAT IT CHECKS.
 // - A walk of apps/mobile's non-spec sources (app.json included): no whole
@@ -88,28 +89,88 @@ function walkMobile(dir = MOBILE_ROOT, { specs = false } = {}) {
 }
 
 /**
- * Whether `index` sits inside a comment. A `//` counts only outside a quoted
- * string on its line, so `"PRODID:-//Signet//…"` and `"https://…"` stay code.
- * A block comment is open when the last `/*` before `index` has no `*\/`
- * after it. Line-local on purpose: a quote miscounted in JSX text can only
- * misjudge the rest of that one line.
+ * The comment spans of one file, as `[start, end)` pairs. JSON has none, so a
+ * `"**\/*"` glob in app.json can't hide the keys after it. For code, one pass
+ * tracks strings and template literals (with `${…}` nesting), so a `/*` in
+ * `"image/*"` or a `//` in `"PRODID:-//…"` stays code.
+ *
+ * Every misread this scanner can make errs toward reporting too much. Quoted
+ * strings close at a newline, so an apostrophe in JSX text or a quote in a
+ * regex literal miscounts one line at most, and a stray backtick only turns
+ * comments into code. The misses are narrower: a `//` preceded by `:` never
+ * opens a comment, so a URL in JSX text stays code, but a bare `//` or `/*`
+ * in unquoted JSX text is still read as a comment opener.
  */
-export function isInComment(source, index) {
-  const open = source.lastIndexOf("/*", index);
-  if (open !== -1 && open > source.lastIndexOf("*/", index)) return true;
-  const lineStart = source.lastIndexOf("\n", index - 1) + 1;
-  let quote = null;
-  for (let i = lineStart; i < index; i += 1) {
+export function commentRanges(rel, source) {
+  if (rel.endsWith(".json")) return [];
+  const ranges = [];
+  const braces = []; // open-brace depth inside each `${`, so `}` knows when the template resumes
+  let state = "code"; // code | line | block | ' | " | `
+  let start = 0;
+  for (let i = 0; i < source.length; i += 1) {
     const char = source[i];
-    if (quote) {
+    const next = source[i + 1];
+    if (state === "line") {
+      if (char === "\n") {
+        ranges.push([start, i]);
+        state = "code";
+      }
+    } else if (state === "block") {
+      if (char === "*" && next === "/") {
+        ranges.push([start, i + 2]);
+        state = "code";
+        i += 1;
+      }
+    } else if (state === "'" || state === '"') {
       if (char === "\\") i += 1;
-      else if (char === quote) quote = null;
-      continue;
+      else if (char === state || char === "\n") state = "code";
+    } else if (state === "`") {
+      if (char === "\\") i += 1;
+      else if (char === "`") state = "code";
+      else if (char === "$" && next === "{") {
+        braces.push(0);
+        state = "code";
+        i += 1;
+      }
+    } else if (char === "/" && next === "/" && source[i - 1] !== ":") {
+      state = "line";
+      start = i;
+      i += 1;
+    } else if (char === "/" && next === "*") {
+      state = "block";
+      start = i;
+      i += 1;
+    } else if (char === "'" || char === '"' || char === "`") {
+      state = char;
+    } else if (braces.length > 0 && char === "{") {
+      braces[braces.length - 1] += 1;
+    } else if (braces.length > 0 && char === "}") {
+      if (braces[braces.length - 1] === 0) {
+        braces.pop();
+        state = "`";
+      } else {
+        braces[braces.length - 1] -= 1;
+      }
     }
-    if (char === '"' || char === "'" || char === "`") quote = char;
-    else if (char === "/" && source[i + 1] === "/") return true;
   }
-  return false;
+  if (state === "line" || state === "block") ranges.push([start, source.length]);
+  return ranges;
+}
+
+function inRanges(ranges, index) {
+  return ranges.some(([from, to]) => index >= from && index < to);
+}
+
+/** Every match of `pattern` in each file that sits outside a comment. */
+function codeMatches(files, pattern) {
+  const found = [];
+  for (const { rel, source } of files) {
+    const comments = commentRanges(rel, source);
+    for (const match of source.matchAll(pattern)) {
+      if (!inRanges(comments, match.index)) found.push({ rel, source, match });
+    }
+  }
+  return found;
 }
 
 function lineOf(source, index) {
@@ -118,40 +179,27 @@ function lineOf(source, index) {
 
 /** `Signet` as a whole word outside comments; `SignetTokens` is not a hit. */
 export function signetCopyProblems(files) {
-  const problems = [];
-  for (const { rel, source } of files) {
-    for (const match of source.matchAll(/\bSignet\b/g)) {
-      if (isInComment(source, match.index)) continue;
-      problems.push(`${rel}:${lineOf(source, match.index)}`);
-    }
-  }
-  return problems;
+  return codeMatches(files, /\bSignet\b/g).map(
+    ({ rel, source, match }) => `${rel}:${lineOf(source, match.index)}`,
+  );
 }
 
 /** A Save-as name that still starts signet-. Design-system files are not downloads. */
 export const SIGNET_DOWNLOAD_NAME = /\bsignet-[^\n]{0,80}?\.(?:ics|csv|pdf)\b/gi;
 
 export function signetDownloadNameProblems(files) {
-  const problems = [];
-  for (const { rel, source } of files) {
-    for (const match of source.matchAll(SIGNET_DOWNLOAD_NAME)) {
-      if (isInComment(source, match.index)) continue;
-      problems.push(`${rel}:${lineOf(source, match.index)}`);
-    }
-  }
-  return problems;
+  return codeMatches(files, SIGNET_DOWNLOAD_NAME).map(
+    ({ rel, source, match }) => `${rel}:${lineOf(source, match.index)}`,
+  );
 }
 
 /** Every `Settings → X` path, with X the word iOS Settings must list. */
 export function collectSettingsPaths(files) {
-  const found = [];
-  for (const { rel, source } of files) {
-    for (const match of source.matchAll(/Settings → ([A-Za-z][\w-]*)/g)) {
-      if (isInComment(source, match.index)) continue;
-      found.push({ rel, line: lineOf(source, match.index), name: match[1] });
-    }
-  }
-  return found;
+  return codeMatches(files, /Settings → ([A-Za-z][\w-]*)/g).map(({ rel, source, match }) => ({
+    rel,
+    line: lineOf(source, match.index),
+    name: match[1],
+  }));
 }
 
 export function settingsPathProblems(files, expoName) {
@@ -196,19 +244,14 @@ export function pinnedSiteProblems({ signIn, calendar }) {
   return problems;
 }
 
+/** The two fixtures must exist; signetFixtureProblems bans the Signet ones in every spec. */
 export function paymentFixtureProblems({ stripeSpec, balanceSpec }) {
   const problems = [];
   if (!/merchantDisplayName:\s*"Frapp"/.test(stripeSpec)) {
     problems.push(`${STRIPE_SPEC} must pass merchantDisplayName Frapp`);
   }
-  if (/merchantDisplayName:\s*"Signet"/.test(stripeSpec)) {
-    problems.push(`${STRIPE_SPEC} must not pass merchantDisplayName Signet`);
-  }
   if (!/installed Frapp build/.test(balanceSpec)) {
     problems.push(`${BALANCE_SPEC} must fixture installed Frapp build`);
-  }
-  if (/installed Signet build/.test(balanceSpec)) {
-    problems.push(`${BALANCE_SPEC} must not fixture installed Signet build`);
   }
   return problems;
 }
@@ -291,6 +334,28 @@ test("a Signet string, JSX text or JSON value fails the walk", () => {
   assert.deepEqual(signetCopyProblems(files), ["a.ts:1", "b.tsx:2", "c.json:1", "d.ts:1"]);
 });
 
+test("a comment opener inside a string, JSON or JSX text hides nothing", () => {
+  const files = [
+    { rel: "a.ts", source: 'const accept = "image/*";\nconst reason = "Signet needs your photos.";\n' },
+    {
+      rel: "b.json",
+      source: '{ "assetBundlePatterns": ["**/*"], "infoPlist": { "X": "Signet reads it." } }\n',
+    },
+    { rel: "c.tsx", source: "<Text>\n  Help lives at https://frapp.live/help. Return to Signet.\n</Text>\n" },
+    { rel: "d.ts", source: "const s = `line one\n see https://frapp.live and Signet`;\n" },
+    { rel: "e.ts", source: 'const s = `${fn({ a: 1 })} Signet`;\n' },
+    { rel: "f.tsx", source: "<Text>Don't</Text>\n// Signet gold\nconst t = \"Signet\";\n" },
+  ];
+  assert.deepEqual(signetCopyProblems(files), [
+    "a.ts:2",
+    "b.json:1",
+    "c.tsx:2",
+    "d.ts:2",
+    "e.ts:1",
+    "f.tsx:3",
+  ]);
+});
+
 test("design-system names and comments are not copy", () => {
   const files = [
     { rel: "a.ts", source: 'import { SignetTokens } from "@repo/theme/signet";\n' },
@@ -298,6 +363,7 @@ test("design-system names and comments are not copy", () => {
     { rel: "c.ts", source: "/**\n * Signet is dark-only by design.\n */\n" },
     { rel: "d.tsx", source: "{/* Static: Signet is dark-only,\n   so no toggle. */}\n" },
     { rel: "e.ts", source: 'const url = "https://frapp.live"; // Signet tokens below\n' },
+    { rel: "f.ts", source: 'const s = `${"}"} b`; // Signet gold\n' },
   ];
   assert.deepEqual(signetCopyProblems(files), []);
 });
@@ -365,14 +431,25 @@ test("putting the brand tagline back on mobile sign-in fails", () => {
 });
 
 test("restoring a Signet payment fixture fails", () => {
-  const problems = paymentFixtureProblems({
-    stripeSpec: readRepo(STRIPE_SPEC).replaceAll(
-      'merchantDisplayName: "Frapp"',
-      'merchantDisplayName: "Signet"',
-    ),
-    balanceSpec: readRepo(BALANCE_SPEC).replace("installed Frapp build", "installed Signet build"),
-  });
-  assert.equal(problems.length, 4, problems.join("; "));
+  const stripeSpec = readRepo(STRIPE_SPEC).replaceAll(
+    'merchantDisplayName: "Frapp"',
+    'merchantDisplayName: "Signet"',
+  );
+  const balanceSpec = readRepo(BALANCE_SPEC).replace(
+    "installed Frapp build",
+    "installed Signet build",
+  );
+  assert.deepEqual(paymentFixtureProblems({ stripeSpec, balanceSpec }), [
+    `${STRIPE_SPEC} must pass merchantDisplayName Frapp`,
+    `${BALANCE_SPEC} must fixture installed Frapp build`,
+  ]);
+  assert.deepEqual(
+    signetFixtureProblems([
+      { rel: STRIPE_SPEC, source: stripeSpec },
+      { rel: BALANCE_SPEC, source: balanceSpec },
+    ]),
+    [`${STRIPE_SPEC}:merchantDisplayName Signet`, `${BALANCE_SPEC}:installed Signet build`],
+  );
 });
 
 test("a third Signet payment fixture fails the spec walk", () => {

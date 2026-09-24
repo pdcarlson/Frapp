@@ -7,8 +7,9 @@
 // wording, drop the USPTO ban, treat a wax seal as the mascot, or add a
 // third spec site the hardcoded paths would miss. It can also point the
 // walker at landing (visual freeze) or apps (no commissioned mascot this slice).
-// Leftover 1959. USPTO stay on 1901. Landing copy is Signet (1954). Leave
-// store-name on 1829. Do not restyle icons in this leftover.
+// Leftover 1959. USPTO stay on 1901. Landing copy is Signet (1954). The
+// store name is ADR-25's, not this lock's. Do not restyle icons in this
+// leftover.
 //
 // SCOPE. Markdown under spec/. Do not walk apps/ or docs/. No raster/SVG
 // mascot ships in this first slice — do not start an asset pass here.

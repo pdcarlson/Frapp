@@ -29,15 +29,19 @@ plain `Frapp` is already taken (app id `1540087188`), as plain `Signet` was (app
 id `1483581287`).
 
 **The home screen says Frapp.** Chrome (home screen, iOS Settings) comes from
-`expo.name` in [`apps/mobile/app.json`](../app.json). ADR-25's step 2 moved that
-string, the iOS permission prompts and the in-app copy from Signet to **Frapp**,
-and the listing text below (description, review notes) with them, so every build
-from that commit on matches this paste. A build from an earlier commit still says
-Signet, so check the build's commit before submitting it.
+`expo.name` in [`apps/mobile/app.json`](../app.json). ADR-25's step 2
+([#2577](https://github.com/pdcarlson/Frapp/issues/2577)) moved that string, the
+iOS permission prompts and the in-app copy from Signet to **Frapp**, and the
+listing text below (description, review notes) with them. A build made before
+step 2 merged still says Signet. Before submitting, check that `expo.name` is
+`Frapp` in `app.json` at the build's commit, or that the installed TestFlight
+build's home-screen name reads Frapp.
 [`frapp-mobile-copy.test.mjs`](../../../scripts/ci/__tests__/frapp-mobile-copy.test.mjs)
-fails CI if the binary says Signet again. Bundle id (`live.frapp.mobile`), slug,
-scheme, and every public URL are **frapp** permanently. The trademark record is on
-#1901; this file is the listing paste.
+fails CI when a string in `apps/mobile`'s source says Signet again. It reads the
+source, not the built binary, and text the server sends (API messages, the
+system actor's name) moves with ADR-25's later steps. Bundle id
+(`live.frapp.mobile`), slug, scheme, and every public URL are **frapp**
+permanently. The trademark record is on #1901; this file is the listing paste.
 
 ## Identity
 

@@ -7,8 +7,10 @@
 // binary would sign first users into the wrong API/DB.
 //
 // SCOPE. Production target + preview contrast so the two profiles cannot
-// be swapped unnoticed. Leave store-name / scheme / bundle id / Settings
-// path on their own leftover (1829). EAS project leftover stays on 938.
+// be swapped unnoticed. The store name and the Settings path are
+// frapp-mobile-copy's (ADR-25 step 2). The scheme and bundle id are
+// permanent identifiers (ADR-25), locked on their own leftover (1967).
+// EAS project leftover stays on 938.
 // Do not require extra.eas.projectId. Do not require an iOS submit block.
 // Do not run eas init.
 //
