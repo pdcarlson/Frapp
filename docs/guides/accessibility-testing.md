@@ -22,10 +22,7 @@ The requirements live in the spec, and this list doesn't restate them. A change 
 - [§ 4 of the same file](../../spec/ui/design-system/README.md#4-state-completeness-standard): every async state is present.
 - [`iconography.md` § 4](../../spec/ui/design-system/iconography.md#4-accessibility), and [§ 3](../../spec/ui/design-system/iconography.md#3-color-usage)'s rule that status is never encoded in color alone.
 
-On top of those, this protocol checks two things:
-
-1. Keyboard and screen-reader users can complete the primary flow.
-2. Icon-only controls show a visual tooltip (e.g., `title`) for sighted users. No spec requires this yet; #2650 decides whether one should.
+On top of those, this protocol checks that keyboard and screen-reader users can complete the primary flow.
 
 ## 3) Automated checks (required)
 
