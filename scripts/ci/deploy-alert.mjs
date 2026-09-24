@@ -890,8 +890,8 @@ export async function runDeployAlert({
     if (tip === null) {
       // Proceed on the verdict: a failed read must not drop an alert.
       logger.log?.(
-        `::warning::[deploy-alert] could not read the tip of \`${headBranch}\`, so this run's verdict ` +
-          "stands even if a newer commit has landed",
+        `::warning::[deploy-alert] could not compare this run's commit (HEAD_SHA ${headSha ? "set" : "unset"}) ` +
+          `with the tip of \`${headBranch}\`, so its verdict stands even if a newer commit has landed`,
       );
     } else if (tip !== headSha) {
       logger.log?.(

@@ -1559,7 +1559,7 @@ test("an unreadable branch tip lets the verdict stand, with a warning", async ()
   });
   assert.equal(result.alert.action, "created");
   assert.ok(calls.some((c) => c.method === "POST" && c.path === "/repos/o/r/issues"));
-  assert.ok(lines.some((line) => /^::warning::.*could not read the tip of `main`/.test(line)));
+  assert.ok(lines.some((line) => /^::warning::.*could not compare .*HEAD_SHA set.* tip of `main`/.test(line)));
 });
 
 test("a run with no commit to compare lets its verdict stand, with a warning", async () => {
@@ -1581,7 +1581,7 @@ test("a run with no commit to compare lets its verdict stand, with a warning", a
   });
   assert.equal(result.alert.action, "created");
   assert.ok(!calls.some((c) => c.path.includes("/git/ref/")));
-  assert.ok(lines.some((line) => /^::warning::.*could not read the tip/.test(line)));
+  assert.ok(lines.some((line) => /^::warning::.*could not compare .*HEAD_SHA unset/.test(line)));
 });
 
 test("readBranchTip reads the ref, and returns null for no branch or a bad reply", async () => {
