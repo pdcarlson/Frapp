@@ -73,10 +73,13 @@ export class HealthController {
       await this.stripePriceConsistency.assertConfiguredPrice();
     } catch (err) {
       if (err instanceof StripePriceAccountMismatchError) {
-        throw new ServiceUnavailableException({
-          code: 'DEGRADED',
-          message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${err.message}`,
-        });
+        throw new ServiceUnavailableException(
+          {
+            code: 'DEGRADED',
+            message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${err.message}`,
+          },
+          { cause: err },
+        );
       }
       throw err;
     }

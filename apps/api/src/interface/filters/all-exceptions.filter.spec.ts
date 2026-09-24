@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { ArgumentsHost } from '@nestjs/common';
@@ -401,6 +402,38 @@ describe('AllExceptionsFilter', () => {
       Error,
     ];
     expect(reported).toBe(thrown);
+  });
+
+  it("hands Sentry a 503's cause and keeps it out of the response body (#2131)", () => {
+    // The shape every catch-and-rethrow 5xx now has: a generic client message,
+    // with the provider error on `cause` for Sentry's LinkedErrors to follow.
+    const providerError = Object.assign(
+      new Error("No such price: 'price_live_123'"),
+      { name: 'StripeInvalidRequestError', param: 'line_items[0].price' },
+    );
+    const thrown = new ServiceUnavailableException(
+      'Billing service is temporarily unavailable',
+      { cause: providerError },
+    );
+
+    new AllExceptionsFilter().catch(thrown, host());
+
+    expect(captured.status).toBe(503);
+    expect(captured.json).toEqual({
+      statusCode: 503,
+      error: 'SERVICE_UNAVAILABLE',
+      message: 'Billing service is temporarily unavailable',
+      requestId: 'req-abc',
+    });
+    const body = JSON.stringify(captured.json);
+    expect(body).not.toContain('price_live_123');
+    expect(body).not.toContain('StripeInvalidRequestError');
+
+    const [reported] = jest.mocked(Sentry.captureException).mock.calls[0] as [
+      Error,
+    ];
+    expect(reported).toBe(thrown);
+    expect(reported.cause).toBe(providerError);
   });
 
   it('strips the query string from the 5xx error log (#1260)', () => {

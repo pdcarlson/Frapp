@@ -830,13 +830,20 @@ describe('BillingService', () => {
         .spyOn(service['logger'], 'error')
         .mockImplementation(() => {});
 
-      await expect(
-        service.createPortalSession({
+      const thrown = await service
+        .createPortalSession({
           chapterId: 'ch-1',
           returnUrl: 'http://localhost:3000/billing',
-        }),
-      ).rejects.toThrow(ServiceUnavailableException);
+        })
+        .catch((error: unknown) => error);
 
+      expect(thrown).toBeInstanceOf(ServiceUnavailableException);
+      expect((thrown as Error).message).toBe(
+        'Billing service is temporarily unavailable',
+      );
+      // Same channel as checkout (FRAPP-API-4): the 503 body stays generic and
+      // Sentry reads the provider error off `cause` (#2131).
+      expect(thrown).toMatchObject({ cause: stripeError });
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         'Failed to create portal session for chapter ch-1: Stripe is down',
         stripeError.stack,
@@ -880,19 +887,29 @@ describe('BillingService', () => {
       .mockImplementation(() => undefined);
 
     try {
-      await expect(
-        service.createPortalSession({
+      const thrown = await service
+        .createPortalSession({
           chapterId: 'ch-1',
           returnUrl: 'http://localhost:3000/billing',
-        }),
-      ).rejects.toThrow(ServiceUnavailableException);
+        })
+        .catch((error: unknown) => error);
 
+      expect(thrown).toBeInstanceOf(ServiceUnavailableException);
       expect(errorSpy).toHaveBeenCalled();
       const printed = loggerPrinted(errorSpy);
       expect(printed).toContain('Failed to create portal session');
       expect(printed).toContain('23505');
       expect(printed).not.toContain('alice@example.com');
       expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(true);
+      // The cause Sentry receives is the normalized error, so `details` (row
+      // values) is not on it either.
+      const cause = (thrown as Error).cause as Error;
+      expect(cause).toBeInstanceOf(Error);
+      expect(cause.name).toBe('NonErrorThrowable');
+      expect(cause.message).toContain('23505');
+      expect(
+        JSON.stringify({ ...cause, message: cause.message }),
+      ).not.toContain('alice@example.com');
     } finally {
       errorSpy.mockRestore();
     }

@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import type { ErrorEvent } from '@sentry/nestjs';
 import { buildSentryOptions } from './sentry-options';
@@ -90,6 +91,10 @@ describe('Sentry SDK integration', () => {
       integrations: [
         Sentry.contextLinesIntegration(),
         Sentry.requestDataIntegration(),
+        // Production keeps it from the default set (`sentry-options.spec.ts`);
+        // it is what turns a rethrown 5xx's `cause` into a second exception
+        // value (#2131).
+        Sentry.linkedErrorsIntegration(),
       ],
       transport: () => ({
         send: (envelope: unknown) => {
@@ -347,5 +352,96 @@ describe('Sentry SDK integration', () => {
     expect(value).not.toContain(USER_UUID);
     expect(value).toContain('[redacted:email]');
     expect(value).toMatch(/\[id:[0-9a-f]{64}\]/);
+  });
+
+  describe('a rethrown 5xx and its cause (#2131)', () => {
+    // Runtime-assembled: `ContextLines` copies the source around each frame
+    // into the payload, so a literal would be echoed back by this file itself.
+    const RAW_FIELD_MARKER = ['req', 'raw', 'field', 'marker'].join('_');
+
+    /** A provider failure as the Stripe SDK shapes it: a named `Error` with fields. */
+    function providerError(name: string, message: string): Error {
+      return Object.assign(new Error(message), {
+        name,
+        raw: { requestId: RAW_FIELD_MARKER },
+      });
+    }
+
+    /** What every catch-and-rethrow site now throws. */
+    function rethrown(cause: Error): ServiceUnavailableException {
+      return new ServiceUnavailableException(
+        'Billing service is temporarily unavailable',
+        { cause },
+      );
+    }
+
+    it('ships the cause as a second exception value, scrubbed like the first', async () => {
+      // Runtime-assembled for the same reason as the message test above.
+      const email = ['treasurer', 'example.com'].join('@');
+      Sentry.captureException(
+        rethrown(
+          providerError(
+            'StripeInvalidRequestError',
+            `No such customer for ${email}`,
+          ),
+        ),
+      );
+      await Sentry.flush(2000);
+
+      expect(sent).toHaveLength(1);
+      const values = sent[0].exception?.values ?? [];
+      // Sentry orders the chain innermost first; the rethrow is last.
+      expect(values.map((value) => value.type)).toEqual([
+        'StripeInvalidRequestError',
+        'ServiceUnavailableException',
+      ]);
+      const [cause, outer] = values;
+      expect(outer.value).toBe('Billing service is temporarily unavailable');
+      expect(cause.value).toContain('No such customer for');
+      expect(cause.value).not.toContain(email);
+      expect(cause.value).toContain('[redacted:email]');
+      // Only allowlisted keys survive on each value; the provider's own fields
+      // (`raw`, `param`, `headers` on a real Stripe error) never ride along.
+      for (const value of values) {
+        expect(
+          Object.keys(value).every((key) =>
+            [
+              'type',
+              'value',
+              'module',
+              'thread_id',
+              'mechanism',
+              'stacktrace',
+            ].includes(key),
+          ),
+        ).toBe(true);
+      }
+      expect(JSON.stringify(sent[0])).not.toContain(RAW_FIELD_MARKER);
+    });
+
+    it('gives two different provider failures at one site two different chains', async () => {
+      // Sentry fingerprints a chained event over every exception in it, so a
+      // bad price and a connection failure stop sharing one issue once each
+      // carries its own cause. The grouping itself runs server-side; what this
+      // pins is the input it groups on.
+      Sentry.captureException(
+        rethrown(
+          providerError('StripeInvalidRequestError', "No such price: 'p_1'"),
+        ),
+      );
+      Sentry.captureException(
+        rethrown(providerError('StripeConnectionError', 'connect ETIMEDOUT')),
+      );
+      await Sentry.flush(2000);
+
+      expect(sent).toHaveLength(2);
+      const chains = sent.map((event) =>
+        (event.exception?.values ?? []).map((value) => value.type),
+      );
+      expect(chains).toEqual([
+        ['StripeInvalidRequestError', 'ServiceUnavailableException'],
+        ['StripeConnectionError', 'ServiceUnavailableException'],
+      ]);
+    });
   });
 });

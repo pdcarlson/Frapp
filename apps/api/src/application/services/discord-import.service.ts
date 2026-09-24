@@ -361,6 +361,7 @@ export class DiscordImportService {
       if (error instanceof DiscordNotConfiguredError) {
         throw new ServiceUnavailableException(
           'Reading Discord is not configured in this environment. The DiscordChatExporter upload flow still works.',
+          { cause: error },
         );
       }
       if (error instanceof DiscordApiError) {
