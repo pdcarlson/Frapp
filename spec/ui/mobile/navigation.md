@@ -69,7 +69,7 @@ The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter
 
 ## Deep links
 
-- Scheme: `frapp://` (`scheme` in `apps/mobile/app.json`). It is permanent, because every installed binary carries it (ADR-25). [`mobile-permanent-identifiers.test.mjs`](../../../scripts/ci/__tests__/mobile-permanent-identifiers.test.mjs) pins it, along with the slug, bundle id, package, Sentry org and EAS project id.
+- Scheme: `frapp://` (`scheme` in `apps/mobile/app.json`). It is permanent, because every installed binary carries it (ADR-25). [`mobile-permanent-identifiers.test.mjs`](../../../scripts/ci/__tests__/mobile-permanent-identifiers.test.mjs) pins it, with the binary's other permanent identifiers.
 - **`frapp://join?token=…` fills s02.** The same query keys web `/join` uses (`token`, then `invite`, then `code`) are accepted on the app scheme and as a pasted URL in the field.
 - **`frapp://event-details` is a contract.** Exported `.ics` files carry it as their deep-link URL, `frapp://event-details?id=<event id>` (`apps/mobile/app/(tabs)/event-details.tsx`), and those files live on in members' device calendars indefinitely. The route filename, the URL and its `id` param MUST never change. The same lock pins the URL and the param, and `apps/mobile/lib/routes.spec.ts` pins the route.
 - **First-officer creation is `(auth)/create-chapter`.** The route is exempt from the authenticated bounce into the tabs so a successful onboard does not yank the officer off the invite step (`spec/behavior/onboarding.md`).

@@ -9,12 +9,10 @@
 // SCOPE. Production target + preview contrast so the two profiles cannot
 // be swapped unnoticed. The home-screen name (`expo.name`) and the Settings
 // path are frapp-mobile-copy's (ADR-25 step 2); nothing locks the App Store
-// listing name. The scheme, slug, bundle id and EAS project id are
-// permanent identifiers (ADR-25, #2526), and
-// mobile-permanent-identifiers.test.mjs pins them, so this lock doesn't.
-// EAS project leftover stays on 938.
-// Do not require extra.eas.projectId. Do not require an iOS submit block.
-// Do not run eas init.
+// listing name. The binary's permanent identifiers (scheme, slug, bundle id,
+// package, EAS project id) are mobile-permanent-identifiers.test.mjs's,
+// which says where each one comes from. This lock doesn't assert
+// extra.eas.projectId or an iOS submit block. Do not run eas init.
 //
 // The first lock imported PRODUCTION_API_URL into every assert, so
 // rewriting the const and eas.json together to the staging host would
