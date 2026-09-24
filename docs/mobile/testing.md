@@ -1,4 +1,4 @@
-# Mobile Testing
+# Mobile testing
 
 ## Running the app on a device
 
@@ -10,7 +10,7 @@ EAS builds are a separate path with a separate owner. `apps/mobile/eas.json`
 defines `development` / `preview` / `production` profiles against a linked EAS
 project (`extra.eas.projectId` and `owner` are committed in
 `apps/mobile/app.json`); the `eas build` commands and that linkage live in
-[`docs/internal/ops/deployment/mobile.md`](../ops/deployment/mobile.md#6-mobile-eas-setup).
+[`docs/internal/ops/deployment/mobile.md`](../internal/ops/deployment/mobile.md#6-mobile-eas-setup).
 
 ### 1. Provide the environment
 
@@ -24,13 +24,14 @@ EXPO_PUBLIC_API_URL=
 ```
 
 Per-environment values are in
-[`docs/internal/environment/ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md).
+[`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
 `EXPO_PUBLIC_API_URL` is the **bare API origin** — the SDK paths already carry
 `/v1`, so a trailing `/v1` doubles it.
 
 Without the two Supabase values the sign-in card renders
 "EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not set for this
-build" and every auth row in the smoke checklist fails by construction.
+build, so sign-in is unavailable." and every auth row in the smoke checklist
+fails by construction.
 
 Alternatively, `npm run dev:mobile` from the repo root injects the same variables
 through Infisical instead of a local file.
@@ -49,7 +50,7 @@ you to log in, an Expo account is being resolved that you are not signed in to.
 
 ### 3. Walk the checklist
 
-[`MOBILE_INTERACTION_SMOKE_CHECKLIST.md`](./MOBILE_INTERACTION_SMOKE_CHECKLIST.md)
+[`interaction-smoke-checklist.md`](interaction-smoke-checklist.md)
 is the script. Note that in Expo Go the deep-link scheme is `exp://`, not
 `frapp://`, so the magic-link rows in §1 are unreachable regardless of the
 Supabase redirect allowlist — use the password sign-in path.
@@ -89,8 +90,8 @@ device run, check:
 - [ ] Tab glyphs are **duotone at 24px** and the active one **recolors** rather
       than switching to a solid shape. The More glyph is a 2×2 grid, not an
       ellipsis. The active label is heavier than the inactive ones.
-- [ ] Every **More** row opens its destination; the stub rows say so rather than
-      erroring.
+- [ ] Every **More** row does what the smoke checklist's
+      [More row](interaction-smoke-checklist.md#2-primary-tab-routes) says.
 - [ ] **Profile** is reachable from More and gone from the tab bar.
 - [ ] A deleted path (`exp://.../--/points`, `--/task-center`) lands on home via
       `+not-found` instead of an error screen.
@@ -112,18 +113,18 @@ device run, check:
 
 ## Unit tests
 
-The `apps/mobile` workspace is configured with Vitest. `vitest.setup.ts` mocks the
-native Expo modules (`expo-file-system/legacy`, `expo-sharing`, `expo-font`,
-`expo-splash-screen`), the S1 native additions (`react-native-gesture-handler`,
-`react-native-safe-area-context`, `@gorhom/bottom-sheet`,
-`react-native-keyboard-controller`, `@expo-google-fonts/figtree`), and the
-`react-native` platform globals (including `StyleSheet` and string component
-stand-ins for Signet token-factory tests).
+The `apps/mobile` workspace is configured with Vitest. `vitest.setup.ts` mocks
+the native modules most specs reach, plus the `react-native` platform globals
+(including `StyleSheet` and string component stand-ins for Signet token-factory
+tests). Read the file for which ones: it doesn't cover them all. A spec that
+loads a native module it leaves out, such as `expo-secure-store` or
+`expo-constants`, mocks that module itself, as `lib/auth-session.spec.tsx` does;
+otherwise the import fails under Vitest.
 
 Two suites are static rather than render-based, and deliberately so:
 `lib/routes.spec.ts` walks the real route tree — it checks every route literal,
 standing in for typed routes, which do not bind under CI's bare `tsc` (see
-[`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md)), and it
+[`spec/ui/mobile/navigation.md`](../../spec/ui/mobile/navigation.md)), and it
 keeps test files out of `app/` (see [§ Gotchas](#gotchas)) — and
 `lib/auth-gate.spec.ts` enumerates every session/chapter state to prove the two
 routing gates cannot redirect into each other.
@@ -171,20 +172,20 @@ must render a whole screen goes in `lib/` as well and reaches back through the
 npm hoist a newer React that leaves the mobile app dead on first render ("Invalid hook call", then
 "Incompatible React versions") while unit tests, lint, and typecheck all pass — only booting the
 app catches it. The pin sites, why exact equality is required, and how to move the pin with an
-Expo SDK upgrade: [`AGENTS.md` § Gotchas](../../../AGENTS.md#gotchas).
+Expo SDK upgrade: [`AGENTS.md` § Gotchas](../../AGENTS.md#gotchas).
 
 **Upgrading the SDK requires re-resolving the lockfile — narrowly, not by rebuilding it.** A plain
 `npm install` keeps the old SDK chain hoisted beside the new one, and a blanket
 `rm -rf node_modules package-lock.json && npm install` breaks every other platform's install while
-CI stays green. The procedure: [`AGENTS.md` § Gotchas](../../../AGENTS.md#gotchas). Both mechanisms:
-[`SECURITY_FIXES.md` § Expo SDK 57 upgrade](../security/SECURITY_FIXES.md#expo-sdk-57-upgrade-289)
-and [§ Do not "fix" this with a full lockfile rebuild](../security/SECURITY_FIXES.md#do-not-fix-this-with-a-full-lockfile-rebuild).
+CI stays green. The procedure: [`AGENTS.md` § Gotchas](../../AGENTS.md#gotchas). Both mechanisms:
+[`SECURITY_FIXES.md` § Expo SDK 57 upgrade](../internal/security/SECURITY_FIXES.md#expo-sdk-57-upgrade-289)
+and [§ Do not "fix" this with a full lockfile rebuild](../internal/security/SECURITY_FIXES.md#do-not-fix-this-with-a-full-lockfile-rebuild).
 Then verify a single `node_modules/expo` at the expected version before trusting any audit numbers.
 
 **A `waitFor` on a derived flag can be satisfied by the wrong state.**
 `useAuthSession` exposes `isChapterResolving` as
 `status === "authenticated" && !hasReadChapterClaim`
-([`lib/auth-session.tsx`](../../../apps/mobile/lib/auth-session.tsx)), so it reads
+([`lib/auth-session.tsx`](../../apps/mobile/lib/auth-session.tsx)), so it reads
 `false` during `hydrating` just as it does once the first claim read has landed.
 `await waitFor(() => expect(result.current.isChapterResolving).toBe(false))`
 therefore _can_ return before `getSession()` has resolved and before any claim read

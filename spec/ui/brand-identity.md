@@ -19,7 +19,7 @@
 - **"Signet" is the design system's internal name** until the post-beta internals rename (ADR-25). That covers the `--signet-*` tokens, identifiers, file names, and design-system prose in specs and skills. It never appears in user-visible text. New or edited product prose in specs says Frapp; existing spec prose is swept with the internals rename.
 - **"Legacy Frapp" means the retired pre-Signet visuals and code** (bone, bronze, Geist, `#2563EB`), not the product name.
 - **Transition.** Until ADR-25's rename series lands, some specs still prescribe user-visible strings that say Signet: copy tables, screen and footer descriptions, and legal-page summaries. Each one changes to Frapp in the same series step as the code that renders it. The one list of those specs, per step, is in [ADR-25](../architecture/adr/adr-25.md), with the command that regenerates it. This rule sets the target. Until its step lands, a prescribed Signet string is what ships, not a license to add new Signet strings.
-- **Code identifiers are frapp permanently:** package names (`@repo/*`), domains (`frapp.live`, `app.frapp.live`), the `frapp://` scheme and the bundle id `live.frapp.mobile`. When citing code, cite the real current names.
+- **Code identifiers are frapp permanently:** the repo and package names (`@repo/*`); `frapp.live` and its subdomains, including `app.frapp.live` and `api.frapp.live`, the API origin every mobile binary bakes in; the `frapp://` scheme; the Expo slug `frapp`; the Sentry org `frapp-live`; and `live.frapp.mobile` as both the iOS bundle id and the Android package (Google Play fixes the package on the first upload, as App Store Connect fixes the bundle id). When citing code, cite the real current names.
 
 ---
 

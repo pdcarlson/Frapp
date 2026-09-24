@@ -36,10 +36,11 @@
 // Settings → <expo.name> recovery paths are frapp-mobile-copy's: its walk
 // exempts a design-system note on its own comment line, which a file-wide
 // ban here would not.
-// app.json slug / scheme / bundle id are permanent identifiers (ADR-25),
-// not copy, and not this lock's. Do not add a must-exist assert for the
-// EAS project id. Do not run eas init. Do not walk landing. Skip spec
-// fixtures (frapp-mobile-copy pins the payment ones).
+// app.json's permanent identifiers are not copy and not this lock's:
+// mobile-permanent-identifiers.test.mjs lists and pins them. Do not run
+// eas init.
+// Do not walk landing. Skip spec fixtures (frapp-mobile-copy pins the
+// payment ones).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
