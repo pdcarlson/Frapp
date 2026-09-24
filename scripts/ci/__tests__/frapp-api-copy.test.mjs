@@ -50,7 +50,6 @@ const PRODID = "PRODID:-//Frapp//Events//EN";
 /** Where a design-system "Signet" starts: the palette engine's accent log lines. */
 export const DESIGN_SYSTEM_PHRASE = /^Signet accent (?:contrast|fill)\b/;
 
-
 function readRepo(rel) {
   return readFileSync(join(REPO_ROOT, rel), "utf8");
 }
