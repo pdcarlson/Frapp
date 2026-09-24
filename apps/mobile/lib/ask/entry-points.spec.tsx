@@ -19,7 +19,7 @@ import { ASK_FLAG_ENV_KEY } from "@/lib/ask/flag";
  * `headerAction` and in `AskSheet` itself — a unit test of the flag alone would
  * pass with every host still drawing the pill. They live here, not beside the
  * screens: a spec under `app/` is a route module and ships in the bundle
- * (`lib/routes.spec.ts`, `docs/internal/mobile/MOBILE_TESTING.md` § Gotchas).
+ * (`lib/routes.spec.ts`, `docs/mobile/testing.md` § Gotchas).
  */
 
 vi.mock("@repo/hooks", () => {

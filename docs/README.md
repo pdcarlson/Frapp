@@ -7,7 +7,7 @@ Developer guides and operator runbooks. Product and architecture truth lives in 
 Which directory owns which kind of change — across `docs/`, `docs/internal/` and `spec/` — is stated
 once, in [`docs/internal/DOCUMENTATION_CONVENTIONS.md` § Where things go](internal/DOCUMENTATION_CONVENTIONS.md#where-things-go).
 This index does not restate it; it only routes:
-[`guides/`](guides/README.md), [`internal/`](internal/README.md),
+[`guides/`](guides/README.md), [`internal/`](internal/README.md), [`mobile/`](mobile/),
 [`performance/`](performance/README.md), [`hooks/`](hooks/README.md).
 
 The design system (tokens, components, iconography, microcopy, accent engine) lives in **[`spec/ui/design-system/`](../spec/ui/design-system/README.md)**.
