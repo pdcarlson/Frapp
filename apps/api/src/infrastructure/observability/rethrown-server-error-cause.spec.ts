@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
+import * as common from '@nestjs/common';
 import * as ts from 'typescript';
 import {
   REPOSITORY_SRC_ROOT as SRC_ROOT,
@@ -31,22 +32,28 @@ import {
  * by a helper (`throw this.unavailable(error)`), and a throw in a function
  * merely *declared* inside a catch, which runs later and elsewhere.
  */
-const SERVER_ERROR_EXCEPTIONS = new Set([
-  'BadGatewayException',
-  'GatewayTimeoutException',
-  'InternalServerErrorException',
-  'ServiceUnavailableException',
-]);
+/**
+ * Every Nest built-in exception whose status is 5xx, read off the installed
+ * `@nestjs/common` rather than listed by hand: a hand list missed
+ * `NotImplementedException` and `HttpVersionNotSupportedException` once.
+ */
+const SERVER_ERROR_EXCEPTIONS = new Set(
+  Object.entries(common)
+    .filter(
+      ([, value]) =>
+        typeof value === 'function' &&
+        value.prototype instanceof common.HttpException &&
+        new (value as new () => common.HttpException)().getStatus() >= 500,
+    )
+    .map(([name]) => name),
+);
 
 /** `HttpStatus` members at or above 500, for `new HttpException(msg, status)`. */
-const SERVER_ERROR_STATUSES = new Set([
-  'INTERNAL_SERVER_ERROR',
-  'NOT_IMPLEMENTED',
-  'BAD_GATEWAY',
-  'SERVICE_UNAVAILABLE',
-  'GATEWAY_TIMEOUT',
-  'HTTP_VERSION_NOT_SUPPORTED',
-]);
+const SERVER_ERROR_STATUSES = new Set(
+  Object.entries(common.HttpStatus)
+    .filter(([, code]) => typeof code === 'number' && Number(code) >= 500)
+    .map(([name]) => name),
+);
 
 interface RethrowSite {
   line: number;
@@ -175,6 +182,23 @@ describe('5xx rethrown from a catch keeps its cause (#2131)', () => {
     ),
   );
 
+  it('knows every 5xx exception and status the installed Nest ships', () => {
+    // Anchors the derived sets: an empty one would make every check vacuous.
+    expect([...SERVER_ERROR_EXCEPTIONS].sort()).toEqual(
+      expect.arrayContaining([
+        'BadGatewayException',
+        'GatewayTimeoutException',
+        'HttpVersionNotSupportedException',
+        'InternalServerErrorException',
+        'NotImplementedException',
+        'ServiceUnavailableException',
+      ]),
+    );
+    expect(SERVER_ERROR_EXCEPTIONS.has('BadRequestException')).toBe(false);
+    expect(SERVER_ERROR_STATUSES.has('INSUFFICIENT_STORAGE')).toBe(true);
+    expect(SERVER_ERROR_STATUSES.has('TOO_MANY_REQUESTS')).toBe(false);
+  });
+
   it('is reading the real source tree', () => {
     expect(sources.length).toBeGreaterThan(100);
     // Anchors the scan: the portal 503 is a known catch-and-rethrow, so an
@@ -257,6 +281,19 @@ describe('5xx rethrown from a catch keeps its cause (#2131)', () => {
           );
         `),
       ).toEqual([false, true]);
+    });
+
+    it('covers every 5xx exception class, not only the four in use today', () => {
+      expect(
+        causes(`
+          try { a(); } catch (error) {
+            throw new NotImplementedException('x');
+          }
+          try { b(); } catch (error) {
+            throw new HttpException('full', HttpStatus.INSUFFICIENT_STORAGE);
+          }
+        `),
+      ).toEqual([false, false]);
     });
 
     it('covers HttpException with a 5xx status, and ignores one with a 4xx', () => {

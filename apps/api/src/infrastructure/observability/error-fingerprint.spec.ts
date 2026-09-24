@@ -5,6 +5,7 @@ import {
 import Stripe from 'stripe';
 import { errorFingerprint } from './error-fingerprint';
 import { toReportableError } from './reportable-error';
+import { StripePriceAccountMismatchError } from '../billing/stripe-price-consistency';
 
 function rethrown(cause: unknown): ServiceUnavailableException {
   return new ServiceUnavailableException(
@@ -67,6 +68,58 @@ describe('errorFingerprint (#2131)', () => {
     ]);
     expect(lookup('42P01')).not.toEqual(lookup('PGRST301'));
     expect(JSON.stringify(lookup('PGRST301'))).not.toContain('example.com');
+  });
+
+  it("splits the readiness check's Stripe misconfigurations, which share one throw site", () => {
+    // health.controller.ts reports StripePriceAccountMismatchError as the
+    // 503's cause; every variant is built in one method.
+    const readiness = (mismatch: StripePriceAccountMismatchError) =>
+      errorFingerprint(
+        new ServiceUnavailableException(
+          { code: 'DEGRADED', message: 'billing degraded' },
+          { cause: toReportableError(mismatch) },
+        ),
+      );
+    const fromStripe = (error: Error) =>
+      new StripePriceAccountMismatchError('price_1', 'rejected', {
+        cause: toReportableError(error),
+      });
+
+    const missingPrice = readiness(
+      fromStripe(
+        new Stripe.errors.StripeInvalidRequestError({
+          message: 'No such price',
+          code: 'resource_missing',
+        }),
+      ),
+    );
+    const revokedKey = readiness(
+      fromStripe(
+        new Stripe.errors.StripeAuthenticationError({
+          message: 'Invalid API Key provided',
+        }),
+      ),
+    );
+    const inactive = readiness(
+      new StripePriceAccountMismatchError('price_1', 'inactive', {
+        code: 'price_inactive',
+      }),
+    );
+    const empty = readiness(
+      new StripePriceAccountMismatchError('(empty)', 'empty', {
+        code: 'price_id_empty',
+      }),
+    );
+
+    expect(missingPrice).toEqual([
+      '{{ default }}',
+      'ServiceUnavailableException',
+      'StripePriceAccountMismatchError',
+      'StripeInvalidRequestError:resource_missing',
+    ]);
+    expect(
+      new Set([missingPrice, revokedKey, inactive, empty].map(String)).size,
+    ).toBe(4);
   });
 
   it('fingerprints a bare non-Error throw, whose stack is always the normalizer', () => {

@@ -38,11 +38,28 @@ const PLACEHOLDER_SECRET_MARKERS = [
 ] as const;
 
 export class StripePriceAccountMismatchError extends Error {
-  constructor(priceId: string, reason: string) {
+  /**
+   * Which misconfiguration this is, when no Stripe error says so (`cause`).
+   *
+   * The readiness 503 reports this error as its cause, and every variant is
+   * thrown from one method, so Sentry's grouping sees the same class over the
+   * same frames. `errorFingerprint` keys on `code` and on the Stripe error in
+   * `cause` to keep a missing Price, a revoked key and an inactive Price apart
+   * (#2131). The message already names the fault for a human.
+   */
+  readonly code?: string;
+
+  constructor(
+    priceId: string,
+    reason: string,
+    options: { cause?: unknown; code?: string } = {},
+  ) {
     super(
       `${STRIPE_PRICE_ACCOUNT_MISMATCH_MESSAGE} (${reason}; STRIPE_PRICE_ID=${priceId})`,
+      options.cause === undefined ? undefined : { cause: options.cause },
     );
     this.name = 'StripePriceAccountMismatchError';
+    if (options.code !== undefined) this.code = options.code;
   }
 }
 
