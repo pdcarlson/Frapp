@@ -221,7 +221,7 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MAN
 
 ### No repository secrets (#2518)
 
-**The rule: every secret is an environment secret, and no repository secret exists.** That is the target; on 2026-09-23 the settings do not follow it yet (**State**, below). For a same-repository pull request, and for a push or a dispatch on any branch, GitHub runs the workflow definitions from that branch. So a repository secret is readable by anyone who can push a branch: they edit a workflow, or add one. Agent sessions push branches, and they read public issue text. The boundary that holds is an environment whose **deployment branches** rule admits `main` only:
+**The rule: every secret is an environment secret, and no repository secret exists.** The settings have followed it since [#2583](https://github.com/pdcarlson/Frapp/issues/2583) (**State**, below). For a same-repository pull request, and for a push or a dispatch on any branch, GitHub runs the workflow definitions from that branch. So a repository secret is readable by anyone who can push a branch: they edit a workflow, or add one. Agent sessions push branches, and they read public issue text. The boundary that holds is an environment whose **deployment branches** rule admits `main` only:
 
 - GitHub matches the rule against the run's `GITHUB_REF`. A `pull_request` run is `refs/pull/N/merge`, a push or dispatch carries its own branch, and `schedule` and `workflow_run` run as the default branch.
 - A job cannot read an environment's secrets until its rules pass.

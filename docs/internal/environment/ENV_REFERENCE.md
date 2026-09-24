@@ -557,7 +557,7 @@ too. Which secrets exist, which environment holds each, and the state today:
 | `INFISICAL_CLIENT_SECRET`       | Same **Universal Auth** panel → **Add Client Secret**. The value is shown once, at creation — if it was not saved, issue a new one rather than hunting for the old.                                                                                                                                                                                                            |
 
 `INFISICAL_PROJECT_ID` used to be listed here. No workflow reads it (the `infisical-secrets` action
-pins `project-slug: frapp-live-ej-ls`), and deleting the repository copy is #1587.
+pins `project-slug: frapp-live-ej-ls`), and its repository copy was deleted on 2026-09-23 (#1587).
 
 **Deploy-time values come from Infisical at job time.** Every workflow that needs them
 (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `API_HEALTHCHECK_URL` and the rest) pulls them
