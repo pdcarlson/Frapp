@@ -40,11 +40,12 @@
  */
 
 import { execSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { loadEnvFiles } from "./lib/env-file.mjs";
 import { ghRequest } from "./ci/lib/github.mjs";
 import { ALL_REQUIRED_CHECKS } from "./ci/lib/required-checks.mjs";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 
@@ -651,10 +652,7 @@ async function main() {
 // the deploy path imports them from there. The guard stays because this file
 // still writes governance when run directly; it is simply no longer the only
 // thing protecting a deploy.
-const isDirectRun =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-
-if (isDirectRun) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Branch protection configuration failed: ${message}`);

@@ -42,6 +42,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASELINE_PATH = path.join(REPO_ROOT, "scripts/dependency-cruiser-known-violations.json");
@@ -464,7 +465,7 @@ function main() {
   return 1;
 }
 
-if (process.argv[1] && process.argv[1].endsWith("check-dep-cruiser.mjs")) {
+if (isInvokedDirectly(import.meta.url)) {
   try {
     process.exit(main());
   } catch (error) {

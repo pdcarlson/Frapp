@@ -64,6 +64,7 @@ import {
   parseFailingIds,
   redactSecrets,
 } from "./staging-conformance.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const PRODUCTION_SITE_URL = "https://app.frapp.live";
 export const PRODUCTION_AUTH_SMTP_ADMIN_EMAIL = "no-reply@mail.frapp.live";
@@ -360,8 +361,7 @@ async function main() {
   if (outcome === "failed") process.exit(1);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);

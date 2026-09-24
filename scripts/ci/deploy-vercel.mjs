@@ -117,6 +117,7 @@ import {
 } from "./lib/vercel-cli.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 // Imported from the observer rather than re-declared, and re-exported so this
 // file's own callers still see them. They were duplicated here with a comment
@@ -779,8 +780,7 @@ async function main() {
   process.exitCode = outcome.ok ? 0 : 1;
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`::error::${String(error.stack ?? error.message).replaceAll("\n", "%0A")}`);
     process.exitCode = 1;

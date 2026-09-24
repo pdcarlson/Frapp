@@ -41,6 +41,7 @@ import {
 } from "./verify-render-deploy.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
+import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const RENDER_POLL_INTERVAL_MS = 20 * 1000;
 export const RENDER_OVERALL_TIMEOUT_MS = 20 * 60 * 1000;
@@ -231,8 +232,7 @@ async function main() {
   process.exit(1);
 }
 
-const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(`Unhandled error: ${error.stack ?? error.message}`);
     process.exit(1);
