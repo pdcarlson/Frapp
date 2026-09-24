@@ -148,7 +148,7 @@ describe('maskBlockedMessages', () => {
 
   it('never masks an imported message, which has no user to have blocked', () => {
     // Blocks are keyed on `users.id`; a `sender_id: null` archive row is not a
-    // Signet user, so there is nothing to match. Masking it would hide history
+    // Frapp user, so there is nothing to match. Masking it would hide history
     // the member never blocked.
     const [row] = maskBlockedMessages(
       [message({ sender_id: null, author_name: 'someone#1234' })],

@@ -28,7 +28,7 @@ import {
  * exclude, and so is everything the officer paths now distinguish: a second
  * open report on the same message (the removal sweep), a resolved one on it
  * too (which the sweep must not touch), a report about `USER_SHARED` (left out
- * for that reviewer), and one on an imported message with no Signet sender
+ * for that reviewer), and one on an imported message with no Frapp sender
  * (never left out — `NULL <> x` is not true, which is the trap a bare `.neq()`
  * falls into).
  *
@@ -98,7 +98,7 @@ const aboutSharedRow = () => ({
   created_at: '2026-02-02T02:00:00.000Z',
 });
 
-/** An open report on an imported archive message: no Signet sender at all. */
+/** An open report on an imported archive message: no Frapp sender at all. */
 const importedRow = () => ({
   ...openRow(),
   reporter_user_id: USER_A,
@@ -170,7 +170,7 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
   it('findByChapterAndStatus leaves out reports about the reviewer, and keeps the imported one', async () => {
     // "The reporter is never disclosed to the reported member": an officer who
     // is the reported sender must not read the report, its note, or — for a
-    // DM — deduce the reporter from it. An imported message has no Signet
+    // DM — deduce the reporter from it. An imported message has no Frapp
     // sender, and a bare `.neq()` would drop it too (NULL <> x is not true).
     const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
       repo.findByChapterAndStatus(CHAPTER_A, 'open', USER_SHARED),
@@ -326,7 +326,7 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
     expect(result).toBeNull();
   });
 
-  it('findById returns a report on an imported message, which names no Signet sender', async () => {
+  it('findById returns a report on an imported message, which names no Frapp sender', async () => {
     const found = await repo.findById(REPORT_A_IMPORTED, CHAPTER_A, USER_B);
 
     expect(found).toMatchObject({

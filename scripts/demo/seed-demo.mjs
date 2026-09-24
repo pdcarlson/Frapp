@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Seed Signet's demo chapter into any Supabase project — the local stack, staging,
+// Seed Frapp's demo chapter into any Supabase project — the local stack, staging,
 // or (with the owner's approval) production — and prove the result signs in.
 //
 //   node scripts/demo/seed-demo.mjs sql     --namespace <hex8> [--reviewer] [--remove]
@@ -13,7 +13,7 @@
 // Supabase SQL editor, or hand it to an MCP `execute_sql`. It is one
 // transaction with no psql meta-commands, so all three run the same thing, and
 // a failure part-way leaves the target untouched. The other three commands talk
-// to the project's HTTP APIs (GoTrue, Storage, PostgREST, and the Signet API
+// to the project's HTTP APIs (GoTrue, Storage, PostgREST, and the Frapp API
 // for `verify`), which is everything a hosted project exposes without Docker.
 //
 // Order: `auth`, then `sql`, then `storage`, then `verify`. The seed links its
@@ -334,7 +334,7 @@ export function placeholderPdf(title, chapterLine) {
   const lines = [
     ["F1", 22, 700, title],
     ["F2", 12, 668, chapterLine],
-    ["F2", 11, 628, "This is a sample document in Signet's demo chapter. The chapter, its"],
+    ["F2", 11, 628, "This is a sample document in Frapp's demo chapter. The chapter, its"],
     ["F2", 11, 612, "members and this file are fictional, created so the app can be shown"],
     ["F2", 11, 596, "with realistic content."],
   ];
@@ -675,7 +675,7 @@ export async function removePlaceholders({
 
 /**
  * Sign in the way the app does and read what a reviewer would see: a password
- * grant, then GETs against the Signet API. It writes nothing of its own, but it
+ * grant, then GETs against the Frapp API. It writes nothing of its own, but it
  * is a real sign-in, and the API's first-sign-in sync creates a chapterless
  * `users` row for a login the seed has not linked yet. The next seed adopts that
  * row (demo-seed.sql § Link the login), so running `verify` early costs a
@@ -864,7 +864,7 @@ export async function main(argv, env = process.env, io = { out: process.stdout, 
     // credential #2308 must never hand App Review, whichever route created it.
     assertPasswordAllowed({ supabaseUrl, password });
     const apiUrl = (options.apiUrl ?? (isLoopbackUrl(supabaseUrl) ? "http://localhost:3001" : null))?.replace(/\/+$/, "");
-    if (!apiUrl) throw new Error("--api-url is required for a hosted project (the Signet API that project backs).");
+    if (!apiUrl) throw new Error("--api-url is required for a hosted project (the Frapp API that project backs).");
     await verifyLogin({
       supabaseUrl,
       anonKey: needEnv(env, io, "SUPABASE_ANON_KEY", "verify signs in with the anon key."),
