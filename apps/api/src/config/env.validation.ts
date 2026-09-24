@@ -2,6 +2,7 @@ import {
   assertProductionAppOrigin,
   isProductionSupabaseUrl,
 } from '@repo/validation';
+import { validateClientPolicyEnv } from '../application/services/client-policy.service';
 
 const REQUIRED_ENV_VARS = [
   'SUPABASE_URL',
@@ -59,6 +60,13 @@ const REQUIRED_ENV_VARS = [
 //   - RESEND_FROM_EMAIL optional from-address override (default a Signet address
 //                       that must be verified with Resend before it will send)
 //
+// Also optional (#2526): the mobile minimum-version policy. Unset, no build is
+// ever told to update. Unlike the rest of this list, a value that IS set is
+// checked here, because a malformed minimum would read as "no minimum" and
+// switch the gate off silently. Rules: validateClientPolicyEnv.
+//   - MOBILE_MIN_VERSION_IOS / MOBILE_MIN_VERSION_ANDROID
+//   - MOBILE_UPDATE_URL_IOS / MOBILE_UPDATE_URL_ANDROID
+//
 // NOT here, and deliberately absent rather than merely unlisted:
 // SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is
 // built from SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
@@ -93,6 +101,11 @@ export function validateEnv(config: Record<string, unknown>) {
   // invite-link.util.ts. The Docker image does not copy .github/, so the
   // production Supabase host is identified by @repo/validation (pinned to
   // environments.json in that package's tests).
+  const clientPolicyProblems = validateClientPolicyEnv(config);
+  if (clientPolicyProblems.length > 0) {
+    throw new Error(clientPolicyProblems.join(' '));
+  }
+
   const supabaseUrl = config.SUPABASE_URL;
   const appUrl = config.APP_URL;
   if (
