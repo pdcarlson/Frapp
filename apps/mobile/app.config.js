@@ -271,10 +271,19 @@ const PUBLIC_SUPABASE_SECRET_KEY_ERROR = [
   "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
-/** The claims of a JWT-shaped key, or undefined for anything else. */
+/**
+ * The claims of every JWT in the value, wherever it sits: the whole value when
+ * it has three parts, and every header-and-claims pair anywhere else in it (a
+ * JWT's header and claims both open with `eyJ`, which is `{"` in base64url),
+ * so one pasted after a URL, a stray dot or another JWT is still read.
+ */
 function jwtClaims(key) {
   const parts = key.split(".");
-  return parts.length === 3 ? decodeJwtSegment(parts[1]) : undefined;
+  const found = parts.length === 3 ? [decodeJwtSegment(parts[1])] : [];
+  for (const [, claims] of key.matchAll(/eyJ[A-Za-z0-9_-]*\.(eyJ[A-Za-z0-9_-]*)/g)) {
+    found.push(decodeJwtSegment(claims));
+  }
+  return found.filter(Boolean);
 }
 
 // Refuses the shapes that are known credentials, on every evaluation: a secret
@@ -285,16 +294,15 @@ function jwtClaims(key) {
 // one path with no EAS profile whose bundle leaves the machine, the export
 // `eas update` publishes, and the only one that sees a credential pasted onto
 // the end of a real key (the allowlist patterns accept key characters to the
-// end), so a prefix anywhere in the value counts. A real key's random part can
-// contain `sbp_` by chance, in fewer than one key in 100,000; rotating it gives
-// one that doesn't.
+// end), so a prefix anywhere in the value counts, and so does any JWT in it. A
+// real key's random part can contain `sbp_` by chance, in fewer than one key
+// in 100,000; rotating it gives one that doesn't.
 function assertNoSupabaseSecretKey({ supabaseAnonKey } = {}) {
   const key = String(supabaseAnonKey || "").trim();
-  const claims = jwtClaims(key);
   if (
     key.includes("sb_secret_") ||
     key.includes("sbp_") ||
-    (claims && claims.role !== "anon")
+    jwtClaims(key).some((claims) => claims.role !== "anon")
   ) {
     throw new Error(PUBLIC_SUPABASE_SECRET_KEY_ERROR);
   }
@@ -341,8 +349,8 @@ function decodeJwtSegment(segment) {
 /**
  * The publishable key, or a well-formed JWT (a header naming its `alg`, and
  * claims) whose role is `anon`, as the whole string. Stricter than
- * `jwtClaims`, which reads only the claims so the denylist can find a secret
- * however it was pasted.
+ * `jwtClaims`, which reads claims wherever they sit so the denylist can find a
+ * JWT inside anything else that was pasted.
  */
 function isSupabaseClientKey(raw) {
   if (SUPABASE_PUBLISHABLE_KEY_PATTERN.test(raw)) return true;

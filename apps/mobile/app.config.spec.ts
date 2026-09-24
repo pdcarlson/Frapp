@@ -704,8 +704,9 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     ["a secret key", SECRET_KEY_FIXTURE],
     ["a service_role JWT", SERVICE_ROLE_JWT_FIXTURE],
     ["a user's access token", USER_TOKEN_JWT_FIXTURE],
-    // With no profile this is the only key check, so a pasted secret is
-    // found wherever it sits: trim() leaves quotes and a zero-width space.
+    // With no profile this is the only key check, so a pasted secret prefix
+    // or JWT is found wherever it sits: trim() leaves quotes and a zero-width
+    // space.
     ["a secret key in quotes", `"${SECRET_KEY_FIXTURE}"`],
     ["a secret key behind a zero-width space", `\u200b${SECRET_KEY_FIXTURE}`],
     ["a personal access token", ACCESS_TOKEN_FIXTURE],
@@ -717,6 +718,12 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     ["an access token appended to a publishable key", `${PUBLISHABLE_KEY_FIXTURE}${ACCESS_TOKEN_FIXTURE}`],
     ["a secret key appended to an anon JWT", `${LEGACY_ANON_JWT_FIXTURE}${SECRET_KEY_FIXTURE}`],
     ["a URL-encoded secret key", `%22${SECRET_KEY_FIXTURE}%22`],
+    // A JWT among other dotted text doesn't split into three parts, so its
+    // claims are found by their `eyJ` header-and-claims pair instead.
+    ["a service_role JWT appended to an anon JWT", `${LEGACY_ANON_JWT_FIXTURE}${SERVICE_ROLE_JWT_FIXTURE}`],
+    ["a service_role JWT after an anon JWT and a space", `${LEGACY_ANON_JWT_FIXTURE} ${SERVICE_ROLE_JWT_FIXTURE}`],
+    ["a service_role JWT with a trailing period", `${SERVICE_ROLE_JWT_FIXTURE}.`],
+    ["a service_role JWT after the project URL", `https://ref.supabase.co ${SERVICE_ROLE_JWT_FIXTURE}`],
   ])("refuses %s on any profile, or none", (_label, supabaseAnonKey) => {
     const {
       applyMobileConfig,
