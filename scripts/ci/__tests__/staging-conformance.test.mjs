@@ -20,6 +20,7 @@ import {
   AUTH_SMTP_SENDER_NAME,
   checkAuthMagicLink,
   leftoverSignetMailerSubjectKeys,
+  magicLinkReadableText,
   checkInfisicalSyncs,
   checkProjectStatus,
   checkRenderAutoDeploy,
@@ -501,6 +502,39 @@ test("a crest image served under its design-system file name is not a Signet lef
       }),
   });
   assert.equal(result.status, PASS);
+});
+
+test("magicLinkReadableText keeps what a reader sees and drops markup", () => {
+  const text = magicLinkReadableText(
+    '<style>.signet-emblem{width:1px}</style><!-- Signet crest -->' +
+      '<img src="/brand/signet-emblem-B.png" alt="Frapp crest" title=\'Frapp\' class="signet-mark">' +
+      '<h2>Sign in to Frapp</h2><a href="{{ .RedirectTo }}">Sign in</a>',
+  );
+  assert.doesNotMatch(text, /signet/i);
+  assert.match(text, /Frapp crest/);
+  assert.match(text, /Sign in to Frapp/);
+});
+
+test("a Magic Link image whose alt or title says Signet fails; a style block naming signet- does not", async () => {
+  const link = '<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a>';
+  for (const img of ['<img src="/brand/crest.png" alt="Signet">', '<img src="/brand/crest.png" title="Signet crest">']) {
+    const result = await checkAuthMagicLink({
+      accessToken: "t",
+      projectRef: "ref",
+      fetchImpl: async () => magicLinkConfig({ mailer_templates_magic_link_content: `${img}<h2>Sign in to Frapp</h2>${link}` }),
+    });
+    assert.equal(result.status, FAIL, img);
+    assert.match(result.detail, /still says Signet/);
+  }
+  const styled = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      magicLinkConfig({
+        mailer_templates_magic_link_content: `<style>.signet-emblem{width:48px}</style><h2>Sign in to Frapp</h2>${link}`,
+      }),
+  });
+  assert.equal(styled.status, PASS);
 });
 
 test("hosted Magic Link subject fails", async () => {

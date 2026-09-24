@@ -601,6 +601,23 @@ export function leftoverSignetMailerSubjectKeys(data) {
 }
 
 /**
+ * What a reader of the Magic Link email can see: the text between tags, plus
+ * `alt` and `title` values, which a mail client shows when it blocks images.
+ * Style and script blocks and HTML comments are dropped, as are the other
+ * attributes, so a crest served under its design-system file name
+ * (`/brand/signet-emblem-B.png`) or a `.signet-*` class is not copy.
+ */
+export function magicLinkReadableText(html) {
+  return String(html)
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(style|script)\b[\s\S]*?<\/\1\s*>/gi, " ")
+    .replace(/<[^>]*>/g, (tag) => {
+      const shown = [...tag.matchAll(/\b(?:alt|title)\s*=\s*("[^"]*"|'[^']*')/gi)];
+      return ` ${shown.map((match) => match[1].slice(1, -1)).join(" ")} `;
+    });
+}
+
+/**
  * Magic Link template stays on the app host via `token_hash`.
  *
  * The hosted default href is `{{ .ConfirmationURL }}` → `*.supabase.co/auth/v1/verify`.
@@ -712,10 +729,7 @@ export async function checkAuthMagicLink({
   }
   // The subject is compared exactly, but the body is free text: a heading or
   // link text left on the old name would reach every inbox with nothing red.
-  // Only the text a reader sees counts. Tags are stripped first, so an image
-  // of the crest served under its design-system file name
-  // (`/brand/signet-emblem-B.png`) is not a leftover.
-  if (/\bSignet\b/i.test(content.replace(/<[^>]*>/g, " "))) {
+  if (/\bSignet\b/i.test(magicLinkReadableText(content))) {
     return result(
       "auth-magic-link",
       label,

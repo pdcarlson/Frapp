@@ -156,7 +156,10 @@ or git. Auth SMTP itself is proven on staging and production.
 step 3, `auth-smtp` and `auth-magic-link` expect Frapp: the sender name, the Magic Link
 subject, no `mailer_subjects_*` that says Signet, and no Signet in the Magic Link body's
 text. The consoles are the owner's to change, in this order, before the next scheduled run
-(staging 07:30 UTC, production 07:45 UTC):
+(staging 07:30 UTC, production 07:45 UTC). Production's step waits on Deploy production,
+which is dispatched by hand, so merge after 07:45 UTC and deploy production the same day;
+until both are done, the Production Auth drift alert is expected, and it closes on the
+first run that passes:
 
 1. **Staging, once the merge has deployed there.** In `frapp-staging` → Authentication:
    SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the subject and
@@ -220,7 +223,7 @@ Observation 2026-09-10 for the Google rows, **2026-09-13 for the Apple rows** (o
 | Skip nonce (Google provider) | **Off** |
 | Allow users without email — **Google** | **Off** |
 | Allow users without email — **Apple** | **On** (2026-09-13). Apple may omit the email claim on a later native grant; AuthSync then stores the `noreply+<auth-id>@users.invalid` placeholder ([`spec/architecture/README.md`](../../../../spec/architecture/README.md)). With this **Off**, GoTrue rejects that sign-in outright and the placeholder path is unreachable. Not an App Store requirement — Apple requires that a member be able to *hide* an address, and Hide My Email still returns a real `@privaterelay.appleid.com` relay address (deliverable **once the sending domain is registered** — see **Still open** below). |
-| Magic Link templates | **Untouched** — do not change them |
+| Magic Link templates | **Untouched** by the OAuth work: don't change them for a provider. *2026-09-24: ADR-25 step 3 retypes them for the product name; see [§ ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp).* |
 | Apple Developer: App ID `live.frapp.mobile` + Sign in with Apple; Services ID `live.frapp.mobile.web`; Sign in with Apple key | **Done** (2026-09-13) |
 | Apple provider enabled on hosted `frapp-staging` and `frapp-prod` | **Done** (2026-09-13) |
 | Apple **Sign in with Apple for Email Communication** source domains | **Not done** — #2191. Until both sending domains are registered, mail to a Hide My Email member is refused by Apple's relay. |
