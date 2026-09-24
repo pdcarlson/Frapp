@@ -27,8 +27,8 @@ changes, update it there, not here.
 From a cloud session, use the provider's MCP connector (GitHub, Supabase, Render, Vercel) whenever
 it has a tool for the question:
 
-- Direct `fetch` to Render, Vercel, Sentry, and PostHog is blocked by the sandbox allowlist. MCP
-  doesn't go through the allowlist.
+- Direct `fetch` to Render, Vercel, Sentry, PostHog and the Supabase Management API is blocked by
+  the sandbox allowlist. MCP doesn't go through the allowlist.
 - The GitHub MCP is the only sanctioned write path for issues, PRs, and comments.
 
 The `curl`, `gh`, and CLI recipes below are for laptops and Actions. These also work from a session:
@@ -151,6 +151,9 @@ npx supabase projects list
 npx supabase migration list --project-ref <ref>
 npx supabase db diff --linked         # local vs remote; needs a linked project
 ```
+
+An exported `SUPABASE_ACCESS_TOKEN` wins over the token `supabase login` stored (checked with CLI
+2.117.0), so `unset SUPABASE_ACCESS_TOKEN` first if your shell holds one of CI's read-only tokens.
 
 From a session, use the Supabase MCP (`list_projects`, `list_migrations`). A ref doesn't say which
 project it belongs to, so look up refs by project name with `list_projects`. Never use one from

@@ -389,7 +389,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 ## Provider API token sanity checks (operations)
 
-When running infrastructure automation (agents/scripts), validate provider API credentials before making write calls:
+When running infrastructure automation from a laptop or a script, validate provider API credentials before making write calls. A cloud session can't reach these hosts; it uses the MCP connectors instead (below):
 
 - **Vercel token check**
   - `GET https://api.vercel.com/v2/user` should return an authenticated user.

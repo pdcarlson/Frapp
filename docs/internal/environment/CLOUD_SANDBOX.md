@@ -553,7 +553,9 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   probes then need a staging user; `scripts/ci/staging-conformance.mjs` already defines the
   convention (`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`). Use a dedicated
   smoke account, never a real member's.
-- **Provider APIs.** Render, Vercel, Sentry, and PostHog stay blocked to direct `fetch` — with
+- **Provider APIs.** Render, Vercel, Sentry, PostHog and the Supabase Management API stay
+  blocked to direct `fetch` (`api.supabase.com` answered `000` through the proxy and `403
+  host_not_allowed` direct on 2026-09-24, so a `403` there says nothing about a token) — with
   one **unexplained** exception, a bare `vercel.com` line the live allowlist carries and this
   repo never asked for (see [What's configured in the web
   UI](#whats-configured-in-the-web-ui)); it is drift pending removal or justification, not a
