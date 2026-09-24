@@ -32,9 +32,10 @@
 // The shapes read here are the ones GitHub's workflow schema fixes: `env` is a
 // flat map of scalars, and steps are a list of mappings under `steps:`. That
 // makes an indentation reader sufficient; it is not a general YAML parser and
-// should not be used as one. A flow mapping (`{ a: b }`) as a key's value, and
-// a flow `env:`, throw instead of being guessed at (see `keysAt`), because a
-// guard over a misread value passes. Known gaps: #2629.
+// should not be used as one. A non-empty flow mapping (`{ a: b }`) as a key's
+// value, and a non-empty flow `env:`, throw instead of being guessed at (see
+// `keysAt`), because a guard over a misread value passes; `{}` reads as empty.
+// Known gaps: #2629.
 
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -131,7 +132,7 @@ function isEmptyFlowMapping(raw) {
   return /^\s*(?:[&!]\S*\s+)*\{\s*\}\s*(#.*)?$/.test(raw);
 }
 
-/** The refusal `keysAt` and `findEnvHeader` share; see `keysAt`. */
+/** The refusal `keysAt`, `findEnvHeader` and `stepEnvAt` share; see `keysAt`. */
 function refuseFlowMapping(key, raw) {
   return new Error(
     `workflow-yaml: \`${key}:\` is a flow mapping (${raw.trim()}), which this reader ` +
@@ -200,10 +201,11 @@ function isBlockScalarHeader(value) {
 }
 
 /**
- * The line indices of a job's steps, found via its `steps:` key.
+ * The line indices of a job's steps, found via its `steps:` key, and where
+ * the steps sequence ends: `{ starts, end }`.
  *
- * Returns [] for a job with no `steps:` (a `uses:` reusable-workflow call),
- * which is correct: it has none.
+ * `starts` is [] for a job with no `steps:` (a `uses:` reusable-workflow
+ * call), which is correct: it has none. `end` is then the job's end.
  */
 function stepIndices(lines, jobStart, jobEnd) {
   let stepsKey = -1;
@@ -225,7 +227,9 @@ function stepIndices(lines, jobStart, jobEnd) {
   let end = jobEnd;
   for (let i = stepsKey + 1; i < jobEnd; i += 1) {
     const indent = indentOf(lines[i]);
-    if (indent < seqIndent) {
+    // Below the sequence, or a non-`- ` line on its own indent: the latter is
+    // a job key when the sequence sits at the job-key indent (`    - name:`).
+    if (indent < seqIndent || (indent === seqIndent && !/^\s*- \S/.test(lines[i]))) {
       end = i;
       break;
     }
@@ -301,7 +305,8 @@ function stepEnvAt(lines, stepStart, stepEnd) {
   if (firstKey) {
     if (isEmptyFlowMapping(firstKey[1])) return new Map();
     if (isFlowMapping(firstKey[1])) throw refuseFlowMapping("env", firstKey[1]);
-    if (opensMapping(firstKey[1])) return envMapAt(lines, stepStart, 8);
+    // The step's other keys sit two past its dash; the env's children deeper.
+    if (opensMapping(firstKey[1])) return envMapAt(lines, stepStart, indentOf(lines[stepStart]) + 2);
   }
   const index = findEnvHeader(lines, stepStart + 1, stepEnd, 8);
   return index === -1 ? new Map() : envMapAt(lines, index);
@@ -412,7 +417,8 @@ function opensMapping(raw) {
  * children, so `outputs:`, `permissions:` and `environment:` can be asserted
  * key by key rather than by a regex over the text.
  *
- * A flow mapping (`permissions: { contents: read }`) THROWS. Splitting one by
+ * A non-empty flow mapping (`permissions: { contents: read }`) THROWS; an
+ * empty one (`{}`) reads as an empty Map, since it hides nothing. Splitting one by
  * hand is a YAML parser by accretion: #2431's review found a new valid shape
  * it misread in every round (quoted `#`, anchors, tags, verbatim tags,
  * explicit keys, values spanning lines), and a misread value lets a guard

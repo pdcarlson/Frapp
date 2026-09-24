@@ -203,6 +203,11 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     const flow = join(dir, "first-key-flow-env.yml");
     writeFileSync(flow, "name: X\njobs:\n  j:\n    steps:\n      - env: { GITHUB_SHA: o }\n        run: echo\n");
     assert.throws(() => workflowSteps(flow), /`env:` is a flow mapping/);
+    // The env's children sit deeper than the step's keys wherever the dash
+    // is, so a sequence at indent 4 reads the same.
+    const shallow = join(dir, "first-key-env-shallow.yml");
+    writeFileSync(shallow, "name: X\njobs:\n  j:\n    steps:\n    - env:\n        GITHUB_SHA: o\n      run: echo\n");
+    assert.equal(workflowSteps(shallow)[0].env.get("GITHUB_SHA"), "o");
   });
 
   it("ends the last step where the steps sequence ends, not at the end of the job", () => {
@@ -216,6 +221,16 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     assert.deepEqual([...workflowSteps(services)[0].env], []);
     writeFileSync(services, text("\n          POSTGRES_PASSWORD: postgres"));
     assert.deepEqual([...workflowSteps(services)[0].env], []);
+    // A sequence at the job-key indent (`    steps:` / `    - name:`) ends at
+    // the next job key on that same indent.
+    writeFileSync(
+      services,
+      "name: X\njobs:\n  j:\n    steps:\n    - name: Test\n      run: npm test\n" +
+        "    services:\n      postgres:\n        env:\n          GITHUB_SHA: x\n",
+    );
+    const [only] = workflowSteps(services);
+    assert.deepEqual([...only.env], []);
+    assert.doesNotMatch(only.body, /services:/);
   });
 
   it("reads an empty flow mapping as an empty mapping: {} can hide nothing", () => {
