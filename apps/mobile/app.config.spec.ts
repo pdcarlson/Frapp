@@ -65,6 +65,11 @@ function loadConfig() {
     PRODUCTION_SUPABASE_KEY_ERROR: string;
     assertNoSupabaseSecretKey: (opts?: { supabaseAnonKey?: string }) => void;
     PUBLIC_SUPABASE_SECRET_KEY_ERROR: string;
+    assertEasSupabaseClientKey: (opts?: {
+      easBuildProfile?: string;
+      supabaseAnonKey?: string;
+    }) => void;
+    EAS_SUPABASE_CLIENT_KEY_ERROR: string;
     assertProductionAppUrl: (opts?: {
       easBuildProfile?: string;
       appUrl?: string;
@@ -102,6 +107,10 @@ const PUBLISHABLE_KEY_FIXTURE = "sb_publishable_not-a-real-key"; // gitleaks:all
 const SECRET_KEY_FIXTURE = "sb_secret_not-a-real-key"; // gitleaks:allow
 const USER_TOKEN_JWT_FIXTURE =
   "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCIsInN1YiI6IngifQ.not-a-real-signature"; // gitleaks:allow
+// Values from the wrong field: neither is a key, and neither has a shape the
+// secret-key denylist could refuse.
+const JWT_SECRET_FIXTURE = "not-a-real-jwt-secret-0123456789abcdef"; // gitleaks:allow
+const ACCESS_TOKEN_FIXTURE = "sbp_not-a-real-token"; // gitleaks:allow
 const SERVICE_ROLE_JWT_FIXTURE =
   "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.not-a-real-signature"; // gitleaks:allow
 
@@ -651,6 +660,8 @@ describe("assertProductionSupabasePublishableKey (#2526)", () => {
   it.each([
     ["a trailing newline", `${PUBLISHABLE_KEY_FIXTURE}\n`],
     ["a leading space", ` ${PUBLISHABLE_KEY_FIXTURE}`],
+    ["a trailing quote", `${PUBLISHABLE_KEY_FIXTURE}"`],
+    ["a zero-width space", `${PUBLISHABLE_KEY_FIXTURE}\u200b`],
   ])("refuses a publishable key with %s", (_label, supabaseAnonKey) => {
     const {
       assertProductionSupabasePublishableKey,
@@ -665,7 +676,7 @@ describe("assertProductionSupabasePublishableKey (#2526)", () => {
   });
 
   // The legacy key goes dead in the field after 2026; a secret key would ship
-  // an RLS bypass inside every binary. Both are refused by one prefix test.
+  // an RLS bypass inside every binary. One pattern refuses both.
   it.each([
     ["the legacy JWT anon key", LEGACY_ANON_JWT_FIXTURE],
     ["a secret key", SECRET_KEY_FIXTURE],
@@ -693,6 +704,10 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     ["a secret key", SECRET_KEY_FIXTURE],
     ["a service_role JWT", SERVICE_ROLE_JWT_FIXTURE],
     ["a user's access token", USER_TOKEN_JWT_FIXTURE],
+    // With no profile this is the only key check, so a pasted secret is
+    // found wherever it sits: trim() leaves quotes and a zero-width space.
+    ["a secret key in quotes", `"${SECRET_KEY_FIXTURE}"`],
+    ["a secret key behind a zero-width space", `\u200b${SECRET_KEY_FIXTURE}`],
   ])("refuses %s on any profile, or none", (_label, supabaseAnonKey) => {
     const {
       applyMobileConfig,
@@ -731,9 +746,100 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
       PUBLISHABLE_KEY_FIXTURE,
       LEGACY_ANON_JWT_FIXTURE,
       "not-a-jwt",
+      // Three parts, but the middle is `[]`: JWT claims are an object, so this
+      // is a placeholder, not a credential to tell anyone to rotate.
+      "x.W10.y",
       undefined,
     ]) {
       expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).not.toThrow();
+    }
+  });
+});
+
+describe("assertEasSupabaseClientKey (#2526)", () => {
+  // Every EAS profile produces a binary that goes to testers or the store. A
+  // value pasted from the wrong field of Supabase's settings has no shape to
+  // deny, so an EAS build allows only the two client keys.
+  it.each([
+    ["the legacy JWT secret", JWT_SECRET_FIXTURE],
+    ["an access token", ACCESS_TOKEN_FIXTURE],
+    ["an unresolved reference", "${SUPABASE_ANON_KEY}"],
+    // Expo inlines the value verbatim and lib/supabase.ts doesn't trim it.
+    ["a publishable key with a trailing newline", `${PUBLISHABLE_KEY_FIXTURE}\n`],
+    ["an anon JWT with a leading space", ` ${LEGACY_ANON_JWT_FIXTURE}`],
+    ["only whitespace", "   "],
+    // Nor anything else a paste leaves around a key, which trim() can't see.
+    ["an anon JWT in quotes", `"${LEGACY_ANON_JWT_FIXTURE}"`],
+    ["an anon JWT behind a zero-width space", `\u200b${LEGACY_ANON_JWT_FIXTURE}`],
+    ["a publishable key with a trailing quote", `${PUBLISHABLE_KEY_FIXTURE}"`],
+    [
+      "anon claims between segments that aren't a JWT",
+      `junk.${LEGACY_ANON_JWT_FIXTURE.split(".")[1]}.junk`,
+    ],
+  ])("refuses %s on every EAS profile", (_label, supabaseAnonKey) => {
+    const {
+      applyMobileConfig,
+      assertEasSupabaseClientKey,
+      EAS_SUPABASE_CLIENT_KEY_ERROR,
+    } = loadConfig();
+    for (const EAS_BUILD_PROFILE of ["development", "preview", "production"]) {
+      expect(() =>
+        assertEasSupabaseClientKey({
+          easBuildProfile: EAS_BUILD_PROFILE,
+          supabaseAnonKey,
+        }),
+      ).toThrow(EAS_SUPABASE_CLIENT_KEY_ERROR);
+    }
+    // Through the whole config, where production's stricter check speaks first.
+    for (const EAS_BUILD_PROFILE of ["development", "preview"]) {
+      expect(() =>
+        applyMobileConfig(androidConfig, {
+          env: {
+            ...productionPublicEnv,
+            EAS_BUILD_PROFILE,
+            EAS_BUILD_PLATFORM: "ios",
+            EXPO_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
+          },
+          existsSync: missing,
+        }),
+      ).toThrow(EAS_SUPABASE_CLIENT_KEY_ERROR);
+    }
+  });
+
+  it("allows the two client keys, and no key, on every EAS profile", () => {
+    const { assertEasSupabaseClientKey } = loadConfig();
+    for (const easBuildProfile of ["development", "preview", "production"]) {
+      for (const supabaseAnonKey of [
+        PUBLISHABLE_KEY_FIXTURE,
+        LEGACY_ANON_JWT_FIXTURE,
+        "",
+        undefined,
+      ]) {
+        expect(() =>
+          assertEasSupabaseClientKey({ easBuildProfile, supabaseAnonKey }),
+        ).not.toThrow();
+      }
+    }
+  });
+
+  // `expo start`, CI prebuild and `expo export` set no profile, and
+  // placeholders are normal there. `eas update` publishes an `expo export`
+  // with no profile either, so there the secret denylist above is the only key
+  // check (spec/environments/README.md § Mobile (EAS) keeps it off until an
+  // update pipeline sets one).
+  it("leaves a run with no EAS profile to the denylist", () => {
+    const { applyMobileConfig, assertEasSupabaseClientKey } = loadConfig();
+    for (const supabaseAnonKey of ["test-anon-key", JWT_SECRET_FIXTURE]) {
+      expect(() => assertEasSupabaseClientKey({ supabaseAnonKey })).not.toThrow();
+      expect(() =>
+        applyMobileConfig(androidConfig, {
+          env: {
+            ...productionPublicEnv,
+            EXPO_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
+          },
+          existsSync: missing,
+        }),
+      ).not.toThrow();
     }
   });
 });
@@ -765,9 +871,9 @@ describe("expo-updates, installed dormant (#2526)", () => {
     expect(packageJson.dependencies["expo-updates"]).toBeDefined();
   });
 
-  // appVersion ties an update to `expo.version`: an update published for
-  // 0.9.x reaches only binaries built at 0.9.x. `fingerprint` is still marked
-  // experimental in Expo's docs, which is not a policy to freeze into a binary.
+  // Keyed to `expo.version`, which is only safe because every build whose
+  // native code changes gets a new version. `spec/environments/README.md`
+  // § Mobile (EAS) owns that rule and why `fingerprint` was rejected.
   it("keys the runtime version to the app version", () => {
     expect(appJson.expo.runtimeVersion).toEqual({ policy: "appVersion" });
   });
@@ -1043,7 +1149,7 @@ describe("iOS privacy manifest (#2294)", () => {
     // react-native's hard-coded core list (C617.1, CA92.1, 35F9.1) and every
     // pod's own manifest that is wired in as a `resource_bundles` entry
     // (`react-native/scripts/cocoapods/privacy_manifest_utils.rb`, on unless
-    // `apple.privacyManifestAggregationEnabled` is "false"). Two things fall
+    // `apple.privacyManifestAggregationEnabled` is "false"). Three pods fall
     // through that net, and they are why this list is not just "what the pods
     // don't already say":
     //
@@ -1054,6 +1160,8 @@ describe("iOS privacy manifest (#2294)", () => {
     //  - Expo's template precompiles modules by default
     //    (EXPO_USE_PRECOMPILED_MODULES), and the prebuilt expo-file-system
     //    tarball carries no manifest, so its declaration is dropped too.
+    //  - The precompiled SDWebImage framework that expo-image-manipulator
+    //    pulls in carries none either.
     //
     // UserDefaults / CA92.1 is the load-bearing row for
     // @stripe/stripe-react-native: StripeSdkImpl.swift reads and writes

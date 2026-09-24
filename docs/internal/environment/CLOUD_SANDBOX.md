@@ -554,7 +554,9 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   probes then need a staging user; `scripts/ci/staging-conformance.mjs` already defines the
   convention (`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`). Use a dedicated
   smoke account, never a real member's.
-- **Provider APIs.** Render, Vercel, Sentry, and PostHog stay blocked to direct `fetch` — with
+- **Provider APIs.** Render, Vercel, Sentry, PostHog and the Supabase Management API stay
+  blocked to direct `fetch` (`api.supabase.com` answered `000` through the proxy and `403
+  host_not_allowed` direct on 2026-09-24, so a `403` there says nothing about a token) — with
   one **unexplained** exception, a bare `vercel.com` line the live allowlist carries and this
   repo never asked for (see [What's configured in the web
   UI](#whats-configured-in-the-web-ui)); it is drift pending removal or justification, not a
@@ -576,7 +578,7 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   permission. Note the boundary is quiet about itself — an out-of-scope environment returns
   `200` with **zero** secrets rather than a 403, so never read scope off a listing
   (see [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md)). Only raw-`fetch` scripts
-  like `staging-conformance.mjs` notice the difference for the other four, and those run in
+  like `staging-conformance.mjs` notice the difference for the other five, and those run in
   CI, where the allowlist does not apply.
 - **Per-deployment Vercel URLs.** Of the deployment surfaces, only the aliased staging
   hostnames are allowlisted, not the unique `*.vercel.app` URL each deployment also gets.

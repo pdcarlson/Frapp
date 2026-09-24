@@ -32,7 +32,7 @@
 // Env inputs:
 //   GITHUB_TOKEN          — required (issues: write) for the alert upsert
 //   GITHUB_REPOSITORY     — required, owner/repo
-//   SUPABASE_ACCESS_TOKEN — Management API token (account-scoped)
+//   SUPABASE_ACCESS_TOKEN — Management API token, read-only, production project only
 //   RUN_URL               — html_url of this run, for the alert body
 
 import { appendFileSync } from "node:fs";

@@ -2,9 +2,16 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { BackHandler, Keyboard, Pressable, Text } from "react-native";
+import {
+  AccessibilityInfo,
+  BackHandler,
+  Keyboard,
+  Platform,
+  Pressable,
+  Text,
+} from "react-native";
 import * as Linking from "expo-linking";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ClientPolicy } from "@/lib/client-policy";
 
@@ -100,6 +107,30 @@ describe("ClientPolicyGate", () => {
       renderer.root.findByType(Pressable).props.onPress();
     });
     expect(texts(renderer)).toContain(UPDATE_REQUIRED_COPY.linkFailed);
+    // VoiceOver has no live regions, and focus stays on the button.
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      UPDATE_REQUIRED_COPY.linkFailed,
+    );
+  });
+
+  it("leaves the link failure to the live region on Android, so TalkBack says it once", async () => {
+    const os = vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
+    onTestFinished(() => os.mockRestore());
+    policy.current = { updateRequired: true, updateUrl: "https://a.test/app" };
+    vi.mocked(Linking.openURL).mockRejectedValueOnce(new Error("no handler"));
+    const renderer = render();
+    await act(async () => {
+      renderer.root.findByType(Pressable).props.onPress();
+    });
+    const failure = renderer.root
+      .findAllByType(Text)
+      .find((node) => node.props.children === UPDATE_REQUIRED_COPY.linkFailed);
+    // The live region is what speaks it on Android, and the announcement
+    // would say it a second time.
+    expect(failure?.props.accessibilityLiveRegion).toBe("polite");
+    expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalledWith(
+      UPDATE_REQUIRED_COPY.linkFailed,
+    );
   });
 
   it("still blocks, with instructions instead of a button, when there is no link", () => {
