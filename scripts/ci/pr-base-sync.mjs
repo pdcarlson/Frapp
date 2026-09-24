@@ -480,9 +480,12 @@ async function reconcileTokenAlert({
     proven: updated,
     fetchImpl,
   });
+  // Say "proven" only when this sweep updated a branch; otherwise the token
+  // merely hit no failure, which is what `proven` tells the closing comment.
+  const why = updated ? "auto-update proven working" : "auto-update hit no failure";
   if (recovery.action === "closed") {
     logger.log?.(
-      `[pr-base-sync] auto-update proven working — closed alert issue(s) ` +
+      `[pr-base-sync] ${why} — closed alert issue(s) ` +
         recovery.closed.map((n) => `#${n}`).join(", "),
     );
   } else if (recovery.action === "failed") {
@@ -492,7 +495,7 @@ async function reconcileTokenAlert({
       ? ` (closed ${recovery.closed.map((n) => `#${n}`).join(", ")})`
       : "";
     logger.log?.(
-      `::warning::[pr-base-sync] auto-update proven working, but an alert issue could not be closed${closed}`,
+      `::warning::[pr-base-sync] ${why}, but an alert issue could not be closed${closed}`,
     );
   }
 }

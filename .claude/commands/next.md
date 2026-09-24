@@ -112,12 +112,12 @@ obligates the whole batch (§0.7).
   issue, since it may already be held. Several numbers claim as one batch under the same caps and
   coherence test; if the set doesn't honestly batch, say so and ask rather than silently splitting
   it or shipping an incoherent PR. `triage` issues are never claimable in any mode (except the
-  record-keeping claim above). Two §0.2 exclusions apply here too, condition 1's `routine-state` /
-  `incident` clause and condition 5: a human naming such an issue, or a `[human]` item, doesn't
-  make it agent-doable. Say so, and for an `incident` offer to file the underlying fault as its own
-  issue. Of condition 1's state labels, only `in-progress` is set aside: a named `in-progress`
-  issue goes through §0.5–§0.7, which decide whether it's held or reclaimable. A named `in-review`
-  issue already has its PR (condition 4), so report that rather than claim it. If you lose the race on a named issue, report who holds it and
+  record-keeping claim above). §0.2 conditions 4 and 5, and condition 1's `routine-state` /
+  `incident` clause, apply here too: a human naming such an issue, a `[human]` item, or one with an
+  open linked PR doesn't make it agent-doable. Say so, and for an `incident` offer to file the
+  underlying fault as its own issue. Condition 1's `in-progress` and `in-review` labels aren't
+  evidence either way: condition 4's PR search and §0.5–§0.7 decide whether a named issue is in
+  flight, held, or reclaimable. If you lose the race on a named issue, report who holds it and
   don't fall back to ranking; the human picked issues, not a category. Losing one member of a named
   batch doesn't abandon the rest: proceed with what you won (subject to §0.5's coherence escape)
   and report the loss.

@@ -82,10 +82,10 @@ it is, close it with the proof and offer him the next item.
 
 An `incident` is the exception to that close and to steps 2 and 5 below: triage it and report on
 its thread, put the fix to him or mention it as new work ([Guardrails](#guardrails)), and leave the close to its
-watchdog, which closes it once its own checks pass. The one alert he closes by hand is one its
-watchdog can't close (a close that keeps failing, or an issue orphaned by a title change), once
-recovery is shown
-([`ALERT_ROUTING.md` § Escalation](../../../docs/internal/ops/ALERT_ROUTING.md#escalation)).
+watchdog, which closes it once its own checks pass. The one exception is an alert its watchdog
+can't close, which he closes by hand
+([`ALERT_ROUTING.md` § Escalation](../../../docs/internal/ops/ALERT_ROUTING.md#escalation) says
+which alerts those are).
 
 1. **Ground the steps in reality, not the issue.** Its "How to do it" was written at filing time and
    may have drifted; confirm names and paths against the repo, and provider state with
