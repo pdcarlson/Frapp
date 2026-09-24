@@ -26,8 +26,8 @@ export const DISCORD_CONNECT_RETURN_PATH = "/discord-import?wizard=bot";
  * Link the chapter's Discord server.
  *
  * The whole step is one button and a status line, which is the point: the admin
- * never sees, pastes, or stores a token. They authorize the Signet bot through
- * Discord's ordinary "Add to Server" screen, and what Signet keeps afterwards is
+ * never sees, pastes, or stores a token. They authorize the Frapp bot through
+ * Discord's ordinary "Add to Server" screen, and what Frapp keeps afterwards is
  * a server id — a public number that does nothing without the install behind it.
  *
  * Discord will only let this finish if the person doing it has **Manage Server**
@@ -131,8 +131,8 @@ export function ConnectStep({
             {connection.data?.connected_discord_username
               ? `Authorized by ${connection.data.connected_discord_username}.`
               : "Authorized."}{" "}
-            Signet can read channel history in this server. It cannot post,
-            edit, or delete anything.
+            Frapp can read channel history in this server. It cannot post, edit,
+            or delete anything.
           </p>
         </div>
 
@@ -169,7 +169,7 @@ export function ConnectStep({
       ) : null}
 
       <p className="text-sm text-muted-foreground">
-        Add the Signet bot to your Discord server. Discord will ask you which
+        Add the Frapp bot to your Discord server. Discord will ask you which
         server, and will only allow it if you have the{" "}
         <strong className="font-medium text-foreground">Manage Server</strong>{" "}
         permission there.

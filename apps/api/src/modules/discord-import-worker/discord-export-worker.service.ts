@@ -279,7 +279,7 @@ export class DiscordExportWorkerService {
   }
 
   /**
-   * The Signet channel a discovered row imports into.
+   * The Frapp channel a discovered row imports into.
    *
    * A thread never gets its own destination — it lands in whatever its parent
    * landed in. That is not a shortcut, it is the only correct answer: the admin

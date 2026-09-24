@@ -409,9 +409,9 @@ exactly the machinery everything else uses.
 chooses one at `/discord-import`; everything after the choice is identical.
 
 - **Connect Discord** (`source = 'bot'`). The chapter installs one
-  Signet-owned bot through Discord's ordinary "Add to Server" screen, and the
+  Frapp-owned bot through Discord's ordinary "Add to Server" screen, and the
   API reads the history itself over Discord's REST API. **No admin ever sees,
-  pastes or stores a credential**: the bot token is a single global Signet
+  pastes or stores a credential**: the bot token is a single global Frapp
   value, and the only per-chapter thing stored is a `guild_id` — a public
   snowflake, inert without an install behind it.
 - **Upload an export** (`source = 'upload'`). The admin runs
@@ -457,7 +457,7 @@ channel that reports a different one fails the import rather than being skipped.
 - **The bot is installed read-only**: View Channels and Read Message History,
   nothing else. It cannot post, edit, or remove anything. One visible
   consequence: Discord gates listing *private* archived threads behind Manage
-  Threads, which is a permission that can also delete threads, so Signet does
+  Threads, which is a permission that can also delete threads, so Frapp does
   not ask for it — private archived threads are reported as skipped, by name,
   rather than silently omitted. Public and active threads import normally.
 - **Threads are not a separate mapping question.** A thread inherits whatever
@@ -482,7 +482,7 @@ channel that reports a different one fails the import rather than being skipped.
   origin rather than the app. This has failed in a deployed environment once,
   when the migrations had not been promoted; the schema being behind the code is
   one of the causes this contract has to cover, not an exception to it.
-- **A failure Signet caused says so, and reports itself.** `expired` means the
+- **A failure Frapp caused says so, and reports itself.** `expired` means the
   handshake really was spent or timed out and starting again will work.
   Something broken on our side answers `failed` instead, because telling an
   admin to "start the connection again" is a loop when the store that mints the
@@ -506,15 +506,15 @@ channel that reports a different one fails the import rather than being skipped.
   instead.
 - **Where it lands is the operator's choice, per channel**, and it is always
   asked: `chat_channels` has no unique constraint on `(chapter_id, name)`, so a
-  same-named Signet channel is never treated as consent to merge into it.
-- **The Discord → Signet role mapping grants nothing.** The wizard records which
-  Signet role each Discord role corresponds to, and shows it back to the admin as
+  same-named Frapp channel is never treated as consent to merge into it.
+- **The Discord → Frapp role mapping grants nothing.** The wizard records which
+  Frapp role each Discord role corresponds to, and shows it back to the admin as
   a worksheet for promoting people by hand. Nothing reads it to grant a
   permission and the importer never touches a `members` row — there are no
   accounts behind imported messages to grant anything to.
 - **Consent is a deliberate friction point.** The admin must confirm they posted
   an in-channel notice in their Discord server before an import can be created.
-  Signet cannot verify it, and says so — but
+  Frapp cannot verify it, and says so — but
   `discord_imports.consent_acknowledged_at` is NOT NULL, so no import exists
   anywhere in the system that skipped the question.
 - **An import is bounded, and so is a chapter's archive.** Both import paths

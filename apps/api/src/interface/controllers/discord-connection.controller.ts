@@ -35,7 +35,7 @@ import {
 } from '../dtos/discord-connection.dto';
 
 /**
- * Connecting a chapter's Discord server to Signet.
+ * Connecting a chapter's Discord server to Frapp.
  *
  * Gated on `channels:manage`, matching `DiscordImportController` — the same
  * authority that already covers creating channels and writing history into

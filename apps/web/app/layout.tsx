@@ -26,23 +26,23 @@ const figtree = localFont({
  * strip; `·` is the separator the framework board uses throughout its own
  * chrome ("Start a chapter · 1 of 3", "$3 per member / month · 42 members").
  * And seventeen copies of a brand name is seventeen places for it to drift —
- * `/no-access` shipped the *previous* product name in its title until the #920
- * slice corrected that one by hand, which is the whole argument for spelling it
- * once. `scripts/ci/__tests__/signet-web-titles.test.mjs` bans that name from
- * this file outright, comments included, so it is described here rather than
- * quoted.
+ * `/no-access` shipped a stale product name in its title ("No access — Frapp",
+ * while the product was named Signet) until the #920 slice corrected that one
+ * by hand, which is the whole argument for spelling it once. ADR-25 step 4
+ * then moved the name from Signet to Frapp by changing the two strings below,
+ * and `scripts/ci/__tests__/frapp-web-titles.test.mjs` pins them.
  *
  * The default was `"Signet Admin Dashboard"`. It is the only string in the
  * product that calls this surface an admin dashboard, and it is wrong on the
  * greenfield: `nav-config.ts` gates Admin behind a permission and everything
  * above it — Chat, Events, Tasks, Points, Polls, Directory — is a member
- * surface. The pre-auth screens already render the product as plain "Signet"
- * (`page.tsx`, `sign-in/page.tsx`), so the default now agrees with them.
+ * surface. The pre-auth screens render the product as the plain name
+ * (`page.tsx`, `sign-in/page.tsx`), so the default agrees with them.
  */
 export const metadata: Metadata = {
   title: {
-    default: "Signet",
-    template: "%s · Signet",
+    default: "Frapp",
+    template: "%s · Frapp",
   },
   description: "Ask your chapter anything.",
 };

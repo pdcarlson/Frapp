@@ -5,7 +5,7 @@
  * principals and must never be confused for one another:
  *
  *  * {@link IDiscordBotGateway} acts as the **bot**, with the one global
- *    Signet token. It reads history and it is the thing that touches every
+ *    Frapp token. It reads history and it is the thing that touches every
  *    connected chapter's data, so every method on it takes an explicitly
  *    authorized guild id and the implementation re-derives the guild from
  *    Discord's own response rather than trusting the caller.

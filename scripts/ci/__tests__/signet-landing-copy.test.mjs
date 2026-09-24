@@ -12,7 +12,8 @@
 // SCOPE. Landing metadata titles, JSON-LD SoftwareApplication / brand
 // names, the lockup aria-label, and the spec's status banner. This lock is
 // about COPY and identity, not visuals: do not turn it into a token check.
-// Do not walk apps/web (those titles are already Signet).
+// Do not walk apps/web: its titles and copy say Frapp since ADR-25 step 4,
+// and frapp-web-titles and frapp-web-copy lock them.
 //
 // THE STATUS BANNER TRACKS THE RESKIN, SO IT MOVES. It asserted the
 // visual-freeze banner until #2365 lifted that freeze, then the

@@ -38,7 +38,7 @@ import { ReviewStep } from "./review-step";
  * ## Two ways in, one wizard
  *
  * The `source` choice decides which of two middle steps runs — `connect` (add
- * the Signet bot and let the API read the server) or `upload` (bring a
+ * the Frapp bot and let the API read the server) or `upload` (bring a
  * DiscordChatExporter export). Everything on either side of that is shared
  * verbatim: the same consent gate, the same channel mapping, the same role
  * worksheet, the same review.

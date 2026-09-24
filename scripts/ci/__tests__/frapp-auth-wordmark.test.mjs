@@ -1,19 +1,20 @@
-// Locks the customer-visible web auth wordmark and tagline on Signet.
+// Locks the customer-visible web auth wordmark and tagline on Frapp.
 //
-// WHY THIS EXISTS. The web pre-auth column says Signet under a locked
+// WHY THIS EXISTS. The web pre-auth column says Frapp under a locked
 // tagline. #1950 locks metadata titles only. A leftover sweep can change the
 // visible wordmark, switch the title to single quotes the first lock used to
-// miss, add a third AuthScreen title=Signet site the hardcoded paths would
+// miss, add a third AuthScreen title=Frapp site the hardcoded paths would
 // miss, or walk landing. #1955.
 //
-// ADR-25 NAMES THE PRODUCT FRAPP, and renames it one surface at a time. Step
+// ADR-25 NAMES THE PRODUCT FRAPP, and renamed it one surface at a time. Step
 // 2 moved mobile sign-in to Frapp and split its half of this lock out into
-// frapp-mobile-copy.test.mjs, along with the mobile tagline note. This lock
-// is the web half until step 4 moves the dashboard, which flips it: the
-// title becomes Frapp and Signet becomes the banned word.
+// frapp-mobile-copy.test.mjs, along with the mobile tagline note. Step 4
+// moved the web dashboard and flipped the rest: this lock was
+// signet-auth-wordmark, the title became Frapp and Signet the banned word.
 //
 // SCOPE. Rendered title/subtitle props on apps/web/app. Do not scan whole
-// web auth files for Frapp — those files keep historical Frapp comments.
+// web auth files for Signet — those files keep design-system comments and
+// the SignetMark component. frapp-web-copy walks their copy lines.
 // Do not lock join / sign-up / no-access titles (those are not the product
 // wordmark).
 
@@ -78,7 +79,7 @@ export function collectWebTaglines(source) {
 
 export function isAuthWordmarkSite(source) {
   const webTitles = collectWebWordmarks(source);
-  return webTitles.includes("Signet") || webTitles.includes("Frapp");
+  return webTitles.includes("Frapp") || webTitles.includes("Signet");
 }
 
 export function authWordmarkSites() {
@@ -92,10 +93,10 @@ export function walkedWordmarkProblems(files) {
   const problems = [];
   for (const { rel, source } of files) {
     for (const title of collectWebWordmarks(source)) {
-      if (title === "Frapp") problems.push(`${rel}:title`);
+      if (title === "Signet") problems.push(`${rel}:title`);
     }
     for (const subtitle of collectWebTaglines(source)) {
-      if (/\bFrapp\b/.test(subtitle)) problems.push(`${rel}:subtitle`);
+      if (/\bSignet\b/.test(subtitle)) problems.push(`${rel}:subtitle`);
     }
   }
   return problems;
@@ -103,21 +104,21 @@ export function walkedWordmarkProblems(files) {
 
 export function authWordmarkLockProblems({ home, signIn }) {
   const problems = [];
-  const homeTitles = collectWebWordmarks(home).filter((title) => title === "Signet");
+  const homeTitles = collectWebWordmarks(home).filter((title) => title === "Frapp");
   const signInTitles = collectWebWordmarks(signIn).filter(
-    (title) => title === "Signet",
+    (title) => title === "Frapp",
   );
   if (homeTitles.length < MIN_HOME_WORDMARKS) {
-    problems.push("web home must keep the Signet wordmark");
+    problems.push("web home must keep the Frapp wordmark");
   }
   if (signInTitles.length < MIN_SIGN_IN_WORDMARKS) {
     problems.push("web sign-in must keep the form and Suspense fallback wordmarks");
   }
-  if (collectWebWordmarks(home).includes("Frapp")) {
-    problems.push("web home title must not be Frapp");
+  if (collectWebWordmarks(home).includes("Signet")) {
+    problems.push("web home title must not be Signet");
   }
-  if (collectWebWordmarks(signIn).includes("Frapp")) {
-    problems.push("web sign-in title must not be Frapp");
+  if (collectWebWordmarks(signIn).includes("Signet")) {
+    problems.push("web sign-in title must not be Signet");
   }
 
   const homeTaglines = collectWebTaglines(home).filter((line) => line === TAGLINE);
@@ -125,16 +126,16 @@ export function authWordmarkLockProblems({ home, signIn }) {
     (line) => line === TAGLINE,
   );
   if (homeTaglines.length < MIN_HOME_WORDMARKS) {
-    problems.push("web home must keep the Signet tagline");
+    problems.push("web home must keep the brand tagline");
   }
   if (signInTaglines.length < MIN_SIGN_IN_WORDMARKS) {
     problems.push("web sign-in must keep the form and Suspense fallback taglines");
   }
-  if (collectWebTaglines(home).some((line) => /\bFrapp\b/.test(line))) {
-    problems.push("web home subtitle must not name Frapp");
+  if (collectWebTaglines(home).some((line) => /\bSignet\b/.test(line))) {
+    problems.push("web home subtitle must not name Signet");
   }
-  if (collectWebTaglines(signIn).some((line) => /\bFrapp\b/.test(line))) {
-    problems.push("web sign-in subtitle must not name Frapp");
+  if (collectWebTaglines(signIn).some((line) => /\bSignet\b/.test(line))) {
+    problems.push("web sign-in subtitle must not name Signet");
   }
   return problems;
 }
@@ -159,8 +160,8 @@ export function lockSelfProblems(source) {
   if (!/title=\(\?:\["'\]/.test(source)) {
     problems.push("must collect single-quoted and double-quoted titles");
   }
-  if (/doesNotMatch\(\s*home[\s\S]{0,80}\\bFrapp\\b/.test(source)) {
-    problems.push("must not scan whole web auth files for Frapp");
+  if (/doesNotMatch\(\s*home[\s\S]{0,80}\\bSignet\\b/.test(source)) {
+    problems.push("must not scan whole web auth files for Signet");
   }
   return problems;
 }
@@ -172,7 +173,7 @@ function liveWordmarkFiles() {
   }));
 }
 
-test("web auth wordmarks stay Signet", () => {
+test("web auth wordmarks say Frapp", () => {
   assert.deepEqual(
     authWordmarkLockProblems({
       home: readRepo(WEB_HOME),
@@ -184,9 +185,9 @@ test("web auth wordmarks stay Signet", () => {
   assert.deepEqual(walkedWordmarkProblems(liveWordmarkFiles()), []);
 });
 
-test("putting Frapp in a web AuthScreen title fails", () => {
+test("putting Signet back in a web AuthScreen title fails", () => {
   const problems = authWordmarkLockProblems({
-    home: readRepo(WEB_HOME).replace('title="Signet"', 'title="Frapp"'),
+    home: readRepo(WEB_HOME).replace('title="Frapp"', 'title="Signet"'),
     signIn: readRepo(WEB_SIGN_IN),
   });
   assert.ok(
@@ -199,7 +200,7 @@ test("dropping a sign-in Suspense fallback wordmark fails", () => {
   const problems = authWordmarkLockProblems({
     home: readRepo(WEB_HOME),
     signIn: readRepo(WEB_SIGN_IN).replace(
-      'title="Signet"',
+      'title="Frapp"',
       'title="Create your account"',
     ),
   });
@@ -209,17 +210,23 @@ test("dropping a sign-in Suspense fallback wordmark fails", () => {
   );
 });
 
-test("a third JS-style Frapp wordmark site fails the walk", () => {
+test("a third JS-style Signet wordmark site fails the walk", () => {
   const rel = "apps/web/app/join/page.tsx";
-  const source = '<AuthScreen title={\'Frapp\'} subtitle="Ask your chapter anything." />\n';
+  const source = '<AuthScreen title={\'Signet\'} subtitle="Ask your chapter anything." />\n';
   assert.equal(isAuthWordmarkSite(source), true);
   assert.deepEqual(walkedWordmarkProblems([{ rel, source }]), [`${rel}:title`]);
 });
 
-test("a single-quoted Frapp title is collected", () => {
-  assert.deepEqual(collectWebWordmarks("<AuthScreen title='Frapp' />"), [
-    "Frapp",
+test("a single-quoted Signet title is collected", () => {
+  assert.deepEqual(collectWebWordmarks("<AuthScreen title='Signet' />"), [
+    "Signet",
   ]);
+});
+
+test("a Signet tagline fails the walk", () => {
+  const rel = "apps/web/app/join/page.tsx";
+  const source = '<AuthScreen title="Frapp" subtitle="Ask Signet anything." />\n';
+  assert.deepEqual(walkedWordmarkProblems([{ rel, source }]), [`${rel}:subtitle`]);
 });
 
 test("walker stays on the web app and keeps the floors", () => {

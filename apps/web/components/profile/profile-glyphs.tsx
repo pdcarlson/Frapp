@@ -37,7 +37,7 @@
  * wizard's eyebrow now carries no glyph at all — its label already names the
  * intent, which is how `points-adjustment-dialog` resolved the same question
  * (§6.2.3) — and the tutorial's welcome slide takes the mark, because the slide
- * is literally a welcome to Signet.
+ * is literally a welcome to Frapp.
  */
 
 import { Svg, detail, fillProps, stroke } from "@/components/ui/duotone";

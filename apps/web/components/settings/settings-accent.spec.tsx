@@ -38,7 +38,7 @@ const DESCRIPTION =
   "Paints primary buttons, your own chat bubbles and the nav&apos;s active item, " +
   "lightened where it needs to stand out. " +
   "Saving derives the rest of the palette from it, and contrast is checked " +
-  "against the dark surfaces it lands on. The Signet mark, the Ask pill and " +
+  "against the dark surfaces it lands on. The Frapp mark, the Ask pill and " +
   "the scrollbars never change.";
 
 const collapse = (text: string) => text.replace(/\s+/g, " ").trim();

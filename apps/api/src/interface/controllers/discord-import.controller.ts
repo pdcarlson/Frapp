@@ -48,7 +48,7 @@ import {
  * No route here takes or returns a Discord credential, on either path. The
  * upload path never touches Discord at all — the admin runs
  * DiscordChatExporter themselves and the browser uploads the result straight to
- * storage. The bot path authenticates with one GLOBAL Signet token that no
+ * storage. The bot path authenticates with one GLOBAL Frapp token that no
  * chapter ever sees; what a chapter contributes is a guild id, established by
  * the OAuth flow in `DiscordConnectionController` and read here only through
  * `chapter_id`.

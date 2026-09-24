@@ -76,7 +76,7 @@ export function PointsCard({ message }: PointsCardProps) {
         {/*
           Semantic tokens, not palette. These were `text-red-600` /
           `text-emerald-700` with `dark:` twins that could never fire — nothing
-          sets `.dark`, Signet being dark-only — so the *light* branch was what
+          sets `.dark`, the design system being dark-only — so the *light* branch was what
           shipped onto `#0E0D0B`. Danger takes the AA-lifted `--destructive-text`
           (components.md §1); a grant is `--success`.
         */}

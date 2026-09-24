@@ -58,7 +58,15 @@ any of those three wrong fails at runtime with an error that names neither this
 page nor the setting.
 
 1. **Create the application.** https://discord.com/developers/applications → New
-   Application, owned by **Signet**, not by a chapter. A separate application per
+   Application, owned by **Frapp**, not by a chapter. Name the application and
+   its bot **Frapp**: Discord's consent screen shows the application's name, the
+   server's member list shows the bot's, and the web import wizard tells an admin
+   to add "the Frapp bot". *2026-09-24: the application was named "Signet" when
+   it was last observed (the 2026-09-15 note in step 4 below). Renaming it and its bot to Frapp is the
+   owner's step on the day ADR-25 step 4
+   ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)) merges: General
+   Information → Name, and Bot → Username. Tracked in
+   [#2669](https://github.com/pdcarlson/Frapp/issues/2669).* A separate application per
    environment is recommended so a staging mistake cannot read production
    chapters' servers. **That recommendation is not currently followed** —
    staging and production were observed sharing one application, so the staging
@@ -126,7 +134,7 @@ page nor the setting.
    recommends.** Two observations, both 2026-09-15:
 
    - Opening the Developer Portal OAuth2 page for application
-     `1541430523090698250` ("Signet") — `https://discord.com/developers/applications/1541430523090698250/oauth2`
+     `1541430523090698250` (then named "Signet") — `https://discord.com/developers/applications/1541430523090698250/oauth2`
      — its Redirects list held exactly the `api-staging` and `api.frapp.live`
      rows, and no `localhost:3001` row.
    - That same client id appeared in the `client_id=` parameter of the authorize
@@ -176,10 +184,11 @@ chapter, and a read-only archiver has no business holding a permission that can
 change anything in someone's server.
 
 **One thing the portal cannot express, so it is worth knowing here.** Discord's
-consent screen names _Signet_ — it does not name the chapter the connection will
-be bound to, and it cannot. Signet closes that gap on its own side: the callback
-parks the server and links nothing, and an authenticated request scoped to the
-chapter is what activates it. So a Signet officer cannot send their authorize
+consent screen names the Discord application (_Signet_ until the owner renames it
+to _Frapp_, [#2669](https://github.com/pdcarlson/Frapp/issues/2669)) — it does not
+name the chapter the connection will be bound to, and it cannot. Frapp closes that gap on its own side:
+the callback parks the server and links nothing, and an authenticated request
+scoped to the chapter is what activates it. So a Frapp officer cannot send their authorize
 link to somebody else's Discord admin and end up reading that server. Do not
 "simplify" the flow by binding on the callback.
 
@@ -192,7 +201,7 @@ link to somebody else's Discord admin and end up reading that server. Do not
 **`available: true` is not "Discord is set up".** `DiscordOAuthService.isAvailable()`
 reads the five variables named above and nothing else; it makes no call to
 Discord, so it cannot observe step 4 or step 5 at all. Neither is detected
-*before* an admin tries to use the flow: step 4 is never visible to Signet, and
+*before* an admin tries to use the flow: step 4 is never visible to Frapp, and
 step 5 only becomes visible once an import is already running. A fully green
 availability check therefore sits happily on top of either one being wrong. The
 three failures look nothing alike:

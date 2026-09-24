@@ -964,7 +964,7 @@ function SettingsPageContent() {
                 </Can>
                 <p className="flex items-start gap-2 text-sm text-muted-foreground">
                   <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
-                  Chapter deactivation is a supported-by-Signet action. Contact
+                  Chapter deactivation is a supported-by-Frapp action. Contact
                   support from the billing portal. Data is preserved
                   indefinitely in read-only mode (see privacy policy).
                 </p>
@@ -1077,7 +1077,8 @@ function SettingsPageContent() {
                     it actually renders on (`resolveChapterAccentColor` is
                     called with `background: surface.card` a few hundred lines
                     up). The code moved; the sentence did not.
-                  - **"invalid colors fall back to the Signet default"** —
+                  - **"invalid colors fall back to the [design system's]
+                    default"** —
                     conflates two different outcomes. A hex the engine cannot
                     parse falls back to `HOUSE_SEED`; a parseable colour that
                     fails §8 contrast is **saved anyway** and disclosed by the
@@ -1107,7 +1108,7 @@ function SettingsPageContent() {
                   is mobile's Preferences row's.
 
                   The closing sentence is board `2e`'s own preview caption
-                  ("The Signet mark and ✦ Ask never change"), moved into the
+                  (the mark and ✦ Ask never change), moved into the
                   product. It is the one place an admin is choosing a colour, so
                   it is the one place worth saying what the colour cannot reach.
                   `settings-accent.spec.tsx` pins it against the tokens.
@@ -1116,7 +1117,7 @@ function SettingsPageContent() {
                   Paints primary buttons, your own chat bubbles and the
                   nav&apos;s active item, lightened where it needs to stand out.
                   Saving derives the rest of the palette from it, and contrast
-                  is checked against the dark surfaces it lands on. The Signet
+                  is checked against the dark surfaces it lands on. The Frapp
                   mark, the Ask pill and the scrollbars never change.
                 </CardDescription>
               </CardHeader>
@@ -1221,7 +1222,7 @@ function SettingsPageContent() {
                     on the unsaved draft (the two contrast ones against a single
                     fixed backdrop each). This is the server's own §8
                     verdict on the colour actually saved, generated through
-                    the real Signet pipeline. §8 forbids a runtime
+                    the real design-system pipeline. §8 forbids a runtime
                     substitution here, so a failing save still succeeds — this
                     discloses rather than corrects (#1183).
                   */}
