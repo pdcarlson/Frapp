@@ -29,9 +29,11 @@ Both run [`scripts/ci/deploy-vercel.mjs`](../../../../scripts/ci/deploy-vercel.m
 
 ### 4.2 Environment Variables per Project
 
-Vercel scopes env vars to **Production** and **Preview**. Production deploys consume Production
-vars (`vercel pull --environment=production` in `deploy-production.yml`) — the workflow rebuilds a
-named commit rather than promoting a preview. **Staging deploys do not consume Preview vars for app
+Vercel scopes env vars to **Production** and **Preview**. Production deploys pull Production vars
+(`vercel pull --environment=production` in `deploy-production.yml`), but the build runs in a job that
+has already injected Infisical `prod`, so a key Infisical holds beats the Production row and the rows
+fill only keys it lacks ([#2673](https://github.com/pdcarlson/Frapp/issues/2673)). The workflow
+rebuilds a named commit rather than promoting a preview. **Staging deploys do not consume Preview vars for app
 config** (since #2672): `deploy-vercel-staging.yml` injects Infisical `staging`, gives each app's
 build exactly the keys it reads, and removes those keys from the Preview env `vercel pull` writes.
 The pull still supplies the project settings and `VERCEL_ENV=preview`
@@ -40,7 +42,9 @@ The pull still supplies the project settings and `VERCEL_ENV=preview`
 **These values are not typed into the Vercel dashboard.** Infisical is the canonical store. The two
 production `vercel-*` syncs push the values into each project's Production scope, and the staging job
 reads Infisical `staging` directly; the dashboard is a destination, not the place a human enters
-anything. Any Preview row left on either project is unused by the build and can be deleted. The authoritative sync map and
+anything. A Preview row can no longer supply a key an app reads, though a row under any other name
+still reaches the staging build's environment; delete the stale rows once a staging deploy on this
+path is green ([#834](https://github.com/pdcarlson/Frapp/issues/834)). The authoritative sync map and
 the setup procedure live in
 [`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md), and the complete
 variable list in [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md). The tables

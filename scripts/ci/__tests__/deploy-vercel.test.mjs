@@ -2,8 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  APP_CONFIG_AMBIENT,
   APP_CONFIG_FROM_INFISICAL,
-  APP_CONFIG_FROM_VERCEL,
   DEPLOY_PHASE_ALL,
   DEPLOY_PHASE_BUILD,
   DEPLOY_PHASE_UPLOAD,
@@ -944,9 +944,9 @@ describe("appConfigSourceFor", () => {
   it("builds staging from the Infisical injection", () =>
     assert.equal(appConfigSourceFor(VERCEL_TARGET_PREVIEW), APP_CONFIG_FROM_INFISICAL));
 
-  // Production stays on the syncs until #834's problem 2 settles their scope.
-  it("builds production from the pulled Vercel env, as before", () =>
-    assert.equal(appConfigSourceFor(VERCEL_TARGET_PRODUCTION), APP_CONFIG_FROM_VERCEL));
+  // Production has not moved yet (#2673): the whole job env, as before.
+  it("builds production on the ambient env, as before", () =>
+    assert.equal(appConfigSourceFor(VERCEL_TARGET_PRODUCTION), APP_CONFIG_AMBIENT));
 });
 
 describe("buildEnvsFor", () => {

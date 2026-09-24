@@ -285,7 +285,8 @@ secrets.
   and then landing, and finally points `app.staging.frapp.live` and `staging.frapp.live` at the
   new deployments. Nothing is push-triggered on Vercel any more. Each build compiles against the
   keys its app reads from Infisical `staging`, which the job injects, and never against a Vercel
-  Preview row: staging has no Infisical→Vercel sync (#834, #2672).
+  Preview row. No staging build reads an Infisical→Vercel sync; the two staging syncs are retired
+  and await deletion (#834, #2672).
 - **Production** deployments are **created by the workflow**, not by a push: a fresh build of
   the named commit with `vercel build --prod`, so it compiles against Production
   environment variables. Promoting a staging build instead would ship a bundle with the

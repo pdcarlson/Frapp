@@ -75,21 +75,44 @@ function workspacePackages() {
   return map;
 }
 
+const runtimeDeps = (dir) =>
+  Object.keys(JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).dependencies ?? {});
+
+/**
+ * The directories whose source an app's bundle can contain: the app, and every
+ * workspace package it reaches through runtime `dependencies`, transitively.
+ * Direct deps alone are not enough: landing gets `@repo/color` only through
+ * `@repo/theme`, and a read there would be checked against web's list and not
+ * landing's.
+ */
+function bundledRoots(appDir) {
+  const packages = workspacePackages();
+  const roots = [join(REPO, appDir)];
+  const seen = new Set();
+  for (let i = 0; i < roots.length; i += 1) {
+    for (const dep of runtimeDeps(roots[i])) {
+      if (!packages.has(dep) || seen.has(dep)) continue;
+      seen.add(dep);
+      roots.push(packages.get(dep));
+    }
+  }
+  return roots;
+}
+
 /**
  * Every `process.env.NAME` an app's deployed code can read: the app's own
- * source plus each workspace package it depends on at runtime, since a package
+ * source plus each workspace package it reaches at runtime, since a package
  * read is compiled into the app that imports it. Returns name → files.
+ *
+ * Memoized per app: three tests read the same scan.
  */
+const scans = new Map();
 function envReadsOf(appDir) {
-  const packages = workspacePackages();
-  const manifest = JSON.parse(readFileSync(join(REPO, appDir, "package.json"), "utf8"));
-  const roots = [
-    join(REPO, appDir),
-    ...Object.keys(manifest.dependencies ?? {})
-      .filter((dep) => packages.has(dep))
-      .map((dep) => packages.get(dep)),
-  ];
+  if (!scans.has(appDir)) scans.set(appDir, scanEnvReads(bundledRoots(appDir)));
+  return scans.get(appDir);
+}
 
+function scanEnvReads(roots) {
   const reads = new Map();
   const dynamic = [];
   let scanned = 0;
@@ -108,7 +131,7 @@ function envReadsOf(appDir) {
       }
     }
   }
-  return { reads, dynamic, scanned };
+  return { reads, dynamic, scanned, roots: roots.map((root) => relative(REPO, root)) };
 }
 
 /**
@@ -160,6 +183,14 @@ describe("APP_CONFIG_KEYS matches what each app reads", () => {
         `APP_CONFIG_KEYS lists ${stale.join(", ")} for ${label}, which nothing in it reads. ` +
           `Remove it, so the build is handed only what the app uses.`,
       );
+    });
+
+    it(`${label}: scans every workspace package its bundle can contain`, () => {
+      // Pinned with the one transitive case that exists today, so a return to
+      // direct-deps-only fails here rather than by missing a future read.
+      const { roots } = envReadsOf(entry.appDir);
+      assert.ok(roots.includes("packages/theme"), `${label} should reach packages/theme`);
+      assert.ok(roots.includes("packages/color"), `${label} reaches packages/color through @repo/theme`);
     });
 
     it(`${label}: reads env by name only, so every read is visible to this guard`, () => {

@@ -12,5 +12,8 @@
 **Mobile can't reach API**
 → Expo Go requires the API to be network-accessible. Use the deployed staging URL, not `localhost`. For local dev, use your machine's LAN IP (e.g., `http://192.168.1.x:3001/v1`).
 
-**Preview deploys on Vercel use wrong env vars**
-→ Check that you scoped the env vars to the correct environment (Production vs Preview). Values are pushed from Infisical rather than typed into the dashboard ([§4.2](vercel.md#42-environment-variables-per-project)), so fix the scope on the sync. Staging builds pull Preview vars via `vercel pull`; nothing is push-triggered. See [§ 4 Vercel Setup](vercel.md).
+**Staging web or landing uses the wrong env var value**
+→ Fix it in Infisical `staging` and let the next merge (or a re-run of **Deploy Vercel staging**) rebuild. The staging build takes every key its app reads from Infisical and removes those keys from the Vercel Preview env it pulls, so editing a Preview row or a staging sync changes nothing. The deploy log's `App config from Infisical:` line names the keys each build received ([§4.2](vercel.md#42-environment-variables-per-project)). A key the app reads but never receives is missing from `APP_CONFIG_KEYS` in `scripts/ci/lib/vercel-build-env.mjs`.
+
+**Production web or landing uses the wrong env var value**
+→ Fix it in Infisical `prod`. The production build prefers the value the job injects from Infisical over the Vercel Production row, which only fills keys Infisical lacks ([#2673](https://github.com/pdcarlson/Frapp/issues/2673)); values are never typed into the dashboard. See [§ 4 Vercel Setup](vercel.md).

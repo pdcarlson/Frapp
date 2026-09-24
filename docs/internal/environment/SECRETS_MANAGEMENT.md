@@ -35,8 +35,8 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 │    ...                                                            │
 │                                                                   │
 │  3 environments: dev, staging, prod                               │
-│  Syncs: Render ×2, Vercel ×2 (production) — §5                    │
-│  Staging web/landing: injected at build by CI, not synced — §5    │
+│  Syncs: Render ×2, Vercel ×4 (the 2 staging ones retired) — §5    │
+│  Staging web/landing: built from an Infisical injection — §5      │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -93,7 +93,7 @@ dashboard (`development` / `preview` / `production`) or a non-secret `eas.json` 
 entry. **This is not limited to `EXPO_PUBLIC_*`:** `SENTRY_AUTH_TOKEN` is build-time only and never
 bundled, yet a Release build *fails* without it in EAS — see
 [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#appsmobile-expo--eas) § apps/mobile. An Infisical entry for
-that name serves `apps/api` / `apps/web`, which do sync; it never reaches EAS. The live syncs are Render + Vercel only (next section).
+that name serves `apps/api` (Render sync) and `apps/web` (Vercel Production sync; injected into the staging build); it never reaches EAS. The live syncs are Render + Vercel only (next section).
 
 ### 5. Configure Secret Syncs
 
@@ -192,7 +192,8 @@ the keys it is listed as reading (next section).
 
 **Decision (owner, 2026-09-24, [#834](https://github.com/pdcarlson/Frapp/issues/834#issuecomment-5821405063)):**
 `deploy-vercel-staging.yml` injects Infisical `staging` itself and builds each app against exactly the
-keys that app reads. There is no staging Vercel sync. Why, and what was turned down:
+keys that app reads. No staging build reads a Vercel sync; the two staging syncs are retired and wait
+for deletion (above). Why, and what was turned down:
 
 - **The syncs cannot address a Git-less project.** Infisical scopes a Vercel Preview write by git
   branch and resolves the branch through the project's connected repository. ADR-21 removed that link
@@ -215,16 +216,21 @@ keys that app reads. There is no staging Vercel sync. Why, and what was turned d
 so no Vercel row can supply one. The per-app key list is `APP_CONFIG_KEYS` in
 [`scripts/ci/lib/vercel-build-env.mjs`](../../../scripts/ci/lib/vercel-build-env.mjs), and
 `vercel-build-env.test.mjs` fails when it drifts from the `process.env` reads in `apps/web`,
-`apps/landing` and the workspace packages they depend on. A required key missing from Infisical fails
-the deploy before anything is built, naming the key. Mechanism and evidence: that file's header.
+`apps/landing` and every workspace package their bundles can contain. A required key missing from
+Infisical fails the deploy before anything is built, naming the key, and so does a pull that leaves no
+env file where the strip looks. Mechanism and evidence: that file's header.
 
 **Runtime needs nothing from Infisical.** Next inlines `NEXT_PUBLIC_*` into client, server and proxy
 code at build, and the only non-public key either app receives, `SENTRY_AUTH_TOKEN`, is read by
 `next.config.js` alone. So deleting the Vercel Preview rows removes nothing a deployment reads at
 request time.
 
-**Production is unchanged.** It still builds from the Production env the `prod` syncs fill, with the
-scope problem below. Moving it to the same path is part of #834's production half.
+**Production has not moved yet ([#2673](https://github.com/pdcarlson/Frapp/issues/2673)).**
+`deploy-production.yml` injects Infisical `prod` in the same job as its Vercel steps, and those steps
+still run on the whole job environment. So every production Vercel CLI process sees the whole `prod`
+store, and any key that injection holds beats the Production row `vercel pull` writes: the rows the
+`prod` syncs fill supply only keys the injection lacks. Narrowing those syncs therefore changes little
+of what production compiles against; moving production to this path fixes both.
 
 #### Blast radius
 
@@ -275,7 +281,8 @@ but, unlike the current rows, were **not** marked Sensitive, so their values wer
 Vercel dashboard. They were deleted from both `frapp-web` and `frapp-landing` on 2026-08-12.
 
 Narrowing the **production** syncs so the frontend projects stop receiving backend credentials is the
-remaining work and is tracked in **#834** (staging no longer has a Vercel sync to narrow). The lever is a secret-path split (for example a frontend-only path that
+remaining work and is tracked in **#834** (the staging syncs feed no build, so they are deleted
+rather than narrowed). The lever is a secret-path split (for example a frontend-only path that
 the Vercel syncs read while Render and CI keep reading `/`) — there is no per-key filter, per "How a
 sync decides what it pushes" above. Note the ordering: narrow the source path *first*, then delete
 the leftover destination rows. Deleting first just invites the next sync to rewrite them.
@@ -411,9 +418,9 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | Stripe secret key         | On suspected compromise | Regenerate in Stripe → update canonical value in Infisical   |
 | Render deploy hook URL (staging only) | On service recreation | Copy from Render → update canonical value in Infisical       |
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
-| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` staging syncs (§5) also push copies to the Render staging service and both Vercel Preview envs — count those in any blast-radius assessment (#834 tracks narrowing that) |
+| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The retired staging Vercel syncs left copies in a Vercel project's Preview env only if the token predates that project's unlink (landing 2026-09-01, web 2026-09-02), until those rows are deleted (#834). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
 
-**All rotations happen in one place (Infisical).** Syncs propagate changes to all providers automatically.
+**All rotations happen in one place (Infisical).** Syncs propagate changes to Render and to Vercel Production automatically; the staging web and landing builds read Infisical directly, so they pick up a change on their next deploy.
 
 ## Emergency Procedures
 
@@ -426,14 +433,15 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 ### Infisical Down
 
-- Existing secrets in Vercel/Render/GitHub are unaffected (synced copies persist)
+- Existing secrets in Vercel/Render are unaffected (synced copies persist), and so are the running deployments
+- Deploys that inject at job time fail until it recovers: the staging API deploy, the staging web and landing deploy, and `deploy-production.yml`
 - New changes must go directly to providers temporarily
 - When Infisical recovers, reconcile and re-sync
 
 ## Audit
 
 - Infisical dashboard → Audit Log for all secret access
-- Verify sync health periodically for all six syncs (§5 — GitHub Actions is not one of them)
+- Verify sync health periodically for every sync in §5 (GitHub Actions is not one of them; the two staging Vercel syncs report Failed until they are deleted)
 - Review no unexpected access patterns
 
 ## Provider API token sanity checks (operations)

@@ -21,12 +21,14 @@
 // `target`, so the two channels cannot drift apart into two implementations.
 //
 // Where those variables come from differs by target too, and `appConfigSourceFor`
-// holds that one fact. Production compiles against the Production env
-// `vercel pull` writes, filled by the Infisical `prod` syncs. Staging's syncs
-// died with the Git link, and the owner chose (#834, 2026-09-24) to have the
-// staging job inject Infisical `staging` and hand each build exactly the keys its
-// app reads (`lib/vercel-build-env.mjs`). Same code path, one more per-project
-// input.
+// holds that one fact. Staging's syncs died with the Git link, and the owner
+// chose (#834, 2026-09-24) to have the staging job inject Infisical `staging` and
+// hand each build exactly the keys its app reads (`lib/vercel-build-env.mjs`).
+// Production has not moved yet (#2673): its CLI processes run on the whole job
+// environment, which `deploy-production.yml` has already filled with Infisical
+// `prod`, so a key that injection holds beats the Production row `vercel pull`
+// writes, and the rows only fill keys it lacks. Same code path, one more
+// per-project input.
 //
 // ── Why a fresh build and not `promote` ────────────────────────────────────
 // Vercel's `POST /v10/projects/{id}/promote/{deploymentId}` re-points production
@@ -100,7 +102,8 @@
 //   VERCEL_BUILD_ENV_BASELINE — required for `preview`: the file
 //                               `record-env-baseline.mjs` wrote before the job
 //                               injected Infisical `staging`. Every CLI process
-//                               runs on those names plus its project's app keys
+//                               runs on those names alone, and `vercel build`
+//                               also gets its project's app keys
 //                               (`lib/vercel-build-env.mjs`)
 //   DEPLOY_REF                — optional, the BRANCH stamped as
 //                               `meta.githubCommitRef` (default `main`). Both
@@ -689,20 +692,23 @@ export function parseDeployPhase(raw) {
   );
 }
 
-/** App config comes from the Production env `vercel pull` writes. */
-export const APP_CONFIG_FROM_VERCEL = "vercel";
+/**
+ * App config comes from the whole job environment, with the env `vercel pull`
+ * writes filling whatever that lacks. Production today (#2673).
+ */
+export const APP_CONFIG_AMBIENT = "ambient";
 /** App config comes from an Infisical injection earlier in the job. */
 export const APP_CONFIG_FROM_INFISICAL = "infisical";
 
 /**
  * Where a target's build takes its app config from.
  *
- * Production stays on the syncs until #834's problem 2 settles their scope;
- * moving it means recording a baseline before `deploy-production.yml`'s `prod`
- * injection and flipping this line.
+ * Production is still ambient: every CLI process sees the whole `prod` store
+ * the job injected. Moving it (#2673) means recording a baseline before
+ * `deploy-production.yml`'s `prod` injection and flipping this line.
  */
 export function appConfigSourceFor(target) {
-  return target === VERCEL_TARGET_PREVIEW ? APP_CONFIG_FROM_INFISICAL : APP_CONFIG_FROM_VERCEL;
+  return target === VERCEL_TARGET_PREVIEW ? APP_CONFIG_FROM_INFISICAL : APP_CONFIG_AMBIENT;
 }
 
 // ── The environment contract, as data ───────────────────────────────────────
@@ -739,7 +745,7 @@ export const REQUIRED_ENV_ALWAYS = Object.freeze([
 /**
  * Required on top of the above, per phase.
  *
- * Keyed by every value `parseDeployPhase` can return, so `requiredEnvForPhase`
+ * Keyed by every value `parseDeployPhase` can return, so `requiredEnvFor`
  * can treat an unknown phase as a programming error rather than as "nothing
  * extra required" — the fail-open reading that would let a new phase ship with
  * no guard at all.
@@ -758,7 +764,7 @@ const REQUIRED_ENV_BY_PHASE = Object.freeze({
  * ambient environment.
  */
 const REQUIRED_ENV_BY_SOURCE = Object.freeze({
-  [APP_CONFIG_FROM_VERCEL]: Object.freeze([]),
+  [APP_CONFIG_AMBIENT]: Object.freeze([]),
   [APP_CONFIG_FROM_INFISICAL]: Object.freeze(["VERCEL_BUILD_ENV_BASELINE"]),
 });
 
@@ -780,7 +786,7 @@ export function requiredEnvFor({ phase, target }) {
 
 /**
  * Each project's `buildEnv`: from the Infisical injection when the target's
- * app config comes from there, else `null` (the pulled Vercel env).
+ * app config comes from there, else `null` (the ambient env).
  *
  * Every project is checked before any is returned, so a missing required key
  * in landing stops the run before web has built, rather than after.

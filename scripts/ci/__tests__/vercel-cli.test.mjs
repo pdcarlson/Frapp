@@ -754,15 +754,17 @@ describe("buildVercelProject with an Infisical build env", () => {
     assert.deepEqual(t.envFiles.writes, []);
   });
 
-  it("builds without a pulled file rather than failing on its absence", async () => {
-    // With no file there is nothing Vercel could supply, which is the outcome
-    // the strip exists to produce.
+  it("refuses to build when the pull left no env file where the strip looks", async () => {
+    // `.vercel` was emptied first, so a missing file means the CLI wrote it
+    // elsewhere. Building anyway would load an unstripped file: the strip that
+    // silently matches nothing and cannot fail.
     const t = setup({ pulled: null });
-    await buildVercelProject(t.options);
+    await assert.rejects(buildVercelProject(t.options), /wrote no .*\.env\.preview\.local.*Refusing to build/s);
     assert.deepEqual(t.envFiles.writes, []);
     assert.deepEqual(
       t.calls.map((c) => c.args[0]),
-      ["pull", "build"],
+      ["pull"],
+      "nothing was built",
     );
   });
 

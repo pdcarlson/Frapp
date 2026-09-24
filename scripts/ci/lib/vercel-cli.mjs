@@ -69,13 +69,16 @@
 // output — which is the reason the builds were sequential to begin with.
 //
 // ── Where a build's app config comes from ───────────────────────────────────
-// A production build compiles against the Production env `vercel pull` writes,
-// which the Infisical `prod` syncs fill (#834 problem 2 is narrowing them). A
-// staging build is handed its app config instead: `deploy-vercel.mjs` passes a
-// `buildEnv` built from Infisical `staging`, and `buildVercelProject` then
-// removes those keys from the pulled file so no Vercel row can supply one. The
-// pull still runs for the project settings and the Vercel system variables.
-// Rules and evidence: the header of `lib/vercel-build-env.mjs`.
+// A staging build is handed its app config: `deploy-vercel.mjs` passes a
+// `buildEnv` built from Infisical `staging`, and `buildVercelProject` removes
+// those keys from the pulled file so no Vercel row can supply one. The pull
+// still runs for the project settings and the Vercel system variables. Rules and
+// evidence: the header of `lib/vercel-build-env.mjs`.
+//
+// A production build has no `buildEnv` yet (#2673). It runs on the whole job
+// environment, which holds the Infisical `prod` injection, so a key that
+// injection holds beats the Production row `vercel pull` writes, and the rows
+// fill only the keys it lacks.
 //
 // That build also starts from an empty `.vercel`. `vercel pull` MERGES into an
 // env file it finds there, keeping keys the new project does not have, so in
@@ -106,13 +109,13 @@ export const VERCEL_TARGET_PREVIEW = "preview";
  * Which Vercel *environment* a target pulls its env vars from.
  *
  * This is the load-bearing line for correctness of the built artifact.
- * `NEXT_PUBLIC_*` values are inlined at build time, and a production build takes
- * them from the Production env the Infisical `prod` syncs fill, so pulling the
- * wrong environment produces a bundle that points at the wrong API and the
- * wrong Supabase project while every status page reports success. A preview
- * build still pulls Preview, for the settings and `VERCEL_ENV=preview`, but its
- * app config comes from Infisical `staging` (header above). See also the header
- * of `deploy-vercel.mjs`.
+ * `NEXT_PUBLIC_*` values are inlined at build time, and whatever key the job's
+ * injection lacks is filled from the pulled env, so pulling the wrong
+ * environment can produce a bundle that points at the wrong API and the wrong
+ * Supabase project while every status page reports success. It also sets
+ * `VERCEL_ENV`, which the production config fences and the Sentry environment
+ * tag read. A preview build takes its app config from Infisical `staging`
+ * instead (header above). See also the header of `deploy-vercel.mjs`.
  */
 export function vercelEnvironmentFor(target) {
   return target === VERCEL_TARGET_PRODUCTION ? "production" : "preview";
@@ -375,15 +378,23 @@ async function runVercelStep({ label, args, env, cwd, cliCommand, runCommand, lo
  * Remove `keys` from the env file `vercel pull` just wrote, so the build can
  * only get them from the injected environment. Logs names, never values.
  *
- * A missing file is not an error: the build then has no pulled env to fall
- * back on, which is the outcome this function exists to produce anyway.
+ * A missing file is a failure, not "nothing to remove". `.vercel` was emptied
+ * just before the pull, so a missing file means this CLI writes it somewhere
+ * `pulledEnvFileFor` does not look, and `vercel build` would then load a file
+ * nobody stripped: a Vercel row could fill any app key Infisical left empty,
+ * with the log still saying the config came from Infisical. That is the strip
+ * that silently matches nothing, which `deploy-production.yml`'s build step
+ * declines to write for exactly this reason; here it fails instead.
  */
 async function dropPulledAppKeys({ label, cwd, target, keys, envFileFs, logger }) {
   const file = pulledEnvFileFor(cwd, target);
   const text = await envFileFs.read(file);
   if (text === null) {
-    logger.log?.(`[${label}] \`vercel pull\` wrote no ${file}; nothing to remove.`);
-    return;
+    throw new Error(
+      `[${label}] \`vercel pull\` exited 0 but wrote no ${file}. This CLI keeps the pulled ` +
+        `env somewhere else, so the app keys could not be removed from it and a Vercel row ` +
+        `could reach the build. Refusing to build; update \`pulledEnvFileFor\` for this CLI.`,
+    );
   }
   const { text: kept, removed } = withoutEnvKeys(text, keys);
   if (removed.length === 0) {

@@ -114,11 +114,11 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@59.11.7
 
-      # Names only, never values. `deploy-vercel.mjs` gives every Vercel CLI
-      # process these names plus its project's app keys, so the rest of the
-      # store the next step injects stays out of them. It must run BEFORE the
-      # injection: a baseline taken after it holds the whole store, and the
-      # script refuses one that contains an app key.
+      # Names only, never values. `deploy-vercel.mjs` runs every Vercel CLI
+      # process on these names alone and hands `vercel build` its project's app
+      # keys on top, so the rest of the store the next step injects stays out of
+      # them. It must run BEFORE the injection: a baseline taken after it holds
+      # the whole store, and the script refuses one that contains an app key.
       - name: Record the job's environment names before Infisical adds to them
         env:
           VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
