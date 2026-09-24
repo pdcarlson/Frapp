@@ -144,6 +144,50 @@ describe("useClientPolicy", () => {
     expect(result.current.updateRequired).toBe(true);
   });
 
+  // The status check is what makes a non-2xx fail open whatever the client
+  // does with its body. openapi-fetch 0.17 never sets `data` on a non-2xx, so
+  // the stand-in above can't reach this; a client that did (another version,
+  // a wrapper) is simulated here directly.
+  it("keeps a block through a non-2xx even when the client parsed its body", async () => {
+    const GET = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: BLOCK.data,
+        error: undefined,
+        response: { ok: true, status: 200 },
+      })
+      .mockResolvedValueOnce({
+        data: { update_required: false, update_url: null },
+        error: undefined,
+        response: { ok: false, status: 503 },
+      });
+    const policyClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const Wrapper = ({ children }: { children: React.ReactNode }) => (
+      <FrappClientProvider
+        client={{ GET } as unknown as ReturnType<typeof createFrappClient>}
+        chapterId={null}
+      >
+        {children}
+      </FrappClientProvider>
+    );
+    Wrapper.displayName = "ParsedErrorBodyWrapper";
+    const { result } = renderHook(() => useClientPolicy(policyClient), {
+      wrapper: Wrapper,
+    });
+    await waitFor(() => expect(result.current.updateRequired).toBe(true));
+    await act(() =>
+      policyClient.refetchQueries({ queryKey: CLIENT_POLICY_QUERY_KEY }),
+    );
+    await waitFor(() => expect(policyClient.isFetching()).toBe(0));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(GET).toHaveBeenCalledTimes(2);
+    expect(result.current.updateRequired).toBe(true);
+  });
+
   it("lifts a block only on an answer of false", async () => {
     const { result, refetch } = setup([
       BLOCK,

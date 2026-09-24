@@ -702,13 +702,21 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).toThrow(
       PUBLIC_SUPABASE_SECRET_KEY_ERROR,
     );
-    for (const EAS_BUILD_PROFILE of ["preview", "development", "production"]) {
+    // `undefined` is `expo start` / `expo export` / CI prebuild: no EAS
+    // profile at all, and the key must still be refused.
+    for (const EAS_BUILD_PROFILE of [
+      undefined,
+      "preview",
+      "development",
+      "production",
+    ]) {
       expect(() =>
         applyMobileConfig(androidConfig, {
           env: {
             ...productionPublicEnv,
-            EAS_BUILD_PROFILE,
-            EAS_BUILD_PLATFORM: "ios",
+            ...(EAS_BUILD_PROFILE
+              ? { EAS_BUILD_PROFILE, EAS_BUILD_PLATFORM: "ios" }
+              : {}),
             EXPO_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
           },
           existsSync: missing,
