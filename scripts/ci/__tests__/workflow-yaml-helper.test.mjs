@@ -404,6 +404,20 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     assert.equal(workflowSteps(quotedBelow)[0].if, quotedCondition);
     assert.equal(workflowJobs(quotedBelow)[0].if, quotedCondition);
 
+    // A trailing comment after that quoted value is still a comment; and an
+    // `if:` with nothing below it is null, not its next sibling.
+    const edges = join(dir, "if-edges.yml");
+    writeFileSync(
+      edges,
+      `name: X\njobs:\n  j:\n    if:\n    runs-on: ubuntu-latest\n    steps:\n` +
+        `      - name: A\n        if:\n          ${quotedCondition} # note\n        run: echo\n` +
+        `      - name: B\n        if:\n        run: echo\n`,
+    );
+    const [a, b] = workflowSteps(edges);
+    assert.equal(a.if, quotedCondition);
+    assert.equal(b.if, null);
+    assert.equal(workflowJobs(edges)[0].if, null);
+
     // A block indicator on the next line opens a block, whose ` #` is content:
     // read as plain text, it cut the condition at `' #skip'`.
     const blockBelow = join(dir, "block-below.yml");
@@ -458,6 +472,44 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     assert.equal(env.get("CONTROL"), "\0\x07\b\t\n\v\f\r\u2028\u2029");
   });
 
+  it("reads a block-scalar value as its content, not its indicator", () => {
+    // Every composite action's `description: >` read as ">", and a job's
+    // `if: |` in its keys as "|": a guard over either passed whatever it said.
+    const blocks = join(dir, "blocks.yml");
+    writeFileSync(
+      blocks,
+      [
+        "name: X",
+        "description: >",
+        "  one",
+        "  two",
+        "jobs:",
+        "  j:",
+        "    if: |",
+        "      a &&",
+        "      b",
+        "    steps:",
+        "      - name: >-",
+        "          Deploy the",
+        "          commit",
+        "        env:",
+        "          FOLDED: >- # note",
+        "            x",
+        "            y",
+        "          LITERAL: |",
+        "            l1",
+        "            l2",
+        "          AFTER: z",
+        "",
+      ].join("\n"),
+    );
+    assert.equal(workflowKeys(blocks).get("description"), "one two");
+    assert.equal(workflowJobs(blocks)[0].keys.get("if"), "a &&\nb");
+    const [step] = workflowSteps(blocks);
+    assert.equal(step.name, "Deploy the commit");
+    assert.deepEqual(Object.fromEntries(step.stepEnv), { FOLDED: "x y", LITERAL: "l1\nl2", AFTER: "z" });
+  });
+
   it("refuses a quoted value that spans lines, or an escape YAML does not have", () => {
     // Read line by line, a quoted `if:` split across lines would come back as
     // its first line, and the clause after the break would be invisible.
@@ -510,14 +562,18 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
   });
 
   it("ends the last job where jobs: ends, not at a top-level block written after it", () => {
-    const after = join(dir, "after.yml");
-    writeFileSync(
-      after,
-      "name: X\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo\n" +
-        "on:\n  workflow_dispatch:\n    inputs:\n      dry_run_only:\n        type: boolean\n  push:\n    branches: [main]\n",
-    );
-    assert.deepEqual([...workflowJobs(after)[0].keys.keys()], ["runs-on", "steps"]);
-    assert.deepEqual([...workflowKeys(after).keys()], ["name", "jobs", "on"]);
+    // Each of a workflow's top-level keys ends `jobs:`, whichever comes first.
+    const topLevel = ["name", "run-name", "on", "permissions", "env", "defaults", "concurrency"];
+    for (const key of topLevel) {
+      const after = join(dir, `after-${key}.yml`);
+      writeFileSync(
+        after,
+        "jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo\n" +
+          `${key}:\n  workflow_dispatch:\n    inputs:\n      dry_run_only:\n        type: boolean\n  push:\n    branches: [main]\n`,
+      );
+      assert.deepEqual([...workflowJobs(after)[0].keys.keys()], ["runs-on", "steps"], key);
+      assert.deepEqual([...workflowKeys(after).keys()], ["jobs", key], key);
+    }
 
     // Worse when the last job has no steps of its own: the trailing block's
     // indent-4 `steps:`, `env:` and `if:` became a phantom step and job gate.
@@ -532,21 +588,49 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     assert.equal(job.if, null);
     assert.deepEqual([...job.keys.keys()], ["uses"]);
 
-    // Only a key ends `jobs:`. A flow sequence continued at column 0 is
-    // accepted by lenient parsers; ending there hid the job's gate and steps.
-    const flow = join(dir, "flow-column-0.yml");
-    writeFileSync(
-      flow,
-      "name: X\njobs:\n  a:\n    steps:\n      - run: echo\n  b:\n    needs: [a,\nb]\n" +
-        "    if: always()\n    runs-on: ubuntu-latest\n    steps:\n      - name: B\n",
-    );
-    const b = workflowJobs(flow)[1];
-    assert.equal(b.if, "always()");
-    assert.deepEqual([...b.keys.keys()], ["needs", "if", "runs-on", "steps"]);
+    // Written quoted or spaced, a top-level key still ends `jobs:`, and so
+    // does a document marker.
+    for (const [written, key] of [['"on"', "on"], ["on ", "on"], ["'env'", "env"]]) {
+      const spelled = join(dir, "after-spelled.yml");
+      writeFileSync(
+        spelled,
+        `jobs:\n  a:\n    steps:\n      - run: echo\n${written}:\n  push:\n    branches: [main]\n`,
+      );
+      assert.deepEqual(workflowJobs(spelled).map((job) => job.jobId), ["a"], written);
+      assert.deepEqual([...workflowKeys(spelled).keys()], ["jobs", key], written);
+    }
+    const marker = join(dir, "after-marker.yml");
+    writeFileSync(marker, "jobs:\n  a:\n    steps:\n      - run: echo\n---\n  push:\n");
+    assert.deepEqual(workflowJobs(marker).map((job) => job.jobId), ["a"]);
+
+    // An explicit top-level key (`? on`) ends `jobs:` too, or its children
+    // at indent 2 read as phantom jobs.
+    const explicit = join(dir, "explicit-key.yml");
+    writeFileSync(explicit, "name: X\njobs:\n  a:\n    steps:\n      - run: echo\n? on\n:\n  push:\n    branches: [main]\n");
     assert.deepEqual(
-      workflowSteps(flow).map((step) => step.name),
-      ["<unnamed: run>", "B"],
+      workflowJobs(explicit).map((job) => job.jobId),
+      ["a"],
     );
+  });
+
+  it("refuses a value continued at column 0 inside jobs:, however it looks", () => {
+    // Lenient parsers accept these. Ending `jobs:` at the continuation hid the
+    // job's gate and steps; the line can look like a key (`https:`), so reading
+    // on can't tell either.
+    for (const [label, value] of [
+      ["flow sequence", "needs: [a,\nb]"],
+      ["key-like flow continuation", "with:\n      args: [--url,\nhttps://example.com]"],
+      ["flow mapping pair", "with: {ref: main,\nfetch-depth: 0}"],
+      ["quoted continuation", 'run: "echo a\nb: c"'],
+    ]) {
+      const file = join(dir, "column-0.yml");
+      writeFileSync(
+        file,
+        `name: X\njobs:\n  a:\n    ${value}\n    if: always()\n    steps:\n      - name: B\n        if: inputs.dry_run_only\n`,
+      );
+      assert.throws(() => workflowSteps(file), /column-0 line inside `jobs:`/, label);
+      assert.throws(() => workflowJobs(file), /column-0 line inside `jobs:`/, label);
+    }
   });
 
   it("reads an empty flow mapping as an empty mapping: {} can hide nothing", () => {

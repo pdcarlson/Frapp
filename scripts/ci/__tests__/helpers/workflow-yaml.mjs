@@ -153,6 +153,24 @@ const DOUBLE_QUOTED_ESCAPES = {
 };
 
 /**
+ * The scalar held by the key on `lines[i]`, whose inline text is `raw` and
+ * which sits at `keyIndent`: `scalarValue(raw)`, or, for a block scalar
+ * (`KEY: >-`, `KEY: |`), the deeper lines below it up to `end`, joined with
+ * newlines (`|`) or spaces (`>`). Returning the indicator as the value (`">-"`)
+ * let a guard over it pass whatever the block said. Approximate: each line is
+ * trimmed, no final newline is kept, and `significantLines` has already dropped
+ * blank lines and lines that start with `#`, none of which a guard matching a
+ * pattern needs.
+ */
+function scalarAt(lines, i, raw, keyIndent, end = lines.length) {
+  const header = withoutComment(raw);
+  if (!isBlockScalarHeader(header)) return scalarValue(raw);
+  const content = [];
+  for (let j = i + 1; j < end && indentOf(lines[j]) > keyIndent; j += 1) content.push(lines[j].trim());
+  return content.join(header.startsWith("|") ? "\n" : " ");
+}
+
+/**
  * A mapping key: bare, or quoted. `"issues": write` and `issues: write` are the
  * same key to YAML and so to Actions. A reader that skipped the quoted form
  * would let a guard on a whole block (`permissions:`) pass while the file
@@ -196,7 +214,7 @@ function envMapAt(lines, headerIndex, floor = indentOf(lines[headerIndex])) {
 
     const match = lines[i].match(new RegExp(String.raw`^\s*${KEY}\s*:\s*(.*)$`));
     // Empty, or only a comment: read as empty, never as the comment's text.
-    if (match) map.set(keyOf(match), opensMapping(match[4]) ? "" : scalarValue(match[4]));
+    if (match) map.set(keyOf(match), opensMapping(match[4]) ? "" : scalarAt(lines, i, match[4], childIndent));
   }
   return map;
 }
@@ -272,23 +290,36 @@ function jobIdFrom(line) {
     .replace(/^["'](.*)["']$/, "$1");
 }
 
+/** A workflow's top-level keys, per GitHub's workflow syntax. */
+const WORKFLOW_KEYS = ["name", "run-name", "on", "permissions", "env", "defaults", "concurrency", "jobs"];
+
 /**
  * Each job's lines, `[start, end)`, under the `jobs:` key at `jobsIndex`. The
  * last job ends where `jobs:` does, at the next column-0 key, not at the end of
  * the file: key order is free, and a top-level block written after `jobs:`
  * (`on:` with its triggers) would otherwise be read as the last job's keys.
  *
- * A key or a document marker, not any column-0 line: lenient parsers (libyaml,
- * so likely Actions) accept a flow collection continued at column 0
- * (`    needs: [a,` then `b]`), and ending there silently dropped the rest of
- * the job, its `if:` and its steps included.
+ * Any other column-0 line THROWS. Lenient parsers (libyaml, so likely Actions)
+ * accept a flow or quoted value continued at column 0 (`    needs: [a,` then
+ * `b]`, or `https://…]`), and such a line can look exactly like a key. Ending
+ * `jobs:` there silently dropped the rest of the job, its `if:` and its steps
+ * included; reading on would take a continuation for a key. So the only lines
+ * that end `jobs:` are a workflow's own top-level keys, an explicit key (`?`)
+ * and a document marker.
  */
 function jobRanges(lines, jobsIndex) {
   const starts = [];
   let jobsEnd = lines.length;
-  const topLevel = new RegExp(String.raw`^(?:${KEY}\s*:|---|\.\.\.)`);
+  const topLevel = new RegExp(String.raw`^(?:(?:${WORKFLOW_KEYS.map(named).join("|")})\s*:|\?(?:\s|$)|---|\.\.\.)`);
   for (let i = jobsIndex + 1; i < lines.length; i += 1) {
-    if (topLevel.test(lines[i])) {
+    if (indentOf(lines[i]) === 0) {
+      if (!topLevel.test(lines[i])) {
+        throw new Error(
+          `workflow-yaml: a column-0 line inside \`jobs:\` (${lines[i].trim()}) that is not a workflow key, ` +
+            "so a value continued at column 0, which this reader refuses rather than guess where the job ends. " +
+            "Indent the continuation.",
+        );
+      }
       jobsEnd = i;
       break;
     }
@@ -382,10 +413,10 @@ function stepKeyIndent(lines, stepStart, stepEnd) {
 function stepName(lines, stepStart, stepEnd, keyIndent) {
   const first = lines[stepStart].trim().replace(/^-\s*/, "").replace(/^#.*$/, "");
   const nameKey = new RegExp(String.raw`^${named("name")}\s*:\s*`);
-  if (nameKey.test(first)) return scalarValue(first.replace(nameKey, ""));
+  if (nameKey.test(first)) return scalarAt(lines, stepStart, first.replace(nameKey, ""), keyIndent, stepEnd);
   for (let i = stepStart + 1; i < stepEnd; i += 1) {
     if (indentOf(lines[i]) === keyIndent && nameKey.test(lines[i].trim())) {
-      return scalarValue(lines[i].trim().replace(nameKey, ""));
+      return scalarAt(lines, i, lines[i].trim().replace(nameKey, ""), keyIndent, stepEnd);
     }
   }
   // Named by its first key, which sits on the line below a bare `-`.
@@ -597,7 +628,7 @@ function keysAt(lines, from, to, indent) {
     } else if (isFlowMapping(match[4])) {
       throw refuseFlowMapping(key, match[4]);
     } else {
-      keys.set(key, scalarValue(match[4]));
+      keys.set(key, scalarAt(lines, i, match[4], indent, to));
     }
   }
   return keys;
