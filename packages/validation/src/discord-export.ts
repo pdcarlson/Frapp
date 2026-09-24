@@ -9,7 +9,7 @@
  * client-side, but the import keys every message on the id the worker reads
  * itself, from the bytes actually being parsed, so a client that lied about
  * which channel a part belongs to cannot redirect a Discord channel's history
- * into a Signet channel the admin did not choose. This module only supplies
+ * into a Frapp channel the admin did not choose. This module only supplies
  * the parser both sides use; the trust boundary is enforced by which call site
  * is treated as authoritative, not by anything here.
  *

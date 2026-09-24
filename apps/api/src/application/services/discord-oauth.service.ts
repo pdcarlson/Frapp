@@ -646,7 +646,7 @@ export class DiscordOAuthService {
       guild_id: pending.pending_guild_id,
       guild_name: pending.pending_guild_name,
       guild_icon: pending.pending_guild_icon,
-      // The Signet user who CONFIRMED, which is the one we can actually
+      // The Frapp user who CONFIRMED, which is the one we can actually
       // attribute: `created_by` on the state is whoever started the handshake,
       // and this step exists precisely because those need not be the same
       // person.

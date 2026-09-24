@@ -1,9 +1,14 @@
-// Locks customer-facing web document titles on Signet.
+// Locks customer-facing web document titles on Frapp.
 //
 // WHY THIS EXISTS. A leftover sweep can put the old product name back
 // in the browser tab, switch the title to single quotes the walker used
 // to miss, drop the floor so a deleted title passes, or walk landing
-// (visual freeze; copy is Signet) and treat those titles as in-scope.
+// (its own copy lock) and treat those titles as in-scope.
+//
+// ADR-25 NAMES THE PRODUCT FRAPP. Step 4 moved the dashboard off Signet,
+// so this lock, which was signet-web-titles, flipped: the root template
+// says Frapp and Signet is the banned word, in route titles and in the
+// root layout's copy.
 //
 // HOW THE ASSERTION INVERTED, and why the lock is stronger for it.
 // This file used to require every route title to MATCH /Signet/,
@@ -14,8 +19,9 @@
 // title that still contains "Signet" now renders it TWICE
 // ("Tasks · Signet · Signet"). The old assertion would have demanded
 // exactly that. So the per-route check is now the inverse, and the
-// "says Signet" half moved to where the name is actually spelled: the
-// root template, asserted once, below.
+// "says the name" half moved to where the name is actually spelled: the
+// root template, asserted once, below. Step 4 kept that shape and swapped
+// the name.
 //
 // SCOPE. `export const metadata` titles under apps/web/app, plus the
 // root layout template, default and description. Do not walk
@@ -28,6 +34,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { copyMatches } from "../lib/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WEB_APP = join(REPO_ROOT, "apps/web/app");
@@ -48,8 +56,8 @@ const MIN_METADATA_TITLES = 18;
  * through Next's `title.template`, which applies to CHILD segments only — so
  * `app/page.tsx`, in the root layout's own segment, takes `default` instead.
  */
-const ROOT_TEMPLATE = "%s · Signet";
-const ROOT_DEFAULT = "Signet";
+const ROOT_TEMPLATE = "%s · Frapp";
+const ROOT_DEFAULT = "Frapp";
 const ROOT_DESCRIPTION = "Ask your chapter anything.";
 
 function walk(dir) {
@@ -110,7 +118,7 @@ export function webTitleLockProblems(source) {
   if (!/generateMetadata/.test(source)) {
     problems.push("must fail if generateMetadata appears without a walker");
   }
-  if (!/const ROOT_TEMPLATE = "%s · Signet";/.test(source)) {
+  if (!/const ROOT_TEMPLATE = "%s · Frapp";/.test(source)) {
     problems.push("must assert the root title template, the only place the name is spelled");
   }
   return problems;
@@ -132,16 +140,16 @@ test("no web metadata title spells the product name itself", () => {
     // name renders it twice, because the root template appends it.
     assert.doesNotMatch(
       title,
-      /Signet/,
-      `${rel}: ${title} — the root title template appends " · Signet"; a route must name only itself`,
+      /Frapp/,
+      `${rel}: ${title} — the root title template appends " · Frapp"; a route must name only itself`,
     );
-    assert.doesNotMatch(title, /Frapp/, `${rel}: ${title}`);
+    assert.doesNotMatch(title, /Signet/, `${rel}: ${title}`);
   }
 });
 
-test("root layout title and tagline stay Signet", () => {
+test("root layout title and tagline say Frapp", () => {
   const source = readFileSync(join(REPO_ROOT, LAYOUT), "utf8");
-  // The template is what puts "Signet" in all seventeen tabs, and `default` is
+  // The template is what puts "Frapp" in all seventeen tabs, and `default` is
   // what the root segment's own page takes, so both have to be here: a template
   // without a default is a Next configuration error, and a default without a
   // template silently drops the name from every child route.
@@ -159,7 +167,13 @@ test("root layout title and tagline stay Signet", () => {
       `description: "${ROOT_DESCRIPTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`,
     ),
   );
-  assert.doesNotMatch(source, /\bFrapp\b/, `${LAYOUT} must not name Frapp`);
+  // The layout's comments record the Signet-era titles, so only its copy is
+  // judged (the note on LINE_BREAK in ../lib/copy-lines.mjs says how).
+  assert.deepEqual(
+    copyMatches([{ rel: LAYOUT, source }], /\bSignet\b/g).map(({ line }) => `${LAYOUT}:${line}`),
+    [],
+    `${LAYOUT} must not name Signet`,
+  );
 });
 
 test("walker stays on apps/web/app and keeps the title floor", () => {
@@ -192,10 +206,18 @@ test("pointing the walker at landing fails", () => {
   );
 });
 
-test("a single-quoted Frapp metadata title is collected and fails", () => {
-  const titles = metadataTitles("export const metadata = {\n  title: 'Frapp — Admin'\n}");
-  assert.deepEqual(titles, ["Frapp — Admin"]);
-  assert.match(titles[0], /Frapp/);
+test("a single-quoted Signet metadata title is collected and fails", () => {
+  const titles = metadataTitles("export const metadata = {\n  title: 'Signet — Admin'\n}");
+  assert.deepEqual(titles, ["Signet — Admin"]);
+  assert.match(titles[0], /Signet/);
+});
+
+test("putting Signet back in the root layout's title fails", () => {
+  const source = readFileSync(join(REPO_ROOT, LAYOUT), "utf8").replace(
+    'template: "%s · Frapp"',
+    'template: "%s · Signet"',
+  );
+  assert.equal(copyMatches([{ rel: LAYOUT, source }], /\bSignet\b/g).length, 1);
 });
 
 test("refuses a GitHub closer next to an issue number", () => {

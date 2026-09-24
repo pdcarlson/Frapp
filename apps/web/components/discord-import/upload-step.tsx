@@ -382,7 +382,7 @@ export function UploadStep({
       <div className="space-y-2 text-sm text-muted-foreground">
         <p>
           Export your server with DiscordChatExporter, then pick the export
-          folder below. Signet uploads the files straight from your browser.
+          folder below. Frapp uploads the files straight from your browser.
         </p>
         <pre className="overflow-x-auto rounded-md border border-border bg-surface-1 p-3 text-xs">
           <code>
@@ -450,7 +450,7 @@ export function UploadStep({
             <p className="mt-1 text-destructive-text">{mintFailure}</p>
           ) : (
             <p className="mt-1 text-muted-foreground">
-              Pick the folder again to retry. Signet re-sends only what is
+              Pick the folder again to retry. Frapp re-sends only what is
               missing. Files over 100 MB cannot be imported.
             </p>
           )}

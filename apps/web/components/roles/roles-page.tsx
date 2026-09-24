@@ -154,7 +154,7 @@ function PresidencyClaimBanner() {
     description = `Only a member holding the ${nextRoleName} role can claim it right now.`;
   } else {
     description =
-      "No eligible officer role was found. Contact Signet support to resolve this.";
+      "No eligible officer role was found. Contact Frapp support to resolve this.";
   }
 
   return (
@@ -639,7 +639,7 @@ export function RolesAndPermissionsPage() {
                 is *about* a role rather than about editing one, and
                 `iconography.md` §6.2 reserves Lucide for control furniture —
                 verbs on buttons and spinners. The roles intent is already
-                drawn as a Signet duotone in `nav-glyphs.tsx`; a second
+                drawn as a design-system duotone in `nav-glyphs.tsx`; a second
                 spelling of it would be the drift §1 rule 1 bans, and a
                 re-export module holding nothing but that alias would be the
                 parallel path the cutover rule bans. So this imports the one

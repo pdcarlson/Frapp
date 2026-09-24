@@ -444,7 +444,7 @@ export class DiscordImportWorkerService {
       // The channel is keyed on the id read from THESE bytes, never on
       // whatever the client claimed when it uploaded. A wizard that lied about
       // which channel a part belonged to therefore cannot redirect a Discord
-      // channel's history into a Signet channel the admin did not choose.
+      // channel's history into a Frapp channel the admin did not choose.
       const mapping = channelBySnowflake.get(parsed.channel.id ?? '');
       if (!mapping || mapping.mapping_action === 'skip') {
         if (!mapping) {
@@ -737,7 +737,7 @@ export class DiscordImportWorkerService {
   }
 
   /**
-   * The Signet channel this Discord channel imports into.
+   * The Frapp channel this Discord channel imports into.
    *
    * Creates one only when the admin asked for a new channel, and records the id
    * back onto the mapping row immediately — so a re-run reuses that channel

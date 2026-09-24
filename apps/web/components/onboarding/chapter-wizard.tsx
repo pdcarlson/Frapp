@@ -967,7 +967,7 @@ function InviteStep({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Signet collects pseudonymous usage analytics (on by default) to fix bugs
+        Frapp collects pseudonymous usage analytics (on by default) to fix bugs
         and improve the product. It never collects message content. You can turn
         it off anytime in Settings → Privacy.
       </p>

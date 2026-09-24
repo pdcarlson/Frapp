@@ -498,7 +498,7 @@ a lens-shaped wedge across the break that makes the two halves read as links.
   gained a replacement: the wizard's eyebrow now carries **no glyph**, because
   its label already names the intent, which is how the points adjustment
   dialog resolved the same question (§6.2.3); and the tutorial's welcome slide
-  takes the **mark**, because the slide is literally a welcome to Signet.
+  takes the **mark**, because the slide is literally a welcome to Frapp.
 - **`SignetMark`.** Locked emblem B (gold crest on charcoal)
   ([`components/auth/signet-mark.tsx`](../../../apps/web/components/auth/signet-mark.tsx))
   is a brand composition governed by [`../brand-identity.md`](../brand-identity.md)

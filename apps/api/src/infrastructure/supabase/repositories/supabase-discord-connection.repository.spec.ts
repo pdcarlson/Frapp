@@ -12,7 +12,7 @@ import {
  * Tenant scope for the Discord bot connection and its OAuth handshake.
  *
  * This is the highest-stakes scoping in the feature, and it is worth being
- * explicit about why. One Signet-owned bot token holds read access to EVERY
+ * explicit about why. One Frapp-owned bot token holds read access to EVERY
  * connected chapter's Discord server at once. The only thing that decides which
  * server a given import may read is `discord_connections.guild_id`, resolved by
  * `chapter_id` — so a `findByChapter` that could return another chapter's row

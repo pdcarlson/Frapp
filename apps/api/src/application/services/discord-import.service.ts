@@ -371,12 +371,12 @@ export class DiscordImportService {
       const status = (error as { status?: unknown })?.status;
       if (status === 403 || status === 401) {
         throw new BadRequestException(
-          'Signet could not read that Discord server. Check the bot is still in the server, then reconnect Discord.',
+          'Frapp could not read that Discord server. Check the bot is still in the server, then reconnect Discord.',
         );
       }
       if (status === 404) {
         throw new BadRequestException(
-          'That Discord server no longer exists, or the Signet bot was removed from it. Reconnect Discord.',
+          'That Discord server no longer exists, or the Frapp bot was removed from it. Reconnect Discord.',
         );
       }
       throw error;
@@ -558,7 +558,7 @@ export class DiscordImportService {
     if (channel.mapping_action === 'use_existing') {
       if (!channel.target_channel_id) {
         throw new BadRequestException(
-          `Pick a Signet channel for #${channel.discord_channel_name}, or choose to create a new one.`,
+          `Pick a Frapp channel for #${channel.discord_channel_name}, or choose to create a new one.`,
         );
       }
       const target = await this.channelRepo.findById(
@@ -637,12 +637,12 @@ export class DiscordImportService {
   }
 
   /**
-   * Record which Signet role each Discord role corresponds to.
+   * Record which Frapp role each Discord role corresponds to.
    *
    * Stored and shown back to the admin; **never read to grant anything**. The
    * importer does not touch a `members` row and does not assign a role — every
    * imported author is a name on a message, not an account. This is a worksheet
-   * for promoting people by hand later, which is the model Signet's onboarding
+   * for promoting people by hand later, which is the model Frapp's onboarding
    * already uses.
    */
   async setRoleMapping(
@@ -695,7 +695,7 @@ export class DiscordImportService {
       );
     }
     // Every channel skipped is a no-op import that reports success, which reads
-    // as "Signet lost my history". The upload path cannot hit this (its rows
+    // as "Frapp lost my history". The upload path cannot hit this (its rows
     // only exist once the admin answered), but the bot path discovers every
     // channel as skipped by default, so clicking straight through is reachable.
     if (

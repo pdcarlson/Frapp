@@ -18,7 +18,7 @@ export interface ChannelChoice {
 
 const ACTIONS: { key: ChannelChoice["action"]; label: string; hint: string }[] =
   [
-    { key: "create_new", label: "New channel", hint: "Create it in Signet" },
+    { key: "create_new", label: "New channel", hint: "Create it in Frapp" },
     { key: "use_existing", label: "Existing channel", hint: "Merge into one" },
     { key: "skip", label: "Skip", hint: "Do not import" },
   ];
@@ -27,7 +27,7 @@ const ACTIONS: { key: ChannelChoice["action"]; label: string; hint: string }[] =
  * Where each Discord channel lands — asked, never inferred.
  *
  * `chat_channels` has no unique constraint on `(chapter_id, name)`, so a
- * same-name Signet channel is not evidence of anything: merging into it is a
+ * same-name Frapp channel is not evidence of anything: merging into it is a
  * decision only the admin can make, and guessing wrong silently interleaves a
  * decade of Discord history into a live channel. Every row starts with no
  * selection and the step cannot be advanced until all of them have one.
@@ -60,8 +60,8 @@ export function ChannelMappingStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Signet will not guess. Choose what happens to each channel. A same-named
-        Signet channel is not treated as an answer.
+        Frapp will not guess. Choose what happens to each channel. A same-named
+        Frapp channel is not treated as an answer.
       </p>
 
       <div className="space-y-3">

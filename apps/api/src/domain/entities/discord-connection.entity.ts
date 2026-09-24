@@ -2,7 +2,7 @@
  * A chapter's link to the Discord server it imports from.
  *
  * This row is the **entire** per-chapter side of the bot integration, and it
- * holds no secret. The bot token is one global Signet value in Infisical
+ * holds no secret. The bot token is one global Frapp value in Infisical
  * (`DISCORD_BOT_TOKEN`, same shape as the Stripe keys — one per environment,
  * not one per tenant); what a chapter contributes is a guild id, which is a
  * public snowflake and does nothing on its own, because the bot only answers

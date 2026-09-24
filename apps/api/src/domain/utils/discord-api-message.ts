@@ -340,8 +340,8 @@ export function isLikelyMissingMessageContentIntent(
 /** The error an admin sees when the tally trips. Names the exact fix. */
 export const MISSING_MESSAGE_CONTENT_INTENT_ERROR =
   'Discord returned every message with no content, no attachments and no embeds. ' +
-  'That means the Signet bot does not have the Message Content Intent enabled, ' +
+  'That means the Frapp bot does not have the Message Content Intent enabled, ' +
   'so it can read that messages exist but not what they say. Nothing was imported ' +
-  'as empty. Enable "Message Content Intent" for the Signet application in the ' +
+  'as empty. Enable "Message Content Intent" for the Frapp application in the ' +
   'Discord Developer Portal (Bot → Privileged Gateway Intents), then start the ' +
   'import again.';

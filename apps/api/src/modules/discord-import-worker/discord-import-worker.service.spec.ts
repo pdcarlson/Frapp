@@ -544,7 +544,7 @@ describe('DiscordImportWorkerService — importing', () => {
   it('creates a channel once across every part of that channel', async () => {
     // `channelBySnowflake` hands the same object back for each part, so a
     // channel split by `--partition` would otherwise mint one identically-named
-    // Signet channel per part, each holding a slice of the history.
+    // Frapp channel per part, each holding a slice of the history.
     repoRef.files = [
       exportFile({ id: 'f0', part_index: 0, relative_path: 'p0.json' }),
       exportFile({ id: 'f1', part_index: 1, relative_path: 'p1.json' }),

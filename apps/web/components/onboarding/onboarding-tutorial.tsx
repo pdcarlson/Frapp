@@ -55,7 +55,7 @@ const GLYPH = "h-5 w-5 text-accent-text";
 const STEPS: Step[] = [
   {
     id: "welcome",
-    title: "Welcome to Signet",
+    title: "Welcome to Frapp",
     description:
       "A quick three-minute tour of the surfaces you'll use most. You can revisit this anytime from your profile.",
     glyph: <SignetMark size="sm" />,
@@ -229,7 +229,7 @@ function OnboardingTutorialDialog({
           </DialogTitle>
           <DialogDescription>
             {stepIndex === 0
-              ? `Welcome to ${chapterName} on Signet. ${step.description}`
+              ? `Welcome to ${chapterName} on Frapp. ${step.description}`
               : step.description}
           </DialogDescription>
         </DialogHeader>

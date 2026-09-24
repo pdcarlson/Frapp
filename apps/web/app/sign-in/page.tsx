@@ -162,7 +162,7 @@ function SignInPageContent() {
   return (
     <AuthScreen
       mark
-      title="Signet"
+      title="Frapp"
       subtitle="Ask your chapter anything."
       footer={
         <>
@@ -243,7 +243,7 @@ export default function SignInPage() {
   return (
     <Suspense
       fallback={
-        <AuthScreen mark title="Signet" subtitle="Ask your chapter anything.">
+        <AuthScreen mark title="Frapp" subtitle="Ask your chapter anything.">
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-in form…</span>
             <SkeletonText lines={4} />

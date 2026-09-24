@@ -6,8 +6,8 @@ import type { Metadata } from "next";
  * `/points` is the one real nav destination whose `page.tsx` is `"use client"`,
  * and a Client Component structurally cannot export `metadata`. Before lane 7
  * it fell through to the root layout's `"Signet Admin Dashboard"`; after the
- * title template landed it fell through to `default: "Signet"`, which put a
- * bare product name in the tab beside sixteen siblings reading `<Page> · Signet`
+ * title template landed it fell through to the bare `default`, which put a
+ * bare product name in the tab beside sixteen siblings reading `<Page> · <name>`
  * — and the same string the 404 shows, since `not-found.tsx` supports no
  * `metadata` export either.
  *

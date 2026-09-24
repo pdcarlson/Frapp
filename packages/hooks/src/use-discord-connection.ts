@@ -7,7 +7,7 @@ import { discordImportKeys } from "./use-discord-import";
 /**
  * The Discord bot connection (admin only).
  *
- * This is the *second* way a chapter can get its history into Signet. The
+ * This is the *second* way a chapter can get its history into Frapp. The
  * first — uploading a DiscordChatExporter export — is untouched by any of this
  * and keeps working whether or not a Discord application is configured for the
  * environment. `useDiscordAvailability` is what tells the wizard which options
@@ -220,7 +220,7 @@ export const DISCORD_CONNECT_MESSAGES: Record<
 > = {
   connected: {
     variant: "success",
-    message: "Discord connected. Signet can now read your server's history.",
+    message: "Discord connected. Frapp can now read your server's history.",
   },
   pending: {
     variant: "error",
@@ -243,17 +243,17 @@ export const DISCORD_CONNECT_MESSAGES: Record<
   no_guild: {
     variant: "error",
     message:
-      "No server was selected, so the Signet bot was not added anywhere. Choose a server on the Discord screen and authorize again.",
+      "No server was selected, so the Frapp bot was not added anywhere. Choose a server on the Discord screen and authorize again.",
   },
   not_member: {
     variant: "error",
     message:
-      "You are not a member of the server the bot was added to, so Signet could not confirm you administer it. Connect from an account that has Manage Server there.",
+      "You are not a member of the server the bot was added to, so Frapp could not confirm you administer it. Connect from an account that has Manage Server there.",
   },
   no_permission: {
     variant: "error",
     message:
-      'You need the "Manage Server" permission in that Discord server to connect it to Signet. Ask a server admin to run this step.',
+      'You need the "Manage Server" permission in that Discord server to connect it to Frapp. Ask a server admin to run this step.',
   },
   failed: {
     variant: "error",
