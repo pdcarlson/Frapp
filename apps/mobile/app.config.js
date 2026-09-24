@@ -60,6 +60,13 @@
 // `EXPO_PUBLIC_*` variable is inlined into the bundle. A preview build is still
 // an installable binary anyone can unpack.
 //
+// Every EAS build, whatever its profile, also allows only a client key once the
+// Supabase key is set: the publishable key or an anon JWT, with no whitespace
+// around it. Its binary goes to testers or the store, and a value pasted from
+// the wrong field (the legacy JWT secret, an access token) has no shape the
+// secret check could refuse. Unset still builds (nothing is inlined), and a run
+// with no EAS profile keeps only the secret check, so local placeholders work.
+//
 // Every EAS **production** build also refuses when `EXPO_PUBLIC_ASK_ENABLED`
 // switches Ask on (#2259). Ask answers from a synthetic corpus
 // (`lib/ask/corpus.ts`), and the App Store listing and review notes describe
@@ -267,26 +274,30 @@ function jwtClaims(key) {
   }
 }
 
-// Refuses the shapes that are known credentials, on every evaluation (a local
-// `expo start` or CI prebuild included): a secret key, or a JWT whose role
-// isn't `anon` (service_role, or a user's `authenticated` access token). It is
-// a denylist, so placeholder values keep working locally; an EAS build also
-// has to pass assertEasSupabaseClientKey, the allowlist.
+// Refuses the shapes that are known credentials, on every evaluation: a secret
+// key, or a JWT whose role isn't `anon` (service_role, or a user's
+// `authenticated` access token). It is a denylist, so placeholder values keep
+// working locally; an EAS build also has to pass assertEasSupabaseClientKey,
+// the allowlist. This is the only key check on the one path with no EAS
+// profile whose bundle leaves the machine, the export `eas update` publishes,
+// so it looks for `sb_secret_` anywhere: a pasted key can arrive wrapped in
+// quotes or behind a zero-width space, which trim() leaves.
 function assertNoSupabaseSecretKey({ supabaseAnonKey } = {}) {
   const key = String(supabaseAnonKey || "").trim();
   const claims = jwtClaims(key);
-  if (key.startsWith("sb_secret_") || (claims && claims.role !== "anon")) {
+  if (key.includes("sb_secret_") || (claims && claims.role !== "anon")) {
     throw new Error(PUBLIC_SUPABASE_SECRET_KEY_ERROR);
   }
 }
 
 const EAS_SUPABASE_CLIENT_KEY_ERROR = [
-  "EAS builds require EXPO_PUBLIC_SUPABASE_ANON_KEY to be a key a client may",
-  "carry: the project's publishable key (sb_publishable_…) or its legacy anon",
-  "JWT. An EAS build inlines the value into a binary that goes to testers or the",
-  "store, and a value pasted from the wrong field (the legacy JWT secret, an",
-  "access token) has no shape to refuse, so only those two are allowed. Rotate",
-  "the value if a build already carried it.",
+  "EAS builds require a set EXPO_PUBLIC_SUPABASE_ANON_KEY to be a key a client",
+  "may carry, with no whitespace around it: the project's publishable key",
+  "(sb_publishable_…) or its legacy anon JWT. An EAS build inlines the value",
+  "verbatim into a binary that goes to testers or the store, and a value",
+  "pasted from the wrong field (the legacy JWT secret, an access token) has no",
+  "shape to refuse, so only those two are allowed. Rotate the value if a build",
+  "already carried it.",
   "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
@@ -294,14 +305,19 @@ const EAS_SUPABASE_CLIENT_KEY_ERROR = [
 // binary that leaves this machine. Unset is allowed: nothing is inlined.
 // Production goes further (assertProductionSupabasePublishableKey), and runs
 // first so its error names the publishable key. The web fence
-// (apps/web/lib/assert-production-public-env.js) is the same allowlist, applied
-// only when VERCEL_ENV is production.
+// (apps/web/lib/assert-production-public-env.js) accepts the same two kinds of
+// key, but only when VERCEL_ENV is production, and it also pins an anon JWT to
+// the frapp-prod project.
 function assertEasSupabaseClientKey({ easBuildProfile, supabaseAnonKey } = {}) {
   if (!easBuildProfile) return;
-  const key = String(supabaseAnonKey || "").trim();
-  if (!key || key.startsWith(SUPABASE_PUBLISHABLE_KEY_PREFIX)) return;
-  const claims = jwtClaims(key);
-  if (claims && claims.role === "anon") return;
+  const raw = String(supabaseAnonKey || "");
+  if (!raw) return;
+  // Untrimmed, as in production: the binary gets exactly this string.
+  if (raw === raw.trim()) {
+    if (raw.startsWith(SUPABASE_PUBLISHABLE_KEY_PREFIX)) return;
+    const claims = jwtClaims(raw);
+    if (claims && claims.role === "anon") return;
+  }
   throw new Error(EAS_SUPABASE_CLIENT_KEY_ERROR);
 }
 

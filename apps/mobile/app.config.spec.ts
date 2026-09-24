@@ -702,6 +702,10 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     ["a secret key", SECRET_KEY_FIXTURE],
     ["a service_role JWT", SERVICE_ROLE_JWT_FIXTURE],
     ["a user's access token", USER_TOKEN_JWT_FIXTURE],
+    // With no profile this is the only key check, so a pasted secret is
+    // found wherever it sits: trim() leaves quotes and a zero-width space.
+    ["a secret key in quotes", `"${SECRET_KEY_FIXTURE}"`],
+    ["a secret key behind a zero-width space", `\u200b${SECRET_KEY_FIXTURE}`],
   ])("refuses %s on any profile, or none", (_label, supabaseAnonKey) => {
     const {
       applyMobileConfig,
@@ -755,6 +759,10 @@ describe("assertEasSupabaseClientKey (#2526)", () => {
     ["the legacy JWT secret", JWT_SECRET_FIXTURE],
     ["an access token", ACCESS_TOKEN_FIXTURE],
     ["an unresolved reference", "${SUPABASE_ANON_KEY}"],
+    // Expo inlines the value verbatim and lib/supabase.ts doesn't trim it.
+    ["a publishable key with a trailing newline", `${PUBLISHABLE_KEY_FIXTURE}\n`],
+    ["an anon JWT with a leading space", ` ${LEGACY_ANON_JWT_FIXTURE}`],
+    ["only whitespace", "   "],
   ])("refuses %s on every EAS profile", (_label, supabaseAnonKey) => {
     const {
       applyMobileConfig,
@@ -801,9 +809,11 @@ describe("assertEasSupabaseClientKey (#2526)", () => {
     }
   });
 
-  // `expo start`, `expo export` and CI prebuild set no profile. Nothing they
-  // bundle leaves the machine, and placeholders are normal there; the secret
-  // denylist above still applies.
+  // `expo start`, CI prebuild and `expo export` set no profile, and
+  // placeholders are normal there. `eas update` publishes an `expo export`
+  // with no profile either, so there the secret denylist above is the only key
+  // check (spec/environments/README.md § Mobile (EAS) keeps it off until an
+  // update pipeline sets one).
   it("leaves a run with no EAS profile to the denylist", () => {
     const { applyMobileConfig, assertEasSupabaseClientKey } = loadConfig();
     for (const supabaseAnonKey of ["test-anon-key", JWT_SECRET_FIXTURE]) {
@@ -848,14 +858,15 @@ describe("expo-updates, installed dormant (#2526)", () => {
     expect(packageJson.dependencies["expo-updates"]).toBeDefined();
   });
 
-  // Keyed to the native code, not to `expo.version`. Several builds of one
-  // store version can differ natively (retiring `0.9.0+12` for `+14` is what
-  // the minimum-version check's build half is for), and `appVersion` would
-  // hand an update built against the newer native modules to the older build
-  // too. A fingerprint that doesn't match only withholds an update.
-  // `spec/environments/README.md` § Mobile (EAS) owns the rule.
-  it("keys the runtime version to the native code", () => {
-    expect(appJson.expo.runtimeVersion).toEqual({ policy: "fingerprint" });
+  // Keyed to `expo.version`, which is only safe because every build whose
+  // native code changes gets a new version: `spec/environments/README.md`
+  // § Mobile (EAS) owns that rule and why `fingerprint` was rejected. In
+  // short, the fingerprint hashes the resolved config, which carries per-build
+  // values (`extra.gitSha` from EAS_BUILD_GIT_COMMIT_HASH, the contents of
+  // google-services.json), so an update published anywhere but the build
+  // worker would never match a shipped binary.
+  it("keys the runtime version to the app version", () => {
+    expect(appJson.expo.runtimeVersion).toEqual({ policy: "appVersion" });
   });
 
   it("points at this project's EAS Update URL and checks at launch without waiting", () => {

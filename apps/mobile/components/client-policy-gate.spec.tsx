@@ -6,6 +6,7 @@ import {
   AccessibilityInfo,
   BackHandler,
   Keyboard,
+  Platform,
   Pressable,
   Text,
 } from "react-native";
@@ -108,6 +109,20 @@ describe("ClientPolicyGate", () => {
     expect(texts(renderer)).toContain(UPDATE_REQUIRED_COPY.linkFailed);
     // VoiceOver has no live regions, and focus stays on the button.
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      UPDATE_REQUIRED_COPY.linkFailed,
+    );
+  });
+
+  it("leaves the link failure to the live region on Android, so TalkBack says it once", async () => {
+    vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
+    policy.current = { updateRequired: true, updateUrl: "https://a.test/app" };
+    vi.mocked(Linking.openURL).mockRejectedValueOnce(new Error("no handler"));
+    const renderer = render();
+    await act(async () => {
+      renderer.root.findByType(Pressable).props.onPress();
+    });
+    expect(texts(renderer)).toContain(UPDATE_REQUIRED_COPY.linkFailed);
+    expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalledWith(
       UPDATE_REQUIRED_COPY.linkFailed,
     );
   });
