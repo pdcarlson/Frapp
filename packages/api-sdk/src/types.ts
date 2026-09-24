@@ -2947,6 +2947,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/client-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the calling mobile build is still supported */
+        get: operations["ClientPolicyController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4490,6 +4507,15 @@ export interface components {
         ConfirmDiscordConnectDto: {
             /** @description The one-time confirmation token the OAuth callback put on the redirect. It is delivered to exactly one place — the browser that completed the authorization — and activates only against a session whose active chapter matches the one that started the handshake. */
             handshake: string;
+        };
+        ClientPolicyDto: {
+            /** @description True when the build named in X-Client-Version is below this deployment's minimum for its platform. The app then shows a blocking update screen. False whenever the header is missing, malformed, or names an unknown platform, and whenever no minimum is set. */
+            update_required: boolean;
+            /**
+             * @description Where the update screen sends the member: the store listing, or a per-platform override such as a TestFlight link. Null when the header does not name a known platform.
+             * @example https://apps.apple.com/app/id6812025642
+             */
+            update_url: string | null;
         };
     };
     responses: never;
@@ -9082,6 +9108,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiscordConnectionDto"];
+                };
+            };
+        };
+    };
+    ClientPolicyController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The calling build, as `<ios|android>/<version>+<build>` (for example `ios/0.9.0+12`). Mobile sends it on every request. */
+                "x-client-version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientPolicyDto"];
                 };
             };
         };

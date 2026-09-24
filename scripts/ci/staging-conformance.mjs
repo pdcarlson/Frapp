@@ -39,7 +39,7 @@
 // Env inputs:
 //   GITHUB_TOKEN                — required (issues: write) for the alert upsert
 //   GITHUB_REPOSITORY           — required, owner/repo
-//   SUPABASE_ACCESS_TOKEN       — Management API token (account-scoped)
+//   SUPABASE_ACCESS_TOKEN       — Management API token, read-only, staging project only
 //   SUPABASE_PROJECT_REF        — staging project ref
 //   SUPABASE_URL                — staging project URL, for the sign-in probe
 //   SUPABASE_ANON_KEY           — staging anon key, for the sign-in probe

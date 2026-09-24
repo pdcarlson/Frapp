@@ -60,7 +60,7 @@ describe("evaluateBackupEnv", () => {
     });
   });
 
-  it("passes when a main-only branch policy is set — that leftover is not this watch", () => {
+  it("passes when a main-only branch policy is set — watching that rule is #2585, not this watch", () => {
     const verdict = evaluateBackupEnv({
       status: 200,
       body: {

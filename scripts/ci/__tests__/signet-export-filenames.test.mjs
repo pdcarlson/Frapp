@@ -9,8 +9,14 @@
 // lock only named the two known templates; a third `frapp-*.csv` /
 // `frapp-*.pdf` download site would have passed.
 //
-// SCOPE. Download filename templates and a walk of apps/{web,api,mobile}
-// for leftover frapp- CSV/PDF names. Do not assert storage paths, OpenAPI
+// ADR-25 NAMES THE PRODUCT FRAPP and renames it one surface at a time, so a
+// surface leaves this walk with its own step. Step 2 moved the mobile binary
+// to Frapp, where a frapp- download name is correct, so apps/mobile left the
+// walk; frapp-mobile-copy.test.mjs bans a signet- one there instead. The API
+// report name flips with step 3 and the web CSV prefix with step 4.
+//
+// SCOPE. Download filename templates and a walk of apps/{web,api} for
+// leftover frapp- CSV/PDF names. Do not assert storage paths, OpenAPI
 // title (1930), calendar ICS PRODID / `frapp-event` fallbacks (1929), or
 // the unprefixed API CSV `filename="${kind}-report.csv"`.
 
@@ -35,7 +41,7 @@ const SITES = [
   },
 ];
 
-const APP_ROOTS = ["apps/web", "apps/api", "apps/mobile"];
+const APP_ROOTS = ["apps/web", "apps/api"];
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next", "coverage"]);
 const SOURCE_EXT = /\.(?:ts|tsx|js|mjs)$/;
 
@@ -97,7 +103,7 @@ test("CSV and PDF download filenames ship signet-, not frapp-", () => {
   }
 });
 
-test("apps/{web,api,mobile} have no leftover frapp- CSV/PDF download names", () => {
+test("apps/{web,api} have no leftover frapp- CSV/PDF download names", () => {
   assert.deepEqual(frappDownloadFilenameProblems(liveAppSources()), []);
 });
 

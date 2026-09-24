@@ -238,7 +238,7 @@ describe("pickAndUploadPhoto", () => {
 
     expect(result).toEqual({
       status: "refused",
-      reason: "Allow photo access for Signet in Settings to send a photo.",
+      reason: "Allow photo access for Frapp in Settings to send a photo.",
     });
   });
 
