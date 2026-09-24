@@ -29,7 +29,9 @@ eas project:info
 The committed [`apps/mobile/app.json`](../../../../apps/mobile/app.json) links
 the app to EAS through `extra.eas.projectId` and `owner: pdcarlson`. Keep these
 real project identifiers committed; do not replace them with placeholders or
-run `eas init` to create a new project for routine setup.
+run `eas init` to create a new project, ever: the project is permanent from the
+first store build
+([`spec/environments/README.md` § Mobile (EAS)](../../../../spec/environments/README.md#mobile-eas)).
 
 This linkage satisfies the project-id check in `isPushAvailable()`; an installed
 build must also load the native notifications module. It does not prove push
@@ -85,8 +87,9 @@ environment so a `preview` build gets the *staging* Supabase project and a `prod
 in eas-cli 21.1.0 (see the install note at the top of § 6).
 
 ```bash
-# Once, after `eas init`, per environment. Values are public by design (the anon key and the
-# publishable key ship inside the binary) — `--visibility plaintext` is the honest setting;
+# Once per environment, on the EAS project app.json already links (never a new `eas init`).
+# Values are public by design (the anon key and the publishable key ship inside the
+# binary) — `--visibility plaintext` is the honest setting;
 # `sensitive` only hides them in the dashboard.
 cd apps/mobile
 for ENV in preview production; do
