@@ -154,20 +154,22 @@ or git. Auth SMTP itself is proven on staging and production.
 
 *2026-09-24 ([#2578](https://github.com/pdcarlson/Frapp/issues/2578)).* From the merge of
 step 3, `auth-smtp` and `auth-magic-link` expect Frapp: the sender name, the Magic Link
-subject, no `mailer_subjects_*` that says Signet, and no Signet in the Magic Link body's
-text. The consoles are the owner's to change, in this order, before the next scheduled run
-(staging 07:30 UTC, production 07:45 UTC). Production's step waits on Deploy production,
-which is dispatched by hand, so merge once that day's Production Auth conformance run has
-started (scheduled runs often start late, and each checks out `main` as it starts), and
+subject, no `mailer_subjects_*` that says Signet, and no Signet anywhere in the Magic Link
+body (comments and `alt` text included) except the design system's lowercase `signet-…`
+file and class names. The consoles are the owner's to change, in this order, before the
+next scheduled run (staging 07:30 UTC, production 07:45 UTC). Production's step waits on
+Deploy production, which is dispatched by hand, so merge once that day's Staging
+conformance and Production Auth conformance runs both appear under Actions (a scheduled
+run tests the `main` commit of the moment GitHub queued it, which is often late), and
 deploy production the same day. A slip opens alerts that close on the first run that
 passes: Staging conformance or Production Auth drift for a console not yet retyped, and
 Migration drift for `20260924170000` if production hasn't deployed by the 07:00 UTC check
 more than 24 hours after 2026-09-24 17:00 UTC:
 
 1. **Staging, once the merge has deployed there.** In `frapp-staging` → Authentication:
-   SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the subject and
-   body above (retype the heading and link text, keep the `token_hash` href); any other
-   template subject that says Signet. Then set Infisical `staging` `RESEND_FROM_EMAIL` to
+   SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the subject above,
+   and the body above pasted whole (it keeps the `token_hash` href); any other template
+   subject that says Signet. Then set Infisical `staging` `RESEND_FROM_EMAIL` to
    `Frapp <invites@mail.staging.frapp.live>`.
 2. **Production, after Deploy production of the merge commit.** The same three Auth
    settings on `frapp-prod`, and `RESEND_FROM_EMAIL` in Infisical `prod` only if it is set

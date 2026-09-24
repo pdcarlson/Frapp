@@ -601,25 +601,17 @@ export function leftoverSignetMailerSubjectKeys(data) {
 }
 
 /**
- * The Magic Link template with the markup that never renders taken out:
- * style and script blocks, and the values of attributes that only address or
- * style something (`src`, `srcset`, `href`, `class`, `id`, `style`,
- * `data-*`). So a crest served under its design-system file name
- * (`/brand/signet-emblem-B.png`) or a `.signet-*` class is not copy.
- *
- * Everything else stays, and the check fails closed on it: text, `alt` and
- * `title` in any quoting (a mail client shows them when it blocks images),
- * Outlook's conditional blocks, and ordinary comments too. Telling a
- * comment no one renders from one Outlook does isn't worth a parser, and a
- * Signet left in a comment is one more line to retype.
+ * The Magic Link template with the design system's identifiers taken out:
+ * lowercase `signet-…` tokens, which is how its file names, classes and
+ * custom properties are spelled (`/brand/signet-emblem-B.png`, `signet-mark`,
+ * `--signet-accent-text`). Nothing else is removed, so the check fails closed
+ * on the product name anywhere in the body (text, `alt` and `title`,
+ * comments, Outlook-only blocks, style and script content), however the
+ * markup around it is written. The known gap is a name split by markup or
+ * an entity (`Sig<span>net</span>`, `&#83;ignet`), which no one types.
  */
 export function magicLinkReadableText(html) {
-  return String(html)
-    .replace(/<(style|script)\b[\s\S]*?<\/\1\s*>/gi, " ")
-    .replace(
-      /(^|[\s<"'/])(?:src|srcset|href|class|id|style|data-[\w-]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+)/gi,
-      "$1",
-    );
+  return String(html).replace(/(?<!\w)signet-[\w.-]*/g, " ");
 }
 
 /**
@@ -633,7 +625,8 @@ export function magicLinkReadableText(html) {
  *
  * It also holds the product name (ADR-25): the subject must be
  * {@link AUTH_MAGIC_LINK_SUBJECT}, no `mailer_subjects_*` may say Signet, and
- * neither may the body's visible text.
+ * neither may the body outside the design system's lowercase `signet-…`
+ * identifiers ({@link magicLinkReadableText}).
  *
  * `whenSmtpUnset`:
  * - `"fail"` (default, staging): empty `smtp_host` does not skip this check.
@@ -739,7 +732,7 @@ export async function checkAuthMagicLink({
       "auth-magic-link",
       label,
       FAIL,
-      "mailer_templates_magic_link_content still says Signet outside src/href/class (retype it as Frapp wherever a reader can meet it: heading, link text, an image's alt or title, an Outlook-only block; keep the token_hash href)",
+      "mailer_templates_magic_link_content still says Signet outside a lowercase signet-… file or class name (heading, link text, an image's alt or title, a comment or an Outlook-only block; paste the body from supabase.md § ADR-25 step 3 and keep the token_hash href)",
     );
   }
   return result("auth-magic-link", label, PASS, `subject=${subject}; token_hash href`);

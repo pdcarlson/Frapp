@@ -504,23 +504,25 @@ test("a crest image served under its design-system file name is not a Signet lef
   assert.equal(result.status, PASS);
 });
 
-test("magicLinkReadableText drops only markup that never renders", () => {
+test("magicLinkReadableText drops only the design system's lowercase signet- identifiers", () => {
   const text = magicLinkReadableText(
-    '<style>.signet-emblem{width:1px}</style>' +
-      '<img src="/brand/signet-emblem-B.png" srcset=/brand/signet-emblem-B@2x.png data-alt="signet-emblem" alt="Frapp crest" class=\'signet-mark\'>' +
-      '<h2>Sign in to Frapp</h2><a href="https://frapp.live/signet-guide">Sign in</a>',
+    '<style>.signet-mark{color:var(--signet-accent-text)}</style>' +
+      '<td background="https://frapp.live/brand/signet-emblem-B.png"><img class="x"src="/brand/signet-emblem-B.png" data-alt="signet-emblem" alt="Frapp crest">' +
+      '<svg><use xlink:href="#signet-emblem"/></svg><h2 aria-labelledby="signet-heading">Sign in to Frapp</h2>',
   );
   assert.doesNotMatch(text, /signet/i);
   assert.match(text, /alt="Frapp crest"/);
   assert.match(text, /Sign in to Frapp/);
 });
 
-test("the body check fails closed: Outlook blocks, comments and unquoted alt still count", async () => {
+test("the body check fails closed: comments, Outlook blocks, style content and unquoted alt still count", async () => {
   const link = '<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a>';
   for (const leftover of [
     "<!--[if mso]><center>Sign in to Signet</center><![endif]-->",
     "<!-- Signet crest -->",
     '<img src="/brand/crest.png" alt=Signet>',
+    '<style>.brand::before{content:"Signet"}</style>',
+    "<p>sign in to signet</p>",
   ]) {
     const result = await checkAuthMagicLink({
       accessToken: "t",
@@ -528,7 +530,7 @@ test("the body check fails closed: Outlook blocks, comments and unquoted alt sti
       fetchImpl: async () => magicLinkConfig({ mailer_templates_magic_link_content: `${leftover}<h2>Sign in to Frapp</h2>${link}` }),
     });
     assert.equal(result.status, FAIL, leftover);
-    assert.match(result.detail, /alt or title/);
+    assert.match(result.detail, /paste the body from supabase\.md/);
   }
 });
 
