@@ -79,6 +79,12 @@ const ESCAPED_CHAR = new RegExp(
  * wider, because nothing wider renders. Link *text* is kept and the href
  * dropped.
  *
+ * The match is approximate in two known places: a leading `> ` or list marker
+ * stays in the quote though the bubble unwraps it, and a message nested past
+ * the web bubble's depth cap (`remark-depth-cap.ts`, #2209) shows as raw source
+ * in the bubble but is still flattened here. Both need pathological or
+ * block-level bodies, and a one-line quote reads better flattened.
+ *
  * **Over-stripping is the failure mode that matters, not under-stripping.**
  * The chain was diffed against `mdast-util-from-markdown` over 28 inputs
  * with zero divergences; `reply-preview.spec.ts` pins the cases that
