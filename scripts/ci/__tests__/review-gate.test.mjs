@@ -1,7 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,7 +43,7 @@ function run(lines) {
 function mark(sha = head) {
   const dir = path.join(repo, ".cache", "diff-review");
   mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(dir, sha), "");
+  writeFileSync(path.join(dir, sha), "reviewed\n");
 }
 
 function clear() {
@@ -135,6 +135,37 @@ test("a clean merge of main on top of a reviewed commit passes without a marker 
     assert.equal(run([`refs/heads/reviewed-branch ${git("rev-parse", "HEAD")} refs/heads/reviewed-branch ${"0".repeat(40)}`]).status, 0);
   } finally {
     git("checkout", "-q", start);
+    git("update-ref", "-d", "refs/remotes/origin/main");
+  }
+});
+
+test("a check that can't run denies: no node on PATH, or no scope script", () => {
+  clear();
+  git("update-ref", "refs/remotes/origin/main", head);
+  const bin = mkdtempSync(path.join(tmpdir(), "review-gate-bin-"));
+  const script = path.join(repo, "scripts", "diff-review-scope.mjs");
+  try {
+    git("checkout", "-q", "-b", "no-node");
+    writeFileSync(path.join(repo, "f.txt"), "no node\n");
+    git("commit", "-qam", "no node");
+    const update = [`refs/heads/no-node ${git("rev-parse", "HEAD")} refs/heads/no-node ${"0".repeat(40)}`];
+    const bash = execFileSync("bash", ["-c", "command -v bash"], { encoding: "utf8" }).trim();
+    symlinkSync(execFileSync("bash", ["-c", "command -v git"], { encoding: "utf8" }).trim(), path.join(bin, "git"));
+    const noNode = spawnSync(bash, [HOOK, "origin", "unused"], {
+      cwd: repo,
+      input: `${update[0]}\n`,
+      encoding: "utf8",
+      env: { ...process.env, PATH: bin },
+    });
+    assert.equal(noNode.status, 1, noNode.stderr);
+    assert.match(noNode.stderr, /no review evidence/);
+
+    renameSync(script, `${script}.away`);
+    assert.equal(run(update).status, 1);
+  } finally {
+    if (existsSync(`${script}.away`)) renameSync(`${script}.away`, script);
+    rmSync(bin, { recursive: true, force: true });
+    git("checkout", "-q", "-");
     git("update-ref", "-d", "refs/remotes/origin/main");
   }
 });

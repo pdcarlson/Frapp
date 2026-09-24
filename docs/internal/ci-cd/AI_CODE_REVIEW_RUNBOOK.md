@@ -15,11 +15,12 @@ scan. Once installed, the same Git hook runs for local Codex, cloud agents, and 
 
 Git gives the hook every proposed ref update. Each non-deletion update must have evidence at
 `.cache/diff-review/<PUSHED_COMMIT_SHA>`, or publish nothing unreviewed: a commit already on
-`origin/main`, or one that adds nothing but merges of `main` since a reviewed commit. Annotated tags
+`origin/main`, or one that adds nothing but clean merges of `main` since a reviewed commit. Annotated tags
 are peeled to their commit. This is stronger than checking the currently checked-out HEAD: explicit
-refspecs and multi-ref pushes cannot borrow a marker from another commit. `/diff-review` writes the
-marker for the reviewed HEAD. Address every finding, commit any fixes, review the new commit, then
-push.
+refspecs and multi-ref pushes cannot borrow a marker from another commit. Only each ref's tip is
+checked, because the review covers the branch's net change, not each commit on the way to it.
+`/diff-review` writes the marker for the reviewed HEAD. Address every finding, commit any fixes,
+review the new commit, then push.
 
 **Why not Codex project hooks?** Verified against the installed Codex CLI 0.144.0-alpha.4 on
 2026-09-16: `PreToolUse` hooks can block Codex-issued shell commands when they return a valid block
@@ -129,7 +130,8 @@ generic angles should retire in favor of the bundled command is
 `/diff-review` reviews a branch thoroughly once: scope → bundled finder subagents → one
 independent verifier per flagged line, plus a second only when the first refutes → a single
 `ReportFindings` call, through the saved workflow `frapp-review`. Later rounds review only the
-commits since, inline, unless they add 300 lines or more (shape and reasons:
+commits since, inline, unless they are large enough to count as new work (`INLINE_MAX_LINES` in
+`scripts/diff-review-scope.mjs`; shape and reasons:
 [ADR-23](../../../spec/architecture/adr/adr-23.md)). It also encodes Frapp's own invariants as
 review angles: `chapter_id` scoping and chapter-scoped role lookups, permission decorators, the
 PGlite migration gate, broken doc pointers, the tracker rule (GitHub Issues), and verification
@@ -140,17 +142,21 @@ trustworthy rather than the agent agreeing with its own work — do not weaken i
 
 - Git invokes `.githooks/pre-push` with proposed updates on standard input. A zero local SHA is a
   deletion and publishes no object, so it is exempt.
-- Every other local object must peel to a commit and have a repository-root
-  `.cache/diff-review/<commit SHA>` marker. Every ref in a multi-ref push is checked.
+- Every other local object must peel to a commit, and that commit needs a repository-root
+  `.cache/diff-review/<commit SHA>` marker unless it adds nothing unreviewed (next bullet). Every
+  ref in a multi-ref push is checked.
 - A commit with no marker of its own passes only if `node scripts/diff-review-scope.mjs --check
   <sha>` finds nothing unreviewed in it: it is already on `origin/main`, or it differs from its
-  branch's last reviewed commit, with the current `main` merged in cleanly, by nothing at all. So a
-  base-branch sync needs no review; a conflict resolution or an edit inside a merge commit does.
+  branch's last reviewed commit, with the current `main` merged in, by nothing at all. So a
+  base-branch sync needs no review; a conflict resolution or an edit inside a merge commit does. The
+  script trusts only markers `/diff-review` wrote (`reviewed`, or the older `full` and `delta`) on
+  the branch's own first-parent line, never an empty legacy marker or one on a branch merged in.
 - The hook exits nonzero when any evidence is absent or an object cannot resolve to a commit. Git
   then aborts the push. Hook failure is denial because `set -euo pipefail` produces a nonzero exit,
   and so is a check that can't run (no `node`, no `origin/main`).
-- A new commit has a new SHA and therefore needs a new review. Retrying does not mutate the marker
-  directory and never changes the verdict; the former four-attempt escape was removed.
+- A new commit that changes anything has a new SHA and therefore needs a new review. Retrying does
+  not mutate the marker directory and never changes the verdict; the former four-attempt escape
+  was removed.
 - The deliberate emergency bypass is Git's standard `git push --no-verify`. It is auditable in the
   operator's command but not server-enforced. Never use it in place of `/diff-review`, including
   after a `/code-review` run.
@@ -175,6 +181,8 @@ trustworthy rather than the agent agreeing with its own work — do not weaken i
   `origin/main`: run `git fetch origin main` and push again.
 - **Denied right after merging `main`:** the hook compares against the local `origin/main`, so a
   merge of a newer `main` than it names looks like new work. `git fetch origin main` and push again.
+  On git older than 2.38, which lacks `merge-tree --write-tree`, the check fails with that message;
+  upgrade git, or run `/diff-review full`.
 - **`/diff-review` is unavailable:** its frontmatter must not contain `disable-model-invocation`.
   Skills load at session start, so start a fresh session after fixing it.
 - **`Skill(skill: "code-review")` returns `disable-model-invocation`:** expected unless the current

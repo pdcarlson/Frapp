@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Refuse to publish a commit that carries changes nobody reviewed.
-# Installed through core.hooksPath by scripts/setup-git-hooks.mjs.
+# Refuse to push a ref whose tip carries changes nobody reviewed. Only each ref's tip
+# is checked: the review covers the branch's net change, not every commit on the way
+# (secrets in any commit are pre-commit's job). Installed through core.hooksPath by
+# scripts/setup-git-hooks.mjs.
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"

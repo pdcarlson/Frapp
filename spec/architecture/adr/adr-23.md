@@ -6,19 +6,23 @@
   it runs through the saved workflow [`frapp-review`](../../../.claude/workflows/frapp-review.js),
   whose shape is fixed in code. No other review (a `/next` lens pass, an ad-hoc adversarial
   re-review of a fix) is layered on top of it. **Corrected 2026-09-24:** only a branch's first
-  review, and a re-review of 300 lines or more, runs the workflow now; see
+  review, and a re-review large enough to count as new work, runs the workflow now; see
   [amendment 1](#adr-23-amendment-1--the-first-round-is-the-thorough-one-2026-09-24).
 - **Finders bundle angles.** One `diff-finder` holds two or more angles: 4 finders at `high` instead
-  of one per angle, 2 on a small diff or a re-review of fix commits.
+  of one per angle, 2 on a small diff or a re-review of fix commits. **Corrected 2026-09-24:** every
+  workflow round adds the acceptance-and-tests finder, and a fix-round re-review has no finders
+  (amendment 1).
 - **One verifier per deduped candidate, a second only on REFUTED.** The first `claim-verifier`
   checks whether the failure scenario reproduces. Only if it says `REFUTED` does a second one, on a
   materiality lens, look independently. The candidate is kept unless both say `REFUTED`.
+  **Corrected 2026-09-24:** candidates at the same line go to one verifier together, with a verdict
+  for each (amendment 1).
 - **A re-review covers only what changed.** After a fix commit, the gate reviews the commits since
   the last reviewed one, with two finders. `scripts/diff-review-scope.mjs` decides, trusting only
   markers the gate wrote with a kind (`full` or `delta`) on commits of this branch. A merge since
   the last review means a full review again, because a merge can hide a change from any diff.
-  **Corrected 2026-09-24:** a re-review under 300 lines is now inline, with no finders; a clean merge
-  of `main` no longer forces a full review, and markers no longer carry a kind (amendment 1).
+  **Corrected 2026-09-24:** a small re-review is now inline, with no finders; a merge of `main` no
+  longer forces a full review, and a marker records only that a review ran (amendment 1).
 - **Everything else stays small.** `workflowSizeGuideline: "medium"` in `.claude/settings.json`
   tells the model to keep workflows under 10 agents; it is advisory text, not a cap. The repo adds
   at most 5 agents per fan-out step, which nothing enforces. Verification outside the gate is one
@@ -88,10 +92,12 @@ the rest:
 
 - A second copy of the review shape is a defect. `frapp-review.js` owns the bundles, caps and
   verify rule; the [`diff-review` skill](../../../.claude/skills/diff-review/SKILL.md) owns the
-  angle definitions and reporting.
+  angle definitions and reporting. **Corrected 2026-09-24:** the angle definitions moved to
+  [`angles.md`](../../../.claude/skills/diff-review/angles.md) beside the skill, so finders read
+  them without the procedure.
 - `/next` under ultracode drops its separate five-lens pass. Acceptance criteria and test adequacy
   became one extra finder inside the gate, run in its own worktree so it can mutate source to prove
-  a test bites (#2414). **Corrected 2026-09-24:** that finder now runs in every first review, not
+  a test bites (#2414). **Corrected 2026-09-24:** that finder now runs in every workflow round, not
   only under ultracode (amendment 1).
 - `skipWorkflowUsageWarning` was removed from `.claude/settings.json`. The CLI reads it only from
   user, local, flag and policy settings, so the project value never did anything.
@@ -105,30 +111,36 @@ behave. Tracking: #2482.
 **Decision:** A branch gets one thorough review. Every later round reviews only what changed, and a
 small round is reviewed inline.
 
-- **First round (`mode: full`):** one shape, with no effort levels and no ultracode variant. It runs
-  4 bundled finders (2 under 150 changed lines) and the acceptance-and-tests finder in its own
-  worktree. Each flagged line then gets one `claim-verifier`, and a second lens only on REFUTED. The
-  gap sweep, which ran only at `xhigh`, is gone.
+- **First round (`mode: full`):** one shape, with no effort levels, no ultracode variant and no cap
+  on reported findings. It runs 4 bundled finders (2 under 150 changed lines) and the
+  acceptance-and-tests finder in its own worktree. Each flagged line then gets one `claim-verifier`,
+  and a second lens only on REFUTED. The gap sweep, which ran only at `xhigh`, is gone.
 - **Later rounds (`mode: delta`):** under 300 changed lines since the last reviewed commit, the agent
   reviews the delta inline against the same angles, with no subagents. At 300 lines or more it is new
-  work, and it gets the workflow with 2 finders. `package-lock.json` and `openapi.json` don't count
-  toward the 300.
+  work, and it gets the workflow with 2 finders plus the acceptance-and-tests finder.
+  `package-lock.json` and `openapi.json` don't count toward the 300. The number lives in
+  `INLINE_MAX_LINES` in `scripts/diff-review-scope.mjs`.
 - **Merges of `main` carry the review.** The delta is HEAD against the last reviewed commit with the
-  current `main` merged in cleanly (`git merge-tree --write-tree`). It holds fix commits and any hand
-  edit or conflict resolution inside a merge commit, and none of `main`'s own changes. If the reviewed
-  commit conflicts with `main`, the branch gets a full review.
+  current `main` merged in (`git merge-tree --write-tree`). It holds fix commits and any hand edit
+  inside a merge commit, and none of `main`'s own changes. Where the two conflict, the merged tree
+  keeps git's conflict markers, so the delta shows the resolution itself, including one that took a
+  side whole. A merge never forces a full review.
 - **The hook accepts a commit that adds nothing unreviewed.** With no marker, `.githooks/pre-push`
   asks `scripts/diff-review-scope.mjs --check`, which passes a commit already on `origin/main` or one
   whose delta is empty. A base sync then needs no review at all. That replaces the `merged` marker
-  kind, so markers no longer carry a kind.
+  kind; a marker now records only that a review ran. The script trusts a marker only on the
+  branch's own first-parent line, and never an empty one: those predate kinds and were written by
+  `touch` after reviews that could cover part of the branch.
 - **Candidates at one line are verified together**, by one verifier returning a verdict per finding.
   That replaces the streaming dedup chain and the workflow's verify-only mode.
 
 **Rationale:** On 2026-09-24 Paul reported that the gate burned usage before every PR and re-ran
 when it didn't need to. The marker is per commit, so every fix commit launched a workflow re-review:
-about 18 agents and ~1.2M subagent tokens per round in the table above. Every merge of `main` reset
-the branch to a full review, at 25 to 40 agents. Babysitting one PR through CI fixes, review comments
-and base syncs could run the workflow half a dozen times. Most of those runs reviewed code that had
+by the 2026-09-23 shape, 2 finders plus a verifier for each of up to 12 candidates. Every merge of
+`main` reset the branch to a full review: 4 to 6 finders (under ultracode, the acceptance finder
+and the gap sweep) plus a verifier for each of up to 46 candidates. Those counts are derived from the shape, not measured on a run; the only measured
+re-review cost is the pre-ADR ~18 agents and ~1.2M tokens in the table above. Babysitting one PR
+through CI fixes, review comments and base syncs could run the workflow half a dozen times. Most of those runs reviewed code that had
 already passed a review, or a few lines written to answer one. #2490 also recorded that #2487's own
 review rounds went mostly to the machinery it added (marker kinds, merge semantics, dedup edge
 cases), so this amendment removes more machinery than it adds.
@@ -141,8 +153,12 @@ cases), so this amendment removes more machinery than it adds.
 - A clean merge of `main` is trusted. A semantic break between `main` and a branch that merges
   cleanly as text is left to CI (types and tests), as it already was for any PR that `main` moved
   under.
-- Sessions without ultracode now run the acceptance-and-tests finder on every first review (one more
-  finder). Ultracode sessions lose the gap sweep (one fewer finder, plus its verifiers).
+- Sessions without ultracode now run the acceptance-and-tests finder in every workflow round (one
+  more finder). Ultracode sessions lose the gap sweep (one fewer finder, plus its verifiers).
+- `/next` no longer runs a batch of issues at `xhigh`. That rule existed because a full review
+  reported at most a fixed number of findings, so several issues would share one cap. The cap is
+  gone, so every surviving finding is reported however many issues the batch holds. One
+  acceptance-and-tests finder still covers every member's criteria, with 6 candidates.
 
 **Alternatives rejected:**
 

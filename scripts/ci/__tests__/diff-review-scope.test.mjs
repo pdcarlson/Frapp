@@ -165,18 +165,22 @@ test("an edit hidden inside a merge commit is still reviewed", (t) => {
   assert.equal(scope.changedLines, 1);
 });
 
-test("when the reviewed work conflicts with main, the whole branch is reviewed again", (t) => {
+test("a conflict with main is reviewed as its resolution, not as the whole branch", (t) => {
   const r = repo();
   t.after(r.cleanup);
+  r.commit("other.txt", lines(400)); // reviewed branch work that must not come back
   r.mark(r.commit("README.md", "branch\n"));
-  const newMain = r.advanceMain("README.md", "main\n");
+  r.advanceMain("README.md", "main\n");
   assert.throws(() => r.git("merge", "-q", "--no-edit", "origin/main"));
-  writeFileSync(path.join(r.dir, "README.md"), "resolved\n");
+  writeFileSync(path.join(r.dir, "README.md"), "main\n"); // resolved by taking main's side whole
   r.git("add", "-A");
   r.git("commit", "-q", "--no-edit");
   const scope = resolveScope({ cwd: r.dir });
-  assert.equal(scope.mode, "full");
-  assert.equal(scope.base, newMain);
+  assert.equal(scope.mode, "delta");
+  assert.equal(scope.review, "inline");
+  const diff = execFileSync("git", ["-C", r.dir, "diff", scope.base, scope.head], { encoding: "utf8" });
+  assert.match(diff, /^-<<<<<<< /m, "the resolution shows against git's conflict markers");
+  assert.doesNotMatch(diff, /other\.txt/);
 });
 
 test("markers on commits outside <merge-base>..HEAD (a rebase) don't count", (t) => {
@@ -189,6 +193,54 @@ test("markers on commits outside <merge-base>..HEAD (a rebase) don't count", (t)
   const scope = resolveScope({ cwd: r.dir });
   assert.equal(scope.mode, "full");
   assert.equal(scope.base, newMain);
+});
+
+test("empty legacy markers are not evidence; the 2026-09-23 kinds are", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  const first = r.commit("a.txt", "1\n");
+  r.mark(first);
+  writeFileSync(path.join(r.dir, ".cache", "diff-review", first), "");
+  r.commit("b.txt", "1\n");
+  assert.equal(resolveScope({ cwd: r.dir }).mode, "full");
+  writeFileSync(path.join(r.dir, ".cache", "diff-review", first), "delta\n");
+  assert.equal(resolveScope({ cwd: r.dir }).mode, "delta");
+});
+
+test("a marker on another branch merged in doesn't count as this branch's review", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.git("checkout", "-q", "-b", "other");
+  r.mark(r.commit("other.txt", "reviewed there\n"));
+  r.git("checkout", "-q", "feature");
+  r.commit("mine.txt", "never reviewed\n");
+  r.git("merge", "-q", "--no-edit", "other");
+  const scope = resolveScope({ cwd: r.dir });
+  assert.equal(scope.mode, "full");
+  assert.equal(scope.reviewed, null);
+});
+
+test("a local branch named origin/main can't stand in for the real one", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  r.git("checkout", "-q", "-b", "origin/main");
+  const own = r.commit("a.txt", "unreviewed\n");
+  const verdict = checkCommit({ cwd: r.dir, sha: own });
+  assert.equal(verdict.ok, false);
+  assert.equal(resolveScope({ cwd: r.dir }).branchBase, r.base);
+});
+
+test("the scope is of the commit named, not of whatever HEAD is", (t) => {
+  const r = repo();
+  t.after(r.cleanup);
+  const pushed = r.commit("a.txt", "1\n");
+  r.git("checkout", "-q", "-b", "elsewhere", r.base);
+  r.mark(r.commit("b.txt", "reviewed\n"));
+  const scope = resolveScope({ cwd: r.dir, head: pushed });
+  assert.equal(scope.head, pushed);
+  assert.equal(scope.mode, "full");
+  assert.equal(checkCommit({ cwd: r.dir, sha: pushed }).ok, false);
+  assert.throws(() => checkCommit({ cwd: r.dir, sha: undefined }), /needs the SHA/);
 });
 
 test("writeMarker records HEAD", (t) => {

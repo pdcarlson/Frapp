@@ -291,8 +291,8 @@ pass; manufacturing a change to show work is a failure.
 ## Phase 4 — Review, push, open the PR
 
 1. Run [`/diff-review`](../diff-review/SKILL.md) after the final commit and act on every finding.
-   The pre-push hook (`.githooks/pre-push`) refuses a push without the review marker for HEAD, and
-   any commit invalidates it.
+   The pre-push hook (`.githooks/pre-push`) refuses a push of unreviewed work without the review
+   marker for HEAD, and any commit that changes something invalidates it.
 2. Open the PR against `main` with `mcp__github__create_pull_request`, filling the PR template. Per
    fix, the body gives the rule restored (cited), the consumers checked, and the verification run
    (commands, outcomes, what couldn't run); a behaviour change gets its own heading. Use `Fixes #N`

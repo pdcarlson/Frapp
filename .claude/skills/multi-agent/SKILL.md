@@ -20,7 +20,7 @@ and how hard each one thinks. Decision and evidence: [ADR-23](../../../spec/arch
 
 - **`/diff-review` is the one review allowed to be big.** It gates every push. A branch's first
   review runs through the saved workflow `frapp-review`, whose shape is fixed in code; later rounds
-  are inline unless they add 300 lines or more. Don't hand-write a review workflow
+  are inline unless they are large enough to count as new work. Don't hand-write a review workflow
   for a diff, and don't layer another review on top of the gate (a lens pass, an "adversarial"
   re-review of a fix).
 - **Everything else stays small.** `workflowSizeGuideline: "medium"` in `.claude/settings.json` has

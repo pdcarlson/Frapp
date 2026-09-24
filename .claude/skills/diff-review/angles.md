@@ -100,8 +100,8 @@ These encode invariants the codebase can't enforce for itself.
 
 ## Acceptance and tests
 
-These run in a branch's first review (`mode: full`), as one finder in its own worktree. An inline
-review covers them itself when the fix round changed behavior or tests.
+These run in every workflow round, as one finder in its own worktree. An inline review covers
+them itself when the fix round changed behavior or tests.
 
 - **Acceptance criteria.** Against the issue's acceptance criteria when the launcher passes them,
   otherwise against what the commits and PR text say the change does: each criterion the diff

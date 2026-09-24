@@ -7,14 +7,14 @@
 //   node scripts/diff-review-scope.mjs --check <sha>  exit 0 when <sha> needs no review (.githooks/pre-push)
 //
 // What each scope means for the reviewer is in .claude/skills/diff-review/SKILL.md; this script
-// only applies the rules. A branch is reviewed up to the newest commit R in <merge-base>..HEAD that
-// has a marker. What is left is the difference between HEAD and R with the current main merged in
-// cleanly (`git merge-tree`). So merging main adds nothing to review, while a fix commit, a conflict
-// resolution or an edit hidden in a merge commit does. When R and main don't merge cleanly, or the
-// branch has no marker (its first review, or after a rebase), the whole branch is reviewed.
+// only applies the rules. A branch is reviewed up to the newest marked commit R on its own
+// first-parent line since it left main. What is left is the difference between HEAD and R with the
+// current main merged in (`git merge-tree`, conflict markers and all). So merging main adds nothing
+// to review, while a fix commit, a conflict resolution or an edit hidden in a merge commit does. A
+// branch with no marked commit (its first review, or after a rebase) is reviewed whole.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -22,8 +22,16 @@ import { pathToFileURL } from "node:url";
 // reviews inline.
 export const INLINE_MAX_LINES = 300;
 
+// Spelled out because a local branch or tag named `origin/main` would otherwise win the lookup.
+const MAIN = "refs/remotes/origin/main";
+
 // Regenerated wholesale by tooling; their churn says nothing about how much there is to review.
 const GENERATED = new Set(["package-lock.json", "openapi.json"]);
+
+// What --mark writes. `full` and `delta` are what the 2026-09-23 script wrote for the same kind of
+// review. Empty markers predate both and were written by `touch`, after reviews that could have
+// covered only part of the branch, so they are not evidence of one.
+const TRUSTED = new Set(["reviewed", "full", "delta"]);
 
 function git(cwd, ...args) {
   return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -42,6 +50,11 @@ function markerPath(root, sha) {
   return path.join(root, ".cache", "diff-review", sha);
 }
 
+function trusted(root, sha) {
+  const file = markerPath(root, sha);
+  return existsSync(file) && TRUSTED.has(readFileSync(file, "utf8").trim());
+}
+
 // Files, and insertions plus deletions outside the generated files.
 function size(root, from, to) {
   let files = 0;
@@ -54,32 +67,34 @@ function size(root, from, to) {
   return { files, changedLines };
 }
 
-// R with main merged in, as a tree: what HEAD would be if nothing but main had landed since R.
-// Null when the two conflict.
+// R with main merged in, as a tree: what HEAD would be if nothing but main had landed since R. Where
+// the two conflict, the tree holds git's conflict markers, so the diff to HEAD shows the resolution.
 function reviewedOnMain(root, reviewed, branchBase) {
   if (succeeds(root, "merge-base", "--is-ancestor", branchBase, reviewed)) return reviewed;
   try {
     return git(root, "merge-tree", "--write-tree", reviewed, branchBase).split("\n")[0];
-  } catch {
-    return null;
+  } catch (err) {
+    if (err.status === 1) return String(err.stdout).split("\n")[0]; // conflicts: the tree is still written
+    throw new Error(`git merge-tree --write-tree failed (it needs git 2.38 or newer; pass --full to review the whole branch): ${String(err.stderr).trim()}`);
   }
 }
 
-export function resolveScope({ cwd = process.cwd(), full = false, head: headRef = "HEAD", baseRef = "origin/main" } = {}) {
+export function resolveScope({ cwd = process.cwd(), full = false, head: headRef = "HEAD", baseRef = MAIN } = {}) {
   const root = git(cwd, "rev-parse", "--show-toplevel");
-  const head = git(root, "rev-parse", `${headRef}^{commit}`);
+  const head = git(root, "rev-parse", "--verify", `${headRef}^{commit}`);
   const branchBase = git(root, "merge-base", baseRef, head);
   const dirty = git(root, "status", "--porcelain", "--untracked-files=no") !== "";
-  const reviewed = git(root, "rev-list", `${branchBase}..${head}`).split("\n").find((sha) => sha && existsSync(markerPath(root, sha))) ?? null;
+  // First parents only: a marker on another branch merged in reviewed that branch, not this one.
+  const reviewed = git(root, "rev-list", "--first-parent", `${branchBase}..${head}`).split("\n").find((sha) => sha && trusted(root, sha)) ?? null;
   const scope = (mode, review, base, counts = { files: 0, changedLines: 0 }) => ({ mode, review, base, head, branchBase, reviewed, root, ...counts, dirty });
 
   if (head === branchBase) return scope("empty", null, head);
   if (reviewed === head && !full) return scope("none", null, head);
-  const onMain = reviewed && !full ? reviewedOnMain(root, reviewed, branchBase) : null;
-  if (!onMain) return scope("full", "workflow", branchBase, size(root, branchBase, head));
-  if (succeeds(root, "diff", "--quiet", onMain, head)) return scope("none", null, head);
-  const counts = size(root, onMain, head);
-  return scope("delta", counts.changedLines >= INLINE_MAX_LINES ? "workflow" : "inline", onMain, counts);
+  if (!reviewed || full) return scope("full", "workflow", branchBase, size(root, branchBase, head));
+  const base = reviewedOnMain(root, reviewed, branchBase);
+  if (succeeds(root, "diff", "--quiet", base, head)) return scope("none", null, head);
+  const counts = size(root, base, head);
+  return scope("delta", counts.changedLines >= INLINE_MAX_LINES ? "workflow" : "inline", base, counts);
 }
 
 export function writeMarker({ cwd = process.cwd() } = {}) {
@@ -92,10 +107,11 @@ export function writeMarker({ cwd = process.cwd() } = {}) {
 
 // The pre-push hook's fallback when <sha> has no marker of its own: a commit already on main, or
 // one with nothing new since a reviewed commit but merges of main, publishes nothing unreviewed.
-export function checkCommit({ cwd = process.cwd(), sha, baseRef = "origin/main" }) {
+export function checkCommit({ cwd = process.cwd(), sha, baseRef = MAIN }) {
+  if (!sha) throw new Error("--check needs the SHA of the commit being pushed");
   const scope = resolveScope({ cwd, head: sha, baseRef });
   if (scope.mode === "empty") return { ok: true, reason: `already on ${baseRef}` };
-  if (scope.mode === "none") return { ok: true, reason: `nothing but merges of ${baseRef} since reviewed ${scope.reviewed}` };
+  if (scope.mode === "none") return { ok: true, reason: `nothing but clean merges of ${baseRef} since reviewed ${scope.reviewed}` };
   return { ok: false, reason: `${scope.files} file(s), ${scope.changedLines} line(s) unreviewed (${scope.mode})` };
 }
 

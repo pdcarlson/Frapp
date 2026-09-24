@@ -12,7 +12,7 @@ allowed-tools: Agent, Task, Workflow, Read, Grep, Glob, Edit, Write, ReportFindi
 
 Frapp's pre-push review gate. A branch gets one thorough review with subagents, the first time it is
 reviewed. After that the gate reviews only what changed since, and a fix round is reviewed inline,
-by you, with no subagents. Merging `main` adds nothing to review. Done means the findings are
+by you, with no subagents. A clean merge of `main` adds nothing to review. Done means the findings are
 reported, each one is fixed or filed, and the commit you push carries a marker.
 
 Never get past the gate with `git push --no-verify`: it leaves no review evidence.
@@ -38,25 +38,26 @@ background fetch can move it mid-review. State the scope in one line, then:
 
 | `mode` / `review` | Means | Do |
 |---|---|---|
-| `full` / `workflow` | No reviewed commit on this branch yet, or the reviewed work conflicts with `main` | §2 |
-| `delta` / `inline` | Under 300 changed lines since the last review: a fix round | §3 |
-| `delta` / `workflow` | 300 lines or more since the last review: new work | §2 |
-| `none` | Nothing unreviewed: HEAD has a marker, or only merges of `main` landed since the last review | Push; the hook accepts it |
+| `full` / `workflow` | No reviewed commit on this branch yet (or after a rebase) | §2 |
+| `delta` / `inline` | Fewer changed lines since the last review than `INLINE_MAX_LINES` (300) in the script: a fix round | §3 |
+| `delta` / `workflow` | That many or more: new work | §2 |
+| `none` | Nothing unreviewed: HEAD has a marker, or only clean merges of `main` landed since the last review | Push; the hook accepts it |
 | `empty` | The branch has no commits of its own | Stop |
 
-A delta is HEAD against the last reviewed commit with the current `main` merged in cleanly, so it
-holds your fix commits and anything a merge commit changed by hand, but none of `main`'s changes.
-`base` may name a tree rather than a commit; `git diff <base> <head>` works either way. Generated
-files (`package-lock.json`, `openapi.json`) count toward `files` but not `changedLines`.
+A delta is HEAD against the last reviewed commit with the current `main` merged in, so it holds
+your fix commits and anything a merge commit changed by hand, but none of `main`'s changes. Where
+the two conflicted, it shows your resolution against git's conflict markers. `base` may name a
+tree rather than a commit: use it with `git diff`, never `git log`. Generated files
+(`package-lock.json`, `openapi.json`) count toward `files` but not `changedLines`.
 
-If you must review a dirty tree (`dirty: true`), say so. An explicit `<target>` (a path, ref or
-range) replaces the script: review exactly that as in §2, with pinned SHAs, and write no marker,
-because it isn't the commit a push publishes.
+If you must review a dirty tree (`dirty: true`), say so. An explicit `<target>` (a ref or range)
+replaces the script: review exactly that as in §2, passing `{ mode: 'full', base, head }` with
+pinned SHAs, and write no marker, because it isn't the commit a push publishes.
 
 ## 2. Workflow round
 
-Bundled `diff-finder`s cover every angle in [`angles.md`](angles.md). On a full review, one more
-finder checks acceptance criteria and test adequacy in its own worktree. Each flagged line then goes
+Bundled `diff-finder`s cover every angle in [`angles.md`](angles.md), and one more checks
+acceptance criteria and test adequacy in its own worktree. Each flagged line then goes
 to an independent `claim-verifier`. A finding it refutes goes to a second verifier on a different
 lens, and a finding is dropped only when both refute it. [`frapp-review.js`](../../workflows/frapp-review.js)
 owns the bundles, caps and verify rule, and [ADR-23](../../../spec/architecture/adr/adr-23.md) says
@@ -94,7 +95,7 @@ only at whether the finding it answered went away. Report only what has a concre
 
 Report once with `ReportFindings`, most severe first: correctness and security above cleanups,
 `CONFIRMED` above `PLAUSIBLE`, with `verdict` set on each finding from a workflow round. Merge
-findings that share a root cause. Pass an empty array when nothing survived. If `ReportFindings` is
+findings that share a root cause, and report every one that survived; there is no cap. Pass an empty array when nothing survived. If `ReportFindings` is
 unavailable, write a numbered list with file, line, verdict, summary and failure scenario. Always
 emit one or the other, because silence is indistinguishable from a clean diff.
 

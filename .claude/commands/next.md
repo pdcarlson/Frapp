@@ -367,7 +367,7 @@ is always refused here.
 Address every finding: fix it, or file a self-contained `triage` follow-up with a reason. A
 post-review commit changes HEAD and invalidates the marker, so re-run `/diff-review` after it. The
 skill decides how much to review again: usually an inline review of just the commits since the last
-reviewed one, and nothing for a clean merge of `main`. Either way every commit you push has been
+reviewed one, and nothing for a clean merge of `main`. Either way every change you push has been
 reviewed. Never push around the gate (`--no-verify`), and never
 delete, revert, stash, or gitignore a file to make it pass. If the gate objects to a file, review the
 file.

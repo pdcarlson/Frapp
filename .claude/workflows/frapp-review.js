@@ -17,19 +17,21 @@ export const meta = {
 //
 // args: the JSON line `node scripts/diff-review-scope.mjs` prints
 //         { mode: 'full' | 'delta', base, head, branchBase, root, changedLines, dirty }
-//       plus acceptance: the issue's acceptance criteria, when there is an issue (full only)
+//       or, for an explicit target, { mode: 'full', base, head }
+//       plus acceptance: the issue's acceptance criteria, when there is an issue
 
 const A = args || {}
 const SHA = /^[0-9a-f]{7,40}$/
 if (A.mode !== 'full' && A.mode !== 'delta') {
   throw new Error(`frapp-review: scope mode is "${A.mode}"; only full and delta get a review`)
 }
-for (const key of ['base', 'head', 'branchBase']) {
+const FULL = A.mode === 'full'
+for (const key of FULL ? ['base', 'head'] : ['base', 'head', 'branchBase']) {
   if (!SHA.test(String(A[key] || ''))) throw new Error(`frapp-review needs ${key} as a SHA: pass the output of scripts/diff-review-scope.mjs`)
 }
-const FULL = A.mode === 'full'
-// Only a measured line count can shrink a full review; a missing or zero count means "not known".
-const SMALL = !FULL || (typeof A.changedLines === 'number' && A.changedLines > 0 && A.changedLines < 150)
+// Only a measured line count can shrink a full review; a missing count means "not known". Zero is
+// measured: a branch that touches only generated files.
+const SMALL = !FULL || (typeof A.changedLines === 'number' && A.changedLines < 150)
 
 const CHANGES = ['Hunk scan', 'Language pitfalls']
 const DEPENDENTS = ['Removed behavior', 'Caller/callee tracing']
@@ -47,13 +49,13 @@ const BUNDLES = SMALL
       { key: 'docs-reuse', angles: DOCS_REUSE, cap: 8 },
       { key: 'invariants', angles: INVARIANTS, cap: 8 },
     ]
-// A branch's first review also checks what it set out to do, and whether its tests would notice.
-if (FULL) BUNDLES.push({ key: 'acceptance-tests', angles: ['Acceptance criteria', 'Test adequacy'], cap: 6, worktree: true })
+// Every workflow round also checks what the change set out to do, and whether its tests would notice.
+BUNDLES.push({ key: 'acceptance-tests', angles: ['Acceptance criteria', 'Test adequacy'], cap: 6, worktree: true })
 
 const DIRTY = A.dirty ? ', plus the uncommitted changes in `git diff HEAD`' : ''
 const SCOPE = FULL
   ? `the diff \`git diff ${A.base} ${A.head}\`${DIRTY}`
-  : `the changes since the last review, \`git diff ${A.base} ${A.head}\`${DIRTY}. ` +
+  : `the changes since the last review, \`git diff ${A.base} ${A.head}\`${DIRTY} (${A.base} may be a tree, the reviewed commit with main merged in: use it only with \`git diff\`). ` +
     `For context only, the whole branch is \`git diff ${A.branchBase} ${A.head}\`. Report defects in those changes, or ones they create with the rest of the branch`
 const CODE_AT = A.dirty ? `the working tree (commit ${A.head} plus its uncommitted changes)` : `commit ${A.head}`
 const PINNED = 'The SHAs are pinned: use them as given and never re-resolve `origin/main`, which a background fetch can move mid-review.'
