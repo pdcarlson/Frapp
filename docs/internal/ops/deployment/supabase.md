@@ -51,7 +51,7 @@ Authentication → URL Configuration / SMTP Settings.
 | Site URL | `https://app.frapp.live` (read 2026-09-07) | `https://app.staging.frapp.live` (read 2026-09-07) |
 | Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** (read 2026-09-07) | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** (read 2026-09-07) |
 | Email confirmations | required (`mailer_autoconfirm: false`) | required |
-| Custom SMTP | **on** — Resend `smtp.resend.com:465`, user `resend`, From `Signet <no-reply@mail.frapp.live>` (owner send proof 2026-09-09 ~23:07Z from `https://app.frapp.live`) | **on** — Resend `smtp.resend.com:465`, From `Signet <no-reply@mail.staging.frapp.live>` (owner send proof 2026-09-09 from `https://app.staging.frapp.live`) |
+| Custom SMTP | **on** — Resend `smtp.resend.com:465`, user `resend`, From `Frapp <no-reply@mail.frapp.live>` (owner send proof 2026-09-09 ~23:07Z from `https://app.frapp.live`, under the sender name Signet) | **on** — Resend `smtp.resend.com:465`, From `Frapp <no-reply@mail.staging.frapp.live>` (owner send proof 2026-09-09 from `https://app.staging.frapp.live`, under the sender name Signet) |
 | Auth email rate limit | **300 per hour** (owner dashboard toast 2026-09-09) | **300 per hour** (owner dashboard 2026-09-09; asserted daily as `auth-smtp`) |
 | Password minimum length | 6 | 6 |
 | Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
@@ -101,17 +101,22 @@ names only; never paste values into Slack or git):
 - The Magic Link template body was copied staging → prod. Confirm and invite
   templates were **intentionally not copied**.
 - Both projects are at **300/hour**. `_dmarc.frapp.live` is `v=DMARC1; p=none;`.
+- *2026-09-24: ADR-25 step 3 (#2578) renamed the expected sender name, Magic
+  Link subject and Magic Link body from Signet to Frapp. The matching console
+  change on both projects is the owner's, on the day it merges. The proofs
+  above were taken under the old name.*
 
-`staging-conformance.mjs` asserts the host, that live From, `smtp_sender_name=Signet`,
+`staging-conformance.mjs` asserts the host, that live From, `smtp_sender_name=Frapp`,
 and the send cap daily (`auth-smtp`) so a revert to the hosted 2/hour mailer, a leftover
-Frapp sender, or the burned apex From cannot sit green. It also asserts the Magic Link
+Signet sender, or the burned apex From cannot sit green. It also asserts the Magic Link
 subject and `token_hash` href daily (`auth-magic-link`) so a dashboard reset to
-`{{ .ConfirmationURL }}` cannot sit green.
+`{{ .ConfirmationURL }}` cannot sit green, and fails any `mailer_subjects_*` or a Magic
+Link body that still says Signet.
 
 Because production SMTP is now on, the 07:45 `production-auth-conformance.yml`
 watchdog no longer skip-asserts an empty host. Empty SMTP is still SKIPPED *if* the
 host is empty; with SMTP on, the same check requires
-`Signet <no-reply@mail.frapp.live>` at ≥300/hour and fails a burned apex From. Magic
+`Frapp <no-reply@mail.frapp.live>` at ≥300/hour and fails a burned apex From. Magic
 Link is the same: ConfirmationURL is SKIPPED only while SMTP is unset; with SMTP on,
 the href must carry `token_hash` + `type=magiclink` or the 07:45 job fails. The
 Magic Link body is now on prod; confirm and invite were intentionally left uncopied.
@@ -122,19 +127,19 @@ generic hosted templates, so sending now uses mail subdomains (Resend domains
 `mail.staging.frapp.live` and `mail.frapp.live`, created 2026-09-08, tracking off)
 and staging tests cannot burn production reputation. Do not send From the apex:
 
-- Staging Auth: `Signet <no-reply@mail.staging.frapp.live>`
-- Prod Auth: `Signet <no-reply@mail.frapp.live>`
-- API invite default: `Signet <invites@mail.frapp.live>` (staging API sets
-  `RESEND_FROM_EMAIL` to `Signet <invites@mail.staging.frapp.live>`)
+- Staging Auth: `Frapp <no-reply@mail.staging.frapp.live>`
+- Prod Auth: `Frapp <no-reply@mail.frapp.live>`
+- API invite default: `Frapp <invites@mail.frapp.live>` (staging API sets
+  `RESEND_FROM_EMAIL` to `Frapp <invites@mail.staging.frapp.live>`)
 
 Leave the existing `frapp.live` Resend domain in place until nothing uses it.
 
 The Magic Link template (on staging and prod as of 2026-09-09; confirm and invite
 were **intentionally not copied**):
 
-Subject: `Sign in to Signet`
+Subject: `Sign in to Frapp`
 
-Body: `<h2>Sign in to Signet</h2><p>Use this one-time link to sign in. It expires soon.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Signet</a></p><p>If you did not ask to sign in, you can ignore this email.</p>`
+Body: `<h2>Sign in to Frapp</h2><p>Use this one-time link to sign in. It expires soon.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a></p><p>If you did not ask to sign in, you can ignore this email.</p>`
 
 Paste this only on the **Magic Link** template. Confirm signup / invite / recovery keep their
 own `type` (`signup`, `invite`, `recovery`) — copying this body onto those breaks them.

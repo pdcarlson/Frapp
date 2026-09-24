@@ -49,7 +49,7 @@
        - the conformance assertions restated in `AGENT_INFRA.md` (the staging and production conformance rows) and `ALERT_ROUTING.md` (the production Auth row);
        - the `RESEND_FROM_EMAIL` default and staging value in `ENV_REFERENCE.md`.
      - *Consoles (owner):*
-       - on `frapp-staging` and `frapp-prod`, in Supabase Auth: the SMTP sender name, the mailer subjects, and the **Magic Link template body**, whose heading and link both read "Sign in to Signet". Conformance checks the subject and the body's link shape (TokenHash and `type=magiclink`, no ConfirmationURL), but never the body's brand text, so a missed heading stays silent. Keep the link shape when retyping it.
+       - on `frapp-staging` and `frapp-prod`, in Supabase Auth: the SMTP sender name, the mailer subjects, and the **Magic Link template body**, whose heading and link both read "Sign in to Signet". Conformance checks the subject and the body's link shape (TokenHash and `type=magiclink`, no ConfirmationURL), but never the body's brand text, so a missed heading stays silent. Keep the link shape when retyping it. *2026-09-24: step 3 closed that gap. `auth-magic-link` now also fails a Magic Link body that says Signet ([#2578](https://github.com/pdcarlson/Frapp/issues/2578)).*
        - `RESEND_FROM_EMAIL` in Infisical `staging`, documented as `Signet <invites@mail.staging.frapp.live>`, and in `prod` if it is set there.
   4. **Web dashboard and third-party sign-in and billing.**
      - *Code:*
