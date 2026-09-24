@@ -1,6 +1,5 @@
-# Mobile Interaction Smoke Checklist
+# Mobile interaction smoke checklist
 
-> Last updated: 2026-09-23 (the Terms rows, #2302)  
 > Scope: `apps/mobile` Expo workflows
 
 This checklist prevents dead-end controls in mobile UX.  
@@ -10,8 +9,10 @@ Rule: **if a control looks interactive, it must do something** (navigate, mutate
 
 Auth is real Supabase auth (#698) — these rows need a build carrying
 `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` and a real member
-account. Without them the sign-in card reports "Auth provider: Not configured"
-and every row below is expected to fail.
+account. Without them sign-in is unavailable and every row below is expected
+to fail; [`testing.md` § 1](testing.md#1-provide-the-environment) quotes what
+the sign-in card says. The Terms rows, and the Terms checkbox in the Join rows,
+came with #2302 (PR #2611).
 
 | Screen | Control | Expected outcome |
 |---|---|---|
@@ -20,7 +21,7 @@ and every row below is expected to fail.
 | Sign in (`/(auth)/sign-in`) | Sign in, wrong password | Shows the Supabase error inline; stays on the screen |
 | Sign in (`/(auth)/sign-in`) | Email me a link (Magic Link mode) | Confirms "Link sent to …"; tapping the emailed link on this device signs in and the auth gate picks join / Terms / welcome / tabs |
 | Sign in (`/(auth)/sign-in`) | Tap an already-used or expired magic link | Opens the app and shows the reason inline — never a silent return to a blank sign-in form |
-| Profile (`/(tabs)/profile`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
+| Settings (`/(tabs)/preferences`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
 | Join (`/(auth)/join`) | Join chapter with a valid invite, box unticked | For a user who hasn't accepted the current Terms, shows the checkbox and `Agree to the Terms of Service and Privacy Policy to join.`; redeems nothing |
 | Join (`/(auth)/join`) | Join chapter with a valid invite, box ticked (or already accepted, no box shown) | Redeems `POST /v1/invites/redeem`, selects the chapter, lands on welcome (s03) |
 | Join (`/(auth)/join`) | Expired / already-used invite | Shows the 410 sentence; stays on the screen |
@@ -40,14 +41,14 @@ URL Configuration (#765), or the link opens the web app instead.
 
 The bar carries four tabs. Home and Points were removed and Profile left the bar
 in the S2 nav restructure (#957) — see
-[`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md).
+[`spec/ui/mobile/navigation.md`](../../spec/ui/mobile/navigation.md).
 
 | Screen | Control | Expected outcome |
 |---|---|---|
 | Chat (`/(tabs)`) | Open #general thread preview | Opens `chat-thread` route |
 | Events (`/(tabs)/events`) | Open event details | Opens `event-details` route |
-| Tasks (`/(tabs)/tasks`) | Back to more | Opens `more` route |
-| More (`/(tabs)/more`) | Each row | Opens selected route (several are stubs) |
+| Tasks (`/(tabs)/tasks`) | New task (+), shown only with `tasks:manage` | Opens the new-task sheet |
+| More (`/(tabs)/more`) | Each row | Opens selected route. The exception is Host check-in (shown with `events:update`): with no upcoming event it reads "No upcoming event to host right now." and is disabled |
 
 ## 3) Detail routes with action controls
 
@@ -84,7 +85,7 @@ host for the DEGRADED/OFFLINE-from-health path (three consecutive failed
 
 | Screen | Control | Expected outcome |
 |---|---|---|
-| Any tab | Enter airplane mode | The banner appears at the top over ~200ms (an opacity transition, not a slide — see [`spec/ui/resilience/connection-state.md`](../../../spec/ui/resilience/connection-state.md)), below the status bar and never under it, reading "You're offline. Showing cached data." Cached content stays on screen |
+| Any tab | Enter airplane mode | The banner appears at the top over ~200ms (an opacity transition, not a slide — see [`spec/ui/resilience/connection-state.md`](../../spec/ui/resilience/connection-state.md)), below the status bar and never under it, reading "You're offline. Showing cached data." Cached content stays on screen |
 | Any tab | Dismiss the banner | It fades out and returns after 30s if the connection has not recovered; a change of state clears the dismissal on its own. Expect the bar's **space** to remain while dismissed — known drift, recorded in connection-state.md |
 | Any tab | Leave airplane mode | The banner leaves without a tap, and stale queries refetch on their own — `onlineManager` is wired, so no force-quit is needed |
 | Chat thread | Compose and send while offline | The composer stays **enabled** and labels itself "You're offline — messages send when you reconnect."; the message queues and sends on reconnect. A disabled composer here is a regression — the outbox is the point |
@@ -95,7 +96,7 @@ host for the DEGRADED/OFFLINE-from-health path (three consecutive failed
 ## 5) Push notifications — **not verifiable in Expo Go**
 
 Exercise remote push on an installed build that meets the prerequisites in
-[Mobile (EAS) Setup](../ops/deployment/mobile.md#61-initial-setup). Project linkage
+[Mobile (EAS) Setup](../internal/ops/deployment/mobile.md#61-initial-setup). Project linkage
 alone is not evidence that token registration or delivery works; record actual
 device results before checking off remote-push behavior.
 

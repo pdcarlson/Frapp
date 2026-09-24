@@ -10,7 +10,7 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 
 - Routes live under `apps/mobile/app`. `(tabs)/` holds everything a member does inside a chapter. `(auth)/` holds everything before that point — which is **not** the same as "signed out": `chapter-picker` and s02/s03 are reached while authenticated. The group's gate keys on chapter context, not on session alone, so a member with no resolved chapter stays here (`apps/mobile/lib/auth-gate.ts` holds the single decision both layouts read).
 - Routes not in the 4-tab bar are hidden (`href: null` in the tab layout) and reached by navigation only.
-- **Filename contract:** `event-details.tsx` MUST never be renamed. `frapp://event-details` is baked into every exported `.ics` file (`deepLinkUrl` in `apps/mobile/app/(tabs)/event-details.tsx`); renaming the route breaks calendar entries already sitting on members' devices.
+- **Filename contract:** `event-details.tsx` MUST never be renamed. `frapp://event-details` is baked into every exported `.ics` file, so renaming the route breaks calendar entries already sitting on members' devices. The whole contract (route, URL and `id` param) is in [`navigation.md` § Deep links](navigation.md#deep-links).
 - All other renames land together in a single PR so typed routes never half-break — see [`navigation.md`](navigation.md).
 - Bottom-sheet screens (marked *sheet* below) are `@gorhom/bottom-sheet` components hosted by a parent screen, not router routes — see [`patterns.md`](patterns.md). s17 is both: a sheet two screens host, and a route file the frozen tab layout's registration requires (see the status legend).
 
