@@ -426,6 +426,28 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(options.tags.swallowed_as).toBe('failed');
   });
 
+  it('fingerprints what it swallows by code, so two faults are two issues (#2131)', async () => {
+    // Every NonErrorThrowable the normalizer builds here has the same stack,
+    // so the fingerprint is what keeps a missing table and a timeout apart.
+    const service = await build();
+    captureException.mockClear();
+    repo.consumeState.mockRejectedValueOnce(PGRST_TABLE_MISSING);
+    await service.handleCallback({ code: 'c', state: STATE });
+    repo.consumeState.mockRejectedValueOnce({
+      code: '57014',
+      message: 'canceling statement due to statement timeout',
+    });
+    await service.handleCallback({ code: 'c', state: STATE });
+
+    const fingerprints = captureException.mock.calls.map(
+      ([, options]) => (options as { fingerprint?: string[] }).fingerprint,
+    );
+    expect(fingerprints).toEqual([
+      ['{{ default }}', 'NonErrorThrowable:PGRST205'],
+      ['{{ default }}', 'NonErrorThrowable:57014'],
+    ]);
+  });
+
   it('reports the hint but never the offending row values', async () => {
     // `hint` is the half that answers the question, so it has to survive.
     // `details` is where Postgres puts the values that broke the constraint,

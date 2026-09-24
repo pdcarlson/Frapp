@@ -371,11 +371,18 @@ describe('AccountDeletionService', () => {
 
   it('aborts with 502 before any mutation when the storage sweep fails', async () => {
     mockUserRepo.findById.mockResolvedValue(liveUser);
-    mockStorage.listFiles.mockRejectedValue(new Error('storage down'));
+    const storageError = new Error('storage down');
+    mockStorage.listFiles.mockRejectedValue(storageError);
 
-    await expect(service.deleteAccount('user-1')).rejects.toThrow(
-      BadGatewayException,
-    );
+    const thrown = await service
+      .deleteAccount('user-1')
+      .catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(BadGatewayException);
+    // The storage failure rides on `cause` so Sentry can tell one 502 from
+    // another; the client message never carries it (#2131).
+    expect(thrown).toMatchObject({ cause: storageError });
+    expect((thrown as Error).message).not.toContain('storage down');
     expect(mockUserRepo.anonymize).not.toHaveBeenCalled();
     expect(mockAnalytics.forgetUser).not.toHaveBeenCalled();
     expect(mockAuthAdmin.deleteAuthUser).not.toHaveBeenCalled();
@@ -403,11 +410,23 @@ describe('AccountDeletionService', () => {
 
   it('aborts with 502 before any mutation when membership enumeration fails', async () => {
     mockUserRepo.findById.mockResolvedValue(liveUser);
-    mockMemberRepo.findByUser.mockRejectedValue(new Error('db blip'));
+    // What a Supabase repository actually throws: a plain PostgREST body.
+    mockMemberRepo.findByUser.mockRejectedValue({
+      code: 'PGRST301',
+      message: 'db blip',
+      details: 'Key (user_id)=(user-1)',
+    });
 
-    await expect(service.deleteAccount('user-1')).rejects.toThrow(
-      BadGatewayException,
-    );
+    const thrown = await service
+      .deleteAccount('user-1')
+      .catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(BadGatewayException);
+    // Normalized before it becomes the cause, so `details` never reaches Sentry.
+    expect((thrown as Error).cause).toMatchObject({
+      name: 'NonErrorThrowable',
+      message: 'PGRST301: db blip',
+    });
     expect(mockUserRepo.anonymize).not.toHaveBeenCalled();
     expect(mockAuthAdmin.deleteAuthUser).not.toHaveBeenCalled();
   });
@@ -425,11 +444,16 @@ describe('AccountDeletionService', () => {
 
   it('maps an auth-deletion failure to 502 after the database is already anonymized', async () => {
     mockUserRepo.findById.mockResolvedValue(liveUser);
-    mockAuthAdmin.deleteAuthUser.mockRejectedValue(new Error('gotrue down'));
+    const authError = new Error('gotrue down');
+    mockAuthAdmin.deleteAuthUser.mockRejectedValue(authError);
 
-    await expect(service.deleteAccount('user-1')).rejects.toThrow(
-      BadGatewayException,
-    );
+    const thrown = await service
+      .deleteAccount('user-1')
+      .catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(BadGatewayException);
+    expect(thrown).toMatchObject({ cause: authError });
+    expect((thrown as Error).message).not.toContain('gotrue down');
     expect(mockUserRepo.anonymize).toHaveBeenCalled();
     expect(mockAnalytics.forgetUser).toHaveBeenCalled();
   });

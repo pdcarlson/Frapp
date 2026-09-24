@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   MAX_ARCHIVE_CHAPTER_BYTES,
@@ -16,7 +17,10 @@ import {
 } from '#domain/repositories/discord-import.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
-import { DISCORD_BOT_GATEWAY } from '#domain/adapters/discord.interface';
+import {
+  DISCORD_BOT_GATEWAY,
+  DiscordNotConfiguredError,
+} from '#domain/adapters/discord.interface';
 import { DiscordOAuthService } from './discord-oauth.service';
 import type { DiscordImport } from '#domain/entities/discord-import.entity';
 import { isUnsafeStoragePath } from '#domain/utils/storage-path';
@@ -793,6 +797,23 @@ describe('DiscordImportService — discovering a guild', () => {
       CHAPTER,
       expect.objectContaining({ guild_id: GUILD }),
     );
+  });
+
+  it('503s when the bot is not configured, carrying the gateway error as cause', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    const notConfigured = new DiscordNotConfiguredError(
+      'DISCORD_BOT_TOKEN is not set',
+    );
+    bot.discoverChannels.mockRejectedValue(notConfigured);
+
+    const thrown = await svc
+      .discoverBotChannels(IMPORT_ID, CHAPTER)
+      .catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(ServiceUnavailableException);
+    expect((thrown as Error).message).not.toContain('DISCORD_BOT_TOKEN');
+    // Sentry reads the gateway's own error off `cause` (#2131).
+    expect((thrown as Error).cause).toBe(notConfigured);
   });
 
   it('refuses to scan on behalf of an upload import', async () => {

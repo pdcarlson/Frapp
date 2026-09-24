@@ -5,10 +5,12 @@ import {
   HttpStatus,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { ArgumentsHost } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
+import Stripe from 'stripe';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
 import { runWithRequestLogStore } from '../../infrastructure/observability/request-als';
@@ -23,14 +25,17 @@ jest.mock('@sentry/nestjs', () => ({
   getTraceData: jest.fn(() => ({
     'sentry-trace': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-1',
   })),
-  withScope: jest.fn((callback: (scope: unknown) => void) =>
-    callback({
-      setLevel: jest.fn(),
-      setTag: jest.fn(),
-      setUser: jest.fn(),
-    }),
-  ),
+  // Given its scope in `beforeEach`, so a test that overrides it cannot leak
+  // its scope into the next one.
+  withScope: jest.fn(),
 }));
+
+const mockScope = {
+  setLevel: jest.fn(),
+  setTag: jest.fn(),
+  setUser: jest.fn(),
+  setFingerprint: jest.fn(),
+};
 
 jest.mock('../../infrastructure/analytics/posthog-runtime', () => ({
   captureSentryErrorCorrelated: jest.fn(),
@@ -62,6 +67,11 @@ describe('AllExceptionsFilter', () => {
   beforeEach(() => {
     process.env.ANALYTICS_HMAC_SALT = SALT;
     jest.clearAllMocks();
+    jest
+      .mocked(Sentry.withScope)
+      .mockImplementation((callback: (scope: never) => unknown) =>
+        callback(mockScope as never),
+      );
     captured = {
       warn: [],
       error: [],
@@ -237,7 +247,12 @@ describe('AllExceptionsFilter', () => {
     jest
       .mocked(Sentry.withScope)
       .mockImplementation((callback: (scope: never) => unknown) =>
-        callback({ setLevel: jest.fn(), setTag, setUser } as never),
+        callback({
+          setLevel: jest.fn(),
+          setTag,
+          setUser,
+          setFingerprint: jest.fn(),
+        } as never),
       );
 
     new AllExceptionsFilter().catch(
@@ -401,6 +416,62 @@ describe('AllExceptionsFilter', () => {
       Error,
     ];
     expect(reported).toBe(thrown);
+  });
+
+  it("hands Sentry a 503's cause and keeps it out of the response body (#2131)", () => {
+    // The shape every catch-and-rethrow 5xx now has: a generic client message,
+    // with the provider error on `cause` for Sentry's LinkedErrors to follow.
+    // A real SDK error, whose `name` is `Error`: the class lives on `type`.
+    const providerError = new Stripe.errors.StripeInvalidRequestError({
+      message: "No such price: 'price_live_123'",
+      code: 'resource_missing',
+      param: 'line_items[0].price',
+    });
+    const thrown = new ServiceUnavailableException(
+      'Billing service is temporarily unavailable',
+      { cause: providerError },
+    );
+
+    new AllExceptionsFilter().catch(thrown, host());
+
+    expect(captured.status).toBe(503);
+    expect(captured.json).toEqual({
+      statusCode: 503,
+      error: 'SERVICE_UNAVAILABLE',
+      message: 'Billing service is temporarily unavailable',
+      requestId: 'req-abc',
+    });
+    const body = JSON.stringify(captured.json);
+    expect(body).not.toContain('price_live_123');
+    expect(body).not.toContain('StripeInvalidRequestError');
+
+    const [reported] = jest.mocked(Sentry.captureException).mock.calls[0] as [
+      Error,
+    ];
+    expect(reported).toBe(thrown);
+    expect(reported.cause).toBe(providerError);
+    // Types and frames alone can't tell this fault from a timeout at the same
+    // site, so the fingerprint names the cause's class and code.
+    expect(mockScope.setFingerprint).toHaveBeenCalledWith([
+      '{{ default }}',
+      'ServiceUnavailableException',
+      'StripeInvalidRequestError:resource_missing',
+    ]);
+  });
+
+  it('fingerprints a bare PostgREST throw by its code, and an ordinary error not at all (#2131)', () => {
+    new AllExceptionsFilter().catch(
+      { code: 'PGRST205', message: 'Could not find the table', details: null },
+      host(),
+    );
+    expect(mockScope.setFingerprint).toHaveBeenCalledWith([
+      '{{ default }}',
+      'NonErrorThrowable:PGRST205',
+    ]);
+
+    mockScope.setFingerprint.mockClear();
+    new AllExceptionsFilter().catch(new Error('boom'), host());
+    expect(mockScope.setFingerprint).not.toHaveBeenCalled();
   });
 
   it('strips the query string from the 5xx error log (#1260)', () => {

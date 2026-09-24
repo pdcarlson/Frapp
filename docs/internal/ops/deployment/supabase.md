@@ -123,15 +123,18 @@ The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`
 (`token_hash`, #1916). Gmail trained the apex From `invites@frapp.live` on the first
 generic hosted templates, so sending now uses mail subdomains (Resend domains
 `mail.staging.frapp.live` and `mail.frapp.live`, created 2026-09-08, tracking off)
-and staging tests cannot burn production reputation. Do not send From the apex. These
-are the senders [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) sets. Each
-console, and `RESEND_FROM_EMAIL` wherever it is set, still says `Signet` until the owner
-makes that change (the table above has the last read, 2026-09-09):
+so staging tests cannot burn production reputation. Staging invite mail doesn't follow
+that yet: see the last item below. Do not send From the apex. The Auth senders are the
+ones [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) sets, and each console
+says `Signet` until the owner makes that change (the table above has the last read,
+2026-09-09):
 
 - Staging Auth: `Frapp <no-reply@mail.staging.frapp.live>`
 - Prod Auth: `Frapp <no-reply@mail.frapp.live>`
-- API invite default: `Frapp <invites@mail.frapp.live>`, with staging's
-  `RESEND_FROM_EMAIL` set to `Frapp <invites@mail.staging.frapp.live>`
+- API invite default: `Frapp <invites@mail.frapp.live>`. `RESEND_FROM_EMAIL` is unset on
+  staging (its boot log, read 2026-09-24), so staging invites use this production
+  subdomain too. Moving them to `Frapp <invites@mail.staging.frapp.live>` is
+  [#2655](https://github.com/pdcarlson/Frapp/issues/2655).
 
 Leave the existing `frapp.live` Resend domain in place until nothing uses it.
 
@@ -167,12 +170,13 @@ passes: Staging conformance or Production Auth drift for a console not yet retyp
 Migration drift for `20260924190000` if production hasn't deployed by the 07:00 UTC check
 more than 24 hours after 2026-09-24 19:00 UTC:
 
-1. **Staging.** Just before merging, set Infisical `staging` `RESEND_FROM_EMAIL` to
-   `Frapp <invites@mail.staging.frapp.live>`. The API reads it only at boot, so the merge's
-   staging deploy is what picks it up. Once that deploy is live, in `frapp-staging` →
+1. **Staging.** Once the merge's staging deploy is live, in `frapp-staging` →
    Authentication: SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the
    subject above, and the body above pasted whole (it keeps the `token_hash` href); any
    other template subject that says Signet.
+   *2026-09-24: this step first said to set staging's `RESEND_FROM_EMAIL` before merging.
+   Staging never had it set, and the new API default already says Frapp, so the rename
+   needs nothing there ([#2655](https://github.com/pdcarlson/Frapp/issues/2655)).*
 2. **Production.** If `RESEND_FROM_EMAIL` is set in Infisical `prod`, set it to
    `Frapp <invites@mail.frapp.live>` before dispatching Deploy production of the merge
    commit (unset, the new API default is already Frapp). After that deploy, the same three

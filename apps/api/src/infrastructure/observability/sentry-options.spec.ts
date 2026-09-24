@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as Sentry from '@sentry/nestjs';
 import {
   buildSentryOptions,
   SENTRY_HTTP_INTEGRATION_OPTIONS,
@@ -59,6 +60,16 @@ describe('buildSentryOptions — Node tracer ownership', () => {
 
   it('wires the safe-integrations mapper as the production integrations hook', () => {
     expect(options().integrations).toBe(withSafeSentryIntegrations);
+  });
+
+  it("keeps LinkedErrors from the SDK's real default set", () => {
+    // A rethrown 5xx carries the provider error only on `cause`, and this is
+    // the integration that ships it (#2131). `sentry-integration.spec.ts`
+    // proves what it ships; this proves production still installs it.
+    const names = withSafeSentryIntegrations(
+      Sentry.getDefaultIntegrations({}),
+    ).map((integration) => integration.name);
+    expect(names).toContain('LinkedErrors');
   });
 
   it('sets release from RENDER_GIT_COMMIT and omits it when unset', () => {
