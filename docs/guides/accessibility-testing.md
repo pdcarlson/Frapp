@@ -2,7 +2,7 @@
 
 > Applies to: `apps/web`, `apps/landing`, `apps/mobile`
 
-This protocol defines the minimum accessibility verification required before UI changes are considered releasable. The baseline it verifies is owned by [`spec/ui/design-system/README.md` § 6](../../spec/ui/design-system/README.md#6-accessibility-baseline-release-gate).
+This protocol defines the minimum accessibility verification required before UI changes are considered releasable. The baseline it verifies is owned by the spec (§ 2 below names where).
 
 ## 1) When this protocol is required
 
@@ -16,13 +16,16 @@ Run this protocol for any PR that changes:
 
 ## 2) Success criteria (baseline)
 
-A change passes only if all are true:
+The requirements live in the spec, and this list doesn't restate them. A change passes only if every one that applies to the surfaces it touches holds:
 
-1. Focus is always visible and never trapped unintentionally.
-2. Keyboard and screen-reader users can complete the primary flow.
-3. Text and non-text UI contrast meet the design-system minimums (§ 6, linked above).
-4. Icon-only controls expose a clear accessible label (e.g., `aria-label`) and a visual tooltip (e.g., `title`) for sighted users.
-5. Async states are understandable without color-only signals.
+- [`spec/ui/design-system/README.md` § 6](../../spec/ui/design-system/README.md#6-accessibility-baseline-release-gate), the release gate: focus, labels, contrast, dialogs, skip links.
+- [§ 4 of the same file](../../spec/ui/design-system/README.md#4-state-completeness-standard): every async state is present.
+- [`iconography.md` § 4](../../spec/ui/design-system/iconography.md#4-accessibility), and [§ 3](../../spec/ui/design-system/iconography.md#3-color-usage)'s rule that status is never encoded in color alone.
+
+On top of those, this protocol checks two things:
+
+1. Keyboard and screen-reader users can complete the primary flow.
+2. Icon-only controls show a visual tooltip (e.g., `title`) for sighted users. No spec requires this yet; #2650 decides whether one should.
 
 ## 3) Automated checks (required)
 
@@ -45,7 +48,7 @@ Use only relevant commands for changed areas.
 
 - [ ] Tab/Shift+Tab traversal follows visual order.
 - [ ] Focus ring remains visible on all interactive controls.
-- [ ] Dialog/sheet focus trap works; closing returns focus to trigger.
+- [ ] Dialogs and sheets meet every § 6 dialog rule (focus on open, trap, return on close, `aria-modal`), and the skip link reaches the main landmark. These are the § 6 items most often missed.
 - [ ] Dropdowns/menus can be fully operated without a mouse.
 - [ ] Error and offline states include non-color explanatory copy.
 - [ ] Core responsive breakpoints validated (desktop, tablet, narrow/mobile width).
@@ -79,4 +82,4 @@ A UI PR isn't ready to merge until:
 - no unresolved accessibility regressions remain
 
 No CI check enforces this. The gate is the accessibility checkbox in
-[`.github/pull_request_template.md`](../../.github/pull_request_template.md), which links here, and review.
+[`.github/pull_request_template.md`](../../.github/pull_request_template.md), which names this file, and review.
