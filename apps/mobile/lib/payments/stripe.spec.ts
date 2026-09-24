@@ -105,7 +105,7 @@ describe("stripeUnavailableReason", () => {
   it("names the build, not the configuration, in Expo Go", () => {
     constantsState.executionEnvironment = "storeClient";
     setStripeLoaderForTests(() => fakeStripe());
-    expect(stripeUnavailableReason()).toContain("installed Signet build");
+    expect(stripeUnavailableReason()).toContain("installed Frapp build");
   });
 
   it("names the configuration when only the key is missing", () => {
@@ -121,7 +121,7 @@ describe("stripeUnavailableReason", () => {
 });
 
 describe("presentPaymentSheet", () => {
-  const input = { clientSecret: "pi_1_secret", merchantDisplayName: "Signet" };
+  const input = { clientSecret: "pi_1_secret", merchantDisplayName: "Frapp" };
 
   it("initialises with the publishable key and the minted intent", async () => {
     const stripe = fakeStripe();
@@ -134,7 +134,7 @@ describe("presentPaymentSheet", () => {
       publishableKey: "pk_test_123",
     });
     expect(stripe.initPaymentSheet).toHaveBeenCalledWith({
-      merchantDisplayName: "Signet",
+      merchantDisplayName: "Frapp",
       paymentIntentClientSecret: "pi_1_secret",
     });
   });

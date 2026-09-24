@@ -100,7 +100,7 @@ describe("SessionCard", () => {
     const rendered = texts(render(<SessionCard {...baseProps} isPaused />));
     expect(
       rendered.some((line) =>
-        line.includes("Paused while Signet was in the background"),
+        line.includes("Paused while Frapp was in the background"),
       ),
     ).toBe(true);
   });
@@ -114,7 +114,7 @@ describe("SessionCard", () => {
     );
     expect(
       rendered.some((line) =>
-        line.includes("Signet hasn't been able to confirm your location"),
+        line.includes("Frapp hasn't been able to confirm your location"),
       ),
     ).toBe(true);
     expect(rendered.some((line) => line.includes("without points"))).toBe(true);

@@ -4,7 +4,7 @@ import { Alert } from "react-native";
  * The one account-deletion prompt, shared by every surface that offers it.
  *
  * Apple 5.1.1(v) requires in-app deletion wherever an account can be created,
- * and Signet creates accounts implicitly on first sign-in — so the control has
+ * and Frapp creates accounts implicitly on first sign-in — so the control has
  * to exist on more than one screen (Settings for a member with a chapter, the
  * join screen for the zero-membership state that cannot reach Settings at all,
  * #2295, and the Terms prompt for a member the gate holds there, #2302).

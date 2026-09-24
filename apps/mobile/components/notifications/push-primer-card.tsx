@@ -28,7 +28,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * (`spec/ui/design-system/README.md` §5 rule 4, the ✦ Ask pill's ruling). So
  * the card takes no reason: while it is on screen, "Turn on" works.
  *
- * Signet gold throughout, not the chapter accent: this is Signet asking for a
+ * Signet gold throughout, not the chapter accent: this is Frapp asking for a
  * device permission on its own behalf, not chapter chrome.
  */
 
