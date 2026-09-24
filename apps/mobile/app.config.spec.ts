@@ -107,8 +107,8 @@ const PUBLISHABLE_KEY_FIXTURE = "sb_publishable_not-a-real-key"; // gitleaks:all
 const SECRET_KEY_FIXTURE = "sb_secret_not-a-real-key"; // gitleaks:allow
 const USER_TOKEN_JWT_FIXTURE =
   "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCIsInN1YiI6IngifQ.not-a-real-signature"; // gitleaks:allow
-// Values from the wrong field: neither is a key, and neither has a shape the
-// secret-key denylist could refuse.
+// Values from the wrong field, neither of them a key. The JWT secret has no
+// shape the secret-key denylist could refuse; a personal access token does.
 const JWT_SECRET_FIXTURE = "not-a-real-jwt-secret-0123456789abcdef"; // gitleaks:allow
 const ACCESS_TOKEN_FIXTURE = "sbp_not-a-real-token"; // gitleaks:allow
 const SERVICE_ROLE_JWT_FIXTURE =
@@ -708,6 +708,8 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     // found wherever it sits: trim() leaves quotes and a zero-width space.
     ["a secret key in quotes", `"${SECRET_KEY_FIXTURE}"`],
     ["a secret key behind a zero-width space", `\u200b${SECRET_KEY_FIXTURE}`],
+    ["a personal access token", ACCESS_TOKEN_FIXTURE],
+    ["a personal access token in quotes", `"${ACCESS_TOKEN_FIXTURE}"`],
   ])("refuses %s on any profile, or none", (_label, supabaseAnonKey) => {
     const {
       applyMobileConfig,
@@ -749,6 +751,8 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
       // Three parts, but the middle is `[]`: JWT claims are an object, so this
       // is a placeholder, not a credential to tell anyone to rotate.
       "x.W10.y",
+      // The prefixes only count where a token starts, never inside a key.
+      "sb_publishable_xxsbp_yysb_secret_zz",
       undefined,
     ]) {
       expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).not.toThrow();
@@ -762,7 +766,6 @@ describe("assertEasSupabaseClientKey (#2526)", () => {
   // deny, so an EAS build allows only the two client keys.
   it.each([
     ["the legacy JWT secret", JWT_SECRET_FIXTURE],
-    ["an access token", ACCESS_TOKEN_FIXTURE],
     ["an unresolved reference", "${SUPABASE_ANON_KEY}"],
     // Expo inlines the value verbatim and lib/supabase.ts doesn't trim it.
     ["a publishable key with a trailing newline", `${PUBLISHABLE_KEY_FIXTURE}\n`],
