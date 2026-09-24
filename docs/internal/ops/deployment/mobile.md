@@ -29,7 +29,9 @@ eas project:info
 The committed [`apps/mobile/app.json`](../../../../apps/mobile/app.json) links
 the app to EAS through `extra.eas.projectId` and `owner: pdcarlson`. Keep these
 real project identifiers committed; do not replace them with placeholders or
-run `eas init` to create a new project for routine setup.
+run `eas init` to create a new project, ever: the project is permanent from the
+first store build
+([`spec/environments/README.md` § Mobile (EAS)](../../../../spec/environments/README.md#mobile-eas)).
 
 This linkage satisfies the project-id check in `isPushAvailable()`; an installed
 build must also load the native notifications module. It does not prove push

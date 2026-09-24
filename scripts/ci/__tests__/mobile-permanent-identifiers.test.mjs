@@ -19,9 +19,12 @@
 // WHAT IT CHECKS.
 // - `apps/mobile/app.json` carries each name above, and `updates.url` points
 //   at the pinned EAS project.
-// - `apps/mobile/app.config.js`, called the way Expo calls it (its default
-//   export with `{ config }`, reading `process.env`), leaves every one of them,
-//   and `expo.name`, exactly as app.json has them. It runs once with no EAS
+// - No config file Expo prefers over those two (an `app.config.ts`, an
+//   `app.config.json`, …) exists, so the files checked are the files built.
+// - `apps/mobile/app.config.js`, evaluated the way a build evaluates it
+//   (required afresh inside that build's `process.env`, then its default
+//   export called with `{ config }`), leaves every one of them, and
+//   `expo.name`, exactly as app.json has them. It runs once with no EAS
 //   profile (`expo start`, `eas update`), then for every `eas.json` build
 //   profile on each platform, with that profile's `env` block (and any profile
 //   it `extends`) and the `EAS_BUILD*` values easBuildEnvs lists. The lock
@@ -33,10 +36,11 @@
 //   `frapp://event-details?id=…`, and the screen still declares the `id`
 //   param that URL carries.
 // - Every `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_APP_URL` in `eas.json`, on
-//   every profile, is an https frapp.live origin (development may use a
-//   loopback http origin).
+//   every profile as it resolves through `extends`, is an https frapp.live
+//   origin (a development-client build may use a loopback http origin).
 // - No hosting-platform hostname (Render, Vercel, Cloud Run: ADR-24's current
-//   and planned hosts) in the non-spec sources of apps/mobile and of every
+//   and planned hosts, a closed list that grows when ADR-24 adopts a host) in
+//   the non-spec sources of apps/mobile and of every
 //   workspace package it bundles, comments included. Git lists the files
 //   (tracked, or untracked and not ignored), so there is no skip list to
 //   narrow, and the function that reads them is pinned by the hash of its
@@ -242,12 +246,16 @@ function isOwnHttpsOrigin(url) {
   return url.protocol === "https:" && (url.hostname === OWN_DOMAIN || url.hostname.endsWith(`.${OWN_DOMAIN}`));
 }
 
-/** Every own-service URL in every eas.json profile is ours: https on frapp.live, or loopback on development. */
+/**
+ * Every own-service URL in every eas.json profile, as that profile resolves
+ * through `extends`, is ours: https on frapp.live, or loopback on a
+ * development-client build.
+ */
 export function easOwnServiceUrlProblems(eas) {
   const problems = [];
-  for (const [profile, config] of Object.entries(eas?.build ?? {})) {
-    const env = config?.env;
-    if (env == null || typeof env !== "object") continue;
+  for (const profile of Object.keys(eas?.build ?? {})) {
+    const resolved = resolveProfile(eas, profile);
+    const env = resolved.env;
     for (const key of OWN_SERVICE_URL_KEYS) {
       if (!(key in env)) continue;
       const value = env[key];
@@ -259,7 +267,7 @@ export function easOwnServiceUrlProblems(eas) {
         continue;
       }
       if (isOwnHttpsOrigin(url)) continue;
-      if (profile === "development" && url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)) {
+      if (resolved.developmentClient === true && url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)) {
         continue;
       }
       problems.push(`build.${profile}.env.${key} must be an https ${OWN_DOMAIN} origin, not ${value}`);
@@ -293,13 +301,18 @@ export function bundledPackageDirs(mobilePackageJson, workspacePackages) {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** A profile's `env`, merged over the `env` of every profile it `extends`, as eas.json resolves it. */
-export function profileEnv(eas, profile, seen = new Set()) {
+/** A profile merged over every profile it `extends`, as eas.json resolves it; `env` merges key by key. */
+export function resolveProfile(eas, profile, seen = new Set()) {
   const config = eas?.build?.[profile];
-  if (config == null || seen.has(profile)) return {};
+  if (config == null || typeof config !== "object" || seen.has(profile)) return { env: {} };
   seen.add(profile);
-  const inherited = typeof config.extends === "string" ? profileEnv(eas, config.extends, seen) : {};
-  return { ...inherited, ...(config.env ?? {}) };
+  const inherited = typeof config.extends === "string" ? resolveProfile(eas, config.extends, seen) : { env: {} };
+  const own = config.env != null && typeof config.env === "object" ? config.env : {};
+  return { ...inherited, ...config, env: { ...inherited.env, ...own } };
+}
+
+export function profileEnv(eas, profile) {
+  return resolveProfile(eas, profile).env;
 }
 
 /**
@@ -439,6 +452,44 @@ export function resolveExpoConfig(configFunction, staticExpo, env) {
   return withBuildEnv(env, () => configFunction({ config: structuredClone(staticExpo) }));
 }
 
+/**
+ * Evaluates a config file the way a build does: afresh, in that build's
+ * environment, so a `process.env` read at module top level sees the build's
+ * values. Every cached module beside it (outside node_modules) is dropped too.
+ */
+export function resolveConfigFile(path, staticExpo, env) {
+  return withBuildEnv(env, () => {
+    const resolved = requireCjs.resolve(path);
+    const root = dirname(resolved);
+    for (const key of Object.keys(requireCjs.cache)) {
+      if (key.startsWith(root) && !key.includes("node_modules")) delete requireCjs.cache[key];
+    }
+    return requireCjs(resolved)({ config: structuredClone(staticExpo) });
+  });
+}
+
+/**
+ * The config files Expo prefers over the two this lock reads, in its own order
+ * (@expo/config's getConfigFilePaths): `app.config` with .ts, .mts, .cts, .mjs
+ * or .cjs before .js, and `app.config.json` before `app.json`. One of them
+ * existing means a build reads a file this lock never checks.
+ */
+export const SHADOWING_CONFIG_FILES = [
+  "app.config.ts",
+  "app.config.mts",
+  "app.config.cts",
+  "app.config.mjs",
+  "app.config.cjs",
+  "app.config.json",
+];
+
+export function shadowingConfigProblems(exists = (name) => existsSync(join(REPO_ROOT, MOBILE_DIR, name))) {
+  return SHADOWING_CONFIG_FILES.filter((name) => exists(name)).map(
+    (name) =>
+      `${MOBILE_DIR}/${name} exists, so Expo reads it instead of ${name.endsWith(".json") ? APP_JSON : APP_CONFIG}; point this lock at it`,
+  );
+}
+
 function loadAppConfig() {
   const resolved = requireCjs.resolve(join(REPO_ROOT, APP_CONFIG));
   delete requireCjs.cache[resolved];
@@ -449,7 +500,7 @@ test("app.json carries every permanent identifier", () => {
   assert.deepEqual(identityProblems(liveAppJson().expo), []);
 });
 
-test("app.config.js, as Expo calls it, leaves every permanent identifier alone on every build", () => {
+test("app.config.js, as a build evaluates it, leaves every permanent identifier alone on every build", () => {
   const appConfig = loadAppConfig();
   const staticExpo = liveAppJson().expo;
   // An Android build refuses on production unless Firebase's client config exists on disk.
@@ -469,12 +520,16 @@ test("app.config.js, as Expo calls it, leaves every permanent identifier alone o
     const builds = easBuildEnvs(liveEas(), dashboard);
     assert.ok(builds.length >= 7, `expected no-profile plus 3 profiles × 2 platforms, got ${builds.length}`);
     for (const { kind, env } of builds) {
-      const resolved = resolveExpoConfig(appConfig, staticExpo, env);
+      const resolved = resolveConfigFile(join(REPO_ROOT, APP_CONFIG), staticExpo, env);
       assert.deepEqual(dynamicLayerProblems(staticExpo, resolved), [], kind);
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+});
+
+test("no config file Expo prefers shadows app.json or app.config.js", () => {
+  assert.deepEqual(shadowingConfigProblems(), []);
 });
 
 test("the calendar export still writes the event-details deep link the screen reads", () => {
@@ -685,6 +740,49 @@ test("a profile that extends another is simulated with the env it inherits", () 
   assert.ok(problems.some((problem) => problem.includes("changes expo.slug ")), problems.join("; ") || "no problems");
 });
 
+test("a config file that reads process.env at module top level is evaluated in each build's environment", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "permanent-identifiers-config-"));
+  const path = join(scratch, "app.config.js");
+  writeFileSync(
+    path,
+    [
+      'const IS_PROD = process.env.EAS_BUILD_PROFILE === "production";',
+      'module.exports = ({ config }) => (IS_PROD ? { ...config, slug: "signet" } : config);',
+      "",
+    ].join("\n"),
+  );
+  try {
+    const staticExpo = liveAppJson().expo;
+    const builds = easBuildEnvs(liveEas());
+    const envOf = (kind) => builds.find((build) => build.kind === kind).env;
+    assert.deepEqual(
+      dynamicLayerProblems(staticExpo, resolveConfigFile(path, staticExpo, envOf("preview ios"))),
+      [],
+    );
+    const problems = dynamicLayerProblems(staticExpo, resolveConfigFile(path, staticExpo, envOf("production ios")));
+    assert.ok(problems.some((problem) => problem.includes("changes expo.slug ")), problems.join("; ") || "no problems");
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("a config file Expo prefers is reported, in Expo's order", () => {
+  const present = new Set(["app.config.ts", "app.config.json"]);
+  assert.deepEqual(shadowingConfigProblems((name) => present.has(name)), [
+    "apps/mobile/app.config.ts exists, so Expo reads it instead of apps/mobile/app.config.js; point this lock at it",
+    "apps/mobile/app.config.json exists, so Expo reads it instead of apps/mobile/app.json; point this lock at it",
+  ]);
+});
+
+test("an eas.json profile that inherits a loopback URL fails unless it builds a development client", () => {
+  const eas = liveEas();
+  eas.build.internal = { extends: "development", developmentClient: false, distribution: "internal" };
+  eas.build["dev-sim"] = { extends: "development" };
+  assert.deepEqual(easOwnServiceUrlProblems(eas), [
+    "build.internal.env.EXPO_PUBLIC_API_URL must be an https frapp.live origin, not http://localhost:3001",
+  ]);
+});
+
 test("resolveExpoConfig clears ambient build variables and restores process.env", () => {
   const before = { EAS_BUILD: process.env.EAS_BUILD, EXPO_PUBLIC_X: process.env.EXPO_PUBLIC_X };
   process.env.EAS_BUILD = "true";
@@ -782,7 +880,7 @@ test("pointing an eas.json profile at a platform or unowned host fails", () => {
   ]);
 });
 
-test("a look-alike or plain-http frapp.live host fails; loopback passes only on development", () => {
+test("a look-alike or plain-http frapp.live host fails; loopback passes only on a development client", () => {
   const eas = liveEas();
   eas.build.preview.env.EXPO_PUBLIC_API_URL = "https://api.frapp.live.example.com";
   eas.build.production.env.EXPO_PUBLIC_APP_URL = "http://app.frapp.live";
