@@ -204,7 +204,8 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     writeFileSync(flow, "name: X\njobs:\n  j:\n    steps:\n      - env: { GITHUB_SHA: o }\n        run: echo\n");
     assert.throws(() => workflowSteps(flow), /`env:` is a flow mapping/);
     // The env's children sit deeper than the step's keys wherever the dash
-    // is, so a sequence at indent 4 reads the same.
+    // is, so a sequence at indent 4 reads a FIRST-key env the same. (Later
+    // keys in that style are the hardcoded-indent gap, #2629.)
     const shallow = join(dir, "first-key-env-shallow.yml");
     writeFileSync(shallow, "name: X\njobs:\n  j:\n    steps:\n    - env:\n        GITHUB_SHA: o\n      run: echo\n");
     assert.equal(workflowSteps(shallow)[0].env.get("GITHUB_SHA"), "o");
@@ -231,6 +232,28 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     const [only] = workflowSteps(services);
     assert.deepEqual([...only.env], []);
     assert.doesNotMatch(only.body, /services:/);
+  });
+
+  it("reads every step entry form, so none ends the sequence or hides the steps after it", () => {
+    // A bare `-` with its keys below, extra spaces after the dash, and a dash
+    // with trailing whitespace are all step entries. Misread as a job key, one
+    // would drop every later step, and with it C's GITHUB_SHA override.
+    const forms = join(dir, "entry-forms.yml");
+    writeFileSync(
+      forms,
+      "name: X\njobs:\n  j:\n    steps:\n" +
+        "      - name: A\n        run: a\n" +
+        "      -\n        name: B\n        run: b\n" +
+        "      -   name: B2\n        run: b2\n" +
+        "      - \n        name: B3\n        run: b3\n" +
+        "      - name: C\n        env:\n          GITHUB_SHA: o\n        run: c\n",
+    );
+    const steps = workflowSteps(forms);
+    assert.deepEqual(
+      steps.map((s) => s.name),
+      ["A", "B", "B2", "B3", "C"],
+    );
+    assert.equal(steps.at(-1).env.get("GITHUB_SHA"), "o");
   });
 
   it("reads an empty flow mapping as an empty mapping: {} can hide nothing", () => {

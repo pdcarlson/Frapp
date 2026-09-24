@@ -201,6 +201,17 @@ function isBlockScalarHeader(value) {
 }
 
 /**
+ * Is this line a sequence entry? A `-` followed by whitespace or nothing: the
+ * step's keys may follow on the same line (`- name: A`, `-   name: A`) or on
+ * the lines below a bare `-`. Anything narrower misses an entry, and since a
+ * non-entry line on the sequence's indent ends the sequence, a missed entry
+ * would hide every step after it.
+ */
+function isSequenceEntry(line) {
+  return /^\s*-(\s|$)/.test(line);
+}
+
+/**
  * The line indices of a job's steps, found via its `steps:` key, and where
  * the steps sequence ends: `{ starts, end }`.
  *
@@ -217,7 +228,7 @@ function stepIndices(lines, jobStart, jobEnd) {
   }
   if (stepsKey === -1) return { starts: [], end: jobEnd };
 
-  const first = lines.slice(stepsKey + 1, jobEnd).find((line) => /^\s*- \S/.test(line));
+  const first = lines.slice(stepsKey + 1, jobEnd).find(isSequenceEntry);
   if (!first) return { starts: [], end: jobEnd };
   const seqIndent = indentOf(first);
 
@@ -229,11 +240,11 @@ function stepIndices(lines, jobStart, jobEnd) {
     const indent = indentOf(lines[i]);
     // Below the sequence, or a non-`- ` line on its own indent: the latter is
     // a job key when the sequence sits at the job-key indent (`    - name:`).
-    if (indent < seqIndent || (indent === seqIndent && !/^\s*- \S/.test(lines[i]))) {
+    if (indent < seqIndent || (indent === seqIndent && !isSequenceEntry(lines[i]))) {
       end = i;
       break;
     }
-    if (indent === seqIndent && /^\s*- \S/.test(lines[i])) starts.push(i);
+    if (indent === seqIndent && isSequenceEntry(lines[i])) starts.push(i);
   }
   return { starts, end };
 }
@@ -366,10 +377,12 @@ export function workflowSteps(workflowPath) {
     //     which would let three fakes satisfy the `carriers().length >= 5` floor
     //     that exists to notice this reader breaking.
     //
-    // Reading the sequence indent rather than hardcoding 6 also accepts the
-    // `    steps:` / `    - name:` style, which is valid YAML and which the old
-    // form parsed as zero steps — dropping a whole workflow out of the contract
-    // check while the floor stayed green.
+    // Reading the sequence indent rather than hardcoding 6 also FINDS the
+    // steps of the `    steps:` / `    - name:` style, which is valid YAML and
+    // which the old form parsed as zero steps, dropping a whole workflow out
+    // of the contract check while the floor stayed green. Reading those steps'
+    // later keys (`name:`, `if:`, `env:` after the first) still assumes the
+    // 6/8 layout: #2629.
     const { starts: stepStarts, end: stepsEnd } = stepIndices(lines, jobStart, jobEnd);
 
     for (let s = 0; s < stepStarts.length; s += 1) {
