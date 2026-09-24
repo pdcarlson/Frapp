@@ -44,7 +44,7 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |
 | Security implementation notes / fixes log | `docs/internal/security/` |
 | Accessibility / PR-review process | `docs/internal/quality/` |
-| Mobile testing / smoke | `docs/internal/mobile/` |
+| Mobile testing / smoke | `docs/mobile/` |
 | Per-service performance notes | `docs/internal/services/` |
 | Per-optimization performance notes (one file per optimization) | `docs/performance/` |
 | Data-layer hook conventions (query keys, chapter scope, optimistic mutations) | `docs/hooks/` |
