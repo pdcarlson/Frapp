@@ -849,9 +849,9 @@ jobs:
       issues: read
     secrets:
       # The called job names the `automation` environment, and GitHub hands it
-      # that environment's RELEASE_GITHUB_TOKEN in preference to this one. Since
-      # #2583 there is no repository copy, so this passes an empty value; it
-      # goes once a production release has shown the environment copy arrives.
+      # that environment's RELEASE_GITHUB_TOKEN in preference to this one, so
+      # this pass-through is inert (AGENT_INFRA.md § No repository secrets).
+      # Removing it waits on a release proving the environment copy (#2630).
       # Empty falls back to GITHUB_TOKEN inside release.yml. A user PAT is what
       # actually creates refs/tags when the live SHA's workflow tree differs from
       # main (run 34254679932).
