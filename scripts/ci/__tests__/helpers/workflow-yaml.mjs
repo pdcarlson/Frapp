@@ -35,7 +35,7 @@
 // should not be used as one. A non-empty flow mapping (`{ a: b }`) as a key's
 // value, and a non-empty flow `env:`, throw instead of being guessed at (see
 // `keysAt`), because a guard over a misread value passes; `{}` reads as empty.
-// Known gaps: #2629.
+// Known gap: anchors, tags and aliases in a value are returned as text (#2639).
 
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -250,22 +250,37 @@ function stepIndices(lines, jobStart, jobEnd) {
 }
 
 /**
+ * The column a step's keys sit at: the column of the first key after its dash
+ * (`      - name:` → 8, `      -   name:` → 10, `    - name:` → 6), or, after a
+ * bare `-`, the indent of the line below. Every per-step reader works from
+ * this rather than a fixed column, which misread any layout but the 6/8 one
+ * (#2629): a gated step read as ungated, an env override as no env.
+ */
+function stepKeyIndent(lines, stepStart, stepEnd) {
+  const onDashLine = /^(\s*-\s+)\S/.exec(lines[stepStart]);
+  if (onDashLine) return onDashLine[1].length;
+  return stepStart + 1 < stepEnd ? indentOf(lines[stepStart + 1]) : indentOf(lines[stepStart]) + 2;
+}
+
+/**
  * A step's `name:`, wherever it sits in the step.
  *
  * `- name: X` is the common form, but `name:` may follow `- uses:`/`- run:`,
  * and a step may have none — in which case it is identified by its first key so
  * a failure message still points somewhere real.
  */
-function stepName(lines, stepStart, stepEnd) {
+function stepName(lines, stepStart, stepEnd, keyIndent) {
   const first = lines[stepStart].trim().replace(/^-\s*/, "");
   const nameKey = new RegExp(String.raw`^${named("name")}\s*:\s*`);
   if (nameKey.test(first)) return scalarValue(first.replace(nameKey, ""));
   for (let i = stepStart + 1; i < stepEnd; i += 1) {
-    if (indentOf(lines[i]) === 8 && nameKey.test(lines[i].trim())) {
+    if (indentOf(lines[i]) === keyIndent && nameKey.test(lines[i].trim())) {
       return scalarValue(lines[i].trim().replace(nameKey, ""));
     }
   }
-  return `<unnamed: ${first.split(":")[0]}>`;
+  // Named by its first key, which sits on the line below a bare `-`.
+  const firstKey = first !== "" ? first : (lines[stepStart + 1] ?? "").trim();
+  return `<unnamed: ${firstKey.split(":")[0]}>`;
 }
 
 /**
@@ -277,12 +292,12 @@ function stepName(lines, stepStart, stepEnd) {
  * `doesNotMatch` assertion: a step re-gated on `dry_run_only` in block form
  * would read as ungated and the guard would stay green.
  */
-function stepIf(lines, stepStart, stepEnd) {
+function stepIf(lines, stepStart, stepEnd, keyIndent) {
   for (let i = stepStart; i < stepEnd; i += 1) {
     const atStepKeyIndent =
       i === stepStart
-        ? new RegExp(String.raw`^\s{6}- ${named("if")}\s*:\s*`).test(lines[i])
-        : indentOf(lines[i]) === 8 && new RegExp(String.raw`^\s*${named("if")}\s*:\s*`).test(lines[i]);
+        ? new RegExp(String.raw`^\s*-\s+${named("if")}\s*:\s*`).test(lines[i])
+        : indentOf(lines[i]) === keyIndent && new RegExp(String.raw`^\s*${named("if")}\s*:\s*`).test(lines[i]);
     if (!atStepKeyIndent) continue;
 
     const inline = lines[i].replace(new RegExp(String.raw`^\s*-?\s*${named("if")}\s*:\s*`), "").trim();
@@ -290,12 +305,12 @@ function stepIf(lines, stepStart, stepEnd) {
 
     // Block scalar: the condition is the deeper-indented lines beneath it.
     //
-    // For the FIRST-key form (`- if: >-`) the dash sits at the step indent but
-    // the step's sibling keys sit two deeper, so using the dash's own indent as
-    // the base never breaks and folds `name:`, `env:` and `run:` into the
-    // condition — which makes a correct REHEARSED step fail and lets a swallowed
-    // line satisfy a SHIPPING match.
-    const base = i === stepStart ? indentOf(lines[i]) + 2 : indentOf(lines[i]);
+    // The base is the step's key indent, not the line's own. For the
+    // FIRST-key form (`- if: >-`) the dash sits left of the step's sibling
+    // keys, so using the dash's indent as the base never breaks and folds
+    // `name:`, `env:` and `run:` into the condition — which makes a correct
+    // REHEARSED step fail and lets a swallowed line satisfy a SHIPPING match.
+    const base = keyIndent;
     const parts = [];
     for (let j = i + 1; j < stepEnd; j += 1) {
       if (indentOf(lines[j]) <= base) break;
@@ -311,15 +326,15 @@ function stepIf(lines, stepStart, stepEnd) {
  * step's first key (`- env:`), which a scan from the line after the dash never
  * sees and which would otherwise read as no env at all.
  */
-function stepEnvAt(lines, stepStart, stepEnd) {
+function stepEnvAt(lines, stepStart, stepEnd, keyIndent) {
   const firstKey = new RegExp(String.raw`^\s*-\s+${named("env")}\s*:(.*)$`).exec(lines[stepStart]);
   if (firstKey) {
     if (isEmptyFlowMapping(firstKey[1])) return new Map();
     if (isFlowMapping(firstKey[1])) throw refuseFlowMapping("env", firstKey[1]);
-    // The step's other keys sit two past its dash; the env's children deeper.
-    if (opensMapping(firstKey[1])) return envMapAt(lines, stepStart, indentOf(lines[stepStart]) + 2);
+    // The step's other keys sit at its key indent; the env's children deeper.
+    if (opensMapping(firstKey[1])) return envMapAt(lines, stepStart, keyIndent);
   }
-  const index = findEnvHeader(lines, stepStart + 1, stepEnd, 8);
+  const index = findEnvHeader(lines, stepStart + 1, stepEnd, keyIndent);
   return index === -1 ? new Map() : envMapAt(lines, index);
 }
 
@@ -380,9 +395,8 @@ export function workflowSteps(workflowPath) {
     // Reading the sequence indent rather than hardcoding 6 also FINDS the
     // steps of the `    steps:` / `    - name:` style, which is valid YAML and
     // which the old form parsed as zero steps, dropping a whole workflow out
-    // of the contract check while the floor stayed green. Reading those steps'
-    // later keys (`name:`, `if:`, `env:` after the first) still assumes the
-    // 6/8 layout: #2629.
+    // of the contract check while the floor stayed green. Each step's keys are
+    // then read at that step's own key indent (`stepKeyIndent`).
     const { starts: stepStarts, end: stepsEnd } = stepIndices(lines, jobStart, jobEnd);
 
     for (let s = 0; s < stepStarts.length; s += 1) {
@@ -391,13 +405,14 @@ export function workflowSteps(workflowPath) {
       // step must absorb neither the next job nor a job key after `steps:`.
       const stepEnd = s + 1 < stepStarts.length ? stepStarts[s + 1] : stepsEnd;
 
-      const stepEnv = stepEnvAt(lines, stepStart, stepEnd);
+      const keyIndent = stepKeyIndent(lines, stepStart, stepEnd);
+      const stepEnv = stepEnvAt(lines, stepStart, stepEnd, keyIndent);
 
       steps.push({
         workflowFile,
         jobId,
-        name: stepName(lines, stepStart, stepEnd),
-        if: stepIf(lines, stepStart, stepEnd),
+        name: stepName(lines, stepStart, stepEnd, keyIndent),
+        if: stepIf(lines, stepStart, stepEnd, keyIndent),
         env: new Map([...workflowEnv, ...jobEnv, ...stepEnv]),
         // The step's OWN env, unmerged. Some values are only legal here: a
         // `steps.*` reference is not available in a job-level `env:`, so a

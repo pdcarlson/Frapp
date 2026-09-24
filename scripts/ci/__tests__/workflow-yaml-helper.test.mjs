@@ -204,8 +204,7 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     writeFileSync(flow, "name: X\njobs:\n  j:\n    steps:\n      - env: { GITHUB_SHA: o }\n        run: echo\n");
     assert.throws(() => workflowSteps(flow), /`env:` is a flow mapping/);
     // The env's children sit deeper than the step's keys wherever the dash
-    // is, so a sequence at indent 4 reads a FIRST-key env the same. (Later
-    // keys in that style are the hardcoded-indent gap, #2629.)
+    // is, so a sequence at indent 4 reads a first-key env the same.
     const shallow = join(dir, "first-key-env-shallow.yml");
     writeFileSync(shallow, "name: X\njobs:\n  j:\n    steps:\n    - env:\n        GITHUB_SHA: o\n      run: echo\n");
     assert.equal(workflowSteps(shallow)[0].env.get("GITHUB_SHA"), "o");
@@ -244,7 +243,7 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
       "name: X\njobs:\n  j:\n    steps:\n" +
         "      - name: A\n        run: a\n" +
         "      -\n        name: B\n        run: b\n" +
-        "      -   name: B2\n        run: b2\n" +
+        "      -   name: B2\n          if: always()\n          run: b2\n" +
         "      - \n        name: B3\n        run: b3\n" +
         "      - name: C\n        env:\n          GITHUB_SHA: o\n        run: c\n",
     );
@@ -254,6 +253,38 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
       ["A", "B", "B2", "B3", "C"],
     );
     assert.equal(steps.at(-1).env.get("GITHUB_SHA"), "o");
+    // B2's keys sit where its first key does, two columns past a normal step's.
+    assert.equal(steps[2].if, "always()");
+  });
+
+  it("reads each step's keys at that step's own key indent, whatever the layout", () => {
+    // A step's keys line up with the first key after its dash (or, after a
+    // bare `-`, with the line below). Reading them at a fixed column 8 misses
+    // them in the 4-space style and after extra spaces, which is how an
+    // override hides from an absence guard and a gated step reads as ungated.
+    const layouts = join(dir, "layouts.yml");
+    writeFileSync(
+      layouts,
+      "name: X\njobs:\n" +
+        // 4-space style: dash at 4, keys at 6.
+        "  four:\n    steps:\n    - name: F\n      if: always()\n      env:\n        GITHUB_SHA: o\n" +
+        "      run: |\n        if : ; then echo; fi\n" +
+        // Extra spaces: dash at 6, keys at 10, a first-key env then a sibling mapping.
+        "  wide:\n    steps:\n      -   env:\n            A: '1'\n          with:\n            ref: x\n" +
+        "      -   if: success()\n          name: W\n" +
+        // A bare `-` with no name: named by its first key.
+        "  bare:\n    steps:\n      -\n        run: d\n",
+    );
+    const steps = workflowSteps(layouts);
+    const four = steps.find((s) => s.jobId === "four");
+    assert.equal(four.name, "F");
+    assert.equal(four.if, "always()", "a run-body `if :` must not be read as the condition");
+    assert.equal(four.env.get("GITHUB_SHA"), "o");
+    const wide = steps.filter((s) => s.jobId === "wide");
+    assert.deepEqual(Object.fromEntries(wide[0].stepEnv), { A: "1" }, "`with:` is a sibling, not env");
+    assert.equal(wide[1].if, "success()");
+    assert.equal(wide[1].name, "W");
+    assert.equal(steps.find((s) => s.jobId === "bare").name, "<unnamed: run>");
   });
 
   it("reads an empty flow mapping as an empty mapping: {} can hide nothing", () => {
