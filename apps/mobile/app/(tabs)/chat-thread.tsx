@@ -518,14 +518,16 @@ export default function ChatThreadScreen() {
         enabled={getKeyboardPath() === "fallback" || Platform.OS === "ios"}
       >
         {/*
-          Everything the mute menu covers. The open menu takes every tap over
-          it, and this takes it out of the accessibility tree the same way
-          `ClientPolicyGate` does, because the overlay's
-          `accessibilityViewIsModal` is iOS-only: without it TalkBack could
-          still reach the thread, and the composer's keyboard, under the menu.
+          Everything the mute menu covers, out of the accessibility tree while
+          the menu is up: its overlay's `accessibilityViewIsModal` is iOS-only,
+          so without this TalkBack could reach the thread, and the composer's
+          keyboard, under it. `collapsable={false}` keeps this one native view;
+          otherwise toggling the two props re-parents the whole thread.
+          spec/ui/mobile/patterns.md § Overlays.
         */}
         <View
           style={styles.flex}
+          collapsable={false}
           accessibilityElementsHidden={muteMenu.visible}
           importantForAccessibility={
             muteMenu.visible ? "no-hide-descendants" : "auto"

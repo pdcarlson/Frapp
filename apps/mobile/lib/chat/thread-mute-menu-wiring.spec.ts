@@ -62,7 +62,7 @@ describe("chat thread mute menu wiring", () => {
     // `accessibilityViewIsModal` is iOS-only; without this TalkBack reaches
     // the thread and the composer under the open menu.
     expect(THREAD).toMatch(
-      /<View\s+style=\{styles\.flex\}\s+accessibilityElementsHidden=\{muteMenu\.visible\}\s+importantForAccessibility=\{\s*muteMenu\.visible \? "no-hide-descendants" : "auto"\s*\}\s*>/,
+      /<View\s+style=\{styles\.flex\}\s+collapsable=\{false\}\s+accessibilityElementsHidden=\{muteMenu\.visible\}\s+importantForAccessibility=\{\s*muteMenu\.visible \? "no-hide-descendants" : "auto"\s*\}\s*>/,
     );
     const wrapper = THREAD.indexOf(
       "accessibilityElementsHidden={muteMenu.visible}",

@@ -2,7 +2,7 @@
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
-import { BackHandler, Keyboard } from "react-native";
+import { AccessibilityInfo, BackHandler, Keyboard } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatNotificationLevel } from "@repo/hooks";
@@ -45,9 +45,10 @@ const View = "View" as unknown as React.ComponentType<{
 const onTriggerLayout = vi.fn();
 
 /**
- * The trigger and the menu wired the way `app/(tabs)/chat-thread.tsx` wires
- * them: the trigger inside a header, and the menu as a later sibling of it,
- * sharing one `useNotificationLevelMenu`.
+ * The trigger and the menu as `app/(tabs)/chat-thread.tsx` lays them out: the
+ * trigger inside a header, the menu a later sibling, one shared
+ * `useNotificationLevelMenu`. The thread's accessibility wrapper is not
+ * mirrored here; `lib/chat/thread-mute-menu-wiring.spec.ts` pins it.
  */
 function Thread({
   level,
@@ -83,6 +84,8 @@ function renderControl(props: Partial<ControlProps> = {}) {
       <FrappThemeProvider>
         <Thread level="mentions" onChange={vi.fn()} {...props} />
       </FrappThemeProvider>,
+      // Host refs resolve to a stand-in, so the menu can move focus.
+      { createNodeMock: () => ({}) },
     );
   });
   return tree;
@@ -374,6 +377,7 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
   beforeEach(() => {
     vi.mocked(BackHandler.addEventListener).mockClear();
     vi.mocked(Keyboard.dismiss).mockClear();
+    vi.mocked(AccessibilityInfo.sendAccessibilityEvent).mockClear();
     onTriggerLayout.mockClear();
   });
 
@@ -450,11 +454,12 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
     expect(menu(tree)).toHaveLength(1);
   });
 
-  it("closes when the trigger itself is activated again, as TalkBack does under the overlay", () => {
+  it("closes when the trigger is activated again past hit-testing", () => {
     const onChange = vi.fn();
     const tree = openMenu(onChange);
-    // A screen reader's click reaches the trigger's handler directly; only a
-    // touch is stopped by the backdrop.
+    // Defensive: a touch lands on the backdrop, and the thread hides the
+    // trigger from screen readers while the menu is up. An activation that
+    // reaches the trigger's handler anyway must close the menu, not re-open it.
     press(byLabel(tree, TRIGGER));
     expect(menu(tree)).toHaveLength(0);
     expect(onChange).not.toHaveBeenCalled();
@@ -513,6 +518,23 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
   it("reports the trigger's frame, so the caller can hang the menu under it", () => {
     const tree = renderControl({ level: "mentions" });
     expect(byLabel(tree, TRIGGER).props.onLayout).toBe(onTriggerLayout);
+  });
+
+  it("moves a screen reader's focus onto the menu as it opens", () => {
+    // Opening hides the focused trigger, which clears focus rather than
+    // moving it.
+    const tree = openMenu();
+    const title = tree.root.find(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props.children === "Notify me about",
+    );
+    expect(AccessibilityInfo.sendAccessibilityEvent).toHaveBeenCalledTimes(1);
+    expect(AccessibilityInfo.sendAccessibilityEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      "focus",
+    );
+    expect(title).toBeTruthy();
   });
 
   it("still writes the picked level from inside the overlay", () => {

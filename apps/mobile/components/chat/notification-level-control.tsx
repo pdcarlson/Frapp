@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   BackHandler,
   Keyboard,
   type LayoutChangeEvent,
@@ -197,10 +198,9 @@ export function NotificationLevelControl({
  * backdrop fills the rest: a tap anywhere outside the menu, the trigger
  * included, closes it and never reaches the thread. Hit-testing stops touch
  * only, so the caller also hides what the menu covers from accessibility
- * while it is visible (`accessibilityViewIsModal` below is iOS-only).
- *
- * Not a React Native `Modal`, which would draw over the update gate
- * (`spec/ui/mobile/patterns.md` § Minimum version).
+ * while it is visible (`accessibilityViewIsModal` below is iOS-only). The
+ * overlay rules, including why this is not a React Native `Modal`:
+ * `spec/ui/mobile/patterns.md` § Overlays.
  */
 export function NotificationLevelMenu({
   menu,
@@ -216,6 +216,14 @@ export function NotificationLevelMenu({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
+
+  // Opening hides the trigger that had a screen reader's focus, which clears
+  // that focus rather than moving it, so put it on the menu.
+  useEffect(() => {
+    if (!menu.visible || !titleRef.current) return;
+    AccessibilityInfo.sendAccessibilityEvent(titleRef.current, "focus");
+  }, [menu.visible]);
 
   if (!menu.visible) return null;
 
@@ -232,7 +240,9 @@ export function NotificationLevelMenu({
         accessibilityRole="menu"
         style={[styles.menu, { top: anchor.top, right: anchor.right }]}
       >
-        <Text style={styles.menuTitle}>Notify me about</Text>
+        <Text ref={titleRef} style={styles.menuTitle}>
+          Notify me about
+        </Text>
         {NOTIFICATION_LEVEL_OPTIONS.map((option) => {
           const selected = option.level === menu.level;
           return (
