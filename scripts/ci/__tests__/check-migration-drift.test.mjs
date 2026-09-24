@@ -437,6 +437,43 @@ test("a clean run exits 0 and closes an open alert issue", async () => {
   assert.deepEqual(JSON.parse(closing.body), { state: "closed", state_reason: "completed" });
 });
 
+test("each target is read with its own token when it carries one (#2583)", async () => {
+  // Each Infisical environment's Supabase token reads only its own project, so
+  // the workflow hands each target its own; `accessToken` is only the fallback.
+  const local = localFixture(3);
+  const { fetchImpl: routed } = makeFetchMock([
+    supabaseRoute("stg", local),
+    supabaseRoute("prod", local),
+    ...githubRoutes({ issues: [] }),
+  ]);
+  const seen = [];
+  const fetchImpl = async (url, init = {}) => {
+    const ref = url.match(/\/projects\/([^/]+)\/database\/migrations$/)?.[1];
+    if (ref) seen.push([ref, init.headers?.Authorization]);
+    return routed(url, init);
+  };
+
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [
+      { label: "staging", ref: "stg", accessToken: "staging-token" },
+      { label: "production", ref: "prod" },
+    ],
+    local,
+    fetchImpl,
+  });
+
+  assert.equal(result.status, "clean");
+  assert.deepEqual(seen, [
+    ["stg", "Bearer staging-token"],
+    ["prod", `Bearer ${baseRun.accessToken}`],
+  ]);
+  assert.ok(
+    result.results.every((r) => !("accessToken" in r)),
+    "a token never reaches the results the summary and alert issue are built from",
+  );
+});
+
 test("a clean run with no open alert touches nothing", async () => {
   const local = localFixture(3);
   const { fetchImpl, calls } = makeFetchMock([

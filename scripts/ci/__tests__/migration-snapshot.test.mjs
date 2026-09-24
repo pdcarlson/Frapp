@@ -259,6 +259,86 @@ test("the publisher's invocation guards", async () => {
   assert.equal(await publishSnapshot({ accessToken: "", outPath: "/tmp/x.json", ...quiet }), 2);
 });
 
+// A token that, like each Infisical environment's since #2583, answers only for
+// its own project: anything else is the Management API's 403.
+function scopedFetch(tokenByRef) {
+  const seen = [];
+  const fetchImpl = async (url, init = {}) => {
+    const ref = url.match(/\/v1\/projects\/([^/]+)\/database\/migrations$/)?.[1];
+    const token = String(init.headers?.Authorization ?? "").replace(/^Bearer /, "");
+    seen.push({ ref, token });
+    const allowed = ref && tokenByRef[ref] === token;
+    const body = ref === STAGING_REF ? STAGING_APPLIED : PRODUCTION_APPLIED;
+    return {
+      ok: allowed,
+      status: allowed ? 200 : 403,
+      text: async () => JSON.stringify(allowed ? body : { message: "Forbidden" }),
+    };
+  };
+  return { fetchImpl, seen };
+}
+
+test("each project is read with its own token, since neither can read the other (#2583)", async () => {
+  const tokens = { staging: "staging-token", production: "production-token" };
+  const { fetchImpl, seen } = scopedFetch({ [STAGING_REF]: tokens.staging, [PRODUCTION_REF]: tokens.production });
+  const code = await publishSnapshot({
+    tokenFor: (name) => tokens[name],
+    outPath: "/tmp/out/x.json",
+    environments: ENVIRONMENTS,
+    fetchImpl,
+    nowMs: NOW,
+    writeFile: () => {},
+    ...quiet,
+  });
+  assert.equal(code, 0);
+  assert.deepEqual(
+    seen.map(({ ref, token }) => [ref, token]),
+    [
+      [STAGING_REF, tokens.staging],
+      [PRODUCTION_REF, tokens.production],
+    ],
+  );
+});
+
+test("production's token alone cannot publish: staging answers 403 and nothing is written", async () => {
+  // The failure run 36022850155 hit on 2026-09-24, before the workflow kept
+  // each environment's token.
+  const { fetchImpl } = scopedFetch({ [STAGING_REF]: "staging-token", [PRODUCTION_REF]: "production-token" });
+  let wrote = false;
+  const code = await publishSnapshot({
+    accessToken: "production-token",
+    outPath: "/tmp/out/x.json",
+    environments: ENVIRONMENTS,
+    fetchImpl,
+    nowMs: NOW,
+    writeFile: () => {
+      wrote = true;
+    },
+    ...quiet,
+  });
+  assert.equal(code, 1);
+  assert.equal(wrote, false);
+});
+
+test("a project with no token is an invocation error that names its variable", async () => {
+  const errors = [];
+  let fetched = false;
+  const code = await publishSnapshot({
+    tokenFor: (name) => (name === "production" ? "production-token" : ""),
+    outPath: "/tmp/out/x.json",
+    environments: ENVIRONMENTS,
+    fetchImpl: async () => {
+      fetched = true;
+      throw new Error("must not fetch");
+    },
+    ...quiet,
+    error: (line) => errors.push(line),
+  });
+  assert.equal(code, 2);
+  assert.equal(fetched, false, "nothing is read until every project has a token");
+  assert.ok(errors.some((line) => line.includes("SUPABASE_ACCESS_TOKEN_STAGING")), errors.join("\n"));
+});
+
 // ── openSnapshot ────────────────────────────────────────────────────────────
 
 test("openSnapshot resolves refs by environment name and reports the capture time", () => {

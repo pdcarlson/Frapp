@@ -41,8 +41,13 @@
 // Env inputs:
 //   GITHUB_TOKEN           — required (issues: write)
 //   GITHUB_REPOSITORY      — required, owner/repo
-//   SUPABASE_ACCESS_TOKEN  — required, Supabase Management API token
 //   DRIFT_TARGETS          — required, `label=ref` pairs, comma-separated
+//   SUPABASE_ACCESS_TOKEN_<LABEL>
+//                          — each target's Supabase Management API token, e.g.
+//                            SUPABASE_ACCESS_TOKEN_STAGING. Each Infisical
+//                            environment's token reads only its own project
+//                            (#2583). SUPABASE_ACCESS_TOKEN stands in for a
+//                            missing one; every target needs one of the two
 //   PENDING_GRACE_HOURS    — optional, default 24
 //   RUN_URL                — optional, html_url of this run
 //
@@ -60,6 +65,7 @@ import { join } from "node:path";
 
 import { ghRequest } from "./lib/github.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { supabaseAccessTokenFor } from "./lib/environments.mjs";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -594,7 +600,8 @@ export async function runMigrationDriftCheck({
 
   for (const target of targets) {
     const remote = await fetchAppliedMigrations({
-      accessToken,
+      // A target's own token wins; `accessToken` serves every target without one.
+      accessToken: target.accessToken ?? accessToken,
       projectRef: target.ref,
       fetchImpl,
     });
@@ -662,11 +669,23 @@ export async function runMigrationDriftCheck({
 async function main() {
   const token = requireEnv("GITHUB_TOKEN");
   const repo = requireEnv("GITHUB_REPOSITORY");
-  const accessToken = requireEnv("SUPABASE_ACCESS_TOKEN");
-  const targets = parseTargets(requireEnv("DRIFT_TARGETS"));
+  const targets = parseTargets(requireEnv("DRIFT_TARGETS")).map((target) => ({
+    ...target,
+    accessToken: supabaseAccessTokenFor(target.label),
+  }));
 
   if (targets.length === 0) {
     console.error("Error: DRIFT_TARGETS parsed to zero targets. Expected `label=ref` pairs.");
+    process.exit(1);
+  }
+  const untokened = targets.filter((target) => !target.accessToken);
+  if (untokened.length > 0) {
+    for (const { label } of untokened) {
+      console.error(
+        `Error: no Supabase token for ${label}: set SUPABASE_ACCESS_TOKEN_${label.toUpperCase()} ` +
+          "or SUPABASE_ACCESS_TOKEN.",
+      );
+    }
     process.exit(1);
   }
 
@@ -692,7 +711,6 @@ async function main() {
   const { exitCode } = await runMigrationDriftCheck({
     token,
     repo,
-    accessToken,
     targets,
     local,
     nowMs: Date.now(),
