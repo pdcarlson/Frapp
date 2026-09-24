@@ -51,7 +51,7 @@
      - *Consoles (owner):*
        - on `frapp-staging` and `frapp-prod`, in Supabase Auth: the SMTP sender name, the mailer subjects, and the **Magic Link template body**, whose heading and link both read "Sign in to Signet". Conformance checks the subject and the body's link shape (TokenHash and `type=magiclink`, no ConfirmationURL), but never the body's brand text, so a missed heading stays silent. Keep the link shape when retyping it. *2026-09-24: step 3 closed that gap. `auth-magic-link` now also fails a Magic Link body that says Signet ([#2578](https://github.com/pdcarlson/Frapp/issues/2578)).*
        - `RESEND_FROM_EMAIL` in Infisical `staging`, documented as `Signet <invites@mail.staging.frapp.live>`, and in `prod` if it is set there.
-       - *2026-09-24: step 3 moved `ENV_REFERENCE.md` to the Frapp value. The order of these console changes, and why, is in [`supabase.md` § ADR-25 step 3](../../../docs/internal/ops/deployment/supabase.md#adr-25-step-3-the-sender-becomes-frapp).*
+       - *2026-09-24: staging never had `RESEND_FROM_EMAIL` set (the staging API's boot log), so its invites took the new Frapp default when step 3 deployed and nothing needed changing there. Moving them onto `mail.staging.frapp.live` is [#2655](https://github.com/pdcarlson/Frapp/issues/2655). The order of these console changes, and why, is in [`supabase.md` § ADR-25 step 3](../../../docs/internal/ops/deployment/supabase.md#adr-25-step-3-the-sender-becomes-frapp).*
   4. **Web dashboard and third-party sign-in and billing.**
      - *Code:*
        - Tab titles, the auth headings, onboarding, settings and roles copy, the invite share text and the CSV and ICS filenames, plus the `packages/validation` and `packages/hooks` strings the dashboard renders.
