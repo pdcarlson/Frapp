@@ -320,27 +320,102 @@ describe("helpers/workflow-yaml.mjs key readers", () => {
     // `if:` is often quoted (a leading `!` is a YAML tag), and a ` #` inside
     // the quotes is part of the condition. Cutting there drops the clause
     // after it, and a `doesNotMatch(/dry_run_only/)` guard passes on a step
-    // that is gated.
+    // that is gated. A quote in the trailing comment must not extend the value
+    // either, or a `match(/!inputs\.dry_run_only/)` guard passes on an ungated one.
     const quoted = join(dir, "quoted.yml");
     writeFileSync(
       quoted,
-      "name: X\njobs:\n  j:\n" +
-        "    if: \"!contains(github.event.head_commit.message, 'skip #release') && !inputs.dry_run_only\" # note\n" +
-        "    steps:\n" +
-        "      - if: \"github.event.head_commit.message != 'wip #' && inputs.dry_run_only\"\n        run: echo\n" +
-        "      - name: 'B #2' # say \"hi\"\n        if: 'x != ''a #b'' && inputs.dry_run_only' # note\n" +
-        "        env:\n          TAG: \"v1 #beta\" # it's \"quoted\"\n          SAY: \"say \\\"hi #1\\\"\" # c\n",
+      [
+        "name: X",
+        "jobs:",
+        "  j:",
+        `    if: "!contains(github.event.head_commit.message, 'skip #release') && !inputs.dry_run_only" # note`,
+        "    steps:",
+        `      - if: "github.event.head_commit.message != 'wip #' && inputs.dry_run_only"`,
+        "        run: echo",
+        `      - name: 'B #2' # say "hi"`,
+        `        if: 'x != ''a #b'' && inputs.dry_run_only' # note`,
+        "        env:",
+        `          TAG: "v1 #beta" # it's "quoted"`,
+        String.raw`          SAY: "say \"hi #1\"" # c`,
+        String.raw`      - if: "github.actor == \"bot\" # x || inputs.dry_run_only"`,
+        "        run: echo",
+        `      - if: 'always()' # was '!inputs.dry_run_only'`,
+        "        run: echo",
+        "  k:",
+        `    if: 'always()' # was '!inputs.dry_run_only'`,
+        "    steps:",
+        "      - run: echo",
+        "",
+      ].join("\n"),
     );
-    const [a, b] = workflowSteps(quoted);
-    assert.equal(a.if, "\"github.event.head_commit.message != 'wip #' && inputs.dry_run_only\"");
+    const [a, b, c, d] = workflowSteps(quoted);
+    assert.equal(a.if, `"github.event.head_commit.message != 'wip #' && inputs.dry_run_only"`);
     assert.equal(b.name, "B #2");
-    assert.equal(b.if, "'x != ''a #b'' && inputs.dry_run_only'");
+    assert.equal(b.if, `'x != ''a #b'' && inputs.dry_run_only'`);
     assert.equal(b.env.get("TAG"), "v1 #beta");
-    assert.equal(b.env.get("SAY"), 'say \\"hi #1\\"');
-    assert.equal(
-      workflowJobs(quoted)[0].if,
-      "\"!contains(github.event.head_commit.message, 'skip #release') && !inputs.dry_run_only\"",
+    assert.equal(b.env.get("SAY"), 'say "hi #1"');
+    assert.equal(c.if, String.raw`"github.actor == \"bot\" # x || inputs.dry_run_only"`);
+    assert.equal(d.if, "'always()'");
+    const [j, k] = workflowJobs(quoted);
+    assert.equal(j.if, `"!contains(github.event.head_commit.message, 'skip #release') && !inputs.dry_run_only"`);
+    assert.equal(k.if, "'always()'");
+  });
+
+  it("reads the condition below an if: that holds only a comment", () => {
+    const below = join(dir, "below.yml");
+    writeFileSync(
+      below,
+      "name: X\njobs:\n  j:\n    if: # gated\n      inputs.dry_run_only\n    steps:\n" +
+        "      - name: A\n        if: # gated\n          inputs.dry_run_only\n        run: echo\n",
     );
+    assert.equal(workflowSteps(below)[0].if, "inputs.dry_run_only");
+    assert.equal(workflowJobs(below)[0].if, "inputs.dry_run_only");
+  });
+
+  it("decodes a quoted value as Actions sees it, and leaves a plain one as written", () => {
+    const values = join(dir, "values.yml");
+    writeFileSync(
+      values,
+      [
+        "name: X",
+        "jobs:",
+        "  j:",
+        "    steps:",
+        "      - run: echo",
+        "        env:",
+        '          PHASE: "build"#pre-apply',
+        '          EMPTY: ""#unset',
+        "          PLAIN: say 'hi'",
+        "          SINGLE: 'don''t # x'",
+        String.raw`          UNICODE: "caf\u00e9"`,
+        "",
+      ].join("\n"),
+    );
+    const { env } = workflowSteps(values)[0];
+    assert.equal(env.get("PHASE"), "build");
+    assert.equal(env.get("EMPTY"), "");
+    assert.equal(env.get("PLAIN"), "say 'hi'");
+    assert.equal(env.get("SINGLE"), "don't # x");
+    assert.equal(env.get("UNICODE"), "café");
+  });
+
+  it("refuses a quoted value that spans lines, or an escape it does not decode", () => {
+    // Read line by line, a quoted `if:` split across lines would come back as
+    // its first line, and the clause after the break would be invisible.
+    const spanning = (at) => {
+      const file = join(dir, `spanning-${at}.yml`);
+      const job = at === "job" ? `    if: "inputs.scope != 'migrations-only'\n      && !inputs.dry_run_only"\n` : "";
+      const step = at === "step" ? `        if: "inputs.scope != 'migrations-only'\n          && !inputs.dry_run_only"\n` : "";
+      writeFileSync(file, `name: X\njobs:\n  j:\n${job}    steps:\n      - name: A\n${step}        run: echo\n`);
+      return file;
+    };
+    assert.throws(() => workflowSteps(spanning("step")), /does not close on its line/);
+    assert.throws(() => workflowJobs(spanning("job")), /does not close on its line/);
+
+    const escaped = join(dir, "escaped.yml");
+    writeFileSync(escaped, "name: X\njobs:\n  j:\n    steps:\n      - run: echo\n        env:\n          A: \"\\x41\"\n");
+    assert.throws(() => workflowSteps(escaped), /escape this reader does not decode/);
   });
 
   it("reads an empty flow mapping as an empty mapping: {} can hide nothing", () => {

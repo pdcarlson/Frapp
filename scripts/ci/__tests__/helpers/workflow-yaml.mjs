@@ -35,6 +35,7 @@
 // should not be used as one. A non-empty flow mapping (`{ a: b }`) as a key's
 // value, and a non-empty flow `env:`, throw instead of being guessed at (see
 // `keysAt`), because a guard over a misread value passes; `{}` reads as empty.
+// A quoted value spanning lines throws for the same reason (`withoutComment`).
 // Known gap: anchors, tags and aliases in a value are returned as text (#2639).
 
 import { readFileSync } from "node:fs";
@@ -59,12 +60,23 @@ function indentOf(line) {
  * cutting it at the ` #` drops the clause a `doesNotMatch` guard is looking
  * for. The quoted forms are matched to their real closing quote (`\"` escapes
  * one in double quotes, `''` in single), so a quote inside the trailing comment
- * can't extend the value either.
+ * can't extend the value either. A `#` straight after the closing quote
+ * (`"build"#note`) is a comment too, as libyaml and the runner's parser read it.
+ *
+ * The reader sees one line at a time, so a quoted scalar that does not close on
+ * its own line (one spanning lines) THROWS rather than being read as its first
+ * line, which would drop every clause after the break.
  */
 function withoutComment(raw) {
   const trimmed = raw.trim();
-  const quoted = trimmed.match(/^("(?:[^"\\]|\\.)*"|'(?:[^']|'')*')(?:\s+#.*)?$/);
+  const quoted = trimmed.match(/^("(?:[^"\\]|\\.)*"|'(?:[^']|'')*')(?:\s*#.*)?$/);
   if (quoted) return quoted[1];
+  if (/^["']/.test(trimmed)) {
+    throw new Error(
+      `workflow-yaml: a quoted value that does not close on its line (${trimmed}), which this ` +
+        "reader refuses rather than reads in part. Keep a quoted value on one line, or use a block scalar.",
+    );
+  }
   return trimmed.replace(/(^|\s+)#.*$/, "").trim();
 }
 
@@ -81,12 +93,22 @@ function withoutComment(raw) {
  *
  * Only a `#` that opens the value or follows whitespace counts, per YAML, so a
  * `#` inside a value (a URL fragment, an expression) survives. A quoted scalar
- * is taken whole, then unquoted (`withoutComment`).
+ * is taken whole (`withoutComment`), then unquoted and decoded: `'don''t'` is
+ * `don't`, and `"say \"hi\""` is `say "hi"`. A double-quoted escape JSON does
+ * not share (`\x41`, `\e`, `\N`) throws rather than come back as the wrong text.
  */
 function scalarValue(raw) {
   const value = withoutComment(raw);
-  const quoted = value.match(/^(["'])([\s\S]*)\1$/);
-  return quoted ? quoted[2] : value;
+  if (value.startsWith("'")) return value.slice(1, -1).replaceAll("''", "'");
+  if (!value.startsWith('"')) return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error(
+      `workflow-yaml: a double-quoted value with an escape this reader does not decode (${value}). ` +
+        "Use a JSON-style escape, or a single-quoted or plain value.",
+    );
+  }
 }
 
 /**
