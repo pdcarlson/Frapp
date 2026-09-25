@@ -431,9 +431,11 @@ describe("readDumpFreshness: this watch's windows", () => {
     ];
     const timedOut = await read(runs, { 99: [cancelledAfter(JOB_TIMEOUT_MS)], 98: [successJob()] });
     assert.equal(timedOut.ok, false);
-    assert.match(timedOut.reason, /timeout/);
-    const early = await read(runs, { 99: [cancelledAfter(JOB_TIMEOUT_MS / 3)], 98: [successJob()] });
-    assert.equal(early.ok, true);
+    assert.match(timedOut.reason, new RegExp(`hit its ${JOB_TIMEOUT_MS / 60000}-minute timeout`));
+    for (const ms of [JOB_TIMEOUT_MS / 3, JOB_TIMEOUT_MS - 5 * 60 * 1000]) {
+      const early = await read(runs, { 99: [cancelledAfter(ms)], 98: [successJob()] });
+      assert.equal(early.ok, true, `cancelled after ${ms / 60000} minutes`);
+    }
   });
 
   it("JOB_TIMEOUT_MS is the job's timeout-minutes in db-backup.yml", () => {

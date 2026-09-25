@@ -12,10 +12,8 @@
 //
 // This script GETs recent `db-backup.yml` runs and their jobs and judges
 // `backup-production-storage` by the rules in `lib/backup-job-freshness.mjs` (shared with
-// the dump watch; that header is the canonical statement). In short: FAIL
-// when the newest run's job failed, is missing or hung, or no success is
-// within 36h; a cancelled, skipped or in-flight newest run passes only on an
-// earlier success, as a warning that never closes an open alert.
+// the dump watch; that header is the canonical statement, so it
+// isn't restated here).
 //
 // It does not name any GitHub `environment:` itself. A schedule job that
 // named `production` would hang on the ADR-19 reviewer gate (#1435). It

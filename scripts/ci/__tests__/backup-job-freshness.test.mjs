@@ -28,24 +28,38 @@ function hoursAgo(hours) {
   return new Date(NOW - hours * HOUR).toISOString();
 }
 
-function run(id, { hours, status = "completed", conclusion = null, updatedHours = hours }) {
+function run(id, { hours, status = "completed", conclusion = null, updatedHours = hours, attempt = 1 }) {
   return {
     id,
     status,
     conclusion,
+    run_attempt: attempt,
     created_at: hoursAgo(hours),
     updated_at: hoursAgo(updatedHours),
   };
 }
 
-function job({ status = "completed", conclusion = "success", completedHours = 16, startedHours, name = JOB } = {}) {
+function job({ status = "completed", conclusion = "success", completedHours = 16, startedHours, name = JOB, steps } = {}) {
   return {
     name,
     status,
     conclusion: status === "completed" ? conclusion : null,
     started_at: startedHours === undefined ? null : hoursAgo(startedHours),
     completed_at: status === "completed" ? hoursAgo(completedHours) : null,
+    ...(steps === undefined ? {} : { steps }),
   };
+}
+
+/** The newest run's job cancelled after `ranMs` (from `startedAt`, or its steps). */
+function cancelledAfter(ranMs, { steps } = {}) {
+  const completedHours = 1;
+  return evaluate({
+    runs: [run(2, { hours: 2, conclusion: "cancelled" }), run(1, { hours: 16.2 })],
+    jobs: {
+      2: [job({ conclusion: "cancelled", startedHours: completedHours + ranMs / HOUR, completedHours, steps })],
+      1: [job()],
+    },
+  });
 }
 
 /** `jobs` maps run id to that run's jobs (or `{ status }` for an unreadable read). */
@@ -146,6 +160,38 @@ describe("the newest run decides alone", () => {
     });
     assert.equal(verdict.ok, true);
     assert.equal(verdict.fresh, false);
+  });
+
+  it("counts a cancel as a timeout only from a minute under the timeout to 15 minutes past it", () => {
+    const MINUTE = 60 * 1000;
+    for (const [ranMs, timedOut] of [
+      [TIMEOUT - 2 * MINUTE, false],
+      [TIMEOUT - 30 * 1000, true],
+      [TIMEOUT + 10 * MINUTE, true],
+      [TIMEOUT + 20 * MINUTE, false],
+    ]) {
+      const verdict = cancelledAfter(ranMs);
+      assert.equal(verdict.ok, !timedOut, `${ranMs / MINUTE} minutes`);
+      if (timedOut) assert.match(verdict.reason, /hit its 30-minute timeout/);
+    }
+  });
+
+  it("a job cancelled while it waited, with no step run, is not a timeout", () => {
+    // `started_at` of a job that never reached a runner marks when it was
+    // queued, so a 45-minute wait would otherwise read as a timeout.
+    const verdict = cancelledAfter(45 * 60 * 1000, { steps: [] });
+    assert.equal(verdict.ok, true);
+    assert.match(verdict.reason, /concluded cancelled/);
+  });
+
+  it("measures the runtime from the first step, not from when the job was queued", () => {
+    const firstStep = { name: "Set up job", started_at: hoursAgo(1 + 10 / 60) };
+    const verdict = cancelledAfter(TIMEOUT + 10 * 60 * 1000, { steps: [firstStep] });
+    assert.equal(verdict.ok, true, "a 10-minute run after a 30-minute wait was cancelled early");
+    const ranFull = cancelledAfter(TIMEOUT + 10 * 60 * 1000, {
+      steps: [{ name: "Set up job", started_at: hoursAgo(1 + TIMEOUT / HOUR) }],
+    });
+    assert.equal(ranFull.ok, false);
   });
 
   it("a run that failed before creating any job fails as missing (a broken workflow must not green)", () => {
@@ -277,6 +323,63 @@ describe("an earlier success backs the newest run", () => {
     });
     assert.equal(verdict.ok, true);
     assert.match(verdict.reason, /succeeded 16h ago/);
+  });
+
+  it("fails a re-run whose job was cancelled or skipped, since the listing hides the earlier attempt", () => {
+    // `filter=latest` shows attempt 2 only: attempt 1 may have failed.
+    for (const conclusion of ["cancelled", "skipped"]) {
+      const verdict = evaluate({
+        runs: [run(2, { hours: 2, attempt: 2 }), run(1, { hours: 25 })],
+        jobs: {
+          2: [job({ conclusion, startedHours: 0.5, completedHours: 0.48 })],
+          1: [job({ completedHours: 24.8 })],
+        },
+      });
+      assert.equal(verdict.ok, false, conclusion);
+      assert.match(verdict.reason, new RegExp(`concluded ${conclusion} on re-run attempt 2`));
+    }
+  });
+
+  it("stops the walk at an earlier re-run whose job was cancelled", () => {
+    const verdict = evaluate({
+      runs: [run(3, { hours: 0.5, status: "in_progress" }), run(2, { hours: 6, attempt: 3 }), run(1, { hours: 25 })],
+      jobs: {
+        3: [job({ status: "in_progress", startedHours: 0.4 })],
+        2: [job({ conclusion: "cancelled", startedHours: 1, completedHours: 0.98 })],
+        1: [job({ completedHours: 24.8 })],
+      },
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /and before it backup-example concluded cancelled on re-run attempt 3/);
+  });
+
+  it("passes over an earlier run whose job was skipped", () => {
+    const verdict = evaluate({
+      runs: [run(3, { hours: 0.5, status: "in_progress" }), run(2, { hours: 6 }), run(1, { hours: 25 })],
+      jobs: {
+        3: [job({ status: "in_progress", startedHours: 0.4 })],
+        2: [job({ conclusion: "skipped", completedHours: 5.9 })],
+        1: [job({ completedHours: 24.8 })],
+      },
+    });
+    assert.equal(verdict.ok, true);
+    assert.match(verdict.reason, /succeeded 25h ago/);
+  });
+
+  it("judges only the first finished attempt it reaches: an old success there is FAIL, even with a newer one behind it", () => {
+    // Run 2's job succeeded 40h ago, but another job's re-run moved the run's
+    // `updated_at` into the window. Run 1 was created earlier and its job was
+    // re-run to success 2h ago. The walk stops at run 2.
+    const verdict = evaluate({
+      runs: [run(3, { hours: 0.5, status: "in_progress" }), run(2, { hours: 41, updatedHours: 3 }), run(1, { hours: 50, updatedHours: 2, attempt: 2 })],
+      jobs: {
+        3: [job({ status: "in_progress", startedHours: 0.4 })],
+        2: [job({ completedHours: 40 }), job({ name: "backup-other", completedHours: 3 })],
+        1: [job({ completedHours: 2 })],
+      },
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /no backup-example success is within 36h/);
   });
 
   it("does not count an old success in a run updated recently by other jobs", () => {

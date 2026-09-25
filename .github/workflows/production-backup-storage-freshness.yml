@@ -21,7 +21,7 @@ name: Production backup storage freshness
 # 30) is a ceiling, not a duration — do not re-derive this slot from it.
 # The Postgres watch's 13:15 is NOT a good slot for this job: it was chosen
 # against the dump job's 30-minute budget, and a probe that lands while the
-# mirror is in flight can only pass on an earlier success (#2332), as a
+# mirror is in flight can at best pass on an earlier run (#2332), as a
 # warning that never closes an open alert. Probing after the mirror finishes
 # lets tonight's own success count.
 #
