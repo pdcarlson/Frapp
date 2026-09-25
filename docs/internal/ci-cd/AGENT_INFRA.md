@@ -919,20 +919,22 @@ does two things:
 - **Says what happened.** A step summary and a `::notice::`/`::error::` annotation state plainly
   whether the run **deployed** something, **failed**, found staging **up to date** (a `current`
   plan: nothing needed deploying, and staging was verified), or was **superseded**, with a per-job
-  result table and the deploy plan. `cancelled` and `timed_out` count as failures, except a
-  `deploy-staging` that GitHub replaced in the queue before it planned, which is superseded.
+  result table and the deploy plan. `cancelled` and `timed_out` count as failures, including a
+  pending job GitHub replaced in its concurrency queue (rare, and closed by the next run).
 - **Raises or clears one alert issue.** On failure it upserts a single tracking issue titled
   *"Deploy API is failing — pushes are not reaching the environment"* (`incident`, `area:ci`,
   `P1`, assigned to the owner): created if absent, reopened if closed, otherwise commented — never a fresh issue per
   failure, because alert spam is how alerting gets muted. A later **successful** deploy closes it
   as `completed`. So an open alert issue means "the deploy path is broken right now".
 
-A **superseded run never touches the alert**. Its plan is `stale` when it is not for `main`'s tip,
-as for a re-run of an old run: deploying an older commit would roll staging back, and any verdict
-about a non-tip commit could close an alert the tip's own run raised. It is also superseded when
-`migrate-staging` or `deploy-staging` was replaced in its queue before it started (a `cancelled`
-job without the `started` output its first step publishes; one that started and was then
-cancelled or timed out is still a failure). Only the tip's `deploy` or `current` run decides. A Deploy API **no-op** (neither job ran) is escalated to a
+A **superseded run never touches the alert**. A run that is not for `main`'s tip (as its checkout
+fetched it) plans `forward` when its commit is newer than the one staging serves and changed the
+image: it deploys and verifies, because `main` usually moves on while a run waits and the tip's
+own run may never deploy, but its success doesn't close the alert, since the tip may still be
+failing. A failed forward deploy does raise it. Anything else a non-tip run could do is `stale`:
+deploying an older commit would roll staging back, so it deploys and verifies nothing. Only the
+tip's `deploy` or `current` run closes the alert. A re-run of an old run still runs
+`migrate-staging` first, which can fail against an older tree and raise the alert. A Deploy API **no-op** (neither job ran) is escalated to a
 failure since #2505, because both jobs now run on every eligible push. `incident` is what keeps
 `/next` from claiming the alert as backlog work (§0.2 treats that label as never-claimable).
 

@@ -68,21 +68,6 @@ describe("deploy-api.yml deploy-staging", () => {
     assert.equal(job().keys.get("outputs").get("plan"), "${{ steps.plan.outputs.plan }}");
   });
 
-  // deploy-alert.mjs (DEPLOY_API_CONFIG.queuedJobs) reads a `cancelled` job
-  // without `started` as replaced in the queue, so `started` must come from
-  // the FIRST step: set any later, a job that hung before it would read as
-  // replaced and never alert.
-  it("both queued jobs publish `started` from their first step", () => {
-    for (const jobId of ["migrate-staging", "deploy-staging"]) {
-      const theJob = workflowJobs(WORKFLOW).find((j) => j.jobId === jobId);
-      assert.equal(theJob.keys.get("outputs").get("started"), "${{ steps.started.outputs.started }}", jobId);
-      const first = workflowSteps(WORKFLOW).find((s) => s.jobId === jobId);
-      assert.equal(first.name, "Mark started", `${jobId}'s first step`);
-      assert.match(first.body, /id: started/);
-      assert.match(first.body, /echo "started=true" >> "\$GITHUB_OUTPUT"/);
-    }
-  });
-
   it("checks out full history at the CI-verified commit, for the plan's diff", () => {
     const checkout = step("Checkout").body;
     assert.match(checkout, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);

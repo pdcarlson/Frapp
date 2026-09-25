@@ -54,23 +54,41 @@ describe("planStagingDeploy", () => {
     }
   });
 
-  // Only the tip's run deploys or speaks for staging. An old run's commit,
-  // deployed while /health is down (a cold start, or the outage someone re-ran
-  // it for), would be a rollback; even a forward deploy of it would close an
-  // alert the tip's own failing run raised.
-  it("calls any run that isn't for main's tip stale, whatever staging serves", () => {
+  // `main` usually moves on while a run waits for CI and migrate-staging, and
+  // the tip's own run may never deploy (its CI can fail). A run that isn't the
+  // tip but is newer than what staging serves still ships its change.
+  it("moves a non-tip run forward when it is newer than the served commit and the image changed", () => {
+    const TIP = "3333333333333333333333333333333333333333";
+    const plan = planStagingDeploy({
+      head: HEAD,
+      served: SERVED,
+      tip: TIP,
+      isAncestor: linearHistory(SERVED, HEAD, TIP),
+      changedPaths: () => ["apps/api/src/main.ts"],
+    });
+    assert.equal(plan.plan, "forward");
+    assert.equal(plan.deploy, true);
+    assert.equal(plan.verifySha, HEAD);
+    assert.match(plan.reason, /its run decides the alert/);
+  });
+
+  // Anything else a non-tip run could do is a rollback, a verdict about an old
+  // commit, or a guess: it changes nothing, and the tip's run decides.
+  it("calls a non-tip run stale when there is nothing to move forward to, or it can't tell", () => {
     const TIP = "3333333333333333333333333333333333333333";
     const cases = [
-      { served: null, isAncestor: never(), changedPaths: never() },
-      { served: SERVED, isAncestor: linearHistory(SERVED, HEAD, TIP), changedPaths: () => ["apps/api/src/main.ts"] },
-      { served: SERVED, isAncestor: () => false, changedPaths: never() },
-      { served: SERVED, isAncestor: () => { throw new Error("bad object"); }, changedPaths: never() },
+      ["served unreadable", { served: null, isAncestor: never(), changedPaths: never() }],
+      ["served is newer", { served: SERVED, isAncestor: linearHistory(HEAD, SERVED, TIP), changedPaths: never() }],
+      ["nothing changed", { served: SERVED, isAncestor: linearHistory(SERVED, HEAD, TIP), changedPaths: () => ["docs/a.md"] }],
+      ["served off history", { served: SERVED, isAncestor: () => false, changedPaths: never() }],
+      ["git can't relate", { served: SERVED, isAncestor: () => { throw new Error("bad object"); }, changedPaths: never() }],
+      ["diff unreadable", { served: SERVED, isAncestor: linearHistory(SERVED, HEAD, TIP), changedPaths: () => { throw new Error("bad revision"); } }],
     ];
-    for (const [i, input] of cases.entries()) {
+    for (const [label, input] of cases) {
       const plan = planStagingDeploy({ head: HEAD, tip: TIP, ...input });
-      assert.equal(plan.plan, "stale", `case ${i}: ${plan.reason}`);
-      assert.equal(plan.deploy, false, `case ${i}`);
-      assert.equal(plan.verifySha, "", `case ${i}`);
+      assert.equal(plan.plan, "stale", `${label}: ${plan.reason}`);
+      assert.equal(plan.deploy, false, label);
+      assert.equal(plan.verifySha, "", label);
     }
   });
 
@@ -357,6 +375,54 @@ describe("CLI", () => {
     assert.equal(status, 0, log);
     assert.match(written, /^plan=stale$/m, written);
     assert.match(written, /^verify_sha=$/m, written);
+  });
+
+  // No TIP_REF, as in the workflow: the tip comes from `origin/main`. Run in a
+  // throwaway repo whose `origin/main` is ahead of the checked-out commit.
+  it("reads the tip from origin/main by default", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-tip-"));
+    const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
+    const server = createServer((req, res) => {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ status: "ok", commit: git("rev-parse", "HEAD") }));
+    });
+    try {
+      git("init", "-q");
+      git("config", "user.email", "t@example.com");
+      git("config", "user.name", "t");
+      writeFileSync(join(root, "a.md"), "a\n");
+      git("add", "-A");
+      git("commit", "-qm", "head");
+      const head = git("rev-parse", "HEAD");
+      writeFileSync(join(root, "b.md"), "b\n");
+      git("add", "-A");
+      git("commit", "-qm", "tip");
+      git("update-ref", "refs/remotes/origin/main", "HEAD");
+      git("checkout", "-q", "--detach", head);
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const output = join(root, ".output");
+      writeFileSync(output, "");
+      const env = {
+        ...process.env,
+        DEPLOY_SHA: head,
+        API_HEALTHCHECK_URL: `http://127.0.0.1:${server.address().port}/health`,
+        GITHUB_OUTPUT: output,
+      };
+      delete env.TIP_REF;
+      delete env.GITHUB_STEP_SUMMARY;
+      const run = await new Promise((resolve) => {
+        const child = spawn(process.execPath, [join(REPO_ROOT, "scripts", "ci", "plan-staging-deploy.mjs")], { env, cwd: root });
+        let log = "";
+        child.stdout.on("data", (d) => { log += d; });
+        child.stderr.on("data", (d) => { log += d; });
+        child.on("close", (status) => resolve({ status, log }));
+      });
+      assert.equal(run.status, 0, run.log);
+      assert.match(readFileSync(output, "utf8"), /^plan=stale$/m, run.log);
+    } finally {
+      server.close();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("writes plan, deploy and verify_sha to GITHUB_OUTPUT", async () => {

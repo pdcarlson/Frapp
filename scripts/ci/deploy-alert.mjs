@@ -119,17 +119,12 @@ export const DEPLOY_API_CONFIG = {
   //   current — nothing needed deploying, and this is main's tip: a green
   //             job means staging was verified serving and ready, which may
   //             close the alert, but the summary must not say DEPLOYED.
-  //   stale   — this run is for a commit main has moved past (a re-run of an
-  //             old run): its verdict is about an old commit, so it neither
-  //             raises nor closes the alert. The tip's run decides.
+  //   forward — not main's tip, but deployed forward: a failure raises the
+  //             alert like any deploy, but success doesn't close it, since
+  //             main's tip may still be failing. The tip's run decides.
+  //   stale   — not main's tip, and nothing deployed: its verdict is about an
+  //             old commit, so it neither raises nor closes the alert.
   planOutput: { job: "deploy-staging", output: "plan" },
-  // Both jobs queue behind a `cancel-in-progress: false` lock, where GitHub
-  // replaces a pending job when a newer run arrives. Such a job ends
-  // `cancelled` without ever starting, and each job's first step publishes
-  // `started`, so a `cancelled` job without it was replaced, not stopped:
-  // superseded, because the run that replaced it covers it. One that started
-  // and was then cancelled or timed out is still a failure.
-  queuedJobs: { jobs: ["migrate-staging", "deploy-staging"], startedOutput: "started" },
   alertTitle: "Deploy API is failing — pushes are not reaching the environment",
   alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
   noOpReason: "no migrate or deploy job ran",
@@ -364,25 +359,14 @@ export function readPlan(needs, config = DEFAULT_ALERT_CONFIG) {
 
 /**
  * Whether this run must neither raise nor close the alert: its plan is
- * `stale` (it is not for main's tip), or one of its queued jobs was replaced
- * before it started. Always false for a config with neither `planOutput` nor
- * `queuedJobs`.
+ * `stale`, or a `forward` deploy of a non-tip commit succeeded (a failure of
+ * one still raises). Always false for a config without `planOutput`.
  */
 export function isSuperseded(needs, config = DEFAULT_ALERT_CONFIG) {
-  if (config.planOutput) {
-    const result = needs?.[config.planOutput.job]?.result;
-    if (result === "success" && readPlan(needs, config) === "stale") return true;
-  }
-  return replacedInQueue(needs, config).length > 0;
-}
-
-/** The `queuedJobs` that ended `cancelled` without publishing that they started. */
-export function replacedInQueue(needs, config = DEFAULT_ALERT_CONFIG) {
-  if (!config.queuedJobs) return [];
-  const { jobs, startedOutput } = config.queuedJobs;
-  return jobs.filter(
-    (name) => needs?.[name]?.result === "cancelled" && needs?.[name]?.outputs?.[startedOutput] !== "true",
-  );
+  if (!config.planOutput) return false;
+  if (needs?.[config.planOutput.job]?.result !== "success") return false;
+  const plan = readPlan(needs, config);
+  return plan === "stale" || plan === "forward";
 }
 
 /** Human-readable one-liner used in the annotation and the issue body. */
@@ -715,11 +699,10 @@ export async function runDeployAlert({
   // commit (or on migrate-staging's success alone), or raise it for a job
   // GitHub replaced in the queue. The newest run decides; this one reports.
   if (isSuperseded(needs, config)) {
-    const replaced = replacedInQueue(needs, config);
     const reason =
-      replaced.length > 0
-        ? `${replaced.map((name) => `\`${name}\``).join(", ")} was replaced in its queue by a newer run before it started`
-        : "its deploy plan is `stale`: this run is not for main's tip";
+      plan === "forward"
+        ? "it deployed this commit forward, but it is not main's tip, so the tip's run decides the alert"
+        : "its deploy plan is `stale`: this run is not for main's tip and deployed nothing";
     const headline = buildHeadline({
       outcome: "superseded",
       failed: [],

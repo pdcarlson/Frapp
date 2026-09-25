@@ -16,27 +16,34 @@
 // serves?" covers all of these: the diff runs from the served commit, so it
 // carries every change that has not reached staging yet.
 //
-// ── Three verdicts ─────────────────────────────────────────────────────────
-//   deploy  — deploy this commit, then verify it is served and ready.
-//   current — nothing the image is built from changed since the served
-//             commit, and this run is for `main`'s tip: verify the served
-//             commit is ready, and let the run speak for staging.
-//   stale   — this run is not for `main`'s tip: a re-run of an old run, or one
-//             `main` moved past while it queued. Only the tip's run deploys or
-//             speaks for staging. An older commit's deploy could roll staging
-//             back, and even a forward one would verify and close the alert
-//             for a commit that isn't main's, while the tip's own run may be
-//             failing. So it deploys nothing, verifies nothing, and
-//             `deploy-alert.mjs` leaves the alert alone. The tip's run decides.
-//             (The tip is `origin/main` as this job's checkout fetched it.)
+// ── Four verdicts ──────────────────────────────────────────────────────────
+// The tip is `origin/main` as this job's checkout fetched it; when it can't be
+// read, the run is treated as the tip.
+//   deploy  — the tip, and something the image is built from changed since
+//             the served commit: deploy it, then verify it is served and ready.
+//   current — the tip, and nothing changed: verify the served commit is
+//             ready, and let the run speak for staging.
+//   forward — not the tip, but newer than the served commit and something
+//             changed: deploy it anyway. `main` usually moves on while a run
+//             waits for CI and migrate-staging, and the tip's own run may
+//             never deploy (its CI can fail), so skipping this commit would
+//             leave a green change unshipped with no alert. It deploys and
+//             verifies like `deploy`; `deploy-alert.mjs` raises the alert if it
+//             fails but never closes it, because the tip's run decides that.
+//   stale   — not the tip, and nothing to move forward to: staging already
+//             serves this commit or a newer one (deploying it would roll
+//             staging back), nothing changed, or it can't tell. It deploys
+//             and verifies nothing, and `deploy-alert.mjs` leaves the alert
+//             alone.
 //
 // ── When it can't tell ─────────────────────────────────────────────────────
 // For the tip, it deploys: an unreadable `/health`, a served commit git
 // doesn't know, or an unreadable diff all mean "deploy", because a redundant
 // deploy is cheap and a change that silently never ships is the #763 failure.
-// When `main`'s tip itself can't be read, this run is treated as the tip.
+// For any other run it doesn't: without knowing what staging serves, a
+// deploy could be a rollback, and the tip's run will deploy.
 //
-// Outputs (GITHUB_OUTPUT): `plan` (deploy|current|stale), `deploy`
+// Outputs (GITHUB_OUTPUT): `plan` (deploy|current|forward|stale), `deploy`
 // (true|false), `verify_sha` (the commit the verify step must find served;
 // empty when stale), `reason`. Unit tests:
 // `scripts/ci/__tests__/plan-staging-deploy.test.mjs`.
@@ -70,16 +77,20 @@ export function planStagingDeploy({ head, served, tip, isAncestor, changedPaths 
   const short = (sha) => sha.slice(0, 12);
   const same = (a, b) => a.toLowerCase() === b.toLowerCase();
 
-  const deploy = (reason) => ({ plan: "deploy", deploy: true, verifySha: head, reason });
+  const isTip = !tip || same(tip, head);
+  const notTip = () => `\`main\` has moved on to ${short(tip)}`;
   const stale = (reason) => ({ plan: "stale", deploy: false, verifySha: "", reason });
-  const current = (reason) => ({ plan: "current", deploy: false, verifySha: served, reason });
-
-  if (tip && !same(tip, head)) {
-    return stale(`\`main\` has moved on to ${short(tip)}, so that commit's run decides`);
-  }
+  // Deploy when the tip, or move forward when not; unsure is a deploy only for the tip.
+  const deploy = (reason) =>
+    isTip
+      ? { plan: "deploy", deploy: true, verifySha: head, reason }
+      : { plan: "forward", deploy: true, verifySha: head, reason: `${reason}; ${notTip()}, so its run decides the alert` };
+  const unsure = (reason) => (isTip ? deploy(`${reason}, so deploying`) : stale(`${reason} and ${notTip()}, so not risking a rollback`));
+  const current = (reason) =>
+    isTip ? { plan: "current", deploy: false, verifySha: served, reason } : stale(`${reason}; ${notTip()}`);
 
   if (!served || !SHA.test(served)) {
-    return deploy("staging's served commit could not be read, so deploying rather than guessing");
+    return unsure("staging's served commit could not be read");
   }
   if (same(served, head)) return current(`staging already serves ${short(head)}`);
 
@@ -89,7 +100,7 @@ export function planStagingDeploy({ head, served, tip, isAncestor, changedPaths 
     headIsOlder = isAncestor(head, served);
     servedIsOlder = isAncestor(served, head);
   } catch {
-    return deploy(`git could not relate ${short(served)} (served) to ${short(head)}, so deploying`);
+    return unsure(`git could not relate ${short(served)} (served) to ${short(head)}`);
   }
 
   if (headIsOlder) {
@@ -99,14 +110,14 @@ export function planStagingDeploy({ head, served, tip, isAncestor, changedPaths 
     );
   }
   if (!servedIsOlder) {
-    return deploy(`staging serves ${short(served)}, which is not on this commit's history, so deploying`);
+    return unsure(`staging serves ${short(served)}, which is not on this commit's history`);
   }
 
   let paths;
   try {
     paths = changedPaths(served, head);
   } catch {
-    return deploy(`could not diff ${short(served)}..${short(head)}, so deploying`);
+    return unsure(`could not diff ${short(served)}..${short(head)}`);
   }
   const imagePaths = paths.filter((path) => API_IMAGE_PATHS.test(path));
   if (imagePaths.length > 0) {
