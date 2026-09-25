@@ -480,11 +480,7 @@ export class ScheduledJobsService {
     if (!claimed) return false;
 
     try {
-      await this.pollService.announceExpiry(
-        poll.id,
-        poll.channel_id,
-        poll.question,
-      );
+      await this.pollService.announceExpiry(poll.id, poll.channel_id);
       return true;
     } catch (error) {
       logThrowable(

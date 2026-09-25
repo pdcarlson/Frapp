@@ -5,7 +5,6 @@ import {
   fetchJson,
   fetchRenderDeploys,
   fetchVercelDeployments,
-  findRenderDeployBySha,
   findVercelDeploymentBySha,
 } from "../lib/providers.mjs";
 
@@ -45,16 +44,6 @@ describe("fetchJson", () => {
       /Example API returned HTTP 404/,
     );
   });
-
-  it("carries the HTTP status on the thrown error", async () => {
-    // verify-render-deploy.mjs fails fast on a 401/403/404 and re-asks on
-    // anything else; it reads this field, not the message.
-    const { fetchImpl } = recorder({ ok: false, status: 403, json: async () => ({}) });
-    await assert.rejects(
-      () => fetchJson({ url: "https://example.com/x", headers: {}, what: "Example API", fetchImpl }),
-      (error) => error.status === 403,
-    );
-  });
 });
 
 describe("fetchRenderDeploys", () => {
@@ -85,60 +74,6 @@ describe("fetchRenderDeploys", () => {
     const { calls, fetchImpl } = recorder(jsonOk([]));
     await fetchRenderDeploys({ apiKey: "k", serviceId: "srv-1", cursor: "cur-abc", fetchImpl });
     assert.match(calls[0].url, /cursor=cur-abc/);
-  });
-});
-
-// Same class of bug as the Vercel finder above (#1377): Render's list is also
-// a single un-paginated page.
-describe("findRenderDeployBySha", () => {
-  function page(entries) {
-    return jsonOk(entries);
-  }
-
-  it("finds a match on the first page without paginating further", async () => {
-    const { calls, fetchImpl } = recorder(
-      page([{ cursor: "c1", deploy: { commit: { id: "sha1" }, createdAt: "2026-04-16T00:00:00Z" } }]),
-    );
-    const result = await findRenderDeployBySha({ apiKey: "k", serviceId: "srv-1", sha: "sha1", fetchImpl });
-    assert.ok(result.match);
-    assert.equal(result.pagesSearched, 1);
-    assert.equal(calls.length, 1);
-  });
-
-  it("follows the row cursor to a later page and finds the match there", async () => {
-    let callIndex = 0;
-    const responses = [
-      page([{ cursor: "c1", deploy: { commit: { id: "other" }, createdAt: "2026-04-16T01:00:00Z" } }]),
-      page([{ cursor: "c2", deploy: { commit: { id: "sha1" }, createdAt: "2026-04-15T00:00:00Z" } }]),
-    ];
-    const calls = [];
-    const fetchImpl = async (url) => {
-      calls.push(url);
-      return responses[callIndex++];
-    };
-
-    const result = await findRenderDeployBySha({ apiKey: "k", serviceId: "srv-1", sha: "sha1", fetchImpl });
-
-    assert.ok(result.match);
-    assert.equal(result.pagesSearched, 2);
-    assert.match(calls[1], /cursor=c1/);
-  });
-
-  it("reports exhausted when the last page has no cursor and no match", async () => {
-    const { fetchImpl } = recorder(
-      page([{ deploy: { commit: { id: "other" }, createdAt: "2026-04-16T00:00:00Z" } }]),
-    );
-    const result = await findRenderDeployBySha({ apiKey: "k", serviceId: "srv-1", sha: "sha1", fetchImpl });
-    assert.equal(result.match, null);
-    assert.equal(result.exhausted, true);
-  });
-
-  it("throws rather than treating a malformed page as empty", async () => {
-    const { fetchImpl } = recorder(jsonOk({ notAnArray: true }));
-    await assert.rejects(
-      () => findRenderDeployBySha({ apiKey: "k", serviceId: "srv-1", sha: "sha1", fetchImpl }),
-      /unexpected payload/,
-    );
   });
 });
 
