@@ -53,7 +53,8 @@ import { asArray, getErrorMessage } from "@/lib/utils";
 
 type PollResult = {
   optionIndex: number;
-  optionText: string;
+  /** `null` on a poll from a member the viewer has blocked (#2495). */
+  optionText: string | null;
   voteCount: number;
 };
 
@@ -73,6 +74,12 @@ type PollRow = {
   isExpired: boolean;
   results: PollResult[];
   userVotes?: number[];
+  /**
+   * The server's verdict that the viewer has blocked this poll's author
+   * (#2495). The question and option text are withheld on such a row, and
+   * this flag, never the sentinel `content`, is what the card keys on.
+   */
+  sender_blocked?: boolean;
 };
 
 type ChannelRow = {
@@ -106,9 +113,18 @@ function Poll({
     new Set(poll.userVotes ?? []),
   );
   const isMultiChoice = poll.metadata.choice_mode === "multi";
+  /*
+   * A blocked member's poll keeps its tallies (chapter state) and loses its
+   * question and option text (`spec/behavior/polls.md`). Choosing among
+   * options the viewer cannot read would be a blind vote, so selecting and
+   * saving are off. Withdrawing stays: a vote cast before the block is the
+   * viewer's own, and taking it back needs no option text.
+   */
+  const isMasked = poll.sender_blocked === true;
+  const canSelect = !poll.isExpired && !isMasked;
 
   function toggleOption(index: number) {
-    if (poll.isExpired) return;
+    if (!canSelect) return;
     setSelection((prev) => {
       const next = new Set(prev);
       if (isMultiChoice) {
@@ -149,7 +165,11 @@ function Poll({
       setSelection(new Set());
       toast({
         title: "Vote withdrawn",
-        description: "You can vote again while the poll is open.",
+        // A masked card offers no way to vote (see `isMasked`), so it must not
+        // promise one.
+        description: isMasked
+          ? "Your vote is removed."
+          : "You can vote again while the poll is open.",
       });
     } catch (error) {
       toast({
@@ -165,7 +185,9 @@ function Poll({
       <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <CardTitle className="text-base">
-            {poll.metadata.question ?? poll.content}
+            {isMasked
+              ? "Poll from a member you blocked"
+              : (poll.metadata.question ?? poll.content)}
           </CardTitle>
           <CardDescription>
             {channelName} · Created {formatDate(poll.created_at)}
@@ -214,7 +236,7 @@ function Poll({
             <button
               key={result.optionIndex}
               type="button"
-              disabled={poll.isExpired}
+              disabled={!canSelect}
               onClick={() => toggleOption(result.optionIndex)}
               className={`w-full rounded-md border p-3 text-left transition ${FOCUS_RING} ${
                 isSelected
@@ -223,7 +245,9 @@ function Poll({
               } disabled:cursor-not-allowed disabled:opacity-70`}
             >
               <div className="flex items-center justify-between text-sm">
-                <span className="font-medium">{result.optionText}</span>
+                <span className="font-medium">
+                  {result.optionText ?? `Option ${result.optionIndex + 1}`}
+                </span>
                 <span className="text-xs text-muted-foreground">
                   {result.voteCount} vote{result.voteCount === 1 ? "" : "s"}
                   {" · "}
@@ -262,7 +286,7 @@ function Poll({
               Withdraw vote
             </Button>
           ) : null}
-          {!poll.isExpired ? (
+          {canSelect ? (
             <Button
               size="sm"
               {...gate.controlProps(
@@ -360,9 +384,9 @@ export function PollsPage() {
           <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-sm text-muted-foreground">
-                Chapter-wide poll list. Vote, change your mind, or review results.
-                Polls are created inside chat channels; this surface is the
-                at-a-glance summary with live vote tallies.
+                Chapter-wide poll list. Vote, change your mind, or review
+                results. Polls are created inside chat channels; this surface is
+                the at-a-glance summary with live vote tallies.
               </p>
             </div>
             <div className="flex items-center gap-2">

@@ -16,8 +16,13 @@ import type {
 } from '#domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
-import type { PollMetadata } from '#domain/entities/poll-vote.entity';
+import type {
+  PollMetadata,
+  PollWithResults,
+} from '#domain/entities/poll-vote.entity';
 import { ChannelAccessService } from './channel-access.service';
+import { ChatBlockService } from './chat-block.service';
+import { maskBlockedPoll } from './chat-block-mask';
 import { clampListLimit } from '#domain/constants/list-query-limits';
 
 const MIN_OPTIONS = 2;
@@ -33,26 +38,6 @@ export interface CreatePollInput {
   choiceMode?: 'single' | 'multi';
 }
 
-export interface PollWithResults {
-  id: string;
-  channel_id: string;
-  /**
-   * Nullable because `chat_messages.sender_id` is. In practice a poll always has
-   * one — `poll` is not a kind the archive importer writes, and `createPoll`
-   * takes the sender from the session — but the field is projected straight off
-   * the message row, so narrowing it here would be a lie the compiler could not
-   * catch at the seam where it is read.
-   */
-  sender_id: string | null;
-  content: string;
-  type: 'POLL';
-  metadata: PollMetadata;
-  created_at: string;
-  isExpired: boolean;
-  results: { optionIndex: number; optionText: string; voteCount: number }[];
-  userVotes?: number[];
-}
-
 @Injectable()
 export class PollService {
   private readonly logger = new Logger(PollService.name);
@@ -63,6 +48,9 @@ export class PollService {
     @Inject(POLL_VOTE_REPOSITORY)
     private readonly voteRepo: IPollVoteRepository,
     private readonly channelAccess: ChannelAccessService,
+    // Both poll reads serve a member's question and options to a named viewer,
+    // so they apply the viewer's block list like the timeline does (#2495).
+    private readonly chatBlocks: ChatBlockService,
   ) {}
 
   async createPoll(input: CreatePollInput): Promise<ChatMessage> {
@@ -261,9 +249,14 @@ export class PollService {
     // Both reads take `message.id`, not `messageId`: past this point the route
     // parameter has served its purpose and the database's own id is the one
     // canonical spelling of it.
-    const [totals, userVoteList] = await Promise.all([
+    //
+    // The block list rides the same `Promise.all`, and a failed read of it
+    // fails the request: "a block list that cannot be read is not an empty
+    // block list", so serving the poll unmasked would fail open.
+    const [totals, userVoteList, blockedUserIds] = await Promise.all([
       this.voteRepo.aggregateOptionTotalsByMessages([message.id]),
       this.voteRepo.findByMessageAndUser(message.id, userId),
+      this.chatBlocks.listBlockedUserIds(chapterId, userId),
     ]);
 
     // Scoped to this poll before keying on `option_index` alone: the RPC takes
@@ -282,18 +275,21 @@ export class PollService {
 
     const userVotes = userVoteList.map((v) => v.option_index);
 
-    return {
-      id: message.id,
-      channel_id: message.channel_id,
-      sender_id: message.sender_id,
-      content: message.content,
-      type: 'POLL',
-      metadata,
-      created_at: message.created_at,
-      isExpired: this.isPollExpired(metadata),
-      results,
-      userVotes,
-    };
+    return maskBlockedPoll(
+      {
+        id: message.id,
+        channel_id: message.channel_id,
+        sender_id: message.sender_id,
+        content: message.content,
+        type: 'POLL',
+        metadata,
+        created_at: message.created_at,
+        isExpired: this.isPollExpired(metadata),
+        results,
+        userVotes,
+      },
+      new Set(blockedUserIds),
+    );
   }
 
   /**
@@ -408,21 +404,34 @@ export class PollService {
    * this check a manual close would still get a spurious "has closed" auto
    * notice — and, because the sweep's dispatch claim is already taken by
    * then, one nothing could later correct.
+   *
+   * **The notice replies to the poll rather than quoting it** (#2495). It used
+   * to read `Poll "<question>" has closed.`, which re-posted the author's text
+   * under the system actor, and the system actor cannot be blocked: a blocked
+   * member's question reached the blocker's timeline beside the poll that the
+   * block had turned into a tombstone. As a reply, both clients draw the poll as
+   * the quote, and a quote of a blocked member's message is already masked
+   * (§ What a block does and does not hide, "quoted in someone else's reply").
+   * It replies in a read-only channel too, which `ChatService.sendMessage`
+   * refuses a member (`allowsInThreadReplies`); the chat spec records this
+   * notice as the one server-written exception.
    */
-  async announceExpiry(
-    pollId: string,
-    channelId: string,
-    question: string,
-  ): Promise<void> {
+  async announceExpiry(pollId: string, channelId: string): Promise<void> {
     const current = await this.messageRepo.findById(pollId);
-    const metadata = current?.metadata as PollMetadata | undefined;
-    if (metadata?.closed_at) return;
+    // A poll that no longer exists, or was deleted after the sweep's snapshot,
+    // has nothing to announce: `findById` returns soft-deleted rows, whose
+    // wiped `metadata` would pass the `closed_at` check below, and the notice
+    // would quote `[message deleted]`.
+    if (!current || current.is_deleted) return;
+    const metadata = current.metadata as PollMetadata;
+    if (metadata.closed_at) return;
 
     await this.messageRepo.create({
       channel_id: channelId,
       sender_id: SYSTEM_SENDER_ID,
-      content: `Poll "${question}" has closed.`,
+      content: 'This poll has closed.',
       kind: 'system_audit',
+      reply_to_id: pollId,
     });
   }
 
@@ -480,50 +489,71 @@ export class PollService {
     }
 
     const messageIds = listRows.map((row) => row.message.id);
-    let voteCountsByMessageId = new Map<string, Map<number, number>>();
-    let userVotesByMessageId: Map<string, number[]> | null = null;
+    const userId = options.userId;
 
-    try {
-      const totals =
-        await this.voteRepo.aggregateOptionTotalsByMessages(messageIds);
-      voteCountsByMessageId = this.groupTotalsByMessage(totals);
-    } catch (error) {
-      // Failed aggregate read: return polls with zero vote tallies rather than failing the list.
-      this.logger.error(
-        `Batch poll vote totals RPC failed for chapter ${chapterId} (${messageIds.length} polls); vote tallies omitted`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    }
+    const readVoteCounts = async (): Promise<
+      Map<string, Map<number, number>>
+    > => {
+      try {
+        const totals =
+          await this.voteRepo.aggregateOptionTotalsByMessages(messageIds);
+        return this.groupTotalsByMessage(totals);
+      } catch (error) {
+        // Failed aggregate read: return polls with zero vote tallies rather than failing the list.
+        this.logger.error(
+          `Batch poll vote totals RPC failed for chapter ${chapterId} (${messageIds.length} polls); vote tallies omitted`,
+          error instanceof Error ? error.stack : String(error),
+        );
+        return new Map();
+      }
+    };
 
-    if (options.userId) {
-      userVotesByMessageId = new Map<string, number[]>();
+    const readUserVotes = async (): Promise<Map<string, number[]> | null> => {
+      if (!userId) return null;
+      const userVotes = new Map<string, number[]>();
       try {
         const userRows = await this.voteRepo.findUserVotesByMessagesForUser(
           messageIds,
-          options.userId,
+          userId,
         );
         for (const row of userRows) {
-          let userList = userVotesByMessageId.get(row.message_id);
+          let userList = userVotes.get(row.message_id);
           if (!userList) {
             userList = [];
-            userVotesByMessageId.set(row.message_id, userList);
+            userVotes.set(row.message_id, userList);
           }
           userList.push(row.option_index);
         }
+        return userVotes;
       } catch (error) {
         this.logger.error(
-          `Batch poll user-vote RPC failed for chapter ${chapterId} (user ${options.userId}); userVotes omitted`,
+          `Batch poll user-vote RPC failed for chapter ${chapterId} (user ${userId}); userVotes omitted`,
           error instanceof Error ? error.stack : String(error),
         );
-        userVotesByMessageId = new Map();
+        return new Map();
       }
-    }
+    };
+
+    // The three reads are independent, so they run together. The block list is
+    // the one that is not caught: a failed tally read degrades to zeros, but a
+    // failed block-list read would serve a blocked member's question in the
+    // clear, so it fails the request (#2495). It is skipped only when nothing
+    // is visible, which includes every call with no `userId`.
+    const [voteCountsByMessageId, userVotesByMessageId, blockedUserIds] =
+      await Promise.all([
+        readVoteCounts(),
+        readUserVotes(),
+        listRows.length > 0 && userId
+          ? this.chatBlocks.listBlockedUserIds(chapterId, userId)
+          : Promise.resolve([]),
+      ]);
+    const blocked = new Set(blockedUserIds);
 
     const results: PollWithResults[] = [];
     for (const { message, metadata, expired } of listRows) {
       const countsByOption = voteCountsByMessageId.get(message.id);
       const options_ = metadata.options ?? [];
-      const entry: PollWithResults = {
+      const entry: Omit<PollWithResults, 'sender_blocked'> = {
         id: message.id,
         channel_id: message.channel_id,
         sender_id: message.sender_id,
@@ -541,7 +571,7 @@ export class PollService {
       if (userVotesByMessageId) {
         entry.userVotes = userVotesByMessageId.get(message.id) ?? [];
       }
-      results.push(entry);
+      results.push(maskBlockedPoll(entry, blocked));
     }
 
     return results;
