@@ -54,6 +54,7 @@ vi.mock("@/components/layout/dashboard-notification-drawer", () => ({
 }));
 
 import { DashboardShell } from "./dashboard-shell";
+import { DASHBOARD_SHELL_ATTR } from "@/components/shared/offline-banner-focus";
 
 describe("DashboardShell", () => {
   it("renders the route inside a main landmark", () => {
@@ -152,21 +153,27 @@ describe("DashboardShell", () => {
     ).toHaveAttribute("href", "#main-content");
   });
 
-  it("leaves room for the offline banner instead of claiming the whole viewport", () => {
-    // `OfflineBanner` is a sibling ABOVE this shell in the root layout and
-    // publishes its height as `--offline-banner-height`. A flat `h-screen`
-    // here adds the banner's height to the page the moment the app goes
-    // offline, pushing the bottom of the shell below the fold.
+  it("takes the full viewport and marks itself for the connection banner", () => {
+    // The connection banner floats over the page (#2244), so the shell makes
+    // no room for it. It used to subtract `--offline-banner-height`, which is
+    // what moved the whole shell down every time the app left ONLINE. The
+    // attribute is how the banner knows to float below the top bar.
     const { container } = render(
       <DashboardShell>
         <p>route content</p>
       </DashboardShell>,
     );
     const root = container.firstElementChild;
-    expect(root?.className).toContain(
-      "h-[calc(100vh_-_var(--offline-banner-height,0px))]",
-    );
+    // `dvh`: `100vh` on a phone is the viewport with the toolbar hidden, which
+    // puts the bottom of a clipped shell under the toolbar while it shows.
+    expect(root).toHaveClass("h-dvh");
     expect(root?.className).not.toContain("h-screen");
+    expect(root?.className).not.toContain("offline-banner-height");
+    expect(root).toHaveAttribute(DASHBOARD_SHELL_ATTR);
+    // The banner floats at `top-14`: this bar's 48px plus an 8px gap. A
+    // taller bar would put the pill over the bar's own controls, so the
+    // height it counts on is pinned here, beside the attribute it keys on.
+    expect(screen.getByRole("banner")).toHaveClass("h-12");
   });
 
   /*

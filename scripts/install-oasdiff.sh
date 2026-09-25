@@ -13,7 +13,10 @@
 # Docs: docs/internal/ci-cd/QUALITY_GATES.md
 set -euo pipefail
 
-OASDIFF_VERSION="${OASDIFF_VERSION:-1.11.7}"
+# The pinned version, the one place it is written. Its archives' digests are
+# pinned in pinned_sha256 below; bump both together.
+PINNED_VERSION="1.11.7"
+OASDIFF_VERSION="${OASDIFF_VERSION:-$PINNED_VERSION}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CACHE_DIR="$ROOT/.cache/oasdiff"
@@ -60,30 +63,52 @@ if ! curl -fsSL --retry 3 --max-time 120 "$base_url/$asset" -o "$tmp/$asset"; th
   exit 1
 fi
 
-# Best-effort supply-chain check, matching install-gitleaks.sh: the binary is
-# fetched over the network, made executable, and run in CI, so TLS alone is not
-# the whole story. oasdiff publishes checksums.txt alongside the assets.
-if curl -fsSL --retry 3 --max-time 60 "$base_url/checksums.txt" -o "$tmp/checksums.txt"; then
+# Verify the archive before it is made executable and run in CI. The
+# shipped-contract check blocks merges on this binary's verdict (#2619), so a
+# checksum fetched from the same release as the archive is not enough on its
+# own: the pinned version's digests live here, and a fetched checksums.txt is
+# used only for an OASDIFF_VERSION override. No path installs unverified.
+# To bump the pin: change PINNED_VERSION above and replace the digests below
+# with the new release's checksums.txt lines for these three assets. Keyed on
+# the platform alone, so a digest can't silently stop matching an asset name.
+pinned_sha256() {
+  case "$1" in
+    linux_amd64) echo "97f1052365f74e6fd6f4d8fa108606e09391aebb8ecbf3b5e7a4059d54327224" ;;
+    linux_arm64) echo "6a7394ec7129ccfbfcf4837db8426198b79e933341a96adf53b0f33498846b45" ;;
+    darwin_all) echo "2aab1d33f3b9f9c28cd6c1977f63b1aa43ba83f9ab94887f3097fcac152d20a1" ;;
+    *) echo "" ;;
+  esac
+}
+
+if [ "$OASDIFF_VERSION" = "$PINNED_VERSION" ]; then
+  expected="$(pinned_sha256 "${os_name}_${arch_name}")"
+  if [ -z "$expected" ]; then
+    echo "install-oasdiff: no pinned digest for $asset — refusing to install." >&2
+    exit 1
+  fi
+else
+  if ! curl -fsSL --retry 3 --max-time 60 "$base_url/checksums.txt" -o "$tmp/checksums.txt"; then
+    echo "install-oasdiff: could not fetch checksums.txt for unpinned $asset — refusing to install." >&2
+    exit 1
+  fi
   expected="$(awk -v a="$asset" '$2 == a || $2 == "*"a {print $1}' "$tmp/checksums.txt" | head -n1)"
   if [ -z "$expected" ]; then
     echo "install-oasdiff: no checksum entry for $asset — refusing to install." >&2
     exit 1
   fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    actual="$(sha256sum "$tmp/$asset" | awk '{print $1}')"
-  else
-    actual="$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')"
-  fi
-  if [ "$actual" != "$expected" ]; then
-    echo "install-oasdiff: checksum mismatch for $asset." >&2
-    echo "  expected $expected" >&2
-    echo "  actual   $actual" >&2
-    exit 1
-  fi
-  echo "Checksum verified."
-else
-  echo "install-oasdiff: could not fetch checksums.txt — continuing unverified." >&2
 fi
+if command -v sha256sum >/dev/null 2>&1; then
+  actual="$(sha256sum "$tmp/$asset" | awk '{print $1}')"
+else
+  actual="$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')"
+fi
+if [ "$actual" != "$expected" ]; then
+  echo "install-oasdiff: checksum mismatch for $asset." >&2
+  echo "  expected $expected" >&2
+  echo "  actual   $actual" >&2
+  exit 1
+fi
+echo "Checksum verified."
 
 tar -xzf "$tmp/$asset" -C "$tmp"
 # Extract to a temp name and move into place only once complete, so an

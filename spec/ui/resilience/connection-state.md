@@ -184,7 +184,13 @@ system's ban on that idiom. So the visual signal here is the cursor, and the
 *explanation* is carried by `aria-describedby` and the note, not by dimming.
 
 Banner behavior:
-- Appears at the top of the content area (below header bar). **Mobile deviates,
+- Appears at the top of the content area (below header bar). On web it takes no layout
+  space: it is a fixed overlay floating just below the top bar, so a state change never
+  moves the shell, the top bar or a page title (#2244; it used to sit in flow above the
+  shell and push everything down). Routes with no bar, such as sign-in, float it
+  at the top of the viewport. Floating means it covers the first row of content, which
+  is why only its dismiss control takes a pointer: a tap on the rest of it reaches the
+  page underneath. **Mobile deviates,
   deliberately:** the banner is mounted above the navigator in `app/_layout.tsx`, not
   below each screen's header. "Below the header bar" is a web-shaped rule written for
   a dashboard chrome; a global banner belongs above every screen, and moving it under
@@ -199,7 +205,9 @@ Banner behavior:
   gesture. Recorded as drift rather than smuggled: nothing about the placement forces a
   fade, so a later pass may make it a real slide.
 - Auto-dismisses when state improves
-- User can manually dismiss (it reappears if state hasn't changed after 30s). On mobile a
+- User can manually dismiss (it reappears if state hasn't changed after 30s). Web
+  shows it again at once on any change of state, since the dismissal was of the state
+  it named. On mobile a
   dismissed bar fades to transparent but **stays laid out**, so its space is not reclaimed
   until the state changes or the 30s timer fires — also known drift
 - Announced, not merely drawn: `accessibilityRole="alert"` +

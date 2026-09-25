@@ -163,6 +163,10 @@ passes as long as the committed artifacts already match a fresh regeneration —
 note that not every contract change affects `types.ts` (security schemes and
 descriptions live only in `openapi.json`).
 
+The same job also fails a change that breaks the contract a shipped mobile build
+was made from, such as removing a route it may call:
+[`QUALITY_GATES.md` § Two comparisons, two postures](docs/internal/ci-cd/QUALITY_GATES.md#two-comparisons-two-postures).
+
 ---
 
 ## Database Migrations
