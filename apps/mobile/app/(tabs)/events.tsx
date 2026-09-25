@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { useEvents } from "@repo/hooks";
+import { useEvents, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
@@ -43,8 +43,10 @@ export default function EventsScreen() {
   const eventsQuery = useEvents();
   const askSheetRef = useRef<BottomSheetModal>(null);
 
-  // Read once per render so every row agrees on what "today" and "open" mean.
-  const now = useMemo(() => new Date(), []);
+  // One `now` per render so every row agrees on what "today" and "open" mean,
+  // and it ticks so a check-in window opens and closes on a tab that never
+  // unmounts rather than staying as it was when the screen first rendered.
+  const now = useNowDate();
   const events = useMemo(
     () => selectEventRows(eventsQuery.data, now),
     [eventsQuery.data, now],

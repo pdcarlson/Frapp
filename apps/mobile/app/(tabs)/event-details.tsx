@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,14 +7,12 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEvent } from "@repo/hooks";
-import { parseInstant } from "@repo/formatting";
+import { useEvent, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { exportEventToCalendar } from "@/lib/calendar-export";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
-  CHECK_IN_GRACE_MINUTES,
   formatEventClock,
   formatEventWindow,
   resolveCheckInWindow,
@@ -65,34 +63,18 @@ export default function EventDetailsScreen() {
   >("ready");
 
   /*
-    A ticking clock, not one frozen at mount.
-    `apps/web/components/chat/renderers/event-card.tsx` carries the same tick for
-    the same reason: this screen is often opened *before* check-in opens — a
-    member arriving early taps through from UP NEXT — and a `new Date()` captured
-    once would leave "Check-in hasn't opened / Opens at 6:00" on screen through
-    6:00, 6:15 and past the close, with no way to reach the scanner but to back
-    out and re-enter.
+    A ticking clock, not one frozen at mount: this screen is often opened
+    *before* check-in opens — a member arriving early taps through from UP
+    NEXT — and a `new Date()` captured once would leave "Check-in hasn't opened
+    / Opens at 6:00" on screen through 6:00, 6:15 and past the close, with no
+    way to reach the scanner but to back out and re-enter.
 
-    30s granularity matches the web card and is well inside the 15-minute grace
-    window; the interval stops once the window has fully closed so a detail
-    screen left open overnight is not re-rendering forever. The server enforces
-    the real window regardless — this is UX only.
+    It is the shared `@repo/hooks` clock the Events list and web's event card
+    read, so this screen and the row it was opened from agree on whether the
+    window is open. Its 30s tick is well inside the 15-minute grace window. The
+    server enforces the real window regardless — this is UX only.
   */
-  const [now, setNow] = useState(() => new Date());
-  const endTime = event?.end_time;
-  useEffect(() => {
-    if (!endTime) return;
-    const end = parseInstant(endTime);
-    if (!end) return;
-    const closesAt = end.getTime() + CHECK_IN_GRACE_MINUTES * 60_000;
-    if (Date.now() > closesAt) return;
-
-    const id = setInterval(() => {
-      setNow(new Date());
-      if (Date.now() > closesAt) clearInterval(id);
-    }, 30_000);
-    return () => clearInterval(id);
-  }, [endTime]);
+  const now = useNowDate();
 
   const window = event
     ? resolveCheckInWindow(event.start_time, event.end_time, now)
