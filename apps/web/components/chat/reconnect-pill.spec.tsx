@@ -50,8 +50,8 @@ describe("ReconnectPill", () => {
     expect(pill).toHaveTextContent(
       "Offline — messages will send when you reconnect",
     );
-    // The AA-lifted tone: `--destructive` on `--destructive-tint` measures
-    // 4.22:1, under README §6's 4.5:1 floor (components.md §1).
+    // The AA-lifted tone: `--destructive` on its own 13% tint measures 4.22:1
+    // over `--card`, under README §6's 4.5:1 floor (components.md §1).
     expect(pill.className).toContain("text-destructive-text");
   });
 

@@ -70,10 +70,12 @@ export function OfflineBanner() {
       message: "You're offline. Showing cached data.",
       /*
        * The `--destructive-text` lift, since #2376. Until then this stayed on
-       * solid `--destructive`, because an alpha tint over the `--background`
-       * the pill is seated on measured 4.850:1. The tint is an opaque token
-       * now, one colour whatever it sits on, and solid danger on it measures
-       * 4.222:1 on every surface: under the gate. The lift measures 5.612:1.
+       * solid `--destructive`, because on its 13% tint over the `--background`
+       * the pill is seated on it measures 4.850:1, clear of the gate. But
+       * danger text on the danger tint is always the lift now (foundations
+       * §5), so that one rule covers every call site and
+       * `status-tint-call-sites.spec.ts` can hold them all to it. Here it
+       * measures 6.448:1 on the tint and 7.421:1 where the tint drops out.
        */
       className:
         "border-destructive/45 bg-destructive-tint text-destructive-text",

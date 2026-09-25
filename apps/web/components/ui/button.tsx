@@ -49,10 +49,11 @@ const buttonVariants = cva(
         tinted:
           "border-accent-border bg-accent-subtle font-bold text-accent-text hover:bg-accent-subtle-hover",
         ghost: "font-semibold text-accent-text hover:bg-accent-subtle",
-        // Tint, never a solid red fill (§3). 14% at rest, ~20% on hover. The
-        // label is the AA-lifted tone: `--destructive` on its own tint measures
-        // 3.97:1 over `--popover`, which is what a destructive button in a
-        // sheet or dialog actually sits on.
+        // Tint, never a solid red fill (§3): `--destructive-tint` (13%) at
+        // rest, `--destructive-tint-hover` (20%) on hover. The label is the
+        // AA-lifted tone: `--destructive` on its own tint measures 3.82:1 over
+        // `--popover`, which is what a destructive button in a sheet or dialog
+        // actually sits on.
         destructive:
           "bg-destructive-tint font-bold text-destructive-text hover:bg-destructive-tint-hover",
         // Not one of §3's five: an inline text link that happens to be a

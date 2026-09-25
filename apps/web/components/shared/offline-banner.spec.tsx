@@ -70,8 +70,9 @@ describe("OfflineBanner", () => {
     // composer has an outbox, and it states that at the control itself.
     expect(banner).toHaveTextContent("You're offline. Showing cached data.");
     expect(banner).not.toHaveTextContent(/will sync/i);
-    // Opaque `bg-background` under an opaque tint (#2376), with the lifted
-    // danger text: solid `--destructive` on `--destructive-tint` is 4.22:1.
+    // Opaque `bg-background` so the page it floats over cannot show through
+    // the 13% semantic tint, and the contrast it was measured at still holds.
+    // Danger text on the tint is the lift (#2376, foundations §5).
     expect(banner).toHaveClass("bg-background");
     expect(banner.firstElementChild).toHaveClass(
       "border-destructive/45 bg-destructive-tint text-destructive-text",

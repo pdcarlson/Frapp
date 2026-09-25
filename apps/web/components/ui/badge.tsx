@@ -32,13 +32,16 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * from the danger tint, so the chapter that most needs `PAID` to read as paid is
  * the chapter where it reads as overdue.
  *
- * Only danger and info need §1's lift. The tints are opaque tokens (#2376,
- * foundations §5: an alpha utility's fallback below the `color-mix` floor was
- * the solid hue, so the label read 1.00:1), so each pair is one number on
- * every surface: `--success` 5.31:1 and `--warning` 5.85:1 clear the 4.5:1
- * gate and render in the hue itself. `--destructive` is 4.22:1, which is why
- * it has `--destructive-text` at 5.61:1. Pinned in
- * `components/shared/status-tint-contrast.spec.ts`.
+ * Only danger and info need §1's lift. Measured on the new ladder
+ * (foundations.md §2), each hue on its own 13% tint across the four steps:
+ * `--success` 4.79–6.08:1 and `--warning` 5.27–6.81:1 both clear the 4.5:1
+ * gate, so they render in the semantic hue itself and need no twin.
+ * `--destructive` is 3.82–4.85:1 (4.222 on `--card`, 3.817 on `--popover`),
+ * which is why it has `--destructive-text` — that twin measures 5.07–6.45:1 on
+ * the same tints and clears throughout. The fill is the `--*-tint` token, not
+ * an alpha utility (#2376, foundations §5), so where `color-mix` is missing
+ * the fill drops out and the label sits on the bare surface, still clear.
+ * Both paths are measured in `components/shared/status-tint-contrast.spec.ts`.
  *
  * `--info` is 3.45–4.36:1 on its own tint (3.807 on `--card`, 3.446 on
  * `--popover`) and now has `--info-text` (#4C93F8) — added when the greenfield
@@ -75,7 +78,7 @@ const badgeVariants = cva(
         success: "border-transparent bg-success-tint text-success",
         warning: "border-transparent bg-warning-tint text-warning",
         // AA-lifted text on the tint — `--destructive` on its own 13% tint is
-        // 4.39:1 over `--card`, the surface a status badge normally sits on.
+        // 4.22:1 over `--card`, the surface a status badge normally sits on.
         destructive:
           "border-transparent bg-destructive-tint text-destructive-text",
         mention: "border-transparent bg-mention text-mention-foreground",
