@@ -1,6 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { Toast, ToastAction, ToastProvider, ToastViewport } from "./toast";
+import {
+  Toast,
+  ToastClose,
+  ToastDescription,
+  ToastProvider,
+  ToastTitle,
+  ToastViewport,
+} from "./toast";
 
 /**
  * #2376: the destructive toast floats over whatever the page has in the
@@ -11,14 +18,14 @@ import { Toast, ToastAction, ToastProvider, ToastViewport } from "./toast";
  */
 const TINT =
   "bg-[linear-gradient(var(--destructive-tint),var(--destructive-tint))]";
-const HOVER_TINT =
-  "bg-[linear-gradient(var(--destructive-tint-hover),var(--destructive-tint-hover))]";
 
 function renderDestructive() {
   render(
     <ToastProvider>
       <Toast variant="destructive" open data-testid="toast">
-        <ToastAction altText="Retry">Retry</ToastAction>
+        <ToastTitle>Save failed</ToastTitle>
+        <ToastDescription>Check your connection.</ToastDescription>
+        <ToastClose aria-label="Close" />
       </Toast>
       <ToastViewport />
     </ToastProvider>,
@@ -32,14 +39,22 @@ describe("the destructive toast", () => {
     expect(toast).toHaveClass("bg-popover", TINT, "text-destructive-text");
   });
 
-  it("repaints the same base under its action's hover, not a second tint", () => {
+  it("keeps every label on it in the lifted danger tone", () => {
+    // Solid `--destructive` on the tint over `--popover` is 3.82:1. The
+    // children sit on a tint their own classes do not paint, which is exactly
+    // what `status-tint-call-sites.spec.ts` cannot see, so they are held here.
     renderDestructive();
-    const action = screen.getByRole("button", { name: "Retry" });
-    expect(action).toHaveClass(
-      "enabled:group-[.destructive]:hover:bg-popover",
-      `enabled:group-[.destructive]:hover:${HOVER_TINT}`,
-      "enabled:group-[.destructive]:text-destructive-text",
-    );
-    expect(action.className).not.toMatch(/hover:bg-destructive-tint-hover/);
+    const title = screen.getByText("Save failed");
+    const description = screen.getByText("Check your connection.");
+    const close = screen.getByRole("button", { name: "Close" });
+
+    // The title sets no colour and inherits the root's lift.
+    expect(title.className).not.toMatch(/text-destructive(?!-text)/);
+    for (const label of [description, close]) {
+      expect(label).toHaveClass("group-[.destructive]:text-destructive-text");
+      expect(label.className).not.toMatch(
+        /group-\[\.destructive\]:(?:hover:)?text-destructive(?!-text)/,
+      );
+    }
   });
 });

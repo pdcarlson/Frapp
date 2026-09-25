@@ -7,6 +7,7 @@ import {
   SEEDS,
   SEMANTIC,
   SURFACE,
+  statusTint,
   tint,
   INDISTINGUISHABLE,
 } from "@/tests/signet-contrast";
@@ -41,11 +42,11 @@ describe("the Semantic badge kinds", () => {
     // remedy is §1's lift, not a hue change.
     for (const [name, bg] of Object.entries(SURFACE)) {
       expect(
-        ratio(SEMANTIC.success, tint(SEMANTIC.success, bg)),
+        ratio(SEMANTIC.success, statusTint("success", bg)),
         `--success on its own tint over ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
       expect(
-        ratio(SEMANTIC.warning, tint(SEMANTIC.warning, bg)),
+        ratio(SEMANTIC.warning, statusTint("warning", bg)),
         `--warning on its own tint over ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
     }
@@ -55,11 +56,11 @@ describe("the Semantic badge kinds", () => {
     for (const name of ["card", "popover"] as const) {
       const bg = SURFACE[name];
       expect(
-        ratio(SEMANTIC.destructive, tint(SEMANTIC.destructive, bg)),
+        ratio(SEMANTIC.destructive, statusTint("destructive", bg)),
         `unlifted --destructive on its own tint over ${name}`,
       ).toBeLessThan(AA_TEXT);
       expect(
-        ratio(DESTRUCTIVE_TEXT, tint(SEMANTIC.destructive, bg)),
+        ratio(DESTRUCTIVE_TEXT, statusTint("destructive", bg)),
         `--destructive-text on the danger tint over ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
     }
@@ -84,8 +85,8 @@ describe("status colour is never decorative", () => {
     // badge are. So a chapter whose brand is green could not tell PAID from
     // PAID, and a chapter whose brand is red read PAID as OVERDUE — which is
     // the wrong direction to be wrong about money.
-    const successTint = tint(SEMANTIC.success, SURFACE.card);
-    const dangerTint = tint(SEMANTIC.destructive, SURFACE.card);
+    const successTint = statusTint("success", SURFACE.card);
+    const dangerTint = statusTint("destructive", SURFACE.card);
 
     expect(
       ratio(accentSubtleFor("#006400"), successTint),
@@ -160,7 +161,7 @@ describe("the warning notice", () => {
     // twin before this slice.
     for (const name of ["background", "popover"] as const) {
       expect(
-        ratio(SEMANTIC.warning, tint(SEMANTIC.warning, SURFACE[name])),
+        ratio(SEMANTIC.warning, statusTint("warning", SURFACE[name])),
         `warning notice over ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
     }

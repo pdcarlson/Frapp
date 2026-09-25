@@ -78,30 +78,6 @@ const Toast = React.forwardRef<
 })
 Toast.displayName = ToastPrimitives.Root.displayName
 
-const ToastAction = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitives.Action>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Action>
->(({ className, ...props }, ref) => (
-  <ToastPrimitives.Action
-    ref={ref}
-    className={cn(
-      "inline-flex h-11 shrink-0 items-center justify-center rounded-md border border-input bg-card px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:border-border disabled:bg-card disabled:text-disabled",
-      // `enabled:`-scoped: `group-[.destructive]:*` compiles to a descendant
-      // selector carrying two ancestor classes, so it strictly outranks
-      // `disabled:*` and would keep a disabled action painted as if live.
-      //
-      // The hover repaints the same opaque base the root has, with the deeper
-      // tint over it. A bare `hover:bg-destructive-tint-hover` would stack 20%
-      // on the root's 13% and take the label to 3.94:1 (#2376).
-      "enabled:group-[.destructive]:border-destructive/45 enabled:group-[.destructive]:bg-transparent enabled:group-[.destructive]:text-destructive-text enabled:group-[.destructive]:hover:bg-popover enabled:group-[.destructive]:hover:bg-[linear-gradient(var(--destructive-tint-hover),var(--destructive-tint-hover))]",
-      FOCUS_RING,
-      className
-    )}
-    {...props}
-  />
-))
-ToastAction.displayName = ToastPrimitives.Action.displayName
-
 const ToastClose = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Close>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Close>
@@ -155,16 +131,12 @@ ToastDescription.displayName = ToastPrimitives.Description.displayName
 
 type ToastProps = React.ComponentPropsWithoutRef<typeof Toast>
 
-type ToastActionElement = React.ReactElement<typeof ToastAction>
-
 export {
   type ToastProps,
-  type ToastActionElement,
   ToastProvider,
   ToastViewport,
   Toast,
   ToastTitle,
   ToastDescription,
   ToastClose,
-  ToastAction,
 }

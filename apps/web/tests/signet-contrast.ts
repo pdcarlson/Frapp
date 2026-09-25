@@ -139,7 +139,7 @@ export const MENTION_CHIP = {
  * `signet.css` so a contrast guard measures the fill that ships rather than a
  * restated alpha. Composite one over its surface with `tint(t.hue, bg, t.alpha)`.
  */
-function statusTint(name: string): { hue: string; alpha: number } {
+function parseStatusTint(name: string): { hue: string; alpha: number } {
   const value = cssToken(name);
   const match = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/.exec(value);
   if (!match) throw new Error(`${name} is not an rgba() literal: ${value}`);
@@ -154,10 +154,10 @@ function statusTint(name: string): { hue: string; alpha: number } {
 }
 
 export const STATUS_TINT = {
-  success: statusTint("--success-tint"),
-  warning: statusTint("--warning-tint"),
-  destructive: statusTint("--destructive-tint"),
-  destructiveHover: statusTint("--destructive-tint-hover"),
+  success: parseStatusTint("--success-tint"),
+  warning: parseStatusTint("--warning-tint"),
+  destructive: parseStatusTint("--destructive-tint"),
+  destructiveHover: parseStatusTint("--destructive-tint-hover"),
 } as const;
 
 /** The hairline's alpha, parsed from the token so the two cannot disagree. */
@@ -230,6 +230,10 @@ export const ratio = (fg: string, bg: string) =>
  */
 export const tint = (hue: string, over: string, alpha = 0.13) =>
   applyAlpha(hue, alpha, over);
+
+/** A §5 status tint as it ships (`STATUS_TINT`), over the surface it lands on. */
+export const statusTint = (key: keyof typeof STATUS_TINT, over: string) =>
+  tint(STATUS_TINT[key].hue, over, STATUS_TINT[key].alpha);
 
 const rolesBySeed = new Map<string, Record<string, string>>();
 

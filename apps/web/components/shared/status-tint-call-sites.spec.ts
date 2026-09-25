@@ -103,41 +103,57 @@ const DANGER_TINT =
   /^(?:bg-destructive-tint(?:-hover)?|bg-\[linear-gradient\(var\(--destructive-tint(?:-hover)?\).*\])$/;
 const DANGER_TEXT = new Set(["text-destructive", "text-destructive-text"]);
 
+/** A utility without Tailwind v4's `!` important marker, either spelling. */
+const unimportant = (utility: string) => utility.replace(/^!|!$/g, "");
+
 /**
  * The unlifted danger text a class list paints on the danger tint. Solid
  * `--destructive` misses the gate on its own tint from `--surface-1` up, so
  * danger text on the tint is `--destructive-text` (foundations §5).
  *
- * A tint under some variants takes its text from the most specific danger
- * text whose variants are a subset of its own, which is how the cascade
- * resolves them: `data-[state=active]:bg-destructive-tint` with no text of its
- * own inherits the list's bare `text-destructive`, and the toast action's
- * `enabled:group-[.destructive]:hover:` tint inherits the
- * `enabled:group-[.destructive]:` text.
+ * Checked per state rather than per class, because a text and a tint under
+ * different variants still meet: `data-[state=active]:bg-destructive-tint`
+ * with no text of its own shows the list's bare `text-destructive`, and
+ * `bg-destructive-tint hover:text-destructive` shows it on hover. Each state
+ * is the tint's variants plus one danger text's, and in it the text that wins
+ * is an `!important` one if any applies, else the one with the most variants,
+ * which is how the cascade resolves Tailwind's variant stacking.
  */
 export function unliftedDangerOnTint(classList: string): string[] {
   const parsed = classList
     .split(/\s+/)
     .filter(Boolean)
-    .map((cls) => ({
-      cls,
-      ...parseClass(cls),
-    }));
+    .map((cls) => {
+      const { variants, utility } = parseClass(cls);
+      return {
+        cls,
+        variants,
+        utility: unimportant(utility),
+        important: unimportant(utility) !== utility,
+      };
+    });
   const texts = parsed.filter((c) => DANGER_TEXT.has(c.utility));
-  const found: string[] = [];
+  const found = new Set<string>();
   for (const tint of parsed.filter((c) => DANGER_TINT.test(c.utility))) {
-    const applicable = texts.filter((text) =>
-      text.variants.every((v) => tint.variants.includes(v)),
-    );
-    const depth = Math.max(-1, ...applicable.map((t) => t.variants.length));
-    const winners = applicable.filter((t) => t.variants.length === depth);
-    for (const text of winners) {
-      if (text.utility === "text-destructive") {
-        found.push(`${tint.cls} under ${text.cls}`);
+    const states = [
+      tint.variants,
+      ...texts.map((t) => [...tint.variants, ...t.variants]),
+    ];
+    for (const state of states) {
+      const applicable = texts.filter((text) =>
+        text.variants.every((v) => state.includes(v)),
+      );
+      const important = applicable.filter((t) => t.important);
+      const pool = important.length > 0 ? important : applicable;
+      const depth = Math.max(-1, ...pool.map((t) => t.variants.length));
+      for (const text of pool.filter((t) => t.variants.length === depth)) {
+        if (text.utility === "text-destructive") {
+          found.add(`${tint.cls} under ${text.cls}`);
+        }
       }
     }
   }
-  return found;
+  return [...found];
 }
 
 describe("semantic status fills are tint tokens, never an alpha utility (#2376)", () => {
@@ -190,6 +206,11 @@ describe("semantic status fills are tint tokens, never an alpha utility (#2376)"
       // A shorter variant prefix is still the text a longer one inherits.
       "enabled:group-[.destructive]:text-destructive enabled:group-[.destructive]:hover:bg-destructive-tint-hover",
       "bg-popover bg-[linear-gradient(var(--destructive-tint),var(--destructive-tint))] text-destructive",
+      // A text under more variants than the tint meets it in that state.
+      "bg-destructive-tint text-destructive-text hover:text-destructive",
+      // Either spelling of Tailwind v4's important marker.
+      "bg-destructive-tint !text-destructive",
+      "bg-destructive-tint text-destructive-text text-destructive!",
     ];
     for (const classList of flagged) {
       expect(unliftedDangerOnTint(classList), classList).toHaveLength(1);
@@ -199,6 +220,8 @@ describe("semantic status fills are tint tokens, never an alpha utility (#2376)"
       "bg-destructive-tint text-destructive-text hover:bg-destructive-tint-hover",
       "text-destructive data-[state=active]:bg-destructive-tint data-[state=active]:text-destructive-text",
       "enabled:group-[.destructive]:text-destructive-text enabled:group-[.destructive]:hover:bg-popover enabled:group-[.destructive]:hover:bg-[linear-gradient(var(--destructive-tint-hover),var(--destructive-tint-hover))]",
+      // Unlifted danger text in a state the tint is not in.
+      "text-destructive hover:bg-destructive-tint hover:text-destructive-text",
       // Text from a child element is out of this scan's reach, not a failure.
       "border-destructive/45 bg-destructive-tint p-3",
     ];

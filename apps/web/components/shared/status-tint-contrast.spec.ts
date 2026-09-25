@@ -30,7 +30,7 @@ const LABELS: Array<[string, string, keyof typeof STATUS_TINT]> = [
   ["--success", SEMANTIC.success, "success"],
   ["--warning", SEMANTIC.warning, "warning"],
   ["--destructive-text", DESTRUCTIVE_TEXT, "destructive"],
-  // The destructive button's and toast action's hover.
+  // The destructive button's hover.
   ["--destructive-text", DESTRUCTIVE_TEXT, "destructiveHover"],
   // Notices that carry neutral text on the danger tint
   // (`chapter-nav-header`, `discord-import/connect-step`).
