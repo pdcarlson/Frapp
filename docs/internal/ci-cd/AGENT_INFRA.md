@@ -901,10 +901,12 @@ noticed for 71 days ([#763](https://github.com/pdcarlson/Frapp/issues/763); the 
 itself is [#696](https://github.com/pdcarlson/Frapp/issues/696)). Three things compounded, and the
 first and third are what the `deploy-outcome` job fixes:
 
-1. **A skipped run is a green run.** The `check-changes` path gate skips the migrate/deploy
-   jobs when a push touches neither the API's source nor `supabase/migrations/`. 46 of the last 90 runs were
-   green-because-empty, so the Actions list read "mostly healthy" while the deploy path was
-   100% dead.
+1. **A skipped run is a green run.** The `check-changes` path gate of the time skipped the
+   migrate/deploy jobs when a push touched neither the API's source nor `supabase/migrations/`.
+   46 of the last 90 runs were green-because-empty, so the Actions list read "mostly healthy"
+   while the deploy path was 100% dead. (No path gate is left: `migrate-staging` has run on every
+   eligible push since, and `deploy-staging` since #2505, which plans its deploy from the commit
+   staging serves.)
 2. **`workflow_run` failures land on no commit and no PR** the way `CI` does — nothing turns red
    anywhere a human normally looks. (Unfixed by design: this is how `workflow_run` works.)
 3. **No notification of any kind.** A failed staging migration was indistinguishable from a quiet
@@ -915,18 +917,22 @@ In `deploy-api.yml` the terminal `deploy-outcome` job `needs` every prior job an
 does two things:
 
 - **Says what happened.** A step summary and a `::notice::`/`::error::` annotation state plainly
-  whether the run **deployed** something, **failed**, or **declined to deploy**, with a per-job
-  result table — so a green run no longer requires opening four skipped jobs to learn it deployed
-  nothing. `cancelled` and `timed_out` count as failures, not as benign.
+  whether the run **deployed** something, **failed**, found staging **up to date** (a `current`
+  plan: nothing needed deploying, and staging was verified), or was **superseded**, with a per-job
+  result table and the deploy plan. `cancelled` and `timed_out` count as failures, except a
+  `deploy-staging` that GitHub replaced in the queue before it planned, which is superseded.
 - **Raises or clears one alert issue.** On failure it upserts a single tracking issue titled
   *"Deploy API is failing — pushes are not reaching the environment"* (`incident`, `area:ci`,
   `P1`, assigned to the owner): created if absent, reopened if closed, otherwise commented — never a fresh issue per
   failure, because alert spam is how alerting gets muted. A later **successful** deploy closes it
   as `completed`. So an open alert issue means "the deploy path is broken right now".
 
-A **no-op run never closes an open alert** — skipping every job proves nothing about whether
-deploys work, and no-op runs are the majority. `incident` is what keeps `/next` from claiming
-the alert as backlog work (§0.2 treats that label as never-claimable).
+A **superseded run never touches the alert**. Its plan is `stale` when `main` has moved past its
+commit, as for a re-run of an old run: deploying it would roll staging back, and its verdict is
+about an old commit, so it would otherwise close an alert the newest run raised. Only a `deploy` or
+a `current` run for `main`'s tip decides. A Deploy API **no-op** (neither job ran) is escalated to a
+failure since #2505, because both jobs now run on every eligible push. `incident` is what keeps
+`/next` from claiming the alert as backlog work (§0.2 treats that label as never-claimable).
 
 ### Several workflows, one script (#1674)
 
@@ -949,10 +955,15 @@ Consequences worth knowing before editing the script:
   then never be found or self-closed.
 - **`gateJob` may be null.** `deploy-vercel-staging.yml` has one job and no changed-path gate, so any
   code assuming a gate exists is wrong for that config.
-- **A no-op means different things per config.** For Deploy API it is benign and the majority case.
-  For a config with no path gate it is a defect — nothing ran that could have — so
-  `noOpIsUnexpected` escalates it to a failure rather than an annotation, which on a `workflow_run`
-  run page would be exactly as invisible as the gap this closes.
+- **A no-op is escalated for both configs.** It was benign for Deploy API while a path gate
+  skipped its jobs on docs-only pushes. Neither workflow has one now, so a no-op means nothing ran
+  that could have, and `noOpIsUnexpected` escalates it to a failure rather than an annotation,
+  which on a `workflow_run` run page would be exactly as invisible as the gap this closes. A gated
+  config with a benign no-op is still supported, and tested on a stand-in.
+- **`planOutput` carries what a job result can't.** Deploy API's `deploy-staging` publishes
+  `plan-staging-deploy.mjs`'s verdict (`deploy`, `current` or `stale`). The script reads it to
+  report a `current` run as up to date rather than deployed, and to leave the alert alone on a
+  superseded one.
 
 The full roster of GitHub-issue watchdogs, with what each one means and when it clears, is
 [`ALERT_ROUTING.md`](../ops/ALERT_ROUTING.md) § Automated GitHub-issue alerts — that table is the

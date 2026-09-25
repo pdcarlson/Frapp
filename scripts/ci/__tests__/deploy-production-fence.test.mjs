@@ -2,7 +2,7 @@
 //
 // The fence is inline shell in a workflow file, so it has no unit-test seam of
 // its own. These tests extract the step's script straight out of the YAML — the
-// same approach `deploy-api-check-changes.test.mjs` uses — and run it against
+// approach the retired `deploy-api-check-changes.test.mjs` took — and run it against
 // real directory state in a throwaway git repo.
 //
 // ── What it is protecting ───────────────────────────────────────────────────

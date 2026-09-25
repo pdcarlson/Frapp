@@ -57,9 +57,15 @@ describe("deploy-api.yml deploy-staging", () => {
     assert.match(deploy.body, /node scripts\/ci\/deploy-render-production\.mjs/);
 
     const verify = step("Verify staging serves the commit");
-    assert.equal(verify.if, null, "verifies on a no-deploy plan too");
+    assert.equal(verify.if, "steps.plan.outputs.plan != 'stale'", "verifies on a current plan too, never on a stale one");
     assert.equal(verify.stepEnv.get("DEPLOY_SHA"), "${{ steps.plan.outputs.verify_sha }}");
     assert.match(verify.body, /node scripts\/ci\/verify-served-commit\.mjs/);
+  });
+
+  // deploy-alert.mjs reads it (DEPLOY_API_CONFIG.planOutput) to leave the
+  // alert alone on a stale run and not to claim DEPLOYED on a current one.
+  it("publishes the plan as a job output", () => {
+    assert.equal(job().keys.get("outputs").get("plan"), "${{ steps.plan.outputs.plan }}");
   });
 
   it("checks out full history at the CI-verified commit, for the plan's diff", () => {

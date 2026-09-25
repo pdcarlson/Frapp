@@ -395,7 +395,7 @@ The table below describes the sites that **fail** on a missing credential: every
 
 #696 was the second case: the identity had recorded no successful login since it was created, so nothing had been revoked and rotating the secret alone would not have helped. Which value was wrong could not be confirmed after the fact — GitHub secrets are write-only — but the remedy is the same either way: set **both** secrets from the Universal Auth panel in one pass, rather than replacing only the one you suspect. Also confirm the identity is attached to the project (`Projects` section on its Details page) and that its trusted-IP ranges permit GitHub runners.
 
-Note that a `Deploy API` run is reported green whenever the `check-changes` path gate skips all four deploy jobs, so a mostly-green run history does **not** mean the injection step works — only runs that touch `apps/api/` or `supabase/migrations/` exercise it. See [issue #696](https://github.com/pdcarlson/Frapp/issues/696), where that distinction hid a 100% injection failure rate for 71 days.
+Note that while `Deploy API` had a `check-changes` path gate, a run was reported green whenever it skipped all four deploy jobs, so a mostly-green history did **not** mean the injection step worked: only runs that touched `apps/api/` or `supabase/migrations/` exercised it. See [issue #696](https://github.com/pdcarlson/Frapp/issues/696), where that distinction hid a 100% injection failure rate for 71 days. Since #2505 both `migrate-staging` and `deploy-staging` inject on every eligible push, and a run where neither ran is escalated as a failure.
 
 ### 7. Update `.infisical.json`
 

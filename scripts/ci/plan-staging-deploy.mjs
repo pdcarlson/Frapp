@@ -4,9 +4,10 @@
 // by comparing it with the commit `frapp-api-staging` is serving now (#2505).
 //
 // ── Why the served commit, not `HEAD~1` ─────────────────────────────────────
-// Staging deploys by commit and Render no longer auto-deploys it, so a deploy
-// that this job skips is one that never happens. A gate that asks "did THIS
-// push change the API?" skips too much:
+// Staging deploys only by commit from this job; Render auto-deploy must be off
+// (staging-conformance asserts it; #2679 turns it off). So a deploy this job
+// skips is one that never happens, and a gate that asks "did THIS push change
+// the API?" skips too much:
 //   * an API commit whose own CI failed or was replaced gets no Deploy API run,
 //     and the next push, if it touches no API path, diffs only itself;
 //   * after a failed Render build, the next docs-only merge would skip, and the
@@ -15,20 +16,29 @@
 // serves?" covers all of these: the diff runs from the served commit, so it
 // carries every change that has not reached staging yet.
 //
-// ── And why it never deploys an older commit ───────────────────────────────
-// A re-run of an old run keeps its original `head_sha`. If staging already
-// serves a commit that contains this one, deploying it would roll staging back
-// (the deploy hook this replaced always built the tip, so re-runs were
-// harmless). Such a run deploys nothing and verifies what is served instead.
+// ── Three verdicts ─────────────────────────────────────────────────────────
+//   deploy  — deploy this commit, then verify it is served and ready.
+//   current — nothing the image is built from changed since the served
+//             commit, and this run is for `main`'s tip: verify the served
+//             commit is ready, and let the run speak for staging.
+//   stale   — this run is for a commit `main` has moved past: a re-run of an
+//             old run, or one whose newer sibling already deployed. Deploying
+//             it would roll staging back, and its verdict would be about an
+//             old commit, so it deploys nothing, verifies nothing, and
+//             `deploy-alert.mjs` leaves the alert alone. The tip's run decides.
 //
 // ── When it can't tell ─────────────────────────────────────────────────────
-// It deploys. An unreadable `/health`, a commit with no `commit` field, or a
-// served commit git doesn't know all mean "deploy": a redundant deploy is
-// cheap, and a change that silently never ships is the #763 failure.
+// For the tip, it deploys: an unreadable `/health`, a served commit git
+// doesn't know, or an unreadable diff all mean "deploy", because a redundant
+// deploy is cheap and a change that silently never ships is the #763 failure.
+// For a commit that isn't the tip, an unreadable served commit means stale:
+// deploying could be the rollback the rule above forbids. When `main`'s tip
+// itself can't be read, this run is treated as the tip.
 //
-// Outputs (GITHUB_OUTPUT): `deploy` (true|false), `verify_sha` (the commit the
-// next step must find served: this run's when deploying, else the served
-// one), `reason`. Unit tests: `scripts/ci/__tests__/plan-staging-deploy.test.mjs`.
+// Outputs (GITHUB_OUTPUT): `plan` (deploy|current|stale), `deploy`
+// (true|false), `verify_sha` (the commit the verify step must find served;
+// empty when stale), `reason`. Unit tests:
+// `scripts/ci/__tests__/plan-staging-deploy.test.mjs`.
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
@@ -50,21 +60,32 @@ export const API_IMAGE_PATHS =
 const SHA = /^[0-9a-f]{7,40}$/i;
 
 /**
- * The pure decision. `isAncestor(a, b)` answers whether `a` is `b` or an
- * ancestor of it, and `changedPaths(base, head)` lists the files between two
- * commits; either may throw, which reads as "can't tell".
+ * The pure decision. `tip` is `main`'s tip (null when unreadable).
+ * `isAncestor(a, b)` answers whether `a` is `b` or an ancestor of it, and
+ * `changedPaths(base, head)` lists the files between two commits; either may
+ * throw, which reads as "can't tell".
  */
-export function planStagingDeploy({ head, served, isAncestor, changedPaths }) {
-  const deploy = (reason) => ({ deploy: true, verifySha: head, reason });
-  const keep = (reason) => ({ deploy: false, verifySha: served, reason });
+export function planStagingDeploy({ head, served, tip, isAncestor, changedPaths }) {
+  const short = (sha) => sha.slice(0, 12);
+  const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+  const isTip = !tip || same(tip, head);
+  const notTip = () => `\`main\` has moved on to ${short(tip)}`;
+
+  const deploy = (reason) => ({ plan: "deploy", deploy: true, verifySha: head, reason });
+  const stale = (reason) => ({ plan: "stale", deploy: false, verifySha: "", reason });
+  // Nothing to deploy. Only the tip's run may say staging is current; any other
+  // run's "current" is about an old commit.
+  const current = (reason) =>
+    isTip
+      ? { plan: "current", deploy: false, verifySha: served, reason }
+      : stale(`${reason}, but ${notTip()}, so its run decides`);
 
   if (!served || !SHA.test(served)) {
-    return deploy("staging's served commit could not be read, so deploying rather than guessing");
+    return isTip
+      ? deploy("staging's served commit could not be read, so deploying rather than guessing")
+      : stale(`staging's served commit could not be read and ${notTip()}, so not risking a rollback`);
   }
-  const short = (sha) => sha.slice(0, 12);
-  if (served.toLowerCase() === head.toLowerCase()) {
-    return keep(`staging already serves ${short(head)}`);
-  }
+  if (same(served, head)) return current(`staging already serves ${short(head)}`);
 
   let headIsOlder;
   let servedIsOlder;
@@ -72,11 +93,13 @@ export function planStagingDeploy({ head, served, isAncestor, changedPaths }) {
     headIsOlder = isAncestor(head, served);
     servedIsOlder = isAncestor(served, head);
   } catch {
-    return deploy(`git could not relate ${short(served)} (served) to ${short(head)}, so deploying`);
+    return isTip
+      ? deploy(`git could not relate ${short(served)} (served) to ${short(head)}, so deploying`)
+      : stale(`git could not relate ${short(served)} (served) to ${short(head)} and ${notTip()}`);
   }
 
   if (headIsOlder) {
-    return keep(
+    return stale(
       `staging serves ${short(served)}, which already contains ${short(head)}; deploying ` +
         `${short(head)} would roll staging back`,
     );
@@ -98,7 +121,7 @@ export function planStagingDeploy({ head, served, isAncestor, changedPaths }) {
         `(first: ${imagePaths[0]})`,
     );
   }
-  return keep(`nothing the API image is built from changed since ${short(served)}`);
+  return current(`nothing the API image is built from changed since ${short(served)}`);
 }
 
 /** `a` is `b` or an ancestor of it. Throws when git can't answer (an unknown commit). */
@@ -112,10 +135,27 @@ export function gitIsAncestor(a, b, { exec = execFileSync } = {}) {
   }
 }
 
+/**
+ * Both sides of a rename, as literal paths. `--no-renames` lists a file moved
+ * out of `apps/api/` under its old path too (with renames on, only the new
+ * one), and `-z` with `core.quotePath=false` keeps a non-ASCII path from
+ * coming back quoted, where an anchored pattern would miss it.
+ */
 export function gitChangedPaths(base, head, { exec = execFileSync } = {}) {
-  return exec("git", ["diff", "--name-only", base, head], { encoding: "utf8" })
-    .split("\n")
+  return exec("git", ["-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "-z", base, head], {
+    encoding: "utf8",
+  })
+    .split("\0")
     .filter(Boolean);
+}
+
+/** The commit `ref` names, or null when git can't resolve it. */
+export function gitResolve(ref, { exec = execFileSync } = {}) {
+  try {
+    return exec("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { encoding: "utf8" }).trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 /** The commit `/health` reports, or null when it can't be read. `/health` answers even when degraded. */
@@ -130,6 +170,11 @@ export async function readServedCommit(healthUrl, { fetchImpl = resilientFetch }
   }
 }
 
+/** The step outputs `deploy-api.yml` reads: `plan`, `deploy`, `verify_sha`. */
+export function formatPlanOutputs(plan) {
+  return `plan=${plan.plan}\ndeploy=${plan.deploy}\nverify_sha=${plan.verifySha}\nreason=${plan.reason}\n`;
+}
+
 // ── CLI entry ───────────────────────────────────────────────────────────────
 
 async function main() {
@@ -138,24 +183,25 @@ async function main() {
     hint: "It comes from Infisical (docs/internal/environment/SECRETS_MANAGEMENT.md).",
   });
   const served = await readServedCommit(healthUrl);
+  // `origin/main` as the checkout fetched it (full history). TIP_REF exists for
+  // the tests, which run on branches whose `origin/main` is elsewhere.
+  const tip = gitResolve(process.env.TIP_REF || "origin/main");
   const plan = planStagingDeploy({
     head,
     served,
+    tip,
     isAncestor: (a, b) => gitIsAncestor(a, b),
     changedPaths: (base, tip) => gitChangedPaths(base, tip),
   });
 
-  console.log(`${plan.deploy ? "Deploying" : "Not deploying"} ${head}: ${plan.reason}.`);
+  console.log(`Plan for ${head}: ${plan.plan} — ${plan.reason}.`);
   if (process.env.GITHUB_OUTPUT) {
-    appendFileSync(
-      process.env.GITHUB_OUTPUT,
-      `deploy=${plan.deploy}\nverify_sha=${plan.verifySha}\nreason=${plan.reason}\n`,
-    );
+    appendFileSync(process.env.GITHUB_OUTPUT, formatPlanOutputs(plan));
   }
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
-      `### Staging deploy plan\n\n${plan.deploy ? "**Deploy**" : "**No deploy**"} \`${head}\`: ${plan.reason}.\n`,
+      `### Staging deploy plan\n\n**${plan.plan}** for \`${head}\`: ${plan.reason}.\n`,
     );
   }
 }

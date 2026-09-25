@@ -1,12 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   API_IMAGE_PATHS,
+  formatPlanOutputs,
   gitChangedPaths,
   gitIsAncestor,
   planStagingDeploy,
@@ -27,33 +30,67 @@ function linearHistory(...commits) {
   };
 }
 
+/** A stub that records calls, so a test can assert a path was never taken (a throw would be caught). */
+function never() {
+  const calls = [];
+  const fn = (...args) => {
+    calls.push(args);
+    return [];
+  };
+  fn.calls = calls;
+  return fn;
+}
+
 describe("planStagingDeploy", () => {
-  it("deploys when staging's served commit can't be read", () => {
+  it("deploys the tip when staging's served commit can't be read", () => {
     for (const served of [null, undefined, "", "not-a-sha"]) {
-      const plan = planStagingDeploy({ head: HEAD, served, isAncestor: () => assert.fail(), changedPaths: () => assert.fail() });
-      assert.equal(plan.deploy, true, `served=${served}`);
+      const isAncestor = never();
+      const plan = planStagingDeploy({ head: HEAD, served, tip: HEAD, isAncestor, changedPaths: never() });
+      assert.equal(plan.plan, "deploy", `served=${served}`);
+      assert.equal(plan.deploy, true);
       assert.equal(plan.verifySha, HEAD);
+      assert.equal(isAncestor.calls.length, 0);
     }
   });
 
+  // An old run's commit, deployed while /health is down (a cold start, or the
+  // outage someone re-ran it for), would be the rollback the plan forbids.
+  it("doesn't deploy a commit that isn't the tip when the served commit can't be read", () => {
+    const plan = planStagingDeploy({ head: HEAD, served: null, tip: SERVED, isAncestor: never(), changedPaths: never() });
+    assert.equal(plan.plan, "stale");
+    assert.equal(plan.deploy, false);
+    assert.equal(plan.verifySha, "");
+  });
+
+  it("treats the run as the tip when main's tip can't be read", () => {
+    const plan = planStagingDeploy({ head: HEAD, served: null, tip: null, isAncestor: never(), changedPaths: never() });
+    assert.equal(plan.plan, "deploy");
+  });
+
   it("does not redeploy the commit staging already serves, and verifies it", () => {
-    const plan = planStagingDeploy({ head: HEAD, served: HEAD.toUpperCase(), isAncestor: () => assert.fail(), changedPaths: () => assert.fail() });
+    const plan = planStagingDeploy({ head: HEAD, served: HEAD.toUpperCase(), tip: HEAD, isAncestor: never(), changedPaths: never() });
+    assert.equal(plan.plan, "current");
     assert.equal(plan.deploy, false);
     assert.match(plan.reason, /already serves/);
   });
 
   // A re-run of an old run keeps its original head_sha. Deploying it would roll
-  // staging back past commits it already serves.
-  it("never deploys a commit staging has already moved past", () => {
+  // staging back past commits it already serves, and its verdict is about an
+  // old commit, so it must not close or raise the alert either.
+  it("never deploys a commit staging has already moved past, and calls it stale", () => {
+    const changedPaths = never();
     const plan = planStagingDeploy({
       head: HEAD,
       served: SERVED,
+      tip: SERVED,
       isAncestor: linearHistory(HEAD, SERVED),
-      changedPaths: () => assert.fail("no diff needed"),
+      changedPaths,
     });
+    assert.equal(plan.plan, "stale");
     assert.equal(plan.deploy, false);
-    assert.equal(plan.verifySha, SERVED, "verifies what staging serves, not the older commit");
+    assert.equal(plan.verifySha, "");
     assert.match(plan.reason, /roll staging back/);
+    assert.equal(changedPaths.calls.length, 0);
   });
 
   // The per-push filter this replaces diffed HEAD~1, so an API commit whose own
@@ -64,6 +101,7 @@ describe("planStagingDeploy", () => {
     const plan = planStagingDeploy({
       head: HEAD,
       served: SERVED,
+      tip: HEAD,
       isAncestor: linearHistory(SERVED, HEAD),
       changedPaths: (base, head) => {
         seen.push([base, head]);
@@ -71,45 +109,67 @@ describe("planStagingDeploy", () => {
       },
     });
     assert.deepEqual(seen, [[SERVED, HEAD]], "diffs from the served commit, not HEAD~1");
-    assert.equal(plan.deploy, true);
+    assert.equal(plan.plan, "deploy");
     assert.equal(plan.verifySha, HEAD);
     assert.match(plan.reason, /apps\/api\/src\/main\.ts/);
   });
 
-  it("doesn't deploy when nothing the image is built from changed, and verifies the served commit", () => {
+  it("calls the tip current when nothing the image is built from changed, and verifies the served commit", () => {
     const plan = planStagingDeploy({
       head: HEAD,
       served: SERVED,
+      tip: HEAD,
       isAncestor: linearHistory(SERVED, HEAD),
       changedPaths: () => ["docs/a.md", "apps/web/app/page.tsx", "packages/ui/package.json"],
     });
+    assert.equal(plan.plan, "current");
     assert.equal(plan.deploy, false);
     assert.equal(plan.verifySha, SERVED);
   });
 
-  it("deploys when git can't relate the two commits", () => {
+  // Only the tip's run may say staging is current: a non-tip run's "nothing
+  // changed" is about an old commit, and a newer run may be failing.
+  it("calls a non-tip run with nothing to deploy stale, not current", () => {
+    const TIP = "3333333333333333333333333333333333333333";
     const plan = planStagingDeploy({
       head: HEAD,
       served: SERVED,
-      isAncestor: () => { throw Object.assign(new Error("bad object"), { status: 128 }); },
-      changedPaths: () => assert.fail(),
+      tip: TIP,
+      isAncestor: linearHistory(SERVED, HEAD, TIP),
+      changedPaths: () => ["docs/a.md"],
     });
-    assert.equal(plan.deploy, true);
+    assert.equal(plan.plan, "stale");
+    assert.equal(plan.verifySha, "");
   });
 
-  it("deploys when staging serves a commit off this history", () => {
-    const plan = planStagingDeploy({ head: HEAD, served: SERVED, isAncestor: () => false, changedPaths: () => assert.fail() });
-    assert.equal(plan.deploy, true);
+  it("deploys the tip when git can't relate the two commits", () => {
+    const plan = planStagingDeploy({
+      head: HEAD,
+      served: SERVED,
+      tip: HEAD,
+      isAncestor: () => { throw Object.assign(new Error("bad object"), { status: 128 }); },
+      changedPaths: never(),
+    });
+    assert.equal(plan.plan, "deploy");
+  });
+
+  it("deploys, without diffing, when staging serves a commit off this history", () => {
+    const changedPaths = never();
+    const plan = planStagingDeploy({ head: HEAD, served: SERVED, tip: HEAD, isAncestor: () => false, changedPaths });
+    assert.equal(plan.plan, "deploy");
+    assert.match(plan.reason, /not on this commit's history/);
+    assert.equal(changedPaths.calls.length, 0, "an off-history served commit is never diffed");
   });
 
   it("deploys when the diff can't be read", () => {
     const plan = planStagingDeploy({
       head: HEAD,
       served: SERVED,
+      tip: HEAD,
       isAncestor: linearHistory(SERVED, HEAD),
       changedPaths: () => { throw new Error("fatal: bad revision"); },
     });
-    assert.equal(plan.deploy, true);
+    assert.equal(plan.plan, "deploy");
   });
 });
 
@@ -161,14 +221,42 @@ describe("git helpers", () => {
     assert.throws(() => gitIsAncestor("a", "b", { exec: exitWith(128) }));
   });
 
-  it("gitChangedPaths splits git diff --name-only output", () => {
+  // Renames off so a file moved out of apps/api is listed under its old path;
+  // NUL-separated and unquoted so a non-ASCII path still matches.
+  it("gitChangedPaths lists both sides of a rename and unquoted paths", () => {
     const calls = [];
     const exec = (cmd, args) => {
       calls.push([cmd, ...args]);
-      return "apps/api/a.ts\ndocs/b.md\n";
+      return "apps/api/\u00e9.ts\0docs/b.md\0";
     };
-    assert.deepEqual(gitChangedPaths("base", "head", { exec }), ["apps/api/a.ts", "docs/b.md"]);
-    assert.deepEqual(calls, [["git", "diff", "--name-only", "base", "head"]]);
+    assert.deepEqual(gitChangedPaths("base", "head", { exec }), ["apps/api/\u00e9.ts", "docs/b.md"]);
+    assert.deepEqual(calls, [
+      ["git", "-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "-z", "base", "head"],
+    ]);
+  });
+
+  it("gitChangedPaths sees the old side of a real rename out of apps/api", () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-rename-"));
+    const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    try {
+      git("init", "-q");
+      git("config", "user.email", "t@example.com");
+      git("config", "user.name", "t");
+      mkdirSync(join(root, "apps", "api"), { recursive: true });
+      writeFileSync(join(root, "apps", "api", "moved.ts"), "export const x = 1;\n".repeat(20));
+      git("add", "-A");
+      git("commit", "-qm", "base");
+      const base = git("rev-parse", "HEAD").trim();
+      mkdirSync(join(root, "tools"), { recursive: true });
+      git("mv", "apps/api/moved.ts", "tools/moved.ts");
+      git("commit", "-qm", "move");
+      const head = git("rev-parse", "HEAD").trim();
+      const paths = gitChangedPaths(base, head, { exec: (cmd, args, opts) => execFileSync(cmd, ["-C", root, ...args], opts) });
+      assert.ok(paths.includes("apps/api/moved.ts"), JSON.stringify(paths));
+      assert.ok(paths.some((path) => API_IMAGE_PATHS.test(path)));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -186,6 +274,17 @@ describe("readServedCommit", () => {
   });
 });
 
+describe("formatPlanOutputs", () => {
+  // The keys deploy-api.yml reads (`steps.plan.outputs.plan|deploy|verify_sha`,
+  // pinned from that side by deploy-api-workflow.test.mjs).
+  it("writes the keys the workflow reads", () => {
+    const out = formatPlanOutputs({ plan: "deploy", deploy: true, verifySha: HEAD, reason: "r" });
+    assert.match(out, /^plan=deploy$/m);
+    assert.match(out, /^deploy=true$/m);
+    assert.match(out, new RegExp(`^verify_sha=${HEAD}$`, "m"));
+  });
+});
+
 // The "a missing API_HEALTHCHECK_URL fails" criterion lives in main(), so the
 // CLI itself is run: a revert to warn-and-exit-0 must go red here.
 describe("CLI", () => {
@@ -196,5 +295,43 @@ describe("CLI", () => {
     const run = spawnSync(process.execPath, [join(REPO_ROOT, "scripts", "ci", "plan-staging-deploy.mjs")], { env, encoding: "utf8" });
     assert.equal(run.status, 1, run.stdout + run.stderr);
     assert.match(run.stderr + run.stdout, /API_HEALTHCHECK_URL/);
+  });
+
+  // End to end through main(): read /health, resolve the tip, write GITHUB_OUTPUT.
+  it("writes plan, deploy and verify_sha to GITHUB_OUTPUT", async () => {
+    const head = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const server = createServer((req, res) => {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ status: "ok", commit: head }));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const dir = mkdtempSync(join(tmpdir(), "plan-cli-"));
+    const output = join(dir, "output");
+    writeFileSync(output, "");
+    try {
+      const env = {
+        ...process.env,
+        DEPLOY_SHA: head,
+        API_HEALTHCHECK_URL: `http://127.0.0.1:${server.address().port}/health`,
+        GITHUB_OUTPUT: output,
+        TIP_REF: "HEAD",
+      };
+      delete env.GITHUB_STEP_SUMMARY;
+      const run = await new Promise((resolve) => {
+        const child = spawn(process.execPath, [join(REPO_ROOT, "scripts", "ci", "plan-staging-deploy.mjs")], { env, cwd: REPO_ROOT });
+        let log = "";
+        child.stdout.on("data", (d) => { log += d; });
+        child.stderr.on("data", (d) => { log += d; });
+        child.on("close", (status) => resolve({ status, log }));
+      });
+      assert.equal(run.status, 0, run.log);
+      const written = readFileSync(output, "utf8");
+      assert.match(written, /^plan=current$/m, written);
+      assert.match(written, /^deploy=false$/m, written);
+      assert.match(written, new RegExp(`^verify_sha=${head}$`, "m"), written);
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -15,8 +15,9 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
 - ✅ CI pipeline uses domain-specific parallel jobs with required status checks.
 - ✅ Branch protection enforced on `main`, the only long-lived branch (#1340).
 - ✅ Staging API deployment is automated: after green CI on `main`,
-  `.github/workflows/deploy-api.yml` applies staging migrations, then deploys **that commit**
-  to `frapp-api-staging` through the Render API and waits until `/health/ready` reports it
+  `.github/workflows/deploy-api.yml` applies staging migrations, then, when anything the API
+  image is built from changed since the commit staging serves, deploys **that commit** to
+  `frapp-api-staging` through the Render API and waits until `/health/ready` reports it
   ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)). [Deploy verification](ci-cd.md#deploy-verification) has the details.
 - ⚠️ Render-side auto-deploy **must be off** on staging too (`staging-conformance.yml` asserts
   it): it builds every push before CI and before the migration, and its deploy can cancel the one

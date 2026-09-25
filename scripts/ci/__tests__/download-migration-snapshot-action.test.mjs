@@ -3,7 +3,7 @@
 //
 // The step is inline shell in a composite action, so it has no unit-test seam
 // of its own. These tests extract its script straight out of the YAML (the
-// same text-based way deploy-api-check-changes.test.mjs does) and run it
+// same text-based way deploy-production-fence.test.mjs does) and run it
 // against a stubbed `gh` that answers from fixtures. What they pin:
 //
 //   - the MIGRATION_SNAPSHOT_STAGING_DEPLOY export the drift gate reads, in

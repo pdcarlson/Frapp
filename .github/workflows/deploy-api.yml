@@ -8,8 +8,10 @@ name: Deploy API
 # why the `production` branch was retired (#1340).
 #
 # Staging deploys the commit CI verified, after `migrate-staging`, through the
-# Render API (#2505): no deploy hook and no Render auto-deploy, both of which
-# built whatever `main`'s tip was rather than this commit.
+# Render API (#2505), when anything the API image is built from changed since
+# the commit staging serves. No deploy hook, which built whatever `main`'s tip
+# was rather than this commit; Render auto-deploy must be off too (#2679), since
+# it builds every push before CI and migrations.
 #
 # Secrets use UNIFIED names (no _STAGING / _PRODUCTION suffixes).
 # `RENDER_API_KEY` is a `staging` environment secret. `API_HEALTHCHECK_URL` is
@@ -26,92 +28,26 @@ permissions:
   contents: read
 
 jobs:
-  # ── Check if deploy-relevant files changed ─────────────────────────────
+  # ── Eligibility: CI passed on a push to this repo ──────────────────────
+  # The name is historical: this job used to filter changed paths. That filter
+  # first stopped gating `migrate-staging` (a filter that answers "false" for
+  # any reason silently skips a migration), then the API deploy (#2505:
+  # `deploy-staging` plans from the commit staging serves, because a per-push
+  # filter skipped API commits whose own run never deployed). What is left is
+  # the eligibility condition below, which `migrate-staging`, `deploy-staging`
+  # and `deploy-outcome` all key on. Kept under this name because
+  # `deploy-alert.mjs` reads it as the gate job.
   check-changes:
     if: |
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
-    outputs:
-      migrations-changed: ${{ steps.filter.outputs.migrations-changed }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          # Full history. The previous `fetch-depth: 2` could not resolve HEAD~1
-          # on a merge commit, and the diff below swallowed that failure — see
-          # the fail-open note in the next step.
-          fetch-depth: 0
-
-      # This filter gates NOTHING any more; it reports whether this push
-      # changed a migration, for the run summary. It stopped gating
-      # `migrate-staging` first: a path filter that answers "false" for any
-      # reason silently skips a migration, which is exactly the incident this
-      # workflow is being hardened against. See `migrate-staging` below. Then
-      # it stopped gating the API deploy (#2505): `deploy-staging` plans from
-      # the commit staging serves, because a per-push filter skipped API
-      # commits whose own run never deployed.
-      #
-      # It also no longer fails open to "nothing changed". The old form was
-      # `git diff --name-only HEAD~1 2>/dev/null || echo ""`, so ANY git failure
-      # (unresolvable HEAD~1 on a shallow merge commit being the live one)
-      # produced an empty file list, which every grep below read as "no changes"
-      # and reported as a clean skip. A deploy that silently does nothing is the
-      # worst available outcome, so an unreadable diff now assumes EVERYTHING
-      # changed and warns loudly. The cost of being wrong is a redundant deploy;
-      # the cost of the old behaviour was a change that never shipped.
-      - name: Detect changed paths
-        id: filter
-        run: |
-          set -euo pipefail
-
-          # The changed-file list goes to a FILE, and every filter greps that
-          # file directly. It must never go back to being `echo "$CHANGED" |
-          # grep -q`, which is how the production promotion (#1330) silently
-          # skipped its API deploy:
-          #
-          #   `grep -q` exits the moment it matches. That closes the pipe while
-          #   `echo` is still writing the remaining paths, `echo` dies with
-          #   EPIPE, and `pipefail` promotes that EPIPE to the pipeline's exit
-          #   status — so a SUCCESSFUL match reported failure and the filter
-          #   answered "nothing changed".
-          #
-          #   It is a race, which is why it stayed hidden: it needs a list
-          #   bigger than the 64KiB pipe buffer AND `grep` to exit before
-          #   `echo` drains. #1330's diff was 1674 paths / 82KiB, matching
-          #   `apps/api/` at line 202 and `supabase/migrations/` at line 1621
-          #   — so the early API match left ~20KiB unwritten and reproduced in
-          #   roughly one run in five, while the late migrations match had
-          #   almost nothing left to write and effectively never did. That run
-          #   lost the coin flip: migrations were detected, the API was not.
-          #
-          # Grepping a file has no writer process to kill, so an early `-q`
-          # exit is harmless and match order cannot change the answer.
-          CHANGED_FILE="${RUNNER_TEMP:-/tmp}/deploy-api-changed-paths.txt"
-
-          if git diff --name-only HEAD~1 > "$CHANGED_FILE"; then
-            DIFF_OK=1
-          else
-            DIFF_OK=0
-            : > "$CHANGED_FILE"
-            echo "::warning::Could not diff HEAD~1 for ${{ github.event.workflow_run.head_sha }}. Assuming all deploy-relevant paths changed rather than skipping the deploy."
-          fi
-
-          echo "Changed paths in this push: $(wc -l < "$CHANGED_FILE")"
-
-          # No API path filter here any more (#2505). Whether staging needs a
-          # deploy depends on what it SERVES, not on what this one push
-          # changed, so deploy-staging decides that itself
-          # (scripts/ci/plan-staging-deploy.mjs). This row is reported only.
-          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED_FILE"; then
-            echo "migrations-changed=true" >> "$GITHUB_OUTPUT"
-            echo "Migration files changed (or the diff was unreadable)."
-          else
-            echo "migrations-changed=false" >> "$GITHUB_OUTPUT"
-            echo "No migration files changed in this push (migrate-staging runs regardless)."
-          fi
+      - name: CI passed on a push
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: echo "CI passed for $HEAD_SHA; migrate-staging applies what is pending and deploy-staging plans the deploy."
 
   # ── Run database migrations (staging) ──────────────────────────────────
   # Staging auto-applies on every merge to `main`. This job is the ONLY
@@ -208,6 +144,10 @@ jobs:
       (needs.migrate-staging.result == 'success' || needs.migrate-staging.result == 'skipped')
     runs-on: ubuntu-latest
     environment: staging
+    # `deploy-outcome` reads the plan: a `stale` run neither raises nor closes
+    # the alert, and a `current` one reports that nothing needed deploying.
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
     # The deploy poll's own ceiling is 20 minutes and the served-commit check's
     # is 5; this bounds the job just past both.
     timeout-minutes: 30
@@ -217,10 +157,10 @@ jobs:
     # deploys first; the newer one then plans against what that left serving.
     #
     # `cancel-in-progress: false`, as on migrate-staging. GitHub still replaces
-    # a PENDING run when a third arrives; that run's job shows `cancelled` and
-    # `deploy-outcome` raises the alert. Nothing is lost by it: the run that
-    # replaced it plans from the served commit, so it deploys the skipped
-    # changes too, and closes the alert.
+    # a PENDING run when a third arrives; that job shows `cancelled` with no
+    # plan, and `deploy-outcome` treats it as superseded, not failed. Nothing
+    # is lost by it: the run that replaced it plans from the served commit,
+    # so it deploys the skipped changes too.
     concurrency:
       group: deploy-api-staging
       cancel-in-progress: false
@@ -261,12 +201,13 @@ jobs:
           node-version: 24
 
       # Compare this commit with the one staging serves (`/health`'s
-      # `commit`). Deploy when anything the API image is built from changed
-      # since then, which carries forward an API commit whose own run never
-      # deployed (its CI failed or was replaced) and retries after a failed
-      # build. Never deploy a commit staging has already moved past: a re-run
-      # of an old run would otherwise roll staging back. Unreadable means
-      # deploy. The reasoning is in the script's header.
+      # `commit`) and with `main`'s tip. `deploy` when anything the API image
+      # is built from changed since the served commit, which carries forward
+      # an API commit whose own run never deployed and retries after a failed
+      # build. `current` when nothing did and this is the tip. `stale` when
+      # `main` has moved past this commit (a re-run of an old run): deploying
+      # it would roll staging back, so nothing is deployed or verified. When
+      # it can't tell, the tip deploys. The reasoning is in the script header.
       - name: Plan the deploy
         id: plan
         env:
@@ -300,11 +241,12 @@ jobs:
       # (this run's when it deployed, else the one staging already served).
       # The old smoke loop took any 2xx, which the previous instance also
       # gives while the new one switches in, so it could pass a deploy that
-      # never took traffic. It runs on a no-deploy plan too, so a green run
-      # always means staging was seen serving and ready. A missing
+      # never took traffic. It runs on a `current` plan too, so a green
+      # non-stale run always means staging was seen serving and ready. A missing
       # API_HEALTHCHECK_URL fails (it used to warn and exit 0), in the plan
       # step before this one.
       - name: Verify staging serves the commit
+        if: steps.plan.outputs.plan != 'stale'
         env:
           SERVICE_LABEL: frapp-api-staging
           DEPLOY_SHA: ${{ steps.plan.outputs.verify_sha }}

@@ -21,15 +21,16 @@
 // `Deploy API` failed 44 of 44 executing runs for 71 days and nobody noticed,
 // because three things compounded —
 //
-//   1. A skipped run is a GREEN run. The `check-changes` path gate skips the
-//      deploy/migrate jobs when a push touches neither `apps/api/` nor
-//      `supabase/migrations/`; 46 of the last 90 runs were green-because-empty,
-//      so the Actions list read "healthy" while the deploy path was 100% dead.
+//   1. A skipped run is a GREEN run. The `check-changes` path gate of the time
+//      skipped the deploy/migrate jobs when a push touched neither `apps/api/`
+//      nor `supabase/migrations/`; 46 of the last 90 runs were
+//      green-because-empty, so the Actions list read "healthy" while the
+//      deploy path was 100% dead. (No path gate is left since #2505.)
 //   2. `workflow_run` failures never land on a commit or a PR the way `CI`
 //      does, so nothing turned red anywhere a human normally looks.
 //   3. There was no notification of any kind.
 //
-// Only (1) is specific to a workflow that HAS a path gate. (2) and (3) are
+// Only (1) was specific to a workflow with a path gate. (2) and (3) are
 // properties of every `workflow_run`-triggered deploy in this repo, which is
 // exactly why `deploy-vercel-staging.yml` needed this too: it has no skip path,
 // so a failure does go red in the Actions list, but there is still no commit
@@ -109,21 +110,36 @@ export const DEPLOY_API_CONFIG = {
   workflowFile: ".github/workflows/deploy-api.yml",
   gateJob: "check-changes",
   deployJobs: ["migrate-staging", "deploy-staging"],
-  // Reported, not gating: since #2505 `deploy-staging` runs on every green
-  // push and plans its deploy from the commit staging serves.
-  gateOutputRows: [{ label: "Migration paths changed", output: "migrations-changed" }],
+  // No rows: `check-changes` gates on eligibility alone since #2505, and
+  // `deploy-staging` plans its deploy from the commit staging serves.
+  gateOutputRows: [],
+  // `deploy-staging`'s plan (scripts/ci/plan-staging-deploy.mjs), which a job
+  // result alone can't carry:
+  //   deploy  — a deploy was attempted; the job result is the verdict.
+  //   current — nothing needed deploying, and this is main's tip: a green
+  //             job means staging was verified serving and ready, which may
+  //             close the alert, but the summary must not say DEPLOYED.
+  //   stale   — this run is for a commit main has moved past (a re-run of an
+  //             old run): its verdict is about an old commit, so it neither
+  //             raises nor closes the alert. The tip's run decides.
+  // A `cancelled` job with no plan never started: GitHub replaced it while it
+  // queued behind another staging deploy. That is superseded too, because
+  // the run that replaced it plans from the served commit.
+  planOutput: { job: "deploy-staging", output: "plan" },
   alertTitle: "Deploy API is failing — pushes are not reaching the environment",
   alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
   noOpReason: "no migrate or deploy job ran",
-  // A no-op stays reported-but-benign, and in particular never closes an open
-  // alert — skipping every job proves nothing about whether deploys work. It
-  // was the common case while a path gate skipped the deploy jobs on docs-only
-  // pushes (46 of the 90 runs in #763). Since #2505 both jobs run on every
-  // eligible push, so a no-op should no longer happen at all.
-  noOpIsUnexpected: false,
+  // A no-op was the common, benign case while a path gate skipped the deploy
+  // jobs on docs-only pushes (46 of the 90 runs in #763). Since #2505 both jobs
+  // run on every eligible push, so a no-op means the jobs' conditions have
+  // drifted from this job's, and every merge is deploying nothing. Escalated,
+  // as for Deploy Vercel staging.
+  noOpIsUnexpected: true,
   noOpNote:
     "Neither `migrate-staging` nor `deploy-staging` ran, so nothing was migrated, deployed or " +
-    "verified. **A green run of this shape is not evidence that deploys work** — see issue #763.",
+    "verified. **A green run of this shape is not evidence that deploys work** (#763). This is " +
+    "not expected for this workflow: both jobs run on every eligible push, so reaching this " +
+    "state means their conditions have drifted from `deploy-outcome`'s.",
   whyLines: [
     "`Deploy API` is triggered by `workflow_run`, so its failures never appear as a PR check or a",
     "commit status, and runs that skip every job report green. That combination hid a 100% deploy",
@@ -203,6 +219,7 @@ export const OUTCOME_COPY = {
     failed: "❌ **FAILED — not confirmed deployed**",
     deployed: "✅ **DEPLOYED**",
     "no-op": "⏭️ **NO-OP — nothing deployed**",
+    superseded: "⏭️ **SUPERSEDED — main has moved past this commit; the newest run decides**",
   },
   brokenLines: (label) => [
     `deploy path is broken: the most recent \`${label}\` run that actually tried to deploy did`,
@@ -330,6 +347,29 @@ export function readJobResults(needs, config = DEFAULT_ALERT_CONFIG) {
   return results;
 }
 
+/**
+ * The plan a config's `planOutput` job published, or null (no `planOutput`,
+ * or nothing published). See DEPLOY_API_CONFIG.
+ */
+export function readPlan(needs, config = DEFAULT_ALERT_CONFIG) {
+  if (!config.planOutput) return null;
+  const { job, output } = config.planOutput;
+  const value = needs?.[job]?.outputs?.[output];
+  return typeof value === "string" && value ? value : null;
+}
+
+/**
+ * Whether this run's verdict is about an old commit, and so must neither raise
+ * nor close the alert: a `stale` plan, or a job cancelled before it planned
+ * (replaced while queued). Always false for a config without `planOutput`.
+ */
+export function isSuperseded(needs, config = DEFAULT_ALERT_CONFIG) {
+  if (!config.planOutput) return false;
+  const result = needs?.[config.planOutput.job]?.result;
+  const plan = readPlan(needs, config);
+  return (result === "success" && plan === "stale") || (result === "cancelled" && plan === null);
+}
+
 /** Human-readable one-liner used in the annotation and the issue body. */
 export function buildHeadline({
   outcome,
@@ -337,10 +377,15 @@ export function buildHeadline({
   deployed,
   headBranch,
   escalated = false,
+  plan = null,
+  supersededReason = "",
   config = DEFAULT_ALERT_CONFIG,
 }) {
   const ref = headBranch ? `\`${headBranch}\`` : "this ref";
   const label = config.workflowLabel;
+  if (outcome === "superseded") {
+    return `${label} on ${ref} is superseded: ${supersededReason}. It neither raises nor closes the alert; the run for the newest commit decides.`;
+  }
   if (outcome === "failed") {
     // An escalated no-op needs its own sentence. Saying "did not succeed" of a
     // job whose result is `skipped` reads as a lie next to the job table, and
@@ -351,6 +396,9 @@ export function buildHeadline({
     return `${label} FAILED on ${ref} — ${failed.join(", ")} did not succeed. ${OUTCOME_COPY.failedTail}`;
   }
   if (outcome === "deployed") {
+    if (plan === "current") {
+      return `${label} succeeded on ${ref} — ${deployed.join(", ")} completed. Nothing needed deploying; staging was verified serving and ready.`;
+    }
     return `${label} succeeded on ${ref} — ${deployed.join(", ")} completed.`;
   }
   return `${label} ${OUTCOME_COPY.noOpLead} on ${ref} — ${config.noOpReason}. ${OUTCOME_COPY.noOpTail}`;
@@ -374,9 +422,17 @@ export function buildRunSummary({
   gateOutputs = {},
   gateSucceeded,
   escalated = false,
+  // The `planOutput` job's plan, or null. `superseded` is this script's own
+  // outcome for a stale or replaced run (see runDeployAlert).
+  plan = null,
+  supersededReason = "",
   config = DEFAULT_ALERT_CONFIG,
 }) {
-  const badge = escalated ? "❌ **NOTHING RAN — nothing deployed**" : OUTCOME_COPY.badges[outcome];
+  const badge = escalated
+    ? "❌ **NOTHING RAN — nothing deployed**"
+    : outcome === "deployed" && plan === "current"
+      ? "✅ **UP TO DATE — nothing needed deploying; staging verified**"
+      : OUTCOME_COPY.badges[outcome];
 
   // When the gate job itself did not succeed, its outputs are empty — which is
   // NOT the same as "no paths changed". Reporting the absent output as "no"
@@ -388,7 +444,7 @@ export function buildRunSummary({
     "",
     badge,
     "",
-    buildHeadline({ outcome, failed, deployed, headBranch, escalated, config }),
+    buildHeadline({ outcome, failed, deployed, headBranch, escalated, plan, supersededReason, config }),
     "",
     "| | |",
     "| --- | --- |",
@@ -399,6 +455,7 @@ export function buildRunSummary({
     ...config.gateOutputRows.map(
       ({ label, output }) => `| ${label} | ${changed(gateOutputs[output])} |`,
     ),
+    ...(config.planOutput ? [`| Deploy plan | ${plan ? `\`${plan}\`` : "none published"} |`] : []),
     "",
     "### Job results",
     "",
@@ -636,6 +693,45 @@ export async function runDeployAlert({
   config = DEFAULT_ALERT_CONFIG,
 }) {
   const jobResults = readJobResults(needs, config);
+  const plan = readPlan(needs, config);
+
+  // A stale or replaced run's verdict is about a commit main has moved past.
+  // Classifying it would close the alert on a run that verified an old
+  // commit (or on migrate-staging's success alone), or raise it for a job
+  // GitHub replaced in the queue. The newest run decides; this one reports.
+  if (isSuperseded(needs, config)) {
+    const reason =
+      plan === "stale"
+        ? "the deploy plan found main has moved past this commit"
+        : "its deploy job was replaced in the queue before it started";
+    const headline = buildHeadline({
+      outcome: "superseded",
+      failed: [],
+      deployed: [],
+      headBranch,
+      supersededReason: reason,
+      config,
+    });
+    writeSummary(
+      buildRunSummary({
+        outcome: "superseded",
+        failed: [],
+        deployed: [],
+        jobResults,
+        headBranch,
+        headSha,
+        runUrl,
+        gateOutputs: {},
+        gateSucceeded: false,
+        plan,
+        supersededReason: reason,
+        config,
+      }),
+    );
+    logger.log?.(`::notice::${headline}`);
+    return { outcome: "superseded", failed: [], deployed: [], alert: { action: "none" } };
+  }
+
   const {
     outcome,
     failed,
@@ -660,6 +756,7 @@ export async function runDeployAlert({
     deployed,
     headBranch,
     escalated,
+    plan,
     config,
   });
 
@@ -678,6 +775,7 @@ export async function runDeployAlert({
       // no gateOutputRows, so `changed()` is never called.
       gateSucceeded: config.gateJob ? jobResults[config.gateJob] === "success" : false,
       escalated,
+      plan,
       config,
     }),
   );

@@ -17,8 +17,10 @@ import {
   buildRunSummary,
   classifyDeployOutcome,
   findAlertIssues,
+  isSuperseded,
   raiseAlert,
   readJobResults,
+  readPlan,
   resolveAlert,
   resolveAlertConfig,
   runDeployAlert,
@@ -31,6 +33,22 @@ import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 //     failed at the Infisical injection step (run 31278413630);
 //   * 46 runs where every deploy/migrate job skipped and the run reported green
 //     (run 31278674931) — the "green because empty" case.
+
+/**
+ * A path-gated config whose no-op is benign: Deploy API's shape before #2505,
+ * when `check-changes` skipped the deploy jobs on docs-only pushes. No live
+ * config is shaped like this any more, but `noOpIsUnexpected: false` and the
+ * gate rows are still supported, so they are tested on a stand-in.
+ */
+const GATED_CONFIG = {
+  ...DEPLOY_API_CONFIG,
+  name: "gated-stand-in",
+  noOpIsUnexpected: false,
+  noOpReason: "the changed-path gate skipped every migrate and deploy job",
+  noOpNote: "The changed-path gate found nothing to deploy. See issue #763.",
+  gateOutputRows: [{ label: "API paths changed", output: "api-changed" }],
+  planOutput: undefined,
+};
 
 /** `toJSON(needs)` for a run where the path gate skipped everything. */
 function noOpNeeds() {
@@ -164,9 +182,17 @@ test("a failed deploy job classifies as failed", () => {
 });
 
 test("all-skipped classifies as no-op, not as a deploy", () => {
-  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()), config: GATED_CONFIG });
   assert.equal(result.outcome, "no-op");
   assert.deepEqual(result.deployed, []);
+});
+
+// Since #2505 both of Deploy API's jobs run on every eligible push, so a run
+// where neither did means their conditions drifted: escalate, don't shrug.
+test("Deploy API escalates an all-skipped run to a failure", () => {
+  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.escalated, true);
 });
 
 test("check-changes succeeding is not itself a deploy", () => {
@@ -231,8 +257,9 @@ test("the run summary distinguishes a no-op from a deploy at a glance", () => {
     runUrl: "https://example.test/run/1",
     gateOutputs: { "api-changed": false, "migrations-changed": false },
     gateSucceeded: true,
+    config: GATED_CONFIG,
   });
-  assert.match(summary, /\| Migration paths changed \| no \|/);
+  assert.match(summary, /\| API paths changed \| no \|/);
   assert.match(summary, /NO-OP — nothing deployed/);
   assert.match(summary, /#763/);
   // Every job's result is spelled out so no inference from skipped jobs is needed.
@@ -277,9 +304,10 @@ test("a failed gate reports the path flags as unknown, never as 'no'", async () 
       summary = text;
     },
     logger: silentLogger,
+    config: GATED_CONFIG,
   });
 
-  assert.match(summary, /\| Migration paths changed \| unknown \|/);
+  assert.match(summary, /\| API paths changed \| unknown \|/);
   assert.doesNotMatch(summary, /paths changed \| no \|/);
 });
 
@@ -480,6 +508,7 @@ test("a no-op run never closes an open alert", async () => {
       summary = text;
     },
     logger,
+    config: GATED_CONFIG,
   });
 
   assert.equal(result.outcome, "no-op");
@@ -507,6 +536,7 @@ test("a no-op run does not annotate as an error", async () => {
     fetchImpl,
     writeSummary: () => {},
     logger,
+    config: GATED_CONFIG,
   });
   assert.ok(!lines.some((line) => line.startsWith("::error::")));
 });
@@ -818,9 +848,10 @@ test("the gated config keeps a no-op benign, and never closes an open alert", as
   // The other half of the same switch. 46 of the 90 runs in #763 were
   // green-because-empty; treating those as failures would have alerted on every
   // docs-only push, and treating them as recoveries would have closed a live
-  // outage's alert. Both directions must stay wrong-proof.
-  assert.equal(DEPLOY_API_CONFIG.noOpIsUnexpected, false);
-  const { outcome } = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+  // outage's alert. Both directions must stay wrong-proof. (Deploy API itself
+  // no longer has a path gate; see "Deploy API escalates an all-skipped run".)
+  assert.equal(GATED_CONFIG.noOpIsUnexpected, false);
+  const { outcome } = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()), config: GATED_CONFIG });
   assert.equal(outcome, "no-op");
 
   const { fetchImpl, calls } = makeFetchStub({ issues: [OPEN_ALERT] });
@@ -834,6 +865,7 @@ test("the gated config keeps a no-op benign, and never closes an open alert", as
     fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
+    config: GATED_CONFIG,
   });
   assert.equal(result.alert.action, "none");
   assert.deepEqual(
@@ -1032,10 +1064,10 @@ test("an escalated no-op explains its own job table instead of contradicting it"
 });
 
 test("escalation leaves the gated config's classify shape untouched", () => {
-  // `escalated` is spread in only when true, so a Deploy API run returns
+  // `escalated` is spread in only when true, so a benign no-op returns
   // exactly the three keys it always did. A differential harness compares these
   // objects; an unconditional key would break that parity for no benefit.
-  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()), config: GATED_CONFIG });
   assert.deepEqual(Object.keys(result).sort(), ["deployed", "failed", "outcome"]);
   assert.equal(result.outcome, "no-op");
 });
@@ -1213,4 +1245,129 @@ test("both configs' copy reads the same on every surface a responder reads", () 
     buildHeadline({ outcome: "no-op", failed: [], deployed: [], headBranch: "main" }),
     /deployed NOTHING on `main` — .*\. This run is green because it declined to deploy, not because a deploy succeeded\.$/,
   );
+});
+
+// ── Deploy API's plan (#2505) ───────────────────────────────────────────────
+// `deploy-staging` publishes plan-staging-deploy.mjs's verdict. A job result
+// alone can't tell a deploy from "nothing needed deploying" from "this run is
+// for an old commit", and each must be reported and alerted differently.
+
+function planNeeds(result, plan) {
+  const needs = deployedNeeds();
+  needs["deploy-staging"] = { result, outputs: plan === undefined ? {} : { plan } };
+  return needs;
+}
+
+test("a stale plan neither closes nor raises the alert, even with migrate-staging green", async () => {
+  // The case: an alert is open for the newest commit's failed build, and a
+  // re-run of an older run plans `stale`. Classifying it would count
+  // migrate-staging's and deploy-staging's success as a deploy and close it.
+  const { fetchImpl, calls } = makeFetchStub({ issues: [OPEN_ALERT] });
+  let summary = "";
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: planNeeds("success", "stale"),
+    runUrl: "https://example.test/run/9",
+    headBranch: "main",
+    headSha: "0ldc0mm",
+    fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
+    logger: silentLogger,
+  });
+  assert.equal(result.outcome, "superseded");
+  assert.equal(result.alert.action, "none");
+  assert.equal(calls.length, 0, "a superseded run must not touch the issues API");
+  assert.match(summary, /SUPERSEDED/);
+  assert.match(summary, /\| Deploy plan \| `stale` \|/);
+  assert.doesNotMatch(summary, /DEPLOYED/);
+});
+
+test("a deploy job replaced in the queue before it planned is superseded, not failed", async () => {
+  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: planNeeds("cancelled", undefined),
+    runUrl: "https://example.test/run/9",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+  });
+  assert.equal(result.outcome, "superseded");
+  assert.equal(calls.length, 0);
+});
+
+test("a deploy cancelled after it planned is still a failure", async () => {
+  // Cancelled mid-deploy: the commit is not confirmed live. Only a job that
+  // never started (no plan) is superseded.
+  const { fetchImpl } = makeFetchStub({ issues: [] });
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: planNeeds("cancelled", "deploy"),
+    runUrl: "https://example.test/run/9",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+  });
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.alert.action, "created");
+});
+
+test("a current plan closes the alert but never claims DEPLOYED", async () => {
+  // `current` is only published for main's tip, after verifying staging serves
+  // and is ready, so it may close an alert. It deployed nothing, and the
+  // summary must say so at a glance (#763).
+  const { fetchImpl } = makeFetchStub({ issues: [OPEN_ALERT] });
+  let summary = "";
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: planNeeds("success", "current"),
+    runUrl: "https://example.test/run/9",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
+    logger: silentLogger,
+  });
+  assert.equal(result.outcome, "deployed");
+  assert.deepEqual(result.alert.closed, [900]);
+  assert.match(summary, /UP TO DATE — nothing needed deploying/);
+  assert.match(summary, /Nothing needed deploying; staging was verified/);
+  assert.doesNotMatch(summary, /✅ \*\*DEPLOYED\*\*/);
+});
+
+test("a deploy plan that succeeds reports DEPLOYED with its plan row", async () => {
+  const { fetchImpl } = makeFetchStub({ issues: [] });
+  let summary = "";
+  await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: planNeeds("success", "deploy"),
+    runUrl: "https://example.test/run/9",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
+    logger: silentLogger,
+  });
+  assert.match(summary, /✅ \*\*DEPLOYED\*\*/);
+  assert.match(summary, /\| Deploy plan \| `deploy` \|/);
+});
+
+test("readPlan and isSuperseded ignore a config without planOutput", () => {
+  assert.equal(readPlan(planNeeds("success", "stale"), DEPLOY_VERCEL_STAGING_CONFIG), null);
+  assert.equal(isSuperseded(planNeeds("success", "stale"), DEPLOY_VERCEL_STAGING_CONFIG), false);
 });
