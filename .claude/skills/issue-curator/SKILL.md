@@ -150,8 +150,9 @@ and it exists for signal quality: `/next` ranks this backlog, and filler buries 
     each service's `srv-…` id with `list_services` rather than from memory
     ([`infrastructure-research`](../infrastructure-research/SKILL.md) has the recipe). A failed
     staging deploy already raises an `incident` (`verify-deployments.yml`), so look there first.
-    File only a failure that no later deploy has fixed, where the service's newest non-live
-    deploy is newer than its live one. Production deploys are dispatched by hand, so an old
+    File only a failure that no later deploy has fixed: a deploy that ended failed
+    (`build_failed`, `update_failed`) and is newer than the service's `live` one. An in-progress
+    deploy is neither. Production deploys are dispatched by hand, so an old
     `live` production commit is expected, not a finding. A Render build log can hold a live
     secret (#2432), so quote only the error line, never raw log output.
   - Vercel MCP: `get_runtime_errors` (`since: "7d"`) for `frapp-web` and `frapp-landing`. It
