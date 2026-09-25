@@ -86,7 +86,7 @@ Turborepo + npm workspaces: 4 apps, 14 shared packages. Product and architecture
 | Migrations | `npm run check:migration-safety` |
 | Boundaries | `npm run check:dep-cruiser`, a required gate. `scripts/dependency-cruiser-known-violations.json` grandfathers pre-existing violations and only shrinks: read it to tell whether a violation is yours, and don't re-record it to pass ([why](docs/internal/ci-cd/QUALITY_GATES.md#the-baseline)) |
 | Duplication | `npm run check:duplication`, advisory; the threshold only ratchets down |
-| API breaking changes | `npm run check:api-breaking -- --base origin/main`, advisory; run `bash scripts/install-oasdiff.sh` first |
+| API breaking changes | `npm run check:api-breaking:shipped` blocks against every shipped mobile build; `npm run check:api-breaking -- --base origin/main` is advisory. Run `bash scripts/install-oasdiff.sh` first |
 | Coverage | `npm run test:cov`, a measurement, not a gate |
 
 Gate postures: [`QUALITY_GATES.md`](docs/internal/ci-cd/QUALITY_GATES.md). Testing detail: the `testing` skill.
