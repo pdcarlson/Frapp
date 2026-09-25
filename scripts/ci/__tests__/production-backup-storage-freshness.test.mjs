@@ -10,13 +10,13 @@ import {
   PRODUCTION_JOB_NAME,
   STALE_AFTER_MS,
   WORKFLOW_FILE,
-  evaluateDumpFreshness,
   readDumpFreshness,
   resolveActionsFallbackToken,
   resolveActionsReadToken,
   runWatchdog,
 } from "../production-backup-storage-freshness.mjs";
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
+import { evaluateJobFreshness, runsNewestFirst } from "../lib/backup-job-freshness.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
 
@@ -45,18 +45,41 @@ function successJob({ hours = 16 } = {}) {
   };
 }
 
+/**
+ * This watch's verdict through the shared rules, with its own job name and
+ * windows. `jobs` are the newest run's; `olderJobs` maps an earlier run's id
+ * to `{ status, jobs }`. The rules themselves are tested in
+ * backup-job-freshness.test.mjs.
+ */
 function evaluate(overrides = {}) {
-  return evaluateDumpFreshness({
+  const { runsStatus, runs, jobsStatus, jobs, olderJobs, now } = {
     runsStatus: 200,
     runs: [{ id: 1, status: "completed", created_at: hoursAgo(16) }],
     jobsStatus: 200,
     jobs: [successJob()],
+    olderJobs: {},
     now: NOW,
     ...overrides,
+  };
+  const jobsByRunId = new Map(
+    Object.entries(olderJobs).map(([id, entry]) => [Number(id), entry]),
+  );
+  if (Array.isArray(runs) && runs.length > 0) {
+    jobsByRunId.set(runsNewestFirst(runs)[0].id, { status: jobsStatus, jobs });
+  }
+  return evaluateJobFreshness({
+    jobName: PRODUCTION_JOB_NAME,
+    workflowFile: WORKFLOW_FILE,
+    staleAfterMs: STALE_AFTER_MS,
+    hungAfterMs: HUNG_AFTER_MS,
+    runsStatus,
+    runs,
+    jobsByRunId,
+    now,
   });
 }
 
-describe("evaluateDumpFreshness", () => {
+describe("the verdict for this watch", () => {
   it("passes a success younger than 36h", () => {
     const verdict = evaluate();
     assert.equal(verdict.ok, true);
@@ -248,108 +271,6 @@ describe("evaluateDumpFreshness", () => {
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /jobs unreadable \(HTTP 502\)/);
   });
-  // #2332: the newest run alone used to decide. An in-flight run returned
-  // before the 36h check, and a cancelled dispatch raised a P1 over a job
-  // that had succeeded hours earlier. The verdict now falls back to the job's
-  // most recent success in an earlier run.
-  describe("falling back to the last success", () => {
-    const inFlight = {
-      name: PRODUCTION_JOB_NAME,
-      status: "in_progress",
-      conclusion: null,
-      started_at: hoursAgo(1),
-    };
-
-    it("fails an in-flight run whose last success is older than 36h", () => {
-      const verdict = evaluate({
-        runs: [
-          { id: 1, status: "in_progress", created_at: hoursAgo(1) },
-          { id: 0, status: "completed", created_at: hoursAgo(38) },
-        ],
-        jobs: [inFlight],
-        olderJobs: { 0: { status: 200, jobs: [successJob({ hours: 37.5 })] } },
-      });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /in flight, and the last .* success is older than 36h/);
-    });
-
-    it("fails an in-flight run with no earlier success at all", () => {
-      const verdict = evaluate({
-        runs: [{ id: 1, status: "in_progress", created_at: hoursAgo(1) }],
-        jobs: [inFlight],
-      });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /in flight, and no .* success is within 36h/);
-    });
-
-    it("passes a cancelled or failed newest run that a success within 36h precedes, without closing the alert", () => {
-      for (const conclusion of ["cancelled", "failure"]) {
-        const verdict = evaluate({
-          runs: [
-            { id: 1, status: "completed", created_at: hoursAgo(2) },
-            { id: 0, status: "completed", created_at: hoursAgo(16.2) },
-          ],
-          jobs: [
-            {
-              name: PRODUCTION_JOB_NAME,
-              status: "completed",
-              conclusion,
-              completed_at: hoursAgo(1.5),
-            },
-          ],
-          olderJobs: { 0: { status: 200, jobs: [successJob()] } },
-        });
-        assert.equal(verdict.ok, true, conclusion);
-        assert.equal(verdict.fresh, false, conclusion);
-        assert.match(verdict.reason, new RegExp(`concluded ${conclusion}; the last .* success was 16h ago`));
-      }
-    });
-
-    it("does not green a job left waiting night after night", () => {
-      // Each night's run parks in `waiting` on a deployment protection rule.
-      // The waiting runs are in flight, so none of them holds a success, and
-      // the last real success has aged out of the window.
-      const waiting = { name: PRODUCTION_JOB_NAME, status: "waiting", conclusion: null, started_at: null };
-      const verdict = evaluate({
-        runs: [
-          { id: 3, status: "waiting", created_at: hoursAgo(1) },
-          { id: 2, status: "waiting", created_at: hoursAgo(25) },
-          { id: 1, status: "completed", created_at: hoursAgo(49) },
-        ],
-        jobs: [waiting],
-        olderJobs: { 1: { status: 200, jobs: [successJob({ hours: 48.9 })] } },
-      });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /in flight, and no .* success is within 36h/);
-    });
-
-    it("fails when an earlier run's jobs are unreadable", () => {
-      const verdict = evaluate({
-        runs: [
-          { id: 1, status: "in_progress", created_at: hoursAgo(1) },
-          { id: 0, status: "completed", created_at: hoursAgo(16.2) },
-        ],
-        jobs: [inFlight],
-        olderJobs: { 0: { status: 502, jobs: null } },
-      });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /earlier run unreadable \(HTTP 502\)/);
-    });
-
-    it("does not count another job's success", () => {
-      const verdict = evaluate({
-        runs: [
-          { id: 1, status: "in_progress", created_at: hoursAgo(1) },
-          { id: 0, status: "completed", created_at: hoursAgo(16.2) },
-        ],
-        jobs: [inFlight],
-        olderJobs: {
-          0: { status: 200, jobs: [{ ...successJob(), name: "backup-staging" }] },
-        },
-      });
-      assert.equal(verdict.ok, false);
-    });
-  });
 });
 
 describe("token preference", () => {
@@ -461,69 +382,45 @@ describe("readDumpFreshness", () => {
   });
 });
 
-describe("readDumpFreshness: earlier runs", () => {
-  const failedNewest = {
-    name: PRODUCTION_JOB_NAME,
-    status: "completed",
-    conclusion: "cancelled",
-    completed_at: hoursAgo(1),
-  };
-
-  function routes({ olderJobs }) {
+// #2332, on this watch: the newest run was cancelled, so the verdict rests
+// on an earlier run of this watch's own job. The rules, and how far back the
+// reader looks, are tested in backup-job-freshness.test.mjs.
+describe("readDumpFreshness: an earlier run backs a cancelled newest run", () => {
+  function routes({ earlier }) {
     return [
       {
         method: "GET",
         path: `/actions/workflows/${WORKFLOW_FILE}/runs`,
         body: {
           workflow_runs: [
-            { id: 99, status: "completed", created_at: hoursAgo(2) },
-            { id: 98, status: "completed", created_at: hoursAgo(16.2) },
-            { id: 97, status: "completed", created_at: hoursAgo(20) },
+            { id: 99, status: "completed", conclusion: "cancelled", created_at: hoursAgo(2), updated_at: hoursAgo(2) },
+            { id: 98, status: "completed", created_at: hoursAgo(16.2), updated_at: earlier.completed_at },
           ],
         },
       },
-      { method: "GET", path: "/actions/runs/99/jobs", body: { jobs: [failedNewest] } },
-      { method: "GET", path: "/actions/runs/98/jobs", body: { jobs: olderJobs } },
-      { method: "GET", path: "/actions/runs/97/jobs", body: { jobs: [successJob({ hours: 19.9 })] } },
+      {
+        method: "GET",
+        path: "/actions/runs/99/jobs",
+        body: { jobs: [{ name: PRODUCTION_JOB_NAME, status: "completed", conclusion: "cancelled", completed_at: hoursAgo(1.5) }] },
+      },
+      { method: "GET", path: "/actions/runs/98/jobs", body: { jobs: [earlier] } },
     ];
   }
 
-  it("reads an earlier run only when the newest run's job didn't succeed, and stops at the first success", async () => {
-    const { fetchImpl, calls } = makeFetchMock(routes({ olderJobs: [successJob()] }));
+  it("passes, without closing the alert, on this job's success within 36h", async () => {
+    const { fetchImpl, calls } = makeFetchMock(routes({ earlier: successJob() }));
     const verdict = await readDumpFreshness({ token: "tok", repo: "org/repo", fetchImpl, now: NOW });
     assert.equal(verdict.ok, true);
     assert.equal(verdict.fresh, false);
-    assert.deepEqual(
-      calls.map((call) => call.url.match(/runs\/(\d+)\/jobs/)?.[1] ?? "runs"),
-      ["runs", "99", "98"],
-    );
+    assert.match(verdict.reason, new RegExp(`concluded cancelled; an earlier ${PRODUCTION_JOB_NAME} succeeded 16h ago`));
+    assert.equal(calls.length, 3);
   });
 
-  it("keeps reading past an earlier failure", async () => {
-    const failed = { ...successJob(), conclusion: "failure" };
-    const { fetchImpl, calls } = makeFetchMock(routes({ olderJobs: [failed] }));
+  it("fails when the earlier success belongs to another job", async () => {
+    const other = { ...successJob(), name: `${PRODUCTION_JOB_NAME}-other` };
+    const { fetchImpl } = makeFetchMock(routes({ earlier: other }));
     const verdict = await readDumpFreshness({ token: "tok", repo: "org/repo", fetchImpl, now: NOW });
-    assert.equal(verdict.ok, true);
-    assert.equal(calls.length, 4);
-  });
-
-  it("reads nothing more when the newest run succeeded", async () => {
-    const { fetchImpl, calls } = makeFetchMock([
-      {
-        method: "GET",
-        path: `/actions/workflows/${WORKFLOW_FILE}/runs`,
-        body: {
-          workflow_runs: [
-            { id: 99, status: "completed", created_at: hoursAgo(16.2) },
-            { id: 98, status: "completed", created_at: hoursAgo(40) },
-          ],
-        },
-      },
-      { method: "GET", path: "/actions/runs/99/jobs", body: { jobs: [successJob()] } },
-    ]);
-    const verdict = await readDumpFreshness({ token: "tok", repo: "org/repo", fetchImpl, now: NOW });
-    assert.equal(verdict.fresh, true);
-    assert.equal(calls.length, 2);
+    assert.equal(verdict.ok, false);
   });
 });
 

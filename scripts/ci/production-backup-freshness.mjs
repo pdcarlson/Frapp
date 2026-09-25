@@ -9,13 +9,13 @@
 // starts, or a job that concludes anything other than success, would leave
 // recoverability looking covered.
 //
-// This script GETs recent `db-backup.yml` runs and their jobs. It fails if
-// `backup-production` is missing, hung more than 3h, or its last success is
-// older than 36h. A latest run that is in flight (under 3h), cancelled,
-// failed or skipped greens the run only while an earlier success within 36h
-// backs it, and never closes an open alert: only the latest run's own success
-// within 36h is recovery. Unreadable Actions responses are FAIL, not pass.
-// The rules are shared with the Storage watch: `lib/backup-job-freshness.mjs`.
+// This script GETs recent `db-backup.yml` runs and their jobs, and fails if
+// `backup-production` is missing from a run that ran, hung more than 3h, or has no
+// success that completed within 36h. A latest run that is in flight,
+// cancelled, failed or skipped passes only on an earlier run's success within
+// 36h, as a `::warning::` that never closes an open alert. Unreadable Actions
+// responses are FAIL, not pass. The rules, shared with the Storage watch:
+// `lib/backup-job-freshness.mjs`.
 //
 // It does not name any GitHub `environment:` itself. A schedule job that
 // named `production` would hang on the ADR-19 reviewer gate (#1435). It
@@ -33,11 +33,7 @@ import {
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
-import {
-  evaluateJobFreshness,
-  readJobFreshness,
-  runsNewestFirst,
-} from "./lib/backup-job-freshness.mjs";
+import { readJobFreshness } from "./lib/backup-job-freshness.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
@@ -86,43 +82,10 @@ async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path }) {
   return first;
 }
 
-/**
- * Classify already-fetched Nightly Backup runs for this watch's job. The
- * rules live in `lib/backup-job-freshness.mjs`, shared with the other
- * backup-freshness watch. `jobs` are the newest run's; `olderJobs` maps an
- * older run's id to `{ status, jobs }`, read only when the newest run's job
- * didn't succeed. `now` is injected so the windows are deterministic in tests.
- */
-export function evaluateDumpFreshness({
-  runsStatus,
-  runs,
-  jobsStatus,
-  jobs,
-  olderJobs = {},
-  now,
-}) {
-  const jobsByRunId = new Map(
-    Object.entries(olderJobs).map(([id, entry]) => [Number(id), entry]),
-  );
-  if (Array.isArray(runs) && runs.length > 0) {
-    jobsByRunId.set(runsNewestFirst(runs)[0].id, { status: jobsStatus, jobs });
-  }
-  return evaluateJobFreshness({
-    jobName: PRODUCTION_JOB_NAME,
-    workflowFile: WORKFLOW_FILE,
-    staleAfterMs: STALE_AFTER_MS,
-    hungAfterMs: HUNG_AFTER_MS,
-    runsStatus,
-    runs,
-    jobsByRunId,
-    now,
-  });
-}
-
 function runsPath(repo) {
   return (
     `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/runs` +
-    `?branch=${encodeURIComponent(DEFAULT_BRANCH)}&per_page=10`
+    `?branch=${encodeURIComponent(DEFAULT_BRANCH)}&per_page=30`
   );
 }
 
@@ -255,8 +218,12 @@ async function main() {
     repo,
     fallbackToken,
   });
-  if (verdict.ok) {
+  if (verdict.fresh) {
     console.log(`✅ ${verdict.reason}`);
+  } else if (verdict.ok) {
+    // Green, but resting on an earlier success: a failed night or a run
+    // still in flight. Say so on the run rather than in a green log line.
+    console.log(`::warning::${verdict.reason}`);
   } else {
     console.error(`::error::${verdict.reason}`);
   }

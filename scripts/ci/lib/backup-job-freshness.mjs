@@ -5,26 +5,38 @@
 // `production-backup-storage-freshness.mjs` (the Storage mirror) watch two
 // jobs of the same workflow with the same rules, so the rules live here once
 // and each script passes its own job name and windows. The constants stay in
-// the scripts, where their source-text locks pin them.
+// the scripts, where their source-text locks pin them. Rule tests:
+// `scripts/ci/__tests__/backup-job-freshness.test.mjs`.
 //
 // THE RULES
 // - Unreadable Actions responses are FAIL, never pass.
-// - The newest run decides only when its job succeeded: within the stale
-//   window it is fresh (the one verdict that may close an open alert), and
-//   older is FAIL.
-// - A newest run that is still in flight (queued, running, or `waiting` on a
-//   deployment protection rule) passes only while it is under the hung window
-//   AND the job's most recent success is within the stale window.
-// - A newest run whose job was cancelled, failed or skipped passes only when
-//   the job's most recent success is within the stale window.
-// - Neither of those two passes is fresh, so neither closes an open alert.
+// - The newest run decides alone when its job succeeded (fresh within the
+//   stale window, the one verdict that may close an open alert; FAIL when
+//   older), when it is hung past the hung window, and when the job is missing
+//   from a run that ran (a renamed or deleted job must not green).
+// - Otherwise the newest run's job is in flight (queued, running, or
+//   `waiting` on a deployment protection rule), or it was cancelled, failed
+//   or skipped, or the run was cancelled or skipped before any job was
+//   created. Then it passes only while an earlier run holds a success of the
+//   job that completed within the stale window, and that pass is never fresh,
+//   so it never closes an open alert.
 //
-// Why the fallback to the last success (#2332): judging the newest run alone
-// let an in-flight run return before the stale check, so a job parked in
-// `waiting` greened the watch every night while nothing was backed up, since
-// each night's new run reset the age the hung check measures. In the other
-// direction, one cancelled dispatch raised a P1 against a job that had
+// Why the fallback to an earlier success (#2332): judging the newest run
+// alone let an in-flight run return before the stale check, so a job parked
+// in `waiting` greened the watch every night while nothing was backed up,
+// since each night's new run reset the age the hung check measures. In the
+// other direction, one cancelled dispatch raised a P1 against a job that had
 // succeeded hours earlier, which teaches responders to distrust the alert.
+//
+// The price, accepted in #2332: a genuinely failed night passes while the
+// previous night's success is within the window, so a single failure alerts
+// about a day late, on the next night's watch if that night fails too. The
+// scripts print every pass that isn't fresh as a `::warning::`, so the run
+// says so even though it is green.
+//
+// The earlier runs searched are the ones the caller lists (the scripts ask
+// for the 30 newest on `main`). More than that many runs inside the window
+// could hide an earlier success; that fails closed, as a P1.
 
 const IN_FLIGHT_STATUSES = new Set([
   "queued",
@@ -33,6 +45,10 @@ const IN_FLIGHT_STATUSES = new Set([
   "pending",
   "requested",
 ]);
+
+// Run conclusions that leave no job rows when they happen before a job is
+// created: a dispatch cancelled while pending on the concurrency group.
+const NO_JOB_CONCLUSIONS = new Set(["cancelled", "skipped"]);
 
 /** `ok` greens the run. `fresh` is the only verdict that may close the alert. */
 export function jobVerdict(ok, fresh, reason) {
@@ -55,68 +71,119 @@ function hours(ms) {
   return `${Math.round(ms / (60 * 60 * 1000))}h`;
 }
 
+function readable(fetched) {
+  return Boolean(fetched) && fetched.status === 200 && Array.isArray(fetched.jobs);
+}
+
+function findJob(jobs, jobName) {
+  return jobs.find((entry) => entry && entry.name === jobName);
+}
+
 /**
- * The older runs worth reading for the job's last success: newest first, not
- * in flight, and young enough that a success in them could still be inside
- * the stale window (a job completes at most the hung window after its run is
- * created, or it would have been reported hung).
+ * The job's success in one run's jobs, if it completed within the window.
+ * The one success test the reader and the evaluator both use, so they stop
+ * at the same run.
  */
-export function candidateOlderRuns({ runs, staleAfterMs, hungAfterMs, now }) {
+export function successWithin({ jobs, jobName, staleAfterMs, now }) {
+  const job = findJob(jobs, jobName);
+  if (!job || job.status !== "completed" || job.conclusion !== "success") return null;
+  return ageMs(job.completed_at, now) <= staleAfterMs ? job : null;
+}
+
+/**
+ * Judge the newest run on its own. Returns `{ verdict }` when it decides, or
+ * `{ backing }` (the reason to report) when the verdict rests on an earlier
+ * success. The reader uses this to decide whether to read earlier runs.
+ */
+export function judgeNewest({ jobName, run, fetched, staleAfterMs, hungAfterMs, now }) {
+  if (!readable(fetched)) {
+    return {
+      verdict: jobVerdict(
+        false,
+        false,
+        `${jobName} jobs unreadable (HTTP ${fetched?.status || "no response"})`,
+      ),
+    };
+  }
+
+  const hung = { verdict: jobVerdict(false, false, `${jobName} hung for more than ${hours(hungAfterMs)}`) };
+  const job = findJob(fetched.jobs, jobName);
+  if (!job) {
+    if (IN_FLIGHT_STATUSES.has(run.status)) {
+      if (ageMs(run.run_started_at || run.created_at, now) > hungAfterMs) return hung;
+      return { backing: `${jobName} is in flight` };
+    }
+    if (NO_JOB_CONCLUSIONS.has(run.conclusion) && fetched.jobs.length === 0) {
+      return { backing: `the newest run was ${run.conclusion} before ${jobName} started` };
+    }
+    return { verdict: jobVerdict(false, false, `${jobName} job is missing`) };
+  }
+
+  if (IN_FLIGHT_STATUSES.has(job.status)) {
+    if (ageMs(job.started_at || run.created_at, now) > hungAfterMs) return hung;
+    return { backing: `${jobName} is in flight` };
+  }
+
+  if (job.conclusion !== "success") {
+    return { backing: `${jobName} concluded ${job.conclusion || "unknown"}` };
+  }
+
+  if (ageMs(job.completed_at, now) > staleAfterMs) {
+    return {
+      verdict: jobVerdict(false, false, `last ${jobName} success is older than ${hours(staleAfterMs)}`),
+    };
+  }
+  return { verdict: jobVerdict(true, true, `${jobName} succeeded within ${hours(staleAfterMs)}`) };
+}
+
+/**
+ * The earlier runs that could hold a success inside the window: every run but
+ * the newest whose `updated_at` is within it. A job completing updates its
+ * run, and a re-run keeps the run's `created_at` but moves `updated_at`, so a
+ * run not updated inside the window can't hold a success inside it. Runs
+ * still in flight are kept: the jobs run in parallel, so the watched job can
+ * finish while another is still running.
+ */
+export function candidateOlderRuns({ runs, staleAfterMs, now }) {
   return runsNewestFirst(runs)
     .slice(1)
-    .filter((run) => !IN_FLIGHT_STATUSES.has(run.status))
-    .filter((run) => ageMs(run.created_at, now) <= staleAfterMs + hungAfterMs);
+    .filter((run) => ageMs(run.updated_at || run.created_at, now) <= staleAfterMs);
 }
 
 /**
- * Walk the older runs for the job's most recent success.
- *
- * `jobsByRunId` holds `{ status, jobs }` per run id, as the reader fetched
- * them. A run the walk reaches with no entry, or with an unreadable one, is
- * unreadable: it is FAIL, because the success it might hold can't be ruled
- * out or in.
- *
- * @returns {{ unreadable: string } | { success: object | null }}
+ * A pass resting on an earlier success, or FAIL. Never fresh: only the newest
+ * run's own success may close an alert. A run the walk reaches with no entry
+ * in `jobsByRunId`, or an unreadable one, is FAIL, because the success it
+ * might hold can't be ruled in or out.
  */
-function lastSuccess({ jobName, runs, jobsByRunId, staleAfterMs, hungAfterMs, now }) {
-  for (const run of candidateOlderRuns({ runs, staleAfterMs, hungAfterMs, now })) {
+function backedBy({ jobName, runs, jobsByRunId, staleAfterMs, now, reason }) {
+  for (const run of candidateOlderRuns({ runs, staleAfterMs, now })) {
     const fetched = jobsByRunId.get(run.id);
-    if (!fetched || fetched.status !== 200 || !Array.isArray(fetched.jobs)) {
-      return {
-        unreadable: `${jobName} jobs for an earlier run unreadable (HTTP ${fetched?.status || "no response"})`,
-      };
+    if (!readable(fetched)) {
+      return jobVerdict(
+        false,
+        false,
+        `${jobName} jobs for an earlier run unreadable (HTTP ${fetched?.status || "no response"})`,
+      );
     }
-    const job = fetched.jobs.find((entry) => entry && entry.name === jobName);
-    if (job && job.status === "completed" && job.conclusion === "success") {
-      return { success: job };
+    const success = successWithin({ jobs: fetched.jobs, jobName, staleAfterMs, now });
+    if (success) {
+      return jobVerdict(
+        true,
+        false,
+        `${reason}; an earlier ${jobName} succeeded ${hours(ageMs(success.completed_at, now))} ago`,
+      );
     }
   }
-  return { success: null };
-}
-
-/**
- * A pass that rests on an earlier success, or the FAIL `failReason` names.
- * Never fresh: only the newest run's own success may close an alert.
- */
-function backedBy({ jobName, runs, jobsByRunId, staleAfterMs, hungAfterMs, now, passReason, failReason }) {
-  const found = lastSuccess({ jobName, runs, jobsByRunId, staleAfterMs, hungAfterMs, now });
-  if ("unreadable" in found) return jobVerdict(false, false, found.unreadable);
-  if (!found.success) {
-    return jobVerdict(false, false, `${failReason}, and no ${jobName} success is within ${hours(staleAfterMs)}`);
-  }
-  const age = ageMs(found.success.completed_at, now);
-  if (age > staleAfterMs) {
-    return jobVerdict(false, false, `${failReason}, and the last ${jobName} success is older than ${hours(staleAfterMs)}`);
-  }
-  return jobVerdict(true, false, `${passReason}; the last ${jobName} success was ${hours(age)} ago`);
+  return jobVerdict(false, false, `${reason}, and no ${jobName} success is within ${hours(staleAfterMs)}`);
 }
 
 /**
  * Classify already-fetched Nightly Backup runs for one job.
  *
  * `jobsByRunId` maps a run id to `{ status, jobs }` for every run the reader
- * fetched: always the newest, and the older ones `candidateOlderRuns` names
- * when the newest run didn't succeed. `now` is injected so the windows are
+ * fetched: always the newest, and the earlier ones `candidateOlderRuns` names
+ * when `judgeNewest` asks for backing. `now` is injected so the windows are
  * deterministic in tests.
  */
 export function evaluateJobFreshness({
@@ -141,66 +208,23 @@ export function evaluateJobFreshness({
   }
 
   const [run] = runsNewestFirst(runs);
-  const newest = jobsByRunId.get(run.id);
-  if (!newest || newest.status !== 200 || !Array.isArray(newest.jobs)) {
-    return jobVerdict(
-      false,
-      false,
-      `${jobName} jobs unreadable (HTTP ${newest?.status || "no response"})`,
-    );
-  }
-
-  const context = { jobName, runs, jobsByRunId, staleAfterMs, hungAfterMs, now };
-  const job = newest.jobs.find((entry) => entry && entry.name === jobName);
-  if (!job) {
-    if (IN_FLIGHT_STATUSES.has(run.status)) {
-      if (ageMs(run.run_started_at || run.created_at, now) > hungAfterMs) {
-        return jobVerdict(false, false, `${jobName} hung for more than ${hours(hungAfterMs)}`);
-      }
-      return backedBy({
-        ...context,
-        passReason: `${jobName} is in flight`,
-        failReason: `${jobName} is in flight`,
-      });
-    }
-    return jobVerdict(false, false, `${jobName} job is missing`);
-  }
-
-  if (IN_FLIGHT_STATUSES.has(job.status)) {
-    if (ageMs(job.started_at || run.created_at, now) > hungAfterMs) {
-      return jobVerdict(false, false, `${jobName} hung for more than ${hours(hungAfterMs)}`);
-    }
-    return backedBy({
-      ...context,
-      passReason: `${jobName} is in flight`,
-      failReason: `${jobName} is in flight`,
-    });
-  }
-
-  if (job.conclusion !== "success") {
-    const concluded = `${jobName} concluded ${job.conclusion || "unknown"}`;
-    return backedBy({ ...context, passReason: concluded, failReason: concluded });
-  }
-
-  if (ageMs(job.completed_at, now) > staleAfterMs) {
-    return jobVerdict(false, false, `last ${jobName} success is older than ${hours(staleAfterMs)}`);
-  }
-
-  return jobVerdict(true, true, `${jobName} succeeded within ${hours(staleAfterMs)}`);
-}
-
-/** Whether the newest run's job succeeded, so no older run needs reading. */
-function newestSucceeded({ jobName, fetched }) {
-  if (fetched.status !== 200 || !Array.isArray(fetched.jobs)) return false;
-  const job = fetched.jobs.find((entry) => entry && entry.name === jobName);
-  return Boolean(job && job.status === "completed" && job.conclusion === "success");
+  const judged = judgeNewest({
+    jobName,
+    run,
+    fetched: jobsByRunId.get(run.id),
+    staleAfterMs,
+    hungAfterMs,
+    now,
+  });
+  if (judged.verdict) return judged.verdict;
+  return backedBy({ jobName, runs, jobsByRunId, staleAfterMs, now, reason: judged.backing });
 }
 
 /**
- * GET the recent runs, the newest run's jobs, and, only when the newest run's
- * job didn't succeed, the older runs' jobs until one holds a success. Never
- * writes. `get(path)` returns `{ status, data }`; the caller owns tokens and
- * the fallback-on-401/403 rule.
+ * GET the recent runs and the newest run's jobs, then, only when the newest
+ * run can't decide alone, the earlier runs' jobs until one holds a success
+ * within the window. Never writes. `get(path)` returns `{ status, data }`;
+ * the caller owns tokens and the fallback-on-401/403 rule.
  */
 export async function readJobFreshness({
   jobName,
@@ -234,11 +258,19 @@ export async function readJobFreshness({
   };
 
   const [newest] = runsNewestFirst(runs);
-  const newestJobs = await readJobs(newest);
-  if (!newestSucceeded({ jobName, fetched: newestJobs }) && newestJobs.status === 200) {
-    for (const run of candidateOlderRuns({ runs, staleAfterMs, hungAfterMs, now })) {
+  const judged = judgeNewest({
+    jobName,
+    run: newest,
+    fetched: await readJobs(newest),
+    staleAfterMs,
+    hungAfterMs,
+    now,
+  });
+  if (judged.backing) {
+    for (const run of candidateOlderRuns({ runs, staleAfterMs, now })) {
       const entry = await readJobs(run);
-      if (entry.status !== 200 || newestSucceeded({ jobName, fetched: entry })) break;
+      if (!readable(entry)) break;
+      if (successWithin({ jobs: entry.jobs, jobName, staleAfterMs, now })) break;
     }
   }
 
