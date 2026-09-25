@@ -20,7 +20,8 @@
  * argument is about *which* keys a persister picks up, and a persister picks up
  * every key by construction.
  *
- * This cache inverts that. It stores three kinds of row, each named explicitly,
+ * This cache inverts that. It stores three kinds of row, each named explicitly
+ * (the third also carries the block list's floor, {@link CachedBlockFloor}),
  * and every row carries the `userId` + `chapterId` it was written under **as
  * part of its primary key**. A read is a lookup at the current scope, so a row
  * written for another member or another chapter is not merely ignored — there
@@ -51,7 +52,7 @@
  *   a partial one seeded there would be a worse bug than the one this fixes.
  *   Nothing here reaches those surfaces; the id is a paint input for chat.
  * - **It is the id the rows beside it are already attributed with.** It is read
- *   in the same transaction as the tails ({@link readFirstChunk}) precisely so
+ *   in the same `Promise.all` as the tails ({@link readFirstChunk}) precisely so
  *   there is no window in which cached rows are painted and the id that says
  *   whose they are has not arrived — which is the window
  *   [#2243](https://github.com/pdcarlson/Frapp/issues/2243) was a bug in.
@@ -97,6 +98,12 @@
  * - **The viewer's `users.id`** — one id per scope, so the tails above can be
  *   attributed to a side of the thread without waiting on `GET /v1/users/me`.
  *   See the section above for why this row and not the user object.
+ * - **The block list's floor** — the ids the viewer's last ready block-list
+ *   read named, on the same per-scope row as the viewer id
+ *   ({@link CachedBlockFloor}). The tails keep each row's server verdict so a
+ *   warm load paints at once, and a verdict can predate a block; this is what
+ *   stops such a row painting on a cold load before the live list lands
+ *   (#2688).
  *
  * ## Failure posture
  *
@@ -117,6 +124,13 @@
  * naming rather than a bug worth blocking on — but it is the first schema change
  * this database has had, so it is the first time the cost exists at all, and
  * every future bump pays it again.
+ *
+ * **A tail written in an older row encoding is refused, not upgraded**
+ * (`TAIL_ROW_FORMAT`). That is a marker on the row rather than a schema bump,
+ * so it costs a cold load of that channel and none of the `VersionError` above.
+ * Across a deploy it can cost more than one: a tab still on the previous bundle
+ * keeps rewriting that channel's tail unstamped, so the new build refuses it on
+ * each load until that tab closes.
  */
 
 import Dexie, { type Table } from "dexie";
@@ -178,7 +192,83 @@ export interface CachedChannelTailRow extends FirstChunkScope {
   channelId: string;
   rows: RawChatMessage[];
   cachedAt: number;
+  /** The encoding `rows` were written in; see {@link TAIL_ROW_FORMAT}. */
+  rowFormat?: number;
 }
+
+/**
+ * The encoding a tail's rows are written in. `readFirstChunk` serves only a
+ * tail stamped with this value, and nothing else is ever upgraded in place.
+ *
+ * `2` is the encoding in which `sender_blocked` means what the block list
+ * needs it to (#2313). Before #2493, `toRawRow` wrote the flag on **every**
+ * row, Realtime echoes included, so an unmarked tail rehydrates echo rows with
+ * `sender_blocked: false`, and `normalizeRow` then reads them as rows the
+ * server evaluated and cleared. The web timeline shows a server-cleared row
+ * even while the block list is unavailable, which is the one place that claim
+ * is load-bearing, so a pre-#2493 tail would paint a blocked member's echoed
+ * message on any cold load until the list read lands, and for a whole session
+ * with the list unreadable. Refusing the tail costs a cold load of that channel
+ * (see the header for a tab still on the old bundle).
+ *
+ * **What the marker does not close.** A REST row's cleared verdict is kept on
+ * purpose, so a warm load paints other members' cached rows at once (the rank-1
+ * "render real" clause, `spec/ui/resilience/performance-budgets.md`). That
+ * verdict is only as old as the REST read that produced it, not the tail write:
+ * `toRawRow` carries it through every rewrite, and each Realtime merge
+ * rewrites the tail, so it can outlive a block made after that read, and the
+ * week `FIRST_CHUNK_MAX_AGE_MS` allows. The persisted block-list floor
+ * ({@link CachedBlockFloor}) is what hides such a row on a cold load, for any
+ * block a ready read here has seen.
+ *
+ * Bump it whenever the meaning of a persisted row changes.
+ */
+export const TAIL_ROW_FORMAT = 2;
+
+/**
+ * The ids the viewer's last ready block-list read named, written by
+ * `useFirstChunkCache` (so only while `/chat` is open) whenever the list reads
+ * ready, this session's confirmed changes included (#2688), and unioned into
+ * the web timeline's block state on a cold load until the live list has been
+ * read (`use-thread-block-list.ts`).
+ *
+ * Why it exists: a tail keeps each REST row's cleared verdict, so a warm load
+ * paints other members' rows at once (the rank-1 "render real" clause,
+ * `spec/ui/resilience/performance-budgets.md`). That verdict is only as old as
+ * the read that produced it, and the classifier shows a cleared row in every
+ * list state unless its sender is on the list. Without a persisted floor,
+ * every cold load starts with an empty list, so a member blocked since that
+ * read painted until the list or a live read of the channel landed, and for
+ * the whole session with the list unreadable.
+ *
+ * It is a floor, like `BlockedUserIds.ids`: anyone on it was blocked as of
+ * `readAt`, and a member missing from it proves nothing. Stale in the safe
+ * direction only. A member unblocked since, on another device, stays a
+ * tombstone (with Unblock) until the live list reads. The residual it cannot
+ * close is a block made on another device after the last ready read `/chat`
+ * saw: web has no way to know of it until the list reads (#2499).
+ *
+ * **Not aged.** Every other row here stops serving after
+ * {@link FIRST_CHUNK_MAX_AGE_MS}, but the rows this one guards do not age with
+ * it: each merge rewrites a tail with a fresh `cachedAt` and carries each
+ * REST row's old verdict along. A floor that expired while the list stayed
+ * unreadable would un-hide exactly the rows it exists to hide. Its staleness
+ * only ever hides too much, and the next ready read replaces it.
+ *
+ * **A tab on an older bundle can drop it.** Before #2688, `writeViewerId` put
+ * the whole row, so a tab still running that bundle after a deploy deletes the
+ * floor each time it rewrites the viewer id. The schema did not change, so
+ * nothing stops it. It costs the pre-#2688 behavior until this bundle's next
+ * ready read writes the floor again, and ends when that tab closes.
+ */
+export interface CachedBlockFloor {
+  ids: string[];
+  /** The ready read's `dataUpdatedAt`. Recorded, never used to expire the floor. */
+  readAt: number;
+}
+
+/** A {@link CachedBlockFloor} with the scope it was written under. */
+export interface CachedBlockFloorRow extends CachedBlockFloor, FirstChunkScope {}
 
 /**
  * The viewer's `users.id` under one scope.
@@ -194,10 +284,27 @@ export interface CachedViewerIdRow extends FirstChunkScope {
   cachedAt: number;
 }
 
+/**
+ * What the `viewerIds` table actually stores: one row per scope, holding the
+ * viewer id and the block-list floor, either of which may be absent.
+ *
+ * Sharing the row, rather than giving the floor a table of its own, is what
+ * spares a schema bump and the cross-bundle `VersionError` every bump costs
+ * (Failure posture, above). The two halves are written by separate
+ * read-modify-write transactions ({@link writeViewerId}, {@link
+ * writeBlockFloor}), each keeping the other's field, and read back as two
+ * separate values ({@link readFirstChunk}), so neither ever sees the other.
+ */
+interface ScopeRow extends FirstChunkScope {
+  viewerUserId?: string;
+  cachedAt?: number;
+  blockFloor?: CachedBlockFloor;
+}
+
 class ChatReadCacheDB extends Dexie {
   channelLists!: Table<CachedChannelListRow, [string, string]>;
   channelTails!: Table<CachedChannelTailRow, [string, string, string]>;
-  viewerIds!: Table<CachedViewerIdRow, [string, string]>;
+  viewerIds!: Table<ScopeRow, [string, string]>;
 
   constructor() {
     super(FIRST_CHUNK_DB_NAME);
@@ -303,9 +410,19 @@ export interface FirstChunk {
    * anything with it, and it cannot do that with the id alone.
    */
   viewer: CachedViewerIdRow | null;
+  /**
+   * The block list's floor as of the last ready read under this scope, or
+   * `null`. The whole row, for the same scope re-check as `viewer`.
+   */
+  blockFloor: CachedBlockFloorRow | null;
 }
 
-const EMPTY_CHUNK: FirstChunk = { channels: null, tails: [], viewer: null };
+const EMPTY_CHUNK: FirstChunk = {
+  channels: null,
+  tails: [],
+  viewer: null,
+  blockFloor: null,
+};
 
 /**
  * Everything cached for one scope, already filtered by age.
@@ -334,7 +451,7 @@ export async function readFirstChunk(
       the incoming shape, then reflow under the member when the id arrived.
       Read together, they reach React together.
     */
-    const [list, tails, viewer] = await Promise.all([
+    const [list, tails, scopeRow] = await Promise.all([
       db.channelLists.get(key as [string, string]),
       db.channelTails.where("[userId+chapterId]").equals(key).toArray(),
       db.viewerIds.get(key as [string, string]),
@@ -355,7 +472,10 @@ export async function readFirstChunk(
       channels: usableList,
       tails: tails.filter(
         (row) =>
-          isFresh(row, now) && row.rows.length > 0 && known.has(row.channelId),
+          row.rowFormat === TAIL_ROW_FORMAT &&
+          isFresh(row, now) &&
+          row.rows.length > 0 &&
+          known.has(row.channelId),
       ),
       /*
         Aged like every other row, and deliberately **not** gated on the channel
@@ -376,7 +496,33 @@ export async function readFirstChunk(
         cached history — so the failure mode is "your old messages briefly read
         as someone else's", never "someone else's read as yours".
       */
-      viewer: viewer && isFresh(viewer, now) ? viewer : null,
+      viewer:
+        scopeRow?.viewerUserId &&
+        scopeRow.cachedAt !== undefined &&
+        isFresh({ cachedAt: scopeRow.cachedAt }, now)
+          ? {
+              userId: scopeRow.userId,
+              chapterId: scopeRow.chapterId,
+              viewerUserId: scopeRow.viewerUserId,
+              cachedAt: scopeRow.cachedAt,
+            }
+          : null,
+      /*
+        In the same read as the tails, for the same reason as the viewer id: the
+        rows and the floor that classifies them reach React together, so there is
+        no pass where a cached row paints against an empty list.
+
+        Not aged (see `CachedBlockFloor`), and not gated on the channel list:
+        like the viewer id, its whole key is the scope.
+      */
+      blockFloor: scopeRow?.blockFloor
+          ? {
+              userId: scopeRow.userId,
+              chapterId: scopeRow.chapterId,
+              ids: scopeRow.blockFloor.ids,
+              readAt: scopeRow.blockFloor.readAt,
+            }
+          : null,
     };
   } catch {
     return EMPTY_CHUNK;
@@ -431,10 +577,57 @@ export async function writeViewerId(
   if (!db) return;
   if (!viewerUserId) return;
   try {
-    await db.viewerIds.put({ ...scope, viewerUserId, cachedAt });
+    await updateScopeRow(db, scope, { viewerUserId, cachedAt });
   } catch {
     /* Best-effort — see `writeChannelList`. */
   }
+}
+
+/**
+ * Remember the ids a ready block-list read named for this scope
+ * ({@link CachedBlockFloor}).
+ *
+ * An empty list is written, not skipped: a ready read naming nobody is real
+ * news, and it is what retires a floor that still names someone the viewer
+ * has since unblocked. Sorted so a re-read naming the same members writes the
+ * same row.
+ */
+export async function writeBlockFloor(
+  scope: FirstChunkScope,
+  ids: Iterable<string>,
+  readAt: number,
+): Promise<void> {
+  const db = openDb();
+  if (!db) return;
+  try {
+    await updateScopeRow(db, scope, {
+      blockFloor: { ids: [...ids].sort(), readAt },
+    });
+  } catch {
+    /* Best-effort — see `writeChannelList`. */
+  }
+}
+
+/**
+ * Sets some of a scope row's fields and keeps the rest, in one transaction, so
+ * the viewer id's writer and the floor's cannot drop each other's field
+ * whichever lands first.
+ */
+async function updateScopeRow(
+  db: ChatReadCacheDB,
+  scope: FirstChunkScope,
+  fields: Omit<ScopeRow, keyof FirstChunkScope>,
+): Promise<void> {
+  const key: [string, string] = [scope.userId, scope.chapterId];
+  await db.transaction("rw", db.viewerIds, async () => {
+    const existing = await db.viewerIds.get(key);
+    await db.viewerIds.put({
+      ...existing,
+      ...fields,
+      userId: scope.userId,
+      chapterId: scope.chapterId,
+    });
+  });
 }
 
 /**
@@ -462,7 +655,13 @@ export async function writeChannelTail(
       absence of news.
     */
     if (rows.length === 0) return;
-    await db.channelTails.put({ ...scope, channelId, rows, cachedAt });
+    await db.channelTails.put({
+      ...scope,
+      channelId,
+      rows,
+      cachedAt,
+      rowFormat: TAIL_ROW_FORMAT,
+    });
     await evictOldestTails(db, scope);
   } catch {
     /* Best-effort — see `writeChannelList`. */

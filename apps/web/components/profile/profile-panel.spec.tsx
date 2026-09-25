@@ -76,6 +76,13 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+// The Blocked members card reads the block list and the unblock flow, and has
+// its own spec (`blocked-members-card.spec.tsx`). These cases are about the
+// other cards, so it renders as an inert stand-in here.
+vi.mock("@/components/profile/blocked-members-card", () => ({
+  BlockedMembersCard: () => null,
+}));
+
 vi.mock("@repo/hooks", () => ({
   useCurrentUser: () => mocks.userQuery,
   useUserSettings: () => mocks.settingsQuery,

@@ -36,10 +36,17 @@ vi.mock("./pins-popover", () => ({
   // own list must agree, and mocking it away would let them drift untested.
   pinnedMessages: (messages: Array<{ is_pinned?: boolean }>) =>
     messages.filter((m) => m.is_pinned),
-  PinsPanel: ({ onJump }: { onJump?: (messageId: string) => void }) => (
+  PinsPanel: ({
+    onJump,
+    hidden,
+  }: {
+    onJump?: (messageId: string) => void;
+    hidden?: { blocked: number; held: number };
+  }) => (
     <button
       type="button"
       data-testid="pins-panel"
+      data-hidden={hidden ? `${hidden.blocked}/${hidden.held}` : "none"}
       onClick={() => onJump?.("msg-2")}
     >
       pins panel
@@ -106,6 +113,7 @@ function renderMenu(overrides: Partial<Parameters<typeof ChannelMenu>[0]> = {}) 
   const props = {
     activeChannelId: "chan-1",
     messages: [] as ChatMessage[],
+    hiddenPins: { blocked: 0, held: 0 },
     nameFor: () => "Someone",
     channelNameFor: () => "general",
     onJumpToMessage: vi.fn(),
@@ -223,6 +231,34 @@ describe("ChannelMenu (#2142)", () => {
     expect(
       screen.getByRole("button", { name: "Pinned, 2" }),
     ).toBeInTheDocument();
+  });
+
+  it("counts pins the block list hides, so hidden pins never read as none (#2313)", async () => {
+    const user = userEvent.setup();
+    renderMenu({
+      messages: [message({ id: "a", is_pinned: true })],
+      hiddenPins: { blocked: 1, held: 1 },
+    });
+    await openMenu(user);
+
+    expect(
+      screen.getByRole("button", { name: "Pinned, 3" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hands hidden pins to the panel, so the row's count and the panel agree (#2313)", async () => {
+    const user = userEvent.setup();
+    renderMenu({ hiddenPins: { blocked: 2, held: 1 } });
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: "Pinned, 3" }));
+
+    // What the panel says with them is `pins-popover.spec.tsx`'s; this pins
+    // that the panel is told at all, which is what keeps it from reading
+    // "Nothing pinned yet" under a row that says "Pinned, 3".
+    expect(screen.getByTestId("pins-panel")).toHaveAttribute(
+      "data-hidden",
+      "2/1",
+    );
   });
 
   it("states no saved count until the list has actually loaded", async () => {

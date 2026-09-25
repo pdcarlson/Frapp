@@ -24,15 +24,26 @@ import type { FirstChunk } from "./first-chunk-cache";
 
 const {
   authUserId,
+  blockListResult,
   channelsResult,
   pruneForeignScopes,
   readFirstChunk,
   viewerResult,
   writeChannelList,
   writeChannelTail,
+  writeBlockFloor,
   writeViewerId,
 } = vi.hoisted(() => ({
   authUserId: { current: null as string | null },
+  /** `useBlockedUserIds` as far as the floor's writer reads it. */
+  blockListResult: {
+    current: {
+      status: "loading" as "ready" | "loading" | "unavailable",
+      ids: new Set<string>() as ReadonlySet<string>,
+      unblocked: new Set<string>() as ReadonlySet<string>,
+      readAt: 0,
+    },
+  },
   channelsResult: {
     current: { data: undefined as unknown, dataUpdatedAt: 0 },
   },
@@ -45,9 +56,11 @@ const {
     channels: null,
     tails: [],
     viewer: null,
+    blockFloor: null,
   })),
   writeChannelList: vi.fn(async () => undefined),
   writeChannelTail: vi.fn(async () => undefined),
+  writeBlockFloor: vi.fn(async () => undefined),
   writeViewerId: vi.fn(async () => undefined),
 }));
 
@@ -55,6 +68,7 @@ vi.mock("@/lib/auth/use-auth-user-id", () => ({
   useAuthUserId: () => authUserId.current,
 }));
 vi.mock("@repo/hooks", () => ({
+  useBlockedUserIds: () => blockListResult.current,
   useChannels: () => channelsResult.current,
   useCurrentUser: () => viewerResult.current,
   useViewerUserId: () => viewerResult.current.id,
@@ -65,6 +79,7 @@ vi.mock("./first-chunk-cache", async (importOriginal) => ({
   readFirstChunk,
   writeChannelList,
   writeChannelTail,
+  writeBlockFloor,
   writeViewerId,
 }));
 
@@ -93,7 +108,12 @@ function viewerRow(
   return { ...scope, viewerUserId, cachedAt };
 }
 
-const EMPTY_CHUNK: FirstChunk = { channels: null, tails: [], viewer: null };
+const EMPTY_CHUNK: FirstChunk = {
+  channels: null,
+  tails: [],
+  viewer: null,
+  blockFloor: null,
+};
 
 function message(id: string) {
   return normalizeRow({
@@ -124,6 +144,12 @@ beforeEach(() => {
   authUserId.current = "auth-alice";
   channelsResult.current = { data: undefined, dataUpdatedAt: 0 };
   viewerResult.current = { id: null, dataUpdatedAt: 0 };
+  blockListResult.current = {
+    status: "loading",
+    ids: new Set(),
+    unblocked: new Set(),
+    readAt: 0,
+  };
   vi.clearAllMocks();
   readFirstChunk.mockResolvedValue(EMPTY_CHUNK);
   act(() => useChapterStore.getState().setActiveChapterId("chapter-1"));
@@ -161,6 +187,7 @@ describe("seedFirstChunk", () => {
       channels: listRow([GENERAL, SOCIAL]),
       tails: [],
       viewer: null,
+      blockFloor: null,
     });
 
     // `chat-shell.tsx` derives `channelsPaneState` from `channels.length > 0`,
@@ -176,6 +203,7 @@ describe("seedFirstChunk", () => {
     seedFirstChunk(client, {
       channels: null,
       viewer: null,
+      blockFloor: null,
       tails: [
         {
           userId: "auth-alice",
@@ -221,6 +249,7 @@ describe("seedFirstChunk", () => {
     seedFirstChunk(client, {
       channels: null,
       viewer: null,
+      blockFloor: null,
       tails: [
         {
           userId: "auth-alice",
@@ -258,6 +287,7 @@ describe("seedFirstChunk", () => {
     seedFirstChunk(client, {
       channels: null,
       viewer: null,
+      blockFloor: null,
       tails: [
         {
           userId: "auth-alice",
@@ -303,6 +333,7 @@ describe("seedFirstChunk", () => {
       channels: listRow([GENERAL]),
       tails: [],
       viewer: null,
+      blockFloor: null,
     });
 
     expect(aborts).toBe(0);
@@ -321,6 +352,7 @@ describe("seedFirstChunk", () => {
       channels: listRow([GENERAL]),
       tails: [],
       viewer: null,
+      blockFloor: null,
     });
 
     expect(client.getQueryData(["channels"])).toEqual([SOCIAL]);
@@ -340,6 +372,7 @@ describe("seedFirstChunk", () => {
       channels: listRow([GENERAL]),
       tails: [],
       viewer: null,
+      blockFloor: null,
     });
 
     expect(client.getQueryState(["channels"])?.isInvalidated).toBe(true);
@@ -374,6 +407,7 @@ describe("useFirstChunkCache", () => {
       channels: listRow([GENERAL]),
       tails: [],
       viewer: null,
+      blockFloor: null,
     });
     const client = makeClient();
 
@@ -505,7 +539,7 @@ describe("useFirstChunkCache — cached viewer id", () => {
 
     // The point of the whole change: a resolved id with no `GET /v1/users/me`
     // behind it, so `message-timeline.tsx`'s gate opens on the warm path.
-    await waitFor(() => expect(result.current).toBe(ALICE_VIEWER));
+    await waitFor(() => expect(result.current.viewerId).toBe(ALICE_VIEWER));
   });
 
   it("does not seed `[\"user\",\"me\"]` with it", async () => {
@@ -525,7 +559,7 @@ describe("useFirstChunkCache — cached viewer id", () => {
     const { result } = renderHook(() => useFirstChunkCache(), {
       wrapper: wrapper(client),
     });
-    await waitFor(() => expect(result.current).toBe(ALICE_VIEWER));
+    await waitFor(() => expect(result.current.viewerId).toBe(ALICE_VIEWER));
 
     expect(client.getQueryData(["user", "me"])).toBeUndefined();
   });
@@ -554,14 +588,14 @@ describe("useFirstChunkCache — cached viewer id", () => {
     const { result, rerender } = renderHook(() => useFirstChunkCache(), {
       wrapper: wrapper(client),
     });
-    await waitFor(() => expect(result.current).toBe(ALICE_VIEWER));
+    await waitFor(() => expect(result.current.viewerId).toBe(ALICE_VIEWER));
 
     // Bob signs in. Nothing resolves for him — the read never settles.
     readFirstChunk.mockReturnValue(new Promise(() => {}));
     authUserId.current = "auth-bob";
     rerender();
 
-    expect(result.current).toBeNull();
+    expect(result.current.viewerId).toBeNull();
   });
 
   it("disowns it on a chapter change too", async () => {
@@ -577,13 +611,13 @@ describe("useFirstChunkCache — cached viewer id", () => {
     const { result, rerender } = renderHook(() => useFirstChunkCache(), {
       wrapper: wrapper(client),
     });
-    await waitFor(() => expect(result.current).toBe(ALICE_VIEWER));
+    await waitFor(() => expect(result.current.viewerId).toBe(ALICE_VIEWER));
 
     readFirstChunk.mockReturnValue(new Promise(() => {}));
     act(() => useChapterStore.getState().setActiveChapterId("chapter-2"));
     rerender();
 
-    expect(result.current).toBeNull();
+    expect(result.current.viewerId).toBeNull();
   });
 
   it("goes cold when the session does, rather than going sticky", async () => {
@@ -598,12 +632,12 @@ describe("useFirstChunkCache — cached viewer id", () => {
     const { result, rerender } = renderHook(() => useFirstChunkCache(), {
       wrapper: wrapper(client),
     });
-    await waitFor(() => expect(result.current).toBe(ALICE_VIEWER));
+    await waitFor(() => expect(result.current.viewerId).toBe(ALICE_VIEWER));
 
     authUserId.current = null;
     rerender();
 
-    expect(result.current).toBeNull();
+    expect(result.current.viewerId).toBeNull();
   });
 
   it("writes the live id under the scope it resolved in", async () => {
@@ -675,6 +709,166 @@ describe("useFirstChunkCache — cached viewer id", () => {
     await waitFor(() => expect(pruneForeignScopes).toHaveBeenCalled());
 
     expect(writeViewerId).not.toHaveBeenCalled();
+  });
+});
+
+/*
+  The block list's floor (#2688): read with the tails, handed back for the
+  scope in effect only, and written from a ready read under the same tenant
+  guard as everything else here.
+*/
+describe("useFirstChunkCache — block-list floor", () => {
+  const BLAKE = "user-blake";
+
+  function floorRow(
+    ids: string[],
+    scope = { userId: "auth-alice", chapterId: "chapter-1" },
+  ) {
+    return { ...scope, ids, readAt: AT };
+  }
+
+  it("hands back the cached floor for this scope, read with the rows", async () => {
+    readFirstChunk.mockResolvedValue({
+      ...EMPTY_CHUNK,
+      blockFloor: floorRow([BLAKE]),
+    });
+    const client = makeClient();
+
+    const { result } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+
+    await waitFor(() =>
+      expect([...(result.current.blockFloor ?? [])]).toEqual([BLAKE]),
+    );
+  });
+
+  it("disowns the floor the moment the member changes", async () => {
+    // Bob must never classify his thread against Alice's blocks.
+    readFirstChunk.mockResolvedValue({
+      ...EMPTY_CHUNK,
+      blockFloor: floorRow([BLAKE]),
+    });
+    const client = makeClient();
+    const { result, rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current.blockFloor).not.toBeNull());
+
+    readFirstChunk.mockReturnValue(new Promise(() => {}));
+    authUserId.current = "auth-bob";
+    rerender();
+
+    expect(result.current.blockFloor).toBeNull();
+  });
+
+  it("writes a ready read's ids, and nothing while the list is not ready", async () => {
+    const client = makeClient();
+    const { rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+
+    // A list that is unavailable after a read still holds ids (the floor
+    // plus confirmed changes) but is not news the floor may be rewritten from.
+    blockListResult.current = {
+      status: "unavailable",
+      ids: new Set([BLAKE]),
+      unblocked: new Set(),
+      readAt: 0,
+    };
+    rerender();
+    await waitFor(() => expect(pruneForeignScopes).toHaveBeenCalled());
+    expect(writeBlockFloor).not.toHaveBeenCalled();
+
+    const readAt = Date.now() + 1;
+    blockListResult.current = {
+      status: "ready",
+      ids: new Set([BLAKE]),
+      unblocked: new Set(),
+      readAt,
+    };
+    rerender();
+
+    await waitFor(() =>
+      expect(writeBlockFloor).toHaveBeenCalledWith(
+        { userId: "auth-alice", chapterId: "chapter-1" },
+        new Set([BLAKE]),
+        readAt,
+      ),
+    );
+  });
+
+  it("does not file the outgoing member's blocks under the incoming member's key", async () => {
+    const client = makeClient();
+    const { rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+    blockListResult.current = {
+      status: "ready",
+      ids: new Set([BLAKE]),
+      unblocked: new Set(),
+      readAt: Date.now() + 1,
+    };
+    rerender();
+    await waitFor(() => expect(writeBlockFloor).toHaveBeenCalled());
+    writeBlockFloor.mockClear();
+
+    // Bob's uid publishes with Alice's list still in hand.
+    authUserId.current = "auth-bob";
+    rerender();
+    expect(writeBlockFloor).not.toHaveBeenCalled();
+
+    // Bob's own read is written.
+    blockListResult.current = {
+      status: "ready",
+      ids: new Set(),
+      unblocked: new Set(),
+      readAt: Date.now() + 2,
+    };
+    rerender();
+    await waitFor(() =>
+      expect(writeBlockFloor).toHaveBeenCalledWith(
+        { userId: "auth-bob", chapterId: "chapter-1" },
+        new Set(),
+        expect.any(Number),
+      ),
+    );
+  });
+});
+
+describe("useFirstChunkCache — block-list floor after a failed refetch", () => {
+  it("does not rewrite the floor from a list that read once and is now unavailable", async () => {
+    /*
+      TanStack keeps a failed refetch's `data`, so `readAt` stays nonzero while
+      the list is unavailable, and a confirmed change still moves its ids. The
+      floor must not be rewritten from that: an unblock confirmed during the
+      outage leaves the floor naming the member until a read succeeds.
+    */
+    const client = makeClient();
+    const { rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+    const readAt = Date.now() + 1;
+    blockListResult.current = {
+      status: "ready",
+      ids: new Set(["user-blake"]),
+      unblocked: new Set(),
+      readAt,
+    };
+    rerender();
+    await waitFor(() => expect(writeBlockFloor).toHaveBeenCalledTimes(1));
+
+    // The refetch fails, then an unblock is confirmed during the outage.
+    blockListResult.current = {
+      status: "unavailable",
+      ids: new Set(),
+      unblocked: new Set(["user-blake"]),
+      readAt,
+    };
+    rerender();
+    await waitFor(() => expect(pruneForeignScopes).toHaveBeenCalled());
+
+    expect(writeBlockFloor).toHaveBeenCalledTimes(1);
   });
 });
 

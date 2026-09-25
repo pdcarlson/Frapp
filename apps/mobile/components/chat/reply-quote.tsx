@@ -9,13 +9,6 @@ import { resolveAuthorLabel } from "@repo/hooks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The quote a reply draws when its parent is held off screen because the block
- * list is loading or unavailable. A blocked member's parent quotes as the
- * tombstone's own words instead (`blocked-message-tombstone.tsx`).
- */
-export const HELD_QUOTE_TEXT = "Message hidden";
-
-/**
  * Quote chrome for a reply on s05. Re-implements the web rule against
  * mobile tokens — not a port of `QuotedMessage` (Tailwind / web type
  * treatment). A left rule plus author and preview, or the unavailable

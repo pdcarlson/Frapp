@@ -12,6 +12,11 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  MASKED_RELOAD_FAILED_BODY,
+  MASKED_RELOAD_FAILED_TITLE,
+} from "@repo/chat-core/block-copy";
+import { isBlockableSender, type ThreadRow } from "@repo/chat-core/blocks";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   resolveAuthorName,
@@ -43,16 +48,9 @@ import { ErrorState } from "@/components/state-block";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
 import {
   confirmUnblockMember,
-  MASKED_RELOAD_FAILED_BODY,
-  MASKED_RELOAD_FAILED_TITLE,
   useBlockActions,
 } from "@/lib/chat/block-actions";
-import {
-  isBlockableSender,
-  messageActionsFor,
-  rosterMembership,
-  type ThreadRow,
-} from "@/lib/chat/blocks";
+import { messageActionsFor, rosterMembership } from "@/lib/chat/blocks";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
@@ -360,7 +358,7 @@ export default function ChatThreadScreen() {
     [nameFor, unblock],
   );
 
-  // A stale tombstone's Reload (`lib/chat/masked-refresh.ts`). The tombstone
+  // A stale tombstone's Reload (`refreshMaskedCopies` in `@repo/chat-core/blocks`). The tombstone
   // keeps offering it while the re-read keeps failing; the alert says a tap
   // that came back empty did not just do nothing.
   const maskedRefresh = useMaskedRefresh();

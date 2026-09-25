@@ -14,22 +14,25 @@
   puts the real schema in front of a real key-range query.
 */
 import "fake-indexeddb/auto";
+import Dexie from "dexie";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeRow, type RawChatMessage } from "@repo/chat-core/types";
 import {
   FIRST_CHUNK_CHANNEL_LIMIT,
   FIRST_CHUNK_MAX_AGE_MS,
   FIRST_CHUNK_MESSAGE_LIMIT,
+  TAIL_ROW_FORMAT,
   pruneForeignScopes,
   readFirstChunk,
   resetFirstChunkCacheForTests,
   toCacheableRows,
   writeChannelList,
+  writeBlockFloor,
   writeChannelTail,
   writeViewerId,
   type FirstChunkScope,
 } from "./first-chunk-cache";
-import { wipeFirstChunkCache } from "./first-chunk-wipe";
+import { FIRST_CHUNK_DB_NAME, wipeFirstChunkCache } from "./first-chunk-wipe";
 import type { ChatChannel } from "@/components/chat/channel-list";
 
 const ALICE: FirstChunkScope = { userId: "auth-alice", chapterId: "chapter-1" };
@@ -170,6 +173,82 @@ describe("scope keying", () => {
     const chunk = await readFirstChunk(ALICE);
 
     expect(chunk.tails).toEqual([]);
+  });
+});
+
+describe("row encoding (#2313)", () => {
+  it("keeps a REST row's cleared verdict, so a warm load paints other members' rows", async () => {
+    // Stripping it would rehydrate every cached row unevaluated, and the block
+    // list holds unevaluated rows until it loads: a warm load, or a whole
+    // offline session, would show only the viewer's own messages. A verdict
+    // that predates a block is hidden by the persisted floor instead (#2688).
+    await seedRail(ALICE);
+    await writeChannelTail(
+      ALICE,
+      "chan-1",
+      [confirmed("1", { sender_blocked: false })],
+      AT,
+    );
+
+    const chunk = await readFirstChunk(ALICE);
+    const row = normalizeRow(chunk.tails[0]!.rows[0]!);
+
+    expect(row._blockEvaluated).toBe(true);
+    expect(row.sender_blocked).toBe(false);
+  });
+
+  /**
+   * A tail as the build before #2493 wrote it: no `rowFormat`, and
+   * `sender_blocked` on an echo row, which rehydrates as "the server evaluated
+   * this and cleared it" — the one claim the block list lets through while it
+   * is unavailable.
+   */
+  async function seedUnstampedTail() {
+    resetFirstChunkCacheForTests();
+    const db = new Dexie(FIRST_CHUNK_DB_NAME);
+    db.version(2).stores({
+      channelLists: "[userId+chapterId]",
+      channelTails:
+        "[userId+chapterId+channelId], [userId+chapterId], cachedAt",
+      viewerIds: "[userId+chapterId]",
+    });
+    await db.open();
+    await db.table("channelTails").put({
+      ...ALICE,
+      channelId: "chan-1",
+      rows: [rawRow("1", { sender_blocked: false })],
+      cachedAt: AT,
+    });
+    db.close();
+  }
+
+  it("stamps every tail it writes with the current encoding", async () => {
+    await seedRail(ALICE);
+    await writeChannelTail(ALICE, "chan-1", [confirmed("1")], AT);
+
+    const chunk = await readFirstChunk(ALICE);
+    expect(chunk.tails[0]!.rowFormat).toBe(TAIL_ROW_FORMAT);
+  });
+
+  it("refuses a tail written before the encoding was stamped", async () => {
+    await seedRail(ALICE);
+    await seedUnstampedTail();
+
+    const chunk = await readFirstChunk(ALICE);
+
+    // The rail is still served: only the row encoding changed.
+    expect(chunk.channels?.channels).toEqual(RAIL);
+    expect(chunk.tails).toEqual([]);
+  });
+
+  it("serves the channel again once it is rewritten in the current encoding", async () => {
+    await seedRail(ALICE);
+    await seedUnstampedTail();
+    resetFirstChunkCacheForTests();
+    await writeChannelTail(ALICE, "chan-1", [confirmed("1")], AT);
+
+    const chunk = await readFirstChunk(ALICE);
+    expect(chunk.tails.map((tail) => tail.channelId)).toEqual(["chan-1"]);
   });
 });
 
@@ -526,6 +605,83 @@ describe("cached viewer id", () => {
   });
 });
 
+/*
+  The block list's floor (#2688). It shares the viewer id's per-scope row, so
+  the property that matters beyond scoping is that neither writer drops the
+  other's field.
+*/
+describe("block-list floor", () => {
+  const ALICE_VIEWER = "user-alice";
+  const BLAKE = "user-blake";
+  const ZED = "user-zed";
+
+  it("reads back the ids a ready read wrote, sorted", async () => {
+    await writeBlockFloor(ALICE, new Set([ZED, BLAKE]), AT);
+
+    const chunk = await readFirstChunk(ALICE);
+
+    expect(chunk.blockFloor).toEqual({ ...ALICE, ids: [BLAKE, ZED], readAt: AT });
+  });
+
+  it("does not serve one member's blocks to another, or across chapters", async () => {
+    await writeBlockFloor(ALICE, [BLAKE], AT);
+
+    expect((await readFirstChunk(BOB)).blockFloor).toBeNull();
+    expect((await readFirstChunk(ALICE_ELSEWHERE)).blockFloor).toBeNull();
+  });
+
+  it("keeps the viewer id when the floor is written, and the floor when the id is", async () => {
+    await writeViewerId(ALICE, ALICE_VIEWER, AT);
+    await writeBlockFloor(ALICE, [BLAKE], AT);
+    await writeViewerId(ALICE, ALICE_VIEWER, AT + 1);
+
+    const chunk = await readFirstChunk(ALICE);
+
+    expect(chunk.viewer?.viewerUserId).toBe(ALICE_VIEWER);
+    expect(chunk.blockFloor?.ids).toEqual([BLAKE]);
+  });
+
+  it("serves no viewer id from a row that holds only a floor", async () => {
+    // A ready list can land before `GET /v1/users/me` does.
+    await writeBlockFloor(ALICE, [BLAKE], AT);
+
+    const chunk = await readFirstChunk(ALICE);
+
+    expect(chunk.viewer).toBeNull();
+    expect(chunk.blockFloor?.ids).toEqual([BLAKE]);
+  });
+
+  it("is replaced, not merged, by the next ready read, an empty one included", async () => {
+    // An empty ready list is what retires a member unblocked since.
+    await writeBlockFloor(ALICE, [BLAKE], AT);
+    await writeBlockFloor(ALICE, [], AT + 1);
+
+    expect((await readFirstChunk(ALICE)).blockFloor?.ids).toEqual([]);
+  });
+
+  it("keeps serving a floor older than the max age, since the tails it guards can be younger", async () => {
+    // Each merge rewrites a tail with a fresh `cachedAt` and keeps its REST
+    // rows' old verdicts, so a floor that aged out during a long list outage
+    // would un-hide the very rows it exists to hide.
+    await writeBlockFloor(ALICE, [BLAKE], AT - FIRST_CHUNK_MAX_AGE_MS - 1);
+
+    expect((await readFirstChunk(ALICE)).blockFloor?.ids).toEqual([BLAKE]);
+  });
+
+  it("is dropped by the prune and by the wipe", async () => {
+    await writeBlockFloor(ALICE, [BLAKE], AT);
+    await writeBlockFloor(BOB, [ZED], AT);
+
+    await pruneForeignScopes(BOB);
+    expect((await readFirstChunk(ALICE)).blockFloor).toBeNull();
+    expect((await readFirstChunk(BOB)).blockFloor?.ids).toEqual([ZED]);
+
+    resetFirstChunkCacheForTests();
+    await wipeFirstChunkCache();
+    expect((await readFirstChunk(BOB)).blockFloor).toBeNull();
+  });
+});
+
 describe("degrading", () => {
   it("answers empty rather than throwing when IndexedDB is unavailable", async () => {
     // Private windows and blocked site data. `use-channel-draft.ts` already
@@ -540,12 +696,16 @@ describe("degrading", () => {
         channels: null,
         tails: [],
         viewer: null,
+        blockFloor: null,
       });
       await expect(
         writeChannelList(ALICE, RAIL, AT),
       ).resolves.toBeUndefined();
       await expect(
         writeViewerId(ALICE, "user-alice", AT),
+      ).resolves.toBeUndefined();
+      await expect(
+        writeBlockFloor(ALICE, ["user-blake"], AT),
       ).resolves.toBeUndefined();
       await expect(pruneForeignScopes(ALICE)).resolves.toBeUndefined();
     } finally {

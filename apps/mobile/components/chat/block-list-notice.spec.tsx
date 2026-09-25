@@ -4,8 +4,8 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { AccessibilityInfo } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BlockListStatus } from "@repo/hooks";
-import { BLOCK_LIST_WAITING_FOR_NETWORK } from "@/lib/chat/blocks";
+import type { BlockListStatus } from "@repo/validation";
+import { BLOCK_LIST_WAITING_FOR_NETWORK } from "@repo/chat-core/block-copy";
 import { FrappThemeProvider } from "@/lib/theme";
 import { BlockListNotice } from "./block-list-notice";
 

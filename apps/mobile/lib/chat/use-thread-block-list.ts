@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { useBlockedUserIds, type BlockedUserIds } from "@repo/hooks";
-import { blockClearance, useBlockClearance } from "./block-clearance";
 import {
   applyBlockList,
+  blockClearance,
   contradictingRows,
+  reconcileContradiction,
   rowsToRemember,
   type BlockedThread,
   type BlockState,
-} from "./blocks";
+} from "@repo/chat-core/blocks";
+import { useBlockedUserIds, type BlockedUserIds } from "@repo/hooks";
+import { useBlockClearance } from "./block-clearance";
 
 const NO_IDS: ReadonlySet<string> = new Set();
 
@@ -28,7 +30,7 @@ export interface ThreadBlockList {
  * 1. Classifies every cached row (`applyBlockList`) against the list, this
  *    client's confirmed changes, and this session's clearances.
  * 2. Records every row a `ready` list shows, and every server-cleared row
- *    shown while it is not ready (`rowsToRemember`, `block-clearance.ts`), so
+ *    shown while it is not ready (`rowsToRemember`, `blockClearance`), so
  *    an outage holds only what first arrives during it (finding 4).
  * 3. Re-reads the list once per distinct set of masked REST rows a ready list
  *    is contradicted by — a masked row for someone off the list, which is what
@@ -84,16 +86,13 @@ export function useThreadBlockList(
   const reconciledFor = useRef("");
   const { retry } = blockList;
   useEffect(() => {
-    if (contradicted === "") {
-      // Resolved — but only a ready list can say so. A list that is loading or
-      // unavailable reports no contradiction because it proves nothing, and
-      // forgetting the set then would re-read on every recovery.
-      if (isReady) reconciledFor.current = "";
-      return;
-    }
-    if (contradicted === reconciledFor.current) return;
-    reconciledFor.current = contradicted;
-    retry();
+    const step = reconcileContradiction(
+      contradicted,
+      isReady,
+      reconciledFor.current,
+    );
+    reconciledFor.current = step.reconciledFor;
+    if (step.reread) retry();
   }, [contradicted, isReady, retry]);
 
   return { blockList, blockState, thread };

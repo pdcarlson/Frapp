@@ -7,7 +7,9 @@ import {
   selectMessages,
 } from "@repo/chat-core/cache";
 import type { ChatMessage, RawChatMessage } from "@repo/chat-core/types";
-import type { BlockedUserIds, BlockListStatus } from "@repo/hooks";
+import { blockClearance } from "@repo/chat-core/blocks";
+import type { BlockedUserIds } from "@repo/hooks";
+import type { BlockListStatus } from "@repo/validation";
 
 const list = vi.hoisted(() => ({
   current: null as unknown as BlockedUserIds,
@@ -20,7 +22,6 @@ vi.mock("@repo/hooks", async () => {
   return { ...actual, useBlockedUserIds: () => list.current };
 });
 
-import { blockClearance } from "./block-clearance";
 import { useThreadBlockList } from "./use-thread-block-list";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
@@ -40,6 +41,7 @@ function setList(
     retry: list.retry,
     isRetrying: false,
     isPaused: false,
+    readAt: status === "ready" ? 1 : 0,
   };
 }
 

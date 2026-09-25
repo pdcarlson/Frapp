@@ -40,6 +40,26 @@ describe("QuotedMessage", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
+  it("prints only the placeholder for a parent the block list hides, and is never a control (#2313)", () => {
+    // The parent is loaded (it has an author), so only `hidden` keeps its words
+    // off screen and keeps the quote from jumping to a row the viewer may not
+    // see: a held parent is not in the timeline to scroll to.
+    render(
+      <QuotedMessage
+        author="Blake Moss"
+        preview="the insult"
+        hidden="Message from a member you blocked"
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("Message from a member you blocked"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Blake Moss")).not.toBeInTheDocument();
+    expect(screen.queryByText("the insult")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
   it("shares one rule and indent across both variants", () => {
     // The unavailable branch used to re-type the class string, in the one file
     // whose stated purpose is that the two cannot drift — and it is the branch

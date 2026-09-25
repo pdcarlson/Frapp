@@ -5,6 +5,7 @@ import { MessageItem, type MessageItemProps } from "./message-item";
 import { reactionActionType, type ChatMessage } from "@repo/chat-core/types";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { reducer } from "@/hooks/use-toast";
+import { NOBODY_BLOCKED } from "@/tests/block-list";
 
 /**
  * `spec/ui/design-system/components.md` specifies the incoming meta line as
@@ -49,6 +50,7 @@ function renderItem(msg: ChatMessage, resolver: NameResolver = nameFor) {
   return render(
     <div role="list">
       <MessageItem
+        blockState={NOBODY_BLOCKED}
         message={msg}
         viewerId={VIEWER}
         showHeader
@@ -66,6 +68,7 @@ function renderItemWithProps(overrides: Partial<MessageItemProps> = {}) {
   return render(
     <div role="list">
       <MessageItem
+        blockState={NOBODY_BLOCKED}
         message={message()}
         viewerId={VIEWER}
         showHeader
@@ -308,6 +311,7 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     render(
       <div role="list">
         <MessageItem
+          blockState={NOBODY_BLOCKED}
           message={message()}
           viewerId={VIEWER}
           showHeader
@@ -333,6 +337,7 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     render(
       <div role="list">
         <MessageItem
+          blockState={NOBODY_BLOCKED}
           message={message({ _status: "pending" })}
           viewerId={VIEWER}
           showHeader
@@ -593,6 +598,7 @@ describe("MessageItem edit and delete", () => {
     rerender(
       <div role="list">
         <MessageItem
+          blockState={NOBODY_BLOCKED}
           message={message({ sender_id: OTHER })}
           viewerId={VIEWER}
           showHeader
@@ -678,6 +684,7 @@ describe("MessageItem edit and delete", () => {
     rerender(
       <div role="list">
         <MessageItem
+          blockState={NOBODY_BLOCKED}
           message={message({ id: "msg-1", sender_id: VIEWER, content: "hello v2" })}
           viewerId={VIEWER}
           showHeader
@@ -708,6 +715,7 @@ describe("MessageItem edit and delete", () => {
     rerender(
       <div role="list">
         <MessageItem
+          blockState={NOBODY_BLOCKED}
           message={message({ id: "msg-1", sender_id: VIEWER, content: "hello v2" })}
           viewerId={VIEWER}
           showHeader
@@ -826,6 +834,7 @@ describe("MessageItem edit and delete", () => {
     rerender(
       <div role="list">
         <MessageItem
+          blockState={NOBODY_BLOCKED}
           message={message({
             id: "msg-1",
             sender_id: VIEWER,

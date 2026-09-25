@@ -32,12 +32,44 @@ export function pinnedMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.filter((message) => message.is_pinned);
 }
 
+/** Pins the viewer's block list keeps off the panel (#2313). */
+export interface HiddenPins {
+  /** From members the viewer blocked. */
+  blocked: number;
+  /** Ones the list cannot vouch for yet, while it is loading or unreadable. */
+  held: number;
+}
+
+const NO_HIDDEN_PINS: HiddenPins = { blocked: 0, held: 0 };
+
+/**
+ * What the panel says for pins it leaves out: a blocked member's are hidden by
+ * the list, and held ones are waiting on it — the same words the timeline's
+ * jump notice uses for a held message, so one state never reads two ways.
+ */
+export function hiddenPinsText(
+  count: number,
+  reason: keyof HiddenPins,
+): string {
+  const subject =
+    count === 1 ? "1 pinned message is" : `${count} pinned messages are`;
+  return reason === "blocked"
+    ? `${subject} hidden by your block list.`
+    : `${subject} waiting on your block list.`;
+}
+
 export function PinsPanel({
   messages,
+  hidden = NO_HIDDEN_PINS,
   nameFor,
   onJump,
 }: {
   messages: ChatMessage[];
+  /**
+   * Pins left out of `messages` by the block list. Said, never drawn, and
+   * never "nothing pinned".
+   */
+  hidden?: HiddenPins;
   /** Resolves `users.id` → display name; `null` when unresolvable. */
   nameFor: (userId: string) => string | null;
   onJump?: (messageId: string) => void;
@@ -45,11 +77,11 @@ export function PinsPanel({
   const pins = pinnedMessages(messages);
   return (
     <>
-      {pins.length === 0 ? (
+      {pins.length === 0 && hidden.blocked === 0 && hidden.held === 0 ? (
         <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
           Nothing pinned yet. Channel managers can pin key messages.
         </p>
-      ) : (
+      ) : pins.length === 0 ? null : (
         <ul className="max-h-72 divide-y divide-border overflow-y-auto">
           {pins.map((message) => (
             <li key={message.id}>
@@ -90,6 +122,16 @@ export function PinsPanel({
             </li>
           ))}
         </ul>
+      )}
+      {(["blocked", "held"] as const).map((reason) =>
+        hidden[reason] > 0 ? (
+          <p
+            key={reason}
+            className="px-3 py-3 text-[12.5px] italic text-muted-foreground"
+          >
+            {hiddenPinsText(hidden[reason], reason)}
+          </p>
+        ) : null,
       )}
     </>
   );

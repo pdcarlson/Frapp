@@ -43,10 +43,15 @@ import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import {
+  useMaskedRefresh,
+  useThreadBlockList,
+} from "@/lib/chat/use-thread-block-list";
 import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
 import { useToast } from "@/hooks/use-toast";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { classifyMessage, hiddenQuoteText } from "@repo/chat-core/blocks";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
@@ -74,6 +79,8 @@ import { ChannelMenu } from "./channel-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
 import { ReconnectPill } from "./reconnect-pill";
+import { BlockListNotice } from "./block-list-notice";
+import { useUnblockFlow } from "./use-unblock-flow";
 import { CHAT_CONTROL_CLASS } from "./chip";
 import type { SlashCommand } from "@repo/chat-integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
@@ -489,6 +496,63 @@ export function ChatShell({
   const channel = useChatChannel(activeChannelId);
   const { toast } = useToast();
 
+  // The viewer's block list, applied on top of the server's mask (#2313). The
+  // server masks what it serves, but a row that arrived over the Realtime echo
+  // was never evaluated, so every row is classified here from its provenance,
+  // this list and this session's clearances (`use-thread-block-list.ts`). The
+  // timeline draws only what this lets through; `BlockListNotice` says when
+  // rows are held.
+  const { blockList, blockState, thread } = useThreadBlockList(
+    channel.messages,
+    userId,
+  );
+  // The rows drawn in full: what every surface beside the timeline that prints
+  // a message's author or words reads (the Pinned panel and its count). A
+  // tombstoned row carries a blocked member's words whenever an echo put them
+  // back, and a held row is one the list cannot vouch for yet, so neither may
+  // reach a surface that has no tombstone of its own.
+  const shownMessages = useMemo(
+    () =>
+      thread.rows
+        .filter((row) => row.visibility === "visible")
+        .map((row) => row.message),
+    [thread.rows],
+  );
+  // Every row the timeline draws, tombstones included: what a jump can reach.
+  const drawnMessageIds = useMemo(
+    () => new Set(thread.rows.map((row) => row.message.id)),
+    [thread.rows],
+  );
+  // Pins the block list keeps off the Pinned panel, counted so the panel says
+  // so rather than reading as "nothing pinned": a blocked member's (drawn as a
+  // tombstone), and ones it cannot vouch for yet (held, not drawn at all).
+  const hiddenPins = useMemo(
+    () => ({
+      blocked: thread.rows.filter(
+        (row) => row.visibility === "tombstone" && row.message.is_pinned,
+      ).length,
+      held: channel.messages.filter(
+        (message) => message.is_pinned && !drawnMessageIds.has(message.id),
+      ).length,
+    }),
+    [thread.rows, channel.messages, drawnMessageIds],
+  );
+  const unblockFlow = useUnblockFlow();
+  const maskedRefresh = useMaskedRefresh();
+  const { requestUnblock, reloadMaskedCopies } = unblockFlow;
+  const handleUnblock = useCallback(
+    (senderId: string) => {
+      void requestUnblock(senderId, nameFor(senderId));
+    },
+    [nameFor, requestUnblock],
+  );
+  const handleReloadMasked = useCallback(
+    (senderId: string) => {
+      void reloadMaskedCopies(senderId);
+    },
+    [reloadMaskedCopies],
+  );
+
   // A custom role can hold `channels:manage` without also being a chapter
   // admin — same gate `chat-admin-page.tsx` computes for its own page-level
   // `<Can>`, done inline here since this is a per-row boolean, not a whole
@@ -720,9 +784,18 @@ export function ChatShell({
   } | null>(null);
   // Channel-scoped: the notice belongs to the channel the jump was attempted
   // in, so it never follows the member into a channel the message was never in.
+  // A pending jump whose target is loaded but held by the block list (#2313):
+  // not a miss, and not "older than the history loaded here". It shows the
+  // same dismissible notice with words that are true, over any earlier miss's.
+  const pendingTargetHeld =
+    pendingMessageId !== null &&
+    (!pendingJumpChannelId || pendingJumpChannelId === activeChannelId) &&
+    !drawnMessageIds.has(pendingMessageId) &&
+    channel.messages.some((message) => message.id === pendingMessageId);
   const showUnreachableNotice =
-    unreachableTarget !== null &&
-    unreachableTarget.channelId === activeChannelId;
+    pendingTargetHeld ||
+    (unreachableTarget !== null &&
+      unreachableTarget.channelId === activeChannelId);
   // Pins are a navigation affordance, not a list: the popover's rows were
   // rendered as buttons but `onJump` was never wired, so every one of them was
   // inert. The timeline exposes the scroll, the shell owns the wiring.
@@ -850,6 +923,11 @@ export function ChatShell({
       replaces it.
     */
     if (!liveUserId) return;
+    // Loaded but held: the block list cannot vouch for it yet, so the timeline
+    // has no row to scroll to (#2313). That is not a miss, so nothing is set
+    // here; `pendingTargetHeld` says so in the notice instead, and
+    // `drawnMessageIds` below re-runs this once the list lets the row through.
+    if (pendingTargetHeld) return;
     const jumped = timeline.current?.scrollToMessage(pendingMessageId) ?? false;
     if (jumped) {
       setPendingMessageId(null);
@@ -867,6 +945,8 @@ export function ChatShell({
     pendingJumpChannelId,
     channel.isLoading,
     channel.messages,
+    drawnMessageIds,
+    pendingTargetHeld,
     jumpAttempt,
     liveUserId,
   ]);
@@ -968,8 +1048,16 @@ export function ChatShell({
       id: parent.id,
       author: resolveAuthorLabel(parent, nameFor, userId),
       preview: replyPreviewText(parent),
+      hidden: hiddenQuoteText(parent, blockState, userId),
     };
-  }, [channel.messages, replyTarget, activeChannelId, nameFor, userId]);
+  }, [
+    channel.messages,
+    replyTarget,
+    activeChannelId,
+    nameFor,
+    userId,
+    blockState,
+  ]);
 
   // A screen-reader announcement for a genuinely new incoming message,
   // decoupled from `#chat-timeline`'s DOM — see the comment on that `role="log"`
@@ -1029,6 +1117,10 @@ export function ChatShell({
       messageId: latestKey,
     };
     if (latest.is_deleted) return;
+    // Only a row the timeline draws in full is announced. Naming the sender of
+    // a message the block list tombstones would narrate exactly what the block
+    // hides, and a held row is not on screen at all (#2313).
+    if (classifyMessage(latest, blockState, liveUserId) !== "visible") return;
     // `liveUserId`, matching the guard above and this effect's dependencies —
     // they are equal here anyway (the live value wins in `useChatViewerId`),
     // but reading the other one would put a value outside the dep list into
@@ -1039,7 +1131,7 @@ export function ChatShell({
         : (nameFor(latest.sender_id ?? "") ?? "Someone");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- announcing a real-time arrival by comparing against the previous render's last-seen id, not syncing render state
     setLiveAnnouncement(`New message from ${author}`);
-  }, [channel.messages, activeChannelId, liveUserId, nameFor]);
+  }, [channel.messages, activeChannelId, liveUserId, nameFor, blockState]);
 
   /*
     From here the frame renders FIRST and every state renders inside it.
@@ -1374,7 +1466,8 @@ export function ChatShell({
             <ReconnectPill status={channel.connection} />
             <ChannelMenu
               activeChannelId={activeChannelId}
-              messages={channel.messages}
+              messages={shownMessages}
+              hiddenPins={hiddenPins}
               nameFor={nameFor}
               channelNameFor={channelNameFor}
               onJumpToMessage={jumpToMessage}
@@ -1450,7 +1543,9 @@ export function ChatShell({
               // condition of the channel.
               <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-1.5">
                 <p className="text-[12.5px] text-muted-foreground">
-                  That message is older than the history loaded here.
+                  {pendingTargetHeld
+                    ? "That message is waiting on your block list. It opens once the list loads."
+                    : "That message is older than the history loaded here."}
                 </p>
                 <Button
                   variant="secondary"
@@ -1596,6 +1691,18 @@ export function ChatShell({
         {timelineReady ? (
         <>
         {/*
+          Above the timeline rather than inside it: the timeline virtualizes,
+          and this is the one line that says rows are being held off it while
+          the block list cannot vouch for them (#2313).
+        */}
+        <BlockListNotice
+          status={blockList.status}
+          heldCount={thread.heldCount}
+          onRetry={blockList.retry}
+          isRetrying={blockList.isRetrying}
+          isPaused={blockList.isPaused}
+        />
+        {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making
           this genuinely non-live takes an explicit `aria-live="off"`, not
@@ -1630,6 +1737,10 @@ export function ChatShell({
             channelId={activeChannel?.id}
             nameFor={nameFor}
             messages={channel.messages}
+            blockList={{ blockState, thread }}
+            onUnblock={handleUnblock}
+            onReloadMasked={handleReloadMasked}
+            maskedRefresh={maskedRefresh}
             viewerId={userId}
             isLoading={channel.isLoading}
             loadError={channel.loadError}
@@ -1777,6 +1888,7 @@ export function ChatShell({
       </section>
 
       {confirmDialog}
+      {unblockFlow.confirmDialog}
     </div>
   );
 }

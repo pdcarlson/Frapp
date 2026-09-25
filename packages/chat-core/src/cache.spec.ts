@@ -318,7 +318,7 @@ describe("block-list provenance through the merge (#2315)", () => {
     // advances that cursor, so an echoed row is normally never read back over
     // REST. It stays unevaluated for the session, which is why a client that
     // applies its own block list must remember rows it already cleared against
-    // a ready list (mobile: `apps/mobile/lib/chat/block-clearance.ts`) rather
+    // a ready list (`blockClearance` in `./blocks.ts`, both clients) rather
     // than hold them again when the list later becomes unavailable (#2257
     // review, finding 4).
     let cache = mergeServerRow(emptyCache(), echoRow());

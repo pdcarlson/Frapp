@@ -31,18 +31,19 @@ vi.mock("@repo/hooks", async () => {
   };
 });
 
+import { BLOCK_FAILURE_BODY } from "@repo/chat-core/block-copy";
 import {
-  BLOCK_FAILURE_BODY,
+  MASKED_REFRESH_RETRY_DELAYS_MS,
+  maskedRefresh,
+} from "@repo/chat-core/blocks";
+import {
   BLOCK_NOT_A_MEMBER_BODY,
   blockConfirmBody,
   confirmBlockMember,
   confirmUnblockMember,
   isMemberNotFound,
-  MASKED_REFRESH_RETRY_DELAYS_MS,
-  refreshMaskedCopies,
   useBlockActions,
 } from "./block-actions";
-import { maskedRefresh } from "./masked-refresh";
 
 const BLOCKED = "22222222-2222-4222-8222-222222222222";
 const FRIEND = "33333333-3333-4333-8333-333333333333";
@@ -288,89 +289,6 @@ describe("useBlockActions", () => {
       "offline",
     );
     expect(api.GET).not.toHaveBeenCalled();
-  });
-});
-
-describe("refreshMaskedCopies — retries (#2257 review)", () => {
-  it("recovers from a transient failure on a retry", async () => {
-    vi.useFakeTimers();
-    const queryClient = new QueryClient();
-    seed(queryClient, "chan-1", [
-      restRow("m1", BLOCKED, { sender_blocked: true, content: "hidden" }),
-    ]);
-    api.GET.mockRejectedValueOnce(new Error("blip")).mockResolvedValue(
-      page([restRow("m1", BLOCKED, { content: "the real words" })]),
-    );
-
-    let landed: boolean | undefined;
-    void refreshMaskedCopies(queryClient, api as never, BLOCKED).then(
-      (value) => {
-        landed = value;
-      },
-    );
-    await runOutRetries();
-
-    expect(api.GET).toHaveBeenCalledTimes(2);
-    expect(landed).toBe(true);
-    expect(cacheOf(queryClient, "chan-1").byId["m1"]!.content).toBe(
-      "the real words",
-    );
-    expect(maskedRefresh.snapshot().has(BLOCKED)).toBe(false);
-  });
-
-  it("treats a non-2xx as a failure too", async () => {
-    const queryClient = new QueryClient();
-    seed(queryClient, "chan-1", [
-      restRow("m1", BLOCKED, { sender_blocked: true }),
-    ]);
-    api.GET.mockResolvedValue({
-      data: undefined,
-      response: new Response(null, { status: 503 }),
-    });
-
-    const landed = await refreshMaskedCopies(
-      queryClient,
-      api as never,
-      BLOCKED,
-      [],
-    );
-    expect(landed).toBe(false);
-    expect(maskedRefresh.snapshot().get(BLOCKED)).toBe("failed");
-  });
-
-  it("stops retrying a thread that no longer holds a masked copy", async () => {
-    vi.useFakeTimers();
-    const queryClient = new QueryClient();
-    seed(queryClient, "chan-1", [
-      restRow("m1", BLOCKED, { sender_blocked: true }),
-    ]);
-    api.GET.mockRejectedValue(new Error("offline"));
-
-    let landed: boolean | undefined;
-    void refreshMaskedCopies(queryClient, api as never, BLOCKED).then(
-      (value) => {
-        landed = value;
-      },
-    );
-    await flush();
-    // The thread reloaded meanwhile and the copy came back clear.
-    seed(queryClient, "chan-1", [restRow("m1", BLOCKED)]);
-    await runOutRetries();
-
-    expect(api.GET).toHaveBeenCalledTimes(1);
-    expect(landed).toBe(true);
-  });
-
-  it("reads nothing and records nothing when no thread holds a masked copy", async () => {
-    const queryClient = new QueryClient();
-    seed(queryClient, "chan-1", [restRow("m1", FRIEND)]);
-    maskedRefresh.set(BLOCKED, "failed");
-
-    await expect(
-      refreshMaskedCopies(queryClient, api as never, BLOCKED),
-    ).resolves.toBe(true);
-    expect(api.GET).not.toHaveBeenCalled();
-    expect(maskedRefresh.snapshot().has(BLOCKED)).toBe(false);
   });
 });
 

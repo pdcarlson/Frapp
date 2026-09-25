@@ -26,12 +26,10 @@ import {
   MAX_TIME_ZONE_LENGTH,
   NOTIFICATION_CATEGORIES,
 } from "@repo/validation";
+import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import {
-  BLOCKED_MEMBERS_TITLE,
-  BlockedMembersSheet,
-} from "@/components/settings/blocked-members-sheet";
+import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
