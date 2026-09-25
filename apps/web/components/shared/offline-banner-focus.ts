@@ -10,18 +10,12 @@
 export const OFFLINE_BANNER_ID = "frapp-offline-banner";
 
 /**
- * Published on `document.documentElement` while the connection banner is
- * mounted, so the dashboard header can sit *under* it (`sticky top-0` on both
- * would stack them in the same viewport slot — #1746).
+ * Set on the dashboard shell's root so the connection banner can float below
+ * the 48px top bar instead of over it (#2244). The banner reads it through a
+ * CSS `:has()` rule, which Tailwind needs spelled literally in the class
+ * string, so this constant is what the specs pin both sides against.
  */
-export const OFFLINE_BANNER_HEIGHT_VAR = "--offline-banner-height";
-
-/**
- * Dashboard page header offset. Paired with `OFFLINE_BANNER_HEIGHT_VAR` so
- * the sticky header cannot occupy the same `top: 0` slot as the banner.
- */
-export const DASHBOARD_HEADER_STICKY_CLASS =
-  "sticky top-[var(--offline-banner-height,0px)] z-30";
+export const DASHBOARD_SHELL_ATTR = "data-dashboard-shell";
 
 export function focusOfflineBanner(): void {
   const banner = document.getElementById(OFFLINE_BANNER_ID);
