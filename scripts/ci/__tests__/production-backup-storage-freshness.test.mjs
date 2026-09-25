@@ -89,6 +89,19 @@ describe("evaluateDumpFreshness", () => {
           completed_at: hoursAgo(1),
         },
       ],
+      olderJobs: {
+        1: {
+          status: 200,
+          jobs: [
+            {
+              name: PRODUCTION_JOB_NAME,
+              status: "completed",
+              conclusion: "failure",
+              completed_at: hoursAgo(16),
+            },
+          ],
+        },
+      },
     });
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /concluded failure/);
@@ -134,9 +147,13 @@ describe("evaluateDumpFreshness", () => {
     }
   });
 
-  it("passes an in-flight job younger than 3h", () => {
+  it("passes an in-flight job younger than 3h when a success within 36h backs it", () => {
     const verdict = evaluate({
-      runs: [{ id: 1, status: "in_progress", created_at: hoursAgo(1) }],
+      runs: [
+        { id: 1, status: "in_progress", created_at: hoursAgo(1) },
+        { id: 0, status: "completed", created_at: hoursAgo(16.2) },
+      ],
+      olderJobs: { 0: { status: 200, jobs: [successJob()] } },
       jobs: [
         {
           name: PRODUCTION_JOB_NAME,
@@ -170,7 +187,11 @@ describe("evaluateDumpFreshness", () => {
 
   it("treats a queued run with no jobs yet as in-flight under 3h", () => {
     const verdict = evaluate({
-      runs: [{ id: 1, status: "queued", created_at: hoursAgo(0.5) }],
+      runs: [
+        { id: 1, status: "queued", created_at: hoursAgo(0.5) },
+        { id: 0, status: "completed", created_at: hoursAgo(16.2) },
+      ],
+      olderJobs: { 0: { status: 200, jobs: [successJob()] } },
       jobs: [],
     });
     assert.equal(verdict.ok, true);
@@ -226,6 +247,108 @@ describe("evaluateDumpFreshness", () => {
     const verdict = evaluate({ jobsStatus: 502, jobs: null });
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /jobs unreadable \(HTTP 502\)/);
+  });
+  // #2332: the newest run alone used to decide. An in-flight run returned
+  // before the 36h check, and a cancelled dispatch raised a P1 over a job
+  // that had succeeded hours earlier. The verdict now falls back to the job's
+  // most recent success in an earlier run.
+  describe("falling back to the last success", () => {
+    const inFlight = {
+      name: PRODUCTION_JOB_NAME,
+      status: "in_progress",
+      conclusion: null,
+      started_at: hoursAgo(1),
+    };
+
+    it("fails an in-flight run whose last success is older than 36h", () => {
+      const verdict = evaluate({
+        runs: [
+          { id: 1, status: "in_progress", created_at: hoursAgo(1) },
+          { id: 0, status: "completed", created_at: hoursAgo(38) },
+        ],
+        jobs: [inFlight],
+        olderJobs: { 0: { status: 200, jobs: [successJob({ hours: 37.5 })] } },
+      });
+      assert.equal(verdict.ok, false);
+      assert.match(verdict.reason, /in flight, and the last .* success is older than 36h/);
+    });
+
+    it("fails an in-flight run with no earlier success at all", () => {
+      const verdict = evaluate({
+        runs: [{ id: 1, status: "in_progress", created_at: hoursAgo(1) }],
+        jobs: [inFlight],
+      });
+      assert.equal(verdict.ok, false);
+      assert.match(verdict.reason, /in flight, and no .* success is within 36h/);
+    });
+
+    it("passes a cancelled or failed newest run that a success within 36h precedes, without closing the alert", () => {
+      for (const conclusion of ["cancelled", "failure"]) {
+        const verdict = evaluate({
+          runs: [
+            { id: 1, status: "completed", created_at: hoursAgo(2) },
+            { id: 0, status: "completed", created_at: hoursAgo(16.2) },
+          ],
+          jobs: [
+            {
+              name: PRODUCTION_JOB_NAME,
+              status: "completed",
+              conclusion,
+              completed_at: hoursAgo(1.5),
+            },
+          ],
+          olderJobs: { 0: { status: 200, jobs: [successJob()] } },
+        });
+        assert.equal(verdict.ok, true, conclusion);
+        assert.equal(verdict.fresh, false, conclusion);
+        assert.match(verdict.reason, new RegExp(`concluded ${conclusion}; the last .* success was 16h ago`));
+      }
+    });
+
+    it("does not green a job left waiting night after night", () => {
+      // Each night's run parks in `waiting` on a deployment protection rule.
+      // The waiting runs are in flight, so none of them holds a success, and
+      // the last real success has aged out of the window.
+      const waiting = { name: PRODUCTION_JOB_NAME, status: "waiting", conclusion: null, started_at: null };
+      const verdict = evaluate({
+        runs: [
+          { id: 3, status: "waiting", created_at: hoursAgo(1) },
+          { id: 2, status: "waiting", created_at: hoursAgo(25) },
+          { id: 1, status: "completed", created_at: hoursAgo(49) },
+        ],
+        jobs: [waiting],
+        olderJobs: { 1: { status: 200, jobs: [successJob({ hours: 48.9 })] } },
+      });
+      assert.equal(verdict.ok, false);
+      assert.match(verdict.reason, /in flight, and no .* success is within 36h/);
+    });
+
+    it("fails when an earlier run's jobs are unreadable", () => {
+      const verdict = evaluate({
+        runs: [
+          { id: 1, status: "in_progress", created_at: hoursAgo(1) },
+          { id: 0, status: "completed", created_at: hoursAgo(16.2) },
+        ],
+        jobs: [inFlight],
+        olderJobs: { 0: { status: 502, jobs: null } },
+      });
+      assert.equal(verdict.ok, false);
+      assert.match(verdict.reason, /earlier run unreadable \(HTTP 502\)/);
+    });
+
+    it("does not count another job's success", () => {
+      const verdict = evaluate({
+        runs: [
+          { id: 1, status: "in_progress", created_at: hoursAgo(1) },
+          { id: 0, status: "completed", created_at: hoursAgo(16.2) },
+        ],
+        jobs: [inFlight],
+        olderJobs: {
+          0: { status: 200, jobs: [{ ...successJob(), name: "backup-staging" }] },
+        },
+      });
+      assert.equal(verdict.ok, false);
+    });
   });
 });
 
@@ -335,6 +458,72 @@ describe("readDumpFreshness", () => {
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /unreadable \(HTTP 500\)/);
     assert.equal(calls.length, 1);
+  });
+});
+
+describe("readDumpFreshness: earlier runs", () => {
+  const failedNewest = {
+    name: PRODUCTION_JOB_NAME,
+    status: "completed",
+    conclusion: "cancelled",
+    completed_at: hoursAgo(1),
+  };
+
+  function routes({ olderJobs }) {
+    return [
+      {
+        method: "GET",
+        path: `/actions/workflows/${WORKFLOW_FILE}/runs`,
+        body: {
+          workflow_runs: [
+            { id: 99, status: "completed", created_at: hoursAgo(2) },
+            { id: 98, status: "completed", created_at: hoursAgo(16.2) },
+            { id: 97, status: "completed", created_at: hoursAgo(20) },
+          ],
+        },
+      },
+      { method: "GET", path: "/actions/runs/99/jobs", body: { jobs: [failedNewest] } },
+      { method: "GET", path: "/actions/runs/98/jobs", body: { jobs: olderJobs } },
+      { method: "GET", path: "/actions/runs/97/jobs", body: { jobs: [successJob({ hours: 19.9 })] } },
+    ];
+  }
+
+  it("reads an earlier run only when the newest run's job didn't succeed, and stops at the first success", async () => {
+    const { fetchImpl, calls } = makeFetchMock(routes({ olderJobs: [successJob()] }));
+    const verdict = await readDumpFreshness({ token: "tok", repo: "org/repo", fetchImpl, now: NOW });
+    assert.equal(verdict.ok, true);
+    assert.equal(verdict.fresh, false);
+    assert.deepEqual(
+      calls.map((call) => call.url.match(/runs\/(\d+)\/jobs/)?.[1] ?? "runs"),
+      ["runs", "99", "98"],
+    );
+  });
+
+  it("keeps reading past an earlier failure", async () => {
+    const failed = { ...successJob(), conclusion: "failure" };
+    const { fetchImpl, calls } = makeFetchMock(routes({ olderJobs: [failed] }));
+    const verdict = await readDumpFreshness({ token: "tok", repo: "org/repo", fetchImpl, now: NOW });
+    assert.equal(verdict.ok, true);
+    assert.equal(calls.length, 4);
+  });
+
+  it("reads nothing more when the newest run succeeded", async () => {
+    const { fetchImpl, calls } = makeFetchMock([
+      {
+        method: "GET",
+        path: `/actions/workflows/${WORKFLOW_FILE}/runs`,
+        body: {
+          workflow_runs: [
+            { id: 99, status: "completed", created_at: hoursAgo(16.2) },
+            { id: 98, status: "completed", created_at: hoursAgo(40) },
+          ],
+        },
+      },
+      { method: "GET", path: "/actions/runs/99/jobs", body: { jobs: [successJob()] } },
+    ]);
+    const verdict = await readDumpFreshness({ token: "tok", repo: "org/repo", fetchImpl, now: NOW });
+    assert.equal(verdict.fresh, true);
+    assert.equal(calls.length, 2);
   });
 });
 
