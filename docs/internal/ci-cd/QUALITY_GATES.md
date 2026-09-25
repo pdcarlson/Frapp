@@ -15,7 +15,8 @@ baseline story actually supports.
 | Gate | Command | CI job | Posture | Why that posture |
 |---|---|---|---|---|
 | dependency-cruiser | `npm run check:dep-cruiser` | `dependency-cruiser` | **Required** | Has a real baseline, and it is **empty** as of 2026-09-07 (7 grandfathered when the gate landed, 5 until then), so every violation now fails |
-| oasdiff breaking changes | `npm run check:api-breaking` | step in `api-contract-check` | **Advisory** | Every consumer is in this repo and ships with the change |
+| oasdiff against shipped mobile builds | `npm run check:api-breaking:shipped` | step in `api-contract-check` | **Required** | A store binary keeps the calls it was built with until its owner updates, so a break merged against it breaks every install. Passes, and says so, while no build is listed |
+| oasdiff against the PR base | `npm run check:api-breaking` | step in `api-contract-check` | **Advisory** | `apps/web` regenerates from this repo and deploys with the change |
 | `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | A large undecorated-route backlog (count it, see below) and no ESLint baseline mechanism |
 | jscpd duplication | `npm run check:duplication` | `duplicate-detection` | **Advisory** | No clone-level baseline exists; a repo-wide % is too coarse to block on |
 | Migration corpus + RLS posture | `npm run check:pglite-migrations` | `pglite-migrations` | **Required** | Nothing to grandfather: it applies every migration from empty and asserts security invariants (RLS on every `public` table, `pg_temp` pinned last in `SECURITY DEFINER` functions, an append-only audit log), which either hold or do not. Advisory until #2538, with no recorded reason |
@@ -192,16 +193,30 @@ What was missing is not drift but **compatibility**. Deleting an endpoint, remov
 or making an optional parameter required all regenerate perfectly cleanly, pass the freshness check,
 and break every existing client. That is the gap `oasdiff breaking` fills.
 
-### Why advisory
+### Two comparisons, two postures
 
-Every consumer of this API — `apps/web`, `apps/mobile` — lives in this repo and regenerates from the
-same commit, so a breaking change ships atomically with the clients that adapt to it. The project is
-also mid-rebuild (legacy Frapp → the Signet design system), where removing endpoints is the intended work rather than an
-accident. A hard gate would fire constantly on correct changes and need an escape hatch immediately.
+**Against every shipped mobile build: blocking.** A store binary is an independently deployed
+consumer. Every install keeps the API calls it was built with until its owner updates from the store
+(ADR-24 decisions 6 (I5) and 8), so a PR that removes a route it calls, removes a response field it
+reads, or makes a parameter required would merge green and break every install of that build. The
+only recovery then is forcing an upgrade through the minimum-version check. The check reads each SHA
+in [`apps/mobile/store/shipped-builds.json`](../../../apps/mobile/store/shipped-builds.json) and runs
+`oasdiff breaking` from that commit's `apps/api/openapi.json` to the PR's, failing on any ERR-level
+change. It compares against the contract **as shipped**, not the PR's base, because a route deleted in
+one PR and its replacement renamed in the next each look fine against their own base.
 
-It annotates the run (`::warning::`) so a finding is visible in the Checks UI rather than buried in a
-green log. **Trigger to revisit:** an external or independently deployed consumer appears → switch to
-`--fail-on-breaking`, which is already implemented.
+With no build listed it passes and says it compared against nothing. With one listed, nothing reads as
+a skipped green (ADR-24 I4): an invalid registry, a missing oasdiff, a SHA whose contract can't be read,
+or oasdiff failing to run each fail it. A break to a route no shipped binary calls (a web-only route)
+is waived by a reviewed line in `apps/mobile/store/api-breaking-ignore.txt`. When to record a SHA,
+when one may go, and the ignore format:
+[`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract).
+
+**Against the PR base: advisory.** `apps/web` lives in this repo and regenerates from the same commit,
+so a breaking change ships atomically with the web client that adapts to it. The project is also
+mid-rebuild (legacy Frapp → the Signet design system), where removing endpoints is the intended work
+rather than an accident, so a hard gate here would fire constantly on correct changes. It annotates the
+run (`::warning::`) so a finding is visible in the Checks UI rather than buried in a green log.
 
 ### The gap this also closed
 
@@ -223,8 +238,10 @@ Not an npm package (the `oasdiff` name on npm is a security placeholder).
 [`scripts/install-oasdiff.sh`](../../../scripts/install-oasdiff.sh) fetches a pinned release into
 `.cache/oasdiff/`, following the same reasoning as
 [gitleaks](SECRET_SCANNING.md): local and CI run the identical version, and no third-party GitHub
-Action enters the supply chain. It verifies the published SHA-256 checksum, retries transient
-failures, and moves the binary into place only once complete.
+Action enters the supply chain. It checks each archive against a SHA-256 digest pinned in the script
+(a fetched `checksums.txt` only for an `OASDIFF_VERSION` override, and never installs unverified),
+because the shipped-contract check blocks merges on this binary's verdict. It retries transient
+failures and moves the binary into place only once complete.
 
 Two details that are easy to get wrong:
 
@@ -236,10 +253,16 @@ Two details that are easy to get wrong:
 
 ### CI availability
 
-Both oasdiff steps live in the **required** `api-contract-check` job and both carry
-`continue-on-error: true`. That is deliberate: they fetch a binary from the GitHub releases CDN at
-run time, and without it a rate limit or a 5xx would turn an advisory signal into a merge block on
-every PR.
+All three steps live in the **required** `api-contract-check` job. The binary comes from the GitHub
+releases CDN, so it is cached by `actions/cache`, keyed on the installer that pins its version and
+digests, and a download happens only when that script changes or the cache is evicted.
+
+The install step keeps `continue-on-error: true`, so a rate limit or a 5xx on that download never
+blocks a PR over the advisory base comparison, which carries it too. It can't turn the blocking check
+green: `--shipped` fails on a missing oasdiff whenever a build is listed, and needs none when no build
+is. The blocking step also runs on push to `main`, so a break that reaches `main` anyway turns `main`
+red. [`check-api-breaking-changes.test.mjs`](../../../scripts/ci/__tests__/check-api-breaking-changes.test.mjs)
+fails if that step gains a `continue-on-error` or an `if:`.
 
 ---
 

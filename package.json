@@ -19,6 +19,7 @@
     "check:dep-cruiser": "node scripts/check-dep-cruiser.mjs",
     "check:duplication": "jscpd --config .jscpd.json",
     "check:api-breaking": "node scripts/check-api-breaking-changes.mjs",
+    "check:api-breaking:shipped": "node scripts/check-api-breaking-changes.mjs --shipped apps/mobile/store/shipped-builds.json",
     "check:api-contract": "node scripts/check-api-contract-drift.mjs",
     "check:migration-safety": "node scripts/check-migration-safety.mjs",
     "check:migration-lock-safety": "node scripts/check-migration-lock-safety.mjs",

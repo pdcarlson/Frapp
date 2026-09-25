@@ -609,23 +609,33 @@ jobs:
       # removing a response field regenerates perfectly cleanly and breaks every
       # client.
       #
-      # ADVISORY (no --fail-on-breaking): every consumer (apps/web, apps/mobile)
-      # regenerates from this repo and ships with the change, and the project is
-      # mid-rebuild where removing endpoints is the intended work. It annotates
-      # the run rather than blocking it. Revisit if an independently deployed
-      # consumer ever appears.
+      # Two comparisons, two postures (docs/internal/ci-cd/QUALITY_GATES.md):
+      # against every shipped mobile build's contract BLOCKING, because a store
+      # binary keeps the calls it was built with; against the PR base ADVISORY,
+      # because apps/web ships with the change.
       #
-      # `continue-on-error` on BOTH steps, and it is load-bearing: this job is a
-      # REQUIRED check, and these steps fetch a binary from the GitHub releases
-      # CDN at run time. Without it, a rate limit or a 5xx on that download turns
-      # an advisory signal into a merge block on every PR — a required gate whose
-      # availability depends on a third-party download.
+      # The binary comes from the GitHub releases CDN, so it is cached, keyed on
+      # the installer that pins its version and digests. The install step keeps
+      # `continue-on-error`: a failed download must not block a PR on the
+      # advisory comparison. It can't turn the blocking one green either,
+      # because `--shipped` fails on a missing oasdiff whenever a shipped build
+      # is listed (and needs none when no build is).
+      - name: Cache oasdiff
+        uses: actions/cache@v4
+        with:
+          path: .cache/oasdiff
+          key: oasdiff-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-oasdiff.sh') }}
+
       - name: Install oasdiff
-        if: github.event_name == 'pull_request'
         continue-on-error: true
         run: bash scripts/install-oasdiff.sh
 
-      - name: Detect breaking API changes (advisory)
+      # Runs on push to main too: a break that reached main anyway turns main
+      # red rather than waiting for the next PR to trip over it.
+      - name: Check API compatibility with shipped mobile builds (blocking)
+        run: npm run check:api-breaking:shipped
+
+      - name: Detect breaking API changes against the PR base (advisory)
         if: github.event_name == 'pull_request'
         continue-on-error: true
         run: npm run check:api-breaking -- --base "${{ github.event.pull_request.base.sha }}"

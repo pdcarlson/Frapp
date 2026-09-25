@@ -1,0 +1,6 @@
+# Breaking API changes the shipped-contract check waives, passed to oasdiff's --err-ignore
+# by scripts/check-api-breaking-changes.mjs --shipped.
+#
+# Waive only a change no shipped binary depends on (a web-only route), with the reason and
+# the evidence on the comment line above the entry. Format, and when an entry may go:
+# apps/mobile/store/README.md, section "Shipped builds and the API contract".
