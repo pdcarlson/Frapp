@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import {
   applyBlockList,
   blockClearance,
@@ -16,6 +23,43 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { useBlockedUserIds, type BlockedUserIds } from "@repo/hooks";
 
 const NO_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * The block list's floor as persisted beside the first-chunk tails
+ * (`CachedBlockFloor` in `first-chunk-cache.ts`, #2688), published by
+ * `ChatProvider` for the scope in effect. `null` outside the provider or when
+ * nothing is cached, which is the behavior without a floor.
+ */
+export const CachedBlockFloorContext = createContext<ReadonlySet<string> | null>(
+  null,
+);
+
+/**
+ * The ids a thread is classified against: the live list's, plus the persisted
+ * floor until the live list has been read this session.
+ *
+ * Cached tails keep each row's server verdict, and the classifier shows a
+ * server-cleared row in every list state unless its sender is on `ids`, so a
+ * cold load needs the floor before the list lands, or a member blocked since
+ * the tail's read paints. Once a read has succeeded, the live ids (which
+ * TanStack keeps through a failed refetch) are newer than anything on disk,
+ * and a floor still applied then would turn rows the ready read had shown back
+ * into tombstones. A member this client confirmed unblocking is taken off the
+ * floor, as a confirmed change applies in every list state.
+ */
+export function blockIdsWithFloor(
+  blockList: Pick<BlockedUserIds, "ids" | "unblocked" | "readAt">,
+  floor: ReadonlySet<string> | null,
+): ReadonlySet<string> {
+  if (floor === null || floor.size === 0 || blockList.readAt !== 0) {
+    return blockList.ids;
+  }
+  const ids = new Set(blockList.ids);
+  for (const id of floor) {
+    if (!blockList.unblocked.has(id)) ids.add(id);
+  }
+  return ids;
+}
 
 export interface ThreadBlockList {
   /** The list hook itself, for the notice's status, retry and spinner. */
@@ -44,6 +88,9 @@ export interface ThreadBlockList {
  * Clearances are passed to the classifier only while the list is not ready,
  * which keeps `blockState` stable while a ready list's rows are recorded.
  *
+ * Until the list has been read this session, `ids` also carries the floor
+ * persisted beside the first-chunk tails (`blockIdsWithFloor`, #2688).
+ *
  * `viewerId` is `null` while identity is unresolved; the timeline withholds
  * its rows then anyway (#2243), and nothing is recorded without a viewer.
  */
@@ -52,6 +99,7 @@ export function useThreadBlockList(
   viewerId: string | null,
 ): ThreadBlockList {
   const blockList = useBlockedUserIds();
+  const floor = useContext(CachedBlockFloorContext);
   const clearance = useSyncExternalStore(
     blockClearance.subscribe,
     () => blockClearance.snapshot(viewerId),
@@ -60,14 +108,20 @@ export function useThreadBlockList(
   const isReady = blockList.status === "ready";
   const cleared = isReady ? NO_IDS : clearance;
 
+  const { ids: liveIds, unblocked, readAt } = blockList;
+  const ids = useMemo(
+    () => blockIdsWithFloor({ ids: liveIds, unblocked, readAt }, floor),
+    [liveIds, unblocked, readAt, floor],
+  );
+
   const blockState = useMemo<BlockState>(
     () => ({
       status: blockList.status,
-      ids: blockList.ids,
-      unblocked: blockList.unblocked,
+      ids,
+      unblocked,
       cleared,
     }),
-    [blockList.status, blockList.ids, blockList.unblocked, cleared],
+    [blockList.status, ids, unblocked, cleared],
   );
 
   const thread = useMemo(

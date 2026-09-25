@@ -27,6 +27,7 @@ import {
   resetFirstChunkCacheForTests,
   toCacheableRows,
   writeChannelList,
+  writeBlockFloor,
   writeChannelTail,
   writeViewerId,
   type FirstChunkScope,
@@ -179,8 +180,8 @@ describe("row encoding (#2313)", () => {
   it("keeps a REST row's cleared verdict, so a warm load paints other members' rows", async () => {
     // Stripping it would rehydrate every cached row unevaluated, and the block
     // list holds unevaluated rows until it loads: a warm load, or a whole
-    // offline session, would show only the viewer's own messages. The stale
-    // verdict this keeps is #2688's to close.
+    // offline session, would show only the viewer's own messages. A verdict
+    // that predates a block is hidden by the persisted floor instead (#2688).
     await seedRail(ALICE);
     await writeChannelTail(
       ALICE,
@@ -604,6 +605,80 @@ describe("cached viewer id", () => {
   });
 });
 
+/*
+  The block list's floor (#2688). It shares the viewer id's per-scope row, so
+  the property that matters beyond scoping is that neither writer drops the
+  other's field.
+*/
+describe("block-list floor", () => {
+  const ALICE_VIEWER = "user-alice";
+  const BLAKE = "user-blake";
+  const ZED = "user-zed";
+
+  it("reads back the ids a ready read wrote, sorted", async () => {
+    await writeBlockFloor(ALICE, new Set([ZED, BLAKE]), AT);
+
+    const chunk = await readFirstChunk(ALICE);
+
+    expect(chunk.blockFloor).toEqual({ ...ALICE, ids: [BLAKE, ZED], readAt: AT });
+  });
+
+  it("does not serve one member's blocks to another, or across chapters", async () => {
+    await writeBlockFloor(ALICE, [BLAKE], AT);
+
+    expect((await readFirstChunk(BOB)).blockFloor).toBeNull();
+    expect((await readFirstChunk(ALICE_ELSEWHERE)).blockFloor).toBeNull();
+  });
+
+  it("keeps the viewer id when the floor is written, and the floor when the id is", async () => {
+    await writeViewerId(ALICE, ALICE_VIEWER, AT);
+    await writeBlockFloor(ALICE, [BLAKE], AT);
+    await writeViewerId(ALICE, ALICE_VIEWER, AT + 1);
+
+    const chunk = await readFirstChunk(ALICE);
+
+    expect(chunk.viewer?.viewerUserId).toBe(ALICE_VIEWER);
+    expect(chunk.blockFloor?.ids).toEqual([BLAKE]);
+  });
+
+  it("serves no viewer id from a row that holds only a floor", async () => {
+    // A ready list can land before `GET /v1/users/me` does.
+    await writeBlockFloor(ALICE, [BLAKE], AT);
+
+    const chunk = await readFirstChunk(ALICE);
+
+    expect(chunk.viewer).toBeNull();
+    expect(chunk.blockFloor?.ids).toEqual([BLAKE]);
+  });
+
+  it("is replaced, not merged, by the next ready read, an empty one included", async () => {
+    // An empty ready list is what retires a member unblocked since.
+    await writeBlockFloor(ALICE, [BLAKE], AT);
+    await writeBlockFloor(ALICE, [], AT + 1);
+
+    expect((await readFirstChunk(ALICE)).blockFloor?.ids).toEqual([]);
+  });
+
+  it("stops serving a floor older than the max age", async () => {
+    await writeBlockFloor(ALICE, [BLAKE], AT - FIRST_CHUNK_MAX_AGE_MS - 1);
+
+    expect((await readFirstChunk(ALICE)).blockFloor).toBeNull();
+  });
+
+  it("is dropped by the prune and by the wipe", async () => {
+    await writeBlockFloor(ALICE, [BLAKE], AT);
+    await writeBlockFloor(BOB, [ZED], AT);
+
+    await pruneForeignScopes(BOB);
+    expect((await readFirstChunk(ALICE)).blockFloor).toBeNull();
+    expect((await readFirstChunk(BOB)).blockFloor?.ids).toEqual([ZED]);
+
+    resetFirstChunkCacheForTests();
+    await wipeFirstChunkCache();
+    expect((await readFirstChunk(BOB)).blockFloor).toBeNull();
+  });
+});
+
 describe("degrading", () => {
   it("answers empty rather than throwing when IndexedDB is unavailable", async () => {
     // Private windows and blocked site data. `use-channel-draft.ts` already
@@ -618,12 +693,16 @@ describe("degrading", () => {
         channels: null,
         tails: [],
         viewer: null,
+        blockFloor: null,
       });
       await expect(
         writeChannelList(ALICE, RAIL, AT),
       ).resolves.toBeUndefined();
       await expect(
         writeViewerId(ALICE, "user-alice", AT),
+      ).resolves.toBeUndefined();
+      await expect(
+        writeBlockFloor(ALICE, ["user-blake"], AT),
       ).resolves.toBeUndefined();
       await expect(pruneForeignScopes(ALICE)).resolves.toBeUndefined();
     } finally {

@@ -55,6 +55,7 @@ function list(overrides: Partial<BlockedUserIds> = {}): BlockedUserIds {
     retry: vi.fn(),
     isRetrying: false,
     isPaused: false,
+    readAt: 0,
     ...overrides,
   };
 }

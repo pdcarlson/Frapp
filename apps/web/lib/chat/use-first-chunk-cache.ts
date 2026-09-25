@@ -60,10 +60,15 @@
  * StrictMode's double-invoked effects.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChatScope } from "./chat-scope";
 import { useQueryClient, type QueryClient, type QueryKey } from "@tanstack/react-query";
-import { useChannels, useCurrentUser, useViewerUserId } from "@repo/hooks";
+import {
+  useBlockedUserIds,
+  useChannels,
+  useCurrentUser,
+  useViewerUserId,
+} from "@repo/hooks";
 import { emptyCache, mergeServerRows } from "@repo/chat-core/cache";
 import {
   chatMessagesKey,
@@ -77,7 +82,9 @@ import {
   readFirstChunk,
   writeChannelList,
   writeChannelTail,
+  writeBlockFloor,
   writeViewerId,
+  type CachedBlockFloorRow,
   type CachedViewerIdRow,
   type FirstChunk,
   type FirstChunkScope,
@@ -333,11 +340,22 @@ export function seedFirstChunk(
   }
 }
 
+/** What a cold load reads back besides the rows it seeds. */
+export interface FirstChunkIdentity {
+  /** The viewer's cached `users.id` for the scope in effect, or `null`. */
+  viewerId: string | null;
+  /**
+   * The block list's floor as of the last ready read under the scope in
+   * effect (`CachedBlockFloor`, #2688), or `null` when there is none.
+   */
+  blockFloor: ReadonlySet<string> | null;
+}
+
 /**
  * Mounted once, by `ChatProvider`. Seeds this tenant's rows into the
- * `QueryClient`, prunes every other tenant's, keeps the channel list and the
- * viewer's `users.id` written — and **returns that id** when this scope has one
- * cached.
+ * `QueryClient`, prunes every other tenant's, keeps the channel list, the
+ * viewer's `users.id` and the block list's floor written — and **returns the
+ * id and the floor** when this scope has them cached.
  *
  * Returning it rather than seeding it is the whole shape of the identity half.
  * The rows go into the `QueryClient` because that is where their live
@@ -353,7 +371,7 @@ export function seedFirstChunk(
  * and cannot reach a foreign key in the first place. Running it in front would
  * put a full key scan between a cold load and the rows it exists to paint.
  */
-export function useFirstChunkCache(): string | null {
+export function useFirstChunkCache(): FirstChunkIdentity {
   const scope = useChatScope();
   const queryClient = useQueryClient();
   /*
@@ -376,6 +394,10 @@ export function useFirstChunkCache(): string | null {
   const [cachedViewer, setCachedViewer] = useState<CachedViewerIdRow | null>(
     null,
   );
+  // Carried as a row with its scope for the same reason as the viewer id.
+  const [cachedFloor, setCachedFloor] = useState<CachedBlockFloorRow | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!scope) return;
@@ -395,6 +417,7 @@ export function useFirstChunkCache(): string | null {
         that did seed.
       */
       setCachedViewer(chunk.viewer);
+      setCachedFloor(chunk.blockFloor);
       try {
         seedFirstChunk(queryClient, chunk);
       } catch {
@@ -472,6 +495,49 @@ export function useFirstChunkCache(): string | null {
   usePersistUnderScope(scope, viewerUpdatedAt, writeViewer);
 
   /*
+    The block list's floor (#2688): another observer on the list's query, not
+    another request, written only from a **ready** read.
+
+    Keyed on `readAt`, the read's `dataUpdatedAt`, which moves only when a read
+    succeeds, so the tenant guard applies unchanged. It matters here as much as
+    for the viewer id: filing the outgoing member's list under the incoming
+    member's key would hand that member someone else's blocks, from disk.
+
+    Only a ready read is written. The ids a list holds while unavailable are
+    the last ready read's plus this session's confirmed changes, and the
+    changes are not persisted: a block confirmed here is followed by a re-read,
+    and it is that read's success that writes it. An unblock confirmed while
+    the list stays unreadable leaves the floor naming that member until a read
+    succeeds, which hides too much rather than too little.
+  */
+  const blockList = useBlockedUserIds();
+  const isBlockListReady = blockList.status === "ready";
+  const blockedIds = blockList.ids;
+  const blockListReadAt = blockList.readAt;
+
+  const writeFloor = useCallback(
+    (current: FirstChunkScope) => {
+      if (!isBlockListReady) return;
+      void writeBlockFloor(current, blockedIds, blockListReadAt);
+    },
+    [isBlockListReady, blockedIds, blockListReadAt],
+  );
+
+  usePersistUnderScope(scope, blockListReadAt, writeFloor);
+
+  const ownFloor =
+    cachedFloor &&
+    scope &&
+    cachedFloor.userId === scope.userId &&
+    cachedFloor.chapterId === scope.chapterId
+      ? cachedFloor
+      : null;
+  const blockFloor = useMemo(
+    () => (ownFloor ? new Set(ownFloor.ids) : null),
+    [ownFloor],
+  );
+
+  /*
     Disowned unless the scope that wrote it is still the scope in effect.
 
     `readFirstChunk` cannot return another tenant's row — the key rules it out —
@@ -492,12 +558,14 @@ export function useFirstChunkCache(): string | null {
     #2249 the shell read `useViewerUserId()` directly and had exactly the same
     exposure. Nothing here widens it, and nothing here closes it either.
   */
-  return cachedViewer &&
+  const viewerId =
+    cachedViewer &&
     scope &&
     cachedViewer.userId === scope.userId &&
     cachedViewer.chapterId === scope.chapterId
-    ? cachedViewer.viewerUserId
-    : null;
+      ? cachedViewer.viewerUserId
+      : null;
+  return { viewerId, blockFloor };
 }
 
 /**

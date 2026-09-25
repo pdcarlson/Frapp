@@ -78,6 +78,7 @@ function list(
     retry: vi.fn(),
     isRetrying: false,
     isPaused: false,
+    readAt: status === "ready" ? 1 : 0,
     ...extras,
   };
 }

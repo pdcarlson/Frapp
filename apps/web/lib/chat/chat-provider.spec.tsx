@@ -14,17 +14,22 @@
   So this renders the real `ChatProvider` and reads the real `useChatViewerId`
   from underneath it.
 */
+import { useContext } from "react";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
-const { cachedViewerId, liveViewerId } = vi.hoisted(() => ({
+const { blockFloor, cachedViewerId, liveViewerId } = vi.hoisted(() => ({
+  blockFloor: { current: null as ReadonlySet<string> | null },
   cachedViewerId: { current: null as string | null },
   liveViewerId: { current: null as string | null },
 }));
 
 vi.mock("./use-first-chunk-cache", () => ({
-  useFirstChunkCache: () => cachedViewerId.current,
+  useFirstChunkCache: () => ({
+    viewerId: cachedViewerId.current,
+    blockFloor: blockFloor.current,
+  }),
 }));
 vi.mock("@repo/hooks", () => ({
   useFrappClient: () => ({ GET: vi.fn() }),
@@ -56,9 +61,16 @@ vi.mock("@repo/chat-core/adapters", () => ({
 
 const { ChatProvider } = await import("./chat-provider");
 const { useChatViewerId } = await import("./viewer-id");
+const { CachedBlockFloorContext } = await import("./use-thread-block-list");
 
 function Probe() {
-  return <span data-testid="viewer">{useChatViewerId() ?? "unknown"}</span>;
+  const floor = useContext(CachedBlockFloorContext);
+  return (
+    <>
+      <span data-testid="viewer">{useChatViewerId() ?? "unknown"}</span>
+      <span data-testid="floor">{floor ? [...floor].join(",") : "none"}</span>
+    </>
+  );
 }
 
 function renderProvider() {
@@ -106,5 +118,25 @@ describe("ChatProvider publishes the cached viewer id (#2249)", () => {
     renderProvider();
 
     expect(viewer()).toBe("unknown");
+  });
+});
+
+describe("ChatProvider publishes the persisted block-list floor (#2688)", () => {
+  it("hands the thread's block list the floor the first-chunk read returned", () => {
+    // `use-thread-block-list.spec.tsx` provides the context by hand, so only
+    // this pins that the provider actually publishes it.
+    blockFloor.current = new Set(["user-blake"]);
+
+    renderProvider();
+
+    expect(screen.getByTestId("floor").textContent).toBe("user-blake");
+  });
+
+  it("publishes none when nothing was cached", () => {
+    blockFloor.current = null;
+
+    renderProvider();
+
+    expect(screen.getByTestId("floor").textContent).toBe("none");
   });
 });

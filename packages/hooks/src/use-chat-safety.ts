@@ -119,6 +119,15 @@ export interface BlockedUserIds {
    * rather than offer a tap that visibly does nothing.
    */
   isPaused: boolean;
+  /**
+   * When the server's list was last read successfully (TanStack's
+   * `dataUpdatedAt`), or `0` if it has not been read since the query cache
+   * was last cleared. A failed refetch does not move it. Web keys its
+   * persisted block-list floor on it (#2688): the floor is written from a
+   * ready read, under the same tenant guard as the rest of the first-chunk
+   * cache, and consulted only while this is `0`.
+   */
+  readAt: number;
 }
 
 /** One server read of the list, and which confirmed changes it could reflect. */
@@ -260,7 +269,15 @@ export function useBlockedUserIds(): BlockedUserIds {
     enabled: !!chapterId,
   });
 
-  const { data, isError, isSuccess, fetchStatus, isFetching, refetch } = query;
+  const {
+    data,
+    dataUpdatedAt,
+    isError,
+    isSuccess,
+    fetchStatus,
+    isFetching,
+    refetch,
+  } = query;
   const changes = changesQuery.data;
   const { ids, unblocked } = useMemo(
     () => effectiveBlockList(data, changes),
@@ -285,6 +302,7 @@ export function useBlockedUserIds(): BlockedUserIds {
     retry,
     isRetrying: isFetching,
     isPaused: fetchStatus === "paused",
+    readAt: data === undefined ? 0 : dataUpdatedAt,
   };
 }
 

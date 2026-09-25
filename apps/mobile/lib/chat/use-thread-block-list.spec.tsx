@@ -41,6 +41,7 @@ function setList(
     retry: list.retry,
     isRetrying: false,
     isPaused: false,
+    readAt: status === "ready" ? 1 : 0,
   };
 }
 
