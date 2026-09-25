@@ -159,7 +159,7 @@ interface ReactionGroup {
  *
  * Counts whatever `message.reactions` holds. The s05 thread hands every bubble
  * and card a message whose reactions already went through the viewer's block
- * list (`visibleReactions` in `lib/chat/blocks.ts`, applied in
+ * list (`visibleReactions` in `@repo/chat-core/blocks`, applied in
  * `thread-message-row.tsx`), so a blocked member's reaction never reaches here.
  */
 export function groupReactions(

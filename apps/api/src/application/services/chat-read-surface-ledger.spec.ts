@@ -339,8 +339,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
 const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
   'public.chat_messages chat_messages_select': {
     creates: 2,
-    status: 'not-hidden',
-    why: "Realtime filters the echo through the subscriber's policy, but a policy can only drop a row, not carry the API's tombstone, and this one has no block clause; § The masking contract makes each client apply its own list instead. Both do, through `@repo/chat-core/blocks`: mobile (#2493, #2315) and web (#2313). A new client that reads this table must too.",
+    status: 'open',
+    issues: [2499],
+    why: "Realtime filters the echo through the subscriber's policy, but a policy can only drop a row, not carry the API's tombstone, and this one has no block clause; § The masking contract makes each client apply its own list instead. Both clients do, through `@repo/chat-core/blocks` (mobile #2493/#2315, web #2313), and a new client reading this table must too. No proof tier here can see a client, so the entry stays open on the echo path's known gap: a member unblocked on this device and re-blocked elsewhere shows until the list is re-read (#2499).",
   },
   'public.chat_message_actions chat_message_actions_select': {
     // Reaction chips, over PostgREST and the Realtime echo. The policy drops a

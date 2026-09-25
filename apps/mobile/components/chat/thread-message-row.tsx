@@ -14,7 +14,7 @@ import { PollCard } from "./poll-card";
 
 /**
  * One s05 row, after the block list has been applied (`applyBlockList` in
- * `lib/chat/blocks.ts`). Held rows never reach here.
+ * `@repo/chat-core/blocks`). Held rows never reach here.
  *
  * Split out of `app/(tabs)/chat-thread.tsx` so the choice between tombstone,
  * poll card and bubble is testable: everything under `app/` ships as a route

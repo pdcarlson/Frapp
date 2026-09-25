@@ -32,7 +32,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FIRST_CHUNK_DB_NAME } from "./first-chunk-wipe";
 import { wipeFirstChunkCache } from "./first-chunk-wipe";
 import {
-  TAIL_ROW_FORMAT,
   readFirstChunk,
   resetFirstChunkCacheForTests,
   writeViewerId,
@@ -67,12 +66,6 @@ async function seedV1Database() {
       },
     ],
     cachedAt: AT,
-    // Stamped as the current encoding, which no real v1 tail ever was: a real
-    // one is refused as pre-#2493 (`TAIL_ROW_FORMAT`, pinned in
-    // `first-chunk-cache.spec.ts`). The stamp keeps this case about what it
-    // tests — that the upgrade keeps the tables it did not name — rather than
-    // about the row encoding.
-    rowFormat: TAIL_ROW_FORMAT,
   });
   db.close();
 }

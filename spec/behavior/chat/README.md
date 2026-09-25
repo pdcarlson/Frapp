@@ -301,7 +301,7 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
 
   The rule binds behavior, not just storage. **Any surface that refuses an action *because* of a block leaks the block** — a distinct error on DM creation is enough to binary-search the roster and enumerate exactly who has blocked you. So a block is enforced by **not delivering**, never by refusing: the blocked member can still open a thread and send into it, and sees the ordinary success they would see anyway. Nothing they send reaches the blocker.
 - **A member cannot block themselves, nor the system actor.** Blocking the system sender would silently mask the chapter welcome post, the `#chapter-audit` bridge, invite-accept DMs and the poll-expiry notice, with nothing rendering as "blocked" to explain why — chapter features would simply appear broken. (A poll and its tally are *not* in that set: `poll` is not a server-only kind, so they are authored by the member who created the poll.)
-- **Blocking is reversible, and the unblock affordance is durable.** The blocked-members list in Settings is the one place a block can always be undone; a tombstone in a thread the member may never reopen is not sufficient.
+- **Blocking is reversible, and the unblock affordance is durable.** The blocked-members list is the one place a block can always be undone (mobile: Settings → Blocked members; web: `/profile` → Blocked members, since web's Settings is chapter administration); a tombstone in a thread the member may never reopen is not sufficient.
 
 #### What a block does and does not hide
 

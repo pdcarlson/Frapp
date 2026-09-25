@@ -33,13 +33,15 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * **Reload, only when a re-read failed.** Once this client unblocked the
  * sender, a leftover masked copy has nothing to unblock, and only the
  * post-unblock re-read can bring its words back. If that re-read gave up
- * (`lib/chat/masked-refresh.ts`), the copy offers Reload, which runs it again —
+ * (`refreshMaskedCopies` in `@repo/chat-core/blocks`, read here through
+ * `lib/chat/masked-refresh.ts`), the copy offers Reload, which runs it again —
  * otherwise it would sit here with no control and nothing saying why. Reload is
  * not offered on a copy whose re-read landed: that copy is older than the page
  * the re-read covers, and tapping Reload would visibly do nothing.
  *
- * These strings are the tombstone's, and a reply quoting a hidden message uses
- * the same words (`thread-message-row.tsx`), so the two cannot disagree.
+ * The strings live in `@repo/chat-core/block-copy`, and a reply quoting a
+ * hidden message takes the same words there (`hiddenQuoteText` in
+ * `@repo/chat-core/blocks`), so the two, and web's, cannot disagree.
  */
 export interface BlockedMessageTombstoneProps {
   /** Shown only in the accessibility label and the confirm prompt. */
@@ -48,7 +50,7 @@ export interface BlockedMessageTombstoneProps {
    * `false` only when this client confirmed unblocking the sender and this row
    * is still the server's masked copy (older than the page the unblock
    * re-read). There is nothing to unblock, so the control is withheld rather
-   * than left dead. See `tombstoneCanUnblock` in `lib/chat/blocks.ts`.
+   * than left dead. See `tombstoneCanUnblock` in `@repo/chat-core/blocks`.
    */
   canUnblock: boolean;
   onUnblock: () => void;

@@ -21,7 +21,6 @@ import {
   FIRST_CHUNK_CHANNEL_LIMIT,
   FIRST_CHUNK_MAX_AGE_MS,
   FIRST_CHUNK_MESSAGE_LIMIT,
-  TAIL_ROW_FORMAT,
   pruneForeignScopes,
   readFirstChunk,
   resetFirstChunkCacheForTests,
@@ -175,14 +174,41 @@ describe("scope keying", () => {
   });
 });
 
-describe("row encoding (#2313)", () => {
-  /**
-   * A tail as the build before #2493 wrote it: no `rowFormat`, and
-   * `sender_blocked` on an echo row, which rehydrates as "the server evaluated
-   * this and cleared it" — the one claim the block list lets through while it
-   * is unavailable.
-   */
-  async function seedUnstampedTail() {
+describe("block verdicts (#2313)", () => {
+  it("drops a cleared verdict, so a cached row cannot vouch for a sender blocked since", async () => {
+    await seedRail(ALICE);
+    await writeChannelTail(
+      ALICE,
+      "chan-1",
+      [confirmed("1", { sender_blocked: false })],
+      AT,
+    );
+
+    const chunk = await readFirstChunk(ALICE);
+    const [row] = chunk.tails[0]!.rows;
+
+    expect(row).not.toHaveProperty("sender_blocked");
+    // Rehydrated, it is an unevaluated row: held until the list is read.
+    expect(normalizeRow(row!)._blockEvaluated).toBe(false);
+  });
+
+  it("keeps a masked verdict, whose content is already withheld", async () => {
+    await seedRail(ALICE);
+    await writeChannelTail(
+      ALICE,
+      "chan-1",
+      [confirmed("1", { sender_blocked: true })],
+      AT,
+    );
+
+    const chunk = await readFirstChunk(ALICE);
+    expect(chunk.tails[0]!.rows[0]!.sender_blocked).toBe(true);
+  });
+
+  it("reads a tail written before #2493 the same way", async () => {
+    // Back then `toRawRow` wrote `sender_blocked: false` on every row, echoes
+    // included, straight to disk.
+    await seedRail(ALICE);
     resetFirstChunkCacheForTests();
     const db = new Dexie(FIRST_CHUNK_DB_NAME);
     db.version(2).stores({
@@ -199,35 +225,9 @@ describe("row encoding (#2313)", () => {
       cachedAt: AT,
     });
     db.close();
-  }
-
-  it("stamps every tail it writes with the current encoding", async () => {
-    await seedRail(ALICE);
-    await writeChannelTail(ALICE, "chan-1", [confirmed("1")], AT);
 
     const chunk = await readFirstChunk(ALICE);
-    expect(chunk.tails[0]!.rowFormat).toBe(TAIL_ROW_FORMAT);
-  });
-
-  it("refuses a tail written before the encoding was stamped", async () => {
-    await seedRail(ALICE);
-    await seedUnstampedTail();
-
-    const chunk = await readFirstChunk(ALICE);
-
-    // The rail is still served: only the row encoding changed.
-    expect(chunk.channels?.channels).toEqual(RAIL);
-    expect(chunk.tails).toEqual([]);
-  });
-
-  it("serves the channel again once it is rewritten in the current encoding", async () => {
-    await seedRail(ALICE);
-    await seedUnstampedTail();
-    resetFirstChunkCacheForTests();
-    await writeChannelTail(ALICE, "chan-1", [confirmed("1")], AT);
-
-    const chunk = await readFirstChunk(ALICE);
-    expect(chunk.tails.map((tail) => tail.channelId)).toEqual(["chan-1"]);
+    expect(chunk.tails[0]!.rows[0]).not.toHaveProperty("sender_blocked");
   });
 });
 

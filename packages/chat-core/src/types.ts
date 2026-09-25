@@ -241,8 +241,8 @@ export interface ChatMessage {
    * ready (a pin or edit echo replaces it unevaluated), since nothing
    * re-evaluates an echoed row: the
    * reconnect backfill reads only after the last-seen cursor, which the echo
-   * itself advanced (mobile: `classifyMessage` in
-   * `apps/mobile/lib/chat/blocks.ts`, and `block-clearance.ts` beside it;
+   * itself advanced (`classifyMessage` and `blockClearance` in `./blocks.ts`,
+   * which the mobile thread and the web timeline both classify through;
    * `spec/behavior/chat/README.md` § The masking contract has every rule).
    */
   _blockEvaluated: boolean;

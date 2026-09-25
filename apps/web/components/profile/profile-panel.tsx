@@ -860,9 +860,9 @@ export function ProfilePanel() {
       </Card>
 
       {/*
-        The durable undo for a chat block (#2313): its own states, because it is
-        a fourth query on this screen and a failed read of it must not look like
-        "nobody is blocked".
+        The durable undo for a chat block (#2313): its own states, because the
+        block list is another query on this screen and a failed read of it must
+        not look like "nobody is blocked".
       */}
       <BlockedMembersCard />
 

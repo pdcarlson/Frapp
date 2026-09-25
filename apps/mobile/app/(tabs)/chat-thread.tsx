@@ -358,7 +358,7 @@ export default function ChatThreadScreen() {
     [nameFor, unblock],
   );
 
-  // A stale tombstone's Reload (`lib/chat/masked-refresh.ts`). The tombstone
+  // A stale tombstone's Reload (`refreshMaskedCopies` in `@repo/chat-core/blocks`). The tombstone
   // keeps offering it while the re-read keeps failing; the alert says a tap
   // that came back empty did not just do nothing.
   const maskedRefresh = useMaskedRefresh();

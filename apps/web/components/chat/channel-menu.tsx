@@ -56,6 +56,11 @@ type View = "menu" | "search" | "pins" | "saved" | "notifications";
 type ChannelMenuProps = {
   /** The channel currently open, or `null` when none is selected yet. */
   activeChannelId: string | null;
+  /**
+   * The messages the viewer's block list lets the timeline draw in full, not
+   * the raw cache: the Pinned panel prints each row's author and words, and has
+   * no tombstone of its own (#2313).
+   */
   messages: ChatMessage[];
   /** Resolves `users.id` → display name; `null` when unresolvable. */
   nameFor: (userId: string) => string | null;

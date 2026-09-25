@@ -497,6 +497,23 @@ export function ChatShell({
     channel.messages,
     userId,
   );
+  // The rows drawn in full: what every surface beside the timeline that prints
+  // a message's author or words reads (the Pinned panel and its count). A
+  // tombstoned row carries a blocked member's words whenever an echo put them
+  // back, and a held row is one the list cannot vouch for yet, so neither may
+  // reach a surface that has no tombstone of its own.
+  const shownMessages = useMemo(
+    () =>
+      thread.rows
+        .filter((row) => row.visibility === "visible")
+        .map((row) => row.message),
+    [thread.rows],
+  );
+  // Every row the timeline draws, tombstones included: what a jump can reach.
+  const drawnMessageIds = useMemo(
+    () => new Set(thread.rows.map((row) => row.message.id)),
+    [thread.rows],
+  );
   const unblockFlow = useUnblockFlow();
   const maskedRefresh = useMaskedRefresh();
   const { requestUnblock, reloadMaskedCopies } = unblockFlow;
@@ -819,6 +836,16 @@ export function ChatShell({
       replaces it.
     */
     if (!liveUserId) return;
+    // Loaded but held: the block list cannot vouch for it yet, so the timeline
+    // has no row to scroll to (#2313). That is not "older than the history
+    // loaded here", so the target stays pending with no notice, and
+    // `drawnMessageIds` below re-runs this once the list lets the row through.
+    if (
+      !drawnMessageIds.has(pendingMessageId) &&
+      channel.messages.some((message) => message.id === pendingMessageId)
+    ) {
+      return;
+    }
     const jumped = timeline.current?.scrollToMessage(pendingMessageId) ?? false;
     if (jumped) {
       setPendingMessageId(null);
@@ -836,6 +863,7 @@ export function ChatShell({
     pendingJumpChannelId,
     channel.isLoading,
     channel.messages,
+    drawnMessageIds,
     jumpAttempt,
     liveUserId,
   ]);
@@ -1350,7 +1378,7 @@ export function ChatShell({
             <ReconnectPill status={channel.connection} />
             <ChannelMenu
               activeChannelId={activeChannelId}
-              messages={channel.messages}
+              messages={shownMessages}
               nameFor={nameFor}
               channelNameFor={channelNameFor}
               onJumpToMessage={jumpToMessage}
