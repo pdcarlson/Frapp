@@ -29,7 +29,18 @@ function subscribe(onStoreChange: () => void): () => void {
   };
 }
 
+/**
+ * With nothing subscribed the interval is stopped, so `currentNow` is whatever
+ * the last tick left, possibly hours ago. React reads the snapshot for a
+ * first render *before* `subscribe` runs, so refresh a cold, stale read here:
+ * a mounting screen is then never more than one tick behind, cold or warm.
+ * Refreshing only past a whole tick keeps consecutive reads identical, which
+ * `useSyncExternalStore` requires of a snapshot.
+ */
 function getNow(): number {
+  if (interval === null && Math.abs(Date.now() - currentNow) >= TICK_MS) {
+    currentNow = Date.now();
+  }
   return currentNow;
 }
 

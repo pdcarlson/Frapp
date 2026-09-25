@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 
 /**
- * #2101. s06 used to read `now` once per mount (`useMemo(() => new Date(), [])`),
- * and a tab is never unmounted, so a check-in window that opened while the
+ * #2101. s06 used to capture `now` once per mount, in a memo with no
+ * dependencies, and a tab is never unmounted, so a check-in window that opened while the
  * list was on screen never showed as open, and a finished event never fell off.
  * This pins that the list reads the shared ticking clock instead.
  *

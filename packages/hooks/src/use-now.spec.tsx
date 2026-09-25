@@ -43,6 +43,24 @@ describe("useNow", () => {
     second.unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("reads a fresh clock on a cold mount, not the last tick before idling", () => {
+    const earlier = renderHook(() => useNow());
+    earlier.unmount();
+
+    // Nothing is subscribed, so the interval is stopped. Hours pass.
+    vi.setSystemTime(T0 + 3 * 60 * 60_000);
+
+    const seen: number[] = [];
+    const { unmount } = renderHook(() => {
+      const now = useNow();
+      seen.push(now);
+      return now;
+    });
+    // The first render, before `subscribe` runs, is already current.
+    expect(seen[0]).toBe(T0 + 3 * 60 * 60_000);
+    unmount();
+  });
 });
 
 describe("useNowDate", () => {
