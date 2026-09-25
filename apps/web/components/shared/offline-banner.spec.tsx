@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
-import { OfflineBanner } from "./offline-banner";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { BANNER_REDISPLAY_MS, OfflineBanner } from "./offline-banner";
 import { DASHBOARD_SHELL_ATTR } from "./offline-banner-focus";
 import * as NetworkProvider from "@/lib/providers/network-provider";
 
@@ -106,7 +106,76 @@ describe("OfflineBanner", () => {
     expect(overlay?.className).toContain(
       `[html:has([${DASHBOARD_SHELL_ATTR}])_&]:top-14`,
     );
-    expect(screen.getByRole("alert")).toHaveClass("pointer-events-auto");
     expect(document.documentElement.getAttribute("style") ?? "").toBe("");
   });
+
+  it("lets taps through to the page it covers, except on its dismiss control", () => {
+    // Floating puts it over the first row of content: a page's title and
+    // actions, or chat's Back and channel-menu buttons on a phone. Neither the
+    // wrapper nor the pill may take a pointer, or those controls go dead for
+    // as long as the connection is down.
+    mockNetwork("OFFLINE");
+    const { container } = render(<OfflineBanner />);
+
+    const pill = screen.getByRole("alert");
+    expect(container.firstElementChild).toHaveClass("pointer-events-none");
+    expect(pill.className).not.toMatch(/pointer-events-auto/);
+    expect(
+      screen.getByRole("button", { name: "Dismiss the connection notice" }),
+    ).toHaveClass("pointer-events-auto");
+  });
+
+  describe("dismissal (connection-state.md: reappears after 30s if the state holds)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("hides on dismiss and comes back after the redisplay delay", () => {
+      vi.useFakeTimers();
+      mockNetwork("DEGRADED");
+      render(<OfflineBanner />);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Dismiss the connection notice" }),
+      );
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(BANNER_REDISPLAY_MS - 1);
+      });
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(screen.getByRole("alert")).toHaveTextContent("Slow connection.");
+    });
+
+    it("comes back at once when the state changes, because the dismissal was of the old state", () => {
+      mockNetwork("DEGRADED");
+      const { rerender } = render(<OfflineBanner />);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Dismiss the connection notice" }),
+      );
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+      mockNetwork("OFFLINE");
+      rerender(<OfflineBanner />);
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "You're offline. Showing cached data.",
+      );
+    });
+  });
 });
+
+function mockNetwork(state: "DEGRADED" | "OFFLINE") {
+  vi.mocked(NetworkProvider.useNetwork).mockReturnValue({
+    state,
+    isOnline: false,
+    isDegraded: state === "DEGRADED",
+    isOffline: state === "OFFLINE",
+    linkOnline: state === "DEGRADED",
+    probeOnce: async () => {},
+  });
+}

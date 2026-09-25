@@ -19,11 +19,10 @@ import { NotificationsGlyph } from "@/components/layout/nav-glyphs";
  * 15/700; this implementation puts it in the main pane instead, at the left of
  * the page's own toolbar row (`page-header.tsx`), which is what #2141 specifies
  * and what was confirmed for this lane. The left cell is therefore an empty
- * spacer — deliberately, and it still earns its place: the bar is a
- * `1fr auto 1fr` grid, so the find field is centered in the viewport only
- * because the two side cells balance. Replacing the grid with flex, or dropping
- * the empty cell, walks the find field off-center as the right cluster changes
- * width.
+ * spacer — deliberately, and it still earns its place: at `lg` both side cells
+ * are `flex-1`, so the find field is centered in the viewport only because the
+ * two side cells balance. Dropping the empty cell, or its `lg:flex-1`, walks
+ * the find field off-center as the right cluster changes width.
  *
  * Not `sticky`. The column this bar heads never scrolls (`<main>` does), so
  * there is nothing to stick to, and the connection banner floats below the bar

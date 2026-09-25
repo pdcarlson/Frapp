@@ -1,14 +1,40 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
+import { FOCUS_RING, FOCUS_RING_ALWAYS } from "@/components/ui/focus";
 import { OFFLINE_BANNER_ID } from "@/components/shared/offline-banner-focus";
-import { WifiOff, Zap } from "lucide-react";
+import { WifiOff, X, Zap } from "lucide-react";
+
+/**
+ * `connection-state.md` § Banner behavior: a dismissed banner comes back if
+ * the state hasn't changed after 30s.
+ */
+export const BANNER_REDISPLAY_MS = 30_000;
 
 export function OfflineBanner() {
   const { state, isOnline } = useNetwork();
 
-  if (isOnline) return null;
+  /*
+   * Dismissal is per state, not sticky. A change of state (DEGRADED to
+   * OFFLINE, or a recovery and a relapse) shows the banner again at once,
+   * which is the render-time reset React documents for "adjusting state when
+   * a prop changes" rather than an effect that would paint the stale value
+   * first. An unchanged state shows it again after `BANNER_REDISPLAY_MS`.
+   */
+  const [dismissed, setDismissed] = useState(false);
+  const [seenState, setSeenState] = useState(state);
+  if (state !== seenState) {
+    setSeenState(state);
+    setDismissed(false);
+  }
+  useEffect(() => {
+    if (!dismissed) return;
+    const timer = setTimeout(() => setDismissed(false), BANNER_REDISPLAY_MS);
+    return () => clearTimeout(timer);
+  }, [dismissed]);
+
+  if (isOnline || dismissed) return null;
 
   // The Signet semantic tint recipe (foundations.md §5): ~13% of the hue as
   // fill with the hue as text. Degraded is warning, offline is destructive —
@@ -75,29 +101,45 @@ export function OfflineBanner() {
    * area (below header bar)", and at the top of the viewport on the pre-auth
    * routes, which have no bar. The shell marks itself with
    * `data-dashboard-shell` (`DASHBOARD_SHELL_ATTR`) rather than this component
-   * asking the router,
-   * because a CSS `:has()` rule is settled before first paint and a pathname
-   * check is one more list of routes to keep in step.
+   * asking the router, because a CSS `:has()` rule is settled before first
+   * paint and a pathname check is one more list of routes to keep in step.
+   * `top-14` is the bar's `h-12` plus an 8px gap; the shell spec pins the bar
+   * height it depends on.
    *
-   * The full-width wrapper is `pointer-events-none` so the strip beside the
-   * pill never eats a click meant for the page under it. `z-40` keeps it above
-   * content and under dialogs and sheets (`z-50`), which dim it like everything
-   * else behind them.
+   * Floating means it sits over the first row of the content area, which on a
+   * phone is a page's title and actions or chat's Back and channel-menu
+   * buttons. So nothing but the dismiss control takes a pointer: a tap on the
+   * pill lands on whatever is under it, and dismissing uncovers it for as
+   * long as the state holds. `z-40` keeps it above content and under dialogs
+   * and sheets (`z-50`), which dim it like everything else behind them.
    */
   return (
     <div className="pointer-events-none fixed inset-x-0 top-2 z-40 flex justify-center px-4 [html:has([data-dashboard-shell])_&]:top-14">
       <div
         id={OFFLINE_BANNER_ID}
         tabIndex={-1}
-        className={`pointer-events-auto max-w-full rounded-lg bg-background shadow-md animate-slide-down ${FOCUS_RING_ALWAYS}`}
+        className={`max-w-full rounded-lg bg-background shadow-md animate-slide-down ${FOCUS_RING_ALWAYS}`}
         role="alert"
         aria-live="polite"
       >
         <div
-          className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${className}`}
+          className={`flex items-center gap-2 rounded-lg border py-1.5 pl-3 pr-1.5 text-sm ${className}`}
         >
           <Icon className="h-4 w-4 shrink-0" />
           <span>{message}</span>
+          {/*
+            24px drawn, 44px to a coarse pointer (the touch floor), with the
+            negative margin absorbing the difference so the pill stays one
+            text line tall on a phone.
+          */}
+          <button
+            type="button"
+            onClick={() => setDismissed(true)}
+            aria-label="Dismiss the connection notice"
+            className={`pointer-events-auto grid h-6 w-6 shrink-0 place-items-center rounded-md hover:bg-foreground/10 pointer-coarse:-m-2.5 pointer-coarse:h-11 pointer-coarse:w-11 ${FOCUS_RING}`}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
       </div>
     </div>

@@ -164,9 +164,16 @@ describe("DashboardShell", () => {
       </DashboardShell>,
     );
     const root = container.firstElementChild;
-    expect(root).toHaveClass("h-screen");
+    // `dvh`: `100vh` on a phone is the viewport with the toolbar hidden, which
+    // puts the bottom of a clipped shell under the toolbar while it shows.
+    expect(root).toHaveClass("h-dvh");
+    expect(root?.className).not.toContain("h-screen");
     expect(root?.className).not.toContain("offline-banner-height");
     expect(root).toHaveAttribute(DASHBOARD_SHELL_ATTR);
+    // The banner floats at `top-14`: this bar's 48px plus an 8px gap. A
+    // taller bar would put the pill over the bar's own controls, so the
+    // height it counts on is pinned here, beside the attribute it keys on.
+    expect(screen.getByRole("banner")).toHaveClass("h-12");
   });
 
   /*

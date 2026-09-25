@@ -109,16 +109,20 @@ export function DashboardShell({
 
   return (
     /*
-      A flat viewport height. The connection banner floats over the page
-      (`offline-banner.tsx`) and takes no layout space, so nothing here makes
-      room for it. This used to subtract the banner's published height, and
-      that is exactly what moved the whole shell down every time the state
+      The visible viewport's height. The connection banner floats over the
+      page (`offline-banner.tsx`) and takes no layout space, so nothing here
+      makes room for it. This used to subtract the banner's published height,
+      and that is exactly what moved the whole shell down every time the state
       left ONLINE (#2244). `data-dashboard-shell` is how the banner knows to sit
       below the top bar instead of over it.
+
+      `dvh`, not `vh`: on a phone browser whose toolbar can hide, `100vh` is
+      the viewport with the toolbar hidden, so a shell that clips its overflow
+      would put chat's composer under the toolbar while it shows.
     */
     <div
       data-dashboard-shell=""
-      className="flex h-screen overflow-hidden bg-background"
+      className="flex h-dvh overflow-hidden bg-background"
     >
       <ChapterWizardGate />
       {/* A member who hasn't accepted the current Terms (#2302). */}
