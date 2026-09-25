@@ -5,7 +5,12 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
-import { accessibilityLabelFor, badgeLabel, ChannelRow } from "./channel-row";
+import {
+  accessibilityLabelFor,
+  badgeLabel,
+  ChannelRow,
+  HIDE_ACTION,
+} from "./channel-row";
 
 /**
  * The rules under test are the two `foundations.md:67-68` states this row
@@ -179,5 +184,40 @@ describe("ChannelRow badge colour", () => {
     expect(style?.backgroundColor).toBe(
       signetDarkTokens.color.semantic.mention,
     );
+  });
+});
+
+// #2303: a 1:1 DM row can be hidden. The long press is invisible to a screen
+// reader, so the same action has to exist as a named accessibility action.
+describe("ChannelRow hide affordance", () => {
+  function pressable(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) => (node.type as unknown as string) === "Pressable",
+      { deep: true },
+    )[0]!;
+  }
+
+  it("offers nothing when the row cannot be hidden", () => {
+    const row = pressable(renderRow({}));
+
+    expect(row.props.onLongPress).toBeUndefined();
+    expect(row.props.accessibilityActions).toBeUndefined();
+  });
+
+  it("hides on a long press, and on the named accessibility action", () => {
+    const onHide = vi.fn();
+    const row = pressable(renderRow({ isDirect: true, onHide }));
+
+    expect(row.props.accessibilityActions).toEqual([
+      { name: HIDE_ACTION, label: "Hide conversation" },
+    ]);
+    row.props.onLongPress();
+    row.props.onAccessibilityAction({
+      nativeEvent: { actionName: "activate" },
+    });
+    row.props.onAccessibilityAction({
+      nativeEvent: { actionName: HIDE_ACTION },
+    });
+    expect(onHide).toHaveBeenCalledTimes(2);
   });
 });

@@ -8,7 +8,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { BookmarkGlyph, MuteGlyph, PinGlyph } from "./chat-glyphs";
+import {
+  BookmarkGlyph,
+  DirectMessageGlyph,
+  MuteGlyph,
+  PinGlyph,
+} from "./chat-glyphs";
 import { SearchGlyph } from "@/components/layout/nav-glyphs";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
@@ -18,7 +23,13 @@ import { PinsPanel, pinnedMessages } from "./pins-popover";
 import { BookmarksPanel, type BookmarkEntry } from "./bookmarks-popover";
 import { NotificationLevelPanel } from "./notification-level-popover";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { ChatNotificationLevel } from "@repo/hooks";
+import {
+  HIDE_CONVERSATION_CONFIRM_ACTION,
+  HIDE_CONVERSATION_CONFIRM_BODY,
+  HIDE_CONVERSATION_LABEL,
+  hideConversationConfirmTitle,
+  type ChatNotificationLevel,
+} from "@repo/hooks";
 
 /**
  * The channel header's one overflow control: Search, Pinned, Saved and
@@ -49,9 +60,13 @@ import type { ChatNotificationLevel } from "@repo/hooks";
  * `MuteGlyph` beside the channel name when the channel is muted, because the
  * deleted notification trigger used to name that state in its `aria-label` and
  * losing it would make a muted channel silently indistinguishable.
+ *
+ * **Hide conversation** (#2303) is a fifth row, on a 1:1 DM only, and its panel
+ * is the confirmation. The same view swap carries it, so it needs no dialog of
+ * its own stacked over a popover.
  */
 
-type View = "menu" | "search" | "pins" | "saved" | "notifications";
+type View = "menu" | "search" | "pins" | "saved" | "notifications" | "hide";
 
 type ChannelMenuProps = {
   /** The channel currently open, or `null` when none is selected yet. */
@@ -71,6 +86,15 @@ type ChannelMenuProps = {
   notificationLevel: ChatNotificationLevel | null;
   notificationSaving: boolean;
   onChangeNotificationLevel: (level: ChatNotificationLevel) => void;
+  /**
+   * Offer "Hide conversation" for the open channel. Pass it only for a 1:1 DM
+   * (`canHideConversation`); absent, the row does not render.
+   */
+  hideConversation?: {
+    /** The other member's name, as the header shows it. */
+    name: string;
+    onHide: () => void;
+  };
 };
 
 type MenuRow = {
@@ -92,6 +116,7 @@ const VIEW_TITLES: Record<Exclude<View, "menu">, string> = {
   pins: "Pinned",
   saved: "Saved",
   notifications: "Notifications",
+  hide: HIDE_CONVERSATION_LABEL,
 };
 
 export function ChannelMenu({
@@ -109,6 +134,7 @@ export function ChannelMenu({
   notificationLevel,
   notificationSaving,
   onChangeNotificationLevel,
+  hideConversation,
 }: ChannelMenuProps) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
@@ -163,6 +189,15 @@ export function ChannelMenu({
       count: bookmarksLoading || bookmarksError ? undefined : bookmarks.length,
     },
     { view: "notifications", label: "Notifications", Glyph: MuteGlyph },
+    ...(hideConversation
+      ? [
+          {
+            view: "hide" as const,
+            label: HIDE_CONVERSATION_LABEL,
+            Glyph: DirectMessageGlyph,
+          },
+        ]
+      : []),
   ];
 
   // Every jump navigates the timeline behind this popover, so the popover has
@@ -287,6 +322,32 @@ export function ChannelMenu({
                 // several bookmarks four clicks apiece.
                 onRemove={onRemoveBookmark}
               />
+            ) : null}
+            {view === "hide" && hideConversation ? (
+              <div className="space-y-3 px-3 py-3">
+                <p className="text-sm font-semibold text-foreground">
+                  {hideConversationConfirmTitle(hideConversation.name)}
+                </p>
+                <p className="text-[12.5px] text-muted-foreground">
+                  {HIDE_CONVERSATION_CONFIRM_BODY}
+                </p>
+                <div className="flex justify-end">
+                  {/*
+                    Closes at once, like the notification level: the shell
+                    reports a failed write with a toast, which outlives this
+                    popover.
+                  */}
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      hideConversation.onHide();
+                      close();
+                    }}
+                  >
+                    {HIDE_CONVERSATION_CONFIRM_ACTION}
+                  </Button>
+                </div>
+              </div>
             ) : null}
             {view === "notifications" ? (
               <NotificationLevelPanel

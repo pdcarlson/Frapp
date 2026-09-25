@@ -303,9 +303,12 @@ Features
 > **Two bullets were narrowed 2026-09-21, because the wider version was not true of the
 > iOS binary (Guideline 2.3).** "direct messages" → "direct messages your chapter has
 > started": a member can read and reply in an existing DM, but **nothing in the iOS app
-> can start one** — `useGetOrCreateDm` has exactly one consumer repo-wide and it is the
-> web dashboard, and the DIRECT section is hidden entirely when the list is empty
-> (`app/(tabs)/index.tsx`). `frapp-prod` has **0** DM channels, so a reviewer would have
+> can start one** — the DIRECT section is hidden entirely when the list is empty
+> (`app/(tabs)/index.tsx`), and the one mobile call of `useGetOrCreateDm` reopens a DM
+> the member hid, from the Hidden conversations group: it passes the other member of a
+> DM row the list already returned, so `findDm` matches the existing pair rather than
+> creating one. *(Corrected 2026-09-25, #2303: this used to say the hook's only consumer
+> was the web dashboard.)* `frapp-prod` has **0** DM channels, so a reviewer would have
 > found neither the feature nor a way to produce it. "leaderboards" → "house rank": the
 > leaderboard *routes* were deleted and what survives is the viewer's own rank tile
 > ("House rank #N of M", composed in `components/tasks/points-summary-card.tsx` from the

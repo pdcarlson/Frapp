@@ -48,6 +48,7 @@ import { clampListLimit } from '#domain/constants/list-query-limits';
 import { instantOrThrow } from './instant-bound';
 import type {
   ChatChannel,
+  ChatChannelListItem,
   ChatChannelView,
   ChatChannelCategory,
   ChatMessage,
@@ -313,14 +314,71 @@ export class ChatService {
     chapterId: string,
     userId: string,
   ): Promise<ChatChannelView[]> {
-    const channels = await this.channelRepo.findByChapter(chapterId);
+    const accessible = await this.accessibleChannels(chapterId, userId);
+    return this.channelAccess.withPostCapability(chapterId, userId, accessible);
+  }
 
-    const accessible = await this.channelAccess.filterAccessibleChannels(
+  /**
+   * `GET /v1/channels`: {@link getChannels} plus whether this caller has hidden
+   * each row from their own list (#2303).
+   *
+   * Its own method rather than a field `getChannels` always computes, because
+   * `getChannels` has callers that only look for one chapter channel (the
+   * activity feed finding `#announcements`), and the hidden lookup is a round
+   * trip they would pay for and throw away. It runs beside the post-capability
+   * projection, not after it, so it adds no latency to the list.
+   */
+  async getChannelList(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannelListItem[]> {
+    const accessible = await this.accessibleChannels(chapterId, userId);
+    const [views, hidden] = await Promise.all([
+      this.channelAccess.withPostCapability(chapterId, userId, accessible),
+      // Only a caller with a DM in the list can have hidden anything.
+      accessible.some((channel) => channel.type === 'DM')
+        ? this.findHiddenChannelIds(chapterId, userId)
+        : Promise.resolve(new Set<string>()),
+    ]);
+    return views.map((view) => ({ ...view, hidden: hidden.has(view.id) }));
+  }
+
+  private async accessibleChannels(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel[]> {
+    const channels = await this.channelRepo.findByChapter(chapterId);
+    return this.channelAccess.filterAccessibleChannels(
       chapterId,
       userId,
       channels,
     );
-    return this.channelAccess.withPostCapability(chapterId, userId, accessible);
+  }
+
+  /**
+   * The DMs this caller hid (#2303), or none when the lookup fails.
+   *
+   * Failing open is deliberate, and it is the only direction that is safe
+   * here. This read sits on the chat home screen of every member with a DM,
+   * and a hide is a list preference, not an access rule: a thread shown that
+   * the member had put away costs them a long press, while a thrown error
+   * costs them the whole channel list. It also keeps the list working against
+   * a database the `get_hidden_channel_ids` migration has not reached — an
+   * API-only deploy, or that migration rolled back.
+   */
+  private async findHiddenChannelIds(
+    chapterId: string,
+    userId: string,
+  ): Promise<Set<string>> {
+    try {
+      return await this.readReceiptRepo.findHiddenChannelIds(chapterId, userId);
+    } catch (error) {
+      this.logger.warn('Could not read hidden channels; showing them all', {
+        chapterId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return new Set();
+    }
   }
 
   /**
@@ -452,7 +510,18 @@ export class ChatService {
     this.channelCache.invalidate(id);
   }
 
-  async getOrCreateDm(input: CreateDmInput): Promise<ChatChannel> {
+  /**
+   * @param openedBy the member opening the DM, when a member is (the
+   *   `POST /v1/channels/dm` route). Opening a DM you hid is the explicit way
+   *   back to it, so it clears your hide (#2303) — and only yours: the other
+   *   member's list is theirs. Server-originated callers (the invite-accept
+   *   system DM) pass nothing, because nobody opened anything; their message
+   *   resurfaces a hidden thread the ordinary way, as a new message.
+   */
+  async getOrCreateDm(
+    input: CreateDmInput,
+    openedBy?: string,
+  ): Promise<ChatChannel> {
     if (input.member_ids.length !== 2) {
       throw new BadRequestException('A DM requires exactly 2 members');
     }
@@ -461,7 +530,22 @@ export class ChatService {
       input.chapter_id,
       input.member_ids,
     );
-    if (existing) return existing;
+    if (existing) {
+      if (openedBy) {
+        // Never at the cost of the open itself: a member messaging someone
+        // must reach the thread even if their list stays behind. The thread
+        // still resurfaces on its next message.
+        await this.readReceiptRepo
+          .unhideChannel(existing.id, openedBy)
+          .catch((error: unknown) => {
+            this.logger.warn('Could not unhide a reopened DM', {
+              chapterId: input.chapter_id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+      }
+      return existing;
+    }
 
     const sorted = [...input.member_ids].sort();
     return this.channelRepo.create({
@@ -492,14 +576,26 @@ export class ChatService {
   }
 
   /**
-   * `spec/behavior/chat/README.md:47` — a member can leave a Group DM; once
-   * one member remains, the channel is archived rather than left to linger.
+   * `POST /v1/channels/:id/leave`: the one exit from a direct conversation,
+   * and it means a different thing per type (`spec/behavior/chat/README.md`
+   * § Direct Messages).
    *
-   * `assertChannelAccess` alone would accept leaving a DM, PUBLIC, PRIVATE or
-   * ROLE_GATED channel the caller can read — the explicit type check is what
-   * rejects everything but GROUP_DM, per the issue's own AC.
+   * - **Group DM:** the member leaves. They are removed from `member_ids`,
+   *   and once one member remains the channel is archived.
+   * - **1:1 DM:** the member hides it from their own list (#2303). It cannot
+   *   take the Group-DM path: a 1:1 DM whose member list drops to one is not a
+   *   conversation that ended, it is one the other member can no longer be
+   *   reached in — and an archive would take it off *their* list too. So
+   *   nothing about the channel changes, no message is deleted, and the other
+   *   member's view is untouched; the caller's read receipt records the hide.
+   * - **Anything else:** rejected, as before. There is no leave for a chapter
+   *   channel (`spec/behavior/chat/README.md` § Direct Messages).
    *
-   * The actual removal goes through the `leave_group_dm` RPC
+   * `assertChannelAccess` alone would accept leaving a PUBLIC, PRIVATE or
+   * ROLE_GATED channel the caller can read, so the type dispatch below is what
+   * rejects those.
+   *
+   * The Group-DM removal goes through the `leave_group_dm` RPC
    * (`channelRepo.leaveGroupDm`), not a read-then-write `update()`: two
    * members leaving at nearly the same time would otherwise each compute
    * their target `member_ids` from the same stale snapshot, and whichever
@@ -507,7 +603,7 @@ export class ChatService {
    * (`/diff-review` caught this in the first pass — see the RPC's migration
    * comment for why the SQL-side `array_remove` is what makes it safe).
    */
-  async leaveGroupDm(
+  async leaveChannel(
     channelId: string,
     chapterId: string,
     userId: string,
@@ -517,8 +613,25 @@ export class ChatService {
       chapterId,
       userId,
     );
+
+    if (channel.type === 'DM') {
+      const receipt = await this.readReceiptRepo.hideDirectMessage(
+        channelId,
+        chapterId,
+        userId,
+      );
+      if (!receipt) {
+        // Lost a race with a concurrent delete — `assertChannelAccess` proved
+        // this row existed and was a DM a moment ago, and a type never changes.
+        throw new NotFoundException('Channel not found');
+      }
+      // No cache eviction: the push worker's cached row is unchanged, and a
+      // hidden DM still notifies — a new message is what brings it back.
+      return;
+    }
+
     if (channel.type !== 'GROUP_DM') {
-      throw new BadRequestException('Only a Group DM can be left');
+      throw new BadRequestException('Only a direct message can be left');
     }
 
     const updated = await this.channelRepo.leaveGroupDm(
@@ -1755,12 +1868,29 @@ export class ChatService {
     const rows = await this.readReceiptRepo.getUnreadCounts(chapterId, userId);
     if (rows.length === 0) return [];
 
-    const accessible = await this.channelAccess.filterAccessibleChannelIds(
-      chapterId,
-      userId,
-      rows.map((row) => row.channel_id),
+    // No "has a DM" guard on the hidden lookup, unlike `getChannelList`: this
+    // read never loads channel types (`filterAccessibleChannelIds` returns
+    // ids), so a guard would have to wait for the access check and serialize
+    // the two on the most-polled chat read. The RPC is cheap for a member who
+    // hid nothing: it starts from their own receipts with `hidden_at` set.
+    const [accessible, hidden] = await Promise.all([
+      this.channelAccess.filterAccessibleChannelIds(
+        chapterId,
+        userId,
+        rows.map((row) => row.channel_id),
+      ),
+      this.findHiddenChannelIds(chapterId, userId),
+    ]);
+    // A DM the caller hid (#2303) has no row on screen to open, so a count on
+    // it would light the app badge with nothing to clear it from. The hide
+    // marks the thread read, and anything that makes it unread again also
+    // brings it back, with one exception: a member the caller has blocked
+    // can still post into it (a block withholds, it never refuses), and that
+    // count is exactly the one that must not surface here. A missing row
+    // reads as fully read on both clients.
+    return rows.filter(
+      (row) => accessible.has(row.channel_id) && !hidden.has(row.channel_id),
     );
-    return rows.filter((row) => accessible.has(row.channel_id));
   }
 
   // ── File Upload ─────────────────────────────────────────────────────

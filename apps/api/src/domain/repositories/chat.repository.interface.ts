@@ -216,6 +216,26 @@ export interface IChannelReadReceiptRepository {
     chapterId: string,
     userId: string,
   ): Promise<ChannelUnreadCount[]>;
+  /**
+   * Hide a 1:1 DM from one member's own list (#2303) and mark it read, through
+   * the `hide_direct_message` RPC. Returns `null` when nothing matched: the
+   * channel is gone, in another chapter, or not a `DM`.
+   */
+  hideDirectMessage(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelReadReceipt | null>;
+  /**
+   * Clear a hide outright — the member opened the DM again themselves. A no-op
+   * when there is no receipt, or nothing is hidden.
+   */
+  unhideChannel(channelId: string, userId: string): Promise<void>;
+  /**
+   * The chapter's channels this member has hidden and nothing has resurfaced
+   * since — see `get_hidden_channel_ids` for what resurfaces one.
+   */
+  findHiddenChannelIds(chapterId: string, userId: string): Promise<Set<string>>;
 }
 
 /**

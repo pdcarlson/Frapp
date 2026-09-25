@@ -3,6 +3,7 @@ import {
   displayChannelName,
   indexUnread,
   isDirectChannel,
+  listedChannels,
   selectChannels,
   selectPostCapability,
 } from "./channel-list";
@@ -43,7 +44,15 @@ describe("selectChannels", () => {
           extra: "ignored",
         },
       ]),
-    ).toEqual([{ id: "c1", name: "general", type: "PUBLIC", member_ids: [] }]);
+    ).toEqual([
+      {
+        id: "c1",
+        name: "general",
+        type: "PUBLIC",
+        member_ids: [],
+        hidden: false,
+      },
+    ]);
   });
 
   it("normalizes member_ids so no consumer needs a null check", () => {
@@ -54,7 +63,13 @@ describe("selectChannels", () => {
         { id: "c1", name: DM_NAME, type: "DM", member_ids: [VIEWER, OTHER] },
       ]),
     ).toEqual([
-      { id: "c1", name: DM_NAME, type: "DM", member_ids: [VIEWER, OTHER] },
+      {
+        id: "c1",
+        name: DM_NAME,
+        type: "DM",
+        member_ids: [VIEWER, OTHER],
+        hidden: false,
+      },
     ]);
   });
 
@@ -69,13 +84,25 @@ describe("selectChannels", () => {
         },
       ]),
     ).toEqual([
-      { id: "c1", name: "general", type: "PUBLIC", member_ids: [VIEWER] },
+      {
+        id: "c1",
+        name: "general",
+        type: "PUBLIC",
+        member_ids: [VIEWER],
+        hidden: false,
+      },
     ]);
   });
 
   it("defaults a missing type to PUBLIC rather than dropping the row", () => {
     expect(selectChannels([{ id: "c1", name: "general" }])).toEqual([
-      { id: "c1", name: "general", type: "PUBLIC", member_ids: [] },
+      {
+        id: "c1",
+        name: "general",
+        type: "PUBLIC",
+        member_ids: [],
+        hidden: false,
+      },
     ]);
   });
 
@@ -89,7 +116,24 @@ describe("selectChannels", () => {
         "not a row",
         { id: "ok", name: "kept", type: "PUBLIC" },
       ]),
-    ).toEqual([{ id: "ok", name: "kept", type: "PUBLIC", member_ids: [] }]);
+    ).toEqual([
+      { id: "ok", name: "kept", type: "PUBLIC", member_ids: [], hidden: false },
+    ]);
+  });
+
+  // #2303: the server keeps a hidden DM in the payload, flagged.
+  it("carries the hidden flag, and reads anything but exactly true as not hidden", () => {
+    expect(
+      selectChannels([
+        { id: "a", name: DM_NAME, type: "DM", hidden: true },
+        { id: "b", name: DM_NAME, type: "DM", hidden: "true" },
+        { id: "c", name: "general", type: "PUBLIC" },
+      ]).map((channel) => [channel.id, channel.hidden]),
+    ).toEqual([
+      ["a", true],
+      ["b", false],
+      ["c", false],
+    ]);
   });
 
   it("survives a non-array payload", () => {
@@ -106,12 +150,24 @@ describe("isDirectChannel", () => {
 
     for (const type of direct) {
       expect(
-        isDirectChannel({ id: "x", name: "n", type, member_ids: [] }),
+        isDirectChannel({
+          id: "x",
+          name: "n",
+          type,
+          member_ids: [],
+          hidden: false,
+        }),
       ).toBe(true);
     }
     for (const type of chapter) {
       expect(
-        isDirectChannel({ id: "x", name: "n", type, member_ids: [] }),
+        isDirectChannel({
+          id: "x",
+          name: "n",
+          type,
+          member_ids: [],
+          hidden: false,
+        }),
       ).toBe(false);
     }
   });
@@ -121,7 +177,13 @@ describe("displayChannelName", () => {
   it("resolves a 1:1 DM to the other participant's name", () => {
     expect(
       displayChannelName(
-        { id: "c1", name: DM_NAME, type: "DM", member_ids: [VIEWER, OTHER] },
+        {
+          id: "c1",
+          name: DM_NAME,
+          type: "DM",
+          member_ids: [VIEWER, OTHER],
+          hidden: false,
+        },
         VIEWER,
         NAMES,
       ),
@@ -136,6 +198,7 @@ describe("displayChannelName", () => {
           name: DM_NAME,
           type: "DM",
           member_ids: [VIEWER, "unknown-user"],
+          hidden: false,
         },
         VIEWER,
         NAMES,
@@ -151,6 +214,7 @@ describe("displayChannelName", () => {
           name: "group-dm-1755300000000",
           type: "GROUP_DM",
           member_ids: [VIEWER],
+          hidden: false,
         },
         VIEWER,
         NAMES,
@@ -166,6 +230,7 @@ describe("displayChannelName", () => {
           name: "Exec board",
           type: "GROUP_DM",
           member_ids: [VIEWER, OTHER],
+          hidden: false,
         },
         VIEWER,
         NAMES,
@@ -178,7 +243,13 @@ describe("displayChannelName", () => {
     // public channel someone called `dm-something` keeps its name.
     expect(
       displayChannelName(
-        { id: "c1", name: DM_NAME, type: "PUBLIC", member_ids: [] },
+        {
+          id: "c1",
+          name: DM_NAME,
+          type: "PUBLIC",
+          member_ids: [],
+          hidden: false,
+        },
         VIEWER,
         NAMES,
       ),
@@ -246,5 +317,20 @@ describe("indexUnread", () => {
 
   it("returns an empty index for no rows", () => {
     expect(indexUnread([])).toEqual({});
+  });
+});
+
+describe("listedChannels", () => {
+  it("leaves out only the DMs the member hid, keeping order", () => {
+    const rows = selectChannels([
+      { id: "general", name: "general", type: "PUBLIC" },
+      { id: "dm-hidden", name: DM_NAME, type: "DM", hidden: true },
+      { id: "dm-shown", name: DM_NAME, type: "DM", hidden: false },
+    ]);
+
+    expect(listedChannels(rows).map((channel) => channel.id)).toEqual([
+      "general",
+      "dm-shown",
+    ]);
   });
 });

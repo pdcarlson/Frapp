@@ -177,6 +177,9 @@ describe('Chat hot path (e2e)', () => {
   const readReceiptRepoMock: jest.Mocked<IChannelReadReceiptRepository> = {
     upsert: jest.fn(),
     getUnreadCounts: jest.fn(),
+    hideDirectMessage: jest.fn(),
+    unhideChannel: jest.fn(),
+    findHiddenChannelIds: jest.fn(),
   };
   const storageProviderMock: jest.Mocked<IStorageProvider> = {
     getSignedUploadUrl: jest.fn(),
@@ -296,6 +299,7 @@ describe('Chat hot path (e2e)', () => {
     attachmentRepoMock.createMany.mockResolvedValue([]);
     attachmentRepoMock.findByMessage.mockResolvedValue([]);
     readReceiptRepoMock.getUnreadCounts.mockResolvedValue([]);
+    readReceiptRepoMock.findHiddenChannelIds.mockResolvedValue(new Set());
     chatNotificationPrefsMock.findChannelPreferencesForUser.mockResolvedValue(
       [],
     );
@@ -472,6 +476,86 @@ describe('Chat hot path (e2e)', () => {
       message_id: targetMessage.id,
       user_id: 'user-1',
       emoji: '🎉',
+    });
+  });
+
+  // #2303, through the real controller, guards and pipes: the route a client
+  // calls to hide a 1:1 DM, and the list read that reports it.
+  describe('hiding a 1:1 DM', () => {
+    const dm: ChatChannel = {
+      ...generalChannel,
+      id: 'chan-dm',
+      name: 'dm-user-1-user-2',
+      type: 'DM',
+      member_ids: ['user-1', 'user-2'],
+    };
+
+    it('POST /channels/:id/leave hides it for the caller and touches no shared row', async () => {
+      channelRepoMock.findById.mockResolvedValue(dm);
+      readReceiptRepoMock.hideDirectMessage.mockResolvedValue({
+        id: 'receipt-1',
+        channel_id: dm.id,
+        user_id: 'user-1',
+        last_read_at: '2026-09-25T20:00:00.000Z',
+        hidden_at: '2026-09-25T20:00:00.000Z',
+        updated_at: '2026-09-25T20:00:00.000Z',
+      });
+
+      const response = await request(app.getHttpServer())
+        .post(`${V1}/channels/${dm.id}/leave`)
+        .set('authorization', 'Bearer token')
+        .set('x-chapter-id', 'chapter-1')
+        .expect(201);
+
+      expect(response.body).toEqual({ success: true });
+      expect(readReceiptRepoMock.hideDirectMessage).toHaveBeenCalledWith(
+        dm.id,
+        'chapter-1',
+        'user-1',
+      );
+      expect(channelRepoMock.leaveGroupDm).not.toHaveBeenCalled();
+      expect(channelRepoMock.update).not.toHaveBeenCalled();
+      expect(messageRepoMock.update).not.toHaveBeenCalled();
+    });
+
+    it('GET /channels keeps a hidden DM in the response, flagged hidden', async () => {
+      channelRepoMock.findByChapter.mockResolvedValue([generalChannel, dm]);
+      readReceiptRepoMock.findHiddenChannelIds.mockResolvedValue(
+        new Set([dm.id]),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`${V1}/channels`)
+        .set('authorization', 'Bearer token')
+        .set('x-chapter-id', 'chapter-1')
+        .expect(200);
+
+      expect(
+        (response.body as { id: string; hidden: boolean }[]).map((row) => [
+          row.id,
+          row.hidden,
+        ]),
+      ).toEqual([
+        [generalChannel.id, false],
+        [dm.id, true],
+      ]);
+    });
+
+    it('POST /channels/dm clears the opener’s own hide', async () => {
+      channelRepoMock.findDm.mockResolvedValue(dm);
+      readReceiptRepoMock.unhideChannel.mockResolvedValue(undefined);
+
+      await request(app.getHttpServer())
+        .post(`${V1}/channels/dm`)
+        .set('authorization', 'Bearer token')
+        .set('x-chapter-id', 'chapter-1')
+        .send({ member_id: '22222222-2222-4222-8222-222222222222' })
+        .expect(201);
+
+      expect(readReceiptRepoMock.unhideChannel).toHaveBeenCalledWith(
+        dm.id,
+        'user-1',
+      );
     });
   });
 });

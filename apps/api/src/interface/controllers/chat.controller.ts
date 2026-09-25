@@ -77,7 +77,7 @@ export class ChatController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.getChannels(chapterId, userId);
+    return this.chatService.getChannelList(chapterId, userId);
   }
 
   // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
@@ -226,10 +226,10 @@ export class ChatController {
     @CurrentUser('id') userId: string,
     @Body() dto: CreateDmDto,
   ) {
-    return this.chatService.getOrCreateDm({
-      chapter_id: chapterId,
-      member_ids: [userId, dto.member_id],
-    });
+    return this.chatService.getOrCreateDm(
+      { chapter_id: chapterId, member_ids: [userId, dto.member_id] },
+      userId,
+    );
   }
 
   @Post('group-dm')
@@ -246,17 +246,24 @@ export class ChatController {
   /**
    * No extra `@RequirePermissions`: same reasoning as `markRead` below — a
    * member is leaving a channel they can already read, and the authorization
-   * that matters (Group DM membership) is `assertChannelAccess` in the
-   * service, not a chapter-wide permission.
+   * that matters (DM membership) is `assertChannelAccess` in the service, not
+   * a chapter-wide permission.
+   *
+   * The handler keeps its `leaveGroupDm` name because the generated contract's
+   * `operationId` derives from it, and renaming an operation breaks every
+   * client generated against the old one. What it does now depends on the
+   * channel type: see `ChatService.leaveChannel`.
    */
   @Post(':id/leave')
-  @ApiOperation({ summary: 'Leave a Group DM' })
+  @ApiOperation({
+    summary: 'Leave a Group DM, or hide a 1-on-1 DM from your own list',
+  })
   async leaveGroupDm(
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    await this.chatService.leaveGroupDm(channelId, chapterId, userId);
+    await this.chatService.leaveChannel(channelId, chapterId, userId);
     return { success: true };
   }
 

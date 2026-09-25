@@ -52,4 +52,40 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
       mention_count: Number(row.mention_count),
     }));
   }
+
+  async hideDirectMessage(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelReadReceipt | null> {
+    const { data, error } = await this.supabase.rpc('hide_direct_message', {
+      p_channel_id: channelId,
+      p_chapter_id: chapterId,
+      p_user_id: userId,
+    });
+    if (error) throw error;
+    return data?.[0] ?? null;
+  }
+
+  async unhideChannel(channelId: string, userId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('channel_read_receipts')
+      .update({ hidden_at: null })
+      .eq('channel_id', channelId)
+      .eq('user_id', userId)
+      .not('hidden_at', 'is', null);
+    if (error) throw error;
+  }
+
+  async findHiddenChannelIds(
+    chapterId: string,
+    userId: string,
+  ): Promise<Set<string>> {
+    const { data, error } = await this.supabase.rpc('get_hidden_channel_ids', {
+      p_chapter_id: chapterId,
+      p_user_id: userId,
+    });
+    if (error) throw error;
+    return new Set((data ?? []).map((row) => row.channel_id));
+  }
 }

@@ -970,7 +970,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Leave a Group DM */
+        /** Leave a Group DM, or hide a 1-on-1 DM from your own list */
         post: operations["ChatController_leaveGroupDm_v1"];
         delete?: never;
         options?: never;

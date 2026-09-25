@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -9,9 +9,14 @@ import {
 } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  canHideConversation,
+  HIDDEN_CONVERSATIONS_LABEL,
+  otherMemberId,
   useChannelUnreadCounts,
+  useGetOrCreateDm,
   useChannels,
   useEvents,
+  useLeaveChannel,
   useMemberDisplayNames,
   useTasks,
   useViewerUserId,
@@ -26,10 +31,13 @@ import { isAskAvailable } from "@/lib/ask/flag";
 import {
   displayChannelName,
   indexUnread,
+  hiddenChannels,
   isDirectChannel,
+  listedChannels,
   selectChannels,
   type ChannelSummary,
 } from "@/lib/chat/channel-list";
+import { confirmHideConversation } from "@/lib/chat/hide-conversation-prompt";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -72,10 +80,19 @@ export default function ChatHomeScreen() {
   const viewerId = useViewerUserId();
   const { byId: memberNames } = useMemberDisplayNames();
 
-  const channels = useMemo(
+  const leaveChannel = useLeaveChannel();
+  const reopenDm = useGetOrCreateDm();
+  const [showHidden, setShowHidden] = useState(false);
+
+  // A DM the member hid (#2303) is still in the payload, so a thread opened by
+  // id keeps resolving. The main list leaves it out; the collapsed Hidden
+  // conversations group at the end is the way back to it.
+  const allChannels = useMemo(
     () => selectChannels(channelsQuery.data),
     [channelsQuery.data],
   );
+  const channels = useMemo(() => listedChannels(allChannels), [allChannels]);
+  const hidden = useMemo(() => hiddenChannels(allChannels), [allChannels]);
   const unread = useMemo(
     () => indexUnread(unreadQuery.data ?? []),
     [unreadQuery.data],
@@ -91,16 +108,39 @@ export default function ChatHomeScreen() {
     router.push({ pathname: "/chat-thread", params: { channelId } });
   }
 
+  /**
+   * Opening a hidden DM from its group is "opening it again yourself", which
+   * is what clears a hide: `POST /v1/channels/dm` with the other member does it
+   * server-side, and its refetch moves the row back into the list. The thread
+   * opens either way — it is readable while hidden — so a failed unhide costs
+   * the member nothing but the row staying in the group.
+   */
+  function reopenHidden(channel: ChannelSummary) {
+    const memberId = otherMemberId(channel, viewerId);
+    if (memberId) reopenDm.mutate({ member_id: memberId });
+    openChannel(channel.id);
+  }
+
   function renderChannel(channel: ChannelSummary) {
     const counts = unread[channel.id];
+    const name = displayChannelName(channel, viewerId, memberNames);
     return (
       <ChannelRow
         key={channel.id}
-        name={displayChannelName(channel, viewerId, memberNames)}
+        name={name}
         isDirect={isDirectChannel(channel)}
         unreadCount={counts?.unread ?? 0}
         mentionCount={counts?.mentions ?? 0}
         onPress={() => openChannel(channel.id)}
+        onHide={
+          canHideConversation(channel)
+            ? () =>
+                confirmHideConversation({
+                  name,
+                  run: () => leaveChannel.mutateAsync(channel.id),
+                })
+            : undefined
+        }
       />
     );
   }
@@ -172,7 +212,7 @@ export default function ChatHomeScreen() {
             </Text>
           </Pressable>
         </View>
-      ) : channels.length === 0 ? (
+      ) : allChannels.length === 0 ? (
         <View style={styles.stateBlock}>
           <Text style={styles.stateTitle}>No channels yet</Text>
           <Text style={styles.stateBody}>
@@ -199,6 +239,38 @@ export default function ChatHomeScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>DIRECT</Text>
               {directChannels.map(renderChannel)}
+            </View>
+          ) : null}
+
+          {hidden.length > 0 ? (
+            <View style={styles.section}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showHidden }}
+                onPress={() => setShowHidden((open) => !open)}
+                style={({ pressed }) => [
+                  styles.hiddenToggle,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={styles.sectionLabel}>
+                  {`${HIDDEN_CONVERSATIONS_LABEL} (${hidden.length})`}
+                </Text>
+              </Pressable>
+              {showHidden
+                ? hidden.map((channel) => (
+                    <ChannelRow
+                      key={channel.id}
+                      name={displayChannelName(channel, viewerId, memberNames)}
+                      isDirect
+                      // A hidden DM carries no count (`GET /v1/channels/unread`
+                      // leaves it out), so there is no badge to draw.
+                      unreadCount={0}
+                      mentionCount={0}
+                      onPress={() => reopenHidden(channel)}
+                    />
+                  ))
+                : null}
             </View>
           ) : null}
         </>
@@ -237,6 +309,10 @@ function createStyles(tokens: SignetTokens) {
     },
     pressed: {
       opacity: 0.7,
+    },
+    hiddenToggle: {
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
     },
     unreadWarning: {
       ...typeRole(tokens.typography.role.caption),

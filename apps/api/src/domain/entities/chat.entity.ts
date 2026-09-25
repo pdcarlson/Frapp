@@ -130,6 +130,17 @@ export interface ChatChannel {
  */
 export type ChatChannelView = ChatChannel & { can_post: boolean };
 
+/**
+ * A row of `GET /v1/channels`: the view plus whether this caller has hidden it
+ * from their own list (#2303, only ever `true` on a 1:1 DM).
+ *
+ * The row is still returned when hidden, and clients leave it out of the list
+ * they render. Dropping it server-side would break every jump that resolves a
+ * channel id against this list (a `?channel=` deep link, a search hit, a
+ * bookmark), which would then read a readable DM as "not found".
+ */
+export type ChatChannelListItem = ChatChannelView & { hidden: boolean };
+
 export interface ChatMessage {
   id: string;
   channel_id: string;
@@ -312,6 +323,13 @@ export interface ChannelReadReceipt {
   channel_id: string;
   user_id: string;
   last_read_at: string;
+  /**
+   * When this member hid the channel (a 1:1 DM) from their own list, or `null`
+   * (#2303). Not "is hidden": a message newer than this, from a sender the
+   * member has not blocked, resurfaces the thread without clearing the column.
+   * `get_hidden_channel_ids` is the one reader that decides.
+   */
+  hidden_at: string | null;
   updated_at: string;
 }
 

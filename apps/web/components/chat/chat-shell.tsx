@@ -9,7 +9,16 @@ import {
 } from "./chat-glyphs";
 import { EmptyState, ErrorState } from "@/components/shared/async-states";
 import {
+  canHideConversation,
   directChannelDisplayName,
+  HIDE_CONVERSATION_CONFIRM_ACTION,
+  HIDE_CONVERSATION_CONFIRM_BODY,
+  HIDE_CONVERSATION_FAILED_BODY,
+  HIDE_CONVERSATION_FAILED_TITLE,
+  hideConversationConfirmTitle,
+  otherMemberId,
+  useGetOrCreateDm,
+  useLeaveChannel,
   useChannelNotificationPreferences,
   useChannelUnreadCounts,
   useChannels,
@@ -569,8 +578,63 @@ export function ChatShell({
     ? setNotificationLevel.variables?.channelId
     : undefined;
 
-  // Opening a channel stamps the read cursor — the only thing that moves it, and
-  // the only thing that clears the badges above. Without it the rail lights up
+  // Hide conversation (#2303).
+  //
+  // Each hide awaits its own `mutateAsync` promise rather than passing
+  // callbacks to `mutate`. The mutation is one instance for the whole shell,
+  // and TanStack v5 runs per-call callbacks only for the latest call, so a
+  // second hide confirmed while the first was in flight would drop the first
+  // one's selection reset and its failure. A failure toasts at once: a hide
+  // can start from the rail on a DM that is not open, where no header line
+  // would ever be seen.
+  const leaveChannelAsync = useLeaveChannel().mutateAsync;
+  const hideConversation = useCallback(
+    (channelId: string) => {
+      leaveChannelAsync(channelId).then(
+        // The hidden DM stays in `channels` (flagged), so without this the
+        // selection would keep it open and on the rail. Only if the member
+        // is still on it: they may have moved on while the write was out.
+        () =>
+          setSelectedChannelId((current) =>
+            current === channelId ? null : current,
+          ),
+        () =>
+          toast({
+            title: HIDE_CONVERSATION_FAILED_TITLE,
+            description: HIDE_CONVERSATION_FAILED_BODY,
+          }),
+      );
+    },
+    [leaveChannelAsync, toast],
+  );
+  // The rail's Hide asks first, in the shell's own dialog; the header menu's
+  // asks in its panel. Both land in `hideConversation`.
+  const hideFromRail = useCallback(
+    (target: ChatChannel) => {
+      void (async () => {
+        const confirmed = await confirm({
+          title: hideConversationConfirmTitle(
+            channelNameFor(target.id) ?? target.name,
+          ),
+          description: HIDE_CONVERSATION_CONFIRM_BODY,
+          confirmLabel: HIDE_CONVERSATION_CONFIRM_ACTION,
+          // Not destructive: nothing is deleted, and the body says so.
+          tone: "default",
+        });
+        if (confirmed) hideConversation(target.id);
+      })();
+    },
+    [confirm, channelNameFor, hideConversation],
+  );
+  // Picking a DM from the rail's Hidden conversations group is opening it
+  // again yourself, which is what clears a hide: `POST /v1/channels/dm` with
+  // the other member does it server-side, and its refetch moves the row back.
+  // The thread opens at once either way, since a hidden DM stays readable.
+  const reopenDm = useGetOrCreateDm();
+
+  // Opening a channel stamps the read cursor, and so does hiding a DM (#2303:
+  // a hidden row must leave no badge). Those are the only things that move
+  // it, and the only things that clear the badges above. Without it the rail lights up
   // on first load and never goes out, which is worse than the dead badge this
   // slice replaced: it would show every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
@@ -1186,7 +1250,12 @@ export function ChatShell({
               categories={categories}
               unreadByChannelId={unreadByChannelId}
               activeChannelId={activeChannelId}
+              onHide={hideFromRail}
               onPick={(ch) => {
+                if (ch.hidden) {
+                  const memberId = otherMemberId(ch, userId);
+                  if (memberId) reopenDm.mutate({ member_id: memberId });
+                }
                 setSelectedChannelId(ch.id);
                 // Below `lg` the list and the thread are never both on screen,
                 // so picking has to navigate. Inert at `lg` and up.
@@ -1326,6 +1395,14 @@ export function ChatShell({
                   level,
                 });
               }}
+              hideConversation={
+                activeChannel && canHideConversation(activeChannel)
+                  ? {
+                      name: activeChannelName,
+                      onHide: () => hideConversation(activeChannel.id),
+                    }
+                  : undefined
+              }
             />
           </div>
         </header>

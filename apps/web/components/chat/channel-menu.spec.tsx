@@ -304,3 +304,49 @@ describe("ChannelMenu (#2142)", () => {
     expect(document.body).not.toHaveFocus();
   });
 });
+
+// #2303: the fifth row, on a 1:1 DM only; its panel is the confirmation.
+describe("ChannelMenu hide conversation", () => {
+  it("offers no Hide row unless the caller passes one", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await openMenu(user);
+
+    expect(
+      screen.queryByRole("button", { name: "Hide conversation" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("confirms before hiding, naming the member, then closes", async () => {
+    const user = userEvent.setup();
+    const onHide = vi.fn();
+    renderMenu({ hideConversation: { name: "Alice Chen", onHide } });
+    await openMenu(user);
+
+    await user.click(screen.getByRole("button", { name: "Hide conversation" }));
+    expect(onHide).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Hide your conversation with Alice Chen?"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/nothing in it is deleted/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Hide" }));
+    expect(onHide).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByText("Hide your conversation with Alice Chen?"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("backs out without hiding", async () => {
+    const user = userEvent.setup();
+    const onHide = vi.fn();
+    renderMenu({ hideConversation: { name: "Alice Chen", onHide } });
+    await openMenu(user);
+
+    await user.click(screen.getByRole("button", { name: "Hide conversation" }));
+    await user.click(
+      screen.getByRole("button", { name: "Back to channel menu" }),
+    );
+    expect(onHide).not.toHaveBeenCalled();
+  });
+});

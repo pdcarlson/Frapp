@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import {
   ChannelList,
@@ -38,11 +38,12 @@ function renderList(
   channels: ChatChannel[],
   unreadByChannelId?: Map<string, ChannelUnread>,
   categories?: ChannelCategory[],
+  activeChannelId: string | null = null,
 ) {
   return render(
     <ChannelList
       channels={channels}
-      activeChannelId={null}
+      activeChannelId={activeChannelId}
       viewerId={VIEWER}
       memberNames={NAMES}
       unreadByChannelId={unreadByChannelId}
@@ -388,5 +389,100 @@ describe("ChannelList unread badges", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     // No numeric badge text should render either.
     expect(screen.queryByText(/^\d+$/)).not.toBeInTheDocument();
+  });
+});
+
+// #2303: a hidden DM stays in the payload so jumps into it resolve; the rail
+// is where it is left out.
+describe("ChannelList hidden conversations", () => {
+  const hiddenDm: ChatChannel = { ...dm, hidden: true };
+
+  it("leaves a DM the member hid off the rail", () => {
+    const { container } = renderList([general, hiddenDm]);
+
+    expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument();
+    expect(sectionLabels(container)).not.toContain("Direct messages");
+  });
+
+  it("keeps it while it is the open channel, so the open row is still marked", () => {
+    renderList([general, hiddenDm], undefined, undefined, hiddenDm.id);
+
+    expect(
+      screen.getByRole("button", { name: /Alice Chen/ }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+});
+
+
+describe("ChannelList hide and reopen (#2303)", () => {
+  const hiddenDm: ChatChannel = { ...dm, hidden: true };
+
+  function renderWith(
+    channels: ChatChannel[],
+    extra: { onPick?: () => void; onHide?: () => void } = {},
+  ) {
+    return render(
+      <ChannelList
+        channels={channels}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={extra.onPick ?? vi.fn()}
+        onHide={extra.onHide}
+      />,
+    );
+  }
+
+  it("offers Hide on a 1:1 DM row only, and hands the row to the caller", () => {
+    const onHide = vi.fn();
+    const group: ChatChannel = {
+      id: "c-group",
+      name: "Exec board",
+      type: "GROUP_DM",
+      member_ids: [VIEWER, OTHER, THIRD],
+    };
+    renderWith([general, dm, group], { onHide });
+
+    const hide = screen.getAllByRole("button", { name: /^Hide conversation/ });
+    expect(hide).toHaveLength(1);
+    expect(hide[0]).toHaveAccessibleName("Hide conversation with Alice Chen");
+    // Invisible until hover or keyboard focus, and it must not take a tap
+    // meant for the row's badge while invisible (touch never hovers).
+    expect(hide[0]!.className).toMatch(/(^|\s)pointer-events-none(\s|$)/);
+    expect(hide[0]!.className).toMatch(/group-hover:pointer-events-auto/);
+    fireEvent.click(hide[0]!);
+    expect(onHide).toHaveBeenCalledWith(dm);
+  });
+
+  it("offers no Hide when the caller passes none", () => {
+    renderWith([general, dm]);
+
+    expect(
+      screen.queryByRole("button", { name: /^Hide conversation/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps hidden DMs in a collapsed group that picks them", () => {
+    const onPick = vi.fn();
+    renderWith([general, hiddenDm], { onPick });
+
+    const toggle = screen.getByRole("button", {
+      name: "Hidden conversations (1)",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(screen.getByRole("button", { name: /Alice Chen/ }));
+    expect(onPick).toHaveBeenCalledWith(hiddenDm);
+  });
+
+  it("draws no group when nothing is hidden", () => {
+    renderWith([general, dm]);
+
+    expect(
+      screen.queryByRole("button", { name: /^Hidden conversations/ }),
+    ).not.toBeInTheDocument();
   });
 });

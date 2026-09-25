@@ -1544,7 +1544,7 @@ After any rollback event:
   DROP FUNCTION IF EXISTS leave_group_dm(uuid, uuid, uuid);
   ALTER TABLE chat_channels DROP COLUMN IF EXISTS archived_at;
   ```
-* **Note**: Additive only — a new nullable `archived_at` column plus a new RPC, no changes to any existing column or row. The API calls the RPC from `SupabaseChatChannelRepository.leaveGroupDm`, so a forward-fix (rather than a bare drop) is required to keep `POST /v1/channels/:id/leave` working: deploy an API revision that stops offering the leave endpoint before dropping the function — otherwise every leave request 500s. Drop the function before the column (the function's body references it). **Data loss on drop**: any channel already archived loses that state — its `archived_at` timestamp is discarded, and it silently reappears in every member's active channel list (`ChannelAccessService.filterAccessibleChannels`/`filterAccessibleChannelIds` both key off this column) even though its membership was already reduced to <= 1 by a completed leave. The membership reduction itself (`member_ids`) is untouched by this rollback and is not restored — a Group DM that shrank to one member before the rollback stays at one member after it, just no longer marked archived.
+* **Note**: Additive only — a new nullable `archived_at` column plus a new RPC, no changes to any existing column or row. The API calls the RPC from `SupabaseChatChannelRepository.leaveGroupDm`, so a forward-fix (rather than a bare drop) is required to keep `POST /v1/channels/:id/leave` working: deploy an API revision whose `ChatService.leaveChannel` rejects a Group DM (a 400, as it does a chapter channel) before dropping the function — otherwise every Group-DM leave 500s. *(Corrected 2026-09-25: this used to say to stop offering the leave endpoint. Since #2303 the same route also hides a 1:1 DM, through `hide_direct_message`, and removing it would take Hide conversation off both clients. Keep the route and its DM branch.)* Drop the function before the column (the function's body references it). **Data loss on drop**: any channel already archived loses that state — its `archived_at` timestamp is discarded, and it silently reappears in every member's active channel list (`ChannelAccessService.filterAccessibleChannels`/`filterAccessibleChannelIds` both key off this column) even though its membership was already reduced to <= 1 by a completed leave. The membership reduction itself (`member_ids`) is untouched by this rollback and is not restored — a Group DM that shrank to one member before the rollback stays at one member after it, just no longer marked archived.
 
 ## Rollback `idx_point_transactions_chapter_created_at`
 * **Migration**: `20260417120000_point_transactions_chapter_created_at_idx.sql`
@@ -2043,3 +2043,18 @@ drop function if exists public.chat_viewer_has_blocked(uuid, uuid);
 That migration re-creates a policy, so the same PR bumps the entry's `creates` count in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` and sets the entry back to `open`. It also removes the PGlite block-enforcement tier and the two `chat_viewer_has_blocked` landmarks from `scripts/check-pglite-migrations.mjs`, which would fail against the old policy.
 
 **This is a safety regression, not a neutral rollback.** Afterwards a blocker's clients again receive every reaction the blocked member leaves, live as well. Web renders them all, since it has no block list (#2313). Mobile still hides them in every list state, but against its own list, so a ready list that predates a block made on another device shows them until it is re-read. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.
+
+## Rollback hiding a 1:1 DM (20260925200000)
+
+* **Migration**: `20260925200000_chat_hide_direct_message.sql`
+
+A column and two functions (#2303). The column is written only by a member hiding a DM, and dropping it loses exactly that: every hidden DM comes back into its member's list. No message, channel or other receipt field is touched.
+
+**Roll back with a new forward migration, not by hand.** Same rule as [§ Rollback per-user Terms acceptance](#rollback-per-user-terms-acceptance-20260923190000): hand DDL leaves the ledger recording `20260925200000` as applied, so a later re-land would apply nothing. Put the following in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). The API carrying #2303 keeps working against the rolled-back database: the channel list shows every DM, and opening a DM still works, because the service fails open on both reads. Only the hide itself answers 500 until that API is rolled back too.
+
+```sql
+drop function if exists public.get_hidden_channel_ids(uuid, uuid);
+drop function if exists public.hide_direct_message(uuid, uuid, uuid);
+alter table public.channel_read_receipts drop column if exists hidden_at;
+```
+
