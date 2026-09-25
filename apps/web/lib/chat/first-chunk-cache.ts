@@ -20,7 +20,8 @@
  * argument is about *which* keys a persister picks up, and a persister picks up
  * every key by construction.
  *
- * This cache inverts that. It stores three kinds of row, each named explicitly,
+ * This cache inverts that. It stores three kinds of row, each named explicitly
+ * (the third also carries the block list's floor, {@link CachedBlockFloor}),
  * and every row carries the `userId` + `chapterId` it was written under **as
  * part of its primary key**. A read is a lookup at the current scope, so a row
  * written for another member or another chapter is not merely ignored — there
@@ -51,7 +52,7 @@
  *   a partial one seeded there would be a worse bug than the one this fixes.
  *   Nothing here reaches those surfaces; the id is a paint input for chat.
  * - **It is the id the rows beside it are already attributed with.** It is read
- *   in the same transaction as the tails ({@link readFirstChunk}) precisely so
+ *   in the same `Promise.all` as the tails ({@link readFirstChunk}) precisely so
  *   there is no window in which cached rows are painted and the id that says
  *   whose they are has not arrived — which is the window
  *   [#2243](https://github.com/pdcarlson/Frapp/issues/2243) was a bug in.
@@ -225,8 +226,9 @@ export interface CachedChannelTailRow extends FirstChunkScope {
 export const TAIL_ROW_FORMAT = 2;
 
 /**
- * The ids the viewer's last ready block-list read named, written from
- * `useBlockedUserIds` whenever the list reads ready (#2688), and unioned into
+ * The ids the viewer's last ready block-list read named, written by
+ * `useFirstChunkCache` (so only while `/chat` is open) whenever the list reads
+ * ready, this session's confirmed changes included (#2688), and unioned into
  * the web timeline's block state on a cold load until the live list has been
  * read (`use-thread-block-list.ts`).
  *
@@ -243,12 +245,25 @@ export const TAIL_ROW_FORMAT = 2;
  * `readAt`, and a member missing from it proves nothing. Stale in the safe
  * direction only. A member unblocked since, on another device, stays a
  * tombstone (with Unblock) until the live list reads. The residual it cannot
- * close is a block made on another device after the last ready read here: web
- * has no way to know of it until the list reads (#2499).
+ * close is a block made on another device after the last ready read `/chat`
+ * saw: web has no way to know of it until the list reads (#2499).
+ *
+ * **Not aged.** Every other row here stops serving after
+ * {@link FIRST_CHUNK_MAX_AGE_MS}, but the rows this one guards do not age with
+ * it: each merge rewrites a tail with a fresh `cachedAt` and carries each
+ * REST row's old verdict along. A floor that expired while the list stayed
+ * unreadable would un-hide exactly the rows it exists to hide. Its staleness
+ * only ever hides too much, and the next ready read replaces it.
+ *
+ * **A tab on an older bundle can drop it.** Before #2688, `writeViewerId` put
+ * the whole row, so a tab still running that bundle after a deploy deletes the
+ * floor each time it rewrites the viewer id. The schema did not change, so
+ * nothing stops it. It costs the pre-#2688 behavior until this bundle's next
+ * ready read writes the floor again, and ends when that tab closes.
  */
 export interface CachedBlockFloor {
   ids: string[];
-  /** The ready read's `dataUpdatedAt`; aged like every other row here. */
+  /** The ready read's `dataUpdatedAt`. Recorded, never used to expire the floor. */
   readAt: number;
 }
 
@@ -497,12 +512,10 @@ export async function readFirstChunk(
         rows and the floor that classifies them reach React together, so there is
         no pass where a cached row paints against an empty list.
 
-        Aged like everything else. Not gated on the channel list either: like
-        the viewer id, its whole key is the scope.
+        Not aged (see `CachedBlockFloor`), and not gated on the channel list:
+        like the viewer id, its whole key is the scope.
       */
-      blockFloor:
-        scopeRow?.blockFloor &&
-        isFresh({ cachedAt: scopeRow.blockFloor.readAt }, now)
+      blockFloor: scopeRow?.blockFloor
           ? {
               userId: scopeRow.userId,
               chapterId: scopeRow.chapterId,

@@ -64,7 +64,7 @@ import { useViewerUserId } from "@repo/hooks";
 /**
  * The cached `users.id` for the scope currently in effect, or `null`.
  *
- * Published by `ChatProvider`, which reads it off the same Dexie transaction as
+ * Published by `ChatProvider`, which reads it in the same `Promise.all` as
  * the first-chunk rows and disowns it the moment the scope changes
  * (`use-first-chunk-cache.ts`).
  */

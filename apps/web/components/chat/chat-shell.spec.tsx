@@ -174,6 +174,8 @@ const blockListState = vi.hoisted(() => ({
     retry: () => {},
     isRetrying: false,
     isPaused: false,
+    // Read, so no persisted floor would apply (`blockIdsWithFloor`).
+    readAt: 1,
   },
 }));
 

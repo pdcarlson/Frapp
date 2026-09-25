@@ -659,10 +659,13 @@ describe("block-list floor", () => {
     expect((await readFirstChunk(ALICE)).blockFloor?.ids).toEqual([]);
   });
 
-  it("stops serving a floor older than the max age", async () => {
+  it("keeps serving a floor older than the max age, since the tails it guards can be younger", async () => {
+    // Each merge rewrites a tail with a fresh `cachedAt` and keeps its REST
+    // rows' old verdicts, so a floor that aged out during a long list outage
+    // would un-hide the very rows it exists to hide.
     await writeBlockFloor(ALICE, [BLAKE], AT - FIRST_CHUNK_MAX_AGE_MS - 1);
 
-    expect((await readFirstChunk(ALICE)).blockFloor).toBeNull();
+    expect((await readFirstChunk(ALICE)).blockFloor?.ids).toEqual([BLAKE]);
   });
 
   it("is dropped by the prune and by the wipe", async () => {

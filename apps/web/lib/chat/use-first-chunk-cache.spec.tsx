@@ -836,6 +836,42 @@ describe("useFirstChunkCache — block-list floor", () => {
   });
 });
 
+describe("useFirstChunkCache — block-list floor after a failed refetch", () => {
+  it("does not rewrite the floor from a list that read once and is now unavailable", async () => {
+    /*
+      TanStack keeps a failed refetch's `data`, so `readAt` stays nonzero while
+      the list is unavailable, and a confirmed change still moves its ids. The
+      floor must not be rewritten from that: an unblock confirmed during the
+      outage leaves the floor naming the member until a read succeeds.
+    */
+    const client = makeClient();
+    const { rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+    const readAt = Date.now() + 1;
+    blockListResult.current = {
+      status: "ready",
+      ids: new Set(["user-blake"]),
+      unblocked: new Set(),
+      readAt,
+    };
+    rerender();
+    await waitFor(() => expect(writeBlockFloor).toHaveBeenCalledTimes(1));
+
+    // The refetch fails, then an unblock is confirmed during the outage.
+    blockListResult.current = {
+      status: "unavailable",
+      ids: new Set(),
+      unblocked: new Set(["user-blake"]),
+      readAt,
+    };
+    rerender();
+    await waitFor(() => expect(pruneForeignScopes).toHaveBeenCalled());
+
+    expect(writeBlockFloor).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("usePersistedChannelTail", () => {
   it("writes the tail once the timeline settles", async () => {
     /*

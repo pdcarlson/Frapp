@@ -503,12 +503,17 @@ export function useFirstChunkCache(): FirstChunkIdentity {
     for the viewer id: filing the outgoing member's list under the incoming
     member's key would hand that member someone else's blocks, from disk.
 
-    Only a ready read is written. The ids a list holds while unavailable are
-    the last ready read's plus this session's confirmed changes, and the
-    changes are not persisted: a block confirmed here is followed by a re-read,
-    and it is that read's success that writes it. An unblock confirmed while
-    the list stays unreadable leaves the floor naming that member until a read
-    succeeds, which hides too much rather than too little.
+    Only a ready list is written. While it is ready, its ids include this
+    session's confirmed changes, so a confirmed block or unblock changes them
+    and is written at once, still stamped with the last read's `readAt`, ahead
+    of the re-read that follows it. While it is unavailable nothing is written,
+    even though its ids still change with a confirmed change: an unblock
+    confirmed then leaves the floor naming that member until a read succeeds,
+    which hides too much rather than too little.
+
+    Only `/chat` mounts this, so a ready read made elsewhere (`/profile`'s
+    Blocked members card) reaches the floor only if `/chat` opens in the same
+    session, before the query is dropped. That is the residual the spec states.
   */
   const blockList = useBlockedUserIds();
   const isBlockListReady = blockList.status === "ready";

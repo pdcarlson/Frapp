@@ -164,7 +164,7 @@ travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records that arithmet
 
 **Resolved (2026-09-14, later still, [#2249](https://github.com/pdcarlson/Frapp/issues/2249)).** Both
 consequences the #2243 correction below records are closed. The viewer's `users.id` is cached beside
-the first chunk and read in the same Dexie transaction as the rows it attributes
+the first chunk and read in the same `Promise.all` as the rows it attributes
 ([`first-chunk-cache.ts`](../../../apps/web/lib/chat/first-chunk-cache.ts),
 [`viewer-id.tsx`](../../../apps/web/lib/chat/viewer-id.tsx)), so identity no longer waits on
 `GET /v1/users/me` on a warm load. The withhold contract is unchanged: with no cached id and no live
