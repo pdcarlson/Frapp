@@ -15,13 +15,18 @@
  *
  * Takes the structural minimum rather than `ChatChannel`, so the cache module
  * can call it without importing the channel rail's types.
+ *
+ * Never a DM the member hid (#2303): it is still in `GET /v1/channels`, flagged
+ * `hidden`, but landing on it would put back on screen the conversation they
+ * just put away — and hiding the open DM is exactly what sends the shell here.
  */
 export function coldLoadDefaultChannelId(
-  channels: readonly { id: string; name: string }[],
+  channels: readonly { id: string; name: string; hidden?: boolean }[],
 ): string | null {
+  const listed = channels.filter((channel) => !channel.hidden);
   return (
-    channels.find((channel) => channel.name === "general")?.id ??
-    channels[0]?.id ??
+    listed.find((channel) => channel.name === "general")?.id ??
+    listed[0]?.id ??
     null
   );
 }

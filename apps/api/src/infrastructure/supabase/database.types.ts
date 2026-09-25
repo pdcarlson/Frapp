@@ -333,6 +333,29 @@ export interface Database {
         Returns: ChatChannel[];
       };
       /**
+       * `20260925200000` (#2303). Hides a 1:1 DM from `p_user_id`'s own list:
+       * upserts their read receipt with `hidden_at` and `last_read_at` at the
+       * database's `now()`. Empty result set means the row didn't match (wrong
+       * id/chapter, or not a DM).
+       */
+      hide_direct_message: {
+        Args: {
+          p_channel_id: string;
+          p_chapter_id: string;
+          p_user_id: string;
+        };
+        Returns: ChannelReadReceipt[];
+      };
+      /**
+       * `20260925200000` (#2303). The chapter's 1:1 DMs `p_user_id` has hidden
+       * and that no newer, non-deleted message from a sender they have not
+       * blocked has resurfaced.
+       */
+      get_hidden_channel_ids: {
+        Args: { p_chapter_id: string; p_user_id: string };
+        Returns: { channel_id: string }[];
+      };
+      /**
        * `20260901183000` — `returns boolean`. `true` on a successful claim,
        * `false` when the chapter's `needs_president` flag was already clear
        * (race lost to another claimant).

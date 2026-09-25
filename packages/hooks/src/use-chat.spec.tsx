@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   useChannelUnreadCounts,
   useMarkChannelRead,
+  useLeaveChannel,
   useAuthorAvatars,
   useChannelNotificationPreferences,
   useSetChannelNotificationLevel,
@@ -138,6 +139,70 @@ describe("useMarkChannelRead", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
 
+    expect(result.current.error).toEqual(mockError);
+    expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+});
+
+// #2303: the hide lands through the list refetch, since a hidden DM stays in
+// `GET /v1/channels` flagged `hidden` rather than being removed from it.
+describe("useLeaveChannel", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  it("posts to the channel's leave endpoint and waits for the channel refetch", async () => {
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: { success: true }, error: null });
+    let resolveRefetch!: () => void;
+    const invalidateSpy = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveRefetch = resolve;
+          }),
+      );
+
+    const { result } = renderHook(() => useLeaveChannel(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    let settled = false;
+    const done = result.current.mutateAsync("dm-1").then(() => {
+      settled = true;
+    });
+
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(1));
+    expect(mockPost).toHaveBeenCalledWith("/v1/channels/{id}/leave", {
+      params: { path: { id: "dm-1" } },
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] });
+    // Not settled until the list has been re-read, or a caller re-rendering
+    // on resolve would still draw the row it just hid.
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    resolveRefetch();
+    await done;
+    expect(settled).toBe(true);
+  });
+
+  it("surfaces an error without invalidating anything", async () => {
+    const mockError = new Error("leave failed");
+    const mockPost = vi.fn().mockResolvedValue({ data: null, error: mockError });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => useLeaveChannel(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    result.current.mutate("dm-1");
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toEqual(mockError);
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
