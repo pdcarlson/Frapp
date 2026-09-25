@@ -16,8 +16,14 @@ import {
 import { useTapRevealedMessage } from "@/hooks/use-tap-revealed-message";
 import { cn } from "@/lib/utils";
 import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
+import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import { MessageItem } from "./message-item";
+import {
+  tombstoneCanUnblock,
+  type MaskedRefreshState,
+} from "@repo/chat-core/blocks";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
+import type { ThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import { authorGroupingKey, useAuthorAvatars } from "@repo/hooks";
 import { parseInstant } from "@repo/formatting";
 
@@ -208,7 +214,27 @@ export interface MessageTimelineHandle {
 export interface MessageTimelineProps {
   /** Undefined while no channel is selected — avatar resolution just no-ops. */
   channelId: string | undefined;
+  /**
+   * Every cached message, held and tombstoned ones included. What is *drawn*
+   * comes from `blockList.thread`; this is only the lookup a reply quote
+   * classifies its parent from, so a reply can tell "hidden by your block
+   * list" from "not loaded".
+   */
   messages: ChatMessage[];
+  /**
+   * The viewer's block list applied to `messages` (`useThreadBlockList`, #2313).
+   * Required: the timeline draws `blockList.thread.rows` and nothing else, so a
+   * caller cannot render a thread with the list forgotten — that would fail
+   * open on a safety feature. A blocked sender's rows come through as
+   * tombstones, and rows the list cannot vouch for yet are held out entirely.
+   */
+  blockList: Pick<ThreadBlockList, "blockState" | "thread">;
+  /** A tombstone's Unblock: asks, then unblocks the sender. */
+  onUnblock: (userId: string) => void;
+  /** A stale tombstone's Reload: re-runs that sender's post-unblock re-read. */
+  onReloadMasked: (userId: string) => void;
+  /** Each member's post-unblock re-read (`useMaskedRefresh`), for stale tombstones. */
+  maskedRefresh: ReadonlyMap<string, MaskedRefreshState>;
   /**
    * The signed-in member's `users.id`, or `null` while `GET /v1/users/me` has
    * not answered yet.
@@ -277,6 +303,10 @@ export const MessageTimeline = forwardRef<
   {
     channelId,
     messages,
+    blockList,
+    onUnblock,
+    onReloadMasked,
+    maskedRefresh,
     viewerId,
     nameFor,
     isLoading,
@@ -334,10 +364,22 @@ export const MessageTimeline = forwardRef<
     if (readable) markColdLoad(COLD_LOAD_MARKS.channelReadable);
   }, [readable]);
 
+  const { blockState, thread } = blockList;
+
+  // The messages the list lets the timeline draw in full. A tombstone draws no
+  // author, so it asks for no avatar either.
+  const visibleMessages = useMemo(
+    () =>
+      thread.rows
+        .filter((row) => row.visibility === "visible")
+        .map((row) => row.message),
+    [thread.rows],
+  );
+
   // One batched request for every distinct imported-author avatar visible in
   // this window, rather than one per message (#1231). A miss (no avatar, out
   // of chapter, or unsigned) just means that row keeps its initials fallback.
-  const avatars = useAuthorAvatars(channelId, messages);
+  const avatars = useAuthorAvatars(channelId, visibleMessages);
 
   // Which row's action cluster a tap revealed — one id for the whole list, so
   // tapping a second row dismisses the first's, matching the reference
@@ -347,7 +389,9 @@ export const MessageTimeline = forwardRef<
   // Parent lookup for reply quotes (#489), built once per message list rather
   // than scanned per row: the timeline is virtualized but `decorated` is mapped
   // over the whole window, so a `find` inside it would be O(n²) on a long
-  // channel. Only messages that are actually replied to occupy the map.
+  // channel. Built over every cached message, held and tombstoned ones
+  // included, so `MessageItem` can classify a parent the list hides and quote
+  // its placeholder rather than "not loaded" (#2313).
   const byId = useMemo(() => {
     const index = new Map<string, ChatMessage>();
     for (const message of messages) index.set(message.id, message);
@@ -355,16 +399,23 @@ export const MessageTimeline = forwardRef<
   }, [messages]);
 
   // Precompute "showHeader" so we don't recompute per render in the renderer.
+  // Over the rows the list lets through: a held row is not drawn, so it
+  // neither breaks nor joins a group.
   const decorated = useMemo(() => {
-    return messages.map((message, index) => {
-      const prev = messages[index - 1];
+    return thread.rows.map(({ message, visibility }, index) => {
+      const prevRow = thread.rows[index - 1];
+      const prev = prevRow?.message;
       // Keyed, not compared on `sender_id` directly: that column is nullable
       // now, and `null === null` is true in JS — so an imported archive channel
       // where twenty different Discord members spoke in turn would collapse into
       // one group under one name. `authorGroupingKey` namespaces a Signet uuid
       // apart from a source-system id.
+      //
+      // A tombstone draws no author line, so a row after one never groups
+      // under it: its header is what says whose message it is.
       const sameAuthor =
         !!prev &&
+        prevRow.visibility === "visible" &&
         authorGroupingKey(prev) === authorGroupingKey(message) &&
         !prev.is_deleted;
       const within =
@@ -376,13 +427,14 @@ export const MessageTimeline = forwardRef<
         !prev || dayKey(prev.created_at) !== dayKey(message.created_at);
       return {
         message,
+        visibility,
         // A new day always restarts the chrome: a grouped follow-on under a
         // divider would inherit the previous day's author line.
         showHeader: startsDay || !(sameAuthor && within),
         startsDay,
       };
     });
-  }, [messages]);
+  }, [thread.rows]);
 
   useImperativeHandle(
     ref,
@@ -513,7 +565,12 @@ export const MessageTimeline = forwardRef<
       </>
     );
   }
-  if (messages.length === 0) {
+  if (thread.rows.length === 0) {
+    // Counted after the block list, held rows included: a channel whose only
+    // messages are being held is not an empty channel, and saying "Nothing in
+    // this channel yet" over them would be false. `BlockListNotice` above the
+    // timeline says they are held.
+    if (thread.heldCount > 0) return <div className="h-full" />;
     return (
       <EmptyState
         title="Nothing in this channel yet"
@@ -538,42 +595,70 @@ export const MessageTimeline = forwardRef<
                 {dayLabel(entry.message.created_at)}
               </p>
             ) : null}
-            <MessageItem
-              nameFor={nameFor}
-              message={entry.message}
-              avatarUrl={
-                entry.message.author_avatar_path
-                  ? avatars.data?.[entry.message.author_avatar_path]
-                  : undefined
-              }
-              viewerId={viewerId}
-              showHeader={entry.showHeader}
-              onReact={onReact}
-              onUnreact={onUnreact}
-              onReply={onReply}
-              onJumpToParent={onJumpToParent}
-              // The parent, or `null` when it is outside the loaded window.
-              // `MessageItem` decides whether to draw a quote from
-              // `message.reply_to_id`, not from this prop, so `null` and
-              // `undefined` are equivalent to it — the `?? null` is here to say
-              // "looked up and absent" rather than to drive a branch.
-              replyParent={
-                entry.message.reply_to_id
-                  ? (byId.get(entry.message.reply_to_id) ?? null)
-                  : undefined
-              }
-              onRetry={onRetry}
-              onDiscard={onDiscard}
-              onRetryUnconfirmed={onRetryUnconfirmed}
-              onAct={onAct}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
-              onToggleBookmark={onToggleBookmark}
-              canManageChannel={canManageChannel}
-              isTapRevealed={tapRevealed.isRevealed(entry.message)}
-              onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
-            />
+            {entry.visibility === "tombstone" ? (
+              <BlockedMessageTombstone
+                senderName={
+                  entry.message.sender_id
+                    ? nameFor(entry.message.sender_id)
+                    : null
+                }
+                canUnblock={tombstoneCanUnblock(entry.message, blockState)}
+                onUnblock={() => {
+                  if (entry.message.sender_id) {
+                    onUnblock(entry.message.sender_id);
+                  }
+                }}
+                reload={
+                  entry.message.sender_id
+                    ? (maskedRefresh.get(entry.message.sender_id) ?? null)
+                    : null
+                }
+                onReload={() => {
+                  if (entry.message.sender_id) {
+                    onReloadMasked(entry.message.sender_id);
+                  }
+                }}
+                showHeader={entry.showHeader}
+              />
+            ) : (
+              <MessageItem
+                nameFor={nameFor}
+                message={entry.message}
+                blockState={blockState}
+                avatarUrl={
+                  entry.message.author_avatar_path
+                    ? avatars.data?.[entry.message.author_avatar_path]
+                    : undefined
+                }
+                viewerId={viewerId}
+                showHeader={entry.showHeader}
+                onReact={onReact}
+                onUnreact={onUnreact}
+                onReply={onReply}
+                onJumpToParent={onJumpToParent}
+                // The parent, or `null` when it is outside the loaded window.
+                // `MessageItem` decides whether to draw a quote from
+                // `message.reply_to_id`, not from this prop, so `null` and
+                // `undefined` are equivalent to it — the `?? null` is here to say
+                // "looked up and absent" rather than to drive a branch.
+                replyParent={
+                  entry.message.reply_to_id
+                    ? (byId.get(entry.message.reply_to_id) ?? null)
+                    : undefined
+                }
+                onRetry={onRetry}
+                onDiscard={onDiscard}
+                onRetryUnconfirmed={onRetryUnconfirmed}
+                onAct={onAct}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
+                onToggleBookmark={onToggleBookmark}
+                canManageChannel={canManageChannel}
+                isTapRevealed={tapRevealed.isRevealed(entry.message)}
+                onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
+              />
+            )}
           </>
         )}
         computeItemKey={(_, entry) =>

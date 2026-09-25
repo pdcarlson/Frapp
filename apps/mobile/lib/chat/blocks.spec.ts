@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mergeServerRow, emptyCache, selectMessages } from "@repo/chat-core/cache";
+import {
+  mergeServerRow,
+  emptyCache,
+  selectMessages,
+} from "@repo/chat-core/cache";
 import type { ChatMessage, RawChatMessage } from "@repo/chat-core/types";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import {

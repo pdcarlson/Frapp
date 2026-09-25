@@ -1,8 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
-import type { ChatMessage } from "@repo/chat-core/types";
+import {
+  HELD_QUOTE_TEXT,
+  TOMBSTONE_STALE_TEXT,
+  TOMBSTONE_TEXT,
+} from "@repo/chat-core/block-copy";
+import { reactionActionType, type ChatMessage } from "@repo/chat-core/types";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
+import { blockState, timelineBlockProps } from "@/tests/block-list";
 
 /**
  * `react-virtuoso` measures with `ResizeObserver` and renders nothing in jsdom,
@@ -83,6 +89,7 @@ function renderTimeline(
       loadError={null}
       onReact={vi.fn()}
       onUnreact={vi.fn()}
+      {...timelineBlockProps(messages, VIEWER)}
       {...overrides}
     />,
   );
@@ -378,6 +385,7 @@ describe("MessageTimeline identity gate (#2243)", () => {
         channelId="chan-1"
         messages={rows}
         viewerId={null}
+        {...timelineBlockProps(rows, null)}
         nameFor={nameFor}
         isLoading={false}
         loadError={null}
@@ -392,6 +400,7 @@ describe("MessageTimeline identity gate (#2243)", () => {
         channelId="chan-1"
         messages={rows}
         viewerId={VIEWER}
+        {...timelineBlockProps(rows, VIEWER)}
         nameFor={nameFor}
         isLoading={false}
         loadError={null}
@@ -408,5 +417,216 @@ describe("MessageTimeline identity gate (#2243)", () => {
     expect(bubble?.className).toContain("rounded-br-[6px]");
     expect(bubble?.className).not.toContain("border-border");
     expect(screen.queryByText("Member 111111")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The viewer's block list (#2313). `message()` builds a row with no provenance
+ * — what the Realtime echo delivers — unless a case marks it as a REST row the
+ * server evaluated (`_blockEvaluated`).
+ */
+describe("MessageTimeline — the viewer's block list (#2313)", () => {
+  /** What the API's masker writes today — used only to prove nothing reads it. */
+  const SERVER_SENTINEL = "[message from a blocked member]";
+
+  function renderWithList(
+    messages: ChatMessage[],
+    state: ReturnType<typeof blockState>,
+    overrides: Record<string, unknown> = {},
+  ) {
+    return renderTimeline(messages, {
+      ...timelineBlockProps(messages, VIEWER, state),
+      ...overrides,
+    });
+  }
+
+  it("tombstones a blocked member's live message, with nothing they wrote", () => {
+    renderWithList(
+      [message({ id: "m1", content: "you are pathetic", attachment_count: 2 })],
+      blockState("ready", { ids: [ALICE] }),
+    );
+
+    expect(screen.getByText(TOMBSTONE_TEXT)).toBeInTheDocument();
+    expect(screen.queryByText("you are pathetic")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument();
+    // No attachment list mounts, so nothing fetches the blocked member's files.
+    expect(screen.queryByText(/attachment/i)).not.toBeInTheDocument();
+  });
+
+  it("tombstones a server-masked row whatever the list says, without reading its body", () => {
+    renderWithList(
+      [
+        message({
+          id: "m1",
+          content: SERVER_SENTINEL,
+          sender_blocked: true,
+          _blockEvaluated: true,
+        }),
+      ],
+      blockState("unavailable"),
+    );
+
+    expect(screen.getByText(TOMBSTONE_TEXT)).toBeInTheDocument();
+    expect(screen.queryByText(SERVER_SENTINEL)).not.toBeInTheDocument();
+  });
+
+  it("tombstones a blocked member's poll rather than drawing a votable card", () => {
+    renderWithList(
+      [
+        message({
+          id: "m1",
+          kind: "poll",
+          content: "Who is the worst?",
+          payload: { question: "Who is the worst?", options: ["You"] },
+        }),
+      ],
+      blockState("ready", { ids: [ALICE] }),
+    );
+
+    expect(screen.getByText(TOMBSTONE_TEXT)).toBeInTheDocument();
+    expect(screen.queryByText("Who is the worst?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /vote/i })).toBeNull();
+  });
+
+  it("offers Unblock for the sender, and nothing else", async () => {
+    const onUnblock = vi.fn();
+    renderWithList(
+      [message({ id: "m1" })],
+      blockState("ready", { ids: [ALICE] }),
+      { onUnblock },
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Unblock Alice Chen" }),
+    );
+    expect(onUnblock).toHaveBeenCalledWith(ALICE);
+    expect(screen.queryByRole("group", { name: "Message actions" })).toBeNull();
+  });
+
+  it("offers Reload, not Unblock, on a masked copy whose post-unblock re-read failed", async () => {
+    const onReloadMasked = vi.fn();
+    renderWithList(
+      [
+        message({
+          id: "m1",
+          content: SERVER_SENTINEL,
+          sender_blocked: true,
+          _blockEvaluated: true,
+        }),
+      ],
+      blockState("ready", { unblocked: [ALICE] }),
+      { onReloadMasked, maskedRefresh: new Map([[ALICE, "failed"]]) },
+    );
+
+    expect(screen.getByText(TOMBSTONE_STALE_TEXT)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^unblock/i })).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Reload hidden messages from Alice Chen",
+      }),
+    );
+    expect(onReloadMasked).toHaveBeenCalledWith(ALICE);
+  });
+
+  it("holds a live row the list cannot vouch for, and does not call the channel empty", () => {
+    renderWithList(
+      [message({ id: "m1", sender_id: BOB, content: "from the echo" })],
+      blockState("unavailable"),
+    );
+
+    expect(screen.queryByText("from the echo")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Nothing in this channel yet"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still shows the viewer's own message and a server-cleared row while the list is unavailable", () => {
+    renderWithList(
+      [
+        message({ id: "m1", sender_id: VIEWER, content: "mine" }),
+        message({
+          id: "m2",
+          sender_id: BOB,
+          content: "read over REST",
+          sender_blocked: false,
+          _blockEvaluated: true,
+        }),
+      ],
+      blockState("unavailable"),
+    );
+
+    expect(screen.getByText("mine")).toBeInTheDocument();
+    expect(screen.getByText("read over REST")).toBeInTheDocument();
+  });
+
+  it("quotes a blocked member's parent as the tombstone's words, on the live path", () => {
+    renderWithList(
+      [
+        message({ id: "p1", content: "the insult" }),
+        message({
+          id: "r1",
+          sender_id: BOB,
+          content: "a reply",
+          reply_to_id: "p1",
+        }),
+      ],
+      blockState("ready", { ids: [ALICE] }),
+    );
+
+    expect(screen.getByText("a reply")).toBeInTheDocument();
+    expect(screen.queryByText("the insult")).not.toBeInTheDocument();
+    // Once for the parent's own row, once in the reply's quote.
+    expect(screen.getAllByText(TOMBSTONE_TEXT)).toHaveLength(2);
+  });
+
+  it("quotes a held parent as hidden, not as not loaded", () => {
+    renderWithList(
+      [
+        message({ id: "p1", content: "unvouched" }),
+        message({
+          id: "r1",
+          sender_id: VIEWER,
+          content: "my reply",
+          reply_to_id: "p1",
+        }),
+      ],
+      blockState("loading"),
+    );
+
+    expect(screen.getByText(HELD_QUOTE_TEXT)).toBeInTheDocument();
+    expect(screen.queryByText("unvouched")).not.toBeInTheDocument();
+    expect(screen.queryByText(UNAVAILABLE_QUOTE)).not.toBeInTheDocument();
+  });
+
+  it("drops a blocked member's reaction from the chip on someone else's message", () => {
+    const thumbs = reactionActionType("👍");
+    const insult = reactionActionType("you suck");
+    renderWithList(
+      [
+        message({
+          id: "m1",
+          sender_id: BOB,
+          reactions: { [thumbs]: [ALICE, VIEWER], [insult]: [ALICE] },
+        }),
+      ],
+      blockState("ready", { ids: [ALICE] }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: /^👍 reaction, 1, including you/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("you suck")).not.toBeInTheDocument();
+  });
+
+  it("never matches the server's sentinel string to decide anything", () => {
+    // A live row whose body happens to read like the sentinel, from someone
+    // the viewer has not blocked, is an ordinary message.
+    renderWithList(
+      [message({ id: "m1", sender_id: BOB, content: SERVER_SENTINEL })],
+      blockState("ready"),
+    );
+
+    expect(screen.getByText(SERVER_SENTINEL)).toBeInTheDocument();
+    expect(screen.queryByText(TOMBSTONE_TEXT)).not.toBeInTheDocument();
   });
 });

@@ -4,7 +4,7 @@ import type { BlockListStatus } from "@repo/validation";
  * The words every chat client says about a block, in one place so the mobile
  * thread and the web dashboard cannot explain one rule two ways
  * (`spec/behavior/chat/README.md` § Report and block,
- * `spec/ui/design-system/writing.md` § Chat — report and block).
+ * `spec/ui/design-system/writing.md` § Report and block).
  *
  * Only what is true of every client lives here. Copy that names a control one
  * client has and another lacks (mobile's Block row, its directory sheet) stays

@@ -13,6 +13,11 @@ import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { MessageAttachments } from "./message-attachments";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import { MessageRenderer, rendersAsBubble } from "./renderers";
+import {
+  hiddenQuoteText,
+  visibleReactions,
+  type BlockState,
+} from "@repo/chat-core/blocks";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import {
   authorInitialsFallback,
@@ -51,6 +56,18 @@ export interface MessageItemProps {
    * from quietly reopening the hole.
    */
   viewerId: string;
+  /**
+   * The viewer's block list as the thread classified it (`useThreadBlockList`).
+   *
+   * A row that reaches `MessageItem` is one the list lets through — the
+   * timeline draws a blocked sender's row as `BlockedMessageTombstone` and holds
+   * unmaskable rows back entirely — but two things inside a visible row can
+   * still carry a blocked member's words: the **quote** of the message it
+   * replies to, and the **reactions** on it. Both are filtered here
+   * (`hiddenQuoteText`, `visibleReactions`; #2313). Required, so a caller
+   * cannot render a row with the list forgotten, which would fail open.
+   */
+  blockState: BlockState;
   showHeader: boolean;
   /**
    * Resolves a `users.id` to a display name, or `null` when unresolvable.
@@ -234,6 +251,7 @@ export function MessageItem({
   message,
   avatarUrl,
   viewerId,
+  blockState,
   showHeader,
   nameFor,
   onReact,
@@ -465,6 +483,9 @@ export function MessageItem({
    * fell outside the loaded window still renders the unavailable line instead of
    * silently looking like an ordinary message.
    */
+  const hiddenParent = replyParent
+    ? hiddenQuoteText(replyParent, blockState, viewerId)
+    : null;
   const replyQuote =
     message.reply_to_id && !message.is_deleted ? (
       <QuotedMessage
@@ -473,6 +494,7 @@ export function MessageItem({
           replyParent ? resolveAuthorLabel(replyParent, nameFor, viewerId) : null
         }
         preview={replyParent ? replyPreviewText(replyParent) : null}
+        hidden={hiddenParent}
         onOpen={
           replyParent && onJumpToParent
             ? () => onJumpToParent(replyParent)
@@ -525,6 +547,16 @@ export function MessageItem({
     ? []
     : selectImportedReactions(message.kind, message.payload);
 
+  // The chips a viewer may see: never a blocked member's, since a reaction is
+  // its author's own text, and while the list cannot vouch for anyone, only the
+  // viewer's own and those of a member this client just unblocked. Same
+  // identity as `message.reactions` when nothing is hidden.
+  const shownReactions = visibleReactions(
+    message.reactions,
+    blockState,
+    viewerId,
+  );
+
   const reactions = message.is_deleted ? null : (
     <>
       <ImportedReactionChips
@@ -532,7 +564,7 @@ export function MessageItem({
         align={selfBubble ? "end" : "start"}
       />
       <ReactionChips
-        reactions={message.reactions}
+        reactions={shownReactions}
         viewerId={viewerId}
         align={selfBubble ? "end" : "start"}
         onReact={(emoji) => onReact(message.id, emoji)}
@@ -602,7 +634,7 @@ export function MessageItem({
       )}
     >
       <ReactionQuickPick
-        reactions={message.reactions}
+        reactions={shownReactions}
         viewerId={viewerId}
         onReact={(emoji) => onReact(message.id, emoji)}
         onUnreact={(emoji) => onUnreact(message.id, emoji)}

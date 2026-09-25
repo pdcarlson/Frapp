@@ -26,6 +26,14 @@ interface QuotedMessageProps {
   author: string | null;
   preview: string | null;
   /**
+   * The placeholder for a parent the viewer's block list hides
+   * (`hiddenQuoteText` in `@repo/chat-core/blocks`): the tombstone's words for
+   * a blocked member's message, or "Message hidden" for one held while the list
+   * is unreadable. When set, `author` and `preview` are ignored — a quote that
+   * printed them would hide nothing — and the quote is never a control (#2313).
+   */
+  hidden?: string | null;
+  /**
    * Opens the quoted message's thread. Optional: the composer's staged-reply
    * strip quotes a message with nowhere to navigate to, so it renders the same
    * shape as static text rather than as a dead control.
@@ -48,31 +56,35 @@ interface QuotedMessageProps {
 export function QuotedMessage({
   author,
   preview,
+  hidden = null,
   onOpen,
   className,
 }: QuotedMessageProps) {
   const unavailable = author === null;
+  const placeholder = hidden ?? (unavailable ? UNAVAILABLE_QUOTE : null);
 
   const shared = cn(
     "flex min-w-0 items-baseline gap-1.5 border-l-2 border-border pl-2",
     "text-[12.5px] text-muted-foreground",
-    unavailable && "italic",
+    placeholder !== null && "italic",
     className,
   );
 
-  const content = unavailable ? (
-    <span className="truncate">{UNAVAILABLE_QUOTE}</span>
-  ) : (
-    <>
-      <span className="shrink-0 font-semibold">{author}</span>
-      <span className="truncate">{preview}</span>
-    </>
-  );
+  const content =
+    placeholder !== null ? (
+      <span className="truncate">{placeholder}</span>
+    ) : (
+      <>
+        <span className="shrink-0 font-semibold">{author}</span>
+        <span className="truncate">{preview}</span>
+      </>
+    );
 
   // An unavailable quote has nothing to open, so it is never a control even
   // when the caller offers `onOpen` — the parent it would navigate to is the
-  // thing that is missing.
-  if (!onOpen || unavailable) {
+  // thing that is missing. A hidden one is not either: a held parent is not in
+  // the timeline to scroll to, and a tombstone has nothing to read.
+  if (!onOpen || placeholder !== null) {
     return <div className={shared}>{content}</div>;
   }
 

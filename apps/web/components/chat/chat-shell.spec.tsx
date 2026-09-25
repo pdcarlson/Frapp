@@ -157,7 +157,32 @@ const mockBookmarkIsError = vi.fn(() => false);
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
 // so the component renders from a controlled `channels`/message state
 // instead of hitting the network.
+/*
+  The viewer's block list (#2313). Ready and naming nobody by default, so the
+  shell's other cases see every row; the block cases below set it.
+*/
+const blockListState = vi.hoisted(() => ({
+  value: {
+    ids: new Set<string>() as ReadonlySet<string>,
+    unblocked: new Set<string>() as ReadonlySet<string>,
+    status: "ready" as "ready" | "loading" | "unavailable",
+    retry: () => {},
+    isRetrying: false,
+    isPaused: false,
+  },
+}));
+
+vi.mock("./use-unblock-flow", () => ({
+  useUnblockFlow: () => ({
+    requestUnblock: vi.fn(),
+    reloadMaskedCopies: vi.fn(),
+    isPending: false,
+    confirmDialog: null,
+  }),
+}));
+
 vi.mock("@repo/hooks", () => ({
+  useBlockedUserIds: () => blockListState.value,
   useChannels: () => ({
     data: CHANNELS,
     isFetching: false,
@@ -512,6 +537,12 @@ function chatChannelResult(
 }
 
 beforeEach(() => {
+  blockListState.value = {
+    ...blockListState.value,
+    ids: new Set(),
+    unblocked: new Set(),
+    status: "ready",
+  };
   setViewer("viewer-1");
   mockScrollToMessage.mockClear();
   mockRefetch.mockClear();
@@ -2029,5 +2060,66 @@ describe("ChatShell composer shell and its upgrade (#2176)", () => {
     channelsQueryState.value = { data: [], isPending: false };
     render(<ChatShell />);
     expect(screen.queryByTestId("composer-shell")).toBeNull();
+  });
+});
+
+describe("ChatShell block list (#2313)", () => {
+  it("does not announce a new message from a member the viewer blocked", () => {
+    blockListState.value = {
+      ...blockListState.value,
+      ids: new Set(["blocked-1"]),
+    };
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-3",
+            sender_id: "blocked-1",
+            content: "just landed",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
+  });
+
+  it("still announces a new message from anyone else", () => {
+    blockListState.value = {
+      ...blockListState.value,
+      ids: new Set(["blocked-1"]),
+    };
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-3",
+            sender_id: "friend-1",
+            content: "just landed",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByText(/new message from someone/i)).toBeInTheDocument();
+  });
+
+  it("says so above the timeline when the block list cannot be read", () => {
+    blockListState.value = { ...blockListState.value, status: "unavailable" };
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(
+      screen.getByText(/couldn't load your block list/i),
+    ).toBeInTheDocument();
   });
 });

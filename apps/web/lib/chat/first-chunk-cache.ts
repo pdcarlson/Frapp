@@ -117,6 +117,11 @@
  * naming rather than a bug worth blocking on — but it is the first schema change
  * this database has had, so it is the first time the cost exists at all, and
  * every future bump pays it again.
+ *
+ * **A tail written in an older row encoding is refused, not upgraded**
+ * (`TAIL_ROW_FORMAT`). That is a marker on the row rather than a schema bump,
+ * so it costs one cold load of that channel and none of the cross-version
+ * failure above.
  */
 
 import Dexie, { type Table } from "dexie";
@@ -178,7 +183,28 @@ export interface CachedChannelTailRow extends FirstChunkScope {
   channelId: string;
   rows: RawChatMessage[];
   cachedAt: number;
+  /** The encoding `rows` were written in; see {@link TAIL_ROW_FORMAT}. */
+  rowFormat?: number;
 }
+
+/**
+ * The encoding a tail's rows are written in. `readFirstChunk` serves only a
+ * tail stamped with this value, and nothing else is ever upgraded in place.
+ *
+ * `2` is the encoding in which `sender_blocked` means what the block list
+ * needs it to (#2313). Before #2493, `toRawRow` wrote the flag on **every**
+ * row, Realtime echoes included, so an unmarked tail rehydrates echo rows with
+ * `sender_blocked: false`, and `normalizeRow` then reads them as rows the
+ * server evaluated and cleared. The web timeline shows a server-cleared row
+ * even while the block list is unavailable, which is the one place that claim
+ * is load-bearing, so a pre-#2493 tail would paint a blocked member's echoed
+ * message on a cold load with the list down. Refusing the tail costs one cold
+ * load of that channel; `FIRST_CHUNK_MAX_AGE_MS` would only have bounded the
+ * exposure to a week.
+ *
+ * Bump it whenever the meaning of a persisted row changes.
+ */
+export const TAIL_ROW_FORMAT = 2;
 
 /**
  * The viewer's `users.id` under one scope.
@@ -355,7 +381,10 @@ export async function readFirstChunk(
       channels: usableList,
       tails: tails.filter(
         (row) =>
-          isFresh(row, now) && row.rows.length > 0 && known.has(row.channelId),
+          row.rowFormat === TAIL_ROW_FORMAT &&
+          isFresh(row, now) &&
+          row.rows.length > 0 &&
+          known.has(row.channelId),
       ),
       /*
         Aged like every other row, and deliberately **not** gated on the channel
@@ -462,7 +491,13 @@ export async function writeChannelTail(
       absence of news.
     */
     if (rows.length === 0) return;
-    await db.channelTails.put({ ...scope, channelId, rows, cachedAt });
+    await db.channelTails.put({
+      ...scope,
+      channelId,
+      rows,
+      cachedAt,
+      rowFormat: TAIL_ROW_FORMAT,
+    });
     await evictOldestTails(db, scope);
   } catch {
     /* Best-effort — see `writeChannelList`. */

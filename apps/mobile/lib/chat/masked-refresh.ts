@@ -1,8 +1,5 @@
 import { useSyncExternalStore } from "react";
-import {
-  maskedRefresh,
-  type MaskedRefreshState,
-} from "@repo/chat-core/blocks";
+import { maskedRefresh, type MaskedRefreshState } from "@repo/chat-core/blocks";
 
 /**
  * Every member's post-unblock re-read (`maskedRefresh` in

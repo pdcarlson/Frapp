@@ -14,12 +14,14 @@
   puts the real schema in front of a real key-range query.
 */
 import "fake-indexeddb/auto";
+import Dexie from "dexie";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeRow, type RawChatMessage } from "@repo/chat-core/types";
 import {
   FIRST_CHUNK_CHANNEL_LIMIT,
   FIRST_CHUNK_MAX_AGE_MS,
   FIRST_CHUNK_MESSAGE_LIMIT,
+  TAIL_ROW_FORMAT,
   pruneForeignScopes,
   readFirstChunk,
   resetFirstChunkCacheForTests,
@@ -29,7 +31,7 @@ import {
   writeViewerId,
   type FirstChunkScope,
 } from "./first-chunk-cache";
-import { wipeFirstChunkCache } from "./first-chunk-wipe";
+import { FIRST_CHUNK_DB_NAME, wipeFirstChunkCache } from "./first-chunk-wipe";
 import type { ChatChannel } from "@/components/chat/channel-list";
 
 const ALICE: FirstChunkScope = { userId: "auth-alice", chapterId: "chapter-1" };
@@ -170,6 +172,62 @@ describe("scope keying", () => {
     const chunk = await readFirstChunk(ALICE);
 
     expect(chunk.tails).toEqual([]);
+  });
+});
+
+describe("row encoding (#2313)", () => {
+  /**
+   * A tail as the build before #2493 wrote it: no `rowFormat`, and
+   * `sender_blocked` on an echo row, which rehydrates as "the server evaluated
+   * this and cleared it" — the one claim the block list lets through while it
+   * is unavailable.
+   */
+  async function seedUnstampedTail() {
+    resetFirstChunkCacheForTests();
+    const db = new Dexie(FIRST_CHUNK_DB_NAME);
+    db.version(2).stores({
+      channelLists: "[userId+chapterId]",
+      channelTails:
+        "[userId+chapterId+channelId], [userId+chapterId], cachedAt",
+      viewerIds: "[userId+chapterId]",
+    });
+    await db.open();
+    await db.table("channelTails").put({
+      ...ALICE,
+      channelId: "chan-1",
+      rows: [rawRow("1", { sender_blocked: false })],
+      cachedAt: AT,
+    });
+    db.close();
+  }
+
+  it("stamps every tail it writes with the current encoding", async () => {
+    await seedRail(ALICE);
+    await writeChannelTail(ALICE, "chan-1", [confirmed("1")], AT);
+
+    const chunk = await readFirstChunk(ALICE);
+    expect(chunk.tails[0]!.rowFormat).toBe(TAIL_ROW_FORMAT);
+  });
+
+  it("refuses a tail written before the encoding was stamped", async () => {
+    await seedRail(ALICE);
+    await seedUnstampedTail();
+
+    const chunk = await readFirstChunk(ALICE);
+
+    // The rail is still served: only the row encoding changed.
+    expect(chunk.channels?.channels).toEqual(RAIL);
+    expect(chunk.tails).toEqual([]);
+  });
+
+  it("serves the channel again once it is rewritten in the current encoding", async () => {
+    await seedRail(ALICE);
+    await seedUnstampedTail();
+    resetFirstChunkCacheForTests();
+    await writeChannelTail(ALICE, "chan-1", [confirmed("1")], AT);
+
+    const chunk = await readFirstChunk(ALICE);
+    expect(chunk.tails.map((tail) => tail.channelId)).toEqual(["chan-1"]);
   });
 });
 

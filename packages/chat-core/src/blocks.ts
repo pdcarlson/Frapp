@@ -134,7 +134,8 @@ export function classifyMessage(
   if (viewerId !== null && sender === viewerId) return "visible";
   if (message.sender_blocked) {
     if (message._blockEvaluated) return "tombstone";
-    if (sender === null || !blockState.unblocked.has(sender)) return "tombstone";
+    if (sender === null || !blockState.unblocked.has(sender))
+      return "tombstone";
   }
   if (!isBlockableSender(sender)) return "visible";
   if (blockState.ids.has(sender)) return "tombstone";
