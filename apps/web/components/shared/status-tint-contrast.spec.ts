@@ -36,6 +36,9 @@ const LABELS: Array<[string, string, keyof typeof STATUS_TINT]> = [
   // (`chapter-nav-header`, `discord-import/connect-step`).
   ["--foreground", TEXT.foreground, "destructive"],
   ["--muted-foreground", TEXT.mutedForeground, "destructive"],
+  // And on the warning tint (`chat/block-list-notice`).
+  ["--foreground", TEXT.foreground, "warning"],
+  ["--muted-foreground", TEXT.mutedForeground, "warning"],
 ];
 
 describe("the status tints", () => {
