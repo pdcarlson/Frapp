@@ -73,9 +73,7 @@ describe("chat bubbles", () => {
   });
 
   it("keeps incoming body text well clear of AA on the card fill", () => {
-    expect(ratio(TEXT.foreground, SURFACE.card)).toBeGreaterThanOrEqual(
-      AA_TEXT,
-    );
+    expect(ratio(TEXT.foreground, SURFACE.card)).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("keeps the self bubble's text/fill pair AA for every chapter seed", () => {
@@ -107,9 +105,7 @@ describe("chat bubbles", () => {
     // the same lift, and the sender name keeps its separation by weight rather
     // than by a second tone, which is what s05 draws anyway.
     for (const [name, bg] of Object.entries(SURFACE)) {
-      expect(ratio(TEXT.muted, bg), `--muted over ${name}`).toBeLessThan(
-        AA_TEXT,
-      );
+      expect(ratio(TEXT.muted, bg), `--muted over ${name}`).toBeLessThan(AA_TEXT);
       expect(
         ratio(TEXT.mutedForeground, bg),
         `--muted-foreground over ${name}`,
@@ -131,9 +127,9 @@ describe("reaction chips", () => {
   });
 
   it("keeps the neutral chip's text AA on the elevated step", () => {
-    expect(ratio(TEXT.mutedForeground, SURFACE.popover)).toBeGreaterThanOrEqual(
-      AA_TEXT,
-    );
+    expect(
+      ratio(TEXT.mutedForeground, SURFACE.popover),
+    ).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("separates the accent chip from the neutral one by more than luminance", () => {
@@ -184,9 +180,7 @@ describe("the mention badge", () => {
     // identically in every chapter, so no seed may produce it.
     for (const seed of SEEDS) {
       const roles = accentRolesFor(seed);
-      expect(roles["--primary"]!.toUpperCase(), seed).not.toBe(
-        SEMANTIC.mention,
-      );
+      expect(roles["--primary"]!.toUpperCase(), seed).not.toBe(SEMANTIC.mention);
     }
   });
 
@@ -361,9 +355,8 @@ describe("the channel rail", () => {
     const fill = applyAlpha(
       "#FFFFFF",
       Number(
-        /rgba\([^)]*,\s*([\d.]+)\)/.exec(
-          signetDarkTokens.color.border.input,
-        )?.[1] ?? "0.14",
+        /rgba\([^)]*,\s*([\d.]+)\)/.exec(signetDarkTokens.color.border.input)?.[1] ??
+          "0.14",
       ),
       SURFACE.surface1,
     );
