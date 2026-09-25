@@ -31,6 +31,13 @@ export interface ChannelSummary {
    * participant ids on it are legitimately theirs to read.
    */
   member_ids: string[];
+  /**
+   * The caller hid this 1:1 DM from their own list (#2303). The server still
+   * returns the row, so a thread opened by id keeps resolving; only the list
+   * leaves it out (`listedChannels`). `false` unless the row says exactly
+   * `true`, so a server that predates the flag hides nothing.
+   */
+  hidden: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -55,9 +62,15 @@ export function selectChannels(data: unknown): ChannelSummary[] {
         name,
         type: typeof type === "string" ? type : "PUBLIC",
         member_ids: memberIds,
+        hidden: row.hidden === true,
       },
     ];
   });
+}
+
+/** The rows the chat list renders: everything but the DMs the member hid. */
+export function listedChannels(channels: ChannelSummary[]): ChannelSummary[] {
+  return channels.filter((channel) => !channel.hidden);
 }
 
 export function isDirectChannel(channel: ChannelSummary): boolean {

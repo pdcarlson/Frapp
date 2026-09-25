@@ -368,6 +368,33 @@ export function useGetOrCreateDm() {
   });
 }
 
+/**
+ * `POST /v1/channels/{id}/leave`: leave a Group DM, or hide a 1:1 DM from the
+ * caller's own list (#2303, `spec/behavior/chat/README.md` § Direct Messages).
+ * The server decides which by the channel's type.
+ *
+ * A hidden DM is not dropped from `GET /v1/channels`; it comes back flagged
+ * `hidden`, and the list screens leave it out. So the effect lands through the
+ * list refetch below, which `mutateAsync` waits for: a caller that resolves and
+ * then re-renders the list must not render the row it just hid.
+ */
+export function useLeaveChannel() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await client.POST("/v1/channels/{id}/leave", {
+        params: { path: { id } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    // `["channels"]` is a prefix, so this also refetches the unread counts,
+    // which a hide changes: it marks the thread read.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
+  });
+}
+
 export function useUnpinMessage() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

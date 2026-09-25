@@ -9,7 +9,10 @@ import {
 } from "./chat-glyphs";
 import { EmptyState, ErrorState } from "@/components/shared/async-states";
 import {
+  canHideConversation,
   directChannelDisplayName,
+  HIDE_CONVERSATION_FAILED_TITLE,
+  useLeaveChannel,
   useChannelNotificationPreferences,
   useChannelUnreadCounts,
   useChannels,
@@ -568,6 +571,28 @@ export function ChatShell({
   const failedChannelId = setNotificationLevel.isError
     ? setNotificationLevel.variables?.channelId
     : undefined;
+
+  // Hide conversation (#2303). One shell-wide mutation, so its failure is
+  // scoped to the channel it was for, the same way as the notification level
+  // above.
+  const leaveChannel = useLeaveChannel();
+  const hideFailedChannelId = leaveChannel.isError
+    ? leaveChannel.variables
+    : undefined;
+  const hideActiveConversation = useCallback(
+    (channelId: string) => {
+      leaveChannel.mutate(channelId, {
+        // The hidden DM stays in `channels` (flagged), so without this the
+        // selection would keep it open and on the rail. Only if the member
+        // is still on it: they may have moved on while the write was out.
+        onSuccess: () =>
+          setSelectedChannelId((current) =>
+            current === channelId ? null : current,
+          ),
+      });
+    },
+    [leaveChannel],
+  );
 
   // Opening a channel stamps the read cursor — the only thing that moves it, and
   // the only thing that clears the badges above. Without it the rail lights up
@@ -1326,6 +1351,14 @@ export function ChatShell({
                   level,
                 });
               }}
+              hideConversation={
+                activeChannel && canHideConversation(activeChannel)
+                  ? {
+                      name: activeChannelName,
+                      onHide: () => hideActiveConversation(activeChannel.id),
+                    }
+                  : undefined
+              }
             />
           </div>
         </header>
@@ -1354,6 +1387,14 @@ export function ChatShell({
               className="border-b border-border px-4 py-1.5 text-[12.5px] text-destructive"
             >
               Notification level not saved
+            </p>
+          ) : null}
+          {activeChannel && hideFailedChannelId === activeChannel.id ? (
+            <p
+              role="alert"
+              className="border-b border-border px-4 py-1.5 text-[12.5px] text-destructive"
+            >
+              {HIDE_CONVERSATION_FAILED_TITLE}
             </p>
           ) : null}
           {bookmarkWriteFailed ? (

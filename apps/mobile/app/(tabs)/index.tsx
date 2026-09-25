@@ -9,9 +9,11 @@ import {
 } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  canHideConversation,
   useChannelUnreadCounts,
   useChannels,
   useEvents,
+  useLeaveChannel,
   useMemberDisplayNames,
   useTasks,
   useViewerUserId,
@@ -27,9 +29,11 @@ import {
   displayChannelName,
   indexUnread,
   isDirectChannel,
+  listedChannels,
   selectChannels,
   type ChannelSummary,
 } from "@/lib/chat/channel-list";
+import { confirmHideConversation } from "@/lib/chat/hide-conversation-prompt";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -72,8 +76,12 @@ export default function ChatHomeScreen() {
   const viewerId = useViewerUserId();
   const { byId: memberNames } = useMemberDisplayNames();
 
+  const leaveChannel = useLeaveChannel();
+
+  // A DM the member hid (#2303) is still in the payload, so a thread opened by
+  // id keeps resolving; the list is the one place it is left out.
   const channels = useMemo(
-    () => selectChannels(channelsQuery.data),
+    () => listedChannels(selectChannels(channelsQuery.data)),
     [channelsQuery.data],
   );
   const unread = useMemo(
@@ -93,14 +101,24 @@ export default function ChatHomeScreen() {
 
   function renderChannel(channel: ChannelSummary) {
     const counts = unread[channel.id];
+    const name = displayChannelName(channel, viewerId, memberNames);
     return (
       <ChannelRow
         key={channel.id}
-        name={displayChannelName(channel, viewerId, memberNames)}
+        name={name}
         isDirect={isDirectChannel(channel)}
         unreadCount={counts?.unread ?? 0}
         mentionCount={counts?.mentions ?? 0}
         onPress={() => openChannel(channel.id)}
+        onHide={
+          canHideConversation(channel)
+            ? () =>
+                confirmHideConversation({
+                  name,
+                  run: () => leaveChannel.mutateAsync(channel.id),
+                })
+            : undefined
+        }
       />
     );
   }

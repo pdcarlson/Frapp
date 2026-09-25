@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useEffect } from "react";
 
@@ -153,6 +153,15 @@ const mockUnbookmarkReset = vi.fn();
 // mock had no `isError` at all, so the alert branch was unreachable from any
 // test and deleting it entirely would have passed CI.
 const mockBookmarkIsError = vi.fn(() => false);
+// Hide conversation (#2303). `mutate` is captured so a case can resolve the
+// per-call `onSuccess` the shell passes; the error state drives its alert.
+const mockLeaveMutate = vi.fn();
+const mockLeaveState = vi.fn(
+  (): { isError: boolean; variables: string | undefined } => ({
+    isError: false,
+    variables: undefined,
+  }),
+);
 
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
 // so the component renders from a controlled `channels`/message state
@@ -226,6 +235,9 @@ vi.mock("@repo/hooks", () => ({
     reset: mockUnbookmarkReset,
     isError: false,
   }),
+  useLeaveChannel: () => ({ mutate: mockLeaveMutate, ...mockLeaveState() }),
+  canHideConversation: (channel: { type: string }) => channel.type === "DM",
+  HIDE_CONVERSATION_FAILED_TITLE: "Couldn't hide the conversation",
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -398,11 +410,22 @@ vi.mock("./channel-menu", () => ({
   ChannelMenu: ({
     onJumpToSearchHit,
     onJumpToBookmark,
+    hideConversation,
   }: {
     onJumpToSearchHit: (hit: { message: { id: string }; channelId: string }) => void;
     onJumpToBookmark: (channelId: string, messageId: string) => void;
+    hideConversation?: { name: string; onHide: () => void };
   }) => (
     <div>
+      {hideConversation ? (
+        <button
+          type="button"
+          data-testid="hide-conversation"
+          onClick={hideConversation.onHide}
+        >
+          hide
+        </button>
+      ) : null}
       <button
         type="button"
         data-testid="search-jump"
@@ -1212,6 +1235,77 @@ describe("ChatShell bookmark jump (#462)", () => {
     await waitFor(() => {
       expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
     });
+  });
+});
+
+describe("ChatShell hide conversation (#2303)", () => {
+  const DM = {
+    id: "chan-dm",
+    name: "dm-viewer-other",
+    type: "DM",
+    member_ids: ["viewer", "other"],
+  };
+
+  afterEach(() => {
+    channelsQueryState.value = {};
+    mockLeaveMutate.mockReset();
+    mockLeaveState.mockReset();
+    mockLeaveState.mockImplementation(() => ({
+      isError: false,
+      variables: undefined,
+    }));
+  });
+
+  it("offers Hide only on a 1:1 DM", () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.queryByTestId("hide-conversation")).toBeNull();
+    unmount();
+
+    render(<ChatShell initialChannelId="chan-dm" />);
+    expect(screen.getByTestId("hide-conversation")).toBeInTheDocument();
+  });
+
+  it("hides the open DM, then moves off it once the list is re-read", async () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    render(<ChatShell initialChannelId="chan-dm" />);
+    expect(screen.getByTestId("composer")).toHaveTextContent("chan-dm");
+
+    fireEvent.click(screen.getByTestId("hide-conversation"));
+    expect(mockLeaveMutate).toHaveBeenCalledWith(
+      "chan-dm",
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+
+    // The re-read list still carries the row, flagged: the shell must not
+    // keep it open just because it can still resolve it.
+    channelsQueryState.value = {
+      data: [...CHANNELS, { ...DM, hidden: true }],
+    };
+    act(() => {
+      mockLeaveMutate.mock.calls[0]![1].onSuccess();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-general");
+    });
+  });
+
+  it("reports a failed hide on the DM it was for, and nowhere else", () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    mockLeaveState.mockImplementation(() => ({
+      isError: true,
+      variables: "chan-dm",
+    }));
+
+    const { unmount } = render(<ChatShell initialChannelId="chan-dm" />);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Couldn't hide the conversation",
+    );
+    unmount();
+
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.queryByText("Couldn't hide the conversation")).toBeNull();
   });
 });
 

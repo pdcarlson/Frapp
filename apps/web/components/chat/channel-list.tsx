@@ -34,6 +34,13 @@ export interface ChatChannel {
    * compiler cannot check.
    */
   member_ids?: string[] | null;
+  /**
+   * The caller hid this 1:1 DM from their own list (#2303). The server keeps
+   * the row in `GET /v1/channels` so a `?channel=` link, a search hit or a
+   * bookmark into it still resolves; the rail leaves it out unless it is the
+   * channel open right now.
+   */
+  hidden?: boolean;
 }
 
 /**
@@ -244,6 +251,9 @@ export function ChannelList({
     );
 
     for (const channel of channels) {
+      // Kept while it is the open channel, so a jump into a hidden DM does
+      // not leave the rail with no row marked current.
+      if (channel.hidden && channel.id !== activeChannelId) continue;
       if (isSystem(channel)) system.push(channel);
       else if (isDm(channel)) dms.push(channel);
       else {
@@ -279,7 +289,7 @@ export function ChannelList({
       section.channels.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
     }
     return result;
-  }, [channels, titleFor, categories]);
+  }, [channels, titleFor, categories, activeChannelId]);
 
   if (channels.length === 0) {
     return (

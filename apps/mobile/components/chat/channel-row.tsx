@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { initialsFor } from "@/lib/chat/display-name";
+import { HIDE_CONVERSATION_LABEL } from "@repo/hooks";
 
 /**
  * One row of the s04 channel list.
@@ -39,7 +40,17 @@ export interface ChannelRowProps {
   unreadCount: number;
   mentionCount: number;
   onPress: () => void;
+  /**
+   * Offer "Hide conversation" (#2303): a long press, and the same thing as a
+   * named accessibility action, since a long press is not discoverable by a
+   * screen reader. Pass it only for a row that can be hidden
+   * (`canHideConversation`); the row itself does not decide.
+   */
+  onHide?: () => void;
 }
+
+/** The accessibility action's `name`; its spoken label is `HIDE_CONVERSATION_LABEL`. */
+export const HIDE_ACTION = "hide";
 
 /**
  * Badge text. A mention badge leads with `@` and shows the mention count, not
@@ -60,6 +71,7 @@ export function ChannelRow({
   unreadCount,
   mentionCount,
   onPress,
+  onHide,
 }: ChannelRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -79,6 +91,19 @@ export function ChannelRow({
         mentionCount,
       })}
       onPress={onPress}
+      onLongPress={onHide}
+      accessibilityActions={
+        onHide
+          ? [{ name: HIDE_ACTION, label: HIDE_CONVERSATION_LABEL }]
+          : undefined
+      }
+      onAccessibilityAction={
+        onHide
+          ? (event) => {
+              if (event.nativeEvent.actionName === HIDE_ACTION) onHide();
+            }
+          : undefined
+      }
       style={({ pressed }) => [
         styles.row,
         isUnread ? styles.rowUnread : null,

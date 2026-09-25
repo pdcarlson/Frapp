@@ -39,6 +39,8 @@ vi.mock("@repo/hooks", () => {
     useTasks: () => empty,
     useViewerUserId: () => "viewer-1",
     useMemberDisplayNames: () => ({ byId: {} }),
+    useLeaveChannel: () => ({ mutateAsync: vi.fn() }),
+    canHideConversation: () => false,
   };
 });
 

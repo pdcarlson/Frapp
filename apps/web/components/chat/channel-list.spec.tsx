@@ -38,11 +38,12 @@ function renderList(
   channels: ChatChannel[],
   unreadByChannelId?: Map<string, ChannelUnread>,
   categories?: ChannelCategory[],
+  activeChannelId: string | null = null,
 ) {
   return render(
     <ChannelList
       channels={channels}
-      activeChannelId={null}
+      activeChannelId={activeChannelId}
       viewerId={VIEWER}
       memberNames={NAMES}
       unreadByChannelId={unreadByChannelId}
@@ -390,3 +391,25 @@ describe("ChannelList unread badges", () => {
     expect(screen.queryByText(/^\d+$/)).not.toBeInTheDocument();
   });
 });
+
+// #2303: a hidden DM stays in the payload so jumps into it resolve; the rail
+// is where it is left out.
+describe("ChannelList hidden conversations", () => {
+  const hiddenDm: ChatChannel = { ...dm, hidden: true };
+
+  it("leaves a DM the member hid off the rail", () => {
+    const { container } = renderList([general, hiddenDm]);
+
+    expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument();
+    expect(sectionLabels(container)).not.toContain("Direct messages");
+  });
+
+  it("keeps it while it is the open channel, so the open row is still marked", () => {
+    renderList([general, hiddenDm], undefined, undefined, hiddenDm.id);
+
+    expect(
+      screen.getByRole("button", { name: /Alice Chen/ }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+});
+
