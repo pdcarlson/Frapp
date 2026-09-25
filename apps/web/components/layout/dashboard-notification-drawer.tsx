@@ -208,7 +208,7 @@ export function DashboardNotificationDrawer({
               Loading notifications...
             </div>
           ) : notificationsQuery.isError ? (
-            <div className="rounded-md border border-destructive/45 bg-destructive/[.13] p-3 text-sm text-destructive-text">
+            <div className="rounded-md border border-destructive/45 bg-destructive-tint p-3 text-sm text-destructive-text">
               Couldn&apos;t load notifications. Retry in a moment.
             </div>
           ) : notifications.length === 0 ? (

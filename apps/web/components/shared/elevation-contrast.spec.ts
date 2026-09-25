@@ -8,7 +8,7 @@ import {
   SEMANTIC,
   SURFACE,
   signetDarkTokens,
-  tint,
+  statusTint,
   INDISTINGUISHABLE,
 } from "@/tests/signet-contrast";
 
@@ -118,7 +118,7 @@ describe("the amber notices were a light-mode island", () => {
     // branch. Unlifted, per components.md §5 — only danger needs §1's lift.
     for (const name of ["card", "popover"] as const) {
       expect(
-        ratio(SEMANTIC.warning, tint(SEMANTIC.warning, SURFACE[name])),
+        ratio(SEMANTIC.warning, statusTint("warning", SURFACE[name])),
         `--warning on its own tint over ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
     }

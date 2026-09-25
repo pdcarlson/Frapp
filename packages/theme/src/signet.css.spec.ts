@@ -308,6 +308,29 @@ describe("the derived accent steps track the slot rather than restating it", () 
   );
 });
 
+describe("the status tints are the §5 recipe over a fixed semantic (#2376)", () => {
+  // An `rgba()` of the semantic hue, because it has no browser floor: an alpha
+  // utility falls back to the solid hue (the label's own colour), and a
+  // `color-mix()` token to no fill at all (foundations §5). The channels restate the hue, so
+  // they are held to it here rather than trusted to move with it.
+  const RGBA = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/;
+  const hex = (r: number, g: number, b: number) =>
+    "#" + [r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("");
+
+  it.each([
+    ["--success-tint", "--success", 0.13],
+    ["--warning-tint", "--warning", 0.13],
+    ["--destructive-tint", "--destructive", 0.13],
+    ["--destructive-tint-hover", "--destructive", 0.2],
+  ])("%s is %s at %s alpha", (token, hue, alpha) => {
+    const match = RGBA.exec(root.get(token) ?? "");
+    expect(match, `${token} must be an rgba() literal`).not.toBeNull();
+    const [, r, g, b, a] = match!.map(Number);
+    expect(hex(r!, g!, b!)).toBe(root.get(hue)!.toLowerCase());
+    expect(a).toBe(alpha);
+  });
+});
+
 describe("each surface imports exactly its own system", () => {
   // Both web surfaces are Signet since #2366 took the landing across. This used
   // to be the FREEZE boundary — web Signet, landing legacy — and is now the
@@ -383,6 +406,12 @@ describe("the fixed families cannot be wired to the accent slot", () => {
     "--mention-foreground",
     "--mention-chip",
     "--mention-chip-text",
+    // The status tints (#2376): a semantic's fill must not move per tenant any
+    // more than its hue does.
+    "--success-tint",
+    "--warning-tint",
+    "--destructive-tint",
+    "--destructive-tint-hover",
     "--gold-house",
     "--gold-on-house",
     "--gold-ask-fill",

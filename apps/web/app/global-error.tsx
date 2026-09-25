@@ -84,7 +84,7 @@ export default function GlobalError({
             */}
             <span
               aria-hidden="true"
-              className="flex h-11 w-11 items-center justify-center rounded-lg bg-destructive/[.13] text-destructive-text"
+              className="flex h-11 w-11 items-center justify-center rounded-lg bg-destructive-tint text-destructive-text"
             >
               <AlertTriangle className="h-6 w-6" />
             </span>

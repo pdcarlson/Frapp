@@ -182,7 +182,7 @@ function PastDueBanner({ status }: { status: string | null }) {
     heading, and that they will reach by reading.
   */
   return (
-    <p className="flex items-center gap-2 rounded-md border border-destructive/45 bg-destructive/[.13] px-3 py-2 text-sm text-destructive-text">
+    <p className="flex items-center gap-2 rounded-md border border-destructive/45 bg-destructive-tint px-3 py-2 text-sm text-destructive-text">
       <AlertTriangle className="h-4 w-4 shrink-0" />
       {status === "canceled"
         ? "This chapter's subscription is canceled and the chapter is read-only."

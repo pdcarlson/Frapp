@@ -440,7 +440,7 @@ export function MemberDetailSheet({
         ) : null}
 
         {memberQuery.isError && !usingPreviewData ? (
-          <div className="mt-6 rounded-md border border-destructive/[.28] bg-destructive/[.13] p-3 text-sm text-destructive-text">
+          <div className="mt-6 rounded-md border border-destructive/[.28] bg-destructive-tint p-3 text-sm text-destructive-text">
             Could not load the latest member profile. Retry from the directory to re-open this member.
           </div>
         ) : null}

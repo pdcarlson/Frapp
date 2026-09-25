@@ -1044,11 +1044,11 @@ function EventFrame() {
           compiles an alpha-modified token to `color-mix`, with the OPAQUE token
           as the un-guarded fallback: below the `color-mix` floor the fill
           resolves to `--destructive` and the lifted `--destructive-text` label
-          on top of it all but disappears. That exposure is #2376, filed
-          repo-wide and not this page's to patch. A literal has no `color-mix`
-          dependency, renders the same in every engine, and is what the frame is
-          transcribed from anyway, since frame internals follow the reference
-          boards rather than the token map.
+          on top of it all but disappears. That exposure was #2376, which gave
+          the dashboard `rgba()` `bg-*-tint` tokens with no floor. A literal has
+          no `color-mix` dependency, renders the same in every engine, and is
+          what the frame is transcribed from anyway, since frame internals
+          follow the reference boards rather than the token map.
         */}
         <span className="inline-flex h-6 items-center rounded-xs bg-[rgba(248,81,73,0.13)] px-2.5 text-[12.5px] font-semibold text-destructive-text">
           Mandatory

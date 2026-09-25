@@ -98,12 +98,14 @@ const OPACITY_WASH = new RegExp(
 );
 
 /**
- * The two sanctioned exceptions, both from `components.md`: §10's error card
- * border and icon tile (`--destructive` at 28% and 13%) and `focus.ts`'s ring.
- * `--destructive` is deliberately absent from `TOKENS` for that reason; the
- * separate rule below keeps it honest.
+ * The sanctioned exceptions: §10's error card border (`--destructive` at 28%,
+ * `components.md`) and `focus.ts`'s ring. The danger *fills* are not among
+ * them: they are the `bg-destructive-tint` tokens since #2376, because an
+ * alpha fill falls back to the solid hue where `color-mix` is missing.
+ * `--destructive` is deliberately absent from `TOKENS` for the border's sake;
+ * the separate rule below keeps it honest.
  */
-const SANCTIONED = /\b(?:border-destructive\/\[\.28\]|bg-destructive\/\[\.13\]|bg-destructive\/\[\.14\]|hover:bg-destructive\/20|ring-ring\/25|ring-destructive\/25)/g;
+const SANCTIONED = /\b(?:border-destructive\/\[\.28\]|ring-ring\/25|ring-destructive\/25)/g;
 
 describe("no token is painted through an opacity wash", () => {
   it.each(FAMILY)("%s", (file) => {

@@ -47,8 +47,14 @@ const toastVariants = cva(
         // tint recipe (13% alpha fill + hue text) over solid fills"
         // (foundations.md §5). A solid `#f85149` panel with near-black text is
         // the light-surface treatment and reads as an alert box, not a toast.
+        //
+        // Over an opaque `--popover`, the default variant's own fill, painted
+        // as the background colour with the tint as a one-colour gradient
+        // image on top. A toast floats over whatever the page has in that
+        // corner, and the tint alone is 87% see-through, so the page's text
+        // and buttons used to show through behind the label (#2376).
         destructive:
-          "destructive group border-destructive/45 bg-destructive/[.13] text-destructive-text",
+          "destructive group border-destructive/45 bg-popover bg-[linear-gradient(var(--destructive-tint),var(--destructive-tint))] text-destructive-text",
       },
     },
     defaultVariants: {
@@ -71,26 +77,6 @@ const Toast = React.forwardRef<
   )
 })
 Toast.displayName = ToastPrimitives.Root.displayName
-
-const ToastAction = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitives.Action>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Action>
->(({ className, ...props }, ref) => (
-  <ToastPrimitives.Action
-    ref={ref}
-    className={cn(
-      "inline-flex h-11 shrink-0 items-center justify-center rounded-md border border-input bg-card px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:border-border disabled:bg-card disabled:text-disabled",
-      // `enabled:`-scoped: `group-[.destructive]:*` compiles to a descendant
-      // selector carrying two ancestor classes, so it strictly outranks
-      // `disabled:*` and would keep a disabled action painted as if live.
-      "enabled:group-[.destructive]:border-destructive/45 enabled:group-[.destructive]:bg-transparent enabled:group-[.destructive]:text-destructive-text enabled:group-[.destructive]:hover:bg-destructive/20",
-      FOCUS_RING,
-      className
-    )}
-    {...props}
-  />
-))
-ToastAction.displayName = ToastPrimitives.Action.displayName
 
 const ToastClose = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Close>,
@@ -145,16 +131,12 @@ ToastDescription.displayName = ToastPrimitives.Description.displayName
 
 type ToastProps = React.ComponentPropsWithoutRef<typeof Toast>
 
-type ToastActionElement = React.ReactElement<typeof ToastAction>
-
 export {
   type ToastProps,
-  type ToastActionElement,
   ToastProvider,
   ToastViewport,
   Toast,
   ToastTitle,
   ToastDescription,
   ToastClose,
-  ToastAction,
 }

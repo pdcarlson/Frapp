@@ -144,7 +144,7 @@ export function StateTile({
         "flex h-11 w-11 items-center justify-center rounded-lg",
         tone === "accent"
           ? "bg-accent-subtle text-accent-text"
-          : "bg-destructive/[.13] text-destructive-text"
+          : "bg-destructive-tint text-destructive-text"
       )}
     >
       {children}

@@ -908,7 +908,7 @@ function OverdueSummary({
     are the ones worth keeping.
   */
   return (
-    <p className="flex items-center gap-2 rounded-md border border-destructive/45 bg-destructive/[.13] px-3 py-2 text-[12.5px] text-destructive-text">
+    <p className="flex items-center gap-2 rounded-md border border-destructive/45 bg-destructive-tint px-3 py-2 text-[12.5px] text-destructive-text">
       <AlertCircle className="h-4 w-4 shrink-0" />
       {failed
         ? "Couldn't load the overdue list. Overdue badges and the Overdue filter are unavailable until it recovers."

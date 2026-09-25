@@ -45,7 +45,7 @@ export function OfflineBanner() {
     DEGRADED: {
       icon: Zap,
       message: "Slow connection. Some features may be delayed.",
-      className: "border-warning/45 bg-warning/[.13] text-warning",
+      className: "border-warning/45 bg-warning-tint text-warning",
     },
     OFFLINE: {
       icon: WifiOff,
@@ -69,16 +69,16 @@ export function OfflineBanner() {
       // mobile ships (`apps/mobile/lib/connection/state.ts`).
       message: "You're offline. Showing cached data.",
       /*
-       * Stays on the SOLID `--destructive`, not the `--destructive-text` lift.
-       * The banner is seated on `--background` (the pill paints an opaque
-       * `bg-background` under the tint), and danger on its own 13% tint over that step
-       * measures 4.850:1 — clear of the gate. The lift is for where the drawn
-       * tone actually misses, which on this ladder is `--surface-1` (4.472),
-       * `--card` (4.222) and `--popover` (3.817). Applying it here would
-       * over-apply foundations §5, the same over-reach the billing guard's
-       * "negative branch" case records.
+       * The `--destructive-text` lift, since #2376. Until then this stayed on
+       * solid `--destructive`, because on its 13% tint over the `--background`
+       * the pill is seated on it measures 4.850:1, clear of the gate. But
+       * danger text on the danger tint is always the lift now (foundations
+       * §5), so that one rule covers every call site and
+       * `status-tint-call-sites.spec.ts` can hold them all to it. The lift
+       * measures 6.448:1 here.
        */
-      className: "border-destructive/45 bg-destructive/[.13] text-destructive",
+      className:
+        "border-destructive/45 bg-destructive-tint text-destructive-text",
     },
   } as const;
 

@@ -162,7 +162,7 @@ export function ConnectStep({
         // "not connected" after having just authorized, and needs the reason
         // in front of them — most often that they authorized while a different
         // chapter was active.
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+        <div className="rounded-lg border border-destructive/40 bg-destructive-tint p-3">
           <p className="text-sm font-medium">Could not confirm that server</p>
           <p className="mt-1 text-sm text-muted-foreground">{confirmError}</p>
         </div>

@@ -17,7 +17,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
  *   default     Accent      — accent-worthy stats: points, active filters
  *   secondary   Neutral     — counts and unread markers; the `--input` fill
  *   outline     Hairline    — quiet metadata that must not read as a status
- *   success     Semantic    — status only, as a 13% tint and never a solid fill
+ *   success     Semantic    — status only, on its `--*-tint` fill, never a solid
  *   warning     Semantic    — "
  *   destructive Semantic    — "
  *   mention     Mention/DM  — "you were addressed", and nothing else
@@ -37,8 +37,11 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * `--success` 4.79–6.08:1 and `--warning` 5.27–6.81:1 both clear the 4.5:1
  * gate, so they render in the semantic hue itself and need no twin.
  * `--destructive` is 3.82–4.85:1 (4.222 on `--card`, 3.817 on `--popover`),
- * which is why it has `--destructive-text` — that twin measures 4.80–6.12:1 on
- * the same tints and clears throughout.
+ * which is why it has `--destructive-text` — that twin measures 5.07–6.45:1 on
+ * the same tints and clears throughout. The fill is the `--*-tint` token, an
+ * `rgba()` with no browser floor, never an alpha utility, whose fallback below
+ * the `color-mix` floor was the solid hue (#2376, foundations §5). Measured
+ * from the tokens in `components/shared/status-tint-contrast.spec.ts`.
  *
  * `--info` is 3.45–4.36:1 on its own tint (3.807 on `--card`, 3.446 on
  * `--popover`) and now has `--info-text` (#4C93F8) — added when the greenfield
@@ -72,12 +75,12 @@ const badgeVariants = cva(
         default: "border-accent-border bg-accent-subtle text-accent-text",
         secondary: "border-transparent bg-input text-foreground",
         outline: "border-border bg-transparent text-muted-foreground",
-        success: "border-transparent bg-success/[.13] text-success",
-        warning: "border-transparent bg-warning/[.13] text-warning",
+        success: "border-transparent bg-success-tint text-success",
+        warning: "border-transparent bg-warning-tint text-warning",
         // AA-lifted text on the tint — `--destructive` on its own 13% tint is
-        // 4.39:1 over `--card`, the surface a status badge normally sits on.
+        // 4.22:1 over `--card`, the surface a status badge normally sits on.
         destructive:
-          "border-transparent bg-destructive/[.13] text-destructive-text",
+          "border-transparent bg-destructive-tint text-destructive-text",
         mention: "border-transparent bg-mention text-mention-foreground",
       },
     },

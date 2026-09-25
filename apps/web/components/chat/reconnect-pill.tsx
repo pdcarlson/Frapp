@@ -18,7 +18,7 @@ import type { ConnectionStatus } from "@repo/chat-core/realtime-manager";
  * `--warning` for degraded and `--destructive` for offline.
  *
  * The danger text is the AA-lifted `--destructive-text`, not `--destructive`:
- * `#F85149` on its own 13% tint measures 4.39:1 over `--card`, under the 4.5:1
+ * `#F85149` on its own 13% tint measures 4.22:1 over `--card`, under the 4.5:1
  * floor README §6 sets — the same lift the primitives slice made for badges and
  * toasts (components.md §1).
  *
@@ -30,8 +30,8 @@ export function ReconnectPill({ status }: { status: ConnectionStatus }) {
 
   const tone =
     status === "offline"
-      ? "border-destructive/45 bg-destructive/[.13] text-destructive-text"
-      : "border-warning/45 bg-warning/[.13] text-warning";
+      ? "border-destructive/45 bg-destructive-tint text-destructive-text"
+      : "border-warning/45 bg-warning-tint text-warning";
 
   return (
     <div

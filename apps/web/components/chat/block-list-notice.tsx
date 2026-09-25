@@ -44,7 +44,7 @@ export function BlockListNotice({
   return (
     <div role="status" aria-live="polite" className="shrink-0">
       {notice ? (
-        <div className="mx-4 mb-2 flex items-center gap-3 rounded-md border border-warning/45 bg-warning/[.13] px-3 py-2 text-[12.5px]">
+        <div className="mx-4 mb-2 flex items-center gap-3 rounded-md border border-warning/45 bg-warning-tint px-3 py-2 text-[12.5px]">
           <p className="min-w-0 flex-1 text-foreground">
             <span className="font-semibold">{notice.title}. </span>
             <span className="text-muted-foreground">{notice.body}</span>

@@ -231,7 +231,7 @@ export function EventDetailSheet({
         </SheetHeader>
 
         {usingPreviewData ? (
-          <div className="mt-5 flex items-start gap-3 rounded-md border border-warning/45 bg-warning/[.13] p-3 text-[12.5px] text-warning">
+          <div className="mt-5 flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-[12.5px] text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               Showing preview event details. Sign in to edit and delete live
@@ -330,7 +330,7 @@ export function EventDetailSheet({
                   </span>
                 </div>
               ) : checkInZoneIsMalformed ? (
-                <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning/[.13] p-3 text-[12.5px] text-warning">
+                <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning-tint p-3 text-[12.5px] text-warning">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <div>
                     This event&apos;s zone is incomplete, so every check-in is

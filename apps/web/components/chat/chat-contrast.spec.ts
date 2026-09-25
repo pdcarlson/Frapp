@@ -14,6 +14,7 @@ import {
   signetDarkTokens,
   SURFACE,
   TEXT,
+  statusTint,
   tint,
 } from "@/tests/signet-contrast";
 
@@ -300,7 +301,7 @@ describe("semantic text on its own 13% tint", () => {
 
   it("lifts danger text, because the unlifted hue misses on the raised steps", () => {
     for (const [name, bg] of surfaces) {
-      const over = tint(SEMANTIC.destructive, bg);
+      const over = statusTint("destructive", bg);
       expect(
         ratio(DESTRUCTIVE_TEXT, over),
         `--destructive-text on danger tint over ${name}`,
@@ -310,14 +311,14 @@ describe("semantic text on its own 13% tint", () => {
     // The measurement that forced the lift, kept so a "simplification" back to
     // `text-destructive` fails here rather than in review.
     expect(
-      ratio(SEMANTIC.destructive, tint(SEMANTIC.destructive, SURFACE.card)),
+      ratio(SEMANTIC.destructive, statusTint("destructive", SURFACE.card)),
     ).toBeLessThan(AA_TEXT);
   });
 
   it("keeps warning and success legible unlifted on every step", () => {
     for (const [name, bg] of surfaces) {
       expect(
-        ratio(SEMANTIC.warning, tint(SEMANTIC.warning, bg)),
+        ratio(SEMANTIC.warning, statusTint("warning", bg)),
         `--warning over ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
       expect(

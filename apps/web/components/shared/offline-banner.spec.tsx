@@ -42,7 +42,7 @@ describe("OfflineBanner", () => {
     // hue rather than a palette colour (foundations.md §5).
     expect(banner).toHaveClass("bg-background");
     expect(banner.firstElementChild).toHaveClass(
-      "border-warning/45 bg-warning/[.13] text-warning",
+      "border-warning/45 bg-warning-tint text-warning",
     );
   });
 
@@ -72,9 +72,10 @@ describe("OfflineBanner", () => {
     expect(banner).not.toHaveTextContent(/will sync/i);
     // Opaque `bg-background` so the page it floats over cannot show through
     // the 13% semantic tint, and the contrast it was measured at still holds.
+    // Danger text on the tint is the lift (#2376, foundations §5).
     expect(banner).toHaveClass("bg-background");
     expect(banner.firstElementChild).toHaveClass(
-      "border-destructive/45 bg-destructive/[.13] text-destructive",
+      "border-destructive/45 bg-destructive-tint text-destructive-text",
     );
   });
 

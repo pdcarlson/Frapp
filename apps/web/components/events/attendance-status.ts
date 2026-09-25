@@ -35,7 +35,7 @@ export type AttendanceStatusOrUnrecorded = AttendanceStatus | "UNRECORDED";
  * "quiet metadata that must not read as a status".
  *
  * Neither `success` nor `warning` takes §1's lift: measured on their own 13%
- * tints they are 5.02–6.46:1 and 5.57–7.15:1, both clear of the gate
+ * tints they are 4.79–6.08:1 and 5.27–6.81:1, both clear of the gate
  * (`components.md` §5). Only danger has a lifted twin, and `Badge` applies it.
  */
 export function attendanceStatusKind(

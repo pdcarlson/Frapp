@@ -39,15 +39,27 @@ const motionEasing = frappTokens.motion.easing;
  * up. So the helper is now what its name always claimed: the token, wrapped in
  * `var()`, as a plain string.
  *
- * What v4 emits in its place is strictly better than what it replaced.
+ * What v4 emits in its place is a different trade, not a strictly better one.
  * `bg-primary` is still a plain `var(--primary)` with no floor at all;
- * `bg-primary/15` becomes `color-mix(in oklab, var(--primary) 15%, transparent)`
- * guarded by `@supports (color: color-mix(in lab, red, red))`, with the opaque
- * `var()` left as the fallback declaration. The v3 helper had no fallback, so
- * below the `color-mix` floor (Chrome 111 / Safari 16.2 / Firefox 113) a
- * modified utility degraded to **no fill**; it now degrades to the un-modified
- * color. The mixing space moves from sRGB to OKLab, which shifts a translucent
- * fill imperceptibly and is Tailwind's own default.
+ * `bg-primary/15` becomes `color-mix(in oklab, var(--primary) 15%,
+ * transparent)` guarded by `@supports (color: color-mix(in lab, red, red))`,
+ * with the opaque `var()` left as the fallback declaration. The v3 helper had
+ * no fallback, so below the `color-mix` floor (Chrome 111 / Safari 16.2 /
+ * Firefox 113) a modified utility degraded to **no fill**; it now degrades to
+ * the un-modified color. The mixing space moves from sRGB to OKLab, which
+ * shifts a translucent fill imperceptibly and is Tailwind's own default.
+ *
+ * The solid fallback is harmless on a border, and ruinous on a fill whose text
+ * is close to the solid. **foundations §5's tint recipe is the systematic
+ * case**: the text is the same hue, so the label read 1.00:1 (#2376). The
+ * recipe therefore uses no modifier: `bg-success-tint`, `bg-warning-tint`,
+ * `bg-destructive-tint` and `bg-destructive-tint-hover` read `rgba()` tokens
+ * from `signet.css`, which have no floor at all, and
+ * `status-tint-call-sites.spec.ts` in `apps/web` fails on a
+ * `bg-<semantic>/<alpha>` fill anywhere in the Next surfaces. Other modified
+ * fills can hit the same trap one call site at a time (a faint `bg-primary/5`
+ * under `--foreground` text falls back to a light gold slab), which #2692
+ * tracks.
  *
  * The three awkward `opacityValue` shapes the old callback had to special-case
  * are all v4's problem now: the `var(--tw-*-opacity, 1)` sentinel, a `"62%"`
@@ -118,6 +130,9 @@ const config: Partial<Config> = {
         success: {
           DEFAULT: colorVar("--success"),
           foreground: colorVar("--success-foreground"),
+          // §5's tint recipe as a token; never `bg-success/[.13]`
+          // (see the `colorVar` docstring and `signet.css`).
+          tint: colorVar("--success-tint"),
         },
         muted: {
           DEFAULT: colorVar("--muted"),
@@ -139,6 +154,8 @@ const config: Partial<Config> = {
         destructive: {
           DEFAULT: colorVar("--destructive"),
           foreground: colorVar("--destructive-foreground"),
+          tint: colorVar("--destructive-tint"),
+          "tint-hover": colorVar("--destructive-tint-hover"),
         },
         border: colorVar("--border"),
         input: colorVar("--input"),
@@ -173,6 +190,7 @@ const config: Partial<Config> = {
         warning: {
           DEFAULT: colorVar("--warning"),
           foreground: colorVar("--warning-foreground"),
+          tint: colorVar("--warning-tint"),
         },
         info: {
           DEFAULT: colorVar("--info"),
