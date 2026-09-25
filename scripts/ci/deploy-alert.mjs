@@ -41,12 +41,15 @@
 // the run and:
 //
 //   * writes a step summary + annotation that states plainly whether the run
-//     DEPLOYED something or DECLINED to deploy, so green stops being ambiguous;
+//     DEPLOYED something or DECLINED to deploy (and, for Deploy API, whether
+//     staging was UP TO DATE or the run SUPERSEDED), so green stops being
+//     ambiguous;
 //   * on failure, upserts ONE tracking issue (create / reopen / comment) rather
 //     than filing a fresh issue per failure — alert spam is how alerting gets
 //     muted;
-//   * on a later successful deploy, closes that issue, so "alert issue open"
-//     reliably means "the deploy path is broken right now".
+//   * on a later successful deploy (for Deploy API, one for main's tip),
+//     closes that issue, so "alert issue open" reliably means "the deploy path
+//     is broken right now".
 //
 // Channel choice: GitHub Issues, matching `ci-wake.mjs` / `pr-base-sync.mjs`
 // (which post to PRs) and the tracker itself (#680 retired Linear). `Deploy API`
@@ -125,6 +128,9 @@ export const DEPLOY_API_CONFIG = {
   //   stale   — not main's tip, and nothing deployed: its verdict is about an
   //             old commit, so it neither raises nor closes the alert.
   planOutput: { job: "deploy-staging", output: "plan" },
+  // What the alert issue tells its reader closes it. Not "a later successful
+  // deploy": a `forward` deploy succeeds without closing it.
+  closesOn: "a later run for `main`'s tip deploys successfully or finds staging up to date",
   alertTitle: "Deploy API is failing — pushes are not reaching the environment",
   alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
   noOpReason: "no migrate or deploy job ran",
@@ -203,6 +209,9 @@ export const ALERT_CONFIGS = {
   [DEPLOY_VERCEL_STAGING_CONFIG.name]: DEPLOY_VERCEL_STAGING_CONFIG,
 };
 
+/** When an alert closes, unless a config says otherwise (`closesOn`). */
+const DEFAULT_CLOSES_ON = "a later run deploys successfully";
+
 /**
  * The sentences every config's reports share. Kept together so the summary,
  * the annotation and the alert issue say the same thing about one run.
@@ -220,11 +229,11 @@ export const OUTCOME_COPY = {
     "no-op": "⏭️ **NO-OP — nothing deployed**",
     superseded: "⏭️ **SUPERSEDED — a newer run decides**",
   },
-  brokenLines: (label) => [
+  brokenLines: (label, closesOn = DEFAULT_CLOSES_ON) => [
     `deploy path is broken: the most recent \`${label}\` run that actually tried to deploy did`,
-    "not succeed. It closes itself as soon as a later run deploys successfully.",
+    `not succeed. It closes itself as soon as ${closesOn}.`,
   ],
-  closesWhen: "This issue closes itself when a later run deploys successfully.",
+  closesWhen: (closesOn = DEFAULT_CLOSES_ON) => `This issue closes itself when ${closesOn}.`,
 };
 
 // The default for the pure functions below, so a test or a caller reasoning
@@ -422,7 +431,7 @@ export function buildRunSummary({
   gateSucceeded,
   escalated = false,
   // The `planOutput` job's plan, or null. `superseded` is this script's own
-  // outcome for a stale or replaced run (see runDeployAlert).
+  // outcome for a `stale` run or a successful `forward` one (see runDeployAlert).
   plan = null,
   supersededReason = "",
   config = DEFAULT_ALERT_CONFIG,
@@ -497,9 +506,9 @@ export function buildAlertIssueBody({
     ...(escalated
       ? [
           `deploy path is broken: the most recent \`${config.workflowLabel}\` run did not even attempt a`,
-          "deploy. It closes itself as soon as a later run deploys successfully.",
+          `deploy. It closes itself as soon as ${config.closesOn ?? DEFAULT_CLOSES_ON}.`,
         ]
-      : OUTCOME_COPY.brokenLines(config.workflowLabel)),
+      : OUTCOME_COPY.brokenLines(config.workflowLabel, config.closesOn)),
     "",
     `Do not claim this issue as backlog work — it carries \`${ALERT_ISSUE_LOOKUP_LABEL}\` and tracks live state,`,
     "not a unit of work. Fix the underlying failure and it resolves on its own.",
@@ -549,7 +558,7 @@ export function buildAlertCommentBody({
   if (runUrl) lines.push(`- Run: ${runUrl}`);
   lines.push(
     "",
-    `_Posted automatically by \`scripts/ci/deploy-alert.mjs\`. ${OUTCOME_COPY.closesWhen}_`,
+    `_Posted automatically by \`scripts/ci/deploy-alert.mjs\`. ${OUTCOME_COPY.closesWhen(config.closesOn)}_`,
   );
   return lines.join("\n");
 }
@@ -694,10 +703,11 @@ export async function runDeployAlert({
   const jobResults = readJobResults(needs, config);
   const plan = readPlan(needs, config);
 
-  // A stale or replaced run's verdict is about a commit main has moved past.
-  // Classifying it would close the alert on a run that verified an old
-  // commit (or on migrate-staging's success alone), or raise it for a job
-  // GitHub replaced in the queue. The newest run decides; this one reports.
+  // A `stale` run, or a successful `forward` one, is not for main's tip.
+  // Classifying it would close the alert on a run that verified an old or
+  // non-tip commit (or on migrate-staging's success alone), while the tip's
+  // own run may be failing. The tip's run decides; this one only reports. A
+  // failed `forward` deploy is not superseded: it raises like any failure.
   if (isSuperseded(needs, config)) {
     const reason =
       plan === "forward"

@@ -924,8 +924,9 @@ does two things:
 - **Raises or clears one alert issue.** On failure it upserts a single tracking issue titled
   *"Deploy API is failing — pushes are not reaching the environment"* (`incident`, `area:ci`,
   `P1`, assigned to the owner): created if absent, reopened if closed, otherwise commented — never a fresh issue per
-  failure, because alert spam is how alerting gets muted. A later **successful** deploy closes it
-  as `completed`. So an open alert issue means "the deploy path is broken right now".
+  failure, because alert spam is how alerting gets muted. A later **successful** run for `main`'s
+  tip (a deploy, or a verified up-to-date staging) closes it as `completed`. So an open alert issue
+  means "the deploy path is broken right now".
 
 A **superseded run never touches the alert**. A run that is not for `main`'s tip (as its checkout
 fetched it) plans `forward` when its commit is newer than the one staging serves and changed the
@@ -965,9 +966,10 @@ Consequences worth knowing before editing the script:
   which on a `workflow_run` run page would be exactly as invisible as the gap this closes. A gated
   config with a benign no-op is still supported, and tested on a stand-in.
 - **`planOutput` carries what a job result can't.** Deploy API's `deploy-staging` publishes
-  `plan-staging-deploy.mjs`'s verdict (`deploy`, `current` or `stale`). The script reads it to
-  report a `current` run as up to date rather than deployed, and to leave the alert alone on a
-  superseded one.
+  `plan-staging-deploy.mjs`'s verdict (`deploy`, `current`, `forward` or `stale`). The script
+  reads it to report a `current` run as up to date rather than deployed, and to leave the alert
+  alone on a `stale` run or a successful `forward` one (a failed `forward` deploy still raises).
+  `closesOn` makes the issue text say which runs close it.
 
 The full roster of GitHub-issue watchdogs, with what each one means and when it clears, is
 [`ALERT_ROUTING.md`](../ops/ALERT_ROUTING.md) § Automated GitHub-issue alerts — that table is the

@@ -62,8 +62,9 @@ describe("deploy-api.yml deploy-staging", () => {
     assert.match(verify.body, /node scripts\/ci\/verify-served-commit\.mjs/);
   });
 
-  // deploy-alert.mjs reads it (DEPLOY_API_CONFIG.planOutput) to leave the
-  // alert alone on a stale run and not to claim DEPLOYED on a current one.
+  // deploy-alert.mjs reads it (DEPLOY_API_CONFIG.planOutput): a stale run or a
+  // successful forward one leaves the alert alone, a current one isn't
+  // reported as DEPLOYED.
   it("publishes the plan as a job output", () => {
     assert.equal(job().keys.get("outputs").get("plan"), "${{ steps.plan.outputs.plan }}");
   });

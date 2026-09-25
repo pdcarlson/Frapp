@@ -145,7 +145,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     # `deploy-outcome` reads the plan: a `stale` run neither raises nor closes
-    # the alert, and a `current` one reports that nothing needed deploying.
+    # the alert, a successful `forward` one doesn't close it (a failed one
+    # raises it), and a `current` one reports that nothing needed deploying.
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
     # The deploy poll's own ceiling is 20 minutes and the served-commit check's

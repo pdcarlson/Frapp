@@ -1207,7 +1207,13 @@ test("a genuine failure still reads as a failure on every surface", async () => 
 
 test("both configs' copy reads the same on every surface a responder reads", () => {
   // `OUTCOME_COPY` is shared; pinned on the headline, the issue body and the
-  // comment, for both configs.
+  // comment, for both configs. Only what closes the issue differs: a Deploy
+  // API `forward` deploy succeeds without closing it (`closesOn`).
+  const closesOn = new Map([
+    [DEPLOY_API_CONFIG, "a later run for `main`'s tip deploys successfully or finds staging up to date"],
+    [DEPLOY_VERCEL_STAGING_CONFIG, "a later run deploys successfully"],
+  ]);
+  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\`]/g, "\\$&");
   for (const config of [DEPLOY_API_CONFIG, DEPLOY_VERCEL_STAGING_CONFIG]) {
     const headline = buildHeadline({
       outcome: "failed",
@@ -1228,7 +1234,7 @@ test("both configs' copy reads the same on every surface a responder reads", () 
       body,
       new RegExp(
         `the most recent \`${config.workflowLabel}\` run that actually tried to deploy did\\nnot succeed\\. ` +
-          "It closes itself as soon as a later run deploys successfully\\.",
+          `It closes itself as soon as ${escape(closesOn.get(config))}\\.`,
       ),
     );
     const comment = buildAlertCommentBody({
@@ -1239,7 +1245,7 @@ test("both configs' copy reads the same on every surface a responder reads", () 
       reopened: false,
       config,
     });
-    assert.match(comment, /This issue closes itself when a later run deploys successfully\._$/);
+    assert.match(comment, new RegExp(`This issue closes itself when ${escape(closesOn.get(config))}\\._$`));
   }
   assert.match(
     buildHeadline({ outcome: "no-op", failed: [], deployed: [], headBranch: "main" }),
@@ -1307,8 +1313,8 @@ test("a deploy job cancelled before it planned is a failure", async () => {
 });
 
 test("a deploy cancelled after it planned is still a failure", async () => {
-  // Cancelled mid-deploy: the commit is not confirmed live. Only a job that
-  // never started (no plan) is superseded.
+  // Cancelled mid-deploy: the commit is not confirmed live. Only a green
+  // `stale` or `forward` plan is superseded.
   const { fetchImpl } = makeFetchStub({ issues: [] });
   const result = await runDeployAlert({
     token: "t",
