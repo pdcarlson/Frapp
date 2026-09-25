@@ -332,64 +332,21 @@ describe("CLI", () => {
     assert.match(run.stderr + run.stdout, /API_HEALTHCHECK_URL/);
   });
 
-  // End to end through main(): read /health, resolve the tip, write GITHUB_OUTPUT.
-  async function runCli({ served, tipRef }) {
-    const server = createServer((req, res) => {
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ status: "ok", commit: served }));
-    });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const dir = mkdtempSync(join(tmpdir(), "plan-cli-"));
-    const output = join(dir, "output");
-    writeFileSync(output, "");
-    try {
-      const head = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-      const env = {
-        ...process.env,
-        DEPLOY_SHA: head,
-        API_HEALTHCHECK_URL: `http://127.0.0.1:${server.address().port}/health`,
-        GITHUB_OUTPUT: output,
-        TIP_REF: tipRef,
-      };
-      delete env.GITHUB_STEP_SUMMARY;
-      const run = await new Promise((resolve) => {
-        const child = spawn(process.execPath, [join(REPO_ROOT, "scripts", "ci", "plan-staging-deploy.mjs")], { env, cwd: REPO_ROOT });
-        let log = "";
-        child.stdout.on("data", (d) => { log += d; });
-        child.stderr.on("data", (d) => { log += d; });
-        child.on("close", (status) => resolve({ status, log }));
-      });
-      return { ...run, written: readFileSync(output, "utf8") };
-    } finally {
-      server.close();
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-
-  // The tip comes from TIP_REF (default origin/main). A tip lookup that broke
-  // would make every run "the tip" and silently disable the stale verdict.
-  it("calls the run stale when TIP_REF resolves to another commit", async () => {
-    const head = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-    const parent = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD~1"], { encoding: "utf8" }).trim();
-    const { status, log, written } = await runCli({ served: head, tipRef: parent });
-    assert.equal(status, 0, log);
-    assert.match(written, /^plan=stale$/m, written);
-    assert.match(written, /^verify_sha=$/m, written);
-  });
-
-  // No TIP_REF, as in the workflow: the tip comes from `origin/main`. Run in a
-  // throwaway repo whose `origin/main` is ahead of the checked-out commit.
-  it("reads the tip from origin/main by default", async () => {
+  /**
+   * Run the CLI in a throwaway repo whose `origin/main` is one commit ahead of
+   * the checked-out commit, with /health serving the checked-out one. A
+   * throwaway repo because CI's checkout is shallow: the real repo has no
+   * `HEAD~1` there.
+   */
+  async function runInTwoCommitRepo(env) {
     const root = mkdtempSync(join(tmpdir(), "plan-tip-"));
     const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
-    const server = createServer((req, res) => {
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ status: "ok", commit: git("rev-parse", "HEAD") }));
-    });
+    let server;
     try {
       git("init", "-q");
       git("config", "user.email", "t@example.com");
       git("config", "user.name", "t");
+      git("config", "commit.gpgsign", "false");
       writeFileSync(join(root, "a.md"), "a\n");
       git("add", "-A");
       git("commit", "-qm", "head");
@@ -399,66 +356,51 @@ describe("CLI", () => {
       git("commit", "-qm", "tip");
       git("update-ref", "refs/remotes/origin/main", "HEAD");
       git("checkout", "-q", "--detach", head);
+      server = createServer((req, res) => {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ status: "ok", commit: head }));
+      });
       await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
       const output = join(root, ".output");
       writeFileSync(output, "");
-      const env = {
+      const childEnv = {
         ...process.env,
         DEPLOY_SHA: head,
         API_HEALTHCHECK_URL: `http://127.0.0.1:${server.address().port}/health`,
         GITHUB_OUTPUT: output,
+        ...env,
       };
-      delete env.TIP_REF;
-      delete env.GITHUB_STEP_SUMMARY;
+      delete childEnv.GITHUB_STEP_SUMMARY;
+      for (const [key, value] of Object.entries(childEnv)) if (value === undefined) delete childEnv[key];
       const run = await new Promise((resolve) => {
-        const child = spawn(process.execPath, [join(REPO_ROOT, "scripts", "ci", "plan-staging-deploy.mjs")], { env, cwd: root });
+        const child = spawn(process.execPath, [join(REPO_ROOT, "scripts", "ci", "plan-staging-deploy.mjs")], { env: childEnv, cwd: root });
         let log = "";
         child.stdout.on("data", (d) => { log += d; });
         child.stderr.on("data", (d) => { log += d; });
         child.on("close", (status) => resolve({ status, log }));
       });
-      assert.equal(run.status, 0, run.log);
-      assert.match(readFileSync(output, "utf8"), /^plan=stale$/m, run.log);
+      return { ...run, head, written: readFileSync(output, "utf8") };
     } finally {
-      server.close();
+      server?.close();
       rmSync(root, { recursive: true, force: true });
     }
+  }
+
+  // No TIP_REF, as in the workflow: the tip comes from `origin/main`. A tip
+  // lookup that broke would make every run "the tip" and silently disable the
+  // stale verdict.
+  it("reads the tip from origin/main by default", async () => {
+    const { status, log, written } = await runInTwoCommitRepo({ TIP_REF: undefined });
+    assert.equal(status, 0, log);
+    assert.match(written, /^plan=stale$/m, log);
+    assert.match(written, /^verify_sha=$/m, written);
   });
 
-  it("writes plan, deploy and verify_sha to GITHUB_OUTPUT", async () => {
-    const head = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-    const server = createServer((req, res) => {
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ status: "ok", commit: head }));
-    });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const dir = mkdtempSync(join(tmpdir(), "plan-cli-"));
-    const output = join(dir, "output");
-    writeFileSync(output, "");
-    try {
-      const env = {
-        ...process.env,
-        DEPLOY_SHA: head,
-        API_HEALTHCHECK_URL: `http://127.0.0.1:${server.address().port}/health`,
-        GITHUB_OUTPUT: output,
-        TIP_REF: "HEAD",
-      };
-      delete env.GITHUB_STEP_SUMMARY;
-      const run = await new Promise((resolve) => {
-        const child = spawn(process.execPath, [join(REPO_ROOT, "scripts", "ci", "plan-staging-deploy.mjs")], { env, cwd: REPO_ROOT });
-        let log = "";
-        child.stdout.on("data", (d) => { log += d; });
-        child.stderr.on("data", (d) => { log += d; });
-        child.on("close", (status) => resolve({ status, log }));
-      });
-      assert.equal(run.status, 0, run.log);
-      const written = readFileSync(output, "utf8");
-      assert.match(written, /^plan=current$/m, written);
-      assert.match(written, /^deploy=false$/m, written);
-      assert.match(written, new RegExp(`^verify_sha=${head}$`, "m"), written);
-    } finally {
-      server.close();
-      rmSync(dir, { recursive: true, force: true });
-    }
+  it("takes the tip from TIP_REF when it is set", async () => {
+    const { status, log, written, head } = await runInTwoCommitRepo({ TIP_REF: "HEAD" });
+    assert.equal(status, 0, log);
+    assert.match(written, /^plan=current$/m, log);
+    assert.match(written, /^deploy=false$/m, written);
+    assert.match(written, new RegExp(`^verify_sha=${head}$`, "m"), written);
   });
 });
