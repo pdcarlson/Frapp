@@ -140,10 +140,31 @@ and it exists for signal quality: `/next` ranks this backlog, and filler buries 
     findings. Take both from [`.github/environments.json`](../../../.github/environments.json)
     (read via `scripts/ci/lib/environments.mjs`), match its `supabaseProjectName` entries against
     `list_projects`, and attribute each finding to its environment.
-  - GitHub MCP: repeated CI failures or flaky jobs on recent `main` runs.
+  - GitHub MCP: repeated CI failures or flaky jobs on recent `main` runs. A deploy workflow
+    triggered by `workflow_run` fails without turning any PR check red. Read its job log
+    (`get_job_logs`), and check for an open `incident` on it before filing anything.
+  - Render MCP: `list_deploys` (`limit: 5`) for `frapp-api-staging` and `frapp-api-prod`. A
+    green `Deploy API` run only means Render accepted the hook, not that the build succeeded.
+    Pass `workspaceId` on every call; the id is in
+    [`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md). Resolve
+    each service's `srv-…` id with `list_services` rather than from memory
+    ([`infrastructure-research`](../infrastructure-research/SKILL.md) has the recipe). A failed
+    staging deploy already raises an `incident` (`verify-deployments.yml`), so look there first.
+    File only a failure that no later deploy has fixed: a deploy that ended failed
+    (`build_failed`, `update_failed`) and is newer than the service's `live` one. An in-progress
+    deploy is neither. Production deploys are dispatched by hand, so an old
+    `live` production commit is expected, not a finding. A Render build log can hold a live
+    secret (#2432), so quote only the error line, never raw log output.
+  - Vercel MCP: `get_runtime_errors` (`since: "7d"`) for `frapp-web` and `frapp-landing`. It
+    requires `teamId` (from `list_teams`), and the project ids come from `list_projects`. It is
+    the web dashboard's only error signal while the web Sentry DSN is unset (#970). One
+    transient error doesn't make an issue; a recurring cluster does.
 
   Cite the evidence (error ID, advisor name, run link) in the issue. If a tool is absent or
   genuinely refuses, skip that source and note it in the run report; never guess runtime state.
+  A refusal that asks you to have a human confirm or pick something, such as Render's "ask the
+  user which workspace to use", is a refusal too. An unattended run has no human to ask, so skip
+  the source rather than choosing for them.
   An error caused by an argument you supplied is your bug, so fix the argument before recording
   the source as unavailable.
 
