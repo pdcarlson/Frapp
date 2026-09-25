@@ -514,14 +514,19 @@ export function ChatShell({
     () => new Set(thread.rows.map((row) => row.message.id)),
     [thread.rows],
   );
-  // Pins the block list keeps off the Pinned panel: a blocked member's, and
-  // ones it cannot vouch for yet. Counted so the panel says they are hidden
-  // rather than reading as "nothing pinned".
-  const hiddenPinCount = useMemo(
-    () =>
-      channel.messages.filter((message) => message.is_pinned).length -
-      shownMessages.filter((message) => message.is_pinned).length,
-    [channel.messages, shownMessages],
+  // Pins the block list keeps off the Pinned panel, counted so the panel says
+  // so rather than reading as "nothing pinned": a blocked member's (drawn as a
+  // tombstone), and ones it cannot vouch for yet (held, not drawn at all).
+  const hiddenPins = useMemo(
+    () => ({
+      blocked: thread.rows.filter(
+        (row) => row.visibility === "tombstone" && row.message.is_pinned,
+      ).length,
+      held: channel.messages.filter(
+        (message) => message.is_pinned && !drawnMessageIds.has(message.id),
+      ).length,
+    }),
+    [thread.rows, channel.messages, drawnMessageIds],
   );
   const unblockFlow = useUnblockFlow();
   const maskedRefresh = useMaskedRefresh();
@@ -1393,7 +1398,7 @@ export function ChatShell({
             <ChannelMenu
               activeChannelId={activeChannelId}
               messages={shownMessages}
-              hiddenPinCount={hiddenPinCount}
+              hiddenPins={hiddenPins}
               nameFor={nameFor}
               channelNameFor={channelNameFor}
               onJumpToMessage={jumpToMessage}

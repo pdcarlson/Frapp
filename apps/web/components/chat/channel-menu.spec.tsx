@@ -106,7 +106,7 @@ function renderMenu(overrides: Partial<Parameters<typeof ChannelMenu>[0]> = {}) 
   const props = {
     activeChannelId: "chan-1",
     messages: [] as ChatMessage[],
-    hiddenPinCount: 0,
+    hiddenPins: { blocked: 0, held: 0 },
     nameFor: () => "Someone",
     channelNameFor: () => "general",
     onJumpToMessage: vi.fn(),
@@ -230,7 +230,7 @@ describe("ChannelMenu (#2142)", () => {
     const user = userEvent.setup();
     renderMenu({
       messages: [message({ id: "a", is_pinned: true })],
-      hiddenPinCount: 2,
+      hiddenPins: { blocked: 1, held: 1 },
     });
     await openMenu(user);
 

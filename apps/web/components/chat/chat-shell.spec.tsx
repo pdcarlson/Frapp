@@ -424,12 +424,12 @@ vi.mock("./composer", () => ({
 vi.mock("./channel-menu", () => ({
   ChannelMenu: ({
     messages,
-    hiddenPinCount,
+    hiddenPins,
     onJumpToSearchHit,
     onJumpToBookmark,
   }: {
     messages: Array<{ id: string }>;
-    hiddenPinCount: number;
+    hiddenPins: { blocked: number; held: number };
     onJumpToSearchHit: (hit: { message: { id: string }; channelId: string }) => void;
     onJumpToBookmark: (channelId: string, messageId: string) => void;
   }) => (
@@ -438,7 +438,9 @@ vi.mock("./channel-menu", () => ({
       <span data-testid="menu-messages">
         {messages.map((m) => m.id).join(",")}
       </span>
-      <span data-testid="menu-hidden-pins">{String(hiddenPinCount)}</span>
+      <span data-testid="menu-hidden-pins">
+        {`${hiddenPins.blocked}/${hiddenPins.held}`}
+      </span>
       <button
         type="button"
         data-testid="search-jump"
@@ -2176,7 +2178,7 @@ describe("ChatShell block list (#2313)", () => {
     render(<ChatShell initialChannelId="chan-general" />);
 
     expect(screen.getByTestId("menu-messages")).toHaveTextContent(/^msg-1$/);
-    expect(screen.getByTestId("menu-hidden-pins")).toHaveTextContent("1");
+    expect(screen.getByTestId("menu-hidden-pins")).toHaveTextContent("1/0");
   });
 
   it("keeps a held row out of the Pinned panel while the list cannot vouch for it", () => {
@@ -2184,7 +2186,11 @@ describe("ChatShell block list (#2313)", () => {
     mockUseChatChannel.mockReturnValue(
       chatChannelResult({
         messages: [
-          { ...MESSAGES[0]!, sender_id: "friend-1" },
+          {
+            ...MESSAGES[0]!,
+            sender_id: "friend-1",
+            is_pinned: true,
+          } as (typeof MESSAGES)[number],
           { ...MESSAGES[1]!, sender_id: "viewer-1" },
         ],
       }),
@@ -2192,8 +2198,10 @@ describe("ChatShell block list (#2313)", () => {
     render(<ChatShell initialChannelId="chan-general" />);
 
     // msg-1 arrived with no server verdict from someone else: held. The
-    // viewer's own msg-2 is always shown.
+    // viewer's own msg-2 is always shown. The held pin is counted as held,
+    // not blocked: nothing says its sender is.
     expect(screen.getByTestId("menu-messages")).toHaveTextContent(/^msg-2$/);
+    expect(screen.getByTestId("menu-hidden-pins")).toHaveTextContent("0/1");
   });
 
   it("hides a staged reply's quote once its author is blocked", async () => {

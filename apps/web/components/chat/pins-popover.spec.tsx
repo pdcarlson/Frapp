@@ -36,16 +36,30 @@ const nameFor = (id: string) => (id === OTHER ? "Alice Chen" : null);
 
 describe("PinsPanel", () => {
   it("says pins the block list hides are hidden, never that nothing is pinned (#2313)", () => {
-    render(<PinsPanel messages={[]} hiddenCount={2} nameFor={nameFor} />);
+    render(
+      <PinsPanel
+        messages={[]}
+        hidden={{ blocked: 2, held: 1 }}
+        nameFor={nameFor}
+      />,
+    );
     expect(
       screen.getByText("2 pinned messages are hidden by your block list."),
+    ).toBeInTheDocument();
+    // Held pins are not the block list's doing yet: it cannot vouch for them.
+    expect(
+      screen.getByText("1 pinned message is waiting on your block list."),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Nothing pinned yet/)).not.toBeInTheDocument();
   });
 
   it("lists the pins it may show, and says the rest are hidden", () => {
     render(
-      <PinsPanel messages={[message()]} hiddenCount={1} nameFor={nameFor} />,
+      <PinsPanel
+        messages={[message()]}
+        hidden={{ blocked: 1, held: 0 }}
+        nameFor={nameFor}
+      />,
     );
     expect(screen.getByText("the dues link")).toBeInTheDocument();
     expect(

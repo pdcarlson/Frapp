@@ -120,8 +120,10 @@
  *
  * **A tail written in an older row encoding is refused, not upgraded**
  * (`TAIL_ROW_FORMAT`). That is a marker on the row rather than a schema bump,
- * so it costs one cold load of that channel and none of the cross-version
- * failure above.
+ * so it costs a cold load of that channel and none of the `VersionError` above.
+ * Across a deploy it can cost more than one: a tab still on the previous bundle
+ * keeps rewriting that channel's tail unstamped, so the new build refuses it on
+ * each load until that tab closes.
  */
 
 import Dexie, { type Table } from "dexie";
@@ -198,17 +200,22 @@ export interface CachedChannelTailRow extends FirstChunkScope {
  * server evaluated and cleared. The web timeline shows a server-cleared row
  * even while the block list is unavailable, which is the one place that claim
  * is load-bearing, so a pre-#2493 tail would paint a blocked member's echoed
- * message on a cold load with the list down. Refusing the tail costs one cold
- * load of that channel; `FIRST_CHUNK_MAX_AGE_MS` would only have bounded the
- * exposure to a week.
+ * message on any cold load until the list read lands, and for a whole session
+ * with the list unreadable. Refusing the tail costs a cold load of that channel
+ * (see the header for a tab still on the old bundle).
  *
  * **What the marker does not close.** A REST row's cleared verdict is kept on
  * purpose, so a warm load paints other members' cached rows at once (the rank-1
  * "render real" clause, `spec/ui/resilience/performance-budgets.md`). That
- * verdict is only as current as the list it was read against: a member blocked
- * after the tail was written shows in it on a cold load with the list
- * unreadable, until a live read of the channel lands (#2688, which persists
- * the list's floor beside the tail).
+ * verdict is only as old as the REST read that produced it, not the tail write:
+ * `toRawRow` carries it through every rewrite, and each Realtime merge
+ * rewrites the tail, so it can outlive a block made after that read, and the
+ * week `FIRST_CHUNK_MAX_AGE_MS` allows. Web's block list is not persisted, so
+ * every cold load starts with it loading, and the classifier shows a cleared
+ * row in every list state: a member blocked since that read shows on each cold
+ * load until the list or a live read of the channel lands, and for the whole
+ * session with the list unreadable (#2688, which persists the list's floor
+ * beside the tail).
  *
  * Bump it whenever the meaning of a persisted row changes.
  */
