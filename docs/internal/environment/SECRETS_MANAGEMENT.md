@@ -371,7 +371,7 @@ The deploy workflows inject these from Infisical at runtime through [`infisical-
 | ------------------------ | --------------------------------------- | ------------------------------- |
 | `SUPABASE_ACCESS_TOKEN`  | Read-only token, `frapp-staging` only   | Read-only token, `frapp-prod` only |
 | `SUPABASE_PROJECT_REF`   | Staging project ref                     | Production project ref          |
-| `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL                 | _(none — production deploys by commit through the Render API, never a hook)_ |
+| `RENDER_DEPLOY_HOOK_URL` | _(none since #2505 — staging deploys by commit through the Render API too)_ | _(none — production deploys by commit through the Render API, never a hook)_ |
 | `API_HEALTHCHECK_URL`    | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |
 
 #### Troubleshooting: `Deploy API` fails with `401 Invalid credentials`
@@ -416,7 +416,6 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | ------------------------- | ----------------------- | ------------------------------------------------------------ |
 | Supabase service role key | On suspected compromise | Regenerate in Supabase → update canonical value in Infisical |
 | Stripe secret key         | On suspected compromise | Regenerate in Stripe → update canonical value in Infisical   |
-| Render deploy hook URL (staging only) | On service recreation | Copy from Render → update canonical value in Infisical       |
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
 | R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The retired staging Vercel syncs left copies in a Vercel project's Preview env only if the token predates that project's unlink (landing 2026-09-01, web 2026-09-02), until those rows are deleted (#834). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
 

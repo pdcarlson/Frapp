@@ -149,7 +149,7 @@ and it exists for signal quality: `/next` ranks this backlog, and filler buries 
     [`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md). Resolve
     each service's `srv-…` id with `list_services` rather than from memory
     ([`infrastructure-research`](../infrastructure-research/SKILL.md) has the recipe). A failed
-    staging deploy already raises an `incident` (`verify-deployments.yml`), so look there first.
+    staging API deploy already raises an `incident` (`deploy-api.yml`'s Deploy API alert), so look there first.
     File only a failure that no later deploy has fixed: a deploy that ended failed
     (`build_failed`, `update_failed`) and is newer than the service's `live` one. An in-progress
     deploy is neither. Production deploys are dispatched by hand, so an old

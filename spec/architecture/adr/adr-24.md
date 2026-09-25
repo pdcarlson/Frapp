@@ -28,7 +28,9 @@ a successful deploy, and nothing noticed for 171 days (#1273). Five causes recur
    hook, sleeps 15 seconds, then polls `/health/ready`. That poll can answer from the instance that
    was already live, and nothing compares the running commit with the deployed SHA. When
    `API_HEALTHCHECK_URL` is unset, the poll warns and exits 0. #1160 and #2431 were Render build or
-   boot failures behind a green workflow.
+   boot failures behind a green workflow. *(Corrected 2026-09-25: no longer true of staging. Since
+   #2505 `deploy-api.yml` deploys the commit through the Render API, polls that deploy, and requires
+   `/health/ready` to report that commit; a missing `API_HEALTHCHECK_URL` fails.)*
 3. **Monitoring runs on a best-effort scheduler.** `production-uptime.yml` is scheduled `*/15`.
    Its last 30 scheduled runs had a median gap of 3.1 hours and a maximum of 6 hours. (GitHub MCP
    `actions_list list_workflow_runs`, `production-uptime.yml`, `event: schedule`, read 2026-09-23.)
@@ -91,7 +93,9 @@ digest 07).
   - **First (#2505).** Render auto-deploy goes off. `deploy-api.yml` deploys the CI-verified commit
     through the Render API after `migrate-staging` and polls that deploy, as production already
     does. That fixes the tip build, the double build and the migrations-first ordering that
-    `spec/environments/README.md` § Deploy Ordering requires.
+    `spec/environments/README.md` § Deploy Ordering requires. *(Built 2026-09-25 in #2505's PR,
+    which also checks `/health`'s `commit` and retires the push-time `verify-deployments.yml`.
+    Turning auto-deploy off is the owner's dashboard step; `staging-conformance.yml` asserts it.)*
   - **Then (#2506).** Staging and production both switch to deploying the CI-built image by
     digest (decision 1). The commit-based path is the interim step.
 - **The API isn't replica-safe yet.** The push and audit-bridge Realtime subscribers double-send

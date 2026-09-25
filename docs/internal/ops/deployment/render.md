@@ -74,8 +74,8 @@ reachable. The JSON body is the liveness payload in
 > both fail the run. The alert title was not renamed — it is the lookup key.
 >
 > **2026-09-08 (later):** `scripts/ci/staging-conformance.mjs` asserts the same
-> nested field on `frapp-api-staging`, daily at 07:30. Staging auto-deploys
-> `main` on commit, so this path is the HTTP gate on those deploys. Missing
+> nested field on `frapp-api-staging`, daily at 07:30. This path is Render's
+> HTTP gate on every staging deploy. Missing
 > `RENDER_API_KEY` is SKIPPED, not a pass.
 >
 > **2026-09-09:** the same daily job now also asserts `frapp-api-staging`
@@ -85,6 +85,14 @@ reachable. The JSON body is the liveness payload in
 > assertions stay green on a stale host. Production-guardrails still asserts
 > the inverse (`autoDeploy: "no"`) under its own alert title — do not fold
 > that expected value into this suite.
+>
+> **2026-09-25 ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)):
+> reversed.** Staging now expects `autoDeploy: "no"`, like production.
+> `deploy-api.yml` deploys `frapp-api-staging` by commit through the Render
+> API, after CI and `migrate-staging`, so auto-deploy is no longer what keeps
+> staging current. Left on, it builds every push before either gate, and its
+> deploy races the one `deploy-api.yml` creates. The `branch: "main"`
+> assertion stands.
 
 ### 5.5 In-process chat workers (Chunk 05)
 
@@ -121,11 +129,12 @@ Splitting these into a standalone Render Background Worker is not currently warr
 
 ### 5.7 Deploy Hooks (for GitHub Actions)
 
-Store these in **Infisical**, not as GitHub secrets: the deploy workflows inject them at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
+No deploy hook is used. Both API services deploy by commit through the Render API with `RENDER_API_KEY` (a GitHub environment secret): `deploy-production.yml` for `frapp-api-prod`, and since [#2505](https://github.com/pdcarlson/Frapp/issues/2505) `deploy-api.yml` for `frapp-api-staging`. A deploy hook can't name a commit; it builds the branch tip. A hook URL is also a bearer credential, so don't store one anywhere.
 
-- `RENDER_DEPLOY_HOOK_URL` → **staging only**: frapp-api-staging → Settings → Deploy Hook → copy the URL into Infisical `staging`. Production deploys by commit through the Render API (`RENDER_API_KEY`, `deploy-production.yml`), so it has no hook to store.
-- `API_HEALTHCHECK_URL` → smoke-check URL, in both `staging` and `prod` (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly; why the two differ is [`observability.md` § Health Check](../../../../spec/behavior/observability.md#health-check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
+The one value the deploy workflows still take from **Infisical**, not GitHub, injected at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
 
-**Don't create or store a deploy hook for `frapp-api-prod`**; [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) gives the reason. Earlier revisions of these docs told operators to store one, and one was likely stored and synced onward ([`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md) records the 2026-08-12 read). Regenerating it and removing the copies is an owner step; [#2540](https://github.com/pdcarlson/Frapp/issues/2540) gives the order.
+- `API_HEALTHCHECK_URL` → smoke-check URL, in both `staging` and `prod` (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly, and staging's also requires the response's `commit` to be the deployed SHA; why the two differ is [`observability.md` § Health Check](../../../../spec/behavior/observability.md#health-check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
+
+**Don't create or store a deploy hook for either service**; [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) gives the reason. Earlier revisions of these docs told operators to store one. The production hook was stored and synced onward, and was regenerated and its copies removed on 2026-09-24 ([#2540](https://github.com/pdcarlson/Frapp/issues/2540)). The staging hook, stored in Infisical `staging` until #2505, gets the same treatment, together with turning staging's auto-deploy off: [#2679](https://github.com/pdcarlson/Frapp/issues/2679).
 
 ---

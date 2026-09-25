@@ -58,7 +58,7 @@ action file is not on disk yet when the runner resolves it.
   `scripts/ci/__tests__/infisical-secrets-action.test.mjs`.
 
   The first half: `deploy-api.yml`'s `deploy-staging` job had no checkout at all — it only
-  fires a deploy hook — and had to gain one. It runs on `workflow_run` after merge, so no PR
+  fired a deploy hook then — and had to gain one. It runs on `workflow_run` after merge, so no PR
   would ever have caught the failure.
 
   The second half is the one that bites hardest. `deploy-production.yml` runs

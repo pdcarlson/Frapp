@@ -935,14 +935,16 @@ test("staging-conformance.yml wires Render creds to the staging service, never p
     "utf8",
   );
   assert.ok(
-    infra.includes(
-      "`verify-deployments.yml` and `staging-conformance.yml` (`RENDER_API_KEY`)",
-    ),
+    infra.includes("and `staging-conformance.yml` (`RENDER_API_KEY`)"),
     "AGENT_INFRA must list staging-conformance.yml as a RENDER_API_KEY consumer",
   );
+  // The roster row itself, not any line: production-guardrails' 07:15 row
+  // names the same words for production.
+  const roster = infra.split("\n").find((line) => line.startsWith("| 07:30 | `staging-conformance.yml`"));
+  assert.ok(roster, "the 07:30 roster row for staging-conformance.yml is missing");
   assert.match(
-    infra,
-    /Render auto-deploy on tracking `main`/,
+    roster,
+    /Render auto-deploy off and tracking `main`/,
     "the 07:30 roster must name the auto-deploy assertion or a revert sits green",
   );
 });

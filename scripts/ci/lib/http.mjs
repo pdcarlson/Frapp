@@ -34,7 +34,7 @@ export const DEFAULT_TIMEOUT_MS = 15_000;
 /**
  * The timeout for a request that cannot be retried.
  *
- * Aborting a create is not free: `deploy-render-production.mjs` POSTs to start a
+ * Aborting a create is not free: `deploy-render-commit.mjs` POSTs to start a
  * deploy, and if we abort at 15s a slow-but-successful create still ran — the
  * deploy proceeds on the provider while the script throws, so CI reports a
  * failure for a deploy that is actually happening. And because the call is not
@@ -60,7 +60,7 @@ export function isRetriableStatus(status) {
 /**
  * Methods a failed request may be re-sent for.
  *
- * This is the sharpest edge in this module. `deploy-render-production.mjs`
+ * This is the sharpest edge in this module. `deploy-render-commit.mjs`
  * POSTs to *create a deployment*, and a create is not idempotent: if the first
  * POST reached the provider and only its response was lost — a gateway 502, or
  * our own timeout firing on a slow but successful call — then retrying it

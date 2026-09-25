@@ -539,7 +539,7 @@ describe("local actions resolve at every call site", () => {
     // `uses: ./…` resolves against the runner workspace, so without an earlier
     // actions/checkout in the SAME job the step fails with "Can't find
     // 'action.yml'". deploy-api.yml's deploy-staging job had no checkout at all
-    // -- it only curls a deploy hook -- and gained one for exactly this reason.
+    // -- it only curled a deploy hook then -- and gained one for exactly this reason.
     // That job runs on workflow_run after merge, so no PR would have caught it.
     for (const { name, text } of workflows) {
       // Comments blanked for the same reason as above: a commented-out

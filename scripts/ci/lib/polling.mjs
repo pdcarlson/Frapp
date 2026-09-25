@@ -10,17 +10,18 @@ export function createClock({
 }
 
 /**
- * The "poll until terminal" skeleton shared by the four provider pollers
- * (`verify-render-deploy.mjs`, `verify-vercel-deploy.mjs`,
- * `deploy-render-production.mjs`, `deploy-vercel.mjs`) before this
- * (#1351). All four hand-wrote the same loop — `startedAt = clock.now()` →
+ * The "poll until terminal" skeleton behind `verify-vercel-deploy.mjs`,
+ * `deploy-render-commit.mjs`, `deploy-vercel.mjs` and, since #2505,
+ * `verify-served-commit.mjs`. Before this (#1351), four provider pollers (the
+ * first three and the since-retired `verify-render-deploy.mjs`) each
+ * hand-wrote the same loop — `startedAt = clock.now()` →
  * while under the deadline: fetch, classify, return on terminal, else log and
  * sleep → identical timeout-failure return — which meant a change to the
  * loop's boundary or timeout semantics could land in some copies and not
  * others, silently.
  *
- * What is deliberately NOT shared: the two deploy-path pollers treat a
- * cancel as failure where the two observers treat it as neutral (documented
+ * What is deliberately NOT shared: the deploy-path pollers treat a cancel
+ * as failure where `verify-vercel-deploy.mjs` treats it as neutral (documented
  * at length in `deploy-vercel.mjs`'s header) — a real difference,
  * not divergence. So this function owns only the loop mechanics; every
  * site-specific judgment stays in the caller's `fetchOne`/`classify`

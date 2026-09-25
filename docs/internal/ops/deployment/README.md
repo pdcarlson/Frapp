@@ -14,17 +14,14 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
   dispatched SHA), since #1578. See [§ 4 Vercel Setup](vercel.md).
 - ✅ CI pipeline uses domain-specific parallel jobs with required status checks.
 - ✅ Branch protection enforced on `main`, the only long-lived branch (#1340).
-- ✅ Staging API deployment is automated on Render: `frapp-api-staging` deploys from `main`,
-  and `.github/workflows/deploy-api.yml` triggers a gated deploy and applies staging
-  migrations after green CI. ⚠️ Verified against the Render API 2026-08-27: the staging
-  service also has **Render-side auto-deploy set to trigger on commit**, which deploys on
-  push _without waiting for CI_ (the latest staging deploy started seconds after its
-  commit). The workflow's green-CI gate governs only its own deploy hook; reconciling the
-  two is a Render-dashboard-only setting — "After CI checks pass" is the mode that keeps
-  the gate honest _without_ breaking `verify-render-api` ([Deploy verification](ci-cd.md#deploy-verification-observer-workflow)), which
-  treats "no deploy created for this SHA" as a failure and so rules out turning
-  auto-deploy fully off.
-- ✅ Production API deployment does **not** use auto-deploy. `deploy-production.yml` calls
+- ✅ Staging API deployment is automated: after green CI on `main`,
+  `.github/workflows/deploy-api.yml` applies staging migrations, then deploys **that commit**
+  to `frapp-api-staging` through the Render API and waits until `/health/ready` reports it
+  ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)). Render-side auto-deploy is
+  **off** on staging too (`staging-conformance.yml` asserts it): it built every push before CI
+  and before the migration, and the deploy hook it ran beside built `main`'s tip rather than the
+  verified commit. [Deploy verification](ci-cd.md#deploy-verification) has the details.
+- ✅ Production API deployment does **not** use auto-deploy either. `deploy-production.yml` calls
   the Render API with an explicit `commitId`, so what ships is the commit a human named.
   This requires `frapp-api-prod` to have auto-deploy **off** and to track `main`;
   `scripts/ci/production-guardrails.mjs` asserts both, on a schedule and again as a

@@ -150,7 +150,7 @@ permissions:
   contents: read
 
 env:
-  # Not secrets — the same identifiers `verify-deployments.yml` already hardcodes.
+  # Not secrets — identifiers, hardcoded the same way in production-guardrails.yml.
   RENDER_PROD_SERVICE_ID: srv-d6lqu41aae7s73f62df0
   VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
   VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy

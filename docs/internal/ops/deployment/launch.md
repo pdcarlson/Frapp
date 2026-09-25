@@ -33,7 +33,7 @@
 
 ### Phase 3: Ongoing
 
-- [ ] Store the **staging** Render deploy hook URL in Infisical `staging` (not a GitHub secret; production deploys by commit and has no hook, per [`render.md` § 5.7](render.md#57-deploy-hooks-for-github-actions))
+- [x] No Render deploy hook to store: both API services deploy by commit through the Render API ([`render.md` § 5.7](render.md#57-deploy-hooks-for-github-actions), #2505)
 - [ ] Verify CI workflow runs on PRs
 - [x] In-repo uptime: `.github/workflows/production-uptime.yml` (see [`AGENT_INFRA.md`](../../ci-cd/AGENT_INFRA.md) § Scheduled conformance). A Sentry 60 s monitor is still the finer-grained human path (quota; ask before creating), planned under #2505. GitHub cron starts after this file is on `main`
 
