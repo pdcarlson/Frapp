@@ -66,22 +66,6 @@ function extractFilterScript() {
   return body.join("\n").replace(/\$\{\{[^}]*\}\}/g, "deadbeef");
 }
 
-/**
- * The build-context sources of every `COPY` in apps/api/Dockerfile (not
- * `COPY --from=<stage>`, which copies between stages).
- */
-function dockerfileCopySources() {
-  const dockerfile = readFileSync(join(REPO_ROOT, "apps", "api", "Dockerfile"), "utf8");
-  const sources = new Set();
-  for (const line of dockerfile.split("\n")) {
-    const match = line.match(/^\s*COPY\s+(?!--from=)(.+)$/);
-    if (!match) continue;
-    const args = match[1].split(/\s+/).filter((arg) => !arg.startsWith("--"));
-    for (const source of args.slice(0, -1)) sources.add(source.replace(/^\.\//, ""));
-  }
-  return [...sources];
-}
-
 let workspace;
 let scriptPath;
 
@@ -159,81 +143,44 @@ describe("deploy-api check-changes filter", () => {
     );
   });
 
-  it("detects an API change that sorts early in a very large diff", () => {
-    // The exact shape of the #1330 failure: an `apps/api/` match near the top,
-    // then far more output than a pipe can buffer.
+  it("detects a migration that sorts early in a very large diff", () => {
+    // The shape of the #1330 failure: a match near the top, then far more
+    // output than a pipe can buffer. (#1330 lost its `apps/api/` match; the
+    // API filter has since moved to plan-staging-deploy.mjs, and this step
+    // greps only for migrations, which the same race would hide.)
     const paths = [
-      "apps/api/src/main.ts",
-      ...Array.from({ length: FLOOD_LINES }, (_, i) => `docs/generated/note-${i}.md`),
       "supabase/migrations/20260827190000_secdef_search_path_pg_temp.sql",
+      ...Array.from({ length: FLOOD_LINES }, (_, i) => `docs/generated/note-${i}.md`),
     ];
 
     const { outputs } = runFilter({ paths });
 
-    assert.equal(outputs["api-changed"], "true");
     assert.equal(outputs["migrations-changed"], "true");
   });
 
   it("gives the same answer whichever path sorts first", () => {
     const flood = Array.from({ length: FLOOD_LINES }, (_, i) => `docs/generated/note-${i}.md`);
 
-    const apiFirst = runFilter({
-      paths: ["apps/api/src/main.ts", ...flood, "supabase/migrations/0001_x.sql"],
-    });
-    const migrationsFirst = runFilter({
-      paths: ["apps/api/zzz.ts", ...flood, "supabase/migrations/0001_x.sql"].sort(),
-    });
+    const migrationsFirst = runFilter({ paths: ["supabase/migrations/0001_x.sql", ...flood] });
+    const migrationsLast = runFilter({ paths: [...flood, "supabase/migrations/0001_x.sql"] });
 
-    assert.deepEqual(apiFirst.outputs, migrationsFirst.outputs);
-    assert.equal(apiFirst.outputs["api-changed"], "true");
+    assert.deepEqual(migrationsFirst.outputs, migrationsLast.outputs);
+    assert.equal(migrationsFirst.outputs["migrations-changed"], "true");
   });
 
-  it("reports no API change for a docs-only diff", () => {
+  it("reports no migration change for a docs-only diff", () => {
     const { outputs } = runFilter({ paths: ["docs/a.md", "README.md"] });
 
-    assert.equal(outputs["api-changed"], "false");
     assert.equal(outputs["migrations-changed"], "false");
   });
 
-  it("detects migrations without claiming an API change", () => {
-    const { outputs } = runFilter({
-      paths: ["supabase/migrations/20260827190000_secdef_search_path_pg_temp.sql"],
-    });
-
-    assert.equal(outputs["api-changed"], "false");
-    assert.equal(outputs["migrations-changed"], "true");
-  });
-
-  it("treats the other deploy-trigger paths as API changes", () => {
-    for (const path of [
-      "packages/validation/src/index.ts",
-      "packages/observability/src/index.ts",
-      "packages/typescript-config/base.json",
-    ]) {
-      const { outputs } = runFilter({ paths: [path] });
-      assert.equal(outputs["api-changed"], "true", `${path} should trigger the API deploy`);
-    }
-  });
-
-  // The filter used to list three of the seven packages the image builds, so a
-  // change to `packages/color` reached the API only on the next unrelated API
-  // commit (#2505). Every source the Dockerfile COPYs from the build context
-  // must trigger the deploy; the list is read from the Dockerfile so a package
-  // added there without the filter fails here.
-  it("treats every path the API Dockerfile copies as an API change", () => {
-    const sources = dockerfileCopySources();
-    assert.ok(sources.length >= 10, `expected the Dockerfile's COPY sources, found ${sources.length}`);
-    for (const source of [...sources, ".dockerignore"]) {
-      // A directory source stands for any file under it.
-      const path = source.endsWith("/") ? `${source}src/index.ts` : source;
-      const { outputs } = runFilter({ paths: [path] });
-      assert.equal(outputs["api-changed"], "true", `${path} (COPY ${source}) should trigger the API deploy`);
-    }
-  });
-
-  it("does not treat a sibling package's manifest as the root manifest", () => {
-    const { outputs } = runFilter({ paths: ["packages/ui/package.json", "apps/web/package.json"] });
-    assert.equal(outputs["api-changed"], "false");
+  // Since #2505 this step gates no deploy: deploy-staging plans from the commit
+  // staging serves. An `api-changed` output reappearing here would be a second
+  // copy of plan-staging-deploy.mjs's path list, free to drift from it.
+  it("no longer computes an API path filter", () => {
+    const { outputs } = runFilter({ paths: ["apps/api/src/main.ts"] });
+    assert.equal(outputs["api-changed"], undefined);
+    assert.doesNotMatch(extractFilterScript(), /grep[^\n]*apps\/api/);
   });
 
   it("fails closed when the diff cannot be read", () => {
@@ -241,7 +188,6 @@ describe("deploy-api check-changes filter", () => {
     // cheap, a change that silently never ships is not.
     const { outputs, stdout } = runFilter({ gitFails: true });
 
-    assert.equal(outputs["api-changed"], "true");
     assert.equal(outputs["migrations-changed"], "true");
     assert.match(stdout, /::warning::/);
   });

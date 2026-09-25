@@ -34,7 +34,6 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
-      api-changed: ${{ steps.filter.outputs.api-changed }}
       migrations-changed: ${{ steps.filter.outputs.migrations-changed }}
     steps:
       - name: Checkout
@@ -46,10 +45,14 @@ jobs:
           # the fail-open note in the next step.
           fetch-depth: 0
 
-      # This filter now gates ONLY the API deploy. It deliberately no longer
-      # gates `migrate-staging`: a path filter that answers "false" for any
+      # This filter gates NOTHING any more; it reports whether this push
+      # changed a migration, for the run summary. It stopped gating
+      # `migrate-staging` first: a path filter that answers "false" for any
       # reason silently skips a migration, which is exactly the incident this
-      # workflow is being hardened against. See `migrate-staging` below.
+      # workflow is being hardened against. See `migrate-staging` below. Then
+      # it stopped gating the API deploy (#2505): `deploy-staging` plans from
+      # the commit staging serves, because a per-push filter skipped API
+      # commits whose own run never deployed.
       #
       # It also no longer fails open to "nothing changed". The old form was
       # `git diff --name-only HEAD~1 2>/dev/null || echo ""`, so ANY git failure
@@ -98,19 +101,10 @@ jobs:
 
           echo "Changed paths in this push: $(wc -l < "$CHANGED_FILE")"
 
-          # Everything the API image is built from: the paths
-          # apps/api/Dockerfile COPYs, plus the root .dockerignore that decides
-          # what reaches it. deploy-api-check-changes.test.mjs reads the
-          # Dockerfile and fails when a COPY source is missing here, which is
-          # how four packages the image builds went unmatched (#2505).
-          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^(apps/api/|packages/(validation|org-archetypes|chapter-theme|color|formatting|observability|typescript-config)/|package\.json$|package-lock\.json$|\.dockerignore$)' "$CHANGED_FILE"; then
-            echo "api-changed=true" >> "$GITHUB_OUTPUT"
-            echo "API-related files changed (or the diff was unreadable)."
-          else
-            echo "api-changed=false" >> "$GITHUB_OUTPUT"
-            echo "No API-related files changed."
-          fi
-
+          # No API path filter here any more (#2505). Whether staging needs a
+          # deploy depends on what it SERVES, not on what this one push
+          # changed, so deploy-staging decides that itself
+          # (scripts/ci/plan-staging-deploy.mjs). This row is reported only.
           if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED_FILE"; then
             echo "migrations-changed=true" >> "$GITHUB_OUTPUT"
             echo "Migration files changed (or the diff was unreadable)."
@@ -205,10 +199,11 @@ jobs:
   # ── Deploy API to staging ──────────────────────────────────────────────
   deploy-staging:
     needs: [check-changes, migrate-staging]
+    # No path gate: every green run on `main` gets here, and the first step
+    # decides whether anything needs deploying (see "Plan the deploy").
     if: |
       always() &&
       needs.check-changes.result == 'success' &&
-      needs.check-changes.outputs.api-changed == 'true' &&
       github.event.workflow_run.head_branch == 'main' &&
       (needs.migrate-staging.result == 'success' || needs.migrate-staging.result == 'skipped')
     runs-on: ubuntu-latest
@@ -219,18 +214,20 @@ jobs:
     # One staging deploy at a time. Two merges landing close together would
     # otherwise create two Render deploys at once, and Render cancels the older,
     # which this job rightly reports as "did not ship". Queued, the older run
-    # deploys first and the newer one supersedes it only after it finished.
+    # deploys first; the newer one then plans against what that left serving.
     #
     # `cancel-in-progress: false`, as on migrate-staging. GitHub still replaces
-    # a PENDING run when a third arrives; that run's job shows `cancelled`, and
-    # `deploy-outcome` raises the alert until the next run deploys. That needs
-    # three API merges inside one deploy, and costs one self-closing alert.
+    # a PENDING run when a third arrives; that run's job shows `cancelled` and
+    # `deploy-outcome` raises the alert. Nothing is lost by it: the run that
+    # replaced it plans from the served commit, so it deploys the skipped
+    # changes too, and closes the alert.
     concurrency:
       group: deploy-api-staging
       cancel-in-progress: false
     steps:
       # The checkout supplies the local composite action below (`uses: ./…`
-      # resolves against the runner's workspace) and the two deploy scripts.
+      # resolves against the runner's workspace), the deploy scripts, and the
+      # history the plan step diffs.
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -242,8 +239,11 @@ jobs:
           # moved over the local action below, this deploy would fail for a
           # commit whose own tree is fine.
           ref: ${{ github.event.workflow_run.head_sha }}
-          # Nothing here talks to git after checkout; it only needs the action
-          # and script files on disk. A third-party action runs next (via the
+          # Full history: the plan diffs from the commit staging serves, which
+          # can be any number of commits back.
+          fetch-depth: 0
+          # Nothing here talks to the remote after checkout; the plan's git
+          # calls are local. A third-party action runs next (via the
           # composite), and this job holds staging secrets — same reasoning as
           # deploy-outcome below and staging-conformance.yml.
           persist-credentials: false
@@ -260,37 +260,54 @@ jobs:
         with:
           node-version: 24
 
+      # Compare this commit with the one staging serves (`/health`'s
+      # `commit`). Deploy when anything the API image is built from changed
+      # since then, which carries forward an API commit whose own run never
+      # deployed (its CI failed or was replaced) and retries after a failed
+      # build. Never deploy a commit staging has already moved past: a re-run
+      # of an old run would otherwise roll staging back. Unreadable means
+      # deploy. The reasoning is in the script's header.
+      - name: Plan the deploy
+        id: plan
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/ci/plan-staging-deploy.mjs
+
       # Deploy-by-commit through the Render API (#2505), the same script
       # `deploy-production.yml` uses. The deploy hook this replaces could not
       # name a commit: it built the tip of `main` at the moment it fired, which
       # can be a newer commit than the one CI verified and migrate-staging
-      # migrated for. Staging also auto-deployed on push, before CI, so every
-      # API commit built twice. With auto-deploy off (staging-conformance
-      # asserts it), this step is the only thing that deploys staging.
+      # migrated for. Render auto-deploy must be off (staging-conformance
+      # asserts it; #2679), so that this is the only thing that deploys
+      # staging: an auto-deploy starting mid-run can cancel this deploy.
       #
       # The script polls the deploy id it created to a terminal state, so a
       # failed build fails THIS job and `deploy-outcome` raises the P1 alert.
       # That is the outcome `verify-deployments.yml` used to watch from the
       # side; it was retired with this change.
       - name: Deploy the commit to Render
+        if: steps.plan.outputs.deploy == 'true'
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: srv-d6lqsq75r7bs73c2fdc0
           SERVICE_LABEL: frapp-api-staging
           DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: node scripts/ci/deploy-render-commit.mjs
+        run: node scripts/ci/deploy-render-production.mjs
 
       # Render's `live` means the new instance passed Render's own probe,
       # `GET /health`, which always 2xxs. This step asks the API itself: poll
-      # `/health/ready` until it answers 2xx AND reports this commit. The old
-      # smoke loop took any 2xx, which the previous instance also gives while
-      # the new one switches in, so it could pass a deploy that never took
-      # traffic. A missing API_HEALTHCHECK_URL now fails (it used to warn and
-      # exit 0): a check that silently does not run reads the same as a pass.
+      # `/health/ready` until it answers 2xx AND reports the planned commit
+      # (this run's when it deployed, else the one staging already served).
+      # The old smoke loop took any 2xx, which the previous instance also
+      # gives while the new one switches in, so it could pass a deploy that
+      # never took traffic. It runs on a no-deploy plan too, so a green run
+      # always means staging was seen serving and ready. A missing
+      # API_HEALTHCHECK_URL fails (it used to warn and exit 0), in the plan
+      # step before this one.
       - name: Verify staging serves the commit
         env:
           SERVICE_LABEL: frapp-api-staging
-          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+          DEPLOY_SHA: ${{ steps.plan.outputs.verify_sha }}
         run: node scripts/ci/verify-served-commit.mjs
 
   # ── Deploy outcome: alert on failure, state plainly when nothing deployed ──

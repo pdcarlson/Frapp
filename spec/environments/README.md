@@ -118,7 +118,7 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
 - **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
 - **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`). Both projects are unlinked from Git (ADR-21), so no push produces a preview; `deploy-vercel-staging.yml` builds and uploads them after CI succeeds on `main`, then aliases both hostnames (#1578) — see §6 **Web and Landing (Vercel)**.
-- **API:** Render staging service (`frapp-api-staging`), pointing at Supabase staging. `deploy-api.yml` deploys each `main` commit that changes the API, after CI and the staging migration, by commit through the Render API; Render auto-deploy is off (#2505).
+- **API:** Render staging service (`frapp-api-staging`), pointing at Supabase staging. After CI and the staging migration, `deploy-api.yml` deploys the `main` commit by commit through the Render API whenever anything the API image is built from changed since the commit staging serves; Render auto-deploy must be off (#2505; the dashboard change is #2679).
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
 - **Data:** May contain seed data. Never production user data.
@@ -311,7 +311,7 @@ secrets.
 
 - API deploys are gated behind CI success using `workflow_run` triggers.
 - Production: a human dispatches **Deploy production** with a commit SHA → the workflow calls the Render API with that `commitId` (no deploy hook, and no push involved).
-- Push to `main` (after CI, then the staging migration) → `deploy-api.yml` calls the Render API with that `commitId` and waits until `/health/ready` reports the commit (no deploy hook, and Render auto-deploy is off; #2505).
+- Push to `main` (after CI, then the staging migration) → `deploy-api.yml` calls the Render API with that `commitId` and waits until `/health/ready` reports the commit (no deploy hook, and Render auto-deploy must be off; #2505, #2679).
 - Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
 - Database migrations run automatically before deploy (see Section 8).
 - See `render.yaml` for the infrastructure-as-code definition.

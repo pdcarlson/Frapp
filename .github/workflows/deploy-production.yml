@@ -737,7 +737,7 @@ jobs:
           DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
         run: |
           set -euo pipefail
-          node scripts/ci/deploy-render-commit.mjs | tee "${RUNNER_TEMP:-/tmp}/render.log"
+          node scripts/ci/deploy-render-production.mjs | tee "${RUNNER_TEMP:-/tmp}/render.log"
           ID="$(grep -oP '^render_deploy_id=\K.*' "${RUNNER_TEMP:-/tmp}/render.log" || true)"
           echo "deploy_id=$ID" >> "$GITHUB_OUTPUT"
 

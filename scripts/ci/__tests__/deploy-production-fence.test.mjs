@@ -317,7 +317,7 @@ describe("the SHA-trim step (run 34234768094)", () => {
 //
 // That is the identical shape #2265 fixed for the Vercel build step, still
 // standing for the other four. The worst of them is `Deploy the commit to
-// Render`: `deploy-render-commit.mjs` calls `requireEnv("DEPLOY_SHA")`, the
+// Render`: `deploy-render-production.mjs` calls `requireEnv("DEPLOY_SHA")`, the
 // step runs AFTER `Run migrations (apply)`, and it is gated
 // `!inputs.dry_run_only` — so no dry run reaches it even now that the rehearsal
 // is wider. A regression there fails a production run with the database already

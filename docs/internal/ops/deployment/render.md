@@ -11,7 +11,7 @@ Create **two** Render Web Services: one for production, one for staging.
 | ------------------- | ----------------------------------------- | --------------------- |
 | **Name**            | `frapp-api-prod`                          | `frapp-api-staging`   |
 | **Branch**          | `main`                                    | `main`                |
-| **Auto-Deploy**     | **No** — deploys are API-driven by commit | Yes (on commit)       |
+| **Auto-Deploy**     | **No** — deploys are API-driven by commit | **No** — same, from `deploy-api.yml` (#2505) |
 | **Root Directory**  | (leave empty — Dockerfile uses repo root) | (same)                |
 | **Runtime**         | Docker                                    | Docker                |
 | **Dockerfile Path** | `apps/api/Dockerfile`                     | `apps/api/Dockerfile` |

@@ -135,3 +135,18 @@ describe("verifyServedCommit", () => {
     assert.equal((await result).status, "success");
   });
 });
+
+// A missing API_HEALTHCHECK_URL must fail the deploy (it used to warn and exit
+// 0, which reads the same as a pass). That lives in main(), so run the CLI.
+describe("CLI", () => {
+  it("exits 1 when API_HEALTHCHECK_URL is missing", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const { fileURLToPath } = await import("node:url");
+    const script = fileURLToPath(new URL("../verify-served-commit.mjs", import.meta.url));
+    const env = { ...process.env, DEPLOY_SHA: SHA };
+    delete env.API_HEALTHCHECK_URL;
+    const run = spawnSync(process.execPath, [script], { env, encoding: "utf8" });
+    assert.equal(run.status, 1, run.stdout + run.stderr);
+    assert.match(run.stderr + run.stdout, /API_HEALTHCHECK_URL/);
+  });
+});

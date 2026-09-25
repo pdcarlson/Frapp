@@ -109,23 +109,21 @@ export const DEPLOY_API_CONFIG = {
   workflowFile: ".github/workflows/deploy-api.yml",
   gateJob: "check-changes",
   deployJobs: ["migrate-staging", "deploy-staging"],
-  gateOutputRows: [
-    { label: "API paths changed", output: "api-changed" },
-    { label: "Migration paths changed", output: "migrations-changed" },
-  ],
+  // Reported, not gating: since #2505 `deploy-staging` runs on every green
+  // push and plans its deploy from the commit staging serves.
+  gateOutputRows: [{ label: "Migration paths changed", output: "migrations-changed" }],
   alertTitle: "Deploy API is failing — pushes are not reaching the environment",
   alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
-  noOpReason: "the changed-path gate skipped every migrate and deploy job",
-  // Explicit: a no-op IS a legitimate outcome here. `check-changes` skipping
-  // the deploy jobs on a docs-only push is the gate doing its job, and 46 of
-  // the 90 runs in #763 were exactly that. It must stay reported-but-benign,
-  // and in particular must never close an open alert — skipping every job
-  // proves nothing about whether deploys work.
+  noOpReason: "no migrate or deploy job ran",
+  // A no-op stays reported-but-benign, and in particular never closes an open
+  // alert — skipping every job proves nothing about whether deploys work. It
+  // was the common case while a path gate skipped the deploy jobs on docs-only
+  // pushes (46 of the 90 runs in #763). Since #2505 both jobs run on every
+  // eligible push, so a no-op should no longer happen at all.
   noOpIsUnexpected: false,
   noOpNote:
-    "The changed-path gate (`check-changes`) found no change to anything the API image is " +
-    "built from, and `migrate-staging` did not run, so every migrate and deploy job was " +
-    "skipped. **A green run of this shape is not evidence that deploys work** — see issue #763.",
+    "Neither `migrate-staging` nor `deploy-staging` ran, so nothing was migrated, deployed or " +
+    "verified. **A green run of this shape is not evidence that deploys work** — see issue #763.",
   whyLines: [
     "`Deploy API` is triggered by `workflow_run`, so its failures never appear as a PR check or a",
     "commit status, and runs that skip every job report green. That combination hid a 100% deploy",
@@ -195,11 +193,14 @@ export const ALERT_CONFIGS = {
  * the annotation and the alert issue say the same thing about one run.
  */
 export const OUTCOME_COPY = {
-  failedTail: "Nothing was deployed by this run.",
+  // "Not confirmed", not "nothing was deployed": a deploy can go live and a
+  // later check in the same job fail (Deploy API's served-commit check), and
+  // the run log says which step it was.
+  failedTail: "Nothing is confirmed deployed by this run; its log says which step failed.",
   noOpLead: "deployed NOTHING",
   noOpTail: "This run is green because it declined to deploy, not because a deploy succeeded.",
   badges: {
-    failed: "❌ **FAILED — nothing deployed**",
+    failed: "❌ **FAILED — not confirmed deployed**",
     deployed: "✅ **DEPLOYED**",
     "no-op": "⏭️ **NO-OP — nothing deployed**",
   },
@@ -304,7 +305,7 @@ export function classifyDeployOutcome({ jobResults, config = DEFAULT_ALERT_CONFI
   // successful deploy like any other alert.
   //
   // `escalated` is reported so the summary can EXPLAIN itself. Without it the
-  // reader gets a "FAILED — nothing deployed" badge above a job table reading
+  // reader gets a "FAILED — not confirmed deployed" badge above a job table reading
   // `deploy | skipped`, which is a contradiction they cannot resolve. It is
   // spread in only when true, so the returned shape for a gated config stays
   // exactly what it was — the same trick `lib/alert-issue.mjs` uses for

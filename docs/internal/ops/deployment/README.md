@@ -17,10 +17,11 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
 - ✅ Staging API deployment is automated: after green CI on `main`,
   `.github/workflows/deploy-api.yml` applies staging migrations, then deploys **that commit**
   to `frapp-api-staging` through the Render API and waits until `/health/ready` reports it
-  ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)). Render-side auto-deploy is
-  **off** on staging too (`staging-conformance.yml` asserts it): it built every push before CI
-  and before the migration, and the deploy hook it ran beside built `main`'s tip rather than the
-  verified commit. [Deploy verification](ci-cd.md#deploy-verification) has the details.
+  ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)). [Deploy verification](ci-cd.md#deploy-verification) has the details.
+- ⚠️ Render-side auto-deploy **must be off** on staging too (`staging-conformance.yml` asserts
+  it): it builds every push before CI and before the migration, and its deploy can cancel the one
+  `deploy-api.yml` creates. It was still **on** when read on 2026-09-25; turning it off is owner
+  step [#2679](https://github.com/pdcarlson/Frapp/issues/2679).
 - ✅ Production API deployment does **not** use auto-deploy either. `deploy-production.yml` calls
   the Render API with an explicit `commitId`, so what ships is the commit a human named.
   This requires `frapp-api-prod` to have auto-deploy **off** and to track `main`;

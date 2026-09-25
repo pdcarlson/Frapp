@@ -5,6 +5,12 @@
 // `deploy-production.yml` for `frapp-api-prod`, and `deploy-api.yml`'s
 // `deploy-staging` for `frapp-api-staging` (#2505).
 //
+// ── Why it is still called `-production` ────────────────────────────────────
+// `deploy-production.yml` checks out the commit being deployed and runs THIS
+// file from that commit's tree. Renaming it would break the deploy of every
+// commit from before the rename, rollbacks to an older commit included, and
+// only after that run had already applied its migrations. Keep the name.
+//
 // ── Why this exists rather than a deploy hook or auto-deploy ────────────────
 // A deploy hook cannot name a commit: it builds whatever is at the tip of the
 // service's configured branch. With deploys running off `main`, the tip moves
@@ -25,12 +31,22 @@
 //
 // ── Why `canceled` is a failure ────────────────────────────────────────────
 // Both callers hold a single-concurrency lock and create exactly one deploy,
-// and neither service auto-deploys, so nothing of ours supersedes it. A cancel
-// means the commit did not ship, and reporting that as neutral would be a green
-// run that deployed nothing — the #763 failure mode, rebuilt.
+// and neither service may auto-deploy (production-guardrails and
+// staging-conformance assert it off), so nothing of ours supersedes it. A
+// cancel means the commit did not ship, and reporting that as neutral would be
+// a green run that deployed nothing — the #763 failure mode, rebuilt. If one
+// does fire with auto-deploy on, the fault is that setting, and the conformance
+// alert names it.
+//
+// ── Why a failed read is re-asked ──────────────────────────────────────────
+// A failure files a P1 on staging and fails a release on production, so one
+// bad read of Render's API must not be one. What outlasts `resilientFetch`'s
+// in-request retries (a 5xx, a network error, a stalled body) is re-asked on
+// the next poll; RENDER_MAX_CONSECUTIVE_READ_ERRORS in a row end the run. A
+// 401, 403 or 404 ends it at once: a dead key or a wrong id doesn't heal.
 //
 // Semantics: the pure functions below. Unit tests:
-// `scripts/ci/__tests__/deploy-render-commit.test.mjs`.
+// `scripts/ci/__tests__/deploy-render-production.test.mjs`.
 
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import { requireEnv } from "./lib/env.mjs";
@@ -49,6 +65,11 @@ export const RENDER_TERMINAL_FAILURE_STATES = new Set([
   "pre_deploy_failed",
 ]);
 export const RENDER_SUPERSEDED_STATES = new Set(["canceled", "deactivated"]);
+
+/** Failed reads IN A ROW that end the poll (about a minute at the default interval). */
+export const RENDER_MAX_CONSECUTIVE_READ_ERRORS = 3;
+/** Refusals re-asking can't fix: a dead or unscoped key, or a wrong service or deploy id. */
+export const RENDER_PERMANENT_READ_STATUSES = new Set([401, 403, 404]);
 
 export const RENDER_POLL_INTERVAL_MS = 20 * 1000;
 export const RENDER_OVERALL_TIMEOUT_MS = 20 * 60 * 1000;
@@ -129,6 +150,7 @@ export async function pollRenderDeploy({
   logger = console,
 }) {
   let lastObservedStatus = null;
+  let consecutiveReadErrors = 0;
 
   return pollUntilTerminal({
     clock,
@@ -136,22 +158,38 @@ export async function pollRenderDeploy({
     overallTimeoutMs,
     logger,
     fetchOne: async () => {
-      const response = await fetchImpl(GET_DEPLOY_URL(serviceId, deployId), {
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      if (!response.ok) {
-        return { httpStatus: response.status };
+      try {
+        const response = await fetchImpl(GET_DEPLOY_URL(serviceId, deployId), {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!response.ok) {
+          return { readError: `HTTP ${response.status}`, httpStatus: response.status };
+        }
+        const deploy = await response.json();
+        return { deployStatus: deploy?.status ?? null };
+      } catch (error) {
+        return { readError: error?.message ?? String(error) };
       }
-      const deploy = await response.json();
-      return { deployStatus: deploy?.status ?? null };
     },
     classify: (state) => {
-      if (state.httpStatus) {
-        return {
-          status: "failure",
-          message: `Render API returned HTTP ${state.httpStatus} for deploy ${deployId} on ${label}.`,
-        };
+      if (state.readError) {
+        consecutiveReadErrors += 1;
+        const what = `Render API read of deploy ${deployId} on ${label} failed (${state.readError})`;
+        if (RENDER_PERMANENT_READ_STATUSES.has(state.httpStatus)) {
+          return { status: "failure", message: `${what}. The key or the id is wrong; re-asking can't fix that.` };
+        }
+        if (consecutiveReadErrors >= RENDER_MAX_CONSECUTIVE_READ_ERRORS) {
+          return {
+            status: "failure",
+            message:
+              `${what}, ${consecutiveReadErrors} reads in a row. Last observed deploy status: ` +
+              `${lastObservedStatus ?? "none"}. Check the deploy in the Render dashboard.`,
+          };
+        }
+        logger.log?.(`[${label}] ${what}; re-asking on the next poll.`);
+        return null;
       }
+      consecutiveReadErrors = 0;
 
       const deployStatus = state.deployStatus;
       lastObservedStatus = deployStatus;

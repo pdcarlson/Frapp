@@ -6,7 +6,8 @@ import {
   createRenderDeploy,
   deployRenderCommit,
   pollRenderDeploy,
-} from "../deploy-render-commit.mjs";
+  RENDER_MAX_CONSECUTIVE_READ_ERRORS,
+} from "../deploy-render-production.mjs";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const SERVICE_ID = "srv-test";
@@ -135,6 +136,75 @@ describe("pollRenderDeploy", () => {
     });
     assert.equal(result.status, "failure");
     assert.match(result.message, /HTTP 401/);
+  });
+
+  // A failure pages (staging) or fails a release (production), so a read that
+  // outlasts resilientFetch's own retries is re-asked, not a verdict.
+  it("re-asks after a transient 502 and passes when the deploy goes live", async () => {
+    const { fetchImpl, calls } = makeFetchStub([errJson(502), okJson({ status: "live" })]);
+    const result = await pollRenderDeploy({
+      apiKey: API_KEY, serviceId: SERVICE_ID, deployId: "dep-1",
+      clock: makeFakeClock(), fetchImpl, logger: quiet,
+    });
+    assert.equal(result.status, "success");
+    assert.equal(calls.length, 2);
+  });
+
+  it("re-asks after a thrown read (network error) instead of dying unhandled", async () => {
+    const { fetchImpl } = makeFetchStub([
+      () => { throw new Error("ECONNRESET"); },
+      okJson({ status: "live" }),
+    ]);
+    const result = await pollRenderDeploy({
+      apiKey: API_KEY, serviceId: SERVICE_ID, deployId: "dep-1",
+      clock: makeFakeClock(), fetchImpl, logger: quiet,
+    });
+    assert.equal(result.status, "success");
+  });
+
+  it("re-asks after a body that fails to parse", async () => {
+    const badBody = { ok: true, status: 200, json: async () => { throw new SyntaxError("Unexpected end"); } };
+    const { fetchImpl } = makeFetchStub([badBody, okJson({ status: "live" })]);
+    const result = await pollRenderDeploy({
+      apiKey: API_KEY, serviceId: SERVICE_ID, deployId: "dep-1",
+      clock: makeFakeClock(), fetchImpl, logger: quiet,
+    });
+    assert.equal(result.status, "success");
+  });
+
+  it("fails after RENDER_MAX_CONSECUTIVE_READ_ERRORS failed reads in a row", async () => {
+    const { fetchImpl, calls } = makeFetchStub([errJson(502)]);
+    const result = await pollRenderDeploy({
+      apiKey: API_KEY, serviceId: SERVICE_ID, deployId: "dep-1",
+      clock: makeFakeClock(), fetchImpl, logger: quiet,
+    });
+    assert.equal(result.status, "failure");
+    assert.equal(calls.length, RENDER_MAX_CONSECUTIVE_READ_ERRORS);
+    assert.match(result.message, /HTTP 502/);
+  });
+
+  it("resets the count after a good read", async () => {
+    const { fetchImpl } = makeFetchStub([
+      errJson(502), errJson(502), okJson({ status: "build_in_progress" }),
+      errJson(502), errJson(502), okJson({ status: "live" }),
+    ]);
+    const result = await pollRenderDeploy({
+      apiKey: API_KEY, serviceId: SERVICE_ID, deployId: "dep-1",
+      clock: makeFakeClock(), fetchImpl, logger: quiet,
+    });
+    assert.equal(result.status, "success");
+  });
+
+  it("fails at once on a 403 or 404: re-asking can't fix a key or an id", async () => {
+    for (const status of [403, 404]) {
+      const { fetchImpl, calls } = makeFetchStub([errJson(status)]);
+      const result = await pollRenderDeploy({
+        apiKey: API_KEY, serviceId: SERVICE_ID, deployId: "dep-1",
+        clock: makeFakeClock(), fetchImpl, logger: quiet,
+      });
+      assert.equal(result.status, "failure", `HTTP ${status}`);
+      assert.equal(calls.length, 1, `HTTP ${status} is not re-asked`);
+    }
   });
 
   it("fails on timeout rather than assuming it went live", async () => {

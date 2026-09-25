@@ -11,7 +11,7 @@ export function createClock({
 
 /**
  * The "poll until terminal" skeleton behind `verify-vercel-deploy.mjs`,
- * `deploy-render-commit.mjs`, `deploy-vercel.mjs` and, since #2505,
+ * `deploy-render-production.mjs`, `deploy-vercel.mjs` and, since #2505,
  * `verify-served-commit.mjs`. Before this (#1351), four provider pollers (the
  * first three and the since-retired `verify-render-deploy.mjs`) each
  * hand-wrote the same loop — `startedAt = clock.now()` →

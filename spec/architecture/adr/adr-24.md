@@ -94,7 +94,7 @@ digest 07).
     through the Render API after `migrate-staging` and polls that deploy, as production already
     does. That fixes the tip build, the double build and the migrations-first ordering that
     `spec/environments/README.md` § Deploy Ordering requires. *(Built 2026-09-25 in #2505's PR,
-    which also checks `/health`'s `commit` and retires the push-time `verify-deployments.yml`.
+    which also requires `/health/ready` to report the deployed commit and retires the push-time `verify-deployments.yml`.
     Turning auto-deploy off is the owner's dashboard step; `staging-conformance.yml` asserts it.)*
   - **Then (#2506).** Staging and production both switch to deploying the CI-built image by
     digest (decision 1). The commit-based path is the interim step.

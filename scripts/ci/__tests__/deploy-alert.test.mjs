@@ -232,7 +232,7 @@ test("the run summary distinguishes a no-op from a deploy at a glance", () => {
     gateOutputs: { "api-changed": false, "migrations-changed": false },
     gateSucceeded: true,
   });
-  assert.match(summary, /\| API paths changed \| no \|/);
+  assert.match(summary, /\| Migration paths changed \| no \|/);
   assert.match(summary, /NO-OP — nothing deployed/);
   assert.match(summary, /#763/);
   // Every job's result is spelled out so no inference from skipped jobs is needed.
@@ -251,7 +251,7 @@ test("the failed summary names the failing job and the commit", () => {
     gateOutputs: { "api-changed": true, "migrations-changed": false },
     gateSucceeded: true,
   });
-  assert.match(summary, /FAILED — nothing deployed/);
+  assert.match(summary, /FAILED — not confirmed deployed/);
   assert.match(summary, /deploy-staging/);
   assert.match(summary, /4de96af/);
 });
@@ -279,7 +279,6 @@ test("a failed gate reports the path flags as unknown, never as 'no'", async () 
     logger: silentLogger,
   });
 
-  assert.match(summary, /\| API paths changed \| unknown \|/);
   assert.match(summary, /\| Migration paths changed \| unknown \|/);
   assert.doesNotMatch(summary, /paths changed \| no \|/);
 });
@@ -438,7 +437,7 @@ test("a failed run writes the summary, annotates as an error, and raises the ale
 
   assert.equal(result.outcome, "failed");
   assert.equal(result.alert.action, "created");
-  assert.match(summary, /FAILED — nothing deployed/);
+  assert.match(summary, /FAILED — not confirmed deployed/);
   assert.ok(lines.some((line) => line.startsWith("::error::")));
   assert.ok(calls.some((c) => c.method === "POST" && c.path === "/repos/o/r/issues"));
 });
@@ -1185,7 +1184,7 @@ test("both configs' copy reads the same on every surface a responder reads", () 
       headBranch: "main",
       config,
     });
-    assert.match(headline, /did not succeed\. Nothing was deployed by this run\.$/);
+    assert.match(headline, /did not succeed\. Nothing is confirmed deployed by this run; its log says which step failed\.$/);
     const body = buildAlertIssueBody({
       headline,
       failed: ["deploy"],
