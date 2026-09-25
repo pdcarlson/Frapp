@@ -514,6 +514,15 @@ export function ChatShell({
     () => new Set(thread.rows.map((row) => row.message.id)),
     [thread.rows],
   );
+  // Pins the block list keeps off the Pinned panel: a blocked member's, and
+  // ones it cannot vouch for yet. Counted so the panel says they are hidden
+  // rather than reading as "nothing pinned".
+  const hiddenPinCount = useMemo(
+    () =>
+      channel.messages.filter((message) => message.is_pinned).length -
+      shownMessages.filter((message) => message.is_pinned).length,
+    [channel.messages, shownMessages],
+  );
   const unblockFlow = useUnblockFlow();
   const maskedRefresh = useMaskedRefresh();
   const { requestUnblock, reloadMaskedCopies } = unblockFlow;
@@ -706,9 +715,18 @@ export function ChatShell({
   } | null>(null);
   // Channel-scoped: the notice belongs to the channel the jump was attempted
   // in, so it never follows the member into a channel the message was never in.
+  // A pending jump whose target is loaded but held by the block list (#2313):
+  // not a miss, and not "older than the history loaded here". It shows the
+  // same dismissible notice with words that are true, over any earlier miss's.
+  const pendingTargetHeld =
+    pendingMessageId !== null &&
+    (!pendingJumpChannelId || pendingJumpChannelId === activeChannelId) &&
+    !drawnMessageIds.has(pendingMessageId) &&
+    channel.messages.some((message) => message.id === pendingMessageId);
   const showUnreachableNotice =
-    unreachableTarget !== null &&
-    unreachableTarget.channelId === activeChannelId;
+    pendingTargetHeld ||
+    (unreachableTarget !== null &&
+      unreachableTarget.channelId === activeChannelId);
   // Pins are a navigation affordance, not a list: the popover's rows were
   // rendered as buttons but `onJump` was never wired, so every one of them was
   // inert. The timeline exposes the scroll, the shell owns the wiring.
@@ -837,15 +855,10 @@ export function ChatShell({
     */
     if (!liveUserId) return;
     // Loaded but held: the block list cannot vouch for it yet, so the timeline
-    // has no row to scroll to (#2313). That is not "older than the history
-    // loaded here", so the target stays pending with no notice, and
+    // has no row to scroll to (#2313). That is not a miss, so nothing is set
+    // here; `pendingTargetHeld` says so in the notice instead, and
     // `drawnMessageIds` below re-runs this once the list lets the row through.
-    if (
-      !drawnMessageIds.has(pendingMessageId) &&
-      channel.messages.some((message) => message.id === pendingMessageId)
-    ) {
-      return;
-    }
+    if (pendingTargetHeld) return;
     const jumped = timeline.current?.scrollToMessage(pendingMessageId) ?? false;
     if (jumped) {
       setPendingMessageId(null);
@@ -864,6 +877,7 @@ export function ChatShell({
     channel.isLoading,
     channel.messages,
     drawnMessageIds,
+    pendingTargetHeld,
     jumpAttempt,
     liveUserId,
   ]);
@@ -1379,6 +1393,7 @@ export function ChatShell({
             <ChannelMenu
               activeChannelId={activeChannelId}
               messages={shownMessages}
+              hiddenPinCount={hiddenPinCount}
               nameFor={nameFor}
               channelNameFor={channelNameFor}
               onJumpToMessage={jumpToMessage}
@@ -1446,7 +1461,9 @@ export function ChatShell({
               // condition of the channel.
               <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-1.5">
                 <p className="text-[12.5px] text-muted-foreground">
-                  That message is older than the history loaded here.
+                  {pendingTargetHeld
+                    ? "That message is waiting on your block list. It opens once the list loads."
+                    : "That message is older than the history loaded here."}
                 </p>
                 <Button
                   variant="secondary"

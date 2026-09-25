@@ -106,6 +106,7 @@ function renderMenu(overrides: Partial<Parameters<typeof ChannelMenu>[0]> = {}) 
   const props = {
     activeChannelId: "chan-1",
     messages: [] as ChatMessage[],
+    hiddenPinCount: 0,
     nameFor: () => "Someone",
     channelNameFor: () => "general",
     onJumpToMessage: vi.fn(),
@@ -222,6 +223,19 @@ describe("ChannelMenu (#2142)", () => {
 
     expect(
       screen.getByRole("button", { name: "Pinned, 2" }),
+    ).toBeInTheDocument();
+  });
+
+  it("counts pins the block list hides, so hidden pins never read as none (#2313)", async () => {
+    const user = userEvent.setup();
+    renderMenu({
+      messages: [message({ id: "a", is_pinned: true })],
+      hiddenPinCount: 2,
+    });
+    await openMenu(user);
+
+    expect(
+      screen.getByRole("button", { name: "Pinned, 3" }),
     ).toBeInTheDocument();
   });
 

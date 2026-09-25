@@ -117,6 +117,11 @@
  * naming rather than a bug worth blocking on — but it is the first schema change
  * this database has had, so it is the first time the cost exists at all, and
  * every future bump pays it again.
+ *
+ * **A tail written in an older row encoding is refused, not upgraded**
+ * (`TAIL_ROW_FORMAT`). That is a marker on the row rather than a schema bump,
+ * so it costs one cold load of that channel and none of the cross-version
+ * failure above.
  */
 
 import Dexie, { type Table } from "dexie";
@@ -178,35 +183,36 @@ export interface CachedChannelTailRow extends FirstChunkScope {
   channelId: string;
   rows: RawChatMessage[];
   cachedAt: number;
+  /** The encoding `rows` were written in; see {@link TAIL_ROW_FORMAT}. */
+  rowFormat?: number;
 }
 
 /**
- * A cached row with any **cleared** block verdict removed (#2313).
+ * The encoding a tail's rows are written in. `readFirstChunk` serves only a
+ * tail stamped with this value, and nothing else is ever upgraded in place.
  *
- * `sender_blocked: false` says the server ran the viewer's block list over the
- * row when it was read, and found nothing. That is only as current as the list
- * it was run against, and a tail may be a week old
- * ({@link FIRST_CHUNK_MAX_AGE_MS}): a member blocked since, on this device or
- * another, would come back as a row the server vouched for. The block list
- * lets a server-cleared row through even while the list itself is loading or
- * unavailable (`classifyMessage` in `@repo/chat-core/blocks`), which is exactly
- * a cold load's state, so the stale verdict would paint the blocked member's
- * words until the live read replaced it — for a whole offline session.
+ * `2` is the encoding in which `sender_blocked` means what the block list
+ * needs it to (#2313). Before #2493, `toRawRow` wrote the flag on **every**
+ * row, Realtime echoes included, so an unmarked tail rehydrates echo rows with
+ * `sender_blocked: false`, and `normalizeRow` then reads them as rows the
+ * server evaluated and cleared. The web timeline shows a server-cleared row
+ * even while the block list is unavailable, which is the one place that claim
+ * is load-bearing, so a pre-#2493 tail would paint a blocked member's echoed
+ * message on a cold load with the list down. Refusing the tail costs one cold
+ * load of that channel; `FIRST_CHUNK_MAX_AGE_MS` would only have bounded the
+ * exposure to a week.
  *
- * Without the flag the row rehydrates unevaluated, the same as a Realtime echo:
- * shown against a ready list, held while the list is not. A **masked** verdict
- * (`true`) is kept: its content is already withheld, and at worst it keeps a
- * since-unblocked member's row a tombstone until the live read lands.
+ * **What the marker does not close.** A REST row's cleared verdict is kept on
+ * purpose, so a warm load paints other members' cached rows at once (the rank-1
+ * "render real" clause, `spec/ui/resilience/performance-budgets.md`). That
+ * verdict is only as current as the list it was read against: a member blocked
+ * after the tail was written shows in it on a cold load with the list
+ * unreadable, until a live read of the channel lands (#2688, which persists
+ * the list's floor beside the tail).
  *
- * This also covers tails written before #2493, when `toRawRow` stamped the flag
- * on every row, echoes included, so no encoding marker is needed for them.
+ * Bump it whenever the meaning of a persisted row changes.
  */
-function withoutClearedVerdict(row: RawChatMessage): RawChatMessage {
-  if (row.sender_blocked !== false) return row;
-  const unevaluated = { ...row };
-  delete unevaluated.sender_blocked;
-  return unevaluated;
-}
+export const TAIL_ROW_FORMAT = 2;
 
 /**
  * The viewer's `users.id` under one scope.
@@ -381,14 +387,13 @@ export async function readFirstChunk(
     const known = new Set(usableList?.channels.map((channel) => channel.id));
     return {
       channels: usableList,
-      tails: tails
-        .filter(
-          (row) =>
-            isFresh(row, now) &&
-            row.rows.length > 0 &&
-            known.has(row.channelId),
-        )
-        .map((row) => ({ ...row, rows: row.rows.map(withoutClearedVerdict) })),
+      tails: tails.filter(
+        (row) =>
+          row.rowFormat === TAIL_ROW_FORMAT &&
+          isFresh(row, now) &&
+          row.rows.length > 0 &&
+          known.has(row.channelId),
+      ),
       /*
         Aged like every other row, and deliberately **not** gated on the channel
         list the way a tail is.
@@ -494,7 +499,13 @@ export async function writeChannelTail(
       absence of news.
     */
     if (rows.length === 0) return;
-    await db.channelTails.put({ ...scope, channelId, rows, cachedAt });
+    await db.channelTails.put({
+      ...scope,
+      channelId,
+      rows,
+      cachedAt,
+      rowFormat: TAIL_ROW_FORMAT,
+    });
     await evictOldestTails(db, scope);
   } catch {
     /* Best-effort — see `writeChannelList`. */

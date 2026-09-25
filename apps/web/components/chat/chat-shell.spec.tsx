@@ -424,10 +424,12 @@ vi.mock("./composer", () => ({
 vi.mock("./channel-menu", () => ({
   ChannelMenu: ({
     messages,
+    hiddenPinCount,
     onJumpToSearchHit,
     onJumpToBookmark,
   }: {
     messages: Array<{ id: string }>;
+    hiddenPinCount: number;
     onJumpToSearchHit: (hit: { message: { id: string }; channelId: string }) => void;
     onJumpToBookmark: (channelId: string, messageId: string) => void;
   }) => (
@@ -436,6 +438,7 @@ vi.mock("./channel-menu", () => ({
       <span data-testid="menu-messages">
         {messages.map((m) => m.id).join(",")}
       </span>
+      <span data-testid="menu-hidden-pins">{String(hiddenPinCount)}</span>
       <button
         type="button"
         data-testid="search-jump"
@@ -2151,6 +2154,31 @@ describe("ChatShell block list (#2313)", () => {
     );
   });
 
+  it("counts a blocked member's pin as hidden, not absent", () => {
+    blockListState.value = {
+      ...blockListState.value,
+      ids: new Set(["blocked-1"]),
+    };
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          { ...MESSAGES[0]!, is_pinned: true } as (typeof MESSAGES)[number],
+          {
+            id: "msg-3",
+            sender_id: "blocked-1",
+            content: "pinned insult",
+            created_at: "2026-01-01T00:02:00Z",
+            is_pinned: true,
+          } as (typeof MESSAGES)[number],
+        ],
+      }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("menu-messages")).toHaveTextContent(/^msg-1$/);
+    expect(screen.getByTestId("menu-hidden-pins")).toHaveTextContent("1");
+  });
+
   it("keeps a held row out of the Pinned panel while the list cannot vouch for it", () => {
     blockListState.value = { ...blockListState.value, status: "unavailable" };
     mockUseChatChannel.mockReturnValue(
@@ -2223,6 +2251,9 @@ describe("ChatShell block list (#2313)", () => {
     expect(
       screen.queryByText(/older than the history loaded here/i),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/waiting on your block list/i),
+    ).toBeInTheDocument();
     expect(mockScrollToMessage).not.toHaveBeenCalled();
 
     // The list reads: the row is drawn, and the pending jump lands on it.
@@ -2230,6 +2261,45 @@ describe("ChatShell block list (#2313)", () => {
     rerender(<ChatShell initialChannelId="chan-general" />);
 
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-held");
+    expect(
+      screen.queryByText(/waiting on your block list/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("replaces an earlier miss's notice once the target turns out to be held", () => {
+    blockListState.value = { ...blockListState.value, status: "unavailable" };
+    searchHit.mockReturnValue({
+      message: { id: "msg-late" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(
+      screen.getByText(/older than the history loaded here/i),
+    ).toBeInTheDocument();
+
+    // It then arrives over the echo while the list is still unreadable.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-late",
+            sender_id: "friend-1",
+            content: "late",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/waiting on your block list/i),
+    ).toBeInTheDocument();
   });
 
   it("says so above the timeline when the block list cannot be read", () => {

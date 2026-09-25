@@ -32,12 +32,26 @@ export function pinnedMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.filter((message) => message.is_pinned);
 }
 
+/** What the panel says for pins the viewer's block list hides (#2313). */
+export function hiddenPinsText(count: number): string {
+  return count === 1
+    ? "1 pinned message is hidden by your block list."
+    : `${count} pinned messages are hidden by your block list.`;
+}
+
 export function PinsPanel({
   messages,
+  hiddenCount = 0,
   nameFor,
   onJump,
 }: {
   messages: ChatMessage[];
+  /**
+   * Pins left out of `messages` by the block list: a blocked member's, or
+   * ones it cannot vouch for yet. Said, never drawn, and never "nothing
+   * pinned".
+   */
+  hiddenCount?: number;
   /** Resolves `users.id` → display name; `null` when unresolvable. */
   nameFor: (userId: string) => string | null;
   onJump?: (messageId: string) => void;
@@ -45,11 +59,11 @@ export function PinsPanel({
   const pins = pinnedMessages(messages);
   return (
     <>
-      {pins.length === 0 ? (
+      {pins.length === 0 && hiddenCount === 0 ? (
         <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
           Nothing pinned yet. Channel managers can pin key messages.
         </p>
-      ) : (
+      ) : pins.length === 0 ? null : (
         <ul className="max-h-72 divide-y divide-border overflow-y-auto">
           {pins.map((message) => (
             <li key={message.id}>
@@ -91,6 +105,11 @@ export function PinsPanel({
           ))}
         </ul>
       )}
+      {hiddenCount > 0 ? (
+        <p className="px-3 py-3 text-[12.5px] italic text-muted-foreground">
+          {hiddenPinsText(hiddenCount)}
+        </p>
+      ) : null}
     </>
   );
 }

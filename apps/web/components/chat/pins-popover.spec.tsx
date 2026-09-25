@@ -35,6 +35,24 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
 const nameFor = (id: string) => (id === OTHER ? "Alice Chen" : null);
 
 describe("PinsPanel", () => {
+  it("says pins the block list hides are hidden, never that nothing is pinned (#2313)", () => {
+    render(<PinsPanel messages={[]} hiddenCount={2} nameFor={nameFor} />);
+    expect(
+      screen.getByText("2 pinned messages are hidden by your block list."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing pinned yet/)).not.toBeInTheDocument();
+  });
+
+  it("lists the pins it may show, and says the rest are hidden", () => {
+    render(
+      <PinsPanel messages={[message()]} hiddenCount={1} nameFor={nameFor} />,
+    );
+    expect(screen.getByText("the dues link")).toBeInTheDocument();
+    expect(
+      screen.getByText("1 pinned message is hidden by your block list."),
+    ).toBeInTheDocument();
+  });
+
   it("previews a pinned poll by its kind noun, not an empty block", () => {
     render(
       <PinsPanel

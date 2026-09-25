@@ -62,6 +62,11 @@ type ChannelMenuProps = {
    * no tombstone of its own (#2313).
    */
   messages: ChatMessage[];
+  /**
+   * Pinned messages the block list keeps out of `messages`. Counted on the
+   * menu row and said in the panel, so hidden pins never read as none.
+   */
+  hiddenPinCount: number;
   /** Resolves `users.id` → display name; `null` when unresolvable. */
   nameFor: (userId: string) => string | null;
   /** Resolves a channel id → display name; `null` when unknown. */
@@ -102,6 +107,7 @@ const VIEW_TITLES: Record<Exclude<View, "menu">, string> = {
 export function ChannelMenu({
   activeChannelId,
   messages,
+  hiddenPinCount,
   nameFor,
   channelNameFor,
   onJumpToMessage,
@@ -156,7 +162,7 @@ export function ChannelMenu({
       view: "pins",
       label: "Pinned",
       Glyph: PinGlyph,
-      count: pinnedMessages(messages).length,
+      count: pinnedMessages(messages).length + hiddenPinCount,
     },
     {
       view: "saved",
@@ -270,6 +276,7 @@ export function ChannelMenu({
             {view === "pins" ? (
               <PinsPanel
                 messages={messages}
+                hiddenCount={hiddenPinCount}
                 nameFor={nameFor}
                 onJump={(messageId) => {
                   onJumpToMessage(messageId);
