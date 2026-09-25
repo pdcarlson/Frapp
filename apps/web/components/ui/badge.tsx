@@ -38,10 +38,10 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * gate, so they render in the semantic hue itself and need no twin.
  * `--destructive` is 3.82–4.85:1 (4.222 on `--card`, 3.817 on `--popover`),
  * which is why it has `--destructive-text` — that twin measures 5.07–6.45:1 on
- * the same tints and clears throughout. The fill is the `--*-tint` token, not
- * an alpha utility (#2376, foundations §5), so where `color-mix` is missing
- * the fill drops out and the label sits on the bare surface, still clear.
- * Both paths are measured in `components/shared/status-tint-contrast.spec.ts`.
+ * the same tints and clears throughout. The fill is the `--*-tint` token, an
+ * `rgba()` with no browser floor, never an alpha utility, whose fallback below
+ * the `color-mix` floor was the solid hue (#2376, foundations §5). Measured
+ * from the tokens in `components/shared/status-tint-contrast.spec.ts`.
  *
  * `--info` is 3.45–4.36:1 on its own tint (3.807 on `--card`, 3.446 on
  * `--popover`) and now has `--info-text` (#4C93F8) — added when the greenfield

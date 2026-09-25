@@ -53,9 +53,9 @@ const motionEasing = frappTokens.motion.easing;
  * is close to the solid. **foundations §5's tint recipe is the systematic
  * case**: the text is the same hue, so the label read 1.00:1 (#2376). The
  * recipe therefore uses no modifier: `bg-success-tint`, `bg-warning-tint`,
- * `bg-destructive-tint` and `bg-destructive-tint-hover` read `color-mix()`
- * tokens from `signet.css`, which an engine below the floor drops to no fill,
- * and `status-tint-call-sites.spec.ts` in `apps/web` fails on a
+ * `bg-destructive-tint` and `bg-destructive-tint-hover` read `rgba()` tokens
+ * from `signet.css`, which have no floor at all, and
+ * `status-tint-call-sites.spec.ts` in `apps/web` fails on a
  * `bg-<semantic>/<alpha>` fill anywhere in the Next surfaces. Other modified
  * fills can hit the same trap one call site at a time (a faint `bg-primary/5`
  * under `--foreground` text falls back to a light gold slab), which #2692
@@ -67,19 +67,15 @@ const motionEasing = frappTokens.motion.easing;
  * `gradientColorStops` passes to synthesise a transparent end-stop (testing it
  * for truthiness turned a fade into a flat block).
  *
- * **Six Signet tokens carry the `color-mix` floor un-modified.**
+ * **Two Signet tokens still carry the `color-mix` floor un-modified.**
  * `--primary-pressed` and `--accent-subtle-hover` are themselves `color-mix()`
  * values (the button states `components.md` §3 names but the accent engine
  * emits no role for), so `bg-primary-pressed` needs `color-mix` support to
  * resolve at all — that is about what the token holds, not about the utility.
  * Below the floor those two degrade to no fill rather than to the un-pressed
  * colour; they are hover/pressed states on controls that are legible without
- * them, which is why they were an acceptable place to spend it. The four
- * status tints above are the same trade made for a rest state (#2376): their
- * labels are measured on the bare surface as well as on the tint, and clear
- * the gate on both. That measurement is the price of entry. Do not reach for
- * a `color-mix` token for a rest state whose content is illegible without the
- * fill, such as a solid button's `--primary-foreground` label.
+ * them, which is why they were an acceptable place to spend it. Do not reach
+ * for a `color-mix` token for a *rest* state.
  */
 export const colorVar = (token: string): string => `var(${token})`;
 

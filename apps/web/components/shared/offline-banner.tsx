@@ -74,8 +74,8 @@ export function OfflineBanner() {
        * the pill is seated on it measures 4.850:1, clear of the gate. But
        * danger text on the danger tint is always the lift now (foundations
        * §5), so that one rule covers every call site and
-       * `status-tint-call-sites.spec.ts` can hold them all to it. Here it
-       * measures 6.448:1 on the tint and 7.421:1 where the tint drops out.
+       * `status-tint-call-sites.spec.ts` can hold them all to it. The lift
+       * measures 6.448:1 here.
        */
       className:
         "border-destructive/45 bg-destructive-tint text-destructive-text",

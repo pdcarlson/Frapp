@@ -309,20 +309,25 @@ describe("the derived accent steps track the slot rather than restating it", () 
 });
 
 describe("the status tints are the §5 recipe over a fixed semantic (#2376)", () => {
-  // A mix of the semantic hue, never a literal and never the accent slot: a
-  // literal cannot be separable from every ladder step at once, and the slot
-  // would retint a status per chapter. And the mix, not an alpha utility,
-  // because a custom property that fails to parse leaves no fill rather than
-  // the solid hue (the colour of the label's own text).
+  // An `rgba()` of the semantic hue, because it has no browser floor: an alpha
+  // utility falls back to the solid hue (the label's own colour), and a
+  // `color-mix()` token to no fill at all (foundations §5). The channels restate the hue, so
+  // they are held to it here rather than trusted to move with it.
+  const RGBA = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/;
+  const hex = (r: number, g: number, b: number) =>
+    "#" + [r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("");
+
   it.each([
-    ["--success-tint", "--success", "13%"],
-    ["--warning-tint", "--warning", "13%"],
-    ["--destructive-tint", "--destructive", "13%"],
-    ["--destructive-tint-hover", "--destructive", "20%"],
-  ])("%s mixes %s at %s with transparent", (token, hue, amount) => {
-    expect(root.get(token)).toBe(
-      `color-mix(in oklab, var(${hue}) ${amount}, transparent)`,
-    );
+    ["--success-tint", "--success", 0.13],
+    ["--warning-tint", "--warning", 0.13],
+    ["--destructive-tint", "--destructive", 0.13],
+    ["--destructive-tint-hover", "--destructive", 0.2],
+  ])("%s is %s at %s alpha", (token, hue, alpha) => {
+    const match = RGBA.exec(root.get(token) ?? "");
+    expect(match, `${token} must be an rgba() literal`).not.toBeNull();
+    const [, r, g, b, a] = match!.map(Number);
+    expect(hex(r!, g!, b!)).toBe(root.get(hue)!.toLowerCase());
+    expect(a).toBe(alpha);
   });
 });
 
@@ -401,6 +406,12 @@ describe("the fixed families cannot be wired to the accent slot", () => {
     "--mention-foreground",
     "--mention-chip",
     "--mention-chip-text",
+    // The status tints (#2376): a semantic's fill must not move per tenant any
+    // more than its hue does.
+    "--success-tint",
+    "--warning-tint",
+    "--destructive-tint",
+    "--destructive-tint-hover",
     "--gold-house",
     "--gold-on-house",
     "--gold-ask-fill",

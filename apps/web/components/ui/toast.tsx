@@ -47,8 +47,14 @@ const toastVariants = cva(
         // tint recipe (13% alpha fill + hue text) over solid fills"
         // (foundations.md §5). A solid `#f85149` panel with near-black text is
         // the light-surface treatment and reads as an alert box, not a toast.
+        //
+        // Over an opaque `--popover`, the default variant's own fill, painted
+        // as the background colour with the tint as a one-colour gradient
+        // image on top. A toast floats over whatever the page has in that
+        // corner, and the tint alone is 87% see-through, so the page's text
+        // and buttons used to show through behind the label (#2376).
         destructive:
-          "destructive group border-destructive/45 bg-destructive-tint text-destructive-text",
+          "destructive group border-destructive/45 bg-popover bg-[linear-gradient(var(--destructive-tint),var(--destructive-tint))] text-destructive-text",
       },
     },
     defaultVariants: {
@@ -83,7 +89,11 @@ const ToastAction = React.forwardRef<
       // `enabled:`-scoped: `group-[.destructive]:*` compiles to a descendant
       // selector carrying two ancestor classes, so it strictly outranks
       // `disabled:*` and would keep a disabled action painted as if live.
-      "enabled:group-[.destructive]:border-destructive/45 enabled:group-[.destructive]:bg-transparent enabled:group-[.destructive]:text-destructive-text enabled:group-[.destructive]:hover:bg-destructive-tint-hover",
+      //
+      // The hover repaints the same opaque base the root has, with the deeper
+      // tint over it. A bare `hover:bg-destructive-tint-hover` would stack 20%
+      // on the root's 13% and take the label to 3.94:1 (#2376).
+      "enabled:group-[.destructive]:border-destructive/45 enabled:group-[.destructive]:bg-transparent enabled:group-[.destructive]:text-destructive-text enabled:group-[.destructive]:hover:bg-popover enabled:group-[.destructive]:hover:bg-[linear-gradient(var(--destructive-tint-hover),var(--destructive-tint-hover))]",
       FOCUS_RING,
       className
     )}

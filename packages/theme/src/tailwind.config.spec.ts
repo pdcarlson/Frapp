@@ -159,22 +159,14 @@ const HSL_TRIPLE = /^\d+(\.\d+)?\s+\d+(\.\d+)?%\s+\d+(\.\d+)?%$/;
  * accepts a single colour argument or a dropped paren — invalid CSS that
  * paints nothing, which is the #1145 failure this guard exists to catch.
  *
- * **`color-mix()` is allowed for exactly six tokens, by name.** `colorVar`'s
+ * **`color-mix()` is allowed for exactly two tokens, by name.** `colorVar`'s
  * docstring records why: a `color-mix()` token degrades to NO FILL below the
- * `color-mix` support floor. Two are hover/pressed states on controls that
- * stay legible without them; the four §5 status tints (#2376) are rest states
- * whose labels `apps/web`'s `status-tint-contrast.spec.ts` measures on the bare
- * surface too. A seventh one is a decision, not a typo, so it fails here
- * rather than passing quietly.
+ * `color-mix` support floor, and those two are hover/pressed states on
+ * controls that stay legible without them — "Do not reach for a `color-mix`
+ * token for a *rest* state." A third one is a decision, not a typo, so it
+ * fails here rather than passing quietly.
  */
-const MIX_ALLOWED = new Set([
-  "--primary-pressed",
-  "--accent-subtle-hover",
-  "--success-tint",
-  "--warning-tint",
-  "--destructive-tint",
-  "--destructive-tint-hover",
-]);
+const MIX_ALLOWED = new Set(["--primary-pressed", "--accent-subtle-hover"]);
 
 // ── Assertions ───────────────────────────────────────────────────────────────
 
@@ -259,8 +251,8 @@ describe("token format matches how the preset reads it", () => {
         `${style} value. A mismatch here renders nothing at all (#1143).` +
         (MIX_ALLOWED.has(token)
           ? ""
-          : " Only the tokens in MIX_ALLOWED may be a `color-mix()`; any" +
-            " other token must be a finished colour."),
+          : " Only the two button-state tokens in MIX_ALLOWED may be a" +
+            " `color-mix()`; a rest-state token must be a finished colour."),
     ).toBe(true);
   });
 });
@@ -513,12 +505,10 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
     );
   });
 
-  it("compiles the status tints to plain var() reads, with no solid fallback", async () => {
+  it("compiles the status tints to plain var() reads, with no color-mix floor", async () => {
     // #2376. An alpha modifier's fallback is the solid hue, which for the §5
-    // tint recipe is the text's own colour. The utilities must read the
-    // tokens as they are: the mix lives in `signet.css`, where an engine
-    // without `color-mix` drops it to no fill, and a modifier here would
-    // bring the solid fallback back.
+    // tint recipe is the text's own colour. The tint tokens are `rgba()`
+    // literals with no floor, and the utilities must read them as they are.
     const css = await compile(
       "bg-success-tint bg-warning-tint bg-destructive-tint bg-destructive-tint-hover",
     );

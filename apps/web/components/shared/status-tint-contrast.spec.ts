@@ -3,6 +3,7 @@ import {
   AA_TEXT,
   DESTRUCTIVE_TEXT,
   SEMANTIC,
+  STATUS_TINT,
   SURFACE,
   TEXT,
   ratio,
@@ -10,62 +11,68 @@ import {
 } from "@/tests/signet-contrast";
 
 /**
- * #2376: every text/fill pair the §5 status tints ship, on both paths a
- * browser can paint them.
+ * #2376: every text/fill pair the §5 status tints ship, on every surface they
+ * can land on.
  *
- * The `--*-tint` tokens are `color-mix()` values (signet.css). A current
- * engine composites the hue at 13% (20% for the hover) over whatever the fill
- * sits on, so that pair is measured on every ladder step. An engine below the
- * `color-mix` floor cannot parse the token, the declaration is invalid at
- * computed-value time, and the fill is transparent: the label sits on the bare
- * surface, so that pair is measured too. Neither path may paint the label's
- * own colour under it, which is what the alpha utility's fallback did.
+ * The `--*-tint` tokens are `rgba()` literals, so there is one path to
+ * measure: every engine composites the same hue at the same alpha over the
+ * surface under it. (The alpha utility they replaced had a second path, below
+ * the `color-mix` floor, where the fill was the solid hue and the label read
+ * 1.00:1; `status-tint-call-sites.spec.ts` keeps it out.) The hue and alpha are
+ * read from the tokens (`STATUS_TINT`), so a changed token is re-measured here.
+ *
+ * `SURFACE` is every ladder step. The destructive toast, which floats over
+ * page content rather than a step, paints `--popover` under its tint for this
+ * reason, and so is covered by the `popover` row (`components/ui/toast.tsx`).
  */
 
-/** The labels the Next surfaces draw on a status tint, by the tint's hue. */
-const LABELS: Array<[string, string, string, number]> = [
-  ["--success", SEMANTIC.success, SEMANTIC.success, 0.13],
-  ["--warning", SEMANTIC.warning, SEMANTIC.warning, 0.13],
-  ["--destructive-text", DESTRUCTIVE_TEXT, SEMANTIC.destructive, 0.13],
+const LABELS: Array<[string, string, keyof typeof STATUS_TINT]> = [
+  ["--success", SEMANTIC.success, "success"],
+  ["--warning", SEMANTIC.warning, "warning"],
+  ["--destructive-text", DESTRUCTIVE_TEXT, "destructive"],
   // The destructive button's and toast action's hover.
-  ["--destructive-text (hover)", DESTRUCTIVE_TEXT, SEMANTIC.destructive, 0.2],
+  ["--destructive-text", DESTRUCTIVE_TEXT, "destructiveHover"],
   // Notices that carry neutral text on the danger tint
   // (`chapter-nav-header`, `discord-import/connect-step`).
-  ["--foreground", TEXT.foreground, SEMANTIC.destructive, 0.13],
-  ["--muted-foreground", TEXT.mutedForeground, SEMANTIC.destructive, 0.13],
+  ["--foreground", TEXT.foreground, "destructive"],
+  ["--muted-foreground", TEXT.mutedForeground, "destructive"],
 ];
 
 describe("the status tints", () => {
-  it("put every shipped label over the gate where color-mix renders", () => {
-    for (const [label, text, hue, alpha] of LABELS) {
+  it("are their hue at 13%, and 20% for the danger hover", () => {
+    // The composite the alpha utility painted in a current engine, so the
+    // move to tokens changed no rendering there.
+    expect(STATUS_TINT.success).toEqual({ hue: SEMANTIC.success, alpha: 0.13 });
+    expect(STATUS_TINT.warning).toEqual({ hue: SEMANTIC.warning, alpha: 0.13 });
+    expect(STATUS_TINT.destructive).toEqual({
+      hue: SEMANTIC.destructive,
+      alpha: 0.13,
+    });
+    expect(STATUS_TINT.destructiveHover).toEqual({
+      hue: SEMANTIC.destructive,
+      alpha: 0.2,
+    });
+  });
+
+  it("put every shipped label over the gate on every surface", () => {
+    for (const [label, text, key] of LABELS) {
+      const { hue, alpha } = STATUS_TINT[key];
       for (const [name, bg] of Object.entries(SURFACE)) {
         expect(
           ratio(text, tint(hue, bg, alpha)),
-          `${label} on its ${alpha * 100}% tint over ${name}`,
+          `${label} on --${key} over ${name}`,
         ).toBeGreaterThanOrEqual(AA_TEXT);
       }
     }
   });
 
-  it("put every shipped label over the gate where the fill drops out", () => {
-    for (const [label, text] of LABELS) {
-      for (const [name, bg] of Object.entries(SURFACE)) {
-        expect(
-          ratio(text, bg),
-          `${label} on bare ${name}`,
-        ).toBeGreaterThanOrEqual(AA_TEXT);
-      }
-    }
-  });
-
-  it("need the lift for danger text on either path", () => {
-    // Solid danger misses on its tint from `--surface-1` up, and on a bare
-    // `--popover` too, which is where an unfilled tint in a dialog leaves it.
-    // So danger text on a tint is always `--destructive-text`, at every call
-    // site, and `status-tint-call-sites.spec.ts` holds them to it.
+  it("need the lift for danger text", () => {
+    // Solid danger misses on its own tint from `--surface-1` up, so danger
+    // text on a tint is always `--destructive-text`, at every call site, and
+    // `status-tint-call-sites.spec.ts` holds them to it.
+    const { hue, alpha } = STATUS_TINT.destructive;
     expect(
-      ratio(SEMANTIC.destructive, tint(SEMANTIC.destructive, SURFACE.card)),
+      ratio(SEMANTIC.destructive, tint(hue, SURFACE.card, alpha)),
     ).toBeLessThan(AA_TEXT);
-    expect(ratio(SEMANTIC.destructive, SURFACE.popover)).toBeLessThan(AA_TEXT);
   });
 });

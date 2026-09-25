@@ -84,25 +84,23 @@
      * over --card and 5.96:1 over --popover. The solid `--destructive` stays
      * the fill and the border. */
     --destructive-text: #FF7B72;
-    /* The §5 tint recipe as tokens (#2376): the hue at 13% over whatever the
-     * fill sits on (20% for the destructive hover). Written here as a
-     * `color-mix()` rather than at each call site as `bg-success/[.13]`,
-     * because the two degrade differently below the color-mix floor (Chrome
-     * 111, Safari 16.2, Firefox 113). Tailwind compiles the alpha utility to a
-     * color-mix behind `@supports`, with the SOLID hue as the fallback, so the
-     * fill became the text's own colour and every status label read 1.00:1:
-     * invisible. A custom property holding a color-mix the engine cannot parse
-     * is invalid at computed-value time instead, so `background-color` falls
-     * back to `transparent`: the label sits on its surface, unfilled but
-     * readable (every status text clears 4.5:1 on every ladder step, solid
-     * danger on --popover aside, which is what --destructive-text is for). In
-     * a current engine this is the alpha recipe exactly, composited over its
-     * surface the way the tint always was. Both paths are measured by
-     * apps/web/components/shared/status-tint-contrast.spec.ts. */
-    --success-tint: color-mix(in oklab, var(--success) 13%, transparent);
-    --warning-tint: color-mix(in oklab, var(--warning) 13%, transparent);
-    --destructive-tint: color-mix(in oklab, var(--destructive) 13%, transparent);
-    --destructive-tint-hover: color-mix(in oklab, var(--destructive) 20%, transparent);
+    /* The §5 tint recipe as tokens (#2376): the fixed semantic hue at 13%
+     * alpha (20% for the destructive hover), written as `rgba()` so it needs
+     * nothing newer than CSS2. Never write the recipe at a call site as an
+     * alpha utility (`bg-success/[.13]`): Tailwind v4 compiles that to a
+     * `color-mix()` behind `@supports`, with the SOLID hue as the fallback,
+     * so below the color-mix floor (Chrome 111, Safari 16.2, Firefox 113) the
+     * fill became the text's own colour and every status label read 1.00:1.
+     * An `rgba()` has no floor and no fallback, so every engine paints the
+     * same composite, over whatever the fill sits on, that a current engine
+     * paints for the utility. The channels restate --success, --warning and
+     * --destructive; signet.css.spec.ts holds them to those hues, and
+     * apps/web/components/shared/status-tint-contrast.spec.ts measures every
+     * label on them, reading the alpha from here. */
+    --success-tint: rgba(63, 185, 80, 0.13);
+    --warning-tint: rgba(229, 160, 0, 0.13);
+    --destructive-tint: rgba(248, 81, 73, 0.13);
+    --destructive-tint-hover: rgba(248, 81, 73, 0.2);
     --info: #2F81F7;
     --info-foreground: #131211;
     /* The same AA lift components.md §5 sanctions for danger, applied to info

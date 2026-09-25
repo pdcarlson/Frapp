@@ -134,6 +134,32 @@ export const MENTION_CHIP = {
   text: cssToken("--mention-chip-text"),
 } as const;
 
+/**
+ * The §5 status tints (#2376): each an `rgba()` of its hue, parsed from
+ * `signet.css` so a contrast guard measures the fill that ships rather than a
+ * restated alpha. Composite one over its surface with `tint(t.hue, bg, t.alpha)`.
+ */
+function statusTint(name: string): { hue: string; alpha: number } {
+  const value = cssToken(name);
+  const match = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/.exec(value);
+  if (!match) throw new Error(`${name} is not an rgba() literal: ${value}`);
+  const [r, g, b] = match.slice(1, 4).map(Number);
+  const hue =
+    "#" +
+    [r!, g!, b!]
+      .map((c) => c.toString(16).padStart(2, "0"))
+      .join("")
+      .toUpperCase();
+  return { hue, alpha: Number(match[4]) };
+}
+
+export const STATUS_TINT = {
+  success: statusTint("--success-tint"),
+  warning: statusTint("--warning-tint"),
+  destructive: statusTint("--destructive-tint"),
+  destructiveHover: statusTint("--destructive-tint-hover"),
+} as const;
+
 /** The hairline's alpha, parsed from the token so the two cannot disagree. */
 export const HAIRLINE_ALPHA = Number(
   /rgba\([^)]*,\s*([\d.]+)\)/.exec(
@@ -197,7 +223,11 @@ export const INDISTINGUISHABLE = 1.15;
 export const ratio = (fg: string, bg: string) =>
   contrastRatio(parseHex(fg)!, parseHex(bg)!);
 
-/** The `bg-x/[.13]` recipe, composited over the surface it lands on. */
+/**
+ * A hue at an alpha, composited over the surface it lands on. For the §5
+ * status tints, pass a `STATUS_TINT` entry's hue and alpha: the recipe ships
+ * as the `--*-tint` tokens, never as a `bg-x/[.13]` utility (#2376).
+ */
 export const tint = (hue: string, over: string, alpha = 0.13) =>
   applyAlpha(hue, alpha, over);
 
