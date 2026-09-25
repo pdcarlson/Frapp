@@ -1,49 +1,40 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
-import {
-  OFFLINE_BANNER_HEIGHT_VAR,
-  OFFLINE_BANNER_ID,
-} from "@/components/shared/offline-banner-focus";
-import { WifiOff, Zap } from "lucide-react";
+import { FOCUS_RING, FOCUS_RING_ALWAYS } from "@/components/ui/focus";
+import { OFFLINE_BANNER_ID } from "@/components/shared/offline-banner-focus";
+import { WifiOff, X, Zap } from "lucide-react";
 
-export {
-  OFFLINE_BANNER_HEIGHT_VAR,
-  OFFLINE_BANNER_ID,
-  focusOfflineBanner,
-} from "@/components/shared/offline-banner-focus";
+/**
+ * `connection-state.md` § Banner behavior: a dismissed banner comes back if
+ * the state hasn't changed after 30s.
+ */
+export const BANNER_REDISPLAY_MS = 30_000;
 
 export function OfflineBanner() {
   const { state, isOnline } = useNetwork();
-  const bannerRef = useRef<HTMLDivElement>(null);
 
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    if (isOnline) {
-      root.style.removeProperty(OFFLINE_BANNER_HEIGHT_VAR);
-      return;
-    }
-    const node = bannerRef.current;
-    if (!node) return;
+  /*
+   * Dismissal is per state, not sticky. A change of state (DEGRADED to
+   * OFFLINE, or a recovery and a relapse) shows the banner again at once,
+   * which is the render-time reset React documents for "adjusting state when
+   * a prop changes" rather than an effect that would paint the stale value
+   * first. An unchanged state shows it again after `BANNER_REDISPLAY_MS`.
+   */
+  const [dismissed, setDismissed] = useState(false);
+  const [seenState, setSeenState] = useState(state);
+  if (state !== seenState) {
+    setSeenState(state);
+    setDismissed(false);
+  }
+  useEffect(() => {
+    if (!dismissed) return;
+    const timer = setTimeout(() => setDismissed(false), BANNER_REDISPLAY_MS);
+    return () => clearTimeout(timer);
+  }, [dismissed]);
 
-    const publishHeight = () => {
-      root.style.setProperty(
-        OFFLINE_BANNER_HEIGHT_VAR,
-        `${node.getBoundingClientRect().height}px`,
-      );
-    };
-    publishHeight();
-    const observer = new ResizeObserver(publishHeight);
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-      root.style.removeProperty(OFFLINE_BANNER_HEIGHT_VAR);
-    };
-  }, [isOnline]);
-
-  if (isOnline) return null;
+  if (isOnline || dismissed) return null;
 
   // The Signet semantic tint recipe (foundations.md §5): ~13% of the hue as
   // fill with the hue as text. Degraded is warning, offline is destructive —
@@ -79,8 +70,8 @@ export function OfflineBanner() {
       message: "You're offline. Showing cached data.",
       /*
        * Stays on the SOLID `--destructive`, not the `--destructive-text` lift.
-       * The banner is seated on `--background` (the sticky wrapper paints
-       * `bg-background/95`), and danger on its own 13% tint over that step
+       * The banner is seated on `--background` (the pill paints an opaque
+       * `bg-background` under the tint), and danger on its own 13% tint over that step
        * measures 4.850:1 — clear of the gate. The lift is for where the drawn
        * tone actually misses, which on this ladder is `--surface-1` (4.472),
        * `--card` (4.222) and `--popover` (3.817). Applying it here would
@@ -97,20 +88,59 @@ export function OfflineBanner() {
     className,
   } = config[state as "DEGRADED" | "OFFLINE"];
 
+  /*
+   * An overlay, never a row in the page (#2244). This banner used to be a
+   * `sticky` block in flow above the dashboard shell, so every state change
+   * after paint (and DEGRADED flaps on a single failed `/health` probe) moved
+   * the nav, the top bar and every page title down by its height and back up
+   * again on recovery. No reservation made before paint can fix that, because
+   * the state arrives later, so the banner takes no layout space at all.
+   *
+   * It floats as a centred pill: below the 48px top bar while the dashboard
+   * shell is mounted, which is `connection-state.md`'s "top of the content
+   * area (below header bar)", and at the top of the viewport on the pre-auth
+   * routes, which have no bar. The shell marks itself with
+   * `data-dashboard-shell` (`DASHBOARD_SHELL_ATTR`) rather than this component
+   * asking the router, because a CSS `:has()` rule is settled before first
+   * paint and a pathname check is one more list of routes to keep in step.
+   * `top-14` is the bar's `h-12` plus an 8px gap; the shell spec pins the bar
+   * height it depends on.
+   *
+   * Floating means it sits over the first row of the content area, which on a
+   * phone is a page's title and actions or chat's Back and channel-menu
+   * buttons. So nothing but the dismiss control takes a pointer: a tap on the
+   * pill lands on whatever is under it, and dismissing uncovers it for as
+   * long as the state holds. `z-40` keeps it above content and under dialogs
+   * and sheets (`z-50`), which dim it like everything else behind them.
+   */
   return (
-    <div
-      ref={bannerRef}
-      id={OFFLINE_BANNER_ID}
-      tabIndex={-1}
-      className={`sticky top-0 z-40 bg-background ${FOCUS_RING_ALWAYS}`}
-      role="alert"
-      aria-live="polite"
-    >
+    <div className="pointer-events-none fixed inset-x-0 top-2 z-40 flex justify-center px-4 [html:has([data-dashboard-shell])_&]:top-14">
       <div
-        className={`flex items-center gap-2 px-4 py-2 text-sm border-b animate-slide-down ${className}`}
+        id={OFFLINE_BANNER_ID}
+        tabIndex={-1}
+        className={`max-w-full rounded-lg bg-background shadow-md animate-slide-down ${FOCUS_RING_ALWAYS}`}
+        role="alert"
+        aria-live="polite"
       >
-        <Icon className="h-4 w-4 shrink-0" />
-        <span>{message}</span>
+        <div
+          className={`flex items-center gap-2 rounded-lg border py-1.5 pl-3 pr-1.5 text-sm ${className}`}
+        >
+          <Icon className="h-4 w-4 shrink-0" />
+          <span>{message}</span>
+          {/*
+            24px drawn, 44px to a coarse pointer (the touch floor), with the
+            negative margin absorbing the difference so the pill stays one
+            text line tall on a phone.
+          */}
+          <button
+            type="button"
+            onClick={() => setDismissed(true)}
+            aria-label="Dismiss the connection notice"
+            className={`pointer-events-auto grid h-6 w-6 shrink-0 place-items-center rounded-md hover:bg-foreground/10 pointer-coarse:-m-2.5 pointer-coarse:h-11 pointer-coarse:w-11 ${FOCUS_RING}`}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </div>
   );
