@@ -122,10 +122,14 @@ export const DEPLOY_API_CONFIG = {
   //   stale   — this run is for a commit main has moved past (a re-run of an
   //             old run): its verdict is about an old commit, so it neither
   //             raises nor closes the alert. The tip's run decides.
-  // A `cancelled` job with no plan never started: GitHub replaced it while it
-  // queued behind another staging deploy. That is superseded too, because
-  // the run that replaced it plans from the served commit.
   planOutput: { job: "deploy-staging", output: "plan" },
+  // Both jobs queue behind a `cancel-in-progress: false` lock, where GitHub
+  // replaces a pending job when a newer run arrives. Such a job ends
+  // `cancelled` without ever starting, and each job's first step publishes
+  // `started`, so a `cancelled` job without it was replaced, not stopped:
+  // superseded, because the run that replaced it covers it. One that started
+  // and was then cancelled or timed out is still a failure.
+  queuedJobs: { jobs: ["migrate-staging", "deploy-staging"], startedOutput: "started" },
   alertTitle: "Deploy API is failing — pushes are not reaching the environment",
   alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
   noOpReason: "no migrate or deploy job ran",
@@ -219,7 +223,7 @@ export const OUTCOME_COPY = {
     failed: "❌ **FAILED — not confirmed deployed**",
     deployed: "✅ **DEPLOYED**",
     "no-op": "⏭️ **NO-OP — nothing deployed**",
-    superseded: "⏭️ **SUPERSEDED — main has moved past this commit; the newest run decides**",
+    superseded: "⏭️ **SUPERSEDED — a newer run decides**",
   },
   brokenLines: (label) => [
     `deploy path is broken: the most recent \`${label}\` run that actually tried to deploy did`,
@@ -359,15 +363,26 @@ export function readPlan(needs, config = DEFAULT_ALERT_CONFIG) {
 }
 
 /**
- * Whether this run's verdict is about an old commit, and so must neither raise
- * nor close the alert: a `stale` plan, or a job cancelled before it planned
- * (replaced while queued). Always false for a config without `planOutput`.
+ * Whether this run must neither raise nor close the alert: its plan is
+ * `stale` (it is not for main's tip), or one of its queued jobs was replaced
+ * before it started. Always false for a config with neither `planOutput` nor
+ * `queuedJobs`.
  */
 export function isSuperseded(needs, config = DEFAULT_ALERT_CONFIG) {
-  if (!config.planOutput) return false;
-  const result = needs?.[config.planOutput.job]?.result;
-  const plan = readPlan(needs, config);
-  return (result === "success" && plan === "stale") || (result === "cancelled" && plan === null);
+  if (config.planOutput) {
+    const result = needs?.[config.planOutput.job]?.result;
+    if (result === "success" && readPlan(needs, config) === "stale") return true;
+  }
+  return replacedInQueue(needs, config).length > 0;
+}
+
+/** The `queuedJobs` that ended `cancelled` without publishing that they started. */
+export function replacedInQueue(needs, config = DEFAULT_ALERT_CONFIG) {
+  if (!config.queuedJobs) return [];
+  const { jobs, startedOutput } = config.queuedJobs;
+  return jobs.filter(
+    (name) => needs?.[name]?.result === "cancelled" && needs?.[name]?.outputs?.[startedOutput] !== "true",
+  );
 }
 
 /** Human-readable one-liner used in the annotation and the issue body. */
@@ -700,10 +715,11 @@ export async function runDeployAlert({
   // commit (or on migrate-staging's success alone), or raise it for a job
   // GitHub replaced in the queue. The newest run decides; this one reports.
   if (isSuperseded(needs, config)) {
+    const replaced = replacedInQueue(needs, config);
     const reason =
-      plan === "stale"
-        ? "the deploy plan found main has moved past this commit"
-        : "its deploy job was replaced in the queue before it started";
+      replaced.length > 0
+        ? `${replaced.map((name) => `\`${name}\``).join(", ")} was replaced in its queue by a newer run before it started`
+        : "its deploy plan is `stale`: this run is not for main's tip";
     const headline = buildHeadline({
       outcome: "superseded",
       failed: [],

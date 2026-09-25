@@ -11,6 +11,7 @@ import {
   API_IMAGE_PATHS,
   formatPlanOutputs,
   gitChangedPaths,
+  gitResolve,
   gitIsAncestor,
   planStagingDeploy,
   readServedCommit,
@@ -53,13 +54,24 @@ describe("planStagingDeploy", () => {
     }
   });
 
-  // An old run's commit, deployed while /health is down (a cold start, or the
-  // outage someone re-ran it for), would be the rollback the plan forbids.
-  it("doesn't deploy a commit that isn't the tip when the served commit can't be read", () => {
-    const plan = planStagingDeploy({ head: HEAD, served: null, tip: SERVED, isAncestor: never(), changedPaths: never() });
-    assert.equal(plan.plan, "stale");
-    assert.equal(plan.deploy, false);
-    assert.equal(plan.verifySha, "");
+  // Only the tip's run deploys or speaks for staging. An old run's commit,
+  // deployed while /health is down (a cold start, or the outage someone re-ran
+  // it for), would be a rollback; even a forward deploy of it would close an
+  // alert the tip's own failing run raised.
+  it("calls any run that isn't for main's tip stale, whatever staging serves", () => {
+    const TIP = "3333333333333333333333333333333333333333";
+    const cases = [
+      { served: null, isAncestor: never(), changedPaths: never() },
+      { served: SERVED, isAncestor: linearHistory(SERVED, HEAD, TIP), changedPaths: () => ["apps/api/src/main.ts"] },
+      { served: SERVED, isAncestor: () => false, changedPaths: never() },
+      { served: SERVED, isAncestor: () => { throw new Error("bad object"); }, changedPaths: never() },
+    ];
+    for (const [i, input] of cases.entries()) {
+      const plan = planStagingDeploy({ head: HEAD, tip: TIP, ...input });
+      assert.equal(plan.plan, "stale", `case ${i}: ${plan.reason}`);
+      assert.equal(plan.deploy, false, `case ${i}`);
+      assert.equal(plan.verifySha, "", `case ${i}`);
+    }
   });
 
   it("treats the run as the tip when main's tip can't be read", () => {
@@ -77,12 +89,15 @@ describe("planStagingDeploy", () => {
   // A re-run of an old run keeps its original head_sha. Deploying it would roll
   // staging back past commits it already serves, and its verdict is about an
   // old commit, so it must not close or raise the alert either.
+  // Even for the tip as this checkout saw it: staging can serve a newer commit
+  // when main moved on after the checkout (and that commit's run deployed), or
+  // when Render auto-deploy is still on (#2679).
   it("never deploys a commit staging has already moved past, and calls it stale", () => {
     const changedPaths = never();
     const plan = planStagingDeploy({
       head: HEAD,
       served: SERVED,
-      tip: SERVED,
+      tip: HEAD,
       isAncestor: linearHistory(HEAD, SERVED),
       changedPaths,
     });
@@ -125,21 +140,6 @@ describe("planStagingDeploy", () => {
     assert.equal(plan.plan, "current");
     assert.equal(plan.deploy, false);
     assert.equal(plan.verifySha, SERVED);
-  });
-
-  // Only the tip's run may say staging is current: a non-tip run's "nothing
-  // changed" is about an old commit, and a newer run may be failing.
-  it("calls a non-tip run with nothing to deploy stale, not current", () => {
-    const TIP = "3333333333333333333333333333333333333333";
-    const plan = planStagingDeploy({
-      head: HEAD,
-      served: SERVED,
-      tip: TIP,
-      isAncestor: linearHistory(SERVED, HEAD, TIP),
-      changedPaths: () => ["docs/a.md"],
-    });
-    assert.equal(plan.plan, "stale");
-    assert.equal(plan.verifySha, "");
   });
 
   it("deploys the tip when git can't relate the two commits", () => {
@@ -274,6 +274,15 @@ describe("readServedCommit", () => {
   });
 });
 
+describe("gitResolve", () => {
+  it("resolves a ref to its commit, and is null for one that doesn't exist", () => {
+    const head = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const exec = (cmd, args, opts) => execFileSync(cmd, ["-C", REPO_ROOT, ...args], opts);
+    assert.equal(gitResolve("HEAD", { exec }), head);
+    assert.equal(gitResolve("refs/heads/no-such-branch-for-this-test", { exec }), null);
+  });
+});
+
 describe("formatPlanOutputs", () => {
   // The keys deploy-api.yml reads (`steps.plan.outputs.plan|deploy|verify_sha`,
   // pinned from that side by deploy-api-workflow.test.mjs).
@@ -282,6 +291,14 @@ describe("formatPlanOutputs", () => {
     assert.match(out, /^plan=deploy$/m);
     assert.match(out, /^deploy=true$/m);
     assert.match(out, new RegExp(`^verify_sha=${HEAD}$`, "m"));
+  });
+
+  // With `-z` a changed path comes back verbatim, newline and all; written raw
+  // into `reason`, it would start a new output line.
+  it("can't be made to write a second output line through the reason", () => {
+    const out = formatPlanOutputs({ plan: "deploy", deploy: true, verifySha: HEAD, reason: "first: apps/api/a\nplan=stale\r" });
+    assert.equal(out.split("\n").filter((line) => line.startsWith("plan=")).length, 1, out);
+    assert.match(out, /^reason=first: apps\/api\/a plan=stale $/m);
   });
 });
 
@@ -298,6 +315,50 @@ describe("CLI", () => {
   });
 
   // End to end through main(): read /health, resolve the tip, write GITHUB_OUTPUT.
+  async function runCli({ served, tipRef }) {
+    const server = createServer((req, res) => {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ status: "ok", commit: served }));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const dir = mkdtempSync(join(tmpdir(), "plan-cli-"));
+    const output = join(dir, "output");
+    writeFileSync(output, "");
+    try {
+      const head = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+      const env = {
+        ...process.env,
+        DEPLOY_SHA: head,
+        API_HEALTHCHECK_URL: `http://127.0.0.1:${server.address().port}/health`,
+        GITHUB_OUTPUT: output,
+        TIP_REF: tipRef,
+      };
+      delete env.GITHUB_STEP_SUMMARY;
+      const run = await new Promise((resolve) => {
+        const child = spawn(process.execPath, [join(REPO_ROOT, "scripts", "ci", "plan-staging-deploy.mjs")], { env, cwd: REPO_ROOT });
+        let log = "";
+        child.stdout.on("data", (d) => { log += d; });
+        child.stderr.on("data", (d) => { log += d; });
+        child.on("close", (status) => resolve({ status, log }));
+      });
+      return { ...run, written: readFileSync(output, "utf8") };
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // The tip comes from TIP_REF (default origin/main). A tip lookup that broke
+  // would make every run "the tip" and silently disable the stale verdict.
+  it("calls the run stale when TIP_REF resolves to another commit", async () => {
+    const head = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const parent = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD~1"], { encoding: "utf8" }).trim();
+    const { status, log, written } = await runCli({ served: head, tipRef: parent });
+    assert.equal(status, 0, log);
+    assert.match(written, /^plan=stale$/m, written);
+    assert.match(written, /^verify_sha=$/m, written);
+  });
+
   it("writes plan, deploy and verify_sha to GITHUB_OUTPUT", async () => {
     const head = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
     const server = createServer((req, res) => {

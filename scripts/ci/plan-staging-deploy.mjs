@@ -21,19 +21,20 @@
 //   current — nothing the image is built from changed since the served
 //             commit, and this run is for `main`'s tip: verify the served
 //             commit is ready, and let the run speak for staging.
-//   stale   — this run is for a commit `main` has moved past: a re-run of an
-//             old run, or one whose newer sibling already deployed. Deploying
-//             it would roll staging back, and its verdict would be about an
-//             old commit, so it deploys nothing, verifies nothing, and
+//   stale   — this run is not for `main`'s tip: a re-run of an old run, or one
+//             `main` moved past while it queued. Only the tip's run deploys or
+//             speaks for staging. An older commit's deploy could roll staging
+//             back, and even a forward one would verify and close the alert
+//             for a commit that isn't main's, while the tip's own run may be
+//             failing. So it deploys nothing, verifies nothing, and
 //             `deploy-alert.mjs` leaves the alert alone. The tip's run decides.
+//             (The tip is `origin/main` as this job's checkout fetched it.)
 //
 // ── When it can't tell ─────────────────────────────────────────────────────
 // For the tip, it deploys: an unreadable `/health`, a served commit git
 // doesn't know, or an unreadable diff all mean "deploy", because a redundant
 // deploy is cheap and a change that silently never ships is the #763 failure.
-// For a commit that isn't the tip, an unreadable served commit means stale:
-// deploying could be the rollback the rule above forbids. When `main`'s tip
-// itself can't be read, this run is treated as the tip.
+// When `main`'s tip itself can't be read, this run is treated as the tip.
 //
 // Outputs (GITHUB_OUTPUT): `plan` (deploy|current|stale), `deploy`
 // (true|false), `verify_sha` (the commit the verify step must find served;
@@ -68,22 +69,17 @@ const SHA = /^[0-9a-f]{7,40}$/i;
 export function planStagingDeploy({ head, served, tip, isAncestor, changedPaths }) {
   const short = (sha) => sha.slice(0, 12);
   const same = (a, b) => a.toLowerCase() === b.toLowerCase();
-  const isTip = !tip || same(tip, head);
-  const notTip = () => `\`main\` has moved on to ${short(tip)}`;
 
   const deploy = (reason) => ({ plan: "deploy", deploy: true, verifySha: head, reason });
   const stale = (reason) => ({ plan: "stale", deploy: false, verifySha: "", reason });
-  // Nothing to deploy. Only the tip's run may say staging is current; any other
-  // run's "current" is about an old commit.
-  const current = (reason) =>
-    isTip
-      ? { plan: "current", deploy: false, verifySha: served, reason }
-      : stale(`${reason}, but ${notTip()}, so its run decides`);
+  const current = (reason) => ({ plan: "current", deploy: false, verifySha: served, reason });
+
+  if (tip && !same(tip, head)) {
+    return stale(`\`main\` has moved on to ${short(tip)}, so that commit's run decides`);
+  }
 
   if (!served || !SHA.test(served)) {
-    return isTip
-      ? deploy("staging's served commit could not be read, so deploying rather than guessing")
-      : stale(`staging's served commit could not be read and ${notTip()}, so not risking a rollback`);
+    return deploy("staging's served commit could not be read, so deploying rather than guessing");
   }
   if (same(served, head)) return current(`staging already serves ${short(head)}`);
 
@@ -93,9 +89,7 @@ export function planStagingDeploy({ head, served, tip, isAncestor, changedPaths 
     headIsOlder = isAncestor(head, served);
     servedIsOlder = isAncestor(served, head);
   } catch {
-    return isTip
-      ? deploy(`git could not relate ${short(served)} (served) to ${short(head)}, so deploying`)
-      : stale(`git could not relate ${short(served)} (served) to ${short(head)} and ${notTip()}`);
+    return deploy(`git could not relate ${short(served)} (served) to ${short(head)}, so deploying`);
   }
 
   if (headIsOlder) {
@@ -170,9 +164,16 @@ export async function readServedCommit(healthUrl, { fetchImpl = resilientFetch }
   }
 }
 
-/** The step outputs `deploy-api.yml` reads: `plan`, `deploy`, `verify_sha`. */
+/**
+ * The step outputs `deploy-api.yml` reads: `plan`, `deploy`, `verify_sha`.
+ * `reason` quotes a changed path, which git (with `-z`, unquoted) can hand
+ * back containing a newline; written raw, that would start a new output line
+ * such as `plan=stale`. Control characters become spaces.
+ */
 export function formatPlanOutputs(plan) {
-  return `plan=${plan.plan}\ndeploy=${plan.deploy}\nverify_sha=${plan.verifySha}\nreason=${plan.reason}\n`;
+  // eslint-disable-next-line no-control-regex
+  const reason = String(plan.reason).replace(/[\u0000-\u001f\u007f]/g, " ");
+  return `plan=${plan.plan}\ndeploy=${plan.deploy}\nverify_sha=${plan.verifySha}\nreason=${reason}\n`;
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────

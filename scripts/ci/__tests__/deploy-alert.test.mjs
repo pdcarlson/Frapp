@@ -1252,9 +1252,14 @@ test("both configs' copy reads the same on every surface a responder reads", () 
 // alone can't tell a deploy from "nothing needed deploying" from "this run is
 // for an old commit", and each must be reported and alerted differently.
 
-function planNeeds(result, plan) {
+/** A job that ran its first step publishes `started`; one replaced in the queue publishes nothing. */
+function planNeeds(result, plan, { started = plan !== undefined } = {}) {
   const needs = deployedNeeds();
-  needs["deploy-staging"] = { result, outputs: plan === undefined ? {} : { plan } };
+  needs["migrate-staging"] = { result: "success", outputs: { started: "true" } };
+  const outputs = {};
+  if (started) outputs.started = "true";
+  if (plan !== undefined) outputs.plan = plan;
+  needs["deploy-staging"] = { result, outputs };
   return needs;
 }
 
@@ -1365,6 +1370,57 @@ test("a deploy plan that succeeds reports DEPLOYED with its plan row", async () 
   });
   assert.match(summary, /✅ \*\*DEPLOYED\*\*/);
   assert.match(summary, /\| Deploy plan \| `deploy` \|/);
+});
+
+// migrate-staging queues behind the same kind of lock (`db-migrate-staging`).
+test("a migrate-staging replaced in its queue is superseded, not failed", async () => {
+  const needs = planNeeds("skipped", undefined, { started: false });
+  needs["migrate-staging"] = { result: "cancelled", outputs: {} };
+  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
+  let summary = "";
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs,
+    runUrl: "https://example.test/run/9",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
+    logger: silentLogger,
+  });
+  assert.equal(result.outcome, "superseded");
+  assert.equal(calls.length, 0);
+  assert.match(summary, /`migrate-staging` was replaced in its queue/);
+});
+
+// A job that started and was then cancelled, or hit timeout-minutes (which
+// GitHub can report as `cancelled`), before its plan step ran is a failure: it
+// published `started`, so it was not a queue replacement.
+test("a job that started and was cancelled before planning is a failure", async () => {
+  for (const job of ["migrate-staging", "deploy-staging"]) {
+    const needs = planNeeds("cancelled", undefined, { started: true });
+    if (job === "migrate-staging") {
+      needs["migrate-staging"] = { result: "cancelled", outputs: { started: "true" } };
+      needs["deploy-staging"] = { result: "skipped", outputs: {} };
+    }
+    const { fetchImpl } = makeFetchStub({ issues: [] });
+    const result = await runDeployAlert({
+      token: "t",
+      repo: "o/r",
+      needs,
+      runUrl: "https://example.test/run/9",
+      headBranch: "main",
+      headSha: "4de96af",
+      fetchImpl,
+      writeSummary: () => {},
+      logger: silentLogger,
+    });
+    assert.equal(result.outcome, "failed", job);
+    assert.equal(result.alert.action, "created", job);
+  }
 });
 
 test("readPlan and isSuperseded ignore a config without planOutput", () => {

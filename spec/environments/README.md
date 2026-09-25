@@ -311,7 +311,7 @@ secrets.
 
 - API deploys are gated behind CI success using `workflow_run` triggers.
 - Production: a human dispatches **Deploy production** with a commit SHA → the workflow calls the Render API with that `commitId` (no deploy hook, and no push involved).
-- Push to `main` (after CI, then the staging migration) → `deploy-api.yml` plans from the commit staging serves: when anything the API image is built from changed since then, it calls the Render API with that push's `commitId` and waits until `/health/ready` reports it; otherwise it verifies the served commit. It never deploys a commit `main` has moved past. No deploy hook, and Render auto-deploy must be off (#2505, #2679).
+- Push to `main` (after CI, then the staging migration) → `deploy-api.yml` plans from the commit staging serves: when anything the API image is built from changed since then, it calls the Render API with that push's `commitId` and waits until `/health/ready` reports it; otherwise it verifies the served commit. Only the run for `main`'s tip deploys; any other run changes nothing. No deploy hook, and Render auto-deploy must be off (#2505, #2679).
 - Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
 - Database migrations run automatically before deploy (see Section 8).
 - See `render.yaml` for the infrastructure-as-code definition.

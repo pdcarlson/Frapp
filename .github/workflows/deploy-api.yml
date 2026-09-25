@@ -95,8 +95,19 @@ jobs:
     concurrency:
       group: db-migrate-staging
       cancel-in-progress: false
+    outputs:
+      started: ${{ steps.started.outputs.started }}
     steps:
-      # Pinned to the commit that triggered the run, like check-changes above.
+      # First, so it is set by the time anything can hang or fail. A job GitHub
+      # replaces while it waits for the lock never starts and publishes no
+      # `started`; `deploy-outcome` reads that as superseded (the run that
+      # replaced it covers it). A job that started and was then cancelled or
+      # timed out has `started`, and stays a failure.
+      - name: Mark started
+        id: started
+        run: echo "started=true" >> "$GITHUB_OUTPUT"
+
+      # Pinned to the commit that triggered the run, as deploy-staging's is.
       # Without a `ref:` a `workflow_run` checkout takes the default branch's
       # TIP, and this job sits behind the `db-migrate-staging` lock — so two
       # merges landing minutes apart let run A, queued for commit1, check out
@@ -148,6 +159,7 @@ jobs:
     # the alert, and a `current` one reports that nothing needed deploying.
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
+      started: ${{ steps.started.outputs.started }}
     # The deploy poll's own ceiling is 20 minutes and the served-commit check's
     # is 5; this bounds the job just past both.
     timeout-minutes: 30
@@ -157,21 +169,34 @@ jobs:
     # deploys first; the newer one then plans against what that left serving.
     #
     # `cancel-in-progress: false`, as on migrate-staging. GitHub still replaces
-    # a PENDING run when a third arrives; that job shows `cancelled` with no
-    # plan, and `deploy-outcome` treats it as superseded, not failed. Nothing
-    # is lost by it: the run that replaced it plans from the served commit,
-    # so it deploys the skipped changes too.
+    # a PENDING run when a third arrives; that job shows `cancelled` without
+    # `started`, and `deploy-outcome` treats it as superseded, not failed. In
+    # the normal case nothing is lost: runs arrive in main's order (CI on main
+    # is serialized), so the replacing run is for a newer commit and plans from
+    # the served commit. The exception is a manual re-run of an OLD CI run
+    # replacing a newer pending one: the re-run plans `stale`, and the newer
+    # commit waits for the next merge, with no alert (#2506's reconciler is
+    # the check for that).
     concurrency:
       group: deploy-api-staging
       cancel-in-progress: false
     steps:
+      # First, so it is set by the time anything can hang or fail. A job GitHub
+      # replaces while it waits for the lock never starts and publishes no
+      # `started`; `deploy-outcome` reads that as superseded (the run that
+      # replaced it covers it). A job that started and was then cancelled or
+      # timed out has `started`, and stays a failure.
+      - name: Mark started
+        id: started
+        run: echo "started=true" >> "$GITHUB_OUTPUT"
+
       # The checkout supplies the local composite action below (`uses: ./…`
       # resolves against the runner's workspace), the deploy scripts, and the
       # history the plan step diffs.
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # The SAME ref check-changes uses, and for the same reason: on a
+          # The commit that triggered the run, as migrate-staging pins it: on a
           # `workflow_run` event GitHub defaults the checkout to the default
           # branch's tip, not the commit that triggered the run. This job runs
           # last, behind migrate-staging's serialized `db push`, so the window
@@ -204,10 +229,11 @@ jobs:
       # `commit`) and with `main`'s tip. `deploy` when anything the API image
       # is built from changed since the served commit, which carries forward
       # an API commit whose own run never deployed and retries after a failed
-      # build. `current` when nothing did and this is the tip. `stale` when
-      # `main` has moved past this commit (a re-run of an old run): deploying
-      # it would roll staging back, so nothing is deployed or verified. When
-      # it can't tell, the tip deploys. The reasoning is in the script header.
+      # build. `current` when nothing did. Both only for `main`'s tip: any
+      # other run is `stale` (a re-run of an old run, or main moved on while
+      # it queued), deploys and verifies nothing, and leaves the alert alone.
+      # When it can't tell, the tip deploys. The reasoning is in the script
+      # header.
       - name: Plan the deploy
         id: plan
         env:
@@ -259,9 +285,12 @@ jobs:
   # executing runs failed while the Actions list read "mostly healthy", because
   # the other 46 runs were green-because-empty.
   #
-  # Writes a step summary + annotation saying whether this run DEPLOYED or
-  # DECLINED to deploy, and upserts/closes a single tracking issue so that
-  # "alert issue open" means "the deploy path is broken right now".
+  # Writes a step summary + annotation saying whether this run DEPLOYED, FAILED,
+  # found staging UP TO DATE (deploy-staging's plan was `current`), or was
+  # SUPERSEDED (plan `stale`, or a job replaced in the queue before it
+  # started), and upserts/closes a single tracking issue so that "alert issue
+  # open" means "the deploy path is broken right now". A superseded run
+  # touches no issue; a run where neither job ran is a failure (#2505).
   deploy-outcome:
     needs: [check-changes, migrate-staging, deploy-staging]
     # always(): reporting on failed and skipped jobs is the entire point.
