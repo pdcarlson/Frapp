@@ -176,6 +176,26 @@ describe("scope keying", () => {
 });
 
 describe("row encoding (#2313)", () => {
+  it("keeps a REST row's cleared verdict, so a warm load paints other members' rows", async () => {
+    // Stripping it would rehydrate every cached row unevaluated, and the block
+    // list holds unevaluated rows until it loads: a warm load, or a whole
+    // offline session, would show only the viewer's own messages. The stale
+    // verdict this keeps is #2688's to close.
+    await seedRail(ALICE);
+    await writeChannelTail(
+      ALICE,
+      "chan-1",
+      [confirmed("1", { sender_blocked: false })],
+      AT,
+    );
+
+    const chunk = await readFirstChunk(ALICE);
+    const row = normalizeRow(chunk.tails[0]!.rows[0]!);
+
+    expect(row._blockEvaluated).toBe(true);
+    expect(row.sender_blocked).toBe(false);
+  });
+
   /**
    * A tail as the build before #2493 wrote it: no `rowFormat`, and
    * `sender_blocked` on an echo row, which rehydrates as "the server evaluated
