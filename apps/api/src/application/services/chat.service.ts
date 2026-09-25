@@ -314,13 +314,7 @@ export class ChatService {
     chapterId: string,
     userId: string,
   ): Promise<ChatChannelView[]> {
-    const channels = await this.channelRepo.findByChapter(chapterId);
-
-    const accessible = await this.channelAccess.filterAccessibleChannels(
-      chapterId,
-      userId,
-      channels,
-    );
+    const accessible = await this.accessibleChannels(chapterId, userId);
     return this.channelAccess.withPostCapability(chapterId, userId, accessible);
   }
 
@@ -331,19 +325,34 @@ export class ChatService {
    * Its own method rather than a field `getChannels` always computes, because
    * `getChannels` has callers that only look for one chapter channel (the
    * activity feed finding `#announcements`), and the hidden lookup is a round
-   * trip they would pay for and throw away.
+   * trip they would pay for and throw away. It runs beside the post-capability
+   * projection, not after it, so it adds no latency to the list.
    */
   async getChannelList(
     chapterId: string,
     userId: string,
   ): Promise<ChatChannelListItem[]> {
-    const views = await this.getChannels(chapterId, userId);
-    // Only a caller with a DM in the list can have hidden anything, so a
-    // chapter-channels-only list skips the lookup.
-    const hidden = views.some((channel) => channel.type === 'DM')
-      ? await this.findHiddenChannelIds(chapterId, userId)
-      : new Set<string>();
+    const accessible = await this.accessibleChannels(chapterId, userId);
+    const [views, hidden] = await Promise.all([
+      this.channelAccess.withPostCapability(chapterId, userId, accessible),
+      // Only a caller with a DM in the list can have hidden anything.
+      accessible.some((channel) => channel.type === 'DM')
+        ? this.findHiddenChannelIds(chapterId, userId)
+        : Promise.resolve(new Set<string>()),
+    ]);
     return views.map((view) => ({ ...view, hidden: hidden.has(view.id) }));
+  }
+
+  private async accessibleChannels(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel[]> {
+    const channels = await this.channelRepo.findByChapter(chapterId);
+    return this.channelAccess.filterAccessibleChannels(
+      chapterId,
+      userId,
+      channels,
+    );
   }
 
   /**
@@ -1859,6 +1868,11 @@ export class ChatService {
     const rows = await this.readReceiptRepo.getUnreadCounts(chapterId, userId);
     if (rows.length === 0) return [];
 
+    // No "has a DM" guard on the hidden lookup, unlike `getChannelList`: this
+    // read never loads channel types (`filterAccessibleChannelIds` returns
+    // ids), so a guard would have to wait for the access check and serialize
+    // the two on the most-polled chat read. The RPC is cheap for a member who
+    // hid nothing: it starts from their own receipts with `hidden_at` set.
     const [accessible, hidden] = await Promise.all([
       this.channelAccess.filterAccessibleChannelIds(
         chapterId,

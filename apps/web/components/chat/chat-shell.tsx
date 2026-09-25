@@ -13,6 +13,7 @@ import {
   directChannelDisplayName,
   HIDE_CONVERSATION_CONFIRM_ACTION,
   HIDE_CONVERSATION_CONFIRM_BODY,
+  HIDE_CONVERSATION_FAILED_BODY,
   HIDE_CONVERSATION_FAILED_TITLE,
   hideConversationConfirmTitle,
   otherMemberId,
@@ -577,26 +578,34 @@ export function ChatShell({
     ? setNotificationLevel.variables?.channelId
     : undefined;
 
-  // Hide conversation (#2303). One shell-wide mutation, so its failure is
-  // scoped to the channel it was for, the same way as the notification level
-  // above.
-  const leaveChannel = useLeaveChannel();
-  const hideFailedChannelId = leaveChannel.isError
-    ? leaveChannel.variables
-    : undefined;
+  // Hide conversation (#2303).
+  //
+  // Each hide awaits its own `mutateAsync` promise rather than passing
+  // callbacks to `mutate`. The mutation is one instance for the whole shell,
+  // and TanStack v5 runs per-call callbacks only for the latest call, so a
+  // second hide confirmed while the first was in flight would drop the first
+  // one's selection reset and its failure. A failure toasts at once: a hide
+  // can start from the rail on a DM that is not open, where no header line
+  // would ever be seen.
+  const leaveChannelAsync = useLeaveChannel().mutateAsync;
   const hideConversation = useCallback(
     (channelId: string) => {
-      leaveChannel.mutate(channelId, {
+      leaveChannelAsync(channelId).then(
         // The hidden DM stays in `channels` (flagged), so without this the
         // selection would keep it open and on the rail. Only if the member
         // is still on it: they may have moved on while the write was out.
-        onSuccess: () =>
+        () =>
           setSelectedChannelId((current) =>
             current === channelId ? null : current,
           ),
-      });
+        () =>
+          toast({
+            title: HIDE_CONVERSATION_FAILED_TITLE,
+            description: HIDE_CONVERSATION_FAILED_BODY,
+          }),
+      );
     },
-    [leaveChannel],
+    [leaveChannelAsync, toast],
   );
   // The rail's Hide asks first, in the shell's own dialog; the header menu's
   // asks in its panel. Both land in `hideConversation`.
@@ -1422,14 +1431,6 @@ export function ChatShell({
               className="border-b border-border px-4 py-1.5 text-[12.5px] text-destructive"
             >
               Notification level not saved
-            </p>
-          ) : null}
-          {activeChannel && hideFailedChannelId === activeChannel.id ? (
-            <p
-              role="alert"
-              className="border-b border-border px-4 py-1.5 text-[12.5px] text-destructive"
-            >
-              {HIDE_CONVERSATION_FAILED_TITLE}
             </p>
           ) : null}
           {bookmarkWriteFailed ? (

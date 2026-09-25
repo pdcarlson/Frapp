@@ -188,6 +188,22 @@ describe("Chat home hide conversation (#2303)", () => {
     });
   });
 
+  it("keeps the way back when every row the member can read is hidden", () => {
+    channelsData.value = [dmBobHidden];
+    const tree = render();
+
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" &&
+          node.props.children === "No channels yet",
+      ),
+    ).toHaveLength(0);
+    expect(hiddenToggle(tree).props.accessibilityState).toEqual({
+      expanded: false,
+    });
+  });
+
   it("draws no group when nothing is hidden", () => {
     channelsData.value = [general, dmAlice];
     const tree = render();

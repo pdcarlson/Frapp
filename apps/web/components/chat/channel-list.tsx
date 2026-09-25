@@ -398,12 +398,17 @@ export function ChannelList({
           // A sibling of the row, not inside it: a button cannot hold a
           // button. Revealed on hover and on keyboard focus, and it sits over
           // the badge while shown, the way a row action does in a chat rail.
+          // It takes no pointer events until then: Tailwind's `group-hover`
+          // applies only where the device can hover, so on touch it would
+          // otherwise be an invisible target over the badge that opens the
+          // hide dialog instead of the thread. Touch hides from the open DM's
+          // `⋯` menu instead.
           <button
             type="button"
             onClick={() => onHide(channel)}
             aria-label={`${HIDE_CONVERSATION_LABEL} with ${titleFor(channel)}`}
             title={HIDE_CONVERSATION_LABEL}
-            className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-xs bg-card text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+            className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-xs bg-card text-muted-foreground pointer-events-none opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
           >
             <EyeOff className="h-4 w-4" aria-hidden="true" />
           </button>

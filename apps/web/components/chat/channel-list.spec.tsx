@@ -446,6 +446,10 @@ describe("ChannelList hide and reopen (#2303)", () => {
     const hide = screen.getAllByRole("button", { name: /^Hide conversation/ });
     expect(hide).toHaveLength(1);
     expect(hide[0]).toHaveAccessibleName("Hide conversation with Alice Chen");
+    // Invisible until hover or keyboard focus, and it must not take a tap
+    // meant for the row's badge while invisible (touch never hovers).
+    expect(hide[0]!.className).toMatch(/(^|\s)pointer-events-none(\s|$)/);
+    expect(hide[0]!.className).toMatch(/group-hover:pointer-events-auto/);
     fireEvent.click(hide[0]!);
     expect(onHide).toHaveBeenCalledWith(dm);
   });

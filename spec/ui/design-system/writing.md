@@ -598,7 +598,7 @@ clients import it from `@repo/hooks`.
 | The control | — | `Hide conversation`: a long press on a 1:1 DM row, and the row's accessibility action of the same name (mobile); a control on a 1:1 DM row in the rail, named `Hide conversation with <name>`, and a row in the open DM's `⋯` menu (web) | `HIDE_CONVERSATION_LABEL` |
 | Confirmation | `Hide your conversation with <name>?` | `It leaves your list, and nothing in it is deleted. They aren't told. It comes back when there's something new in it, and you can open it from Hidden conversations anytime.` · confirm `Hide`. A native alert on mobile; on web, the shell's confirm dialog from the rail and the `⋯` menu's panel from the header | `hideConversationConfirmTitle`, `HIDE_CONVERSATION_CONFIRM_BODY` |
 | Hidden group | `Hidden conversations (<n>)` | A collapsed group at the end of the list, on both clients; opening a row from it brings that DM back | `HIDDEN_CONVERSATIONS_LABEL` |
-| Hide failed | `Couldn't hide the conversation` | `Nothing changed. Check your connection and try again.` (a mobile alert). Web shows the title alone as the header's `role="alert"` line, scoped to that DM | `HIDE_CONVERSATION_FAILED_TITLE`, `HIDE_CONVERSATION_FAILED_BODY` |
+| Hide failed | `Couldn't hide the conversation` | `Nothing changed. Check your connection and try again.` A mobile alert; a toast on web, because a rail hide can fail for a DM that is not open | `HIDE_CONVERSATION_FAILED_TITLE`, `HIDE_CONVERSATION_FAILED_BODY` |
 
 **The confirmation says what does not happen.** A member hiding a thread they are
 uneasy about wants to know that nothing is destroyed and the other member is not

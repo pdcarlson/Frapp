@@ -333,9 +333,9 @@ export function ChannelMenu({
                 </p>
                 <div className="flex justify-end">
                   {/*
-                    Closes at once, like the notification level: the write's
-                    failure is reported by the header's `role="alert"` line,
-                    which outlives this popover.
+                    Closes at once, like the notification level: the shell
+                    reports a failed write with a toast, which outlives this
+                    popover.
                   */}
                   <Button
                     size="sm"

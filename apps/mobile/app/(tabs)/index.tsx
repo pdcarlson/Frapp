@@ -212,7 +212,7 @@ export default function ChatHomeScreen() {
             </Text>
           </Pressable>
         </View>
-      ) : channels.length === 0 ? (
+      ) : allChannels.length === 0 ? (
         <View style={styles.stateBlock}>
           <Text style={styles.stateTitle}>No channels yet</Text>
           <Text style={styles.stateBody}>
