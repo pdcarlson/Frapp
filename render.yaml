@@ -40,12 +40,17 @@ services:
         sync: false
 
   # ─── Staging API ──────────────────────────────────────────────
+  # `autoDeploy: false` records intent, like production's: since #2505
+  # `deploy-api.yml` deploys staging by commit through the Render API, after CI
+  # and `migrate-staging`. The live setting is changed in the dashboard, and
+  # `scripts/ci/staging-conformance.mjs` asserts it.
   - type: web
     name: frapp-api-staging
     runtime: docker
     dockerfilePath: apps/api/Dockerfile
     dockerContext: .
     branch: main
+    autoDeploy: false
     plan: free
     healthCheckPath: /health
     envVars:

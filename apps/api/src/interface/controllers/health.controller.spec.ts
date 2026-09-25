@@ -159,6 +159,25 @@ describe('HealthController', () => {
       expect(stripePriceConsistency.assertConfiguredPrice).toHaveBeenCalled();
     });
 
+    // The staging deploy gate (scripts/ci/verify-served-commit.mjs) passes only
+    // on a /health/ready 2xx whose `commit` is the deployed SHA (#2505).
+    // Trimming this payload would fail every staging deploy.
+    it('includes commit when Render injected a git SHA', async () => {
+      const previous = process.env.RENDER_GIT_COMMIT;
+      process.env.RENDER_GIT_COMMIT =
+        '0ca478e9105105ff7013834615eee81499813d0e';
+      try {
+        const result = await controller.ready();
+        expect(result.commit).toBe('0ca478e9105105ff7013834615eee81499813d0e');
+      } finally {
+        if (previous === undefined) {
+          delete process.env.RENDER_GIT_COMMIT;
+        } else {
+          process.env.RENDER_GIT_COMMIT = previous;
+        }
+      }
+    });
+
     it('throws ServiceUnavailableException when the configured Stripe Price is missing', async () => {
       const mismatch = new StripePriceAccountMismatchError(
         'price_missing',

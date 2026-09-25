@@ -733,7 +733,6 @@ describe('ScheduledJobsService', () => {
       id: 'poll-1',
       chapter_id: 'chap-1',
       channel_id: 'chan-1',
-      question: 'Pizza or tacos?',
       expires_at: '2026-08-05T10:00:00Z',
     };
 
@@ -750,11 +749,7 @@ describe('ScheduledJobsService', () => {
         'EXPIRED',
         '2026-08-05',
       );
-      expect(announceExpiry).toHaveBeenCalledWith(
-        'poll-1',
-        'chan-1',
-        'Pizza or tacos?',
-      );
+      expect(announceExpiry).toHaveBeenCalledWith('poll-1', 'chan-1');
     });
 
     it('queries a bounded lookback window ending now', async () => {

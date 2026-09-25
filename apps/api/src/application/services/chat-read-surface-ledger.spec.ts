@@ -40,8 +40,10 @@ import * as ts from 'typescript';
  * - Broadcast and Presence subscriptions, which this does not scan. The push
  *   worker reads Presence on `chat:channel:<id>`; what those topics may carry
  *   is the `realtime.messages` entry below (#2496);
- * - member text re-posted under the system actor, which cannot be blocked. The
- *   poll-expiry notice quotes the poll's question this way (#2495);
+ * - member text re-posted under the system actor, which cannot be blocked.
+ *   The poll-expiry notice used to quote the poll's question this way; it
+ *   replies to the poll instead since #2495, and nothing here would catch
+ *   another notice starting to quote;
  * - a policy or table written through dynamic SQL assembled from parts.
  *
  * A `masked` entry names the test that proves it, and that test must be live:
@@ -86,6 +88,7 @@ const PGLITE_HARNESS = join(
 );
 
 const CHAT_SERVICE_SPEC = 'application/services/chat.service.spec.ts';
+const POLL_SERVICE_SPEC = 'application/services/poll.service.spec.ts';
 
 const OWN_PREFERENCES: Entry = {
   status: 'no-foreign-content',
@@ -270,14 +273,18 @@ const HTTP_LEDGER: Record<string, Entry> = {
     why: "Creator-only; returns the caller's own poll.",
   },
   PollController_listPolls_v1: {
-    status: 'open',
-    issues: [2495],
-    why: "Serves a blocked member's poll question and options.",
+    status: 'masked',
+    proof: {
+      spec: POLL_SERVICE_SPEC,
+      test: 'masks a poll from a member the caller has blocked in place, keeping its tallies',
+    },
   },
   PollController_getPoll_v1: {
-    status: 'open',
-    issues: [2495],
-    why: "Serves a blocked member's poll question and options.",
+    status: 'masked',
+    proof: {
+      spec: POLL_SERVICE_SPEC,
+      test: 'withholds the question and option text of a poll from a member the caller has blocked',
+    },
   },
 
   // ── Cross-cutting reads that serve chat content ────────────────────

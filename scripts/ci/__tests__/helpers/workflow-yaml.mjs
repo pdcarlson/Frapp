@@ -5,8 +5,8 @@
 // `yaml` and `js-yaml` both import successfully in this repo today, but neither
 // is a declared dependency — `package.json` lists them only under `overrides`,
 // so they resolve purely by transitive hoisting and npm is free to stop
-// providing that. `deploy-api-check-changes.test.mjs` states the same policy
-// and reads workflows as text for the same reason.
+// providing that. The step-extracting suites (`deploy-production-fence.test.mjs`
+// among them) read workflows as text for the same reason.
 //
 // ── Why not one more regex in each test ────────────────────────────────────
 // Because that is the bug this module exists to stop. Workflow guards written
