@@ -2,6 +2,10 @@ import type {
   BookmarkedMessage,
   ChatMessage,
 } from '#domain/entities/chat.entity';
+import type {
+  MaskedPollMetadata,
+  PollWithResults,
+} from '#domain/entities/poll-vote.entity';
 
 /**
  * Server-side application of a viewer's block list to chat message rows
@@ -189,4 +193,44 @@ export function maskBlockedMessages(
       ? maskMessage(message)
       : { ...message, sender_blocked: false },
   );
+}
+
+/**
+ * The same rule over the **poll routes' projection** (#2495): `GET /v1/polls`
+ * and `GET /v1/polls/{messageId}` serve a poll's message reshaped with its
+ * tallies, which {@link maskBlockedMessages} does not fit, for the reason
+ * {@link maskBlockedBookmarkMessage} gives. What is shared is the same: the
+ * sentinel, `isFromBlockedSender` (so an imported row is never masked), the
+ * allowlist construction, and `sender_blocked` on every row.
+ *
+ * **Masked in place, not left out.** The tallies are chapter state, which a
+ * block counts rather than hides (`spec/behavior/chat/README.md` § What a block
+ * does and does not hide), and dropping the row would change the list's counts
+ * and paging. So a masked poll keeps its ids, timing, expiry, every
+ * `voteCount` and the caller's own `userVotes`, and loses the question, the
+ * option text and `content`.
+ */
+export function maskBlockedPoll(
+  poll: Omit<PollWithResults, 'sender_blocked'>,
+  blockedUserIds: ReadonlySet<string>,
+): PollWithResults {
+  if (!isFromBlockedSender(poll.sender_id, blockedUserIds)) {
+    return { ...poll, sender_blocked: false };
+  }
+  const metadata: MaskedPollMetadata = {
+    choice_mode: poll.metadata.choice_mode,
+    expires_at: poll.metadata.expires_at,
+    closed_at: poll.metadata.closed_at,
+  };
+  return {
+    ...poll,
+    content: BLOCKED_MESSAGE_CONTENT,
+    metadata,
+    results: poll.results.map(({ optionIndex, voteCount }) => ({
+      optionIndex,
+      optionText: null,
+      voteCount,
+    })),
+    sender_blocked: true,
+  };
 }
