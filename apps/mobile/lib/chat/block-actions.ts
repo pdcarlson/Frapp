@@ -1,20 +1,16 @@
 import { useCallback } from "react";
 import { Alert } from "react-native";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import {
-  serverMessageOf,
-  statusOf,
-  type createFrappClient,
-} from "@repo/api-sdk";
-import {
-  CHAT_MESSAGE_QUERY_ROOT,
-  chatMessagesKey,
-  type ChannelCache,
-  type RawChatMessage,
-} from "@repo/chat-core/types";
+  BLOCK_FAILURE_BODY,
+  UNBLOCK_CONFIRM_BODY,
+  UNNAMED_MEMBER,
+  unblockConfirmTitle,
+  unblockFailedTitle,
+} from "@repo/chat-core/block-copy";
+import { refreshMaskedCopies } from "@repo/chat-core/blocks";
 import { useBlockMember, useFrappClient, useUnblockMember } from "@repo/hooks";
-import { hasMaskedCopyFrom, replaceMaskedCopies } from "./blocks";
-import { maskedRefresh } from "./masked-refresh";
 
 /**
  * Block and unblock for every mobile surface that offers them — the message
@@ -25,11 +21,10 @@ import { maskedRefresh } from "./masked-refresh";
  * below say only what is true of this client today, and nothing about the
  * blocked member finding out: blocking is silent by contract. A block is
  * scoped to one chapter and a member can belong to several, so the copy says
- * "this chapter" wherever it says what a block hides.
+ * "this chapter" wherever it says what a block hides. Copy web says too (the
+ * unblock confirmation, a failure) lives in `@repo/chat-core/block-copy`; what
+ * is here names Block, which only mobile offers.
  */
-
-/** Used wherever the roster cannot name the member. */
-export const UNNAMED_MEMBER = "this member";
 
 /**
  * The block confirmation's body.
@@ -49,12 +44,6 @@ export function blockConfirmBody(inDirectory: boolean): string {
   );
 }
 
-export const UNBLOCK_CONFIRM_BODY =
-  "Their messages in this chapter's chat will show again. They won't be told.";
-
-export const BLOCK_FAILURE_BODY =
-  "Nothing changed. Check your connection and try again.";
-
 /** `POST /v1/chat/blocks` answers 404 (`Member not found`) for a non-member. */
 export const BLOCK_NOT_A_MEMBER_BODY =
   "This member is no longer in your chapter, so there's nothing to block.";
@@ -68,10 +57,6 @@ export const BLOCK_ROW_DESCRIPTION =
   "Hides their messages from you in this chapter's chat. They aren't told.";
 export const UNBLOCK_ROW_DESCRIPTION =
   "Their messages in this chapter's chat show again.";
-
-/** A stale tombstone's Reload, when the re-read it re-runs fails again. */
-export const MASKED_RELOAD_FAILED_TITLE = "Couldn't reload these messages";
-export const MASKED_RELOAD_FAILED_BODY = "Check your connection and try again.";
 
 /**
  * Whether a failed block is the API's "not a member of this chapter" answer:
@@ -89,10 +74,6 @@ export function blockConfirmTitle(name: string): string {
   return `Block ${name}?`;
 }
 
-export function unblockConfirmTitle(name: string): string {
-  return `Unblock ${name}?`;
-}
-
 export interface BlockActions {
   /** Resolves once the server confirmed and the caches were told. Rejects on failure. */
   block: (userId: string) => Promise<void>;
@@ -104,122 +85,6 @@ export interface BlockActions {
    */
   reloadMaskedCopies: (userId: string) => Promise<boolean>;
   isPending: boolean;
-}
-
-type FrappClient = ReturnType<typeof createFrappClient>;
-
-/** The channel id in a `chatMessagesKey`, or `null` for any other `["chat", …]` key. */
-function channelIdOf(queryKey: readonly unknown[]): string | null {
-  const [root, channelId, leaf] = queryKey;
-  return root === CHAT_MESSAGE_QUERY_ROOT &&
-    typeof channelId === "string" &&
-    leaf === "messages" &&
-    queryKey.length === 3
-    ? channelId
-    : null;
-}
-
-/** Waits between attempts of one thread's re-read: two retries, then give up. */
-export const MASKED_REFRESH_RETRY_DELAYS_MS: readonly number[] = [1_000, 3_000];
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * After an unblock, bring the member's words back where the server had masked
- * them — out of band, and never by re-running a thread's query.
- *
- * Re-running the query (the old `invalidateQueries(["chat"])`) re-ran its
- * snapshot-then-await `queryFn`, which returns the cache as it was before its
- * reaction select: a Realtime row or a send that landed in that window was
- * overwritten, and a message could vanish for the session (#2257 review,
- * finding 3). Here each affected thread's newest page is fetched on its own
- * and folded into the cache **as it is when the response lands**, through
- * `replaceMaskedCopies`, which only swaps masked copies for their clear twins.
- *
- * Only threads that hold a masked copy from this member are read. Older copies
- * beyond the newest page stay masked, as stale tombstones, until the thread's
- * query is next read from scratch — the thread screen stays mounted, so that is
- * a chapter switch, a sign-out, an app restart, or the default `gcTime` after
- * the member opens a different channel — and that read covers only the newest
- * page, so they then leave the timeline (spec/behavior/chat/README.md, Channel
- * messages row).
- *
- * **A failure is retried, then recorded — never swallowed.** Each thread's read
- * is tried up to `1 + retryDelaysMs.length` times, and a thread that no longer
- * holds a masked copy by the next attempt (reloaded, or another re-read landed)
- * counts as done. If one still fails, `masked-refresh.ts` records it and the
- * stale tombstones for that member offer Reload, which runs this again: after
- * a confirmed unblock the tombstone has no Unblock to offer, and without that
- * record the copies would be stranded with no control at all. The unblock
- * itself is unaffected either way — it succeeded, and the thread already shows
- * the member's live messages because the client applies the list itself.
- *
- * Resolves `true` when every affected thread was read. Never rejects.
- *
- * A block needs no counterpart. The thread tombstones a blocked sender on every
- * path from the list alone, so there is nothing to re-read.
- */
-export async function refreshMaskedCopies(
-  queryClient: QueryClient,
-  client: FrappClient,
-  userId: string,
-  retryDelaysMs: readonly number[] = MASKED_REFRESH_RETRY_DELAYS_MS,
-): Promise<boolean> {
-  const holdsMaskedCopy = (channelId: string) =>
-    hasMaskedCopyFrom(
-      queryClient.getQueryData<ChannelCache>(chatMessagesKey(channelId)),
-      userId,
-    );
-
-  const channelIds = queryClient
-    .getQueryCache()
-    .findAll({ queryKey: [CHAT_MESSAGE_QUERY_ROOT] })
-    .map((query) => channelIdOf(query.queryKey))
-    .filter((channelId): channelId is string => channelId !== null)
-    .filter(holdsMaskedCopy);
-
-  if (channelIds.length === 0) {
-    maskedRefresh.set(userId, null);
-    return true;
-  }
-  maskedRefresh.set(userId, "refreshing");
-
-  /** One read of a thread's newest page, folded in. `false` on any failure. */
-  async function readNewestPage(channelId: string): Promise<boolean> {
-    try {
-      const result = await client.GET("/v1/channels/{id}/messages", {
-        params: { path: { id: channelId }, query: { limit: 50 } },
-      });
-      if (!result.response.ok || !Array.isArray(result.data)) return false;
-      const rows = result.data as RawChatMessage[];
-      queryClient.setQueryData<ChannelCache>(
-        chatMessagesKey(channelId),
-        (current) =>
-          current ? replaceMaskedCopies(current, rows, userId) : current,
-      );
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  const results = await Promise.all(
-    channelIds.map(async (channelId) => {
-      for (let attempt = 0; ; attempt += 1) {
-        if (await readNewestPage(channelId)) return true;
-        const delay = retryDelaysMs[attempt];
-        if (delay === undefined) return false;
-        await wait(delay);
-        if (!holdsMaskedCopy(channelId)) return true;
-      }
-    }),
-  );
-
-  const landed = results.every(Boolean);
-  maskedRefresh.set(userId, landed ? null : "failed");
-  return landed;
 }
 
 /**
@@ -344,7 +209,7 @@ export function confirmUnblockMember({
             await run();
             onDone?.();
           } catch {
-            Alert.alert(`Couldn't unblock ${label}`, BLOCK_FAILURE_BODY);
+            Alert.alert(unblockFailedTitle(label), BLOCK_FAILURE_BODY);
           }
         })();
       },

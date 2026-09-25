@@ -13,7 +13,9 @@
     "./chat-client": "./src/chat-client.ts",
     "./realtime-manager": "./src/realtime-manager.ts",
     "./polls": "./src/polls.ts",
-    "./reply-preview": "./src/reply-preview.ts"
+    "./reply-preview": "./src/reply-preview.ts",
+    "./blocks": "./src/blocks.ts",
+    "./block-copy": "./src/block-copy.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",

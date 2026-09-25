@@ -18,7 +18,7 @@ import {
   UNBLOCK_ROW_DESCRIPTION,
   useBlockActions,
 } from "@/lib/chat/block-actions";
-import { isBlockableSender } from "@/lib/chat/blocks";
+import { isBlockableSender } from "@repo/chat-core/blocks";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";

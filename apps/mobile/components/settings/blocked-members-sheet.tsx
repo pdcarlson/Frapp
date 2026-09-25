@@ -12,6 +12,16 @@ import {
   useBlockedUserIds,
   useMemberDisplayNames,
 } from "@repo/hooks";
+import {
+  BLOCK_LIST_WAITING_FOR_NETWORK,
+  BLOCKED_MEMBERS_EMPTY_TITLE,
+  BLOCKED_MEMBERS_ERROR_BODY,
+  BLOCKED_MEMBERS_ERROR_TITLE,
+  BLOCKED_MEMBERS_OFFLINE_BODY,
+  BLOCKED_MEMBERS_SCOPE,
+  BLOCKED_MEMBERS_STALE,
+  BLOCKED_MEMBERS_TITLE,
+} from "@repo/chat-core/block-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListSection } from "@/components/list-section";
 import {
@@ -29,7 +39,6 @@ import {
   confirmUnblockMember,
   useBlockActions,
 } from "@/lib/chat/block-actions";
-import { BLOCK_LIST_WAITING_FOR_NETWORK } from "@/lib/chat/blocks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -44,28 +53,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 const SNAP_POINTS = ["65%"];
 
-export const BLOCKED_MEMBERS_TITLE = "Blocked members";
-
 /**
- * The sheet's strings, exported so `spec/ui/design-system/writing.md` and the
- * spec can point at one home. A block is scoped to one chapter and a member can
- * belong to several (`spec/behavior/chat/README.md` § Block), so the sheet says
- * which chapter it is listing — the empty state included: "You haven't blocked
- * anyone" would be false for a member with blocks in another chapter.
+ * The empty state's body, mobile's own: it names where this client offers
+ * Block. Every other string on this sheet is shared with web's list and lives
+ * in `@repo/chat-core/block-copy`.
  */
-export const BLOCKED_MEMBERS_SCOPE = "Blocks apply in this chapter only.";
-export const BLOCKED_MEMBERS_EMPTY_TITLE =
-  "You haven't blocked anyone in this chapter";
 export const BLOCKED_MEMBERS_EMPTY_BODY =
   "Block someone from a message or their profile in the directory. Their messages in this chapter's chat are hidden from you, and they aren't told.";
-export const BLOCKED_MEMBERS_ERROR_TITLE = "Couldn't load your blocked members";
-export const BLOCKED_MEMBERS_ERROR_BODY =
-  "Check your connection and try again. Your blocks haven't changed.";
-/** The first read is parked until the device is online; a tap cannot help. */
-export const BLOCKED_MEMBERS_OFFLINE_BODY =
-  "You're offline. This list loads when you're back online. Your blocks haven't changed.";
-export const BLOCKED_MEMBERS_STALE =
-  "Couldn't refresh this list. It may be missing a recent change.";
 
 export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
   function BlockedMembersSheet(_props, ref) {

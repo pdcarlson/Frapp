@@ -8,6 +8,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
+import type { BlockListStatus } from "@repo/validation";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { bookmarkKeys } from "./use-chat";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
@@ -84,12 +85,6 @@ function throwUnlessOk(result: { error?: unknown; response: Response }): void {
     message: typeof error === "string" && error.length > 0 ? error : undefined,
   };
 }
-
-/**
- * Tri-state, never boolean. A failed read that looked like "nobody is blocked"
- * would fail open on a safety feature — the exact defect #2315 records.
- */
-export type BlockListStatus = "ready" | "loading" | "unavailable";
 
 export interface BlockedUserIds {
   /**

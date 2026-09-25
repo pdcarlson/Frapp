@@ -6,7 +6,11 @@ import {
   View,
 } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
-import type { MaskedRefreshState } from "@/lib/chat/masked-refresh";
+import {
+  TOMBSTONE_STALE_TEXT,
+  TOMBSTONE_TEXT,
+} from "@repo/chat-core/block-copy";
+import type { MaskedRefreshState } from "@repo/chat-core/blocks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -56,9 +60,6 @@ export interface BlockedMessageTombstoneProps {
   reload?: MaskedRefreshState | null;
   onReload?: () => void;
 }
-
-export const TOMBSTONE_TEXT = "Message from a member you blocked";
-export const TOMBSTONE_STALE_TEXT = "Hidden while you had this member blocked";
 
 export function BlockedMessageTombstone({
   senderName,
