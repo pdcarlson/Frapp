@@ -11,7 +11,12 @@ import { EmptyState, ErrorState } from "@/components/shared/async-states";
 import {
   canHideConversation,
   directChannelDisplayName,
+  HIDE_CONVERSATION_CONFIRM_ACTION,
+  HIDE_CONVERSATION_CONFIRM_BODY,
   HIDE_CONVERSATION_FAILED_TITLE,
+  hideConversationConfirmTitle,
+  otherMemberId,
+  useGetOrCreateDm,
   useLeaveChannel,
   useChannelNotificationPreferences,
   useChannelUnreadCounts,
@@ -579,7 +584,7 @@ export function ChatShell({
   const hideFailedChannelId = leaveChannel.isError
     ? leaveChannel.variables
     : undefined;
-  const hideActiveConversation = useCallback(
+  const hideConversation = useCallback(
     (channelId: string) => {
       leaveChannel.mutate(channelId, {
         // The hidden DM stays in `channels` (flagged), so without this the
@@ -593,9 +598,34 @@ export function ChatShell({
     },
     [leaveChannel],
   );
+  // The rail's Hide asks first, in the shell's own dialog; the header menu's
+  // asks in its panel. Both land in `hideConversation`.
+  const hideFromRail = useCallback(
+    (target: ChatChannel) => {
+      void (async () => {
+        const confirmed = await confirm({
+          title: hideConversationConfirmTitle(
+            channelNameFor(target.id) ?? target.name,
+          ),
+          description: HIDE_CONVERSATION_CONFIRM_BODY,
+          confirmLabel: HIDE_CONVERSATION_CONFIRM_ACTION,
+          // Not destructive: nothing is deleted, and the body says so.
+          tone: "default",
+        });
+        if (confirmed) hideConversation(target.id);
+      })();
+    },
+    [confirm, channelNameFor, hideConversation],
+  );
+  // Picking a DM from the rail's Hidden conversations group is opening it
+  // again yourself, which is what clears a hide: `POST /v1/channels/dm` with
+  // the other member does it server-side, and its refetch moves the row back.
+  // The thread opens at once either way, since a hidden DM stays readable.
+  const reopenDm = useGetOrCreateDm();
 
-  // Opening a channel stamps the read cursor — the only thing that moves it, and
-  // the only thing that clears the badges above. Without it the rail lights up
+  // Opening a channel stamps the read cursor, and so does hiding a DM (#2303:
+  // a hidden row must leave no badge). Those are the only things that move
+  // it, and the only things that clear the badges above. Without it the rail lights up
   // on first load and never goes out, which is worse than the dead badge this
   // slice replaced: it would show every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
@@ -1211,7 +1241,12 @@ export function ChatShell({
               categories={categories}
               unreadByChannelId={unreadByChannelId}
               activeChannelId={activeChannelId}
+              onHide={hideFromRail}
               onPick={(ch) => {
+                if (ch.hidden) {
+                  const memberId = otherMemberId(ch, userId);
+                  if (memberId) reopenDm.mutate({ member_id: memberId });
+                }
                 setSelectedChannelId(ch.id);
                 // Below `lg` the list and the thread are never both on screen,
                 // so picking has to navigate. Inert at `lg` and up.
@@ -1355,7 +1390,7 @@ export function ChatShell({
                 activeChannel && canHideConversation(activeChannel)
                   ? {
                       name: activeChannelName,
-                      onHide: () => hideActiveConversation(activeChannel.id),
+                      onHide: () => hideConversation(activeChannel.id),
                     }
                   : undefined
               }

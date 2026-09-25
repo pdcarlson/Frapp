@@ -313,7 +313,7 @@ export class ChatService {
   async getChannels(
     chapterId: string,
     userId: string,
-  ): Promise<ChatChannelListItem[]> {
+  ): Promise<ChatChannelView[]> {
     const channels = await this.channelRepo.findByChapter(chapterId);
 
     const accessible = await this.channelAccess.filterAccessibleChannels(
@@ -321,14 +321,28 @@ export class ChatService {
       userId,
       channels,
     );
+    return this.channelAccess.withPostCapability(chapterId, userId, accessible);
+  }
+
+  /**
+   * `GET /v1/channels`: {@link getChannels} plus whether this caller has hidden
+   * each row from their own list (#2303).
+   *
+   * Its own method rather than a field `getChannels` always computes, because
+   * `getChannels` has callers that only look for one chapter channel (the
+   * activity feed finding `#announcements`), and the hidden lookup is a round
+   * trip they would pay for and throw away.
+   */
+  async getChannelList(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannelListItem[]> {
+    const views = await this.getChannels(chapterId, userId);
     // Only a caller with a DM in the list can have hidden anything, so a
     // chapter-channels-only list skips the lookup.
-    const [views, hidden] = await Promise.all([
-      this.channelAccess.withPostCapability(chapterId, userId, accessible),
-      accessible.some((channel) => channel.type === 'DM')
-        ? this.findHiddenChannelIds(chapterId, userId)
-        : Promise.resolve(new Set<string>()),
-    ]);
+    const hidden = views.some((channel) => channel.type === 'DM')
+      ? await this.findHiddenChannelIds(chapterId, userId)
+      : new Set<string>();
     return views.map((view) => ({ ...view, hidden: hidden.has(view.id) }));
   }
 
@@ -1845,12 +1859,24 @@ export class ChatService {
     const rows = await this.readReceiptRepo.getUnreadCounts(chapterId, userId);
     if (rows.length === 0) return [];
 
-    const accessible = await this.channelAccess.filterAccessibleChannelIds(
-      chapterId,
-      userId,
-      rows.map((row) => row.channel_id),
+    const [accessible, hidden] = await Promise.all([
+      this.channelAccess.filterAccessibleChannelIds(
+        chapterId,
+        userId,
+        rows.map((row) => row.channel_id),
+      ),
+      this.findHiddenChannelIds(chapterId, userId),
+    ]);
+    // A DM the caller hid (#2303) has no row on screen to open, so a count on
+    // it would light the app badge with nothing to clear it from. The hide
+    // marks the thread read, and anything that makes it unread again also
+    // brings it back, with one exception: a member the caller has blocked
+    // can still post into it (a block withholds, it never refuses), and that
+    // count is exactly the one that must not surface here. A missing row
+    // reads as fully read on both clients.
+    return rows.filter(
+      (row) => accessible.has(row.channel_id) && !hidden.has(row.channel_id),
     );
-    return rows.filter((row) => accessible.has(row.channel_id));
   }
 
   // ── File Upload ─────────────────────────────────────────────────────

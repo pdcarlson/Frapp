@@ -1,7 +1,14 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
-import { directChannelDisplayName, type DisplayNameMap } from "@repo/hooks";
+import { useCallback, useMemo, useState } from "react";
+import { EyeOff } from "lucide-react";
+import {
+  canHideConversation,
+  directChannelDisplayName,
+  HIDDEN_CONVERSATIONS_LABEL,
+  HIDE_CONVERSATION_LABEL,
+  type DisplayNameMap,
+} from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
@@ -129,7 +136,8 @@ export function unreadAnnouncement(
   { unreadCount, mentionCount }: ChannelUnread,
   isDirect = false,
 ): string {
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const plural = (n: number, word: string) =>
+    `${n} ${word}${n === 1 ? "" : "s"}`;
   if (mentionCount > 0) {
     return `${plural(mentionCount, "mention")}, ${unreadCount} unread`;
   }
@@ -163,7 +171,16 @@ export interface ChannelListProps {
    * the single "Channels" group rather than an empty rail.
    */
   categories?: ChannelCategory[];
+  /**
+   * Picking a row. A row from the Hidden conversations group comes through
+   * here too, flagged `hidden`, and reopening it is the caller's job (#2303).
+   */
   onPick: (channel: ChatChannel) => void;
+  /**
+   * Offer Hide on each 1:1 DM row (#2303). The caller confirms; the rail only
+   * asks. Absent, no row offers it.
+   */
+  onHide?: (channel: ChatChannel) => void;
 }
 
 /**
@@ -191,7 +208,9 @@ export function ChannelList({
   unreadByChannelId,
   categories = NO_CATEGORIES,
   onPick,
+  onHide,
 }: ChannelListProps) {
+  const [showHidden, setShowHidden] = useState(false);
   // Resolved once, then used for the row title and the sort key alike, which
   // must agree: sorting on the stored name put a DM under its uuid rather than
   // under the name the row visibly shows. (It resolved the search needle too,
@@ -240,8 +259,12 @@ export function ChannelList({
    * everything just sees that group's empty section disappear, which the render
    * below already does for any empty section.
    */
-  const sections = useMemo<Section[]>(() => {
+  const { sections, hiddenDms } = useMemo(() => {
     const uncategorized: ChatChannel[] = [];
+    // A DM the member hid (#2303) moves to the collapsed group at the end,
+    // except while it is the open channel, so a jump into one does not leave
+    // the rail with no row marked current.
+    const hiddenDms: ChatChannel[] = [];
     const dms: ChatChannel[] = [];
     const system: ChatChannel[] = [];
     // Seeded from `categories` so a category with no channels still gets an
@@ -251,9 +274,10 @@ export function ChannelList({
     );
 
     for (const channel of channels) {
-      // Kept while it is the open channel, so a jump into a hidden DM does
-      // not leave the rail with no row marked current.
-      if (channel.hidden && channel.id !== activeChannelId) continue;
+      if (channel.hidden && channel.id !== activeChannelId) {
+        hiddenDms.push(channel);
+        continue;
+      }
       if (isSystem(channel)) system.push(channel);
       else if (isDm(channel)) dms.push(channel);
       else {
@@ -288,8 +312,105 @@ export function ChannelList({
     for (const section of result) {
       section.channels.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
     }
-    return result;
+    hiddenDms.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
+    return { sections: result, hiddenDms };
   }, [channels, titleFor, categories, activeChannelId]);
+
+  const renderRow = (channel: ChatChannel) => {
+    const isActive = channel.id === activeChannelId;
+    const countsKnown = unreadByChannelId !== undefined;
+    const counts = unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
+    // Red is "you were addressed", and foundations §5 spells that
+    // as "an @-mention **or a direct message**" — s04 draws the DM
+    // row with a plain red `1` and no `@`. `mention_count` is
+    // @-mentions only (the RPC filters on `m.mentions`), so a DM
+    // has to be folded in here or the one signal the fixed red
+    // exists for never fires for the most personal channel there is.
+    const hasMention =
+      counts.mentionCount > 0 || (isDm(channel) && counts.unreadCount > 0);
+    // A mention implies an unread row even if the two counts ever
+    // disagree — a red badge on a read-styled row is a contradiction
+    // on screen.
+    const isUnread = countsKnown && (counts.unreadCount > 0 || hasMention);
+    return (
+      <li key={channel.id} className="group relative">
+        <button
+          type="button"
+          onClick={() => onPick(channel)}
+          aria-current={isActive ? "page" : undefined}
+          // `1b` pin 6 and the `3a` geometry table: a channel row
+          // is 32px at radius 8, tighter than the 34px/r10 nav row
+          // above it, because a rail of channels is a longer list
+          // than a rail of sections. 14/600 type, and the accent
+          // tint still marks the active row the way the nav's does.
+          className={cn(
+            "flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
+            isActive
+              ? "bg-accent-subtle font-semibold text-accent-text"
+              : isUnread
+                ? "font-semibold text-foreground hover:bg-card"
+                : "text-muted-foreground hover:bg-card hover:text-foreground",
+          )}
+        >
+          <ChannelMark channel={channel} title={titleFor(channel)} />
+          <span className="truncate">{titleFor(channel)}</span>
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            {/*
+              The glyphs below are `aria-hidden` (every duotone
+              glyph is), so each carries its own `sr-only` word.
+              The muted state used to be the literal text "muted",
+              which a screen reader read for free; swapping it for a
+              mark without this would have silently dropped it.
+            */}
+            {channel.muted ? (
+              <>
+                <MuteGlyph className="h-4 w-4 text-muted-foreground" active />
+                <span className="sr-only">Muted</span>
+              </>
+            ) : null}
+            {/*
+              A lock glyph, not a "Read" badge (`1b` pin 7, `1t`).
+              The badge spent 20-odd pixels of a 240px column
+              spelling out a state the mark can carry, and read
+              "Read" next to a row whose own styling already means
+              read-or-unread — two different senses of the word on
+              one row. `aria-label` keeps it stated for AT, which
+              the badge did only by accident of its text.
+            */}
+            {channel.is_read_only && !channel.muted && !isUnread ? (
+              <>
+                <LockGlyph className="h-4 w-4 text-muted-foreground" />
+                <span className="sr-only">Read-only</span>
+              </>
+            ) : null}
+            {isUnread ? (
+              <Badge
+                variant={hasMention ? "mention" : "secondary"}
+                className="h-6 justify-center px-2"
+                aria-label={unreadAnnouncement(counts, isDm(channel))}
+              >
+                {badgeLabel(counts.unreadCount, counts.mentionCount)}
+              </Badge>
+            ) : null}
+          </span>
+        </button>
+        {onHide && canHideConversation(channel) && !channel.hidden ? (
+          // A sibling of the row, not inside it: a button cannot hold a
+          // button. Revealed on hover and on keyboard focus, and it sits over
+          // the badge while shown, the way a row action does in a chat rail.
+          <button
+            type="button"
+            onClick={() => onHide(channel)}
+            aria-label={`${HIDE_CONVERSATION_LABEL} with ${titleFor(channel)}`}
+            title={HIDE_CONVERSATION_LABEL}
+            className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-xs bg-card text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <EyeOff className="h-4 w-4" aria-hidden="true" />
+          </button>
+        ) : null}
+      </li>
+    );
+  };
 
   if (channels.length === 0) {
     return (
@@ -320,96 +441,32 @@ export function ChannelList({
               {section.label}
             </p>
             <ul aria-labelledby={`channel-section:${section.key}`}>
-              {section.channels.map((channel) => {
-                const isActive = channel.id === activeChannelId;
-                const countsKnown = unreadByChannelId !== undefined;
-                const counts = unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
-                // Red is "you were addressed", and foundations §5 spells that
-                // as "an @-mention **or a direct message**" — s04 draws the DM
-                // row with a plain red `1` and no `@`. `mention_count` is
-                // @-mentions only (the RPC filters on `m.mentions`), so a DM
-                // has to be folded in here or the one signal the fixed red
-                // exists for never fires for the most personal channel there is.
-                const hasMention =
-                  counts.mentionCount > 0 ||
-                  (isDm(channel) && counts.unreadCount > 0);
-                // A mention implies an unread row even if the two counts ever
-                // disagree — a red badge on a read-styled row is a contradiction
-                // on screen.
-                const isUnread =
-                  countsKnown && (counts.unreadCount > 0 || hasMention);
-                return (
-                  <li key={channel.id}>
-                    <button
-                      type="button"
-                      onClick={() => onPick(channel)}
-                      aria-current={isActive ? "page" : undefined}
-                      // `1b` pin 6 and the `3a` geometry table: a channel row
-                      // is 32px at radius 8, tighter than the 34px/r10 nav row
-                      // above it, because a rail of channels is a longer list
-                      // than a rail of sections. 14/600 type, and the accent
-                      // tint still marks the active row the way the nav's does.
-                      className={cn(
-                        "flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
-                        isActive
-                          ? "bg-accent-subtle font-semibold text-accent-text"
-                          : isUnread
-                            ? "font-semibold text-foreground hover:bg-card"
-                            : "text-muted-foreground hover:bg-card hover:text-foreground",
-                      )}
-                    >
-                      <ChannelMark channel={channel} title={titleFor(channel)} />
-                      <span className="truncate">{titleFor(channel)}</span>
-                      <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                        {/*
-                          The glyphs below are `aria-hidden` (every duotone
-                          glyph is), so each carries its own `sr-only` word.
-                          The muted state used to be the literal text "muted",
-                          which a screen reader read for free; swapping it for a
-                          mark without this would have silently dropped it.
-                        */}
-                        {channel.muted ? (
-                          <>
-                            <MuteGlyph
-                              className="h-4 w-4 text-muted-foreground"
-                              active
-                            />
-                            <span className="sr-only">Muted</span>
-                          </>
-                        ) : null}
-                        {/*
-                          A lock glyph, not a "Read" badge (`1b` pin 7, `1t`).
-                          The badge spent 20-odd pixels of a 240px column
-                          spelling out a state the mark can carry, and read
-                          "Read" next to a row whose own styling already means
-                          read-or-unread — two different senses of the word on
-                          one row. `aria-label` keeps it stated for AT, which
-                          the badge did only by accident of its text.
-                        */}
-                        {channel.is_read_only && !channel.muted && !isUnread ? (
-                          <>
-                            <LockGlyph className="h-4 w-4 text-muted-foreground" />
-                            <span className="sr-only">Read-only</span>
-                          </>
-                        ) : null}
-                        {isUnread ? (
-                          <Badge
-                            variant={hasMention ? "mention" : "secondary"}
-                            className="h-6 justify-center px-2"
-                            aria-label={unreadAnnouncement(counts, isDm(channel))}
-                          >
-                            {badgeLabel(counts.unreadCount, counts.mentionCount)}
-                          </Badge>
-                        ) : null}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
+              {section.channels.map(renderRow)}
             </ul>
           </div>
         ),
       )}
+      {hiddenDms.length > 0 ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowHidden((open) => !open)}
+            aria-expanded={showHidden}
+            aria-controls="channel-section:hidden"
+            className="w-full px-3 pb-1 text-left text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
+          >
+            {`${HIDDEN_CONVERSATIONS_LABEL} (${hiddenDms.length})`}
+          </button>
+          {showHidden ? (
+            <ul
+              id="channel-section:hidden"
+              aria-label={HIDDEN_CONVERSATIONS_LABEL}
+            >
+              {hiddenDms.map(renderRow)}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -426,8 +483,7 @@ function ChannelMark({
   channel: ChatChannel;
   title: string;
 }) {
-  if (isSystem(channel))
-    return <AuditGlyph className="h-4 w-4 shrink-0" />;
+  if (isSystem(channel)) return <AuditGlyph className="h-4 w-4 shrink-0" />;
   if (isDm(channel))
     return (
       // 24px, with the primitive's own caption-role initials — no size

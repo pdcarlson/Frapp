@@ -650,7 +650,7 @@ describe('ChatService', () => {
           new Set(['ch-dm-mine']),
         );
 
-        const result = await service.getChannels('ch-1', 'user-1');
+        const result = await service.getChannelList('ch-1', 'user-1');
 
         expect(result.map((channel) => [channel.id, channel.hidden])).toEqual([
           ['ch-chan-1', false],
@@ -669,7 +669,7 @@ describe('ChatService', () => {
           new Error('function get_hidden_channel_ids does not exist'),
         );
 
-        const result = await service.getChannels('ch-1', 'user-1');
+        const result = await service.getChannelList('ch-1', 'user-1');
 
         expect(result.map((channel) => [channel.id, channel.hidden])).toEqual([
           ['ch-chan-1', false],
@@ -681,9 +681,18 @@ describe('ChatService', () => {
       it('skips the hidden lookup when the caller has no DM in the list', async () => {
         mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
 
-        const result = await service.getChannels('ch-1', 'user-1');
+        const result = await service.getChannelList('ch-1', 'user-1');
 
         expect(result.map((channel) => channel.hidden)).toEqual([false]);
+        expect(mockReadReceiptRepo.findHiddenChannelIds).not.toHaveBeenCalled();
+      });
+
+      it('leaves getChannels (the activity feed’s read) without the hidden lookup', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result.every((channel) => !('hidden' in channel))).toBe(true);
         expect(mockReadReceiptRepo.findHiddenChannelIds).not.toHaveBeenCalled();
       });
 
@@ -4503,6 +4512,44 @@ describe('ChatService', () => {
 
       expect(result).toEqual([
         { channel_id: baseChannel.id, unread_count: 3, mention_count: 1 },
+      ]);
+    });
+
+    // #2303: a hidden DM has no row on screen, so its count would light the
+    // app badge with nothing to clear it from — the blocked-sender case above
+    // all, since a blocked member's post never brings the thread back.
+    it('drops a DM the caller has hidden', async () => {
+      const dm: ChatChannel = {
+        ...baseChannel,
+        id: 'ch-dm',
+        type: 'DM',
+        member_ids: ['user-1', 'user-2'],
+      };
+      mockChannelRepo.findByIds.mockResolvedValue([baseChannel, dm]);
+      mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([
+        { channel_id: baseChannel.id, unread_count: 1, mention_count: 0 },
+        { channel_id: dm.id, unread_count: 3, mention_count: 0 },
+      ]);
+      mockReadReceiptRepo.findHiddenChannelIds.mockResolvedValue(
+        new Set([dm.id]),
+      );
+
+      await expect(service.getUnreadCounts('ch-1', 'user-1')).resolves.toEqual([
+        { channel_id: baseChannel.id, unread_count: 1, mention_count: 0 },
+      ]);
+    });
+
+    it('keeps every count when the hidden lookup fails', async () => {
+      mockChannelRepo.findByIds.mockResolvedValue([baseChannel]);
+      mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([
+        { channel_id: baseChannel.id, unread_count: 2, mention_count: 0 },
+      ]);
+      mockReadReceiptRepo.findHiddenChannelIds.mockRejectedValue(
+        new Error('down'),
+      );
+
+      await expect(service.getUnreadCounts('ch-1', 'user-1')).resolves.toEqual([
+        { channel_id: baseChannel.id, unread_count: 2, mention_count: 0 },
       ]);
     });
 

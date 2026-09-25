@@ -40,7 +40,10 @@ vi.mock("@repo/hooks", () => {
     useViewerUserId: () => "viewer-1",
     useMemberDisplayNames: () => ({ byId: {} }),
     useLeaveChannel: () => ({ mutateAsync: vi.fn() }),
+    useGetOrCreateDm: () => ({ mutate: vi.fn() }),
     canHideConversation: () => false,
+    otherMemberId: () => null,
+    HIDDEN_CONVERSATIONS_LABEL: "Hidden conversations",
   };
 });
 

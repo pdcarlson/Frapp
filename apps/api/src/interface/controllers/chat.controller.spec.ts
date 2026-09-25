@@ -20,7 +20,7 @@ describe('ChatController', () => {
       unpinMessage: jest.fn(),
       updateCategory: jest.fn(),
       deleteCategory: jest.fn(),
-      getChannels: jest.fn(),
+      getChannelList: jest.fn(),
       getChannel: jest.fn(),
       createChannel: jest.fn(),
       getMessages: jest.fn(),
@@ -77,10 +77,10 @@ describe('ChatController', () => {
   // so the service had nothing to filter on no matter what it did. These assert
   // at the layer where that defect actually lived.
   describe('channel reads carry the caller', () => {
-    it('passes the caller’s user id to getChannels', async () => {
+    it('passes the caller’s user id to getChannelList', async () => {
       await controller.listChannels('ch-1', 'user-1');
 
-      expect(service.getChannels).toHaveBeenCalledWith('ch-1', 'user-1');
+      expect(service.getChannelList).toHaveBeenCalledWith('ch-1', 'user-1');
     });
 
     it('passes the caller’s user id to getChannel', async () => {

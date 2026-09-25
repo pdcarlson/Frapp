@@ -77,7 +77,7 @@ export class ChatController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.getChannels(chapterId, userId);
+    return this.chatService.getChannelList(chapterId, userId);
   }
 
   // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and

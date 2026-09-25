@@ -73,6 +73,11 @@ export function listedChannels(channels: ChannelSummary[]): ChannelSummary[] {
   return channels.filter((channel) => !channel.hidden);
 }
 
+/** The DMs the member hid, for the list's Hidden conversations group. */
+export function hiddenChannels(channels: ChannelSummary[]): ChannelSummary[] {
+  return channels.filter((channel) => channel.hidden);
+}
+
 export function isDirectChannel(channel: ChannelSummary): boolean {
   return channel.type === "DM" || channel.type === "GROUP_DM";
 }

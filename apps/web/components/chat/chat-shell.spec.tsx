@@ -156,6 +156,7 @@ const mockBookmarkIsError = vi.fn(() => false);
 // Hide conversation (#2303). `mutate` is captured so a case can resolve the
 // per-call `onSuccess` the shell passes; the error state drives its alert.
 const mockLeaveMutate = vi.fn();
+const mockReopenMutate = vi.fn();
 const mockLeaveState = vi.fn(
   (): { isError: boolean; variables: string | undefined } => ({
     isError: false,
@@ -236,8 +237,19 @@ vi.mock("@repo/hooks", () => ({
     isError: false,
   }),
   useLeaveChannel: () => ({ mutate: mockLeaveMutate, ...mockLeaveState() }),
+  useGetOrCreateDm: () => ({ mutate: mockReopenMutate }),
   canHideConversation: (channel: { type: string }) => channel.type === "DM",
+  otherMemberId: (
+    channel: { member_ids?: string[] | null },
+    viewerId: string | null,
+  ) => (channel.member_ids ?? []).find((id) => id !== viewerId) ?? null,
+  hideConversationConfirmTitle: (name: string) =>
+    `Hide your conversation with ${name}?`,
+  HIDE_CONVERSATION_CONFIRM_ACTION: "Hide",
+  HIDE_CONVERSATION_CONFIRM_BODY: "It leaves your list.",
   HIDE_CONVERSATION_FAILED_TITLE: "Couldn't hide the conversation",
+  HIDE_CONVERSATION_LABEL: "Hide conversation",
+  HIDDEN_CONVERSATIONS_LABEL: "Hidden conversations",
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -276,12 +288,40 @@ vi.mock("./channel-list", () => ({
   ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
   ChannelList: ({
     onPick,
+    onHide,
     categories,
   }: {
-    onPick?: (ch: { id: string }) => void;
+    onPick?: (ch: {
+      id: string;
+      hidden?: boolean;
+      member_ids?: string[];
+    }) => void;
+    onHide?: (ch: { id: string; name: string; type: string }) => void;
     categories?: { id: string; name: string }[];
   }) => (
     <div data-testid="channel-list">
+      {/* The rail's Hide on a DM row, and a row from its Hidden conversations
+          group (#2303): the shell confirms the first and reopens the second. */}
+      <button
+        data-testid="rail-hide-dm"
+        onClick={() =>
+          onHide?.({ id: "chan-dm", name: "dm-viewer-other", type: "DM" })
+        }
+      >
+        rail hide
+      </button>
+      <button
+        data-testid="pick-hidden-dm"
+        onClick={() =>
+          onPick?.({
+            id: "chan-dm",
+            hidden: true,
+            member_ids: ["viewer-1", "other-1"],
+          })
+        }
+      >
+        hidden dm
+      </button>
       {/* Enough of the rail to drive a channel switch, which is a distinct
           path from a deep link or a search jump and clears different state. */}
       <button
@@ -1249,6 +1289,7 @@ describe("ChatShell hide conversation (#2303)", () => {
   afterEach(() => {
     channelsQueryState.value = {};
     mockLeaveMutate.mockReset();
+    mockReopenMutate.mockReset();
     mockLeaveState.mockReset();
     mockLeaveState.mockImplementation(() => ({
       isError: false,
@@ -1289,6 +1330,52 @@ describe("ChatShell hide conversation (#2303)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("composer")).toHaveTextContent("chan-general");
     });
+  });
+
+  it("confirms a Hide from the rail before hiding, and cancelling hides nothing", async () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("rail-hide-dm"));
+    await waitFor(() => {
+      expect(screen.getByText(/^Hide your conversation with/)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByText(/^Hide your conversation with/)).toBeNull();
+    });
+    expect(mockLeaveMutate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("rail-hide-dm"));
+    await waitFor(() => {
+      expect(screen.getByText(/^Hide your conversation with/)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+    await waitFor(() => {
+      expect(mockLeaveMutate).toHaveBeenCalledWith(
+        "chan-dm",
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("reopens a DM picked from the Hidden conversations group", () => {
+    channelsQueryState.value = { data: [...CHANNELS, { ...DM, hidden: true }] };
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("pick-hidden-dm"));
+
+    // Reopening goes through the DM route with the other member, which is
+    // what clears the hide server-side; the thread opens at once regardless.
+    expect(mockReopenMutate).toHaveBeenCalledWith({ member_id: "other-1" });
+    expect(screen.getByTestId("composer")).toHaveTextContent("chan-dm");
+  });
+
+  it("does not reopen anything when a visible row is picked", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("pick-random"));
+    expect(mockReopenMutate).not.toHaveBeenCalled();
   });
 
   it("reports a failed hide on the DM it was for, and nowhere else", () => {

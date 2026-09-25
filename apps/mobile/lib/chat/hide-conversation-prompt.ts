@@ -10,10 +10,10 @@ import {
 /**
  * The "Hide conversation" confirmation for a 1:1 DM row (#2303).
  *
- * Asked rather than applied on a long press: the row simply vanishes, and a
- * member who did not mean to would have to find the person in the directory
- * to get the thread back. Not `destructive`-styled, because nothing is
- * destroyed — the body says so.
+ * Asked rather than applied on a long press: the row simply vanishes into the
+ * collapsed Hidden conversations group, where a member who did not mean to
+ * would have to go looking for it. Not `destructive`-styled, because nothing
+ * is destroyed — the body says so.
  *
  * `run` is awaited inside the alert's handler rather than fired through a
  * mutation's per-call `onError`, for the reason `confirmBlockMember` gives:
