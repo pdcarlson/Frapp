@@ -2359,7 +2359,7 @@
             "bearer": []
           }
         ],
-        "summary": "Leave a Group DM",
+        "summary": "Leave a Group DM, or hide a 1-on-1 DM from your own list",
         "tags": [
           "Chat"
         ]

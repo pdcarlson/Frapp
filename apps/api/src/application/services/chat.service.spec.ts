@@ -185,6 +185,9 @@ describe('ChatService', () => {
     mockReadReceiptRepo = {
       upsert: jest.fn(),
       getUnreadCounts: jest.fn().mockResolvedValue([]),
+      hideDirectMessage: jest.fn(),
+      unhideChannel: jest.fn().mockResolvedValue(undefined),
+      findHiddenChannelIds: jest.fn().mockResolvedValue(new Set()),
     };
 
     mockStorageProvider = {
@@ -639,6 +642,51 @@ describe('ChatService', () => {
         ]);
       });
 
+      // #2303: a hidden DM stays in the response, flagged, so a jump that
+      // resolves a channel id against this list still finds it.
+      it('flags only the DMs the caller has hidden, and keeps them in the list', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+        mockReadReceiptRepo.findHiddenChannelIds.mockResolvedValue(
+          new Set(['ch-dm-mine']),
+        );
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result.map((channel) => [channel.id, channel.hidden])).toEqual([
+          ['ch-chan-1', false],
+          ['ch-dm-mine', true],
+          ['ch-priv-mine', false],
+        ]);
+        expect(mockReadReceiptRepo.findHiddenChannelIds).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+        );
+      });
+
+      it('shows every channel rather than failing the list when the hidden lookup fails', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+        mockReadReceiptRepo.findHiddenChannelIds.mockRejectedValue(
+          new Error('function get_hidden_channel_ids does not exist'),
+        );
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result.map((channel) => [channel.id, channel.hidden])).toEqual([
+          ['ch-chan-1', false],
+          ['ch-dm-mine', false],
+          ['ch-priv-mine', false],
+        ]);
+      });
+
+      it('skips the hidden lookup when the caller has no DM in the list', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result.map((channel) => channel.hidden)).toEqual([false]);
+        expect(mockReadReceiptRepo.findHiddenChannelIds).not.toHaveBeenCalled();
+      });
+
       it('hides a PRIVATE channel whose member_ids is NULL from everyone', async () => {
         mockChannelRepo.findByChapter.mockResolvedValue(everything);
 
@@ -827,6 +875,77 @@ describe('ChatService', () => {
       expect(result.type).toBe('DM');
     });
 
+    // #2303: opening a DM you hid is the explicit way back to it.
+    it('clears the opener’s own hide when they open an existing DM', async () => {
+      const dmChannel = {
+        ...baseChannel,
+        id: 'ch-dm',
+        type: 'DM' as const,
+        member_ids: ['user-1', 'user-2'],
+      };
+      mockChannelRepo.findDm.mockResolvedValue(dmChannel);
+
+      await service.getOrCreateDm(
+        { chapter_id: 'ch-1', member_ids: ['user-1', 'user-2'] },
+        'user-1',
+      );
+
+      expect(mockReadReceiptRepo.unhideChannel).toHaveBeenCalledTimes(1);
+      expect(mockReadReceiptRepo.unhideChannel).toHaveBeenCalledWith(
+        'ch-dm',
+        'user-1',
+      );
+    });
+
+    it('still opens the DM when clearing the hide fails', async () => {
+      const dmChannel = {
+        ...baseChannel,
+        id: 'ch-dm',
+        type: 'DM' as const,
+        member_ids: ['user-1', 'user-2'],
+      };
+      mockChannelRepo.findDm.mockResolvedValue(dmChannel);
+      mockReadReceiptRepo.unhideChannel.mockRejectedValue(new Error('down'));
+
+      await expect(
+        service.getOrCreateDm(
+          { chapter_id: 'ch-1', member_ids: ['user-1', 'user-2'] },
+          'user-1',
+        ),
+      ).resolves.toEqual(dmChannel);
+    });
+
+    it('clears no hide when nobody opened it (a server-originated DM)', async () => {
+      mockChannelRepo.findDm.mockResolvedValue({
+        ...baseChannel,
+        type: 'DM' as const,
+        member_ids: ['user-1', 'user-2'],
+      });
+
+      await service.getOrCreateDm({
+        chapter_id: 'ch-1',
+        member_ids: ['user-1', 'user-2'],
+      });
+
+      expect(mockReadReceiptRepo.unhideChannel).not.toHaveBeenCalled();
+    });
+
+    it('has nothing to unhide on a DM it just created', async () => {
+      mockChannelRepo.findDm.mockResolvedValue(null);
+      mockChannelRepo.create.mockResolvedValue({
+        ...baseChannel,
+        type: 'DM' as const,
+        member_ids: ['user-1', 'user-2'],
+      });
+
+      await service.getOrCreateDm(
+        { chapter_id: 'ch-1', member_ids: ['user-1', 'user-2'] },
+        'user-1',
+      );
+
+      expect(mockReadReceiptRepo.unhideChannel).not.toHaveBeenCalled();
+    });
+
     it('should reject DM with wrong member count', async () => {
       await expect(
         service.getOrCreateDm({
@@ -862,8 +981,8 @@ describe('ChatService', () => {
     });
   });
 
-  // #348: spec/behavior/chat/README.md:47.
-  describe('leaveGroupDm', () => {
+  // #348 and #2303: spec/behavior/chat/README.md § Direct Messages.
+  describe('leaveChannel', () => {
     const groupDm: ChatChannel = {
       ...baseChannel,
       type: 'GROUP_DM',
@@ -877,7 +996,7 @@ describe('ChatService', () => {
         member_ids: ['user-2', 'user-3'],
       });
 
-      await service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1');
+      await service.leaveChannel('ch-chan-1', 'ch-1', 'user-1');
 
       // The removal + archive-threshold decision is made atomically inside
       // the `leave_group_dm` RPC (see its migration comment) rather than
@@ -890,24 +1009,11 @@ describe('ChatService', () => {
       );
     });
 
-    it('rejects leaving a non-Group-DM channel', async () => {
+    it('rejects leaving a PUBLIC channel', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel); // PUBLIC
 
       await expect(
-        service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1'),
-      ).rejects.toThrow(BadRequestException);
-      expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
-    });
-
-    it('rejects leaving a 1-on-1 DM', async () => {
-      mockChannelRepo.findById.mockResolvedValue({
-        ...baseChannel,
-        type: 'DM',
-        member_ids: ['user-1', 'user-2'],
-      });
-
-      await expect(
-        service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1'),
+        service.leaveChannel('ch-chan-1', 'ch-1', 'user-1'),
       ).rejects.toThrow(BadRequestException);
       expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
     });
@@ -919,7 +1025,7 @@ describe('ChatService', () => {
       });
 
       await expect(
-        service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1'),
+        service.leaveChannel('ch-chan-1', 'ch-1', 'user-1'),
       ).rejects.toThrow(ForbiddenException);
       expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
     });
@@ -928,7 +1034,7 @@ describe('ChatService', () => {
       mockChannelRepo.findById.mockResolvedValue(null);
 
       await expect(
-        service.leaveGroupDm('ch-chan-x', 'ch-other', 'user-1'),
+        service.leaveChannel('ch-chan-x', 'ch-other', 'user-1'),
       ).rejects.toThrow(NotFoundException);
       expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
     });
@@ -941,7 +1047,7 @@ describe('ChatService', () => {
       mockChannelRepo.leaveGroupDm.mockResolvedValue(null);
 
       await expect(
-        service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1'),
+        service.leaveChannel('ch-chan-1', 'ch-1', 'user-1'),
       ).rejects.toThrow(NotFoundException);
       expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
     });
@@ -953,9 +1059,97 @@ describe('ChatService', () => {
         member_ids: ['user-2', 'user-3'],
       });
 
-      await service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1');
+      await service.leaveChannel('ch-chan-1', 'ch-1', 'user-1');
 
       expect(mockChannelCache.invalidate).toHaveBeenCalledWith('ch-chan-1');
+    });
+
+    // #2303: a 1:1 DM is hidden for the caller, never left.
+    describe('on a 1:1 DM', () => {
+      const dm: ChatChannel = {
+        ...baseChannel,
+        id: 'ch-dm',
+        type: 'DM',
+        member_ids: ['user-1', 'user-2'],
+      };
+
+      it('hides it for the caller only, through the receipt RPC', async () => {
+        mockChannelRepo.findById.mockResolvedValue(dm);
+        mockReadReceiptRepo.hideDirectMessage.mockResolvedValue({
+          id: 'r-1',
+          channel_id: 'ch-dm',
+          user_id: 'user-1',
+          last_read_at: '2026-09-25T20:00:00.000Z',
+          hidden_at: '2026-09-25T20:00:00.000Z',
+          updated_at: '2026-09-25T20:00:00.000Z',
+        });
+
+        await service.leaveChannel('ch-dm', 'ch-1', 'user-1');
+
+        expect(mockReadReceiptRepo.hideDirectMessage).toHaveBeenCalledTimes(1);
+        expect(mockReadReceiptRepo.hideDirectMessage).toHaveBeenCalledWith(
+          'ch-dm',
+          'ch-1',
+          'user-1',
+        );
+      });
+
+      it('changes nothing the other member sees, and deletes nothing', async () => {
+        mockChannelRepo.findById.mockResolvedValue(dm);
+        mockReadReceiptRepo.hideDirectMessage.mockResolvedValue({
+          id: 'r-1',
+          channel_id: 'ch-dm',
+          user_id: 'user-1',
+          last_read_at: '2026-09-25T20:00:00.000Z',
+          hidden_at: '2026-09-25T20:00:00.000Z',
+          updated_at: '2026-09-25T20:00:00.000Z',
+        });
+
+        await service.leaveChannel('ch-dm', 'ch-1', 'user-1');
+
+        // The channel row (member_ids, archived_at) is shared by both
+        // members, so any write to it would reach the other one.
+        expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        expect(mockChannelRepo.delete).not.toHaveBeenCalled();
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      });
+
+      it('rejects a DM the caller is not in, before hiding anything', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...dm,
+          member_ids: ['user-2', 'user-3'],
+        });
+
+        await expect(
+          service.leaveChannel('ch-dm', 'ch-1', 'user-1'),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockReadReceiptRepo.hideDirectMessage).not.toHaveBeenCalled();
+      });
+
+      it('surfaces a not-found if the RPC matches no row', async () => {
+        mockChannelRepo.findById.mockResolvedValue(dm);
+        mockReadReceiptRepo.hideDirectMessage.mockResolvedValue(null);
+
+        await expect(
+          service.leaveChannel('ch-dm', 'ch-1', 'user-1'),
+        ).rejects.toThrow(NotFoundException);
+      });
+    });
+
+    it('rejects a PRIVATE channel the caller is in', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'PRIVATE',
+        member_ids: ['user-1'],
+      });
+
+      await expect(
+        service.leaveChannel('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
+      expect(mockReadReceiptRepo.hideDirectMessage).not.toHaveBeenCalled();
     });
   });
 

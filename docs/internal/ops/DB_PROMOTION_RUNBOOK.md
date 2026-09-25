@@ -560,6 +560,19 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-25: Hide a 1:1 DM from your own list (#2303)
+
+### 20260925200000_chat_hide_direct_message.sql
+
+- **Purpose**: Adds the nullable column `channel_read_receipts.hidden_at timestamptz` and two `security invoker` RPCs, both with `search_path = public, pg_temp` and EXECUTE for `service_role` only. `hide_direct_message(p_channel_id, p_chapter_id, p_user_id)` upserts the caller's receipt with `hidden_at` and `last_read_at` at the database's `now()`, and matches only a `DM` in that chapter. `get_hidden_channel_ids(p_chapter_id, p_user_id)` returns the caller's hidden DMs that no newer, non-deleted message from a sender they have not blocked has resurfaced. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#direct-messages) § Direct Messages. No data changes, and RLS on `channel_read_receipts` stays default-deny.
+- **Checks**: After `db push`,
+  `select data_type, is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'channel_read_receipts' and column_name = 'hidden_at';` returns `timestamp with time zone | YES`.
+  `select proname, prosecdef, proconfig from pg_proc where proname in ('hide_direct_message', 'get_hidden_channel_ids') order by proname;` returns two rows, each `false | {"search_path=public, pg_temp"}`.
+  `select has_function_privilege('anon', 'public.get_hidden_channel_ids(uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.get_hidden_channel_ids(uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | false`, and the same for `public.hide_direct_message(uuid, uuid, uuid)`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
+- **Promoter notes**: Apply before, or with, the API that carries #2303; both the staging merge and a `full` production run migrate before deploying. An API that reaches a database without it still serves the channel list with nothing hidden, and still opens DMs, because the service fails open on both reads. Only the hide itself errors until the migration lands. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-hiding-a-11-dm-20260925200000) § Rollback hiding a 1:1 DM.
+
 ## 2026-09-24: System actor display_name becomes Frapp System (#2578)
 
 - **Migration**: `20260924190000_rename_system_actor_to_frapp.sql`

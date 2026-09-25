@@ -2043,3 +2043,18 @@ drop function if exists public.chat_viewer_has_blocked(uuid, uuid);
 That migration re-creates a policy, so the same PR bumps the entry's `creates` count in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` and sets the entry back to `open`. It also removes the PGlite block-enforcement tier and the two `chat_viewer_has_blocked` landmarks from `scripts/check-pglite-migrations.mjs`, which would fail against the old policy.
 
 **This is a safety regression, not a neutral rollback.** Afterwards a blocker's clients again receive every reaction the blocked member leaves, live as well. Web renders them all, since it has no block list (#2313). Mobile still hides them in every list state, but against its own list, so a ready list that predates a block made on another device shows them until it is re-read. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.
+
+## Rollback hiding a 1:1 DM (20260925200000)
+
+* **Migration**: `20260925200000_chat_hide_direct_message.sql`
+
+A column and two functions (#2303). The column is written only by a member hiding a DM, and dropping it loses exactly that: every hidden DM comes back into its member's list. No message, channel or other receipt field is touched.
+
+**Roll back with a new forward migration, not by hand.** Same rule as [§ Rollback per-user Terms acceptance](#rollback-per-user-terms-acceptance-20260923190000): hand DDL leaves the ledger recording `20260925200000` as applied, so a later re-land would apply nothing. Put the following in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). The API carrying #2303 keeps working against the rolled-back database: the channel list shows every DM, and opening a DM still works, because the service fails open on both reads. Only the hide itself answers 500 until that API is rolled back too.
+
+```sql
+drop function if exists public.get_hidden_channel_ids(uuid, uuid);
+drop function if exists public.hide_direct_message(uuid, uuid, uuid);
+alter table public.channel_read_receipts drop column if exists hidden_at;
+```
+
