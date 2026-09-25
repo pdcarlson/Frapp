@@ -65,7 +65,7 @@ in the last row; path-gated jobs are still required.
 | `web-tests` (path-gated) | `npm run test -w apps/web`, plus `-w packages/hooks`, `-w packages/chat-core`, `-w packages/chat-integrations`. The job runs on any `packages/**` change |
 | `mobile-validate` | `npm run lint -w apps/mobile`, `npm run check-types -w apps/mobile`, `npm run test -w apps/mobile` and again with `TZ=Asia/Tokyo`. For `app.json` or dependency changes, run `npx expo prebuild --no-install --clean --platform all` in `apps/mobile` |
 | `api-docker-build` | `docker build -f apps/api/Dockerfile .` (CI also boots the image and probes `/health`) |
-| `api-contract-check` | `npm run check:api-contract`. CI also runs the advisory `check:api-breaking` |
+| `api-contract-check` | `npm run check:api-contract` and `npm run check:api-breaking:shipped` (blocking once a shipped mobile build is listed; run `bash scripts/install-oasdiff.sh` first). CI also runs the advisory `check:api-breaking` against the PR base |
 | `dependency-cruiser` | `npm run check:dep-cruiser` |
 | `migration-safety` | `npm run check:migration-safety -- --base "$(git merge-base origin/main HEAD)" --head HEAD` |
 | `dependency-audit` | `npm run check:npm-audit`. Add `-- --soft-network` when offline. Fails on any high/critical advisory not in `scripts/npm-audit-allowlist.json` |

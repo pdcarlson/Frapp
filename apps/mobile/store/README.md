@@ -583,3 +583,51 @@ Google Play Data safety: data is encrypted in transit; users delete in the app o
 > 2026-09-23: the Terms say 18 or older, which agrees with this target audience, and the
 > owner kept the iOS rating at 13+ (§ Age rating). Leave the three declarations as they
 > are.
+
+## Shipped builds and the API contract
+
+Every install keeps the API calls its binary was built with until its owner updates from the store,
+so CI holds each pull request to the contract of every build that has shipped (#2619).
+[`shipped-builds.json`](shipped-builds.json) lists those builds, and the required
+`api-contract-check` job fails any PR whose `apps/api/openapi.json` breaks the contract at a listed
+commit (`npm run check:api-breaking:shipped`). While the list is empty the check passes and says it
+compared against nothing. Why it blocks, and how it fails:
+[`QUALITY_GATES.md` § Two comparisons, two postures](../../../docs/internal/ci-cd/QUALITY_GATES.md#two-comparisons-two-postures).
+
+**Record a build when it is first uploaded to TestFlight or a Play track**, before any tester can
+install it, in a PR that adds one entry per build:
+
+```json
+{ "platform": "ios", "version": "1.0.0", "build": "12", "sha": "<40-character commit SHA>", "recorded": "2026-10-01" }
+```
+
+- `platform` is `ios` or `android`. `version` is the store version and `build` the native build
+  number, as a string: the `<version>+<build>` the binary sends in `X-Client-Version`
+  ([`spec/ui/mobile/patterns.md` § Minimum version](../../../spec/ui/mobile/patterns.md#minimum-version)).
+- `sha` is the full commit the build was made from. Build store binaries from a commit on `main`:
+  CI reads the contract with `git show <sha>:apps/api/openapi.json`, and a SHA it can't read fails
+  the check rather than being skipped.
+- An iOS and an Android build from the same commit are two entries, and are compared once.
+
+**Drop an entry only once production's minimum for its platform is above it**, that is,
+`MOBILE_MIN_VERSION_IOS` or `MOBILE_MIN_VERSION_ANDROID` on `frapp-api-prod` names a later build
+([`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md) § API-Only Settings), so
+every install of it is held at the update gate until its owner updates. Name the minimum and the
+date it went live in that PR. Until then the build is still calling the API, whatever the stores
+show.
+
+**A break the shipped binaries don't depend on** (a route only the web dashboard calls) is waived
+in [`api-breaking-ignore.txt`](api-breaking-ignore.txt), which the check hands to oasdiff's
+`--err-ignore`. Each entry is one line holding `METHOD /path` and oasdiff's change text as the
+failing run printed it, for example `POST /v1/chapters api path removed without deprecation`. Lines
+starting with `#` are comments: the check removes them before oasdiff reads the file, because oasdiff
+itself has no comment syntax and would still honour a commented-out entry. Put the evidence on a
+comment line above the entry: that no listed SHA's `apps/mobile`, or a package it bundles, calls the
+route (`git grep '<path>' <sha> -- apps/mobile packages`). Delete an entry once the check passes
+without it.
+
+**Lower-severity changes don't block.** The check fails on oasdiff's error level: a removed route, a
+removed required response field, a parameter made required. A removed *optional* response field is
+a warning: the generated SDK already types it as possibly absent, so the binary compiles against its
+absence, but it may still lose whatever the field fed. The run prints each one as a `::warning::`;
+read them before merging.
