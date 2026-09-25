@@ -25,6 +25,7 @@ import {
   useReportMessage,
   type ChatReportReason,
 } from "@repo/hooks";
+import { UNNAMED_MEMBER } from "@repo/chat-core/block-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListRow, ListSection } from "@/components/list-section";
 import {
@@ -38,7 +39,6 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   BLOCK_ROW_DESCRIPTION,
   confirmBlockMember,
-  UNNAMED_MEMBER,
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import {

@@ -8,12 +8,12 @@ import {
   Text,
   View,
 } from "react-native";
-import type { BlockListStatus } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import type { BlockListStatus } from "@repo/validation";
 import {
   BLOCK_LIST_WAITING_FOR_NETWORK,
   blockListNotice,
-} from "@/lib/chat/blocks";
+} from "@repo/chat-core/block-copy";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**

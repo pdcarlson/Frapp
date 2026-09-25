@@ -7,8 +7,16 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
-import type { BlockState, ThreadRow } from "@/lib/chat/blocks";
-import type { MaskedRefreshState } from "@/lib/chat/masked-refresh";
+import {
+  HELD_QUOTE_TEXT,
+  TOMBSTONE_STALE_TEXT,
+  TOMBSTONE_TEXT,
+} from "@repo/chat-core/block-copy";
+import type {
+  BlockState,
+  MaskedRefreshState,
+  ThreadRow,
+} from "@repo/chat-core/blocks";
 
 const attachmentHook = vi.hoisted(() => ({
   calls: 0,
@@ -39,11 +47,6 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import { MESSAGE_ACTIONS_A11Y_LABEL } from "./message-bubble";
-import {
-  TOMBSTONE_STALE_TEXT,
-  TOMBSTONE_TEXT,
-} from "./blocked-message-tombstone";
-import { HELD_QUOTE_TEXT } from "./reply-quote";
 import { ThreadMessageRow } from "./thread-message-row";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";

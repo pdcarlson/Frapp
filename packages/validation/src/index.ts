@@ -446,6 +446,18 @@ export function isModuleEnabled(
  */
 export const SYSTEM_SENDER_ID = "00000000-0000-0000-0000-000000000000";
 
+/**
+ * Where a client's read of its own chat block list stands
+ * (`spec/behavior/chat/README.md` § The masking contract). Tri-state, never
+ * boolean: a failed read that looked like "nobody is blocked" would fail open
+ * on a safety feature — the exact defect #2315 records.
+ *
+ * Canonical here because two packages that may not import each other share
+ * it: `@repo/hooks`' `useBlockedUserIds` produces it, and `@repo/chat-core`'s
+ * classifier (`blocks.ts`) consumes it.
+ */
+export type BlockListStatus = "ready" | "loading" | "unavailable";
+
 export const CHAT_MESSAGE_KINDS = [
   "text",
   "event",

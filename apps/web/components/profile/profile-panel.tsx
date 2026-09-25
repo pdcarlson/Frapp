@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { BlockedMembersCard } from "@/components/profile/blocked-members-card";
 import {
   DELETE_ACCOUNT_FAILED,
   useDeleteAccountFlow,
@@ -857,6 +858,13 @@ export function ProfilePanel() {
           )}
         </CardContent>
       </Card>
+
+      {/*
+        The durable undo for a chat block (#2313): its own states, because the
+        block list is another query on this screen and a failed read of it must
+        not look like "nobody is blocked".
+      */}
+      <BlockedMembersCard />
 
       <Card>
         <CardHeader>

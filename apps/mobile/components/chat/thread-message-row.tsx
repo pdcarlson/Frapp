@@ -1,25 +1,20 @@
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { MaskedRefreshState } from "@/lib/chat/masked-refresh";
 import {
-  canOpenMessageActions,
-  classifyMessage,
+  hiddenQuoteText,
   tombstoneCanUnblock,
   visibleReactions,
   type BlockState,
+  type MaskedRefreshState,
   type ThreadRow,
-} from "@/lib/chat/blocks";
-import {
-  BlockedMessageTombstone,
-  TOMBSTONE_STALE_TEXT,
-  TOMBSTONE_TEXT,
-} from "./blocked-message-tombstone";
+} from "@repo/chat-core/blocks";
+import { canOpenMessageActions } from "@/lib/chat/blocks";
+import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import { MessageBubble } from "./message-bubble";
 import { PollCard } from "./poll-card";
-import { HELD_QUOTE_TEXT } from "./reply-quote";
 
 /**
  * One s05 row, after the block list has been applied (`applyBlockList` in
- * `lib/chat/blocks.ts`). Held rows never reach here.
+ * `@repo/chat-core/blocks`). Held rows never reach here.
  *
  * Split out of `app/(tabs)/chat-thread.tsx` so the choice between tombstone,
  * poll card and bubble is testable: everything under `app/` ships as a route
@@ -64,29 +59,6 @@ export interface ThreadMessageRowProps {
   maskedRefresh: ReadonlyMap<string, MaskedRefreshState>;
   /** A stale tombstone's Reload: re-runs that member's re-read. */
   onReload: (userId: string) => void;
-}
-
-/**
- * The placeholder a quote draws for a parent the list hides, or `null` when
- * the parent may be quoted. Consistent with what the parent's own row shows:
- * the tombstone's words (stale when this client unblocked them since), or
- * "Message hidden" for a parent held while the list is unreadable.
- */
-export function hiddenQuoteText(
-  parent: ChatMessage,
-  blockState: BlockState,
-  viewerId: string | null,
-): string | null {
-  switch (classifyMessage(parent, blockState, viewerId)) {
-    case "visible":
-      return null;
-    case "held":
-      return HELD_QUOTE_TEXT;
-    case "tombstone":
-      return tombstoneCanUnblock(parent, blockState)
-        ? TOMBSTONE_TEXT
-        : TOMBSTONE_STALE_TEXT;
-  }
 }
 
 export function ThreadMessageRow({

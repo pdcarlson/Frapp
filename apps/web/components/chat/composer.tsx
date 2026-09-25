@@ -364,6 +364,12 @@ export interface ComposerReplyTarget {
   id: string;
   author: string | null;
   preview: string | null;
+  /**
+   * The quote's placeholder when the viewer's block list hides the parent
+   * (`hiddenQuoteText`), so the strip never prints a blocked member's words
+   * even when the block landed after the reply was staged (#2313).
+   */
+  hidden?: string | null;
 }
 
 /**
@@ -1253,6 +1259,7 @@ export function Composer({
               className="flex-1"
               author={replyTo.author}
               preview={replyTo.preview}
+              hidden={replyTo.hidden}
             />
             <Button
               type="button"

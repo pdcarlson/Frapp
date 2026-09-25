@@ -16,6 +16,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { timelineBlockProps } from "@/tests/block-list";
 
 const { liveViewerId } = vi.hoisted(() => ({
   liveViewerId: { current: null as string | null },
@@ -175,11 +176,13 @@ describe("a warm timeline painted from the cached id alone", () => {
   }
 
   function Inner({ messages }: { messages: ChatMessage[] }) {
+    const viewerId = useChatViewerId();
     return (
       <MessageTimeline
         channelId="chan-1"
         messages={messages}
-        viewerId={useChatViewerId()}
+        viewerId={viewerId}
+        {...timelineBlockProps(messages, viewerId)}
         nameFor={nameFor}
         isLoading={false}
         loadError={null}

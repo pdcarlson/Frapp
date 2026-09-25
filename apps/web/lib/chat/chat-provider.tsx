@@ -26,6 +26,7 @@ import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
 import { useFirstChunkCache } from "./use-first-chunk-cache";
 import { CachedViewerIdProvider } from "./viewer-id";
+import { CachedBlockFloorContext } from "./use-thread-block-list";
 import type { RawChatMessage } from "@repo/chat-core/types";
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
@@ -65,7 +66,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     Dexie transaction, so there is no pass where the surface holds cached history
     it cannot put a side on.
   */
-  const cachedViewerId = useFirstChunkCache();
+  const { viewerId: cachedViewerId, blockFloor } = useFirstChunkCache();
 
   // Configure the realtime manager exactly once per mount. Manager is a
   // module singleton; this just rebinds it to the current QueryClient /
@@ -144,7 +145,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   */
   return (
     <CachedViewerIdProvider value={cachedViewerId}>
-      {children}
+      {/* The block list's persisted floor (#2688); `use-thread-block-list.ts`. */}
+      <CachedBlockFloorContext.Provider value={blockFloor}>
+        {children}
+      </CachedBlockFloorContext.Provider>
     </CachedViewerIdProvider>
   );
 }

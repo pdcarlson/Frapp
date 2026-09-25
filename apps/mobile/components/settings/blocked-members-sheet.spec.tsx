@@ -52,15 +52,17 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import { BLOCK_LIST_WAITING_FOR_NETWORK } from "@/lib/chat/blocks";
 import {
-  BLOCKED_MEMBERS_EMPTY_BODY,
+  BLOCK_LIST_WAITING_FOR_NETWORK,
   BLOCKED_MEMBERS_EMPTY_TITLE,
   BLOCKED_MEMBERS_ERROR_BODY,
   BLOCKED_MEMBERS_ERROR_TITLE,
   BLOCKED_MEMBERS_OFFLINE_BODY,
   BLOCKED_MEMBERS_SCOPE,
   BLOCKED_MEMBERS_STALE,
+} from "@repo/chat-core/block-copy";
+import {
+  BLOCKED_MEMBERS_EMPTY_BODY,
   BlockedMembersSheet,
 } from "./blocked-members-sheet";
 
@@ -76,6 +78,7 @@ function list(
     retry: vi.fn(),
     isRetrying: false,
     isPaused: false,
+    readAt: status === "ready" ? 1 : 0,
     ...extras,
   };
 }

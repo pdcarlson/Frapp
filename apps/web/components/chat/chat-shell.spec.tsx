@@ -162,7 +162,34 @@ const mockToast = vi.fn();
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
 // so the component renders from a controlled `channels`/message state
 // instead of hitting the network.
+/*
+  The viewer's block list (#2313). Ready and naming nobody by default, so the
+  shell's other cases see every row; the block cases below set it.
+*/
+const blockListState = vi.hoisted(() => ({
+  value: {
+    ids: new Set<string>() as ReadonlySet<string>,
+    unblocked: new Set<string>() as ReadonlySet<string>,
+    status: "ready" as "ready" | "loading" | "unavailable",
+    retry: () => {},
+    isRetrying: false,
+    isPaused: false,
+    // Read, so no persisted floor would apply (`blockIdsWithFloor`).
+    readAt: 1,
+  },
+}));
+
+vi.mock("./use-unblock-flow", () => ({
+  useUnblockFlow: () => ({
+    requestUnblock: vi.fn(),
+    reloadMaskedCopies: vi.fn(),
+    isPending: false,
+    confirmDialog: null,
+  }),
+}));
+
 vi.mock("@repo/hooks", () => ({
+  useBlockedUserIds: () => blockListState.value,
   useChannels: () => ({
     data: CHANNELS,
     isFetching: false,
@@ -388,6 +415,7 @@ vi.mock("./composer", () => ({
       id: string;
       author: string | null;
       preview: string | null;
+      hidden?: string | null;
     } | null;
     onCancelReply?: () => void;
   }) => {
@@ -420,6 +448,7 @@ vi.mock("./composer", () => ({
         <span data-testid="composer-reply-preview">
           {replyTo?.preview ?? ""}
         </span>
+        <span data-testid="composer-reply-hidden">{replyTo?.hidden ?? ""}</span>
         <button data-testid="composer-send" onClick={() => onSend?.("hi", [])}>
           send
         </button>
@@ -458,15 +487,26 @@ vi.mock("./composer", () => ({
 // spec, and the menu's view switching by `channel-menu.spec.tsx`.
 vi.mock("./channel-menu", () => ({
   ChannelMenu: ({
+    messages,
+    hiddenPins,
     onJumpToSearchHit,
     onJumpToBookmark,
     hideConversation,
   }: {
+    messages: Array<{ id: string }>;
+    hiddenPins: { blocked: number; held: number };
     onJumpToSearchHit: (hit: { message: { id: string }; channelId: string }) => void;
     onJumpToBookmark: (channelId: string, messageId: string) => void;
     hideConversation?: { name: string; onHide: () => void };
   }) => (
     <div>
+      {/* What the Pinned panel would read: the block list's cases assert on it. */}
+      <span data-testid="menu-messages">
+        {messages.map((m) => m.id).join(",")}
+      </span>
+      <span data-testid="menu-hidden-pins">
+        {`${hiddenPins.blocked}/${hiddenPins.held}`}
+      </span>
       {hideConversation ? (
         <button
           type="button"
@@ -551,6 +591,7 @@ vi.mock("./message-timeline", async () => {
   return { MessageTimeline, MessageTimelineSkeleton };
 });
 
+import { blockClearance } from "@repo/chat-core/blocks";
 import { ChatShell } from "./chat-shell";
 
 function chatChannelResult(
@@ -585,6 +626,15 @@ function chatChannelResult(
 }
 
 beforeEach(() => {
+  // Session-wide by design, so a row an earlier case showed against a ready
+  // list would otherwise stay cleared into the next one.
+  blockClearance.reset();
+  blockListState.value = {
+    ...blockListState.value,
+    ids: new Set(),
+    unblocked: new Set(),
+    status: "ready",
+  };
   setViewer("viewer-1");
   mockScrollToMessage.mockClear();
   mockRefetch.mockClear();
@@ -2271,5 +2321,245 @@ describe("ChatShell composer shell and its upgrade (#2176)", () => {
     channelsQueryState.value = { data: [], isPending: false };
     render(<ChatShell />);
     expect(screen.queryByTestId("composer-shell")).toBeNull();
+  });
+});
+
+describe("ChatShell block list (#2313)", () => {
+  it("does not announce a new message from a member the viewer blocked", () => {
+    blockListState.value = {
+      ...blockListState.value,
+      ids: new Set(["blocked-1"]),
+    };
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-3",
+            sender_id: "blocked-1",
+            content: "just landed",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
+  });
+
+  it("still announces a new message from anyone else", () => {
+    blockListState.value = {
+      ...blockListState.value,
+      ids: new Set(["blocked-1"]),
+    };
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-3",
+            sender_id: "friend-1",
+            content: "just landed",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByText(/new message from someone/i)).toBeInTheDocument();
+  });
+
+  it("keeps a blocked member's message out of the Pinned panel, even when an echo put its words back", () => {
+    blockListState.value = {
+      ...blockListState.value,
+      ids: new Set(["blocked-1"]),
+    };
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-3",
+            sender_id: "blocked-1",
+            content: "pinned insult",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("menu-messages")).toHaveTextContent(
+      /^msg-1,msg-2$/,
+    );
+  });
+
+  it("counts a blocked member's pin as hidden, not absent", () => {
+    blockListState.value = {
+      ...blockListState.value,
+      ids: new Set(["blocked-1"]),
+    };
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          { ...MESSAGES[0]!, is_pinned: true } as (typeof MESSAGES)[number],
+          {
+            id: "msg-3",
+            sender_id: "blocked-1",
+            content: "pinned insult",
+            created_at: "2026-01-01T00:02:00Z",
+            is_pinned: true,
+          } as (typeof MESSAGES)[number],
+        ],
+      }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("menu-messages")).toHaveTextContent(/^msg-1$/);
+    expect(screen.getByTestId("menu-hidden-pins")).toHaveTextContent("1/0");
+  });
+
+  it("keeps a held row out of the Pinned panel while the list cannot vouch for it", () => {
+    blockListState.value = { ...blockListState.value, status: "unavailable" };
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          {
+            ...MESSAGES[0]!,
+            sender_id: "friend-1",
+            is_pinned: true,
+          } as (typeof MESSAGES)[number],
+          { ...MESSAGES[1]!, sender_id: "viewer-1" },
+        ],
+      }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    // msg-1 arrived with no server verdict from someone else: held. The
+    // viewer's own msg-2 is always shown. The held pin is counted as held,
+    // not blocked: nothing says its sender is.
+    expect(screen.getByTestId("menu-messages")).toHaveTextContent(/^msg-2$/);
+    expect(screen.getByTestId("menu-hidden-pins")).toHaveTextContent("0/1");
+  });
+
+  it("hides a staged reply's quote once its author is blocked", async () => {
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          {
+            ...MESSAGES[0]!,
+            channel_id: "chan-general",
+            sender_id: "friend-1",
+          } as (typeof MESSAGES)[number],
+        ],
+      }),
+    );
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+    expect(screen.getByTestId("composer-reply-hidden")).toBeEmptyDOMElement();
+
+    // A block made on another device, picked up when the list is re-read.
+    blockListState.value = {
+      ...blockListState.value,
+      ids: new Set(["friend-1"]),
+    };
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("composer-reply-hidden")).toHaveTextContent(
+      "Message from a member you blocked",
+    );
+  });
+
+  it("waits on a jump to a held message instead of calling it unloaded, and lands once the list reads", () => {
+    blockListState.value = { ...blockListState.value, status: "unavailable" };
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-held",
+            sender_id: "friend-1",
+            content: "arrived during the outage",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "msg-held" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/waiting on your block list/i),
+    ).toBeInTheDocument();
+    expect(mockScrollToMessage).not.toHaveBeenCalled();
+
+    // The list reads: the row is drawn, and the pending jump lands on it.
+    blockListState.value = { ...blockListState.value, status: "ready" };
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(mockScrollToMessage).toHaveBeenCalledWith("msg-held");
+    expect(
+      screen.queryByText(/waiting on your block list/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("replaces an earlier miss's notice once the target turns out to be held", () => {
+    blockListState.value = { ...blockListState.value, status: "unavailable" };
+    searchHit.mockReturnValue({
+      message: { id: "msg-late" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(
+      screen.getByText(/older than the history loaded here/i),
+    ).toBeInTheDocument();
+
+    // It then arrives over the echo while the list is still unreadable.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-late",
+            sender_id: "friend-1",
+            content: "late",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/waiting on your block list/i),
+    ).toBeInTheDocument();
+  });
+
+  it("says so above the timeline when the block list cannot be read", () => {
+    blockListState.value = { ...blockListState.value, status: "unavailable" };
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(
+      screen.getByText(/couldn't load your block list/i),
+    ).toBeInTheDocument();
   });
 });

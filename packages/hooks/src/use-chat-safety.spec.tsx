@@ -100,9 +100,11 @@ describe("useBlockedUserIds", () => {
     });
 
     expect(result.current.status).toBe("loading");
+    expect(result.current.readAt).toBe(0);
     await waitFor(() => expect(result.current.status).toBe("ready"));
 
     expect(GET).toHaveBeenCalledWith("/v1/chat/blocks");
+    expect(result.current.readAt).toBeGreaterThan(0);
     expect([...result.current.ids]).toEqual([ALICE]);
     expect(result.current.unblocked.size).toBe(0);
     expect(result.current.isPaused).toBe(false);
@@ -130,6 +132,7 @@ describe("useBlockedUserIds", () => {
 
     await waitFor(() => expect(result.current.status).toBe("unavailable"));
     expect(result.current.ids.size).toBe(0);
+    expect(result.current.readAt).toBe(0);
   });
 
   it("a non-2xx with an empty body is unavailable too", async () => {
@@ -162,6 +165,7 @@ describe("useBlockedUserIds", () => {
       wrapper: createWrapper(queryClient, { GET }),
     });
     await waitFor(() => expect(result.current.status).toBe("ready"));
+    const readAt = result.current.readAt;
 
     act(() => result.current.retry());
 
@@ -170,6 +174,8 @@ describe("useBlockedUserIds", () => {
     // everyone on it is still known-blocked.
     expect(result.current.ids.has(ALICE)).toBe(true);
     expect(result.current.isRetrying).toBe(false);
+    // A failed refetch is not a read: web's persisted floor stays retired (#2688).
+    expect(result.current.readAt).toBe(readAt);
   });
 
   describe("a paused first read", () => {
