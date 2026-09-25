@@ -59,7 +59,8 @@ export const CI_CHECKS = [
   // API Jest suites: `test`, `test:e2e` and `test:ai-evals`, all three
   // unconditional (`.github/workflows/ci.yml`). Not unit tests alone.
   "api-tests",
-  // openapi.json + api-sdk freshness.
+  // openapi.json + api-sdk freshness, and oasdiff compatibility with every
+  // shipped mobile build in apps/mobile/store/shipped-builds.json.
   "api-contract-check",
   // Migration filename + promotion/rollback doc validation.
   "migration-safety",

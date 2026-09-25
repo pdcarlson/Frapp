@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,8 @@ import {
   baselinesFor,
   checkShipped,
   parseRegistry,
+  runOasdiff,
+  waiverLines,
 } from "../../check-api-breaking-changes.mjs";
 import { workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
@@ -45,7 +47,6 @@ function run(builds, overrides = {}) {
     registryLabel: "shipped-builds.json",
     headPath: "/head/openapi.json",
     oasdiffBin: "/bin/oasdiff",
-    ignorePath: "/ignore.txt",
     exists: () => true,
     specAt: () => "{}",
     oasdiff: (args) => {
@@ -179,11 +180,91 @@ test("compatible with every shipped build passes", () => {
   assert.ok(calls.every((c) => c.headPath === "/head/openapi.json" && c.bin === "/bin/oasdiff"));
 });
 
-test("the ignore file is passed to oasdiff only when it exists", () => {
-  const withFile = run([build()]);
-  assert.equal(withFile.calls[0].ignorePath, "/ignore.txt");
-  const without = run([build()], { exists: (p) => p !== "/ignore.txt" });
-  assert.equal(without.calls[0].ignorePath, undefined);
+test("WARN-level changes pass but are printed as a warning", () => {
+  const { code, out } = run([build()], {
+    oasdiff: () => ({
+      status: "clean",
+      output: "2 changes: 0 error, 2 warning\n[response-optional-property-removed]",
+    }),
+  });
+  assert.equal(code, 0);
+  assert.match(out, /::warning::Lower-severity API changes against shipped mobile build\(s\) ios\/1\.0\.0\+12/);
+  assert.match(out, /response-optional-property-removed/);
+});
+
+// ── The ignore file ─────────────────────────────────────────────────────────
+//
+// oasdiff's --err-ignore has no comment syntax: a line holding `METHOD /path`
+// and the change text waives it whether or not it starts with `#`. A
+// commented-out waiver that still waived would pass the break it was meant to
+// catch, so oasdiff only ever sees the entries.
+
+test("comment and blank lines are not waivers", () => {
+  assert.deepEqual(
+    waiverLines(
+      "# GET /v1/foo api path removed without deprecation\n\n  POST /v1/bar api path removed without deprecation  \r\n   # indented comment\n",
+    ),
+    ["POST /v1/bar api path removed without deprecation"],
+  );
+});
+
+test("oasdiff reads only the ignore file's entries", () => {
+  const ignoreText = "# evidence: GET /v1/foo api path removed without deprecation\nPOST /v1/bar api path removed without deprecation\n";
+  const { calls, dir } = run([build()], { ignoreText });
+  assert.equal(calls[0].ignorePath, path.join(dir, "err-ignore.txt"));
+  assert.equal(
+    readFileSync(calls[0].ignorePath, "utf8"),
+    "POST /v1/bar api path removed without deprecation\n",
+  );
+});
+
+test("an ignore file with no entries, or none at all, passes no --err-ignore", () => {
+  assert.equal(run([build()], { ignoreText: "# only a comment\n" }).calls[0].ignorePath, undefined);
+  assert.equal(run([build()], { ignoreText: null }).calls[0].ignorePath, undefined);
+});
+
+// ── runOasdiff ──────────────────────────────────────────────────────────────
+//
+// The gate's verdict rests on two things here: `--fail-on ERR` (without it
+// oasdiff exits 0 on a breaking change) and exit 1 meaning "breaking". Every
+// checkShipped test above stubs oasdiff, so these run the real function
+// against a stand-in binary that records its arguments and exits as told.
+
+function fakeOasdiff(exitCode, stdout = "") {
+  const dir = mkdtempSync(path.join(tmpdir(), "fake-oasdiff-"));
+  const bin = path.join(dir, "oasdiff");
+  const argsFile = path.join(dir, "args");
+  writeFileSync(
+    bin,
+    `#!/bin/sh\nprintf '%s\\n' "$@" > '${argsFile}'\nprintf '%s' '${stdout}'\necho 'oasdiff says no' >&2\nexit ${exitCode}\n`,
+  );
+  chmodSync(bin, 0o755);
+  return { bin, args: () => readFileSync(argsFile, "utf8").trim().split("\n") };
+}
+
+test("runOasdiff asks oasdiff to fail on ERR, and passes the ignore file", () => {
+  const fake = fakeOasdiff(0);
+  runOasdiff({ bin: fake.bin, basePath: "/b.json", headPath: "/h.json", ignorePath: "/i.txt" });
+  assert.deepEqual(fake.args(), [
+    "breaking", "/b.json", "/h.json", "--format", "text", "--fail-on", "ERR", "--err-ignore", "/i.txt",
+  ]);
+  runOasdiff({ bin: fake.bin, basePath: "/b.json", headPath: "/h.json" });
+  assert.ok(!fake.args().includes("--err-ignore"));
+});
+
+test("runOasdiff reads exit 0 as clean, 1 as breaking, anything else as an error", () => {
+  assert.deepEqual(
+    runOasdiff({ bin: fakeOasdiff(0, "No breaking changes").bin, basePath: "/b", headPath: "/h" }),
+    { status: "clean", output: "No breaking changes" },
+  );
+  assert.deepEqual(
+    runOasdiff({ bin: fakeOasdiff(1, "1 changes: 1 error").bin, basePath: "/b", headPath: "/h" }),
+    { status: "breaking", output: "1 changes: 1 error" },
+  );
+  const failed = runOasdiff({ bin: fakeOasdiff(102).bin, basePath: "/b", headPath: "/h" });
+  assert.equal(failed.status, "error");
+  assert.match(failed.output, /exit status: 102/);
+  assert.match(failed.output, /oasdiff says no/);
 });
 
 // ── The CI wiring ───────────────────────────────────────────────────────────
@@ -200,6 +281,11 @@ test("ci.yml runs the shipped check as a blocking step of the required contract 
   assert.equal(step.jobId, "api-contract-check");
   assert.equal(step.if, null, "the step runs on every event");
   assert.doesNotMatch(step.body, /continue-on-error/);
+
+  // The advisory base comparison must still run when the blocking step fails:
+  // it is the only report of breaks to routes no shipped build had.
+  const [advisory] = workflowSteps(ciPath).filter((s) => /check:api-breaking -- --base/.test(s.body));
+  assert.match(String(advisory.if), /!cancelled\(\)/);
 
   const job = workflowJobs(ciPath).find((j) => j.jobId === "api-contract-check");
   assert.equal(job.if, null);

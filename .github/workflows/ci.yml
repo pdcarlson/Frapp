@@ -635,8 +635,10 @@ jobs:
       - name: Check API compatibility with shipped mobile builds (blocking)
         run: npm run check:api-breaking:shipped
 
+      # `!cancelled()` so a red blocking step above doesn't skip this one: its
+      # findings are the only report of breaks to routes no shipped build had.
       - name: Detect breaking API changes against the PR base (advisory)
-        if: github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         continue-on-error: true
         run: npm run check:api-breaking -- --base "${{ github.event.pull_request.base.sha }}"
 

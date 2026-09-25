@@ -50,15 +50,20 @@
  * (ADR-24 I4): a missing oasdiff, an invalid registry, a SHA whose contract
  * can't be read, or oasdiff failing to run each fail the check.
  *
+ * It fails on oasdiff's ERR level: a removed route, a removed required
+ * response field, a parameter made required. WARN-level changes, such as a
+ * removed optional response field (which the generated SDK types as possibly
+ * absent), are printed as a `::warning::` and don't block.
+ *
  * A break to a route no shipped binary calls (a web-only route) is waived by a
- * line in `apps/mobile/store/api-breaking-ignore.txt`, passed to oasdiff's
- * `--err-ignore`. When a SHA may be dropped from the registry, and the ignore
- * file's format: apps/mobile/store/README.md § Shipped builds and the API
- * contract.
+ * line in `apps/mobile/store/api-breaking-ignore.txt`, handed to oasdiff's
+ * `--err-ignore` with its `#` comment lines removed first: oasdiff has no
+ * comment syntax, so a commented-out entry would otherwise still waive. When a
+ * SHA may be dropped from the registry, and the ignore file's format:
+ * apps/mobile/store/README.md § Shipped builds and the API contract.
  *
  * Usage:
  *   node scripts/check-api-breaking-changes.mjs --base <ref>
- *   node scripts/check-api-breaking-changes.mjs --base <ref> --fail-on-breaking
  *   node scripts/check-api-breaking-changes.mjs --shipped apps/mobile/store/shipped-builds.json
  */
 
@@ -210,6 +215,20 @@ export function baselinesFor(builds) {
 }
 
 /**
+ * The ignore file's entries, without its comments and blank lines.
+ *
+ * oasdiff's `--err-ignore` has no comment syntax: any line holding
+ * `METHOD /path` and the change text waives that change, `#` or not. So the
+ * file oasdiff reads is these lines only, and `#` means what it looks like.
+ */
+export function waiverLines(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"));
+}
+
+/**
  * The blocking comparison against every shipped build's contract.
  *
  * Dependencies are injected so the tests can drive every branch without git
@@ -223,7 +242,7 @@ export function checkShipped({
   registryLabel,
   headPath,
   oasdiffBin,
-  ignorePath,
+  ignoreText = null,
   exists = existsSync,
   specAt = specAtRef,
   oasdiff = runOasdiff,
@@ -260,9 +279,13 @@ export function checkShipped({
     log(`::error::${SPEC_PATH} not found in the working tree.`);
     return 2;
   }
-  const ignore = ignorePath && exists(ignorePath) ? ignorePath : undefined;
-
   const dir = workDir();
+  const waivers = ignoreText === null ? [] : waiverLines(ignoreText);
+  let ignore;
+  if (waivers.length > 0) {
+    ignore = path.join(dir, "err-ignore.txt");
+    writeFileSync(ignore, `${waivers.join("\n")}\n`, "utf8");
+  }
   let failed = false;
   let broken = false;
   for (const { sha, labels } of baselines) {
@@ -297,6 +320,15 @@ export function checkShipped({
       broken = true;
     } else {
       log(`Compatible with ${names} (${sha}).`);
+      // Exit 0 with output means WARN-level changes only (a removed optional
+      // response field, say). They don't block, but a reviewer should see them.
+      if (result.output !== "" && !/^No breaking changes/i.test(result.output)) {
+        log(
+          `::warning::Lower-severity API changes against shipped mobile build(s) ${names} (${sha}). ` +
+            "Not blocking; check the shipped binary tolerates each one.",
+        );
+        log(result.output);
+      }
     }
   }
 
@@ -311,11 +343,13 @@ export function checkShipped({
   return broken ? 1 : 0;
 }
 
-function mainBase(base, failOnBreaking) {
+function mainBase(base) {
   if (!existsSync(OASDIFF_BIN)) {
-    console.error(
-      "check-api-breaking-changes: oasdiff is not installed.\n" +
-        "Run: bash scripts/install-oasdiff.sh",
+    // A workflow command, not just stderr: this step runs under
+    // continue-on-error, so without it the skip reads as a green run (ADR-24 I4).
+    console.log(
+      `::warning::Advisory comparison against ${base} skipped: oasdiff is not installed ` +
+        "(its download failed?). Run: bash scripts/install-oasdiff.sh",
     );
     return 2;
   }
@@ -344,7 +378,7 @@ function mainBase(base, failOnBreaking) {
   const result = runOasdiff({ bin: OASDIFF_BIN, basePath, headPath });
 
   if (result.status === "error") {
-    console.error("check-api-breaking-changes: oasdiff failed to run.");
+    console.log(`::warning::Advisory comparison against ${base} skipped: oasdiff failed to run.`);
     console.error(result.output);
     return 2;
   }
@@ -382,7 +416,7 @@ function mainBase(base, failOnBreaking) {
     "separately, and that check blocks. See docs/internal/ci-cd/QUALITY_GATES.md.",
   );
 
-  return failOnBreaking ? 1 : 0;
+  return 0;
 }
 
 function main() {
@@ -396,7 +430,7 @@ function main() {
     return 2;
   }
 
-  if (base) return mainBase(base, process.argv.includes("--fail-on-breaking"));
+  if (base) return mainBase(base);
 
   const registryPath = path.resolve(REPO_ROOT, shipped);
   let registryText;
@@ -406,12 +440,13 @@ function main() {
     console.log(`::error::Cannot read ${shipped}: ${e.message}`);
     return 2;
   }
+  const ignorePath = path.join(REPO_ROOT, IGNORE_PATH);
   return checkShipped({
     registryText,
     registryLabel: shipped,
     headPath: path.join(REPO_ROOT, SPEC_PATH),
     oasdiffBin: OASDIFF_BIN,
-    ignorePath: path.join(REPO_ROOT, IGNORE_PATH),
+    ignoreText: existsSync(ignorePath) ? readFileSync(ignorePath, "utf8") : null,
   });
 }
 

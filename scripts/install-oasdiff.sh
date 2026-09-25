@@ -13,7 +13,10 @@
 # Docs: docs/internal/ci-cd/QUALITY_GATES.md
 set -euo pipefail
 
-OASDIFF_VERSION="${OASDIFF_VERSION:-1.11.7}"
+# The pinned version, the one place it is written. Its archives' digests are
+# pinned in pinned_sha256 below; bump both together.
+PINNED_VERSION="1.11.7"
+OASDIFF_VERSION="${OASDIFF_VERSION:-$PINNED_VERSION}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CACHE_DIR="$ROOT/.cache/oasdiff"
@@ -65,23 +68,25 @@ fi
 # checksum fetched from the same release as the archive is not enough on its
 # own: the pinned version's digests live here, and a fetched checksums.txt is
 # used only for an OASDIFF_VERSION override. No path installs unverified.
-# To bump the pin: take the new release's checksums.txt lines for these three
-# assets and replace the digests below with OASDIFF_VERSION's default.
-PINNED_VERSION="1.11.7"
+# To bump the pin: change PINNED_VERSION above and replace the digests below
+# with the new release's checksums.txt lines for these three assets. Keyed on
+# the platform alone, so a digest can't silently stop matching an asset name.
 pinned_sha256() {
   case "$1" in
-    oasdiff_1.11.7_linux_amd64.tar.gz) echo "97f1052365f74e6fd6f4d8fa108606e09391aebb8ecbf3b5e7a4059d54327224" ;;
-    oasdiff_1.11.7_linux_arm64.tar.gz) echo "6a7394ec7129ccfbfcf4837db8426198b79e933341a96adf53b0f33498846b45" ;;
-    oasdiff_1.11.7_darwin_all.tar.gz) echo "2aab1d33f3b9f9c28cd6c1977f63b1aa43ba83f9ab94887f3097fcac152d20a1" ;;
+    linux_amd64) echo "97f1052365f74e6fd6f4d8fa108606e09391aebb8ecbf3b5e7a4059d54327224" ;;
+    linux_arm64) echo "6a7394ec7129ccfbfcf4837db8426198b79e933341a96adf53b0f33498846b45" ;;
+    darwin_all) echo "2aab1d33f3b9f9c28cd6c1977f63b1aa43ba83f9ab94887f3097fcac152d20a1" ;;
     *) echo "" ;;
   esac
 }
 
-expected=""
 if [ "$OASDIFF_VERSION" = "$PINNED_VERSION" ]; then
-  expected="$(pinned_sha256 "$asset")"
-fi
-if [ -z "$expected" ]; then
+  expected="$(pinned_sha256 "${os_name}_${arch_name}")"
+  if [ -z "$expected" ]; then
+    echo "install-oasdiff: no pinned digest for $asset — refusing to install." >&2
+    exit 1
+  fi
+else
   if ! curl -fsSL --retry 3 --max-time 60 "$base_url/checksums.txt" -o "$tmp/checksums.txt"; then
     echo "install-oasdiff: could not fetch checksums.txt for unpinned $asset — refusing to install." >&2
     exit 1

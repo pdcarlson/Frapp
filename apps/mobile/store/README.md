@@ -617,10 +617,17 @@ date it went live in that PR. Until then the build is still calling the API, wha
 show.
 
 **A break the shipped binaries don't depend on** (a route only the web dashboard calls) is waived
-in [`api-breaking-ignore.txt`](api-breaking-ignore.txt), which the check passes to oasdiff's
+in [`api-breaking-ignore.txt`](api-breaking-ignore.txt), which the check hands to oasdiff's
 `--err-ignore`. Each entry is one line holding `METHOD /path` and oasdiff's change text as the
-failing run printed it, for example `POST /v1/chapters api path removed without deprecation`. A line
-without both matches nothing, so comments start with `#`. Put the evidence on the comment line
-above: that no listed SHA's `apps/mobile`, or a package it bundles, calls the route
-(`git grep '<path>' <sha> -- apps/mobile packages`). Delete an entry once the check passes without
-it.
+failing run printed it, for example `POST /v1/chapters api path removed without deprecation`. Lines
+starting with `#` are comments: the check removes them before oasdiff reads the file, because oasdiff
+itself has no comment syntax and would still honour a commented-out entry. Put the evidence on a
+comment line above the entry: that no listed SHA's `apps/mobile`, or a package it bundles, calls the
+route (`git grep '<path>' <sha> -- apps/mobile packages`). Delete an entry once the check passes
+without it.
+
+**Lower-severity changes don't block.** The check fails on oasdiff's error level: a removed route, a
+removed required response field, a parameter made required. A removed *optional* response field is
+a warning: the generated SDK already types it as possibly absent, so the binary compiles against its
+absence, but it may still lose whatever the field fed. The run prints each one as a `::warning::`;
+read them before merging.

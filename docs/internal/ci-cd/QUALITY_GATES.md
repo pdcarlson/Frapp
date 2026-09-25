@@ -197,18 +197,21 @@ and break every existing client. That is the gap `oasdiff breaking` fills.
 
 **Against every shipped mobile build: blocking.** A store binary is an independently deployed
 consumer. Every install keeps the API calls it was built with until its owner updates from the store
-(ADR-24 decisions 6 (I5) and 8), so a PR that removes a route it calls, removes a response field it
-reads, or makes a parameter required would merge green and break every install of that build. The
+(ADR-24 decisions 6 (I5) and 8), so a PR that removes a route it calls, removes a required response
+field it reads, or makes a parameter required would merge green and break every install of that build. The
 only recovery then is forcing an upgrade through the minimum-version check. The check reads each SHA
 in [`apps/mobile/store/shipped-builds.json`](../../../apps/mobile/store/shipped-builds.json) and runs
 `oasdiff breaking` from that commit's `apps/api/openapi.json` to the PR's, failing on any ERR-level
-change. It compares against the contract **as shipped**, not the PR's base, because a route deleted in
+change: a removed route, a removed required response field, a parameter made required. A removed
+*optional* response field is WARN-level. The generated SDK types it as possibly absent, so it doesn't
+block, but the run prints it as a `::warning::`. It compares against the contract **as shipped**, not the PR's base, because a route deleted in
 one PR and its replacement renamed in the next each look fine against their own base.
 
 With no build listed it passes and says it compared against nothing. With one listed, nothing reads as
 a skipped green (ADR-24 I4): an invalid registry, a missing oasdiff, a SHA whose contract can't be read,
 or oasdiff failing to run each fail it. A break to a route no shipped binary calls (a web-only route)
-is waived by a reviewed line in `apps/mobile/store/api-breaking-ignore.txt`. When to record a SHA,
+is waived by a reviewed line in `apps/mobile/store/api-breaking-ignore.txt`, whose `#` comment lines
+the check strips before oasdiff reads it. When to record a SHA,
 when one may go, and the ignore format:
 [`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract).
 
@@ -239,7 +242,8 @@ Not an npm package (the `oasdiff` name on npm is a security placeholder).
 `.cache/oasdiff/`, following the same reasoning as
 [gitleaks](SECRET_SCANNING.md): local and CI run the identical version, and no third-party GitHub
 Action enters the supply chain. It checks each archive against a SHA-256 digest pinned in the script
-(a fetched `checksums.txt` only for an `OASDIFF_VERSION` override, and never installs unverified),
+beside the one pinned version (a fetched `checksums.txt` only for an `OASDIFF_VERSION` override;
+a version bump that misses the digests fails on the mismatch, and nothing installs unverified),
 because the shipped-contract check blocks merges on this binary's verdict. It retries transient
 failures and moves the binary into place only once complete.
 
@@ -258,7 +262,9 @@ releases CDN, so it is cached by `actions/cache`, keyed on the installer that pi
 digests, and a download happens only when that script changes or the cache is evicted.
 
 The install step keeps `continue-on-error: true`, so a rate limit or a 5xx on that download never
-blocks a PR over the advisory base comparison, which carries it too. It can't turn the blocking check
+blocks a PR over the advisory base comparison, which carries it too. That comparison says so when it
+can't run (a `::warning::` that it was skipped), and its `!cancelled()` condition keeps it running
+after the blocking step fails, since it alone reports breaks to routes no shipped build had. It can't turn the blocking check
 green: `--shipped` fails on a missing oasdiff whenever a build is listed, and needs none when no build
 is. The blocking step also runs on push to `main`, so a break that reaches `main` anyway turns `main`
 red. [`check-api-breaking-changes.test.mjs`](../../../scripts/ci/__tests__/check-api-breaking-changes.test.mjs)
