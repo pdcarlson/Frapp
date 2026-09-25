@@ -119,9 +119,9 @@ export const REPORT_MAX_ROWS = 5_000;
  * Higher than `REPORT_MAX_ROWS` because these rows never reach the renderer.
  * The pages are read sequentially, each waiting on the last, so the ceiling is
  * really a latency budget rather than a render cost: at 50,000 that is up to
- * 50 round-trips (~1.2 s by the measurement in the perf notes), plus the one
- * terminating empty request `fetchAllPages` always pays, before any rendering
- * starts. That arithmetic is unchanged by #567 — what changed is how many rows
+ * 50 round-trips (~1.2 s by the measurement in `docs/performance/reports.md`),
+ * plus the one terminating empty request `fetchAllPages` always pays, before
+ * any rendering starts. That arithmetic is unchanged by #567 — what changed is how many rows
  * it takes to get there.
  *
  * **It counts scoring members, not transactions (#567).** Balances come from
@@ -494,7 +494,7 @@ export class ReportService {
     // A total order is not a snapshot, and does not claim to be: a paged read
     // is several statements, so a concurrent write can still shift a boundary
     // (`fetchAllPages`' own docstring says so). That is the report-wide caveat
-    // in the perf notes, not something this ordering fixes.
+    // in `docs/performance/reports.md`, not something this ordering fixes.
     //
     // What DID change is the shape of that rare failure, and it cuts both
     // ways. A row inserted between pages used to double-count one transaction;
