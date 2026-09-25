@@ -605,6 +605,12 @@ export function scriptPinProblems(source) {
   if (!/if \(!verdict\.fresh\)/.test(source)) {
     problems.push("in-flight must not close the alert");
   }
+  if (!/per_page=\$\{RUNS_PER_PAGE\}/.test(source)) {
+    problems.push("runs GET must list RUNS_PER_PAGE runs from the shared lib");
+  }
+  if (!/verdictLogLine\(verdict\)/.test(source)) {
+    problems.push("main() must print through verdictLogLine, so a backed pass shows as a warning");
+  }
   return problems;
 }
 
@@ -824,6 +830,18 @@ describe("watchdog mutations", () => {
       problems.some((problem) => problem.includes("npm ci")),
       problems.join("; "),
     );
+  });
+
+  it("hard-coding the runs page size fails", () => {
+    const problems = scriptPinProblems(script.replace("per_page=${RUNS_PER_PAGE}", "per_page=10"));
+    assert.ok(problems.some((problem) => problem.includes("RUNS_PER_PAGE")), problems.join("; "));
+  });
+
+  it("printing the verdict by hand fails", () => {
+    const problems = scriptPinProblems(
+      script.replace("verdictLogLine(verdict)", "`✅ ${verdict.reason}`"),
+    );
+    assert.ok(problems.some((problem) => problem.includes("verdictLogLine")), problems.join("; "));
   });
 
   it("dropping the in-flight fresh gate fails", () => {

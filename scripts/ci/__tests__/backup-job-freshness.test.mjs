@@ -2,9 +2,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  RUNS_PER_PAGE,
   candidateOlderRuns,
   evaluateJobFreshness,
+  jobVerdict,
   readJobFreshness,
+  verdictLogLine,
 } from "../lib/backup-job-freshness.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
@@ -103,6 +106,30 @@ describe("the newest run decides alone", () => {
     assert.match(verdict.reason, /job is missing/);
   });
 
+  it("a job that ran and failed fails the same day, whatever an earlier run holds", () => {
+    // A failed backup is what this alarm exists for. If an earlier success
+    // covered it, an isolated failed night would never raise the P1.
+    for (const conclusion of ["failure", "timed_out"]) {
+      const verdict = evaluate({
+        runs: [run(2, { hours: 2, conclusion: "failure" }), run(1, { hours: 16.2 })],
+        jobs: { 2: [job({ conclusion, completedHours: 1.9 })], 1: [job()] },
+      });
+      assert.equal(verdict.ok, false, conclusion);
+      assert.match(verdict.reason, new RegExp(`concluded ${conclusion}`));
+    }
+  });
+
+  it("a run that failed before creating any job fails as missing (a broken workflow must not green)", () => {
+    for (const conclusion of ["failure", "startup_failure"]) {
+      const verdict = evaluate({
+        runs: [run(2, { hours: 2, conclusion }), run(1, { hours: 16.2 })],
+        jobs: { 2: [], 1: [job()] },
+      });
+      assert.equal(verdict.ok, false, conclusion);
+      assert.match(verdict.reason, /job is missing/);
+    }
+  });
+
   it("a run cancelled after other jobs started, without the job, still fails as missing", () => {
     const verdict = evaluate({
       runs: [run(2, { hours: 2, conclusion: "cancelled" }), run(1, { hours: 16.2 })],
@@ -119,7 +146,6 @@ describe("an earlier success backs the newest run", () => {
     ["a job waiting on a protection rule", run(2, { hours: 1, status: "waiting" }), [job({ status: "waiting" })], /in flight/],
     ["a queued run with no job yet", run(2, { hours: 0.5, status: "queued" }), [], /in flight/],
     ["a cancelled job", run(2, { hours: 2, conclusion: "cancelled" }), [job({ conclusion: "cancelled", completedHours: 1.9 })], /concluded cancelled/],
-    ["a failed job", run(2, { hours: 2, conclusion: "failure" }), [job({ conclusion: "failure", completedHours: 1.9 })], /concluded failure/],
     ["a skipped job", run(2, { hours: 2, conclusion: "skipped" }), [job({ conclusion: "skipped", completedHours: 1.9 })], /concluded skipped/],
     ["a run cancelled before any job was created", run(2, { hours: 2, conclusion: "cancelled" }), [], /newest run was cancelled before/],
   ];
@@ -180,10 +206,24 @@ describe("an earlier success backs the newest run", () => {
   it("counts a success from re-running a run created long ago", () => {
     // A re-run keeps `created_at` and moves `updated_at`.
     const verdict = evaluate({
-      runs: [run(2, { hours: 2, conclusion: "failure" }), run(1, { hours: 49, updatedHours: 5 })],
-      jobs: { 2: [job({ conclusion: "failure", completedHours: 1.9 })], 1: [job({ completedHours: 5 })] },
+      runs: [run(2, { hours: 2, conclusion: "cancelled" }), run(1, { hours: 49, updatedHours: 5 })],
+      jobs: { 2: [job({ conclusion: "cancelled", completedHours: 1.9 })], 1: [job({ completedHours: 5 })] },
     });
     assert.equal(verdict.ok, true);
+  });
+
+  it("does not count an old success in a run updated recently by other jobs", () => {
+    // Re-running a run's failed jobs moves its `updated_at` into the window,
+    // and `filter=latest` still lists the watched job's old success.
+    const verdict = evaluate({
+      runs: [run(2, { hours: 2, conclusion: "cancelled" }), run(1, { hours: 49, updatedHours: 5 })],
+      jobs: {
+        2: [],
+        1: [job({ completedHours: 48.9 }), job({ name: "backup-other", completedHours: 5 })],
+      },
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /no backup-example success is within 36h/);
   });
 
   it("counts a success whose run queued for hours before the job started", () => {
@@ -293,5 +333,17 @@ describe("readJobFreshness", () => {
     });
     assert.equal(verdict.ok, false);
     assert.deepEqual(reads, ["runs", "9"]);
+  });
+});
+
+describe("what the scripts share besides the verdict", () => {
+  it("prints a fresh pass green, a backed pass as a warning, and a failure as an error", () => {
+    assert.equal(verdictLogLine(jobVerdict(true, true, "fine")), "✅ fine");
+    assert.equal(verdictLogLine(jobVerdict(true, false, "backed")), "::warning::backed");
+    assert.equal(verdictLogLine(jobVerdict(false, false, "broken")), "::error::broken");
+  });
+
+  it("lists 30 runs, so a burst of dispatches can't easily hide the last success", () => {
+    assert.equal(RUNS_PER_PAGE, 30);
   });
 });

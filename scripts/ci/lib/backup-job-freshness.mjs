@@ -8,18 +8,21 @@
 // the scripts, where their source-text locks pin them. Rule tests:
 // `scripts/ci/__tests__/backup-job-freshness.test.mjs`.
 //
-// THE RULES
+// THE RULES (the canonical statement; the docs and scripts link here)
 // - Unreadable Actions responses are FAIL, never pass.
 // - The newest run decides alone when its job succeeded (fresh within the
 //   stale window, the one verdict that may close an open alert; FAIL when
-//   older), when it is hung past the hung window, and when the job is missing
-//   from a run that ran (a renamed or deleted job must not green).
+//   older), when its job concluded anything but success, cancelled or
+//   skipped (a failed or timed-out backup is FAIL the same day), when it is
+//   hung past the hung window, and when the job is missing from a run that
+//   ran (a renamed or deleted job must not green).
 // - Otherwise the newest run's job is in flight (queued, running, or
-//   `waiting` on a deployment protection rule), or it was cancelled, failed
-//   or skipped, or the run was cancelled or skipped before any job was
-//   created. Then it passes only while an earlier run holds a success of the
-//   job that completed within the stale window, and that pass is never fresh,
-//   so it never closes an open alert.
+//   `waiting` on a deployment protection rule), or it was cancelled or
+//   skipped, or the run was cancelled or skipped before any job was created.
+//   Then it passes only while an earlier run holds a success of the job that
+//   completed within the stale window. That pass is never fresh, so it never
+//   closes an open alert, and the scripts print it as a `::warning::`
+//   (`verdictLogLine`).
 //
 // Why the fallback to an earlier success (#2332): judging the newest run
 // alone let an in-flight run return before the stale check, so a job parked
@@ -27,16 +30,17 @@
 // since each night's new run reset the age the hung check measures. In the
 // other direction, one cancelled dispatch raised a P1 against a job that had
 // succeeded hours earlier, which teaches responders to distrust the alert.
+// A job that ran and failed is not that case: #2332's acceptance list named
+// "failed" alongside "cancelled", but a failed backup is the thing this alarm
+// exists for, and letting an earlier success cover it meant an isolated
+// failed night never raised the P1 at all.
 //
-// The price, accepted in #2332: a genuinely failed night passes while the
-// previous night's success is within the window, so a single failure alerts
-// about a day late, on the next night's watch if that night fails too. The
-// scripts print every pass that isn't fresh as a `::warning::`, so the run
-// says so even though it is green.
-//
-// The earlier runs searched are the ones the caller lists (the scripts ask
-// for the 30 newest on `main`). More than that many runs inside the window
+// The earlier runs searched are the ones the scripts list: the
+// `RUNS_PER_PAGE` newest on `main`. More runs than that inside the window
 // could hide an earlier success; that fails closed, as a P1.
+
+/** How many recent runs the scripts list; the earlier-success search sees no further back. */
+export const RUNS_PER_PAGE = 30;
 
 const IN_FLIGHT_STATUSES = new Set([
   "queued",
@@ -46,13 +50,25 @@ const IN_FLIGHT_STATUSES = new Set([
   "requested",
 ]);
 
-// Run conclusions that leave no job rows when they happen before a job is
-// created: a dispatch cancelled while pending on the concurrency group.
-const NO_JOB_CONCLUSIONS = new Set(["cancelled", "skipped"]);
+// Conclusions an earlier success may cover: nothing was attempted and failed.
+// On a run with no job rows, these are a dispatch cancelled while pending on
+// the concurrency group; on a job, a cancelled or skipped backup.
+const BACKED_CONCLUSIONS = new Set(["cancelled", "skipped"]);
 
 /** `ok` greens the run. `fresh` is the only verdict that may close the alert. */
 export function jobVerdict(ok, fresh, reason) {
   return { ok, fresh: Boolean(ok && fresh), reason };
+}
+
+/**
+ * The line a script prints for a verdict: green when fresh, a `::warning::`
+ * when it passes on an earlier success, an `::error::` when it fails. Both
+ * scripts print through this, so a pass that isn't fresh can't look green.
+ */
+export function verdictLogLine(verdict) {
+  if (verdict.fresh) return `✅ ${verdict.reason}`;
+  if (verdict.ok) return `::warning::${verdict.reason}`;
+  return `::error::${verdict.reason}`;
 }
 
 /** Newest first, by `created_at`. */
@@ -113,7 +129,7 @@ export function judgeNewest({ jobName, run, fetched, staleAfterMs, hungAfterMs, 
       if (ageMs(run.run_started_at || run.created_at, now) > hungAfterMs) return hung;
       return { backing: `${jobName} is in flight` };
     }
-    if (NO_JOB_CONCLUSIONS.has(run.conclusion) && fetched.jobs.length === 0) {
+    if (BACKED_CONCLUSIONS.has(run.conclusion) && fetched.jobs.length === 0) {
       return { backing: `the newest run was ${run.conclusion} before ${jobName} started` };
     }
     return { verdict: jobVerdict(false, false, `${jobName} job is missing`) };
@@ -125,7 +141,9 @@ export function judgeNewest({ jobName, run, fetched, staleAfterMs, hungAfterMs, 
   }
 
   if (job.conclusion !== "success") {
-    return { backing: `${jobName} concluded ${job.conclusion || "unknown"}` };
+    const concluded = `${jobName} concluded ${job.conclusion || "unknown"}`;
+    if (BACKED_CONCLUSIONS.has(job.conclusion)) return { backing: concluded };
+    return { verdict: jobVerdict(false, false, concluded) };
   }
 
   if (ageMs(job.completed_at, now) > staleAfterMs) {

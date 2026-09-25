@@ -10,13 +10,12 @@
 // concludes anything other than success, would leave recoverability looking
 // covered.
 //
-// This script GETs recent `db-backup.yml` runs and their jobs, and fails if
-// `backup-production-storage` is missing from a run that ran, hung more than 3h, or has no
-// success that completed within 36h. A latest run that is in flight,
-// cancelled, failed or skipped passes only on an earlier run's success within
-// 36h, as a `::warning::` that never closes an open alert. Unreadable Actions
-// responses are FAIL, not pass. The rules, shared with the dump watch:
-// `lib/backup-job-freshness.mjs`.
+// This script GETs recent `db-backup.yml` runs and their jobs and judges
+// `backup-production-storage` by the rules in `lib/backup-job-freshness.mjs` (shared with
+// the dump watch; that header is the canonical statement). In short: FAIL
+// when the newest run's job failed, is missing or hung, or no success is
+// within 36h; a cancelled, skipped or in-flight newest run passes only on an
+// earlier success, as a warning that never closes an open alert.
 //
 // It does not name any GitHub `environment:` itself. A schedule job that
 // named `production` would hang on the ADR-19 reviewer gate (#1435). It
@@ -25,8 +24,8 @@
 // Own alert title. A recovered pin, uptime, or backup-env run must not
 // close this. The hosted restore leftover stays on its own issue (1861).
 //
-// Semantics: the pure functions below. Unit tests:
-// `scripts/ci/__tests__/production-backup-storage-freshness.test.mjs`.
+// Semantics: `lib/backup-job-freshness.mjs`. Tests: its own suite, and
+// `scripts/ci/__tests__/production-backup-storage-freshness.test.mjs` for this watch.
 
 import {
   ALERT_LOOKUP_LABEL,
@@ -34,7 +33,11 @@ import {
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
-import { readJobFreshness } from "./lib/backup-job-freshness.mjs";
+import {
+  RUNS_PER_PAGE,
+  readJobFreshness,
+  verdictLogLine,
+} from "./lib/backup-job-freshness.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
@@ -86,7 +89,7 @@ async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path }) {
 function runsPath(repo) {
   return (
     `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/runs` +
-    `?branch=${encodeURIComponent(DEFAULT_BRANCH)}&per_page=30`
+    `?branch=${encodeURIComponent(DEFAULT_BRANCH)}&per_page=${RUNS_PER_PAGE}`
   );
 }
 
@@ -95,8 +98,8 @@ function jobsPath(repo, runId) {
 }
 
 /**
- * GET recent Nightly Backup runs on `main`, then the newest run's jobs, and
- * the older runs' jobs only when the newest run's job didn't succeed.
+ * GET recent Nightly Backup runs on `main` and their jobs, as
+ * `readJobFreshness` in `lib/backup-job-freshness.mjs` describes.
  * A feature-branch dispatch is not the production dump. Schedule and
  * workflow_dispatch on `main` both count: a failed dump on `main` is a
  * failed dump. Retry with the fallback token only on 401/403, and only
@@ -219,15 +222,8 @@ async function main() {
     repo,
     fallbackToken,
   });
-  if (verdict.fresh) {
-    console.log(`✅ ${verdict.reason}`);
-  } else if (verdict.ok) {
-    // Green, but resting on an earlier success: a failed night or a run
-    // still in flight. Say so on the run rather than in a green log line.
-    console.log(`::warning::${verdict.reason}`);
-  } else {
-    console.error(`::error::${verdict.reason}`);
-  }
+  // A pass resting on an earlier success prints as a warning, not green.
+  (verdict.ok ? console.log : console.error)(verdictLogLine(verdict));
 
   if (probeOnly) {
     process.exit(verdict.ok ? 0 : 1);
