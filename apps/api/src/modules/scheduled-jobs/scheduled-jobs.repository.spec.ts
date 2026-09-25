@@ -254,7 +254,7 @@ describe('ScheduledJobsRepository', () => {
   });
 
   describe('findExpiredPollsPendingNotice', () => {
-    it('extracts chapter_id, question and expires_at through the chat_channels embed', async () => {
+    it('extracts chapter_id and expires_at through the chat_channels embed', async () => {
       const { repo } = await buildRepo([
         {
           data: [
@@ -293,20 +293,21 @@ describe('ScheduledJobsRepository', () => {
           id: 'poll-1',
           chapter_id: 'chap-1',
           channel_id: 'chan-1',
-          question: 'Pizza or tacos?',
           expires_at: '2026-08-05T10:00:00Z',
         },
         {
           id: 'poll-2',
           chapter_id: 'chap-2',
           channel_id: 'chan-2',
-          question: 'Formal or casual?',
           expires_at: '2026-08-05T11:00:00Z',
         },
       ]);
     });
 
-    it('drops a row missing its embed, question, or expires_at rather than throwing', async () => {
+    // The question is deliberately not required: the expiry notice replies to
+    // the poll rather than quoting it (#2495), so a row without one still gets
+    // its announcement.
+    it('drops a row missing its embed or expires_at rather than throwing', async () => {
       const { repo } = await buildRepo([
         {
           data: [
@@ -315,6 +316,12 @@ describe('ScheduledJobsRepository', () => {
               channel_id: 'chan-1',
               metadata: { question: 'Q', expires_at: '2026-08-05T10:00:00Z' },
               chat_channels: null,
+            },
+            {
+              id: 'poll-no-expiry',
+              channel_id: 'chan-1',
+              metadata: { question: 'Q' },
+              chat_channels: { chapter_id: 'chap-1' },
             },
             {
               id: 'poll-no-question',
@@ -338,7 +345,7 @@ describe('ScheduledJobsRepository', () => {
         new Date('2026-08-05T12:00:00Z'),
       );
 
-      expect(result.map((r) => r.id)).toEqual(['poll-ok']);
+      expect(result.map((r) => r.id)).toEqual(['poll-no-question', 'poll-ok']);
     });
   });
 

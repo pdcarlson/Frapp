@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { PollService } from './poll.service';
 import { ChannelAccessService } from './channel-access.service';
+import { ChatBlockService } from './chat-block.service';
+import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
 import { RbacService } from './rbac.service';
 import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
@@ -30,6 +32,7 @@ describe('PollService', () => {
     getEffectivePermissions: jest.Mock;
     hasAlumniRole: jest.Mock;
   };
+  let mockChatBlocks: { listBlockedUserIds: jest.Mock };
   let loggerErrorSpy: jest.SpyInstance;
 
   const baseChannel: ChatChannel = {
@@ -125,6 +128,9 @@ describe('PollService', () => {
       hasAlumniRole: jest.fn().mockResolvedValue(false),
     };
 
+    // Nobody blocked by default; the block-list tests below set their own.
+    mockChatBlocks = { listBlockedUserIds: jest.fn().mockResolvedValue([]) };
+
     // Default: caller is a chapter member with no extra permissions, and the
     // chapter's channels are PUBLIC (channel-1 hosts the listPolls fixtures).
     // Individual tests override these to exercise PRIVATE / ROLE_GATED / 404.
@@ -159,6 +165,10 @@ describe('PollService', () => {
         {
           provide: RbacService,
           useValue: mockRbac,
+        },
+        {
+          provide: ChatBlockService,
+          useValue: mockChatBlocks,
         },
       ],
     }).compile();
@@ -538,18 +548,32 @@ describe('PollService', () => {
   });
 
   describe('announceExpiry', () => {
-    it('posts a system_audit message into the poll channel', async () => {
+    // #2495: the notice replies to the poll and never quotes it. A quoted
+    // question was a blocked member's text re-posted under the system actor,
+    // which no block list can mask.
+    it('posts a system_audit reply to the poll that does not quote its question', async () => {
       mockMessageRepo.findById.mockResolvedValue(basePollMessage);
       mockMessageRepo.create.mockResolvedValue(basePollMessage);
 
-      await service.announceExpiry('msg-1', 'chan-1', 'Pizza or tacos?');
+      await service.announceExpiry('msg-1', 'chan-1');
 
       expect(mockMessageRepo.create).toHaveBeenCalledWith({
         channel_id: 'chan-1',
         sender_id: '00000000-0000-0000-0000-000000000000',
-        content: 'Poll "Pizza or tacos?" has closed.',
+        content: 'This poll has closed.',
         kind: 'system_audit',
+        reply_to_id: 'msg-1',
       });
+      const [notice] = mockMessageRepo.create.mock.calls[0];
+      expect(JSON.stringify(notice)).not.toContain('Best meeting time?');
+    });
+
+    it('skips posting when the poll no longer exists', async () => {
+      mockMessageRepo.findById.mockResolvedValue(null);
+
+      await service.announceExpiry('msg-1', 'chan-1');
+
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
     });
 
     // Sweep's candidate list is a point-in-time snapshot; the creator can
@@ -566,7 +590,7 @@ describe('PollService', () => {
         },
       });
 
-      await service.announceExpiry('msg-1', 'chan-1', 'Pizza or tacos?');
+      await service.announceExpiry('msg-1', 'chan-1');
 
       expect(mockMessageRepo.create).not.toHaveBeenCalled();
     });
@@ -880,6 +904,214 @@ describe('PollService', () => {
         expect.stringContaining('chapter-xyz'),
         expect.stringContaining('postgrest timeout'),
       );
+    });
+  });
+
+  // #2495. A poll is a message its creator authored, so a poll from a member
+  // the caller has blocked must not serve its question or option text on
+  // either poll route, while its tallies (chapter state) stay as they are.
+  describe('block list', () => {
+    const BLOCKED = 'user-blocked';
+    const futureIso = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    const blockedPoll: ChatMessage = {
+      ...basePollMessage,
+      id: 'poll-blocked',
+      channel_id: 'channel-1',
+      sender_id: BLOCKED,
+      content: 'Secret question?',
+      metadata: {
+        question: 'Secret question?',
+        options: ['Hidden A', 'Hidden B'],
+        choice_mode: 'multi',
+        expires_at: futureIso,
+      },
+    };
+    const clearPoll: ChatMessage = {
+      ...basePollMessage,
+      id: 'poll-clear',
+      channel_id: 'channel-1',
+    };
+    // An imported archive row has no user to have blocked, so it is never
+    // masked (`isFromBlockedSender`).
+    const importedPoll: ChatMessage = {
+      ...basePollMessage,
+      id: 'poll-imported',
+      channel_id: 'channel-1',
+      sender_id: null,
+    };
+
+    const TOTALS = [
+      { message_id: 'poll-blocked', option_index: 0, vote_count: 3 },
+      { message_id: 'poll-blocked', option_index: 1, vote_count: 1 },
+    ];
+
+    function expectNoAuthorText(value: unknown) {
+      const json = JSON.stringify(value);
+      for (const text of ['Secret question?', 'Hidden A', 'Hidden B']) {
+        expect(json).not.toContain(text);
+      }
+    }
+
+    beforeEach(() => {
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue([BLOCKED]);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        id: 'channel-1',
+      });
+    });
+
+    describe('getPoll', () => {
+      it('withholds the question and option text of a poll from a member the caller has blocked', async () => {
+        mockMessageRepo.findById.mockResolvedValue(blockedPoll);
+        mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue(TOTALS);
+        mockVoteRepo.findByMessageAndUser.mockResolvedValue([
+          { ...baseVote, message_id: 'poll-blocked', option_index: 0 },
+        ]);
+
+        const result = await service.getPoll('poll-blocked', 'ch-1', 'user-2');
+
+        expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledWith(
+          'ch-1',
+          'user-2',
+        );
+        expectNoAuthorText(result);
+        expect(result).toEqual({
+          id: 'poll-blocked',
+          channel_id: 'channel-1',
+          sender_id: BLOCKED,
+          content: BLOCKED_MESSAGE_CONTENT,
+          type: 'POLL',
+          metadata: {
+            choice_mode: 'multi',
+            expires_at: futureIso,
+            closed_at: undefined,
+          },
+          created_at: blockedPoll.created_at,
+          isExpired: false,
+          // Tallies are counted, not hidden, and the caller's own vote is
+          // theirs to read back.
+          results: [
+            { optionIndex: 0, optionText: null, voteCount: 3 },
+            { optionIndex: 1, optionText: null, voteCount: 1 },
+          ],
+          userVotes: [0],
+          sender_blocked: true,
+        });
+      });
+
+      it('serves a poll from a member the caller has not blocked, flagged clear', async () => {
+        mockMessageRepo.findById.mockResolvedValue(clearPoll);
+        mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+        mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
+
+        const result = await service.getPoll('poll-clear', 'ch-1', 'user-2');
+
+        expect(result.sender_blocked).toBe(false);
+        expect(result.content).toBe('Best meeting time?');
+        expect(result.metadata).toEqual(clearPoll.metadata);
+        expect(result.results.map((r) => r.optionText)).toEqual([
+          'Monday',
+          'Tuesday',
+          'Wednesday',
+        ]);
+      });
+
+      it('never masks an imported poll, which has no sender to have blocked', async () => {
+        mockMessageRepo.findById.mockResolvedValue(importedPoll);
+        mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+        mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
+
+        const result = await service.getPoll('poll-imported', 'ch-1', 'user-2');
+
+        expect(result.sender_blocked).toBe(false);
+        expect(result.content).toBe('Best meeting time?');
+      });
+
+      it('fails rather than serving the poll unmasked when the block list cannot be read', async () => {
+        mockMessageRepo.findById.mockResolvedValue(blockedPoll);
+        mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue(TOTALS);
+        mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
+        mockChatBlocks.listBlockedUserIds.mockRejectedValue(
+          new Error('block list down'),
+        );
+
+        await expect(
+          service.getPoll('poll-blocked', 'ch-1', 'user-2'),
+        ).rejects.toThrow('block list down');
+      });
+    });
+
+    describe('listPolls', () => {
+      it('masks a poll from a member the caller has blocked in place, keeping its tallies', async () => {
+        mockMessageRepo.findPollsByChapter.mockResolvedValue([
+          blockedPoll,
+          clearPoll,
+        ]);
+        mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue(TOTALS);
+        mockVoteRepo.findUserVotesByMessagesForUser.mockResolvedValue([]);
+
+        const result = await service.listPolls('ch-1', { userId: 'user-2' });
+
+        expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledWith(
+          'ch-1',
+          'user-2',
+        );
+        // Masked in place, not left out: the page's counts and paging hold.
+        expect(result.map((p) => p.id)).toEqual(['poll-blocked', 'poll-clear']);
+        const [masked, clear] = result;
+        expectNoAuthorText(masked);
+        expect(masked.sender_blocked).toBe(true);
+        expect(masked.content).toBe(BLOCKED_MESSAGE_CONTENT);
+        expect(masked.metadata).toEqual({
+          choice_mode: 'multi',
+          expires_at: futureIso,
+          closed_at: undefined,
+        });
+        expect(masked.results).toEqual([
+          { optionIndex: 0, optionText: null, voteCount: 3 },
+          { optionIndex: 1, optionText: null, voteCount: 1 },
+        ]);
+        expect(clear.sender_blocked).toBe(false);
+        expect(clear.metadata).toEqual(clearPoll.metadata);
+      });
+
+      it('never masks an imported poll', async () => {
+        mockMessageRepo.findPollsByChapter.mockResolvedValue([importedPoll]);
+        mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+        mockVoteRepo.findUserVotesByMessagesForUser.mockResolvedValue([]);
+
+        const [row] = await service.listPolls('ch-1', { userId: 'user-2' });
+
+        expect(row.sender_blocked).toBe(false);
+        expect(row.content).toBe('Best meeting time?');
+      });
+
+      it('fails rather than serving the list unmasked when the block list cannot be read', async () => {
+        mockMessageRepo.findPollsByChapter.mockResolvedValue([blockedPoll]);
+        mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue(TOTALS);
+        mockVoteRepo.findUserVotesByMessagesForUser.mockResolvedValue([]);
+        mockChatBlocks.listBlockedUserIds.mockRejectedValue(
+          new Error('block list down'),
+        );
+
+        // Unlike a failed tally, which degrades to zeros: a list that served
+        // this row in the clear would fail open on a safety feature.
+        await expect(
+          service.listPolls('ch-1', { userId: 'user-2' }),
+        ).rejects.toThrow('block list down');
+      });
+
+      it('does not read the block list when there is nothing to show', async () => {
+        mockMessageRepo.findPollsByChapter.mockResolvedValue([]);
+        mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+        mockVoteRepo.findUserVotesByMessagesForUser.mockResolvedValue([]);
+
+        await expect(
+          service.listPolls('ch-1', { userId: 'user-2' }),
+        ).resolves.toEqual([]);
+        expect(mockChatBlocks.listBlockedUserIds).not.toHaveBeenCalled();
+      });
     });
   });
 

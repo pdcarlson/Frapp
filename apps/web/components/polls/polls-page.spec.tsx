@@ -460,3 +460,63 @@ describe("PollsPage subscription gating", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
+
+// #2495: the API masks a blocked member's poll in place, withholding its
+// question and option text and flagging the row `sender_blocked`.
+describe("PollsPage blocked-member polls", () => {
+  const MASKED_POLL = {
+    ...VOTED_POLL,
+    id: "poll-masked",
+    sender_id: "user-blocked",
+    // The server's sentinel. The card must not render or key off it.
+    content: "[message from a blocked member]",
+    metadata: { choice_mode: "single" as const, expires_at: null },
+    results: [
+      { optionIndex: 0, optionText: null, voteCount: 3 },
+      { optionIndex: 1, optionText: null, voteCount: 1 },
+    ],
+    userVotes: [0],
+    sender_blocked: true,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCanGrant.value = true;
+    mockOffline.value = false;
+    resolvedPollsQuery();
+    chapter.active();
+    pollsQuery.data = [MASKED_POLL];
+  });
+
+  it("says whose poll it is and labels the options by number, keeping the tallies", () => {
+    render(<PollsPage />);
+
+    expect(
+      screen.getByText("Poll from a member you blocked"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Option 1")).toBeInTheDocument();
+    expect(screen.getByText("Option 2")).toBeInTheDocument();
+    expect(screen.getByText("4 total votes")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("blocked member]");
+  });
+
+  it("offers no blind vote, but keeps a vote cast before the block withdrawable", () => {
+    render(<PollsPage />);
+
+    expect(
+      screen.queryByRole("button", { name: /save vote/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /option 1/i })).toBeDisabled();
+    expect(withdrawVote()).toBeEnabled();
+  });
+
+  it("renders a clear row as before", () => {
+    pollsQuery.data = [{ ...VOTED_POLL, sender_blocked: false }];
+
+    render(<PollsPage />);
+
+    expect(screen.getByText("Pizza night?")).toBeInTheDocument();
+    expect(screen.getByText("Friday")).toBeInTheDocument();
+    expect(saveVote()).toBeInTheDocument();
+  });
+});

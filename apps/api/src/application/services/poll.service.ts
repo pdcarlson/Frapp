@@ -18,6 +18,11 @@ import type { ChatMessage } from '#domain/entities/chat.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import type { PollMetadata } from '#domain/entities/poll-vote.entity';
 import { ChannelAccessService } from './channel-access.service';
+import { ChatBlockService } from './chat-block.service';
+import {
+  BLOCKED_MESSAGE_CONTENT,
+  isFromBlockedSender,
+} from './chat-block-mask';
 import { clampListLimit } from '#domain/constants/list-query-limits';
 
 const MIN_OPTIONS = 2;
@@ -46,11 +51,77 @@ export interface PollWithResults {
   sender_id: string | null;
   content: string;
   type: 'POLL';
-  metadata: PollMetadata;
+  /**
+   * The whole {@link PollMetadata} for a clear row. A masked row carries only
+   * {@link MaskedPollMetadata}: the question and options are what the blocked
+   * member wrote.
+   */
+  metadata: PollMetadata | MaskedPollMetadata;
   created_at: string;
   isExpired: boolean;
-  results: { optionIndex: number; optionText: string; voteCount: number }[];
+  /** `optionText` is `null` on a masked row; `voteCount` never is. */
+  results: {
+    optionIndex: number;
+    optionText: string | null;
+    voteCount: number;
+  }[];
   userVotes?: number[];
+  /**
+   * Whether the caller has blocked the poll's author, on every row, as the
+   * timeline's `sender_blocked` is (`chat-block-mask.ts`). This is the signal a
+   * client keys on, never the sentinel in `content`.
+   */
+  sender_blocked: boolean;
+}
+
+/**
+ * What survives of a blocked member's poll metadata: the fields a card needs to
+ * say whether and when the poll closes, none of which the author wrote as text.
+ * An allowlist, for `maskMessage`'s reason: a field added to `PollMetadata`
+ * later is withheld until someone lets it through.
+ */
+export type MaskedPollMetadata = Pick<
+  PollMetadata,
+  'choice_mode' | 'expires_at' | 'closed_at'
+>;
+
+/**
+ * The poll-shaped counterpart of `maskBlockedMessages` (#2495). The two poll
+ * routes serve a projection of the message rather than the row, so the
+ * timeline's masker does not fit it, but the rule is the same one:
+ * `isFromBlockedSender` decides, so an imported row is never masked, and every
+ * row carries `sender_blocked`.
+ *
+ * **Masked in place, not left out.** The tallies are chapter state, which a
+ * block counts rather than hides (`spec/behavior/chat/README.md` § What a block
+ * does and does not hide), and dropping the row would change the list's counts
+ * and paging. So a masked poll keeps its ids, timing, expiry, every
+ * `voteCount` and the caller's own `userVotes`, and loses the question, the
+ * option text and `content`.
+ */
+function maskPollForViewer(
+  poll: Omit<PollWithResults, 'sender_blocked'>,
+  blockedUserIds: ReadonlySet<string>,
+): PollWithResults {
+  if (!isFromBlockedSender(poll.sender_id, blockedUserIds)) {
+    return { ...poll, sender_blocked: false };
+  }
+  const metadata: MaskedPollMetadata = {
+    choice_mode: poll.metadata.choice_mode,
+    expires_at: poll.metadata.expires_at,
+    closed_at: poll.metadata.closed_at,
+  };
+  return {
+    ...poll,
+    content: BLOCKED_MESSAGE_CONTENT,
+    metadata,
+    results: poll.results.map(({ optionIndex, voteCount }) => ({
+      optionIndex,
+      optionText: null,
+      voteCount,
+    })),
+    sender_blocked: true,
+  };
 }
 
 @Injectable()
@@ -63,6 +134,9 @@ export class PollService {
     @Inject(POLL_VOTE_REPOSITORY)
     private readonly voteRepo: IPollVoteRepository,
     private readonly channelAccess: ChannelAccessService,
+    // Both poll reads serve a member's question and options to a named viewer,
+    // so they apply the viewer's block list like the timeline does (#2495).
+    private readonly chatBlocks: ChatBlockService,
   ) {}
 
   async createPoll(input: CreatePollInput): Promise<ChatMessage> {
@@ -261,9 +335,14 @@ export class PollService {
     // Both reads take `message.id`, not `messageId`: past this point the route
     // parameter has served its purpose and the database's own id is the one
     // canonical spelling of it.
-    const [totals, userVoteList] = await Promise.all([
+    //
+    // The block list rides the same `Promise.all`, and a failed read of it
+    // fails the request: "a block list that cannot be read is not an empty
+    // block list", so serving the poll unmasked would fail open.
+    const [totals, userVoteList, blockedUserIds] = await Promise.all([
       this.voteRepo.aggregateOptionTotalsByMessages([message.id]),
       this.voteRepo.findByMessageAndUser(message.id, userId),
+      this.chatBlocks.listBlockedUserIds(chapterId, userId),
     ]);
 
     // Scoped to this poll before keying on `option_index` alone: the RPC takes
@@ -282,18 +361,21 @@ export class PollService {
 
     const userVotes = userVoteList.map((v) => v.option_index);
 
-    return {
-      id: message.id,
-      channel_id: message.channel_id,
-      sender_id: message.sender_id,
-      content: message.content,
-      type: 'POLL',
-      metadata,
-      created_at: message.created_at,
-      isExpired: this.isPollExpired(metadata),
-      results,
-      userVotes,
-    };
+    return maskPollForViewer(
+      {
+        id: message.id,
+        channel_id: message.channel_id,
+        sender_id: message.sender_id,
+        content: message.content,
+        type: 'POLL',
+        metadata,
+        created_at: message.created_at,
+        isExpired: this.isPollExpired(metadata),
+        results,
+        userVotes,
+      },
+      new Set(blockedUserIds),
+    );
   }
 
   /**
@@ -408,21 +490,29 @@ export class PollService {
    * this check a manual close would still get a spurious "has closed" auto
    * notice — and, because the sweep's dispatch claim is already taken by
    * then, one nothing could later correct.
+   *
+   * **The notice replies to the poll rather than quoting it** (#2495). It used
+   * to read `Poll "<question>" has closed.`, which re-posted the author's text
+   * under the system actor, and the system actor cannot be blocked: a blocked
+   * member's question reached the blocker's timeline beside the poll that the
+   * block had turned into a tombstone. As a reply, both clients draw the poll as
+   * the quote, and a quote of a blocked member's message is already masked
+   * (§ What a block does and does not hide, "quoted in someone else's reply").
    */
-  async announceExpiry(
-    pollId: string,
-    channelId: string,
-    question: string,
-  ): Promise<void> {
+  async announceExpiry(pollId: string, channelId: string): Promise<void> {
     const current = await this.messageRepo.findById(pollId);
-    const metadata = current?.metadata as PollMetadata | undefined;
-    if (metadata?.closed_at) return;
+    // A poll that no longer exists has nothing to announce, and a reply to it
+    // would fail `reply_to_id`'s foreign key on insert.
+    if (!current) return;
+    const metadata = current.metadata as PollMetadata;
+    if (metadata.closed_at) return;
 
     await this.messageRepo.create({
       channel_id: channelId,
       sender_id: SYSTEM_SENDER_ID,
-      content: `Poll "${question}" has closed.`,
+      content: 'This poll has closed.',
       kind: 'system_audit',
+      reply_to_id: pollId,
     });
   }
 
@@ -463,6 +553,16 @@ export class PollService {
       );
     const visibleMessages = messages.filter((message) =>
       accessibleChannelIds.has(message.channel_id),
+    );
+
+    // Read before the tallies, and not caught like them: a failed tally read
+    // degrades to zeros, but a failed block-list read would serve a blocked
+    // member's question in the clear, so it fails the request. Skipped only
+    // when nothing is visible, which includes every call with no `userId`.
+    const blockedUserIds = new Set(
+      visibleMessages.length > 0 && options.userId
+        ? await this.chatBlocks.listBlockedUserIds(chapterId, options.userId)
+        : [],
     );
 
     const listRows: {
@@ -523,7 +623,7 @@ export class PollService {
     for (const { message, metadata, expired } of listRows) {
       const countsByOption = voteCountsByMessageId.get(message.id);
       const options_ = metadata.options ?? [];
-      const entry: PollWithResults = {
+      const entry: Omit<PollWithResults, 'sender_blocked'> = {
         id: message.id,
         channel_id: message.channel_id,
         sender_id: message.sender_id,
@@ -541,7 +641,7 @@ export class PollService {
       if (userVotesByMessageId) {
         entry.userVotes = userVotesByMessageId.get(message.id) ?? [];
       }
-      results.push(entry);
+      results.push(maskPollForViewer(entry, blockedUserIds));
     }
 
     return results;
