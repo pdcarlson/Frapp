@@ -9,11 +9,10 @@
 // starts, or a job that concludes anything other than success, would leave
 // recoverability looking covered.
 //
-// This script GETs recent `db-backup.yml` runs and their jobs. It fails if
-// `backup-production` is missing, not success, hung more than 3h, or last
-// success older than 36h. In-flight under 3h greens the run but does not
-// close an open alert — only a success within 36h is recovery. Unreadable
-// Actions responses are FAIL, not pass.
+// This script GETs recent `db-backup.yml` runs and their jobs and judges
+// `backup-production` by the rules in `lib/backup-job-freshness.mjs` (shared with
+// the Storage watch; that header is the canonical statement, so it
+// isn't restated here).
 //
 // It does not name any GitHub `environment:` itself. A schedule job that
 // named `production` would hang on the ADR-19 reviewer gate (#1435). It
@@ -22,8 +21,8 @@
 // Own alert title. A recovered pin, uptime, or backup-env run must not
 // close this. The hosted restore leftover stays on its own issue (1861).
 //
-// Semantics: the pure functions below. Unit tests:
-// `scripts/ci/__tests__/production-backup-freshness.test.mjs`.
+// Semantics: `lib/backup-job-freshness.mjs`. Tests: its own suite, and
+// `scripts/ci/__tests__/production-backup-freshness.test.mjs` for this watch.
 
 import {
   ALERT_LOOKUP_LABEL,
@@ -31,6 +30,11 @@ import {
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
+import {
+  RUNS_PER_PAGE,
+  readJobFreshness,
+  verdictLogLine,
+} from "./lib/backup-job-freshness.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
@@ -40,19 +44,15 @@ export const DEFAULT_BRANCH = "main";
 export const PRODUCTION_JOB_NAME = "backup-production";
 export const STALE_AFTER_MS = 36 * 60 * 60 * 1000;
 export const HUNG_AFTER_MS = 3 * 60 * 60 * 1000;
+// The job's `timeout-minutes` in db-backup.yml. GitHub reports a job its
+// timeout stopped as `cancelled`; this is how the verdict tells that from a
+// cancelled dispatch. The test suite checks it against the workflow.
+export const JOB_TIMEOUT_MS = 30 * 60 * 1000;
 
 export const ALERT_ISSUE_TITLE =
   "Nightly production dump is stale or failed — recoverability is unproven";
 export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
-
-const IN_FLIGHT_STATUSES = new Set([
-  "queued",
-  "in_progress",
-  "waiting",
-  "pending",
-  "requested",
-]);
 
 /** Prefer the job token: Actions reads work with GITHUB_TOKEN. */
 export function resolveActionsReadToken(env = process.env) {
@@ -74,11 +74,6 @@ function isAuthish(status) {
   return status === 401 || status === 403;
 }
 
-/** `ok` greens the run. `fresh` is the only verdict that may close the alert. */
-function dumpVerdict(ok, fresh, reason) {
-  return { ok, fresh: Boolean(ok && fresh), reason };
-}
-
 async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path }) {
   const first = await ghRequest({ token, fetchImpl, path });
   if (
@@ -92,85 +87,10 @@ async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path }) {
   return first;
 }
 
-function newestRun(runs) {
-  return [...runs].sort(
-    (a, b) => Date.parse(b.created_at ?? 0) - Date.parse(a.created_at ?? 0),
-  )[0];
-}
-
-function ageMs(iso, now) {
-  const at = Date.parse(iso ?? "");
-  return Number.isNaN(at) ? Number.POSITIVE_INFINITY : now - at;
-}
-
-/**
- * Classify one already-fetched Nightly Backup run + its jobs.
- * `now` is injected so the 36h / 3h windows are deterministic in tests.
- */
-export function evaluateDumpFreshness({
-  runsStatus,
-  runs,
-  jobsStatus,
-  jobs,
-  now,
-}) {
-  if (runsStatus !== 200 || !Array.isArray(runs)) {
-    return dumpVerdict(
-      false,
-      false,
-      `db-backup.yml runs unreadable (HTTP ${runsStatus || "no response"})`,
-    );
-  }
-  if (runs.length === 0) {
-    return dumpVerdict(false, false, "no db-backup.yml runs found");
-  }
-
-  const run = newestRun(runs);
-  if (jobsStatus !== 200 || !Array.isArray(jobs)) {
-    return dumpVerdict(
-      false,
-      false,
-      `backup-production jobs unreadable (HTTP ${jobsStatus || "no response"})`,
-    );
-  }
-
-  const job = jobs.find((entry) => entry && entry.name === PRODUCTION_JOB_NAME);
-  if (!job) {
-    if (IN_FLIGHT_STATUSES.has(run.status)) {
-      if (ageMs(run.run_started_at || run.created_at, now) > HUNG_AFTER_MS) {
-        return dumpVerdict(false, false, "backup-production hung for more than 3h");
-      }
-      return dumpVerdict(true, false, "backup-production is in flight");
-    }
-    return dumpVerdict(false, false, "backup-production job is missing");
-  }
-
-  if (IN_FLIGHT_STATUSES.has(job.status)) {
-    if (ageMs(job.started_at || run.created_at, now) > HUNG_AFTER_MS) {
-      return dumpVerdict(false, false, "backup-production hung for more than 3h");
-    }
-    return dumpVerdict(true, false, "backup-production is in flight");
-  }
-
-  if (job.conclusion !== "success") {
-    return dumpVerdict(
-      false,
-      false,
-      `backup-production concluded ${job.conclusion || "unknown"}`,
-    );
-  }
-
-  if (ageMs(job.completed_at, now) > STALE_AFTER_MS) {
-    return dumpVerdict(false, false, "last backup-production success is older than 36h");
-  }
-
-  return dumpVerdict(true, true, "backup-production succeeded within 36h");
-}
-
 function runsPath(repo) {
   return (
     `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/runs` +
-    `?branch=${encodeURIComponent(DEFAULT_BRANCH)}&per_page=10`
+    `?branch=${encodeURIComponent(DEFAULT_BRANCH)}&per_page=${RUNS_PER_PAGE}`
   );
 }
 
@@ -179,7 +99,8 @@ function jobsPath(repo, runId) {
 }
 
 /**
- * GET recent Nightly Backup runs on `main`, then the newest run's jobs.
+ * GET recent Nightly Backup runs on `main` and their jobs, as
+ * `readJobFreshness` in `lib/backup-job-freshness.mjs` describes.
  * A feature-branch dispatch is not the production dump. Schedule and
  * workflow_dispatch on `main` both count: a failed dump on `main` is a
  * failed dump. Retry with the fallback token only on 401/403, and only
@@ -192,35 +113,15 @@ export async function readDumpFreshness({
   fallbackToken,
   now = Date.now(),
 }) {
-  const listed = await ghGetWithFallback({
-    token,
-    fallbackToken,
-    fetchImpl,
-    path: runsPath(repo),
-  });
-  const runs = listed.data?.workflow_runs;
-  if (listed.status !== 200 || !Array.isArray(runs) || runs.length === 0) {
-    return evaluateDumpFreshness({
-      runsStatus: listed.status,
-      runs: Array.isArray(runs) ? runs : null,
-      jobsStatus: 0,
-      jobs: null,
-      now,
-    });
-  }
-
-  const run = newestRun(runs);
-  const fetched = await ghGetWithFallback({
-    token,
-    fallbackToken,
-    fetchImpl,
-    path: jobsPath(repo, run.id),
-  });
-  return evaluateDumpFreshness({
-    runsStatus: listed.status,
-    runs,
-    jobsStatus: fetched.status,
-    jobs: fetched.data?.jobs,
+  return readJobFreshness({
+    jobName: PRODUCTION_JOB_NAME,
+    workflowFile: WORKFLOW_FILE,
+    staleAfterMs: STALE_AFTER_MS,
+    hungAfterMs: HUNG_AFTER_MS,
+    timeoutMs: JOB_TIMEOUT_MS,
+    runsPath: runsPath(repo),
+    jobsPath: (runId) => jobsPath(repo, runId),
+    get: (path) => ghGetWithFallback({ token, fallbackToken, fetchImpl, path }),
     now,
   });
 }
@@ -323,11 +224,8 @@ async function main() {
     repo,
     fallbackToken,
   });
-  if (verdict.ok) {
-    console.log(`✅ ${verdict.reason}`);
-  } else {
-    console.error(`::error::${verdict.reason}`);
-  }
+  // A pass resting on an earlier success prints as a warning, not green.
+  (verdict.ok ? console.log : console.error)(verdictLogLine(verdict));
 
   if (probeOnly) {
     process.exit(verdict.ok ? 0 : 1);

@@ -17,8 +17,9 @@ name: Production backup freshness
 # probing (#1435). The dump jobs themselves use `production-backup` for the
 # same reason. This workflow names no environment at all.
 #
-# Semantics live in scripts/ci/production-backup-freshness.mjs.
-# Unit tests: scripts/ci/__tests__/production-backup-freshness.test.mjs
+# Rules: scripts/ci/lib/backup-job-freshness.mjs (tests:
+# scripts/ci/__tests__/backup-job-freshness.test.mjs). This watch's wiring:
+# scripts/ci/production-backup-freshness.mjs (tests: scripts/ci/__tests__/production-backup-freshness.test.mjs).
 # (`npm run test:ci-scripts`).
 #
 # Not a required PR check.

@@ -7,18 +7,20 @@ import { fileURLToPath } from "node:url";
 import {
   ALERT_ISSUE_TITLE,
   HUNG_AFTER_MS,
+  JOB_TIMEOUT_MS,
   PRODUCTION_JOB_NAME,
   STALE_AFTER_MS,
   WORKFLOW_FILE,
-  evaluateDumpFreshness,
   readDumpFreshness,
   resolveActionsFallbackToken,
   resolveActionsReadToken,
   runWatchdog,
 } from "../production-backup-freshness.mjs";
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
+import { evaluateJobFreshness, runsNewestFirst } from "../lib/backup-job-freshness.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
+import { workflowJobs } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-backup-freshness.yml");
@@ -45,18 +47,42 @@ function successJob({ hours = 16 } = {}) {
   };
 }
 
+/**
+ * This watch's verdict through the shared rules, with its own job name and
+ * windows. `jobs` are the newest run's; `olderJobs` maps an earlier run's id
+ * to `{ status, jobs }`. The rules themselves are tested in
+ * backup-job-freshness.test.mjs.
+ */
 function evaluate(overrides = {}) {
-  return evaluateDumpFreshness({
+  const { runsStatus, runs, jobsStatus, jobs, olderJobs, now } = {
     runsStatus: 200,
     runs: [{ id: 1, status: "completed", created_at: hoursAgo(16) }],
     jobsStatus: 200,
     jobs: [successJob()],
+    olderJobs: {},
     now: NOW,
     ...overrides,
+  };
+  const jobsByRunId = new Map(
+    Object.entries(olderJobs).map(([id, entry]) => [Number(id), entry]),
+  );
+  if (Array.isArray(runs) && runs.length > 0) {
+    jobsByRunId.set(runsNewestFirst(runs)[0].id, { status: jobsStatus, jobs });
+  }
+  return evaluateJobFreshness({
+    jobName: PRODUCTION_JOB_NAME,
+    workflowFile: WORKFLOW_FILE,
+    staleAfterMs: STALE_AFTER_MS,
+    hungAfterMs: HUNG_AFTER_MS,
+    timeoutMs: JOB_TIMEOUT_MS,
+    runsStatus,
+    runs,
+    jobsByRunId,
+    now,
   });
 }
 
-describe("evaluateDumpFreshness", () => {
+describe("the verdict for this watch", () => {
   it("passes a success younger than 36h", () => {
     const verdict = evaluate();
     assert.equal(verdict.ok, true);
@@ -89,6 +115,19 @@ describe("evaluateDumpFreshness", () => {
           completed_at: hoursAgo(1),
         },
       ],
+      olderJobs: {
+        1: {
+          status: 200,
+          jobs: [
+            {
+              name: PRODUCTION_JOB_NAME,
+              status: "completed",
+              conclusion: "failure",
+              completed_at: hoursAgo(16),
+            },
+          ],
+        },
+      },
     });
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /concluded failure/);
@@ -134,9 +173,13 @@ describe("evaluateDumpFreshness", () => {
     }
   });
 
-  it("passes an in-flight job younger than 3h", () => {
+  it("passes an in-flight job younger than 3h when a success within 36h backs it", () => {
     const verdict = evaluate({
-      runs: [{ id: 1, status: "in_progress", created_at: hoursAgo(1) }],
+      runs: [
+        { id: 1, status: "in_progress", created_at: hoursAgo(1) },
+        { id: 0, status: "completed", created_at: hoursAgo(16.2) },
+      ],
+      olderJobs: { 0: { status: 200, jobs: [successJob()] } },
       jobs: [
         {
           name: PRODUCTION_JOB_NAME,
@@ -170,7 +213,11 @@ describe("evaluateDumpFreshness", () => {
 
   it("treats a queued run with no jobs yet as in-flight under 3h", () => {
     const verdict = evaluate({
-      runs: [{ id: 1, status: "queued", created_at: hoursAgo(0.5) }],
+      runs: [
+        { id: 1, status: "queued", created_at: hoursAgo(0.5) },
+        { id: 0, status: "completed", created_at: hoursAgo(16.2) },
+      ],
+      olderJobs: { 0: { status: 200, jobs: [successJob()] } },
       jobs: [],
     });
     assert.equal(verdict.ok, true);
@@ -298,6 +345,103 @@ describe("readDumpFreshness", () => {
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /unreadable \(HTTP 500\)/);
     assert.equal(calls.length, 1);
+  });
+});
+
+// #2332, on this watch: the newest run was cancelled, so the verdict rests
+// on an earlier run of this watch's own job. The rules, and how far back the
+// reader looks, are tested in backup-job-freshness.test.mjs.
+describe("readDumpFreshness: an earlier run backs a cancelled newest run", () => {
+  function routes({ earlier }) {
+    return [
+      {
+        method: "GET",
+        path: `/actions/workflows/${WORKFLOW_FILE}/runs`,
+        body: {
+          workflow_runs: [
+            { id: 99, status: "completed", conclusion: "cancelled", created_at: hoursAgo(2), updated_at: hoursAgo(2) },
+            { id: 98, status: "completed", created_at: hoursAgo(16.2), updated_at: earlier.completed_at },
+          ],
+        },
+      },
+      {
+        method: "GET",
+        path: "/actions/runs/99/jobs",
+        body: { jobs: [{ name: PRODUCTION_JOB_NAME, status: "completed", conclusion: "cancelled", completed_at: hoursAgo(1.5) }] },
+      },
+      { method: "GET", path: "/actions/runs/98/jobs", body: { jobs: [earlier] } },
+    ];
+  }
+
+  it("passes, without closing the alert, on this job's success within 36h", async () => {
+    const { fetchImpl, calls } = makeFetchMock(routes({ earlier: successJob() }));
+    const verdict = await readDumpFreshness({ token: "tok", repo: "org/repo", fetchImpl, now: NOW });
+    assert.equal(verdict.ok, true);
+    assert.equal(verdict.fresh, false);
+    assert.match(verdict.reason, new RegExp(`concluded cancelled; an earlier ${PRODUCTION_JOB_NAME} succeeded 16h ago`));
+    assert.equal(calls.length, 3);
+  });
+
+  it("fails when the earlier success belongs to another job", async () => {
+    const other = { ...successJob(), name: `${PRODUCTION_JOB_NAME}-other` };
+    const { fetchImpl } = makeFetchMock(routes({ earlier: other }));
+    const verdict = await readDumpFreshness({ token: "tok", repo: "org/repo", fetchImpl, now: NOW });
+    assert.equal(verdict.ok, false);
+  });
+});
+
+// This watch's own windows and timeout reach the shared rules. The rules are
+// tested with their own values in backup-job-freshness.test.mjs; these prove
+// the script passes its constants, not someone else's.
+describe("readDumpFreshness: this watch's windows", () => {
+  function read(runs, jobsById) {
+    const { fetchImpl } = makeFetchMock([
+      { method: "GET", path: `/actions/workflows/${WORKFLOW_FILE}/runs`, body: { workflow_runs: runs } },
+      ...Object.entries(jobsById).map(([id, jobs]) => ({ method: "GET", path: `/actions/runs/${id}/jobs`, body: { jobs } })),
+    ]);
+    return readDumpFreshness({ token: "tok", repo: "org/repo", fetchImpl, now: NOW });
+  }
+
+  it("fails a newest success older than 36h", async () => {
+    const verdict = await read([{ id: 99, status: "completed", created_at: hoursAgo(40.2) }], { 99: [successJob({ hours: 40 })] });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /older than 36h/);
+  });
+
+  it("fails a job in flight for more than 3h", async () => {
+    const verdict = await read(
+      [{ id: 99, status: "in_progress", created_at: hoursAgo(4) }],
+      { 99: [{ name: PRODUCTION_JOB_NAME, status: "in_progress", conclusion: null, started_at: hoursAgo(4) }] },
+    );
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /hung for more than 3h/);
+  });
+
+  it("fails a job cancelled at this watch's timeout, and backs one cancelled well before it", async () => {
+    const cancelledAfter = (ms) => ({
+      name: PRODUCTION_JOB_NAME,
+      status: "completed",
+      conclusion: "cancelled",
+      started_at: new Date(NOW - HOUR - ms).toISOString(),
+      completed_at: new Date(NOW - HOUR).toISOString(),
+    });
+    const runs = [
+      { id: 99, status: "completed", conclusion: "cancelled", created_at: hoursAgo(2) },
+      { id: 98, status: "completed", created_at: hoursAgo(16.2), updated_at: hoursAgo(16) },
+    ];
+    const timedOut = await read(runs, { 99: [cancelledAfter(JOB_TIMEOUT_MS)], 98: [successJob()] });
+    assert.equal(timedOut.ok, false);
+    assert.match(timedOut.reason, new RegExp(`hit its ${JOB_TIMEOUT_MS / 60000}-minute timeout`));
+    for (const ms of [JOB_TIMEOUT_MS / 3, JOB_TIMEOUT_MS - 5 * 60 * 1000]) {
+      const early = await read(runs, { 99: [cancelledAfter(ms)], 98: [successJob()] });
+      assert.equal(early.ok, true, `cancelled after ${ms / 60000} minutes`);
+    }
+  });
+
+  it("JOB_TIMEOUT_MS is the job's timeout-minutes in db-backup.yml", () => {
+    const job = workflowJobs(join(WORKFLOWS_DIR, "db-backup.yml")).find((j) => j.jobId === PRODUCTION_JOB_NAME);
+    assert.ok(job, `${PRODUCTION_JOB_NAME} job not found in db-backup.yml`);
+    assert.equal(Number(job.keys.get("timeout-minutes")) * 60 * 1000, JOB_TIMEOUT_MS);
   });
 });
 
@@ -473,6 +617,12 @@ export function scriptPinProblems(source) {
   }
   if (!/if \(!verdict\.fresh\)/.test(source)) {
     problems.push("in-flight must not close the alert");
+  }
+  if (!/per_page=\$\{RUNS_PER_PAGE\}/.test(source)) {
+    problems.push("runs GET must list RUNS_PER_PAGE runs from the shared lib");
+  }
+  if (!/verdictLogLine\(verdict\)/.test(source)) {
+    problems.push("main() must print through verdictLogLine, so a backed pass shows as a warning");
   }
   return problems;
 }
@@ -669,6 +819,18 @@ describe("watchdog mutations", () => {
       problems.some((problem) => problem.includes("npm ci")),
       problems.join("; "),
     );
+  });
+
+  it("hard-coding the runs page size fails", () => {
+    const problems = scriptPinProblems(script.replace("per_page=${RUNS_PER_PAGE}", "per_page=10"));
+    assert.ok(problems.some((problem) => problem.includes("RUNS_PER_PAGE")), problems.join("; "));
+  });
+
+  it("printing the verdict by hand fails", () => {
+    const problems = scriptPinProblems(
+      script.replace("verdictLogLine(verdict)", "`✅ ${verdict.reason}`"),
+    );
+    assert.ok(problems.some((problem) => problem.includes("verdictLogLine")), problems.join("; "));
   });
 
   it("dropping the in-flight fresh gate fails", () => {
