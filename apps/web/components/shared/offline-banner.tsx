@@ -1,47 +1,12 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
-import {
-  OFFLINE_BANNER_HEIGHT_VAR,
-  OFFLINE_BANNER_ID,
-} from "@/components/shared/offline-banner-focus";
+import { OFFLINE_BANNER_ID } from "@/components/shared/offline-banner-focus";
 import { WifiOff, Zap } from "lucide-react";
-
-export {
-  OFFLINE_BANNER_HEIGHT_VAR,
-  OFFLINE_BANNER_ID,
-  focusOfflineBanner,
-} from "@/components/shared/offline-banner-focus";
 
 export function OfflineBanner() {
   const { state, isOnline } = useNetwork();
-  const bannerRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    if (isOnline) {
-      root.style.removeProperty(OFFLINE_BANNER_HEIGHT_VAR);
-      return;
-    }
-    const node = bannerRef.current;
-    if (!node) return;
-
-    const publishHeight = () => {
-      root.style.setProperty(
-        OFFLINE_BANNER_HEIGHT_VAR,
-        `${node.getBoundingClientRect().height}px`,
-      );
-    };
-    publishHeight();
-    const observer = new ResizeObserver(publishHeight);
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-      root.style.removeProperty(OFFLINE_BANNER_HEIGHT_VAR);
-    };
-  }, [isOnline]);
 
   if (isOnline) return null;
 
@@ -79,8 +44,8 @@ export function OfflineBanner() {
       message: "You're offline. Showing cached data.",
       /*
        * Stays on the SOLID `--destructive`, not the `--destructive-text` lift.
-       * The banner is seated on `--background` (the sticky wrapper paints
-       * `bg-background/95`), and danger on its own 13% tint over that step
+       * The banner is seated on `--background` (the pill paints an opaque
+       * `bg-background` under the tint), and danger on its own 13% tint over that step
        * measures 4.850:1 — clear of the gate. The lift is for where the drawn
        * tone actually misses, which on this ladder is `--surface-1` (4.472),
        * `--card` (4.222) and `--popover` (3.817). Applying it here would
@@ -97,20 +62,43 @@ export function OfflineBanner() {
     className,
   } = config[state as "DEGRADED" | "OFFLINE"];
 
+  /*
+   * An overlay, never a row in the page (#2244). This banner used to be a
+   * `sticky` block in flow above the dashboard shell, so every state change
+   * after paint (and DEGRADED flaps on a single failed `/health` probe) moved
+   * the nav, the top bar and every page title down by its height and back up
+   * again on recovery. No reservation made before paint can fix that, because
+   * the state arrives later, so the banner takes no layout space at all.
+   *
+   * It floats as a centred pill: below the 48px top bar while the dashboard
+   * shell is mounted, which is `connection-state.md`'s "top of the content
+   * area (below header bar)", and at the top of the viewport on the pre-auth
+   * routes, which have no bar. The shell marks itself with
+   * `data-dashboard-shell` (`DASHBOARD_SHELL_ATTR`) rather than this component
+   * asking the router,
+   * because a CSS `:has()` rule is settled before first paint and a pathname
+   * check is one more list of routes to keep in step.
+   *
+   * The full-width wrapper is `pointer-events-none` so the strip beside the
+   * pill never eats a click meant for the page under it. `z-40` keeps it above
+   * content and under dialogs and sheets (`z-50`), which dim it like everything
+   * else behind them.
+   */
   return (
-    <div
-      ref={bannerRef}
-      id={OFFLINE_BANNER_ID}
-      tabIndex={-1}
-      className={`sticky top-0 z-40 bg-background ${FOCUS_RING_ALWAYS}`}
-      role="alert"
-      aria-live="polite"
-    >
+    <div className="pointer-events-none fixed inset-x-0 top-2 z-40 flex justify-center px-4 [html:has([data-dashboard-shell])_&]:top-14">
       <div
-        className={`flex items-center gap-2 px-4 py-2 text-sm border-b animate-slide-down ${className}`}
+        id={OFFLINE_BANNER_ID}
+        tabIndex={-1}
+        className={`pointer-events-auto max-w-full rounded-lg bg-background shadow-md animate-slide-down ${FOCUS_RING_ALWAYS}`}
+        role="alert"
+        aria-live="polite"
       >
-        <Icon className="h-4 w-4 shrink-0" />
-        <span>{message}</span>
+        <div
+          className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${className}`}
+        >
+          <Icon className="h-4 w-4 shrink-0" />
+          <span>{message}</span>
+        </div>
       </div>
     </div>
   );

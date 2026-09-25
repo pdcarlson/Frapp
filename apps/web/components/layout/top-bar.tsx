@@ -7,7 +7,6 @@ import { FindBar } from "@/components/layout/find-bar";
 import { AskPill } from "@/components/layout/ask-pill";
 import { AccountMenu } from "@/components/layout/account-menu";
 import { NotificationsGlyph } from "@/components/layout/nav-glyphs";
-import { DASHBOARD_HEADER_STICKY_CLASS } from "@/components/shared/offline-banner-focus";
 
 /**
  * The 48px top bar: find, notifications, Ask, account.
@@ -26,9 +25,12 @@ import { DASHBOARD_HEADER_STICKY_CLASS } from "@/components/shared/offline-banne
  * the empty cell, walks the find field off-center as the right cluster changes
  * width.
  *
- * `DASHBOARD_HEADER_STICKY_CLASS` rather than a bare `sticky top-0`: the header
- * has to sit *under* the OFFLINE/DEGRADED banner instead of covering the only
- * connection signal the app has (#1746).
+ * Not `sticky`. The column this bar heads never scrolls (`<main>` does), so
+ * there is nothing to stick to, and the connection banner floats below the bar
+ * rather than competing with it for `top: 0` (#1746, #2244). No `z-index`
+ * either: a positioned, z-indexed bar would be a stacking context capping the
+ * find results' `z-50` at the bar's level, and the banner (`z-40`) floats
+ * right where those results open.
  */
 
 type TopBarProps = {
@@ -50,10 +52,7 @@ export function TopBar({
 }: TopBarProps) {
   return (
     <header
-      className={cn(
-        DASHBOARD_HEADER_STICKY_CLASS,
-        "flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface-1 px-3",
-      )}
+      className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface-1 px-3"
     >
       {/*
         Left cell. Below `lg` it holds the drawer trigger, which is the only

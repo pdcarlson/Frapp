@@ -109,15 +109,17 @@ export function DashboardShell({
 
   return (
     /*
-      Height is the viewport MINUS the offline banner, not a flat `h-screen`.
-      `OfflineBanner` renders as a sibling above this shell in the root layout
-      and publishes its own height as `--offline-banner-height` (0px when it is
-      unmounted). A flat 100vh here would add the banner's height to the page
-      the moment the app goes offline, pushing the bottom of the shell below the
-      fold and giving the body a scrollbar it otherwise never has (#1746 is the
-      same banner, from the other direction).
+      A flat viewport height. The connection banner floats over the page
+      (`offline-banner.tsx`) and takes no layout space, so nothing here makes
+      room for it. This used to subtract the banner's published height, and
+      that is exactly what moved the whole shell down every time the state
+      left ONLINE (#2244). `data-dashboard-shell` is how the banner knows to sit
+      below the top bar instead of over it.
     */
-    <div className="flex h-[calc(100vh_-_var(--offline-banner-height,0px))] overflow-hidden bg-background">
+    <div
+      data-dashboard-shell=""
+      className="flex h-screen overflow-hidden bg-background"
+    >
       <ChapterWizardGate />
       {/* A member who hasn't accepted the current Terms (#2302). */}
       <TermsPromptGate />

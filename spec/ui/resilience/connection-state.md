@@ -184,6 +184,11 @@ system's ban on that idiom. So the visual signal here is the cursor, and the
 *explanation* is carried by `aria-describedby` and the note, not by dimming.
 
 Banner behavior:
+- Never takes layout space on web. It is a fixed overlay that floats over the page, so
+  a state change never moves the shell, the top bar or a page title (#2244; it used to
+  sit in flow above the shell and push everything down). It floats below the top bar
+  while the dashboard shell is mounted, and at the top of the viewport on routes with
+  no bar.
 - Appears at the top of the content area (below header bar). **Mobile deviates,
   deliberately:** the banner is mounted above the navigator in `app/_layout.tsx`, not
   below each screen's header. "Below the header bar" is a web-shaped rule written for
