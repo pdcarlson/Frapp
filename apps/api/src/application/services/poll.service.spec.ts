@@ -906,6 +906,52 @@ describe('PollService', () => {
       );
     });
 
+    it('degrades a failed user-vote read to empty userVotes rather than failing the list', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+      mockVoteRepo.findUserVotesByMessagesForUser.mockRejectedValue(
+        new Error('user votes down'),
+      );
+
+      const result = await service.listPolls('ch-1', { userId: 'user-2' });
+
+      // `[]`, not absent: a row with no `userVotes` field reads as a caller
+      // who was never asked about, where `[]` is the honest "unknown, none
+      // shown" this degrade has always served.
+      expect(result).toHaveLength(1);
+      expect(result[0].userVotes).toEqual([]);
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('userVotes omitted'),
+        expect.stringContaining('user votes down'),
+      );
+    });
+
+    // #2495 moved the block-list read into the same round as the tally and
+    // user-vote reads. Pinned so a sequential rewrite, which would pass every
+    // other test, cannot quietly bring back the extra round trips.
+    it('starts the block-list, tally and user-vote reads together', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      let releaseBlocks: (ids: string[]) => void = () => undefined;
+      mockChatBlocks.listBlockedUserIds.mockReturnValue(
+        new Promise<string[]>((resolve) => {
+          releaseBlocks = resolve;
+        }),
+      );
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+      mockVoteRepo.findUserVotesByMessagesForUser.mockResolvedValue([]);
+
+      const pending = service.listPolls('ch-1', { userId: 'user-2' });
+      // Let the channel-access filter settle; the block list stays pending.
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalled();
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalled();
+      expect(mockVoteRepo.findUserVotesByMessagesForUser).toHaveBeenCalled();
+
+      releaseBlocks([]);
+      await expect(pending).resolves.toHaveLength(1);
+    });
+
     it('logs when the batched vote aggregation fails and returns zero tallies', async () => {
       mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
       const batchError = new Error('postgrest timeout');

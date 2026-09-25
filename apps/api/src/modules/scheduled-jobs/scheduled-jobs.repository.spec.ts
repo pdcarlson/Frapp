@@ -254,6 +254,23 @@ describe('ScheduledJobsRepository', () => {
   });
 
   describe('findExpiredPollsPendingNotice', () => {
+    // The fixtures below carry `expires_at` at the top level, as the alias
+    // makes PostgREST return it, and the mock ignores the select list. So the
+    // alias itself is pinned here: selecting `metadata` instead would leave
+    // `row.expires_at` undefined in production and drop every poll as malformed.
+    it('selects expires_at out of metadata by alias, not the whole jsonb', async () => {
+      const { repo, supabase } = await buildRepo([{ data: [], error: null }]);
+
+      await repo.findExpiredPollsPendingNotice(
+        new Date('2026-08-04T12:00:00Z'),
+        new Date('2026-08-05T12:00:00Z'),
+      );
+
+      expect(supabase.builder.select).toHaveBeenCalledWith(
+        'id, channel_id, expires_at:metadata->>expires_at, chat_channels!inner(chapter_id)',
+      );
+    });
+
     it('extracts chapter_id and expires_at through the chat_channels embed', async () => {
       const { repo } = await buildRepo([
         {
