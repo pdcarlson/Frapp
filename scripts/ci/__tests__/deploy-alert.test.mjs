@@ -10,8 +10,6 @@ import {
   ALERT_ISSUE_TITLE,
   DEPLOY_API_CONFIG,
   DEPLOY_VERCEL_STAGING_CONFIG,
-  OUTCOME_COPY,
-  VERIFY_DEPLOYMENTS_CONFIG,
   alertJobNames,
   buildAlertCommentBody,
   buildAlertIssueBody,
@@ -19,15 +17,13 @@ import {
   buildRunSummary,
   classifyDeployOutcome,
   findAlertIssues,
+  isSuperseded,
   raiseAlert,
-  outcomeCopy,
-  readBranchTip,
-  readJobOutputs,
   readJobResults,
+  readPlan,
   resolveAlert,
   resolveAlertConfig,
   runDeployAlert,
-  unrecognisedVerdicts,
 } from "../deploy-alert.mjs";
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
@@ -37,6 +33,22 @@ import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 //     failed at the Infisical injection step (run 31278413630);
 //   * 46 runs where every deploy/migrate job skipped and the run reported green
 //     (run 31278674931) — the "green because empty" case.
+
+/**
+ * A path-gated config whose no-op is benign: Deploy API's shape before #2505,
+ * when `check-changes` skipped the deploy jobs on docs-only pushes. No live
+ * config is shaped like this any more, but `noOpIsUnexpected: false` and the
+ * gate rows are still supported, so they are tested on a stand-in.
+ */
+const GATED_CONFIG = {
+  ...DEPLOY_API_CONFIG,
+  name: "gated-stand-in",
+  noOpIsUnexpected: false,
+  noOpReason: "the changed-path gate skipped every migrate and deploy job",
+  noOpNote: "The changed-path gate found nothing to deploy. See issue #763.",
+  gateOutputRows: [{ label: "API paths changed", output: "api-changed" }],
+  planOutput: undefined,
+};
 
 /** `toJSON(needs)` for a run where the path gate skipped everything. */
 function noOpNeeds() {
@@ -88,18 +100,13 @@ const CLOSED_ALERT = {
  * Minimal GitHub API stub. `routes` maps "METHOD /path-prefix" to a response
  * body (or a function of the request). Records every call for assertions.
  */
-function makeFetchStub({ issues = [], failCreate = false, tip } = {}) {
+function makeFetchStub({ issues = [], failCreate = false } = {}) {
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
     const method = options.method ?? "GET";
     const path = url.replace("https://api.github.com", "");
     const body = options.body ? JSON.parse(options.body) : null;
     calls.push({ method, path, body });
-
-    // `tip`: the commit the branch points at, for the observer's tip check.
-    if (method === "GET" && path.startsWith("/repos/o/r/git/ref/heads/") && tip !== undefined) {
-      return jsonResponse(200, { object: { sha: tip } });
-    }
 
     if (method === "GET" && path.startsWith("/repos/o/r/issues?")) {
       return jsonResponse(200, issues);
@@ -175,9 +182,17 @@ test("a failed deploy job classifies as failed", () => {
 });
 
 test("all-skipped classifies as no-op, not as a deploy", () => {
-  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()), config: GATED_CONFIG });
   assert.equal(result.outcome, "no-op");
   assert.deepEqual(result.deployed, []);
+});
+
+// Since #2505 both of Deploy API's jobs run on every eligible push, so a run
+// where neither did means their conditions drifted: escalate, don't shrug.
+test("Deploy API escalates an all-skipped run to a failure", () => {
+  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.escalated, true);
 });
 
 test("check-changes succeeding is not itself a deploy", () => {
@@ -242,6 +257,7 @@ test("the run summary distinguishes a no-op from a deploy at a glance", () => {
     runUrl: "https://example.test/run/1",
     gateOutputs: { "api-changed": false, "migrations-changed": false },
     gateSucceeded: true,
+    config: GATED_CONFIG,
   });
   assert.match(summary, /\| API paths changed \| no \|/);
   assert.match(summary, /NO-OP — nothing deployed/);
@@ -262,7 +278,7 @@ test("the failed summary names the failing job and the commit", () => {
     gateOutputs: { "api-changed": true, "migrations-changed": false },
     gateSucceeded: true,
   });
-  assert.match(summary, /FAILED — nothing deployed/);
+  assert.match(summary, /FAILED — not confirmed deployed/);
   assert.match(summary, /deploy-staging/);
   assert.match(summary, /4de96af/);
 });
@@ -288,10 +304,10 @@ test("a failed gate reports the path flags as unknown, never as 'no'", async () 
       summary = text;
     },
     logger: silentLogger,
+    config: GATED_CONFIG,
   });
 
   assert.match(summary, /\| API paths changed \| unknown \|/);
-  assert.match(summary, /\| Migration paths changed \| unknown \|/);
   assert.doesNotMatch(summary, /paths changed \| no \|/);
 });
 
@@ -449,7 +465,7 @@ test("a failed run writes the summary, annotates as an error, and raises the ale
 
   assert.equal(result.outcome, "failed");
   assert.equal(result.alert.action, "created");
-  assert.match(summary, /FAILED — nothing deployed/);
+  assert.match(summary, /FAILED — not confirmed deployed/);
   assert.ok(lines.some((line) => line.startsWith("::error::")));
   assert.ok(calls.some((c) => c.method === "POST" && c.path === "/repos/o/r/issues"));
 });
@@ -492,6 +508,7 @@ test("a no-op run never closes an open alert", async () => {
       summary = text;
     },
     logger,
+    config: GATED_CONFIG,
   });
 
   assert.equal(result.outcome, "no-op");
@@ -519,6 +536,7 @@ test("a no-op run does not annotate as an error", async () => {
     fetchImpl,
     writeSummary: () => {},
     logger,
+    config: GATED_CONFIG,
   });
   assert.ok(!lines.some((line) => line.startsWith("::error::")));
 });
@@ -587,7 +605,6 @@ test("resolveAlertConfig resolves every name and refuses everything else", () =>
     resolveAlertConfig("deploy-vercel-staging"),
     DEPLOY_VERCEL_STAGING_CONFIG,
   );
-  assert.equal(resolveAlertConfig("verify-deployments"), VERIFY_DEPLOYMENTS_CONFIG);
 
   // A typo'd ALERT_CONFIG must be loud.
   assert.throws(() => resolveAlertConfig("deploy-vercel"), /ALERT_CONFIG/);
@@ -612,7 +629,7 @@ test("resolveAlertConfig resolves every name and refuses everything else", () =>
   // The error names what is valid, or it is not actionable at 3am.
   assert.throws(
     () => resolveAlertConfig("nope"),
-    /deploy-api, deploy-vercel-staging, verify-deployments/,
+    /deploy-api, deploy-vercel-staging/,
   );
 });
 
@@ -743,8 +760,6 @@ test("runDeployAlert files the Vercel alert under the Vercel title", async () =>
 
   assert.equal(result.outcome, "failed");
   assert.equal(result.alert.action, "created");
-  // A deploy workflow's verdict is about what it just deployed: no tip check.
-  assert.ok(!calls.some((call) => call.path.includes("/git/ref/")), "a deploy config read the branch tip");
 
   const created = calls.find((call) => call.method === "POST" && call.path === "/repos/o/r/issues");
   assert.equal(created.body.title, DEPLOY_VERCEL_STAGING_CONFIG.alertTitle);
@@ -833,9 +848,10 @@ test("the gated config keeps a no-op benign, and never closes an open alert", as
   // The other half of the same switch. 46 of the 90 runs in #763 were
   // green-because-empty; treating those as failures would have alerted on every
   // docs-only push, and treating them as recoveries would have closed a live
-  // outage's alert. Both directions must stay wrong-proof.
-  assert.equal(DEPLOY_API_CONFIG.noOpIsUnexpected, false);
-  const { outcome } = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+  // outage's alert. Both directions must stay wrong-proof. (Deploy API itself
+  // no longer has a path gate; see "Deploy API escalates an all-skipped run".)
+  assert.equal(GATED_CONFIG.noOpIsUnexpected, false);
+  const { outcome } = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()), config: GATED_CONFIG });
   assert.equal(outcome, "no-op");
 
   const { fetchImpl, calls } = makeFetchStub({ issues: [OPEN_ALERT] });
@@ -849,6 +865,7 @@ test("the gated config keeps a no-op benign, and never closes an open alert", as
     fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
+    config: GATED_CONFIG,
   });
   assert.equal(result.alert.action, "none");
   assert.deepEqual(
@@ -974,8 +991,8 @@ test("every workflow running deploy-alert.mjs sets a known ALERT_CONFIG", () => 
   // Guards the scan itself: a path typo would make the loop below vacuous.
   assert.deepEqual(
     callers.map((c) => c.name).sort(),
-    ["deploy-api.yml", "deploy-vercel-staging.yml", "verify-deployments.yml"],
-    "expected exactly the three known callers — add the new one to this list deliberately",
+    ["deploy-api.yml", "deploy-vercel-staging.yml"],
+    "expected exactly the two known callers — add the new one to this list deliberately",
   );
 
   // Tolerates the forms a human will actually write: quoted or bare, with or
@@ -1047,10 +1064,10 @@ test("an escalated no-op explains its own job table instead of contradicting it"
 });
 
 test("escalation leaves the gated config's classify shape untouched", () => {
-  // `escalated` is spread in only when true, so a Deploy API run returns
+  // `escalated` is spread in only when true, so a benign no-op returns
   // exactly the three keys it always did. A differential harness compares these
   // objects; an unconditional key would break that parity for no benefit.
-  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()), config: GATED_CONFIG });
   assert.deepEqual(Object.keys(result).sort(), ["deployed", "failed", "outcome"]);
   assert.equal(result.outcome, "no-op");
 });
@@ -1188,181 +1205,15 @@ test("a genuine failure still reads as a failure on every surface", async () => 
   assert.doesNotMatch(issueBody, /those two have drifted apart/);
 });
 
-// ── The Verify deployments configuration (#2431) ────────────────────────────
-// The third caller, and the first that deploys nothing: `verify-render-api`
-// OBSERVES the Render deploy of the pushed commit. Two things are new and each
-// has a failure mode worth pinning. Its copy must not say "nothing was
-// deployed by this run". And its green job means two different things, a live
-// deploy or a superseded one, told apart only by the verifier's published
-// `outcome`, so only the first may close an open alert.
-
-/** `toJSON(needs)` for a Verify deployments run, as GitHub renders it. */
-function verifyNeeds(result, outcome) {
-  return {
-    "verify-render-api": {
-      result,
-      outputs: outcome === undefined ? {} : { outcome },
-    },
-  };
-}
-
-const VERIFY_OPEN_ALERT = {
-  number: 960,
-  state: "open",
-  title: VERIFY_DEPLOYMENTS_CONFIG.alertTitle,
-};
-
-test("every configuration names a kind the copy table knows", () => {
-  for (const config of Object.values(ALERT_CONFIGS)) {
-    assert.ok(Object.hasOwn(OUTCOME_COPY, config.kind), `${config.name} kind ${config.kind}`);
-  }
-  assert.equal(DEPLOY_API_CONFIG.kind, "deploy");
-  assert.equal(DEPLOY_VERCEL_STAGING_CONFIG.kind, "deploy");
-  assert.equal(VERIFY_DEPLOYMENTS_CONFIG.kind, "observer");
-  // A typo'd kind must be loud, not fall back to deploy copy.
-  assert.throws(() => outcomeCopy({ name: "x", kind: "deployer" }), /unknown kind "deployer"/);
-  assert.throws(() => outcomeCopy({ name: "x", kind: "toString" }), /unknown kind/);
-});
-
-test("the Verify deployments config watches the job the workflow runs", () => {
-  assert.equal(VERIFY_DEPLOYMENTS_CONFIG.gateJob, null);
-  assert.deepEqual(alertJobNames(VERIFY_DEPLOYMENTS_CONFIG), ["verify-render-api"]);
-  assert.deepEqual(VERIFY_DEPLOYMENTS_CONFIG.deployedOutput, {
-    output: "outcome",
-    value: "success",
-    neutral: ["neutral"],
-  });
-  // Title is the lookup key: renaming it orphans an open alert. Pinned so a
-  // tidy-up has to come through here.
-  assert.equal(
-    VERIFY_DEPLOYMENTS_CONFIG.alertTitle,
-    "Render staging deploy is failing — frapp-api-staging is not confirmed live on main",
-  );
-  assert.deepEqual(VERIFY_DEPLOYMENTS_CONFIG.alertLabels, [ALERT_LOOKUP_LABEL, "area:ci", "P1"]);
-});
-
-test("readJobOutputs flattens outputs and reads a missing job as {}", () => {
-  const outputs = readJobOutputs(verifyNeeds("success", "neutral"), VERIFY_DEPLOYMENTS_CONFIG);
-  assert.deepEqual(outputs, { "verify-render-api": { outcome: "neutral" } });
-  assert.deepEqual(readJobOutputs({}, VERIFY_DEPLOYMENTS_CONFIG), { "verify-render-api": {} });
-});
-
-test("only a published `success` verdict makes a green verify job a deploy", () => {
-  const config = VERIFY_DEPLOYMENTS_CONFIG;
-  const classify = (needs) =>
-    classifyDeployOutcome({
-      jobResults: readJobResults(needs, config),
-      jobOutputs: readJobOutputs(needs, config),
-      config,
-    });
-
-  assert.deepEqual(classify(verifyNeeds("success", "success")), {
-    outcome: "deployed",
-    failed: [],
-    deployed: ["verify-render-api"],
-  });
-  // Superseded (`canceled` / `deactivated`): green, and proves nothing.
-  assert.equal(classify(verifyNeeds("success", "neutral")).outcome, "no-op");
-  // Broken wiring: green, no verdict. Must not read as a recovery.
-  assert.equal(classify(verifyNeeds("success", undefined)).outcome, "no-op");
-  assert.equal(classify(verifyNeeds("success", "")).outcome, "no-op");
-  // Failure reads only the job result, so it raises even with no output.
-  assert.deepEqual(classify(verifyNeeds("failure", undefined)), {
-    outcome: "failed",
-    failed: ["verify-render-api"],
-    deployed: [],
-  });
-  assert.equal(classify(verifyNeeds("failure", "failure")).outcome, "failed");
-});
-
-test("a config without deployedOutput still counts a green deploy job, outputs or not", () => {
-  // The two deploy configs publish no verdict; the new parameter must not
-  // turn their every success into a no-op.
-  assert.equal(
-    classifyDeployOutcome({ jobResults: readJobResults(deployedNeeds()) }).outcome,
-    "deployed",
-  );
-  assert.equal(
-    classifyDeployOutcome({
-      jobResults: { deploy: "success" },
-      jobOutputs: { deploy: { outcome: "neutral" } },
-      config: DEPLOY_VERCEL_STAGING_CONFIG,
-    }).outcome,
-    "deployed",
-  );
-});
-
-test("unrecognisedVerdicts flags a green verify job with no recognised verdict", () => {
-  const config = VERIFY_DEPLOYMENTS_CONFIG;
-  const check = (needs) =>
-    unrecognisedVerdicts({
-      jobResults: readJobResults(needs, config),
-      jobOutputs: readJobOutputs(needs, config),
-      config,
-    });
-  assert.deepEqual(check(verifyNeeds("success", undefined)), ["verify-render-api"]);
-  assert.deepEqual(check(verifyNeeds("success", "SUCCESS")), ["verify-render-api"]);
-  assert.deepEqual(check(verifyNeeds("success", "success")), []);
-  assert.deepEqual(check(verifyNeeds("success", "neutral")), []);
-  // A failed job is the failure path's business, not a wiring warning.
-  assert.deepEqual(check(verifyNeeds("failure", undefined)), []);
-  // Configs without a verdict output never warn.
-  assert.deepEqual(unrecognisedVerdicts({ jobResults: readJobResults(deployedNeeds()) }), []);
-});
-
-test("the observer's copy never claims the run deployed or declined to deploy", () => {
-  const config = VERIFY_DEPLOYMENTS_CONFIG;
-  const failedHeadline = buildHeadline({
-    outcome: "failed",
-    failed: ["verify-render-api"],
-    deployed: [],
-    headBranch: "main",
-    config,
-  });
-  assert.match(failedHeadline, /^Verify deployments FAILED on `main` — verify-render-api did not succeed\./);
-  assert.match(failedHeadline, /not confirmed live/);
-  assert.doesNotMatch(failedHeadline, /Nothing was deployed by this run/);
-
-  const noOpHeadline = buildHeadline({
-    outcome: "no-op",
-    failed: [],
-    deployed: [],
-    headBranch: "main",
-    config,
-  });
-  assert.match(noOpHeadline, /confirmed NOTHING/);
-  assert.match(noOpHeadline, /superseded/);
-  assert.doesNotMatch(noOpHeadline, /declined to deploy|deployed NOTHING/);
-
-  const body = buildAlertIssueBody({
-    headline: failedHeadline,
-    failed: ["verify-render-api"],
-    headBranch: "main",
-    headSha: "4de96af",
-    runUrl: "https://example.test/run/1",
-    config,
-  });
-  assert.match(body, /## Verify deployments is failing/);
-  assert.match(body, /`\.github\/workflows\/verify-deployments\.yml`/);
-  assert.match(body, /run to reach a verdict did not find its/);
-  assert.match(body, /#2431/);
-  assert.doesNotMatch(body, /actually tried to deploy/);
-
-  const comment = buildAlertCommentBody({
-    headline: failedHeadline,
-    failed: ["verify-render-api"],
-    headBranch: "main",
-    headSha: "4de96af",
-    reopened: false,
-    config,
-  });
-  assert.match(comment, /\*\*Verify deployments failed again\.\*\*/);
-  assert.match(comment, /closes itself when a later run confirms a deploy live/);
-});
-
-test("the deploy configs' copy is unchanged by the observer split", () => {
-  // `OUTCOME_COPY.deploy` claims to hold the old wording verbatim. Pinned on
-  // the surfaces a responder reads, for both deploy configs.
+test("both configs' copy reads the same on every surface a responder reads", () => {
+  // `OUTCOME_COPY` is shared; pinned on the headline, the issue body and the
+  // comment, for both configs. Only what closes the issue differs: a Deploy
+  // API `forward` deploy succeeds without closing it (`closesOn`).
+  const closesOn = new Map([
+    [DEPLOY_API_CONFIG, "a later run for `main`'s tip deploys successfully or finds staging up to date"],
+    [DEPLOY_VERCEL_STAGING_CONFIG, "a later run deploys successfully"],
+  ]);
+  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\`]/g, "\\$&");
   for (const config of [DEPLOY_API_CONFIG, DEPLOY_VERCEL_STAGING_CONFIG]) {
     const headline = buildHeadline({
       outcome: "failed",
@@ -1371,7 +1222,7 @@ test("the deploy configs' copy is unchanged by the observer split", () => {
       headBranch: "main",
       config,
     });
-    assert.match(headline, /did not succeed\. Nothing was deployed by this run\.$/);
+    assert.match(headline, /did not succeed\. Nothing is confirmed deployed by this run; its log says which step failed\.$/);
     const body = buildAlertIssueBody({
       headline,
       failed: ["deploy"],
@@ -1383,7 +1234,7 @@ test("the deploy configs' copy is unchanged by the observer split", () => {
       body,
       new RegExp(
         `the most recent \`${config.workflowLabel}\` run that actually tried to deploy did\\nnot succeed\\. ` +
-          "It closes itself as soon as a later run deploys successfully\\.",
+          `It closes itself as soon as ${escape(closesOn.get(config))}\\.`,
       ),
     );
     const comment = buildAlertCommentBody({
@@ -1394,7 +1245,7 @@ test("the deploy configs' copy is unchanged by the observer split", () => {
       reopened: false,
       config,
     });
-    assert.match(comment, /This issue closes itself when a later run deploys successfully\._$/);
+    assert.match(comment, new RegExp(`This issue closes itself when ${escape(closesOn.get(config))}\\._$`));
   }
   assert.match(
     buildHeadline({ outcome: "no-op", failed: [], deployed: [], headBranch: "main" }),
@@ -1402,52 +1253,95 @@ test("the deploy configs' copy is unchanged by the observer split", () => {
   );
 });
 
-test("a failed verify files the Verify deployments alert, as an error, with no gate rows", async () => {
-  const config = VERIFY_DEPLOYMENTS_CONFIG;
-  const { fetchImpl, calls } = makeFetchStub({ issues: [], tip: "4de96af" });
-  const { logger, lines } = capturingLogger();
-  let summary = "";
+// ── Deploy API's plan (#2505) ───────────────────────────────────────────────
+// `deploy-staging` publishes plan-staging-deploy.mjs's verdict. A job result
+// alone can't tell a deploy from "nothing needed deploying" from "this run is
+// for an old commit", and each must be reported and alerted differently.
 
+function planNeeds(result, plan) {
+  const needs = deployedNeeds();
+  needs["deploy-staging"] = { result, outputs: plan === undefined ? {} : { plan } };
+  return needs;
+}
+
+test("a stale plan neither closes nor raises the alert, even with migrate-staging green", async () => {
+  // The case: an alert is open for the newest commit's failed build, and a
+  // re-run of an older run plans `stale`. Classifying it would count
+  // migrate-staging's and deploy-staging's success as a deploy and close it.
+  const { fetchImpl, calls } = makeFetchStub({ issues: [OPEN_ALERT] });
+  let summary = "";
   const result = await runDeployAlert({
     token: "t",
     repo: "o/r",
-    needs: verifyNeeds("failure", "failure"),
-    runUrl: "https://example.test/run/1",
+    needs: planNeeds("success", "stale"),
+    runUrl: "https://example.test/run/9",
     headBranch: "main",
-    headSha: "4de96af",
+    headSha: "0ldc0mm",
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
     },
-    logger,
-    config,
+    logger: silentLogger,
   });
-
-  assert.equal(result.outcome, "failed");
-  assert.equal(result.alert.action, "created");
-  const create = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
-  assert.equal(create.body.title, config.alertTitle);
-  assert.deepEqual([...create.body.labels].sort(), ["P1", "area:ci", ALERT_LOOKUP_LABEL].sort());
-  assert.deepEqual(create.body.assignees, [ALERT_ASSIGNEE]);
-  assert.match(create.body.body, /`verify-render-api`/);
-  assert.match(create.body.body, /4de96af/);
-  assert.ok(lines.some((line) => line.startsWith("::error::Verify deployments FAILED")));
-  assert.match(summary, /FAILED — deploy not confirmed live/);
-  assert.match(summary, /\| `verify-render-api` \| failure \|/);
-  assert.doesNotMatch(summary, /paths changed/);
+  assert.equal(result.outcome, "superseded");
+  assert.equal(result.alert.action, "none");
+  assert.equal(calls.length, 0, "a superseded run must not touch the issues API");
+  assert.match(summary, /SUPERSEDED/);
+  assert.match(summary, /\| Deploy plan \| `stale` \|/);
+  assert.doesNotMatch(summary, /DEPLOYED/);
 });
 
-test("a confirmed live deploy closes only the Verify deployments alert", async () => {
-  const config = VERIFY_DEPLOYMENTS_CONFIG;
-  const deployApiAlert = { number: 900, state: "open", title: ALERT_ISSUE_TITLE };
-  const { fetchImpl, calls } = makeFetchStub({ issues: [VERIFY_OPEN_ALERT, deployApiAlert], tip: "4de96af" });
-  let summary = "";
-
+// A queue-replaced job (GitHub cancels a pending job when a third run
+// arrives) is a failure like any other cancel. Telling it apart would rest on
+// whether GitHub publishes a cancelled job's outputs, and a hung migrate-staging
+// with no timeout would hide behind a stream of such runs.
+test("a deploy job cancelled before it planned is a failure", async () => {
+  const { fetchImpl } = makeFetchStub({ issues: [] });
   const result = await runDeployAlert({
     token: "t",
     repo: "o/r",
-    needs: verifyNeeds("success", "success"),
-    runUrl: "https://example.test/run/1",
+    needs: planNeeds("cancelled", undefined),
+    runUrl: "https://example.test/run/9",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+  });
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.alert.action, "created");
+});
+
+test("a deploy cancelled after it planned is still a failure", async () => {
+  // Cancelled mid-deploy: the commit is not confirmed live. Only a green
+  // `stale` or `forward` plan is superseded.
+  const { fetchImpl } = makeFetchStub({ issues: [] });
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: planNeeds("cancelled", "deploy"),
+    runUrl: "https://example.test/run/9",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+  });
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.alert.action, "created");
+});
+
+test("a current plan closes the alert but never claims DEPLOYED", async () => {
+  // `current` is only published for main's tip, after verifying staging serves
+  // and is ready, so it may close an alert. It deployed nothing, and the
+  // summary must say so at a glance (#763).
+  const { fetchImpl } = makeFetchStub({ issues: [OPEN_ALERT] });
+  let summary = "";
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: planNeeds("success", "current"),
+    runUrl: "https://example.test/run/9",
     headBranch: "main",
     headSha: "4de96af",
     fetchImpl,
@@ -1455,183 +1349,78 @@ test("a confirmed live deploy closes only the Verify deployments alert", async (
       summary = text;
     },
     logger: silentLogger,
-    config,
   });
-
   assert.equal(result.outcome, "deployed");
-  const patched = calls.filter((c) => c.method === "PATCH").map((c) => c.path);
-  assert.deepEqual(patched, ["/repos/o/r/issues/960"]);
-  const comment = calls.find(
-    (c) => c.method === "POST" && c.path === "/repos/o/r/issues/960/comments",
-  );
-  assert.match(comment.body.body, /\*\*Verify deployments recovered\.\*\* Closing\./);
-  assert.match(summary, /CONFIRMED LIVE/);
-  assert.match(summary, /\| `verify-render-api` \| success \(`outcome`: `success`\) \|/);
+  assert.deepEqual(result.alert.closed, [900]);
+  assert.match(summary, /UP TO DATE — nothing needed deploying/);
+  assert.match(summary, /Nothing needed deploying; staging was verified/);
+  assert.doesNotMatch(summary, /✅ \*\*DEPLOYED\*\*/);
 });
 
-test("a superseded deploy leaves an open alert exactly as it was", async () => {
-  // The case `deployedOutput` exists for. Mid-outage, an older push's deploy
-  // is cancelled by a newer one: the verify job goes green with `neutral`.
-  // Closing here would post "recovered" while the newer build is failing.
-  const config = VERIFY_DEPLOYMENTS_CONFIG;
-  const { fetchImpl, calls } = makeFetchStub({ issues: [VERIFY_OPEN_ALERT] });
-  const { logger, lines } = capturingLogger();
+test("a deploy plan that succeeds reports DEPLOYED with its plan row", async () => {
+  const { fetchImpl } = makeFetchStub({ issues: [] });
   let summary = "";
-
-  const result = await runDeployAlert({
+  await runDeployAlert({
     token: "t",
     repo: "o/r",
-    needs: verifyNeeds("success", "neutral"),
-    runUrl: "https://example.test/run/1",
+    needs: planNeeds("success", "deploy"),
+    runUrl: "https://example.test/run/9",
     headBranch: "main",
     headSha: "4de96af",
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
     },
-    logger,
-    config,
+    logger: silentLogger,
   });
-
-  assert.equal(result.outcome, "no-op");
-  assert.equal(result.alert.action, "none");
-  assert.deepEqual(
-    calls.filter((c) => c.method !== "GET"),
-    [],
-    "a superseded deploy must write nothing to the tracker",
-  );
-  assert.match(summary, /NO-OP — nothing confirmed/);
-  assert.match(summary, /\| `verify-render-api` \| success \(`outcome`: `neutral`\) \|/);
-  assert.match(summary, /not evidence that the staging API deployed/);
-  // A recognised verdict: no wiring warning, and no error annotation.
-  assert.ok(!lines.some((line) => line.startsWith("::warning::")));
-  assert.ok(!lines.some((line) => line.startsWith("::error::")));
+  assert.match(summary, /✅ \*\*DEPLOYED\*\*/);
+  assert.match(summary, /\| Deploy plan \| `deploy` \|/);
 });
 
-// An observer's verdict is about one commit. A re-run of an old failed run, or
-// a slow run finishing after a newer one, must not reopen the alert while the
-// newest deploy is live, or close it while the newest deploy is failing.
-test("a verdict on a commit main has moved past neither raises nor closes the alert", async () => {
-  for (const [needs, issues] of [
-    [verifyNeeds("failure", "failure"), []],
-    [verifyNeeds("success", "success"), [VERIFY_OPEN_ALERT]],
-  ]) {
-    const { fetchImpl, calls } = makeFetchStub({ issues, tip: "b0b0b0b" });
-    const { logger, lines } = capturingLogger();
-    const result = await runDeployAlert({
-      token: "t",
-      repo: "o/r",
-      needs,
-      runUrl: "https://example.test/run/1",
-      headBranch: "main",
-      headSha: "4de96af",
-      fetchImpl,
-      writeSummary: () => {},
-      logger,
-      config: VERIFY_DEPLOYMENTS_CONFIG,
-    });
-    assert.deepEqual(result.alert, { action: "superseded", tip: "b0b0b0b" });
-    assert.deepEqual(
-      calls.map((c) => `${c.method} ${c.path}`),
-      ["GET /repos/o/r/git/ref/heads/main"],
-      "a superseded verdict reads the tip and nothing else",
-    );
-    assert.ok(lines.some((line) => /^::notice::.*moved on to b0b0b0b/.test(line)));
-  }
-});
-
-test("an unreadable branch tip lets the verdict stand, with a warning", async () => {
-  // A failed read must not drop an alert: the stub has no tip route, so the
-  // read gets a 404.
-  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
-  const { logger, lines } = capturingLogger();
-  const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: verifyNeeds("failure", "failure"),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
-    fetchImpl,
-    writeSummary: () => {},
-    logger,
-    config: VERIFY_DEPLOYMENTS_CONFIG,
-  });
-  assert.equal(result.alert.action, "created");
-  assert.ok(calls.some((c) => c.method === "POST" && c.path === "/repos/o/r/issues"));
-  assert.ok(lines.some((line) => /^::warning::.*could not compare .*HEAD_SHA set.* tip of `main`/.test(line)));
-});
-
-test("a run with no commit to compare lets its verdict stand, with a warning", async () => {
-  // Any tip differs from "", so without this a workflow that forgot HEAD_SHA
-  // would drop every verdict.
-  const { fetchImpl, calls } = makeFetchStub({ issues: [], tip: "b0b0b0b" });
-  const { logger, lines } = capturingLogger();
-  const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: verifyNeeds("failure", "failure"),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "",
-    fetchImpl,
-    writeSummary: () => {},
-    logger,
-    config: VERIFY_DEPLOYMENTS_CONFIG,
-  });
-  assert.equal(result.alert.action, "created");
-  assert.ok(!calls.some((c) => c.path.includes("/git/ref/")));
-  assert.ok(lines.some((line) => /^::warning::.*could not compare .*HEAD_SHA unset/.test(line)));
-});
-
-test("readBranchTip reads the ref, and returns null for no branch or a bad reply", async () => {
-  const { fetchImpl, calls } = makeFetchStub({ tip: "c0ffee1" });
-  assert.equal(await readBranchTip({ token: "t", repo: "o/r", branch: "main", fetchImpl }), "c0ffee1");
-  assert.equal(calls[0].path, "/repos/o/r/git/ref/heads/main");
-  assert.equal(await readBranchTip({ token: "t", repo: "o/r", branch: "", fetchImpl }), null);
-  await readBranchTip({ token: "t", repo: "o/r", branch: "release/2.0", fetchImpl });
-  assert.equal(calls.at(-1).path, "/repos/o/r/git/ref/heads/release/2.0");
-  const { fetchImpl: noRoute } = makeFetchStub({});
-  assert.equal(await readBranchTip({ token: "t", repo: "o/r", branch: "main", fetchImpl: noRoute }), null);
-});
-
-test("the deploy configs speak for the branch they deployed and never read its tip", async () => {
-  // A deploy workflow deploys what it verifies, so its verdict is current.
-  for (const config of [DEPLOY_API_CONFIG, DEPLOY_VERCEL_STAGING_CONFIG]) {
-    assert.ok(!config.verdictAtBranchTipOnly, config.name);
-  }
-  assert.equal(VERIFY_DEPLOYMENTS_CONFIG.verdictAtBranchTipOnly, true);
-});
-
-test("a green verify with no published verdict warns and still cannot close the alert", async () => {
-  // The wiring regression this guards: the job's `outputs:` mapping or the
-  // step id drifts, every run publishes nothing, and the first failure after
-  // that leaves the alert open for good. It must be said out loud.
-  const config = VERIFY_DEPLOYMENTS_CONFIG;
-  const { fetchImpl, calls } = makeFetchStub({ issues: [VERIFY_OPEN_ALERT] });
-  const { logger, lines } = capturingLogger();
+// A run `main` moved past still deploys forward when it is newer than what
+// staging serves (the tip's own run may never deploy). Its success says
+// nothing about the tip, so it must not close the alert; its failure is a real
+// failure of the deploy path.
+test("a successful forward deploy leaves the alert alone", async () => {
+  const { fetchImpl, calls } = makeFetchStub({ issues: [OPEN_ALERT] });
   let summary = "";
-
   const result = await runDeployAlert({
     token: "t",
     repo: "o/r",
-    needs: verifyNeeds("success", undefined),
-    runUrl: "https://example.test/run/1",
+    needs: planNeeds("success", "forward"),
+    runUrl: "https://example.test/run/9",
     headBranch: "main",
     headSha: "4de96af",
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
     },
-    logger,
-    config,
+    logger: silentLogger,
   });
+  assert.equal(result.outcome, "superseded");
+  assert.equal(calls.length, 0);
+  assert.match(summary, /deployed this commit forward, but it is not main's tip/);
+  assert.match(summary, /\| Deploy plan \| `forward` \|/);
+});
 
-  assert.equal(result.outcome, "no-op");
-  assert.deepEqual(calls.filter((c) => c.method !== "GET"), []);
-  const warning = lines.find((line) => line.startsWith("::warning::"));
-  assert.ok(warning, "expected a wiring warning");
-  assert.match(warning, /verify-render-api succeeded but published no recognised `outcome` verdict/);
-  assert.match(warning, /\.github\/workflows\/verify-deployments\.yml/);
-  assert.match(summary, /success \(`outcome`: not published\)/);
+test("a failed forward deploy raises the alert", async () => {
+  const { fetchImpl } = makeFetchStub({ issues: [] });
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: planNeeds("failure", "forward"),
+    runUrl: "https://example.test/run/9",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+  });
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.alert.action, "created");
+});
+
+test("readPlan and isSuperseded ignore a config without planOutput", () => {
+  assert.equal(readPlan(planNeeds("success", "stale"), DEPLOY_VERCEL_STAGING_CONFIG), null);
+  assert.equal(isSuperseded(planNeeds("success", "stale"), DEPLOY_VERCEL_STAGING_CONFIG), false);
 });

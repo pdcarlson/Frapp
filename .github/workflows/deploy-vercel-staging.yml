@@ -24,8 +24,8 @@ name: Deploy Vercel staging
 # `verify-deployments.yml` would have been. A post-push observer has to go
 # looking for a deployment by SHA and guess whether a missing one is a problem;
 # this workflow is handed the deployment id by the thing that created it, and
-# polls that. `verify-deployments.yml` stays as it is — the Render staging
-# observer — and stays green.
+# polls that. (`deploy-api.yml` moved the staging API to the same shape in
+# #2505, and `verify-deployments.yml` was retired with it.)
 #
 # ── The one job, two projects ───────────────────────────────────────────────
 # Web and landing deploy in ONE job, sequentially, not as a matrix. `vercel

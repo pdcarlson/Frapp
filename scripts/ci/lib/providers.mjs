@@ -9,12 +9,12 @@ const VERCEL_DEPLOYMENTS_URL = (projectId, until) =>
   `https://api.vercel.com/v6/deployments?projectId=${projectId}&limit=20` +
   (until ? `&until=${until}` : "");
 
-// A single un-paginated page (20 Vercel deployments, 10 Render deploys) is
-// only the newest slice. Re-running an old verify job after enough newer
-// deployments have landed means the SHA it is looking for has fallen off
-// that page, which used to read as "no deployment exists" (#1377). Both
-// finders below page back, newest-first, bounded by `maxPages` rather than
-// walking all the way to a project's first deployment ever.
+// A single un-paginated page (20 Vercel deployments) is only the newest slice.
+// Re-running an old verify job after enough newer deployments have landed
+// means the SHA it is looking for has fallen off that page, which used to read
+// as "no deployment exists" (#1377). The finder below pages back,
+// newest-first, bounded by `maxPages` rather than walking all the way to a
+// project's first deployment ever.
 const DEFAULT_MAX_PAGES = 5;
 
 /**
@@ -29,12 +29,7 @@ const DEFAULT_MAX_PAGES = 5;
 export async function fetchJson({ url, headers, what, fetchImpl = fetch }) {
   const response = await fetchImpl(url, { headers });
   if (!response.ok) {
-    // `status` rides on the error so a caller can tell a dead key or a wrong
-    // id (a 401/403/404, which re-asking can't fix) from a provider blip
-    // without parsing the message. `verify-render-deploy.mjs` relies on it.
-    const error = new Error(`${what} returned HTTP ${response.status}`);
-    error.status = response.status;
-    throw error;
+    throw new Error(`${what} returned HTTP ${response.status}`);
   }
   return response.json();
 }
@@ -66,11 +61,6 @@ export async function fetchVercelDeployments({ apiKey, projectId, until, fetchIm
  *  sorts or cuts off deployments agree on which field wins. */
 export function vercelDeploymentCreatedAt(deployment) {
   return new Date(deployment?.createdAt ?? deployment?.created ?? 0).getTime();
-}
-
-/** Render deploy rows carry `createdAt` (ISO) on the nested `deploy`. */
-function renderDeployCreatedAt(entry) {
-  return new Date(entry?.deploy?.createdAt ?? 0).getTime();
 }
 
 /**
@@ -128,56 +118,4 @@ export async function findVercelDeploymentBySha({
   }
 
   return { deployments, matches: [], pagesSearched, oldestSeenMs, exhausted: false };
-}
-
-/**
- * Page back through Render's deploy list looking for `sha`, bounded by
- * `maxPages`. Newest-first; each row carries its own `cursor`, and the last
- * row's `cursor` is passed back as the next page's `cursor` param.
- *
- * Same `exhausted` semantics as `findVercelDeploymentBySha`.
- */
-export async function findRenderDeployBySha({
-  apiKey,
-  serviceId,
-  sha,
-  maxPages = DEFAULT_MAX_PAGES,
-  fetchImpl = fetch,
-}) {
-  const entries = [];
-  let cursor;
-  let pagesSearched = 0;
-  let oldestSeenMs = null;
-
-  while (pagesSearched < maxPages) {
-    const page = await fetchRenderDeploys({ apiKey, serviceId, cursor, fetchImpl });
-    // Same reasoning as `findVercelDeploymentBySha`: a malformed page must
-    // not silently read as "zero deploys here", which would trip the
-    // exhaustion check below and report a false "genuinely absent" verdict.
-    if (!Array.isArray(page)) {
-      throw new Error(
-        `Render API for service ${serviceId} returned an unexpected payload (page ${pagesSearched + 1})`,
-      );
-    }
-    const batch = page;
-    entries.push(...batch);
-    pagesSearched += 1;
-    for (const entry of batch) {
-      const at = renderDeployCreatedAt(entry);
-      if (oldestSeenMs === null || at < oldestSeenMs) oldestSeenMs = at;
-    }
-
-    const match = entries.find((entry) => entry?.deploy?.commit?.id === sha);
-    if (match) {
-      return { entries, match, pagesSearched, oldestSeenMs, exhausted: false };
-    }
-
-    const last = batch[batch.length - 1];
-    cursor = last?.cursor;
-    if (!cursor || batch.length === 0) {
-      return { entries, match: null, pagesSearched, oldestSeenMs, exhausted: true };
-    }
-  }
-
-  return { entries, match: null, pagesSearched, oldestSeenMs, exhausted: false };
 }

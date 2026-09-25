@@ -314,7 +314,9 @@ commit.
 
 ### Deploy verification is no longer a branch-protection question
 
-`verify-deployments.yml` polls Render after a push to `main` and emits `verify-render-api`. It used
+`verify-deployments.yml` was retired on 2026-09-25 ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)):
+each deploy workflow now verifies the deploy it created, and none of them is a pull-request check. Before
+that it polled Render after a push to `main` and emitted `verify-render-api`. It used
 to emit `verify-vercel-web` and `verify-vercel-landing` too; both were **removed on 2026-09-02** by
 [#1579](https://github.com/pdcarlson/Frapp/issues/1579), because ADR-21's Git unlink means no push
 produces a Vercel deployment for them to verify. They had failed on every push, and separately

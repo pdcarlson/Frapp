@@ -152,7 +152,9 @@ ADR called *designed, not built* is built. All four *Consequences* bullets are n
   deploy ships a commit whose CI has not finished — which is also why #1578's acceptance criterion
   naming `verify-deployments.yml` was met **in this workflow instead**: it holds the deployment id it
   created, so it verifies by id rather than searching for a deployment by SHA, and
-  `verify-deployments.yml` stays the push-triggered Render observer.
+  `verify-deployments.yml` stays the push-triggered Render observer. *(Corrected 2026-09-25:
+  `verify-deployments.yml` is retired. #2505 moved the staging API to the same deploy-and-verify-by-id
+  shape in `deploy-api.yml`.)*
 - **`gitSource` is gone.** `scripts/ci/deploy-vercel-production.mjs` was **replaced** by
   `scripts/ci/deploy-vercel.mjs`, parameterised by target rather than production-only: after this ADR
   both channels are CI's job, and carrying the difference in one argument keeps them from drifting

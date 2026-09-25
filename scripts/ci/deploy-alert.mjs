@@ -10,25 +10,27 @@
 // second copy of an upsert-one-tracking-issue script is two places for the
 // "an open alert means it is broken right now" contract to drift.
 //
-// Extended in #2431 to .github/workflows/verify-deployments.yml, which deploys
-// nothing itself: it OBSERVES the staging API deploy that Render runs, and was
-// the only workflow to go red when those builds failed for four days with no
-// alert. Its config is `kind: "observer"`, so its copy says "not confirmed
-// live" where a deploy workflow's says "nothing was deployed".
+// #2431 added a third, for `verify-deployments.yml`, which watched the staging
+// API deploy Render ran on push. #2505 retired it with that push path:
+// `deploy-api.yml` now creates the staging deploy itself and polls it, so a
+// failed Render build fails its `deploy-staging` job and raises the Deploy API
+// alert below. The observer-only machinery (a verdict read from a job output,
+// a branch-tip check, "not confirmed live" copy) went with it.
 //
 // Closes the visibility gap recorded in issue #763:
 // `Deploy API` failed 44 of 44 executing runs for 71 days and nobody noticed,
 // because three things compounded —
 //
-//   1. A skipped run is a GREEN run. The `check-changes` path gate skips the
-//      deploy/migrate jobs when a push touches neither `apps/api/` nor
-//      `supabase/migrations/`; 46 of the last 90 runs were green-because-empty,
-//      so the Actions list read "healthy" while the deploy path was 100% dead.
+//   1. A skipped run is a GREEN run. The `check-changes` path gate of the time
+//      skipped the deploy/migrate jobs when a push touched neither `apps/api/`
+//      nor `supabase/migrations/`; 46 of the last 90 runs were
+//      green-because-empty, so the Actions list read "healthy" while the
+//      deploy path was 100% dead. (No path gate is left since #2505.)
 //   2. `workflow_run` failures never land on a commit or a PR the way `CI`
 //      does, so nothing turned red anywhere a human normally looks.
 //   3. There was no notification of any kind.
 //
-// Only (1) is specific to a workflow that HAS a path gate. (2) and (3) are
+// Only (1) was specific to a workflow with a path gate. (2) and (3) are
 // properties of every `workflow_run`-triggered deploy in this repo, which is
 // exactly why `deploy-vercel-staging.yml` needed this too: it has no skip path,
 // so a failure does go red in the Actions list, but there is still no commit
@@ -39,12 +41,15 @@
 // the run and:
 //
 //   * writes a step summary + annotation that states plainly whether the run
-//     DEPLOYED something or DECLINED to deploy, so green stops being ambiguous;
+//     DEPLOYED something or DECLINED to deploy (and, for Deploy API, whether
+//     staging was UP TO DATE or the run SUPERSEDED), so green stops being
+//     ambiguous;
 //   * on failure, upserts ONE tracking issue (create / reopen / comment) rather
 //     than filing a fresh issue per failure — alert spam is how alerting gets
 //     muted;
-//   * on a later successful deploy, closes that issue, so "alert issue open"
-//     reliably means "the deploy path is broken right now".
+//   * on a later successful deploy (for Deploy API, one for main's tip),
+//     closes that issue, so "alert issue open" reliably means "the deploy path
+//     is broken right now".
 //
 // Channel choice: GitHub Issues, matching `ci-wake.mjs` / `pr-base-sync.mjs`
 // (which post to PRs) and the tracker itself (#680 retired Linear). `Deploy API`
@@ -74,7 +79,6 @@ import {
   resolveAlert as resolveAlertIssue,
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
-import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 // ── Alert issue identity ────────────────────────────────────────────────────
@@ -105,29 +109,42 @@ export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
  */
 export const DEPLOY_API_CONFIG = {
   name: "deploy-api",
-  kind: "deploy",
   workflowLabel: "Deploy API",
   workflowFile: ".github/workflows/deploy-api.yml",
   gateJob: "check-changes",
   deployJobs: ["migrate-staging", "deploy-staging"],
-  gateOutputRows: [
-    { label: "API paths changed", output: "api-changed" },
-    { label: "Migration paths changed", output: "migrations-changed" },
-  ],
+  // No rows: `check-changes` gates on eligibility alone since #2505, and
+  // `deploy-staging` plans its deploy from the commit staging serves.
+  gateOutputRows: [],
+  // `deploy-staging`'s plan (scripts/ci/plan-staging-deploy.mjs), which a job
+  // result alone can't carry:
+  //   deploy  — a deploy was attempted; the job result is the verdict.
+  //   current — nothing needed deploying, and this is main's tip: a green
+  //             job means staging was verified serving and ready, which may
+  //             close the alert, but the summary must not say DEPLOYED.
+  //   forward — not main's tip, but deployed forward: a failure raises the
+  //             alert like any deploy, but success doesn't close it, since
+  //             main's tip may still be failing. The tip's run decides.
+  //   stale   — not main's tip, and nothing deployed: its verdict is about an
+  //             old commit, so it neither raises nor closes the alert.
+  planOutput: { job: "deploy-staging", output: "plan" },
+  // What the alert issue tells its reader closes it. Not "a later successful
+  // deploy": a `forward` deploy succeeds without closing it.
+  closesOn: "a later run for `main`'s tip deploys successfully or finds staging up to date",
   alertTitle: "Deploy API is failing — pushes are not reaching the environment",
   alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
-  noOpReason: "the changed-path gate skipped every migrate and deploy job",
-  // Explicit: a no-op IS a legitimate outcome here. `check-changes` skipping
-  // the deploy jobs on a docs-only push is the gate doing its job, and 46 of
-  // the 90 runs in #763 were exactly that. It must stay reported-but-benign,
-  // and in particular must never close an open alert — skipping every job
-  // proves nothing about whether deploys work.
-  noOpIsUnexpected: false,
+  noOpReason: "no migrate or deploy job ran",
+  // A no-op was the common, benign case while a path gate skipped the deploy
+  // jobs on docs-only pushes (46 of the 90 runs in #763). Since #2505 both jobs
+  // run on every eligible push, so a no-op means the jobs' conditions have
+  // drifted from this job's, and every merge is deploying nothing. Escalated,
+  // as for Deploy Vercel staging.
+  noOpIsUnexpected: true,
   noOpNote:
-    "The changed-path gate (`check-changes`) found no changes under `apps/api/`, " +
-    "`packages/validation/`, `packages/observability/`, `packages/typescript-config/`, or `supabase/migrations/`, " +
-    "so every migrate and deploy job was skipped. **A green run of this shape is not " +
-    "evidence that deploys work** — see issue #763.",
+    "Neither `migrate-staging` nor `deploy-staging` ran, so nothing was migrated, deployed or " +
+    "verified. **A green run of this shape is not evidence that deploys work** (#763). This is " +
+    "not expected for this workflow: both jobs run on every eligible push, so reaching this " +
+    "state means their conditions have drifted from `deploy-outcome`'s.",
   whyLines: [
     "`Deploy API` is triggered by `workflow_run`, so its failures never appear as a PR check or a",
     "commit status, and runs that skip every job report green. That combination hid a 100% deploy",
@@ -153,7 +170,6 @@ export const DEPLOY_API_CONFIG = {
  */
 export const DEPLOY_VERCEL_STAGING_CONFIG = {
   name: "deploy-vercel-staging",
-  kind: "deploy",
   workflowLabel: "Deploy Vercel staging",
   workflowFile: ".github/workflows/deploy-vercel-staging.yml",
   gateJob: null,
@@ -188,139 +204,37 @@ export const DEPLOY_VERCEL_STAGING_CONFIG = {
   ],
 };
 
-/**
- * `.github/workflows/verify-deployments.yml` — added by #2431.
- *
- * The one workflow that sees the staging API deploy's OUTCOME. `Deploy API`
- * fires the Render deploy hook and polls `/health/ready`, which the old
- * instance keeps answering, so it goes green whether or not the new build ever
- * ships.
- * This workflow polls Render until the pushed commit's deploy reaches a
- * terminal state. It went red on at least ten straight pushes to `main`
- * between 2026-09-18 and 2026-09-22, every one a `build_failed`, and staging
- * served a four-day-old image while nothing alerted.
- *
- * `kind: "observer"`: it deploys nothing (Render does), so "nothing was
- * deployed by this run" would send a responder looking for a deploy step that
- * does not exist. See OUTCOME_COPY.
- *
- * No gate job, and unlike the Vercel config a no-op IS legitimate here:
- * `verify-render-api` exits 0 on a SUPERSEDED deploy (`canceled` /
- * `deactivated`) as well as on a live one. A superseded deploy proves nothing
- * about whether deploys work; closing the alert on it would announce a
- * recovery in the middle of an outage, and the next push would reopen it. So
- * `deployedOutput` counts the job as a deploy only when the verifier's
- * published verdict is `success`; `neutral` is a no-op that leaves an open
- * alert alone, and the run for the commit that superseded it reports instead.
- *
- * P1, like the Deploy API alert: same service, and a staging build failure is
- * the same Dockerfile a production deploy of that commit would build.
- *
- * `verdictAtBranchTipOnly`: a deploy workflow's run speaks for the branch it
- * just deployed, but an observer's verdict is about one fixed commit, which
- * can be old by the time it lands. A re-run of an old failed run, or a slow
- * run finishing after a newer one, would otherwise reopen the alert while the
- * newest deploy is live. So only the run for the branch's current tip raises
- * or closes it (`runDeployAlert`).
- */
-export const VERIFY_DEPLOYMENTS_CONFIG = {
-  name: "verify-deployments",
-  kind: "observer",
-  verdictAtBranchTipOnly: true,
-  workflowLabel: "Verify deployments",
-  workflowFile: ".github/workflows/verify-deployments.yml",
-  gateJob: null,
-  deployJobs: ["verify-render-api"],
-  gateOutputRows: [],
-  // The job output `verify-deployments.yml` maps from the verifier step
-  // (`writeOutcomeOutput` in verify-render-deploy.mjs). `value` proves a
-  // deploy; `neutral` values are recognised verdicts that prove nothing. Any
-  // other value on a successful job means the wiring broke, which is warned
-  // about rather than read as a recovery (see `unrecognisedVerdicts`).
-  deployedOutput: { output: "outcome", value: "success", neutral: ["neutral"] },
-  alertTitle:
-    "Render staging deploy is failing — frapp-api-staging is not confirmed live on main",
-  alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
-  noOpReason:
-    "`verify-render-api` gave no verdict, normally because Render superseded this commit's " +
-    "deploy with a newer one (`canceled` / `deactivated`)",
-  noOpIsUnexpected: false,
-  noOpNote:
-    "A superseded deploy proves nothing about whether deploys work, so this run leaves any open " +
-    "alert exactly as it was; the run for the commit that superseded it gives the verdict. " +
-    "**A green run of this shape is not evidence that the staging API deployed.**",
-  whyLines: [
-    "`Deploy API` goes green once Render accepts its deploy hook and the old instance still answers",
-    "`/health/ready`, so it cannot see a build that fails afterwards. `Verify deployments` polls Render until",
-    "the pushed commit's deploy reaches a terminal state, but a red check on a `main` commit notifies",
-    "nobody. It went red on at least ten straight pushes from 2026-09-18 to 2026-09-22, every one a",
-    "`build_failed`, and staging served a four-day-old image while nothing alerted (#2431). This issue",
-    "is the notification that was missing.",
-  ],
-};
-
 export const ALERT_CONFIGS = {
   [DEPLOY_API_CONFIG.name]: DEPLOY_API_CONFIG,
   [DEPLOY_VERCEL_STAGING_CONFIG.name]: DEPLOY_VERCEL_STAGING_CONFIG,
-  [VERIFY_DEPLOYMENTS_CONFIG.name]: VERIFY_DEPLOYMENTS_CONFIG,
 };
+
+/** When an alert closes, unless a config says otherwise (`closesOn`). */
+const DEFAULT_CLOSES_ON = "a later run deploys successfully";
 
 /**
- * The sentences that depend on what the watched workflow DOES, keyed by
- * `config.kind`. A deploy workflow deploys, so "nothing was deployed by this
- * run" is what its failure means. An observer deploys nothing itself, and the
- * same sentence of it is false in a way that misdirects: the responder goes
- * looking for a deploy step the run never had. Its failure means the deploy is
- * NOT CONFIRMED live, which also covers a verifier that could not read the
- * provider, so the copy says that and points at the run log for which.
- *
- * `deploy` holds the wording the deploy configs have always used, verbatim.
+ * The sentences every config's reports share. Kept together so the summary,
+ * the annotation and the alert issue say the same thing about one run.
  */
 export const OUTCOME_COPY = {
-  deploy: {
-    failedTail: "Nothing was deployed by this run.",
-    noOpLead: "deployed NOTHING",
-    noOpTail: "This run is green because it declined to deploy, not because a deploy succeeded.",
-    badges: {
-      failed: "❌ **FAILED — nothing deployed**",
-      deployed: "✅ **DEPLOYED**",
-      "no-op": "⏭️ **NO-OP — nothing deployed**",
-    },
-    brokenLines: (label) => [
-      `deploy path is broken: the most recent \`${label}\` run that actually tried to deploy did`,
-      "not succeed. It closes itself as soon as a later run deploys successfully.",
-    ],
-    closesWhen: "This issue closes itself when a later run deploys successfully.",
+  // "Not confirmed", not "nothing was deployed": a deploy can go live and a
+  // later check in the same job fail (Deploy API's served-commit check), and
+  // the run log says which step it was.
+  failedTail: "Nothing is confirmed deployed by this run; its log says which step failed.",
+  noOpLead: "deployed NOTHING",
+  noOpTail: "This run is green because it declined to deploy, not because a deploy succeeded.",
+  badges: {
+    failed: "❌ **FAILED — not confirmed deployed**",
+    deployed: "✅ **DEPLOYED**",
+    "no-op": "⏭️ **NO-OP — nothing deployed**",
+    superseded: "⏭️ **SUPERSEDED — a newer run decides**",
   },
-  observer: {
-    failedTail:
-      "This commit's deploy is not confirmed live: the run log says whether it failed, never " +
-      "appeared, never finished, or the provider could not be read.",
-    noOpLead: "confirmed NOTHING",
-    noOpTail: "This run is green because it had no verdict to give, not because a deploy went live.",
-    badges: {
-      failed: "❌ **FAILED — deploy not confirmed live**",
-      deployed: "✅ **CONFIRMED LIVE**",
-      "no-op": "⏭️ **NO-OP — nothing confirmed**",
-    },
-    brokenLines: (label) => [
-      `deploy path is broken: the most recent \`${label}\` run to reach a verdict did not find its`,
-      "commit's deploy live. It closes itself as soon as a later run confirms a deploy live.",
-    ],
-    closesWhen: "This issue closes itself when a later run confirms a deploy live.",
-  },
+  brokenLines: (label, closesOn = DEFAULT_CLOSES_ON) => [
+    `deploy path is broken: the most recent \`${label}\` run that actually tried to deploy did`,
+    `not succeed. It closes itself as soon as ${closesOn}.`,
+  ],
+  closesWhen: (closesOn = DEFAULT_CLOSES_ON) => `This issue closes itself when ${closesOn}.`,
 };
-
-/** The copy for a config's kind. Throws on an unknown kind, like resolveAlertConfig. */
-export function outcomeCopy(config = DEFAULT_ALERT_CONFIG) {
-  if (!Object.hasOwn(OUTCOME_COPY, config.kind)) {
-    throw new Error(
-      `Alert config ${JSON.stringify(config.name)} has unknown kind ${JSON.stringify(config.kind)}. ` +
-        `Known kinds: ${Object.keys(OUTCOME_COPY).join(", ")}.`,
-    );
-  }
-  return OUTCOME_COPY[config.kind];
-}
 
 // The default for the pure functions below, so a test or a caller reasoning
 // about the original watchdog need not thread a config through every call. It
@@ -382,34 +296,13 @@ export const ALERT_ISSUE_LABELS = DEPLOY_API_CONFIG.alertLabels;
 export const FAILED_RESULTS = new Set(["failure", "cancelled", "timed_out"]);
 
 /**
- * Whether a deploy job that SUCCEEDED proves a deploy. Always true for a config
- * without `deployedOutput`. With one, only the job output's `value` counts: for
- * `verify-render-api` a green job also covers a superseded deploy, which must
- * not close an open alert (see VERIFY_DEPLOYMENTS_CONFIG).
- */
-function provesDeploy(name, jobOutputs, config) {
-  if (!config.deployedOutput) return true;
-  const { output, value } = config.deployedOutput;
-  return jobOutputs?.[name]?.[output] === value;
-}
-
-/**
  * Pure classifier over the `needs` context's job results.
  * Returns { outcome, failed, deployed } where outcome is one of:
  *   "failed"   — at least one gate/migrate/deploy job did not succeed
  *   "deployed" — nothing failed and at least one migrate/deploy job succeeded
- *                (and, for a config with `deployedOutput`, published `value`)
- *   "no-op"    — nothing failed and nothing ran (the green-because-empty case),
- *                or what succeeded proved no deploy
- *
- * `jobOutputs` ({ jobName: outputs }, from readJobOutputs) is read only by a
- * config with `deployedOutput`.
+ *   "no-op"    — nothing failed and nothing ran (the green-because-empty case)
  */
-export function classifyDeployOutcome({
-  jobResults,
-  config = DEFAULT_ALERT_CONFIG,
-  jobOutputs = {},
-}) {
+export function classifyDeployOutcome({ jobResults, config = DEFAULT_ALERT_CONFIG }) {
   const failed = [];
   const deployed = [];
 
@@ -417,11 +310,7 @@ export function classifyDeployOutcome({
     const result = jobResults[name];
     if (FAILED_RESULTS.has(result)) {
       failed.push(name);
-    } else if (
-      result === "success" &&
-      name !== config.gateJob &&
-      provesDeploy(name, jobOutputs, config)
-    ) {
+    } else if (result === "success" && name !== config.gateJob) {
       // The gate succeeding is not a deploy — only the real deploy jobs count.
       // With `gateJob: null` this comparison is always true, which is correct:
       // such a config has no gate to exclude.
@@ -441,7 +330,7 @@ export function classifyDeployOutcome({
   // successful deploy like any other alert.
   //
   // `escalated` is reported so the summary can EXPLAIN itself. Without it the
-  // reader gets a "FAILED — nothing deployed" badge above a job table reading
+  // reader gets a "FAILED — not confirmed deployed" badge above a job table reading
   // `deploy | skipped`, which is a contradiction they cannot resolve. It is
   // spread in only when true, so the returned shape for a gated config stays
   // exactly what it was — the same trick `lib/alert-issue.mjs` uses for
@@ -467,34 +356,26 @@ export function readJobResults(needs, config = DEFAULT_ALERT_CONFIG) {
 }
 
 /**
- * Flattens `toJSON(needs)` into { jobName: outputs }. A job absent from the
- * context, or one that published nothing, reads as `{}`.
+ * The plan a config's `planOutput` job published, or null (no `planOutput`,
+ * or nothing published). See DEPLOY_API_CONFIG.
  */
-export function readJobOutputs(needs, config = DEFAULT_ALERT_CONFIG) {
-  const outputs = {};
-  for (const name of alertJobNames(config)) {
-    outputs[name] = needs?.[name]?.outputs ?? {};
-  }
-  return outputs;
+export function readPlan(needs, config = DEFAULT_ALERT_CONFIG) {
+  if (!config.planOutput) return null;
+  const { job, output } = config.planOutput;
+  const value = needs?.[job]?.outputs?.[output];
+  return typeof value === "string" && value ? value : null;
 }
 
 /**
- * Deploy jobs that succeeded but published a `deployedOutput` value that is
- * neither `value` nor a recognised `neutral` one — missing included. That is
- * broken wiring (the job's `outputs:` mapping, or the step `id` it reads), and
- * its cost is quiet: such a run can never close an alert, so the first failure
- * after the break would leave the alert open for good. Failures still raise,
- * because the `failed` path reads only job results. Always [] for a config
- * without `deployedOutput`.
+ * Whether this run must neither raise nor close the alert: its plan is
+ * `stale`, or a `forward` deploy of a non-tip commit succeeded (a failure of
+ * one still raises). Always false for a config without `planOutput`.
  */
-export function unrecognisedVerdicts({ jobResults, jobOutputs = {}, config = DEFAULT_ALERT_CONFIG }) {
-  if (!config.deployedOutput) return [];
-  const { output, value, neutral = [] } = config.deployedOutput;
-  return config.deployJobs.filter((name) => {
-    if (jobResults[name] !== "success") return false;
-    const got = jobOutputs?.[name]?.[output];
-    return got !== value && !neutral.includes(got);
-  });
+export function isSuperseded(needs, config = DEFAULT_ALERT_CONFIG) {
+  if (!config.planOutput) return false;
+  if (needs?.[config.planOutput.job]?.result !== "success") return false;
+  const plan = readPlan(needs, config);
+  return plan === "stale" || plan === "forward";
 }
 
 /** Human-readable one-liner used in the annotation and the issue body. */
@@ -504,11 +385,15 @@ export function buildHeadline({
   deployed,
   headBranch,
   escalated = false,
+  plan = null,
+  supersededReason = "",
   config = DEFAULT_ALERT_CONFIG,
 }) {
   const ref = headBranch ? `\`${headBranch}\`` : "this ref";
   const label = config.workflowLabel;
-  const copy = outcomeCopy(config);
+  if (outcome === "superseded") {
+    return `${label} on ${ref} is superseded: ${supersededReason}. It neither raises nor closes the alert; the run for the newest commit decides.`;
+  }
   if (outcome === "failed") {
     // An escalated no-op needs its own sentence. Saying "did not succeed" of a
     // job whose result is `skipped` reads as a lie next to the job table, and
@@ -516,12 +401,15 @@ export function buildHeadline({
     if (escalated) {
       return `${label} deployed NOTHING on ${ref} — ${failed.join(", ")} did not run at all, on a run that was eligible to deploy. This is a configuration defect, not a skip.`;
     }
-    return `${label} FAILED on ${ref} — ${failed.join(", ")} did not succeed. ${copy.failedTail}`;
+    return `${label} FAILED on ${ref} — ${failed.join(", ")} did not succeed. ${OUTCOME_COPY.failedTail}`;
   }
   if (outcome === "deployed") {
+    if (plan === "current") {
+      return `${label} succeeded on ${ref} — ${deployed.join(", ")} completed. Nothing needed deploying; staging was verified serving and ready.`;
+    }
     return `${label} succeeded on ${ref} — ${deployed.join(", ")} completed.`;
   }
-  return `${label} ${copy.noOpLead} on ${ref} — ${config.noOpReason}. ${copy.noOpTail}`;
+  return `${label} ${OUTCOME_COPY.noOpLead} on ${ref} — ${config.noOpReason}. ${OUTCOME_COPY.noOpTail}`;
 }
 
 /**
@@ -542,24 +430,17 @@ export function buildRunSummary({
   gateOutputs = {},
   gateSucceeded,
   escalated = false,
+  // The `planOutput` job's plan, or null. `superseded` is this script's own
+  // outcome for a `stale` run or a successful `forward` one (see runDeployAlert).
+  plan = null,
+  supersededReason = "",
   config = DEFAULT_ALERT_CONFIG,
-  // { jobName: outputs }. Read only for a config with `deployedOutput`, whose
-  // green job means "live" or "superseded" depending on it.
-  jobOutputs = {},
 }) {
   const badge = escalated
     ? "❌ **NOTHING RAN — nothing deployed**"
-    : outcomeCopy(config).badges[outcome];
-
-  // A config with `deployedOutput` shows the verdict beside a green result,
-  // since `success` alone does not say whether that job proved a deploy.
-  const resultCell = (name) => {
-    const result = jobResults[name];
-    if (!config.deployedOutput || result !== "success") return result;
-    const { output } = config.deployedOutput;
-    const verdict = jobOutputs?.[name]?.[output];
-    return `${result} (\`${output}\`: ${verdict ? `\`${verdict}\`` : "not published"})`;
-  };
+    : outcome === "deployed" && plan === "current"
+      ? "✅ **UP TO DATE — nothing needed deploying; staging verified**"
+      : OUTCOME_COPY.badges[outcome];
 
   // When the gate job itself did not succeed, its outputs are empty — which is
   // NOT the same as "no paths changed". Reporting the absent output as "no"
@@ -571,7 +452,7 @@ export function buildRunSummary({
     "",
     badge,
     "",
-    buildHeadline({ outcome, failed, deployed, headBranch, escalated, config }),
+    buildHeadline({ outcome, failed, deployed, headBranch, escalated, plan, supersededReason, config }),
     "",
     "| | |",
     "| --- | --- |",
@@ -582,12 +463,13 @@ export function buildRunSummary({
     ...config.gateOutputRows.map(
       ({ label, output }) => `| ${label} | ${changed(gateOutputs[output])} |`,
     ),
+    ...(config.planOutput ? [`| Deploy plan | ${plan ? `\`${plan}\`` : "none published"} |`] : []),
     "",
     "### Job results",
     "",
     "| Job | Result |",
     "| --- | --- |",
-    ...alertJobNames(config).map((name) => `| \`${name}\` | ${resultCell(name)} |`),
+    ...alertJobNames(config).map((name) => `| \`${name}\` | ${jobResults[name]} |`),
   ];
 
   // The note is what explains a job table reading `skipped` under a red badge,
@@ -624,9 +506,9 @@ export function buildAlertIssueBody({
     ...(escalated
       ? [
           `deploy path is broken: the most recent \`${config.workflowLabel}\` run did not even attempt a`,
-          "deploy. It closes itself as soon as a later run deploys successfully.",
+          `deploy. It closes itself as soon as ${config.closesOn ?? DEFAULT_CLOSES_ON}.`,
         ]
-      : outcomeCopy(config).brokenLines(config.workflowLabel)),
+      : OUTCOME_COPY.brokenLines(config.workflowLabel, config.closesOn)),
     "",
     `Do not claim this issue as backlog work — it carries \`${ALERT_ISSUE_LOOKUP_LABEL}\` and tracks live state,`,
     "not a unit of work. Fix the underlying failure and it resolves on its own.",
@@ -676,7 +558,7 @@ export function buildAlertCommentBody({
   if (runUrl) lines.push(`- Run: ${runUrl}`);
   lines.push(
     "",
-    `_Posted automatically by \`scripts/ci/deploy-alert.mjs\`. ${outcomeCopy(config).closesWhen}_`,
+    `_Posted automatically by \`scripts/ci/deploy-alert.mjs\`. ${OUTCOME_COPY.closesWhen(config.closesOn)}_`,
   );
   return lines.join("\n");
 }
@@ -819,13 +701,52 @@ export async function runDeployAlert({
   config = DEFAULT_ALERT_CONFIG,
 }) {
   const jobResults = readJobResults(needs, config);
-  const jobOutputs = readJobOutputs(needs, config);
+  const plan = readPlan(needs, config);
+
+  // A `stale` run, or a successful `forward` one, is not for main's tip.
+  // Classifying it would close the alert on a run that verified an old or
+  // non-tip commit (or on migrate-staging's success alone), while the tip's
+  // own run may be failing. The tip's run decides; this one only reports. A
+  // failed `forward` deploy is not superseded: it raises like any failure.
+  if (isSuperseded(needs, config)) {
+    const reason =
+      plan === "forward"
+        ? "it deployed this commit forward, but it is not main's tip, so the tip's run decides the alert"
+        : "its deploy plan is `stale`: this run is not for main's tip and deployed nothing";
+    const headline = buildHeadline({
+      outcome: "superseded",
+      failed: [],
+      deployed: [],
+      headBranch,
+      supersededReason: reason,
+      config,
+    });
+    writeSummary(
+      buildRunSummary({
+        outcome: "superseded",
+        failed: [],
+        deployed: [],
+        jobResults,
+        headBranch,
+        headSha,
+        runUrl,
+        gateOutputs: {},
+        gateSucceeded: false,
+        plan,
+        supersededReason: reason,
+        config,
+      }),
+    );
+    logger.log?.(`::notice::${headline}`);
+    return { outcome: "superseded", failed: [], deployed: [], alert: { action: "none" } };
+  }
+
   const {
     outcome,
     failed,
     deployed,
     escalated = false,
-  } = classifyDeployOutcome({ jobResults, config, jobOutputs });
+  } = classifyDeployOutcome({ jobResults, config });
   const gateOutputs = Object.fromEntries(
     config.gateOutputRows.map(({ output }) => [
       output,
@@ -844,6 +765,7 @@ export async function runDeployAlert({
     deployed,
     headBranch,
     escalated,
+    plan,
     config,
   });
 
@@ -862,46 +784,14 @@ export async function runDeployAlert({
       // no gateOutputRows, so `changed()` is never called.
       gateSucceeded: config.gateJob ? jobResults[config.gateJob] === "success" : false,
       escalated,
+      plan,
       config,
-      jobOutputs,
     }),
   );
 
   // Annotations surface at the top of the run page, above the job list.
   // `::error::` here does NOT fail the job — it only annotates.
   logger.log?.(`${outcome === "failed" ? "::error::" : "::notice::"}${headline}`);
-
-  // Reported, not escalated: the run itself proves nothing is broken, only
-  // that this run cannot close an alert. Escalating would file a P1 claiming
-  // a failed deploy on a run whose deploy may well be live.
-  const unrecognised = unrecognisedVerdicts({ jobResults, jobOutputs, config });
-  if (unrecognised.length > 0) {
-    const { output } = config.deployedOutput;
-    logger.log?.(
-      `::warning::[deploy-alert] ${unrecognised.join(", ")} succeeded but published no recognised ` +
-        `\`${output}\` verdict, so this run cannot close an open alert. Check the job's \`outputs:\` ` +
-        `mapping in \`${config.workflowFile}\`.`,
-    );
-  }
-
-  if (config.verdictAtBranchTipOnly && (outcome === "failed" || outcome === "deployed")) {
-    // No commit to compare counts as unreadable too: `"" !== tip` would drop
-    // every verdict of a workflow that forgot to pass HEAD_SHA.
-    const tip = headSha ? await readBranchTip({ token, repo, branch: headBranch, fetchImpl }) : null;
-    if (tip === null) {
-      // Proceed on the verdict: a failed read must not drop an alert.
-      logger.log?.(
-        `::warning::[deploy-alert] could not compare this run's commit (HEAD_SHA ${headSha ? "set" : "unset"}) ` +
-          `with the tip of \`${headBranch}\`, so its verdict stands even if a newer commit has landed`,
-      );
-    } else if (tip !== headSha) {
-      logger.log?.(
-        `::notice::[deploy-alert] \`${headBranch}\` has moved on to ${tip.slice(0, 7)}, so this verdict on ` +
-          `${String(headSha).slice(0, 7)} neither raises nor closes the alert; the run for the newest commit does.`,
-      );
-      return { outcome, failed, deployed, alert: { action: "superseded", tip } };
-    }
-  }
 
   if (outcome === "failed") {
     const alert = await raiseAlert({
@@ -961,23 +851,6 @@ export async function runDeployAlert({
   // whether deploys work, and closing on a no-op would silence a live outage.
   logger.log?.("[deploy-alert] nothing deployed; alert issue left as-is");
   return { outcome, failed, deployed, alert: { action: "none" } };
-}
-
-/**
- * The commit `branch` points at now, or null when it can't be read (an empty
- * branch name counts, since there is nothing to compare against).
- */
-export async function readBranchTip({ token, repo, branch, fetchImpl }) {
-  if (!branch) return null;
-  const { ok, data } = await ghRequest({
-    token,
-    fetchImpl,
-    // Segment by segment: `release/x` is two path segments, not `release%2Fx`.
-    path: `/repos/${repo}/git/ref/heads/${branch.split("/").map(encodeURIComponent).join("/")}`,
-    retry: true,
-  });
-  const sha = ok ? data?.object?.sha : null;
-  return typeof sha === "string" && sha ? sha : null;
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
