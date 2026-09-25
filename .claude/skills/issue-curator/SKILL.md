@@ -143,14 +143,17 @@ and it exists for signal quality: `/next` ranks this backlog, and filler buries 
   - GitHub MCP: repeated CI failures or flaky jobs on recent `main` runs. A deploy workflow
     triggered by `workflow_run` fails without turning any PR check red. Read its job log
     (`get_job_logs`), and check for an open `incident` on it before filing anything.
-  - Render MCP: `list_deploys` for `frapp-api-staging` and `frapp-api-prod`. A green `Deploy API`
-    run only means Render accepted the hook, not that the build succeeded. Pass `workspaceId` on
-    every call. The workspace and service ids are in
-    [`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md) and the
-    [`infrastructure-research`](../infrastructure-research/SKILL.md) Render recipe. A failed
+  - Render MCP: `list_deploys` (`limit: 5`) for `frapp-api-staging` and `frapp-api-prod`. A
+    green `Deploy API` run only means Render accepted the hook, not that the build succeeded.
+    Pass `workspaceId` on every call; the id is in
+    [`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md). Resolve
+    each service's `srv-…` id with `list_services` rather than from memory
+    ([`infrastructure-research`](../infrastructure-research/SKILL.md) has the recipe). A failed
     staging deploy already raises an `incident` (`verify-deployments.yml`), so look there first.
-    A Render build log can hold a live secret (#2432), so quote only the error line, never raw
-    log output.
+    File only a failure that no later deploy has fixed, where the service's newest non-live
+    deploy is newer than its live one. Production deploys are dispatched by hand, so an old
+    `live` production commit is expected, not a finding. A Render build log can hold a live
+    secret (#2432), so quote only the error line, never raw log output.
   - Vercel MCP: `get_runtime_errors` (`since: "7d"`) for `frapp-web` and `frapp-landing`. It
     requires `teamId` (from `list_teams`), and the project ids come from `list_projects`. It is
     the web dashboard's only error signal while the web Sentry DSN is unset (#970). One
@@ -158,6 +161,9 @@ and it exists for signal quality: `/next` ranks this backlog, and filler buries 
 
   Cite the evidence (error ID, advisor name, run link) in the issue. If a tool is absent or
   genuinely refuses, skip that source and note it in the run report; never guess runtime state.
+  A refusal that asks you to have a human confirm or pick something, such as Render's "ask the
+  user which workspace to use", is a refusal too. An unattended run has no human to ask, so skip
+  the source rather than choosing for them.
   An error caused by an argument you supplied is your bug, so fix the argument before recording
   the source as unavailable.
 
