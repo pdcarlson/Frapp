@@ -46,7 +46,7 @@ const httpError = (status) => ({ ok: false, status, json: async () => ({}) });
 /** Live GET /v1/services/{id} shape for frapp-api-staging (2026-09-09). */
 const healthyStagingRender = () =>
   ok({
-    autoDeploy: "yes",
+    autoDeploy: "no",
     branch: "main",
     serviceDetails: { healthCheckPath: "/health" },
   });
@@ -734,10 +734,10 @@ test("default staging toRun includes render-auto-deploy — the function alone i
   const toRun = source.slice(source.indexOf("const toRun = checks ??"));
   assert.match(toRun, /id: "render-auto-deploy"/);
   assert.match(toRun, /checkRenderAutoDeploy\(/);
-  // Production's expected value. A copy-paste of assertRenderService here
-  // would freeze-assert the wrong host.
-  assert.match(source, /autoDeploy !== "yes"/);
-  assert.doesNotMatch(source, /autoDeploy !== "no"/);
+  // Since #2505 staging expects auto-deploy OFF, like production: deploy-api.yml
+  // deploys it by commit. The pre-#2505 expectation must not come back.
+  assert.match(source, /autoDeploy !== "no"/);
+  assert.doesNotMatch(source, /autoDeploy !== "yes"/);
 });
 
 // ── Render healthCheckPath ─────────────────────────────────────────────────
@@ -823,15 +823,16 @@ test("render-auto-deploy skips rather than fails when the Render credential is a
   assert.match(result.detail, /RENDER_API_KEY/);
 });
 
-test("render-auto-deploy fails when auto-deploy is off — that freezes staging", async () => {
+test("render-auto-deploy fails when auto-deploy is on — it builds before CI and races Deploy API", async () => {
   const result = await checkRenderAutoDeploy({
     apiKey: "rk",
     serviceId: "srv-test",
-    fetchImpl: async () => ok({ autoDeploy: "no", branch: "main" }),
+    fetchImpl: async () => ok({ autoDeploy: "yes", branch: "main" }),
   });
   assert.equal(result.status, FAIL);
-  assert.match(result.detail, /autoDeploy='no'/);
-  assert.match(result.detail, /frozen/);
+  assert.match(result.detail, /autoDeploy='yes' \(expected 'no'\)/);
+  assert.match(result.detail, /before CI and migrate-staging/);
+  assert.match(result.detail, /Auto-Deploy → Off/);
   assert.doesNotMatch(result.detail, /branch=/);
 });
 
@@ -839,7 +840,7 @@ test("render-auto-deploy fails when the service tracks a branch other than main"
   const result = await checkRenderAutoDeploy({
     apiKey: "rk",
     serviceId: "srv-test",
-    fetchImpl: async () => ok({ autoDeploy: "yes", branch: "staging" }),
+    fetchImpl: async () => ok({ autoDeploy: "no", branch: "staging" }),
   });
   assert.equal(result.status, FAIL);
   assert.match(result.detail, /branch='staging'/);
@@ -849,10 +850,10 @@ test("render-auto-deploy names both findings when auto-deploy and branch are wro
   const result = await checkRenderAutoDeploy({
     apiKey: "rk",
     serviceId: "srv-test",
-    fetchImpl: async () => ok({ autoDeploy: "no", branch: "production" }),
+    fetchImpl: async () => ok({ autoDeploy: "yes", branch: "production" }),
   });
   assert.equal(result.status, FAIL);
-  assert.match(result.detail, /autoDeploy='no'/);
+  assert.match(result.detail, /autoDeploy='yes'/);
   assert.match(result.detail, /branch='production'/);
 });
 
@@ -862,7 +863,7 @@ test("render-auto-deploy does not treat a nested decoy as the live Render field"
     serviceId: "srv-test",
     fetchImpl: async () =>
       ok({
-        serviceDetails: { autoDeploy: "yes", branch: "main" },
+        serviceDetails: { autoDeploy: "no", branch: "main" },
       }),
   });
   assert.equal(result.status, FAIL);
@@ -874,20 +875,20 @@ test("render-auto-deploy does not unwrap a { service: … } envelope", async () 
     apiKey: "rk",
     serviceId: "srv-test",
     fetchImpl: async () =>
-      ok({ service: { autoDeploy: "yes", branch: "main" } }),
+      ok({ service: { autoDeploy: "no", branch: "main" } }),
   });
   assert.equal(result.status, FAIL);
   assert.match(result.detail, /unreadable/);
 });
 
-test("render-auto-deploy passes when autoDeploy is yes and branch is main", async () => {
+test("render-auto-deploy passes when autoDeploy is no and branch is main", async () => {
   const result = await checkRenderAutoDeploy({
     apiKey: "rk",
     serviceId: "srv-test",
     fetchImpl: async () => healthyStagingRender(),
   });
   assert.equal(result.status, PASS);
-  assert.match(result.detail, /autoDeploy=yes/);
+  assert.match(result.detail, /autoDeploy=no/);
   assert.match(result.detail, /branch=main/);
 });
 

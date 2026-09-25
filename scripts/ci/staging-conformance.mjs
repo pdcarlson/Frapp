@@ -48,8 +48,8 @@
 //   INFISICAL_PROJECT_ID        — workspaceId from .infisical.json
 //   STAGING_SMOKE_USER_EMAIL    — optional; enables the end-to-end sign-in probe
 //   STAGING_SMOKE_USER_PASSWORD
-//   RENDER_API_KEY             — optional; enables the Render healthCheckPath assertion
-//   RENDER_SERVICE_ID          — frapp-api-staging service id (same as verify-deployments.yml)
+//   RENDER_API_KEY             — optional; enables the Render healthCheckPath and auto-deploy assertions
+//   RENDER_SERVICE_ID          — frapp-api-staging service id (same as deploy-api.yml's deploy-staging)
 //   RUN_URL                     — html_url of this run, for the alert body
 
 import { appendFileSync, readFileSync } from "node:fs";
@@ -223,12 +223,13 @@ export async function checkProjectStatus({ accessToken, projectRef, fetchImpl = 
 /**
  * Render `frapp-api-staging` `serviceDetails.healthCheckPath` is `/health`.
  *
- * Staging auto-deploys `main` on commit, so this path is the only HTTP gate on
- * those deploys. Empty is a TCP socket check (documented 2026-09-06).
- * `/health/ready` would cancel a deploy when a dependency is degraded.
- * Production's copy of this assertion lives in production-guardrails.mjs —
- * do not fold production auto-deploy into this suite (alert title is the
- * lookup key). Staging auto-deploy *on* is this suite: `checkRenderAutoDeploy`.
+ * This path is Render's gate on every staging deploy: `deploy-api.yml` waits
+ * for the deploy to go `live`, which means the new instance passed it. Empty
+ * is a TCP socket check (documented 2026-09-06). `/health/ready` would cancel
+ * a deploy when a dependency is degraded. Production's copy of this assertion
+ * lives in production-guardrails.mjs — do not fold production into this suite
+ * (alert title is the lookup key). Staging's auto-deploy setting is this
+ * suite's: `checkRenderAutoDeploy`.
  */
 export async function checkRenderHealthCheckPath({
   apiKey,
@@ -278,17 +279,25 @@ export async function checkRenderHealthCheckPath({
 }
 
 /**
- * Render `frapp-api-staging` auto-deploys `main`.
+ * Render `frapp-api-staging` does NOT auto-deploy, and tracks `main`.
  *
- * Staging is the only host that can prove Magic Link, invite, and join
- * without a production Deploy. `autoDeploy: "no"` (or a branch other than
- * `main`) freezes that host while this job keeps reading yesterday's
- * settings and staying green. Live GET `/v1/services/{id}` puts
- * `autoDeploy` and `branch` on the service root (2026-09-09), not under
- * `serviceDetails` — a nested decoy is not the live field.
+ * Since #2505 `deploy-api.yml` deploys staging by commit, after CI and
+ * `migrate-staging`, through the Render API. Auto-deploy fires on push,
+ * before either: it builds a commit CI may yet fail, against a schema its
+ * migration has not reached, and every API commit builds twice. The deploy
+ * `deploy-api.yml` then creates is superseded by, or supersedes, the one
+ * auto-deploy started, and a cancelled deploy fails that job. So auto-deploy
+ * on is drift, exactly as it is on production.
  *
- * Production-guardrails asserts the inverse (`autoDeploy: "no"`) under a
- * different alert title. Do not copy that expected value here.
+ * (Until #2505 this asserted the opposite, `autoDeploy: "yes"`, because
+ * auto-deploy was what kept staging current. `deploy-api.yml` does that now.)
+ *
+ * `branch` must still be `main`: a service linked to another branch is not the
+ * staging `deploy-api.yml` deploys `main`'s commits to. Live GET
+ * `/v1/services/{id}` puts `autoDeploy` and `branch` on the service root
+ * (2026-09-09), not under `serviceDetails` — a nested decoy is not the live
+ * field. Production-guardrails asserts production's copy under a different
+ * alert title.
  */
 export async function checkRenderAutoDeploy({
   apiKey,
@@ -297,7 +306,7 @@ export async function checkRenderAutoDeploy({
   serviceLabel = "frapp-api-staging",
 } = {}) {
   const id = "render-auto-deploy";
-  const label = `${serviceLabel} auto-deploys main`;
+  const label = `${serviceLabel} deploys by commit (auto-deploy off, tracks main)`;
   if (!apiKey || !serviceId) {
     return result(id, label, SKIPPED, "RENDER_API_KEY / RENDER_SERVICE_ID not set");
   }
@@ -312,11 +321,12 @@ export async function checkRenderAutoDeploy({
   const autoDeploy = service?.autoDeploy;
   const branch = service?.branch;
   const findings = [];
-  if (autoDeploy !== "yes") {
+  if (autoDeploy !== "no") {
     findings.push(
-      `autoDeploy='${autoDeploy ?? "unreadable"}' (expected 'yes'). ` +
-        `With auto-deploy off, merges to main never reach staging and first-user ` +
-        `rehearsal runs against a frozen host.`,
+      `autoDeploy='${autoDeploy ?? "unreadable"}' (expected 'no'). ` +
+        `With auto-deploy on, every push builds before CI and migrate-staging, and races the ` +
+        `deploy Deploy API creates for the same commit. Render dashboard → frapp-api-staging → ` +
+        `Settings → Auto-Deploy → Off.`,
     );
   }
   if (branch !== "main") {
@@ -1248,7 +1258,7 @@ export async function runStagingConformance({
         serviceId: env.RENDER_SERVICE_ID,
         fetchImpl,
       }) },
-    { id: "render-auto-deploy", label: "frapp-api-staging auto-deploys main", run: () =>
+    { id: "render-auto-deploy", label: "frapp-api-staging deploys by commit (auto-deploy off, tracks main)", run: () =>
       checkRenderAutoDeploy({
         apiKey: env.RENDER_API_KEY,
         serviceId: env.RENDER_SERVICE_ID,

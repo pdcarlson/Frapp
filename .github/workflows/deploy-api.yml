@@ -7,12 +7,15 @@ name: Deploy API
 # `workflow_dispatch` that names an exact commit — see that file's header for
 # why the `production` branch was retired (#1340).
 #
+# Staging deploys the commit CI verified, after `migrate-staging`, through the
+# Render API (#2505): no deploy hook and no Render auto-deploy, both of which
+# built whatever `main`'s tip was rather than this commit.
+#
 # Secrets use UNIFIED names (no _STAGING / _PRODUCTION suffixes).
-# `RENDER_DEPLOY_HOOK_URL` and `API_HEALTHCHECK_URL` are not GitHub secrets:
-# `.github/actions/infisical-secrets` injects them from the Infisical `staging`
-# environment at job time. See docs/internal/environment/SECRETS_MANAGEMENT.md.
-# Production doesn't use a deploy hook: it deploys a named commit through the
-# Render API. A stale production hook may still exist; see #2540.
+# `RENDER_API_KEY` is a `staging` environment secret. `API_HEALTHCHECK_URL` is
+# not a GitHub secret: `.github/actions/infisical-secrets` injects it from the
+# Infisical `staging` environment at job time. See
+# docs/internal/environment/SECRETS_MANAGEMENT.md.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -95,7 +98,12 @@ jobs:
 
           echo "Changed paths in this push: $(wc -l < "$CHANGED_FILE")"
 
-          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^(apps/api/|packages/validation/|packages/observability/|packages/typescript-config/)' "$CHANGED_FILE"; then
+          # Everything the API image is built from: the paths
+          # apps/api/Dockerfile COPYs, plus the root .dockerignore that decides
+          # what reaches it. deploy-api-check-changes.test.mjs reads the
+          # Dockerfile and fails when a COPY source is missing here, which is
+          # how four packages the image builds went unmatched (#2505).
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^(apps/api/|packages/(validation|org-archetypes|chapter-theme|color|formatting|observability|typescript-config)/|package\.json$|package-lock\.json$|\.dockerignore$)' "$CHANGED_FILE"; then
             echo "api-changed=true" >> "$GITHUB_OUTPUT"
             echo "API-related files changed (or the diff was unreadable)."
           else
@@ -205,13 +213,24 @@ jobs:
       (needs.migrate-staging.result == 'success' || needs.migrate-staging.result == 'skipped')
     runs-on: ubuntu-latest
     environment: staging
+    # The deploy poll's own ceiling is 20 minutes and the served-commit check's
+    # is 5; this bounds the job just past both.
+    timeout-minutes: 30
+    # One staging deploy at a time. Two merges landing close together would
+    # otherwise create two Render deploys at once, and Render cancels the older,
+    # which this job rightly reports as "did not ship". Queued, the older run
+    # deploys first and the newer one supersedes it only after it finished.
+    #
+    # `cancel-in-progress: false`, as on migrate-staging. GitHub still replaces
+    # a PENDING run when a third arrives; that run's job shows `cancelled`, and
+    # `deploy-outcome` raises the alert until the next run deploys. That needs
+    # three API merges inside one deploy, and costs one self-closing alert.
+    concurrency:
+      group: deploy-api-staging
+      cancel-in-progress: false
     steps:
-      # This job needs no source of its own — it fires a Render deploy hook and
-      # health-checks the result. The checkout is here because the next step
-      # calls a LOCAL composite action, and `uses: ./…` resolves against the
-      # runner's workspace: without a checkout the action file is not on disk
-      # and the step fails with "Can't find 'action.yml'". Every other job that
-      # calls one already had a checkout for its own reasons; this one did not.
+      # The checkout supplies the local composite action below (`uses: ./…`
+      # resolves against the runner's workspace) and the two deploy scripts.
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -224,8 +243,8 @@ jobs:
           # commit whose own tree is fine.
           ref: ${{ github.event.workflow_run.head_sha }}
           # Nothing here talks to git after checkout; it only needs the action
-          # file on disk. A third-party action runs next (via the composite),
-          # and this job holds staging secrets — same reasoning as
+          # and script files on disk. A third-party action runs next (via the
+          # composite), and this job holds staging secrets — same reasoning as
           # deploy-outcome below and staging-conformance.yml.
           persist-credentials: false
 
@@ -236,42 +255,43 @@ jobs:
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
 
-      - name: Trigger Render deploy
-        run: |
-          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
-            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not configured for staging environment."
-            exit 1
-          fi
-          echo "Triggering Render staging deploy..."
-          curl --fail --silent --show-error --connect-timeout 5 --max-time 30 "$RENDER_DEPLOY_HOOK_URL"
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
-      - name: Wait for deploy to propagate
-        run: sleep 15
+      # Deploy-by-commit through the Render API (#2505), the same script
+      # `deploy-production.yml` uses. The deploy hook this replaces could not
+      # name a commit: it built the tip of `main` at the moment it fired, which
+      # can be a newer commit than the one CI verified and migrate-staging
+      # migrated for. Staging also auto-deployed on push, before CI, so every
+      # API commit built twice. With auto-deploy off (staging-conformance
+      # asserts it), this step is the only thing that deploys staging.
+      #
+      # The script polls the deploy id it created to a terminal state, so a
+      # failed build fails THIS job and `deploy-outcome` raises the P1 alert.
+      # That is the outcome `verify-deployments.yml` used to watch from the
+      # side; it was retired with this change.
+      - name: Deploy the commit to Render
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: srv-d6lqsq75r7bs73c2fdc0
+          SERVICE_LABEL: frapp-api-staging
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/ci/deploy-render-commit.mjs
 
-      - name: Health smoke check
-        run: |
-          if [ -z "$API_HEALTHCHECK_URL" ]; then
-            echo "::warning::API_HEALTHCHECK_URL not configured — skipping"
-            exit 0
-          fi
-          # API_HEALTHCHECK_URL points at /health, which is Render's own
-          # healthCheckPath (render.yaml) and must stay a plain liveness probe
-          # that always 2xxs. /health/ready is the strict readiness sibling
-          # that 503s on a degraded dependency (see #302) — hit that here so
-          # this gate actually fails on a DB/Storage outage instead of reading
-          # a 200 with a discarded "degraded" body.
-          READY_URL="${API_HEALTHCHECK_URL%/}/ready"
-          echo "Waiting for staging API to become healthy..."
-          for i in 1 2 3 4 5 6; do
-            if curl --fail --silent --show-error --location --connect-timeout 2 --max-time 5 "$READY_URL" >/dev/null 2>&1; then
-              echo "✅ Staging API is healthy."
-              exit 0
-            fi
-            echo "Attempt $i/6 — retrying in 20s..."
-            sleep 20
-          done
-          echo "::error::Staging health check failed after 6 attempts (2 min)."
-          exit 1
+      # Render's `live` means the new instance passed Render's own probe,
+      # `GET /health`, which always 2xxs. This step asks the API itself: poll
+      # `/health/ready` until it answers 2xx AND reports this commit. The old
+      # smoke loop took any 2xx, which the previous instance also gives while
+      # the new one switches in, so it could pass a deploy that never took
+      # traffic. A missing API_HEALTHCHECK_URL now fails (it used to warn and
+      # exit 0): a check that silently does not run reads the same as a pass.
+      - name: Verify staging serves the commit
+        env:
+          SERVICE_LABEL: frapp-api-staging
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/ci/verify-served-commit.mjs
 
   # ── Deploy outcome: alert on failure, state plainly when nothing deployed ──
   # Terminal reporting job. Exists because a `workflow_run` failure lands on no

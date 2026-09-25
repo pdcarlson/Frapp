@@ -66,6 +66,22 @@ function extractFilterScript() {
   return body.join("\n").replace(/\$\{\{[^}]*\}\}/g, "deadbeef");
 }
 
+/**
+ * The build-context sources of every `COPY` in apps/api/Dockerfile (not
+ * `COPY --from=<stage>`, which copies between stages).
+ */
+function dockerfileCopySources() {
+  const dockerfile = readFileSync(join(REPO_ROOT, "apps", "api", "Dockerfile"), "utf8");
+  const sources = new Set();
+  for (const line of dockerfile.split("\n")) {
+    const match = line.match(/^\s*COPY\s+(?!--from=)(.+)$/);
+    if (!match) continue;
+    const args = match[1].split(/\s+/).filter((arg) => !arg.startsWith("--"));
+    for (const source of args.slice(0, -1)) sources.add(source.replace(/^\.\//, ""));
+  }
+  return [...sources];
+}
+
 let workspace;
 let scriptPath;
 
@@ -197,6 +213,27 @@ describe("deploy-api check-changes filter", () => {
       const { outputs } = runFilter({ paths: [path] });
       assert.equal(outputs["api-changed"], "true", `${path} should trigger the API deploy`);
     }
+  });
+
+  // The filter used to list three of the seven packages the image builds, so a
+  // change to `packages/color` reached the API only on the next unrelated API
+  // commit (#2505). Every source the Dockerfile COPYs from the build context
+  // must trigger the deploy; the list is read from the Dockerfile so a package
+  // added there without the filter fails here.
+  it("treats every path the API Dockerfile copies as an API change", () => {
+    const sources = dockerfileCopySources();
+    assert.ok(sources.length >= 10, `expected the Dockerfile's COPY sources, found ${sources.length}`);
+    for (const source of [...sources, ".dockerignore"]) {
+      // A directory source stands for any file under it.
+      const path = source.endsWith("/") ? `${source}src/index.ts` : source;
+      const { outputs } = runFilter({ paths: [path] });
+      assert.equal(outputs["api-changed"], "true", `${path} (COPY ${source}) should trigger the API deploy`);
+    }
+  });
+
+  it("does not treat a sibling package's manifest as the root manifest", () => {
+    const { outputs } = runFilter({ paths: ["packages/ui/package.json", "apps/web/package.json"] });
+    assert.equal(outputs["api-changed"], "false");
   });
 
   it("fails closed when the diff cannot be read", () => {

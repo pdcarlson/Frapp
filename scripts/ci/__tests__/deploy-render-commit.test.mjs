@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import {
   classifyRenderStatus,
   createRenderDeploy,
-  deployRenderProduction,
+  deployRenderCommit,
   pollRenderDeploy,
-} from "../deploy-render-production.mjs";
+} from "../deploy-render-commit.mjs";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const SERVICE_ID = "srv-test";
@@ -43,12 +43,12 @@ describe("classifyRenderStatus", () => {
   it("pre_deploy_failed is failure", () =>
     assert.equal(classifyRenderStatus("pre_deploy_failed"), "failure"));
 
-  // The observer calls these neutral because a newer push supersedes an older
-  // deploy. This path holds a single-concurrency lock and creates exactly one
-  // deploy, so there is no newer push: a cancel means the commit did not ship.
-  it("canceled is a FAILURE here, unlike the observer", () =>
+  // Superseded deploys. Every caller holds a single-concurrency lock and creates
+  // exactly one deploy on a service that does not auto-deploy, so nothing of
+  // ours supersedes it: a cancel means the commit did not ship.
+  it("canceled is a failure — the commit did not ship", () =>
     assert.equal(classifyRenderStatus("canceled"), "failure"));
-  it("deactivated is a FAILURE here, unlike the observer", () =>
+  it("deactivated is a failure — the commit is not serving", () =>
     assert.equal(classifyRenderStatus("deactivated"), "failure"));
 
   it("build_in_progress is pending", () =>
@@ -149,12 +149,12 @@ describe("pollRenderDeploy", () => {
   });
 });
 
-describe("deployRenderProduction", () => {
+describe("deployRenderCommit", () => {
   it("returns the created deploy id alongside the verdict", async () => {
     const fetchImpl = async (url, options) =>
       options?.method === "POST" ? okJson({ id: "dep-9" }) : okJson({ status: "live" });
 
-    const result = await deployRenderProduction({
+    const result = await deployRenderCommit({
       apiKey: API_KEY, serviceId: SERVICE_ID, sha: SHA,
       clock: makeFakeClock(), fetchImpl, logger: quiet,
     });
@@ -165,7 +165,7 @@ describe("deployRenderProduction", () => {
 
   it("surfaces a failed create as a failure, not a throw", async () => {
     const fetchImpl = async () => errJson(403, "forbidden");
-    const result = await deployRenderProduction({
+    const result = await deployRenderCommit({
       apiKey: API_KEY, serviceId: SERVICE_ID, sha: SHA,
       clock: makeFakeClock(), fetchImpl, logger: quiet,
     });
