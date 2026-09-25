@@ -22,6 +22,7 @@ const HOUR = 60 * 60 * 1000;
 const NOW = Date.parse("2026-09-25T13:15:00Z");
 const STALE = 36 * HOUR;
 const HUNG = 3 * HOUR;
+const TIMEOUT = 30 * 60 * 1000;
 
 function hoursAgo(hours) {
   return new Date(NOW - hours * HOUR).toISOString();
@@ -60,6 +61,7 @@ function evaluate({ runs, jobs }) {
     workflowFile: "db-backup.yml",
     staleAfterMs: STALE,
     hungAfterMs: HUNG,
+    timeoutMs: TIMEOUT,
     runsStatus: 200,
     runs,
     jobsByRunId,
@@ -109,7 +111,7 @@ describe("the newest run decides alone", () => {
   it("a job that ran and failed fails the same day, whatever an earlier run holds", () => {
     // A failed backup is what this alarm exists for. If an earlier success
     // covered it, an isolated failed night would never raise the P1.
-    for (const conclusion of ["failure", "timed_out"]) {
+    for (const conclusion of ["failure", "timed_out", "action_required"]) {
       const verdict = evaluate({
         runs: [run(2, { hours: 2, conclusion: "failure" }), run(1, { hours: 16.2 })],
         jobs: { 2: [job({ conclusion, completedHours: 1.9 })], 1: [job()] },
@@ -117,6 +119,33 @@ describe("the newest run decides alone", () => {
       assert.equal(verdict.ok, false, conclusion);
       assert.match(verdict.reason, new RegExp(`concluded ${conclusion}`));
     }
+  });
+
+  it("a job its timeout stopped fails the same day, though GitHub reports it as cancelled", () => {
+    // The runner has no timed-out job result: a job killed by
+    // `timeout-minutes` completes as `cancelled`. Only its runtime tells it
+    // from a cancelled dispatch.
+    const verdict = evaluate({
+      runs: [run(2, { hours: 2, conclusion: "cancelled" }), run(1, { hours: 16.2 })],
+      jobs: {
+        2: [job({ conclusion: "cancelled", startedHours: 1.9, completedHours: 1.4 })],
+        1: [job()],
+      },
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /backup-example hit its 30-minute timeout/);
+  });
+
+  it("a job cancelled well before its timeout is not a timeout", () => {
+    const verdict = evaluate({
+      runs: [run(2, { hours: 2, conclusion: "cancelled" }), run(1, { hours: 16.2 })],
+      jobs: {
+        2: [job({ conclusion: "cancelled", startedHours: 1.9, completedHours: 1.8 })],
+        1: [job()],
+      },
+    });
+    assert.equal(verdict.ok, true);
+    assert.equal(verdict.fresh, false);
   });
 
   it("a run that failed before creating any job fails as missing (a broken workflow must not green)", () => {
@@ -212,6 +241,44 @@ describe("an earlier success backs the newest run", () => {
     assert.equal(verdict.ok, true);
   });
 
+  it("fails when the last finished attempt before a cancelled run failed, whatever succeeded before that", () => {
+    // Cancelling a retry must not hide the failed nightly behind yesterday's
+    // success.
+    const verdict = evaluate({
+      runs: [run(3, { hours: 0.5, conclusion: "cancelled" }), run(2, { hours: 6 }), run(1, { hours: 30.5 })],
+      jobs: { 3: [], 2: [job({ conclusion: "failure", completedHours: 1.2 })], 1: [job({ completedHours: 30.3 })] },
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /and before it backup-example concluded failure/);
+  });
+
+  it("fails when the last finished attempt before an in-flight run timed out", () => {
+    const verdict = evaluate({
+      runs: [run(3, { hours: 0.5, status: "pending" }), run(2, { hours: 6 }), run(1, { hours: 30.5 })],
+      jobs: {
+        3: [],
+        2: [job({ conclusion: "cancelled", startedHours: 5.9, completedHours: 5.4 })],
+        1: [job({ completedHours: 30.3 })],
+      },
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /hit its 30-minute timeout/);
+  });
+
+  it("passes over earlier runs where the job didn't finish an attempt, to the success behind them", () => {
+    const verdict = evaluate({
+      runs: [run(4, { hours: 0.5, conclusion: "cancelled" }), run(3, { hours: 3, conclusion: "cancelled" }), run(2, { hours: 5, status: "in_progress" }), run(1, { hours: 16.2 })],
+      jobs: {
+        4: [],
+        3: [job({ conclusion: "cancelled", startedHours: 2.9, completedHours: 2.8 })],
+        2: [job({ status: "in_progress", startedHours: 4.9 })],
+        1: [job()],
+      },
+    });
+    assert.equal(verdict.ok, true);
+    assert.match(verdict.reason, /succeeded 16h ago/);
+  });
+
   it("does not count an old success in a run updated recently by other jobs", () => {
     // Re-running a run's failed jobs moves its `updated_at` into the window,
     // and `filter=latest` still lists the watched job's old success.
@@ -279,6 +346,7 @@ describe("readJobFreshness", () => {
       workflowFile: "db-backup.yml",
       staleAfterMs: STALE,
       hungAfterMs: HUNG,
+      timeoutMs: TIMEOUT,
       runsPath: "/runs?branch=main",
       jobsPath: (id) => `/runs/${id}/jobs`,
       get,
@@ -302,7 +370,7 @@ describe("readJobFreshness", () => {
     }
   });
 
-  it("reads earlier runs until one holds a success within the window, past failures", async () => {
+  it("reads earlier runs to the first finished attempt, and stops there even when it failed", async () => {
     const { verdict, reads } = await read({
       runs: [cancelled, run(8, { hours: 16.2 }), run(7, { hours: 20 }), run(6, { hours: 30 })],
       jobs: {
@@ -312,8 +380,8 @@ describe("readJobFreshness", () => {
         6: [job({ completedHours: 30 })],
       },
     });
-    assert.equal(verdict.ok, true);
-    assert.deepEqual(reads, ["runs", "9", "8", "7"]);
+    assert.equal(verdict.ok, false);
+    assert.deepEqual(reads, ["runs", "9", "8"]);
   });
 
   it("stops at an unreadable earlier run, and fails", async () => {

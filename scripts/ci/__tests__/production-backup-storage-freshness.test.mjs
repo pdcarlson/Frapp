@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   ALERT_ISSUE_TITLE,
   HUNG_AFTER_MS,
+  JOB_TIMEOUT_MS,
   PRODUCTION_JOB_NAME,
   STALE_AFTER_MS,
   WORKFLOW_FILE,
@@ -19,6 +20,7 @@ import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 import { evaluateJobFreshness, runsNewestFirst } from "../lib/backup-job-freshness.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
+import { workflowJobs } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-backup-storage-freshness.yml");
@@ -72,6 +74,7 @@ function evaluate(overrides = {}) {
     workflowFile: WORKFLOW_FILE,
     staleAfterMs: STALE_AFTER_MS,
     hungAfterMs: HUNG_AFTER_MS,
+    timeoutMs: JOB_TIMEOUT_MS,
     runsStatus,
     runs,
     jobsByRunId,
@@ -424,6 +427,59 @@ describe("readDumpFreshness: an earlier run backs a cancelled newest run", () =>
   });
 });
 
+// This watch's own windows and timeout reach the shared rules. The rules are
+// tested with their own values in backup-job-freshness.test.mjs; these prove
+// the script passes its constants, not someone else's.
+describe("readDumpFreshness: this watch's windows", () => {
+  function read(runs, jobsById) {
+    const { fetchImpl } = makeFetchMock([
+      { method: "GET", path: `/actions/workflows/${WORKFLOW_FILE}/runs`, body: { workflow_runs: runs } },
+      ...Object.entries(jobsById).map(([id, jobs]) => ({ method: "GET", path: `/actions/runs/${id}/jobs`, body: { jobs } })),
+    ]);
+    return readDumpFreshness({ token: "tok", repo: "org/repo", fetchImpl, now: NOW });
+  }
+
+  it("fails a newest success older than 36h", async () => {
+    const verdict = await read([{ id: 99, status: "completed", created_at: hoursAgo(40.2) }], { 99: [successJob({ hours: 40 })] });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /older than 36h/);
+  });
+
+  it("fails a job in flight for more than 3h", async () => {
+    const verdict = await read(
+      [{ id: 99, status: "in_progress", created_at: hoursAgo(4) }],
+      { 99: [{ name: PRODUCTION_JOB_NAME, status: "in_progress", conclusion: null, started_at: hoursAgo(4) }] },
+    );
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /hung for more than 3h/);
+  });
+
+  it("fails a job cancelled at this watch's timeout, and backs one cancelled well before it", async () => {
+    const cancelledAfter = (ms) => ({
+      name: PRODUCTION_JOB_NAME,
+      status: "completed",
+      conclusion: "cancelled",
+      started_at: new Date(NOW - HOUR - ms).toISOString(),
+      completed_at: new Date(NOW - HOUR).toISOString(),
+    });
+    const runs = [
+      { id: 99, status: "completed", conclusion: "cancelled", created_at: hoursAgo(2) },
+      { id: 98, status: "completed", created_at: hoursAgo(16.2), updated_at: hoursAgo(16) },
+    ];
+    const timedOut = await read(runs, { 99: [cancelledAfter(JOB_TIMEOUT_MS)], 98: [successJob()] });
+    assert.equal(timedOut.ok, false);
+    assert.match(timedOut.reason, /timeout/);
+    const early = await read(runs, { 99: [cancelledAfter(JOB_TIMEOUT_MS / 3)], 98: [successJob()] });
+    assert.equal(early.ok, true);
+  });
+
+  it("JOB_TIMEOUT_MS is the job's timeout-minutes in db-backup.yml", () => {
+    const job = workflowJobs(join(WORKFLOWS_DIR, "db-backup.yml")).find((j) => j.jobId === PRODUCTION_JOB_NAME);
+    assert.ok(job, `${PRODUCTION_JOB_NAME} job not found in db-backup.yml`);
+    assert.equal(Number(job.keys.get("timeout-minutes")) * 60 * 1000, JOB_TIMEOUT_MS);
+  });
+});
+
 describe("runWatchdog", () => {
   const failVerdict = {
     ok: false,
@@ -641,8 +697,9 @@ export function watchdogWorkflowProblems(yaml) {
   // 13:30 was this watch's original slot, copied from the sibling. It is only
   // ~26 minutes past the latest observed storage-job start (13:04 UTC,
   // measured 2026-09-17), so a scheduling-lag night can put the probe inside
-  // a healthy run — which returns a green "in flight" verdict that never
-  // reaches the 36h staleness check. Do not move back onto it.
+  // a healthy run, which then can only pass on the previous night's success
+  // (as a warning that never closes an open alert) instead of counting
+  // tonight's own. Do not move back onto it.
   if (/cron:\s*"30 13 \* \* \*"/.test(live)) {
     problems.push("must not sit at 13:30 — too close to the observed storage window");
   }

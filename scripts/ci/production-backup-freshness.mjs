@@ -46,6 +46,10 @@ export const DEFAULT_BRANCH = "main";
 export const PRODUCTION_JOB_NAME = "backup-production";
 export const STALE_AFTER_MS = 36 * 60 * 60 * 1000;
 export const HUNG_AFTER_MS = 3 * 60 * 60 * 1000;
+// The job's `timeout-minutes` in db-backup.yml. GitHub reports a job its
+// timeout stopped as `cancelled`; this is how the verdict tells that from a
+// cancelled dispatch. The test suite checks it against the workflow.
+export const JOB_TIMEOUT_MS = 30 * 60 * 1000;
 
 export const ALERT_ISSUE_TITLE =
   "Nightly production dump is stale or failed — recoverability is unproven";
@@ -116,6 +120,7 @@ export async function readDumpFreshness({
     workflowFile: WORKFLOW_FILE,
     staleAfterMs: STALE_AFTER_MS,
     hungAfterMs: HUNG_AFTER_MS,
+    timeoutMs: JOB_TIMEOUT_MS,
     runsPath: runsPath(repo),
     jobsPath: (runId) => jobsPath(repo, runId),
     get: (path) => ghGetWithFallback({ token, fallbackToken, fetchImpl, path }),

@@ -12,17 +12,20 @@
 // - Unreadable Actions responses are FAIL, never pass.
 // - The newest run decides alone when its job succeeded (fresh within the
 //   stale window, the one verdict that may close an open alert; FAIL when
-//   older), when its job concluded anything but success, cancelled or
-//   skipped (a failed or timed-out backup is FAIL the same day), when it is
+//   older), when its job failed or timed out (FAIL the same day), when it is
 //   hung past the hung window, and when the job is missing from a run that
-//   ran (a renamed or deleted job must not green).
+//   ran (a renamed or deleted job must not green). GitHub reports a job
+//   stopped by its `timeout-minutes` as `cancelled`, so a cancelled job that
+//   ran for its whole timeout counts as timed out.
 // - Otherwise the newest run's job is in flight (queued, running, or
-//   `waiting` on a deployment protection rule), or it was cancelled or
-//   skipped, or the run was cancelled or skipped before any job was created.
-//   Then it passes only while an earlier run holds a success of the job that
-//   completed within the stale window. That pass is never fresh, so it never
-//   closes an open alert, and the scripts print it as a `::warning::`
-//   (`verdictLogLine`).
+//   `waiting` on a deployment protection rule), or it was cancelled before its
+//   timeout or skipped, or the run was cancelled or skipped before any job
+//   was created. Then the verdict rests on the most recent earlier run in
+//   which the job finished: a success within the stale window passes, and
+//   anything else (a failure, a timeout, an older success, or no finished
+//   run) is FAIL, so cancelling a retry can't hide a failed nightly. That
+//   pass is never fresh, so it never closes an open alert, and the scripts
+//   print it as a `::warning::` (`verdictLogLine`).
 //
 // Why the fallback to an earlier success (#2332): judging the newest run
 // alone let an in-flight run return before the stale check, so a job parked
@@ -95,15 +98,36 @@ function findJob(jobs, jobName) {
   return jobs.find((entry) => entry && entry.name === jobName);
 }
 
+// A cancelled job that ran this close to its timeout was stopped by it.
+const TIMEOUT_SLACK_MS = 60 * 1000;
+
+function ranToTimeout(job, timeoutMs) {
+  const started = Date.parse(job.started_at ?? "");
+  const completed = Date.parse(job.completed_at ?? "");
+  if (Number.isNaN(started) || Number.isNaN(completed)) return false;
+  return completed - started >= timeoutMs - TIMEOUT_SLACK_MS;
+}
+
 /**
- * The job's success in one run's jobs, if it completed within the window.
- * The one success test the reader and the evaluator both use, so they stop
- * at the same run.
+ * How a finished job's attempt ended: "success", "failed" (a failure, a
+ * timeout, or any conclusion an earlier success may not cover), or null
+ * when it didn't finish an attempt (missing, in flight, cancelled before its
+ * timeout, skipped). The one test the reader and the evaluator both use, so
+ * they stop at the same run.
  */
-export function successWithin({ jobs, jobName, staleAfterMs, now }) {
-  const job = findJob(jobs, jobName);
-  if (!job || job.status !== "completed" || job.conclusion !== "success") return null;
-  return ageMs(job.completed_at, now) <= staleAfterMs ? job : null;
+export function finishedAttempt(job, timeoutMs) {
+  if (!job || job.status !== "completed") return null;
+  if (job.conclusion === "success") return "success";
+  if (job.conclusion === "cancelled" && ranToTimeout(job, timeoutMs)) return "failed";
+  if (BACKED_CONCLUSIONS.has(job.conclusion)) return null;
+  return "failed";
+}
+
+function describeEnd(job, jobName, timeoutMs) {
+  if (job.conclusion === "cancelled" && ranToTimeout(job, timeoutMs)) {
+    return `${jobName} hit its ${Math.round(timeoutMs / 60000)}-minute timeout`;
+  }
+  return `${jobName} concluded ${job.conclusion || "unknown"}`;
 }
 
 /**
@@ -111,7 +135,7 @@ export function successWithin({ jobs, jobName, staleAfterMs, now }) {
  * `{ backing }` (the reason to report) when the verdict rests on an earlier
  * success. The reader uses this to decide whether to read earlier runs.
  */
-export function judgeNewest({ jobName, run, fetched, staleAfterMs, hungAfterMs, now }) {
+export function judgeNewest({ jobName, run, fetched, staleAfterMs, hungAfterMs, timeoutMs, now }) {
   if (!readable(fetched)) {
     return {
       verdict: jobVerdict(
@@ -141,9 +165,9 @@ export function judgeNewest({ jobName, run, fetched, staleAfterMs, hungAfterMs, 
   }
 
   if (job.conclusion !== "success") {
-    const concluded = `${jobName} concluded ${job.conclusion || "unknown"}`;
-    if (BACKED_CONCLUSIONS.has(job.conclusion)) return { backing: concluded };
-    return { verdict: jobVerdict(false, false, concluded) };
+    const ended = describeEnd(job, jobName, timeoutMs);
+    if (finishedAttempt(job, timeoutMs) === "failed") return { verdict: jobVerdict(false, false, ended) };
+    return { backing: ended };
   }
 
   if (ageMs(job.completed_at, now) > staleAfterMs) {
@@ -169,12 +193,16 @@ export function candidateOlderRuns({ runs, staleAfterMs, now }) {
 }
 
 /**
- * A pass resting on an earlier success, or FAIL. Never fresh: only the newest
- * run's own success may close an alert. A run the walk reaches with no entry
- * in `jobsByRunId`, or an unreadable one, is FAIL, because the success it
- * might hold can't be ruled in or out.
+ * A pass resting on an earlier success, or FAIL. Walks the earlier runs to
+ * the most recent one in which the job finished an attempt, and judges that
+ * attempt alone: a success within the window passes; a failure, a timeout or
+ * an older success is FAIL. Never fresh: only the newest run's own success
+ * may close an alert. A run the walk reaches with no entry in `jobsByRunId`,
+ * or an unreadable one, is FAIL, because what it holds can't be ruled in or
+ * out.
  */
-function backedBy({ jobName, runs, jobsByRunId, staleAfterMs, now, reason }) {
+function backedBy({ jobName, runs, jobsByRunId, staleAfterMs, timeoutMs, now, reason }) {
+  const none = jobVerdict(false, false, `${reason}, and no ${jobName} success is within ${hours(staleAfterMs)}`);
   for (const run of candidateOlderRuns({ runs, staleAfterMs, now })) {
     const fetched = jobsByRunId.get(run.id);
     if (!readable(fetched)) {
@@ -184,16 +212,17 @@ function backedBy({ jobName, runs, jobsByRunId, staleAfterMs, now, reason }) {
         `${jobName} jobs for an earlier run unreadable (HTTP ${fetched?.status || "no response"})`,
       );
     }
-    const success = successWithin({ jobs: fetched.jobs, jobName, staleAfterMs, now });
-    if (success) {
-      return jobVerdict(
-        true,
-        false,
-        `${reason}; an earlier ${jobName} succeeded ${hours(ageMs(success.completed_at, now))} ago`,
-      );
+    const job = findJob(fetched.jobs, jobName);
+    const attempt = finishedAttempt(job, timeoutMs);
+    if (attempt === null) continue;
+    if (attempt === "failed") {
+      return jobVerdict(false, false, `${reason}, and before it ${describeEnd(job, jobName, timeoutMs)}`);
     }
+    const age = ageMs(job.completed_at, now);
+    if (age > staleAfterMs) return none;
+    return jobVerdict(true, false, `${reason}; an earlier ${jobName} succeeded ${hours(age)} ago`);
   }
-  return jobVerdict(false, false, `${reason}, and no ${jobName} success is within ${hours(staleAfterMs)}`);
+  return none;
 }
 
 /**
@@ -209,6 +238,7 @@ export function evaluateJobFreshness({
   workflowFile,
   staleAfterMs,
   hungAfterMs,
+  timeoutMs,
   runsStatus,
   runs,
   jobsByRunId,
@@ -232,16 +262,17 @@ export function evaluateJobFreshness({
     fetched: jobsByRunId.get(run.id),
     staleAfterMs,
     hungAfterMs,
+    timeoutMs,
     now,
   });
   if (judged.verdict) return judged.verdict;
-  return backedBy({ jobName, runs, jobsByRunId, staleAfterMs, now, reason: judged.backing });
+  return backedBy({ jobName, runs, jobsByRunId, staleAfterMs, timeoutMs, now, reason: judged.backing });
 }
 
 /**
  * GET the recent runs and the newest run's jobs, then, only when the newest
- * run can't decide alone, the earlier runs' jobs until one holds a success
- * within the window. Never writes. `get(path)` returns `{ status, data }`;
+ * run can't decide alone, the earlier runs' jobs until one holds a finished
+ * attempt of the job. Never writes. `get(path)` returns `{ status, data }`;
  * the caller owns tokens and the fallback-on-401/403 rule.
  */
 export async function readJobFreshness({
@@ -249,13 +280,14 @@ export async function readJobFreshness({
   workflowFile,
   staleAfterMs,
   hungAfterMs,
+  timeoutMs,
   runsPath,
   jobsPath,
   get,
   now,
 }) {
   const evaluate = (fields) =>
-    evaluateJobFreshness({ jobName, workflowFile, staleAfterMs, hungAfterMs, now, ...fields });
+    evaluateJobFreshness({ jobName, workflowFile, staleAfterMs, hungAfterMs, timeoutMs, now, ...fields });
 
   const listed = await get(runsPath);
   const runs = listed.data?.workflow_runs;
@@ -282,13 +314,14 @@ export async function readJobFreshness({
     fetched: await readJobs(newest),
     staleAfterMs,
     hungAfterMs,
+    timeoutMs,
     now,
   });
   if (judged.backing) {
     for (const run of candidateOlderRuns({ runs, staleAfterMs, now })) {
       const entry = await readJobs(run);
       if (!readable(entry)) break;
-      if (successWithin({ jobs: entry.jobs, jobName, staleAfterMs, now })) break;
+      if (finishedAttempt(findJob(entry.jobs, jobName), timeoutMs) !== null) break;
     }
   }
 
