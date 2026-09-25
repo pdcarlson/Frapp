@@ -493,7 +493,11 @@ export const SendChatMessageSchema = z.object({
 // "keep it inline" rule stays so any future Deno consumer can reuse it.)
 
 export type ChatChannelType =
-  "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
+  | "PUBLIC"
+  | "PRIVATE"
+  | "ROLE_GATED"
+  | "DM"
+  | "GROUP_DM";
 
 /** The trusted channel fields the access decision depends on. */
 export interface ChannelAccessRecord {
@@ -602,10 +606,11 @@ export function isAlumniPostableChannel(channel: ChannelAccessRecord): boolean {
  *
  * Read-only channels (`#announcements`, `#chapter-audit`) are broadcast
  * surfaces. Per `spec/behavior/chat/README.md` § Announcements: "Announcement
- * messages cannot be replied to in-thread." A reply would turn a one-way broadcast into a conversation the channel's
- * whole point is to not have — note the rationale is the one-way model, *not*
- * hidden nesting: replies here are Discord-style reply-with-quote rendered in
- * the main timeline (§ Reply threads), so nothing is ever tucked out of sight.
+ * messages cannot be replied to in-thread." A reply would turn a one-way
+ * broadcast into a conversation the channel's whole point is to not have —
+ * note the rationale is the one-way model, *not* hidden nesting: replies here
+ * are Discord-style reply-with-quote rendered in the main timeline (§ Reply
+ * threads), so nothing is ever tucked out of sight.
  *
  * Two deliberate properties:
  *
@@ -880,8 +885,7 @@ export function validateIndexedPollVote(input: {
   now?: Date;
 }): PollVoteRejection | null {
   const unknown = input.optionIndexes.find(
-    (index) =>
-      !Number.isInteger(index) || index < 0 || index >= input.optionCount,
+    (index) => !Number.isInteger(index) || index < 0 || index >= input.optionCount,
   );
 
   return evaluatePollVote({
