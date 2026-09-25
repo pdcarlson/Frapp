@@ -6,6 +6,7 @@ import {
   useInvoices,
   useListChapters,
   useNotifications,
+  useNowDate,
   usePermissionList,
   useStudySessions,
   useViewerUserId,
@@ -24,7 +25,6 @@ import {
 import { formatHoursLabel, startOfWeek } from "@/lib/study/format";
 import { selectSessionHistory } from "@/lib/study/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { useNowTick } from "@/lib/use-now-tick";
 import { StatusChip } from "@/components/status-chip";
 
 /**
@@ -95,7 +95,7 @@ export default function MoreScreen() {
   // Query's structural sharing keeps `data` referentially stable across a
   // refetch that returns identical rows, so a captured `new Date()` would
   // keep targeting an event whose check-in window has since closed.
-  const now = useNowTick();
+  const now = useNowDate();
 
   const nextEvent = useMemo(() => {
     if (!canHost) return null;
@@ -113,7 +113,7 @@ export default function MoreScreen() {
     enabled: !!viewerUserId,
   });
 
-  // Keyed on the week boundary rather than the minute-ticking `now`: this
+  // Keyed on the week boundary rather than the ticking `now`: this
   // narrows and sorts the whole session list, and the answer only changes once a
   // week.
   const weekStart = startOfWeek(now).getTime();

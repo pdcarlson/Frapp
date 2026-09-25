@@ -5,6 +5,7 @@ import {
   useActiveChapterId,
   useMarkNotificationRead,
   useNotifications,
+  useNowDate,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
@@ -23,7 +24,6 @@ import {
 import { NOTIFICATION_FALLBACK_PATHNAME } from "@/lib/notifications/targets";
 import { asRoute } from "@/lib/href";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { useNowTick } from "@/lib/use-now-tick";
 
 /**
  * s14 — Notifications (`canvas-screens.dc.html:474`).
@@ -79,7 +79,7 @@ export default function NotificationsScreen() {
   // returns identical rows, so a `new Date()` read inside the memo would
   // freeze the TODAY/EARLIER split at mount — a row from 11:47 PM would still
   // sit under TODAY at 12:10 AM on a tab screen that never unmounts.
-  const now = useNowTick();
+  const now = useNowDate();
 
   const groups = useMemo(
     () => selectNotificationGroups(notificationsQuery.data, now),

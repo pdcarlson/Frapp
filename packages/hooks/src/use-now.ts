@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 /** 30s matches the previous EventCard check-in window ticker. */
 const TICK_MS = 30_000;
@@ -44,4 +44,19 @@ function getNow(): number {
  */
 export function useNow(): number {
   return useSyncExternalStore(subscribe, getNow, getNow);
+}
+
+/**
+ * The same clock as a `Date`, for callers whose selectors take one. The
+ * instance changes only on a tick, so it is safe as a memo dependency.
+ *
+ * For a screen that buckets rows by "now" on a tab that never unmounts, this
+ * is what keeps the buckets moving: React Query's structural sharing keeps
+ * `data` referentially stable across a refetch that returns identical rows, so
+ * a `new Date()` read once at mount (or in a memo with no time dependency)
+ * would freeze them at whatever moment the screen first rendered.
+ */
+export function useNowDate(): Date {
+  const now = useNow();
+  return useMemo(() => new Date(now), [now]);
 }

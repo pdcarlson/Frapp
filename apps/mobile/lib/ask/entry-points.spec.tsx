@@ -30,7 +30,9 @@ vi.mock("@repo/hooks", () => {
     isFetching: false,
     refetch: vi.fn(),
   };
+  const now = new Date("2026-09-25T18:00:00Z");
   return {
+    useNowDate: () => now,
     useChannels: () => empty,
     useChannelUnreadCounts: () => empty,
     useEvents: () => empty,
