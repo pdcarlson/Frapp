@@ -54,7 +54,7 @@ const buttonVariants = cva(
         // 3.97:1 over `--popover`, which is what a destructive button in a
         // sheet or dialog actually sits on.
         destructive:
-          "bg-destructive/[.14] font-bold text-destructive-text hover:bg-destructive/20",
+          "bg-destructive-tint font-bold text-destructive-text hover:bg-destructive-tint-hover",
         // Not one of §3's five: an inline text link that happens to be a
         // button. It opts out of the shared disabled fill, which would draw a
         // card-coloured slab around a run of text.

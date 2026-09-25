@@ -337,7 +337,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         </DialogHeader>
 
         {hasLiveDataError ? (
-          <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning/[.13] p-3 text-[12.5px] text-warning">
+          <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning-tint p-3 text-[12.5px] text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             {/*
               This banner is the **only** explanation for two disabled controls

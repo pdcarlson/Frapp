@@ -8,7 +8,7 @@ import {
   SEMANTIC,
   SURFACE,
   signetDarkTokens,
-  tint,
+  STATUS_TINT,
   INDISTINGUISHABLE,
 } from "@/tests/signet-contrast";
 
@@ -116,11 +116,10 @@ describe("the amber notices were a light-mode island", () => {
   it("puts the warning tint's text over the gate on both surfaces it lands on", () => {
     // The replacement, matching `shared/subscription-gate.tsx`'s definite
     // branch. Unlifted, per components.md §5 — only danger needs §1's lift.
-    for (const name of ["card", "popover"] as const) {
-      expect(
-        ratio(SEMANTIC.warning, tint(SEMANTIC.warning, SURFACE[name])),
-        `--warning on its own tint over ${name}`,
-      ).toBeGreaterThanOrEqual(AA_TEXT);
-    }
+    // One opaque tint wherever the notice sits (#2376).
+    expect(
+      ratio(SEMANTIC.warning, STATUS_TINT.warning),
+      "--warning on --warning-tint",
+    ).toBeGreaterThanOrEqual(AA_TEXT);
   });
 });

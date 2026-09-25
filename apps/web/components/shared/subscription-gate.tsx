@@ -326,7 +326,7 @@ export function SubscriptionNotice({
         // every step of the ladder where a one-step fill does not.
         isPending
           ? "border-border text-muted-foreground"
-          : "border-warning/45 bg-warning/[.13] text-warning",
+          : "border-warning/45 bg-warning-tint text-warning",
         // Focusable via `tabIndex={-1}` and only ever reached programmatically,
         // on `useGatedDialog`'s revoke path — `:focus-visible` does not match a
         // scripted `.focus()` in every engine, so this takes the always-on ring.

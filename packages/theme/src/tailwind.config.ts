@@ -39,15 +39,26 @@ const motionEasing = frappTokens.motion.easing;
  * up. So the helper is now what its name always claimed: the token, wrapped in
  * `var()`, as a plain string.
  *
- * What v4 emits in its place is strictly better than what it replaced.
- * `bg-primary` is still a plain `var(--primary)` with no floor at all;
- * `bg-primary/15` becomes `color-mix(in oklab, var(--primary) 15%, transparent)`
- * guarded by `@supports (color: color-mix(in lab, red, red))`, with the opaque
- * `var()` left as the fallback declaration. The v3 helper had no fallback, so
- * below the `color-mix` floor (Chrome 111 / Safari 16.2 / Firefox 113) a
- * modified utility degraded to **no fill**; it now degrades to the un-modified
- * color. The mixing space moves from sRGB to OKLab, which shifts a translucent
- * fill imperceptibly and is Tailwind's own default.
+ * What v4 emits in its place is better than what it replaced, with one
+ * exception. `bg-primary` is still a plain `var(--primary)` with no floor at
+ * all; `bg-primary/15` becomes `color-mix(in oklab, var(--primary) 15%,
+ * transparent)` guarded by `@supports (color: color-mix(in lab, red, red))`,
+ * with the opaque `var()` left as the fallback declaration. The v3 helper had
+ * no fallback, so below the `color-mix` floor (Chrome 111 / Safari 16.2 /
+ * Firefox 113) a modified utility degraded to **no fill**; it now degrades to
+ * the un-modified color. The mixing space moves from sRGB to OKLab, which
+ * shifts a translucent fill imperceptibly and is Tailwind's own default.
+ *
+ * **The exception is a fill whose text is the same hue** — which is exactly
+ * foundations §5's tint recipe. There the un-modified fallback is the text's
+ * own colour, and the label reads 1.00:1 (#2376). Degrading to the solid is
+ * worse than degrading to nothing for that pair, so the recipe does not use a
+ * modifier at all: it has opaque tokens (`bg-success-tint`, `bg-warning-tint`,
+ * `bg-destructive-tint`, `hover:bg-destructive-tint-hover`) resolved to
+ * literals in `signet.css`, and `status-tint-call-sites.spec.ts` in
+ * `apps/web` fails on a `bg-<semantic>/<alpha>` fill anywhere in the Next
+ * surfaces. A modifier elsewhere (a border, the accent tints) still degrades
+ * to a bolder colour, which is cosmetic and accepted.
  *
  * The three awkward `opacityValue` shapes the old callback had to special-case
  * are all v4's problem now: the `var(--tw-*-opacity, 1)` sentinel, a `"62%"`
@@ -118,6 +129,9 @@ const config: Partial<Config> = {
         success: {
           DEFAULT: colorVar("--success"),
           foreground: colorVar("--success-foreground"),
+          // §5's tint recipe as an opaque fill; never `bg-success/[.13]`
+          // (see the `colorVar` docstring and `signet.css`).
+          tint: colorVar("--success-tint"),
         },
         muted: {
           DEFAULT: colorVar("--muted"),
@@ -139,6 +153,8 @@ const config: Partial<Config> = {
         destructive: {
           DEFAULT: colorVar("--destructive"),
           foreground: colorVar("--destructive-foreground"),
+          tint: colorVar("--destructive-tint"),
+          "tint-hover": colorVar("--destructive-tint-hover"),
         },
         border: colorVar("--border"),
         input: colorVar("--input"),
@@ -173,6 +189,7 @@ const config: Partial<Config> = {
         warning: {
           DEFAULT: colorVar("--warning"),
           foreground: colorVar("--warning-foreground"),
+          tint: colorVar("--warning-tint"),
         },
         info: {
           DEFAULT: colorVar("--info"),

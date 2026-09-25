@@ -383,6 +383,12 @@ describe("the fixed families cannot be wired to the accent slot", () => {
     "--mention-foreground",
     "--mention-chip",
     "--mention-chip-text",
+    // The status tints (#2376): a semantic's fill must not move per tenant any
+    // more than its hue does.
+    "--success-tint",
+    "--warning-tint",
+    "--destructive-tint",
+    "--destructive-tint-hover",
     "--gold-house",
     "--gold-on-house",
     "--gold-ask-fill",

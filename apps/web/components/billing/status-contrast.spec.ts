@@ -7,6 +7,7 @@ import {
   SEEDS,
   SEMANTIC,
   SURFACE,
+  STATUS_TINT,
   tint,
   INDISTINGUISHABLE,
 } from "@/tests/signet-contrast";
@@ -37,32 +38,28 @@ const accentSubtleFor = (seed: string) =>
 describe("the Semantic badge kinds", () => {
   it("puts success and warning text over the gate on their own tint, unlifted", () => {
     // The measurement that decided these two ship without a `--destructive-text`
-    // twin. If a ladder change ever pushes one under 4.5, this fails and the
-    // remedy is §1's lift, not a hue change.
-    for (const [name, bg] of Object.entries(SURFACE)) {
-      expect(
-        ratio(SEMANTIC.success, tint(SEMANTIC.success, bg)),
-        `--success on its own tint over ${name}`,
-      ).toBeGreaterThanOrEqual(AA_TEXT);
-      expect(
-        ratio(SEMANTIC.warning, tint(SEMANTIC.warning, bg)),
-        `--warning on its own tint over ${name}`,
-      ).toBeGreaterThanOrEqual(AA_TEXT);
-    }
+    // twin. If a tint or hue change ever pushes one under 4.5, this fails and
+    // the remedy is §1's lift, not a hue change. The tints are opaque (#2376),
+    // so each pair is one number on every surface a badge sits on.
+    expect(
+      ratio(SEMANTIC.success, STATUS_TINT.success),
+      "--success on --success-tint",
+    ).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(
+      ratio(SEMANTIC.warning, STATUS_TINT.warning),
+      "--warning on --warning-tint",
+    ).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
-  it("still needs the lift for danger, on the two surfaces a badge lands on", () => {
-    for (const name of ["card", "popover"] as const) {
-      const bg = SURFACE[name];
-      expect(
-        ratio(SEMANTIC.destructive, tint(SEMANTIC.destructive, bg)),
-        `unlifted --destructive on its own tint over ${name}`,
-      ).toBeLessThan(AA_TEXT);
-      expect(
-        ratio(DESTRUCTIVE_TEXT, tint(SEMANTIC.destructive, bg)),
-        `--destructive-text on the danger tint over ${name}`,
-      ).toBeGreaterThanOrEqual(AA_TEXT);
-    }
+  it("still needs the lift for danger", () => {
+    expect(
+      ratio(SEMANTIC.destructive, STATUS_TINT.destructive),
+      "unlifted --destructive on --destructive-tint",
+    ).toBeLessThan(AA_TEXT);
+    expect(
+      ratio(DESTRUCTIVE_TEXT, STATUS_TINT.destructive),
+      "--destructive-text on --destructive-tint",
+    ).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("records that --info would need a lift before it gets a first call site", () => {
@@ -84,8 +81,8 @@ describe("status colour is never decorative", () => {
     // badge are. So a chapter whose brand is green could not tell PAID from
     // PAID, and a chapter whose brand is red read PAID as OVERDUE — which is
     // the wrong direction to be wrong about money.
-    const successTint = tint(SEMANTIC.success, SURFACE.card);
-    const dangerTint = tint(SEMANTIC.destructive, SURFACE.card);
+    const successTint = STATUS_TINT.success;
+    const dangerTint = STATUS_TINT.destructive;
 
     expect(
       ratio(accentSubtleFor("#006400"), successTint),
@@ -158,11 +155,10 @@ describe("the warning notice", () => {
     // `/billing`'s preview card sits on `--background`; the invite dialog's
     // notice sits on `--popover`. Both were stock amber with an inert `dark:`
     // twin before this slice.
-    for (const name of ["background", "popover"] as const) {
-      expect(
-        ratio(SEMANTIC.warning, tint(SEMANTIC.warning, SURFACE[name])),
-        `warning notice over ${name}`,
-      ).toBeGreaterThanOrEqual(AA_TEXT);
-    }
+    // One opaque tint wherever the notice sits (#2376).
+    expect(
+      ratio(SEMANTIC.warning, STATUS_TINT.warning),
+      "warning notice text on --warning-tint",
+    ).toBeGreaterThanOrEqual(AA_TEXT);
   });
 });

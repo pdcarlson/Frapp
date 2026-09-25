@@ -461,7 +461,9 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
    * Compiled, not asserted about.
    *
    * Dozens of live classes depend on this — `bg-primary/15`,
-   * `border-destructive/45`, `bg-success/15` and friends. Under v3 the preset
+   * `border-destructive/45` and friends. (Not the §5 status tints: those
+   * moved to opaque `bg-*-tint` tokens in #2376, pinned at the end of this
+   * block, because a modifier's fallback is the solid hue.) Under v3 the preset
    * hand-rolled the alpha branch inside `colorVar`, and this block probed that
    * function directly. That was only ever a proxy for the real question, and on
    * the v4 bump the proxy went green while every one of those classes compiled
@@ -501,6 +503,29 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
     expect(css).toContain(
       "color-mix(in oklab, var(--primary) 15%, transparent)",
     );
+  });
+
+  it("compiles the status tints to plain var() reads, with no color-mix floor", async () => {
+    // #2376. An alpha modifier's fallback is the solid hue, which for the §5
+    // tint recipe is the text's own colour. The tint tokens exist so that no
+    // status fill depends on `color-mix` support at all.
+    const css = await compile(
+      "bg-success-tint bg-warning-tint bg-destructive-tint bg-destructive-tint-hover",
+    );
+    for (const token of [
+      "success-tint",
+      "warning-tint",
+      "destructive-tint",
+      "destructive-tint-hover",
+    ]) {
+      expect(css).toMatch(
+        new RegExp(
+          `\\.bg-${token}\\s*\\{\\s*background-color:\\s*var\\(--${token}\\);\\s*\\}`,
+        ),
+      );
+    }
+    // Scoped to the tint rules: Tailwind's own base layer uses color-mix.
+    expect(css).not.toMatch(/\.bg-[\w-]*-tint[\w-]*[^{}]*\{[^}]*color-mix/);
   });
 
   it("uses a percentage modifier as-is", async () => {

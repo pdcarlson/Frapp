@@ -116,7 +116,7 @@ function readSignetCss(): string {
 
 const SIGNET_CSS = readSignetCss();
 
-function cssToken(name: string): string {
+export function cssToken(name: string): string {
   const value = new RegExp(`${name}:\\s*([^;]+);`).exec(SIGNET_CSS)?.[1];
   if (!value) throw new Error(`${name} is not declared in signet.css`);
   return value.trim();
@@ -132,6 +132,19 @@ export const DESTRUCTIVE_TEXT = cssToken("--destructive-text");
 export const MENTION_CHIP = {
   fill: cssToken("--mention-chip"),
   text: cssToken("--mention-chip-text"),
+} as const;
+
+/**
+ * The §5 status tints (#2376): opaque fills, one colour on every surface. Every
+ * status tint the dashboard draws is one of these, so a contrast guard on a
+ * status chip measures the text against this, not against an alpha composite
+ * over whatever the chip sits on.
+ */
+export const STATUS_TINT = {
+  success: cssToken("--success-tint"),
+  warning: cssToken("--warning-tint"),
+  destructive: cssToken("--destructive-tint"),
+  destructiveHover: cssToken("--destructive-tint-hover"),
 } as const;
 
 /** The hairline's alpha, parsed from the token so the two cannot disagree. */
@@ -197,7 +210,12 @@ export const INDISTINGUISHABLE = 1.15;
 export const ratio = (fg: string, bg: string) =>
   contrastRatio(parseHex(fg)!, parseHex(bg)!);
 
-/** The `bg-x/[.13]` recipe, composited over the surface it lands on. */
+/**
+ * A hue at an alpha, composited over the surface it lands on. The §5 status
+ * tints no longer use this shape (they are the opaque `STATUS_TINT`s); it
+ * stays for what does, or might, draw an alpha fill, like the mention chip's
+ * rejected alternative.
+ */
 export const tint = (hue: string, over: string, alpha = 0.13) =>
   applyAlpha(hue, alpha, over);
 

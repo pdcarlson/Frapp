@@ -106,7 +106,7 @@ const RAIL_TRIGGER_CLASS =
   "h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-muted-foreground data-[state=active]:bg-accent-subtle data-[state=active]:font-semibold data-[state=active]:text-accent-text data-[state=active]:shadow-none lg:w-full lg:flex-none";
 
 const RAIL_DANGER_TRIGGER_CLASS =
-  "h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-destructive data-[state=active]:bg-destructive/15 data-[state=active]:font-semibold data-[state=active]:text-destructive data-[state=active]:shadow-none lg:mt-auto lg:w-full lg:flex-none";
+  "h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-destructive data-[state=active]:bg-destructive-tint data-[state=active]:font-semibold data-[state=active]:text-destructive-text data-[state=active]:shadow-none lg:mt-auto lg:w-full lg:flex-none";
 
 // Valid `?tab=` deep-link targets — mirrors the rail triggers below.
 //

@@ -42,7 +42,7 @@ describe("OfflineBanner", () => {
     // hue rather than a palette colour (foundations.md §5).
     expect(banner).toHaveClass("bg-background");
     expect(banner.firstElementChild).toHaveClass(
-      "border-warning/45 bg-warning/[.13] text-warning",
+      "border-warning/45 bg-warning-tint text-warning",
     );
   });
 
@@ -70,11 +70,11 @@ describe("OfflineBanner", () => {
     // composer has an outbox, and it states that at the control itself.
     expect(banner).toHaveTextContent("You're offline. Showing cached data.");
     expect(banner).not.toHaveTextContent(/will sync/i);
-    // Opaque `bg-background` so the page it floats over cannot show through
-    // the 13% semantic tint, and the contrast it was measured at still holds.
+    // Opaque `bg-background` under an opaque tint (#2376), with the lifted
+    // danger text: solid `--destructive` on `--destructive-tint` is 4.22:1.
     expect(banner).toHaveClass("bg-background");
     expect(banner.firstElementChild).toHaveClass(
-      "border-destructive/45 bg-destructive/[.13] text-destructive",
+      "border-destructive/45 bg-destructive-tint text-destructive-text",
     );
   });
 

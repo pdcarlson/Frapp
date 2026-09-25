@@ -417,6 +417,12 @@ describe("getSignetCssVars", () => {
     "--info-text",
     "--mention-chip",
     "--mention-chip-text",
+    // The §5 status tints as opaque fills (#2376). A web answer to a web
+    // problem: the `color-mix` floor they avoid does not exist in React Native.
+    "--success-tint",
+    "--warning-tint",
+    "--destructive-tint",
+    "--destructive-tint-hover",
   ];
 
   const UNDOCUMENTED_HERE = [

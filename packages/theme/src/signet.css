@@ -66,7 +66,7 @@
      * Foregrounds are for text ON a solid semantic fill; measured against
      * WCAG AA — near-black wins on every one of these hues (white loses on
      * success 2.54:1 and destructive 3.35:1). On dark surfaces, prefer the
-     * tint recipe (13% alpha fill + hue text) over solid fills. */
+     * tint recipe (the `--*-tint` fills below + hue text) over solid fills. */
     --success: #3FB950;
     --success-foreground: #131211;
     --warning: #E5A000;
@@ -84,6 +84,21 @@
      * over --card and 5.96:1 over --popover. The solid `--destructive` stays
      * the fill and the border. */
     --destructive-text: #FF7B72;
+    /* The §5 tint recipe as opaque fills (#2376): the hue at 13% over --card,
+     * resolved to a literal, the way --mention-chip resolves its own. Never
+     * write the recipe as an alpha utility (`bg-success/[.13]`). Tailwind v4
+     * compiles that to a `color-mix()` behind `@supports`, with the SOLID hue
+     * as the fallback, so below the color-mix floor (Chrome 111, Safari 16.2,
+     * Firefox 113) the fill became the text's own colour and the label read
+     * 1.00:1: invisible. A literal carries no floor, and its text contrast is
+     * one number on every surface instead of one per surface. The pairs below
+     * are pinned by apps/web/components/shared/status-tint-contrast.spec.ts:
+     * --success 5.31:1, --warning 5.85:1, --destructive-text 5.61:1 on the
+     * 13% fills, and 5.09:1 on the 20% destructive hover. */
+    --success-tint: #253221;
+    --warning-tint: #3A2F17;
+    --destructive-tint: #3D2520;
+    --destructive-tint-hover: #4C2823;
     --info: #2F81F7;
     --info-foreground: #131211;
     /* The same AA lift components.md §5 sanctions for danger, applied to info

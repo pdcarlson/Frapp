@@ -48,7 +48,7 @@ const toastVariants = cva(
         // (foundations.md §5). A solid `#f85149` panel with near-black text is
         // the light-surface treatment and reads as an alert box, not a toast.
         destructive:
-          "destructive group border-destructive/45 bg-destructive/[.13] text-destructive-text",
+          "destructive group border-destructive/45 bg-destructive-tint text-destructive-text",
       },
     },
     defaultVariants: {
@@ -83,7 +83,7 @@ const ToastAction = React.forwardRef<
       // `enabled:`-scoped: `group-[.destructive]:*` compiles to a descendant
       // selector carrying two ancestor classes, so it strictly outranks
       // `disabled:*` and would keep a disabled action painted as if live.
-      "enabled:group-[.destructive]:border-destructive/45 enabled:group-[.destructive]:bg-transparent enabled:group-[.destructive]:text-destructive-text enabled:group-[.destructive]:hover:bg-destructive/20",
+      "enabled:group-[.destructive]:border-destructive/45 enabled:group-[.destructive]:bg-transparent enabled:group-[.destructive]:text-destructive-text enabled:group-[.destructive]:hover:bg-destructive-tint-hover",
       FOCUS_RING,
       className
     )}

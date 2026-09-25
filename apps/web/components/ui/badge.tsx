@@ -17,7 +17,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
  *   default     Accent      — accent-worthy stats: points, active filters
  *   secondary   Neutral     — counts and unread markers; the `--input` fill
  *   outline     Hairline    — quiet metadata that must not read as a status
- *   success     Semantic    — status only, as a 13% tint and never a solid fill
+ *   success     Semantic    — status only, on its `--*-tint` fill, never a solid
  *   warning     Semantic    — "
  *   destructive Semantic    — "
  *   mention     Mention/DM  — "you were addressed", and nothing else
@@ -32,13 +32,13 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * from the danger tint, so the chapter that most needs `PAID` to read as paid is
  * the chapter where it reads as overdue.
  *
- * Only danger and info need §1's lift. Measured on the new ladder
- * (foundations.md §2), each hue on its own 13% tint across the four steps:
- * `--success` 4.79–6.08:1 and `--warning` 5.27–6.81:1 both clear the 4.5:1
- * gate, so they render in the semantic hue itself and need no twin.
- * `--destructive` is 3.82–4.85:1 (4.222 on `--card`, 3.817 on `--popover`),
- * which is why it has `--destructive-text` — that twin measures 4.80–6.12:1 on
- * the same tints and clears throughout.
+ * Only danger and info need §1's lift. The tints are opaque tokens (#2376,
+ * foundations §5: an alpha utility's fallback below the `color-mix` floor was
+ * the solid hue, so the label read 1.00:1), so each pair is one number on
+ * every surface: `--success` 5.31:1 and `--warning` 5.85:1 clear the 4.5:1
+ * gate and render in the hue itself. `--destructive` is 4.22:1, which is why
+ * it has `--destructive-text` at 5.61:1. Pinned in
+ * `components/shared/status-tint-contrast.spec.ts`.
  *
  * `--info` is 3.45–4.36:1 on its own tint (3.807 on `--card`, 3.446 on
  * `--popover`) and now has `--info-text` (#4C93F8) — added when the greenfield
@@ -72,12 +72,12 @@ const badgeVariants = cva(
         default: "border-accent-border bg-accent-subtle text-accent-text",
         secondary: "border-transparent bg-input text-foreground",
         outline: "border-border bg-transparent text-muted-foreground",
-        success: "border-transparent bg-success/[.13] text-success",
-        warning: "border-transparent bg-warning/[.13] text-warning",
+        success: "border-transparent bg-success-tint text-success",
+        warning: "border-transparent bg-warning-tint text-warning",
         // AA-lifted text on the tint — `--destructive` on its own 13% tint is
         // 4.39:1 over `--card`, the surface a status badge normally sits on.
         destructive:
-          "border-transparent bg-destructive/[.13] text-destructive-text",
+          "border-transparent bg-destructive-tint text-destructive-text",
         mention: "border-transparent bg-mention text-mention-foreground",
       },
     },

@@ -202,7 +202,7 @@ export function ChapterNavHeader({
     return (
       <div
         className={cn(
-          "space-y-2 rounded-[10px] border border-destructive/45 bg-destructive/[.13] px-2.5 py-2",
+          "space-y-2 rounded-[10px] border border-destructive/45 bg-destructive-tint px-2.5 py-2",
           collapsed && "w-[200px]",
           className,
         )}

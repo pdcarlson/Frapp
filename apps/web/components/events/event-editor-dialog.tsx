@@ -498,7 +498,7 @@ export function EventEditorDialog({
         </DialogHeader>
 
         {usingPreviewData ? (
-          <div className="flex items-start gap-3 rounded-md border border-warning/45 bg-warning/[.13] p-3 text-[12.5px] text-warning">
+          <div className="flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-[12.5px] text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               Preview mode is active. Sign in to create and edit live events.
@@ -615,7 +615,7 @@ export function EventEditorDialog({
               attendance and auto-absent to members holding any selected role.
             </p>
             {rolesQuery.isError ? (
-              <div className="rounded-md border border-warning/45 bg-warning/[.13] p-3 text-[12.5px] text-warning">
+              <div className="rounded-md border border-warning/45 bg-warning-tint p-3 text-[12.5px] text-warning">
                 Couldn&apos;t load chapter roles, so the list below may be
                 incomplete.
               </div>
