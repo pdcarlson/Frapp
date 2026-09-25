@@ -83,7 +83,8 @@ export interface SweepTaskRow {
 interface PollCandidateRow {
   id: string;
   channel_id: string;
-  metadata: { expires_at?: string } | null;
+  /** `metadata->>expires_at`, aliased: the sweep reads nothing else of it. */
+  expires_at: string | null;
   chat_channels: { chapter_id: string } | { chapter_id: string }[] | null;
 }
 
@@ -297,7 +298,9 @@ export class ScheduledJobsRepository {
         // the same embed-inference gap.
         this.supabase
           .from('chat_messages')
-          .select('id, channel_id, metadata, chat_channels!inner(chapter_id)')
+          .select(
+            'id, channel_id, expires_at:metadata->>expires_at, chat_channels!inner(chapter_id)',
+          )
           .eq('type', 'POLL')
           .eq('is_deleted', false)
           .is('metadata->>closed_at', null)
@@ -315,7 +318,7 @@ export class ScheduledJobsRepository {
         const chapter = Array.isArray(row.chat_channels)
           ? row.chat_channels[0]
           : row.chat_channels;
-        const expiresAt = row.metadata?.expires_at;
+        const expiresAt = row.expires_at;
         if (!chapter || !expiresAt) {
           // Unlike a query error (handled, and retried, by `fetchAllPages`),
           // a row that fails this shape check is dropped for good — it will

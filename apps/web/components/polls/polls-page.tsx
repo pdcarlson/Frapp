@@ -165,7 +165,11 @@ function Poll({
       setSelection(new Set());
       toast({
         title: "Vote withdrawn",
-        description: "You can vote again while the poll is open.",
+        // A masked card offers no way to vote (see `isMasked`), so it must not
+        // promise one.
+        description: isMasked
+          ? "Your vote is removed."
+          : "You can vote again while the poll is open.",
       });
     } catch (error) {
       toast({

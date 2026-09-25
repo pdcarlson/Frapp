@@ -568,6 +568,23 @@ describe('PollService', () => {
       expect(JSON.stringify(notice)).not.toContain('Best meeting time?');
     });
 
+    // The sweep's snapshot excludes deleted polls, but the creator can delete
+    // one before this runs. `findById` returns the tombstone, whose wiped
+    // metadata has no `closed_at`, so only the explicit check stops a notice
+    // quoting `[message deleted]`.
+    it('skips posting when the poll was deleted since the sweep snapshot', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        content: '[message deleted]',
+        is_deleted: true,
+        metadata: {},
+      });
+
+      await service.announceExpiry('msg-1', 'chan-1');
+
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
     it('skips posting when the poll no longer exists', async () => {
       mockMessageRepo.findById.mockResolvedValue(null);
 

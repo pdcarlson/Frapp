@@ -9,8 +9,8 @@ import { ChapterModule } from '../chapter/chapter.module';
  * `ChannelAccessModule` hosts `ChannelAccessService`: more than one surface
  * owes the same guarantee and must reach it through one code path.
  *
- * Five modules consume it, and the list is the whole point of the module
- * existing rather than `ChatModule` providing the service privately:
+ * Its consumers, and the list is the whole point of the module existing rather
+ * than `ChatModule` providing the service privately:
  *
  * - `ChatModule` — the message and pin reads, and the routes that edit the list.
  * - `SearchModule` — full-text message search is a message read surface.

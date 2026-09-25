@@ -93,7 +93,11 @@ vi.mock("@/components/shared/can", () => ({
   }) => <>{mockCanGrant.value ? children : deniedFallback}</>,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+const { toastMock } = vi.hoisted(() => ({
+  toastMock: vi.fn(() => ({ toast: vi.fn() })),
+}));
+
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => toastMock() }));
 
 const { PollsPage } = await import("./polls-page");
 
@@ -508,6 +512,54 @@ describe("PollsPage blocked-member polls", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /option 1/i })).toBeDisabled();
     expect(withdrawVote()).toBeEnabled();
+  });
+
+  // The card keys on `sender_blocked`, never on the sentinel `content`: the
+  // two fixtures below carry one signal each, so a card keyed on the wrong one
+  // fails one of them.
+  it("masks on sender_blocked even when content is ordinary text", () => {
+    pollsQuery.data = [{ ...MASKED_POLL, content: "Ordinary text" }];
+
+    render(<PollsPage />);
+
+    expect(
+      screen.getByText("Poll from a member you blocked"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /save vote/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not mask a clear row whose content happens to match the sentinel", () => {
+    pollsQuery.data = [
+      {
+        ...VOTED_POLL,
+        content: "[message from a blocked member]",
+        sender_blocked: false,
+      },
+    ];
+
+    render(<PollsPage />);
+
+    expect(
+      screen.queryByText("Poll from a member you blocked"),
+    ).not.toBeInTheDocument();
+    expect(saveVote()).toBeInTheDocument();
+  });
+
+  it("does not promise a re-vote after withdrawing on a masked card", async () => {
+    const toast = vi.fn();
+    toastMock.mockReturnValue({ toast });
+    render(<PollsPage />);
+
+    await userEvent.click(withdrawVote());
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Vote withdrawn",
+        description: "Your vote is removed.",
+      }),
+    );
   });
 
   it("renders a clear row as before", () => {

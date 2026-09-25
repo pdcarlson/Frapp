@@ -261,20 +261,16 @@ describe('ScheduledJobsRepository', () => {
             {
               id: 'poll-1',
               channel_id: 'chan-1',
-              metadata: {
-                question: 'Pizza or tacos?',
-                expires_at: '2026-08-05T10:00:00Z',
-              },
+              // The select aliases `metadata->>expires_at`, so PostgREST returns
+              // the one field rather than the whole jsonb.
+              expires_at: '2026-08-05T10:00:00Z',
               // PostgREST projects a to-one embed as an object.
               chat_channels: { chapter_id: 'chap-1' },
             },
             {
               id: 'poll-2',
               channel_id: 'chan-2',
-              metadata: {
-                question: 'Formal or casual?',
-                expires_at: '2026-08-05T11:00:00Z',
-              },
+              expires_at: '2026-08-05T11:00:00Z',
               // Some clients/typings hand back a single-element array instead.
               chat_channels: [{ chapter_id: 'chap-2' }],
             },
@@ -304,9 +300,6 @@ describe('ScheduledJobsRepository', () => {
       ]);
     });
 
-    // The question is deliberately not required: the expiry notice replies to
-    // the poll rather than quoting it (#2495), so a row without one still gets
-    // its announcement.
     it('drops a row missing its embed or expires_at rather than throwing', async () => {
       const { repo } = await buildRepo([
         {
@@ -314,25 +307,19 @@ describe('ScheduledJobsRepository', () => {
             {
               id: 'poll-no-embed',
               channel_id: 'chan-1',
-              metadata: { question: 'Q', expires_at: '2026-08-05T10:00:00Z' },
+              expires_at: '2026-08-05T10:00:00Z',
               chat_channels: null,
             },
             {
               id: 'poll-no-expiry',
               channel_id: 'chan-1',
-              metadata: { question: 'Q' },
-              chat_channels: { chapter_id: 'chap-1' },
-            },
-            {
-              id: 'poll-no-question',
-              channel_id: 'chan-1',
-              metadata: { expires_at: '2026-08-05T10:00:00Z' },
+              expires_at: null,
               chat_channels: { chapter_id: 'chap-1' },
             },
             {
               id: 'poll-ok',
               channel_id: 'chan-1',
-              metadata: { question: 'Q', expires_at: '2026-08-05T10:00:00Z' },
+              expires_at: '2026-08-05T10:00:00Z',
               chat_channels: { chapter_id: 'chap-1' },
             },
           ],
@@ -345,7 +332,7 @@ describe('ScheduledJobsRepository', () => {
         new Date('2026-08-05T12:00:00Z'),
       );
 
-      expect(result.map((r) => r.id)).toEqual(['poll-no-question', 'poll-ok']);
+      expect(result.map((r) => r.id)).toEqual(['poll-ok']);
     });
   });
 
@@ -695,7 +682,10 @@ const tenantSeed = () => ({
       created_at: '2026-01-01T00:00:00.000Z',
       // How PostgREST projects `chat_channels!inner(chapter_id)` back onto
       // the row — the harness resolves an embed from whatever the seed row
-      // carries, it does not perform the join itself.
+      // carries, it does not perform the join itself. Likewise the
+      // `expires_at:metadata->>expires_at` alias: the harness ignores the
+      // select list, so the seed carries the projected field.
+      expires_at: '2026-09-01T00:00:00.000Z',
       chat_channels: { chapter_id: CHAPTER_A },
     }),
     inB({
@@ -712,6 +702,7 @@ const tenantSeed = () => ({
       },
       is_deleted: false,
       created_at: '2026-01-01T00:00:00.000Z',
+      expires_at: '2026-09-01T00:00:00.000Z',
       chat_channels: { chapter_id: CHAPTER_B },
     }),
   ],
