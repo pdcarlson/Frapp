@@ -93,7 +93,11 @@ vi.mock("@/components/shared/can", () => ({
   }) => <>{mockCanGrant.value ? children : deniedFallback}</>,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+const { toastMock } = vi.hoisted(() => ({
+  toastMock: vi.fn(() => ({ toast: vi.fn() })),
+}));
+
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => toastMock() }));
 
 const { PollsPage } = await import("./polls-page");
 
@@ -458,5 +462,113 @@ describe("PollsPage subscription gating", () => {
     expect(saveVote()).toBeEnabled();
     expect(withdrawVote()).toBeEnabled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+// #2495: the API masks a blocked member's poll in place, withholding its
+// question and option text and flagging the row `sender_blocked`.
+describe("PollsPage blocked-member polls", () => {
+  const MASKED_POLL = {
+    ...VOTED_POLL,
+    id: "poll-masked",
+    sender_id: "user-blocked",
+    // The server's sentinel. The card must not render or key off it.
+    content: "[message from a blocked member]",
+    metadata: { choice_mode: "single" as const, expires_at: null },
+    results: [
+      { optionIndex: 0, optionText: null, voteCount: 3 },
+      { optionIndex: 1, optionText: null, voteCount: 1 },
+    ],
+    userVotes: [0],
+    sender_blocked: true,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCanGrant.value = true;
+    mockOffline.value = false;
+    resolvedPollsQuery();
+    chapter.active();
+    pollsQuery.data = [MASKED_POLL];
+  });
+
+  it("says whose poll it is and labels the options by number, keeping the tallies", () => {
+    render(<PollsPage />);
+
+    expect(
+      screen.getByText("Poll from a member you blocked"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Option 1")).toBeInTheDocument();
+    expect(screen.getByText("Option 2")).toBeInTheDocument();
+    expect(screen.getByText("4 total votes")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("blocked member]");
+  });
+
+  it("offers no blind vote, but keeps a vote cast before the block withdrawable", () => {
+    render(<PollsPage />);
+
+    expect(
+      screen.queryByRole("button", { name: /save vote/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /option 1/i })).toBeDisabled();
+    expect(withdrawVote()).toBeEnabled();
+  });
+
+  // The card keys on `sender_blocked`, never on the sentinel `content`: the
+  // two fixtures below carry one signal each, so a card keyed on the wrong one
+  // fails one of them.
+  it("masks on sender_blocked even when content is ordinary text", () => {
+    pollsQuery.data = [{ ...MASKED_POLL, content: "Ordinary text" }];
+
+    render(<PollsPage />);
+
+    expect(
+      screen.getByText("Poll from a member you blocked"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /save vote/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not mask a clear row whose content happens to match the sentinel", () => {
+    pollsQuery.data = [
+      {
+        ...VOTED_POLL,
+        content: "[message from a blocked member]",
+        sender_blocked: false,
+      },
+    ];
+
+    render(<PollsPage />);
+
+    expect(
+      screen.queryByText("Poll from a member you blocked"),
+    ).not.toBeInTheDocument();
+    expect(saveVote()).toBeInTheDocument();
+  });
+
+  it("does not promise a re-vote after withdrawing on a masked card", async () => {
+    const toast = vi.fn();
+    toastMock.mockReturnValue({ toast });
+    render(<PollsPage />);
+
+    await userEvent.click(withdrawVote());
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Vote withdrawn",
+        description: "Your vote is removed.",
+      }),
+    );
+  });
+
+  it("renders a clear row as before", () => {
+    pollsQuery.data = [{ ...VOTED_POLL, sender_blocked: false }];
+
+    render(<PollsPage />);
+
+    expect(screen.getByText("Pizza night?")).toBeInTheDocument();
+    expect(screen.getByText("Friday")).toBeInTheDocument();
+    expect(saveVote()).toBeInTheDocument();
   });
 });

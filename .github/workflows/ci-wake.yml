@@ -40,7 +40,7 @@ permissions:
 jobs:
   ci-wake:
     # Push runs to main have their own consumers
-    # (deploy-api.yml, verify-deployments.yml); only PR runs need a wake.
+    # (deploy-api.yml, deploy-vercel-staging.yml); only PR runs need a wake.
     if: github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5

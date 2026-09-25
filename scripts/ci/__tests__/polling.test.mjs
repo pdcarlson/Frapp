@@ -31,8 +31,8 @@ describe("createClock", () => {
   });
 });
 
-// The shared skeleton behind verify-render-deploy.mjs, verify-vercel-deploy.mjs,
-// deploy-render-production.mjs and deploy-vercel-production.mjs (#1351). Each
+// The shared skeleton behind verify-vercel-deploy.mjs, deploy-render-production.mjs,
+// deploy-vercel.mjs and verify-served-commit.mjs (#1351, #2505). Each
 // of those files pins its own provider-specific classify/fetch behaviour in
 // its own test file; this file only covers the loop mechanics pollUntilTerminal
 // itself owns — deadline, sleep-between-attempts, and handing the timeout case

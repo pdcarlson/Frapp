@@ -83,7 +83,8 @@ export interface SweepTaskRow {
 interface PollCandidateRow {
   id: string;
   channel_id: string;
-  metadata: { question?: string; expires_at?: string } | null;
+  /** `metadata->>expires_at`, aliased: the sweep reads nothing else of it. */
+  expires_at: string | null;
   chat_channels: { chapter_id: string } | { chapter_id: string }[] | null;
 }
 
@@ -91,7 +92,6 @@ export interface SweepPollRow {
   id: string;
   chapter_id: string;
   channel_id: string;
-  question: string;
   expires_at: string;
 }
 
@@ -274,7 +274,7 @@ export class ScheduledJobsRepository {
 
   /**
    * Open (not manually closed), not-yet-notified polls whose `expires_at`
-   * falls inside the window. `expires_at`/`question` live in `metadata`
+   * falls inside the window. `expires_at` lives in `metadata`
    * (there is no dedicated column — see `idx_chat_messages_poll_expires_at`,
    * added by `20260902010000_poll_expiry_dispatch.sql` for this query), and
    * `chapter_id` isn't on `chat_messages` at all — both are read through the
@@ -298,7 +298,9 @@ export class ScheduledJobsRepository {
         // the same embed-inference gap.
         this.supabase
           .from('chat_messages')
-          .select('id, channel_id, metadata, chat_channels!inner(chapter_id)')
+          .select(
+            'id, channel_id, expires_at:metadata->>expires_at, chat_channels!inner(chapter_id)',
+          )
           .eq('type', 'POLL')
           .eq('is_deleted', false)
           .is('metadata->>closed_at', null)
@@ -316,16 +318,15 @@ export class ScheduledJobsRepository {
         const chapter = Array.isArray(row.chat_channels)
           ? row.chat_channels[0]
           : row.chat_channels;
-        const question = row.metadata?.question;
-        const expiresAt = row.metadata?.expires_at;
-        if (!chapter || !question || !expiresAt) {
+        const expiresAt = row.expires_at;
+        if (!chapter || !expiresAt) {
           // Unlike a query error (handled, and retried, by `fetchAllPages`),
           // a row that fails this shape check is dropped for good — it will
           // never satisfy the check on a later tick either. Log it so a
           // malformed POLL row doesn't silently and permanently stop getting
           // its expiry notice with nothing pointing at why.
           this.logger.warn(
-            `poll-expiry sweep: dropping malformed POLL row ${row.id} (missing chapter, question, or expires_at)`,
+            `poll-expiry sweep: dropping malformed POLL row ${row.id} (missing chapter or expires_at)`,
           );
           return null;
         }
@@ -333,7 +334,6 @@ export class ScheduledJobsRepository {
           id: row.id,
           chapter_id: chapter.chapter_id,
           channel_id: row.channel_id,
-          question,
           expires_at: expiresAt,
         };
       })

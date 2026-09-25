@@ -1,47 +1,75 @@
 #!/usr/bin/env node
 
-// Deploy ONE named commit to the production Render service, and watch that
-// deploy — not "a deploy" — to a terminal state.
+// Deploy ONE named commit to a Render service, and watch that deploy — not "a
+// deploy" — to a terminal state. Both API environments deploy through it:
+// `deploy-production.yml` for `frapp-api-prod`, and `deploy-api.yml`'s
+// `deploy-staging` for `frapp-api-staging` (#2505).
 //
-// ── Why this exists rather than the deploy hook ─────────────────────────────
-// `deploy-api.yml` triggers Render with `curl "$RENDER_DEPLOY_HOOK_URL"`. A
-// deploy hook cannot name a commit: it builds whatever is at the tip of the
-// service's configured branch. That was tolerable while a `production` branch
-// existed whose tip WAS the thing being promoted. With deploys running off
-// `main`, the tip moves whenever anyone merges, so a hook fired for commit X
-// can ship commit Y — and nothing in the run would say so.
+// ── Why it is still called `-production` ────────────────────────────────────
+// `deploy-production.yml` checks out the commit being deployed and runs THIS
+// file from that commit's tree. Renaming it would break the deploy of every
+// commit from before the rename, rollbacks to an older commit included, and
+// only after that run had already applied its migrations. Keep the name.
+//
+// ── Why this exists rather than a deploy hook or auto-deploy ────────────────
+// A deploy hook cannot name a commit: it builds whatever is at the tip of the
+// service's configured branch. With deploys running off `main`, the tip moves
+// whenever anyone merges, so a hook fired for commit X can ship commit Y — and
+// nothing in the run would say so. Render's auto-deploy has the same defect
+// and a worse one: it builds on push, before CI or the staging migration has
+// run. Staging used both until #2505, so every API commit built twice, the
+// second time from whatever the tip was by then.
 //
 // `POST /v1/services/{id}/deploys` takes a `commitId`, which makes the deployed
 // artifact an input rather than a race.
 //
 // ── Why it polls by deploy id, not by commit ───────────────────────────────
-// `verify-render-deploy.mjs` scans the deploy list for the first entry matching
-// `$GITHUB_SHA` (`entries.find(...)`). That is right for an observer reacting to
-// a push, and ambiguous here: re-dispatching the same SHA produces two deploys
-// with the same commit, and the older one is already terminal. The POST hands
-// back the id of the deploy it created; watching that id cannot pick the wrong
-// one.
+// Scanning the deploy list for the first entry matching a SHA is ambiguous:
+// re-running the same SHA produces two deploys with the same commit, and the
+// older one is already terminal. The POST hands back the id of the deploy it
+// created; watching that id cannot pick the wrong one.
 //
-// ── Why `canceled` is a failure here and neutral there ─────────────────────
-// The observer treats `canceled` / `deactivated` as neutral because a newer
-// push supersedes an older deploy, which is normal and not anyone's failure.
-// This path holds a single-concurrency lock and creates exactly one deploy, so
-// there is no "newer push" to be superseded by: a cancel means the commit did
-// not ship, and reporting that as neutral would be a green run that deployed
-// nothing — the #763 failure mode, rebuilt.
+// ── Why `canceled` is a failure ────────────────────────────────────────────
+// Both callers hold a single-concurrency lock and create exactly one deploy,
+// and neither service may auto-deploy (production-guardrails and
+// staging-conformance assert it off), so nothing of ours supersedes it. A
+// cancel means the commit did not ship, and reporting that as neutral would be
+// a green run that deployed nothing — the #763 failure mode, rebuilt. If one
+// does fire with auto-deploy on, the fault is that setting, and the conformance
+// alert names it.
+//
+// ── Why a failed read is re-asked ──────────────────────────────────────────
+// A failure files a P1 on staging and fails a release on production, so one
+// bad read of Render's API must not be one. What outlasts `resilientFetch`'s
+// in-request retries (a 5xx, a network error, a stalled body) is re-asked on
+// the next poll; RENDER_MAX_CONSECUTIVE_READ_ERRORS in a row end the run. A
+// 401, 403 or 404 ends it at once: a dead key or a wrong id doesn't heal.
 //
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/deploy-render-production.test.mjs`.
 
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
-import {
-  RENDER_NEUTRAL_TERMINAL_STATES,
-  RENDER_TERMINAL_FAILURE_STATES,
-  RENDER_TERMINAL_SUCCESS_STATES,
-} from "./verify-render-deploy.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
+
+// ── Render deploy states ────────────────────────────────────────────────────
+// `live` is the only state in which this commit is serving. Render says
+// `canceled` when a newer deploy replaces this one before it finishes, and
+// `deactivated` when a newer deploy replaced it after it went live; both mean
+// the commit is not serving, so `classifyRenderStatus` fails them.
+export const RENDER_TERMINAL_SUCCESS_STATES = new Set(["live"]);
+export const RENDER_TERMINAL_FAILURE_STATES = new Set([
+  "build_failed",
+  "update_failed",
+  "pre_deploy_failed",
+]);
+export const RENDER_SUPERSEDED_STATES = new Set(["canceled", "deactivated"]);
+
+/** Failed reads IN A ROW that end the poll (about a minute at the default interval). */
+export const RENDER_MAX_CONSECUTIVE_READ_ERRORS = 3;
+/** Refusals re-asking can't fix: a dead or unscoped key, or a wrong service or deploy id. */
+export const RENDER_PERMANENT_READ_STATUSES = new Set([401, 403, 404]);
 
 export const RENDER_POLL_INTERVAL_MS = 20 * 1000;
 export const RENDER_OVERALL_TIMEOUT_MS = 20 * 60 * 1000;
@@ -53,14 +81,13 @@ const GET_DEPLOY_URL = (serviceId, deployId) =>
   `https://api.render.com/v1/services/${serviceId}/deploys/${deployId}`;
 
 /**
- * Classify a Render deploy status for the STRICT (deliberate, single-deploy)
- * path. The neutral set the observer honours collapses into failure here — see
- * the header.
+ * Classify a Render deploy status. A superseded deploy is a failure — see the
+ * header.
  */
 export function classifyRenderStatus(status) {
   if (RENDER_TERMINAL_SUCCESS_STATES.has(status)) return "success";
   if (RENDER_TERMINAL_FAILURE_STATES.has(status)) return "failure";
-  if (RENDER_NEUTRAL_TERMINAL_STATES.has(status)) return "failure";
+  if (RENDER_SUPERSEDED_STATES.has(status)) return "failure";
   return "pending";
 }
 
@@ -123,6 +150,7 @@ export async function pollRenderDeploy({
   logger = console,
 }) {
   let lastObservedStatus = null;
+  let consecutiveReadErrors = 0;
 
   return pollUntilTerminal({
     clock,
@@ -130,22 +158,38 @@ export async function pollRenderDeploy({
     overallTimeoutMs,
     logger,
     fetchOne: async () => {
-      const response = await fetchImpl(GET_DEPLOY_URL(serviceId, deployId), {
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      if (!response.ok) {
-        return { httpStatus: response.status };
+      try {
+        const response = await fetchImpl(GET_DEPLOY_URL(serviceId, deployId), {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!response.ok) {
+          return { readError: `HTTP ${response.status}`, httpStatus: response.status };
+        }
+        const deploy = await response.json();
+        return { deployStatus: deploy?.status ?? null };
+      } catch (error) {
+        return { readError: error?.message ?? String(error) };
       }
-      const deploy = await response.json();
-      return { deployStatus: deploy?.status ?? null };
     },
     classify: (state) => {
-      if (state.httpStatus) {
-        return {
-          status: "failure",
-          message: `Render API returned HTTP ${state.httpStatus} for deploy ${deployId} on ${label}.`,
-        };
+      if (state.readError) {
+        consecutiveReadErrors += 1;
+        const what = `Render API read of deploy ${deployId} on ${label} failed (${state.readError})`;
+        if (RENDER_PERMANENT_READ_STATUSES.has(state.httpStatus)) {
+          return { status: "failure", message: `${what}. The key or the id is wrong; re-asking can't fix that.` };
+        }
+        if (consecutiveReadErrors >= RENDER_MAX_CONSECUTIVE_READ_ERRORS) {
+          return {
+            status: "failure",
+            message:
+              `${what}, ${consecutiveReadErrors} reads in a row. Last observed deploy status: ` +
+              `${lastObservedStatus ?? "none"}. Check the deploy in the Render dashboard.`,
+          };
+        }
+        logger.log?.(`[${label}] ${what}; re-asking on the next poll.`);
+        return null;
       }
+      consecutiveReadErrors = 0;
 
       const deployStatus = state.deployStatus;
       lastObservedStatus = deployStatus;
@@ -159,7 +203,7 @@ export async function pollRenderDeploy({
           status: "failure",
           message:
             `Render deploy ${deployId} for ${label} ended in ${deployStatus}. ` +
-            `On a deliberate single-commit deploy this means the commit did not ship.`,
+            `This commit did not ship.`,
         };
       }
 
@@ -177,7 +221,7 @@ export async function pollRenderDeploy({
 }
 
 /** create + poll, the whole job. */
-export async function deployRenderProduction({
+export async function deployRenderCommit({
   apiKey,
   serviceId,
   sha,
@@ -214,7 +258,7 @@ export async function deployRenderProduction({
 
 async function main() {
   const serviceId = requireEnv("RENDER_SERVICE_ID");
-  const result = await deployRenderProduction({
+  const result = await deployRenderCommit({
     apiKey: requireEnv("RENDER_API_KEY"),
     serviceId,
     sha: requireEnv("DEPLOY_SHA"),
