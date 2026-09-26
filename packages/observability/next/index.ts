@@ -26,8 +26,6 @@ export {
   attachAnonymousPostHogCorrelation,
   headerValue,
   httpStatusClass,
-  statusFrom,
-  traceIdFrom,
   withAnonymousPostHogSentryCorrelation,
 } from "./sentry-correlation";
 export type {
