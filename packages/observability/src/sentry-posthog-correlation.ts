@@ -5,6 +5,7 @@ import {
   getPostHogReplayId,
   getPostHogSessionId,
 } from "./posthog-adapter";
+import { statusFrom, traceIdFrom } from "./sentry-event";
 import { headerValue, httpStatusClass } from "./sentry-http";
 
 export { headerValue, httpStatusClass } from "./sentry-http";
@@ -24,24 +25,6 @@ export interface CorrelatableSentryEvent {
     trace?: { trace_id?: unknown };
     response?: { status_code?: unknown };
   };
-}
-
-function traceIdFrom(event: CorrelatableSentryEvent): string | undefined {
-  const trace = event.contexts?.trace;
-  if (!trace || typeof trace !== "object") return undefined;
-  const id = trace.trace_id;
-  return typeof id === "string" && id.length > 0 ? id : undefined;
-}
-
-function statusFrom(event: CorrelatableSentryEvent): unknown {
-  const response = event.contexts?.response;
-  if (response && typeof response === "object") {
-    return response.status_code;
-  }
-  const tag = event.tags?.["http.status_code"];
-  if (typeof tag === "number") return tag;
-  if (typeof tag === "string") return Number(tag);
-  return undefined;
 }
 
 /**

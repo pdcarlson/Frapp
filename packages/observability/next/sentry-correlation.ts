@@ -4,6 +4,7 @@ import {
   httpStatusClass,
   pickSentryErrorCorrelatedProperties,
 } from "../src/index";
+import { statusFrom, traceIdFrom } from "../src/sentry-event";
 
 export { headerValue, httpStatusClass } from "../src/index";
 
@@ -37,25 +38,6 @@ function asAnonymousEvent(event: object): AnonymousSentryEvent {
   return event as AnonymousSentryEvent;
 }
 
-export function traceIdFrom(event: object): string | undefined {
-  const trace = asAnonymousEvent(event).contexts?.trace;
-  if (!trace || typeof trace !== "object") return undefined;
-  const id = (trace as { trace_id?: unknown }).trace_id;
-  return typeof id === "string" && id.length > 0 ? id : undefined;
-}
-
-export function statusFrom(event: object): unknown {
-  const view = asAnonymousEvent(event);
-  const response = view.contexts?.response;
-  if (response && typeof response === "object") {
-    return (response as { status_code?: unknown }).status_code;
-  }
-  const tag = view.tags?.["http.status_code"];
-  if (typeof tag === "number") return tag;
-  if (typeof tag === "string") return Number(tag);
-  return undefined;
-}
-
 /**
  * Session/replay tags + timeline marker. Never writes `posthog_distinct_id`
  * or `user`.
@@ -83,11 +65,11 @@ export function attachAnonymousPostHogCorrelation<TEvent extends object>(
     source.captureSentryErrorCorrelated(
       pickSentryErrorCorrelatedProperties({
         sentry_event_id: view.event_id,
-        trace_id: traceIdFrom(event),
+        trace_id: traceIdFrom(view),
         request_id: headerValue(view.request?.headers, REQUEST_ID_HEADER),
         route:
           typeof view.transaction === "string" ? view.transaction : undefined,
-        status_class: extras?.statusClass ?? httpStatusClass(statusFrom(event)),
+        status_class: extras?.statusClass ?? httpStatusClass(statusFrom(view)),
         release: typeof view.release === "string" ? view.release : undefined,
       }),
     );
@@ -118,7 +100,7 @@ export function withAnonymousPostHogSentryCorrelation<
   ) => TEvent,
 ): (event: TEvent, hint: THint) => Promise<TEvent | null> {
   return (event: TEvent, hint: THint) => {
-    const statusClass = httpStatusClass(statusFrom(event));
+    const statusClass = httpStatusClass(statusFrom(asAnonymousEvent(event)));
     const next = beforeSend ? beforeSend(event, hint) : event;
     return Promise.resolve(next).then((resolved) =>
       resolved ? attach(resolved, { statusClass }) : null,
