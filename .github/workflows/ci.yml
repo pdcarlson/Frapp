@@ -870,18 +870,24 @@ jobs:
       # and a `@repo/*` exports change can break only Metro's resolution.
       #
       # It runs before "Build shared packages" on purpose. The EAS worker
-      # installs from this lockfile and never runs turbo, so no packages/*/dist
-      # exists there. An `import` of `@repo/*` resolves to src/ either way, but
-      # anything Metro resolves through `require`/`default`/`main` lands in
-      # dist/: a `require("@repo/validation")` bundles green after the build
-      # and fails to resolve on EAS. `expo export` defaults to a production bundle
-      # (--dev false, minified, Hermes bytecode). No EAS_BUILD_PROFILE is set,
-      # so app.config.js skips its production fences and needs no secrets; no
-      # EXPO_PUBLIC_* value is set either, so nothing real is inlined. The
-      # output goes to the runner's temp dir, outside the workspace, so the
-      # lint and test steps below never see it and nothing uploads or caches
-      # it. iOS only: the app's own sources have no .ios/.android split, so
-      # the second platform would double the step for third-party files.
+      # installs from this lockfile and never builds the packages, so no
+      # packages/*/dist exists there. An `import` of `@repo/*` resolves to src/
+      # either way, but a package whose `exports` send `require`/`default`/
+      # `main` to dist/ (validation, formatting, color, org-archetypes,
+      # observability's root) resolves differently once dist/ exists: a local
+      # `require("@repo/validation")` exports with dist/ present and fails to
+      # resolve without it, the state the EAS worker is in.
+      # scripts/ci/__tests__/mobile-bundle-gate.test.mjs locks the order.
+      #
+      # `expo export` builds for production by default (minified, Hermes
+      # bytecode); never add `--dev`, which its parser reads as true even as
+      # `--dev=false`. No EAS_BUILD_PROFILE is set, so app.config.js skips its
+      # production fences and needs no secrets; no EXPO_PUBLIC_* value is set
+      # either, so nothing real is inlined. The output goes to the runner's
+      # temp dir so the checkout stays as `npm ci` left it and no later step
+      # can upload, cache or commit a stray bundle. iOS only: the app's own
+      # sources have no .ios/.android split, so the second platform would
+      # double the step for third-party files.
       - name: App bundles for iOS without prebuilt packages (expo export)
         working-directory: apps/mobile
         env:

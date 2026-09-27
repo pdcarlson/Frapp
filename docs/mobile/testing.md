@@ -157,16 +157,17 @@ only at bundle time, as does a `lib/` or `components/` module that a screen
 imports. `mobile-validate` catches those: its first step after `npm ci` is a
 production iOS bundle, and it runs before the shared packages are built,
 because the EAS worker never builds them (#2388). Metro resolves a `@repo/*`
-`import` to `src/`, but anything it resolves through a package's `require`,
-`default` or `main` entry lands in `dist/`, so on a tree with a built `dist/`
-a `require("@repo/validation")` bundles green and EAS still fails to resolve
-it. To reproduce the CI step locally before pushing a change that moves modules
-around:
+`import` to `src/`. A package whose `exports` send `require`, `default` or
+`main` to `dist/` (validation, formatting, color, org-archetypes,
+observability's root) resolves differently once `dist/` exists: locally, a
+`require("@repo/validation")` exports with `dist/` present and fails to resolve
+without it, which is the EAS worker's state. To reproduce the CI step locally
+before pushing a change that moves modules around:
 
 ```bash
 # Catches route-tree and Metro-resolution breakage end to end.
 # EAS runs the embed form of this in its "Bundle JavaScript" phase.
-# Output outside the workspace, as CI does, so lint never sees dist/.
+# Output outside the checkout, as CI does, so no stray bundle is left behind.
 npx expo export --platform ios --output-dir /tmp/mobile-bundle
 ```
 
