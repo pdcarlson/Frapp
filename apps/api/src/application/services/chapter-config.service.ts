@@ -131,46 +131,33 @@ const DUES_DEFAULTS: DuesConfig = {
   scholarship_pool_cents: 0,
 };
 
-function duesConfigFromUpsert(
-  row: TablesInsert<'chapter_dues_config'>,
-  fallback: DuesConfig,
-): DuesConfig {
-  const next: DuesConfig = { ...fallback };
-  for (const key of DUES_FIELDS) {
-    const value = row[key];
-    if (value !== undefined) {
-      (next as unknown as Record<string, unknown>)[key] = value;
-    }
+/**
+ * `fallback` with every field in `fields` that `incoming` supplies laid over
+ * it. `undefined` means "not supplied" and keeps the fallback value; `null` is
+ * a real value and is written. Generic over the field list so each assignment
+ * is checked against its own column type rather than erased by a cast.
+ * Exported only for its direct spec; its one production home is this file.
+ */
+export function mergeDefinedFields<T, K extends keyof T>(
+  fallback: T,
+  incoming: { readonly [P in K]?: T[P] },
+  fields: readonly K[],
+): T {
+  const next: T = { ...fallback };
+  for (const key of fields) {
+    const value = incoming[key];
+    if (value !== undefined) next[key] = value;
   }
   return next;
 }
 
-function serviceConfigFromUpsert(
-  row: TablesInsert<'chapter_service_config'>,
-  fallback: ServiceConfig,
-): ServiceConfig {
-  const next: ServiceConfig = { ...fallback };
-  for (const key of SERVICE_CONFIG_FIELDS) {
-    const value = row[key];
-    if (value !== undefined) {
-      (next as unknown as Record<string, unknown>)[key] = value;
-    }
-  }
-  return next;
-}
-
-function pointsConfigFromUpsert(
-  row: TablesInsert<'chapter_points_config'>,
-  fallback: PointsConfig,
-): PointsConfig {
-  const next: PointsConfig = { ...fallback };
-  for (const key of POINTS_CONFIG_FIELDS) {
-    const value = row[key];
-    if (value !== undefined) {
-      (next as unknown as Record<string, unknown>)[key] = value;
-    }
-  }
-  return next;
+/** Whether `next` differs from `current` on any of `fields`. */
+function fieldsChanged<T, K extends keyof T>(
+  current: T,
+  next: T,
+  fields: readonly K[],
+): boolean {
+  return fields.some((key) => next[key] !== current[key]);
 }
 
 /** One incoming workflow toggle in a config PATCH. */
@@ -615,71 +602,50 @@ export class ChapterConfigService {
       }
     }
 
-    // Dues are a singleton row (chapter_dues_config, PK = chapter_id). A partial
-    // PATCH merges the provided fields onto the current row; only a real change
-    // writes (and audits). Numeric/enum guards are enforced by the DTO.
+    // Dues, service-hours policy and points anti-fraud limits are singleton
+    // rows (PK = chapter_id). A partial PATCH merges the provided fields onto
+    // the current row; only a real change writes (and audits). Numeric/enum
+    // guards are enforced by the DTO, and the points floors a second time by
+    // the column CHECK, so the merge only has to decide what changed.
+    //
+    // `chapter_id` goes last in each upsert, not first: `next` is built from a
+    // client-supplied `Partial<…Config>`, so spreading it over the scoped key
+    // would let any future `chapter_id`-shaped addition to that config type
+    // upsert onto another chapter's row. No such key exists today; the order
+    // is what keeps it from mattering if one is ever added.
     let duesUpsert: TablesInsert<'chapter_dues_config'> | null = null;
     if (dto.dues !== undefined) {
       const current = existing.dues;
-      const next: DuesConfig = { ...current };
-      for (const key of DUES_FIELDS) {
-        const incoming = dto.dues[key];
-        if (incoming !== undefined) {
-          (next as unknown as Record<string, unknown>)[key] = incoming;
-        }
-      }
-      if (DUES_FIELDS.some((key) => next[key] !== current[key])) {
-        // `chapter_id` last, not first: `next` is built from a client-supplied
-        // `Partial<…Config>`, so spreading it over the scoped key would let any
-        // future `chapter_id`-shaped addition to that config type upsert onto
-        // another chapter's row. No such key exists today; the order is what
-        // keeps it from mattering if one is ever added.
+      const next = mergeDefinedFields(current, dto.dues, DUES_FIELDS);
+      if (fieldsChanged(current, next, DUES_FIELDS)) {
         duesUpsert = { ...next, chapter_id: chapterId };
         diff['dues'] = { from: current, to: next };
       }
     }
 
-    // Service-hours policy is the same singleton merge as dues.
     let serviceUpsert: TablesInsert<'chapter_service_config'> | null = null;
     if (dto.service !== undefined) {
       const current = existing.service;
-      const next: ServiceConfig = { ...current };
-      for (const key of SERVICE_CONFIG_FIELDS) {
-        const incoming = dto.service[key];
-        if (incoming !== undefined) {
-          (next as unknown as Record<string, unknown>)[key] = incoming;
-        }
-      }
-      if (SERVICE_CONFIG_FIELDS.some((key) => next[key] !== current[key])) {
-        // `chapter_id` last, not first: `next` is built from a client-supplied
-        // `Partial<…Config>`, so spreading it over the scoped key would let any
-        // future `chapter_id`-shaped addition to that config type upsert onto
-        // another chapter's row. No such key exists today; the order is what
-        // keeps it from mattering if one is ever added.
+      const next = mergeDefinedFields(
+        current,
+        dto.service,
+        SERVICE_CONFIG_FIELDS,
+      );
+      if (fieldsChanged(current, next, SERVICE_CONFIG_FIELDS)) {
         serviceUpsert = { ...next, chapter_id: chapterId };
         diff['service'] = { from: current, to: next };
       }
     }
 
-    // Points anti-fraud limits are the same singleton merge as dues and
-    // service. Numeric floors are enforced twice — by the DTO's @Min(1) and by
-    // the column CHECK — so this loop only has to decide what changed.
     let pointsUpsert: TablesInsert<'chapter_points_config'> | null = null;
     if (dto.points !== undefined) {
       const current = existing.points;
-      const next: PointsConfig = { ...current };
-      for (const key of POINTS_CONFIG_FIELDS) {
-        const incoming = dto.points[key];
-        if (incoming !== undefined) {
-          (next as unknown as Record<string, unknown>)[key] = incoming;
-        }
-      }
-      if (POINTS_CONFIG_FIELDS.some((key) => next[key] !== current[key])) {
-        // `chapter_id` last, not first: `next` is built from a client-supplied
-        // `Partial<…Config>`, so spreading it over the scoped key would let any
-        // future `chapter_id`-shaped addition to that config type upsert onto
-        // another chapter's row. No such key exists today; the order is what
-        // keeps it from mattering if one is ever added.
+      const next = mergeDefinedFields(
+        current,
+        dto.points,
+        POINTS_CONFIG_FIELDS,
+      );
+      if (fieldsChanged(current, next, POINTS_CONFIG_FIELDS)) {
         pointsUpsert = { ...next, chapter_id: chapterId };
         diff['points'] = { from: current, to: next };
       }
@@ -951,13 +917,21 @@ export class ChapterConfigService {
           : existing.default_invite_role_id,
       workflows,
       dues: duesUpsert
-        ? duesConfigFromUpsert(duesUpsert, existing.dues)
+        ? mergeDefinedFields(existing.dues, duesUpsert, DUES_FIELDS)
         : existing.dues,
       service: serviceUpsert
-        ? serviceConfigFromUpsert(serviceUpsert, existing.service)
+        ? mergeDefinedFields(
+            existing.service,
+            serviceUpsert,
+            SERVICE_CONFIG_FIELDS,
+          )
         : existing.service,
       points: pointsUpsert
-        ? pointsConfigFromUpsert(pointsUpsert, existing.points)
+        ? mergeDefinedFields(
+            existing.points,
+            pointsUpsert,
+            POINTS_CONFIG_FIELDS,
+          )
         : existing.points,
     };
   }
