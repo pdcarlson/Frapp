@@ -10,7 +10,11 @@ import {
 import type { components } from "@repo/api-sdk";
 import type { BlockListStatus } from "@repo/validation";
 import { createChapterQueryKeys } from "./chapter-query-keys";
-import { bookmarkKeys, CHANNEL_UNREAD_COUNTS_KEY } from "./use-chat";
+import {
+  bookmarkKeys,
+  CHANNEL_LIST_KEY,
+  CHANNEL_UNREAD_COUNTS_KEY,
+} from "./use-chat";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 // ── Report and block (#2257) ────────────────────────────────────────────────
@@ -349,6 +353,16 @@ async function applyConfirmedBlockChange(
   // something next refetches the counts.
   void queryClient.invalidateQueries({
     queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+  });
+  // And the channel list, re-read together with the counts: a hidden 1:1 DM
+  // stays hidden only while no member the viewer has not blocked has written
+  // in it (`get_hidden_channel_ids`), so an unblock can resurface one. Re-read
+  // alone, the counts would badge that DM while the cached list still files
+  // it under Hidden conversations, where no row shows a badge. `exact`, so
+  // this re-reads the list and not every channel query under its prefix.
+  void queryClient.invalidateQueries({
+    queryKey: CHANNEL_LIST_KEY,
+    exact: true,
   });
 }
 

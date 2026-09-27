@@ -5,10 +5,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 
+/** The query key `useChannels` caches the channel list under. */
+export const CHANNEL_LIST_KEY = ["channels"] as const;
+
 export function useChannels() {
   const client = useFrappClient();
   return useQuery({
-    queryKey: ["channels"],
+    queryKey: CHANNEL_LIST_KEY,
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/channels");
       if (error) throw error;

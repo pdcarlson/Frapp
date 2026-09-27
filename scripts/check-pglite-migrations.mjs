@@ -3484,6 +3484,11 @@ try {
       ('${PUB}', '${U.b}', null, 'plain from B', '{}'::uuid[], ${at(3)}),
       ('${PUB}', '${U.b}', null, '@A from B', array['${U.a}']::uuid[], ${at(4)}),
       ('${PUB}', null, 'Webhook Bot', 'live, no sender', '{}'::uuid[], ${at(5)}),
+      -- The blocker's own messages. Never unread to userA, but userB counts
+      -- them, so a predicate that also hid a blocker from the member they
+      -- blocked (the oracle) would move userB's counts.
+      ('${PUB}', '${U.a}', null, '@B from A', array['${U.b}']::uuid[], ${at(5.5)}),
+      ('${DM}', '${U.a}', null, 'dm from A', '{}'::uuid[], ${at(5.5)}),
       ('${DM}', '${U.b}', null, 'dm one', '{}'::uuid[], ${at(6)}),
       ('${DM}', '${U.b}', null, '@A dm two', array['${U.a}']::uuid[], ${at(7)}),
       ('${PUB_OTHER}', '${U.b}', null, '@A elsewhere', array['${U.a}']::uuid[], ${at(8)});
@@ -3535,7 +3540,7 @@ try {
       // their own messages.
       name: "before any block, unread and mention counts include every sender (#2521)",
       got: `${before.aHere} | ${before.aThere} | ${before.b} | ${before.c}`,
-      want: "DM=2/1 PUB=4/2 | PUB_OTHER=1/1 | DM=0/0 PUB=2/0 | DM=2/0 PUB=4/0",
+      want: "DM=2/1 PUB=4/2 | PUB_OTHER=1/1 | DM=1/0 PUB=3/1 | DM=3/0 PUB=5/0",
     },
     {
       name: "a blocker's unread and mention counts skip the blocked member's messages in that chapter (#2521)",
