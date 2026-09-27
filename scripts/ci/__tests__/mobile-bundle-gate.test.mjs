@@ -9,12 +9,14 @@ import { workflowSteps } from "./helpers/workflow-yaml.mjs";
 //
 // The step exists because nothing else in CI hands the mobile module graph to
 // Metro: #2347 shipped a spec under `apps/mobile/app/` that only EAS's "Bundle
-// JavaScript" phase could see, and EAS reported it as "Unknown error". What
-// makes the step worth anything is where it sits. The EAS worker installs from
-// the lockfile and never runs turbo, so it resolves `@repo/*` with no
-// `packages/*/dist` present. Moved below "Build shared packages", the step
-// would stay green while bundling a tree EAS never sees, and nothing else
-// would notice, so the ordering is what this file locks.
+// JavaScript" phase could see, and EAS reported it as "Unknown error". Where
+// the step sits matters too. The EAS worker installs from the lockfile and
+// never runs turbo, so it resolves `@repo/*` with no `packages/*/dist`
+// present. Anything Metro resolves through a package's `require`/`default`/
+// `main` entry lands in dist/, so below "Build shared packages" a
+// `require("@repo/validation")` bundles green that EAS fails to resolve
+// (checked by hand for #2388). Nothing else would notice the step moving, so
+// the ordering is what this file locks.
 
 const CI_YML = join(
   dirname(fileURLToPath(import.meta.url)),

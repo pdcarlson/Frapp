@@ -154,14 +154,24 @@ where to move it, so `npm run test -w apps/mobile` catches this in seconds.
 It is a file-placement check, not an import check. A route module that reaches
 test tooling under some other name — a fixture, a render helper — still fails
 only at bundle time, as does a `lib/` or `components/` module that a screen
-imports. Nothing in CI bundles the app, so run the export yourself before
-trusting a mobile change that moves modules around:
+imports. `mobile-validate` catches those: its first step after `npm ci` is a
+production iOS bundle, and it runs before the shared packages are built,
+because the EAS worker never builds them (#2388). Metro resolves a `@repo/*`
+`import` to `src/`, but anything it resolves through a package's `require`,
+`default` or `main` entry lands in `dist/`, so on a tree with a built `dist/`
+a `require("@repo/validation")` bundles green and EAS still fails to resolve
+it. To reproduce the CI step locally before pushing a change that moves modules
+around:
 
 ```bash
 # Catches route-tree and Metro-resolution breakage end to end.
 # EAS runs the embed form of this in its "Bundle JavaScript" phase.
-npx expo export --platform ios
+# Output outside the workspace, as CI does, so lint never sees dist/.
+npx expo export --platform ios --output-dir /tmp/mobile-bundle
 ```
+
+A green local run with `packages/*/dist` present can still hide the `dist/`
+resolution case above; the CI step can't.
 
 Put screen-adjacent logic that wants a test in `lib/` and import it from the
 screen — `lib/chat/channel-list.ts` and its spec are the pattern. A spec that

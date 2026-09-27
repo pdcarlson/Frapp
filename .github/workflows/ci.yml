@@ -871,8 +871,10 @@ jobs:
       #
       # It runs before "Build shared packages" on purpose. The EAS worker
       # installs from this lockfile and never runs turbo, so no packages/*/dist
-      # exists there; bundling after the build would resolve `@repo/*` against
-      # a tree EAS never sees. `expo export` defaults to a production bundle
+      # exists there. An `import` of `@repo/*` resolves to src/ either way, but
+      # anything Metro resolves through `require`/`default`/`main` lands in
+      # dist/: a `require("@repo/validation")` bundles green after the build
+      # and fails to resolve on EAS. `expo export` defaults to a production bundle
       # (--dev false, minified, Hermes bytecode). No EAS_BUILD_PROFILE is set,
       # so app.config.js skips its production fences and needs no secrets; no
       # EXPO_PUBLIC_* value is set either, so nothing real is inlined. The
