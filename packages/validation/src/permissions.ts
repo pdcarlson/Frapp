@@ -85,7 +85,7 @@ export function canAny(
  * `chat-report-copy.ts`, pinned against this list by its spec), `writing.md`
  * §7's Chat Admin row, the Status line, § Report and § Officer action of
  * `spec/behavior/chat/README.md`, and the `chat/reports` row of
- * `docs/internal/security/AUTHORIZATION_MODEL.md`.
+ * `docs/security/authorization-model.md`.
  */
 export const CHAT_REPORT_QUEUE_PERMISSIONS = [
   "members:view",
@@ -123,8 +123,8 @@ export const CHAT_REPORT_QUEUE_PERMISSIONS = [
  * Prose that restates it: `spec/behavior/rbac.md`'s `chapter-config:manage`
  * row, `spec/behavior/chapter-config.md` § "PATCH /chapters/current — core
  * chapter profile", the `chapters/current` row of
- * `docs/internal/security/AUTHORIZATION_MODEL.md`, and the #930 section of
- * `docs/internal/security/SECURITY_FIXES.md`.
+ * `docs/security/authorization-model.md`, and the #930 section of
+ * `docs/security/security-fixes.md`.
  */
 export const CHAPTER_PROFILE_PERMISSIONS = [
   "chapter-config:view",

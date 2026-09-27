@@ -26,7 +26,7 @@
  * still store and that API callers can already upload.
  *
  * SVG (`image/svg+xml`, `.svg`) is never on these lists. SVGs can embed
- * script; see `docs/internal/security/content-validation.md`.
+ * script; see `docs/security/content-validation.md`.
  *
  * Bucket policies in `supabase/migrations/*.sql` must keep mirroring these
  * MIME lists (comment cross-references only on shipped migrations). Size is
@@ -76,7 +76,7 @@
  * The application-layer check in each service therefore gates URL *issuance*
  * only. It is a real half of the pair — it turns a rejection into a readable
  * error rather than a failed PUT — but it is not a second enforcement point.
- * See `docs/internal/security/content-validation.md` and #1230.
+ * See `docs/security/content-validation.md` and #1230.
  */
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;

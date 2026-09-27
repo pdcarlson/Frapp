@@ -25,7 +25,7 @@ Legacy Office stays on `document` because the API and every matching storage buc
 Validate the filename with `isAllowedUploadExtension(kind, filename)`. If the extension is not in the kind, reject. Blocklists must not be used.
 
 ### 3. Size
-`MAX_UPLOAD_BYTES` (25 MB / 26214400) is the shared cap for the **member-upload** buckets and matches their `file_size_limit`. It is **not** universal: `chat-archive` and `supabase/config.toml`'s global `[storage] file_size_limit` are both set higher. Per-bucket values and the global cap are owned by [`spec/architecture/README.md` § 7](../../../spec/architecture/README.md#7-storage-supabase-storage). Clients must check `file.size` via `inspectUploadFile` / `isWithinUploadSizeLimit` before requesting a signed URL.
+`MAX_UPLOAD_BYTES` (25 MB / 26214400) is the shared cap for the **member-upload** buckets and matches their `file_size_limit`. It is **not** universal: `chat-archive` and `supabase/config.toml`'s global `[storage] file_size_limit` are both set higher. Per-bucket values and the global cap are owned by [`spec/architecture/README.md` § 7](../../spec/architecture/README.md#7-storage-supabase-storage). Clients must check `file.size` via `inspectUploadFile` / `isWithinUploadSizeLimit` before requesting a signed URL.
 
 Every cap above bounds **one object**. The Discord archive importer additionally bounds the **total**, and this section owns those two numbers: `MAX_ARCHIVE_IMPORT_BYTES` (20 GiB) per import and `MAX_ARCHIVE_CHAPTER_BYTES` (50 GiB) per chapter, both in `packages/validation/src/upload-allowlists.ts` (#1243). Without them, `MAX_UPLOAD_URL_BATCH` capped a single *request* at 100 tickets while nothing capped the loop, and `CustomThrottlerGuard` bounds request rate rather than bytes.
 

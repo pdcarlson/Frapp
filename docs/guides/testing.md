@@ -305,7 +305,7 @@ matter before anyone touches the root `overrides` block.
 
 The **`api-tests`** job runs **three** suites after building shared packages: the unit suite (`npm run test -w apps/api`), the E2E suite (`npm run test:e2e -w apps/api`), and the adversarial AI evals (`npm run test:ai-evals -w apps/api`). Because the E2E specs mock Supabase (§6) and the evals are pure fixtures, the job stays deterministic in GitHub Actions and requires no external services.
 
-The evals run unconditionally rather than path-gated. Spec §13 requires them on any change to prompts, retrieval or the tool registry; running them always is a superset, and costs ~1.5s against the minutes a separate job's checkout and install would burn (ADR-15). Their behavioural half currently **skips** — no agent exists yet — so a green `api-tests` is not evidence any agent was graded; see [`docs/internal/security/ai-prompt-injection.md`](../internal/security/ai-prompt-injection.md) and `apps/api/test/ai-evals/README.md`.
+The evals run unconditionally rather than path-gated. Spec §13 requires them on any change to prompts, retrieval or the tool registry; running them always is a superset, and costs ~1.5s against the minutes a separate job's checkout and install would burn (ADR-15). Their behavioural half currently **skips** — no agent exists yet — so a green `api-tests` is not evidence any agent was graded; see [`docs/security/ai-prompt-injection.md`](../security/ai-prompt-injection.md) and `apps/api/test/ai-evals/README.md`.
 
 ## 5a. Chat hot-path tests (ADR-11 / #416)
 

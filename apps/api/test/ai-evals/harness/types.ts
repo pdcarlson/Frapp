@@ -6,7 +6,7 @@
  * an implementation must accept and return in order to be graded; nothing here
  * imports application code, so the suite compiles and runs against an empty repo.
  *
- * Threat model: `docs/internal/security/ai-prompt-injection.md`
+ * Threat model: `docs/security/ai-prompt-injection.md`
  * Spec: `spec/architecture/README.md` §13 (AI Corpus Architecture) → Evals
  */
 

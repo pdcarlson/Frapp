@@ -34,7 +34,7 @@
  * per-channel predicate (`can_read_chat_channel`) rather than chapter
  * membership, so DM and role-gated presence is not visible chapter-wide.
  * Canonical home for the authorisation half:
- * `docs/internal/security/AUTHORIZATION_MODEL.md` § "The policies that do
+ * `docs/security/authorization-model.md` § "The policies that do
  * exist".
  *
  * Kept tiny and dependency-free so the pin test can import it without pulling
@@ -56,7 +56,7 @@
  * neither read the roster nor publish an entry. A chapter member can still
  * `track()` another member's id — Realtime policies see the topic and the
  * message extension, not the presence payload — so presence stays advisory
- * (`AUTHORIZATION_MODEL.md`). Changing the prefix here without a matching
+ * (`authorization-model.md`). Changing the prefix here without a matching
  * policy branch turns the Directory silently empty; grep the migrations first.
  */
 export function chapterPresenceTopic(chapterId: string): string {
