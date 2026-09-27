@@ -340,17 +340,6 @@ updates:
       - dependency-name: "@sentry/nextjs"
         update-types: ["version-update:semver-major"]
 
-      # ── The jscpd 5.3.2 hold ─────────────────────────────────────────────
-      # 5.3.2 fixed an off-by-one that counted every clone one line short, so
-      # the same tree measures 4.25% instead of 3.91% (2026-09-27: 1,244
-      # clones, +1,244 lines) and the advisory `duplicate-detection` job goes
-      # red against `.jscpd.json`'s 4.1%. The code did not change, the unit
-      # did. Re-basing the threshold is a gate decision for a human: #2726.
-      # Until then this keeps the grouped minor/patch PR from carrying the bump.
-      # Drop it in the PR that resolves #2726 either way it goes.
-      - dependency-name: "jscpd"
-        versions: [">=5.3.2"]
-
       # ── The ESLint 10 hold ───────────────────────────────────────────────
       # Majors only. ESLint 10 is blocked on a plugin, not on our own code:
       # `eslint-plugin-react` has no v10-compatible release — 7.37.5 is the
