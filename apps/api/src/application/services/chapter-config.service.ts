@@ -136,6 +136,7 @@ const DUES_DEFAULTS: DuesConfig = {
  * it. `undefined` means "not supplied" and keeps the fallback value; `null` is
  * a real value and is written. Generic over the field list so each assignment
  * is checked against its own column type rather than erased by a cast.
+ * Exported only for its direct spec; its one production home is this file.
  */
 export function mergeDefinedFields<T, K extends keyof T>(
   fallback: T,

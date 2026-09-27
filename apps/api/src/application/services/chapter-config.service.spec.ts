@@ -1694,6 +1694,32 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
     expect(result.service).toMatchObject({ minutes_per_point: 30 });
   });
 
+  it('returns the merged points row when only the trailing points read fails', async () => {
+    const supabase = makeSupabase(
+      [],
+      CONFIGURED_DUES,
+      {},
+      null,
+      { adjustment_rate_limit_per_hour: 20, anomaly_threshold: 400 },
+      {
+        readErrorOnCall: { points: 2 },
+        trailingReadError: TRAILING,
+      },
+    );
+    const service = await buildService(supabase);
+
+    const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
+      points: { anomaly_threshold: 250 },
+    });
+
+    expect(supabase.pointsUpsert).toHaveBeenCalledTimes(1);
+    expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
+    expect(result.points).toEqual({
+      adjustment_rate_limit_per_hour: 20,
+      anomaly_threshold: 250,
+    });
+  });
+
   it('returns the overlayed workflow when only the trailing workflows read fails', async () => {
     const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
       readErrorOnCall: { workflows: 2 },
@@ -1789,10 +1815,11 @@ describe('mergeDefinedFields', () => {
   });
 
   it('ignores a supplied key that is not in the field list', () => {
+    // A wider row than the field list, the way an upsert row carrying
+    // `chapter_id` is passed back in; a fresh literal would not typecheck.
+    const incoming: Partial<Config> = { cadence: 'yearly', amount: 5 };
     expect(
-      mergeDefinedFields(fallback, { cadence: 'yearly', amount: 5 }, [
-        'cadence',
-      ] as const),
+      mergeDefinedFields(fallback, incoming, ['cadence'] as const),
     ).toEqual({ ...fallback, cadence: 'yearly' });
   });
 
