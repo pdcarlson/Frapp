@@ -25,7 +25,7 @@ These encode invariants the codebase can't enforce for itself.
 
 - **Tenant isolation.** RLS is on for every base table with no permissive policies (the chat hot
   path's narrow client-read policies are the audited exception; see
-  `docs/internal/security/AUTHORIZATION_MODEL.md`), but the API holds the `service_role` key, which
+  `docs/security/authorization-model.md`), but the API holds the `service_role` key, which
   bypasses RLS. Isolation for API queries is therefore application-layer only. Flag a new query
   without `.eq('chapter_id', chapterId)`, and a role or permission lookup not re-scoped by
   `chapter_id` (a cross-chapter `role_id` leaks permissions). Reference pattern:
@@ -64,11 +64,11 @@ These encode invariants the codebase can't enforce for itself.
     | `push-rules.ts:defaultLevelFor` | `spec/behavior/notifications.md`, `spec/architecture/README.md` |
     | `packages/validation/src/upload-allowlists.ts` (`MAX_UPLOAD_BYTES`, kinds); per-bucket caps differ, and `config.toml` is a different number | `content-validation.md` (the owner), `spec/architecture/README.md` § 7 |
     | `buildChapterConfigFromArchetype` (which seeds are `structuredClone`d) | `spec/engineering.md`, `spec/architecture/README.md` |
-    | `DEFAULT_SYSTEM_ROLES` / `DEFAULT_CHANNELS` / `SystemPermissions` | `spec/behavior/rbac.md`, `spec/behavior/chat/README.md`, `spec/behavior/alumni.md`, `spec/product/modules.md`, `spec/product/personas.md`, `AUTHORIZATION_MODEL.md` |
+    | `DEFAULT_SYSTEM_ROLES` / `DEFAULT_CHANNELS` / `SystemPermissions` | `spec/behavior/rbac.md`, `spec/behavior/chat/README.md`, `spec/behavior/alumni.md`, `spec/product/modules.md`, `spec/product/personas.md`, `authorization-model.md` |
     | `scripts/check-env-slugs.mjs:INFISICAL_ENV_SLUGS` | `ENV_REFERENCE.md` (the owner), and the slug warnings in `SECRETS_MANAGEMENT.md`, `LOCAL_DEV.md`, `AGENT_INFRA.md`, `.claude/skills/infrastructure-research/SKILL.md` |
-    | Storage bucket declarations in `supabase/migrations/` | `spec/architecture/README.md` § 7, `AUTHORIZATION_MODEL.md` |
+    | Storage bucket declarations in `supabase/migrations/` | `spec/architecture/README.md` § 7, `authorization-model.md` |
     | `apps/web/tests/visual/routes.ts` | `apps/web/tests/visual/README.md` |
-    | The React pin in every `package.json`, root `overrides` included (`git ls-files '*package.json' \| xargs grep -ln '"react": "19'`) | `AGENTS.md` (the owner), `SECURITY_FIXES.md` |
+    | The React pin in every `package.json`, root `overrides` included (`git ls-files '*package.json' \| xargs grep -ln '"react": "19'`) | `AGENTS.md` (the owner), `security-fixes.md` |
     | `QueryClient` defaults in `apps/web/lib/providers/query-provider.tsx` and `apps/mobile/lib/query-client.ts`; they differ, and an unset option resolves per platform | `spec/ui/resilience/`, `spec/ui/web-dashboard/README.md` |
     | The `delete from` block of the `anonymize_user` RPC (the latest migration re-creating it wins) | `spec/behavior/data-retention.md` |
     | `throttle-profiles.decorator.ts` and every handler applying a profile (applied per route, never inherited) | `spec/behavior/README.md` § Per-route rate limits, `docs/guides/api-architecture.md` |

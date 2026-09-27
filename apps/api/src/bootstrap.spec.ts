@@ -150,7 +150,7 @@ describe('configureApp', () => {
       // *unmodified* default — see the HELMET_OPTIONS comment in bootstrap.ts
       // for why Swagger UI already fits inside it without any directive
       // override (verified by a live /docs boot, recorded in
-      // docs/internal/security/SECURITY_FIXES.md).
+      // docs/security/security-fixes.md).
       expect(res.headers['content-security-policy']).toBe(
         "default-src 'self';base-uri 'self';font-src 'self' https: data:;" +
           "form-action 'self';frame-ancestors 'self';img-src 'self' data:;" +

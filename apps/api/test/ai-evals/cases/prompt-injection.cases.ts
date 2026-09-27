@@ -12,7 +12,7 @@
  * in `harness/grader.ts` a fair test.
  *
  * One case per threat-model vector; see
- * `docs/internal/security/ai-prompt-injection.md`.
+ * `docs/security/ai-prompt-injection.md`.
  */
 import type { EvalCase } from '../harness/types';
 import {

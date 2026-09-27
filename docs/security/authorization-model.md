@@ -9,15 +9,15 @@ every route and every table:
 Keep this current when adding a route, a table, or a storage bucket. It is a durable map of the
 enforcement model, not a point-in-time audit write-up.
 
-Related: [`SECURITY_FIXES.md`](SECURITY_FIXES.md) (history of applied fixes) ·
-[`../../../spec/behavior/multi-tenancy.md`](../../../spec/behavior/multi-tenancy.md) (product rules).
+Related: [`security-fixes.md`](security-fixes.md) (history of applied fixes) ·
+[`spec/behavior/multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) (product rules).
 
 ---
 
 ## 1. The model in short
 
 Frapp is multi-tenant **by chapter**. Every request carries a bearer token, and the active chapter
-comes from the JWT `active_chapter_id` claim, with an `x-chapter-id` header fallback whose precedence [`multi-tenancy.md`](../../../spec/behavior/multi-tenancy.md) owns. Three
+comes from the JWT `active_chapter_id` claim, with an `x-chapter-id` header fallback whose precedence [`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) owns. Three
 guards compose, in this order:
 
 | Guard | Proves | Source |
@@ -69,7 +69,7 @@ composed with **B** or **C** for per-row reads.
 | `chapters/:id/config` | `GET`, `PATCH`, `POST /:id/theme-palette` | A+C+P `chapter-config:view` / `…:manage`\|`*` | A — data always comes from the guard-resolved chapter; `:id` disagreeing with it is rejected with `403 chapter.context.mismatch` (`chapter-config.controller.ts:45,64,80`, `assertMatchesActiveChapter`). See §5.1 |
 | `documents` | `POST /upload-url`, `POST /`, `GET /`, `GET /folders`, `POST /folders`, `PATCH /folders/:id`, `DELETE /folders/:id`, `GET /:id`, `DELETE /:id` | A+C+P `members:view`, `chapter_docs:upload` / `…:manage` | B — `findById(id, chapterId)` |
 | `channels` (chat) | 23 routes incl. `GET/POST /:id/messages`, `PATCH/DELETE /messages/:messageId`, pins, reactions, `POST /:id/upload-url` | A+C+P `members:view`, `channels:create` / `channels:manage` | B for categories; **C** for channels and messages — the list filters through `filterAccessibleChannels` and `GET /:id` through `assertChannelAccess` (`getChannels`/`getChannel`, `chat.service.ts:286,305`), messages via `assertMessageAccess` → `assertChannelAccess` (`chat.service.ts:896`). The `channels:manage` mutations resolve chapter-scoped only, by design. **The bucket routes here are gated below the route guard, not by it**: `members:view` admits any member and cannot see which channel is in play, so what decides whether bytes may land is `assertChannelAccess(…, 'post')` inside `requestChatUploadUrl` — the same gate `sendMessage` applies, so mint and send cannot diverge (#2186) — and the attachment/avatar download mints gate on `assertChannelAccess` likewise (`chat.service.ts:1742,1876`). See §4 |
-| `chat/reports` | `POST /`, `GET /`, `PATCH /:id`, `POST /:id/remove-message` | A+C+P `members:view`; `channels:manage` on the three officer routes; `@SubscriptionExempt` | `POST /` authorizes the message as a **read** through `assertMessageAccess` (C). The officer routes are B — `findById` / `resolve` / `findByChapterAndStatus` / `resolveOpenForMessage` / `releaseClaim` all carry `.eq('chapter_id', chapterId)` — and the reads and resolutions also leave out the reports whose `reported_sender_id` is the caller, so a reported officer gets no list row and a 404 on the write routes ([`chat/README.md` § Report](../../../spec/behavior/chat/README.md#report)); `releaseClaim` can only match the claim the same request's `resolve` wrote. **`remove-message` is the one route that acts on a message in a channel its caller cannot read** (#2311): the chapter-scoped report row is the capability, passed through `assertMessageAccess` as a `ReportedMessageGrant` that admits only the message the open report names, only for a read-class action, only after its channel resolves in the caller's chapter — and only once the report has been claimed `open` → `actioned` by a conditional write, so a report resolved after it was read grants nothing. It never opens a channel read; the response carries the message's `channel_id` as an id only. Rule and reasoning: [`chat/README.md` § Officer action](../../../spec/behavior/chat/README.md#officer-action-removing-a-reported-message) |
+| `chat/reports` | `POST /`, `GET /`, `PATCH /:id`, `POST /:id/remove-message` | A+C+P `members:view`; `channels:manage` on the three officer routes; `@SubscriptionExempt` | `POST /` authorizes the message as a **read** through `assertMessageAccess` (C). The officer routes are B — `findById` / `resolve` / `findByChapterAndStatus` / `resolveOpenForMessage` / `releaseClaim` all carry `.eq('chapter_id', chapterId)` — and the reads and resolutions also leave out the reports whose `reported_sender_id` is the caller, so a reported officer gets no list row and a 404 on the write routes ([`chat/README.md` § Report](../../spec/behavior/chat/README.md#report)); `releaseClaim` can only match the claim the same request's `resolve` wrote. **`remove-message` is the one route that acts on a message in a channel its caller cannot read** (#2311): the chapter-scoped report row is the capability, passed through `assertMessageAccess` as a `ReportedMessageGrant` that admits only the message the open report names, only for a read-class action, only after its channel resolves in the caller's chapter — and only once the report has been claimed `open` → `actioned` by a conditional write, so a report resolved after it was read grants nothing. It never opens a channel read; the response carries the message's `channel_id` as an id only. Rule and reasoning: [`chat/README.md` § Officer action](../../spec/behavior/chat/README.md#officer-action-removing-a-reported-message) |
 | `custom-fields` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter-config:view` on `GET`; the three writes override to `…:manage`\|`*` | B |
 | `custom-roles` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter-config:view` on `GET`; the three writes override to `…:manage`\|`*` | B — `findByIds(ids, chapterId)` |
 | `audit-log` | `GET` | A+C+P `chapter-config:view` **and** `members:view` (route-level, merged via `PermissionsGuard`'s AND); **row visibility by role identity, not permission** — callers who do not hold the chapter's seeded `PRESIDENT` role get `member_visible = true` rows only (#1773) | A — chapter is the subject; read-only, `chapter_audit_log`'s RLS carries no SELECT policy so only this service-role-backed query can ever return rows, and `ChapterAuditLogService.list` is where the member-visibility filter the migration comment promised is actually applied |
@@ -95,7 +95,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | --- | --- | --- |
 | `GET /health` | none | Liveness only; no tenant data |
 | `GET /health/ready` | none | Readiness probe for deploy smoke checks; no tenant data |
-| `GET /v1/client-policy` | none (the read throttle bucket: per IP for an anonymous call, per user when the app sends a signed-in member's token) | Mobile minimum-version check (#2526). The app asks before anyone signs in, so it can't require a token. It reads only the `X-Client-Version` header and the `MOBILE_*` env, and returns whether that build is still served plus a store link: no user, chapter or row data. `Cache-Control: no-store`, because the answer varies by header. [`spec/ui/mobile/patterns.md`](../../../spec/ui/mobile/patterns.md) § Minimum version |
+| `GET /v1/client-policy` | none (the read throttle bucket: per IP for an anonymous call, per user when the app sends a signed-in member's token) | Mobile minimum-version check (#2526). The app asks before anyone signs in, so it can't require a token. It reads only the `X-Client-Version` header and the `MOBILE_*` env, and returns whether that build is still served plus a store link: no user, chapter or row data. `Cache-Control: no-store`, because the answer varies by header. [`spec/ui/mobile/patterns.md`](../../spec/ui/mobile/patterns.md) § Minimum version |
 | `GET /v1/discord/connect/callback` | none | OAuth redirect target, so it cannot carry a bearer token. Its capability is the single-use `state` row it consumes, which binds the chapter. `code` and `state` never reach a log — `LoggingInterceptor` strips the query string via `pathOnly` — though `error` / `error_description` are logged through `logSafe`, which caps and strips control characters rather than redacting |
 | `POST /webhooks/stripe` | none (throttler skipped) | **HMAC signature** verified against `STRIPE_WEBHOOK_SECRET` before the body is parsed; an invalid signature is `401` (`webhook.controller.ts:52-66`). Not user-authenticated by design |
 | `GET /chapter-directory/search` | A | Public reference dataset (Greek orgs + universities). Contains no chapter-owned data |
@@ -270,7 +270,7 @@ not a partial fix — it is the original defect spelled out.
 This is checked, not just conventional: `scripts/check-pglite-migrations.mjs` applies every migration
 and fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `public` does not pin
 `pg_temp` last. Whether that job blocks a merge is set in
-[the branch protection runbook § Required Status Checks](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
+[the branch protection runbook § Required Status Checks](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
 (#2538). Fixed repo-wide in #985 (#983 fixed the first instance).
 
 ### The `chat_messages` read surface — accepted, with the bound named
@@ -321,7 +321,7 @@ URL:
 Clients never read a bucket directly; the API issues short-lived signed URLs after running the same
 route guards. Every bucket carries a MIME allowlist and a size cap. The table above summarizes the
 allowlists; the declarations, the size caps and the reasoning behind each are owned once
-by [`spec/architecture/README.md`](../../../spec/architecture/README.md) § 7 — change them there, and
+by [`spec/architecture/README.md`](../../spec/architecture/README.md) § 7 — change them there, and
 keep this table to what a security reader needs. Note the five dashboard-created buckets were only
 brought into IaC by #690 — their pre-migration public/private state is tracked in #770.
 
@@ -345,7 +345,7 @@ RLS as making it weaker than its siblings; none of them have it.
 
 **Object-path obscurity is not a second layer — treat every path as guessable.** This is the
 inverse of a tempting reading of the paragraph above. The worked case is in
-[`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages): an
+[`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#imported-archive-messages): an
 imported author avatar and a message attachment share one `chat-archive` object layout
 (`archiveMediaObjectPath`), so nothing in a path distinguishes them. A caller-supplied path would
 therefore let someone fetch an attachment under the guise of an avatar, bypassing channel access

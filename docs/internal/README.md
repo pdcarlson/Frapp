@@ -9,9 +9,9 @@ Operations, infrastructure, and agent/CI reference. Grouped by area.
 
 Which subfolder of `docs/internal/` owns which kind of change is stated once, in
 [`DOCUMENTATION_CONVENTIONS.md` § Where things go](DOCUMENTATION_CONVENTIONS.md#where-things-go).
-This index does not restate it; it only routes: [`ops/`](ops/), [`ci-cd/`](ci-cd/),
-[`environment/`](environment/README.md), and
-[`security/`](security/README.md). Performance notes live in
+This index does not restate it; it only routes: [`ops/`](ops/), [`ci-cd/`](ci-cd/), and
+[`environment/`](environment/README.md). Security notes live in
+[`../security/`](../security/README.md), and performance notes in
 [`../performance/`](../performance/README.md).
 
 Design-system guidance moved to [`spec/ui/design-system/`](../../spec/ui/design-system/README.md) (Signet restructure).
