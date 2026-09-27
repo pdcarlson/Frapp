@@ -79,7 +79,9 @@ DELETE FROM users WHERE id::text LIKE 'c0ffee00-0000-4000-8000-1000%';
 -- same value. `theme_palette` is left for the sweep to write within the hour.
 --
 -- `subscription_status 'active'` is load-bearing for the reviewer: an
--- `incomplete` chapter refuses paid-ops writes on three surfaces (#2297).
+-- `incomplete` chapter has every paid-ops write refused. Which mobile screens
+-- explain that refusal is listed in spec/ui/design-system/README.md
+-- § What "fail fast" means concretely (#2297).
 INSERT INTO chapters (id, name, university, org_archetype, accent_color, branding,
                       subscription_status, enabled_modules, created_at)
 VALUES ('c0ffee00-0000-4000-8000-000000000001', 'Beta Theta Omega', 'Westfield University', 'ifc', '#EFB63B',
