@@ -28,6 +28,10 @@ import {
   todayIsoDate,
 } from "@/lib/more/service-hours";
 import { useConnection } from "@/lib/connection/use-connection";
+import {
+  SUBSCRIPTION_REFUSAL_COPY,
+  subscriptionRefusalOf,
+} from "@/lib/subscription-refusal";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -91,6 +95,15 @@ export default function ServiceHoursScreen() {
   const [description, setDescription] = useState("");
   const [duration, setDuration] = useState("");
   const [submitFailed, setSubmitFailed] = useState(false);
+  /**
+   * A subscription refusal is a different outcome from a failed save (#2410,
+   * the shape #2297 set on tasks). A brand-new chapter is `incomplete` until
+   * checkout, and `POST /v1/service-entries` stays refused until an officer
+   * sorts that out, so the sheet explains the state and withdraws Submit
+   * rather than inviting a retry that cannot win. `submitFailed` keeps its
+   * exact old meaning: a save that might succeed.
+   */
+  const [subscriptionRefused, setSubscriptionRefused] = useState(false);
 
   /**
    * s20 has **no outbox**. A submit posted with no network is simply lost, so
@@ -106,10 +119,12 @@ export default function ServiceHoursScreen() {
     description.trim().length > 0 &&
     durationMinutes !== null &&
     writeBlockedReason === null &&
-    !createEntry.isPending;
+    !createEntry.isPending &&
+    !subscriptionRefused;
 
   const openSheet = useCallback(() => {
     setSubmitFailed(false);
+    setSubscriptionRefused(false);
     sheetRef.current?.present();
   }, []);
 
@@ -119,6 +134,7 @@ export default function ServiceHoursScreen() {
 
   function submit() {
     if (!canSubmit || durationMinutes === null) return;
+    setSubmitFailed(false);
     createEntry.mutate(
       {
         date: todayIsoDate(new Date()),
@@ -132,7 +148,17 @@ export default function ServiceHoursScreen() {
           setSubmitFailed(false);
           closeSheet();
         },
-        onError: () => setSubmitFailed(true),
+        onError: (error) => {
+          // Ordinary failures keep the retry they have always had; a
+          // subscription refusal takes it away, because retrying cannot win.
+          // The module gate (`@RequireModule('hours')`) is the other refusal
+          // that cannot win, and it still gets the retry: #2718.
+          if (subscriptionRefusalOf(error)) {
+            setSubscriptionRefused(true);
+            return;
+          }
+          setSubmitFailed(true);
+        },
       },
     );
   }
@@ -286,6 +312,12 @@ export default function ServiceHoursScreen() {
                   `Logging ${formatMinutesRounded(durationMinutes)}, dated today.`}
           </Text>
 
+          {subscriptionRefused ? (
+            <Text style={styles.sheetError}>
+              {SUBSCRIPTION_REFUSAL_COPY.serviceHours}
+            </Text>
+          ) : null}
+
           {submitFailed ? (
             <Text style={styles.sheetError}>
               That didn&apos;t save. Your entry is still here — try again.
@@ -301,7 +333,14 @@ export default function ServiceHoursScreen() {
             accessibilityState={{ disabled: !canSubmit }}
             // Wired to the control, not merely printed above it: a screen
             // reader lands on the disabled button, not on the sentence before.
-            accessibilityHint={writeBlockedReason ?? undefined}
+            // The refusal outranks the offline reason: reconnecting clears
+            // one and not the other, so naming only the offline reason would
+            // promise a fix that doesn't come.
+            accessibilityHint={
+              subscriptionRefused
+                ? SUBSCRIPTION_REFUSAL_COPY.serviceHours
+                : (writeBlockedReason ?? undefined)
+            }
             disabled={!canSubmit}
             onPress={submit}
             style={[
