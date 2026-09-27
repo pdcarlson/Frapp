@@ -17,6 +17,7 @@ import {
   rowsToRemember,
   tombstoneCanUnblock,
   visibleReactions,
+  visibleTypingUsers,
   type BlockState,
 } from "./blocks";
 import {
@@ -537,6 +538,37 @@ describe("visibleReactions (finding 2)", () => {
 
   it("shows nothing but the viewer's while the viewer is unknown", () => {
     expect(visibleReactions(reactions, unavailable(), null)).toEqual({});
+  });
+});
+
+describe("visibleTypingUsers (#2496)", () => {
+  const typing = [FRIEND, BLOCKED];
+
+  it("drops a blocked member from the indicator on a ready list", () => {
+    expect(visibleTypingUsers(typing, ready([BLOCKED]), VIEWER)).toEqual([
+      FRIEND,
+    ]);
+    // The DM case: the only typist is the member the viewer blocked.
+    expect(visibleTypingUsers([BLOCKED], ready([BLOCKED]), VIEWER)).toEqual([]);
+  });
+
+  it("keeps everyone a ready list does not name, and the array itself", () => {
+    expect(visibleTypingUsers(typing, ready(), VIEWER)).toBe(typing);
+  });
+
+  it("shows nobody while the list is not ready (fail closed)", () => {
+    for (const state of [loading(), unavailable(), unavailable([BLOCKED])]) {
+      expect(visibleTypingUsers(typing, state, VIEWER)).toEqual([]);
+    }
+  });
+
+  it("keeps a member this client confirmed unblocking, in every list state", () => {
+    for (const state of [
+      loading([], { unblocked: [BLOCKED] }),
+      unavailable([], { unblocked: [BLOCKED] }),
+    ]) {
+      expect(visibleTypingUsers(typing, state, VIEWER)).toEqual([BLOCKED]);
+    }
   });
 });
 

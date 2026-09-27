@@ -50,7 +50,10 @@ import * as ts from 'typescript';
  * present, not commented out, in a spec that skips and focuses nothing. A
  * policy's proof can instead be a scenario in the PGlite harness, which reads
  * the table as a non-owner role and is the only tier that runs RLS; it must
- * still be a `name:` in that file. That cannot prove the test asserts the
+ * still be a `name:` in that file. A surface only a client can mask (a
+ * Broadcast the server relays as sent) names the shared client rule's test in
+ * `packages/`; that proves the rule, not that every client applies it, which
+ * each client's own tests cover. That cannot prove the test asserts the
  * right thing, but it stops a renamed, deleted or disabled proof leaving the
  * ledger vouching for nothing. An `open` entry is a known gap, and names the
  * issue tracking it. An `open` or `not-hidden` entry that is masked in part
@@ -59,10 +62,14 @@ import * as ts from 'typescript';
  */
 
 /**
- * A Jest test (`spec` relative to `apps/api/src`, `test` its title), or a
- * scenario `name` in `scripts/check-pglite-migrations.mjs`.
+ * A Jest test (`spec` relative to `apps/api/src`, `test` its title), a
+ * scenario `name` in `scripts/check-pglite-migrations.mjs`, or a Vitest test
+ * of a shared client package (`clientSpec` relative to the repo root).
  */
-type Proof = { spec: string; test: string } | { pglite: string };
+type Proof =
+  | { spec: string; test: string }
+  | { pglite: string }
+  | { clientSpec: string; test: string };
 
 type Entry =
   | { status: 'masked'; proof: Proof }
@@ -82,7 +89,8 @@ type Entry =
 
 const API_SRC = join(__dirname, '..', '..');
 const API_ROOT = join(API_SRC, '..');
-const MIGRATIONS = join(API_ROOT, '..', '..', 'supabase', 'migrations');
+const REPO_ROOT = join(API_ROOT, '..', '..');
+const MIGRATIONS = join(REPO_ROOT, 'supabase', 'migrations');
 const PGLITE_HARNESS = join(
   API_ROOT,
   '..',
@@ -379,10 +387,18 @@ const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
       why: "Select-own only: the caller's own preferences.",
     },
   'realtime.messages realtime_messages_scoped_select': {
+    // Authorizes Broadcast and Presence on `chat:channel:<id>`. Neither carries
+    // message content, and no client renders presence (the push worker reads
+    // it). The one thing drawn is the anonymous typing indicator, and both
+    // clients drop a blocked member's `typing` from it through
+    // `visibleTypingUsers` (#2496). The rule trusts the payload's `userId`,
+    // which the insert policy does not check (#2725).
     creates: 2,
-    status: 'open',
-    issues: [2496],
-    why: "Authorizes Broadcast and Presence on `chat:channel:<id>`. Clients act only on presence and `typing`, rendered anonymously, and neither carries message content. A blocked member's `typing` still counts toward that indicator.",
+    status: 'masked',
+    proof: {
+      clientSpec: 'packages/chat-core/src/realtime-manager.spec.ts',
+      test: "a blocked member's typing broadcast leaves the indicator empty",
+    },
   },
   'public.users auth_admin_can_read_users': {
     creates: 1,
@@ -790,8 +806,12 @@ function proofProblem(proof: Proof): string | null {
       ? null
       : `scripts/check-pglite-migrations.mjs has no scenario named '${proof.pglite}'`;
   }
-  const file = parse(join(API_SRC, proof.spec));
-  if (skipsOrFocuses(file)) return `${proof.spec} skips or focuses a test`;
+  const [path, name] =
+    'clientSpec' in proof
+      ? [join(REPO_ROOT, proof.clientSpec), proof.clientSpec]
+      : [join(API_SRC, proof.spec), proof.spec];
+  const file = parse(path);
+  if (skipsOrFocuses(file)) return `${name} skips or focuses a test`;
   const live = everyNode(file).some(
     (node) =>
       ts.isCallExpression(node) &&
@@ -799,7 +819,7 @@ function proofProblem(proof: Proof): string | null {
       ['it', 'test'].includes(node.expression.text) &&
       literalText(node.arguments[0]) === proof.test,
   );
-  return live ? null : `${proof.spec} has no live it('${proof.test}')`;
+  return live ? null : `${name} has no live it('${proof.test}')`;
 }
 
 /** Every non-spec `.ts` under apps/api/src, parsed. */
