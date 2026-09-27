@@ -27,10 +27,15 @@
 // recover on their own and MUST keep their retry control. Do not "simplify"
 // any branch below to a status check.
 //
-// SCOPE. Message parity between the guard and `@repo/validation`, and the
-// wiring of the three surfaces named in #2297. Copy wording itself is asserted
-// in `apps/mobile/lib/subscription-refusal.spec.ts` (no price/plan/link, names
-// an officer, never says "try again"). Reads are deliberately NOT in scope:
+// SCOPE. Message parity between the guard and `@repo/validation`, the
+// detector, and the order of the study copy's arms. What the three surfaces
+// named in #2297 DO with a refusal is rendered, not source-matched (#2416):
+// `apps/mobile/lib/events/check-in-screen.spec.tsx`,
+// `apps/mobile/lib/study/study-screen.spec.tsx` and
+// `apps/mobile/components/tasks/new-task-sheet.spec.tsx`. Copy wording itself
+// is asserted in `apps/mobile/lib/subscription-refusal.spec.ts` (no
+// price/plan/link, names an officer, never says "try again"). Reads are
+// deliberately NOT in scope:
 // the gate returns early for GET/HEAD/OPTIONS, so a read surface has no
 // refusal to render and a gate state on a read error is dead code.
 
@@ -45,9 +50,6 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".."
 const GUARD = "apps/api/src/interface/guards/chapter.guard.ts";
 const MIRROR = "packages/validation/src/subscription.ts";
 const DETECTOR = "apps/mobile/lib/subscription-refusal.ts";
-const TASK_SHEET = "apps/mobile/components/tasks/new-task-sheet.tsx";
-const CHECK_IN = "apps/mobile/app/(tabs)/check-in.tsx";
-const STUDY = "apps/mobile/app/(tabs)/study.tsx";
 const STUDY_ERRORS = "apps/mobile/lib/study/errors.ts";
 
 /** Every refusal the guard can throw. A dropped one must fail this lock. */
@@ -74,11 +76,11 @@ function readRepo(rel) {
  * every unit test stays green. Stripping comments by regex fails the same
  * way: cutting each line at its first `//` also cuts `"https://…"` in half.
  *
- * `code` keeps string CONTENTS, because the wiring assertions match on them
- * (`"blocked"`, `kind: "idle"`). That makes any structural walk over `code`
- * steerable by string text, which was proven twice — a `}` inside a string
- * truncated the guard-body walk, a `;` inside one truncated a declaration —
- * so every literal's span is recorded and the walkers jump them.
+ * `code` keeps string CONTENTS, so the assertions over it can match a string
+ * where one is part of the rule. That makes any structural walk over `code`
+ * steerable by string text, which was proven — a `}` inside a string
+ * truncated the guard-body walk — so every literal's span is recorded and the
+ * walker jumps them.
  *
  * NO REGEX-LITERAL STATE, DELIBERATELY. A previous version tried to detect
  * regex literals by looking at the preceding character. It was worse than
@@ -186,7 +188,7 @@ function stringLiterals(rel) {
   return scan(readRepo(rel)).literals.map((l) => l.value);
 }
 
-/** Source with comments removed, for the wiring assertions. */
+/** Source with comments removed, for the assertions over code. */
 function readCode(rel) {
   return scan(readRepo(rel)).code;
 }
@@ -232,33 +234,6 @@ function functionBodyIn(code, spans, signature) {
 }
 
 /**
- * The right-hand side of one `const <name> = …;`, skipping strings.
- *
- * Ends at the first `;` at bracket depth 0 that is not inside a literal, so a
- * declaration containing an inner `;` is captured whole rather than
- * truncating to a head that passes every `doesNotMatch` vacuously. The name
- * must be followed by a non-identifier character, so `const scanningPaused`
- * cannot silently redirect assertions meant for `const scanning`.
- */
-function declarationIn(code, spans, name) {
-  const at = new RegExp(`const ${name}(?![A-Za-z0-9_$])`).exec(code);
-  if (!at) return null;
-  let depth = 0;
-  for (let i = at.index; i < code.length; i += 1) {
-    const jumped = skipSpan(spans, i);
-    if (jumped !== i) {
-      i = jumped - 1;
-      continue;
-    }
-    const c = code[i];
-    if (c === "{" || c === "(" || c === "[") depth += 1;
-    else if (c === "}" || c === ")" || c === "]") depth -= 1;
-    else if (c === ";" && depth === 0) return code.slice(at.index, i);
-  }
-  return null;
-}
-
-/**
  * Every message `enforceSubscription` throws, however it is worded.
  *
  * Counted from the body rather than by prefix: the prefix filter can only see
@@ -282,13 +257,6 @@ function guardRefusalThrows() {
   };
 }
 
-function declaration(rel, name) {
-  const { code, spans } = scan(readRepo(rel));
-  const slice = declarationIn(code, spans, name);
-  assert.ok(slice !== null, `${rel} no longer declares \`${name}\``);
-  return slice;
-}
-
 /**
  * The scanner's own tests.
  *
@@ -296,8 +264,8 @@ function declaration(rel, name) {
  * file. The first attempt at these tests asserted on `scan().code` and on
  * span existence, and was FAKE COVERAGE: deleting the entire regex branch, or
  * replacing `skipSpan`'s body with `return i`, left them all green. So these
- * drive the actual walkers — `declarationIn`, `functionBodyIn` — against
- * synthetic sources, which is the only form that can fail.
+ * drive the actual walker, `functionBodyIn`, against synthetic sources,
+ * which is the only form that can fail.
  */
 test("an apostrophe cannot truncate an extracted message", () => {
   // The `[^'"]*` regex cut here, so two DIFFERENT sentences both reduced to
@@ -314,16 +282,6 @@ test("a quote style does not change the message that comes out", () => {
   const single = scan(`const a = 'it\\'s here';`).literals[0].value;
   const double = scan(`const a = "it's here";`).literals[0].value;
   assert.equal(single, double);
-});
-
-test("a semicolon inside a string cannot truncate a declaration", () => {
-  // PROVEN EXPLOIT: with a non-span-aware walk the slice ended at the `;`
-  // inside the string, so `doesNotMatch(slice, /forbidden/)` passed while the
-  // forbidden term sat just past the cut.
-  const src = `const scanning = a !== "x" && b !== "Offline; reconnect" && c !== "forbidden";`;
-  const { code, spans } = scan(src);
-  const slice = declarationIn(code, spans, "scanning");
-  assert.match(slice, /"forbidden"/, "the declaration slice was truncated");
 });
 
 test("a brace inside a string cannot truncate a function body", () => {
@@ -352,34 +310,6 @@ test("a brace inside a string cannot truncate a function body", () => {
   );
 });
 
-test("a declaration with an inner semicolon is captured whole", () => {
-  // PROVEN EXPLOIT: dropping the depth-0 condition truncates at the `;` inside
-  // the arrow body, so `doesNotMatch(slice, /submitFailed/)` passes with
-  // `submitFailed` sitting just past the cut — which is the regression that
-  // reverted the earlier attempt at this issue.
-  const src = `const canSubmit = useMemo(() => { const t = title.trim(); return t.length > 0 && !submitFailed; }, [title]);`;
-  const { code, spans } = scan(src);
-  assert.match(
-    declarationIn(code, spans, "canSubmit"),
-    /submitFailed/,
-    "the declaration slice truncated at a semicolon nested inside it",
-  );
-});
-
-test("a similarly-named declaration cannot capture the assertions", () => {
-  // Dropping the identifier-boundary lookahead silently re-points every
-  // assertion at a neighbour's statement.
-  const src = `const scanningPaused = a !== "paused";\nconst scanning = b !== "blocked";`;
-  const { code, spans } = scan(src);
-  const slice = declarationIn(code, spans, "scanning");
-  assert.match(slice, /"blocked"/);
-  assert.doesNotMatch(
-    slice,
-    /"paused"/,
-    "declarationIn matched `scanningPaused` when asked for `scanning`",
-  );
-});
-
 test("comments are removed, including ones carrying quotes and braces", () => {
   const { code, literals } = scan(`// don't read { this ; either\nconst x = 1;`);
   assert.doesNotMatch(code, /don/);
@@ -392,7 +322,7 @@ test("the scanned files contain no regex literal, which the scanner cannot read"
   // worse than nothing: `}` in its operator set made every JSX `{x} />` parse
   // as a regex (23 bogus spans across these files) while missing `=> /…/` and
   // `return /…/`. Failing loudly beats misparsing silently.
-  for (const rel of [GUARD, MIRROR, DETECTOR, TASK_SHEET, CHECK_IN, STUDY, STUDY_ERRORS]) {
+  for (const rel of [GUARD, MIRROR, DETECTOR, STUDY_ERRORS]) {
     assertNoRegexLiterals(rel);
   }
   // And the tripwire itself must be able to fire.
@@ -500,138 +430,6 @@ test("the mobile detector requires both the 403 and an exact message", () => {
     detector,
     /codeOf/,
     `${DETECTOR} must not branch on codeOf — AllExceptionsFilter drops it (#1020)`,
-  );
-});
-
-test("all three write surfaces route their failures through the detector", () => {
-  for (const rel of [TASK_SHEET, CHECK_IN, STUDY_ERRORS]) {
-    // Stripped, deliberately. Against the raw source this passes on a comment
-    // that merely NAMES the detector — including the comments this change
-    // added — so the call could be deleted and the lock would stay green.
-    assert.match(
-      readCode((rel)),
-      /subscriptionRefusalOf\(/,
-      `${rel} no longer distinguishes a subscription refusal from a save failure`,
-    );
-  }
-});
-
-test("the task sheet withdraws its submit control on a refusal", () => {
-  // The retry affordance here is the Create button staying enabled, which is
-  // `canSubmit` — not any occurrence of the identifier elsewhere in the file.
-  const canSubmit = declaration(TASK_SHEET, "canSubmit");
-  assert.match(
-    canSubmit,
-    /!subscriptionRefused/,
-    "Create is still offered after a refusal that cannot succeed",
-  );
-  // THE OTHER DIRECTION, and the regression that reverted the previous attempt
-  // at #2297: an ordinary save failure must KEEP its retry. Gating `canSubmit`
-  // on `submitFailed` too would withdraw Create from failures that recover.
-  assert.doesNotMatch(
-    canSubmit,
-    /submitFailed/,
-    "an ordinary save failure must not withdraw Create — only a refusal may",
-  );
-  assert.match(
-    readCode((TASK_SHEET)),
-    /setSubmitFailed\(true\)/,
-    "ordinary save failures must keep their existing retry copy",
-  );
-});
-
-test("check-in stops scanning and stops manual submit on a refusal", () => {
-  assert.match(
-    readCode((CHECK_IN)),
-    /kind: "blocked"/,
-    "the terminal refusal state is gone from check-in",
-  );
-
-  // Anchored to the declarations that actually gate the two affordances, so a
-  // render-branch mention cannot satisfy either one.
-  const scanning = declaration(CHECK_IN, "scanning");
-  assert.match(
-    scanning,
-    /"blocked"/,
-    "the scanner still re-arms after a refusal",
-  );
-  // The other direction: an ordinary error must NOT kill the scanner. Before
-  // #2297 a failed scan always re-armed, and that has to stay true.
-  assert.doesNotMatch(
-    scanning,
-    /!== "error"/,
-    "an ordinary failure must not disarm the scanner — only a refusal may",
-  );
-
-  const manualSubmitDisabled = declaration(CHECK_IN, "manualSubmitDisabled");
-  assert.match(
-    manualSubmitDisabled,
-    /"blocked"/,
-    "manual submit is still enabled after a refusal",
-  );
-});
-
-test("a refusal does not outlive the visit that produced it", () => {
-  // Both screens keep the refusal in component state, and a tab screen is
-  // never unmounted — so without a focus reset an officer could fix the
-  // chapter's billing and the member would still be locked out until they
-  // force-quit. "Dead until a force-quit" is what got the previous attempt
-  // at #2297 reverted; it must not come back as the fix.
-  //
-  // LIMITS, STATED. `apps/mobile/app/(tabs)` has no render harness, so this is
-  // a source tripwire, not a behaviour test: it cannot prove the effect runs,
-  // and hoisting the callback to a named `const` will trip it even though
-  // behaviour is unchanged. If you are here because a refactor turned it red,
-  // re-point the assertion — do not delete it. The real fix is a harness for
-  // these two screens.
-  const study = readCode(STUDY);
-  assert.match(
-    study,
-    /useFocusEffect\(/,
-    "study no longer resets anything on focus",
-  );
-  // Unconditional, so a reset neutered into a branch that never runs fails.
-  assert.match(
-    study,
-    /\n\s*setSubscriptionRefused\(false\);/,
-    "study's latch reset is gone or is no longer unconditional",
-  );
-
-  const checkIn = readCode(CHECK_IN);
-  assert.match(
-    checkIn,
-    /useFocusEffect\(/,
-    "check-in no longer resets anything on focus",
-  );
-  // The MAPPING, not the tokens: an inverted ternary (`? current : idle`)
-  // names all the same identifiers while leaving both latches in place.
-  assert.match(
-    checkIn,
-    /\?\s*\{ kind: "idle" \}/,
-    "check-in's focus reset no longer maps the dead states to idle",
-  );
-  for (const dead of ['"blocked"', '"success"']) {
-    assert.ok(
-      checkIn.includes(`current.kind === ${dead}`),
-      `check-in does not clear ${dead} on focus, and it disarms the scanner`,
-    );
-  }
-});
-
-test("study does not re-arm its automatic retry against a refusal", () => {
-  const study = readCode((STUDY));
-  // This one is the automatic version of the bug: the pause/resume mirror
-  // re-armed a setTimeout on EVERY error, so a permanent refusal spun it every
-  // MIRROR_RETRY_MS for as long as the screen stayed open.
-  assert.match(
-    study,
-    /if \(!refused\) \{\s*retryTimer = setTimeout\(/,
-    "the mirror retry timer is no longer guarded against a permanent refusal",
-  );
-  assert.match(
-    study,
-    /isBlocked=\{subscriptionRefused\}/,
-    "Start is still offered after a refusal",
   );
 });
 

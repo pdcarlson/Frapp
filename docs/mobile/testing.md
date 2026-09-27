@@ -121,6 +121,12 @@ loads a native module it leaves out, such as `expo-secure-store` or
 `expo-constants`, mocks that module itself, as `lib/auth-session.spec.tsx` does;
 otherwise the import fails under Vitest.
 
+A tab screen renders under test like any component: `lib/events/check-in-screen.spec.tsx`
+and `lib/study/study-screen.spec.tsx` show how, and the spec lives under `lib/`
+(see [§ Gotchas](#gotchas)). A tab screen is never unmounted, so state that
+must clear when the member comes back is tested by calling the mocked router's
+`__refocus()` inside `act`, which re-runs every mounted `useFocusEffect`.
+
 Two suites are static rather than render-based, and deliberately so:
 `lib/routes.spec.ts` walks the real route tree — it checks every route literal,
 standing in for typed routes, which do not bind under CI's bare `tsc` (see
