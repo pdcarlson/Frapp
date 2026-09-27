@@ -8,8 +8,8 @@ import { describe, expect, it } from "vitest";
  * them unmounts once opened, so a `new Date()` captured at mount freezes them:
  * Events kept a window closed that had opened, and a TODAY/EARLIER split would
  * stay on the day the app was opened. `lib/events/events-screen.spec.tsx`
- * renders Events against the real clock; the others have no render harness
- * yet (#2416), so this reads the source, the way
+ * renders Events against the real clock; until the others are rendered under
+ * test too (#2705), this reads the source, the way
  * `lib/chat/thread-mute-menu-wiring.spec.ts` does.
  */
 const TICKING = [
