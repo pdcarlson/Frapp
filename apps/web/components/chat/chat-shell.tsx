@@ -51,7 +51,11 @@ import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
 import { useToast } from "@/hooks/use-toast";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { classifyMessage, hiddenQuoteText } from "@repo/chat-core/blocks";
+import {
+  classifyMessage,
+  hiddenQuoteText,
+  visibleTypingUsers,
+} from "@repo/chat-core/blocks";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
@@ -504,6 +508,13 @@ export function ChatShell({
   // rows are held.
   const { blockList, blockState, thread } = useThreadBlockList(
     channel.messages,
+    userId,
+  );
+  // A blocked member's `typing` broadcast still arrives; in a DM the indicator
+  // would say they are writing to the viewer (#2496).
+  const typingUsers = visibleTypingUsers(
+    channel.typingUsers,
+    blockState,
     userId,
   );
   // The rows drawn in full: what every surface beside the timeline that prints
@@ -1797,11 +1808,11 @@ export function ChatShell({
           nobody is typing: it is transient status, and a permanently reserved
           strip would push the composer down by a line on every channel.
         */}
-        {channel.typingUsers.length > 0 ? (
+        {typingUsers.length > 0 ? (
           <p className="shrink-0 px-4 pb-1 text-[12.5px] text-muted-foreground">
-            {channel.typingUsers.length === 1
+            {typingUsers.length === 1
               ? "Someone is typing…"
-              : `${channel.typingUsers.length} people are typing…`}
+              : `${typingUsers.length} people are typing…`}
           </p>
         ) : null}
         </>

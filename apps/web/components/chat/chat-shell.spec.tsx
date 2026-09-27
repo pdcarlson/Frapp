@@ -602,6 +602,7 @@ function chatChannelResult(
     // writes with `setDraft`, and `draft` is what the editor is built from.
     draft: string;
     setDraft: (body: string) => void;
+    typingUsers: string[];
   }> = {},
 ) {
   return {
@@ -615,7 +616,7 @@ function chatChannelResult(
     delete: vi.fn(),
     draft: overrides.draft ?? "",
     setDraft: overrides.setDraft ?? vi.fn(),
-    typingUsers: [],
+    typingUsers: overrides.typingUsers ?? [],
     emitTyping: vi.fn(),
     connection: "live",
     retry: vi.fn(),
@@ -2561,5 +2562,31 @@ describe("ChatShell block list (#2313)", () => {
     expect(
       screen.getByText(/couldn't load your block list/i),
     ).toBeInTheDocument();
+  });
+
+  it("keeps a blocked member's typing out of the indicator (#2496)", () => {
+    blockListState.value = {
+      ...blockListState.value,
+      ids: new Set(["blocked-1"]),
+    };
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ typingUsers: ["blocked-1"] }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByText(/is typing|are typing/)).not.toBeInTheDocument();
+  });
+
+  it("still counts everyone else who is typing (#2496)", () => {
+    blockListState.value = {
+      ...blockListState.value,
+      ids: new Set(["blocked-1"]),
+    };
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ typingUsers: ["blocked-1", "friend-1"] }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByText("Someone is typing…")).toBeInTheDocument();
   });
 });

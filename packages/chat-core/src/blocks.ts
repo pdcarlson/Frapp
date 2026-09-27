@@ -298,17 +298,62 @@ export function visibleReactions(
       hidden = true;
       continue;
     }
-    const shown = userIds.filter((userId) =>
-      userId === viewerId
-        ? true
-        : blockState.status === "ready"
-          ? !blockState.ids.has(userId)
-          : blockState.unblocked.has(userId),
+    const shown = userIds.filter(
+      (userId) => userId === viewerId || isVisibleMember(userId, blockState),
     );
     if (shown.length !== userIds.length) hidden = true;
     if (shown.length > 0) visible[actionType] = shown;
   }
   return hidden ? visible : reactions;
+}
+
+/**
+ * The typing indicator after the viewer's block list (#2496).
+ *
+ * `typing` is a Broadcast on `chat:channel:<id>`, and anyone who can read the
+ * channel may send one, so the server delivers a blocked member's too. The
+ * indicator is anonymous, but in a two-person DM "Someone is typing…" tells
+ * the blocker, live, that the member they blocked is writing to them. So both
+ * clients pass the manager's list through this before rendering it.
+ *
+ * Everyone else goes by a reaction chip's rule (`visibleReactions`), for the
+ * same reason: against a ready list a blocked member is dropped; while the
+ * list is loading or unavailable only a member this client just unblocked
+ * counts, failing closed. An indicator missing for the length of a list read
+ * costs nothing.
+ *
+ * Unlike a chip, the viewer never counts. `broadcast: { self: false }` only
+ * spares the socket that sent it, so the viewer typing on another device
+ * arrives here too, and the indicator never reports the viewer's own typing
+ * (`spec/ui/resilience/message-delivery.md`).
+ *
+ * It trusts the broadcast's `userId`, which the sender's client writes. That
+ * is the limit of a client-list rule, tracked in #2725.
+ *
+ * Returns `userIds` itself when nothing was dropped, so a caller comparing by
+ * identity does not re-render for an unchanged list.
+ */
+export function visibleTypingUsers(
+  userIds: readonly string[],
+  blockState: BlockState,
+  viewerId: string | null,
+): readonly string[] {
+  const shown = userIds.filter(
+    (userId) => userId !== viewerId && isVisibleMember(userId, blockState),
+  );
+  return shown.length === userIds.length ? userIds : shown;
+}
+
+/**
+ * Whether another member's own action (a reaction, a typing broadcast) may
+ * show: against a ready list unless they are on it, and while the list is not
+ * ready only once this client confirmed unblocking them. Callers decide what
+ * the viewer's own actions do.
+ */
+function isVisibleMember(userId: string, blockState: BlockState): boolean {
+  return blockState.status === "ready"
+    ? !blockState.ids.has(userId)
+    : blockState.unblocked.has(userId);
 }
 
 /**

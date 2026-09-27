@@ -15,6 +15,7 @@ import {
 } from "./types";
 import type { KeyValueStore } from "./adapters";
 import { persistNotice, readNotices } from "./heavy-command-notices";
+import { visibleTypingUsers, type BlockState } from "./blocks";
 import { memoryStore } from "./test/memory-store";
 import { unconfirmedNotice } from "./test/notices";
 
@@ -43,6 +44,8 @@ interface FakeChannel {
     new?: unknown;
     old?: unknown;
   }) => void;
+  /** Delivers a Broadcast frame to the handler bound for its event. */
+  emitBroadcast: (event: string, payload: unknown) => void;
 }
 
 /**
@@ -59,6 +62,7 @@ function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
   let captured: ((status: SubscribeStatus) => void) | null = null;
   let onChange: ((payload: { new?: unknown; old?: unknown }) => void) | null =
     null;
+  const onBroadcast = new Map<string, (msg: { payload: unknown }) => void>();
   const channel: FakeChannel = {
     topic: `realtime:${topic}`,
     state: "closed",
@@ -81,6 +85,12 @@ function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
           (filter as { table?: string } | undefined)?.table === "chat_messages"
         ) {
           onChange = handler ?? null;
+        }
+        if (type === "broadcast" && handler) {
+          onBroadcast.set(
+            (filter as { event: string }).event,
+            handler as (msg: { payload: unknown }) => void,
+          );
         }
         return channel;
       },
@@ -109,6 +119,12 @@ function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
     emitPostgresChange: (payload) => {
       if (!onChange) throw new Error("postgres_changes handler not captured");
       onChange(payload);
+    },
+    emitBroadcast: (event, payload) => {
+      const handler = onBroadcast.get(event);
+      if (!handler)
+        throw new Error(`broadcast handler for ${event} not captured`);
+      handler({ payload });
     },
   };
   return channel;
@@ -819,5 +835,71 @@ describe("ChatRealtimeManager — heavy-command notice eviction (#1909)", () => 
     });
 
     expect(readNotices("chan-1", "user-1", kv)).toHaveLength(1);
+  });
+});
+
+describe("ChatRealtimeManager — typing after the viewer's block list (#2496)", () => {
+  const BLOCKED = "22222222-2222-4222-8222-222222222222";
+  const FRIEND = "33333333-3333-4333-8333-333333333333";
+  const VIEWER = "11111111-1111-4111-8111-111111111111";
+  const blockedList: BlockState = {
+    status: "ready",
+    ids: new Set([BLOCKED]),
+    unblocked: new Set(),
+    cleared: new Set(),
+  };
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+
+  beforeEach(() => {
+    queryClient = new QueryClient();
+    let supabase: SupabaseClient;
+    ({ supabase, channels } = makeFakeSupabase());
+    chatRealtime.configure({
+      queryClient,
+      supabase,
+      backfill: vi.fn(async () => []),
+      kv: memoryStore(),
+      viewerId: VIEWER,
+    });
+  });
+
+  afterEach(() => {
+    chatRealtime.destroy();
+    queryClient.clear();
+  });
+
+  function joined(): FakeChannel {
+    chatRealtime.subscribe("dm-1");
+    const ch = channels.get("chat:channel:dm-1");
+    if (!ch) throw new Error("no fake channel for dm-1");
+    ch.trigger("SUBSCRIBED");
+    return ch;
+  }
+
+  /** What both clients draw: the manager's list after the viewer's block list. */
+  const indicator = () =>
+    visibleTypingUsers(
+      chatRealtime.getTypingUsers("dm-1"),
+      blockedList,
+      VIEWER,
+    );
+
+  test("a blocked member's typing broadcast leaves the indicator empty", () => {
+    const ch = joined();
+    ch.emitBroadcast("typing", { userId: BLOCKED, displayName: null });
+
+    // The server delivered it, and the manager holds it…
+    expect(chatRealtime.getTypingUsers("dm-1")).toEqual([BLOCKED]);
+    // …but it never reaches the indicator.
+    expect(indicator()).toEqual([]);
+  });
+
+  test("a member the viewer has not blocked still shows as typing", () => {
+    const ch = joined();
+    ch.emitBroadcast("typing", { userId: BLOCKED, displayName: null });
+    ch.emitBroadcast("typing", { userId: FRIEND, displayName: null });
+
+    expect(indicator()).toEqual([FRIEND]);
   });
 });
