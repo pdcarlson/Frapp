@@ -18,6 +18,9 @@ export function useChannels() {
   });
 }
 
+/** The query key `useChannelUnreadCounts` caches under. */
+export const CHANNEL_UNREAD_COUNTS_KEY = ["channels", "unread"] as const;
+
 /** One row per channel the caller can read, zeros included. */
 export interface ChannelUnreadCount {
   channel_id: string;
@@ -39,7 +42,7 @@ export interface ChannelUnreadCount {
 export function useChannelUnreadCounts(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
-    queryKey: ["channels", "unread"],
+    queryKey: CHANNEL_UNREAD_COUNTS_KEY,
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/channels/unread");
       if (error) throw error;

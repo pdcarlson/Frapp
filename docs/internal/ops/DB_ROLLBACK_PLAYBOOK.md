@@ -2058,3 +2058,13 @@ drop function if exists public.hide_direct_message(uuid, uuid, uuid);
 alter table public.channel_read_receipts drop column if exists hidden_at;
 ```
 
+
+## Rollback skipping blocked senders in unread counts (20260927050000)
+
+* **Migration**: `20260927050000_chat_unread_counts_skip_blocked.sql`
+
+A function body (#2521). It re-creates `get_channel_unread_counts` with one more join predicate, so a sender the caller has blocked in the chapter no longer counts toward their unread or mention badges. No data changes, the signature is unchanged, and no API or client code depends on the new behaviour: the API reads the counts the same way under either body.
+
+**Roll back with a new forward migration, not by hand.** Same rule as [§ Rollback per-user Terms acceptance](#rollback-per-user-terms-acceptance-20260923190000): hand DDL leaves the ledger recording `20260927050000` as applied, so a later re-land would apply nothing. Put the whole of section 1 of `20260823123000_chat_imported_kind_semantics.sql` (the `create or replace function public.get_channel_unread_counts` statement and the grant block after it) in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). Copy that body rather than retyping it: the rollback must keep `kind <> 'imported'`, `is distinct from` and `set search_path = public, pg_temp`, and dropping any of them is a different regression.
+
+**This is a safety regression, not a neutral rollback.** Afterwards a blocked member's messages and @-mentions raise the blocker's channel-row, mention and mobile app-icon badges again, onto threads that show only tombstones. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.

@@ -10,7 +10,7 @@ import {
 import type { components } from "@repo/api-sdk";
 import type { BlockListStatus } from "@repo/validation";
 import { createChapterQueryKeys } from "./chapter-query-keys";
-import { bookmarkKeys } from "./use-chat";
+import { bookmarkKeys, CHANNEL_UNREAD_COUNTS_KEY } from "./use-chat";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 // ── Report and block (#2257) ────────────────────────────────────────────────
@@ -342,6 +342,13 @@ async function applyConfirmedBlockChange(
   // so a cached panel still shows whatever the old list let through.
   void queryClient.invalidateQueries({
     queryKey: bookmarkKeys.lists(chapterId),
+  });
+  // So are the unread and mention counts: `get_channel_unread_counts` skips a
+  // sender the caller blocked (#2521). Without this a block leaves the blocked
+  // member's messages on the badges, and an unblock leaves them off, until
+  // something next refetches the counts.
+  void queryClient.invalidateQueries({
+    queryKey: CHANNEL_UNREAD_COUNTS_KEY,
   });
 }
 
