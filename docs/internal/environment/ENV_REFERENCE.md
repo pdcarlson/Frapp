@@ -392,16 +392,15 @@ is unavailable in that state and the sign-in screen says so.
 > needs a Google Play **service-account key**. Since 2026-09-06 `eas.json` names no
 > local path for it (`submit.production.android` carries only `track`): upload the key
 > once to the EAS project's credentials (expo.dev → project → Credentials → Android →
-> Google Service Account) so no machine holds it, or pass `--key <path>` to a one-off
-> `eas submit`. `apps/mobile/play-service-account.json` stays gitignored in case a
-> local copy is ever used; it must never be committed. No such key exists yet — it
+> Google Service Account) so no machine holds it, or name a local copy with
+> `serviceAccountKeyPath` in `submit.production.android` (eas-cli has no `--key` flag).
+> `apps/mobile/play-service-account.json` stays gitignored in case a local copy is ever
+> used; it must never be committed. No such key exists yet — it
 > becomes real when Play submission is set up (#938). The iOS submit identifiers
-> (`appleId`, `ascAppId`, `appleTeamId`) are likewise not in `eas.json` any more, so
-> the file carries no placeholders. That leaves `eas submit -p ios` interactive only:
-> an App Store Connect API key in EAS credentials authenticates the upload, but without
-> `ascAppId` in the profile only the interactive Apple sign-in can find the app, and a
-> `--non-interactive` run stops. Details: [`spec/environments/README.md` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas),
-> **Store submission**.
+> (`appleId`, `ascAppId`, `appleTeamId`) are likewise not in `eas.json` any more: an
+> interactive `eas submit` gets them from the Apple sign-in, so the file carries no
+> placeholders. How each store is submitted, and what a non-interactive run would need:
+> [`mobile.md` § 6.6](../ops/deployment/mobile.md#66-store-submission).
 
 > **Push credentials also live outside Infisical, and Android needs two of them.**
 > `expo-notifications` delivers through APNs on iOS and FCM on Android.

@@ -242,4 +242,46 @@ failure deletes `screenshots/google-play/`, so a failed run leaves nothing to up
 **Upload is the owner's step:** Play Console → the app → Main store listing → Phone screenshots →
 the files in order, for the default language. The upload needs the developer account (#2556).
 
+### 6.6 Store submission
+
+Submission is by hand from a maintainer's terminal, after the build finishes on EAS. No CI job
+runs `eas submit`, and CI has no `EXPO_TOKEN`. Both platforms read the `production` submit profile
+in `apps/mobile/eas.json`; `eas submit` defaults to it, and falls back to it when the build's own
+profile has no submit profile of the same name.
+
+**Google Play:** `eas submit -p android --latest` uploads to the `internal` track, the one the
+profile sets. It authenticates with the Play service-account key held in EAS credentials, or a
+local file named by `serviceAccountKeyPath` in the profile. No key exists yet (#2556, #938); where
+it lives: [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md#appsmobile-expo--eas), the
+`eas submit` note.
+
+**App Store:** `eas submit -p ios --latest`, run interactively. The profile has no `ios` block, so
+eas-cli uses its default iOS profile:
+
+- **App.** With no `ascAppId`, the run signs in to the Apple account and finds the App Store
+  Connect app by bundle ID (it would create one if none existed). The record exists: its Apple ID
+  is in [`apps/mobile/store/README.md`](../../../../apps/mobile/store/README.md) § As submitted.
+- **Credentials.** The upload uses the App Store Connect API key stored in EAS credentials for
+  submissions; with none stored, the interactive run offers to create one. If
+  `EXPO_APPLE_APP_SPECIFIC_PASSWORD` is set, it is used **instead of** the key, and it needs an
+  Apple ID too (`EXPO_APPLE_ID`, or the sign-in).
+
+**What a `--non-interactive` run needs** (any CI job; none exists). Each gap stops the run with
+the message shown:
+
+| Missing | eas-cli stops with |
+| --- | --- |
+| An archive flag (`--latest`, `--id`, `--path` or `--url`) | "You need to specify the archive source when running in non-interactive mode" |
+| iOS: `ascAppId` in `submit.production.ios` | "Set ascAppId in the submit profile (eas.json) or re-run this command in interactive mode." |
+| iOS: a submissions App Store Connect API key already stored in EAS | "App Store Connect API Keys cannot be set up in --non-interactive mode." |
+| iOS, password route: an Apple ID | "Set appleId in the submit profile (eas.json)." |
+
+Plus `EXPO_TOKEN` for the Expo account. `eas-production-profile.test.mjs` allows an `ios` submit
+block with `ascAppId`; none is committed, because nothing runs non-interactively yet.
+
+**Source:** read from the eas-cli 24.8.0 source (`IosSubmitCommand`, `AscApiKeySource`,
+`SetUpAscApiKey`, `AppSpecificPasswordSource`, `submit/commons`) and `@expo/eas-json` 24.8.0
+(`resolveSubmitProfile`) on 2026-09-27 (#2379). eas-cli isn't pinned (see the top of this section),
+so re-check the table against `eas submit --help` when a run disagrees.
+
 ---
