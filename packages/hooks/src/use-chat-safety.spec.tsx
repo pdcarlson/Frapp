@@ -14,7 +14,11 @@ import {
   useReportMessage,
   useUnblockMember,
 } from "./use-chat-safety";
-import { bookmarkKeys } from "./use-chat";
+import {
+  bookmarkKeys,
+  CHANNEL_LIST_KEY,
+  CHANNEL_UNREAD_COUNTS_KEY,
+} from "./use-chat";
 import { FrappClientProvider } from "./use-frapp-client";
 
 const CHAPTER = "chapter-1";
@@ -234,7 +238,7 @@ describe("useBlockMember / useUnblockMember", () => {
     );
   }
 
-  it("posts the target id, applies it at once, and re-reads the list and bookmarks", async () => {
+  it("posts the target id, applies it at once, and re-reads the list, bookmarks and unread counts", async () => {
     const GET = vi
       .fn()
       .mockResolvedValueOnce(blockList([BOB]))
@@ -256,6 +260,15 @@ describe("useBlockMember / useUnblockMember", () => {
     });
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: bookmarkKeys.lists(CHAPTER),
+    });
+    // The counts skip a blocked sender server-side (#2521), so the badges
+    // re-read now rather than at the next unrelated refetch.
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: CHANNEL_LIST_KEY,
+      exact: true,
     });
     await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
     await waitFor(() =>
@@ -310,6 +323,7 @@ describe("useBlockMember / useUnblockMember", () => {
       .mockResolvedValueOnce(blockList([ALICE, BOB]))
       .mockResolvedValue(failed(500, { message: "boom" }));
     const DELETE = vi.fn().mockResolvedValue(ok(undefined));
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderListAndActions({ GET, DELETE });
     await waitFor(() => expect(result.current.list.status).toBe("ready"));
@@ -325,6 +339,16 @@ describe("useBlockMember / useUnblockMember", () => {
     await waitFor(() => expect(result.current.list.ids.has(ALICE)).toBe(false));
     expect(result.current.list.ids.has(BOB)).toBe(true);
     expect(result.current.list.unblocked.has(ALICE)).toBe(true);
+    // Unblocking puts the member's messages back on the badges (#2521), and
+    // can resurface a DM hidden while the block stood, so the list is re-read
+    // with the counts: badged and listed agree.
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: CHANNEL_LIST_KEY,
+      exact: true,
+    });
     await waitFor(() => expect(result.current.list.isRetrying).toBe(false));
     expect(result.current.list.status).toBe("unavailable");
   });
