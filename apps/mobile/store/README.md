@@ -598,8 +598,8 @@ Two of Play's definitions differ from Apple's, and they change answers:
 | Photos and videos → Photos | Yes | No | Optional | App functionality | **Kept, anonymised** | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages. The camera only reads check-in codes on the device, and no frame leaves the phone |
 | App activity → App interactions | Yes | No | Required | Analytics | Forgotten (the analytics forget) | The server-side product events behind the App Store *Product Interaction* row. Required because the only opt-out is a chapter setting, not the member's choice |
 | App activity → In-app search history | Yes | **Yes** | Optional | App functionality | Nothing stored to delete | The directory and chapter-finder queries (`GET /v1/members/search`, `GET /v1/chapter-directory/search`). Ephemeral only while the App Store table's open question holds: if the API keeps query strings in its access logs, this answer is No |
-| App activity → Other user-generated content | Yes | No | Optional | App functionality | **Kept, anonymised** | Free text a member writes outside chat: service-hour entries, tasks they create, the details of a report they file, and a chapter they create |
-| App activity → Other actions | Yes | No | Optional | App functionality | **Mixed**: event check-ins, poll votes, reactions and filed reports are kept, anonymised; study sessions, settings, notification preferences, read markers and the member's own blocks are deleted | Event check-ins (`event_attendance`), study sessions (`study_sessions`), task completions, poll votes, reactions, blocks, settings and notification preferences, read markers, and the Terms acceptance |
+| App activity → Other user-generated content | Yes | No | Optional | App functionality | **Kept, anonymised** | Free text a member writes outside chat: service-hour entries, tasks they create, the details of a report they file (kept whole, as moderation history), and a chapter they create |
+| App activity → Other actions | Yes | No | Optional | App functionality | **Mixed**: event check-ins, task completions, poll votes and reactions are kept, anonymised; the Terms acceptance stays on the anonymised account record; study sessions, settings, notification preferences, read markers and the member's own blocks are deleted | Event check-ins (`event_attendance`), study sessions (`study_sessions`), task completions, poll votes, reactions, blocks, settings and notification preferences, read markers, and the Terms acceptance |
 | App info and performance → Crash logs | Yes | No | Required | App functionality | Not deleted with the account; aged out by Sentry's retention | Sentry, when the build has `EXPO_PUBLIC_SENTRY_DSN` (EAS `production` does, per #2415) |
 | App info and performance → Diagnostics | Yes | No | Required | App functionality | As Crash logs | Sentry tracing at `tracesSampleRate = 0.1` (`lib/sentry/options.ts`) |
 | Device or other IDs | Yes | No | Optional | App functionality | Deleted | The Expo push token (`lib/notifications/push.ts`). Optional because it sits behind the notification permission |
@@ -607,8 +607,11 @@ Two of Play's definitions differ from Apple's, and they change answers:
 **On account deletion** is what `DELETE /v1/users/me` does to each type, and
 [`data-retention.md` § Individual Account Deletion](../../../spec/behavior/data-retention.md#individual-account-deletion)
 owns the rules. *Kept, anonymised* means the record stays for the chapter's history under "Deleted
-User", with nothing left that names the member. That's why the deletion answer below is "request
-deletion", not "all data is deleted".
+User": the account's name, email and profile are scrubbed, and the record no longer points at a
+person. What members wrote isn't rewritten, though. A message that mentions the member by name
+keeps it, a report filed about them keeps a snapshot of their words, and a kept chat photo can
+still show them. That's why the deletion answer below is "request deletion", not "all data is
+deleted".
 
 **Not collected:** Approximate location (the location permission grants coarse and fine together,
 but only precise fixes are sent, so declare only Precise *(rule unverified)*), Financial info (every

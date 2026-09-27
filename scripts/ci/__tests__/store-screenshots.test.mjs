@@ -4,9 +4,11 @@ import assert from "node:assert/strict";
 import {
   APP_STORE_PRESET,
   GOOGLE_PLAY_PRESET,
+  PLAY_SCREENSHOT_LIMITS,
   STORE_SCALE,
   playSizeProblems,
   storePngProblems,
+  storeSetProblems,
 } from "../../demo/store-screenshots.mjs";
 
 /**
@@ -51,6 +53,13 @@ test("each preset's viewport at the store scale is its pixel size", () => {
 test("the Google Play preset is inside Play's screenshot limits", () => {
   assert.deepEqual(playSizeProblems(GOOGLE_PLAY_PRESET.pixels), []);
   assert.equal(GOOGLE_PLAY_PRESET.opaqueRgb, true, "Play rejects a PNG with alpha");
+  assert.deepEqual(GOOGLE_PLAY_PRESET.countLimits, { min: 2, max: 8 });
+});
+
+test("the Google Play preset is the shape Play promotes: 9:16, 1080 px or more a side", () => {
+  const { width, height } = GOOGLE_PLAY_PRESET.pixels;
+  assert.ok(Math.min(width, height) >= PLAY_SCREENSHOT_LIMITS.promotionMinSide);
+  assert.equal(width * 16, height * 9);
 });
 
 test("the App Store size breaks Play's 2:1 cap, which is why Play has its own preset", () => {
@@ -90,5 +99,32 @@ test("storePngProblems refuses what Play would reject", () => {
   assert.deepEqual(
     storePngProblems(fakePng({ ...size, chunks: ["tRNS"] }), GOOGLE_PLAY_PRESET),
     ["PNG carries a tRNS transparency chunk"],
+  );
+});
+
+test("storeSetProblems is empty only for a complete, acceptable set", () => {
+  const good = (slug) => ({ slug, bytes: fakePng({ ...GOOGLE_PLAY_PRESET.pixels }) });
+  const seven = ["a", "b", "c", "d", "e", "f", "g"].map(good);
+  assert.deepEqual(storeSetProblems(GOOGLE_PLAY_PRESET, seven), []);
+
+  assert.deepEqual(
+    storeSetProblems(GOOGLE_PLAY_PRESET, seven.slice(1), ["a: timed out waiting for a"]),
+    ["a: timed out waiting for a"],
+    "a screen that failed to render fails the set",
+  );
+  assert.deepEqual(
+    storeSetProblems(GOOGLE_PLAY_PRESET, [
+      ...seven.slice(1),
+      { slug: "a", bytes: fakePng({ ...GOOGLE_PLAY_PRESET.pixels, colourType: 6 }) },
+    ]),
+    ["a: PNG colour type 6 at 8-bit, expected 8-bit RGB (colour type 2)"],
+  );
+  assert.deepEqual(
+    storeSetProblems(GOOGLE_PLAY_PRESET, [...seven, good("h"), good("i")]),
+    ["9 screenshots, but Google Play takes 2 to 8"],
+  );
+  assert.deepEqual(
+    storeSetProblems(GOOGLE_PLAY_PRESET, [good("a")]),
+    ["1 screenshots, but Google Play takes 2 to 8"],
   );
 });

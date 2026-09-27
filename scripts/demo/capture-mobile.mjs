@@ -61,7 +61,7 @@ import {
   APP_STORE_PRESET,
   GOOGLE_PLAY_PRESET,
   STORE_SCALE,
-  storePngProblems,
+  storeSetProblems,
 } from "./store-screenshots.mjs";
 
 const MOBILE_URL = process.env.MOBILE_URL ?? "http://localhost:3002";
@@ -645,18 +645,22 @@ async function captureStoreSet(browser, preset) {
     throw error;
   }
 
+  // captureRunningApp words and records its own screen failures.
+  const screenFailures = failures.slice(failuresBefore);
+  const files = [];
   for (const shot of shots) {
     const bytes = await readFile(shot.file);
     const header = pngHeader(bytes);
     shot.size = header ? `${header.width}x${header.height}` : "not a PNG";
-    for (const problem of storePngProblems(bytes, preset)) {
-      failures.push(`${shot.slug}: ${problem}`);
-    }
+    files.push({ slug: shot.slug, bytes });
   }
+  const problems = storeSetProblems(preset, files, screenFailures);
+  failures.push(...problems.slice(screenFailures.length));
 
-  // The same rule for every other failure: a screen that never rendered, or a
-  // file the store would reject, leaves nothing behind to upload.
-  if (failures.length > failuresBefore) {
+  // The same rule as the Ask refusal, for every other problem: a screen that
+  // never rendered, a file the store would reject, or a count it won't take
+  // leaves nothing behind to upload.
+  if (problems.length) {
     await rm(dir, { recursive: true, force: true });
     console.log(`\n${name} set not written: ${dir} removed, see below.`);
     return shots;
