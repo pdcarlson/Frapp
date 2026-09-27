@@ -216,4 +216,27 @@ stops at once and deletes `screenshots/app-store/`, so there is nothing to uploa
 drag in the files in order, for the English (U.S.) localization. `screenshots/` is gitignored and
 the PNGs are not committed; regenerate them with the procedure above rather than keeping copies.
 
+### 6.5 Google Play screenshots
+
+Play can't reuse the App Store set: 1320 × 2868 is about 2.17:1, and Play caps a screenshot's long
+side at twice its short side ([#2557](https://github.com/pdcarlson/Frapp/issues/2557)). The Play set
+is the same seven screens, rendered the same way, at Play's shape.
+
+**Size: 1242 × 2208 pixels, portrait (9:16)**, a 414 × 736 point viewport at 3x. Play Console Help
+("Add preview assets to showcase your app") takes JPEG or 24-bit PNG with no alpha, 320 to 3840 px
+per side, the long side at most twice the short one, and 2 to 8 phone screenshots. For promotion it
+prefers 9:16 with at least 1080 px on each side, which this size also meets. **Not read from the
+page itself:** support.google.com is blocked from the cloud sandbox, so these rules come from search
+snippets of that page (2026-09-27). Replace this paragraph's source with the console's wording once
+the set is uploaded, and record the upload on #2557's parent tracker (#2555).
+
+**Procedure:** § 6.4's steps 1 to 3 unchanged, then from the repo root
+`node scripts/demo/capture-mobile.mjs --google-play` (same `CHROMIUM_PATH` prefix in the sandbox). It
+writes `screenshots/google-play/01-chat-home.png` … `07-directory.png`, with the same Ask refusal and
+landed-route checks as the App Store run. It also fails if a file isn't 1242 × 2208 or carries an
+alpha channel (anything but PNG colour type 2), because Play rejects a PNG with alpha.
+
+**Upload is the owner's step:** Play Console → the app → Main store listing → Phone screenshots →
+the files in order, for the default language. The upload needs the developer account (#2556).
+
 ---

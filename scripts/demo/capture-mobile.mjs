@@ -34,8 +34,19 @@
  * unset. Procedure and the size's provenance:
  * `docs/internal/ops/deployment/mobile.md` § 6.4.
  *
+ * ## Google Play preset (`--google-play`, or `GOOGLE_PLAY=1`)
+ *
+ * The same seven screens, with the same Ask refusal, at Play's shape (#2557):
+ *
+ *   google-play/       1242x2208 PNGs (414x736 at 3x, 9:16)
+ *
+ * The App Store size is about 2.17:1, past Play's 2:1 cap on a screenshot's
+ * long side, so Play cannot reuse that set. Procedure and the size's
+ * provenance: `docs/internal/ops/deployment/mobile.md` § 6.5.
+ *
  * Env: MOBILE_URL (default http://localhost:3002), OUT_ROOT, CHROMIUM_PATH,
- *      DEMO_EMAIL, DEMO_PASSWORD, EVENT_ID, SKIP_REFERENCE=1, APP_STORE=1
+ *      DEMO_EMAIL, DEMO_PASSWORD, EVENT_ID, SKIP_REFERENCE=1, APP_STORE=1,
+ *      GOOGLE_PLAY=1
  */
 import { chromium } from "playwright";
 import { mkdir, rm, readFile } from "node:fs/promises";
@@ -48,10 +59,11 @@ const MOBILE_URL = process.env.MOBILE_URL ?? "http://localhost:3002";
 const OUT_ROOT = process.env.OUT_ROOT ?? "screenshots";
 const APP_DIR = path.join(OUT_ROOT, "mobile-app");
 const REF_DIR = path.join(OUT_ROOT, "mobile-reference");
-const STORE_DIR = path.join(OUT_ROOT, "app-store");
 
 const APP_STORE =
   process.argv.includes("--app-store") || process.env.APP_STORE === "1";
+const GOOGLE_PLAY =
+  process.argv.includes("--google-play") || process.env.GOOGLE_PLAY === "1";
 
 // The local login setup-demo.sh creates; seed-demo.mjs owns the values.
 const EMAIL = process.env.DEMO_EMAIL ?? LOCAL_DEMO_EMAIL;
@@ -76,8 +88,33 @@ const SCALE = 3;
  * is the published page, not the console: #2454 asks for the size App Store
  * Connect states at upload to be confirmed and recorded.
  */
-const STORE_PHONE = { width: 440, height: 956 };
-const STORE_PIXELS = { width: 1320, height: 2868 };
+const APP_STORE_PRESET = {
+  name: "App Store",
+  dir: path.join(OUT_ROOT, "app-store"),
+  viewport: { width: 440, height: 956 },
+  pixels: { width: 1320, height: 2868 },
+};
+
+/**
+ * Google Play's phone screenshots: 414x736 points at 3x is 1242x2208 pixels,
+ * 9:16. Play Console Help ("Add preview assets to showcase your app") takes a
+ * JPEG or 24-bit PNG with no alpha, each side 320-3840 px, the long side at
+ * most twice the short one; and for promotion it prefers 9:16 with at least
+ * 1080 px on each side. That page is blocked from the sandbox, so those rules
+ * come from search-result snippets of it (2026-09-27), not the page itself:
+ * #2557 asks for the console's wording to be recorded at upload. 9:16 meets
+ * both the hard cap and the promotion shape, and 414 is a Pixel-class width.
+ */
+const GOOGLE_PLAY_PRESET = {
+  name: "Google Play",
+  dir: path.join(OUT_ROOT, "google-play"),
+  viewport: { width: 414, height: 736 },
+  pixels: { width: 1242, height: 2208 },
+  // Play rejects a PNG with an alpha channel. Playwright writes RGB (IHDR
+  // colour type 2) today; this turns a change there into a failed run rather
+  // than a rejected upload.
+  colorType: 2,
+};
 
 const FREEZE_CSS = `
   *, *::before, *::after {
@@ -293,8 +330,9 @@ const APP_SCREENS = [
 ];
 
 /**
- * The App Store set: what the listing sells (`apps/mobile/store/README.md`
- * § Description), in the order a browser of the listing should meet it —
+ * The store set, for both stores' presets: what the listing sells
+ * (`apps/mobile/store/README.md` § Description), in the order a browser of
+ * the listing should meet it —
  * chat first, because that is the product's centre, then the officer's QR,
  * then the member's week. Every screen here ships in the store binary; there
  * is deliberately no Ask shot, because that binary has no Ask (#2259).
@@ -393,10 +431,17 @@ const ASK_ON_SCREEN = () =>
 
 class AskOnScreenError extends Error {}
 
-/** Width and height from a PNG's IHDR chunk, which always follows the magic. */
-async function pngSize(file) {
+/**
+ * Width, height and colour type from a PNG's IHDR chunk, which always follows
+ * the magic. Colour type 2 is RGB; 6 is RGB with alpha.
+ */
+async function pngHeader(file) {
   const bytes = await readFile(file);
-  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  return {
+    width: bytes.readUInt32BE(16),
+    height: bytes.readUInt32BE(20),
+    colorType: bytes[25],
+  };
 }
 
 async function signIn(page) {
@@ -613,41 +658,47 @@ async function captureReferenceBoard(browser) {
   return done;
 }
 
-async function captureAppStore(browser) {
-  await rm(STORE_DIR, { recursive: true, force: true });
-  await mkdir(STORE_DIR, { recursive: true });
+async function captureStoreSet(browser, preset) {
+  const { name, dir, viewport, pixels, colorType } = preset;
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
 
   console.log(
-    `App Store set, ${STORE_PHONE.width}x${STORE_PHONE.height} @${SCALE}x ` +
+    `${name} set, ${viewport.width}x${viewport.height} @${SCALE}x ` +
       "(signed in against the seeded demo chapter):",
   );
   let shots;
   try {
     shots = await captureRunningApp(browser, {
       screens: STORE_SCREENS,
-      viewport: STORE_PHONE,
-      outDir: STORE_DIR,
+      viewport,
+      outDir: dir,
       noAsk: true,
     });
   } catch (error) {
     // No partial store set survives a run that saw Ask: a folder of the shots
     // taken before it is exactly what someone would upload by mistake.
-    await rm(STORE_DIR, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true });
     throw error;
   }
 
   for (const shot of shots) {
-    const { width, height } = await pngSize(shot.file);
-    shot.size = `${width}x${height}`;
-    if (width !== STORE_PIXELS.width || height !== STORE_PIXELS.height) {
+    const header = await pngHeader(shot.file);
+    shot.size = `${header.width}x${header.height}`;
+    if (header.width !== pixels.width || header.height !== pixels.height) {
       failures.push(
-        `${shot.slug}: ${shot.size}, expected ` +
-          `${STORE_PIXELS.width}x${STORE_PIXELS.height}`,
+        `${shot.slug}: ${shot.size}, expected ${pixels.width}x${pixels.height}`,
+      );
+    }
+    if (colorType !== undefined && header.colorType !== colorType) {
+      failures.push(
+        `${shot.slug}: PNG colour type ${header.colorType}, expected ` +
+          `${colorType} (RGB, no alpha)`,
       );
     }
   }
 
-  console.log(`\n${shots.length} App Store screens -> ${STORE_DIR}`);
+  console.log(`\n${shots.length} ${name} screens -> ${dir}`);
   for (const { slug, label, size } of shots) {
     console.log(`  ${slug}.png  ${size}  ${label}`);
   }
@@ -660,9 +711,16 @@ async function main() {
     args: ["--no-sandbox"],
   });
 
-  if (APP_STORE) {
+  if (APP_STORE && GOOGLE_PLAY) {
+    await browser.close();
+    throw new Error("Pass --app-store or --google-play, not both.");
+  }
+  if (APP_STORE || GOOGLE_PLAY) {
     try {
-      await captureAppStore(browser);
+      await captureStoreSet(
+        browser,
+        APP_STORE ? APP_STORE_PRESET : GOOGLE_PLAY_PRESET,
+      );
     } finally {
       await browser.close();
     }
