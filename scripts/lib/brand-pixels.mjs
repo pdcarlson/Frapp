@@ -405,6 +405,7 @@ export function pngHeader(buffer) {
   return {
     width: buffer.readUInt32BE(16),
     height: buffer.readUInt32BE(20),
+    bitDepth: buffer[24],
     colourType: buffer[25],
   };
 }
