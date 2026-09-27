@@ -39,7 +39,7 @@ import * as ts from 'typescript';
  *   it, or a subscription opened by a helper outside it;
  * - Broadcast and Presence subscriptions, which this does not scan. The push
  *   worker reads Presence on `chat:channel:<id>`; what those topics may carry
- *   is the `realtime.messages` entry below (#2496);
+ *   is the `realtime.messages` entry below (#2725);
  * - member text re-posted under the system actor, which cannot be blocked.
  *   The poll-expiry notice used to quote the poll's question this way; it
  *   replies to the poll instead since #2495, and nothing here would catch
@@ -387,14 +387,10 @@ const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
       why: "Select-own only: the caller's own preferences.",
     },
   'realtime.messages realtime_messages_scoped_select': {
-    // Authorizes Broadcast and Presence on `chat:channel:<id>`. Neither carries
-    // message content, and no client renders presence (the push worker reads
-    // it). The one thing drawn is the anonymous typing indicator, and both
-    // clients drop a blocked member's `typing` from it through
-    // `visibleTypingUsers` (#2496). The rule trusts the payload's `userId`,
-    // which the insert policy does not check (#2725).
     creates: 2,
-    status: 'masked',
+    status: 'open',
+    issues: [2725],
+    why: "Authorizes Broadcast and Presence on `chat:channel:<id>`. Neither carries message content, and no client renders chat-topic presence (the push worker reads it). The one thing drawn is the anonymous typing indicator, and both clients drop a blocked member's `typing` from it (`visibleTypingUsers`, #2496). Open because that rule trusts the payload's client-written `userId`, which the insert policy does not check: a modified client can put another id in it (#2725).",
     proof: {
       clientSpec: 'packages/chat-core/src/realtime-manager.spec.ts',
       test: "a blocked member's typing broadcast leaves the indicator empty",
@@ -720,6 +716,21 @@ const JEST_MODIFIERS = new Set([
   'todo',
 ]);
 
+/**
+ * A modifier on a `describe` / `it` / `test` chain that can stop the proof
+ * running as written: Jest's `.skip`, `.only` and `.todo`, and, since a proof
+ * can be a Vitest spec (`clientSpec`), Vitest's `.skipIf(…)` and `.runIf(…)`,
+ * which switch a block off on a condition, and `.fails`, which inverts it.
+ */
+const DISABLING_MODIFIERS = new Set([
+  'skip',
+  'only',
+  'todo',
+  'skipIf',
+  'runIf',
+  'fails',
+]);
+
 const SKIPPING_IDENTIFIERS = new Set([
   'xdescribe',
   'xit',
@@ -730,9 +741,10 @@ const SKIPPING_IDENTIFIERS = new Set([
 ]);
 
 /**
- * What makes Jest skip a test in this file, read from the syntax tree: `.skip`,
- * `.only` or `.todo` anywhere on a chain that names `describe`, `it` or `test`
- * (so `it.concurrent.only` and a namespace import's `j.it.only` too), and the
+ * What makes Jest or Vitest skip a test in this file, read from the syntax
+ * tree: a `DISABLING_MODIFIERS` name anywhere on a chain that names
+ * `describe`, `it` or `test` (so `it.concurrent.only`, a namespace import's
+ * `j.it.only` and Vitest's `describe.skipIf(cond)` too), and the
  * `x`/`f` names, whether referenced (`fit(…)`, `cond ? describe : xdescribe`)
  * or called off a namespace (`j.fit(…)`). A focused test
  * anywhere skips the proof, and a skipped block around it leaves the title in
@@ -755,10 +767,11 @@ function skipsOrFocuses(file: ts.SourceFile): boolean {
           node.parent.expression === node) ||
           (ts.isPropertyAccessExpression(node.parent) &&
             JEST_MODIFIERS.has(node.parent.name.text)))) ||
-      // `.skip` / `.only` / `.todo` anywhere on a chain that names describe,
-      // it or test: `it.concurrent.only`, `j.it.only`, `describe.skip.each`.
+      // A disabling modifier anywhere on a chain that names describe, it or
+      // test: `it.concurrent.only`, `j.it.only`, `describe.skip.each`,
+      // `describe.skipIf(cond)`.
       (ts.isPropertyAccessExpression(node) &&
-        ['skip', 'only', 'todo'].includes(node.name.text) &&
+        DISABLING_MODIFIERS.has(node.name.text) &&
         chainNames(node).some((name) =>
           ['describe', 'it', 'test'].includes(name),
         )),

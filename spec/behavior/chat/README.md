@@ -197,7 +197,8 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 
 - When a user starts typing in a channel, a lightweight ephemeral event is broadcast to other channel members via Supabase Realtime Broadcast (not persisted).
 - Shows "Someone is typing…" (or "N people are typing…") just above the composer. It names nobody. A member the viewer has blocked never counts toward it (§ What a block does and does not hide).
-- A sender broadcasts at most once every 3 seconds while typing, and each typist drops off the indicator 4 seconds after their last broadcast (`packages/chat-core/src/realtime-manager.ts`).
+- A sender broadcasts at most once every 3 seconds while typing. A typist expires 4 seconds after their last broadcast, and the indicator catches up on the next sweep of expired typists, which runs every 1.5 seconds, so it clears 4 to 5.5 seconds after that broadcast (`packages/chat-core/src/realtime-manager.ts`).
+- The viewer's own typing never counts, including typing from another of the viewer's devices, whose broadcasts do arrive.
 
 **Online/offline presence:**
 

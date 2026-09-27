@@ -570,6 +570,18 @@ describe("visibleTypingUsers (#2496)", () => {
       expect(visibleTypingUsers(typing, state, VIEWER)).toEqual([BLOCKED]);
     }
   });
+
+  it("never counts the viewer, whose other device's typing arrives too", () => {
+    for (const state of [
+      ready(),
+      loading([], { unblocked: [VIEWER] }),
+      unavailable(),
+    ]) {
+      expect(visibleTypingUsers([VIEWER, FRIEND], state, VIEWER)).toEqual(
+        state.status === "ready" ? [FRIEND] : [],
+      );
+    }
+  });
 });
 
 describe("replaceMaskedCopies (finding 3)", () => {
