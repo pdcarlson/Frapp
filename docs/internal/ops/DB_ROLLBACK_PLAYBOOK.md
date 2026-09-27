@@ -1499,7 +1499,7 @@ After any rollback event:
   DROP FUNCTION IF EXISTS public.can_read_chat_message(uuid);
   ```
 * **⚠️ Note**: Rolling back **re-opens the cross-chapter / private-DM / role-gated action-read leak this migration closed** (FRA-38 / #279) — any authenticated user could again read every `chat_message_actions` row via the web client's direct query and the global Realtime subscription, so **prefer a roll-forward fix over this rollback**. No data is lost (policy + function only). Drop order matters: the `SELECT` policy references `can_read_chat_message(...)`, so the policy must be dropped/recreated **before** the function. No app-code change is required either way — the web reaction backfill and Realtime subscription work under either policy; the restored policy is simply permissive again.
-* **Replica identity**: nothing to revert. The migration deliberately leaves `chat_message_actions` at the default replica identity — see the rationale in the migration header and `docs/internal/security/SECURITY_FIXES.md`. If you find the table set to `FULL`, that is drift, not this migration.
+* **Replica identity**: nothing to revert. The migration deliberately leaves `chat_message_actions` at the default replica identity — see the rationale in the migration header and `docs/security/security-fixes.md`. If you find the table set to `FULL`, that is drift, not this migration.
 
 ## Rollback poll list vote aggregate RPCs
 * **Migration**: `20260417180000_add_poll_list_vote_aggregate_rpcs.sql`
@@ -2058,3 +2058,15 @@ drop function if exists public.hide_direct_message(uuid, uuid, uuid);
 alter table public.channel_read_receipts drop column if exists hidden_at;
 ```
 
+
+## Rollback skipping blocked senders in unread counts (20260927050000)
+
+* **Migration**: `20260927050000_chat_unread_counts_skip_blocked.sql`
+
+A function body (#2521). It re-creates `get_channel_unread_counts` with one more join predicate, so a sender the caller has blocked in the chapter no longer counts toward their unread or mention badges. No data changes, the signature is unchanged, and no API or client code depends on the new behaviour: the API reads the counts the same way under either body.
+
+**Roll back with a new forward migration, not by hand.** Same rule as [§ Rollback per-user Terms acceptance](#rollback-per-user-terms-acceptance-20260923190000): hand DDL leaves the ledger recording `20260927050000` as applied, so a later re-land would apply nothing. Put the whole of section 1 of `20260823123000_chat_imported_kind_semantics.sql` (the `create or replace function public.get_channel_unread_counts` statement and the grant block after it) in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). Copy that body rather than retyping it: the rollback must keep `kind <> 'imported'`, `is distinct from` and `set search_path = public, pg_temp`, and dropping any of them is a different regression.
+
+The same PR removes the `#2521` landmark and the "Unread and mention counts skip a blocked sender" tier from `scripts/check-pglite-migrations.mjs`, which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
+
+**This is a safety regression, not a neutral rollback.** Afterwards a blocked member's messages and @-mentions raise the blocker's channel-row, mention and mobile app-icon badges again, onto threads that show only tombstones. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.

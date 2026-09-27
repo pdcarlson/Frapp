@@ -80,7 +80,7 @@
  * future .npmrc `omit`/`production` setting cannot silently shrink the
  * audited tree.
  *
- * Docs: docs/internal/security/SECURITY_FIXES.md § npm audit sweep + CI gate.
+ * Docs: docs/security/security-fixes.md § npm audit sweep + CI gate.
  */
 
 import { spawnSync } from "node:child_process";
@@ -619,7 +619,7 @@ async function main() {
       console.error(`  - ${describe(advisory)}`);
     }
     console.error(
-      "\nFix: `npm audit fix` (or a targeted bump per docs/internal/security/SECURITY_FIXES.md).\n" +
+      "\nFix: `npm audit fix` (or a targeted bump per docs/security/security-fixes.md).\n" +
         "Only if the fix genuinely cannot land now: add an allowlist entry to\n" +
         "scripts/npm-audit-allowlist.json with a reason, a tracking issue, and an expiry.",
     );
@@ -635,7 +635,7 @@ async function main() {
 /**
  * The exit-code split, as a function so it can be tested (pure — unit-tested).
  * Inlined in the entry guard it was unreachable from a test, and flipping it
- * would silently falsify the triage rule in SECURITY_FIXES.md § Prevention.
+ * would silently falsify the triage rule in security-fixes.md § Prevention.
  */
 export function exitCodeFor(error) {
   return error instanceof AuditUnavailableError ? 2 : 1;

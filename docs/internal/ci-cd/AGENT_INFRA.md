@@ -342,7 +342,7 @@ When nothing in a Dependabot diff but `package-lock.json` explains a wall of red
 to recognise.
 
 It is the duplicate-hoisted-copy trap of
-[`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md#why-the-pin-bump-alone-was-not-enough) — its
+[`security-fixes.md`](../../security/security-fixes.md#why-the-pin-bump-alone-was-not-enough) — its
 § *Prevention* rule "Check for a duplicate hoisted copy afterward", and the `next`/`geist` case
 under § *Why the pin bump alone was not enough* — arriving through the Dependabot lane instead of an
 advisory sweep. Six packages outside the bumped set peer-depend on the root `@nestjs/common` node

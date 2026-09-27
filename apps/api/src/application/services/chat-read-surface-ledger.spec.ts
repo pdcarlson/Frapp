@@ -129,10 +129,15 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_createCategory_v1: CHANNEL_METADATA,
   ChatController_updateCategory_v1: CHANNEL_METADATA,
   ChatController_deleteCategory_v1: CHANNEL_METADATA,
+  // Counts only, but a count is still a signal: `get_channel_unread_counts`
+  // skips a sender the caller blocked in the chapter, so a blocked member's
+  // messages and @-mentions don't move the blocker's badges (#2521).
   ChatController_getUnreadCounts_v1: {
-    status: 'open',
-    issues: [2521],
-    why: "Counts only, but `get_channel_unread_counts` counts a blocked member's messages and @-mentions, so they still move the blocker's unread, mention and app-icon badges.",
+    status: 'masked',
+    proof: {
+      pglite:
+        "a blocker's unread and mention counts skip the blocked member's messages in that chapter (#2521)",
+    },
   },
   ChatController_markRead_v1: {
     status: 'no-foreign-content',
