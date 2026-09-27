@@ -20,6 +20,9 @@ procedure, and where the size comes from, are in
 [`mobile.md` § 6.4](../../../docs/internal/ops/deployment/mobile.md#64-app-store-screenshots).
 They are generated rather than committed (`screenshots/` is gitignored). Whether they
 have been uploaded is recorded on #2454, not here: until that issue closes, assume not.
+Google Play can't take that size, so `--google-play` writes the same seven screens at
+1242 × 2208 to `screenshots/google-play/`
+([`mobile.md` § 6.5](../../../docs/internal/ops/deployment/mobile.md#65-google-play-screenshots)).
 
 **The product is Frapp** ([ADR-25](../../../spec/architecture/adr/adr-25.md),
 2026-09-23). The App Store **listing** name is **`Frapp: Chapter Hub`**. The
@@ -56,7 +59,7 @@ trademark record is on #1901; this file is the listing paste.
 | Subtitle (iOS, 30 chars) / Short description (Android, 80 chars) | Your chapter, in one place |
 | Bundle id / package | `live.frapp.mobile` |
 | Category | Productivity (primary); Social Networking (secondary, iOS) |
-| Age rating | **13+** (iOS) / Everyone (Android). See § Age rating below — 13+ is a deliberate override of the 4+ the questionnaire calculated. |
+| Age rating | **13+** (iOS) / Everyone (Android, **pending**: the IARC questionnaire in Play Console issues the real rating, [#2720](https://github.com/pdcarlson/Frapp/issues/2720)). See § Age rating below — 13+ is a deliberate override of the 4+ the questionnaire calculated. |
 | Price | Free (chapters subscribe on the web dashboard. The app has no in-app purchases, and no payment can be taken in the app at all — card payments are not switched on for this build. **Basis: no Stripe key in the EAS `production` environment, per #2415's `env:list` of 2026-09-18. Re-run `eas env:list --environment production` against the build you actually submit before pasting this.** See § Review notes.) |
 | Privacy policy URL | https://frapp.live/privacy |
 | Terms URL | https://frapp.live/terms |
@@ -559,7 +562,97 @@ Where each answer comes from:
   not brokers. A single Yes would require an ATT prompt, which the app does not
   implement.
 
-Google Play Data safety: data is encrypted in transit; users delete in the app or dashboard (support page § 4), or by emailing team@frapp.live if they cannot sign in; no data shared with third parties for advertising; the developer is not enrolled in the Families program.
+## Google Play answers
+
+What Play Console asks under **Policy and programs → App content** before any release, including
+the Data safety form. These are the answers to enter; nothing has been entered yet, because the
+developer account doesn't exist ([#2556](https://github.com/pdcarlson/Frapp/issues/2556)). Written
+2026-09-27 for [#2557](https://github.com/pdcarlson/Frapp/issues/2557). Where an answer rests on a
+Play rule, the rule comes from search-result snippets of Play Console Help, because
+support.google.com is blocked from the cloud sandbox. Those answers carry *(rule unverified)*: check
+the console's own help text as you enter them, and fix this file where it disagrees.
+
+The facts are the same ones the App Store table above rests on, read against Play's definitions.
+Two of Play's definitions differ from Apple's, and they change answers:
+
+- **Anything sent off the device counts as collected**, even if it's never stored. Play then asks
+  whether it's *processed ephemerally* (held in memory only for the request) *(rule unverified)*.
+  So search queries are collected here, though the App Store table declares Search History not
+  collected.
+- **Transfers to a service provider are not *sharing*** *(rule unverified)*. Supabase, Render,
+  Sentry, PostHog, and Expo's push service with Firebase Cloud Messaging process data for us. What a
+  member posts reaching other members of their chapter is a transfer the member starts, which Play
+  also doesn't count as sharing. So every row reads **Shared: No**, and no data goes to advertisers
+  or brokers.
+
+### Data safety: data types
+
+| Play category → type | Collected | Ephemeral | Required or optional | Purposes | On account deletion | Basis |
+| --- | --- | --- | --- | --- | --- | --- |
+| Location → Precise location | Yes | **Yes** | Optional | App functionality | Nothing stored to delete | `lib/location.ts` sends lat/lng with each check-in and study heartbeat (`attendance.controller.ts`, `study.controller.ts`). The API tests it against the zone and stores no coordinates: `event_attendance` and `study_sessions` have no location columns. Optional because it sits behind the location permission, and the rest of the app works without it. No member ever sees another member's location |
+| Personal info → Name | Yes | No | Required | App functionality, Account management | Scrubbed | The member profile |
+| Personal info → Email address | Yes | No | Required | App functionality, Account management | Scrubbed | Sign-in |
+| Personal info → Phone number | Yes | No | Optional | App functionality | Deleted | A chapter's `phone` member field, as in the App Store row |
+| Personal info → User IDs | Yes | No | Required | App functionality, Analytics | Kept as an anonymous tombstone; the analytics id is forgotten | Member and account ids; the pseudonymous analytics `distinct_id` (see *User ID carries Analytics* above) |
+| Messages → Other in-app messages | Yes | No | Optional | App functionality | **Kept, anonymised** | Chat channels and DMs |
+| Photos and videos → Photos | Yes | No | Optional | App functionality | **Kept, anonymised** | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages. The camera only reads check-in codes on the device, and no frame leaves the phone |
+| App activity → App interactions | Yes | No | Required | Analytics | Forgotten (the analytics forget) | The server-side product events behind the App Store *Product Interaction* row. Required because the only opt-out is a chapter setting, not the member's choice |
+| App activity → In-app search history | Yes | **Yes** | Optional | App functionality | Nothing stored to delete | The directory and chapter-finder queries (`GET /v1/members/search`, `GET /v1/chapter-directory/search`). Ephemeral only while the App Store table's open question holds: if the API keeps query strings in its access logs, this answer is No |
+| App activity → Other user-generated content | Yes | No | Optional | App functionality | **Kept, anonymised** | Free text a member writes outside chat: service-hour entries, tasks they create, the details of a report they file (kept whole, as moderation history), and a chapter they create |
+| App activity → Other actions | Yes | No | Optional | App functionality | **Mixed**: event check-ins, task completions, poll votes and reactions are kept, anonymised; the Terms acceptance stays on the anonymised account record; study sessions, settings, notification preferences, read markers and the member's own blocks are deleted | Event check-ins (`event_attendance`), study sessions (`study_sessions`), task completions, poll votes, reactions, blocks, settings and notification preferences, read markers, and the Terms acceptance |
+| App info and performance → Crash logs | Yes | No | Required | App functionality | Not deleted with the account; aged out by Sentry's retention | Sentry, when the build has `EXPO_PUBLIC_SENTRY_DSN` (EAS `production` does, per #2415) |
+| App info and performance → Diagnostics | Yes | No | Required | App functionality | As Crash logs | Sentry tracing at `tracesSampleRate = 0.1` (`lib/sentry/options.ts`) |
+| Device or other IDs | Yes | No | Optional | App functionality | Deleted | The Expo push token (`lib/notifications/push.ts`). Optional because it sits behind the notification permission |
+
+**On account deletion** is what `DELETE /v1/users/me` does to each type, and
+[`data-retention.md` § Individual Account Deletion](../../../spec/behavior/data-retention.md#individual-account-deletion)
+owns the rules. *Kept, anonymised* means the record stays for the chapter's history under "Deleted
+User": the account's name, email and profile are scrubbed, and the record no longer points at a
+person. What members wrote isn't rewritten, though. A message that mentions the member by name
+keeps it, a report filed about them keeps a snapshot of their words, and a kept chat photo can
+still show them. That's why the deletion answer below is "request deletion", not "all data is
+deleted".
+
+**Not collected:** Approximate location (the location permission grants coarse and fine together,
+but only precise fixes are sent, so declare only Precise *(rule unverified)*), Financial info (every
+type), Health and fitness, Emails, SMS or MMS, Videos, Audio files, Files and docs, Calendar,
+Contacts, Installed apps, Web browsing, and the remaining Personal info types.
+
+- **Files and docs:** the documents screen only downloads. The two upload surfaces that aren't in
+  the binary, documents and service-hour proof, are web-only (see *Other User Content* above).
+- **Calendar:** the event `.ics` export is handed to the phone's share sheet and never comes back
+  to us.
+- **Financial info is conditional, as on iOS.** Payment info and Purchase history are *not
+  collected* only while EAS `production` has no Stripe key. If the key ships, re-answer both in
+  the same sitting as the App Store *Payment Info* and *Purchases* rows.
+
+### Data safety: security practices
+
+| Question | Answer |
+| --- | --- |
+| Is all user data encrypted in transit? | **Yes.** Every endpoint the binary calls is HTTPS: `api.frapp.live`, Supabase, Sentry, PostHog and Expo |
+| Do you provide a way for users to request that their data is deleted? | **Yes.** In the app: More → Settings → Delete account, or Delete account on the join screen or the Terms prompt. On the web dashboard: My Profile → Delete account. Anyone who can't sign in can email team@frapp.live. What deletion keeps, anonymised, is in the table's *On account deletion* column |
+| Delete account URL | `https://frapp.live/support`; § 4 of that page describes all three routes. **It still says "Signet"**, and Play wants this page to name the app as the listing does *(rule unverified)*. [#2580](https://github.com/pdcarlson/Frapp/issues/2580) (ADR-25 step 5) renames the page. Enter this URL only after that's live on production |
+| Independent security review | No |
+| Families policy | Not applicable. The app isn't in the Families program, and its target audience is adults (§ Android-specific) |
+
+### App content declarations
+
+| Declaration | Answer |
+| --- | --- |
+| Privacy policy | `https://frapp.live/privacy` |
+| App access | **All or some functionality is restricted.** Give the same login App Review gets, with the same caveats: § Seed the reviewer's chapter and § Review notes. It doesn't exist in `frapp-prod` until #2309 is done |
+| Ads | **No ads.** There is no ad SDK |
+| Advertising ID | **No, the app doesn't use the advertising ID.** Nothing in `apps/mobile` reads it, and PostHog and Sentry identify members by the pseudonymous id instead. **Before entering this, confirm the first AAB's merged manifest has no `com.google.android.gms.permission.AD_ID`** ([#2720](https://github.com/pdcarlson/Frapp/issues/2720) tracks it): `bundletool dump manifest --bundle <the .aab>`, then search the output for `AD_ID`. Play checks the declaration against the manifest *(rule unverified)*. A static walk on 2026-09-27 found it in none of the Maven Central artifacts the native modules pull in (Stripe, Sentry, the image cropper, ShortcutBadger) or in any module's own manifest. It could not open the Google-hosted ones (`firebase-messaging`, `play-services-location`, `installreferrer`, and ML Kit and code-scanner from `expo-camera`), because the sandbox can't reach Google's Maven. If the AAB has it, don't answer Yes: add it to `expo.android.blockedPermissions` in `app.json` and rebuild. The same walk found no `READ_MEDIA_*` permission, so the photo-and-video permissions declaration shouldn't apply. `expo-location` does declare a `LocationTaskService` with `foregroundServiceType="location"`, but the app requests no `FOREGROUND_SERVICE*` permission, because background location is off in `app.json`. Whether Play Console still asks for a foreground-service declaration because of that service is unverified; #2720 records what it asks |
+| Content rating | Answer the IARC questionnaire with these inputs. **Users interact or communicate: yes** (channel chat, DMs and photo sharing, with member-level report and block, #2257). **Shares the user's location with other users: no** (location reaches our API only, as above). **Digital purchases: no. Unrestricted internet access: no.** Violence, sexual content, profanity, drugs and gambling: **none in the app's own content.** Whatever members post is user-generated, which the interaction answer covers. The rating is whatever the questionnaire issues; record it in § Identity ([#2720](https://github.com/pdcarlson/Frapp/issues/2720)) |
+| Target audience and content | The target audience § Android-specific declares, which owns the answer and the reasons not to change it |
+| News app | No |
+| Government app | No |
+| Financial features | **The app provides no financial features.** It shows a member the dues their chapter bills them, and no payment can be taken while EAS `production` has no Stripe key. The same conditional as the Financial info row: revisit if the key ships |
+| Health apps | No health features. Study hours are an academic record |
+
+Nothing on this page can be entered before the developer account exists (#2556), and the Data
+safety form asks for the app's package, so create the app as `live.frapp.mobile` first.
 
 ## Android-specific
 

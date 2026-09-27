@@ -34,8 +34,21 @@
  * unset. Procedure and the size's provenance:
  * `docs/internal/ops/deployment/mobile.md` § 6.4.
  *
+ * ## Google Play preset (`--google-play`, or `GOOGLE_PLAY=1`)
+ *
+ * The same seven screens, with the same Ask refusal, at Play's shape (#2557):
+ *
+ *   google-play/       1242x2208 PNGs (414x736 at 3x, 9:16)
+ *
+ * The App Store size is about 2.17:1, past Play's 2:1 cap on a screenshot's
+ * long side, so Play cannot reuse that set. Procedure and the size's
+ * provenance: `docs/internal/ops/deployment/mobile.md` § 6.5. Both presets,
+ * and the checks each file must pass, live in `store-screenshots.mjs`; any
+ * failed check deletes the store folder, like the Ask refusal.
+ *
  * Env: MOBILE_URL (default http://localhost:3002), OUT_ROOT, CHROMIUM_PATH,
- *      DEMO_EMAIL, DEMO_PASSWORD, EVENT_ID, SKIP_REFERENCE=1, APP_STORE=1
+ *      DEMO_EMAIL, DEMO_PASSWORD, EVENT_ID, SKIP_REFERENCE=1, APP_STORE=1,
+ *      GOOGLE_PLAY=1
  */
 import { chromium } from "playwright";
 import { mkdir, rm, readFile } from "node:fs/promises";
@@ -43,15 +56,23 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { LOCAL_DEMO_EMAIL, LOCAL_DEMO_PASSWORD, TEMPLATE_NAMESPACE, demoIds } from "./seed-demo.mjs";
+import { pngHeader } from "../lib/brand-pixels.mjs";
+import {
+  APP_STORE_PRESET,
+  GOOGLE_PLAY_PRESET,
+  STORE_SCALE,
+  storeSetProblems,
+} from "./store-screenshots.mjs";
 
 const MOBILE_URL = process.env.MOBILE_URL ?? "http://localhost:3002";
 const OUT_ROOT = process.env.OUT_ROOT ?? "screenshots";
 const APP_DIR = path.join(OUT_ROOT, "mobile-app");
 const REF_DIR = path.join(OUT_ROOT, "mobile-reference");
-const STORE_DIR = path.join(OUT_ROOT, "app-store");
 
 const APP_STORE =
   process.argv.includes("--app-store") || process.env.APP_STORE === "1";
+const GOOGLE_PLAY =
+  process.argv.includes("--google-play") || process.env.GOOGLE_PLAY === "1";
 
 // The local login setup-demo.sh creates; seed-demo.mjs owns the values.
 const EMAIL = process.env.DEMO_EMAIL ?? LOCAL_DEMO_EMAIL;
@@ -66,18 +87,6 @@ const FONT = "packages/theme/fonts/FigtreeVF.woff2";
 /** iPhone 16 Pro logical size — the `hint-size` the board's artboards declare. */
 const PHONE = { width: 402, height: 874 };
 const SCALE = 3;
-
-/**
- * The App Store's 6.9" iPhone size: 440x956 points at 3x is 1320x2868 pixels.
- * Apple's screenshot specifications (developer.apple.com → App Store Connect
- * help → Reference → Screenshot specifications, read 2026-09-22) list 1320x2868
- * portrait among the 6.9" sizes, ask for a 6.5" set only when no 6.9" set is
- * provided, and scale the smaller iPhone sizes from the set above them. That
- * is the published page, not the console: #2454 asks for the size App Store
- * Connect states at upload to be confirmed and recorded.
- */
-const STORE_PHONE = { width: 440, height: 956 };
-const STORE_PIXELS = { width: 1320, height: 2868 };
 
 const FREEZE_CSS = `
   *, *::before, *::after {
@@ -293,8 +302,9 @@ const APP_SCREENS = [
 ];
 
 /**
- * The App Store set: what the listing sells (`apps/mobile/store/README.md`
- * § Description), in the order a browser of the listing should meet it —
+ * The store set, for both stores' presets: what the listing sells
+ * (`apps/mobile/store/README.md` § Description), in the order a browser of
+ * the listing should meet it —
  * chat first, because that is the product's centre, then the officer's QR,
  * then the member's week. Every screen here ships in the store binary; there
  * is deliberately no Ask shot, because that binary has no Ask (#2259).
@@ -393,12 +403,6 @@ const ASK_ON_SCREEN = () =>
 
 class AskOnScreenError extends Error {}
 
-/** Width and height from a PNG's IHDR chunk, which always follows the magic. */
-async function pngSize(file) {
-  const bytes = await readFile(file);
-  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
-}
-
 async function signIn(page) {
   await page.goto(`${MOBILE_URL}/sign-in`, {
     waitUntil: "domcontentloaded",
@@ -465,13 +469,14 @@ async function captureRunningApp(
   {
     screens = APP_SCREENS,
     viewport = PHONE,
+    scale = SCALE,
     outDir = APP_DIR,
     noAsk = false,
   } = {},
 ) {
   const context = await browser.newContext({
     viewport,
-    deviceScaleFactor: SCALE,
+    deviceScaleFactor: scale,
     colorScheme: "dark",
     isMobile: true,
     hasTouch: true,
@@ -613,41 +618,55 @@ async function captureReferenceBoard(browser) {
   return done;
 }
 
-async function captureAppStore(browser) {
-  await rm(STORE_DIR, { recursive: true, force: true });
-  await mkdir(STORE_DIR, { recursive: true });
+async function captureStoreSet(browser, preset) {
+  const { name, viewport } = preset;
+  const dir = path.join(OUT_ROOT, preset.folder);
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
 
   console.log(
-    `App Store set, ${STORE_PHONE.width}x${STORE_PHONE.height} @${SCALE}x ` +
+    `${name} set, ${viewport.width}x${viewport.height} @${STORE_SCALE}x ` +
       "(signed in against the seeded demo chapter):",
   );
+  const failuresBefore = failures.length;
   let shots;
   try {
     shots = await captureRunningApp(browser, {
       screens: STORE_SCREENS,
-      viewport: STORE_PHONE,
-      outDir: STORE_DIR,
+      viewport,
+      scale: STORE_SCALE,
+      outDir: dir,
       noAsk: true,
     });
   } catch (error) {
     // No partial store set survives a run that saw Ask: a folder of the shots
     // taken before it is exactly what someone would upload by mistake.
-    await rm(STORE_DIR, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true });
     throw error;
   }
 
+  // captureRunningApp words and records its own screen failures.
+  const screenFailures = failures.slice(failuresBefore);
+  const files = [];
   for (const shot of shots) {
-    const { width, height } = await pngSize(shot.file);
-    shot.size = `${width}x${height}`;
-    if (width !== STORE_PIXELS.width || height !== STORE_PIXELS.height) {
-      failures.push(
-        `${shot.slug}: ${shot.size}, expected ` +
-          `${STORE_PIXELS.width}x${STORE_PIXELS.height}`,
-      );
-    }
+    const bytes = await readFile(shot.file);
+    const header = pngHeader(bytes);
+    shot.size = header ? `${header.width}x${header.height}` : "not a PNG";
+    files.push({ slug: shot.slug, bytes });
+  }
+  const problems = storeSetProblems(preset, files, screenFailures);
+  failures.push(...problems.slice(screenFailures.length));
+
+  // The same rule as the Ask refusal, for every other problem: a screen that
+  // never rendered, a file the store would reject, or a count it won't take
+  // leaves nothing behind to upload.
+  if (problems.length) {
+    await rm(dir, { recursive: true, force: true });
+    console.log(`\n${name} set not written: ${dir} removed, see below.`);
+    return shots;
   }
 
-  console.log(`\n${shots.length} App Store screens -> ${STORE_DIR}`);
+  console.log(`\n${shots.length} ${name} screens -> ${dir}`);
   for (const { slug, label, size } of shots) {
     console.log(`  ${slug}.png  ${size}  ${label}`);
   }
@@ -655,14 +674,19 @@ async function captureAppStore(browser) {
 }
 
 async function main() {
+  if (APP_STORE && GOOGLE_PLAY) {
+    throw new Error("Pass --app-store or --google-play, not both.");
+  }
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,
     args: ["--no-sandbox"],
   });
-
-  if (APP_STORE) {
+  if (APP_STORE || GOOGLE_PLAY) {
     try {
-      await captureAppStore(browser);
+      await captureStoreSet(
+        browser,
+        APP_STORE ? APP_STORE_PRESET : GOOGLE_PLAY_PRESET,
+      );
     } finally {
       await browser.close();
     }

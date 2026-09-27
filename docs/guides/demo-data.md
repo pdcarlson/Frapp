@@ -203,12 +203,14 @@ scripts tick it for the demo login and carry on. By hand, tick the box and
 choose **Agree and continue**; the App Review reviewer does the same, which
 § Review notes in `apps/mobile/store/README.md` tells them to expect.
 
-`node scripts/demo/capture-mobile.mjs --app-store` is the other mode: the App
+`node scripts/demo/capture-mobile.mjs --app-store` is the second mode: the App
 Store set, at the store's size, into `screenshots/app-store/`, with no Ask or
 Dues shot and a hard stop if any Ask surface is on screen. It needs the Expo
 server started **without** `EXPO_PUBLIC_ASK_ENABLED`. The procedure, and which
 size and why, are in
 [`mobile.md` § 6.4](../internal/ops/deployment/mobile.md#64-app-store-screenshots).
+`--google-play` is the same set at Play's size, into `screenshots/google-play/`
+([§ 6.5](../internal/ops/deployment/mobile.md#65-google-play-screenshots)).
 
 Output lands in `screenshots/`, which is **gitignored**. There is no sanctioned
 home for generated marketing binaries
@@ -297,7 +299,7 @@ EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<SUPABASE_ANON_KEY from apps/api/.env.local>
 EXPO_PUBLIC_API_URL=http://localhost:3001
 EXPO_PUBLIC_WEB_SECURE_STORE=1
-# Marketing/demo capture only. Leave it out for the App Store set.
+# Marketing/demo capture only. Leave it out for either store set.
 EXPO_PUBLIC_ASK_ENABLED=1
 ```
 
@@ -308,12 +310,13 @@ that is acceptable: nothing in the repo sets the flag, and an EAS `production`
 build refuses to evaluate its config when it is on (`apps/mobile/app.config.js`).
 
 **The flag is for the marketing and demo capture only.** The default run shoots
-`02-ask-answer` and so needs it. The App Store set (`--app-store`) must run
-with it **unset**: the store binary has no Ask, so with the flag off the app
-draws no ✦ pill ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and
-the preset refuses to write anything if it finds one. `EXPO_PUBLIC_*` values are
-inlined when Metro transforms the bundle, so between the two modes remove the line
-and restart Expo with `--clear`.
+`02-ask-answer` and so needs it. Both store sets (`--app-store` and
+`--google-play`) must run with it **unset**: the store binary has no Ask, so
+with the flag off the app draws no ✦ pill
+([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and each store preset
+refuses to write anything if it finds one. `EXPO_PUBLIC_*` values are inlined
+when Metro transforms the bundle, so between the marketing run and a store run
+remove the line and restart Expo with `--clear`.
 
 Two API-side values matter for the check-in screens:
 
