@@ -1,7 +1,7 @@
 # AI evals
 
 The adversarial test set required by [`spec/architecture/README.md`](../../../../spec/architecture/README.md)
-§13 → Evals. Threat model: [`docs/internal/security/ai-prompt-injection.md`](../../../../docs/internal/security/ai-prompt-injection.md).
+§13 → Evals. Threat model: [`docs/security/ai-prompt-injection.md`](../../../../docs/security/ai-prompt-injection.md).
 
 ```bash
 npm run test:ai-evals -w apps/api

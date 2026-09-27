@@ -876,7 +876,7 @@ SELECT`; `select qual from pg_policies where policyname =
   typing with web. Guarded on the `realtime` schema and the `authenticated`
   role, so PGlite skips the policy half but applies and exercises the predicate
   half; the PGlite policy inventory's hosted figure moves from 11 to 12 and
-  `AUTHORIZATION_MODEL.md` § "The policies that do exist" says why.
+  `authorization-model.md` § "The policies that do exist" says why.
 - **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) §
   Rollback the private presence topics.
 
@@ -1554,7 +1554,7 @@ something a watchdog should do on its own.
 ## 2026-08-03: `chat_message_actions` membership-scoped read RLS (FRA-38)
 
 - **Migration**: `20260803150000_chat_message_actions_membership_rls.sql`
-- **Purpose**: Closes a high-severity cross-tenant read leak. The table's `SELECT` policy was `using (auth.role() = 'authenticated')`, so any authenticated user could read every reaction/poll-vote row in every chapter, private DM and role-gated channel — and the web client reads this table **directly under the user's JWT** (a per-channel backfill plus a global Realtime subscription), so RLS was the only gate. Replaces the policy with one scoped `TO authenticated` and gated on a new `SECURITY DEFINER` helper `public.can_read_chat_message(uuid)` that mirrors the canonical `canAccessChannel` predicate. Details in `docs/internal/security/SECURITY_FIXES.md`.
+- **Purpose**: Closes a high-severity cross-tenant read leak. The table's `SELECT` policy was `using (auth.role() = 'authenticated')`, so any authenticated user could read every reaction/poll-vote row in every chapter, private DM and role-gated channel — and the web client reads this table **directly under the user's JWT** (a per-channel backfill plus a global Realtime subscription), so RLS was the only gate. Replaces the policy with one scoped `TO authenticated` and gated on a new `SECURITY DEFINER` helper `public.can_read_chat_message(uuid)` that mirrors the canonical `canAccessChannel` predicate. Details in `docs/security/security-fixes.md`.
 - **Safety**: Non-destructive — one `create or replace function` plus a `drop policy if exists` / `create policy` swap on the same policy name. No columns, no data, no backfill, and **no replica-identity change** (see the migration header for why `FULL` is deliberately _not_ set). `security definer` with `search_path` pinned to `public` as shipped here — `20260827190000` later repins it to `public, pg_temp` (#985), so a database promoted past that migration shows the pair — EXECUTE revoked from `public`/`anon` and granted to `authenticated`/`service_role`; every role statement — including the policy's `TO authenticated` clause, emitted via `format()` — is guarded on `pg_roles` existence, so the file also applies on bare Postgres / PGlite. INSERT/DELETE policies and the `service_role` write path are untouched, so Edge Function hot-path writes are unaffected.
 - **Order**: Standalone — **no coordinated app deploy required**. No application code changes with it; the web backfill and Realtime subscription work under either policy. Safe to apply at any point relative to the API/web rollout.
 - **Checks**: After `db push`:

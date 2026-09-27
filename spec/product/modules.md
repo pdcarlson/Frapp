@@ -68,7 +68,7 @@
 - **Channels:** PUBLIC, PRIVATE, ROLE_GATED (gated by any permission string, including custom), DM (1-on-1), GROUP_DM (up to 10 members).
 - **Channel categories:** Named groups for organizing channels (display-only, like Discord).
 - **Default channels:** seeded on every chapter at creation; the set, and each channel's type and gating, are defined in [`spec/behavior/chat/README.md` § Channels](../behavior/chat/README.md#channels).
-- **Messages support:** Markdown formatting, emoji reactions, file/image uploads (size-capped per [`content-validation.md` § 3](../../docs/internal/security/content-validation.md#3-size)), reply threads (reply-with-quote), edit, delete (soft), pinned messages (up to 50 per channel).
+- **Messages support:** Markdown formatting, emoji reactions, file/image uploads (size-capped per [`content-validation.md` § 3](../../docs/security/content-validation.md#3-size)), reply threads (reply-with-quote), edit, delete (soft), pinned messages (up to 50 per channel).
 - **Typing indicators** and **online/offline presence** via Supabase Realtime.
 - **Read receipts:** Last-read timestamp per channel per user.
 - **Mentions:** `@user` triggers a push notification.

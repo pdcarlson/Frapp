@@ -93,7 +93,7 @@ interface ExpressSettable {
  * is a `data:` URI, and the default `img-src` already includes `data:` too.
  * So the right move is to change nothing about CSP — verified by booting the
  * app and loading `/docs` and its bundle/CSS/init-script assets (see
- * `docs/internal/security/SECURITY_FIXES.md`) — rather than add an
+ * `docs/security/security-fixes.md`) — rather than add an
  * `'unsafe-inline'` `script-src` exception Swagger never needed, which would
  * have weakened XSS protection on every route, not just `/docs`.
  *

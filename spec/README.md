@@ -19,7 +19,7 @@ This index does not restate it: every topic tree under `spec/` routes from its o
 
 Canonical engineering principles are a file rather than a tree: [`engineering.md`](engineering.md).
 
-Security implementation notes live under [`docs/internal/security/`](../docs/internal/security/README.md).
+Security implementation notes live under [`docs/security/`](../docs/security/README.md).
 
 ---
 

@@ -139,7 +139,7 @@ export class MemberController {
    * `@CurrentMember()`, which `ChapterGuard` resolves filtered by both `user_id`
    * and `chapter_id`, so there is no id to authorize against and nothing a caller
    * could reach beyond their own membership. Recorded in
-   * `docs/internal/security/AUTHORIZATION_MODEL.md` § Chapter-scoped controllers.
+   * `docs/security/authorization-model.md` § Chapter-scoped controllers.
    *
    * Whether the member can *act* on the nudge is a separate question the client
    * answers — the card renders only behind `chapter-config:manage` — and

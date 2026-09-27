@@ -462,7 +462,7 @@ test("the exit-2 banner only says 're-run it' when re-running could help", () =>
 });
 
 test("exitCodeFor splits a no-verdict from a verdict", () => {
-  // SECURITY_FIXES.md § Prevention tells operators to read the exit code
+  // security-fixes.md § Prevention tells operators to read the exit code
   // first: 2 means nothing was established, only 1 is a finding. Flipping
   // this ternary silently falsifies that instruction — which is #1638.
   assert.equal(exitCodeFor(new AuditUnavailableError("registry down", { retriable: true })), 2);
