@@ -231,4 +231,21 @@ describe("tab bar", () => {
     // pre-registered cluster routes are exactly the case that invites it.
     expect(missing.map((m) => m.name)).toEqual([]);
   });
+
+  it("registers every route file in (tabs)", () => {
+    // The other half-deletion. expo-router's Tabs renders every child route,
+    // registered or not (`TabsClient` leaves `useOnlyUserDefinedScreens`
+    // false), so a file with no `Tabs.Screen` is a fifth visible tab and a live
+    // deep link. Removing `sheet-demo`'s registration without its file (#2301)
+    // would have passed every other test here. Only files directly in (tabs)
+    // are checked: a nested directory registers under a different name, and
+    // there is none today.
+    const tabsDir = path.join(appDir, "(tabs)");
+    const unregistered = routeFiles
+      .filter((f) => path.dirname(f) === tabsDir)
+      .map((f) => path.basename(f, ".tsx"))
+      .filter((name) => !registrations.some((r) => r.name === name));
+
+    expect(unregistered).toEqual([]);
+  });
 });

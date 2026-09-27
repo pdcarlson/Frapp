@@ -253,5 +253,6 @@ sheet provider, or an open sheet draws over the update prompt. See
 Its device checks now run on product screens
 ([`docs/mobile/testing.md`](../../../docs/mobile/testing.md#4-s1-foundation-smoke)).
 The registration and the file went in one commit. A `Tabs.Screen` with no file throws at
-runtime, which `lib/routes.spec.ts` catches. The reverse half-deletion, a file with no
-registration, would have put the screen on the tab bar as a fifth tab.
+runtime. A file with no registration is worse, because expo-router's `Tabs` renders every
+child route and it would have become a fifth visible tab. `lib/routes.spec.ts` now fails on
+either half-deletion (#2727).

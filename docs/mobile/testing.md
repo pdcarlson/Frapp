@@ -60,18 +60,21 @@ Supabase redirect allowlist — use the password sign-in path.
 S1 of #937 (the Signet foundation cutover) could not be device-verified from the
 cloud session that built it. Its proof used to be a throwaway `sheet-demo` route,
 deleted before the first store build because a live `frapp://sheet-demo` would
-have shipped in the binary (#2301). Every check it carried now runs on a product
-screen:
+have shipped in the binary (#2301). Its device checks now run on product screens,
+except the on-screen readout of the keyboard path, which a unit test covers:
 
 - [ ] The app **boots**. No crash at launch means the provider stack
       (gesture-handler root, safe-area, guarded keyboard, sheet host) and the
       splash-held Figtree load are sound.
-- [ ] **Figtree** renders visibly different weights for 400/600/700 on any
-      screen with a title, a label and body text (Android is the honest test,
-      because it can't fake weights from one file). The invite field on the
-      join screen (s02) renders in a monospace face.
-- [ ] **Sheets and the keyboard.** More → Service hours → **Log service hours**
-      presents the s20 sheet with its grabber, header and Cancel. It drags and
+- [ ] **Figtree** renders visibly different weights for 400, 600 and 700 on
+      the sign-in screen (s01): its title is 700, its button labels 600 and its body
+      copy 400. Android is the honest test, because it can't fake weights from
+      one file. Screens built on `ScreenShell` show no 700 text, so they can't
+      prove it. The invite field on the join screen (s02), which an account
+      with no chapter lands on, renders in a monospace face.
+- [ ] **Sheets and the keyboard.** More → Service hours, then **Log** in the
+      header, presents the s20 "Log service hours" sheet with its grabber,
+      header and Cancel. It drags and
       dismisses, and typing in its description field keeps the field visible
       above the keyboard. In Expo Go that is the fallback keyboard path;
       `lib/keyboard.spec.ts` pins that Expo Go never takes the native one.
