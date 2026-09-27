@@ -215,6 +215,7 @@ describe("SUBSCRIPTION_REFUSAL_COPY", () => {
     expect(SUBSCRIPTION_REFUSAL_COPY.task).toMatch(/task/i);
     expect(SUBSCRIPTION_REFUSAL_COPY.checkIn).toMatch(/check-in/i);
     expect(SUBSCRIPTION_REFUSAL_COPY.study).toMatch(/study/i);
+    expect(SUBSCRIPTION_REFUSAL_COPY.serviceHours).toMatch(/service hours/i);
     // The in-session variant has to hold a narrow line, and it has been wrong
     // in both directions. It must not claim the time was lost (the session is
     // still live server-side and quick resolution credits it in full), and it

@@ -1,7 +1,7 @@
 // Locks the subscription-refusal chain at the level only source can check:
 // the guard's messages, the shared mirror's copy of them, the mobile detector
 // that matches on them, and the order of the study copy's arms. What the
-// three mobile write surfaces DO with a refusal is rendered (see SCOPE).
+// mobile write surfaces DO with a refusal is rendered (see SCOPE).
 //
 // WHY THIS EXISTS (#2297). A freshly created chapter is `subscription_status
 // 'incomplete'` — chapter creation has no billing gate — so a founder reaches
@@ -29,15 +29,15 @@
 // any branch below to a status check.
 //
 // SCOPE. Message parity between the guard and `@repo/validation`, the
-// detector, and the order of the study copy's arms. What the three surfaces
-// named in #2297 DO with a refusal is rendered, not source-matched (#2416):
+// detector, and the order of the study copy's arms. What the write surfaces
+// DO with a refusal is rendered, not source-matched (#2416):
 // `apps/mobile/lib/events/check-in-screen.spec.tsx`,
-// `apps/mobile/lib/study/study-screen.spec.tsx` and
-// `apps/mobile/components/tasks/new-task-sheet.spec.tsx`. Copy wording itself
-// is asserted in `apps/mobile/lib/subscription-refusal.spec.ts` (no
-// price/plan/link, names an officer, never says "try again"). Reads are
-// deliberately NOT in scope:
-// the gate returns early for GET/HEAD/OPTIONS, so a read surface has no
+// `apps/mobile/lib/study/study-screen.spec.tsx`,
+// `apps/mobile/components/tasks/new-task-sheet.spec.tsx` (the three #2297
+// named) and `apps/mobile/lib/more/service-hours-screen.spec.tsx` (#2410).
+// Copy wording itself is asserted in `apps/mobile/lib/subscription-refusal.spec.ts`
+// (no price/plan/link, names an officer, never says "try again"). Reads are
+// deliberately NOT in scope: the gate returns early for GET/HEAD/OPTIONS, so a read surface has no
 // refusal to render and a gate state on a read error is dead code.
 
 import { test } from "node:test";

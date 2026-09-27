@@ -1,0 +1,22 @@
+import type { ReactTestRenderer } from "react-test-renderer";
+
+/**
+ * Everything a rendered screen says, as one string, so a check for text the
+ * screen must never show is a substring test. Matching whole `Text` elements
+ * would miss the text inside a longer sentence (`<Text>Details: {message}</Text>`),
+ * and `String()` of a children array joins it with commas.
+ *
+ * Shared by the rendered subscription-refusal specs (#2416, #2410): each one's
+ * "must not contain" checks are only as strong as this flattening, so it lives
+ * in one place rather than drifting across copies.
+ */
+export const screenText = (tree: ReactTestRenderer) =>
+  tree.root
+    .findAllByType("Text" as never)
+    .map((node) =>
+      [node.props.children]
+        .flat(Infinity)
+        .filter((part) => typeof part === "string" || typeof part === "number")
+        .join(""),
+    )
+    .join("\n");
