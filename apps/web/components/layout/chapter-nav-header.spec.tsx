@@ -66,7 +66,7 @@ function chapterPayload(name: string) {
   };
 }
 
-/** Radix opens its dropdown on keydown; jsdom has no real PointerEvent. */
+/** Opens the menu the way a keyboard user does: Enter on the Radix trigger. */
 function openMenu() {
   fireEvent.keyDown(screen.getByRole("button", { name: /Chapter menu/ }), {
     key: "Enter",
