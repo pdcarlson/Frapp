@@ -83,6 +83,13 @@ export const SUBSCRIPTION_REFUSAL_COPY = {
   study:
     "Your chapter's subscription isn't active, so study sessions can't be recorded. An officer can sort this out for the chapter.",
   /**
+   * `POST /v1/service-entries` (#2410). Arguably the refusal a new founder
+   * meets first: study needs a zone and check-in needs an event, while logging
+   * service hours needs neither.
+   */
+  serviceHours:
+    "Your chapter's subscription isn't active, so service hours can't be logged. An officer can sort this out for the chapter.",
+  /**
    * Pause, resume, heartbeat and stop — a session that is ALREADY RUNNING.
    *
    * Deliberately different from `study`, and the wording has been wrong in
