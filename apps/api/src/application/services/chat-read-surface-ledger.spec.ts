@@ -53,9 +53,9 @@ import * as ts from 'typescript';
  * still be a `name:` in that file. That cannot prove the test asserts the
  * right thing, but it stops a renamed, deleted or disabled proof leaving the
  * ledger vouching for nothing. An `open` entry is a known gap, and names the
- * issue tracking it; one that is masked in part also names the proof of that
- * part, checked the same way. The ledger's job is to keep gaps visible, not
- * to pretend there are none.
+ * issue tracking it. An `open` or `not-hidden` entry that is masked in part
+ * also names the proof of that part, checked the same way. The ledger's job
+ * is to keep gaps visible, not to pretend there are none.
  */
 
 /**
@@ -68,8 +68,12 @@ type Entry =
   | { status: 'masked'; proof: Proof }
   /** Serves nothing another member authored: metadata, counts, or the caller's own writes. */
   | { status: 'no-foreign-content'; why: string }
-  /** Serves another member's content on purpose. The spec's table says so. */
-  | { status: 'not-hidden'; why: string }
+  /**
+   * Serves another member's content on purpose. The spec's table says so.
+   * `proof`, when the surface is masked in part: the test for the part that
+   * is, held live like a `masked` entry's.
+   */
+  | { status: 'not-hidden'; why: string; proof?: Proof }
   /**
    * A known gap, tracked. `proof`, when the surface is masked in part: the
    * test for the part that is, held live like a `masked` entry's.
@@ -301,13 +305,13 @@ const HTTP_LEDGER: Record<string, Entry> = {
     },
   },
   ActivityFeedController_getFeed_v1: {
-    // Its announcement items are masked: a blocked author's announcement is
-    // left out, reading as the caller. Its other items carry text a member
-    // wrote (a backwork title beside its uploader, an event name, a points
-    // reason), which is MEMBER_TEXT, still open, so the route is too.
-    status: 'open',
-    issues: [2498],
-    why: "Announcements are masked; the items carrying a member's own text (a backwork title, an event name, a points reason) are not.",
+    // Its announcement items are chat, and masked: a blocked author's
+    // announcement is left out, reading as the caller. Its other items are
+    // chapter records carrying text a member wrote (a backwork title beside
+    // its uploader, an event name, a points reason), which a block does not
+    // hide (#2498).
+    status: 'not-hidden',
+    why: "Announcements are masked. The record items carrying a member's own text (a backwork title, an event name, a points reason) are not: a block is a chat control, and the spec's table row for non-chat modules says so.",
     proof: {
       spec: 'application/services/activity-feed.service.spec.ts',
       test: 'leaves out an announcement whose author the caller has blocked, reading as the caller',
@@ -318,11 +322,13 @@ const HTTP_LEDGER: Record<string, Entry> = {
     // `ChatService.notifyMessageRecipients` writes for DMs and announcements are
     // masked at write time: no row is written for a member who had blocked the
     // sender (PUSH_LEDGER below holds the proofs), and a row written before the
-    // block stays, as notification history. The non-chat rows that quote a
-    // member's text are MEMBER_TEXT, still open, so the route is too.
+    // block stays, as notification history, though the thread now tombstones
+    // the same message: no spec row decides that, so the route is open on it
+    // (#2715). The non-chat rows that quote a member's text are MEMBER_TEXT,
+    // which a block does not hide (#2498).
     status: 'open',
-    issues: [2498],
-    why: "Chat rows are masked at write time; the non-chat rows carrying a member's own text (a task title, an event name) are not.",
+    issues: [2715],
+    why: "Chat rows are masked at write time, but a chat row written before the block keeps the blocked member's text, and whether it should is undecided. The non-chat rows carrying a member's own text (a task title, an event name) are not hidden, by the spec's table row for non-chat modules.",
   },
 };
 
@@ -436,14 +442,14 @@ const PUSH_LEDGER: Record<string, Entry> = {
  * A non-chat notification whose body carries text some member wrote (a fine
  * reason, a task title, a review comment, an event or invoice name), whoever
  * or whatever triggers it: an officer's action, a webhook, a reminder sweep.
- * The spec hides that same text in chat, and does not say whether a block
- * reaches the notification. Open until #2498 decides it; the person a filter
- * would key on is the text's author, not the trigger.
+ * The spec hides that same text in chat, but not here: a block is a chat
+ * control, and these arrive in full, as the records they announce do (owner
+ * decision, #2498). Filtering one would mean keying on the text's author,
+ * not the trigger, so a change of mind is a new decision, not a quick fix.
  */
 const MEMBER_TEXT: Entry = {
-  status: 'open',
-  issues: [2498],
-  why: 'Not chat, but delivers text a member wrote, so someone who blocked that member still receives it. Whether a chat block reaches these is undecided.',
+  status: 'not-hidden',
+  why: "Not chat. Delivers text a member wrote, and still reaches someone who blocked that member: the spec's table row for non-chat modules says a block does not reach these.",
 };
 
 /**
@@ -1087,8 +1093,10 @@ describe('chat read-surface ledger (#2324)', () => {
       Object.entries(NOTIFY_EMITTERS).map(([rel, { calls }]) => [rel, calls]),
     );
     // A new or moved notification lands here. If it carries another member's
-    // words, it has to drop blockers and name the proof, or be open against an
-    // issue that decides whether it must.
+    // chat content, it has to drop blockers and name the proof, or be open
+    // against an issue that decides whether it must. If it is a non-chat
+    // notification quoting a member's text, it is MEMBER_TEXT: a block does not
+    // reach it (#2498).
     expect(found).toEqual(expected);
 
     // Every emitter in PUSH_LEDGER is claimed by the file that emits it, so
@@ -1118,7 +1126,7 @@ describe('chat read-surface ledger (#2324)', () => {
 
   it.each(
     allEntries.flatMap(([key, entry]): (readonly [string, Proof])[] =>
-      (entry.status === 'masked' || entry.status === 'open') && entry.proof
+      entry.status !== 'no-foreign-content' && entry.proof
         ? [[key, entry.proof]]
         : [],
     ),
