@@ -12,6 +12,10 @@
 //   rehearse write a canary, back it up, delete it from Storage, restore it,
 //            assert the bytes survived. AC 3 of #1290, as something repeatable
 //            rather than a one-time manual chore.
+//   verify   read-only: prove the manifest is this destination's and every
+//            object it lists is offsite with the bytes it recorded. `backup`
+//            runs the same check after every write (#2335); on its own it is
+//            what a restore runs first.
 //
 // The offsite side shells out to `aws s3`, exactly as db-backup.yml does, so
 // there is one S3 story in this repo and not two. The AWS_* environment and the
@@ -22,6 +26,7 @@
 //   node scripts/storage-backup-run.mjs restore  [--prefix storage] [--bucket B]
 //                                               [--path P] [--dry-run]
 //   node scripts/storage-backup-run.mjs rehearse [--prefix storage]
+//   node scripts/storage-backup-run.mjs verify   [--prefix storage]
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
@@ -33,16 +38,21 @@ import {
   REHEARSAL_BUCKET,
   REHEARSAL_CONTENT_TYPE,
   REHEARSAL_PREFIX,
+  assertManifestDestination,
   assertSafeObjectPath,
   assertStorageBackupTarget,
   backupKey,
   checkDeletionSanity,
   downloadObject,
+  isMissingObjectError,
   listBucketObjects,
   listBuckets,
+  mirrorDestination,
+  parseOffsiteListing,
   planSync,
   sha256,
   uploadObject,
+  verifyOffsiteMirror,
 } from "./storage-backup.mjs";
 
 function requireEnv(name) {
@@ -63,8 +73,11 @@ function aws(args, { endpoint, allowFailure = false } = {}) {
   } catch (err) {
     if (allowFailure) return null;
     // stderr, not the thrown object: the AWS CLI puts the actionable message
-    // there, and the Error's own message is just the exit code.
-    throw new Error(`aws ${args[0]} ${args[1] ?? ""} failed: ${err.stderr || err.message}`);
+    // there, and the Error's own message is just the exit code. Kept on the
+    // error too, so a caller can tell a missing key from a failed read.
+    const failure = new Error(`aws ${args[0]} ${args[1] ?? ""} failed: ${err.stderr || err.message}`);
+    failure.stderr = String(err.stderr ?? "");
+    throw failure;
   }
 }
 
@@ -85,30 +98,58 @@ function parseArgs(argv) {
 }
 
 /**
- * The previous manifest, or null on a first run.
+ * The previous manifest, or null when there is none under the prefix.
  *
- * A missing manifest must mean "back everything up", never "everything was
- * deleted" -- so a failed read returns null and the caller treats every object
- * as new. Getting this backwards would tombstone the entire backup on a
- * transient S3 hiccup.
+ * Only a missing key is null. A missing manifest must never mean "everything
+ * was deleted" -- that would tombstone the whole backup -- and it no longer
+ * means "back everything up" either: the backup refuses it unless the run says
+ * the destination is new (`assertManifestDestination`, #2335). A failed read
+ * (403, timeout) or a corrupt manifest throws, because treating either as a
+ * first run is how a broken destination used to look green.
  */
 function readManifest({ bucket, prefix, endpoint, tmp }) {
   const local = join(tmp, "manifest.json");
-  const got = aws(["s3", "cp", `s3://${bucket}/${prefix}/manifest.json`, local, "--only-show-errors"], {
-    endpoint,
-    allowFailure: true,
-  });
-  if (got === null) {
-    console.log("No previous manifest offsite -- treating this as a first full backup.");
-    return null;
+  try {
+    aws(["s3", "cp", `s3://${bucket}/${prefix}/manifest.json`, local, "--only-show-errors"], { endpoint });
+  } catch (err) {
+    if (isMissingObjectError(err.stderr)) return null;
+    throw err;
   }
   try {
     return JSON.parse(readFileSync(local, "utf8"));
   } catch (err) {
-    // A corrupt manifest is NOT a reason to re-tombstone everything either.
-    console.log(`Previous manifest unreadable (${err.message}) -- treating as a first full backup.`);
-    return null;
+    throw new Error(`The manifest at ${prefix}/manifest.json is unreadable (${err.message}); refusing to back up over it.`);
   }
+}
+
+/**
+ * List the prefix offsite and check it holds every object the manifest names,
+ * at the size it recorded. Throws with every problem found.
+ */
+function listOffsite({ bucket, prefix, endpoint }) {
+  return parseOffsiteListing(
+    aws(["s3api", "list-objects-v2", "--bucket", bucket, "--prefix", `${prefix}/`, "--output", "json"], { endpoint }),
+  );
+}
+
+function verifyOffsite({ manifest, bucket, prefix, endpoint }) {
+  const listing = listOffsite({ bucket, prefix, endpoint });
+  const problems = verifyOffsiteMirror({ manifest, prefix, listing });
+  if (problems.length > 0) {
+    const shown = problems.slice(0, 20).map((p) => `  - ${p}`).join("\n");
+    const more = problems.length > 20 ? `\n  ...and ${problems.length - 20} more` : "";
+    throw new Error(`The offsite mirror does not hold what its manifest lists (${problems.length} problem(s)):\n${shown}${more}`);
+  }
+  return (manifest?.objects ?? []).filter((o) => !o.lost_offsite_at).length;
+}
+
+function expectedDestination(opts, s3Bucket) {
+  return mirrorDestination({
+    environment: opts.target.environment,
+    projectRef: opts.target.projectRef,
+    bucket: s3Bucket,
+    prefix: opts.prefix,
+  });
 }
 
 async function collectRemote({ supabaseUrl, serviceKey }) {
@@ -138,19 +179,36 @@ async function runBackup(opts) {
 
   const tmp = mkdtempSync(join(tmpdir(), "storage-backup-"));
   try {
-    const remote = await collectRemote({ supabaseUrl, serviceKey });
+    const destination = expectedDestination(opts, s3Bucket);
     const manifest = readManifest({ bucket: s3Bucket, prefix: opts.prefix, endpoint, tmp });
+    // Before listing Storage and before any write: a manifest that isn't this
+    // destination's means the run is pointed somewhere nobody restores from.
+    assertManifestDestination({
+      manifest,
+      expected: destination,
+      allowNewDestination: process.env.STORAGE_BACKUP_NEW_DESTINATION === "true",
+    });
+    if (manifest === null) {
+      console.log("STORAGE_BACKUP_NEW_DESTINATION=true and no manifest offsite -- starting a new mirror.");
+    }
 
+    const remote = await collectRemote({ supabaseUrl, serviceKey });
     const plan = planSync({
       remote,
       manifest,
       nowMs: Date.now(),
       retentionMs: retentionDays * 86_400_000,
+      destination,
+      prefix: opts.prefix,
+      // What is offsite now, so an object the manifest lists but R2 lost is
+      // copied again instead of being carried forward as "unchanged".
+      offsite: manifest === null ? null : listOffsite({ bucket: s3Bucket, prefix: opts.prefix, endpoint }),
     });
 
     console.log(
       `Plan: ${plan.upload.length} to upload, ${plan.keep.length} unchanged, ` +
-        `${plan.tombstone.length} newly deleted, ${plan.prune.length} past retention.`,
+        `${plan.tombstone.length} newly deleted, ${plan.prune.length} past retention, ` +
+        `${plan.missingOffsite.length} missing offsite.`,
     );
 
     // Before any write. A short listing looks exactly like a mass deletion from
@@ -170,6 +228,10 @@ async function runBackup(opts) {
       return plan;
     }
 
+    // The record of what was actually written, which the offsite check below
+    // compares with: Storage's listed `size` can go stale if the object
+    // changes between the listing and the download.
+    const records = new Map(plan.manifest.objects.map((o) => [`${o.bucket}\u0000${o.path}`, o]));
     let bytes = 0;
     for (const obj of plan.upload) {
       const body = await downloadObject({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path });
@@ -179,6 +241,7 @@ async function runBackup(opts) {
         ["s3", "cp", local, `s3://${s3Bucket}/${backupKey(opts.prefix, obj.bucket, obj.path)}`, "--only-show-errors"],
         { endpoint },
       );
+      records.get(`${obj.bucket}\u0000${obj.path}`).backed_up_bytes = body.length;
       bytes += body.length;
     }
 
@@ -190,23 +253,53 @@ async function runBackup(opts) {
     }
 
     const manifestPath = join(tmp, "manifest.next.json");
-    writeFileSync(manifestPath, JSON.stringify(plan.manifest, null, 2));
+    const written = JSON.stringify(plan.manifest, null, 2);
+    writeFileSync(manifestPath, written);
     aws(["s3", "cp", manifestPath, `s3://${s3Bucket}/${opts.prefix}/manifest.json`, "--only-show-errors"], { endpoint });
 
     // Read the manifest straight back. `aws s3 cp` exiting 0 proves the request
     // was accepted, not that the object is retrievable from the bucket you think
     // you configured -- the same read-back db-backup.yml does, for the same
-    // reason: an unverified backup is the thing this work exists to end.
+    // reason: an unverified backup is the thing this work exists to end. Byte
+    // for byte: comparing `object_count` with itself verified `0 === 0` (#2335).
     const verify = join(tmp, "manifest.verify.json");
     aws(["s3", "cp", `s3://${s3Bucket}/${opts.prefix}/manifest.json`, verify, "--only-show-errors"], { endpoint });
-    const readBack = JSON.parse(readFileSync(verify, "utf8"));
-    if (readBack.object_count !== plan.manifest.object_count) {
+    if (readFileSync(verify, "utf8") !== written) {
+      throw new Error("Read-back mismatch: the manifest read back from the bucket differs from the one written.");
+    }
+
+    // Then prove the objects themselves are there, not just the index.
+    const checked = verifyOffsite({ manifest: plan.manifest, bucket: s3Bucket, prefix: opts.prefix, endpoint });
+
+    console.log(
+      `Uploaded ${plan.upload.length} object(s), ${bytes} byte(s). Manifest read back byte for byte; ` +
+        `all ${checked} manifest object(s) found offsite at their recorded size.`,
+    );
+    // The mirror is whole again, but it wasn't: fail this run so the loss is
+    // seen. The next run finds nothing missing and passes.
+    if (plan.missingOffsite.length > 0) {
+      const lines = plan.missingOffsite
+        .slice(0, 20)
+        .map((o) => `  - ${o.bucket}/${o.path}: ${o.recovered ? "re-uploaded from Storage" : "deleted from Storage too, so it is lost"}`)
+        .join("\n");
+      const more = plan.missingOffsite.length > 20 ? `\n  ...and ${plan.missingOffsite.length - 20} more` : "";
       throw new Error(
-        `Read-back mismatch: wrote ${plan.manifest.object_count} objects, read ${readBack.object_count}.`,
+        `${plan.missingOffsite.length} object(s) the previous manifest listed were missing offsite. Something ` +
+          `other than this job deleted them (an R2 lifecycle rule, a hand deletion). Every one Storage still ` +
+          `has is offsite again; the rest are unrecoverable. Find what removed them:\n${lines}${more}`,
       );
     }
 
-    console.log(`Uploaded ${plan.upload.length} object(s), ${bytes} byte(s). Read-back verified.`);
+    // A mirror that held objects and now lists none was refused above
+    // (checkDeletionSanity) unless the run allowed it. Otherwise reaching here
+    // empty means it has never held one: true of production before launch,
+    // so a warning rather than a failure that would stay red until then.
+    if (plan.manifest.object_count === 0) {
+      console.log(
+        "::warning::The mirror holds no live objects because Storage listed none. " +
+          "Expected only while the project has no uploads.",
+      );
+    }
     return plan;
   } finally {
     rmSync(tmp, { recursive: true, force: true });
@@ -229,9 +322,15 @@ async function runRestore(opts) {
 
     // Tombstoned objects are restorable ON PURPOSE: recovering a file someone
     // deleted is the most likely reason anyone runs this.
-    const targets = manifest.objects.filter(
+    const matching = manifest.objects.filter(
       (o) => (!opts.bucket || o.bucket === opts.bucket) && (!opts.path || o.path === opts.path),
     );
+    // A record marked lost has no bytes offsite; copying it would abort the
+    // restore halfway through everything else.
+    const targets = matching.filter((o) => !o.lost_offsite_at);
+    for (const o of matching.filter((o) => o.lost_offsite_at)) {
+      console.log(`  skipping ${o.bucket}/${o.path}: lost offsite since ${o.lost_offsite_at}`);
+    }
     if (targets.length === 0) {
       console.error("::error::Nothing in the manifest matches that --bucket/--path.");
       process.exit(1);
@@ -320,12 +419,36 @@ async function runRehearsal(opts) {
   console.log("Rehearsal PASSED: an object deleted from Storage was restored from the offsite copy byte-for-byte.");
 }
 
+/**
+ * Read-only: the manifest is this destination's, and every object it lists is
+ * offsite at its recorded size. The same check `backup` runs after writing.
+ */
+async function runVerify(opts) {
+  const s3Bucket = requireEnv("BACKUP_S3_BUCKET");
+  const endpoint = requireEnv("BACKUP_S3_ENDPOINT");
+
+  const tmp = mkdtempSync(join(tmpdir(), "storage-verify-"));
+  try {
+    const manifest = readManifest({ bucket: s3Bucket, prefix: opts.prefix, endpoint, tmp });
+    assertManifestDestination({ manifest, expected: expectedDestination(opts, s3Bucket) });
+    const checked = verifyOffsite({ manifest, bucket: s3Bucket, prefix: opts.prefix, endpoint });
+    const lost = manifest.objects.length - checked;
+    console.log(
+      `Verified: ${checked} manifest object(s) found offsite at their recorded size ` +
+        `(${manifest.object_count} live, ${manifest.tombstone_count} tombstoned` +
+        `${lost > 0 ? `, of which ${lost} marked lost` : ""}); manifest generated ${manifest.generated_at}.`,
+    );
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 const opts = parseArgs(process.argv.slice(2));
-const modes = { backup: runBackup, restore: runRestore, rehearse: runRehearsal };
+const modes = { backup: runBackup, restore: runRestore, rehearse: runRehearsal, verify: runVerify };
 const run = modes[opts.mode];
 
 if (!run) {
-  console.error(`Usage: storage-backup-run.mjs <backup|restore|rehearse> [options]`);
+  console.error(`Usage: storage-backup-run.mjs <backup|restore|rehearse|verify> [options]`);
   process.exit(2);
 }
 
@@ -340,6 +463,7 @@ try {
     expectedEnvironment: process.env.BACKUP_ENVIRONMENT || undefined,
   });
   console.log(`Target: ${target.environment} (${target.projectRef}) prefix '${opts.prefix}'.`);
+  opts.target = target;
 } catch (err) {
   console.error(`::error::${err.message}`);
   process.exit(1);

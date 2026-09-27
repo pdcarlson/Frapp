@@ -34,6 +34,22 @@ inputs:
       canary.
     required: false
     default: "false"
+  new-destination:
+    description: >
+      `"true"` accepts an offsite destination with no manifest under the
+      prefix, or a manifest recording another destination, and records this
+      one. Without it the backup refuses both, because on a mirror that has run
+      before they mean BACKUP_S3_BUCKET or the prefix changed (#2335).
+    required: false
+    default: "false"
+  allow-mass-delete:
+    description: >
+      `"true"` lets a run tombstone every backed-up object, or more than half
+      of 20 or more. Without it the backup refuses, since a short Storage
+      listing looks exactly like that. Tombstoned bytes stay offsite until
+      retention prunes them.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -112,6 +128,10 @@ runs:
         BACKUP_ENVIRONMENT: ${{ inputs.environment }}
         STORAGE_PREFIX: ${{ inputs.prefix }}
         REHEARSAL: ${{ inputs.rehearsal }}
+        # Read by storage-backup-run.mjs (`assertManifestDestination`,
+        # `checkDeletionSanity`); only the literal "true" enables either.
+        STORAGE_BACKUP_NEW_DESTINATION: ${{ inputs.new-destination }}
+        STORAGE_BACKUP_ALLOW_MASS_DELETE: ${{ inputs.allow-mass-delete }}
       run: |
         set -euo pipefail
         # From the process environment, not `${{ env.* }}` — see the database
@@ -136,7 +156,10 @@ runs:
           echo
           echo "- Source: ${BACKUP_ENVIRONMENT} Storage (all buckets)"
           echo "- Destination: \`$BACKUP_S3_BUCKET/${STORAGE_PREFIX}/\`"
-          echo "- Manifest read back from the bucket after upload."
+          echo "- Manifest read back from the bucket byte for byte, and every object it"
+          echo "  lists found offsite at its recorded size. A missing manifest, one"
+          echo "  recording another destination, or a listing that would tombstone every"
+          echo "  object fails the job instead (#2335)."
           echo
           echo "Incremental: unchanged objects are not re-fetched. Deleted objects are"
           echo "tombstoned and stay restorable for \`BACKUP_RETENTION_DAYS\` (default 30)."

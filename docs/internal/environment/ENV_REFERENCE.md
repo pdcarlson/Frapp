@@ -214,7 +214,7 @@ Cloudflare R2 bucket (#852 / #1287); what it backs up, and under which prefixes,
 production jobs still read these four from Infisical `staging` until the `prod`
 column is filled — see the `prod` cells. Empty `prod` values for these names are
 restored from that staging inject (`preserve-nonempty` on the `prod` call in
-`db-backup.yml`) so a documented "leave empty" cell cannot blank the destination. The bucket name, account endpoint, and key values are deliberately
+`db-backup.yml`) so a documented "leave empty" cell cannot blank the destination. Changing `BACKUP_S3_BUCKET` (filling the `prod` column included) moves a Storage mirror, so that environment's next Storage job fails until one run is dispatched with `storage_new_destination` ([`DB_ROLLBACK_PLAYBOOK.md` § If the backup job fails](../ops/DB_ROLLBACK_PLAYBOOK.md#if-the-backup-job-fails)). The bucket name, account endpoint, and key values are deliberately
 not written into this public repo — read them from Infisical or the Cloudflare
 dashboard. They do not live _only_ there, though: the path-`/` `render-api-staging`
 sync ([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5) pushes every Staging
