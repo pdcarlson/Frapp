@@ -395,6 +395,7 @@ test("pngHeader reads IHDR and rejects anything that is not a PNG", () => {
   assert.deepEqual(pngHeader(fakePng(48)), {
     width: 48,
     height: 48,
+    bitDepth: 8,
     colourType: 6,
   });
   assert.equal(pngHeader(Buffer.alloc(64)), null);

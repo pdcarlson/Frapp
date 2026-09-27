@@ -42,7 +42,9 @@
  *
  * The App Store size is about 2.17:1, past Play's 2:1 cap on a screenshot's
  * long side, so Play cannot reuse that set. Procedure and the size's
- * provenance: `docs/internal/ops/deployment/mobile.md` § 6.5.
+ * provenance: `docs/internal/ops/deployment/mobile.md` § 6.5. Both presets,
+ * and the checks each file must pass, live in `store-screenshots.mjs`; any
+ * failed check deletes the store folder, like the Ask refusal.
  *
  * Env: MOBILE_URL (default http://localhost:3002), OUT_ROOT, CHROMIUM_PATH,
  *      DEMO_EMAIL, DEMO_PASSWORD, EVENT_ID, SKIP_REFERENCE=1, APP_STORE=1,
@@ -54,6 +56,13 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { LOCAL_DEMO_EMAIL, LOCAL_DEMO_PASSWORD, TEMPLATE_NAMESPACE, demoIds } from "./seed-demo.mjs";
+import { pngHeader } from "../lib/brand-pixels.mjs";
+import {
+  APP_STORE_PRESET,
+  GOOGLE_PLAY_PRESET,
+  STORE_SCALE,
+  storePngProblems,
+} from "./store-screenshots.mjs";
 
 const MOBILE_URL = process.env.MOBILE_URL ?? "http://localhost:3002";
 const OUT_ROOT = process.env.OUT_ROOT ?? "screenshots";
@@ -78,43 +87,6 @@ const FONT = "packages/theme/fonts/FigtreeVF.woff2";
 /** iPhone 16 Pro logical size — the `hint-size` the board's artboards declare. */
 const PHONE = { width: 402, height: 874 };
 const SCALE = 3;
-
-/**
- * The App Store's 6.9" iPhone size: 440x956 points at 3x is 1320x2868 pixels.
- * Apple's screenshot specifications (developer.apple.com → App Store Connect
- * help → Reference → Screenshot specifications, read 2026-09-22) list 1320x2868
- * portrait among the 6.9" sizes, ask for a 6.5" set only when no 6.9" set is
- * provided, and scale the smaller iPhone sizes from the set above them. That
- * is the published page, not the console: #2454 asks for the size App Store
- * Connect states at upload to be confirmed and recorded.
- */
-const APP_STORE_PRESET = {
-  name: "App Store",
-  dir: path.join(OUT_ROOT, "app-store"),
-  viewport: { width: 440, height: 956 },
-  pixels: { width: 1320, height: 2868 },
-};
-
-/**
- * Google Play's phone screenshots: 414x736 points at 3x is 1242x2208 pixels,
- * 9:16. Play Console Help ("Add preview assets to showcase your app") takes a
- * JPEG or 24-bit PNG with no alpha, each side 320-3840 px, the long side at
- * most twice the short one; and for promotion it prefers 9:16 with at least
- * 1080 px on each side. That page is blocked from the sandbox, so those rules
- * come from search-result snippets of it (2026-09-27), not the page itself:
- * #2557 asks for the console's wording to be recorded at upload. 9:16 meets
- * both the hard cap and the promotion shape, and 414 is a Pixel-class width.
- */
-const GOOGLE_PLAY_PRESET = {
-  name: "Google Play",
-  dir: path.join(OUT_ROOT, "google-play"),
-  viewport: { width: 414, height: 736 },
-  pixels: { width: 1242, height: 2208 },
-  // Play rejects a PNG with an alpha channel. Playwright writes RGB (IHDR
-  // colour type 2) today; this turns a change there into a failed run rather
-  // than a rejected upload.
-  colorType: 2,
-};
 
 const FREEZE_CSS = `
   *, *::before, *::after {
@@ -431,19 +403,6 @@ const ASK_ON_SCREEN = () =>
 
 class AskOnScreenError extends Error {}
 
-/**
- * Width, height and colour type from a PNG's IHDR chunk, which always follows
- * the magic. Colour type 2 is RGB; 6 is RGB with alpha.
- */
-async function pngHeader(file) {
-  const bytes = await readFile(file);
-  return {
-    width: bytes.readUInt32BE(16),
-    height: bytes.readUInt32BE(20),
-    colorType: bytes[25],
-  };
-}
-
 async function signIn(page) {
   await page.goto(`${MOBILE_URL}/sign-in`, {
     waitUntil: "domcontentloaded",
@@ -510,13 +469,14 @@ async function captureRunningApp(
   {
     screens = APP_SCREENS,
     viewport = PHONE,
+    scale = SCALE,
     outDir = APP_DIR,
     noAsk = false,
   } = {},
 ) {
   const context = await browser.newContext({
     viewport,
-    deviceScaleFactor: SCALE,
+    deviceScaleFactor: scale,
     colorScheme: "dark",
     isMobile: true,
     hasTouch: true,
@@ -659,19 +619,22 @@ async function captureReferenceBoard(browser) {
 }
 
 async function captureStoreSet(browser, preset) {
-  const { name, dir, viewport, pixels, colorType } = preset;
+  const { name, viewport } = preset;
+  const dir = path.join(OUT_ROOT, preset.folder);
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
 
   console.log(
-    `${name} set, ${viewport.width}x${viewport.height} @${SCALE}x ` +
+    `${name} set, ${viewport.width}x${viewport.height} @${STORE_SCALE}x ` +
       "(signed in against the seeded demo chapter):",
   );
+  const failuresBefore = failures.length;
   let shots;
   try {
     shots = await captureRunningApp(browser, {
       screens: STORE_SCREENS,
       viewport,
+      scale: STORE_SCALE,
       outDir: dir,
       noAsk: true,
     });
@@ -683,19 +646,20 @@ async function captureStoreSet(browser, preset) {
   }
 
   for (const shot of shots) {
-    const header = await pngHeader(shot.file);
-    shot.size = `${header.width}x${header.height}`;
-    if (header.width !== pixels.width || header.height !== pixels.height) {
-      failures.push(
-        `${shot.slug}: ${shot.size}, expected ${pixels.width}x${pixels.height}`,
-      );
+    const bytes = await readFile(shot.file);
+    const header = pngHeader(bytes);
+    shot.size = header ? `${header.width}x${header.height}` : "not a PNG";
+    for (const problem of storePngProblems(bytes, preset)) {
+      failures.push(`${shot.slug}: ${problem}`);
     }
-    if (colorType !== undefined && header.colorType !== colorType) {
-      failures.push(
-        `${shot.slug}: PNG colour type ${header.colorType}, expected ` +
-          `${colorType} (RGB, no alpha)`,
-      );
-    }
+  }
+
+  // The same rule for every other failure: a screen that never rendered, or a
+  // file the store would reject, leaves nothing behind to upload.
+  if (failures.length > failuresBefore) {
+    await rm(dir, { recursive: true, force: true });
+    console.log(`\n${name} set not written: ${dir} removed, see below.`);
+    return shots;
   }
 
   console.log(`\n${shots.length} ${name} screens -> ${dir}`);
@@ -706,15 +670,13 @@ async function captureStoreSet(browser, preset) {
 }
 
 async function main() {
+  if (APP_STORE && GOOGLE_PLAY) {
+    throw new Error("Pass --app-store or --google-play, not both.");
+  }
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,
     args: ["--no-sandbox"],
   });
-
-  if (APP_STORE && GOOGLE_PLAY) {
-    await browser.close();
-    throw new Error("Pass --app-store or --google-play, not both.");
-  }
   if (APP_STORE || GOOGLE_PLAY) {
     try {
       await captureStoreSet(
