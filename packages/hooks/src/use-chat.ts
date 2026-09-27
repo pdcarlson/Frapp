@@ -5,10 +5,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 
+/** The query key `useChannels` caches the channel list under. */
+export const CHANNEL_LIST_KEY = ["channels"] as const;
+
 export function useChannels() {
   const client = useFrappClient();
   return useQuery({
-    queryKey: ["channels"],
+    queryKey: CHANNEL_LIST_KEY,
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/channels");
       if (error) throw error;
@@ -17,6 +20,9 @@ export function useChannels() {
     staleTime: 60_000,
   });
 }
+
+/** The query key `useChannelUnreadCounts` caches under. */
+export const CHANNEL_UNREAD_COUNTS_KEY = ["channels", "unread"] as const;
 
 /** One row per channel the caller can read, zeros included. */
 export interface ChannelUnreadCount {
@@ -39,7 +45,7 @@ export interface ChannelUnreadCount {
 export function useChannelUnreadCounts(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
-    queryKey: ["channels", "unread"],
+    queryKey: CHANNEL_UNREAD_COUNTS_KEY,
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/channels/unread");
       if (error) throw error;

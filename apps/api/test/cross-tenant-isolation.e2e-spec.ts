@@ -18,7 +18,7 @@
  *    masking a missing chapter check with a coincidentally-identical 403.
  *
  * The layers under test are documented in
- * `docs/internal/security/AUTHORIZATION_MODEL.md` §1.
+ * `docs/security/authorization-model.md` §1.
  */
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';

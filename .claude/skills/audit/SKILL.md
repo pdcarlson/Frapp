@@ -85,12 +85,12 @@ Every table in `supabase/migrations/` must `ENABLE ROW LEVEL SECURITY`. Almost e
 has no permissive policies (default deny), because the API reaches data through the
 `service_role` client. The deliberate exceptions are the chat hot path's client-read policies
 (`chat_message_actions`, membership-scoped `chat_messages` reads). The per-table inventory is
-[`AUTHORIZATION_MODEL.md`](../../../docs/internal/security/AUTHORIZATION_MODEL.md); audit a new
+[`authorization-model.md`](../../../docs/security/authorization-model.md); audit a new
 permissive policy against it.
 
 `npm run check:pglite-migrations` (the CI `pglite-migrations` job) applies every migration to an
 in-process Postgres and fails if any public table lacks RLS, if the policy inventory drifts from
-`AUTHORIZATION_MODEL.md` §4, or if a non-owner probe role can read what it shouldn't. It needs no
+`authorization-model.md` §4, or if a non-owner probe role can read what it shouldn't. It needs no
 Docker. What it can't judge is whether a new policy's predicate is right; that is the review.
 
 ### Input validation
@@ -128,7 +128,7 @@ optional peer dependencies can keep a stale hoisted copy alive.
 The CI `dependency-audit` job (`npm run check:npm-audit`) fails on high and critical advisories.
 Fix in range where possible; otherwise add a time-boxed, issue-tracked entry to
 `scripts/npm-audit-allowlist.json` per
-[`SECURITY_FIXES.md`](../../../docs/internal/security/SECURITY_FIXES.md) § npm audit sweep + CI gate.
+[`security-fixes.md`](../../../docs/security/security-fixes.md) § npm audit sweep + CI gate.
 
 ## API contract
 

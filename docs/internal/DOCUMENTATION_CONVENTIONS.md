@@ -42,7 +42,7 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Ops runbooks (DB, incidents, branch protection) | `docs/internal/ops/` |
 | Deploy runbook (providers, CI/CD gate, launch) | `docs/internal/ops/deployment/` — folder-as-index; cite a named leaf and heading, never `§N` |
 | Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |
-| Security implementation notes / fixes log | `docs/internal/security/` |
+| Security implementation notes / fixes log | `docs/security/` |
 | Mobile testing / smoke | `docs/mobile/` |
 | Performance notes (one file per optimization or per service) | `docs/performance/` |
 | Data-layer hook conventions (query keys, chapter scope, optimistic mutations) | `docs/hooks/` |

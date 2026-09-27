@@ -178,8 +178,8 @@ Expo SDK upgrade: [`AGENTS.md` § Gotchas](../../AGENTS.md#gotchas).
 `npm install` keeps the old SDK chain hoisted beside the new one, and a blanket
 `rm -rf node_modules package-lock.json && npm install` breaks every other platform's install while
 CI stays green. The procedure: [`AGENTS.md` § Gotchas](../../AGENTS.md#gotchas). Both mechanisms:
-[`SECURITY_FIXES.md` § Expo SDK 57 upgrade](../internal/security/SECURITY_FIXES.md#expo-sdk-57-upgrade-289)
-and [§ Do not "fix" this with a full lockfile rebuild](../internal/security/SECURITY_FIXES.md#do-not-fix-this-with-a-full-lockfile-rebuild).
+[`security-fixes.md` § Expo SDK 57 upgrade](../security/security-fixes.md#expo-sdk-57-upgrade-289)
+and [§ Do not "fix" this with a full lockfile rebuild](../security/security-fixes.md#do-not-fix-this-with-a-full-lockfile-rebuild).
 Then verify a single `node_modules/expo` at the expected version before trusting any audit numbers.
 
 **A `waitFor` on a derived flag can be satisfied by the wrong state.**
