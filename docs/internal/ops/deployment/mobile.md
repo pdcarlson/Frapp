@@ -209,11 +209,37 @@ Supabase):
 
 It prints each file's measured size, and exits non-zero if a screen lands on a route other than the
 one requested (a lost session redirects to sign-in), if a screen's data never arrives, or if a file
-is not 1320 × 2868 — re-run rather than upload a set with a gap. If any Ask surface is on screen it
-stops at once and deletes `screenshots/app-store/`, so there is nothing to upload by mistake.
+is not 1320 × 2868, and then deletes `screenshots/app-store/` so there is no set with a gap to upload;
+re-run it. If any Ask surface is on screen it stops at once, with the same deletion.
 
 **Upload is the owner's step:** App Store Connect → the app → the version → iPhone 6.9" Display →
 drag in the files in order, for the English (U.S.) localization. `screenshots/` is gitignored and
 the PNGs are not committed; regenerate them with the procedure above rather than keeping copies.
+
+### 6.5 Google Play screenshots
+
+Play can't reuse the App Store set: 1320 × 2868 is about 2.17:1, and Play caps a screenshot's long
+side at twice its short side ([#2557](https://github.com/pdcarlson/Frapp/issues/2557)). The Play set
+is the same seven screens, rendered the same way, at Play's shape.
+
+**Size: 1242 × 2208 pixels, portrait (9:16)**, a 414 × 736 point viewport at 3x. Play Console Help
+("Add preview assets to showcase your app") takes JPEG or 24-bit PNG with no alpha, 320 to 3840 px
+per side, the long side at most twice the short one, and 2 to 8 phone screenshots. For promotion it
+prefers 9:16 with at least 1080 px on each side, which this size also meets. **Not read from the
+page itself:** support.google.com is blocked from the cloud sandbox, so these rules come from search
+snippets of that page (2026-09-27). Replace this paragraph's source with the console's wording once
+the set is uploaded ([#2720](https://github.com/pdcarlson/Frapp/issues/2720)). The limits are held
+in [`scripts/demo/store-screenshots.mjs`](../../../../scripts/demo/store-screenshots.mjs) and
+tested against the preset, so change them there too.
+
+**Procedure:** § 6.4's steps 1 to 3 unchanged, then from the repo root
+`node scripts/demo/capture-mobile.mjs --google-play` (same `CHROMIUM_PATH` prefix in the sandbox). It
+writes `screenshots/google-play/01-chat-home.png` … `07-directory.png`, with the same Ask refusal and
+landed-route checks as the App Store run. It also fails if a file isn't 1242 × 2208 or isn't an
+opaque 8-bit RGB PNG (colour type 2, no `tRNS` chunk), because Play rejects a PNG with alpha. Any
+failure deletes `screenshots/google-play/`, so a failed run leaves nothing to upload.
+
+**Upload is the owner's step:** Play Console → the app → Main store listing → Phone screenshots →
+the files in order, for the default language. The upload needs the developer account (#2556).
 
 ---
