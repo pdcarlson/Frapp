@@ -560,6 +560,18 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-27: Unread and mention counts skip a blocked sender (#2521)
+
+### 20260927050000_chat_unread_counts_skip_blocked.sql
+
+- **Purpose**: Re-creates `public.get_channel_unread_counts(p_chapter_id, p_user_id)` with one more predicate on its `chat_messages` join: a message whose sender the caller has blocked in that chapter (`chat_member_blocks`) is neither unread nor a mention. Same signature and return type, still `stable`, `security definer`, `search_path = public, pg_temp`, EXECUTE for `service_role` only. No data changes. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#read-receipts) § Read Receipts.
+- **Checks**: After `db push`,
+  `select prosecdef, proconfig, prosrc like '%chat_member_blocks%' as skips_blocked from pg_proc where proname = 'get_channel_unread_counts';` returns `true | {"search_path=public, pg_temp"} | true`.
+  `select has_function_privilege('anon', 'public.get_channel_unread_counts(uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.get_channel_unread_counts(uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | false`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
+- **Promoter notes**: Nothing needs to ship with it, and either order with any API or client deploy is safe: the API calls the function the same way and gets fewer counted rows for a member who has blocked someone. Badges drop on the next `GET /v1/channels/unread`. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-skipping-blocked-senders-in-unread-counts-20260927050000) § Rollback skipping blocked senders in unread counts.
+
 ## 2026-09-25: Hide a 1:1 DM from your own list (#2303)
 
 ### 20260925200000_chat_hide_direct_message.sql
