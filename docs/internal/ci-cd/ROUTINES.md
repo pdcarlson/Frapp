@@ -147,10 +147,11 @@ and keeps only the tracker rules built on these labels. Labels auto-create on fi
     separated; whether `area:ops` stays or folds into `area:infra` is open.
   - `area:landing`: `apps/landing` PostHog module work (#2150). It overlaps `area:web`, which could
     also claim `apps/landing`; whether landing keeps its own label is open.
-  - `area:testing`: the jsdom 30.1 Radix-overlay hold (#2451). It overlaps on two axes: test
-    infrastructure is already filed under `area:ci` (#2450 `test:cov` runs nowhere, #827 no
-    Supabase stack for the integration suite), and a missing spec under its surface label (#2456
-    and #2282 are `area:mobile`). Whether a third home helps or splits one class three ways is open.
+  - `area:testing`: first used for the jsdom 30.1 Radix-overlay hold (#2451, lifted with jsdom
+    30.1.1). It overlaps on two axes: test infrastructure is already filed under `area:ci` (#2450
+    `test:cov` runs nowhere, #827 no Supabase stack for the integration suite), and a missing spec
+    under its surface label (#2456 and #2282 are `area:mobile`). Whether a third home helps or
+    splits one class three ways is open.
 - **Scope:** `scope:production`: work that only becomes relevant once a production environment
   exists (owner decision 2026-08-10; the
   [decision record on #814](https://github.com/pdcarlson/Frapp/issues/814#issuecomment-5245093672)
