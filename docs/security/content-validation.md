@@ -35,6 +35,16 @@ These are **abuse ceilings, not a capacity plan** for the hosted project; that q
 
 The four signed-upload-URL requests (chat, backwork, chapter documents, service-entry proof) also accept an optional `size_bytes`, checked with `isWithinUploadSizeLimit` before the URL is issued. It has the same issuance-only caveat as §1's content-type gate: the field is optional and nothing forces a caller to send an accurate value — a caller can omit it entirely, exactly as every client did before this field existed. So the bucket's `file_size_limit` column remains the only gate that actually constrains the bytes written to storage; the request-level check only turns a declared oversize into a readable 400 instead of a failed or wasted PUT.
 
+### 4. Filenames in storage paths
+A client-supplied filename shapes at most the **last segment** of an object path, so a name like `../../../x.txt` cannot escape the route's prefix (for example `chapters/<chapterId>/documents/<documentId>/`). Each service that builds a path from client input strips it first:
+
+- `ChapterDocumentService`, `BackworkService`, `ChatService` and `UserService` interpolate `path.basename(filename)`.
+- `ServiceEntryService` takes `path.basename(filename)`, then replaces every character outside `[A-Za-z0-9._-]` with `_`. storage-api rejects keys outside its ASCII set, and a posix basename leaves backslashes, `#` and `%` in place.
+- `ChapterService` puts no filename in the path. The logo is always `chapters/<chapterId>/branding/logo.<ext>`, where `<ext>` has already passed `isAllowedUploadExtension('image', …)`.
+- The Discord import flattens the archive's relative path through `flattenArchiveRelativePath` (`apps/api/src/domain/constants/storage.ts`), which replaces every run of characters outside `[A-Za-z0-9._-]` with `_`. That run includes `/`, so the whole relative path becomes one segment and a `..` in it can't climb.
+
+A new upload route follows the same rule: never interpolate a client string into a storage path unstripped.
+
 ## Error Handling
 If either validation fails, the service must throw a `BadRequestException` immediately, returning an HTTP 400 response and preventing the signed URL from being generated.
 
