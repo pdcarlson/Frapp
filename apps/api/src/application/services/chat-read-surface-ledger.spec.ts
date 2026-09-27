@@ -322,10 +322,13 @@ const HTTP_LEDGER: Record<string, Entry> = {
     // `ChatService.notifyMessageRecipients` writes for DMs and announcements are
     // masked at write time: no row is written for a member who had blocked the
     // sender (PUSH_LEDGER below holds the proofs), and a row written before the
-    // block stays, as notification history. The non-chat rows that quote a
-    // member's text are MEMBER_TEXT, which a block does not hide (#2498).
-    status: 'not-hidden',
-    why: "Chat rows are masked at write time. The non-chat rows carrying a member's own text (a task title, an event name) are not: a block is a chat control, and the spec's table row for non-chat modules says so.",
+    // block stays, as notification history, though the thread now tombstones
+    // the same message: no spec row decides that, so the route is open on it
+    // (#2715). The non-chat rows that quote a member's text are MEMBER_TEXT,
+    // which a block does not hide (#2498).
+    status: 'open',
+    issues: [2715],
+    why: "Chat rows are masked at write time, but a chat row written before the block keeps the blocked member's text, and whether it should is undecided. The non-chat rows carrying a member's own text (a task title, an event name) are not hidden, by the spec's table row for non-chat modules.",
   },
 };
 
@@ -1090,8 +1093,10 @@ describe('chat read-surface ledger (#2324)', () => {
       Object.entries(NOTIFY_EMITTERS).map(([rel, { calls }]) => [rel, calls]),
     );
     // A new or moved notification lands here. If it carries another member's
-    // words, it has to drop blockers and name the proof, or be open against an
-    // issue that decides whether it must.
+    // chat content, it has to drop blockers and name the proof, or be open
+    // against an issue that decides whether it must. If it is a non-chat
+    // notification quoting a member's text, it is MEMBER_TEXT: a block does not
+    // reach it (#2498).
     expect(found).toEqual(expected);
 
     // Every emitter in PUSH_LEDGER is claimed by the file that emits it, so
