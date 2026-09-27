@@ -27,7 +27,7 @@
     "@repo/api-sdk": "*",
     "@repo/chat-integrations": "*",
     "@repo/validation": "*",
-    "@supabase/supabase-js": "^2.116.0",
+    "@supabase/supabase-js": "^2.117.1",
     "@tanstack/react-query": "^5.103.2"
   },
   "devDependencies": {
