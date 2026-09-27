@@ -1,5 +1,10 @@
 import { LegalDocument } from "../components/legal-document";
 
+// A material change here moves `lastUpdated` below and bumps
+// `LEGAL_POLICY_VERSION` in `@repo/validation`, which asks every user to accept
+// again. Any change to the text updates this page's pin in
+// scripts/ci/__tests__/legal-policy-version.test.mjs, which enforces both.
+
 const sections = [
   {
     heading: "1. Information We Collect",

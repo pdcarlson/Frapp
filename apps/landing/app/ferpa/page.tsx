@@ -1,5 +1,9 @@
 import { LegalDocument } from "../components/legal-document";
 
+// A change to the text below moves `lastUpdated` when it is material, and
+// updates this page's pin in scripts/ci/__tests__/legal-policy-version.test.mjs
+// either way. Nobody accepts this notice, so LEGAL_POLICY_VERSION doesn't move.
+
 const sections = [
   {
     heading: "1. Purpose of This Notice",
@@ -40,7 +44,7 @@ export default function FerpaPage() {
   return (
     <LegalDocument
       title="FERPA Notice"
-      lastUpdated="March 2026"
+      lastUpdated="September 2026"
       sections={sections}
     />
   );

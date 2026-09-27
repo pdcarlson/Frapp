@@ -14,8 +14,10 @@ import {
 /**
  * The Terms of Service and Privacy Policy version the API enforces
  * (spec/behavior/legal.md § Acceptance record). Bump it whenever the Terms or
- * Privacy Policy change materially, to the `YYYY-MM` of the Terms page's "Last
- * updated" (frapp.live/terms, currently "September 2026").
+ * Privacy Policy change materially, to the `YYYY-MM` of the newer of the two
+ * pages' "Last updated" (frapp.live/terms and /privacy, both "September 2026"
+ * now). `scripts/ci/__tests__/legal-policy-version.test.mjs` fails when the
+ * two disagree, or when a page's text changes and nobody decides.
  *
  * Only the API reads it. It stamps it onto a chapter at onboarding and onto a
  * user when they accept, and a user whose stored version differs is asked
