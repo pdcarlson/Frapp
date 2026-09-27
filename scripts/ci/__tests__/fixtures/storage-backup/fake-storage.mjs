@@ -1,6 +1,8 @@
 // Preloaded with `node --import` in storage-backup.test.mjs's end-to-end
 // tests: replaces fetch with the Supabase Storage REST calls the backup
 // makes, served from FAKE_STORAGE, a JSON file of { bucket: { path: content } }.
+// A content of `null` is listed but 404s on download: an object deleted
+// between the listing and the download.
 import fs from "node:fs";
 
 const state = JSON.parse(fs.readFileSync(process.env.FAKE_STORAGE, "utf8"));
@@ -22,7 +24,7 @@ globalThis.fetch = async (url, init = {}) => {
       const [head, ...rest] = objectPath.slice(level.length).split("/");
       rows.set(head, rest.length
         ? { name: head, id: null }
-        : { name: head, id: "id", updated_at: "2026-09-01T00:00:00Z", metadata: { size: Buffer.byteLength(content), eTag: etag(content), mimetype: "text/plain" } });
+        : { name: head, id: "id", updated_at: "2026-09-01T00:00:00Z", metadata: { size: Buffer.byteLength(content ?? ""), eTag: etag(content ?? ""), mimetype: "text/plain" } });
     }
     return json([...rows.values()]);
   }
@@ -30,7 +32,8 @@ globalThis.fetch = async (url, init = {}) => {
   match = pathname.match(/^\/storage\/v1\/object\/([^/]+)\/(.+)$/);
   if (match) {
     const content = state[match[1]]?.[decodeURIComponent(match[2])];
-    return { ok: content !== undefined, status: content === undefined ? 404 : 200, arrayBuffer: async () => Buffer.from(content ?? "") };
+    const found = typeof content === "string";
+    return { ok: found, status: found ? 200 : 404, arrayBuffer: async () => Buffer.from(content ?? "") };
   }
   throw new Error(`fake storage: unmocked ${url}`);
 };

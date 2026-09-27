@@ -48,11 +48,11 @@ import {
   listBucketObjects,
   listBuckets,
   mirrorDestination,
-  offsiteProblem,
   parseOffsiteListing,
   planSync,
   sha256,
   uploadObject,
+  verifyOffsiteMirror,
 } from "./storage-backup.mjs";
 
 function requireEnv(name) {
@@ -145,6 +145,18 @@ function listOffsite({ bucket, prefix, endpoint }) {
 }
 
 /**
+ * An error about one object, safe for a public CI log: the object's path
+ * (and the folder, for a listing) is replaced, since it carries chapter ids
+ * and member-chosen filenames. Locally the error passes through unchanged.
+ */
+function withheld(err, ...paths) {
+  if (process.env.GITHUB_ACTIONS !== "true") return err;
+  let message = err.message;
+  for (const p of paths.filter(Boolean)) message = message.split(p).join("<path withheld>");
+  return new Error(message);
+}
+
+/**
  * Lines naming affected objects, for an error. Object paths carry chapter ids
  * and member-chosen filenames, and this repository's Actions logs are public,
  * so in CI only per-bucket counts are printed; `verify` run locally lists the
@@ -166,7 +178,7 @@ function describeObjects(entries) {
 
 function verifyOffsite({ manifest, bucket, prefix, endpoint }) {
   const listing = listOffsite({ bucket, prefix, endpoint });
-  const problems = (manifest?.objects ?? []).map((r) => offsiteProblem(r, prefix, listing)).filter(Boolean);
+  const problems = verifyOffsiteMirror({ manifest, prefix, listing });
   if (problems.length > 0) {
     throw new Error(
       `The offsite mirror does not hold what its manifest lists (${problems.length} problem(s)):\n` +
@@ -193,7 +205,13 @@ async function collectRemote({ supabaseUrl, serviceKey }) {
 
   const remote = [];
   for (const bucket of buckets) {
-    const objects = await listBucketObjects({ supabaseUrl, serviceKey, bucket });
+    let objects;
+    try {
+      objects = await listBucketObjects({ supabaseUrl, serviceKey, bucket });
+    } catch (err) {
+      // "Listing <bucket>/<folder> failed": the folder is a chapter's.
+      throw withheld(err, ...(err.message.match(new RegExp(`^Listing ${bucket}/(.+) failed`))?.slice(1) ?? []));
+    }
     console.log(`  ${bucket}: ${objects.length} object(s)`);
     remote.push(...objects);
   }
@@ -269,13 +287,17 @@ async function runBackup(opts) {
     const records = new Map(plan.manifest.objects.map((o) => [`${o.bucket}\u0000${o.path}`, o]));
     let bytes = 0;
     for (const obj of plan.upload) {
-      const body = await downloadObject({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path });
-      const local = join(tmp, "obj");
-      writeFileSync(local, body);
-      aws(
-        ["s3", "cp", local, `s3://${s3Bucket}/${backupKey(opts.prefix, obj.bucket, obj.path)}`, "--only-show-errors"],
-        { endpoint },
-      );
+      let body;
+      try {
+        body = await downloadObject({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path });
+        writeFileSync(join(tmp, "obj"), body);
+        aws(
+          ["s3", "cp", join(tmp, "obj"), `s3://${s3Bucket}/${backupKey(opts.prefix, obj.bucket, obj.path)}`, "--only-show-errors"],
+          { endpoint },
+        );
+      } catch (err) {
+        throw withheld(err, obj.path, encodeURIComponent(obj.path));
+      }
       records.get(`${obj.bucket}\u0000${obj.path}`).backed_up_bytes = body.length;
       bytes += body.length;
     }
@@ -308,7 +330,7 @@ async function runBackup(opts) {
 
     console.log(
       `Uploaded ${plan.upload.length} object(s), ${bytes} byte(s). Manifest read back byte for byte; ` +
-        `all ${checked} manifest object(s) found offsite at their recorded size.`,
+        `all ${checked} manifest object(s) found offsite, at the written size where recorded.`,
     );
     // The mirror is whole again, but it wasn't: fail this run so the loss is
     // seen. The next run finds nothing missing and passes.
@@ -324,7 +346,8 @@ async function runBackup(opts) {
       throw new Error(
         `${plan.missingOffsite.length} object(s) the previous manifest listed were not offsite as written. ` +
           `Something other than this job changed them (an R2 lifecycle rule, a hand deletion). Every one ` +
-          `Storage still has is offsite again; the rest are unrecoverable. Find what changed them:\n${lines}`,
+          `Storage still has is offsite again; the rest are unrecoverable. The manifest records which ` +
+          `(last_offsite_loss; \`verify\` prints it). Find what changed them:\n${lines}`,
       );
     }
 
@@ -473,10 +496,17 @@ async function runVerify(opts) {
     const checked = verifyOffsite({ manifest, bucket: s3Bucket, prefix: opts.prefix, endpoint });
     const lost = manifest.objects.length - checked;
     console.log(
-      `Verified: ${checked} manifest object(s) found offsite at their recorded size ` +
+      `Verified: ${checked} manifest object(s) found offsite, at the written size where recorded ` +
         `(${manifest.object_count} live, ${manifest.tombstone_count} tombstoned` +
         `${lost > 0 ? `, of which ${lost} marked lost` : ""}); manifest generated ${manifest.generated_at}.`,
     );
+    const loss = manifest.last_offsite_loss;
+    if (loss) {
+      console.log(`Last offsite loss, found ${loss.found_at} (${loss.objects.length} object(s)):`);
+      for (const o of loss.objects) {
+        console.log(`  - ${o.bucket}/${o.path}: ${PROBLEM_TEXT[o.kind]}; ${o.recovered ? "re-uploaded" : "unrecoverable"}`);
+      }
+    }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

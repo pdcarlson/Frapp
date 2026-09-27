@@ -191,8 +191,12 @@ export function planSync({ remote, manifest, nowMs, retentionMs, destination = n
       keep.push(obj);
       // Carry the record forward verbatim. Rebuilding it from `obj` would drop
       // first_backed_up_at, which is the only record of how far back a given
-      // object's copy actually reaches.
-      objects.push(recorded);
+      // object's copy actually reaches. One exception: a record from before
+      // `backed_up_bytes` adopts the offsite size when it matches what Storage
+      // listed, so from then on its length is checked too.
+      const offsiteBytes = offsite?.get(backupKey(prefix, recorded.bucket, recorded.path));
+      const adopt = typeof recorded.backed_up_bytes !== "number" && offsiteBytes !== undefined && offsiteBytes === recorded.size;
+      objects.push(adopt ? { ...recorded, backed_up_bytes: offsiteBytes } : recorded);
       continue;
     }
 
@@ -250,6 +254,22 @@ export function planSync({ remote, manifest, nowMs, retentionMs, destination = n
       // where it actually read the manifest from (`assertManifestDestination`).
       destination,
       retention_days: retentionMs / 86_400_000,
+      // The objects the last run that found a loss named, carried forward
+      // until another loss replaces it: the run that finds a loss also repairs
+      // what it can, so afterwards nothing else says which files were hit.
+      // Read it with `verify`; CI logs withhold paths.
+      last_offsite_loss:
+        missingOffsite.length > 0
+          ? {
+              found_at: new Date(nowMs).toISOString(),
+              objects: missingOffsite.map((gap) => ({
+                bucket: gap.record.bucket,
+                path: gap.record.path,
+                kind: gap.kind,
+                recovered: gap.recovered,
+              })),
+            }
+          : (manifest?.last_offsite_loss ?? null),
       object_count: objects.filter((o) => !o.deleted_at).length,
       tombstone_count: objects.filter((o) => o.deleted_at).length,
       objects,
@@ -405,14 +425,11 @@ export function parseOffsiteListing(stdout) {
  * its `size` is Storage's listing, which can go stale between the listing and
  * the download. This is a presence-and-length check, not a content hash. A
  * record marked `lost_offsite_at` is skipped: planSync marked it on the run
- * that found the loss, and that run failed. Returns the problems found; empty
- * means verified.
+ * that found the loss, and that run failed. Returns the `offsiteProblem`s
+ * found; empty means verified.
  */
 export function verifyOffsiteMirror({ manifest, prefix, listing }) {
-  return (manifest?.objects ?? [])
-    .map((record) => offsiteProblem(record, prefix, listing))
-    .filter(Boolean)
-    .map((problem) => problem.message);
+  return (manifest?.objects ?? []).map((record) => offsiteProblem(record, prefix, listing)).filter(Boolean);
 }
 
 /**

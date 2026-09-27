@@ -317,7 +317,9 @@ A Storage job that concluded `success` has proved more than "no command failed"
 (#2335). Every run checks that the manifest it read is this destination's,
 reads the new manifest back byte for byte, and lists the prefix in R2 to confirm
 that every object the manifest names is there, at the size written where the
-record kept it. That is a presence-and-length check, not a content hash. So the
+record kept it. That is a presence-and-length check, not a content hash. A
+record from before the written size was kept adopts the offsite size on the
+first run where it matches Storage's, and is length-checked from then on. So the
 freshness watch's P1 ([`ALERT_ROUTING.md`](ALERT_ROUTING.md)) reads a job that
 mirrored nothing, or mirrored into the wrong bucket, as the failure it is.
 
@@ -360,7 +362,9 @@ acting. Read the job's `::error::` line and match it:
   destination is new on purpose (the separate production bucket, say), re-run
   with **`storage_new_destination`** set to that environment
   (`STORAGE_BACKUP_NEW_DESTINATION=true` locally). It starts or adopts the
-  mirror there and records the new destination.
+  mirror there and records the new destination. While production reads its
+  destination from Infisical `staging`, a change to that bucket moves both
+  mirrors: set it to `both`.
 - **"The manifest at … is unreadable".** The index itself is corrupt. No re-run
   input gets past this, on purpose: backing up over it would lose every
   tombstone it records. Replace `<prefix>/manifest.json` with a good copy if
@@ -377,7 +381,9 @@ acting. Read the job's `::error::` line and match it:
   fails once so the loss is seen, and the next run passes. Find and stop
   whatever changed them. In CI the error gives per-bucket counts only, because
   object paths carry chapter ids and member filenames and Actions logs here are
-  public; run `verify` locally for the list.
+  public. The job withholds paths from its other per-object errors (a failed
+  download, upload or folder listing) too. The manifest records which objects
+  were hit (`last_offsite_loss`), and a local `verify` prints them.
 - **"does not hold what its manifest lists"** after a write. The upload or the
   destination is broken in a way the run couldn't repair. Run `verify` (below)
   to see the list.
