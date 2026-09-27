@@ -25,7 +25,7 @@ Legacy Office stays on `document` because the API and every matching storage buc
 Validate the filename with `isAllowedUploadExtension(kind, filename)`. If the extension is not in the kind, reject. Blocklists must not be used.
 
 ### 3. Size
-`MAX_UPLOAD_BYTES` (25 MB / 26214400) is the shared cap for the **member-upload** buckets and matches their `file_size_limit`. It is **not** universal: `chat-archive` and `supabase/config.toml`'s global `[storage] file_size_limit` are both set higher. Per-bucket values and the global cap are owned by [`spec/architecture/README.md` § 7](../../../spec/architecture/README.md#7-storage-supabase-storage). Clients must check `file.size` via `inspectUploadFile` / `isWithinUploadSizeLimit` before requesting a signed URL.
+`MAX_UPLOAD_BYTES` (25 MB / 26214400) is the shared cap for the **member-upload** buckets and matches their `file_size_limit`. It is **not** universal: `chat-archive` and `supabase/config.toml`'s global `[storage] file_size_limit` are both set higher. Per-bucket values and the global cap are owned by [`spec/architecture/README.md` § 7](../../spec/architecture/README.md#7-storage-supabase-storage). Clients must check `file.size` via `inspectUploadFile` / `isWithinUploadSizeLimit` before requesting a signed URL.
 
 Every cap above bounds **one object**. The Discord archive importer additionally bounds the **total**, and this section owns those two numbers: `MAX_ARCHIVE_IMPORT_BYTES` (20 GiB) per import and `MAX_ARCHIVE_CHAPTER_BYTES` (50 GiB) per chapter, both in `packages/validation/src/upload-allowlists.ts` (#1243). Without them, `MAX_UPLOAD_URL_BATCH` capped a single *request* at 100 tickets while nothing capped the loop, and `CustomThrottlerGuard` bounds request rate rather than bytes.
 
@@ -35,8 +35,20 @@ These are **abuse ceilings, not a capacity plan** for the hosted project; that q
 
 The four signed-upload-URL requests (chat, backwork, chapter documents, service-entry proof) also accept an optional `size_bytes`, checked with `isWithinUploadSizeLimit` before the URL is issued. It has the same issuance-only caveat as §1's content-type gate: the field is optional and nothing forces a caller to send an accurate value — a caller can omit it entirely, exactly as every client did before this field existed. So the bucket's `file_size_limit` column remains the only gate that actually constrains the bytes written to storage; the request-level check only turns a declared oversize into a readable 400 instead of a failed or wasted PUT.
 
+### 4. Filenames in storage paths
+**The traversal guard is the storage chokepoint, not the services.** Every object operation in `SupabaseStorageService` (`apps/api/src/infrastructure/storage/supabase-storage.service.ts`), including `getSignedUploadUrl`, runs `assertSafeObjectPath` before it reaches storage (list calls check their prefix the same way). It throws `BadRequestException` when `isUnsafeStoragePath` (`apps/api/src/domain/utils/storage-path.ts`) finds an empty, `.` or `..` segment however it is spelled (`%2e`, a backslash, `%2f` or `%5c` as a separator), or any control character. The spellings it must catch are tested in the `path containment` table of `supabase-storage.service.spec.ts`. A new storage call goes through `IStorageProvider`, never straight to `supabase.storage`, or it skips this guard.
+
+What each service does to a client filename before that is key hygiene, not the guard:
+
+- `ChapterDocumentService`, `BackworkService`, `ChatService` and `UserService` interpolate `path.basename(filename)`. It drops a `/`-separated directory part, but a backslash or `%2e` passes through to the guard.
+- `ServiceEntryService` takes `path.basename(filename)`, then replaces every character outside `[A-Za-z0-9._-]` with `_`, because storage-api refuses keys outside its ASCII set.
+- `ChapterService` puts no filename in the path. The logo is always `chapters/<chapterId>/branding/logo.<ext>`, where `<ext>` has already passed `isAllowedUploadExtension('image', …)`.
+- The Discord import flattens the archive's relative path through `flattenArchiveRelativePath` (`apps/api/src/domain/constants/storage.ts`), which replaces every run of characters outside `[A-Za-z0-9._-]` with `_`, `/` included.
+
+The four routes that keep a raw basename break on a `#` or a non-ASCII name: the upload fails, or lands under a key cut at the `#`. #2697 moves all five onto one sanitizer.
+
 ## Error Handling
-If either validation fails, the service must throw a `BadRequestException` immediately, returning an HTTP 400 response and preventing the signed URL from being generated.
+If a content-type, extension or declared-size check (§§ 1–3) fails, the service must throw a `BadRequestException` immediately, returning an HTTP 400 response and preventing the signed URL from being generated. § 4's stripping never throws; the chokepoint does, with the same 400.
 
 ## SVG Upload Risks
 The `image/svg+xml` content type and `.svg` extension must **never** be included in these allowlists unless rigorous, server-side SVG sanitization is performed, as SVGs can embed arbitrary JavaScript (XSS).

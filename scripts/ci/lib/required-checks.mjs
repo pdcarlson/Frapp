@@ -246,7 +246,7 @@ export const CI_CHECKS = [
   // executing it, and `migration-replay` applies only a PR's pending tail.
   //
   // Required since #2538. It was advisory with no recorded reason, while
-  // `AUTHORIZATION_MODEL.md` and the DB rollback playbook described it as the
+  // `authorization-model.md` and the DB rollback playbook described it as the
   // check that stops a bad migration; a red run that blocks nothing made both
   // untrue. What it asserts are security invariants, not style.
   //

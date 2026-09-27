@@ -916,7 +916,7 @@ for (const lm of RLS_SMOKE) await runOne(lm);
 
 // ─── Policy inventory (#977) ────────────────────────────────────────────────
 //
-// `AUTHORIZATION_MODEL.md` §4 heads its table "The policies that do exist (N
+// `authorization-model.md` §4 heads its table "The policies that do exist (N
 // statements)". That number had drifted and was reconciled by hand, which is
 // precisely why it drifted again: nothing re-checked it. This checks it against
 // the catalog.
@@ -1011,7 +1011,7 @@ for (const lm of RLS_SMOKE) await runOne(lm);
     drifted = true;
     missing += 1;
     console.log(
-      "MISS  public policy inventory drifted from AUTHORIZATION_MODEL.md §4" +
+      "MISS  public policy inventory drifted from authorization-model.md §4" +
         (added.length
           ? `\n        ↳ ADDED (a new policy widens access — update §4): ${added.join(", ")}`
           : "") +
@@ -1027,7 +1027,7 @@ for (const lm of RLS_SMOKE) await runOne(lm);
   }
   if (!drifted) {
     console.log(
-      `OK    public policy inventory matches AUTHORIZATION_MODEL.md §4 (${got.length} here, ${EXPECTED_PUBLIC_POLICIES.length + 4} hosted)`,
+      `OK    public policy inventory matches authorization-model.md §4 (${got.length} here, ${EXPECTED_PUBLIC_POLICIES.length + 4} hosted)`,
     );
   }
 }
