@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppState } from "react-native";
 import * as expoRouter from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
+import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 
 /**
@@ -132,23 +133,6 @@ function render(): ReactTestRenderer {
   });
   return tree;
 }
-
-/**
- * Everything the screen says, as one string, so a check for text the screen
- * must never show is a substring test. Matching whole `Text` elements would
- * miss the text inside a longer sentence (`<Text>Details: {message}</Text>`),
- * and `String()` of a children array joins it with commas.
- */
-const screenText = (tree: ReactTestRenderer) =>
-  tree.root
-    .findAllByType("Text" as never)
-    .map((node) =>
-      [node.props.children]
-        .flat(Infinity)
-        .filter((part) => typeof part === "string" || typeof part === "number")
-        .join(""),
-    )
-    .join("\n");
 
 const startButton = (tree: ReactTestRenderer) =>
   tree.root.find(

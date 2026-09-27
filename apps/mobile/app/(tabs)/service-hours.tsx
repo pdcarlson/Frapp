@@ -149,8 +149,10 @@ export default function ServiceHoursScreen() {
           closeSheet();
         },
         onError: (error) => {
-          // Ordinary failures keep the retry they have always had; only a
-          // subscription refusal takes it away, because only it cannot win.
+          // Ordinary failures keep the retry they have always had; a
+          // subscription refusal takes it away, because retrying cannot win.
+          // The module gate (`@RequireModule('hours')`) is the other refusal
+          // that cannot win, and it still gets the retry: #2718.
           if (subscriptionRefusalOf(error)) {
             setSubscriptionRefused(true);
             return;
@@ -331,11 +333,13 @@ export default function ServiceHoursScreen() {
             accessibilityState={{ disabled: !canSubmit }}
             // Wired to the control, not merely printed above it: a screen
             // reader lands on the disabled button, not on the sentence before.
+            // The refusal outranks the offline reason: reconnecting clears
+            // one and not the other, so naming only the offline reason would
+            // promise a fix that doesn't come.
             accessibilityHint={
-              writeBlockedReason ??
-              (subscriptionRefused
+              subscriptionRefused
                 ? SUBSCRIPTION_REFUSAL_COPY.serviceHours
-                : undefined)
+                : (writeBlockedReason ?? undefined)
             }
             disabled={!canSubmit}
             onPress={submit}

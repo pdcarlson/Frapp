@@ -97,12 +97,19 @@ export function SheetPrimaryButton({
   /** Painted with the chapter accent, whose fallback is the drawn house gold. */
   accent,
   onAccent,
+  /**
+   * Why the button is disabled, wired to the control rather than only printed
+   * above it: a screen reader lands on the disabled button, not on the
+   * sentence before it.
+   */
+  accessibilityHint,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   accent: string;
   onAccent: string;
+  accessibilityHint?: string;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -111,6 +118,7 @@ export function SheetPrimaryButton({
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ disabled }}
+      accessibilityHint={accessibilityHint}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [

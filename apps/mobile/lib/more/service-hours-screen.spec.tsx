@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 
 /**
@@ -70,8 +71,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateServiceEntry: () => ({ mutate, isPending: false }),
 }));
 
+/** `null` online; the offline copy from `lib/connection/state.ts` otherwise. */
+let writeBlockedReason: string | null = null;
+
 vi.mock("@/lib/connection/use-connection", () => ({
-  useConnection: () => ({ writeBlockedReason: null }),
+  useConnection: () => ({ writeBlockedReason }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -91,23 +95,6 @@ function render(): ReactTestRenderer {
   });
   return tree;
 }
-
-/**
- * Everything the screen says, as one string, so a check for text the screen
- * must never show is a substring test. Matching whole `Text` elements would
- * miss the text inside a longer sentence (`<Text>Details: {message}</Text>`),
- * and `String()` of a children array joins it with commas.
- */
-const screenText = (tree: ReactTestRenderer) =>
-  tree.root
-    .findAllByType("Text" as never)
-    .map((node) =>
-      [node.props.children]
-        .flat(Infinity)
-        .filter((part) => typeof part === "string" || typeof part === "number")
-        .join(""),
-    )
-    .join("\n");
 
 /** The sheet's primary action, the only control carrying `accessibilityState`. */
 const submitButton = (tree: ReactTestRenderer) =>
@@ -140,6 +127,7 @@ function submitEntry(tree: ReactTestRenderer) {
 describe("Service hours on a subscription refusal (#2410)", () => {
   beforeEach(() => {
     mutate.mockClear();
+    writeBlockedReason = null;
   });
 
   it("explains the refusal and withdraws Submit", () => {
@@ -161,10 +149,15 @@ describe("Service hours on a subscription refusal (#2410)", () => {
     act(() => tree.unmount());
   });
 
-  it("keeps Submit and its retry copy after an ordinary failure", () => {
-    // The direction that got an earlier attempt at #2297 reverted: only a
-    // refusal may withdraw the retry.
-    failure = FAILED;
+  // The direction that got an earlier attempt at #2297 reverted: only a
+  // refusal may withdraw the retry. The 403 is the trap: a bare status check
+  // would take the retry from a permission denial, which recovers once an
+  // officer grants the role.
+  it.each([
+    ["an ordinary failure", FAILED],
+    ["a 403 that is not the subscription gate", DENIED],
+  ])("keeps Submit and its retry copy after %s", (_label, error) => {
+    failure = error;
     const tree = render();
     submitEntry(tree);
 
@@ -176,18 +169,43 @@ describe("Service hours on a subscription refusal (#2410)", () => {
     act(() => tree.unmount());
   });
 
-  it("keeps the retry on a 403 that is not the subscription gate", () => {
-    // A bare status check is the trap: a permission denial recovers once an
-    // officer grants the role.
-    failure = DENIED;
+  it("drops an earlier failure's retry copy when the next submit is refused", () => {
+    // Otherwise "try again" sits beside the refusal under a disabled Submit,
+    // the contradiction this fix exists to remove.
+    failure = FAILED;
+    const tree = render();
+    submitEntry(tree);
+    expect(screenText(tree)).toContain(TRY_AGAIN);
+
+    failure = REFUSED;
+    act(() => submitButton(tree).props.onPress());
+
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.serviceHours);
+    expect(screenText(tree)).not.toContain(TRY_AGAIN);
+    expect(submitButton(tree).props.disabled).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("names the refusal, not the connection, on the button when both apply", () => {
+    // Reconnecting clears the offline block and leaves the refusal, so a hint
+    // naming only the connection would promise a fix that doesn't come.
+    failure = REFUSED;
     const tree = render();
     submitEntry(tree);
 
-    expect(screenText(tree)).toContain(TRY_AGAIN);
-    expect(screenText(tree)).not.toContain(
+    writeBlockedReason = "Reconnect to make changes.";
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <ServiceHoursScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+
+    expect(submitButton(tree).props.disabled).toBe(true);
+    expect(submitButton(tree).props.accessibilityHint).toBe(
       SUBSCRIPTION_REFUSAL_COPY.serviceHours,
     );
-    expect(submitButton(tree).props.disabled).toBe(false);
     act(() => tree.unmount());
   });
 
