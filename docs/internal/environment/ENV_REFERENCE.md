@@ -396,9 +396,12 @@ is unavailable in that state and the sign-in screen says so.
 > `eas submit`. `apps/mobile/play-service-account.json` stays gitignored in case a
 > local copy is ever used; it must never be committed. No such key exists yet — it
 > becomes real when Play submission is set up (#938). The iOS submit identifiers
-> (`appleId`, `ascAppId`, `appleTeamId`) are likewise not in `eas.json` any more —
-> `eas submit` reads them from the logged-in Apple account or an App Store Connect API
-> key held in EAS credentials, so the file carries no placeholders.
+> (`appleId`, `ascAppId`, `appleTeamId`) are likewise not in `eas.json` any more, so
+> the file carries no placeholders. That leaves `eas submit -p ios` interactive only:
+> an App Store Connect API key in EAS credentials authenticates the upload, but without
+> `ascAppId` in the profile only the interactive Apple sign-in can find the app, and a
+> `--non-interactive` run stops. Details: [`spec/environments/README.md` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas),
+> **Store submission**.
 
 > **Push credentials also live outside Infisical, and Android needs two of them.**
 > `expo-notifications` delivers through APNs on iOS and FCM on Android.
