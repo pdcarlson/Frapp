@@ -320,9 +320,9 @@ updates:
 
       # ── The Sentry 11 hold ───────────────────────────────────────────────
       # Majors only. Blocked on our own code, not on an upstream release (the
-      # NestJS 12 hold above waits on this one): v11 replaces `sendDefaultPii` with a `dataCollection`
-      # object whose categories all default to ON (cookies, headers, HTTP
-      # bodies, stack-frame locals). A bump that only fixes the compile errors
+      # NestJS 12 hold above waits on this one): v11 replaces `sendDefaultPii`
+      # with a `dataCollection` object whose categories all default to ON
+      # (cookies, headers, HTTP bodies, stack-frame locals). A bump that only fixes the compile errors
       # would widen what the API and both Next surfaces send to Sentry. That is
       # a privacy migration, tracked in #2722 with the full break list.
       #
