@@ -7,7 +7,7 @@
 // binary would sign first users into the wrong API/DB.
 //
 // SCOPE. Production target + preview contrast so the two profiles cannot
-// be swapped unnoticed. The home-screen name (`expo.name`) and the Settings
+// be swapped unnoticed, and the iOS build image every profile pins. The home-screen name (`expo.name`) and the Settings
 // path are frapp-mobile-copy's (ADR-25 step 2); nothing locks the App Store
 // listing name. The binary's permanent identifiers are
 // mobile-permanent-identifiers.test.mjs's, which lists them and says where
@@ -38,6 +38,17 @@ export const PRODUCTION_API_URL = "https://api.frapp.live";
 export const PREVIEW_API_URL = "https://api-staging.frapp.live";
 export const PRODUCTION_SENTRY_ENV = "production";
 export const ANDROID_SUBMIT_TRACK = "internal";
+
+// THE iOS BUILD IMAGE. Apple's TN3187: an app built with the iOS 27 SDK
+// has to adopt the UIScene life cycle or it does not launch, and SDK 57's
+// prebuild still emits the AppDelegate window. With no `image`, EAS builds
+// on `auto`, whose SDK alias EAS moves to a newer Xcode when it ships one
+// (it moved `sdk-54` to Xcode 26). So every profile pins an exact Xcode 26
+// image until the app adopts scenes. Why, and when it has to move:
+// spec/environments/README.md § Mobile (EAS).
+export const IOS_BUILD_IMAGE = "macos-tahoe-26.5-xcode-26.6";
+const IOS_XCODE_MAJOR = 26;
+const EAS_IMAGE_ALIASES = /^(auto|default|latest|sdk-\d+)$/;
 
 export function parseEasJson(text) {
   let parsed;
@@ -98,6 +109,51 @@ export function productionTargetProblems(eas) {
   return problems;
 }
 
+/** The iOS image a profile builds on, following `extends` as eas.json does. */
+export function iosImageOf(eas, profile, seen = new Set()) {
+  const config = eas?.build?.[profile];
+  if (config == null || typeof config !== "object" || seen.has(profile)) {
+    return undefined;
+  }
+  seen.add(profile);
+  const own = config.ios?.image;
+  if (own !== undefined) return own;
+  return typeof config.extends === "string"
+    ? iosImageOf(eas, config.extends, seen)
+    : undefined;
+}
+
+export function xcodeMajorOf(image) {
+  const match = /-xcode-(\d+)(?:\.\d+)*$/.exec(String(image));
+  return match ? Number(match[1]) : null;
+}
+
+/** Every build profile pins the one exact Xcode 26 image; no alias. */
+export function iosImageProblems(eas) {
+  const problems = [];
+  const profiles = Object.keys(eas?.build ?? {});
+  if (profiles.length === 0) problems.push("build must declare its profiles");
+  for (const profile of profiles) {
+    const image = iosImageOf(eas, profile);
+    if (image === undefined) {
+      problems.push(`build.${profile}.ios.image must be set, or EAS builds on auto`);
+      continue;
+    }
+    if (EAS_IMAGE_ALIASES.test(String(image))) {
+      problems.push(`build.${profile}.ios.image must be an exact image, not the alias ${image}`);
+      continue;
+    }
+    if (xcodeMajorOf(image) !== IOS_XCODE_MAJOR) {
+      problems.push(`build.${profile}.ios.image must be an Xcode ${IOS_XCODE_MAJOR} image, not ${image}`);
+      continue;
+    }
+    if (image !== IOS_BUILD_IMAGE) {
+      problems.push(`build.${profile}.ios.image must be ${IOS_BUILD_IMAGE}, not ${image}`);
+    }
+  }
+  return problems;
+}
+
 export function walkEasJson(dir) {
   const out = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -151,6 +207,14 @@ export function lockSelfProblems(source) {
   if (!track || track[1] !== "internal") {
     problems.push("ANDROID_SUBMIT_TRACK must stay internal");
   }
+  const image = source.match(/^export const IOS_BUILD_IMAGE = "([^"]+)";?$/m);
+  if (!image || !/^macos-[a-z]+-\d+(\.\d+)*-xcode-26(\.\d+)*$/.test(image[1])) {
+    problems.push("IOS_BUILD_IMAGE must stay an exact Xcode 26 image");
+  }
+  const major = source.match(/^const IOS_XCODE_MAJOR = (\d+);?$/m);
+  if (!major || major[1] !== "26") {
+    problems.push("IOS_XCODE_MAJOR must stay 26 until the app adopts UIScene");
+  }
   const easPath = source.match(/^const EAS_JSON = "([^"]+)";?$/m);
   if (!easPath || easPath[1] !== "apps/mobile/eas.json") {
     problems.push("must read apps/mobile/eas.json");
@@ -201,6 +265,69 @@ test("live eas.json production profile targets the production API", () => {
   assert.deepEqual(problems, []);
   assert.deepEqual(easJsonSites(liveEasJsonFiles()), EXPECTED_EAS_JSON);
   assert.deepEqual(walkedEasJsonProblems(liveEasJsonFiles()), []);
+});
+
+test("live eas.json pins the iOS build image on every profile", () => {
+  const eas = readLiveEas();
+  assert.deepEqual(iosImageProblems(eas), []);
+  for (const profile of ["development", "preview", "production"]) {
+    assert.equal(iosImageOf(eas, profile), IOS_BUILD_IMAGE, profile);
+  }
+});
+
+test("dropping a profile's iOS image fails", () => {
+  const eas = fixtureEas();
+  delete eas.build.preview.ios;
+  assert.deepEqual(
+    iosImageProblems(eas).filter((problem) => problem.includes("build.preview")),
+    ["build.preview.ios.image must be set, or EAS builds on auto"],
+  );
+});
+
+test("an image alias fails", () => {
+  for (const alias of ["auto", "latest", "sdk-57", "default"]) {
+    const eas = fixtureEas();
+    eas.build.production.ios.image = alias;
+    assert.ok(
+      iosImageProblems(eas).some((problem) => problem.includes(`alias ${alias}`)),
+      alias,
+    );
+  }
+});
+
+test("an Xcode 27 image fails", () => {
+  const eas = fixtureEas();
+  eas.build.production.ios.image = "macos-tahoe-27.0-xcode-27.0";
+  assert.ok(
+    iosImageProblems(eas).some((problem) => problem.includes("Xcode 26 image")),
+    iosImageProblems(eas).join("; "),
+  );
+});
+
+test("another Xcode 26 image than the pinned one fails", () => {
+  const eas = fixtureEas();
+  eas.build.development.ios.image = "macos-tahoe-26.4-xcode-26.4";
+  assert.ok(
+    iosImageProblems(eas).some((problem) => problem.includes(IOS_BUILD_IMAGE)),
+    iosImageProblems(eas).join("; "),
+  );
+});
+
+test("a profile inherits its iOS image through extends", () => {
+  const eas = fixtureEas();
+  delete eas.build.preview.ios;
+  eas.build.preview.extends = "production";
+  assert.equal(iosImageOf(eas, "preview"), IOS_BUILD_IMAGE);
+  assert.deepEqual(iosImageProblems(eas), []);
+  eas.build.production.extends = "preview";
+  delete eas.build.production.ios;
+  assert.equal(iosImageOf(eas, "production"), undefined);
+});
+
+test("xcodeMajorOf reads the Xcode major off an image name", () => {
+  assert.equal(xcodeMajorOf(IOS_BUILD_IMAGE), 26);
+  assert.equal(xcodeMajorOf("macos-sequoia-15.6-xcode-16.4"), 16);
+  assert.equal(xcodeMajorOf("sdk-57"), null);
 });
 
 test("retargeting production at the staging host fails", () => {
@@ -306,6 +433,32 @@ test("rewriting PRODUCTION_API_URL to the staging host fails", () => {
   );
   assert.ok(
     problems.some((problem) => problem.includes("api.frapp.live")),
+    problems.join("; "),
+  );
+});
+
+test("moving IOS_BUILD_IMAGE to an Xcode 27 image fails", () => {
+  const problems = lockSelfProblems(
+    readFileSync(LOCK, "utf8").replace(
+      `export const IOS_BUILD_IMAGE = "${IOS_BUILD_IMAGE}"`,
+      'export const IOS_BUILD_IMAGE = "macos-tahoe-27.0-xcode-27.0"',
+    ),
+  );
+  assert.ok(
+    problems.some((problem) => problem.includes("IOS_BUILD_IMAGE")),
+    problems.join("; "),
+  );
+});
+
+test("raising IOS_XCODE_MAJOR fails", () => {
+  const problems = lockSelfProblems(
+    readFileSync(LOCK, "utf8").replace(
+      "const IOS_XCODE_MAJOR = 26;",
+      "const IOS_XCODE_MAJOR = 27;",
+    ),
+  );
+  assert.ok(
+    problems.some((problem) => problem.includes("IOS_XCODE_MAJOR")),
     problems.join("; "),
   );
 });
