@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { readFileSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   DEFAULT_RETENTION_DAYS,
@@ -486,6 +489,16 @@ test("a manifest recording another bucket, prefix or project is refused", () => 
   }
 });
 
+test("verify's refusal names no override it can't take", () => {
+  // `verify` is read-only and ignores STORAGE_BACKUP_NEW_DESTINATION.
+  for (const manifest of [null, { ...manifestOf([]), destination: { ...DEST, bucket: "other" } }]) {
+    assert.throws(
+      () => assertManifestDestination({ manifest, expected: DEST, readOnly: true }),
+      (err) => !/STORAGE_BACKUP_NEW_DESTINATION|Nothing has been written/.test(err.message) && /Check BACKUP_S3_BUCKET/.test(err.message),
+    );
+  }
+});
+
 test("a matching manifest, or one from before the field existed, is accepted", () => {
   assert.doesNotThrow(() =>
     assertManifestDestination({ manifest: { ...manifestOf([]), destination: { ...DEST } }, expected: DEST }),
@@ -511,7 +524,7 @@ test("THE POINT (#2335): an unchanged object R2 lost is re-uploaded, not carried
     offsite: offsiteOf(a),
   });
   assert.deepEqual(plan.upload.map((o) => o.path), ["b.pdf"]);
-  assert.deepEqual(plan.missingOffsite.map((o) => [o.path, o.recovered]), [["b.pdf", true]]);
+  assert.deepEqual(plan.missingOffsite.map((o) => [o.record.path, o.kind, o.recovered]), [["b.pdf", "missing", true]]);
   const rebuilt = plan.manifest.objects.find((o) => o.path === "b.pdf");
   assert.equal(rebuilt.first_backed_up_at, "2026-07-01T00:00:00Z", "history survives the re-upload");
 });
@@ -519,7 +532,7 @@ test("THE POINT (#2335): an unchanged object R2 lost is re-uploaded, not carried
 test("a tombstone whose bytes R2 lost is marked once, kept in the index, and not reported again", () => {
   const dead = recorded("documents", "gone.pdf", { deleted_at: "2026-08-30T00:00:00Z" });
   const first = planSync({ remote: [], manifest: manifestOf([dead]), nowMs: NOW, retentionMs, prefix: "storage", offsite: new Map() });
-  assert.deepEqual(first.missingOffsite.map((o) => [o.path, o.recovered]), [["gone.pdf", false]]);
+  assert.deepEqual(first.missingOffsite.map((o) => [o.record.path, o.recovered]), [["gone.pdf", false]]);
   const marked = first.manifest.objects[0];
   assert.equal(marked.lost_offsite_at, new Date(NOW).toISOString());
   assert.deepEqual(verifyOffsiteMirror({ manifest: first.manifest, prefix: "storage", listing: new Map() }), []);
@@ -534,6 +547,20 @@ test("a lost mark clears if the bytes turn up offsite after all", () => {
   const plan = planSync({ remote: [], manifest: manifestOf([dead]), nowMs: NOW, retentionMs, prefix: "storage", offsite: offsiteOf(dead) });
   assert.equal(plan.manifest.objects[0].lost_offsite_at, null);
   assert.equal(plan.missingOffsite.length, 0);
+});
+
+test("a legacy tombstone at a stale size is not marked lost: its bytes are there", () => {
+  const dead = recorded("documents", "gone.pdf", { size: 1024, deleted_at: "2026-08-30T00:00:00Z" });
+  const plan = planSync({
+    remote: [],
+    manifest: manifestOf([dead]),
+    nowMs: NOW,
+    retentionMs,
+    prefix: "storage",
+    offsite: new Map([["storage/documents/gone.pdf", 999]]),
+  });
+  assert.equal(plan.missingOffsite.length, 0);
+  assert.equal(plan.manifest.objects[0].lost_offsite_at, null);
 });
 
 test("without an offsite listing nothing is judged missing", () => {
@@ -563,13 +590,11 @@ test("only a missing key reads as 'no manifest'; a denied or failed read does no
 // -- parseOffsiteListing / verifyOffsiteMirror --------------------------------
 
 test("an offsite listing parses to key -> size, and an empty prefix to nothing", () => {
-  const listing = parseOffsiteListing(
-    JSON.stringify({ Contents: [{ Key: "storage/documents/a.pdf", Size: 1024 }] }),
-  );
+  const listing = parseOffsiteListing(JSON.stringify([["storage/documents/a.pdf", 1024]]));
   assert.equal(listing.get("storage/documents/a.pdf"), 1024);
   assert.equal(parseOffsiteListing("").size, 0);
-  assert.equal(parseOffsiteListing(JSON.stringify({ RequestCharged: null })).size, 0);
-  assert.throws(() => parseOffsiteListing(JSON.stringify({ Contents: "nope" })), /not an array/);
+  assert.equal(parseOffsiteListing("null\n").size, 0);
+  assert.throws(() => parseOffsiteListing(JSON.stringify({ Contents: [] })), /\[key, size\] pairs/);
 });
 
 test("a mirror holding every manifest object at its size verifies", () => {
@@ -598,21 +623,23 @@ test("THE POINT (#2335): an object the manifest lists but R2 lacks fails, tombst
   assert.match(problems[0], /documents\/a\.pdf is in the manifest but not offsite/);
 });
 
-test("a size mismatch fails, compared against the bytes actually written when recorded", () => {
+test("a size mismatch fails against the bytes the job recorded writing", () => {
   const manifest = manifestOf([
     recorded("documents", "a.pdf", { size: 1024, backed_up_bytes: 1000 }),
-    recorded("documents", "b.pdf", { size: 1024 }),
+    recorded("documents", "b.pdf", { size: 1024, backed_up_bytes: 1024 }),
   ]);
   const listing = new Map([
     ["storage/documents/a.pdf", 1000],
     ["storage/documents/b.pdf", 0],
   ]);
   const problems = verifyOffsiteMirror({ manifest, prefix: "storage", listing });
-  assert.deepEqual(problems, ["documents/b.pdf is 0 bytes offsite, the manifest says 1024"]);
+  assert.deepEqual(problems, ["documents/b.pdf is 0 bytes offsite, but 1024 were written"]);
 });
 
-test("a record with no known size is checked for existence only", () => {
-  const manifest = manifestOf([recorded("documents", "a.pdf", { size: null })]);
+test("a record from before backed_up_bytes is checked for existence only", () => {
+  // Its `size` is Storage's listing, which can go stale between the listing
+  // and the download, so comparing it would call good bytes missing.
+  const manifest = manifestOf([recorded("documents", "a.pdf", { size: 1024 })]);
   const listing = new Map([["storage/documents/a.pdf", 7]]);
   assert.deepEqual(verifyOffsiteMirror({ manifest, prefix: "storage", listing }), []);
 });
@@ -895,6 +922,9 @@ test("the backup checks the destination before listing, and the offsite mirror a
   assert.ok(manifestWrite !== -1 && offsite > manifestWrite, "the offsite mirror is verified after the manifest is written");
   assert.doesNotMatch(body, /object_count !== plan\.manifest\.object_count/, "the read-back compares bytes, not a count with itself");
   assert.match(src, /verify: runVerify/);
+  // The offsite listing grows with the corpus; Node's 1 MiB default buffer
+  // turns it into ENOBUFS on every run once a prefix holds a few thousand keys.
+  assert.match(src.slice(src.indexOf("function aws("), src.indexOf("function parseArgs")), /maxBuffer: 512 \* 1024 \* 1024/);
 });
 
 test("a failed manifest read is a failure; only a missing key is 'no manifest'", () => {
@@ -904,20 +934,151 @@ test("a failed manifest read is a failure; only a missing key is 'no manifest'",
   assert.doesNotMatch(body, /allowFailure: true/);
 });
 
-test("both Storage jobs pass the two overrides, and only from their dispatch inputs", () => {
+test("each override reaches only the Storage job its dispatch input names", () => {
+  // One tick for staging must not also disarm production's guard (#2335 review).
   const workflow = readFileSync(".github/workflows/db-backup.yml", "utf8");
   for (const input of ["storage_new_destination", "storage_allow_mass_delete"]) {
-    assert.match(workflow, new RegExp(`\\n      ${input}:\\n`), `${input} is a dispatch input`);
+    const start = workflow.indexOf(`\n      ${input}:\n`);
+    assert.ok(start !== -1, `${input} is a dispatch input`);
+    assert.match(workflow.slice(start, start + 1200), /type: choice\n\s+options: \[none, staging, production\]\n\s+default: none/);
   }
-  for (const job of ["backup-staging-storage", "backup-production-storage"]) {
+  for (const [job, env] of [["backup-staging-storage", "staging"], ["backup-production-storage", "production"]]) {
     const start = workflow.indexOf(`  ${job}:`);
     const next = workflow.indexOf("\n  backup-", start + 1);
     const block = workflow.slice(start, next === -1 ? undefined : next);
-    assert.match(block, /new-destination: \$\{\{ inputs\.storage_new_destination == true && 'true' \|\| 'false' \}\}/, job);
-    assert.match(block, /allow-mass-delete: \$\{\{ inputs\.storage_allow_mass_delete == true && 'true' \|\| 'false' \}\}/, job);
+    assert.match(block, new RegExp(`new-destination: \\$\\{\\{ inputs\\.storage_new_destination == '${env}' && 'true' \\|\\| 'false' \\}\\}`), job);
+    assert.match(block, new RegExp(`allow-mass-delete: \\$\\{\\{ inputs\\.storage_allow_mass_delete == '${env}' && 'true' \\|\\| 'false' \\}\\}`), job);
   }
 
   const action = readFileSync(".github/actions/storage-offsite-backup/action.yml", "utf8");
   assert.match(action, /STORAGE_BACKUP_NEW_DESTINATION: \$\{\{ inputs\.new-destination \}\}/);
   assert.match(action, /STORAGE_BACKUP_ALLOW_MASS_DELETE: \$\{\{ inputs\.allow-mass-delete \}\}/);
+});
+
+// -- End to end: the real CLI against a fake R2 and a fake Storage -----------
+// The unit tests above prove each check; these prove runBackup acts on them.
+// `aws` is a shim on PATH over a temp directory, and Storage is a fetch
+// preload, so every run below is `storage-backup-run.mjs` exactly as the
+// nightly job invokes it.
+
+const FIXTURES = join(import.meta.dirname, "fixtures", "storage-backup");
+
+function e2eSandbox() {
+  const dir = mkdtempSync(join(tmpdir(), "storage-backup-e2e-"));
+  const bin = join(dir, "bin");
+  const s3 = join(dir, "s3");
+  spawnSync("mkdir", ["-p", bin, s3]);
+  writeFileSync(join(bin, "aws"), `#!/bin/sh\nexec "${process.execPath}" "${join(FIXTURES, "fake-aws.mjs")}" "$@"\n`);
+  chmodSync(join(bin, "aws"), 0o755);
+  const run = (mode, storage, env = {}) => {
+    const storageFile = join(dir, "storage.json");
+    writeFileSync(storageFile, JSON.stringify(storage));
+    const res = spawnSync(
+      process.execPath,
+      ["--import", join(FIXTURES, "fake-storage.mjs"), "scripts/storage-backup-run.mjs", mode, "--prefix", "storage"],
+      {
+        encoding: "utf8",
+        env: {
+          PATH: `${bin}:${process.env.PATH}`,
+          SUPABASE_URL: "https://hnoyzpidbmizhbqaiity.supabase.co",
+          SUPABASE_SERVICE_ROLE_KEY: "test-key",
+          BACKUP_S3_BUCKET: "bk",
+          BACKUP_S3_ENDPOINT: "https://r2.example",
+          FAKE_S3: s3,
+          FAKE_STORAGE: storageFile,
+          ...env,
+        },
+      },
+    );
+    return { status: res.status, out: `${res.stdout}${res.stderr}` };
+  };
+  const offsite = (key) => join(s3, "bk", key);
+  return { run, offsite, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+const TWO = { documents: { "chapter-1/a.txt": "hello", "b.txt": "world" }, profiles: {} };
+
+test("e2e: a first backup is refused without the new-destination override, then starts the mirror", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  const refused = box.run("backup", TWO);
+  assert.equal(refused.status, 1, refused.out);
+  assert.match(refused.out, /No manifest at storage\/manifest\.json/);
+  assert.equal(existsSync(box.offsite("storage/manifest.json")), false, "nothing written");
+
+  const started = box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" });
+  assert.equal(started.status, 0, started.out);
+  const manifest = JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8"));
+  assert.equal(manifest.object_count, 2);
+  assert.equal(manifest.destination.bucket, "bk");
+  assert.equal(manifest.objects.find((o) => o.path === "b.txt").backed_up_bytes, 5);
+  assert.equal(box.run("backup", TWO).status, 0, "the next night passes on its own");
+  assert.equal(box.run("verify", TWO).status, 0);
+});
+
+test("e2e: a listing that comes back empty is refused, and the mirror is left intact", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  const before = readFileSync(box.offsite("storage/manifest.json"), "utf8");
+  const empty = box.run("backup", { documents: {}, profiles: {} });
+  assert.equal(empty.status, 1, empty.out);
+  assert.match(empty.out, /all 2 of 2/);
+  assert.equal(readFileSync(box.offsite("storage/manifest.json"), "utf8"), before);
+});
+
+test("e2e: a typo'd bucket is refused rather than started as a fresh mirror", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  const typo = box.run("backup", TWO, { BACKUP_S3_BUCKET: "bk-typo" });
+  assert.equal(typo.status, 1, typo.out);
+  assert.match(typo.out, /No manifest at/);
+});
+
+test("e2e: an object R2 lost is re-uploaded, that run fails once, and the next passes", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  unlinkSync(box.offsite("storage/documents/b.txt"));
+  const found = box.run("backup", TWO);
+  assert.equal(found.status, 1, found.out);
+  assert.match(found.out, /not offsite as written/);
+  assert.match(found.out, /documents\/b\.txt: not offsite; re-uploaded from Storage/);
+  assert.equal(readFileSync(box.offsite("storage/documents/b.txt"), "utf8"), "world");
+  assert.equal(box.run("backup", TWO).status, 0, found.out);
+});
+
+test("e2e: in CI a loss is reported by bucket, never by object path", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  unlinkSync(box.offsite("storage/documents/chapter-1/a.txt"));
+  const found = box.run("backup", TWO, { GITHUB_ACTIONS: "true" });
+  assert.equal(found.status, 1, found.out);
+  assert.match(found.out, /1 object\(s\) in documents: not offsite/);
+  assert.doesNotMatch(found.out, /chapter-1/);
+});
+
+test("e2e: verify reports an object missing offsite without writing anything", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  unlinkSync(box.offsite("storage/documents/b.txt"));
+  const before = readFileSync(box.offsite("storage/manifest.json"), "utf8");
+  const res = box.run("verify", TWO);
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /documents\/b\.txt: not offsite/);
+  assert.equal(readFileSync(box.offsite("storage/manifest.json"), "utf8"), before);
+  assert.equal(existsSync(box.offsite("storage/documents/b.txt")), false);
+});
+
+test("e2e: a corrupt manifest is refused, and no override gets past it", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  writeFileSync(box.offsite("storage/manifest.json"), "{nope");
+  const res = box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" });
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /is unreadable/);
 });

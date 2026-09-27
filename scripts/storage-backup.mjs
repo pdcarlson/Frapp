@@ -69,9 +69,9 @@
 //                                 prefix, or one recording another destination,
 //                                 is refused without this (`assertManifestDestination`)
 //   STORAGE_BACKUP_ALLOW_MASS_DELETE
-//                                 optional; a backup that would tombstone every
-//                                 object, or over half of 20 or more, is refused
-//                                 without this (`checkDeletionSanity`)
+//                                 optional; a backup the deletion guard
+//                                 (`checkDeletionSanity`) refuses proceeds
+//                                 with this
 
 import { createHash } from "node:crypto";
 
@@ -153,9 +153,10 @@ export function isUnchanged(remote, recorded) {
  *   tombstone -- gone from Storage, still in the backup, newly marked deleted
  *   prune     -- tombstoned longer than the retention window, safe to delete
  *   keep      -- unchanged, deliberately not re-fetched
- *   missingOffsite -- records the previous manifest listed whose bytes the
- *               `offsite` listing lacks: re-uploaded when Storage still has
- *               them (`recovered: true`), otherwise marked `lost_offsite_at`.
+ *   missingOffsite -- `offsiteProblem`s for records the previous manifest
+ *               listed that the `offsite` listing lacks (or holds at the
+ *               wrong written size): re-uploaded when Storage still has them
+ *               (`recovered: true`), otherwise marked `lost_offsite_at`.
  *               Empty when no `offsite` listing is passed.
  *   manifest  -- the next manifest, whatever the caller does with the above
  *
@@ -167,8 +168,8 @@ export function planSync({ remote, manifest, nowMs, retentionMs, destination = n
   const seen = new Set();
   // With an offsite listing, a record whose bytes aren't there is not "unchanged":
   // the manifest would go on promising a file nobody can restore (#2335).
-  const lostOffsite = (recorded) =>
-    offsite !== null && offsiteProblem({ ...recorded, lost_offsite_at: null }, prefix, offsite) !== null;
+  const offsiteGap = (recorded) =>
+    offsite === null ? null : offsiteProblem({ ...recorded, lost_offsite_at: null }, prefix, offsite);
 
   const upload = [];
   const keep = [];
@@ -182,9 +183,10 @@ export function planSync({ remote, manifest, nowMs, retentionMs, destination = n
     seen.add(id);
     const recorded = previous.get(id);
 
-    if (isUnchanged(obj, recorded) && lostOffsite(recorded)) {
+    const gap = isUnchanged(obj, recorded) ? offsiteGap(recorded) : null;
+    if (gap) {
       // Still in Storage, so it can be copied again: re-upload it.
-      missingOffsite.push({ ...recorded, recovered: true });
+      missingOffsite.push({ ...gap, recovered: true });
     } else if (isUnchanged(obj, recorded)) {
       keep.push(obj);
       // Carry the record forward verbatim. Rebuilding it from `obj` would drop
@@ -227,10 +229,9 @@ export function planSync({ remote, manifest, nowMs, retentionMs, destination = n
     // The record stays (one bad listing must not erase the index) but is
     // marked, so the run that finds the loss fails and later runs don't fail
     // on it again. If the bytes turn up offsite after all, the mark clears.
-    const lostAt = lostOffsite(recorded)
-      ? (recorded.lost_offsite_at ?? new Date(nowMs).toISOString())
-      : null;
-    if (lostAt && !recorded.lost_offsite_at) missingOffsite.push({ ...recorded, recovered: false });
+    const gap = offsiteGap(recorded);
+    const lostAt = gap ? (recorded.lost_offsite_at ?? new Date(nowMs).toISOString()) : null;
+    if (gap && !recorded.lost_offsite_at) missingOffsite.push({ ...gap, recovered: false });
 
     if (!recorded.deleted_at) tombstone.push({ ...recorded, deleted_at: deletedAt });
     objects.push({ ...recorded, deleted_at: deletedAt, lost_offsite_at: lostAt });
@@ -293,7 +294,7 @@ export function checkDeletionSanity({ manifest, tombstone, maxRatio = 0.5, minCo
       `(${Math.round(ratio * 100)}%). That is more likely a short listing than a real ` +
       `mass deletion. Nothing has been changed offsite. If the deletion is genuine, ` +
       `re-run with STORAGE_BACKUP_ALLOW_MASS_DELETE=true (the Nightly Backup ` +
-      `storage_allow_mass_delete input).`,
+      `storage_allow_mass_delete input, set to this environment).`,
   });
 
   if (live === 0) return { ok: true, live, deleting, ratio: 0 };
@@ -339,15 +340,19 @@ export function mirrorDestination({ environment, projectRef, bucket, prefix }) {
  * `destination` predates the field (#2335) and is accepted; the run then
  * writes it.
  */
-export function assertManifestDestination({ manifest, expected, allowNewDestination = false }) {
+export function assertManifestDestination({ manifest, expected, allowNewDestination = false, readOnly = false }) {
   if (allowNewDestination) return;
+  // `verify` writes nothing and takes no override: it only reports.
+  const remedy = readOnly
+    ? "Check BACKUP_S3_BUCKET and --prefix; the nightly backup refuses this destination the same way."
+    : "Nothing has been written. If the destination is new or moved on purpose, re-run with " +
+      "STORAGE_BACKUP_NEW_DESTINATION=true (the Nightly Backup storage_new_destination input, set to this " +
+      "environment).";
   if (manifest === null || manifest === undefined) {
     throw new Error(
       `No manifest at ${expected.prefix}/manifest.json in the configured bucket. On a mirror that has ` +
-        `run before, that means BACKUP_S3_BUCKET or the prefix changed, and this run would start a fresh ` +
-        `mirror somewhere nobody restores from. Nothing has been written. If the destination is new on ` +
-        `purpose, re-run with STORAGE_BACKUP_NEW_DESTINATION=true (the Nightly Backup ` +
-        `storage_new_destination input).`,
+        `run before, that means BACKUP_S3_BUCKET or the prefix changed, and a backup here would start a ` +
+        `fresh mirror somewhere nobody restores from. ${remedy}`,
     );
   }
   const recorded = manifest.destination;
@@ -357,8 +362,7 @@ export function assertManifestDestination({ manifest, expected, allowNewDestinat
     throw new Error(
       `The manifest at ${expected.prefix}/manifest.json records a different destination ` +
         `(${differing.join(", ")} differ${differing.length === 1 ? "s" : ""}). It was copied from ` +
-        `elsewhere or belongs to another environment. Nothing has been written. If the destination ` +
-        `moved on purpose, re-run with STORAGE_BACKUP_NEW_DESTINATION=true.`,
+        `elsewhere or belongs to another environment. ${remedy}`,
     );
   }
 }
@@ -375,46 +379,58 @@ export function isMissingObjectError(stderr) {
 }
 
 /**
- * The key → size map of an `aws s3api list-objects-v2 --output json` response.
- * The CLI merges its pages into one document; an empty prefix has no
- * `Contents` at all, and some CLI versions print nothing, so both read as empty.
+ * The key → size map of `aws s3api list-objects-v2 --query 'Contents[].[Key,Size]'
+ * --output json`: an array of `[key, size]` pairs. The CLI merges its pages
+ * before the query runs; an empty prefix has no `Contents`, which the query
+ * prints as `null` (or nothing), so both read as empty. The query keeps the
+ * output to about a tenth of the full document, which matters because
+ * `execFileSync` buffers all of it.
  */
 export function parseOffsiteListing(stdout) {
   const text = String(stdout ?? "").trim();
-  if (text === "") return new Map();
-  const parsed = JSON.parse(text);
-  const contents = parsed?.Contents ?? [];
-  if (!Array.isArray(contents)) {
-    throw new Error("The offsite listing's Contents is not an array; refusing to verify against it.");
+  if (text === "" || text === "null") return new Map();
+  const pairs = JSON.parse(text);
+  if (!Array.isArray(pairs) || !pairs.every((p) => Array.isArray(p) && p.length === 2)) {
+    throw new Error("The offsite listing is not a list of [key, size] pairs; refusing to verify against it.");
   }
-  return new Map(contents.map((entry) => [entry.Key, Number(entry.Size)]));
+  return new Map(pairs.map(([key, size]) => [key, Number(size)]));
 }
 
 /**
  * Every object the manifest lists, live or tombstoned, must exist offsite at
- * its key with the bytes it recorded. Tombstones count: a deleted file being
- * restorable for the retention window is the promise the tombstone makes.
- * The size compared is what was written (`backed_up_bytes`), or Storage's own
- * `size` for a record from before that field. A record marked
- * `lost_offsite_at` is skipped: planSync marked it on the run that found the
- * loss, and that run failed. Returns the problems found; empty means verified.
+ * its key. Tombstones count: a deleted file being restorable for the
+ * retention window is the promise the tombstone makes. Where the record kept
+ * how many bytes were written (`backed_up_bytes`), the offsite size must match
+ * it. A record from before that field is checked for existence only, because
+ * its `size` is Storage's listing, which can go stale between the listing and
+ * the download. This is a presence-and-length check, not a content hash. A
+ * record marked `lost_offsite_at` is skipped: planSync marked it on the run
+ * that found the loss, and that run failed. Returns the problems found; empty
+ * means verified.
  */
 export function verifyOffsiteMirror({ manifest, prefix, listing }) {
-  return (manifest?.objects ?? []).map((record) => offsiteProblem(record, prefix, listing)).filter(Boolean);
+  return (manifest?.objects ?? [])
+    .map((record) => offsiteProblem(record, prefix, listing))
+    .filter(Boolean)
+    .map((problem) => problem.message);
 }
 
 /**
- * Why one manifest record isn't offsite as recorded, or null when it is. A
- * record already marked `lost_offsite_at` was reported by the run that found
- * the loss, so it is not a problem again.
+ * Why one manifest record isn't offsite as recorded, or null when it is:
+ * `{ kind: "missing" | "size", record, message }`.
  */
 export function offsiteProblem(record, prefix, listing) {
   if (record.lost_offsite_at) return null;
   const key = backupKey(prefix, record.bucket, record.path);
-  if (!listing.has(key)) return `${record.bucket}/${record.path} is in the manifest but not offsite`;
-  const want = record.backed_up_bytes ?? record.size;
-  if (want !== null && want !== undefined && listing.get(key) !== want) {
-    return `${record.bucket}/${record.path} is ${listing.get(key)} bytes offsite, the manifest says ${want}`;
+  const where = `${record.bucket}/${record.path}`;
+  if (!listing.has(key)) return { kind: "missing", record, message: `${where} is in the manifest but not offsite` };
+  const want = record.backed_up_bytes;
+  if (typeof want === "number" && listing.get(key) !== want) {
+    return {
+      kind: "size",
+      record,
+      message: `${where} is ${listing.get(key)} bytes offsite, but ${want} were written`,
+    };
   }
   return null;
 }

@@ -13,9 +13,9 @@
 //            assert the bytes survived. AC 3 of #1290, as something repeatable
 //            rather than a one-time manual chore.
 //   verify   read-only: prove the manifest is this destination's and every
-//            object it lists is offsite with the bytes it recorded. `backup`
-//            runs the same check after every write (#2335); on its own it is
-//            what a restore runs first.
+//            object it lists is offsite at the size it recorded (presence and
+//            length, not a content hash). `backup` runs the same check after
+//            every write (#2335); on its own it is what a restore runs first.
 //
 // The offsite side shells out to `aws s3`, exactly as db-backup.yml does, so
 // there is one S3 story in this repo and not two. The AWS_* environment and the
@@ -48,11 +48,11 @@ import {
   listBucketObjects,
   listBuckets,
   mirrorDestination,
+  offsiteProblem,
   parseOffsiteListing,
   planSync,
   sha256,
   uploadObject,
-  verifyOffsiteMirror,
 } from "./storage-backup.mjs";
 
 function requireEnv(name) {
@@ -69,6 +69,9 @@ function aws(args, { endpoint, allowFailure = false } = {}) {
     return execFileSync("aws", [...args, "--endpoint-url", endpoint], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      // Node's default is 1 MiB, and the offsite listing grows with the
+      // corpus; past the limit the call dies with ENOBUFS on every run.
+      maxBuffer: 512 * 1024 * 1024,
     });
   } catch (err) {
     if (allowFailure) return null;
@@ -118,7 +121,10 @@ function readManifest({ bucket, prefix, endpoint, tmp }) {
   try {
     return JSON.parse(readFileSync(local, "utf8"));
   } catch (err) {
-    throw new Error(`The manifest at ${prefix}/manifest.json is unreadable (${err.message}); refusing to back up over it.`);
+    throw new Error(
+      `The manifest at ${prefix}/manifest.json is unreadable (${err.message}); refusing to back up over it. ` +
+        `No re-run input clears this: see DB_ROLLBACK_PLAYBOOK.md § If the backup job fails.`,
+    );
   }
 }
 
@@ -128,20 +134,49 @@ function readManifest({ bucket, prefix, endpoint, tmp }) {
  */
 function listOffsite({ bucket, prefix, endpoint }) {
   return parseOffsiteListing(
-    aws(["s3api", "list-objects-v2", "--bucket", bucket, "--prefix", `${prefix}/`, "--output", "json"], { endpoint }),
+    aws(
+      [
+        "s3api", "list-objects-v2", "--bucket", bucket, "--prefix", `${prefix}/`,
+        "--query", "Contents[].[Key,Size]", "--output", "json",
+      ],
+      { endpoint },
+    ),
   );
+}
+
+/**
+ * Lines naming affected objects, for an error. Object paths carry chapter ids
+ * and member-chosen filenames, and this repository's Actions logs are public,
+ * so in CI only per-bucket counts are printed; `verify` run locally lists the
+ * paths.
+ */
+function describeObjects(entries) {
+  if (process.env.GITHUB_ACTIONS === "true") {
+    const perBucket = new Map();
+    for (const { record, text } of entries) {
+      const key = `${record.bucket}: ${text}`;
+      perBucket.set(key, (perBucket.get(key) ?? 0) + 1);
+    }
+    const lines = [...perBucket].map(([key, n]) => `  - ${n} object(s) in ${key}`).join("\n");
+    return `${lines}\n  (Paths are withheld from this public log; run \`verify\` locally to list them.)`;
+  }
+  const shown = entries.slice(0, 20).map(({ record, text }) => `  - ${record.bucket}/${record.path}: ${text}`).join("\n");
+  return entries.length > 20 ? `${shown}\n  ...and ${entries.length - 20} more` : shown;
 }
 
 function verifyOffsite({ manifest, bucket, prefix, endpoint }) {
   const listing = listOffsite({ bucket, prefix, endpoint });
-  const problems = verifyOffsiteMirror({ manifest, prefix, listing });
+  const problems = (manifest?.objects ?? []).map((r) => offsiteProblem(r, prefix, listing)).filter(Boolean);
   if (problems.length > 0) {
-    const shown = problems.slice(0, 20).map((p) => `  - ${p}`).join("\n");
-    const more = problems.length > 20 ? `\n  ...and ${problems.length - 20} more` : "";
-    throw new Error(`The offsite mirror does not hold what its manifest lists (${problems.length} problem(s)):\n${shown}${more}`);
+    throw new Error(
+      `The offsite mirror does not hold what its manifest lists (${problems.length} problem(s)):\n` +
+        describeObjects(problems.map((p) => ({ record: p.record, text: PROBLEM_TEXT[p.kind] }))),
+    );
   }
   return (manifest?.objects ?? []).filter((o) => !o.lost_offsite_at).length;
 }
+
+const PROBLEM_TEXT = { missing: "not offsite", size: "offsite at a different size than was written" };
 
 function expectedDestination(opts, s3Bucket) {
   return mirrorDestination({
@@ -278,26 +313,30 @@ async function runBackup(opts) {
     // The mirror is whole again, but it wasn't: fail this run so the loss is
     // seen. The next run finds nothing missing and passes.
     if (plan.missingOffsite.length > 0) {
-      const lines = plan.missingOffsite
-        .slice(0, 20)
-        .map((o) => `  - ${o.bucket}/${o.path}: ${o.recovered ? "re-uploaded from Storage" : "deleted from Storage too, so it is lost"}`)
-        .join("\n");
-      const more = plan.missingOffsite.length > 20 ? `\n  ...and ${plan.missingOffsite.length - 20} more` : "";
+      const lines = describeObjects(
+        plan.missingOffsite.map((gap) => ({
+          record: gap.record,
+          text:
+            `${PROBLEM_TEXT[gap.kind]}; ` +
+            (gap.recovered ? "re-uploaded from Storage" : "deleted from Storage too, so it is unrecoverable"),
+        })),
+      );
       throw new Error(
-        `${plan.missingOffsite.length} object(s) the previous manifest listed were missing offsite. Something ` +
-          `other than this job deleted them (an R2 lifecycle rule, a hand deletion). Every one Storage still ` +
-          `has is offsite again; the rest are unrecoverable. Find what removed them:\n${lines}${more}`,
+        `${plan.missingOffsite.length} object(s) the previous manifest listed were not offsite as written. ` +
+          `Something other than this job changed them (an R2 lifecycle rule, a hand deletion). Every one ` +
+          `Storage still has is offsite again; the rest are unrecoverable. Find what changed them:\n${lines}`,
       );
     }
 
-    // A mirror that held objects and now lists none was refused above
-    // (checkDeletionSanity) unless the run allowed it. Otherwise reaching here
-    // empty means it has never held one: true of production before launch,
-    // so a warning rather than a failure that would stay red until then.
+    // A run that would take a mirror from live objects to none was refused
+    // above (checkDeletionSanity) unless it was allowed. So an empty mirror
+    // here either never held an object (production before launch) or was
+    // emptied by an allowed run, and from then on further empty runs pass
+    // too. A warning rather than a failure that would stay red until launch.
     if (plan.manifest.object_count === 0) {
       console.log(
-        "::warning::The mirror holds no live objects because Storage listed none. " +
-          "Expected only while the project has no uploads.",
+        "::warning::The mirror holds no live objects because Storage listed none. Expected only while " +
+          "the project has no uploads, or after a deletion someone allowed with storage_allow_mass_delete.",
       );
     }
     return plan;
@@ -430,7 +469,7 @@ async function runVerify(opts) {
   const tmp = mkdtempSync(join(tmpdir(), "storage-verify-"));
   try {
     const manifest = readManifest({ bucket: s3Bucket, prefix: opts.prefix, endpoint, tmp });
-    assertManifestDestination({ manifest, expected: expectedDestination(opts, s3Bucket) });
+    assertManifestDestination({ manifest, expected: expectedDestination(opts, s3Bucket), readOnly: true });
     const checked = verifyOffsite({ manifest, bucket: s3Bucket, prefix: opts.prefix, endpoint });
     const lost = manifest.objects.length - checked;
     console.log(

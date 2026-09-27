@@ -83,22 +83,25 @@ on:
         default: false
       storage_new_destination:
         description: >-
-          Both Storage jobs: the offsite destination is new or moved on purpose.
+          One Storage job: its offsite destination is new or moved on purpose.
           Accept a prefix with no manifest, or a manifest recording another
           bucket, project or prefix, and record this destination. Without it
           the job refuses both, because on a mirror that has run before they
           mean BACKUP_S3_BUCKET or the prefix changed and the job would start a
-          fresh mirror nobody restores from (#2335).
-        type: boolean
-        default: false
+          fresh mirror nobody restores from (#2335). Names one environment so a
+          fix for staging never disarms production's check in the same run.
+        type: choice
+        options: [none, staging, production]
+        default: none
       storage_allow_mass_delete:
         description: >-
-          Both Storage jobs: the deletion is genuine. Let the run tombstone every
-          backed-up object, or more than half of 20 or more. Without it the job
-          refuses, because a short Storage listing looks exactly like that.
-          Tombstoned bytes stay offsite until retention prunes them.
-        type: boolean
-        default: false
+          One Storage job: the deletion is genuine. Let that run tombstone what
+          the deletion guard refuses (DB_ROLLBACK_PLAYBOOK.md § If the backup
+          job fails). Tombstoned bytes stay offsite until retention prunes
+          them. Names one environment for the same reason as above.
+        type: choice
+        options: [none, staging, production]
+        default: none
 
 permissions:
   contents: read
@@ -161,8 +164,8 @@ jobs:
           # tombstones stay continuous.
           prefix: storage
           rehearsal: ${{ inputs.storage_rehearsal == true && 'true' || 'false' }}
-          new-destination: ${{ inputs.storage_new_destination == true && 'true' || 'false' }}
-          allow-mass-delete: ${{ inputs.storage_allow_mass_delete == true && 'true' || 'false' }}
+          new-destination: ${{ inputs.storage_new_destination == 'staging' && 'true' || 'false' }}
+          allow-mass-delete: ${{ inputs.storage_allow_mass_delete == 'staging' && 'true' || 'false' }}
 
   # ── Production ────────────────────────────────────────────────────────────
   # See the header for why this is `production-backup`, not `production`, and
@@ -241,5 +244,6 @@ jobs:
           # Unlike the rehearsal, these two write nothing into production
           # Storage: they only relax a refusal on the offsite side, and a
           # tombstoned object's bytes stay restorable for the retention window.
-          new-destination: ${{ inputs.storage_new_destination == true && 'true' || 'false' }}
-          allow-mass-delete: ${{ inputs.storage_allow_mass_delete == true && 'true' || 'false' }}
+          # Each takes effect only when the dispatch names `production`.
+          new-destination: ${{ inputs.storage_new_destination == 'production' && 'true' || 'false' }}
+          allow-mass-delete: ${{ inputs.storage_allow_mass_delete == 'production' && 'true' || 'false' }}

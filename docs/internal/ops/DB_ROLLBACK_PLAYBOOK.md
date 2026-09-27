@@ -316,13 +316,22 @@ gone; one deleted yesterday is one command away.
 A Storage job that concluded `success` has proved more than "no command failed"
 (#2335). Every run checks that the manifest it read is this destination's,
 reads the new manifest back byte for byte, and lists the prefix in R2 to confirm
-that every object the manifest names is there at the size it recorded. So the
+that every object the manifest names is there, at the size written where the
+record kept it. That is a presence-and-length check, not a content hash. So the
 freshness watch's P1 ([`ALERT_ROUTING.md`](ALERT_ROUTING.md)) reads a job that
 mirrored nothing, or mirrored into the wrong bucket, as the failure it is.
 
-One gap is deliberate. A mirror that has **never** held an object passes, with
-a `::warning::` in the job log, because production Storage was empty when this
-landed and a check failing on that would hold a P1 open until launch.
+Two gaps are deliberate:
+
+- **An empty mirror passes**, with a `::warning::` in the job log. A run that
+  would take a mirror from live objects to none is refused, but a mirror that
+  has no live objects to begin with isn't: production Storage was empty when
+  this landed, and a check failing on that would hold a P1 open until launch.
+  The same applies after a wipe someone allowed with `storage_allow_mass_delete`:
+  from then on, empty runs pass. So allow a wipe only once you've confirmed
+  Storage really is empty.
+- **Below 20 objects, only a total wipe is refused.** A partial drop in a small
+  corpus passes (#2702).
 
 ### If the backup job fails
 
@@ -339,23 +348,36 @@ acting. Read the job's `::error::` line and match it:
   threshold. Nothing is written offsite when this fires, so the previous backup
   is intact. Check what Storage actually returns. If the deletion is genuine (a
   chapter offboarded, a bucket deliberately emptied), re-run **Nightly Backup**
-  with **`storage_allow_mass_delete`** ticked
-  (`STORAGE_BACKUP_ALLOW_MASS_DELETE=true` locally).
+  with **`storage_allow_mass_delete`** set to that environment
+  (`STORAGE_BACKUP_ALLOW_MASS_DELETE=true` locally). Both override inputs name
+  one environment, so a staging fix never disarms production's guard in the
+  same run.
 - **"No manifest at …" or "records a different destination".** The job read
   its previous manifest from somewhere other than where the mirror lives:
   `BACKUP_S3_BUCKET` changed or is typo'd, or the manifest was copied from
-  another environment. A 403 or an unreadable manifest fails too, rather than
-  being read as a first run. Nothing has been written. Fix the secret. Only if
-  the destination is new on purpose (the separate production bucket, say),
-  re-run with **`storage_new_destination`** ticked
-  (`STORAGE_BACKUP_NEW_DESTINATION=true` locally). It starts or adopts the mirror
-  there and records the new destination.
-- **"missing offsite".** Objects the manifest listed were gone from R2, so
-  something other than this job deleted them (an R2 lifecycle rule, a hand
-  deletion). The run has already re-uploaded every one Storage still has, and
-  marked the rest `lost_offsite_at`. Those are unrecoverable, and a restore
-  skips them. The job fails once so the loss is seen, and the next run passes.
-  Find and stop whatever removed them.
+  another environment. A 403 on the read fails too, rather than being read as
+  a first run. Nothing has been written. Fix the secret. Only if the
+  destination is new on purpose (the separate production bucket, say), re-run
+  with **`storage_new_destination`** set to that environment
+  (`STORAGE_BACKUP_NEW_DESTINATION=true` locally). It starts or adopts the
+  mirror there and records the new destination.
+- **"The manifest at … is unreadable".** The index itself is corrupt. No re-run
+  input gets past this, on purpose: backing up over it would lose every
+  tombstone it records. Replace `<prefix>/manifest.json` with a good copy if
+  you have one. Otherwise delete it and re-run with `storage_new_destination`
+  set to that environment. That rebuilds the index from what Storage lists now,
+  re-uploading every live object. Objects already deleted from Storage stay in
+  R2, but no manifest names them any more, so a restore can't find them by
+  itself.
+- **"were not offsite as written".** Objects the manifest listed were gone from
+  R2, or were there at a different size than the job wrote, so something other
+  than this job changed them (an R2 lifecycle rule, a hand deletion). The run
+  has already re-uploaded every one Storage still has, and marked the rest
+  `lost_offsite_at`. Those are unrecoverable, and a restore skips them. The job
+  fails once so the loss is seen, and the next run passes. Find and stop
+  whatever changed them. In CI the error gives per-bucket counts only, because
+  object paths carry chapter ids and member filenames and Actions logs here are
+  public; run `verify` locally for the list.
 - **"does not hold what its manifest lists"** after a write. The upload or the
   destination is broken in a way the run couldn't repair. Run `verify` (below)
   to see the list.
@@ -402,6 +424,10 @@ can be written into them — a Storage restore against a database that has not b
 migrated fails on the missing bucket.
 
 ### Rehearsing it
+
+This drill and the nightly content check are the whole Storage mechanism. The
+hosted **database** restore drill (#1861) is separate: it restores a Postgres
+dump once, and never reads the Storage manifest.
 
 A copy nobody has restored from is not a backup. The drill is
 `node scripts/storage-backup-run.mjs rehearse --prefix storage` (the staging
