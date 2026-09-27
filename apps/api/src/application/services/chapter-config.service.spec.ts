@@ -59,7 +59,10 @@ jest.mock('@repo/chapter-theme', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
-import { ChapterConfigService } from './chapter-config.service';
+import {
+  ChapterConfigService,
+  mergeDefinedFields,
+} from './chapter-config.service';
 import { SERVICE_CONFIG_DEFAULTS } from './chapter-service-config.service';
 import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -1750,5 +1753,53 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
 
     expect(supabase.duesUpsert).not.toHaveBeenCalled();
     expect(mockAuditLog.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('mergeDefinedFields', () => {
+  type Config = { cadence: string; amount: number; note: string | null };
+  const FIELDS = ['cadence', 'amount', 'note'] as const;
+  const fallback: Config = { cadence: 'monthly', amount: 100, note: 'keep' };
+
+  it('lays every supplied field over the fallback', () => {
+    expect(
+      mergeDefinedFields(
+        fallback,
+        { cadence: 'yearly', amount: 250, note: 'new' },
+        FIELDS,
+      ),
+    ).toEqual({ cadence: 'yearly', amount: 250, note: 'new' });
+  });
+
+  it('keeps the fallback for a listed field that is undefined or absent', () => {
+    expect(mergeDefinedFields(fallback, { amount: undefined }, FIELDS)).toEqual(
+      fallback,
+    );
+  });
+
+  it('writes a null, which is a real value rather than "not supplied"', () => {
+    expect(mergeDefinedFields(fallback, { note: null }, FIELDS)).toEqual({
+      ...fallback,
+      note: null,
+    });
+  });
+
+  it('writes a falsy value such as 0', () => {
+    expect(mergeDefinedFields(fallback, { amount: 0 }, FIELDS).amount).toBe(0);
+  });
+
+  it('ignores a supplied key that is not in the field list', () => {
+    expect(
+      mergeDefinedFields(fallback, { cadence: 'yearly', amount: 5 }, [
+        'cadence',
+      ] as const),
+    ).toEqual({ ...fallback, cadence: 'yearly' });
+  });
+
+  it('returns a new object and leaves the fallback untouched', () => {
+    const before = { ...fallback };
+    const next = mergeDefinedFields(fallback, { amount: 1 }, FIELDS);
+    expect(next).not.toBe(fallback);
+    expect(fallback).toEqual(before);
   });
 });
