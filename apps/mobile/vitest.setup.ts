@@ -135,13 +135,32 @@ vi.mock("expo-router", () => {
     navigate: vi.fn(),
     back: vi.fn(),
   };
+  // Every mounted focus effect, re-runnable as one "the member came back"
+  // event. A tab screen is never unmounted, so state that must not outlive a
+  // visit (a subscription refusal, #2297) is cleared on refocus, and a spec
+  // can only prove that by refocusing: `act(() => __refocus())`.
+  const refocusers = new Set<() => void>();
   return {
     useRouter: () => router,
-    // Runs the effect immediately and on every callback-identity change, which
-    // is the focused-screen behavior; the real one additionally re-runs on
-    // refocus, which a headless test never triggers.
+    // Runs the effect on mount and on every callback-identity change, which
+    // is the focused-screen behavior. `__refocus` below is the rest of it: the
+    // real hook runs the cleanup on blur and the effect again on focus.
     useFocusEffect: (callback: () => undefined | (() => void)) => {
-      React.useEffect(callback, [callback]);
+      React.useEffect(() => {
+        let cleanup = callback();
+        const refocus = () => {
+          cleanup?.();
+          cleanup = callback();
+        };
+        refocusers.add(refocus);
+        return () => {
+          refocusers.delete(refocus);
+          cleanup?.();
+        };
+      }, [callback]);
+    },
+    __refocus: () => {
+      for (const refocus of [...refocusers]) refocus();
     },
     useLocalSearchParams: vi.fn(() => ({})),
     usePathname: vi.fn(() => "/"),
