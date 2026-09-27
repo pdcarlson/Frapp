@@ -64,6 +64,14 @@
 //                                 refused without this. Backup is not: the
 //                                 nightly job must read production Storage.
 //                                 Restore overwrites live objects.
+//   STORAGE_BACKUP_NEW_DESTINATION
+//                                 optional; a backup with no manifest under the
+//                                 prefix, or one recording another destination,
+//                                 is refused without this (`assertManifestDestination`)
+//   STORAGE_BACKUP_ALLOW_MASS_DELETE
+//                                 optional; a backup the deletion guard
+//                                 (`checkDeletionSanity`) refuses proceeds
+//                                 with this
 
 import { createHash } from "node:crypto";
 
@@ -145,32 +153,50 @@ export function isUnchanged(remote, recorded) {
  *   tombstone -- gone from Storage, still in the backup, newly marked deleted
  *   prune     -- tombstoned longer than the retention window, safe to delete
  *   keep      -- unchanged, deliberately not re-fetched
+ *   missingOffsite -- `offsiteProblem`s for records the previous manifest
+ *               listed that the `offsite` listing lacks (or holds at the
+ *               wrong written size): re-uploaded when Storage still has them
+ *               (`recovered: true`), otherwise marked `lost_offsite_at`.
+ *               Empty when no `offsite` listing is passed.
  *   manifest  -- the next manifest, whatever the caller does with the above
  *
  * `nowMs` and `retentionMs` are parameters rather than clock reads so the
  * retention boundary is testable at all.
  */
-export function planSync({ remote, manifest, nowMs, retentionMs }) {
+export function planSync({ remote, manifest, nowMs, retentionMs, destination = null, prefix = null, offsite = null }) {
   const previous = new Map((manifest?.objects ?? []).map((o) => [`${o.bucket}\u0000${o.path}`, o]));
   const seen = new Set();
+  // With an offsite listing, a record whose bytes aren't there is not "unchanged":
+  // the manifest would go on promising a file nobody can restore (#2335).
+  const offsiteGap = (recorded) =>
+    offsite === null ? null : offsiteProblem({ ...recorded, lost_offsite_at: null }, prefix, offsite);
 
   const upload = [];
   const keep = [];
   const tombstone = [];
   const prune = [];
   const objects = [];
+  const missingOffsite = [];
 
   for (const obj of remote) {
     const id = `${obj.bucket}\u0000${obj.path}`;
     seen.add(id);
     const recorded = previous.get(id);
 
-    if (isUnchanged(obj, recorded)) {
+    const gap = isUnchanged(obj, recorded) ? offsiteGap(recorded) : null;
+    if (gap) {
+      // Still in Storage, so it can be copied again: re-upload it.
+      missingOffsite.push({ ...gap, recovered: true });
+    } else if (isUnchanged(obj, recorded)) {
       keep.push(obj);
       // Carry the record forward verbatim. Rebuilding it from `obj` would drop
       // first_backed_up_at, which is the only record of how far back a given
-      // object's copy actually reaches.
-      objects.push(recorded);
+      // object's copy actually reaches. One exception: a record from before
+      // `backed_up_bytes` adopts the offsite size when it matches what Storage
+      // listed, so from then on its length is checked too.
+      const offsiteBytes = offsite?.get(backupKey(prefix, recorded.bucket, recorded.path));
+      const adopt = typeof recorded.backed_up_bytes !== "number" && offsiteBytes !== undefined && offsiteBytes === recorded.size;
+      objects.push(adopt ? { ...recorded, backed_up_bytes: offsiteBytes } : recorded);
       continue;
     }
 
@@ -203,8 +229,16 @@ export function planSync({ remote, manifest, nowMs, retentionMs }) {
       continue;
     }
 
+    // Gone from Storage AND from the offsite copy: nothing can bring it back.
+    // The record stays (one bad listing must not erase the index) but is
+    // marked, so the run that finds the loss fails and later runs don't fail
+    // on it again. If the bytes turn up offsite after all, the mark clears.
+    const gap = offsiteGap(recorded);
+    const lostAt = gap ? (recorded.lost_offsite_at ?? new Date(nowMs).toISOString()) : null;
+    if (gap && !recorded.lost_offsite_at) missingOffsite.push({ ...gap, recovered: false });
+
     if (!recorded.deleted_at) tombstone.push({ ...recorded, deleted_at: deletedAt });
-    objects.push({ ...recorded, deleted_at: deletedAt });
+    objects.push({ ...recorded, deleted_at: deletedAt, lost_offsite_at: lostAt });
   }
 
   return {
@@ -212,10 +246,30 @@ export function planSync({ remote, manifest, nowMs, retentionMs }) {
     keep,
     tombstone,
     prune,
+    missingOffsite,
     manifest: {
       version: 1,
       generated_at: new Date(nowMs).toISOString(),
+      // Where this manifest claims to live. The next run compares it with
+      // where it actually read the manifest from (`assertManifestDestination`).
+      destination,
       retention_days: retentionMs / 86_400_000,
+      // The objects the last run that found a loss named, carried forward
+      // until another loss replaces it: the run that finds a loss also repairs
+      // what it can, so afterwards nothing else says which files were hit.
+      // Read it with `verify`; CI logs withhold paths.
+      last_offsite_loss:
+        missingOffsite.length > 0
+          ? {
+              found_at: new Date(nowMs).toISOString(),
+              objects: missingOffsite.map((gap) => ({
+                bucket: gap.record.bucket,
+                path: gap.record.path,
+                kind: gap.kind,
+                recovered: gap.recovered,
+              })),
+            }
+          : (manifest?.last_offsite_loss ?? null),
       object_count: objects.filter((o) => !o.deleted_at).length,
       tombstone_count: objects.filter((o) => o.deleted_at).length,
       objects,
@@ -234,28 +288,168 @@ export function planSync({ remote, manifest, nowMs, retentionMs }) {
  * them), so this is not the last line of defence; it is the one that makes the
  * problem loud on day one instead of on day thirty.
  *
- * `minCorpus` keeps the guard away from the small-corpus case where a large
+ * `minCorpus` keeps the ratio away from the small-corpus case where a large
  * PERCENTAGE is unremarkable -- deleting 2 of 3 objects is 67% and entirely
- * ordinary. A first run has no manifest and so cannot trip this at all.
+ * ordinary. Deleting ALL of them is not, at any size: a listing that comes
+ * back empty is the likeliest way a small corpus breaks, and below `minCorpus`
+ * it used to pass untouched, writing `object_count: 0` over a mirror that held
+ * objects (#2335). So a run that would tombstone every live object is refused
+ * whatever the corpus size. A first run has no manifest and so cannot trip
+ * this at all.
+ *
+ * Rehearsal canaries are left out of both counts. The rehearsal writes one,
+ * backs it up and deletes it, so the next nightly on an otherwise empty corpus
+ * sees its only live object vanish. That is the drill working, not a wipe.
  */
 export function checkDeletionSanity({ manifest, tombstone, maxRatio = 0.5, minCorpus = 20 }) {
-  const live = (manifest?.objects ?? []).filter((o) => !o.deleted_at).length;
-  if (live < minCorpus) return { ok: true, live, deleting: tombstone.length, ratio: 0 };
-
-  const ratio = tombstone.length / live;
-  if (ratio <= maxRatio) return { ok: true, live, deleting: tombstone.length, ratio };
-
-  return {
+  const live = (manifest?.objects ?? []).filter((o) => !o.deleted_at && !isRehearsalCanary(o)).length;
+  const deleting = tombstone.filter((o) => !isRehearsalCanary(o)).length;
+  const refuse = (ratio, what) => ({
     ok: false,
     live,
-    deleting: tombstone.length,
+    deleting,
     ratio,
     reason:
-      `This run would mark ${tombstone.length} of ${live} backed-up objects deleted ` +
+      `This run would mark ${what} backed-up objects deleted ` +
       `(${Math.round(ratio * 100)}%). That is more likely a short listing than a real ` +
       `mass deletion. Nothing has been changed offsite. If the deletion is genuine, ` +
-      `re-run with STORAGE_BACKUP_ALLOW_MASS_DELETE=true.`,
-  };
+      `re-run with STORAGE_BACKUP_ALLOW_MASS_DELETE=true (the Nightly Backup ` +
+      `storage_allow_mass_delete input, set to this environment).`,
+  });
+
+  if (live === 0) return { ok: true, live, deleting, ratio: 0 };
+  if (deleting >= live) return refuse(1, `all ${live} of ${live}`);
+  if (live < minCorpus) return { ok: true, live, deleting, ratio: 0 };
+
+  const ratio = deleting / live;
+  if (ratio <= maxRatio) return { ok: true, live, deleting, ratio };
+  return refuse(ratio, `${deleting} of ${live}`);
+}
+
+/** A rehearsal canary (`REHEARSAL_BUCKET/REHEARSAL_PREFIX/...`), not chapter content. */
+export function isRehearsalCanary(o) {
+  return o.bucket === REHEARSAL_BUCKET && String(o.path).startsWith(`${REHEARSAL_PREFIX}/`);
+}
+
+// -- Proving the mirror is where we think, and holds what it says ------------
+// A backup job that concluded `success` used to prove only that no command
+// failed. It could list nothing, write `object_count: 0`, read that back and
+// call it verified, or write a complete mirror into a bucket nobody restores
+// from, and the freshness watch would stay green (#2335). These checks turn a
+// successful run into "bytes we can name are where we expect them". They run
+// inside the backup job, which already holds the R2 credentials; the watch
+// holds only GITHUB_TOKEN by design, and reads the job's conclusion.
+
+/** Where a manifest lives. Recorded in the manifest and checked on the next run. */
+export function mirrorDestination({ environment, projectRef, bucket, prefix }) {
+  return { environment, supabase_project_ref: projectRef, bucket, prefix };
+}
+
+/**
+ * Refuse a previous manifest that isn't this run's.
+ *
+ * `null` means no manifest exists under the prefix. On a mirror that has run
+ * before, that means the destination moved: a typo'd `BACKUP_S3_BUCKET` reads
+ * an empty place, re-uploads everything there and looks green, while the real
+ * mirror ages out untouched. So a missing manifest is refused unless the run
+ * says the destination is new (`allowNewDestination`, the Nightly Backup
+ * `storage_new_destination` input).
+ *
+ * A manifest recording a different destination was copied from elsewhere or
+ * belongs to another environment, and is refused the same way. One with no
+ * `destination` predates the field (#2335) and is accepted; the run then
+ * writes it.
+ */
+export function assertManifestDestination({ manifest, expected, allowNewDestination = false, readOnly = false }) {
+  if (allowNewDestination) return;
+  // `verify` writes nothing and takes no override: it only reports.
+  const remedy = readOnly
+    ? "Check BACKUP_S3_BUCKET and --prefix; the nightly backup refuses this destination the same way."
+    : "Nothing has been written. If the destination is new or moved on purpose, re-run with " +
+      "STORAGE_BACKUP_NEW_DESTINATION=true (the Nightly Backup storage_new_destination input, set to this " +
+      "environment).";
+  if (manifest === null || manifest === undefined) {
+    throw new Error(
+      `No manifest at ${expected.prefix}/manifest.json in the configured bucket. On a mirror that has ` +
+        `run before, that means BACKUP_S3_BUCKET or the prefix changed, and a backup here would start a ` +
+        `fresh mirror somewhere nobody restores from. ${remedy}`,
+    );
+  }
+  const recorded = manifest.destination;
+  if (!recorded) return;
+  const differing = Object.keys(expected).filter((key) => recorded[key] !== expected[key]);
+  if (differing.length > 0) {
+    throw new Error(
+      `The manifest at ${expected.prefix}/manifest.json records a different destination ` +
+        `(${differing.join(", ")} differ${differing.length === 1 ? "s" : ""}). It was copied from ` +
+        `elsewhere or belongs to another environment. ${remedy}`,
+    );
+  }
+}
+
+/**
+ * Did `aws s3 cp` fail because the object doesn't exist, rather than because
+ * the read failed? The CLI reports a missing key from its HeadObject call as
+ * `An error occurred (404) when calling the HeadObject operation: Not Found`
+ * (or `Key "..." does not exist`). A 403, a timeout or a DNS failure is not
+ * "no manifest" and must never be read as one.
+ */
+export function isMissingObjectError(stderr) {
+  return /\(404\)|NoSuchKey|does not exist/.test(String(stderr ?? ""));
+}
+
+/**
+ * The key → size map of `aws s3api list-objects-v2 --query 'Contents[].[Key,Size]'
+ * --output json`: an array of `[key, size]` pairs. The CLI merges its pages
+ * before the query runs; an empty prefix has no `Contents`, which the query
+ * prints as `null` (or nothing), so both read as empty. The query keeps the
+ * output to about a tenth of the full document, which matters because
+ * `execFileSync` buffers all of it.
+ */
+export function parseOffsiteListing(stdout) {
+  const text = String(stdout ?? "").trim();
+  if (text === "" || text === "null") return new Map();
+  const pairs = JSON.parse(text);
+  if (!Array.isArray(pairs) || !pairs.every((p) => Array.isArray(p) && p.length === 2)) {
+    throw new Error("The offsite listing is not a list of [key, size] pairs; refusing to verify against it.");
+  }
+  return new Map(pairs.map(([key, size]) => [key, Number(size)]));
+}
+
+/**
+ * Every object the manifest lists, live or tombstoned, must exist offsite at
+ * its key. Tombstones count: a deleted file being restorable for the
+ * retention window is the promise the tombstone makes. Where the record kept
+ * how many bytes were written (`backed_up_bytes`), the offsite size must match
+ * it. A record from before that field is checked for existence only, because
+ * its `size` is Storage's listing, which can go stale between the listing and
+ * the download. This is a presence-and-length check, not a content hash. A
+ * record marked `lost_offsite_at` is skipped: planSync marked it on the run
+ * that found the loss, and that run failed. Returns the `offsiteProblem`s
+ * found; empty means verified.
+ */
+export function verifyOffsiteMirror({ manifest, prefix, listing }) {
+  return (manifest?.objects ?? []).map((record) => offsiteProblem(record, prefix, listing)).filter(Boolean);
+}
+
+/**
+ * Why one manifest record isn't offsite as recorded, or null when it is:
+ * `{ kind: "missing" | "size", record, message }`.
+ */
+export function offsiteProblem(record, prefix, listing) {
+  if (record.lost_offsite_at) return null;
+  const key = backupKey(prefix, record.bucket, record.path);
+  const where = `${record.bucket}/${record.path}`;
+  if (!listing.has(key)) return { kind: "missing", record, message: `${where} is in the manifest but not offsite` };
+  const want = record.backed_up_bytes;
+  if (typeof want === "number" && listing.get(key) !== want) {
+    return {
+      kind: "size",
+      record,
+      message: `${where} is ${listing.get(key)} bytes offsite, but ${want} were written`,
+    };
+  }
+  return null;
 }
 
 /**

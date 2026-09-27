@@ -64,7 +64,8 @@ export const CI_CHECKS = [
   "api-contract-check",
   // Migration filename + promotion/rollback doc validation.
   "migration-safety",
-  // Mobile lint + typecheck + Vitest unit tests.
+  // Mobile iOS production bundle (`expo export`, before any package build) +
+  // lint + typecheck + Vitest unit tests + `expo prebuild`.
   "mobile-validate",
   // `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`),
   // covering the gate and deploy scripts under both `scripts/` and
@@ -246,7 +247,7 @@ export const CI_CHECKS = [
   // executing it, and `migration-replay` applies only a PR's pending tail.
   //
   // Required since #2538. It was advisory with no recorded reason, while
-  // `AUTHORIZATION_MODEL.md` and the DB rollback playbook described it as the
+  // `authorization-model.md` and the DB rollback playbook described it as the
   // check that stops a bad migration; a red run that blocks nothing made both
   // untrue. What it asserts are security invariants, not style.
   //

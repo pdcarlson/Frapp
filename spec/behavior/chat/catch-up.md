@@ -250,7 +250,7 @@ Per-user dismissal wants `chat_message_actions`: already per-user, unique on
 `(message_id, user_id, action_type)`, upsertable like a poll vote (ADR-07), no new table.
 
 **But it is not private, and that matters here.** That table's `SELECT` policy
-([`AUTHORIZATION_MODEL.md`](../../../docs/internal/security/AUTHORIZATION_MODEL.md) § The policies
+([`authorization-model.md`](../../../docs/security/authorization-model.md) § The policies
 that do exist) lets every member who can read the channel read every action row on the message —
 `user_id` and `action_type` included — except a reaction, which is withheld from a member who
 blocked its author in that chapter. And both clients already hold a global Realtime subscription on

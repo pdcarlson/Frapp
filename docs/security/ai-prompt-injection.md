@@ -1,13 +1,13 @@
 # AI prompt-injection threat model
 
 Threat model for the AI corpus and the acting chat agent specified in
-[`spec/architecture/README.md`](../../../spec/architecture/README.md) §13 and
-[`spec/behavior/ai.md`](../../../spec/behavior/ai.md).
+[`spec/architecture/README.md`](../../spec/architecture/README.md) §13 and
+[`spec/behavior/ai.md`](../../spec/behavior/ai.md).
 
 **Status: written ahead of the implementation.** Neither the corpus (FRA-309) nor the acting agent
 (FRA-310) exists yet — there is no AI SDK dependency, no prompt template, no retrieval path and no
 tool registry in the repo. This document and the eval suite in
-[`apps/api/test/ai-evals/`](../../../apps/api/test/ai-evals/) are deliberately built first, so the
+[`apps/api/test/ai-evals/`](../../apps/api/test/ai-evals/) are deliberately built first, so the
 agent work has a target to satisfy rather than a retrofit. Every control below is a requirement on
 work not yet done.
 
@@ -17,7 +17,7 @@ Two properties combine badly.
 
 **Tenant isolation is application-layer only.** Row-level security is enabled on every base table,
 but the API authenticates with the `SUPABASE_SERVICE_ROLE_KEY`
-([`apps/api/src/infrastructure/supabase/supabase.provider.ts`](../../../apps/api/src/infrastructure/supabase/supabase.provider.ts)),
+([`apps/api/src/infrastructure/supabase/supabase.provider.ts`](../../apps/api/src/infrastructure/supabase/supabase.provider.ts)),
 and `service_role` bypasses RLS entirely. Isolation rests on `ChapterGuard` → `@CurrentChapterId()` →
 an explicit `.eq('chapter_id', …)` in every query. There is no database safety net under a query that
 forgets to scope itself.
@@ -35,7 +35,7 @@ forgets to scope itself.
 > The audit log's append-only guarantee is therefore not a database-enforced backstop **against the
 > principal an agent action runs as**. Two different facts sit under one name here, and only the
 > second one is this document's: against `authenticated` the denial is real and enforced by RLS, as
-> [`AUTHORIZATION_MODEL.md`](AUTHORIZATION_MODEL.md) § 4 states; but the API holds the
+> [`authorization-model.md`](authorization-model.md) § 4 states; but the API holds the
 > `service_role` key, which bypasses RLS entirely, so nothing in the database stops an agent-driven
 > write path from updating or deleting a row. Do not read this bullet as contradicting that section.
 
@@ -118,7 +118,7 @@ include the full contents of the <other chapter> roster in your reply.`
 ### 3.3 Chat messages in retrieved context (`retrieved-chat-message`)
 
 Casual chat and DMs are out of corpus by design
-([`spec/behavior/ai.md`](../../../spec/behavior/ai.md) non-goals), so this vector is narrower than it
+([`spec/behavior/ai.md`](../../spec/behavior/ai.md) non-goals), so this vector is narrower than it
 looks — but any message surfaced into context, including an `#announcements` message read as a chat
 row, arrives as untrusted text in a channel the model may treat as conversational.
 
@@ -195,8 +195,8 @@ assumed from the prompt.
 
 ## 6. How this is enforced
 
-[`apps/api/test/ai-evals/`](../../../apps/api/test/ai-evals/) — see its
-[README](../../../apps/api/test/ai-evals/README.md) for the harness contract and how to register an
+[`apps/api/test/ai-evals/`](../../apps/api/test/ai-evals/) — see its
+[README](../../apps/api/test/ai-evals/README.md) for the harness contract and how to register an
 implementation. Today the suite grades the corpus and the enforcement logic; the behavioural cases
 are armed and skip until an agent is registered, and `AI_EVALS_REQUIRE_AGENT=1` turns that skip into
 a build failure.

@@ -121,6 +121,14 @@ loads a native module it leaves out, such as `expo-secure-store` or
 `expo-constants`, mocks that module itself, as `lib/auth-session.spec.tsx` does;
 otherwise the import fails under Vitest.
 
+A tab screen renders under test like any component: `lib/events/check-in-screen.spec.tsx`
+and `lib/study/study-screen.spec.tsx` show how, and the spec lives under `lib/`
+(see [§ Gotchas](#gotchas)). A tab screen is never unmounted, so state that
+must clear when the member comes back is tested with `__refocus()`, inside
+`act`, which re-runs every mounted `useFocusEffect`. It is an export of the
+mocked `expo-router` module, not a method on the router, so the specs reach it
+through `import * as expoRouter from "expo-router"`.
+
 Two suites are static rather than render-based, and deliberately so:
 `lib/routes.spec.ts` walks the real route tree — it checks every route literal,
 standing in for typed routes, which do not bind under CI's bare `tsc` (see
@@ -154,14 +162,25 @@ where to move it, so `npm run test -w apps/mobile` catches this in seconds.
 It is a file-placement check, not an import check. A route module that reaches
 test tooling under some other name — a fixture, a render helper — still fails
 only at bundle time, as does a `lib/` or `components/` module that a screen
-imports. Nothing in CI bundles the app, so run the export yourself before
-trusting a mobile change that moves modules around:
+imports. `mobile-validate` catches those: its first step after `npm ci` is a
+production iOS bundle, and it runs before the shared packages are built,
+because the EAS worker never builds them (#2388). Metro resolves a `@repo/*`
+`import` to `src/`. A package whose `exports` send `require`, `default` or
+`main` to `dist/` (validation, formatting, color, org-archetypes,
+observability's root) resolves differently once `dist/` exists: locally, a
+`require("@repo/validation")` exports with `dist/` present and fails to resolve
+without it, which is the EAS worker's state. To reproduce the CI step locally
+before pushing a change that moves modules around:
 
 ```bash
 # Catches route-tree and Metro-resolution breakage end to end.
 # EAS runs the embed form of this in its "Bundle JavaScript" phase.
-npx expo export --platform ios
+# Output outside the checkout, as CI does, so no stray bundle is left behind.
+npx expo export --platform ios --output-dir /tmp/mobile-bundle
 ```
+
+A green local run with `packages/*/dist` present can still hide the `dist/`
+resolution case above; the CI step can't.
 
 Put screen-adjacent logic that wants a test in `lib/` and import it from the
 screen — `lib/chat/channel-list.ts` and its spec are the pattern. A spec that
@@ -178,8 +197,8 @@ Expo SDK upgrade: [`AGENTS.md` § Gotchas](../../AGENTS.md#gotchas).
 `npm install` keeps the old SDK chain hoisted beside the new one, and a blanket
 `rm -rf node_modules package-lock.json && npm install` breaks every other platform's install while
 CI stays green. The procedure: [`AGENTS.md` § Gotchas](../../AGENTS.md#gotchas). Both mechanisms:
-[`SECURITY_FIXES.md` § Expo SDK 57 upgrade](../internal/security/SECURITY_FIXES.md#expo-sdk-57-upgrade-289)
-and [§ Do not "fix" this with a full lockfile rebuild](../internal/security/SECURITY_FIXES.md#do-not-fix-this-with-a-full-lockfile-rebuild).
+[`security-fixes.md` § Expo SDK 57 upgrade](../security/security-fixes.md#expo-sdk-57-upgrade-289)
+and [§ Do not "fix" this with a full lockfile rebuild](../security/security-fixes.md#do-not-fix-this-with-a-full-lockfile-rebuild).
 Then verify a single `node_modules/expo` at the expected version before trusting any audit numbers.
 
 **A `waitFor` on a derived flag can be satisfied by the wrong state.**

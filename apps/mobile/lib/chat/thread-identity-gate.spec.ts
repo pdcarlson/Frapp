@@ -14,8 +14,9 @@ import { describe, expect, it } from "vitest";
  * else's and their own reaction chips read as not theirs. The rows now take a
  * non-nullable `viewerId`, which typecheck enforces; what typecheck can't see
  * is that the screen gates the list on identity at all, rather than, say,
- * passing `viewerId ?? ""`. A screen has no render harness yet (#2416), so
- * this reads the source, the way `thread-mute-menu-wiring.spec.ts` does.
+ * passing `viewerId ?? ""`. Until the thread screen is rendered under test
+ * (#2705), this reads the source, the way `thread-mute-menu-wiring.spec.ts`
+ * does.
  */
 const MOBILE_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const THREAD = readFileSync(

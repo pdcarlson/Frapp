@@ -860,6 +860,41 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Nothing else in CI hands the module graph to Metro; EAS's "Bundle
+      # JavaScript" phase was the first place that did (#2388). That is how
+      # #2347 shipped: a spec under app/ became a route, Metro followed its
+      # vitest import into Vite's module runner, and an iOS production build
+      # died with a bare "Unknown error" while lint, tsc and Vitest were green.
+      # routes.spec.ts now blocks that file placement, not the class: a helper
+      # or a lib/ module a screen imports can still pull unbundleable code in,
+      # and a `@repo/*` exports change can break only Metro's resolution.
+      #
+      # It runs before "Build shared packages" on purpose. The EAS worker
+      # installs from this lockfile and never builds the packages, so no
+      # packages/*/dist exists there. An `import` of `@repo/*` resolves to src/
+      # either way, but a package whose `exports` send `require`/`default`/
+      # `main` to dist/ (validation, formatting, color, org-archetypes,
+      # observability's root) resolves differently once dist/ exists: a local
+      # `require("@repo/validation")` exports with dist/ present and fails to
+      # resolve without it, the state the EAS worker is in.
+      # scripts/ci/__tests__/mobile-bundle-gate.test.mjs locks the order.
+      #
+      # `expo export` builds for production by default (minified, Hermes
+      # bytecode); never add `--dev`, which its parser reads as true even as
+      # `--dev=false`. No EAS_BUILD_PROFILE is set, so app.config.js skips its
+      # production fences and needs no secrets; no EXPO_PUBLIC_* value is set
+      # either, so nothing real is inlined. The output goes to the runner's
+      # temp dir so the checkout stays as `npm ci` left it and no later step
+      # can upload, cache or commit a stray bundle. iOS only: the app's own
+      # sources have no .ios/.android split, so the second platform would
+      # double the step for third-party files.
+      - name: App bundles for iOS without prebuilt packages (expo export)
+        working-directory: apps/mobile
+        env:
+          CI: "1"
+          EXPO_NO_TELEMETRY: "1"
+        run: npx expo export --platform ios --output-dir "$RUNNER_TEMP/mobile-bundle"
+
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build
 
@@ -891,7 +926,7 @@ jobs:
       # prebuild time is a build that fails on EAS's runner instead of here —
       # which is how a root `overrides` entry broke every iOS build without a
       # single red check (`@xmldom/xmldom` 0.9 under `@expo/plist`, see
-      # docs/internal/security/SECURITY_FIXES.md). `--no-install` skips
+      # docs/security/security-fixes.md). `--no-install` skips
       # CocoaPods and the Gradle wrapper, so this needs no native toolchain
       # and finishes in seconds. The tree is not committed; `--clean` keeps a
       # cached runner from masking a plugin that only works incrementally.
@@ -924,7 +959,7 @@ jobs:
   # allowlisted in scripts/npm-audit-allowlist.json — entries need a reason, a
   # tracking issue, and an expiry, so known debt is visible and time-boxed
   # while new advisories block immediately. See
-  # docs/internal/security/SECURITY_FIXES.md § npm audit sweep + CI gate.
+  # docs/security/security-fixes.md § npm audit sweep + CI gate.
   dependency-audit:
     runs-on: ubuntu-latest
     permissions:
