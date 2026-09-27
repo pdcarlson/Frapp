@@ -312,23 +312,31 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 3.88%** duplicated lines (1,030 clones, 12,393 duplicated lines, across
-  1,428 files analysed; 12,393 / 319,277 = 3.882%) — measured 2026-09-17 with
-  `npm run check:duplication` after folding the three inline `chapter_audit_log` writers into
-  `ChapterAuditLogService.record` (#2167), which removed two clone pairs. `main` measured 3.89%
-  / 1,032 clones / 12,422 duplicated lines the same day, so 0.01 of the figure is this change and
-  the rest is slack the ratio had already shed.
-- **Threshold: 4.1%.** Ratcheted from 4.3% on 2026-09-17. The 0.22 of headroom is deliberate:
-  the measured figure has ranged 3.89–4.24% across the seven days to 2026-09-12, so a threshold
-  set just above 3.88% would redden on ordinary drift rather than on a real copy-paste.
+- **Current measurement: 4.25%** duplicated lines (1,244 clones, 15,479 duplicated lines, across
+  1,552 files analysed; 15,479 / 363,931 = 4.253%) — measured 2026-09-27 with
+  `npm run check:duplication` on jscpd **5.3.2**. That release changed the unit, not the code:
+  it fixed an off-by-one that counted every clone one line short (`end - start` instead of an
+  inclusive range). The same tree on 5.3.1 measures 14,235 lines, 3.91%, and 15,479 − 14,235 is
+  exactly the 1,244 clones. **Every figure below dated before 2026-09-27 is in 5.3.1's unit** and
+  reads about one line per clone low against a current run.
+- **Threshold: 4.4%.** Re-based from 4.1% on 2026-09-27 for that unit change (#2726), which is
+  not a loosening: 4.1% in the old unit is 14,921 lines on today's tree, which 5.3.2 counts as
+  16,165, or 4.44%, and 4.4% is that figure rounded down. Before that it was ratcheted from 4.3%
+  to 4.1% on 2026-09-17 against a 3.88% measurement (1,030 clones, 12,393 lines, 1,428 files,
+  old unit) after folding the three inline `chapter_audit_log` writers into
+  `ChapterAuditLogService.record` (#2167). The figure ranged 3.89–4.24% (old unit) across the
+  seven days to 2026-09-12, which is why the threshold keeps headroom rather than sitting just
+  above the measurement.
 - The **2026-09-10 figure** was 4.16% (977 clones, 11,833 duplicated lines, 1,294 files;
   11,833 / 284,707 = 4.156%), measured after combining the identity-query / named-event extract
   with first-party Sentry trace origins and the shared `/task` `/event` `/hours` `card_posted`
   cases. Kept as the previous datum, not as a baseline to compare a current run against — the
   denominator has grown since.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
-  make a red run green. Set the new value from a *measured* run, never from a guess, and leave
-  enough headroom that ordinary drift does not redden it.
+  make a red run green. The one exception is a jscpd release that changes how lines are counted,
+  as 5.3.2 did: re-base to the same tree measured under both versions, and record both here.
+  Set the new value from a *measured* run, never from a guess, and leave enough headroom that
+  ordinary drift does not redden it.
 - History: the gate landed with a **recorded** 4.37% (556 clones across 845 files) and a 4.5%
   threshold. **Those recorded figures do not reproduce** — re-running jscpd at `df7c667`, the
   commit that added `.jscpd.json`, against its own committed config measures 4.27% / 801 clones /
