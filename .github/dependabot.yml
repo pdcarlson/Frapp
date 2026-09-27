@@ -103,6 +103,20 @@ updates:
         patterns:
           - "vitest"
           - "@vitest/coverage-v8"
+      # `@sentry/nestjs` and `@sentry/nextjs` each pin `@sentry/core` and
+      # `@sentry/node` EXACTLY, so moving one alone installs a second SDK tree.
+      # Their minors and patches already travel together in
+      # `npm-minor-and-patch` below. This group does the same for MAJORS,
+      # which that group excludes: #2712 and #2714 arrived as two
+      # single-package Sentry 11 PRs, and neither could go green (#2722).
+      # `@sentry/react-native` is on its own line (8.x on `@sentry/core` 10)
+      # and stays out. Majors only, so no package can match two groups.
+      sentry:
+        patterns:
+          - "@sentry/nestjs"
+          - "@sentry/nextjs"
+        update-types:
+          - major
       npm-minor-and-patch:
         patterns:
           - "*"

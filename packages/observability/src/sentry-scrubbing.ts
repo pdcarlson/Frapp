@@ -124,11 +124,13 @@ export interface ScrubbableEvent {
 }
 
 /**
- * Request headers worth keeping. Everything else is dropped unread.
+ * Request headers worth keeping, matched by exact name. Everything else is
+ * dropped unread.
  *
- * Exported because `sentryDataCollection()` hands the same list to the SDK as
- * its `httpHeaders.request` allowlist, so collection and scrubbing cannot
- * disagree about which headers are worth having.
+ * Exported for `sentryDataCollection()`, which hands the same list to the SDK
+ * as its `httpHeaders.request` allowlist. The SDK matches that list by
+ * substring, so it collects a little more than this keeps; the exact match
+ * here is the one that decides.
  */
 export const SENTRY_REQUEST_HEADER_ALLOWLIST = [
   'content-type',

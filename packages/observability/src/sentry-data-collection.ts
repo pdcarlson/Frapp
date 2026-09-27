@@ -4,9 +4,15 @@ import { SENTRY_REQUEST_HEADER_ALLOWLIST } from "./sentry-scrubbing";
  * Structural copy of the Sentry SDK's `DataCollection` option (v11,
  * `@sentry/core` `types/datacollection.d.ts`), narrowed to the values this
  * repo ships. This package cannot name `@sentry/*` types (see
- * `apps/api/src/infrastructure/observability/sentry-scrubbing.ts`), so each
- * `Sentry.init` call site assigns the result to the real option type, and a
- * changed SDK shape fails to compile there.
+ * `apps/api/src/infrastructure/observability/sentry-scrubbing.ts`).
+ *
+ * **The compiler does not guard this against SDK changes.** Every field of
+ * the SDK type is optional and this value reaches it as a function result
+ * (the Next builders also cast), so a category the SDK renames or adds still
+ * compiles and silently resolves to its default, which is on. Only a changed
+ * value type on an existing key fails `check-types`. What does catch a
+ * renamed or new category is the runtime read-back of the resolved options
+ * in the API and landing integration specs.
  */
 export interface SentryDataCollection {
   userInfo: false;
@@ -44,10 +50,13 @@ export interface SentryDataCollection {
  *   fill `user.*`. The API sets a pseudonymous `user.id` itself.
  * - `cookies: false`: stricter. v10 collected cookies and filtered them by
  *   name; the scrubber drops `request.cookies` whole.
- * - `httpHeaders`: stricter. Request headers are the scrubber's own
- *   allowlist, and any other header name arrives valued `[Filtered]` (the
- *   SDK's allow mode keeps the key), which the scrubber then drops. Response
- *   headers are off, because no scrubber rule keeps one.
+ * - `httpHeaders`: stricter. Request headers use the scrubber's allowlist
+ *   as the SDK's `allow` list. The SDK matches allow terms **by substring**,
+ *   so it also collects a header whose name merely contains one
+ *   (`x-original-content-type`); every other header arrives valued
+ *   `[Filtered]` (allow mode keeps the key). The scrubber's exact-name match
+ *   drops both, so it remains the rule that decides which headers leave.
+ *   Response headers are off, because no scrubber rule keeps one.
  * - `httpBodies: []`: same as v10. No body in either direction.
  * - `urlQueryParams: false`: stricter. The scrubber cuts every URL to its
  *   path and drops `query_string`, so the SDK no longer collects one.

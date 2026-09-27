@@ -11,6 +11,19 @@ import {
 
 const FIXTURE_DSN = 'https://fixturekey@o0.ingest.example.invalid/1';
 
+// Call-through wrappers, so a test can see what the two replacement
+// integrations are built with. `jest.spyOn` cannot redefine them: the
+// compiled namespace import exposes the SDK's exports as fixed getters.
+jest.mock('@sentry/nestjs', () => {
+  const actual =
+    jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs');
+  return {
+    ...actual,
+    httpIntegration: jest.fn(actual.httpIntegration),
+    nativeNodeFetchIntegration: jest.fn(actual.nativeNodeFetchIntegration),
+  };
+});
+
 describe('buildSentryOptions — Node tracer ownership', () => {
   const options = () => buildSentryOptions(FIXTURE_DSN);
 
@@ -56,6 +69,20 @@ describe('buildSentryOptions — Node tracer ownership', () => {
     expect(out[1]?.name).toBe('NodeFetch');
     expect(out[1]).not.toBe(fetch);
     expect(out[2]).toBe(nest);
+  });
+
+  it('builds the replacements with the safe option objects', () => {
+    // The constants are asserted above; this proves they reach the SDK. A
+    // swap to `Sentry.httpIntegration()` with no argument keeps the name and
+    // returns a new object, so the name checks alone pass it, while the SDK
+    // falls back to its own defaults (bodies up to 'medium').
+    const http = jest.mocked(Sentry.httpIntegration);
+    const fetch = jest.mocked(Sentry.nativeNodeFetchIntegration);
+    http.mockClear();
+    fetch.mockClear();
+    withSafeSentryIntegrations([{ name: 'Http' }, { name: 'NodeFetch' }]);
+    expect(http.mock.calls).toEqual([[SENTRY_HTTP_INTEGRATION_OPTIONS]]);
+    expect(fetch.mock.calls).toEqual([[SENTRY_NODE_FETCH_INTEGRATION_OPTIONS]]);
   });
 
   it("replaces integrations the SDK's real default set still contains", () => {

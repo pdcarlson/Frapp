@@ -34,7 +34,7 @@ These identifiers are distinct. Do not copy one into another.
 | Identifier | Who mints it | Format | Where it travels | Must not |
 | --- | --- | --- | --- | --- |
 | `x-request-id` | Web/mobile `createFrappClient` and health probes (`withRequestIdInit`); API `requestIdMiddleware` honours inbound, else mints `req_<uuid>` | Opaque string | Request header, response header, internal logs, error JSON `requestId`, Sentry request headers (allowlisted). CORS `exposedHeaders` so browser JS can read the echo. | Be replaced by a Sentry/OTEL trace id; be a credential |
-| Sentry trace id | Sentry SDK (Node trace provider on the API) | Sentry/OTEL trace id | Sentry transactions/spans only | Be used as `x-request-id` |
+| Sentry trace id | Sentry SDK (its own tracing on the API, no OpenTelemetry provider) | Sentry/OTEL trace id | Sentry transactions/spans only | Be used as `x-request-id` |
 | Sentry event id | Sentry, per error event | Sentry event id | Sentry; optional PostHog [`sentry-error-correlated`](#privacy-and-replay) marker | Be treated as a user id |
 | PostHog `distinct_id` | API `hmac_sha256(salt, user_id)` | 64 lowercase hex | PostHog events; web and mobile Sentry `user.id` via identity | Be computed in a client bundle |
 | PostHog chapter group | API `hmac_sha256(salt, chapter_id)` | 64 lowercase hex | PostHog groups; activation-funnel `distinct_id` | Be a raw `chapter_id` |
@@ -44,7 +44,7 @@ These identifiers are distinct. Do not copy one into another.
 
 **Client product flags.** Web and mobile `isProductFlagEnabled` (via `@repo/observability/identified-posthog`) evaluates only the HMAC hex context, matching API `PosthogRuntime.isFeatureEnabled`. It returns `false` unless the bound adapter's `getDistinctId()` is 64-char lowercase hex (`isPseudonymHex`), in addition to chapter opt-out. A UUID, email, or missing distinct id never calls through as enabled, even if the vendor SDK would return true. After a successful identify (and chapter group when present) the adapter reloads flags against that hex context before the next evaluation is treated as settled. Landing stays flag-disabled (`advanced_disable_feature_flags`). Flags are not an authorization input — `can()` / guards still decide.
 
-On the API, Sentry owns the Node trace provider. Integrate with its OpenTelemetry context; do not install a second global tracer.
+On the API, Sentry owns tracing, and under SDK v11 it registers no OpenTelemetry tracer provider (details under Request Tracing below). Create spans through the Sentry SDK, not `@opentelemetry/api`, whose spans would never reach Sentry; do not install a second global tracer.
 
 ## Privacy and replay
 
@@ -176,7 +176,7 @@ The two hooks cannot share one function. A transaction carries its trace payload
 - **Free text is swept, not dropped.** An exception message is the payload worth having, so emails, bearer tokens, JWTs, key-shaped strings, IPs, and UUIDs are rewritten in place. UUIDs become their HMAC rather than a placeholder, so a message stays correlatable with the event's own `user`/`chapter` values — the hashes are byte-identical.
 - **Fail closed, twice.** With no salt configured the identifiers are removed rather than sent raw, and any throw inside the scrubber drops the event entirely. Losing an error report is preferable to emitting an uninspected payload.
 
-What the SDK collects in the first place is set by `dataCollection`, and every category is named, because Sentry SDK v11 defaults each one to on. The API and both Next apps share one value, `sentryDataCollection()` in `@repo/observability`, which collects at the source only what the scrubber would keep. No cookies, bodies, query strings, response headers, stack-frame locals, database values, queue arguments, or user info are collected. Request headers are limited to the scrubber's own allowlist (`content-type`, `x-request-id`). The comment on `sentryDataCollection()` gives the reason for each value. It is a floor, not a substitute: the scrubber's allowlists and free-text sweep still decide what leaves. Mobile is still on `@sentry/react-native` 8 and still sets `sendDefaultPii: false`, the v10 key-name filter: `authorization` and `cookie` arrive as `[Filtered]`, but a value under an innocuously-named key passes through to the scrubber.
+What the SDK collects in the first place is set by `dataCollection`, and every category is named, because Sentry SDK v11 defaults each one to on. The API and both Next apps share one value, `sentryDataCollection()` in `@repo/observability`, which collects at the source only what the scrubber would keep. No cookies, bodies, query strings, response headers, stack-frame locals, database values, queue arguments, or user info are collected. Request headers use the scrubber's own allowlist (`content-type`, `x-request-id`) as the SDK's allow list; the SDK matches it by substring, so the scrubber's exact-name match is what decides which headers leave. The comment on `sentryDataCollection()` gives the reason for each value. It is a floor, not a substitute: the scrubber's allowlists and free-text sweep still decide what leaves. Mobile is still on `@sentry/react-native` 8 and still sets `sendDefaultPii: false`, the v10 key-name filter: `authorization` and `cookie` arrive as `[Filtered]`, but a value under an innocuously-named key passes through to the scrubber.
 
 ## Metrics
 

@@ -87,7 +87,8 @@ export function withSafeSentryIntegrations(
  * out-of-range value falls back to `0.1` and is logged at boot (#2040).
  *
  * Init itself lives in `instrument.ts`, imported first from `main.ts`, so
- * Nest/HTTP OpenTelemetry patches apply before other modules load.
+ * the SDK's load-time module hooks are registered before any `@nestjs/*` or
+ * Express module loads (see that file's header).
  */
 export function buildSentryOptions(dsn: string): NodeOptions {
   return {

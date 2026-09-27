@@ -24,11 +24,9 @@
 export {
   createSentryScrubber,
   NO_PSEUDONYMS,
-  SENTRY_REQUEST_HEADER_ALLOWLIST,
   stripAuthority,
 } from "./sentry-scrubbing";
 export { sentryDataCollection } from "./sentry-data-collection";
-export type { SentryDataCollection } from "./sentry-data-collection";
 export type {
   ScrubbableEvent,
   SentryPseudonymizer,
