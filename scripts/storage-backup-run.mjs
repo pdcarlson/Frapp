@@ -503,9 +503,14 @@ async function runVerify(opts) {
     const loss = manifest.last_offsite_loss;
     if (loss) {
       console.log(`Last offsite loss, found ${loss.found_at} (${loss.objects.length} object(s)):`);
-      for (const o of loss.objects) {
-        console.log(`  - ${o.bucket}/${o.path}: ${PROBLEM_TEXT[o.kind]}; ${o.recovered ? "re-uploaded" : "unrecoverable"}`);
-      }
+      console.log(
+        describeObjects(
+          loss.objects.map((o) => ({
+            record: o,
+            text: `${PROBLEM_TEXT[o.kind]}; ${o.recovered ? "re-uploaded" : "unrecoverable"}`,
+          })),
+        ),
+      );
     }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
