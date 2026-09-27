@@ -2,7 +2,8 @@ import { LegalDocument } from "../components/legal-document";
 
 // A change to the text below moves `lastUpdated` when it is material, and
 // updates this page's pin in scripts/ci/__tests__/legal-policy-version.test.mjs
-// either way. Nobody accepts this notice, so LEGAL_POLICY_VERSION doesn't move.
+// either way. Nobody accepts this notice, so LEGAL_POLICY_VERSION doesn't move
+// (spec/behavior/legal.md § Acceptance record).
 
 const sections = [
   {

@@ -12,6 +12,10 @@
 // - `LEGAL_POLICY_VERSION` is `YYYY-MM`, the month of the newer of the Terms
 //   and Privacy `lastUpdated`. The acceptance checkbox covers both pages, so
 //   either one moving moves the constant, which asks every member again.
+// - A second material revision inside a month whose version is already taken
+//   can't move a truthful date, so it takes a revision suffix instead:
+//   `2026-09.2`, then `2026-09.3`. Any other value asks nobody again, and the
+//   members who accepted the earlier text would keep a stamp naming it.
 // - FERPA is a notice nobody accepts, so it has a date but no constant.
 // - Each page's text is pinned below with its date. Editing a page's text
 //   fails until its pin is updated, which forces the call nothing else made:
@@ -130,7 +134,13 @@ export function textFingerprint(source) {
   return createHash("sha256").update(served).digest("hex").slice(0, 16);
 }
 
-/** The constant the pages' dates require: the newer accepted page's month. */
+/** `2026-09` or `2026-09.2` → `{ month: "2026-09", revision: 2 }`; null otherwise. */
+export function parsePolicyVersion(version) {
+  const match = /^(\d{4}-(?:0[1-9]|1[0-2]))(?:\.([2-9]|[1-9]\d+))?$/.exec(version);
+  return match ? { month: match[1], revision: match[2] ? Number(match[2]) : 1 } : null;
+}
+
+/** The month the pages' dates require of the constant: the newer accepted page's. */
 export function requiredPolicyVersion(datesByPage) {
   return ACCEPTED_PAGES.map((page) => monthOf(datesByPage[page])).sort().at(-1);
 }
@@ -143,17 +153,19 @@ function readPages() {
 
 test("LEGAL_POLICY_VERSION is the month of the newer Terms or Privacy date", () => {
   const version = readPolicyVersion(readRepo(VALIDATION));
-  assert.match(version, /^\d{4}-(0[1-9]|1[0-2])$/, "LEGAL_POLICY_VERSION must be YYYY-MM");
+  const parsed = parsePolicyVersion(version);
+  assert.ok(parsed, `LEGAL_POLICY_VERSION must be YYYY-MM, or YYYY-MM.N (N ≥ 2) for a later revision in the same month; got ${JSON.stringify(version)}`);
   const pages = readPages();
   const dates = Object.fromEntries(
     ACCEPTED_PAGES.map((page) => [page, readLastUpdated(pages[page])]),
   );
   assert.equal(
-    version,
+    parsed.month,
     requiredPolicyVersion(dates),
-    `LEGAL_POLICY_VERSION (${version}) must equal the month of the newer of Terms (${dates.terms}) and Privacy (${dates.privacy}). ` +
+    `LEGAL_POLICY_VERSION (${version}) must be the month of the newer of Terms (${dates.terms}) and Privacy (${dates.privacy}). ` +
       "A page whose date moved needs the constant moved with it, which asks every member to accept again; " +
-      "a constant that moved needs the page date that justifies it. spec/behavior/legal.md § Acceptance record.",
+      "a constant that moved needs the page date that justifies it. A second material revision in the same month " +
+      "keeps the date and takes the next suffix (2026-09 → 2026-09.2). spec/behavior/legal.md § Acceptance record.",
   );
 });
 
@@ -169,7 +181,9 @@ for (const [page, pin] of Object.entries(PINNED_PAGES)) {
       pin.fingerprint,
       `${pin.path}: the served text changed (fingerprint ${fingerprint}, pinned ${pin.fingerprint}). ` +
         "Decide whether the change is material. If it is, move lastUpdated" +
-        (accepted ? " and LEGAL_POLICY_VERSION (which asks every member to accept again)" : "") +
+        (accepted
+          ? " and LEGAL_POLICY_VERSION (which asks every member to accept again); if lastUpdated already names this month, keep it and give the constant the next suffix (2026-09 → 2026-09.2)"
+          : "") +
         ". If it isn't, leave the date alone. Either way, update this page's row in PINNED_PAGES " +
         "(scripts/ci/__tests__/legal-policy-version.test.mjs) and say which you chose in the PR.",
     );
@@ -191,6 +205,14 @@ test("the rules fail on the drifts they exist for", () => {
   // A year boundary compares by year first.
   assert.equal(requiredPolicyVersion({ terms: "December 2026", privacy: "January 2027" }), "2027-01");
   assert.throws(() => monthOf("Sept 2026"), /<Month> <YYYY>/);
+
+  // A second material revision in a month already used takes a suffix.
+  assert.deepEqual(parsePolicyVersion("2026-09"), { month: "2026-09", revision: 1 });
+  assert.deepEqual(parsePolicyVersion("2026-09.2"), { month: "2026-09", revision: 2 });
+  assert.deepEqual(parsePolicyVersion("2026-09.10"), { month: "2026-09", revision: 10 });
+  for (const bad of ["2026-09.1", "2026-09.0", "2026-09.02", "2026-09b", "2026-13", "2026-9", "2026-09-27"]) {
+    assert.equal(parsePolicyVersion(bad), null, bad);
+  }
   assert.throws(() => monthOf("2026-09"), /<Month> <YYYY>/);
 
   // The #2480 case: the text moves and the date doesn't.
