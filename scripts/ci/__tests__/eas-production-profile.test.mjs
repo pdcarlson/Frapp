@@ -39,16 +39,9 @@ export const PREVIEW_API_URL = "https://api-staging.frapp.live";
 export const PRODUCTION_SENTRY_ENV = "production";
 export const ANDROID_SUBMIT_TRACK = "internal";
 
-// THE iOS BUILD IMAGE. Apple's TN3187: an app built with the iOS 27 SDK
-// has to adopt the UIScene life cycle or it does not launch, and SDK 57's
-// prebuild still emits the AppDelegate window. With no `image`, EAS builds
-// on `auto`, whose SDK alias EAS moves to a newer Xcode when it ships one
-// (it moved `sdk-54` to Xcode 26). So every profile pins an exact Xcode 26
-// image until the app adopts scenes. Why, and when it has to move:
-// spec/environments/README.md § Mobile (EAS).
+// Every profile builds iOS on this exact image, never an alias. Why, and
+// when it has to move: spec/environments/README.md § Mobile (EAS).
 export const IOS_BUILD_IMAGE = "macos-tahoe-26.5-xcode-26.6";
-const IOS_XCODE_MAJOR = 26;
-const EAS_IMAGE_ALIASES = /^(auto|default|latest|sdk-\d+)$/;
 
 export function parseEasJson(text) {
   let parsed;
@@ -123,12 +116,7 @@ export function iosImageOf(eas, profile, seen = new Set()) {
     : undefined;
 }
 
-export function xcodeMajorOf(image) {
-  const match = /-xcode-(\d+)(?:\.\d+)*$/.exec(String(image));
-  return match ? Number(match[1]) : null;
-}
-
-/** Every build profile pins the one exact Xcode 26 image; no alias. */
+/** Every build profile pins exactly IOS_BUILD_IMAGE. */
 export function iosImageProblems(eas) {
   const problems = [];
   const profiles = Object.keys(eas?.build ?? {});
@@ -137,14 +125,6 @@ export function iosImageProblems(eas) {
     const image = iosImageOf(eas, profile);
     if (image === undefined) {
       problems.push(`build.${profile}.ios.image must be set, or EAS builds on auto`);
-      continue;
-    }
-    if (EAS_IMAGE_ALIASES.test(String(image))) {
-      problems.push(`build.${profile}.ios.image must be an exact image, not the alias ${image}`);
-      continue;
-    }
-    if (xcodeMajorOf(image) !== IOS_XCODE_MAJOR) {
-      problems.push(`build.${profile}.ios.image must be an Xcode ${IOS_XCODE_MAJOR} image, not ${image}`);
       continue;
     }
     if (image !== IOS_BUILD_IMAGE) {
@@ -210,10 +190,6 @@ export function lockSelfProblems(source) {
   const image = source.match(/^export const IOS_BUILD_IMAGE = "([^"]+)";?$/m);
   if (!image || !/^macos-[a-z]+-\d+(\.\d+)*-xcode-26(\.\d+)*$/.test(image[1])) {
     problems.push("IOS_BUILD_IMAGE must stay an exact Xcode 26 image");
-  }
-  const major = source.match(/^const IOS_XCODE_MAJOR = (\d+);?$/m);
-  if (!major || major[1] !== "26") {
-    problems.push("IOS_XCODE_MAJOR must stay 26 until the app adopts UIScene");
   }
   const easPath = source.match(/^const EAS_JSON = "([^"]+)";?$/m);
   if (!easPath || easPath[1] !== "apps/mobile/eas.json") {
@@ -284,33 +260,22 @@ test("dropping a profile's iOS image fails", () => {
   );
 });
 
-test("an image alias fails", () => {
-  for (const alias of ["auto", "latest", "sdk-57", "default"]) {
+test("an alias or any other image than the pinned one fails", () => {
+  for (const image of [
+    "auto",
+    "latest",
+    "sdk-57",
+    "macos-tahoe-27.0-xcode-27.0",
+    "macos-tahoe-26.4-xcode-26.4",
+  ]) {
     const eas = fixtureEas();
-    eas.build.production.ios.image = alias;
-    assert.ok(
-      iosImageProblems(eas).some((problem) => problem.includes(`alias ${alias}`)),
-      alias,
+    eas.build.development.ios.image = image;
+    assert.deepEqual(
+      iosImageProblems(eas),
+      [`build.development.ios.image must be ${IOS_BUILD_IMAGE}, not ${image}`],
+      image,
     );
   }
-});
-
-test("an Xcode 27 image fails", () => {
-  const eas = fixtureEas();
-  eas.build.production.ios.image = "macos-tahoe-27.0-xcode-27.0";
-  assert.ok(
-    iosImageProblems(eas).some((problem) => problem.includes("Xcode 26 image")),
-    iosImageProblems(eas).join("; "),
-  );
-});
-
-test("another Xcode 26 image than the pinned one fails", () => {
-  const eas = fixtureEas();
-  eas.build.development.ios.image = "macos-tahoe-26.4-xcode-26.4";
-  assert.ok(
-    iosImageProblems(eas).some((problem) => problem.includes(IOS_BUILD_IMAGE)),
-    iosImageProblems(eas).join("; "),
-  );
 });
 
 test("a profile inherits its iOS image through extends", () => {
@@ -322,12 +287,6 @@ test("a profile inherits its iOS image through extends", () => {
   eas.build.production.extends = "preview";
   delete eas.build.production.ios;
   assert.equal(iosImageOf(eas, "production"), undefined);
-});
-
-test("xcodeMajorOf reads the Xcode major off an image name", () => {
-  assert.equal(xcodeMajorOf(IOS_BUILD_IMAGE), 26);
-  assert.equal(xcodeMajorOf("macos-sequoia-15.6-xcode-16.4"), 16);
-  assert.equal(xcodeMajorOf("sdk-57"), null);
 });
 
 test("retargeting production at the staging host fails", () => {
@@ -446,19 +405,6 @@ test("moving IOS_BUILD_IMAGE to an Xcode 27 image fails", () => {
   );
   assert.ok(
     problems.some((problem) => problem.includes("IOS_BUILD_IMAGE")),
-    problems.join("; "),
-  );
-});
-
-test("raising IOS_XCODE_MAJOR fails", () => {
-  const problems = lockSelfProblems(
-    readFileSync(LOCK, "utf8").replace(
-      "const IOS_XCODE_MAJOR = 26;",
-      "const IOS_XCODE_MAJOR = 27;",
-    ),
-  );
-  assert.ok(
-    problems.some((problem) => problem.includes("IOS_XCODE_MAJOR")),
     problems.join("; "),
   );
 });
