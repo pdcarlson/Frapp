@@ -124,8 +124,10 @@ otherwise the import fails under Vitest.
 A tab screen renders under test like any component: `lib/events/check-in-screen.spec.tsx`
 and `lib/study/study-screen.spec.tsx` show how, and the spec lives under `lib/`
 (see [§ Gotchas](#gotchas)). A tab screen is never unmounted, so state that
-must clear when the member comes back is tested by calling the mocked router's
-`__refocus()` inside `act`, which re-runs every mounted `useFocusEffect`.
+must clear when the member comes back is tested with `__refocus()`, inside
+`act`, which re-runs every mounted `useFocusEffect`. It is an export of the
+mocked `expo-router` module, not a method on the router, so the specs reach it
+through `import * as expoRouter from "expo-router"`.
 
 Two suites are static rather than render-based, and deliberately so:
 `lib/routes.spec.ts` walks the real route tree — it checks every route literal,

@@ -117,7 +117,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import StudyScreen from "@/app/(tabs)/study";
 
-/** The mocked router's "member came back to this screen" (vitest.setup.ts). */
+/** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void })
   .__refocus;
 
@@ -133,10 +133,22 @@ function render(): ReactTestRenderer {
   return tree;
 }
 
-const texts = (tree: ReactTestRenderer) =>
+/**
+ * Everything the screen says, as one string, so a check for text the screen
+ * must never show is a substring test. Matching whole `Text` elements would
+ * miss the text inside a longer sentence (`<Text>Details: {message}</Text>`),
+ * and `String()` of a children array joins it with commas.
+ */
+const screenText = (tree: ReactTestRenderer) =>
   tree.root
     .findAllByType("Text" as never)
-    .map((node) => String(node.props.children ?? ""));
+    .map((node) =>
+      [node.props.children]
+        .flat(Infinity)
+        .filter((part) => typeof part === "string" || typeof part === "number")
+        .join(""),
+    )
+    .join("\n");
 
 const startButton = (tree: ReactTestRenderer) =>
   tree.root.find(
@@ -171,10 +183,10 @@ describe("Study Start on a subscription refusal (#2297)", () => {
     await tapStart(tree);
 
     expect(api.start).toHaveBeenCalledTimes(1);
-    expect(texts(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.study);
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.study);
     // The server's own words are a purchase instruction, which the store
     // declaration forbids inside the app.
-    expect(texts(tree)).not.toContain(REFUSED.message);
+    expect(screenText(tree)).not.toContain(REFUSED.message);
     expect(startButton(tree).props.disabled).toBe(true);
     act(() => tree.unmount());
   });
@@ -186,7 +198,7 @@ describe("Study Start on a subscription refusal (#2297)", () => {
     const tree = render();
     await tapStart(tree);
 
-    expect(texts(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.study);
+    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.study);
     expect(startButton(tree).props.disabled).toBe(false);
     act(() => tree.unmount());
   });
@@ -201,7 +213,7 @@ describe("Study Start on a subscription refusal (#2297)", () => {
 
     // The copy goes with the latch: an enabled Start under a sentence saying
     // sessions cannot be recorded would offer and deny the same action.
-    expect(texts(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.study);
+    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.study);
     expect(startButton(tree).props.disabled).toBe(false);
     act(() => tree.unmount());
   });
@@ -235,7 +247,7 @@ describe("Study pause mirror on a subscription refusal (#2297)", () => {
 
     expect(api.pause).toHaveBeenCalledTimes(1);
     // A refused pause greys out nothing silently: the session copy says why.
-    expect(texts(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.studySession);
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.studySession);
     act(() => tree.unmount());
   });
 

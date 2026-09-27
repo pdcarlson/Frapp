@@ -22,13 +22,14 @@ import type { StudyZoneModel } from "@/lib/study/zones";
  * the chapter's subscription refused a session write.
  *
  * WHY THIS FILE EXISTS. The wiring was originally asserted only at the call
- * site in `study.tsx`, by a source lock that checked the prop is *passed*
- * (now `lib/study/study-screen.spec.tsx`, which renders it). Deleting
- * `|| isBlocked` from both expressions below — leaving the prop declared,
- * destructured and ignored — kept the whole mobile suite and that lock green
- * while Start stayed tappable after a permanent refusal, which is exactly the
- * retry-that-cannot-win the issue closes. The prop needs an assertion at the
- * implementation, not only at the caller.
+ * site in `study.tsx`, by a source lock that checked the prop is *passed*.
+ * Deleting `|| isBlocked` from both expressions below — leaving the prop
+ * declared, destructured and ignored — kept the whole mobile suite and that
+ * lock green while Start stayed tappable after a permanent refusal, which is
+ * exactly the retry-that-cannot-win the issue closes. The lock is gone:
+ * `lib/study/study-screen.spec.tsx` now renders the screen and catches that
+ * deletion too. This file still pins the prop at the implementation, without
+ * the screen's mocks.
  */
 
 function render(node: React.ReactElement): ReactTestRenderer {

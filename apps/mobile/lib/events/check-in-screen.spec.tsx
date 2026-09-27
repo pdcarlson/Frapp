@@ -86,7 +86,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import CheckInScreen from "@/app/(tabs)/check-in";
 
-/** The mocked router's "member came back to this screen" (vitest.setup.ts). */
+/** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void })
   .__refocus;
 
@@ -102,10 +102,22 @@ function render(): ReactTestRenderer {
   return tree;
 }
 
-const texts = (tree: ReactTestRenderer) =>
+/**
+ * Everything the screen says, as one string, so a check for text the screen
+ * must never show is a substring test. Matching whole `Text` elements would
+ * miss the text inside a longer sentence (`<Text>Details: {message}</Text>`),
+ * and `String()` of a children array joins it with commas.
+ */
+const screenText = (tree: ReactTestRenderer) =>
   tree.root
     .findAllByType("Text" as never)
-    .map((node) => String(node.props.children ?? ""));
+    .map((node) =>
+      [node.props.children]
+        .flat(Infinity)
+        .filter((part) => typeof part === "string" || typeof part === "number")
+        .join(""),
+    )
+    .join("\n");
 
 const camera = (tree: ReactTestRenderer) =>
   tree.root.findByType("CameraView" as never);
@@ -141,10 +153,10 @@ describe("Check-in on a subscription refusal (#2297)", () => {
     const tree = render();
     await submitManualCode(tree);
 
-    expect(texts(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
     // The server's own words are a purchase instruction, which the store
     // declaration forbids inside the app.
-    expect(texts(tree)).not.toContain(REFUSED.message);
+    expect(screenText(tree)).not.toContain(REFUSED.message);
     expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
     expect(manualSubmit(tree).props.disabled).toBe(true);
     act(() => tree.unmount());
@@ -157,7 +169,7 @@ describe("Check-in on a subscription refusal (#2297)", () => {
     const tree = render();
     await submitManualCode(tree);
 
-    expect(texts(tree)).toContain(FAILED.message);
+    expect(screenText(tree)).toContain(FAILED.message);
     expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
     expect(manualSubmit(tree).props.disabled).toBe(false);
     act(() => tree.unmount());
@@ -171,9 +183,26 @@ describe("Check-in on a subscription refusal (#2297)", () => {
 
     act(() => refocus());
 
-    expect(texts(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
+    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
     expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
     expect(manualSubmit(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("re-arms the scanner after a check-in when the member comes back", async () => {
+    // The same instance serves the next event, and `success` disarms the
+    // decoder just as a refusal does. Without the reset the camera is live but
+    // deaf at the next event, under "You're checked in" for the previous one.
+    checkIn.mockResolvedValue({});
+    const tree = render();
+    await submitManualCode(tree);
+    expect(screenText(tree)).toContain("You're checked in. +10 pts");
+    expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
+
+    act(() => refocus());
+
+    expect(screenText(tree)).not.toContain("You're checked in");
+    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
     act(() => tree.unmount());
   });
 });

@@ -1,6 +1,7 @@
-// Locks the subscription-refusal chain: the guard's messages, the shared
-// mirror's copy of them, and the three mobile write surfaces that branch on
-// them.
+// Locks the subscription-refusal chain at the level only source can check:
+// the guard's messages, the shared mirror's copy of them, the mobile detector
+// that matches on them, and the order of the study copy's arms. What the
+// three mobile write surfaces DO with a refusal is rendered (see SCOPE).
 //
 // WHY THIS EXISTS (#2297). A freshly created chapter is `subscription_status
 // 'incomplete'` — chapter creation has no billing gate — so a founder reaches
@@ -85,7 +86,8 @@ function readRepo(rel) {
  * NO REGEX-LITERAL STATE, DELIBERATELY. A previous version tried to detect
  * regex literals by looking at the preceding character. It was worse than
  * nothing: `}` was in the operator set, so every JSX `<Foo prop={x} />`
- * parsed as a regex — 23 bogus spans across the scanned files — while the
+ * parsed as a regex — 23 bogus spans across the files scanned then, which
+ * included the JSX surfaces — while the
  * two commonest real positions (`=> /…/` and `return /…/`) were missed. The
  * heuristic is gone. `assertNoRegexLiterals` below turns the residual hazard
  * into a loud failure instead of a silent misparse.
@@ -320,7 +322,7 @@ test("comments are removed, including ones carrying quotes and braces", () => {
 test("the scanned files contain no regex literal, which the scanner cannot read", () => {
   // The tripwire that replaced a regex-detection heuristic. The heuristic was
   // worse than nothing: `}` in its operator set made every JSX `{x} />` parse
-  // as a regex (23 bogus spans across these files) while missing `=> /…/` and
+  // as a regex (23 bogus spans across the JSX surfaces this used to scan) while missing `=> /…/` and
   // `return /…/`. Failing loudly beats misparsing silently.
   for (const rel of [GUARD, MIRROR, DETECTOR, STUDY_ERRORS]) {
     assertNoRegexLiterals(rel);
@@ -328,7 +330,8 @@ test("the scanned files contain no regex literal, which the scanner cannot read"
   // And the tripwire itself must be able to fire.
   assert.match(`const isUrl = (s) => /^https?:x/.test(s);`, REGEX_LITERAL);
   assert.match(`return /abc/.test(x);`, REGEX_LITERAL);
-  // …without firing on the JSX and division that fill these files.
+  // …without firing on JSX or division, so a .tsx file can be scanned again
+  // without tripping it.
   assert.doesNotMatch(`const row = <Icon name={n} />;`, REGEX_LITERAL);
   assert.doesNotMatch(`const ratio = total / count;`, REGEX_LITERAL);
   assert.doesNotMatch(`const ratio = f(a) / g(b);`, REGEX_LITERAL);

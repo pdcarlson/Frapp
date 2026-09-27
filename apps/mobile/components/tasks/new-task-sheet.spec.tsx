@@ -65,10 +65,22 @@ function render(): ReactTestRenderer {
   return tree;
 }
 
-const texts = (tree: ReactTestRenderer) =>
+/**
+ * Everything the screen says, as one string, so a check for text the screen
+ * must never show is a substring test. Matching whole `Text` elements would
+ * miss the text inside a longer sentence (`<Text>Details: {message}</Text>`),
+ * and `String()` of a children array joins it with commas.
+ */
+const screenText = (tree: ReactTestRenderer) =>
   tree.root
     .findAllByType("Text" as never)
-    .map((node) => String(node.props.children ?? ""));
+    .map((node) =>
+      [node.props.children]
+        .flat(Infinity)
+        .filter((part) => typeof part === "string" || typeof part === "number")
+        .join(""),
+    )
+    .join("\n");
 
 const createButton = (tree: ReactTestRenderer) =>
   tree.root.find(
@@ -96,8 +108,8 @@ describe("New task on a subscription refusal (#2297)", () => {
     submitTask(tree);
 
     expect(mutate).toHaveBeenCalledTimes(1);
-    expect(texts(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.task);
-    expect(texts(tree)).not.toContain(TRY_AGAIN);
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.task);
+    expect(screenText(tree)).not.toContain(TRY_AGAIN);
     expect(createButton(tree).props.disabled).toBe(true);
     act(() => tree.unmount());
   });
@@ -109,8 +121,8 @@ describe("New task on a subscription refusal (#2297)", () => {
     const tree = render();
     submitTask(tree);
 
-    expect(texts(tree)).toContain(TRY_AGAIN);
-    expect(texts(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.task);
+    expect(screenText(tree)).toContain(TRY_AGAIN);
+    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.task);
     expect(createButton(tree).props.disabled).toBe(false);
     act(() => tree.unmount());
   });
