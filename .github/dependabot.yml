@@ -282,13 +282,13 @@ updates:
       - dependency-name: "postcss"
 
       # ── The NestJS 12 hold ───────────────────────────────────────────────
-      # Majors only. Like the ESLint 10 hold below, this is blocked on a
-      # dependency, not on our own code: `@sentry/nestjs` does not support
-      # NestJS 12 in any stable release. 10.75.0 (newest) still peer-requires
-      # `@nestjs/core`/`@nestjs/common` at `^8||^9||^10||^11`. The only
-      # published build that adds `^12.0.0` is `11.0.0-rc.0` — a release
-      # candidate, and `@sentry/nestjs` is the API's error reporting, so
-      # running it pre-release to satisfy a dependency bump is the wrong trade.
+      # Majors only. Blocked on `@sentry/nestjs`: the 10.x line the API runs
+      # peer-requires `@nestjs/core`/`@nestjs/common` at `^8||^9||^10||^11`.
+      # Only its 11.x line adds `^12.0.0`, and moving to 11 is the migration
+      # held below (#2722). (Corrected 2026-09-27: this used to read "blocked
+      # on a dependency, not on our own code", when 11.x existed only as
+      # `11.0.0-rc.0` and running the API's error reporting pre-release was the
+      # wrong trade.)
       #
       # The four packages move as a set: `@nestjs/platform-express` and
       # `@nestjs/testing` peer-require `@nestjs/core@^12` from 12.0.1 onward
@@ -305,7 +305,8 @@ updates:
       # Check the peer range before adding a fifth entry; "starts with
       # @nestjs/" is not the rule.
       #
-      # Re-evaluate when `@sentry/nestjs` 11 ships stable. Tracking: #2357.
+      # Lift it in the PR after #2722 lands (`@sentry/nestjs@11.0.0` is stable
+      # and peers `^8 … ^12`). Tracking: #2357.
       - dependency-name: "@nestjs/core"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@nestjs/common"
@@ -315,6 +316,28 @@ updates:
       - dependency-name: "@nestjs/testing"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@nestjs/swagger"
+        update-types: ["version-update:semver-major"]
+
+      # ── The Sentry 11 hold ───────────────────────────────────────────────
+      # Majors only. Blocked on our own code, not on an upstream release (the
+      # NestJS 12 hold above waits on this one): v11 replaces `sendDefaultPii`
+      # with a `dataCollection` object whose categories all default to ON
+      # (cookies, headers, HTTP bodies, stack-frame locals). A bump that only fixes the compile errors
+      # would widen what the API and both Next surfaces send to Sentry. That is
+      # a privacy migration, tracked in #2722 with the full break list.
+      #
+      # The two move as a set: both hard-pin `@sentry/core` and `@sentry/node`
+      # exactly, so #2712 and #2714 each left a second SDK tree installed as
+      # well as failing on their own. `@sentry/react-native` is on its own 8.x
+      # line and is not part of this hold.
+      #
+      # Security: 10.x minors and patches still flow. `ignore` also suppresses
+      # Dependabot SECURITY updates, so a CVE fixed only in 11.x opens no PR;
+      # `check:npm-audit` is the backstop, as for the holds above. Drop both
+      # entries in the PR that closes #2722.
+      - dependency-name: "@sentry/nestjs"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@sentry/nextjs"
         update-types: ["version-update:semver-major"]
 
       # ── The ESLint 10 hold ───────────────────────────────────────────────
