@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
  * inverted message list, but React Native hit-tested the list's frame, so
  * every option tap landed on a thread row and the level never changed. The
  * component spec pins the menu's own structure. What it can't see is where the
- * screen puts it, and a screen has no render harness yet (#2416), so this reads
- * the source, the way `lib/more/service-entry-scoping.spec.ts` does.
+ * screen puts it, and until the thread screen is rendered under test (#2705)
+ * this reads the source, the way `lib/more/service-entry-scoping.spec.ts` does.
  */
 const MOBILE_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const THREAD = readFileSync(
