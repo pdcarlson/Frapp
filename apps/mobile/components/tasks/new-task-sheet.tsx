@@ -325,6 +325,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             label={createTask.isPending ? "Creating…" : "Create task"}
             onPress={submit}
             disabled={!canSubmit}
+            accessibilityHint={
+              subscriptionRefused ? SUBSCRIPTION_REFUSAL_COPY.task : undefined
+            }
             accent={accent}
             onAccent={tokens.color.gold.onHouse}
           />
