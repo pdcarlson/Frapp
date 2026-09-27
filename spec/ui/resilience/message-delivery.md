@@ -188,7 +188,6 @@ Messages are ordered by `created_at` (server timestamp). Optimistic messages use
 Typing indicators use Supabase Realtime Broadcast (ephemeral, not persisted). They are best-effort and non-critical.
 
 - If the Broadcast channel is disconnected, typing indicators simply don't show — no fallback needed
-- Typing events expire after 5 seconds of no keystrokes (client-side timer)
-- Never show "User is typing..." for the current user's own messages
+- What the indicator shows, who counts toward it and when a typist drops off: [`spec/behavior/chat/README.md` § Messages](../../behavior/chat/README.md#messages) ("Typing indicators")
 
 ---

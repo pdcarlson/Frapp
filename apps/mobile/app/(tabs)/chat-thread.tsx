@@ -16,7 +16,11 @@ import {
   MASKED_RELOAD_FAILED_BODY,
   MASKED_RELOAD_FAILED_TITLE,
 } from "@repo/chat-core/block-copy";
-import { isBlockableSender, type ThreadRow } from "@repo/chat-core/blocks";
+import {
+  isBlockableSender,
+  visibleTypingUsers,
+  type ThreadRow,
+} from "@repo/chat-core/blocks";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   resolveAuthorName,
@@ -329,6 +333,13 @@ export default function ChatThreadScreen() {
   // `BlockListNotice` says so.
   const { blockList, blockState, thread } = useThreadBlockList(
     messages,
+    viewerId,
+  );
+  // A blocked member's `typing` broadcast still arrives; in a DM the indicator
+  // would say they are writing to the viewer (#2496).
+  const shownTypingUsers = visibleTypingUsers(
+    typingUsers,
+    blockState,
     viewerId,
   );
 
@@ -666,11 +677,11 @@ export default function ChatThreadScreen() {
             />
           )}
 
-          {typingUsers.length > 0 ? (
+          {shownTypingUsers.length > 0 ? (
             <Text style={styles.typing}>
-              {typingUsers.length === 1
+              {shownTypingUsers.length === 1
                 ? "Someone is typing…"
-                : `${typingUsers.length} people are typing…`}
+                : `${shownTypingUsers.length} people are typing…`}
             </Text>
           ) : null}
 

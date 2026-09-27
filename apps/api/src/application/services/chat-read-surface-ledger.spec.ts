@@ -39,7 +39,7 @@ import * as ts from 'typescript';
  *   it, or a subscription opened by a helper outside it;
  * - Broadcast and Presence subscriptions, which this does not scan. The push
  *   worker reads Presence on `chat:channel:<id>`; what those topics may carry
- *   is the `realtime.messages` entry below (#2496);
+ *   is the `realtime.messages` entry below (#2725);
  * - member text re-posted under the system actor, which cannot be blocked.
  *   The poll-expiry notice used to quote the poll's question this way; it
  *   replies to the poll instead since #2495, and nothing here would catch
@@ -50,7 +50,10 @@ import * as ts from 'typescript';
  * present, not commented out, in a spec that skips and focuses nothing. A
  * policy's proof can instead be a scenario in the PGlite harness, which reads
  * the table as a non-owner role and is the only tier that runs RLS; it must
- * still be a `name:` in that file. That cannot prove the test asserts the
+ * still be a `name:` in that file. A surface only a client can mask (a
+ * Broadcast the server relays as sent) names the shared client rule's test in
+ * `packages/`; that proves the rule, not that every client applies it, which
+ * each client's own tests cover. That cannot prove the test asserts the
  * right thing, but it stops a renamed, deleted or disabled proof leaving the
  * ledger vouching for nothing. An `open` entry is a known gap, and names the
  * issue tracking it. An `open` or `not-hidden` entry that is masked in part
@@ -59,10 +62,14 @@ import * as ts from 'typescript';
  */
 
 /**
- * A Jest test (`spec` relative to `apps/api/src`, `test` its title), or a
- * scenario `name` in `scripts/check-pglite-migrations.mjs`.
+ * A Jest test (`spec` relative to `apps/api/src`, `test` its title), a
+ * scenario `name` in `scripts/check-pglite-migrations.mjs`, or a Vitest test
+ * of a shared client package (`clientSpec` relative to the repo root).
  */
-type Proof = { spec: string; test: string } | { pglite: string };
+type Proof =
+  | { spec: string; test: string }
+  | { pglite: string }
+  | { clientSpec: string; test: string };
 
 type Entry =
   | { status: 'masked'; proof: Proof }
@@ -82,7 +89,8 @@ type Entry =
 
 const API_SRC = join(__dirname, '..', '..');
 const API_ROOT = join(API_SRC, '..');
-const MIGRATIONS = join(API_ROOT, '..', '..', 'supabase', 'migrations');
+const REPO_ROOT = join(API_ROOT, '..', '..');
+const MIGRATIONS = join(REPO_ROOT, 'supabase', 'migrations');
 const PGLITE_HARNESS = join(
   API_ROOT,
   '..',
@@ -381,8 +389,12 @@ const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
   'realtime.messages realtime_messages_scoped_select': {
     creates: 2,
     status: 'open',
-    issues: [2496],
-    why: "Authorizes Broadcast and Presence on `chat:channel:<id>`. Clients act only on presence and `typing`, rendered anonymously, and neither carries message content. A blocked member's `typing` still counts toward that indicator.",
+    issues: [2725],
+    why: "Authorizes Broadcast and Presence on `chat:channel:<id>`. Neither carries message content, and no client renders chat-topic presence (the push worker reads it). The one thing drawn is the anonymous typing indicator, and both clients drop a blocked member's `typing` from it (`visibleTypingUsers`, #2496). Open because that rule trusts the payload's client-written `userId`, which the insert policy does not check: a modified client can put another id in it (#2725).",
+    proof: {
+      clientSpec: 'packages/chat-core/src/realtime-manager.spec.ts',
+      test: "a blocked member's typing broadcast leaves the indicator empty",
+    },
   },
   'public.users auth_admin_can_read_users': {
     creates: 1,
@@ -704,6 +716,21 @@ const JEST_MODIFIERS = new Set([
   'todo',
 ]);
 
+/**
+ * A modifier on a `describe` / `it` / `test` chain that can stop the proof
+ * running as written: Jest's `.skip`, `.only` and `.todo`, and, since a proof
+ * can be a Vitest spec (`clientSpec`), Vitest's `.skipIf(…)` and `.runIf(…)`,
+ * which switch a block off on a condition, and `.fails`, which inverts it.
+ */
+const DISABLING_MODIFIERS = new Set([
+  'skip',
+  'only',
+  'todo',
+  'skipIf',
+  'runIf',
+  'fails',
+]);
+
 const SKIPPING_IDENTIFIERS = new Set([
   'xdescribe',
   'xit',
@@ -714,9 +741,10 @@ const SKIPPING_IDENTIFIERS = new Set([
 ]);
 
 /**
- * What makes Jest skip a test in this file, read from the syntax tree: `.skip`,
- * `.only` or `.todo` anywhere on a chain that names `describe`, `it` or `test`
- * (so `it.concurrent.only` and a namespace import's `j.it.only` too), and the
+ * What makes Jest or Vitest skip a test in this file, read from the syntax
+ * tree: a `DISABLING_MODIFIERS` name anywhere on a chain that names
+ * `describe`, `it` or `test` (so `it.concurrent.only`, a namespace import's
+ * `j.it.only` and Vitest's `describe.skipIf(cond)` too), and the
  * `x`/`f` names, whether referenced (`fit(…)`, `cond ? describe : xdescribe`)
  * or called off a namespace (`j.fit(…)`). A focused test
  * anywhere skips the proof, and a skipped block around it leaves the title in
@@ -739,10 +767,11 @@ function skipsOrFocuses(file: ts.SourceFile): boolean {
           node.parent.expression === node) ||
           (ts.isPropertyAccessExpression(node.parent) &&
             JEST_MODIFIERS.has(node.parent.name.text)))) ||
-      // `.skip` / `.only` / `.todo` anywhere on a chain that names describe,
-      // it or test: `it.concurrent.only`, `j.it.only`, `describe.skip.each`.
+      // A disabling modifier anywhere on a chain that names describe, it or
+      // test: `it.concurrent.only`, `j.it.only`, `describe.skip.each`,
+      // `describe.skipIf(cond)`.
       (ts.isPropertyAccessExpression(node) &&
-        ['skip', 'only', 'todo'].includes(node.name.text) &&
+        DISABLING_MODIFIERS.has(node.name.text) &&
         chainNames(node).some((name) =>
           ['describe', 'it', 'test'].includes(name),
         )),
@@ -790,8 +819,12 @@ function proofProblem(proof: Proof): string | null {
       ? null
       : `scripts/check-pglite-migrations.mjs has no scenario named '${proof.pglite}'`;
   }
-  const file = parse(join(API_SRC, proof.spec));
-  if (skipsOrFocuses(file)) return `${proof.spec} skips or focuses a test`;
+  const [path, name] =
+    'clientSpec' in proof
+      ? [join(REPO_ROOT, proof.clientSpec), proof.clientSpec]
+      : [join(API_SRC, proof.spec), proof.spec];
+  const file = parse(path);
+  if (skipsOrFocuses(file)) return `${name} skips or focuses a test`;
   const live = everyNode(file).some(
     (node) =>
       ts.isCallExpression(node) &&
@@ -799,7 +832,7 @@ function proofProblem(proof: Proof): string | null {
       ['it', 'test'].includes(node.expression.text) &&
       literalText(node.arguments[0]) === proof.test,
   );
-  return live ? null : `${proof.spec} has no live it('${proof.test}')`;
+  return live ? null : `${name} has no live it('${proof.test}')`;
 }
 
 /** Every non-spec `.ts` under apps/api/src, parsed. */
