@@ -245,3 +245,14 @@ gained `ClientPolicyGate` around `BottomSheetModalProvider`. That is a real edit
 frozen file, and it can't live in `components/app-runtime.tsx`: the gate has to wrap the
 sheet provider, or an open sheet draws over the update prompt. See
 [`patterns.md`](patterns.md) § Minimum version.
+
+**#2301 touched `app/(tabs)/_layout.tsx`, as an integrator change.** It removed the
+`sheet-demo` registration along with its file, `app/(tabs)/sheet-demo.tsx`, the throwaway
+#937 S1 smoke screen. Its `href: null` hid it from the tab bar but not from the router, so
+`frapp://sheet-demo` would have opened developer scaffolding in the first store binary.
+Its device checks now run on product screens
+([`docs/mobile/testing.md`](../../../docs/mobile/testing.md#4-s1-foundation-smoke)).
+The registration and the file went in one commit. A `Tabs.Screen` with no file throws at
+runtime. A file with no registration is worse, because expo-router's `Tabs` renders every
+child route and it would have become a fifth visible tab. `lib/routes.spec.ts` now fails on
+either half-deletion (#2727).

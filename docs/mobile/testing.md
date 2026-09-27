@@ -55,28 +55,31 @@ is the script. Note that in Expo Go the deep-link scheme is `exp://`, not
 `frapp://`, so the magic-link rows in §1 are unreachable regardless of the
 Supabase redirect allowlist — use the password sign-in path.
 
-### 4. S1 foundation smoke (`sheet-demo`)
+### 4. S1 foundation smoke
 
 S1 of #937 (the Signet foundation cutover) could not be device-verified from the
-cloud session that built it, so its proof is a throwaway screen: navigate to
-`/sheet-demo` (hidden `href: null` route — from any screen's URL bar in Expo Go,
-or temporarily deep-link `exp://.../--/sheet-demo`). Verify:
+cloud session that built it. Its proof used to be a throwaway `sheet-demo` route,
+deleted before the first store build because a live `frapp://sheet-demo` would
+have shipped in the binary (#2301). Its device checks now run on product screens,
+except the on-screen readout of the keyboard path, which a unit test covers:
 
-- [ ] The app **boots** — no crash at launch means the provider stack
+- [ ] The app **boots**. No crash at launch means the provider stack
       (gesture-handler root, safe-area, guarded keyboard, sheet host) and the
       splash-held Figtree load are sound.
-- [ ] The **Figtree specimen** renders visibly different weights for 400/600/700
-      (Android is the honest test — it cannot fake weights from one file), and
-      the mono line renders in a monospace face.
-- [ ] The **keyboard path** line reads `fallback` in Expo Go (it must never read
-      `native` there; `native` is correct only in a future EAS dev build).
-- [ ] **Open bottom sheet** presents the gorhom sheet with grabber, header, and
-      Cancel; it drags and dismisses; typing in the field keeps it visible above
-      the keyboard.
+- [ ] **Figtree** renders visibly different weights for 400, 600 and 700 on
+      the sign-in screen (s01): its title is 700, its button labels 600 and its body
+      copy 400. Android is the honest test, because it can't fake weights from
+      one file. Screens built on `ScreenShell` show no 700 text, so they can't
+      prove it. The invite field on the join screen (s02), which an account
+      with no chapter lands on, renders in a monospace face.
+- [ ] **Sheets and the keyboard.** More → Service hours, then **Log** in the
+      header, presents the s20 "Log service hours" sheet with its grabber,
+      header and Cancel. It drags and
+      dismisses, and typing in its description field keeps the field visible
+      above the keyboard. In Expo Go that is the fallback keyboard path;
+      `lib/keyboard.spec.ts` pins that Expo Go never takes the native one.
 
-The screen is deleted before the Phase 2 exit gate (#808 supersedes it). It
-deliberately survived the S2 nav restructure: it is still the only device smoke
-vehicle anyone has, and no one has yet run it.
+#808 is the full device smoke pass, and it supersedes this list.
 
 ### 5. S2 navigation smoke
 

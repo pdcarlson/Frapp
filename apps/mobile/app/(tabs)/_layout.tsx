@@ -148,15 +148,6 @@ export default function TabLayout() {
         name="host-check-in"
         options={{ title: "Host check-in", href: null }}
       />
-
-      {/* THROWAWAY (#937 S1): Expo Go smoke screen, deleted before Phase 2 exit. */}
-      <Tabs.Screen
-        name="sheet-demo"
-        options={{
-          title: "Sheet Demo",
-          href: null,
-        }}
-      />
     </Tabs>
   );
 }

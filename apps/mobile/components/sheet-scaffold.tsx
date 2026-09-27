@@ -17,9 +17,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * and the reason its header gives applies here: the copies drift, and the drift
  * is invisible until two sheets sit side by side.
  *
- * `app/(tabs)/service-hours.tsx` and `app/(tabs)/sheet-demo.tsx` still carry
- * their own copies — migrating them is a mechanical change with its own review
- * surface, tracked separately, exactly as #1050 tracks the state-block ones.
+ * `app/(tabs)/service-hours.tsx` still carries its own copy — migrating it is a
+ * mechanical change with its own review surface, tracked in #1060, exactly as
+ * #1050 tracks the state-block ones.
  *
  * This owns chrome only. The caller supplies the modal itself, because
  * `BottomSheetModal`'s ref, snap behavior and keyboard mode are per-sheet
