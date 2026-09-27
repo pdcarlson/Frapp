@@ -129,9 +129,12 @@ export type MobileSentryReleaseExtras = {
 /**
  * The options the app actually ships.
  *
- * `sendDefaultPii: false` matches web and the API. Under v10 that is a key-name
- * filter, not a content filter — values under innocuously-named keys are still
- * collected — so it is a floor and the scrubber does the real work.
+ * `sendDefaultPii: false` is the v10 SDK's key-name filter (this app is on
+ * `@sentry/react-native` 8, which runs `@sentry/core` 10), not a content
+ * filter: values under innocuously-named keys are still collected, so it is
+ * a floor and the scrubber does the real work. Web and the API are on SDK 11
+ * and set an explicit `dataCollection` instead (`sentryDataCollection()` in
+ * `@repo/observability`).
  *
  * Both hooks are wired. Setting only one leaves the other event class shipping
  * unscrubbed, which is the gap #896 closed on the API.

@@ -5,6 +5,7 @@ import {
   buildSentryOptions,
   SENTRY_HTTP_INTEGRATION_OPTIONS,
   SENTRY_NODE_FETCH_INTEGRATION_OPTIONS,
+  SENTRY_REPLACED_INTEGRATION_NAMES,
   withSafeSentryIntegrations,
 } from './sentry-options';
 
@@ -13,10 +14,11 @@ const FIXTURE_DSN = 'https://fixturekey@o0.ingest.example.invalid/1';
 describe('buildSentryOptions — Node tracer ownership', () => {
   const options = () => buildSentryOptions(FIXTURE_DSN);
 
-  it('leaves Sentry as the OpenTelemetry provider', () => {
-    // ADR-22: a second global tracer corrupts context. `true` would mean we
-    // had to install `@opentelemetry/sdk-node` ourselves.
-    expect(options().skipOpenTelemetrySetup).toBe(false);
+  it('does not register an OpenTelemetry tracer provider', () => {
+    // ADR-22: Sentry owns the API's tracing, and under SDK v11 it needs no
+    // OpenTelemetry provider to do so. `true` would install Sentry's as the
+    // global one, which nothing in the API needs.
+    expect(options().enableOpenTelemetrySetup).toBe(false);
   });
 
   it('does not add a second tracer package beside @sentry/nestjs', () => {
@@ -29,11 +31,9 @@ describe('buildSentryOptions — Node tracer ownership', () => {
   });
 
   it('does not collect incoming request bodies on HTTP spans', () => {
-    expect(SENTRY_HTTP_INTEGRATION_OPTIONS.maxIncomingRequestBodySize).toBe(
-      'none',
-    );
+    expect(SENTRY_HTTP_INTEGRATION_OPTIONS.maxRequestBodySize).toBe('none');
     expect(
-      SENTRY_HTTP_INTEGRATION_OPTIONS.ignoreIncomingRequestBody('/health', {
+      SENTRY_HTTP_INTEGRATION_OPTIONS.ignoreRequestBody('/health', {
         method: 'GET',
       }),
     ).toBe(true);
@@ -56,6 +56,23 @@ describe('buildSentryOptions — Node tracer ownership', () => {
     expect(out[1]?.name).toBe('NodeFetch');
     expect(out[1]).not.toBe(fetch);
     expect(out[2]).toBe(nest);
+  });
+
+  it("replaces integrations the SDK's real default set still contains", () => {
+    // The swap matches by `name`. If the SDK renames or splits one of these
+    // (v11 already calls the server half `Http.Server`), the `switch` in
+    // `withSafeSentryIntegrations` matches nothing and the unconfigured
+    // default ships silently. This is the test that notices. The synthetic
+    // list above cannot, because it spells the names itself.
+    const defaults = Sentry.getDefaultIntegrations({});
+    const out = withSafeSentryIntegrations(defaults);
+    const names = defaults.map((integration) => integration.name);
+    for (const name of SENTRY_REPLACED_INTEGRATION_NAMES) {
+      expect(names).toContain(name);
+      const index = names.indexOf(name);
+      expect(out[index]?.name).toBe(name);
+      expect(out[index]).not.toBe(defaults[index]);
+    }
   });
 
   it('wires the safe-integrations mapper as the production integrations hook', () => {

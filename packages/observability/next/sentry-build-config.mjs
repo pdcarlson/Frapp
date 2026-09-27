@@ -1,5 +1,6 @@
 /**
- * Sentry webpack-plugin options shared by Next.js apps.
+ * `withSentryConfig` build options shared by Next.js apps (SDK v11 builds
+ * through `@sentry/bundler-plugins`; the webpack plugin is gone).
  *
  * Source maps and debug IDs stay enabled even when `SENTRY_AUTH_TOKEN` is
  * unset so a production-parity `next build` still injects debug IDs. Upload

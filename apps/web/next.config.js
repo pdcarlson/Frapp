@@ -1,4 +1,4 @@
-import { withSentryConfig } from "@sentry/nextjs";
+import { withSentryConfig } from "@sentry/nextjs/config";
 import { getAnonymousSentryBuildConfig } from "@repo/observability/next/sentry-build-config.js";
 import { assertProductionWebPublicEnv } from "./lib/assert-production-public-env.js";
 

@@ -1,10 +1,11 @@
 /**
- * Sentry must be imported before the rest of the Nest graph so its Nest/HTTP
- * OpenTelemetry instrumentations patch modules as they load.
+ * Sentry must be imported before the rest of the Nest graph so its
+ * load-time module hooks (which instrument modules such as Express as they
+ * load) are in place before those modules are required.
  *
- * ADR-22: Sentry owns the Node trace provider. Do not install
+ * ADR-22: Sentry owns the API's tracing. Do not install
  * `@opentelemetry/sdk-node` (or any other global tracer) beside this.
- * `skipOpenTelemetrySetup` stays false in `buildSentryOptions`.
+ * `enableOpenTelemetrySetup` stays false in `buildSentryOptions`.
  *
  * Imported first from `main.ts`. Not imported from `AppModule` — e2e boots
  * the module without a DSN and must not call `Sentry.init`.

@@ -25,24 +25,33 @@ type ErrorEvent = {
   extra?: unknown;
 };
 
-function eventsFromEnvelope(envelope: unknown): ErrorEvent[] {
+function itemsFromEnvelope<T>(envelope: unknown, type: string): T[] {
   if (!Array.isArray(envelope) || !Array.isArray(envelope[1])) return [];
-  return (envelope[1] as [{ type?: string }, ErrorEvent][])
-    .filter(([headers]) => headers?.type === "event")
+  return (envelope[1] as [{ type?: string }, T][])
+    .filter(([headers]) => headers?.type === type)
     .map(([, payload]) => payload);
 }
 
 describe("Sentry SDK integration", () => {
   let sent: ErrorEvent[] = [];
+  let sentTransactions: Record<string, unknown>[] = [];
 
   beforeAll(() => {
     Sentry.init({
       ...buildLandingSentryOptions(FIXTURE_DSN),
+      // Every span sampled, so the transaction test is deterministic.
+      tracesSampleRate: 1,
       defaultIntegrations: false,
       integrations: [],
       transport: () => ({
         send: (envelope: unknown) => {
-          for (const event of eventsFromEnvelope(envelope)) sent.push(event);
+          sent.push(...itemsFromEnvelope<ErrorEvent>(envelope, "event"));
+          sentTransactions.push(
+            ...itemsFromEnvelope<Record<string, unknown>>(
+              envelope,
+              "transaction",
+            ),
+          );
           return Promise.resolve({ statusCode: 200 });
         },
         flush: () => Promise.resolve(true),
@@ -52,21 +61,63 @@ describe("Sentry SDK integration", () => {
 
   beforeEach(() => {
     sent = [];
+    sentTransactions = [];
   });
 
   afterAll(async () => {
     await Sentry.close(2000);
   });
 
-  it("ships production options: no PII flag, both hooks, no replay", () => {
+  it("ships production options: static traces, both hooks, no replay", () => {
     const browser = buildLandingSentryOptions(FIXTURE_DSN);
     const server = buildLandingServerSentryOptions(FIXTURE_DSN);
-    expect(browser.sendDefaultPii).toBe(false);
-    expect(server.sendDefaultPii).toBe(false);
+    // v11's default, "stream", never calls `beforeSendTransaction` (#2722).
+    expect(browser.traceLifecycle).toBe("static");
+    expect(server.traceLifecycle).toBe("static");
+    expect(server.dataCollection).toEqual(browser.dataCollection);
     expect(browser.replaysSessionSampleRate).toBe(0);
     expect(browser.replaysOnErrorSampleRate).toBe(0);
     expect(typeof browser.beforeSend).toBe("function");
     expect(typeof browser.beforeSendTransaction).toBe("function");
+  });
+
+  it("leaves no data-collection category to the SDK default (#2722)", () => {
+    // Read back from the live client: what the installed SDK resolved. v11
+    // defaults every category to on, so one missing from `dataCollection`,
+    // or one a future SDK adds, resolves to `true` and fails `toEqual`.
+    // Literals on purpose, so the builder is not read back to itself.
+    expect(Sentry.getClient()?.getDataCollectionOptions()).toEqual({
+      userInfo: false,
+      cookies: false,
+      httpHeaders: {
+        request: { allow: ["content-type", "x-request-id"] },
+        response: false,
+      },
+      httpBodies: [],
+      urlQueryParams: false,
+      graphQL: { document: false, variables: false },
+      genAI: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      queues: false,
+      stackFrameVariables: false,
+      frameContextLines: 7,
+    });
+  });
+
+  it("ships a transaction through beforeSendTransaction", async () => {
+    Sentry.startSpan(
+      {
+        name: `/join?email=${MEMBER_EMAIL}`,
+        op: "pageload",
+        forceTransaction: true,
+      },
+      () => undefined,
+    );
+    await Sentry.flush(2000);
+
+    expect(sentTransactions).toHaveLength(1);
+    expect(JSON.stringify(sentTransactions[0])).not.toContain(MEMBER_EMAIL);
+    expect(sentTransactions[0]?.transaction).toBe("/join");
   });
 
   it("does not put email, IP, token, query, or body on the envelope", async () => {

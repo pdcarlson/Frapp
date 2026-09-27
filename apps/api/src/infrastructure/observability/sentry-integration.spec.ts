@@ -20,9 +20,9 @@ import { scrubSentryEvent } from './sentry-scrubbing';
  * managed to pass while proving nothing:
  *
  *  - **Options come from {@link buildSentryOptions}**, the same function
- *    `main.ts` calls. A draft that re-declared them locally made
- *    `expect(sendDefaultPii).toBe(false)` a tautology reading back its own
- *    literal, and would have stayed green while production flipped to `true`.
+ *    `main.ts` calls. A draft that re-declared them locally made its PII
+ *    assertion (then `sendDefaultPii`) a tautology reading back its own
+ *    literal, and would have stayed green while production flipped it.
  *
  *  - **Assertions read what reached the transport**, not what `beforeSend`
  *    returned. `beforeSend` is passed through untouched from production, so
@@ -41,10 +41,11 @@ import { scrubSentryEvent } from './sentry-scrubbing';
  * leave the process and the `.invalid` DSN is never resolved, on any runner.
  *
  * **Scope of "production options", stated precisely.** `dsn`, `environment`,
- * `tracesSampleRate`, `sendDefaultPii` and `beforeSend` come from the builder
- * and are what the assertions below exercise. `transport`, `integrations` and
- * `defaultIntegrations` are overridden here, so this file would *not* notice
- * production adding any of those three — the default integration set leaks a
+ * `dataCollection`, `traceLifecycle` and both `beforeSend*` hooks come from the
+ * builder and are what the assertions below exercise. `tracesSampleRate`
+ * (forced to 1 so the transaction test is deterministic), `transport`,
+ * `integrations` and `defaultIntegrations` are overridden here, so this file
+ * would *not* notice production adding any of the last three — the default integration set leaks a
  * test environment per worker (`jest --detectLeaks` fails), and a real
  * transport would defeat hermeticity.
  *
@@ -60,9 +61,9 @@ import { scrubSentryEvent } from './sentry-scrubbing';
  * `@repo/observability` scrubber spec and this directory's `sentry-scrubbing.spec.ts`
  * build a frame carrying `vars` by hand and assert it does not survive. **Do not read that as the
  * rule being dead:** `LocalVariablesAsync` ships in production's default
- * integration set and `sendDefaultPii: false` still resolves
- * `stackFrameVariables: true`, so enabling `includeLocalVariables` for
- * debugging would immediately put request payloads behind that rule.
+ * integration set. `dataCollection.stackFrameVariables: false` now tells it
+ * to attach nothing, but that is one SDK setting, so the scrubber rule stays
+ * the backstop if `includeLocalVariables` is ever enabled for debugging.
  *
  * This file is a wiring test, not a scrubber test. The per-rule coverage
  * (`user` rejection, contexts, request, breadcrumbs, fail-closed) lives in
@@ -80,6 +81,8 @@ describe('Sentry SDK integration', () => {
   const originalSalt = process.env.ANALYTICS_HMAC_SALT;
   /** Event payloads as the transport received them — i.e. what would ship. */
   let sent: ErrorEvent[] = [];
+  /** Transaction payloads, likewise. */
+  let sentTransactions: Record<string, unknown>[] = [];
 
   beforeAll(() => {
     process.env.ANALYTICS_HMAC_SALT = SALT;
@@ -88,6 +91,9 @@ describe('Sentry SDK integration', () => {
       // Spread verbatim: `beforeSend` is production's, unwrapped, so a `null`
       // return still drops the event exactly as it does in the API.
       ...buildSentryOptions(FIXTURE_DSN),
+      // Every span sampled, so the transaction test below is deterministic.
+      // The production rate is asserted against the builder further down.
+      tracesSampleRate: 1,
       defaultIntegrations: false,
       integrations: [
         Sentry.contextLinesIntegration(),
@@ -100,6 +106,7 @@ describe('Sentry SDK integration', () => {
       transport: () => ({
         send: (envelope: unknown) => {
           for (const event of eventsFromEnvelope(envelope)) sent.push(event);
+          sentTransactions.push(...itemsFromEnvelope(envelope, 'transaction'));
           return Promise.resolve({ statusCode: 200 });
         },
         flush: () => Promise.resolve(true),
@@ -109,6 +116,7 @@ describe('Sentry SDK integration', () => {
 
   beforeEach(() => {
     sent = [];
+    sentTransactions = [];
   });
 
   afterAll(async () => {
@@ -122,9 +130,16 @@ describe('Sentry SDK integration', () => {
    * Only `event`-type items carry the error payloads this file asserts on.
    */
   function eventsFromEnvelope(envelope: unknown): ErrorEvent[] {
+    return itemsFromEnvelope(envelope, 'event') as ErrorEvent[];
+  }
+
+  function itemsFromEnvelope(
+    envelope: unknown,
+    type: string,
+  ): Record<string, unknown>[] {
     if (!Array.isArray(envelope) || !Array.isArray(envelope[1])) return [];
-    return (envelope[1] as [{ type?: string }, ErrorEvent][])
-      .filter(([headers]) => headers?.type === 'event')
+    return (envelope[1] as [{ type?: string }, Record<string, unknown>][])
+      .filter(([headers]) => headers?.type === type)
       .map(([, payload]) => payload);
   }
 
@@ -137,17 +152,37 @@ describe('Sentry SDK integration', () => {
       expect(options().beforeSend).toBe(scrubSentryEvent);
     });
 
-    it('disables the SDK-level PII collection switch', () => {
-      // Under v10 this flag is a key-name filter, not a collection switch, so
-      // it is a floor rather than the whole PII story — the two scrubber hooks
-      // are, one per event class (#896).
-      expect(options().sendDefaultPii).toBe(false);
+    it('leaves no data-collection category to the SDK default (#2722)', () => {
+      // Read back from the live client, so this is what the installed SDK
+      // resolved, not what the builder wrote. v11 defaults every category to
+      // on, so a category missing from `dataCollection` resolves to `true`
+      // here. So does one a future SDK adds. Either way `toEqual` fails, and
+      // the new category needs a decision before it ships.
+      //
+      // Literals on purpose: comparing against `sentryDataCollection()` would
+      // read the builder back to itself.
+      expect(Sentry.getClient()?.getDataCollectionOptions()).toEqual({
+        userInfo: false,
+        cookies: false,
+        httpHeaders: {
+          request: { allow: ['content-type', 'x-request-id'] },
+          response: false,
+        },
+        httpBodies: [],
+        urlQueryParams: false,
+        graphQL: { document: false, variables: false },
+        genAI: { inputs: false, outputs: false },
+        databaseQueryData: false,
+        queues: false,
+        stackFrameVariables: false,
+        frameContextLines: 7,
+      });
     });
 
-    it('leaves Sentry as the Node OpenTelemetry provider', () => {
-      // ADR-22: a second global tracer corrupts context. `true` would mean we
-      // had to install `@opentelemetry/sdk-node` ourselves.
-      expect(options().skipOpenTelemetrySetup).toBe(false);
+    it('does not register an OpenTelemetry tracer provider', () => {
+      // ADR-22: Sentry owns the API's tracing, with no OpenTelemetry provider
+      // under SDK v11. See `sentry-options.spec.ts`.
+      expect(options().enableOpenTelemetrySetup).toBe(false);
     });
 
     it('passes the DSN through', () => {
@@ -311,6 +346,74 @@ describe('Sentry SDK integration', () => {
     expect(event.level).toBe('warning');
     expect(event.tags).toMatchObject({ security_event: 'auth_failure_spike' });
     expect(event.user?.id).toBe(pseudonym);
+  });
+
+  it('ships no cookie, secret header, query string or body from the request', async () => {
+    // The request as `RequestData` finds it on the isolation scope, which is
+    // where the HTTP server integration leaves it in production. Every value
+    // is runtime-assembled so a `ContextLines` echo of this file cannot put
+    // one on the wire (see the note above the Stripe test).
+    const marker = (name: string) => ['leak', name, 'marker'].join('_');
+    Sentry.withIsolationScope((isolationScope) => {
+      isolationScope.setSDKProcessingMetadata({
+        normalizedRequest: {
+          method: 'POST',
+          url: `https://api.example.invalid/v1/members?invite=${marker('query')}`,
+          query_string: `invite=${marker('query')}`,
+          headers: {
+            'content-type': 'application/json',
+            'x-request-id': 'req-integration-2',
+            authorization: `Bearer ${marker('auth')}`,
+            cookie: `sb-access-token=${marker('cookie')}`,
+            'x-note': marker('header'),
+          },
+          cookies: { 'sb-access-token': marker('cookie') },
+          data: JSON.stringify({ email: marker('body') }),
+        },
+      });
+      Sentry.captureException(new Error('request data check'));
+    });
+    await Sentry.flush(2000);
+
+    expect(sent).toHaveLength(1);
+    const json = JSON.stringify(sent[0]);
+    for (const name of ['query', 'auth', 'cookie', 'header', 'body']) {
+      expect(json).not.toContain(marker(name));
+    }
+    // What the scrubber keeps must still arrive, or this would pass on an
+    // event with no request at all.
+    expect(sent[0].request).toMatchObject({
+      method: 'POST',
+      url: '/v1/members',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req-integration-2',
+      },
+    });
+  });
+
+  it('ships a transaction through beforeSendTransaction (#2722)', async () => {
+    // SDK v11's default trace lifecycle streams spans and never calls
+    // `beforeSendTransaction`, so the transaction scrubber would be skipped
+    // while this file's other tests, all error events, stayed green. This is
+    // the one that reads a real transaction off the transport.
+    const email = ['ops', 'example.com'].join('@');
+    Sentry.startSpan(
+      {
+        name: `GET /v1/chapters?notify=${email}`,
+        op: 'http.server',
+        forceTransaction: true,
+        attributes: { 'url.query': `notify=${email}` },
+      },
+      () => undefined,
+    );
+    await Sentry.flush(2000);
+
+    expect(sentTransactions).toHaveLength(1);
+    const json = JSON.stringify(sentTransactions[0]);
+    expect(json).not.toContain(email);
+    expect(json).not.toContain('url.query');
+    expect(sentTransactions[0].transaction).toBe('GET /v1/chapters');
   });
 
   it('scrubs PII out of tag values', async () => {
