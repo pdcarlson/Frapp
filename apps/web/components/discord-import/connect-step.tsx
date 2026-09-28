@@ -161,7 +161,7 @@ export function ConnectStep({
         {withdrawn ? (
           <p className="text-sm text-muted-foreground">
             Connecting a different server is not available here right now. This
-            server stays connected, and its import still works.
+            server stays connected.
           </p>
         ) : null}
       </div>

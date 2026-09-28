@@ -247,7 +247,7 @@ before every "Add to Server"
 one Discord answered without listing its redirects ("unchecked"), one minute for
 a withdrawal or an unreachable Discord. A withdrawal is re-read before it is
 answered again; the others answer at once and refresh behind. A 401 the bot has
-met since, from an import say, skips the cache. That record
+met since, from an import say, skips the cache. Discord's record
 settles three things: the redirect URI is registered (step 4), the bot token is
 live (step 2), and the token and `DISCORD_CLIENT_ID` belong to one application
 (steps 2 and 3). A mistake in any of them withdraws the flow instead of sending
