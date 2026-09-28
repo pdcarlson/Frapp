@@ -11,7 +11,7 @@ import {
   useOverdueInvoices,
   useTransitionInvoiceStatus,
 } from "@repo/hooks";
-import { memberLabel } from "@repo/hooks/display-names";
+import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { can } from "@repo/validation";
 import { formatBareDate } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
@@ -746,7 +746,8 @@ export function InvoiceList({ id }: { id?: string }) {
               const selected = selectedIds.includes(invoice.id);
               const isOverdue = overdueIds.has(invoice.id);
               const memberName = canManage
-                ? (memberNameById.get(invoice.user_id) ?? invoice.user_id)
+                ? (memberNameById.get(invoice.user_id) ??
+                  memberFallbackLabel(invoice.user_id))
                 : null;
               return (
                 <li

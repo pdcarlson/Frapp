@@ -112,6 +112,30 @@ describe("MemberDetailSheet custom fields", () => {
   });
 });
 
+describe("MemberDetailSheet heading", () => {
+  it("names an unnamed member exactly as the directory row that opened it does", () => {
+    // #2422: the row reads `Member <first six of id>` via `memberLabel`, so the
+    // sheet opened from it must too, not a second spelling of the same person.
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        member={{
+          ...baseMember,
+          user_id: "2f4a1c9d-0000-4000-8000-000000000000",
+          display_name: "   ",
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Member 2f4a1c" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Unknown member")).toBeNull();
+  });
+});
+
 describe("MemberDetailSheet custom roles", () => {
   it("renders assignable custom roles with the member's assignment pre-checked", () => {
     customRolesState.data = [

@@ -35,6 +35,8 @@ export type DisplayNameMap = Record<string, string>;
  *
  * `null` rather than a fallback string so each caller picks its own copy: a
  * message meta line wants `Member 2f4a1c`, a DM row wants `Direct message`.
+ * A caller naming a *member* (a row, a picker option, a heading) wants
+ * {@link memberLabel}, which owns that copy, not a fallback of its own.
  */
 export function resolveDisplayName(
   names: DisplayNameMap,
@@ -55,7 +57,9 @@ export function resolveDisplayName(
  * not a nicety — a name of spaces is as unset as an empty one.
  *
  * `null` rather than a fallback string for the reason {@link resolveDisplayName}
- * gives: each caller picks its own copy. This shares the *rule*, not the wording.
+ * gives. This shares the *rule*, not the wording; for a member, the wording is
+ * shared too, in {@link memberLabel}. Never write `displayNameOrNull(x) ?? "…"`
+ * for a member: that is how the tree grew four spellings of one person (#2422).
  *
  * Takes `string | null | undefined` rather than `string`, for the same reason
  * {@link resolveDisplayName} type-guards the value it reads out of the map: not
@@ -109,17 +113,23 @@ const UNKNOWN_MEMBER = "Unknown member";
  * email, the full id in a fine's picker) adds it around this, never instead of
  * it.
  *
- * `userId` is nullable only for the rows that are hand-narrowed rather than
- * contract-typed (the Find bar's search results); with no id either, the row
- * reads `Unknown member`, the same words chat uses for an author it cannot name.
+ * Both arguments are `unknown` because not every caller holds a contract-typed
+ * row: the Find bar's search results are hand-narrowed and the member detail
+ * sheet reads a loosely-typed record. A non-string is treated as absent. With
+ * neither a name nor an id, the row reads `Unknown member`, the same words chat
+ * uses for an author it cannot name.
  */
-export function memberLabel(
-  displayName: string | null | undefined,
-  userId: string | null | undefined,
-): string {
-  const name = displayNameOrNull(displayName);
+export function memberLabel(displayName: unknown, userId: unknown): string {
+  const name = displayNameOrNull(
+    typeof displayName === "string" ? displayName : null,
+  );
   if (name) return name;
-  return userId ? memberFallbackLabel(userId) : UNKNOWN_MEMBER;
+  // `typeof`, not truthiness, for the reason `displayNameOrNull` guards its
+  // input: a hand-narrowed row can carry a non-string id, and `.slice` on it
+  // would throw mid-render.
+  return typeof userId === "string" && userId.length > 0
+    ? memberFallbackLabel(userId)
+    : UNKNOWN_MEMBER;
 }
 
 /**

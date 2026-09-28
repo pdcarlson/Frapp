@@ -72,6 +72,12 @@ describe("memberLabel", () => {
     expect(memberLabel(undefined, null)).toBe("Unknown member");
   });
 
+  it("treats a non-string name or id as absent rather than throwing", () => {
+    // Hand-narrowed rows (the Find bar's search results) can carry anything.
+    expect(memberLabel(42, id)).toBe(memberFallbackLabel(id));
+    expect(memberLabel("", 12345)).toBe("Unknown member");
+  });
+
   it("uses the same words chat uses for an author it cannot name", () => {
     expect(memberLabel("", null)).toBe(
       resolveAuthorLabel({ sender_id: null }, () => null, null),

@@ -10,7 +10,7 @@ import {
   useMembers,
   useUpdateAttendanceStatus,
 } from "@repo/hooks";
-import { memberLabel } from "@repo/hooks/display-names";
+import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -128,7 +128,10 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
         result.get(userId) ??
         ({
           userId,
-          displayName: "Non-member attendee",
+          // A departed member, most often: the same `Member <6>` label the
+          // leaderboard and task board give them, so two off-roster attendees
+          // stay distinguishable rather than both reading as one phrase.
+          displayName: memberFallbackLabel(userId),
           email: "",
           status: "UNRECORDED" as const,
           checkInTime: null,

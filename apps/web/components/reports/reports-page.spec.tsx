@@ -448,6 +448,42 @@ describe("ReportsPage event and member pickers", () => {
     expect(screen.queryByPlaceholderText(/uuid/i)).not.toBeInTheDocument();
   });
 
+  it("names an unnamed member with the shared label, email beside it", async () => {
+    // #2422: `Member <first six of id>` is how every other surface names this
+    // member, so the email is extra identity around the label, not a stand-in.
+    const user = userEvent.setup();
+    mockUseMembers.mockReturnValue({
+      data: [
+        {
+          user_id: "2f4a1c9d-0000-4000-8000-000000000000",
+          display_name: "  ",
+          email: "jo@example.com",
+        },
+        {
+          user_id: "8f14e45f-0000-4000-8000-000000000000",
+          display_name: "",
+          email: null,
+        },
+      ],
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<ReportsPage />);
+    await user.click(screen.getByLabelText(/^report$/i));
+    await user.click(await screen.findByRole("option", { name: "Points" }));
+
+    expect(
+      await screen.findByRole("option", {
+        name: "Member 2f4a1c (jo@example.com)",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Member 8f14e4" }),
+    ).toBeInTheDocument();
+  });
+
   it("scopes the event/member list fetch to reports:export, not just the page render", () => {
     // `useEvents`/`useMembers` are eager queries, unlike the four report
     // mutations — firing them for a visitor who cannot even see this page
