@@ -781,14 +781,12 @@ export function buildEnvsFor({ projects, env, readBaseline, dryRun = false }) {
   const errors = [];
   const withEnv = projects.map((project) => {
     try {
-      const buildEnv = { ...infisicalBuildEnv({ label: project.label, env, baselineNames }), withheld: [] };
-      if (dryRun) {
-        for (const key of DRY_RUN_WITHHELD_KEYS) {
-          if (!(key in buildEnv.appEnv)) continue;
-          delete buildEnv.appEnv[key];
-          buildEnv.withheld.push(key);
-        }
-      }
+      const buildEnv = infisicalBuildEnv({ label: project.label, env, baselineNames });
+      // Withheld whether or not the key arrived: the workflow's shell `unset`
+      // usually removes it before this script runs, and the warning must
+      // still not call it lost.
+      buildEnv.withheld = dryRun ? [...DRY_RUN_WITHHELD_KEYS] : [];
+      for (const key of buildEnv.withheld) delete buildEnv.appEnv[key];
       return { ...project, buildEnv };
     } catch (error) {
       errors.push(error.message);

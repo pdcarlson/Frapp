@@ -997,6 +997,15 @@ describe("buildEnvsFor", () => {
     }
   });
 
+  // The workflow's shell `unset` usually removes the token before this script
+  // runs. It must still count as withheld, or the lost-key warning would tell
+  // the owner to add a key Infisical holds.
+  it("marks the Sentry token withheld on a dry run even when the shell already removed it", () => {
+    for (const project of buildEnvsFor({ projects, env, readBaseline: baseline, dryRun: true })) {
+      assert.deepEqual(project.buildEnv.withheld, ["SENTRY_AUTH_TOKEN"], project.label);
+    }
+  });
+
   // The other half: a guard that withheld it unconditionally would stop every
   // real production release from reaching Sentry.
   it("keeps the Sentry token on a real ship", () => {
