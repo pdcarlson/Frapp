@@ -103,10 +103,10 @@ export interface UseChatChannelResult {
   loadOlder: () => Promise<LoadOlderResult>;
   /**
    * Reads what arrived after the newest loaded row, once, and merges it — or,
-   * when more arrived than one read returns, rebuilds from the newest page: a
-   * jump's first move, since its target may be a message Realtime has not
-   * delivered yet rather than an old one. Resolves how many rows it read, or
-   * `null` when the read failed.
+   * when more arrived than one read returns, makes that read the thread's
+   * newest page: a jump's first move, since its target may be a message
+   * Realtime has not delivered yet rather than an old one. Resolves how many
+   * rows were new, or `null` when the read failed.
    */
   loadNewer: () => Promise<number | null>;
   send: (
@@ -437,10 +437,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     target may be newer than the cache rather than older.
 
     The API's `since` read returns the newest `limit` rows after the pivot,
-    not the ones right after it, so a full page may sit on the far side of a
-    hole. Merged, it would draw the hole as silence and put a target inside it
-    out of reach of paging back. A full page therefore rebuilds the thread
-    from its newest page instead, which pages back contiguously from there.
+    not the ones right after it (#2807), so a full page may sit on the far
+    side of a hole. Merged, it would draw the hole as silence and put a target
+    inside it out of reach of paging back. A full page is therefore folded in
+    the way the channel query folds its newest page: it becomes the thread's
+    newest page, and the older rows it is not contiguous with go
+    (`reconcileNewestPage`), so paging back runs contiguously through the
+    hole. No second request: the rows in hand already are that page.
 
     Heavy-command cards it delivers settle their persisted notices, as every
     other path that delivers a server card does (`mergePersistedNotices`), or
@@ -456,16 +459,24 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         limit: OLDER_PAGE_LIMIT,
         since: newest.id,
       });
-      if (rows.length >= OLDER_PAGE_LIMIT) {
-        await queryClient.refetchQueries({ queryKey: key, exact: true });
-        return rows.length;
-      }
+      const full = rows.length >= OLDER_PAGE_LIMIT;
       let added = 0;
       queryClient.setQueryData<ChannelCache>(key, (current) => {
         if (!current) return current;
-        const merged = mergeUnheldRows(current, rows, actions);
-        added = merged.added;
-        return mergePersistedNotices(merged.cache, {
+        let next: ChannelCache;
+        if (full) {
+          let fresh = mergeServerRows(emptyCache(), rows);
+          for (const action of actions) {
+            fresh = applyReactionInsert(fresh, action);
+          }
+          next = reconcileNewestPage(current, fresh);
+          added = rows.filter((row) => !current.byId[row.id]).length;
+        } else {
+          const merged = mergeUnheldRows(current, rows, actions);
+          next = merged.cache;
+          added = merged.added;
+        }
+        return mergePersistedNotices(next, {
           channelId,
           viewerId: viewerRef.current,
           kv: browserKeyValueStore,

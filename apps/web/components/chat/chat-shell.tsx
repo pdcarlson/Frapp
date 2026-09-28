@@ -1904,10 +1904,15 @@ export function ChatShell({
             isLoadingOlder={channel.isLoadingOlder}
             olderError={channel.olderError}
             onLoadOlder={loadOlderHistory}
+            // Only while the jump is still working. Once it has settled on a
+            // notice the target stays pending (so a late arrival still lands),
+            // but holding follow through that would stop new messages
+            // scrolling into view until the member dismissed it.
             holdFollow={
               pendingMessageId !== null &&
               (pendingJumpChannelId === null ||
-                pendingJumpChannelId === activeChannelId)
+                pendingJumpChannelId === activeChannelId) &&
+              !showUnreachableNotice
             }
             onReact={channel.react}
             onUnreact={channel.unreact}

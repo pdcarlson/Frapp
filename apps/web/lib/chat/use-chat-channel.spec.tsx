@@ -13,17 +13,14 @@ import {
   mergeServerRows,
   upsertOptimistic,
 } from "@repo/chat-core/cache";
+
 import {
   chatMessagesKey,
   optimisticMessage,
   type ChannelCache,
 } from "@repo/chat-core/types";
 import { QueryProvider } from "@/lib/providers/query-provider";
-import {
-  FIRST_PAGE_LIMIT,
-  OLDER_PAGE_LIMIT,
-  useChatChannel,
-} from "./use-chat-channel";
+import { OLDER_PAGE_LIMIT, useChatChannel } from "./use-chat-channel";
 
 /**
  * #1909 — an `unconfirmed` `/points` row, and the Retry that replays its
@@ -606,25 +603,55 @@ describe("useChatChannel — older history, the edges (#1571 review)", () => {
     expect(view.result.current.olderError).toBe(false);
   });
 
-  it("rebuilds from the newest page when more arrived than one read returns", async () => {
+  it("makes a full page the newest page rather than merge it across a hole", async () => {
     mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
     const { result } = await mountChannel();
 
     // A full page after the pivot is the newest 100, not the next 100: there
-    // may be a hole between it and the cache, so it is not merged.
+    // may be a hole between it and the cache, so the cached rows it does not
+    // touch go, and paging back runs through the hole from here.
     mocks.GET.mockResolvedValueOnce(historyPage(301, 400));
-    mocks.GET.mockResolvedValueOnce(historyPage(351, 400));
     await act(async () => {
       await result.current.loadNewer();
     });
 
     await waitFor(() =>
-      expect(result.current.messages.map((m) => m.id)[0]).toBe("msg-351"),
+      expect(result.current.messages.map((m) => m.id)[0]).toBe("msg-301"),
     );
-    expect(result.current.messages).toHaveLength(50);
-    expect(mocks.GET.mock.calls[2]![1].params.query).toEqual({
-      limit: FIRST_PAGE_LIMIT,
+    expect(result.current.messages).toHaveLength(100);
+    // No second read: the rows in hand already are that page.
+    expect(mocks.GET).toHaveBeenCalledTimes(2);
+  });
+
+  it("settles a heavy-command notice for a card it delivers", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
+    const { result } = await mountChannel();
+    // Filed the way `persistNotice` files it (heavy-command-notices.ts,
+    // `storageKey`): a recorded /points grant whose card had not posted.
+    const key = `chat:heavy:v1:${VIEWER}:${CHANNEL_ID}`;
+    window.localStorage.setItem(
+      key,
+      JSON.stringify([
+        {
+          status: "recorded",
+          clientMessageId: "cm-151",
+          channelId: CHANNEL_ID,
+          senderId: VIEWER,
+          content: "/points grant @bobby 50",
+          note: "Recorded. The card did not post.",
+          createdAt: new Date().toISOString(),
+        },
+      ]),
+    );
+
+    // The forward read is what delivers the card.
+    mocks.GET.mockResolvedValueOnce(historyPage(151, 151));
+    await act(async () => {
+      await result.current.loadNewer();
     });
+
+    const left = window.localStorage.getItem(key);
+    expect(left === null ? [] : JSON.parse(left)).toEqual([]);
   });
 
   it("resolves null when the forward read fails", async () => {

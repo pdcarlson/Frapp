@@ -665,9 +665,9 @@ function wait(ms: number): Promise<void> {
  *
  * Only threads that hold a masked copy from this member are read. Reading
  * back to the oldest copy, not just the newest page, is what older history
- * needs (#1571): a thread keeps the older pages a member scrolled through
- * across a refetch, so a copy there would otherwise stay a stale tombstone
- * whose Reload could never reach it.
+ * needs (#1571): a thread holds the older pages a member scrolled through
+ * until its next refetch, and an unblock re-runs no query, so a copy there
+ * would otherwise stay a stale tombstone whose Reload could never reach it.
  *
  * **A failure is retried, then recorded — never swallowed.** Each thread's read
  * is tried up to `1 + retryDelaysMs.length` times, and a thread that no longer

@@ -545,9 +545,10 @@ vi.mock("./message-timeline", async () => {
       onDelete?: (messageId: string) => void;
       onReply?: (message: { id: string; reply_to_id?: string | null }) => void;
       canManageChannel?: boolean;
+      holdFollow?: boolean;
     }
   >(function MessageTimeline(
-    { messages, onDelete, onReply, canManageChannel },
+    { messages, onDelete, onReply, canManageChannel, holdFollow },
     ref,
   ) {
     // Models the REAL contract: the timeline can only scroll to a message it
@@ -565,6 +566,7 @@ vi.mock("./message-timeline", async () => {
     return (
       <div data-testid="message-timeline">
         <span data-testid="can-manage-channel">{String(canManageChannel)}</span>
+        <span data-testid="hold-follow">{String(!!holdFollow)}</span>
         {/* Whether the shell offered a Reply handler at all — the read-only
             rule (#489 AC 4) is expressed by withholding the prop, so it is
             invisible without this echo. */}
@@ -994,6 +996,33 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("pick-random"));
 
     await waitFor(() => expect(loadOlder.mock.calls.length).toBeGreaterThan(20));
+  });
+
+  it("holds follow while a jump works, and lets go once it settles on a notice", async () => {
+    const loadOlder = vi.fn(async () => "loaded");
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "msg-ancient" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("hold-follow")).toHaveTextContent("false");
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(await screen.findByText("Finding that message...")).toBeTruthy();
+    expect(screen.getByTestId("hold-follow")).toHaveTextContent("true");
+
+    // The channel runs out of history without it: the notice goes up, the
+    // target stays pending, and new messages are followed again.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: false, loadOlder, messages: [...MESSAGES] }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
+    expect(screen.getByTestId("hold-follow")).toHaveTextContent("false");
   });
 
   it("says a read failed, not that the message is gone, when the forward read fails", async () => {

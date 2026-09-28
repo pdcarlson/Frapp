@@ -592,21 +592,49 @@ export const MessageTimeline = forwardRef<
   // re-ran the effect while it still read "at the top" and a second page
   // followed the first before the member had scrolled at all. A page that
   // drew nothing (the first row did not change) may ask again.
-  //
-  // A switch to a channel already in the cache keeps this list mounted (no
-  // skeleton, and deliberately no remount: a fresh Virtuoso's deferred scroll
-  // to its newest row cancels a jump issued in the same commit), so no "left
-  // the top" arrives for the new channel. The switch arms it instead when the
-  // list is not at its top, adjusted during render like the index above.
   const [atTop, setAtTop] = useState(false);
   const [topArrival, setTopArrival] = useState(0);
   const [armedFor, setArmedFor] = useState<string | undefined>(undefined);
-  const [seenChannel, setSeenChannel] = useState(channelId);
-  if (seenChannel !== channelId) {
-    setSeenChannel(channelId);
-    if (!atTop) setArmedFor(channelId);
-  }
   const armed = armedFor === channelId;
+
+  /*
+    A switch to a channel already in the cache keeps this list mounted: no
+    skeleton, and deliberately no remount, because a fresh Virtuoso's deferred
+    scroll to its newest row cancels a jump issued in the same commit. So
+    `initialTopMostItemIndex` does not apply, and the list would open wherever
+    the previous channel left its scroll offset. This does what a mount would:
+    open at the newest row (unless a jump is taking the list somewhere), and
+    arm the older-history load, since the list is now off its top.
+
+    Only when the same list spans the switch. A switch into a channel that
+    shows the skeleton, or out of one that drew no list, mounts a fresh
+    Virtuoso, which opens at its end by itself and arms on leaving its top;
+    arming it here would answer the moment at the top every open passes
+    through with an older-page read.
+  */
+  const listMounted = useRef(false);
+  // Read by the switch effect without re-running it: a jump ending must not
+  // send the list to its bottom. Declared first, so it is current there.
+  const holdFollowRef = useRef(holdFollow);
+  useEffect(() => {
+    holdFollowRef.current = holdFollow;
+  });
+  useEffect(() => {
+    if (!listMounted.current || !virtuoso.current || !channelId) return;
+    if (!holdFollowRef.current) {
+      virtuoso.current.scrollToIndex({
+        index: "LAST",
+        align: "end",
+        behavior: "auto",
+      });
+    }
+    setArmedFor(channelId);
+  }, [channelId]);
+  // Declared after the switch effect, so that effect reads whether the list
+  // was mounted before this commit.
+  useEffect(() => {
+    listMounted.current = virtuoso.current !== null;
+  });
   const firstRowKey = rowKeys[0];
   const lastTopLoad = useRef<{ arrival: number; firstRowKey?: string } | null>(
     null,
