@@ -18,6 +18,7 @@ const {
   availability,
   connection,
   channelsQuery,
+  myPermissions,
 } = vi.hoisted(() => ({
   createImport: vi.fn(),
   setChannelMapping: vi.fn(),
@@ -30,6 +31,7 @@ const {
   beginConnect: vi.fn(),
   confirmConnect: vi.fn(),
   availability: { value: { available: true } as { available: boolean } },
+  myPermissions: { value: ["*"] as string[] },
   channelsQuery: {
     value: {
       data: [{ id: "ch-1", name: "general" }] as unknown,
@@ -80,10 +82,38 @@ vi.mock("@repo/hooks", () => ({
   }),
   useRoles: () => ({
     data: [
-      { name: "President", permissions: ["*"] },
-      { name: "Treasurer", permissions: ["chapter-config:manage"] },
-      { name: "Cabinet", permissions: ["cabinet:read"] },
+      {
+        id: "role-president",
+        name: "President",
+        system_key: "PRESIDENT",
+        permissions: ["*"],
+      },
+      {
+        id: "role-treasurer",
+        name: "Treasurer",
+        system_key: "TREASURER",
+        permissions: ["chapter-config:manage"],
+      },
+      {
+        id: "role-secretary",
+        name: "Secretary",
+        system_key: "SECRETARY",
+        permissions: [],
+      },
+      {
+        id: "role-cabinet",
+        name: "Cabinet",
+        system_key: null,
+        permissions: ["cabinet:read"],
+      },
     ],
+    isError: false,
+    refetch: () => Promise.resolve(),
+  }),
+  useMyPermissions: () => ({
+    data: { permissions: myPermissions.value },
+    isError: false,
+    refetch: () => Promise.resolve(),
   }),
   // Phase 3: the bot path.
   useDiscordAvailability: () => ({ data: availability.value }),
@@ -284,8 +314,10 @@ describe("ImportWizard — the consent gate", () => {
   });
 
   it("shows a step counter, which is the accessible progress signal", () => {
+    // Before a path is chosen it counts the upload path's five steps; the
+    // bot path adds the role step, which only it has (#2818).
     render(<ImportWizard onStarted={() => {}} onCancel={() => {}} />);
-    expect(screen.getByText("Step 1 of 6")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 5")).toBeInTheDocument();
   });
 });
 
@@ -298,6 +330,9 @@ describe("ImportWizard — the bot path", () => {
     discoverChannels.mockReset();
     setDiscoveredMapping.mockReset();
     setDiscoveredMapping.mockResolvedValue([]);
+    setRoleMapping.mockReset();
+    setRoleMapping.mockResolvedValue({});
+    myPermissions.value = ["*"];
     channelsQuery.value = {
       data: [{ id: "ch-1", name: "general" }],
       isPending: false,
@@ -319,6 +354,17 @@ describe("ImportWizard — the bot path", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   }
 
+  /**
+   * Consent, then the role step (which comes first, #2818, and whose
+   * defaults are already an answer), then the channels.
+   */
+  async function renderAtChannels() {
+    renderAtConsent();
+    await screen.findByRole("heading", { name: "Map the roles" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Map the channels" });
+  }
+
   it("scans the server on leaving consent, and lists what it found", async () => {
     discoverChannels.mockResolvedValue({
       channels: [
@@ -333,7 +379,7 @@ describe("ImportWizard — the bot path", () => {
       warnings: [],
     });
 
-    renderAtConsent();
+    await renderAtChannels();
 
     await waitFor(() =>
       expect(discoverChannels).toHaveBeenCalledWith({ id: "import-1" }),
@@ -364,7 +410,7 @@ describe("ImportWizard — the bot path", () => {
       warnings: [],
     });
 
-    renderAtConsent();
+    await renderAtChannels();
 
     expect(await screen.findByText("#general")).toBeInTheDocument();
     expect(screen.queryByText(/planning/)).not.toBeInTheDocument();
@@ -389,7 +435,7 @@ describe("ImportWizard — the bot path", () => {
       warnings: ["Private archived threads in #general could not be read"],
     });
 
-    renderAtConsent();
+    await renderAtChannels();
 
     expect(
       await screen.findByText(/Private archived threads in #general/),
@@ -415,7 +461,7 @@ describe("ImportWizard — the bot path", () => {
       warnings: [],
     });
 
-    renderAtConsent();
+    await renderAtChannels();
     // No clashes and nothing private: the defaults are already an answer, so
     // Continue works with zero per-channel clicks (#2787).
     await screen.findByText(/Nothing needs attention/);
@@ -453,7 +499,7 @@ describe("ImportWizard — the bot path", () => {
       warnings: [],
     });
 
-    renderAtConsent();
+    await renderAtChannels();
     await screen.findAllByText(/#cabinet was private in Discord/);
     const continueButton = screen.getByRole("button", { name: "Continue" });
     expect((continueButton as HTMLButtonElement).disabled).toBe(true);
@@ -504,7 +550,7 @@ describe("ImportWizard — the bot path", () => {
       warnings: [],
     });
 
-    renderAtConsent();
+    await renderAtChannels();
     expect(
       await screen.findByRole("button", {
         name: /#general holds 1 private thread in Discord/,
@@ -541,7 +587,7 @@ describe("ImportWizard — the bot path", () => {
     };
     discoverChannels.mockResolvedValue(scan);
 
-    renderAtConsent();
+    await renderAtChannels();
     await screen.findByText(/Nothing needs attention/);
     // The "No category" group has nothing to fix, so it starts closed.
     fireEvent.click(screen.getByRole("button", { name: /^No category/ }));
@@ -586,7 +632,7 @@ describe("ImportWizard — the bot path", () => {
       refetch: () => Promise.resolve(),
     };
     scanOneChannel();
-    renderAtConsent();
+    await renderAtChannels();
     expect(
       await screen.findByText(/Checking the new names against your existing/),
     ).toBeInTheDocument();
@@ -602,7 +648,7 @@ describe("ImportWizard — the bot path", () => {
       refetch,
     };
     scanOneChannel();
-    renderAtConsent();
+    await renderAtChannels();
     expect(
       await screen.findByText(/could not load your existing channels/),
     ).toBeInTheDocument();
@@ -621,7 +667,7 @@ describe("ImportWizard — the bot path", () => {
       refetch: () => Promise.resolve(),
     };
     scanOneChannel();
-    renderAtConsent();
+    await renderAtChannels();
     // #general still clashes with the loaded list; nothing else is reported.
     expect(
       await screen.findAllByText(/#general already exists in Frapp/),
@@ -665,7 +711,7 @@ describe("ImportWizard — the bot path", () => {
         warnings: [],
       });
 
-    renderAtConsent();
+    await renderAtChannels();
     await screen.findByText(/Nothing needs attention/);
     fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
 
@@ -682,6 +728,163 @@ describe("ImportWizard — the bot path", () => {
       (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  describe("roles gate the private channels (#2818)", () => {
+    const privateRow = (id: string, name: string, readers: string[]) => ({
+      discord_channel_id: id,
+      discord_channel_name: name,
+      discord_category: "Officers",
+      parent_discord_channel_id: null,
+      readable: true,
+      private_in_discord: true,
+      discord_reader_role_ids: readers,
+    });
+    const scanWithRoles = () =>
+      discoverChannels.mockResolvedValue({
+        channels: [
+          privateRow("c1", "exec", ["r-treasurer", "r-rush"]),
+          privateRow("c2", "rush", ["r-rush"]),
+        ],
+        roles: [
+          { discord_role_id: "r-treasurer", discord_role_name: "treasurer" },
+          {
+            discord_role_id: "r-rs",
+            discord_role_name: "Recording Secretary",
+          },
+          { discord_role_id: "r-rush", discord_role_name: "Rush Chair" },
+          { discord_role_id: "r-gamer", discord_role_name: "Gamers" },
+        ],
+        warnings: [],
+      });
+    const becomes = (roleName: string) =>
+      screen
+        .getByText(roleName, { selector: "span" })
+        .closest("div.rounded-md")
+        ?.querySelector("select") as HTMLSelectElement;
+
+    it("asks about roles before channels, defaulting by name, then a close match, then new or ignore", async () => {
+      scanWithRoles();
+      renderAtConsent();
+      await screen.findByRole("heading", { name: "Map the roles" });
+
+      expect(becomes("treasurer").value).toBe("role-treasurer");
+      expect(becomes("Recording Secretary").value).toBe("role-secretary");
+      // Reads a private channel, matches nothing: a new role.
+      expect(becomes("Rush Chair").value).toBe("__new__");
+      expect(
+        (screen.getByLabelText("New role name") as HTMLInputElement).value,
+      ).toBe("Rush Chair");
+      // Reads nothing private: creates nothing.
+      expect(becomes("Gamers").value).toBe("__ignore__");
+
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await waitFor(() =>
+        expect(setRoleMapping).toHaveBeenCalledWith({
+          id: "import-1",
+          roles: [
+            {
+              discord_role_id: "r-treasurer",
+              discord_role_name: "treasurer",
+              action: "existing",
+              frapp_role_id: "role-treasurer",
+              new_role_name: undefined,
+            },
+            {
+              discord_role_id: "r-rs",
+              discord_role_name: "Recording Secretary",
+              action: "existing",
+              frapp_role_id: "role-secretary",
+              new_role_name: undefined,
+            },
+            {
+              discord_role_id: "r-rush",
+              discord_role_name: "Rush Chair",
+              action: "new",
+              frapp_role_id: undefined,
+              new_role_name: "Rush Chair",
+            },
+            {
+              discord_role_id: "r-gamer",
+              discord_role_name: "Gamers",
+              action: "ignore",
+              frapp_role_id: undefined,
+              new_role_name: undefined,
+            },
+          ],
+        }),
+      );
+      expect(
+        await screen.findByRole("heading", { name: "Map the channels" }),
+      ).toBeInTheDocument();
+    });
+
+    it("starts a private channel as Same as Discord, names who reads it, and sends no permissions", async () => {
+      scanWithRoles();
+      await renderAtChannels();
+      await screen.findByText(/Nothing needs attention/);
+      fireEvent.click(screen.getByRole("button", { name: /^Officers/ }));
+      expect(
+        screen.getByText("Readable by Treasurer, Rush Chair (new)."),
+      ).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await waitFor(() => expect(setDiscoveredMapping).toHaveBeenCalled());
+      const { channels } = setDiscoveredMapping.mock.calls[0]![0] as {
+        channels: Record<string, unknown>[];
+      };
+      expect(channels[0]).toMatchObject({
+        discord_channel_id: "c1",
+        new_channel_visibility: "discord",
+        new_channel_required_permissions: undefined,
+      });
+      // Review says what starting will do to roles.
+      expect(await screen.findByText(/New roles:/)).toBeInTheDocument();
+    });
+
+    it("asks who can read a private channel once every role that could read it is ignored", async () => {
+      scanWithRoles();
+      renderAtConsent();
+      await screen.findByRole("heading", { name: "Map the roles" });
+      fireEvent.change(becomes("Rush Chair"), {
+        target: { value: "__ignore__" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await screen.findByRole("heading", { name: "Map the channels" });
+
+      // #exec keeps Treasurer, so it stays Same as Discord, narrower than
+      // Discord; #rush has no mapped reader left and needs a choice.
+      expect(
+        await screen.findByRole("button", {
+          name: /#rush was private in Discord, and none of the roles/,
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /#exec was private/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+    });
+
+    it("keeps every role on Ignore for a viewer who cannot manage roles", async () => {
+      myPermissions.value = ["channels:manage"];
+      scanWithRoles();
+      renderAtConsent();
+      await screen.findByRole("heading", { name: "Map the roles" });
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await waitFor(() => expect(setRoleMapping).toHaveBeenCalled());
+      const { roles } = setRoleMapping.mock.calls[0]![0] as {
+        roles: { action: string }[];
+      };
+      expect(roles.map((role) => role.action)).toEqual([
+        "ignore",
+        "ignore",
+        "ignore",
+        "ignore",
+      ]);
+    });
   });
 });
 
@@ -991,28 +1194,77 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
   });
 });
 
-describe("RoleMappingStep — informational only", () => {
-  const roles = [{ roleId: "r1", roleName: "President" }];
+describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
+  const frappRoles = [
+    { id: "role-secretary", name: "Secretary", system_key: "SECRETARY" },
+  ];
 
-  it("defaults every Discord role to Member", () => {
-    render(<RoleMappingStep roles={roles} choices={{}} onChange={() => {}} />);
-
-    const checked = screen
-      .getAllByRole("radio")
-      .filter((radio) => radio.getAttribute("aria-checked") === "true");
-
-    expect(checked).toHaveLength(1);
-    expect(checked[0]).toHaveTextContent("Member");
+  it("says that nobody is put into a role", () => {
+    render(
+      <RoleMappingStep
+        roles={[{ roleId: "r1", roleName: "Recording Secretary" }]}
+        choices={{ r1: { action: "existing", roleId: "role-secretary" } }}
+        matches={{ r1: "close" }}
+        privateReads={new Map([["r1", 2]])}
+        frappRoles={frappRoles}
+        issues={[]}
+        canManageRoles
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByText(/Nobody is put into a role/)).toBeInTheDocument();
+    // A guess is labelled as one, so the admin gives it a second look.
+    expect(screen.getByText("Close match")).toBeInTheDocument();
+    expect(
+      screen.getByText("Could read 2 private channels"),
+    ).toBeInTheDocument();
   });
 
-  it("says plainly that the mapping grants nothing", () => {
-    render(<RoleMappingStep roles={roles} choices={{}} onChange={() => {}} />);
-    expect(screen.getByText(/does not\s+grant anything/)).toBeInTheDocument();
+  it("asks for the new role's name, and reports what blocks it in place", () => {
+    const onChange = vi.fn();
+    render(
+      <RoleMappingStep
+        roles={[{ roleId: "r1", roleName: "Rush Chair" }]}
+        choices={{ r1: { action: "new", name: "" } }}
+        matches={{}}
+        privateReads={new Map()}
+        frappRoles={frappRoles}
+        issues={[
+          { roleId: "r1", message: "Name the new role for Rush Chair." },
+        ]}
+        canManageRoles
+        onChange={onChange}
+      />,
+    );
+    expect(
+      screen.getByText("Name the new role for Rush Chair."),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("New role name"), {
+      target: { value: "Rush" },
+    });
+    expect(onChange).toHaveBeenCalledWith("r1", {
+      action: "new",
+      name: "Rush",
+    });
   });
 
-  it("explains itself when the export named no roles", () => {
-    render(<RoleMappingStep roles={[]} choices={{}} onChange={() => {}} />);
-    expect(screen.getByText(/No Discord roles were found/)).toBeInTheDocument();
+  it("locks every role on Ignore, and says why, for a viewer who cannot manage roles", () => {
+    render(
+      <RoleMappingStep
+        roles={[{ roleId: "r1", roleName: "Exec" }]}
+        choices={{ r1: { action: "ignore" } }}
+        matches={{}}
+        privateReads={new Map()}
+        frappRoles={frappRoles}
+        issues={[]}
+        canManageRoles={false}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Becomes")).toBeDisabled();
+    expect(
+      screen.getByText(/needs permission to manage roles/),
+    ).toBeInTheDocument();
   });
 });
 

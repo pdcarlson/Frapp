@@ -1,9 +1,9 @@
 "use client";
 
 import type { ChannelChoice } from "./channel-mapping-step";
-import type { StagedExport } from "./upload-step";
+import type { StagedChannel, StagedExport, StagedRole } from "./upload-step";
 import type { ImportSource } from "./source-step";
-import { DEFAULT_SIGNET_ROLE } from "./role-mapping-step";
+import type { RoleChoice, SameAsDiscordReaders } from "./role-matching";
 
 const ACTION_LABEL: Record<ChannelChoice["action"], string> = {
   create_new: "New channel",
@@ -11,20 +11,58 @@ const ACTION_LABEL: Record<ChannelChoice["action"], string> = {
   skip: "Skipped",
 };
 
+const VISIBILITY_LABEL: Record<
+  NonNullable<ChannelChoice["visibility"]>,
+  string | null
+> = {
+  chapter: null,
+  restricted: "restricted",
+  discord: "same as Discord",
+};
+
 export function ReviewStep({
   staged,
   source,
   channelChoices,
+  roles,
   roleChoices,
+  readersOf,
 }: {
   staged: StagedExport;
   source: ImportSource;
   channelChoices: Record<string, ChannelChoice>;
-  roleChoices: Record<string, string>;
+  roles: StagedRole[];
+  roleChoices: Record<string, RoleChoice>;
+  readersOf: (channel: StagedChannel) => SameAsDiscordReaders | null;
 }) {
   const importing = staged.channels.filter(
     (channel) => channelChoices[channel.channelId]?.action !== "skip",
   );
+  // What starting the import does to roles: which it creates, and which
+  // Frapp roles are given read access to the channels imported "Same as
+  // Discord". It never puts anyone into one.
+  const created = [
+    ...new Set(
+      roles.flatMap((role) => {
+        const choice = roleChoices[role.roleId];
+        return choice?.action === "new" ? [choice.name.trim()] : [];
+      }),
+    ),
+  ];
+  const readers = [
+    ...new Set(
+      staged.channels.flatMap((channel) => {
+        const choice = channelChoices[channel.channelId];
+        if (
+          choice?.action !== "create_new" ||
+          choice.visibility !== "discord"
+        ) {
+          return [];
+        }
+        return readersOf(channel)?.roles ?? [];
+      }),
+    ),
+  ];
 
   return (
     <div className="space-y-4 text-sm">
@@ -62,6 +100,10 @@ export function ReviewStep({
         <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
           {staged.channels.map((channel) => {
             const choice = channelChoices[channel.channelId];
+            const visibility =
+              choice?.action === "create_new" && choice.visibility
+                ? VISIBILITY_LABEL[choice.visibility]
+                : null;
             return (
               <li
                 key={channel.channelId}
@@ -73,10 +115,7 @@ export function ReviewStep({
                   {choice?.action === "create_new" && choice.newName
                     ? ` · #${choice.newName}`
                     : ""}
-                  {choice?.action === "create_new" &&
-                  choice.visibility === "restricted"
-                    ? " · restricted"
-                    : ""}
+                  {visibility ? ` · ${visibility}` : ""}
                 </span>
               </li>
             );
@@ -84,13 +123,30 @@ export function ReviewStep({
         </ul>
       </div>
 
+      {created.length > 0 || readers.length > 0 ? (
+        <div className="space-y-1 rounded-lg border border-border p-3">
+          {created.length > 0 ? (
+            <p>
+              <span className="font-semibold">New roles:</span>{" "}
+              {created.join(", ")}. Deleting the import later keeps them.
+            </p>
+          ) : null}
+          {readers.length > 0 ? (
+            <p>
+              <span className="font-semibold">
+                Can read the channels imported same as Discord:
+              </span>{" "}
+              {readers.join(", ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       <p className="text-xs text-muted-foreground">
-        Everyone imports as {DEFAULT_SIGNET_ROLE.toLowerCase()}:{" "}
-        {Object.keys(roleChoices).length > 0
-          ? "your role notes are saved for promoting people afterwards."
-          : "promote people from Settings → Roles once it finishes."}{" "}
-        Imported messages are read-only, never notify anyone, and never count as
-        unread. You can delete the whole import later.
+        Nobody is put into a role by the import. Add people to roles in Settings
+        → Roles once it finishes. Imported messages are read-only, never notify
+        anyone, and never count as unread. You can delete the whole import
+        later.
       </p>
     </div>
   );

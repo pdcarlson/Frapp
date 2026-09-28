@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -17,6 +18,7 @@ import {
   fileExtension,
   isAllowedUploadMime,
   isWithinArchiveUploadSizeLimit,
+  ROLE_NAME_MAX_LENGTH,
 } from '@repo/validation';
 import { formatBytes } from '@repo/formatting';
 import {
@@ -48,7 +50,16 @@ import type {
   DiscordImportSource,
   DiscordImportStatus,
   DiscordRoleMapping,
+  DiscordRoleMappingAction,
 } from '#domain/entities/discord-import.entity';
+import type { Role } from '#domain/entities/role.entity';
+import {
+  DISCORD_READ_PERMISSION_PREFIX,
+  parseRoleMapping,
+  roleNameKey,
+  sameAsDiscordGate,
+  uniqueReadPermission,
+} from '#domain/utils/discord-role-gates';
 import {
   DISCORD_BOT_GATEWAY,
   DiscordApiError,
@@ -56,6 +67,7 @@ import {
   type IDiscordBotGateway,
 } from '#domain/adapters/discord.interface';
 import { DiscordOAuthService } from './discord-oauth.service';
+import { RbacService } from './rbac.service';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
@@ -168,28 +180,75 @@ export interface ChannelMappingInput {
    * (it defaults to the whole chapter); refused for one that was private
    * there, holds private threads, or whose privacy the scan could not read,
    * and for every channel of an uploaded export, which says nothing either way.
+   *
+   * `discord` is "Same as Discord" (#2818): the Frapp roles mapped from the
+   * Discord roles that could read it. Bot path only, for a channel the scan
+   * saw was private, with at least one of its reader roles mapped. The API
+   * works out the permissions; any the caller sends are ignored.
    */
-  new_channel_visibility?: 'chapter' | 'restricted' | null;
+  new_channel_visibility?: 'chapter' | 'restricted' | 'discord' | null;
   /** Required, and non-empty, when `new_channel_visibility` is `restricted`. */
   new_channel_required_permissions?: string[] | null;
   message_count?: number;
 }
 
-/** The chat_channels type and gate a decision's new channel will get. */
-function newChannelShape(decision: ChannelMappingInput | undefined): {
+/**
+ * One Discord role's answer on the role step, as the caller sends it. The
+ * read permission is never taken from the caller: the API assigns it.
+ */
+export interface RoleMappingInput {
+  discord_role_id: string;
+  discord_role_name: string;
+  action: DiscordRoleMappingAction;
+  /** `existing` only: one of this chapter's roles. */
+  frapp_role_id?: string | null;
+  /** `new` only: the name to create the role with. */
+  new_role_name?: string | null;
+}
+
+/**
+ * The chat_channels type and gate a decision's new channel will get.
+ * `sameAsDiscord` is the resolved gate of a "Same as Discord" decision.
+ */
+function newChannelShape(
+  decision: ChannelMappingInput | undefined,
+  sameAsDiscord?: string[],
+): {
   new_channel_type: DiscordImportNewChannelType;
   new_channel_required_permissions: string[] | null;
+  new_channel_same_as_discord: boolean;
 } {
-  if (
-    decision?.mapping_action === 'create_new' &&
-    decision.new_channel_visibility === 'restricted'
-  ) {
-    return {
-      new_channel_type: 'ROLE_GATED',
-      new_channel_required_permissions: normalisedPermissions(decision),
-    };
+  if (decision?.mapping_action === 'create_new') {
+    if (
+      decision.new_channel_visibility === 'discord' &&
+      sameAsDiscord &&
+      sameAsDiscord.length > 0
+    ) {
+      return {
+        new_channel_type: 'ROLE_GATED',
+        new_channel_required_permissions: sameAsDiscord,
+        new_channel_same_as_discord: true,
+      };
+    }
+    if (decision.new_channel_visibility === 'restricted') {
+      return {
+        new_channel_type: 'ROLE_GATED',
+        new_channel_required_permissions: normalisedPermissions(decision),
+        new_channel_same_as_discord: false,
+      };
+    }
   }
-  return { new_channel_type: 'PUBLIC', new_channel_required_permissions: null };
+  return {
+    new_channel_type: 'PUBLIC',
+    new_channel_required_permissions: null,
+    new_channel_same_as_discord: false,
+  };
+}
+
+/** Whether two gates hold the same permissions, in any order. */
+function sameGate(a: readonly string[], b: readonly string[] | null): boolean {
+  const right = new Set(b ?? []);
+  return a.length === right.size && a.every((entry) => right.has(entry));
 }
 
 /**
@@ -246,6 +305,7 @@ export class DiscordImportService {
     @Inject(DISCORD_BOT_GATEWAY)
     private readonly bot: IDiscordBotGateway,
     private readonly oauthService: DiscordOAuthService,
+    private readonly rbac: RbacService,
   ) {}
 
   async create(
@@ -575,13 +635,15 @@ export class DiscordImportService {
       private_in_discord: channel.privateInDiscord,
       new_channel_type: 'PUBLIC' as const,
       new_channel_required_permissions: null,
+      discord_reader_role_ids: channel.readerRoleIds,
+      new_channel_same_as_discord: false,
     }));
 
     const channels = await this.importRepo.replaceChannels(id, chapterId, rows);
 
     // Roles come from the guild, not from message authors: the API names roles
     // on the guild and puts only ids on a message, so this is the only place
-    // the worksheet can get readable names from. They are the same read the
+    // the role step can get readable names from. They are the same read the
     // scan computed access from, so a roles failure reaches the admin as the
     // scan's warning rather than failing the request after the rows were
     // replaced.
@@ -653,6 +715,11 @@ export class DiscordImportService {
       ),
     );
 
+    // The role step runs first, so the mapping a "Same as Discord" channel is
+    // gated through is already saved.
+    const roleMapping = parseRoleMapping(job.role_mapping);
+    const gates = new Map<string, string[]>();
+
     const byId = new Map<string, ChannelMappingInput>();
     for (const decision of decisions) {
       const scanned = known.get(decision.discord_channel_id);
@@ -686,6 +753,15 @@ export class DiscordImportService {
             `${reason} Choose who can read it in Frapp before importing it.`,
           );
         }
+      }
+      if (
+        decision.mapping_action === 'create_new' &&
+        decision.new_channel_visibility === 'discord'
+      ) {
+        gates.set(
+          scanned.discord_channel_id,
+          this.sameAsDiscordGateFor(scanned, roleMapping),
+        );
       }
       await this.assertDecisionResolvable(decision, chapterId);
       byId.set(decision.discord_channel_id, decision);
@@ -729,12 +805,45 @@ export class DiscordImportService {
           // Scan facts are carried across a re-map, never taken from the caller.
           readable: channel.readable,
           private_in_discord: channel.private_in_discord,
-          ...newChannelShape(decision),
+          discord_reader_role_ids: channel.discord_reader_role_ids,
+          ...newChannelShape(decision, gates.get(key)),
         };
       },
     );
 
     return this.importRepo.replaceChannels(id, chapterId, rows);
+  }
+
+  /**
+   * The gate of a channel mapped "Same as Discord", or a sentence saying why
+   * it cannot be. What the scan recorded decides, never the caller: only a
+   * channel it saw was private has a Discord audience to copy.
+   */
+  private sameAsDiscordGateFor(
+    scanned: DiscordImportChannel,
+    roleMapping: readonly DiscordRoleMapping[],
+  ): string[] {
+    const name = `#${scanned.discord_channel_name}`;
+    // Empty is a channel hidden only by a deny: every role reads it by
+    // inheriting from @everyone, and Frapp has no deny to copy.
+    if (
+      scanned.private_in_discord !== true ||
+      !scanned.discord_reader_role_ids?.length
+    ) {
+      throw new BadRequestException(
+        `Frapp has no Discord roles to copy for ${name}, so it cannot be "Same as Discord". Choose who can read it in Frapp.`,
+      );
+    }
+    const gate = sameAsDiscordGate(
+      scanned.discord_reader_role_ids,
+      roleMapping,
+    );
+    if (gate.length === 0) {
+      throw new BadRequestException(
+        `None of the Discord roles that could read ${name} is mapped to a Frapp role. Map one on the roles step, or choose who can read it in Frapp.`,
+      );
+    }
+    return gate;
   }
 
   /**
@@ -827,6 +936,14 @@ export class DiscordImportService {
           `An export does not say whether #${channel.discord_channel_name} was private in Discord. Choose who can read it in Frapp before importing it.`,
         );
       }
+      if (
+        channel.mapping_action === 'create_new' &&
+        channel.new_channel_visibility === 'discord'
+      ) {
+        throw new BadRequestException(
+          `An export does not say which Discord roles could read #${channel.discord_channel_name}, so it cannot be "Same as Discord". Choose who can read it in Frapp.`,
+        );
+      }
       await this.assertDecisionResolvable(channel, chapterId);
     }
 
@@ -851,31 +968,182 @@ export class DiscordImportService {
         cursor_before_snowflake: null,
         parent_discord_channel_id: null,
         position: 0,
-        // An export carries no Discord permissions, so neither fact is known.
+        // An export carries no Discord permissions, so no fact is known.
         readable: null,
         private_in_discord: null,
+        discord_reader_role_ids: null,
         ...newChannelShape(channel),
       })),
     );
   }
 
   /**
-   * Record which Frapp role each Discord role corresponds to.
+   * Record which Frapp role each Discord role becomes (#2818).
    *
-   * Stored and shown back to the admin; **never read to grant anything**. The
-   * importer does not touch a `members` row and does not assign a role — every
-   * imported author is a name on a message, not an account. This is a worksheet
-   * for promoting people by hand later, which is the model Frapp's onboarding
-   * already uses.
+   * The mapping gates channels and creates roles, but never assigns anyone:
+   * the importer does not touch a `members` row, since every imported author
+   * is a name on a message, not an account. Nothing is created or granted
+   * here. Starting the import does that (`provisionRoles`), for the channels
+   * that end up gated on it.
+   *
+   * Saving it assigns each mapped Frapp role its read permission, so the
+   * channel step can resolve a "Same as Discord" gate before any new role
+   * exists. Mapping anything needs `roles:manage` as well as the import's own
+   * `channels:manage`, because starting the import creates roles and grants
+   * permissions that Settings → Roles would otherwise require it for. An
+   * all-Ignore mapping needs nothing more.
    */
   async setRoleMapping(
     id: string,
     chapterId: string,
-    roleMapping: DiscordRoleMapping[],
+    entries: RoleMappingInput[],
+    canManageRoles: boolean,
   ): Promise<DiscordImport> {
     const job = await this.load(id, chapterId);
     this.assertMutable(job);
-    return this.importRepo.update(id, chapterId, { role_mapping: roleMapping });
+
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      if (seen.has(entry.discord_role_id)) {
+        throw new BadRequestException(
+          `The Discord role ${entry.discord_role_name} is mapped twice.`,
+        );
+      }
+      seen.add(entry.discord_role_id);
+    }
+
+    const mapsSomething = entries.some((entry) => entry.action !== 'ignore');
+    if (mapsSomething && !canManageRoles) {
+      throw new ForbiddenException(
+        'Mapping Discord roles to Frapp roles creates roles and lets them read the imported channels, which needs permission to manage roles. Set every role to Ignore, or ask someone who can manage roles to map them.',
+      );
+    }
+
+    const roles = mapsSomething ? await this.rbac.findByChapter(chapterId) : [];
+    const mapping = this.resolveRoleMapping(
+      entries,
+      roles,
+      parseRoleMapping(job.role_mapping),
+    );
+    return this.importRepo.update(id, chapterId, { role_mapping: mapping });
+  }
+
+  /**
+   * Validate the role step's answers against the chapter's roles, and give
+   * each mapped Frapp role its read permission.
+   *
+   * A read permission is held by one role alone, or it would gate a channel
+   * to a second role nobody chose. So an existing role reuses a
+   * `channels:read:` permission only it already holds (from an earlier import),
+   * and otherwise gets a new string no role in the chapter holds. Every entry
+   * mapping to the same role shares one, including two Discord roles mapped
+   * to the same new role name.
+   */
+  private resolveRoleMapping(
+    entries: readonly RoleMappingInput[],
+    roles: readonly Role[],
+    previous: readonly DiscordRoleMapping[],
+  ): DiscordRoleMapping[] {
+    const byId = new Map(roles.map((role) => [role.id, role]));
+    const byName = new Map(roles.map((role) => [roleNameKey(role.name), role]));
+    const previousById = new Map(
+      previous.map((entry) => [entry.discord_role_id, entry]),
+    );
+
+    const holders = new Map<string, number>();
+    for (const role of roles) {
+      for (const permission of role.permissions) {
+        holders.set(permission, (holders.get(permission) ?? 0) + 1);
+      }
+    }
+    const taken = new Set(holders.keys());
+    const assigned = new Map<string, string>();
+    const permissionFor = (target: string, name: string, role?: Role) => {
+      const known = assigned.get(target);
+      if (known) return known;
+      const permission =
+        role?.permissions.find(
+          (held) =>
+            held.startsWith(DISCORD_READ_PERMISSION_PREFIX) &&
+            holders.get(held) === 1,
+        ) ?? uniqueReadPermission(name, taken);
+      taken.add(permission);
+      assigned.set(target, permission);
+      return permission;
+    };
+
+    return entries.map((entry): DiscordRoleMapping => {
+      const base = {
+        discord_role_id: entry.discord_role_id,
+        discord_role_name: entry.discord_role_name,
+      };
+      if (entry.action === 'existing') {
+        const role = entry.frapp_role_id
+          ? byId.get(entry.frapp_role_id)
+          : undefined;
+        if (!role) {
+          throw new BadRequestException(
+            `The role chosen for ${entry.discord_role_name} is not one of this chapter's roles.`,
+          );
+        }
+        return {
+          ...base,
+          action: 'existing',
+          frapp_role_id: role.id,
+          new_role_name: null,
+          read_permission: permissionFor(`role:${role.id}`, role.name, role),
+        };
+      }
+      if (entry.action === 'new') {
+        const name = entry.new_role_name?.trim() ?? '';
+        if (!name) {
+          throw new BadRequestException(
+            `Name the new role for ${entry.discord_role_name}.`,
+          );
+        }
+        if (name.length > ROLE_NAME_MAX_LENGTH) {
+          throw new BadRequestException(
+            `The new role for ${entry.discord_role_name} needs a name of at most ${ROLE_NAME_MAX_LENGTH} characters.`,
+          );
+        }
+        const clash = byName.get(roleNameKey(name));
+        if (clash) {
+          // The role an earlier start of THIS import created is not a clash:
+          // re-saving the mapping of a failed import keeps pointing at it.
+          const before = previousById.get(entry.discord_role_id);
+          if (before?.action === 'new' && before.frapp_role_id === clash.id) {
+            return {
+              ...base,
+              action: 'new',
+              frapp_role_id: clash.id,
+              new_role_name: clash.name,
+              read_permission: permissionFor(
+                `role:${clash.id}`,
+                clash.name,
+                clash,
+              ),
+            };
+          }
+          throw new BadRequestException(
+            `A role named "${clash.name}" already exists. Map ${entry.discord_role_name} to it instead of creating a new one.`,
+          );
+        }
+        return {
+          ...base,
+          action: 'new',
+          frapp_role_id: null,
+          new_role_name: name,
+          read_permission: permissionFor(`new:${roleNameKey(name)}`, name),
+        };
+      }
+      return {
+        ...base,
+        action: 'ignore',
+        frapp_role_id: null,
+        new_role_name: null,
+        read_permission: null,
+      };
+    });
   }
 
   async start(id: string, chapterId: string): Promise<DiscordImport> {
@@ -930,11 +1198,123 @@ export class DiscordImportService {
       );
     }
 
+    const roleMapping = await this.provisionRoles(
+      chapterId,
+      channels,
+      parseRoleMapping(job.role_mapping),
+    );
+
     return this.importRepo.update(id, chapterId, {
       status: 'ready',
       parts_total: partsTotal,
       error: null,
+      role_mapping: roleMapping,
     });
+  }
+
+  /**
+   * Create the mapping's new roles and grant each role the read permission
+   * of the channels about to be created on it (#2818). Never assigns anyone.
+   *
+   * Only a channel still to be created counts: one whose Frapp channel exists
+   * already has its gate. Each such "Same as Discord" channel is checked
+   * against the mapping as it stands now, because the role step can be saved
+   * again after the channels were mapped, and a gate that no longer matches
+   * would be created on permissions nobody is granted.
+   *
+   * A new role is created with only the read permissions that gate an
+   * imported channel, and nothing else (owner's decision on #2818). Re-running
+   * it is safe: a new role already created, by an earlier start that failed
+   * or by anyone since, is found by name and used, and a permission a role
+   * already holds is not added twice.
+   */
+  private async provisionRoles(
+    chapterId: string,
+    channels: readonly DiscordImportChannel[],
+    mapping: DiscordRoleMapping[],
+  ): Promise<DiscordRoleMapping[]> {
+    const needed = new Set<string>();
+    for (const channel of channels) {
+      if (
+        channel.parent_discord_channel_id ||
+        channel.mapping_action !== 'create_new' ||
+        channel.target_channel_id !== null ||
+        channel.status === 'completed' ||
+        !channel.new_channel_same_as_discord
+      ) {
+        continue;
+      }
+      const gate = sameAsDiscordGate(
+        channel.discord_reader_role_ids ?? [],
+        mapping,
+      );
+      if (
+        gate.length === 0 ||
+        !sameGate(gate, channel.new_channel_required_permissions)
+      ) {
+        throw new BadRequestException(
+          `The role mapping changed after #${channel.discord_channel_name} was mapped. Save the channel mapping again, then start the import.`,
+        );
+      }
+      for (const permission of gate) needed.add(permission);
+    }
+
+    const creating = mapping.filter(
+      (entry) => entry.action === 'new' && entry.frapp_role_id === null,
+    );
+    const granting = mapping.some(
+      (entry) => entry.read_permission && needed.has(entry.read_permission),
+    );
+    if (creating.length === 0 && !granting) return mapping;
+
+    const roles = await this.rbac.findByChapter(chapterId);
+    const byId = new Map(roles.map((role) => [role.id, role]));
+    const byName = new Map(roles.map((role) => [roleNameKey(role.name), role]));
+    let order = Math.max(0, ...roles.map((role) => role.display_order));
+
+    const provisioned = mapping.map((entry) => ({ ...entry }));
+    for (const entry of provisioned) {
+      if (entry.action !== 'new' || entry.frapp_role_id !== null) continue;
+      const name = entry.new_role_name ?? entry.discord_role_name;
+      let role = byName.get(roleNameKey(name));
+      if (!role) {
+        const grant =
+          entry.read_permission && needed.has(entry.read_permission)
+            ? [entry.read_permission]
+            : [];
+        order += 1;
+        role = await this.rbac.create(chapterId, {
+          name,
+          permissions: grant,
+          display_order: order,
+          color: null,
+        });
+        byName.set(roleNameKey(name), role);
+      }
+      byId.set(role.id, role);
+      entry.frapp_role_id = role.id;
+    }
+
+    for (const entry of provisioned) {
+      const permission = entry.read_permission;
+      if (!permission || !needed.has(permission) || !entry.frapp_role_id) {
+        continue;
+      }
+      const role = byId.get(entry.frapp_role_id);
+      if (!role) {
+        throw new BadRequestException(
+          `The Frapp role ${entry.discord_role_name} maps to no longer exists. Map the roles again, then start the import.`,
+        );
+      }
+      if (role.permissions.includes(permission)) continue;
+      byId.set(
+        role.id,
+        await this.rbac.update(role.id, chapterId, {
+          permissions: [...role.permissions, permission],
+        }),
+      );
+    }
+    return provisioned;
   }
 
   async cancel(id: string, chapterId: string): Promise<DiscordImport> {

@@ -106,9 +106,16 @@ export interface DiscordChannelRef {
    * private whatever its parent is. Null when unknown.
    */
   privateInDiscord: boolean | null;
+  /**
+   * For a top-level channel that is private in Discord: the roles that could
+   * read its history, each on its own (`readerRoleIds`), in the order of
+   * `DiscordChannelDiscovery.roles`. Only roles on that list are named. Null
+   * for a public channel, a thread, or when the roles could not be read.
+   */
+  readerRoleIds: string[] | null;
 }
 
-/** A role as the guild defines it, for the role worksheet. */
+/** A role as the guild defines it, for the role mapping step. */
 export interface DiscordRoleRef {
   id: string;
   name: string;
@@ -125,9 +132,11 @@ export interface DiscordChannelDiscovery {
   channels: DiscordChannelRef[];
   warnings: string[];
   /**
-   * The guild's roles, for the (informational) role worksheet: the same read
-   * discovery computes access from, so one failure cannot pass one and fail
-   * the other. Empty when they could not be read, which `warnings` says.
+   * The guild's roles a chapter could map, highest first as Discord lists
+   * them: every role but `@everyone` and the managed roles Discord gives
+   * bots and boosters. The same read discovery computes access from, so one
+   * failure cannot pass one and fail the other. Empty when they could not be
+   * read, which `warnings` says.
    */
   roles: DiscordRoleRef[];
 }

@@ -4,7 +4,6 @@ import {
   DiscordExportFormatError,
   MAX_SUMMARISED_REACTIONS,
   buildImportPayload,
-  collectRoles,
   parseExportPart,
   parseExportPreamble,
   resolveAuthorName,
@@ -285,16 +284,6 @@ describe('toImportedAttachments', () => {
     expect(rows).toHaveLength(0);
     expect(unresolved).toEqual([
       'general [800000000000000001]_Files/never-uploaded.zip',
-    ]);
-  });
-});
-
-describe('collectRoles', () => {
-  it('collects every distinct role named on any author', () => {
-    const roles = collectRoles(part000().messages);
-    expect([...roles.entries()].sort()).toEqual([
-      ['500000000000000001', 'President'],
-      ['500000000000000002', 'Brother'],
     ]);
   });
 });

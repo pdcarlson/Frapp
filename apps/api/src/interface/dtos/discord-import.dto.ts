@@ -13,6 +13,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import { MAX_UPLOAD_URL_BATCH } from '../../application/services/discord-import.service';
 import { RawValue } from './raw-value.transform';
 
@@ -55,13 +56,17 @@ export class DiscordDiscoveredRoleDto {
 export class DiscordDiscoveryResponseDto {
   @ApiProperty({
     description:
-      'Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord, or for a thread a private thread; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created.',
+      'Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord, or for a thread a private thread; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown.',
     type: 'array',
     items: { type: 'object', additionalProperties: true },
   })
   channels: unknown[];
 
-  @ApiProperty({ type: [DiscordDiscoveredRoleDto] })
+  @ApiProperty({
+    type: [DiscordDiscoveredRoleDto],
+    description:
+      'The roles the chapter can map, highest first as Discord lists them: every role except `@everyone` and the managed roles Discord gives bots and boosters. Empty when they could not be read, which `warnings` says.',
+  })
   roles: DiscordDiscoveredRoleDto[];
 
   @ApiProperty({
@@ -171,13 +176,13 @@ export class DiscordChannelMappingDto {
   new_channel_is_read_only?: boolean;
 
   @ApiPropertyOptional({
-    enum: ['chapter', 'restricted'],
+    enum: ['chapter', 'restricted', 'discord'],
     description:
-      'Who can read the channel `create_new` makes: the whole chapter, or only members holding one of `new_channel_required_permissions` (a ROLE_GATED channel). Omitted or null means not chosen, which is refused unless this is a bot import whose scan saw the channel was public in Discord and holding no private thread. An uploaded export always needs it.',
+      'Who can read the channel `create_new` makes: the whole chapter, only members holding one of `new_channel_required_permissions` (a ROLE_GATED channel), or `discord` ("Same as Discord"): ROLE_GATED on the read permissions of the Frapp roles mapped (on the roles route) from the Discord roles that could read it. `discord` is for a bot channel the scan saw was private, with at least one of its reader roles mapped; the API works out its permissions and ignores any sent. Omitted or null means not chosen, which is refused unless this is a bot import whose scan saw the channel was public in Discord and holding no private thread. An uploaded export always needs it, and cannot use `discord`.',
   })
   @IsOptional()
-  @IsIn(['chapter', 'restricted'])
-  new_channel_visibility?: 'chapter' | 'restricted' | null;
+  @IsIn(['chapter', 'restricted', 'discord'])
+  new_channel_visibility?: 'chapter' | 'restricted' | 'discord' | null;
 
   @ApiPropertyOptional({
     type: [String],
@@ -219,12 +224,31 @@ export class DiscordRoleMappingDto {
   discord_role_name: string;
 
   @ApiProperty({
+    enum: ['existing', 'new', 'ignore'],
     description:
-      'Frapp role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role.',
+      'What this Discord role becomes in Frapp: one of the chapter\'s roles (`frapp_role_id`), a new role created when the import starts (`new_role_name`), or nothing. It decides who reads the channels imported "Same as Discord"; it never assigns anyone to a role.',
   })
+  @IsIn(['existing', 'new', 'ignore'])
+  action: 'existing' | 'new' | 'ignore';
+
+  @ApiPropertyOptional({
+    type: String,
+    description: "Required for `existing`: one of this chapter's roles.",
+  })
+  @IsOptional()
+  @IsUUID()
+  frapp_role_id?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    maxLength: ROLE_NAME_MAX_LENGTH,
+    description:
+      'Required for `new`: the name to create the role with. It must not match an existing role, ignoring case.',
+  })
+  @IsOptional()
   @IsString()
-  @MaxLength(64)
-  signet_role_key: string;
+  @MaxLength(ROLE_NAME_MAX_LENGTH)
+  new_role_name?: string | null;
 }
 
 export class SetDiscordRoleMappingDto {

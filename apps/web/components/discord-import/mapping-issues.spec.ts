@@ -35,6 +35,24 @@ describe("defaultChoice", () => {
     });
   });
 
+  it("starts a private channel as Same as Discord when the scan named who could read it (#2818)", () => {
+    const exec = {
+      ...open("1", "exec"),
+      privateInDiscord: true,
+      readerRoleIds: ["r-exec"],
+    };
+    expect(defaultChoice(exec).visibility).toBe("discord");
+    // No roles named (only bots or single members could read it): a choice.
+    expect(defaultChoice({ ...exec, readerRoleIds: [] }).visibility).toBe(
+      undefined,
+    );
+    // A private thread was readable only by its own members, and would land
+    // where the whole channel's readers see it: a choice.
+    expect(defaultChoice({ ...exec, privateThreads: 1 }).visibility).toBe(
+      undefined,
+    );
+  });
+
   it("skips a channel the bot cannot read", () => {
     expect(defaultChoice({ ...open("1", "jboard"), readable: false })).toEqual({
       action: "skip",
@@ -152,6 +170,45 @@ describe("mappingIssues", () => {
       {
         channelId: null,
         message: "Every channel is skipped. Choose at least one to import.",
+      },
+    ]);
+  });
+});
+
+describe("mappingIssues — Same as Discord (#2818)", () => {
+  const exec = {
+    ...open("1", "exec"),
+    privateInDiscord: true,
+    readerRoleIds: ["r-exec", "r-pledge"],
+  };
+  const choices = {
+    "1": {
+      action: "create_new" as const,
+      newName: "exec",
+      visibility: "discord" as const,
+    },
+  };
+
+  it("counts as chosen while one of its Discord readers is mapped, even if another is ignored", () => {
+    expect(
+      mappingIssues([exec], choices, [], () => ({
+        roles: ["Exec"],
+        ignored: ["Pledge"],
+      })),
+    ).toEqual([]);
+  });
+
+  it("needs a choice once none of its readers is mapped", () => {
+    expect(
+      mappingIssues([exec], choices, [], () => ({
+        roles: [],
+        ignored: ["Exec", "Pledge"],
+      })),
+    ).toEqual([
+      {
+        channelId: "1",
+        message:
+          "#exec was private in Discord, and none of the roles that could read it is mapped to a Frapp role. Choose who can read it in Frapp, or map one of its roles.",
       },
     ]);
   });

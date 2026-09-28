@@ -15,8 +15,10 @@ export type ImportSource = "bot" | "upload";
  * if Discord ever throttles or refuses one shared bot across every chapter, and
  * it is the only path when a chapter cannot install apps in its own server.
  *
- * Everything downstream is identical either way — the same consent step, the
- * same channel mapping, the same role worksheet, the same delete.
+ * Everything downstream is the same either way — the same consent step, the
+ * same channel mapping, the same delete — except that only the bot can read
+ * the server's roles, so only the bot path maps them and offers "Same as
+ * Discord" for a private channel (#2818).
  */
 export function SourceStep({
   value,

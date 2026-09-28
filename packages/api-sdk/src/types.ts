@@ -2812,8 +2812,8 @@ export interface paths {
         };
         get?: never;
         /**
-         * Record the Discord role → Frapp role worksheet
-         * @description Informational only. Nothing reads this to grant a permission and the importer never assigns a role; everyone imports as a name on a message, and the admin promotes people by hand afterwards.
+         * Map each Discord role to a Frapp role
+         * @description Each Discord role becomes an existing Frapp role, a new role, or nothing (#2818). The mapping decides who reads the channels imported "Same as Discord"; starting the import creates the new roles and grants each role the read permission of the channels gated on it. It never assigns anyone to a role. Mapping anything other than `ignore` also needs `roles:manage`, since it creates roles and grants permissions.
          */
         put: operations["DiscordImportController_setRoleMapping_v1"];
         post?: never;
@@ -2834,7 +2834,7 @@ export interface paths {
         put?: never;
         /**
          * Scan the connected Discord server (bot imports only)
-         * @description Lists every channel in the server, and the threads of each channel the bot can read, and records them against this import, all set to `skip` until mapped. Each channel carries whether the bot can read it and whether it was private in Discord. Also returns the guild’s roles for the worksheet, and any warnings about what could not be read.
+         * @description Lists every channel in the server, and the threads of each channel the bot can read, and records them against this import, all set to `skip` until mapped. Each channel carries whether the bot can read it and whether it was private in Discord. Also returns the guild’s roles for the role step (every role but `@everyone` and the managed bot and booster roles) and, on each private channel, which of them could read it; and any warnings about what could not be read.
          */
         post: operations["DiscordImportController_discover_v1"];
         delete?: never;
@@ -4512,10 +4512,10 @@ export interface components {
             /** @default true */
             new_channel_is_read_only: boolean;
             /**
-             * @description Who can read the channel `create_new` makes: the whole chapter, or only members holding one of `new_channel_required_permissions` (a ROLE_GATED channel). Omitted or null means not chosen, which is refused unless this is a bot import whose scan saw the channel was public in Discord and holding no private thread. An uploaded export always needs it.
+             * @description Who can read the channel `create_new` makes: the whole chapter, only members holding one of `new_channel_required_permissions` (a ROLE_GATED channel), or `discord` ("Same as Discord"): ROLE_GATED on the read permissions of the Frapp roles mapped (on the roles route) from the Discord roles that could read it. `discord` is for a bot channel the scan saw was private, with at least one of its reader roles mapped; the API works out its permissions and ignores any sent. Omitted or null means not chosen, which is refused unless this is a bot import whose scan saw the channel was public in Discord and holding no private thread. An uploaded export always needs it, and cannot use `discord`.
              * @enum {string}
              */
-            new_channel_visibility?: "chapter" | "restricted";
+            new_channel_visibility?: "chapter" | "restricted" | "discord";
             /** @description Permission strings that can read a `restricted` new channel; a member needs any one. Required and non-empty when `new_channel_visibility` is `restricted`. */
             new_channel_required_permissions?: string[];
             message_count?: number;
@@ -4526,8 +4526,15 @@ export interface components {
         DiscordRoleMappingDto: {
             discord_role_id: string;
             discord_role_name: string;
-            /** @description Frapp role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role. */
-            signet_role_key: string;
+            /**
+             * @description What this Discord role becomes in Frapp: one of the chapter's roles (`frapp_role_id`), a new role created when the import starts (`new_role_name`), or nothing. It decides who reads the channels imported "Same as Discord"; it never assigns anyone to a role.
+             * @enum {string}
+             */
+            action: "existing" | "new" | "ignore";
+            /** @description Required for `existing`: one of this chapter's roles. */
+            frapp_role_id?: string;
+            /** @description Required for `new`: the name to create the role with. It must not match an existing role, ignoring case. */
+            new_role_name?: string;
         };
         SetDiscordRoleMappingDto: {
             roles: components["schemas"]["DiscordRoleMappingDto"][];
@@ -4537,10 +4544,11 @@ export interface components {
             discord_role_name: string;
         };
         DiscordDiscoveryResponseDto: {
-            /** @description Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord, or for a thread a private thread; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. */
+            /** @description Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord, or for a thread a private thread; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown. */
             channels: {
                 [key: string]: unknown;
             }[];
+            /** @description The roles the chapter can map, highest first as Discord lists them: every role except `@everyone` and the managed roles Discord gives bots and boosters. Empty when they could not be read, which `warnings` says. */
             roles: components["schemas"]["DiscordDiscoveredRoleDto"][];
             /** @description What could not be enumerated, in the admin’s words — most often private archived threads, which Discord gates behind a Manage Threads permission this read-only bot deliberately does not request. */
             warnings: string[];

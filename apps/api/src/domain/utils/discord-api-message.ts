@@ -55,8 +55,6 @@ export interface DiscordApiUser {
 export interface DiscordApiMessageMember {
   /** Per-server nickname — what the channel actually showed at the time. */
   nick?: string | null;
-  /** Role ids only. The API never names them here; the guild does. */
-  roles?: string[] | null;
 }
 
 export interface DiscordApiMessage {
@@ -164,18 +162,6 @@ export function discordAttachmentKey(
   return `${id}/${filename}`;
 }
 
-export interface ToExportShapeArgs {
-  /**
-   * Role names by id, from `GET /guilds/{id}/roles`.
-   *
-   * The API names roles on the guild, not on the message — a message carries
-   * only role *ids*. DCE writes `{id, name}` pairs, and `collectRoles` reads
-   * the name, so without this the role worksheet would list bare snowflakes
-   * and be useless to the admin filling it in.
-   */
-  roleNamesById?: ReadonlyMap<string, string>;
-}
-
 /**
  * One Discord API message, in the shape `toImportedMessage` already consumes.
  *
@@ -196,12 +182,7 @@ export interface ToExportShapeArgs {
  */
 export function toExportShapeMessage(
   message: DiscordApiMessage,
-  args: ToExportShapeArgs = {},
 ): DiscordExportMessage {
-  const roleIds = Array.isArray(message.member?.roles)
-    ? message.member.roles
-    : [];
-
   const author: DiscordExportUser = {
     id: asString(message.author?.id),
     name:
@@ -210,10 +191,6 @@ export function toExportShapeMessage(
     discriminator: asString(message.author?.discriminator),
     nickname: asString(message.member?.nick),
     isBot: message.author?.bot === true,
-    roles: roleIds
-      .map((id) => asString(id))
-      .filter((id): id is string => id !== null)
-      .map((id) => ({ id, name: args.roleNamesById?.get(id) ?? id })),
     avatarUrl: null,
   };
 

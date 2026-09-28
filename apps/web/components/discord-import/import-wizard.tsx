@@ -9,23 +9,40 @@ import {
   useDiscordConnection,
   useDiscordImportFiles,
   useDiscoverDiscordChannels,
+  useMyPermissions,
   useRequestDiscordUploadUrls,
+  useRoles,
   useSetDiscordChannelMapping,
   useSetDiscordRoleMapping,
   useSetDiscoveredChannelMapping,
   useStartDiscordImport,
 } from "@repo/hooks";
+import { can, ROLE_NAME_MAX_LENGTH } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { StepDots } from "@/components/onboarding/step-dots";
 import { useToast } from "@/hooks/use-toast";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import { asArray, cn, getErrorMessage } from "@/lib/utils";
+import { FOCUS_RING } from "@/components/ui/focus";
 import { ConsentStep } from "./consent-step";
 import { SourceStep, type ImportSource } from "./source-step";
 import { ConnectStep } from "./connect-step";
-import { UploadStep, type StagedExport } from "./upload-step";
+import {
+  UploadStep,
+  type StagedChannel,
+  type StagedExport,
+} from "./upload-step";
 import { ChannelMappingStep, type ChannelChoice } from "./channel-mapping-step";
 import { mappingIssues, restageChoices } from "./mapping-issues";
 import { RoleMappingStep } from "./role-mapping-step";
+import {
+  defaultRoleChoice,
+  privateReads,
+  roleIssues,
+  sameAsDiscordReaders,
+  type FrappRole,
+  type MatchKind,
+  type RoleChoice,
+} from "./role-matching";
 import { ReviewStep } from "./review-step";
 
 /**
@@ -43,8 +60,9 @@ import { ReviewStep } from "./review-step";
  * The `source` choice decides which of two middle steps runs — `connect` (add
  * the Frapp bot and let the API read the server) or `upload` (bring a
  * DiscordChatExporter export). Everything on either side of that is shared
- * verbatim: the same consent gate, the same channel mapping, the same role
- * worksheet, the same review.
+ * verbatim: the same consent gate, the same channel mapping, the same review.
+ * Only the bot path maps roles, because only the bot can read them: an export
+ * names no roles and carries no permissions.
  *
  * The upload path is **not** a fallback that switches on when the bot is
  * unavailable. It is a supported choice, offered every time, because it is what
@@ -60,10 +78,14 @@ export type WizardStep =
  * load-bearing, not cosmetic: creating a bot import resolves the chapter's
  * guild server-side, so the API refuses one for a chapter that has not
  * connected yet. Leaving `consent` is what mints the import on both paths.
+ *
+ * `roles` sits BEFORE `channels` for the same kind of reason (#2818): a
+ * private channel defaults to "Same as Discord", which is the Frapp roles its
+ * Discord roles map to, and the API resolves that through the saved mapping.
  */
 const STEP_ORDERS: Record<ImportSource, WizardStep[]> = {
-  bot: ["source", "connect", "consent", "channels", "roles", "review"],
-  upload: ["source", "consent", "upload", "channels", "roles", "review"],
+  bot: ["source", "connect", "consent", "roles", "channels", "review"],
+  upload: ["source", "consent", "upload", "channels", "review"],
 };
 
 const STEP_LABELS: Record<WizardStep, string> = {
@@ -103,7 +125,9 @@ export function ImportWizard({
   const [channelChoices, setChannelChoices] = useState<
     Record<string, ChannelChoice>
   >({});
-  const [roleChoices, setRoleChoices] = useState<Record<string, string>>({});
+  // Only the roles the admin changed; the rest read their default, which
+  // depends on the Frapp roles and on who could read what.
+  const [roleEdits, setRoleEdits] = useState<Record<string, RoleChoice>>({});
 
   const availability = useDiscordAvailability();
   const botConnection = useDiscordConnection();
@@ -122,6 +146,8 @@ export function ImportWizard({
   const setChannelMapping = useSetDiscordChannelMapping();
   const setDiscoveredMapping = useSetDiscoveredChannelMapping();
   const setRoleMapping = useSetDiscordRoleMapping();
+  const frappRolesQuery = useRoles();
+  const myPermissions = useMyPermissions();
   const startImport = useStartDiscordImport();
   // Drives the resume: anything the manifest already records as landed is not
   // re-sent when the admin re-picks the folder.
@@ -197,6 +223,7 @@ export function ImportWizard({
             readable: channel.readable ?? null,
             privateInDiscord: channel.private_in_discord ?? null,
             privateThreads: privateThreads.get(channel.discord_channel_id) ?? 0,
+            readerRoleIds: channel.discord_reader_role_ids ?? null,
           })),
         roles: (discovery.roles ?? []).map((role) => ({
           roleId: role.discord_role_id,
@@ -259,7 +286,7 @@ export function ImportWizard({
       }
 
       await scan(createdId);
-      setStep("channels");
+      setStep("roles");
     } catch (error) {
       toast({
         variant: "destructive",
@@ -267,6 +294,79 @@ export function ImportWizard({
       });
     }
   }, [acknowledged, source, importId, createImport, scan, toast]);
+
+  // The role step's answers: what the admin changed, over each role's
+  // default. A viewer who cannot manage roles keeps every role on Ignore,
+  // the only mapping the API takes from them.
+  const frappRoles = useMemo<FrappRole[]>(
+    () =>
+      asArray<{ id?: unknown; name?: unknown; system_key?: unknown }>(
+        frappRolesQuery.data,
+      ).flatMap((role) =>
+        typeof role.id === "string" && typeof role.name === "string"
+          ? [
+              {
+                id: role.id,
+                name: role.name,
+                system_key:
+                  typeof role.system_key === "string" ? role.system_key : null,
+              },
+            ]
+          : [],
+      ),
+    [frappRolesQuery.data],
+  );
+  const canManageRoles = can("roles:manage", myPermissions.data?.permissions);
+  const readsPrivate = useMemo(
+    () => privateReads(staged?.channels ?? []),
+    [staged],
+  );
+  const { roleChoices, roleMatches } = useMemo(() => {
+    const choices: Record<string, RoleChoice> = {};
+    const matches: Record<string, MatchKind> = {};
+    for (const role of staged?.roles ?? []) {
+      const edited = canManageRoles ? roleEdits[role.roleId] : undefined;
+      if (edited) {
+        choices[role.roleId] = edited;
+        matches[role.roleId] = null;
+        continue;
+      }
+      const fallback = defaultRoleChoice(
+        role,
+        frappRoles,
+        (readsPrivate.get(role.roleId) ?? 0) > 0,
+        canManageRoles,
+      );
+      choices[role.roleId] = fallback.choice;
+      matches[role.roleId] = fallback.kind;
+    }
+    return { roleChoices: choices, roleMatches: matches };
+  }, [staged, roleEdits, frappRoles, readsPrivate, canManageRoles]);
+  const roleProblems = useMemo(
+    () =>
+      roleIssues(
+        staged?.roles ?? [],
+        roleChoices,
+        frappRoles,
+        ROLE_NAME_MAX_LENGTH,
+      ),
+    [staged, roleChoices, frappRoles],
+  );
+  // Defaults are only right once both the roles and the viewer's own
+  // permissions have loaded; until then, Continue waits.
+  const rolesLoaded =
+    frappRolesQuery.data !== undefined && myPermissions.data !== undefined;
+  const rolesFailed = frappRolesQuery.isError || myPermissions.isError;
+  const readersOf = useCallback(
+    (channel: StagedChannel) =>
+      sameAsDiscordReaders(
+        channel,
+        staged?.roles ?? [],
+        roleChoices,
+        frappRoles,
+      ),
+    [staged, roleChoices, frappRoles],
+  );
 
   const existingChannels = useChannels();
   // One list decides both whether Continue is enabled and what Needs
@@ -287,6 +387,7 @@ export function ImportWizard({
       asArray<{ name: string }>(existingChannels.data).map(
         (channel) => channel.name,
       ),
+      readersOf,
     );
     if (existingChannels.data === undefined) {
       issues.unshift(
@@ -310,6 +411,7 @@ export function ImportWizard({
     existingChannels.data,
     existingChannels.isError,
     refetchChannels,
+    readersOf,
   ]);
   const channelsReady = !!staged && channelIssues.length === 0;
 
@@ -329,7 +431,8 @@ export function ImportWizard({
         new_channel_is_read_only: choice.readOnly ?? true,
         // Only a new channel has a visibility; the API refuses one that was
         // (or may have been) private in Discord without one, so it is sent
-        // as chosen.
+        // as chosen. "Same as Discord" sends no permissions: the API works
+        // them out from the saved role mapping.
         new_channel_visibility:
           choice.action === "create_new" ? choice.visibility : undefined,
         new_channel_required_permissions:
@@ -346,11 +449,12 @@ export function ImportWizard({
       // the bot path answers a set the server already discovered, and refuses a
       // channel that was not in it.
       if (source === "bot") {
+        await saveRoles();
         await setDiscoveredMapping.mutateAsync({ id: importId, channels });
       } else {
         await setChannelMapping.mutateAsync({ id: importId, channels });
       }
-      setStep("roles");
+      setStep("review");
     } catch (error) {
       toast({
         variant: "destructive",
@@ -362,17 +466,46 @@ export function ImportWizard({
     }
   }
 
-  async function submitRolesAndStart() {
+  /**
+   * Save the role step's answers. A "Same as Discord" channel is resolved
+   * through the saved mapping, so it is saved on leaving the role step and
+   * again just before the channels: a re-scan on the channel step can change
+   * which roles could read what, and with it the defaults the page shows.
+   */
+  async function saveRoles() {
     if (!importId || !staged) return;
-    try {
-      await setRoleMapping.mutateAsync({
-        id: importId,
-        roles: staged.roles.map((role) => ({
+    await setRoleMapping.mutateAsync({
+      id: importId,
+      roles: staged.roles.map((role) => {
+        const choice = roleChoices[role.roleId] ?? { action: "ignore" };
+        return {
           discord_role_id: role.roleId,
           discord_role_name: role.roleName,
-          signet_role_key: roleChoices[role.roleId] ?? "MEMBER",
-        })),
+          action: choice.action,
+          frapp_role_id:
+            choice.action === "existing" ? choice.roleId : undefined,
+          new_role_name:
+            choice.action === "new" ? choice.name.trim() : undefined,
+        };
+      }),
+    });
+  }
+
+  async function submitRoles() {
+    try {
+      await saveRoles();
+      setStep("channels");
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        description: getErrorMessage(error, "Could not save the role mapping."),
       });
+    }
+  }
+
+  async function submitStart() {
+    if (!importId) return;
+    try {
       await startImport.mutateAsync({ id: importId });
       onStarted(importId);
     } catch (error) {
@@ -384,7 +517,9 @@ export function ImportWizard({
   }
 
   const mappingPending =
-    setChannelMapping.isPending || setDiscoveredMapping.isPending;
+    setChannelMapping.isPending ||
+    setDiscoveredMapping.isPending ||
+    setRoleMapping.isPending;
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col">
@@ -456,6 +591,7 @@ export function ImportWizard({
               onChange={setChannelChoices}
               issues={channelIssues}
               knowsPrivacy={source === "bot"}
+              readersOf={readersOf}
               onRescan={source === "bot" ? () => void rescan() : undefined}
               rescanning={discoverChannels.isPending}
             />
@@ -463,11 +599,41 @@ export function ImportWizard({
         ) : null}
 
         {step === "roles" && staged ? (
-          <RoleMappingStep
-            roles={staged.roles}
-            choices={roleChoices}
-            onChange={setRoleChoices}
-          />
+          rolesLoaded ? (
+            <RoleMappingStep
+              roles={staged.roles}
+              choices={roleChoices}
+              matches={roleMatches}
+              privateReads={readsPrivate}
+              frappRoles={frappRoles}
+              issues={roleProblems}
+              canManageRoles={canManageRoles}
+              onChange={(roleId, next) =>
+                setRoleEdits((previous) => ({ ...previous, [roleId]: next }))
+              }
+            />
+          ) : rolesFailed ? (
+            <p className="text-sm">
+              Frapp could not load your roles to map these against.{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  void frappRolesQuery.refetch();
+                  void myPermissions.refetch();
+                }}
+                className={cn(
+                  "text-accent-text underline-offset-2 hover:underline",
+                  FOCUS_RING,
+                )}
+              >
+                Try again
+              </button>
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Loading your Frapp roles…
+            </p>
+          )
         ) : null}
 
         {step === "review" && staged ? (
@@ -475,7 +641,9 @@ export function ImportWizard({
             staged={staged}
             source={source ?? "upload"}
             channelChoices={channelChoices}
+            roles={staged.roles}
             roleChoices={roleChoices}
+            readersOf={readersOf}
           />
         ) : null}
       </main>
@@ -538,13 +706,22 @@ export function ImportWizard({
         ) : null}
 
         {step === "roles" ? (
-          <Button onClick={() => setStep("review")}>Continue</Button>
+          <Button
+            onClick={() => void submitRoles()}
+            disabled={
+              !rolesLoaded ||
+              roleProblems.length > 0 ||
+              setRoleMapping.isPending
+            }
+          >
+            Continue
+          </Button>
         ) : null}
 
         {step === "review" ? (
           <Button
-            onClick={() => void submitRolesAndStart()}
-            disabled={setRoleMapping.isPending || startImport.isPending}
+            onClick={() => void submitStart()}
+            disabled={startImport.isPending}
           >
             Start import
           </Button>

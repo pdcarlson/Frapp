@@ -162,6 +162,53 @@ export function openToEveryone(
   );
 }
 
+/**
+ * The roles that could read a channel's history in Discord, each asked on its
+ * own: a member holding `@everyone` and that one role. This is what "Same as
+ * Discord" gates an imported channel on (#2818).
+ *
+ * Worked from the overwrites, never from what the bot can read: a role the bot
+ * does not hold, and cannot see through, still appears in the overwrites of a
+ * channel it gates. `candidates` is the set worth asking about (the caller
+ * drops `@everyone` and the managed roles Discord creates for bots and
+ * boosters), in the order to report them.
+ *
+ * Empty when `@everyone` alone could read it: the channel is private only
+ * because a deny hides it from someone (the "hide it from pledges" shape).
+ * Every other role then reads it by inheriting from `@everyone`, colour and
+ * game roles included, so none of them is an audience worth copying, and
+ * Frapp has no deny to express the rest. Such a channel needs a choice.
+ *
+ * One role at a time is an approximation, because Discord answers per
+ * combination of roles and Frapp's gate is "any of" with no deny. It differs
+ * in two places, both rare in a chapter server: two roles that read only
+ * together (neither alone) are not listed, which is narrower than Discord; and
+ * a member holding a listed role plus a role the channel denies reads it in
+ * Frapp but not in Discord, unless the listed role's read came from an
+ * overwrite allow, which beats the deny there too.
+ */
+export function readerRoleIds(
+  guildId: string,
+  roles: readonly DiscordRolePermissions[],
+  overwrites: readonly DiscordPermissionOverwrite[],
+  candidates: readonly string[],
+): string[] {
+  const readsAs = (subject: DiscordPermissionSubject) =>
+    canReadHistory(
+      channelPermissions(
+        basePermissions(guildId, roles, subject),
+        guildId,
+        overwrites,
+        subject,
+      ),
+    );
+  if (readsAs({ userId: null, roleIds: [] })) return [];
+  return candidates.filter(
+    (roleId) =>
+      roleId !== guildId && readsAs({ userId: null, roleIds: [roleId] }),
+  );
+}
+
 /** Parse `permission_overwrites` off a raw channel, dropping malformed rows. */
 export function parseOverwrites(raw: unknown): DiscordPermissionOverwrite[] {
   if (!Array.isArray(raw)) return [];

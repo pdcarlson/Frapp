@@ -55,6 +55,12 @@ export interface StagedChannel {
   readable?: boolean | null;
   privateInDiscord?: boolean | null;
   privateThreads?: number;
+  /**
+   * Bot path only, for a channel private in Discord: the Discord roles that
+   * could read it, which "Same as Discord" gates it on (#2818). Null when the
+   * scan could not tell.
+   */
+  readerRoleIds?: string[] | null;
 }
 
 export interface StagedRole {
