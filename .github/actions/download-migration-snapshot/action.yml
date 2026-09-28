@@ -129,7 +129,10 @@ runs:
         RUNS="${RUNNER_TEMP}/migration-snapshot-runs.json"
         CANDIDATES="${RUNNER_TEMP}/migration-snapshot-candidates.txt"
         DEPLOYS="${RUNNER_TEMP}/migration-snapshot-deploys.json"
-        DEADLINE=$(( $(date +%s) + 1500 ))
+        # The budget the header derives. The error below reads it, so this is
+        # the one number to change.
+        WAIT_SECONDS=1500
+        DEADLINE=$(( $(date +%s) + WAIT_SECONDS ))
 
         # `gh api` under scripts/ci/lib/http.mjs's retry policy: three attempts,
         # backing off 1s then 5s, and no retry of a 4xx other than 429, which
@@ -300,7 +303,7 @@ runs:
             break
           fi
           if (( $(date +%s) >= DEADLINE )); then
-            echo "::error::Waited 25 minutes: ${WAIT_FOR}. Re-run this check once Migration snapshot has published; if it is failing, its log names the cause: ${GITHUB_SERVER_URL}/${REPO}/actions/workflows/migration-snapshot.yml"
+            echo "::error::Waited $(( WAIT_SECONDS / 60 )) minutes: ${WAIT_FOR}. Re-run this check once Migration snapshot has published; if it is failing, its log names the cause: ${GITHUB_SERVER_URL}/${REPO}/actions/workflows/migration-snapshot.yml"
             exit 1
           fi
           echo "Waiting 45s: ${WAIT_FOR}."
