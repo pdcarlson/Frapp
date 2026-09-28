@@ -653,7 +653,8 @@ export async function raiseAlert({
 /**
  * Closes every open alert issue after a successful deploy. Closing them all
  * (not just the first) is what makes a duplicate created during an API blip
- * self-heal.
+ * self-heal. Returns lib/alert-issue.mjs's `resolveAlert` result unchanged:
+ * "closed" | "none" | "failed" | "unread".
  */
 export async function resolveAlert({
   token,
@@ -841,6 +842,12 @@ export async function runDeployAlert({
       // config with no path gate, where every merge reaches this branch.
       logger.log?.(
         "::warning::[deploy-alert] the deploy recovered but the alert issue could not be closed — it is still open and will re-post on the next run",
+      );
+    } else if (alert.action === "unread") {
+      // Not "still open": the lookup failed, so this run does not know whether
+      // an alert is open at all. The next successful deploy looks again.
+      logger.log?.(
+        "::warning::[deploy-alert] the deploy succeeded but the alert issues could not be read, so none was closed",
       );
     }
     return { outcome, failed, deployed, alert };

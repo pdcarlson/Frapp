@@ -19,6 +19,15 @@ import {
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
+  EMPTY_CHAPTER_IDENTITY,
+  FOUNDED_YEAR_MIN,
+  chapterIdentityBranding,
+  chapterIdentityIsValid,
+  latestFoundedYear,
+  normalizeAccentInput,
+  type ChapterIdentityForm,
+} from "@repo/hooks/chapter-identity";
+import {
   DIRECTORY_MIN_QUERY_LENGTH,
   useChapterDirectorySearch,
   useCreateInvite,
@@ -26,7 +35,6 @@ import {
   useOnboardChapter,
   type ChapterDirectoryResult,
 } from "@repo/hooks";
-import { signetDarkTokens } from "@repo/theme/signet";
 import { EmailInviteSchema, dedupeEmails } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,17 +77,6 @@ import { FERPA_URL } from "@/lib/legal-links";
  * gate". `/billing` already offers checkout at this exact status.
  */
 const POST_CREATE_PATH = "/billing";
-// The house seed itself, not a copy of it. This was a bare `#F2B72E` literal
-// that had to be remembered whenever the seed moved, and the greenfield ladder
-// change is exactly the event that would have silently desynced it.
-//
-// Read from `@repo/theme/signet`, not `@repo/chapter-theme`'s `HOUSE_SEED`, for
-// the reason `components/roles/roles-page.tsx` records at its own
-// `DEFAULT_ROLE_SWATCH`: that package's `index.ts` re-exports through a
-// `./signet.js` specifier Turbopack cannot resolve from source, so importing it
-// in app code type-checks and passes vitest and then fails `next build`.
-const DEFAULT_ACCENT = signetDarkTokens.color.gold.seed;
-const HEX6 = /^#[0-9a-fA-F]{6}$/;
 const INVITE_ROLE = "Member";
 
 type WizardStep = "find" | "archetype" | "identity" | "invite";
@@ -90,42 +87,6 @@ const STEP_LABELS: Record<WizardStep, string> = {
   identity: "Confirm identity",
   invite: "Invite members",
 };
-
-type IdentityForm = {
-  name: string;
-  university: string;
-  greekLetters: string;
-  designation: string;
-  schoolShort: string;
-  foundedYear: string;
-  colorAccent: string;
-};
-
-const EMPTY_IDENTITY: IdentityForm = {
-  name: "",
-  university: "",
-  greekLetters: "",
-  designation: "",
-  schoolShort: "",
-  foundedYear: "",
-  colorAccent: DEFAULT_ACCENT,
-};
-
-function normalizeHex(value: string | undefined, fallback: string): string {
-  if (!value) return fallback;
-  const v = value.trim();
-  const withHash = v.startsWith("#") ? v : `#${v}`;
-  return HEX6.test(withHash) ? withHash : fallback;
-}
-
-/** Guard-parse a founded-year input. Returns a finite year >= 1776 or undefined. */
-function parseFoundedYear(raw: string): number | undefined {
-  if (!raw.trim()) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed < 1776 || parsed > 9999)
-    return undefined;
-  return parsed;
-}
 
 export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const router = useRouter();
@@ -142,7 +103,9 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
   const [directoryId, setDirectoryId] = useState<string | null>(null);
   const [archetype, setArchetype] = useState<ArchetypeKey>("ifc");
-  const [identity, setIdentity] = useState<IdentityForm>(EMPTY_IDENTITY);
+  const [identity, setIdentity] = useState<ChapterIdentityForm>(
+    EMPTY_CHAPTER_IDENTITY,
+  );
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [acceptedLegal, setAcceptedLegal] = useState(false);
@@ -171,7 +134,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorAccent: normalizeHex(row.default_colors?.accent, DEFAULT_ACCENT),
+      colorAccent: normalizeAccentInput(row.default_colors?.accent),
     });
     // A different chapter identity invalidates any prior consent — re-affirm.
     setAcceptedLegal(false);
@@ -182,7 +145,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     setDirectoryId(null);
     setArchetype("ifc");
     setIdentity({
-      ...EMPTY_IDENTITY,
+      ...EMPTY_CHAPTER_IDENTITY,
       // Seed the chapter name from whatever the officer was searching for.
       name: rawQuery.trim(),
     });
@@ -195,8 +158,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     if (prev) setStep(prev);
   }
 
-  const identityValid =
-    identity.name.trim().length >= 3 && identity.university.trim().length >= 2;
+  const identityValid = chapterIdentityIsValid(identity);
   // Gate "Create chapter" on the required Terms/Privacy acceptance as well as a
   // valid identity (spec/behavior/legal.md). The API enforces the same rule
   // server-side (ChapterOnboardingDto.accept_terms_privacy must be true).
@@ -211,15 +173,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
         org_archetype: archetype,
         directory_id: directoryId ?? undefined,
         accept_terms_privacy: true,
-        branding: {
-          greek_letters: identity.greekLetters.trim() || undefined,
-          designation: identity.designation.trim() || undefined,
-          school_short: identity.schoolShort.trim() || undefined,
-          founded_at: parseFoundedYear(identity.foundedYear),
-          colors: {
-            accent: normalizeHex(identity.colorAccent, DEFAULT_ACCENT),
-          },
-        },
+        branding: chapterIdentityBranding(identity),
       });
       const id =
         chapter && typeof chapter === "object" && "id" in chapter
@@ -710,13 +664,16 @@ function IdentityStep({
   accepted,
   onAcceptedChange,
 }: {
-  identity: IdentityForm;
-  onChange: (next: IdentityForm) => void;
+  identity: ChapterIdentityForm;
+  onChange: (next: ChapterIdentityForm) => void;
   isManual: boolean;
   accepted: boolean;
   onAcceptedChange: (next: boolean) => void;
 }) {
-  function set<K extends keyof IdentityForm>(key: K, value: IdentityForm[K]) {
+  function set<K extends keyof ChapterIdentityForm>(
+    key: K,
+    value: ChapterIdentityForm[K],
+  ) {
     onChange({ ...identity, [key]: value });
   }
 
@@ -782,8 +739,8 @@ function IdentityStep({
             id="wiz-founded"
             type="number"
             inputMode="numeric"
-            min={1776}
-            max={9999}
+            min={FOUNDED_YEAR_MIN}
+            max={latestFoundedYear()}
             value={identity.foundedYear}
             onChange={(e) => set("foundedYear", e.target.value)}
             placeholder="1948"

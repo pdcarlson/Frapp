@@ -498,6 +498,13 @@ async function reconcileTokenAlert({
     logger.log?.(
       `::warning::[pr-base-sync] ${why}, but an alert issue could not be closed${closed}`,
     );
+  } else if (recovery.action === "unread") {
+    // A warning, not a red run: this sweep runs on every merge to main, its
+    // alert is a P2, and the next sweep looks again. It must not say an alert
+    // is open, because the lookup that would know failed.
+    logger.log?.(
+      `::warning::[pr-base-sync] ${why}, but the alert issues could not be read, so none was closed`,
+    );
   }
 }
 

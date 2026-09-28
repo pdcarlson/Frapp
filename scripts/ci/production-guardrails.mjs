@@ -60,7 +60,9 @@
 //                  Production Branch — skipping only frapp-landing. See main().
 //   --preflight  exit non-zero on any violation, file nothing. Used by
 //                deploy-production.yml before it touches anything.
-//   (default)    raise/resolve a tracking issue, for the schedule.
+//   (default)    raise/resolve a tracking issue, for the schedule. Exits 1 on
+//                any violation, or when a clean run could not read or close
+//                its alert (see syncGuardrailsAlert).
 //
 // Unlike staging-conformance.mjs there is no `skipped` outcome. An unreadable
 // setting is a failure: "I could not check whether production is wired to
@@ -71,7 +73,6 @@
 
 import {
   ALERT_LOOKUP_LABEL,
-  findAlertIssuesDetailed,
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
@@ -310,6 +311,61 @@ function buildAlertIssueBody({ findings, runUrl }) {
     .join("\n");
 }
 
+/**
+ * Raises the alert on a violation, or closes it on a clean run, and returns the
+ * scheduled run's exit code: 1 on any violation, and 1 on a clean run whose
+ * alert could not be read or closed, since exiting 0 there hides a P1 left open
+ * on a healthy production (#2627).
+ */
+export async function syncGuardrailsAlert({
+  findings,
+  summary,
+  token,
+  repo,
+  runUrl = "",
+  fetchImpl,
+  logger = console,
+}) {
+  if (findings.length > 0) {
+    const alert = await raiseAlert({
+      token,
+      repo,
+      fetchImpl,
+      title: ALERT_ISSUE_TITLE,
+      labels: ALERT_ISSUE_LABELS,
+      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      buildIssueBody: () => buildAlertIssueBody({ findings, runUrl }),
+      buildCommentBody: ({ reopened }) =>
+        `${reopened ? "Reopened — " : ""}still drifted:\n\n${findings.map((f) => `- ${f}`).join("\n")}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
+      refreshBodyOnRaise: true,
+    });
+    if (alert.action === "failed") {
+      logger.log?.("::error::guardrails have drifted and the alert issue could not be written");
+    }
+    return { alert, exitCode: 1 };
+  }
+
+  const alert = await resolveAlert({
+    token,
+    repo,
+    fetchImpl,
+    title: ALERT_ISSUE_TITLE,
+    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    buildRecoveryBody: () => `Guardrails hold again.\n\n${summary}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
+  });
+  if (alert.action === "unread") {
+    logger.log?.(
+      "::error::guardrails hold, but the alert issues could not be read, so none was closed this run",
+    );
+    return { alert, exitCode: 1 };
+  }
+  if (alert.action === "failed") {
+    logger.log?.("::error::guardrails hold but the alert issue could not be closed");
+    return { alert, exitCode: 1 };
+  }
+  return { alert, exitCode: 0 };
+}
+
 async function main() {
   const preflight = process.argv.includes("--preflight");
 
@@ -375,40 +431,8 @@ async function main() {
   const repo = requireEnv("GITHUB_REPOSITORY");
   const runUrl = process.env.RUN_URL ?? "";
 
-  if (findings.length > 0) {
-    await raiseAlert({
-      token,
-      repo,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
-      buildIssueBody: () => buildAlertIssueBody({ findings, runUrl }),
-      buildCommentBody: ({ reopened }) =>
-        `${reopened ? "Reopened — " : ""}still drifted:\n\n${findings.map((f) => `- ${f}`).join("\n")}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
-      refreshBodyOnRaise: true,
-    });
-    process.exit(1);
-  }
-
-  // Only close on a lookup that actually worked. A failed lookup returns an
-  // empty list, which is indistinguishable from "no alert is open" — closing on
-  // that would let a transient 5xx silently resolve a live alert.
-  const { lookupOk } = await findAlertIssuesDetailed({
-    token,
-    repo,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
-  });
-  if (lookupOk) {
-    await resolveAlert({
-      token,
-      repo,
-      title: ALERT_ISSUE_TITLE,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
-      buildRecoveryBody: () => `Guardrails hold again.\n\n${summary}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
-    });
-  }
-  process.exit(0);
+  const { exitCode } = await syncGuardrailsAlert({ findings, summary, token, repo, runUrl });
+  process.exit(exitCode);
 }
 
 if (isInvokedDirectly(import.meta.url)) {

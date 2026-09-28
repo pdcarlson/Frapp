@@ -348,6 +348,30 @@ test("a close that leaves a duplicate alert open is surfaced, not dropped", asyn
   assert.match(warning, /could not be closed \(closed #900\)/);
 });
 
+test("a successful update whose alert lookup fails warns 'could not be read', never 'still open'", async () => {
+  // resolveAlert reports a failed lookup as "unread" (#2627). The sweep keeps
+  // going and the next merge looks again; the warning must not claim to know
+  // whether an alert is open.
+  const lines = [];
+  const pr = makePr(17);
+  const { calls } = await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      compareRoute(pr.head.sha, 1),
+      { method: "PUT", path: "/pulls/17/update-branch", status: 202, body: {} },
+      { method: "GET", path: "/issues?state=all", status: 502, body: {} },
+      emptyCommentsRoute,
+    ],
+    updateToken: "app-token",
+    logger: { log: (line) => lines.push(line) },
+  });
+  const warning = lines.find((line) => line.startsWith("::warning::[pr-base-sync]"));
+  assert.match(warning ?? "", /alert issues could not be read, so none was closed/);
+  assert.ok(!lines.some((line) => /still open|could not be closed/.test(line)));
+  assert.ok(!calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/")));
+});
+
 test("a successful update closes an open alert; a quiet sweep does not", async () => {
   const openAlert = [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE }];
   const alertLookupRoute = { method: "GET", path: "/issues?state=all", body: openAlert };

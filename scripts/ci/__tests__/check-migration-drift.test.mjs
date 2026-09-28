@@ -614,36 +614,6 @@ test("a close that fails is reported as failed, never as closed-with-nothing", a
   assert.equal(result.exitCode, 1);
 });
 
-test("a clean run whose second alert lookup fails reports a failed close, not nothing to close", async () => {
-  // resolveAlert looks the alert up again. When that second GET fails it sees
-  // nothing and returns "none", which must not read as "nothing was open"
-  // once the first lookup already saw the open alert.
-  const local = localFixture(3);
-  const { fetchImpl, calls } = makeFetchMock([
-    supabaseRoute("stg", local),
-    { method: "GET", path: "issues?state=all", body: [{ number: 42, state: "open", title: ALERT_ISSUE_TITLE }] },
-  ]);
-  let lookups = 0;
-  const secondFails = async (url, init = {}) => {
-    const response = await fetchImpl(url, init);
-    if (!url.includes("issues?state=all")) return response;
-    lookups += 1;
-    return lookups === 1 ? response : { ...response, ok: false, status: 502 };
-  };
-
-  const result = await runMigrationDriftCheck({
-    ...baseRun,
-    targets: [{ label: "staging", ref: "stg" }],
-    local,
-    fetchImpl: secondFails,
-  });
-
-  assert.equal(result.status, "clean");
-  assert.equal(result.alert.action, "failed");
-  assert.equal(result.exitCode, 1);
-  assert.equal(calls.some((c) => c.method !== "GET"), false);
-});
-
 test("a clean run that closes one open duplicate but not another still fails", async () => {
   // A duplicate left open is still a P1 on a healthy environment; "closed" has
   // to mean every match closed.
@@ -675,10 +645,11 @@ test("a clean run that closes one open duplicate but not another still fails", a
   assert.equal(result.exitCode, 1);
 });
 
-test("a failed alert lookup on a clean run is reported, not read as nothing open", async () => {
+test("a failed alert lookup on a clean run is reported as unread, not read as nothing open", async () => {
   // An empty list from a failed lookup is indistinguishable from "no alert is
   // open". The run must say it could not read the alert state rather than
-  // report that there was nothing to close.
+  // report that there was nothing to close. The lookup is resolveAlert's own:
+  // there is no pre-check, so this is the regression a lib-only change caused.
   const local = localFixture(3);
   const { fetchImpl, calls } = makeFetchMock([
     supabaseRoute("stg", local),
@@ -693,7 +664,7 @@ test("a failed alert lookup on a clean run is reported, not read as nothing open
   });
 
   assert.equal(result.status, "clean");
-  assert.equal(result.alert.action, "failed");
+  assert.deepEqual(result.alert, { action: "unread", closed: [] });
   assert.equal(result.exitCode, 1);
   assert.equal(calls.some((c) => c.method !== "GET"), false);
 });
