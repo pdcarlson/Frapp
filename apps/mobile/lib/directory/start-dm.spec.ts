@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import {
   dmChannelIdOf,
-  MESSAGE_BLOCK_LIST_FAILED,
   MESSAGE_CHECKING_BLOCK_LIST,
   messageRowDescription,
   messageRowState,
@@ -39,7 +38,8 @@ describe("messageRowState", () => {
     status: "ready" | "loading" | "unavailable",
     ids: string[] = [],
     isPaused = false,
-  ) => ({ status, ids: new Set(ids), isPaused });
+    isRetrying = false,
+  ) => ({ status, ids: new Set(ids), isPaused, isRetrying });
 
   it("is ready for another member once the block list is ready", () => {
     expect(
@@ -85,6 +85,17 @@ describe("messageRowState", () => {
       messageRowState({ memberId: MEMBER, blockList: list("unavailable") }),
     ).toEqual({ kind: "retry" });
   });
+
+  // A failed list with cached data keeps its `unavailable` status while it
+  // re-reads, so the in-flight read, not the status, says it is checking.
+  it("checks, not offers a retry, while a re-read of a failed list is in flight", () => {
+    expect(
+      messageRowState({
+        memberId: MEMBER,
+        blockList: list("unavailable", [], false, true),
+      }),
+    ).toEqual({ kind: "checking" });
+  });
 });
 
 describe("messageRowDescription", () => {
@@ -97,10 +108,10 @@ describe("messageRowDescription", () => {
       MESSAGE_CHECKING_BLOCK_LIST,
     );
     expect(messageRowDescription({ kind: "waitingForNetwork" })).toBe(
-      "Checking your block list first. Retries when you're back online.",
+      "Couldn't check your block list first. Retries when you're back online.",
     );
     expect(messageRowDescription({ kind: "retry" })).toBe(
-      MESSAGE_BLOCK_LIST_FAILED,
+      "Couldn't check your block list first. Tap to try again.",
     );
   });
 });

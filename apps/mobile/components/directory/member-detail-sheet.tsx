@@ -253,9 +253,7 @@ export const MemberDetailSheet = forwardRef<
                   disabled={
                     messageRow.kind === "ready"
                       ? dmPending.has(detail.userId)
-                      : messageRow.kind === "retry"
-                        ? blockList.isRetrying
-                        : true
+                      : messageRow.kind !== "retry"
                   }
                   onPress={() => {
                     if (messageRow.kind === "retry") blockList.retry();

@@ -8,7 +8,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SYSTEM_SENDER_ID, type BlockListStatus } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
-  MESSAGE_BLOCK_LIST_FAILED,
   MESSAGE_CHECKING_BLOCK_LIST,
   START_DM_FAILED_BODY,
   startDmFailedTitle,
@@ -29,6 +28,7 @@ const state = vi.hoisted(() => ({
   blockStatus: "ready" as BlockListStatus,
   blocked: new Set<string>(),
   blockPaused: false,
+  blockRetrying: false,
   retryBlockList: vi.fn(),
   mutateAsync: vi.fn(),
   dmOptions: [] as unknown[],
@@ -78,7 +78,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     status: state.blockStatus,
     isPaused: state.blockPaused,
     retry: state.retryBlockList,
-    isRetrying: false,
+    isRetrying: state.blockRetrying,
   }),
   useGetOrCreateDm: (options: unknown) => {
     state.dmOptions.push(options);
@@ -148,6 +148,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     state.blockStatus = "ready";
     state.blocked = new Set();
     state.blockPaused = false;
+    state.blockRetrying = false;
     state.dmOptions = [];
   });
 
@@ -204,7 +205,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const [row] = messageRows(tree);
     expect(row.props.disabled).toBe(true);
     expect(row.props.description).toBe(
-      "Checking your block list first. Retries when you're back online.",
+      "Couldn't check your block list first. Retries when you're back online.",
     );
     act(() => tree.unmount());
   });
@@ -214,11 +215,23 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const tree = render(ADA);
     const [row] = messageRows(tree);
     expect(row.props.disabled).toBe(false);
-    expect(row.props.description).toBe(MESSAGE_BLOCK_LIST_FAILED);
+    expect(row.props.description).toBe(
+      "Couldn't check your block list first. Tap to try again.",
+    );
 
     act(() => row.props.onPress());
     expect(state.retryBlockList).toHaveBeenCalledTimes(1);
     expect(state.mutateAsync).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("says it is checking, disabled, while that re-read is in flight", () => {
+    state.blockStatus = "unavailable";
+    state.blockRetrying = true;
+    const tree = render(ADA);
+    const [row] = messageRows(tree);
+    expect(row.props.disabled).toBe(true);
+    expect(row.props.description).toBe(MESSAGE_CHECKING_BLOCK_LIST);
     act(() => tree.unmount());
   });
 

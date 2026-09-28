@@ -39,6 +39,8 @@ export interface MessageTargetInput {
     status: BlockListStatus;
     ids: ReadonlySet<string>;
     isPaused: boolean;
+    /** A read of the list is in flight, a retry included. */
+    isRetrying: boolean;
   };
 }
 
@@ -58,8 +60,12 @@ export interface MessageTargetInput {
  *   ceiling, so a block made earlier or on another device can be missing from
  *   them until the list is read. Block can act off the floor, because a repeat
  *   block is a no-op; Message cannot, because it would open a DM with that
- *   member. A failed read would otherwise remove the action with no reason and
- *   no way back, since nothing polls the list, so `retry` re-reads it.
+ *   member. A read re-runs on its own on reconnect and when the app returns to
+ *   the foreground, but nothing polls the list, so a server error while the
+ *   member stays online and in the app would otherwise leave the action gone
+ *   with no reason given; `retry` re-reads it. A read in flight, a retry
+ *   included, shows as `checking`: a failed list keeps its `unavailable`
+ *   status while it re-reads, and must not keep offering the tap.
  */
 export type MessageRowState =
   | { kind: "hidden" }
@@ -76,8 +82,11 @@ export function messageRowState({
     return { kind: "hidden" };
   }
   if (blockList.status === "ready") return { kind: "ready" };
-  if (blockList.status === "loading") return { kind: "checking" };
-  return { kind: blockList.isPaused ? "waitingForNetwork" : "retry" };
+  if (blockList.isPaused) return { kind: "waitingForNetwork" };
+  if (blockList.status === "loading" || blockList.isRetrying) {
+    return { kind: "checking" };
+  }
+  return { kind: "retry" };
 }
 
 /** The Message row's second line while the block list isn't ready. */
@@ -86,17 +95,17 @@ export function messageRowDescription(state: MessageRowState): string | null {
     case "checking":
       return MESSAGE_CHECKING_BLOCK_LIST;
     case "waitingForNetwork":
-      return `${MESSAGE_CHECKING_BLOCK_LIST} ${BLOCK_LIST_WAITING_FOR_NETWORK}.`;
+      return `${MESSAGE_BLOCK_LIST_UNCHECKED} ${BLOCK_LIST_WAITING_FOR_NETWORK}.`;
     case "retry":
-      return MESSAGE_BLOCK_LIST_FAILED;
+      return `${MESSAGE_BLOCK_LIST_UNCHECKED} Tap to try again.`;
     default:
       return null;
   }
 }
 
 export const MESSAGE_CHECKING_BLOCK_LIST = "Checking your block list first.";
-export const MESSAGE_BLOCK_LIST_FAILED =
-  "Couldn't check your block list first. Tap to try again.";
+/** A read that failed, whether a retry can run now or waits for the network. */
+export const MESSAGE_BLOCK_LIST_UNCHECKED = "Couldn't check your block list first.";
 
 /**
  * The channel id out of a `POST /v1/channels/dm` response, or `null` when the
