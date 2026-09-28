@@ -109,7 +109,7 @@ export const VERCEL_TARGET_PREVIEW = "preview";
  *
  * This is the load-bearing line for correctness of the built artifact. The
  * pull sets `VERCEL_ENV`, which the production config fences and the Sentry
- * environment tag read, and the project settings `vercel build --prod` checks.
+ * environment tag read, and writes the project settings `vercel build` reads.
  * App config no longer comes from it: every build takes that from Infisical,
  * and the pulled file keeps only Vercel's system variables (header above,
  * #2810). See also the header of `deploy-vercel.mjs`.

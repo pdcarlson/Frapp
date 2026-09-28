@@ -533,8 +533,8 @@ jobs:
       # pull --environment=production` still runs, for the project settings and
       # `VERCEL_ENV=production`, but the file it writes keeps only Vercel's
       # system variables, so no Vercel Production row can supply an app key
-      # (#2673, #2810, lib/vercel-build-env.mjs). A required key missing from Infisical fails
-      # here, naming the key. Each project's `.vercel` directory is stashed under
+      # (#2673, #2810, lib/vercel-build-env.mjs). A required key missing from
+      # Infisical fails here, naming the key. Each project's `.vercel` directory is stashed under
       # $RUNNER_TEMP so the second build cannot overwrite the first and the
       # upload step can find both.
       #
