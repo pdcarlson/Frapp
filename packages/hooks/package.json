@@ -4,7 +4,8 @@
   "private": true,
   "exports": {
     ".": "./src/index.ts",
-    "./display-names": "./src/display-names.ts"
+    "./display-names": "./src/display-names.ts",
+    "./chapter-identity": "./src/chapter-identity.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -15,6 +16,8 @@
   },
   "dependencies": {
     "@repo/api-sdk": "*",
+    "@repo/color": "*",
+    "@repo/theme": "*",
     "@repo/validation": "*",
     "@tanstack/react-query": "^5.103.2",
     "react": "19.2.3"
