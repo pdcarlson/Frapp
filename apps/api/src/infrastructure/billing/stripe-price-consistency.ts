@@ -2,8 +2,9 @@
  * Fail-closed Stripe Price / account consistency.
  *
  * `validateEnv` only requires a non-empty `STRIPE_PRICE_ID`. A `price_...` from
- * another Stripe account (old org, or the Signet sandbox that holds customers
- * and zero Prices) therefore boots, then checkout 503s at runtime — FRAPP-API-4.
+ * another Stripe account (an old org, or a separate sandbox, which can hold
+ * customers and zero Prices) therefore boots, then checkout 503s at runtime —
+ * FRAPP-API-4.
  * Retrieving the configured Price with `STRIPE_SECRET_KEY` is the gate mocked
  * billing tests cannot provide. Canonical footgun:
  * `docs/internal/environment/ENV_REFERENCE.md` § Core App Secrets.

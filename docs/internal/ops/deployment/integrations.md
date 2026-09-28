@@ -29,6 +29,13 @@
 
 4. Copy the webhook signing secret → `STRIPE_WEBHOOK_SECRET`.
 5. Create a Product + Price → copy price ID → `STRIPE_PRICE_ID`.
+6. Save the customer portal settings (Settings → Billing → Customer portal), even
+   if you keep Stripe's defaults. The API opens a portal session with no
+   `configuration` (`createCustomerPortalSession` in
+   [`stripe.service.ts`](../../../../apps/api/src/infrastructure/billing/stripe.service.ts)),
+   so Stripe uses the mode's saved default and refuses the session when there is
+   none, and "Manage billing" 503s. Whether test mode has one saved has not been
+   checked: [#2762](https://github.com/pdcarlson/Frapp/issues/2762).
 
 ### 7.2 Live Mode (Production)
 
@@ -40,6 +47,31 @@ production URL — one is, today. So "an endpoint exists at `api.frapp.live`" se
 mode says nothing about live mode, and the six event types above must be enabled again,
 by hand, on the live endpoint. Agent sessions cannot check this: their Stripe access is
 test-mode only.
+
+### 7.3 What customers see (live mode)
+
+Checkout, the customer portal, receipts and Stripe's emails show what the dashboard
+holds here. No repo state sets it and no check reads it back. The owner set these on
+2026-09-24, and this table records them from the owner's dashboard screenshots
+([#2669](https://github.com/pdcarlson/Frapp/issues/2669)). Re-read the dashboard to refresh it. Test mode
+was not matched to it; of these settings, staging depends only on the portal (§ 7.1 step 6).
+
+| Where | Field | Value |
+| --- | --- | --- |
+| Settings → Business → Business details → Public details | Public business name | Frapp (the value before wasn't recorded) |
+| Business details → Public details | Statement descriptor | `FRAPP.LIVE` (the value before wasn't recorded) |
+| Business details → Business information | Business website | `https://www.frapp.live`, because the apex only redirects there ([`vercel.md`](vercel.md)) |
+| Business details → Public details | Support email | `team@frapp.live`, the address the landing, Privacy and Support pages publish |
+| Business details → Public details | Customer support, privacy and terms URLs | Set. The portal links `https://www.frapp.live/terms` and `https://www.frapp.live/privacy` from them. |
+| Business details → Public details | Support phone and address | Set to the owner's own; not copied here |
+| Branding | Icon | `packages/brand-assets/assets/signet-emblem-B-1024.png` (the crest on its charcoal tile) |
+| Branding | Logo | **Empty on purpose.** `frapp-lockup.svg` still draws the "Signet" wordmark until ADR-25 step 5 ([#2580](https://github.com/pdcarlson/Frapp/issues/2580)) renames it. Upload the lockup once that step lands. |
+| Branding | Brand color / accent color | `#1A1A1A` (the mark field) / `#EFB63B` (house gold), per [`brand-identity.md` § 2](../../../../spec/ui/brand-identity.md#2-the-mark) |
+| Billing → Customer portal | Features | Stripe's defaults: update payment method, invoice history, update billing info, cancel. Updating the payment method is how a `past_due` chapter recovers ([`billing.md`](../../../../spec/behavior/billing.md)), and Billing promises invoices ([`surfaces.md`](../../../../spec/product/surfaces.md)). The portal header and redirect link are empty, because the API passes `return_url` on every session. |
+| Business → Customer emails | Successful payments, refunds | On (were off) |
+| Billing → Subscriptions and emails | Trial-ends reminder (7 days), upcoming renewals, expiring cards, card payment failures, bank debit failures | All on (all were off). The trial reminder matters because every new chapter starts on a trial (`TRIAL_PERIOD_DAYS` in `stripe.service.ts`). |
+| Billing → Subscriptions and emails | Payment method updates | A link to a Stripe-hosted page (was "mix of both (Legacy)", with every custom link pointing at the `www.frapp.live` homepage) |
+| Billing → Subscriptions and emails | Include a link for customers to manage their subscriptions | On (was off) |
 
 ---
 
@@ -61,12 +93,9 @@ page nor the setting.
    Application, owned by **Frapp**, not by a chapter. Name the application and
    its bot **Frapp**: Discord's consent screen shows the application's name, the
    server's member list shows the bot's, and the web import wizard tells an admin
-   to add "the Frapp bot". *2026-09-24: the application was named "Signet" when
-   it was last observed (the 2026-09-15 note in step 4 below). Renaming it and its bot to Frapp is the
-   owner's step on the day ADR-25 step 4
-   ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)) merges: General
-   Information → Name, and Bot → Username. Tracked in
-   [#2669](https://github.com/pdcarlson/Frapp/issues/2669).* A separate application per
+   to add "the Frapp bot". *2026-09-24: the owner renamed the application
+   (General Information → Name) and its bot (Bot → Username) from Signet to
+   Frapp, and reported both on [#2669](https://github.com/pdcarlson/Frapp/issues/2669).* A separate application per
    environment is recommended so a staging mistake cannot read production
    chapters' servers. **That recommendation is not currently followed** —
    staging and production were observed sharing one application, so the staging
@@ -184,8 +213,7 @@ chapter, and a read-only archiver has no business holding a permission that can
 change anything in someone's server.
 
 **One thing the portal cannot express, so it is worth knowing here.** Discord's
-consent screen names the Discord application (_Signet_ until the owner renames it
-to _Frapp_, [#2669](https://github.com/pdcarlson/Frapp/issues/2669)) — it does not
+consent screen names the Discord application (_Frapp_, step 1) — it does not
 name the chapter the connection will be bound to, and it cannot. Frapp closes that gap on its own side:
 the callback parks the server and links nothing, and an authenticated request
 scoped to the chapter is what activates it. So a Frapp officer cannot send their authorize
