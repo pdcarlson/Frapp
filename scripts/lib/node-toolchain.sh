@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Put a Node that satisfies the root package.json `engines.node` on PATH, in the cloud
 # sandbox. Sourced, not executed, by scripts/cloud-sandbox-setup.sh (which installs it into
-# the cached filesystem), scripts/cloud-sandbox-up.sh, and .claude/hooks/session-start.sh.
+# the cached filesystem), scripts/cloud-sandbox-up.sh (which installs it when that cache
+# predates it), and .claude/hooks/session-start.sh (which only puts it on PATH: session
+# start must never wait on a download).
 #
 # Why: the sandbox image puts /opt/node22 first on PATH, and the repo needs Node 24.9+.
 # Nothing failed loudly on 22. The API's Jest suite loads ESM-only dependencies such as
@@ -32,10 +34,10 @@ node_engines_floor() {
   [ -r "$pkg" ] || return 1
   command -v python3 >/dev/null 2>&1 || return 1
   range="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("engines",{}).get("node",""))' "$pkg" 2>/dev/null)" || return 1
-  case "$range" in
-    '>='[0-9]*.[0-9]*.[0-9]*) printf '%s\n' "${range#>=}" ;;
-    *) return 1 ;;
-  esac
+  # A regex, not a case glob: `*` in a glob matches any tail, so `>=24.9.0 <25` would pass
+  # as the floor "24.9.0 <25" and the upper bound would be silently ignored.
+  [[ "$range" =~ ^'>='([0-9]+\.[0-9]+\.[0-9]+)$ ]] || return 1
+  printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
 # Version of the node binary $1 (default: the one on PATH), as x.y.z.
@@ -46,8 +48,14 @@ _node_version_of() {
 }
 
 # Download the latest release of the floor's major line into FRAPP_NODE_DIR, verifying its
-# SHA-256 against nodejs.org's SHASUMS256.txt. Extracts beside the target and renames, so an
-# interrupted run never leaves a half-written FRAPP_NODE_DIR that looks installed.
+# SHA-256 against nodejs.org's SHASUMS256.txt. Extracts beside the target and swaps it in
+# with renames, so an interrupted run never leaves a half-written FRAPP_NODE_DIR that looks
+# installed, and a failed swap puts the previous install back.
+#
+# Not safe to run twice at once, and it does not need to be: its callers are the setup
+# script, which runs before any session, and bringup, which holds the bringup lock. The
+# SessionStart hook never installs. So a leftover `.tmp.*` beside the target is from an
+# interrupted run, never a live one, and is cleared first.
 _node_install() {
   local major="$1" arch base shasums file sum tmp
   case "$(uname -m)" in
@@ -63,6 +71,7 @@ _node_install() {
   sum="$(printf '%s\n' "$shasums" | awk -v f="$file" '$2 == f {print $1; exit}')"
   [ -n "$file" ] && [ -n "$sum" ] || { _node_toolchain_log "no linux-${arch} build listed at $base"; return 1; }
 
+  rm -rf "${FRAPP_NODE_DIR}".tmp.* 2>/dev/null
   tmp="$(mktemp -d "${FRAPP_NODE_DIR}.tmp.XXXXXX" 2>/dev/null)" \
     || { _node_toolchain_log "cannot write beside $FRAPP_NODE_DIR"; return 1; }
   if ! curl -fsSL --max-time 90 -o "$tmp/$file" "$base/$file"; then
@@ -73,11 +82,35 @@ _node_install() {
   fi
   mkdir "$tmp/node" && tar -xJf "$tmp/$file" -C "$tmp/node" --strip-components=1 \
     || { _node_toolchain_log "could not extract $file"; rm -rf "$tmp"; return 1; }
-  rm -rf "$FRAPP_NODE_DIR" && mv "$tmp/node" "$FRAPP_NODE_DIR"
-  local moved=$?
+  # `mv -T` renames onto the path itself; plain `mv` onto an existing directory would nest
+  # the new tree inside it and report success.
+  if [ -e "$FRAPP_NODE_DIR" ] && ! mv -T "$FRAPP_NODE_DIR" "$tmp/old"; then
+    _node_toolchain_log "could not move the previous install aside"; rm -rf "$tmp"; return 1
+  fi
+  if ! mv -T "$tmp/node" "$FRAPP_NODE_DIR"; then
+    [ -e "$tmp/old" ] && mv -T "$tmp/old" "$FRAPP_NODE_DIR"
+    _node_toolchain_log "could not move Node into $FRAPP_NODE_DIR"; rm -rf "$tmp"; return 1
+  fi
   rm -rf "$tmp"
-  [ "$moved" -eq 0 ] || { _node_toolchain_log "could not move Node into $FRAPP_NODE_DIR"; return 1; }
   _node_toolchain_log "installed ${file%.tar.xz} into $FRAPP_NODE_DIR"
+}
+
+# For the SessionStart hook, which must not download. True when engines.node for the repo
+# at $1 is readable and the node on PATH does not meet it, so FRAPP_NODE_DIR/bin belongs on
+# PATH. False when there is no floor to enforce, or PATH already meets it.
+node_toolchain_path_below_floor() {
+  local floor current
+  floor="$(node_engines_floor "$1")" || return 1
+  current="$(_node_version_of node)" || return 0
+  ! _node_version_at_least "$current" "$floor"
+}
+
+# True when FRAPP_NODE_DIR already holds a Node that meets engines.node for the repo at $1.
+node_toolchain_cached() {
+  local floor cached
+  floor="$(node_engines_floor "$1")" || return 1
+  cached="$(_node_version_of "$FRAPP_NODE_DIR/bin/node")" || return 1
+  _node_version_at_least "$cached" "$floor"
 }
 
 # Make `node` on PATH satisfy engines.node for the repo at $1, installing into

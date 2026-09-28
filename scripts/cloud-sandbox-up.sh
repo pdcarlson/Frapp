@@ -12,8 +12,9 @@
 #   7. verify node_modules is usable — LAST, so a broken npm never costs the database
 #      (see the comment above the call for why this is not the first step)
 #
-# Before step 1 it probes egress and builds the workspace packages (`packages/*`). Neither
-# needs Docker, and each comment says why it comes first.
+# Before step 1 it probes egress, puts Node 24 on PATH (installing it when the setup cache
+# lacks it), and builds the workspace packages (`packages/*`). None needs Docker, and each
+# comment says why it comes first.
 #
 # Steps 4 and 5 are in that order deliberately, and this list had them backwards until
 # #1156 — see the comment above the ACL repair for why the env write has to come first.
@@ -147,6 +148,8 @@ rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL" "$EGRESS_MANIFEST"
 # Set by the package build below, and read by both sentinel writers: it runs before any step
 # that can fail, so its result belongs in whichever sentinel this run ends with.
 packages_build_failed=""
+# Set by the Node toolchain step below, for the same two writers and the same reason.
+node_toolchain_warn=""
 PACKAGES_BUILD_WARN='WARN: the workspace package build failed, so anything that resolves @repo/* through dist/ (the API, check:dep-cruiser) will not resolve; run `npx turbo run build --filter='"'"'./packages/*'"'"'` and read its errors.'
 
 fail() {
@@ -156,21 +159,6 @@ fail() {
   [ -n "$node_toolchain_warn" ] && printf '%s\n' "$node_toolchain_warn" >>"$FAILED_SENTINEL"
   exit 1
 }
-
-# Node that satisfies engines.node, before anything below runs npm or turbo. Launched by the
-# SessionStart hook this is a no-op, because the hook already put it on the PATH this script
-# inherits; it matters for a hand run from a shell where Node 22 comes first. Non-fatal like
-# the package build: the stack does not need it, so the warning rides in whichever sentinel
-# this run ends with.
-node_toolchain_warn=""
-# shellcheck source=scripts/lib/node-toolchain.sh
-. "$ROOT/scripts/lib/node-toolchain.sh"
-if ensure_node_toolchain "$ROOT"; then
-  cs_log "Node toolchain: $(node --version 2>/dev/null) (${NODE_TOOLCHAIN_STATUS})."
-else
-  node_toolchain_warn="WARN: node on PATH is $(node --version 2>/dev/null || echo missing), below package.json engines.node, and installing one into ${FRAPP_NODE_DIR} failed (see /tmp/cloud-sandbox-up.log). The API's Jest suites that load ESM-only packages fail on it with \"Must use import to load ES Module\"."
-  cs_log "$node_toolchain_warn"
-fi
 
 # Egress capability probe — deliberately FIRST, before any Docker or Supabase work.
 #
@@ -214,7 +202,30 @@ if [ ! -s "$EGRESS_MANIFEST" ]; then
   cs_log "WARN: the probe writes an UNKNOWN manifest even when it cannot probe, so an ABSENT one means it never got that far — a parse error or a kill, not a network result. Sessions are told to read that file instead of probing hosts by hand; until it exists, treat deployed-staging reachability as UNKNOWN (not as blocked). Re-run: bash scripts/cloud-sandbox-egress-probe.sh"
 fi
 
-# Workspace packages (#2516) — the second step that needs no Docker, so it runs before any.
+# Node that satisfies engines.node — after the egress probe, so its manifest still lands
+# within a second of launch, and before the package build and every later npm or turbo run.
+# The SessionStart hook already put FRAPP_NODE_DIR/bin first on the PATH this inherits but
+# never downloads, so when the environment's setup cache predates the install (or for a hand
+# run from a shell where Node 22 comes first), this is where it is installed, ~5s. Bringup
+# holds the bringup lock, so no other installer runs beside it. Non-fatal like the package
+# build: the stack does not need it, so the warning, with the installer's own reason, rides
+# in whichever sentinel this run ends with.
+if [ -f "$ROOT/scripts/lib/node-toolchain.sh" ]; then
+  # shellcheck source=scripts/lib/node-toolchain.sh
+  . "$ROOT/scripts/lib/node-toolchain.sh"
+  node_toolchain_err="$(mktemp 2>/dev/null || echo /tmp/cloud-sandbox-node-toolchain.err)"
+  if ensure_node_toolchain "$ROOT" 2>"$node_toolchain_err"; then
+    cat "$node_toolchain_err" >&2
+    cs_log "Node toolchain: $(node --version 2>/dev/null) (${NODE_TOOLCHAIN_STATUS})."
+  else
+    cat "$node_toolchain_err" >&2
+    node_toolchain_warn="WARN: node is $(node --version 2>/dev/null || echo missing), below package.json engines.node, and installing one into ${FRAPP_NODE_DIR} failed: $(tail -n 1 "$node_toolchain_err" | sed 's/^\[node-toolchain\] //'). API Jest suites that load ESM-only packages fail on it with \"Must use import to load ES Module\"."
+    cs_log "$node_toolchain_warn"
+  fi
+  rm -f "$node_toolchain_err"
+fi
+
+# Workspace packages (#2516) — the third step that needs no Docker, so it runs before any.
 # The API, and the `require`/`types` side of every package whose manifest points into
 # `dist/`, resolve `@repo/*` through that gitignored `dist/`, and nothing else in setup or
 # bringup builds it. So on a fresh checkout `npm run start:dev -w apps/api` died with 91

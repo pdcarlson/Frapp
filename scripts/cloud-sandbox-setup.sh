@@ -32,6 +32,18 @@ touch /etc/frapp-cloud-sandbox 2>/dev/null || cs_log "WARN: could not write /etc
 . "$ROOT/scripts/lib/node-toolchain.sh"
 if ensure_node_toolchain "$ROOT"; then
   cs_log "Node toolchain: $(node --version 2>/dev/null) (${NODE_TOOLCHAIN_STATUS})."
+  # And for the session's own shells, which do not inherit this script's PATH. Claude Code
+  # snapshots PATH from a login shell, which runs /etc/profile.d/*.sh in name order, so this
+  # file lands after the image's nodejs.sh (the line that puts /opt/node22 first) and wins.
+  # It is part of the cached filesystem, so it does not depend on the SessionStart hook's
+  # CLAUDE_ENV_FILE line, which covers an environment whose cache predates this file.
+  if [ "$NODE_TOOLCHAIN_STATUS" = cached ] || [ "$NODE_TOOLCHAIN_STATUS" = installed ]; then
+    printf '%s\n' \
+      '# Written by scripts/cloud-sandbox-setup.sh: the repo needs package.json engines.node (Node 24.9+).' \
+      "case \":\$PATH:\" in *\":${FRAPP_NODE_DIR}/bin:\"*) ;; *) export PATH=\"${FRAPP_NODE_DIR}/bin:\$PATH\" ;; esac" \
+      >/etc/profile.d/zz-frapp-node24.sh 2>/dev/null \
+      || cs_log "WARN: could not write /etc/profile.d/zz-frapp-node24.sh; sessions rely on the SessionStart hook's PATH line instead."
+  fi
 else
   cs_log "WARN: could not install a Node that satisfies package.json engines.node into ${FRAPP_NODE_DIR}; npm ci runs on $(node --version 2>/dev/null || echo 'no node')."
 fi
