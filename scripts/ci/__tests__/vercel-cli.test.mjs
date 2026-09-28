@@ -73,6 +73,22 @@ function makeStashFs(initial = []) {
   };
 }
 
+/**
+ * The minimal `buildEnv` every build and upload now requires (#2673): a base
+ * env, no app config. Tests about what a build env carries use their own.
+ */
+const BUILD_ENV = Object.freeze({ baseEnv: { PATH: "/usr/bin" }, appEnv: {}, appKeys: [] });
+
+/** An env-file stand-in whose pulled file holds only a system variable. */
+function pulledEnvFs() {
+  return { read: async () => 'VERCEL_ENV="production"\n', write: async () => {} };
+}
+
+/** What a build needs besides its CLI identity, so no test touches the real disk. */
+function buildDeps() {
+  return { buildEnv: BUILD_ENV, stashFs: makeStashFs().fs, envFileFs: pulledEnvFs() };
+}
+
 const CWD = "/work/repo";
 const VERCEL_DIR = vercelDirFor(CWD);
 const STASH = "/tmp/vercel-builds/frapp-web";
@@ -304,6 +320,7 @@ describe("buildAndDeployVercelProject", () => {
       projectId: PROJECT_ID,
       runCommand,
       logger: quiet,
+      ...buildDeps(),
     });
 
     assert.deepEqual(
@@ -323,6 +340,7 @@ describe("buildAndDeployVercelProject", () => {
       projectId: PROJECT_ID,
       runCommand,
       logger: quiet,
+      ...buildDeps(),
     });
     for (const call of calls) {
       assert.equal(call.env.VERCEL_PROJECT_ID, PROJECT_ID);
@@ -351,6 +369,7 @@ describe("buildAndDeployVercelProject", () => {
         projectId: PROJECT_ID,
         runCommand,
         logger: quiet,
+        ...buildDeps(),
       }),
       /exited 1.*Not authorized/s,
     );
@@ -374,6 +393,7 @@ describe("buildAndDeployVercelProject", () => {
         projectId: PROJECT_ID,
         runCommand,
         logger: quiet,
+        ...buildDeps(),
       }),
       /Type error/,
     );
@@ -397,6 +417,7 @@ describe("buildAndDeployVercelProject", () => {
         projectId: PROJECT_ID,
         runCommand,
         logger: quiet,
+        ...buildDeps(),
       }),
       /was killed by SIGKILL/,
     );
@@ -418,6 +439,7 @@ describe("buildAndDeployVercelProject", () => {
         projectId: PROJECT_ID,
         runCommand,
         logger: quiet,
+        ...buildDeps(),
       }),
       /printed no deployment URL/,
     );
@@ -436,11 +458,13 @@ describe("buildVercelProject", () => {
     label: "frapp-web",
     cwd: CWD,
     logger: quiet,
+    buildEnv: BUILD_ENV,
+    envFileFs: pulledEnvFs(),
   };
 
   it("runs pull then build, and never deploy", async () => {
     const { runCommand, calls } = makeRunStub();
-    await buildVercelProject({ ...base, runCommand });
+    await buildVercelProject({ ...base, runCommand, stashFs: makeStashFs().fs });
     assert.deepEqual(
       calls.map((c) => c.args[0]),
       ["pull", "build"],
@@ -467,9 +491,11 @@ describe("buildVercelProject", () => {
     assert.equal(result.stashDir, STASH);
     assert.ok(stash.dirs.has(STASH), "the stash exists");
     assert.ok(!stash.dirs.has(VERCEL_DIR), ".vercel was moved, not copied — the next build starts clean");
-    // A stale stash from an earlier attempt is removed before the move, so two
-    // builds can never be merged into one upload.
+    // `.vercel` is emptied before the pull. A stale stash from an earlier
+    // attempt is removed before the move, so two builds can never be merged
+    // into one upload.
     assert.deepEqual(stash.ops, [
+      ["remove", VERCEL_DIR],
       ["remove", STASH],
       ["move", VERCEL_DIR, STASH],
     ]);
@@ -484,7 +510,7 @@ describe("buildVercelProject", () => {
       buildVercelProject({ ...base, runCommand, stashDir: STASH, stashFs: stash.fs }),
       /left no .*\.vercel to stash/,
     );
-    assert.equal(stash.ops.length, 0);
+    assert.deepEqual(stash.ops, [["remove", VERCEL_DIR]], "only the pre-pull emptying ran");
   });
 
   it("does not touch the stash when the build fails", async () => {
@@ -500,7 +526,7 @@ describe("buildVercelProject", () => {
     // The previous stash is left alone: the failure is reported on its own, not
     // compounded by deleting output from an earlier phase.
     assert.ok(stash.dirs.has(STASH));
-    assert.equal(stash.ops.length, 0);
+    assert.deepEqual(stash.ops, [["remove", VERCEL_DIR]], "only the pre-pull emptying ran");
   });
 
   it("leaves .vercel in place when no stash is requested", async () => {
@@ -513,7 +539,18 @@ describe("buildVercelProject", () => {
     });
     await buildVercelProject({ ...base, runCommand, stashFs: stash.fs });
     assert.ok(stash.dirs.has(VERCEL_DIR));
-    assert.equal(stash.ops.length, 0);
+    assert.deepEqual(stash.ops, [["remove", VERCEL_DIR]], "only the pre-pull emptying ran");
+  });
+
+  // #2673: the fallback to the ambient job env, which holds the whole injected
+  // store, is gone. A caller that forgets the build env is refused.
+  it("refuses to build without a build env, before any CLI step", async () => {
+    const { runCommand, calls } = makeRunStub();
+    await assert.rejects(
+      buildVercelProject({ ...base, buildEnv: undefined, runCommand, stashFs: makeStashFs().fs }),
+      /No build env/,
+    );
+    assert.equal(calls.length, 0);
   });
 });
 
@@ -527,6 +564,7 @@ describe("deployPrebuiltVercelProject", () => {
     label: "frapp-web",
     cwd: CWD,
     logger: quiet,
+    buildEnv: BUILD_ENV,
   };
 
   it("restores the stash over whatever .vercel holds, then deploys only", async () => {
@@ -579,10 +617,34 @@ describe("deployPrebuiltVercelProject", () => {
     );
     assert.equal(stash.ops.length, 0);
   });
+
+  it("refuses to upload without a build env, before touching the stash", async () => {
+    const stash = makeStashFs([STASH]);
+    const { runCommand, calls } = makeRunStub({ deploy: READY_DEPLOY });
+    await assert.rejects(
+      deployPrebuiltVercelProject({ ...base, buildEnv: undefined, runCommand, stashDir: STASH, stashFs: stash.fs }),
+      /No build env/,
+    );
+    assert.equal(calls.length, 0);
+    assert.equal(stash.ops.length, 0);
+  });
+
+  it("runs the upload on the base env alone", async () => {
+    const { runCommand, calls } = makeRunStub({ deploy: READY_DEPLOY });
+    process.env.FRAPP_TEST_INJECTED_SECRET = "sk_live_should_never_reach_the_cli";
+    try {
+      await deployPrebuiltVercelProject({ ...base, runCommand, stashFs: makeStashFs([VERCEL_DIR]).fs });
+    } finally {
+      delete process.env.FRAPP_TEST_INJECTED_SECRET;
+    }
+    assert.equal(calls[0].env.FRAPP_TEST_INJECTED_SECRET, undefined);
+    assert.equal(calls[0].env.PATH, "/usr/bin");
+  });
 });
 
-// The staging path since #2672: app config from Infisical, handed in as a
-// `buildEnv`, and the pulled Preview env stripped of every key the app reads.
+// Every build since #2673 (staging since #2672): app config from Infisical,
+// handed in as a `buildEnv`, and the pulled env stripped of every key the app
+// reads.
 describe("buildVercelProject with an Infisical build env", () => {
   const ENV_FILE = pulledEnvFileFor(CWD, VERCEL_TARGET_PREVIEW);
   const INJECTED_SECRET = "sk_live_should_never_reach_the_cli";
@@ -768,12 +830,37 @@ describe("buildVercelProject with an Infisical build env", () => {
     );
   });
 
-  it("does none of this without a build env: the production path is unchanged", async () => {
+  it("warns, naming keys only, when Vercel held an app key Infisical did not supply", async () => {
+    // NEXT_PUBLIC_POSTHOG_KEY is in the pulled file but not in appEnv: the
+    // build now goes without it. On the first production run on this path that
+    // is how a key that only ever lived in Vercel shows up.
     const t = setup();
-    await buildVercelProject({ ...t.options, target: VERCEL_TARGET_PRODUCTION, buildEnv: null });
-    assert.deepEqual(t.stash.ops, [], ".vercel is not emptied on the production path");
-    assert.deepEqual(t.envFiles.writes, []);
-    const build = t.calls.find((c) => c.args[0] === "build");
-    assert.equal(build.env.PATH, process.env.PATH, "production builds on the ambient env, as before");
+    const warned = [];
+    await buildVercelProject({ ...t.options, logger: { log: () => {}, warn: (line) => warned.push(line) } });
+    assert.equal(warned.length, 1);
+    assert.match(warned[0], /^::warning::\[frapp-web\].*holds NEXT_PUBLIC_POSTHOG_KEY, but the Infisical injection supplied no value/);
+    assert.doesNotMatch(warned[0], /NEXT_PUBLIC_API_URL\b/, "a key Infisical supplied is not lost");
+    assert.ok(!warned[0].includes("phc_stale"), "the warning printed a value");
+  });
+
+  it("builds production the same way: stripped file, base env, app keys", async () => {
+    await inAmbient(async () => {
+      const t = setup();
+      const prodFile = pulledEnvFileFor(CWD, VERCEL_TARGET_PRODUCTION);
+      const { runCommand, calls } = makeRunStub({
+        pull: () => {
+          t.envFiles.files.set(prodFile, PULLED.replace('VERCEL_ENV="preview"', 'VERCEL_ENV="production"'));
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      });
+      await buildVercelProject({ ...t.options, target: VERCEL_TARGET_PRODUCTION, runCommand });
+      const after = t.envFiles.files.get(prodFile);
+      assert.doesNotMatch(after, /^NEXT_PUBLIC_API_URL=/m);
+      assert.match(after, /^VERCEL_ENV="production"$/m, "assertProductionWebPublicEnv reads it");
+      const build = calls.find((c) => c.args[0] === "build");
+      assert.deepEqual(build.args, ["build", "--prod"]);
+      assert.equal(build.env.NEXT_PUBLIC_API_URL, "https://api-staging.example");
+      assert.equal(build.env.FRAPP_TEST_INJECTED_SECRET, undefined);
+    });
   });
 });

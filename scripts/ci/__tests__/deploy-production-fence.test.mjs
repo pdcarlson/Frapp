@@ -432,10 +432,10 @@ describe("the dry run rehearses the build and ships nothing", () => {
     assert.match(release.if ?? "", /inputs\.scope != 'migrations-only'/);
   });
 
-  // The Sentry guard's whole wiring is this one `env:` key. Nothing outside the
-  // step's `run:` block references it, so a tidy-up that deleted it as unused
-  // would leave `${DRY_RUN:-}` permanently empty, the `unset` would never fire,
-  // and every dry run would build with the real token — with the suite green.
+  // The Sentry guard's whole wiring is this one `env:` key. Nothing else in the
+  // workflow references it, so a tidy-up that deleted it as unused would leave
+  // `deploy-vercel.mjs` reading no DRY_RUN, and every dry run would build with
+  // the real token — with the suite green.
   it("the build step wires DRY_RUN from the input the Sentry guard reads", () => {
     const build = byName().get("Build the Vercel production bundles (web + landing)");
     assert.ok(build, "the Vercel build step is missing");
@@ -443,55 +443,47 @@ describe("the dry run rehearses the build and ships nothing", () => {
   });
 });
 
-// The Vercel BUILD step runs on a dry run as well as on a real ship, which is
-// what makes "dry run: green" mean the frontends compile. That is only safe
-// while the build stays inert, and it has exactly one way not to be: both
-// `next.config.js` files hand `process.env.SENTRY_AUTH_TOKEN` to
-// `withSentryConfig` with `release: sentryGitSha`, `vercelCliEnv` spreads
-// `process.env` into the build subprocess, and the Infisical `prod` inject puts
-// the whole prod secret set into this job's environment. With that token
-// present a dry run would create a Sentry release, and upload source maps, for
-// a commit that is not being deployed.
-//
-// Whether the token is in Infisical `prod` is recorded in
-// docs/internal/environment/ENV_REFERENCE.md § apps/api; wherever it is, this gap
-// is live, not latent. That is precisely why it needs a test: nothing else would
-// go red when the token reaches the job.
-describe("the dry-run Sentry guard on the Vercel build step", () => {
-  const BUILD_STEP = "Build the Vercel production bundles (web + landing)";
+// The Vercel steps build every CLI process's environment from the names the
+// job had before its Infisical `prod` injection, plus each app's own keys
+// (#2673). The runtime refuses a baseline that holds an app key, which catches
+// a record step moved after the injection; these catch the rest in review: a
+// record step that is gone, one that writes a file the Vercel steps don't read,
+// and one moved earlier, where names exported between it and the injection
+// would silently fall out of every CLI process's environment.
+describe("the production Vercel steps run on the pre-injection env baseline", () => {
+  const steps = () => workflowSteps(WORKFLOW).filter((s) => s.jobId === "deploy");
+  const USES_INFISICAL = /uses:\s*\.\/\.github\/actions\/infisical-secrets/;
+  const indexOf = (pred, what) => {
+    const i = steps().findIndex(pred);
+    assert.notEqual(i, -1, `the deploy job has no step that ${what}`);
+    return i;
+  };
 
-  /** The step's script, with the real deploy swapped for a probe. */
-  function runBuildStep(dryRun) {
-    const path = join(workspace, "build-step.sh");
-    const script = extractStepScript(BUILD_STEP)
-      .replace(/\$\{\{[^}]*\}\}/g, "")
-      .replace(
-        "node scripts/ci/deploy-vercel.mjs",
-        'printf "token=%s\\n" "${SENTRY_AUTH_TOKEN-__UNSET__}"',
-      );
-    writeFileSync(path, script);
-    try {
-      return execFileSync("bash", [path], {
-        encoding: "utf8",
-        stdio: "pipe",
-        env: { ...process.env, DRY_RUN: dryRun, SENTRY_AUTH_TOKEN: "sntrys_realtoken" },
-      });
-    } catch (error) {
-      return `${error.stdout ?? ""}${error.stderr ?? ""}`;
-    }
-  }
-
-  it("clears SENTRY_AUTH_TOKEN on a dry run, so no release is minted", () => {
-    const output = runBuildStep("true");
-    assert.match(output, /token=__UNSET__/);
-    assert.doesNotMatch(output, /sntrys_realtoken/);
+  it("records the baseline immediately before the prod injection", () => {
+    const record = indexOf((s) => s.body.includes("scripts/ci/record-env-baseline.mjs"), "records the baseline");
+    const inject = indexOf((s) => USES_INFISICAL.test(s.body), "injects Infisical");
+    assert.match(steps()[inject].body, /env-slug:\s*"prod"/);
+    assert.equal(record, inject - 1);
   });
 
-  // The other half, and the one that makes the test above mean something: a
-  // guard that cleared the token unconditionally would pass that assertion while
-  // silently stopping every real production release from reaching Sentry.
-  it("leaves SENTRY_AUTH_TOKEN alone on a real ship", () => {
-    assert.match(runBuildStep("false"), /token=sntrys_realtoken/);
+  it("hands both Vercel steps the file the record step wrote", () => {
+    const record = steps().find((s) => s.body.includes("scripts/ci/record-env-baseline.mjs"));
+    const written = record.env.get("VERCEL_BUILD_ENV_BASELINE");
+    assert.match(written ?? "", /^\$\{\{ runner\.temp \}\}\//, "outside the checkout, so nothing uploads it");
+    const vercel = steps().filter((s) => s.body.includes("scripts/ci/deploy-vercel.mjs"));
+    assert.equal(vercel.length, 2, "expected the build and upload steps");
+    for (const step of vercel) {
+      assert.equal(step.env.get("VERCEL_BUILD_ENV_BASELINE"), written, `"${step.name}" reads another file`);
+    }
+  });
+
+  // The dry-run Sentry guard lives in deploy-vercel.mjs now (`buildEnvsFor`'s
+  // `dryRun`, tested there), where it covers the pulled env file as well as the
+  // job env; the shell `unset` it replaced covered only the job env (#2275).
+  it("runs the build step's script with no shell-side token handling left to drift", () => {
+    const build = steps().find((s) => s.name === "Build the Vercel production bundles (web + landing)");
+    assert.ok(build, "the Vercel build step is missing");
+    assert.doesNotMatch(build.body, /unset\s+SENTRY_AUTH_TOKEN/);
   });
 });
 

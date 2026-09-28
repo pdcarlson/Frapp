@@ -328,8 +328,8 @@ Reads the `NEXT_PUBLIC_*` references:
 > **It still goes in Infisical, not in Vercel's dashboard.** Infisical is the canonical store and
 > Vercel only receives from it; a value set directly on the Vercel project lives outside the one
 > place that is supposed to hold it and is invisible to every other environment. Add it to the
-> **Staging** and **Production** Infisical environments. The staging deploy job injects it into the
-> staging build and `vercel-web-production` carries it to production
+> **Staging** and **Production** Infisical environments. The staging and production deploy jobs inject it
+> into their builds
 > ([`SECRETS_MANAGEMENT.md` §5](./SECRETS_MANAGEMENT.md#5-configure-secret-syncs)).
 > Leave the **local** environment unset — no DSN means `Sentry.init` is never called, which is what
 > keeps local dev, tests, and CI reporting nowhere.

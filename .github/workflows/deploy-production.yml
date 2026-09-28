@@ -342,6 +342,17 @@ jobs:
       # variables, the other puts a binary on PATH — so neither cares that the
       # workspace moves underneath it afterwards.
       #
+      # The Vercel steps below build every CLI process's environment from the
+      # names recorded here, plus each app's own keys (#2673), so the rest of
+      # the `prod` store the next step exports never reaches `vercel pull`,
+      # `vercel build` or `vercel deploy`. It must run immediately before the
+      # injection: recorded after it, the baseline holds the whole store, and
+      # `infisicalBuildEnv` refuses it for containing an app key.
+      - name: Record the job's environment names before Infisical adds to them
+        env:
+          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
+        run: node scripts/ci/record-env-baseline.mjs
+
       # NOTE: the Infisical slug for production is `prod`, not `production`.
       - name: Inject production secrets from Infisical
         uses: ./.github/actions/infisical-secrets
@@ -510,17 +521,22 @@ jobs:
       # the job. This is the same reasoning as the `npm ci` above, applied to the
       # step that actually failed last time: `vercel build` is the step most
       # likely to die for reasons unrelated to the commit (the OOM killer taking
-      # `next build`, a Production env var the Infisical sync never delivered, a
-      # registry blip), and when it ran last it failed AFTER the migration had
+      # `next build`, an app key missing from Infisical `prod`, a registry
+      # blip), and when it ran last it failed AFTER the migration had
       # applied and Render had shipped. Run 33275321347 is what that produced:
       # a migrated database, a new API, six-month-old frontends, no tag.
       #
-      # Up here the same failure costs nothing. `vercel pull --environment=production`
-      # fetches the Production environment variables so each bundle is compiled
-      # against them (NEXT_PUBLIC_* are inlined at build time — see the header of
-      # deploy-vercel.mjs for why a promoted preview is not an option), and each
-      # project's `.vercel` directory is stashed under $RUNNER_TEMP so the second
-      # build cannot overwrite the first and the upload step can find both.
+      # Up here the same failure costs nothing. Each bundle compiles against
+      # exactly the keys its app reads, taken from the Infisical `prod` injection
+      # (NEXT_PUBLIC_* are inlined at build time — see the header of
+      # deploy-vercel.mjs for why a promoted preview is not an option). `vercel
+      # pull --environment=production` still runs, for the project settings and
+      # `VERCEL_ENV=production`, but every app key is removed from the file it
+      # writes, so no Vercel Production row can supply one (#2673,
+      # lib/vercel-build-env.mjs). A required key missing from Infisical fails
+      # here, naming the key. Each project's `.vercel` directory is stashed under
+      # $RUNNER_TEMP so the second build cannot overwrite the first and the
+      # upload step can find both.
       #
       # Still gated on the full scope: a migrations-only run builds nothing.
       #
@@ -582,9 +598,9 @@ jobs:
       #
       # Note what it costs and what it does not: it lengthens a dry run by an
       # `npm ci` and two `next build`s, and it does NOT prove the upload works.
-      # What it does prove is that this commit compiles against the Production
-      # environment variables actually in Vercel right now — the half of the
-      # job that has failed, and the half no other gate looks at.
+      # What it does prove is that this commit compiles against the app config
+      # actually in Infisical `prod` right now — the half of the job that has
+      # failed, and the half no other gate looks at.
       #
       # `!inputs.dry_run_only` is absent rather than rewritten: on a real ship
       # and on a migrations-only run the condition evaluates exactly as it did
@@ -601,71 +617,14 @@ jobs:
           DEPLOY_PHASE: build
           DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
           VERCEL_BUILD_STASH_DIR: ${{ runner.temp }}/vercel-builds
+          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
+          # A dry run's build must not mint a Sentry release for a commit that is
+          # not being deployed. `deploy-vercel.mjs` withholds SENTRY_AUTH_TOKEN
+          # from the build's app keys and strips it from the pulled env file, so
+          # neither channel can hand it to `next build` (#2275). An `unset` in
+          # this shell used to cover only the first.
           DRY_RUN: ${{ inputs.dry_run_only }}
-        run: |
-          set -euo pipefail
-
-          # The one way this build is NOT inert, and it only bites later.
-          #
-          # Both `next.config.js` files pass `authToken: process.env.SENTRY_AUTH_TOKEN`
-          # to `withSentryConfig` with `release: sentryGitSha`, and `vercelCliEnv`
-          # spreads `process.env` into the build subprocess — while the Infisical
-          # `prod` inject above puts the whole prod secret set into this job's
-          # environment. So a build with that token present CREATES a Sentry release
-          # and uploads source maps for the commit it built.
-          #
-          # On a real ship that is exactly right. On a dry run it would mint a
-          # release for a commit that is not being deployed, and Sentry would then
-          # attribute production errors to a version that never shipped.
-          #
-          # ── READ THIS BEFORE TRUSTING THE UNSET ──────────────────────────
-          # It closes ONE of the two ways the token reaches `next build`, and
-          # not the one that will matter most.
-          #
-          #   * CLOSED: the copy the Infisical step exported into this job's
-          #     environment. That is what `unset` removes.
-          #   * OPEN: the copy `vercel pull --environment=production` writes into
-          #     the pulled env file moments later, which `vercel build --prod`
-          #     compiles against. The Infisical syncs are configured at path `/`
-          #     with no per-key filter (SECRETS_MANAGEMENT.md § the sync table),
-          #     so the Vercel Production scope is INTENDED to hold the whole prod
-          #     store — and ENV_REFERENCE.md lists SENTRY_AUTH_TOKEN as a
-          #     frapp-web/frapp-landing build-time variable, so it is in scope for
-          #     that sync.
-          #
-          #     Stated carefully, because the obvious phrasing gets it backwards:
-          #     this is NOT "the channel that delivered NEXT_PUBLIC_API_URL to run
-          #     34894763676". That run died because the variable was ABSENT — the
-          #     same channel demonstrably failed to deliver it, and ci-cd.md
-          #     records the Production scope as empty of at least two keys again.
-          #     So whether SENTRY_AUTH_TOKEN would actually arrive is unknown.
-          #     That uncertainty is the argument FOR leaving this open and tracked
-          #     rather than against it: a guard whose correctness depends on a
-          #     sync that is currently broken is not a guard.
-          #
-          # So whenever SENTRY_AUTH_TOKEN is in Infisical `prod` (which environments
-          # carry it: docs/internal/environment/ENV_REFERENCE.md § apps/api) and the
-          # sync delivers it into the file `vercel pull` writes, a dry run creates a
-          # Sentry release unless the pulled file is stripped too. Closing that
-          # means editing the file `vercel pull` writes, between the pull and the
-          # build, inside `buildVercelProject` — shared with staging, and its
-          # exact filename varies by CLI version. A strip that silently matched
-          # nothing would be a guard that cannot fail, which is the specific
-          # defect this whole change exists to remove, so it is NOT being guessed
-          # at here. Tracked instead; see the issue linked from the PR.
-          #
-          # The unset stays because it is free and correct for the channel it
-          # does cover. It is not, today, a guarantee.
-          #
-          # Unset rather than left empty: `withSentryConfig` treats an empty string
-          # as no token, but `unset` is the state the plugin documents and cannot be
-          # read as "configured, blank".
-          if [ "${DRY_RUN:-}" = "true" ]; then
-            echo "Dry run: clearing SENTRY_AUTH_TOKEN so this build mints no Sentry release."
-            unset SENTRY_AUTH_TOKEN
-          fi
-
-          node scripts/ci/deploy-vercel.mjs
+        run: node scripts/ci/deploy-vercel.mjs
 
       # The summary states what the rehearsal DID and, as carefully, what it
       # still did not. A dry run that overstates its own coverage is how the
@@ -691,19 +650,17 @@ jobs:
               echo ""
               echo "Both Vercel production bundles were BUILT — \`vercel pull --environment=production\`"
               echo "then \`vercel build --prod\` — so this commit is known to compile against the"
-              echo "Production environment variables currently in Vercel. Nothing was uploaded:"
+              echo "app config currently in Infisical \`prod\`. Nothing was uploaded:"
               echo "no deployment was created and production still serves what it served before."
               echo ""
               echo "Still unrehearsed, and reachable only on a real run: the migration apply, the"
               echo "Render deploy, the health check, and the Vercel upload."
               echo ""
               echo "One difference inside the build itself: a real run compiles with"
-              echo "\`SENTRY_AUTH_TOKEN\` whenever the deploy environment carries it, and then uploads"
-              echo "source maps and creates a Sentry release. This run cleared the copy in the job environment, which does NOT"
-              echo "cover the copy \`vercel pull\` writes into the pulled env file — so whenever that"
-              echo "token is in Infisical \`prod\`, a dry run may mint a Sentry"
-              echo "release. Either way, a green build here does not prove the real build's"
-              echo "Sentry upload will succeed."
+              echo "\`SENTRY_AUTH_TOKEN\` when Infisical \`prod\` holds it, and then uploads source"
+              echo "maps and creates a Sentry release. This run withheld it, so it minted no"
+              echo "release, and a green build here does not prove the real build's Sentry"
+              echo "upload will succeed."
             else
               echo ""
               echo "Scope is \`migrations-only\`, so no frontend bundle was built. The Vercel build"
@@ -812,6 +769,7 @@ jobs:
           DEPLOY_TARGET: production
           DEPLOY_PHASE: upload
           VERCEL_BUILD_STASH_DIR: ${{ runner.temp }}/vercel-builds
+          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
           DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
         run: node scripts/ci/deploy-vercel.mjs
 

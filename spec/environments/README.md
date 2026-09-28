@@ -288,8 +288,8 @@ secrets.
   Preview row. No staging build reads an Infisical→Vercel sync; the two staging syncs were deleted
   on 2026-09-28 (#834, #2672).
 - **Production** deployments are **created by the workflow**, not by a push: a fresh build of
-  the named commit with `vercel build --prod`, so it compiles against Production
-  environment variables. Promoting a staging build instead would ship a bundle with the
+  the named commit with `vercel build --prod`, against the keys its app reads from Infisical
+  `prod`, which the job injects, and never against a Vercel Production row (#2673). Promoting a staging build instead would ship a bundle with the
   staging API URL and staging Supabase keys inlined at build time.
 - Every deployment CI creates is stamped `--meta githubCommitSha=<sha>`. A `--prebuilt`
   upload carries no git metadata of its own, and the named-commit guarantee (ADR-19), the

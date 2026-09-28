@@ -1,18 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
-  APP_CONFIG_AMBIENT,
-  APP_CONFIG_FROM_INFISICAL,
   DEPLOY_PHASE_ALL,
   DEPLOY_PHASE_BUILD,
   DEPLOY_PHASE_UPLOAD,
-  appConfigSourceFor,
+  DRY_RUN_WITHHELD_KEYS,
   buildEnvsFor,
-  buildVercelProjects,
+  buildVercelProjects as buildVercelProjectsImpl,
   classifyVercelState,
-  createVercelDeployment,
-  deployVercel,
+  createVercelDeployment as createVercelDeploymentImpl,
+  deployVercel as deployVercelImpl,
   expectedDeploymentTarget,
   parseDeployPhase,
   parseDeployTarget,
@@ -26,6 +25,27 @@ import {
   VERCEL_TARGET_PRODUCTION,
   vercelDirFor,
 } from "../lib/vercel-cli.mjs";
+
+// Every build and upload requires a build env since #2673. Most tests here are
+// about ordering, polling and fail-fast, not about what the env carries, so
+// these wrappers give each project a minimal one (and keep the CLI layer off
+// the real disk) unless a test supplies its own.
+const BUILD_ENV = Object.freeze({ baseEnv: { PATH: "/usr/bin" }, appEnv: {}, appKeys: [] });
+function pulledEnvFs() {
+  return { read: async () => 'VERCEL_ENV="production"\n', write: async () => {} };
+}
+function withBuildEnvs(options) {
+  return {
+    stashFs: makeStashFs().fs,
+    envFileFs: pulledEnvFs(),
+    ...options,
+    projects: options.projects.map((project) => ({ buildEnv: BUILD_ENV, ...project })),
+  };
+}
+const deployVercel = (options) => deployVercelImpl(withBuildEnvs(options));
+const buildVercelProjects = (options) => buildVercelProjectsImpl(withBuildEnvs(options));
+const createVercelDeployment = (options) =>
+  createVercelDeploymentImpl({ buildEnv: BUILD_ENV, stashFs: makeStashFs().fs, envFileFs: pulledEnvFs(), ...options });
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const API_KEY = "test-key";
@@ -938,16 +958,7 @@ describe("fail-fast distinguishes shipped from not-shipped", () => {
   });
 });
 
-// ── Staging's app config from Infisical (#834 option b, #2672) ─────────────
-
-describe("appConfigSourceFor", () => {
-  it("builds staging from the Infisical injection", () =>
-    assert.equal(appConfigSourceFor(VERCEL_TARGET_PREVIEW), APP_CONFIG_FROM_INFISICAL));
-
-  // Production has not moved yet (#2673): the whole job env, as before.
-  it("builds production on the ambient env, as before", () =>
-    assert.equal(appConfigSourceFor(VERCEL_TARGET_PRODUCTION), APP_CONFIG_AMBIENT));
-});
+// ── App config from Infisical, staging (#2672) and production (#2673) ─────
 
 describe("buildEnvsFor", () => {
   const projects = [
@@ -965,19 +976,41 @@ describe("buildEnvsFor", () => {
   };
   const baseline = () => JSON.stringify(["HOME", "PATH"]);
 
-  it("gives production no build env and never reads a baseline", () => {
-    const out = buildEnvsFor({
-      target: VERCEL_TARGET_PRODUCTION,
-      projects,
-      env,
-      readBaseline: () => {
-        throw new Error("production must not need a baseline");
-      },
-    });
-    assert.deepEqual(
-      out.map((p) => p.buildEnv),
-      [null, null],
-    );
+  it("gives production a build env from the injection too, never the ambient env", () => {
+    // Before #2673 production returned no build env, so every CLI process ran
+    // on the whole injected `prod` store.
+    const [web] = buildEnvsFor({ target: VERCEL_TARGET_PRODUCTION, projects, env, readBaseline: baseline });
+    assert.deepEqual(web.buildEnv.baseEnv, { HOME: "/home/runner", PATH: "/usr/bin" });
+    assert.equal(web.buildEnv.appEnv.STRIPE_SECRET_KEY, undefined);
+    assert.equal(web.buildEnv.baseEnv.STRIPE_SECRET_KEY, undefined);
+  });
+
+  // #2275: a dry run must mint no Sentry release. The token is withheld from
+  // the build and still stripped from the pulled file, so neither channel has it.
+  it("withholds the Sentry token from a dry run's build, and still strips it from the pulled file", () => {
+    const withToken = { ...env, SENTRY_AUTH_TOKEN: "sntrys_realtoken" };
+    assert.deepEqual(DRY_RUN_WITHHELD_KEYS, ["SENTRY_AUTH_TOKEN"]);
+    for (const project of buildEnvsFor({ projects, env: withToken, readBaseline: baseline, dryRun: true })) {
+      assert.equal(project.buildEnv.appEnv.SENTRY_AUTH_TOKEN, undefined, project.label);
+      assert.ok(project.buildEnv.appKeys.includes("SENTRY_AUTH_TOKEN"), `${project.label} must still strip it`);
+    }
+  });
+
+  // The other half: a guard that withheld it unconditionally would stop every
+  // real production release from reaching Sentry.
+  it("keeps the Sentry token on a real ship", () => {
+    const withToken = { ...env, SENTRY_AUTH_TOKEN: "sntrys_realtoken" };
+    for (const project of buildEnvsFor({ projects, env: withToken, readBaseline: baseline })) {
+      assert.equal(project.buildEnv.appEnv.SENTRY_AUTH_TOKEN, "sntrys_realtoken", project.label);
+    }
+  });
+
+  it("reads DRY_RUN from the job the way the workflow sets it", () => {
+    // The workflow passes `${{ inputs.dry_run_only }}`, which renders `true` or
+    // `false`. Nothing else wires the flag through, so pin the read.
+    const source = readFileSync(new URL("../deploy-vercel.mjs", import.meta.url), "utf8");
+    assert.match(source, /const dryRun = process\.env\.DRY_RUN === "true";/);
+    assert.match(source, /buildEnvsFor\(\{\s*dryRun,/);
   });
 
   it("gives each staging project its own app keys", () => {

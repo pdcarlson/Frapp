@@ -142,8 +142,10 @@ Infisical's `deleteSecretSync` (open-source backend, read 2026-09-28) queues a j
 synced secrets first and deletes the sync only when it completes; that the job would fail here on the
 same Git error is inferred, not observed. `frapp-landing`'s sync branch was never read in the
 dashboard (only `frapp-web`'s, `main`, on 2026-08-12), so its unfiltered Preview list was read
-afterwards too: it holds one row, an unscoped `NEXT_PUBLIC_APP_URL` added 2026-02-28, which the
-staging build strips. Neither project's Preview env holds a staging credential.
+afterwards too: it held one row, an unscoped `NEXT_PUBLIC_APP_URL` added 2026-02-28. The owner then
+deleted the unscoped Preview rows in both projects as well (`frapp-web`'s three `NEXT_PUBLIC_*`,
+`frapp-landing`'s one), which no build read, and turned **Branch Tracking** off on both projects'
+Preview environment. Neither project holds a Preview env variable now.
 
 **Never re-create a Vercel Preview sync with a git branch filter.** The *Vercel env* column is
 Vercel's environment name (`Production` or `Preview`); a Preview sync additionally names a
@@ -222,12 +224,18 @@ code at build, and the only non-public key either app receives, `SENTRY_AUTH_TOK
 `next.config.js` alone. So deleting the syncs' Vercel Preview rows (2026-09-28) removed nothing a
 deployment reads at request time.
 
-**Production has not moved yet ([#2673](https://github.com/pdcarlson/Frapp/issues/2673)).**
-`deploy-production.yml` injects Infisical `prod` in the same job as its Vercel steps, and those steps
-still run on the whole job environment. So every production Vercel CLI process sees the whole `prod`
-store, and any key that injection holds beats the Production row `vercel pull` writes: the rows the
-`prod` syncs fill supply only keys the injection lacks. Narrowing those syncs therefore changes little
-of what production compiles against; moving production to this path fixes both.
+**Production takes the same path (owner, 2026-09-28, [#2673](https://github.com/pdcarlson/Frapp/issues/2673)).**
+`deploy-production.yml` records its env names immediately before its Infisical `prod` injection, and
+both Vercel steps (build and upload) run on those names plus each app's `APP_CONFIG_KEYS`. Before
+this, every production Vercel CLI process ran on the whole `prod` store, and a Production row filled
+any app key the injection lacked. A dry run withholds `SENTRY_AUTH_TOKEN` from the build and strips
+it from the pulled file, so it mints no Sentry release
+([#2275](https://github.com/pdcarlson/Frapp/issues/2275)). A key Vercel's Production env holds that
+Infisical `prod` doesn't supply prints a `::warning::` naming it, which is how a value that only
+ever lived in Vercel shows up. With that, **no build reads a Vercel env row**, and the two production
+Vercel syncs only copy the whole `prod` store into two frontend projects: they are deleted, with
+their Production rows, once a production run on this path is green (owner, §5 and #834). Nothing
+here depends on Vercel's Git link or branch tracking, both of which are off.
 
 #### Blast radius
 
@@ -277,12 +285,11 @@ behind by the original misconfiguration. Those were inert (no deployment reads a
 but, unlike the current rows, were **not** marked Sensitive, so their values were readable in the
 Vercel dashboard. They were deleted from both `frapp-web` and `frapp-landing` on 2026-08-12.
 
-Narrowing the **production** syncs so the frontend projects stop receiving backend credentials is the
-remaining work and is tracked in **#834** (the staging syncs fed no build, so they were deleted
-rather than narrowed). The lever is a secret-path split (for example a frontend-only path that
-the Vercel syncs read while Render and CI keep reading `/`) — there is no per-key filter, per "How a
-sync decides what it pushes" above. Note the ordering: narrow the source path *first*, then delete
-the leftover destination rows. Deleting first just invites the next sync to rewrite them.
+The **production** syncs still deliver the whole `prod` store into both frontend projects. Since
+#2673 no build reads what they write, so they are deleted rather than narrowed, like the staging
+ones (owner decision 2026-09-28, #834; a secret-path split was the rejected alternative). Delete the
+sync *first*, then its Production rows: deleting the rows first just invites the next sync to rewrite
+them.
 
 #### Verifying this section against reality
 

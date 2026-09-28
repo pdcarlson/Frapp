@@ -1,5 +1,5 @@
-// What a CI-built Vercel bundle compiles against, when the app config comes
-// from Infisical rather than from the Vercel project (#834, #2672).
+// What a CI-built Vercel bundle compiles against: app config from Infisical,
+// never from the Vercel project (#834; staging #2672, production #2673).
 //
 // ── Why staging stopped reading Vercel's Preview env ───────────────────────
 // Staging's app config used to reach Vercel through two Infisical→Vercel syncs
@@ -12,6 +12,12 @@
 // its app reads. Reconnecting Git (option c) stays off the table, and an
 // unfiltered Preview target (option a) was declined because it keeps fanning the
 // backend store into the frontends.
+//
+// Production followed on 2026-09-28 (#2673). Its job already injected Infisical
+// `prod` before the Vercel steps, so every production CLI process saw the whole
+// store, and a Production row filled any app key the injection lacked. It now
+// records the same baseline and builds the same way; a dry run also withholds
+// `SENTRY_AUTH_TOKEN` (`deploy-vercel.mjs`, #2275).
 //
 // The syncs had also stopped mattering to the build before anyone noticed:
 // `vercel pull --environment=preview` with no `--git-branch` requests
