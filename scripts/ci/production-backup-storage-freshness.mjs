@@ -194,11 +194,11 @@ export async function runWatchdog({
     buildRecoveryBody: () =>
       `Nightly production Storage mirror is fresh again: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });
-  // A clean run that cannot read or close its alert is red. An unreadable
-  // tracker usually means the alert token lost access, and then the next real
-  // failure cannot raise its alert either; this daily run is the only early
-  // signal of that. A close that left the alert open is red too: a green run
-  // would hide a P1 open on a healthy system.
+  // A clean run that cannot read or close its alert is red. One failed read is
+  // usually transient, but a lasting one means the job's token lost issues
+  // access, and then the next real failure cannot raise its alert either; this
+  // daily run is the only early signal of that. A close that left the alert
+  // open is red too: a green run would hide a P1 open on a healthy system.
   if (resolved.action === "unread") {
     return { outcome: "fail", resolved: false, lookupOk: false };
   }

@@ -280,11 +280,11 @@ export async function raiseAlert({
  *   callers' policies differ. Every daily watchdog goes red on it (the
  *   conformance pair, check-migration-drift, production-guardrails,
  *   production-backup-env, both backup-freshness watchdogs and
- *   production-release-pin): an unreadable tracker usually means the alert
- *   token lost access, so the next real failure could not raise its alert
- *   either. production-uptime passes with a warning, because at a 15-minute
- *   cadence a blip would be constant noise and the dailies catch a lasting
- *   break. deploy-alert and pr-base-sync warn. Whatever its policy, a caller
+ *   production-release-pin): one failed read is usually transient, but a
+ *   lasting one means the job's token lost issues access, and then the next
+ *   real failure could not raise its alert either. production-uptime passes
+ *   with a warning, because at a 15-minute cadence a blip would be constant
+ *   noise and the dailies catch a lasting break. deploy-alert and pr-base-sync warn. Whatever its policy, a caller
  *   must never say an alert "is still open" when it could not look.
  */
 export async function resolveAlert({
