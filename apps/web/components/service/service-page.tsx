@@ -13,7 +13,7 @@ import {
   useServiceEntries,
   putSignedUpload,
 } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberLabel } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -127,10 +127,7 @@ export function ServiceHoursPage() {
     const map = new Map<string, string>();
     for (const m of members) {
       if (m.user_id)
-        map.set(
-          String(m.user_id),
-          displayNameOrNull(m.display_name) ?? "Unnamed member",
-        );
+        map.set(String(m.user_id), memberLabel(m.display_name, m.user_id));
     }
     return map;
   }, [members]);

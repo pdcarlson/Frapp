@@ -93,6 +93,35 @@ export function memberFallbackLabel(userId: string): string {
   return `Member ${userId.slice(0, FALLBACK_ID_CHARS)}`;
 }
 
+/** Rendered in a name slot when there is neither a name nor an id. */
+const UNKNOWN_MEMBER = "Unknown member";
+
+/**
+ * The label for a member row: their name, or {@link memberFallbackLabel}.
+ *
+ * The rule: **one fallback spelling for a member, on every surface, web and
+ * mobile.** A member with no name set reads `Member 2f4a1c` in the directory,
+ * on the leaderboard, in a task card, in a picker and in chat alike. The cost
+ * is that an unnamed member never gets a generic "no name" label anywhere; the
+ * gain is that an officer comparing two surfaces can see the rows are the same
+ * person, which a generic label on one and an id prefix on the other made
+ * impossible (#2422). A caller that shows extra identity beside the label (an
+ * email, the full id in a fine's picker) adds it around this, never instead of
+ * it.
+ *
+ * `userId` is nullable only for the rows that are hand-narrowed rather than
+ * contract-typed (the Find bar's search results); with no id either, the row
+ * reads `Unknown member`, the same words chat uses for an author it cannot name.
+ */
+export function memberLabel(
+  displayName: string | null | undefined,
+  userId: string | null | undefined,
+): string {
+  const name = displayNameOrNull(displayName);
+  if (name) return name;
+  return userId ? memberFallbackLabel(userId) : UNKNOWN_MEMBER;
+}
+
 /**
  * A DM channel name the server generated from participant ids
  * (`dm-<uuidA>-<uuidB>`). These are storage keys, never display strings.
@@ -199,9 +228,6 @@ export interface MessageAuthor {
 /** Resolves a `users.id` to a display name, or `null`. Matches `nameFor`. */
 export type NameResolver = (userId: string) => string | null;
 
-/** Rendered when a message names nobody at all. */
-const UNKNOWN_AUTHOR = "Unknown member";
-
 /**
  * The best available human name for a message's author, or `null`.
  *
@@ -248,7 +274,7 @@ export function authorInitialsFallback(author: MessageAuthor): string {
  * a message always has a Signet user behind it.
  *
  * Order: the viewer is "You", then a resolved name, then a truncated id for an
- * unresolvable member, then `UNKNOWN_AUTHOR`. The last branch is unreachable
+ * unresolvable member, then `UNKNOWN_MEMBER`. The last branch is unreachable
  * against a healthy database — `chat_messages_author_present` guarantees a null
  * `sender_id` comes with an `author_name` — but a label has to render something,
  * and a blank one reads as a broken layout rather than as missing data.
@@ -262,7 +288,7 @@ export function resolveAuthorLabel(
   const name = resolveAuthorName(author, nameFor);
   if (name) return name;
   if (author.sender_id) return memberFallbackLabel(author.sender_id);
-  return UNKNOWN_AUTHOR;
+  return UNKNOWN_MEMBER;
 }
 
 /**

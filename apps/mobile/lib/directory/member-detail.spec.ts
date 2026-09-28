@@ -50,9 +50,9 @@ describe("selectMemberDetail", () => {
     });
   });
 
-  it("falls back to a placeholder name for an empty display_name", () => {
+  it("falls back to the shared member label for an empty display_name", () => {
     const detail = selectMemberDetail(profile({ display_name: "" }));
-    expect(detail?.displayName).toBe("Unnamed member");
+    expect(detail?.displayName).toBe("Member u-1");
   });
 
   it("omits meta parts that are unset, without a dangling separator", () => {

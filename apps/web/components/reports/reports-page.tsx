@@ -16,7 +16,10 @@ import {
   type ReportTruncation,
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import {
+  displayNameOrNull,
+  memberFallbackLabel,
+} from "@repo/hooks/display-names";
 import { formatLocaleDateTime } from "@repo/formatting";
 import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -129,7 +132,7 @@ function buildMemberOptions(members: MemberProfile[]): PickerOption[] {
         ? email
           ? `${displayName} (${email})`
           : displayName
-        : email || `Member ${id.slice(0, 8)}`;
+        : email || memberFallbackLabel(id);
       return { id, label };
     })
     .filter((option): option is PickerOption => option !== null);

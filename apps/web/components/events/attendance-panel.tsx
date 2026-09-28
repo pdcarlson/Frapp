@@ -10,7 +10,7 @@ import {
   useMembers,
   useUpdateAttendanceStatus,
 } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberLabel } from "@repo/hooks/display-names";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,7 +106,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
       if (!member.user_id) continue;
       result.set(String(member.user_id), {
         userId: String(member.user_id),
-        displayName: displayNameOrNull(member.display_name) ?? "Unnamed member",
+        displayName: memberLabel(member.display_name, member.user_id),
         email: member.email ?? "",
         status: "UNRECORDED",
         checkInTime: null,

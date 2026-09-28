@@ -14,7 +14,7 @@ import {
   useTransferPresidency,
   useUpdateRole,
 } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberLabel } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -668,8 +668,7 @@ export function RolesAndPermissionsPage() {
                       key={member.id ?? member.user_id ?? "unknown"}
                       value={String(member.id ?? member.user_id ?? "")}
                     >
-                      {displayNameOrNull(member.display_name) ??
-                        "Unnamed member"}
+                      {memberLabel(member.display_name, member.user_id)}
                     </SelectItem>
                   ))}
                 </SelectContent>

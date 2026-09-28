@@ -11,7 +11,7 @@ import {
   useOverdueInvoices,
   useTransitionInvoiceStatus,
 } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberLabel } from "@repo/hooks/display-names";
 import { can } from "@repo/validation";
 import { formatBareDate } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
@@ -220,7 +220,7 @@ export function InvoiceList({ id }: { id?: string }) {
       if (member.user_id) {
         map.set(
           String(member.user_id),
-          displayNameOrNull(member.display_name) ?? "Unnamed member",
+          memberLabel(member.display_name, member.user_id),
         );
       }
     }
@@ -519,8 +519,7 @@ export function InvoiceList({ id }: { id?: string }) {
                             key={member.user_id ?? "unknown"}
                             value={String(member.user_id ?? "")}
                           >
-                            {displayNameOrNull(member.display_name) ??
-                              "Unnamed member"}
+                            {memberLabel(member.display_name, member.user_id)}
                           </SelectItem>
                         ))}
                       </SelectContent>

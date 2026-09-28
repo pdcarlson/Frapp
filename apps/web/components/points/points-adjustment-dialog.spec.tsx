@@ -74,9 +74,9 @@ describe("PointsAdjustmentDialog member labels", () => {
     ).map((option) => option.textContent ?? "");
 
     expect(labels).toContain("Rush Chair (u-1)");
-    // Asserts the invariant, not the wording: #2422 is still to decide which
-    // of the repo's four no-name spellings wins, and pinning this one here
-    // would make that change look like a regression.
+    // The shared no-name label (#2422), never the bare id in the name slot:
+    // `Member u-2` here is what the directory and leaderboard call this member.
+    expect(labels).toContain("Member u-2 (u-2)");
     for (const label of labels) {
       expect(label.trimStart()).toBe(label);
       expect(label).not.toMatch(/^\s*\(/);

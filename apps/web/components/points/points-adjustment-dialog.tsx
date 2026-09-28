@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { AdjustGlyph } from "@/components/points/points-glyphs";
 import { useAdjustPoints, useMembers } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberLabel } from "@repo/hooks/display-names";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,8 +68,10 @@ export function PointsAdjustmentDialog({
       .map((member) => {
         const userId = String(member.user_id ?? "");
         if (!userId) return null;
-        const displayName = displayNameOrNull(member.display_name) ?? userId;
-        return { userId, label: `${displayName} (${userId})` };
+        // The full id stays beside the label: this picker names the target of
+        // a fine, so two members who share a name must still be told apart.
+        const label = memberLabel(member.display_name, userId);
+        return { userId, label: `${label} (${userId})` };
       })
       .filter((option): option is MemberOption => option !== null);
   }, [membersQuery.data]);
