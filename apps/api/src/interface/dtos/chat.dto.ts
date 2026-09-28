@@ -118,6 +118,16 @@ export class CreateDmDto {
   member_id: string;
 }
 
+/** `POST /v1/channels/{id}/members` (#1302): add a chapter member to a PRIVATE channel. */
+export class AddChannelMemberDto {
+  @ApiProperty({
+    description:
+      "The `users.id` to add. Must be a member of the channel's chapter.",
+  })
+  @IsUUID()
+  user_id: string;
+}
+
 export class CreateGroupDmDto {
   @ApiProperty({ type: [String] })
   @IsArray()

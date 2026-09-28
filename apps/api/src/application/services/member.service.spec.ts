@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { MemberService } from './member.service';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -39,6 +41,8 @@ describe('MemberService', () => {
   };
   let mockAuditLogService: AuditLogServiceMock;
   let mockStorageProvider: { listFiles: jest.Mock; deleteFiles: jest.Mock };
+  let mockChannelRepo: { removeUserFromPrivateChannels: jest.Mock };
+  let mockChannelCache: { invalidate: jest.Mock };
 
   beforeEach(async () => {
     mockRepo = {
@@ -88,6 +92,10 @@ describe('MemberService', () => {
       listFiles: jest.fn().mockResolvedValue([]),
       deleteFiles: jest.fn().mockResolvedValue(undefined),
     };
+    mockChannelRepo = {
+      removeUserFromPrivateChannels: jest.fn().mockResolvedValue([]),
+    };
+    mockChannelCache = { invalidate: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -100,6 +108,8 @@ describe('MemberService', () => {
         { provide: RbacService, useValue: mockRbacService },
         { provide: ChapterAuditLogService, useValue: mockAuditLogService },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
+        { provide: CHAT_CHANNEL_REPOSITORY, useValue: mockChannelRepo },
+        { provide: ChannelCacheService, useValue: mockChannelCache },
       ],
     }).compile();
 
@@ -795,6 +805,63 @@ describe('MemberService', () => {
       expect(mockRepo.delete).toHaveBeenCalledWith('member-1');
     });
 
+    // #1302: a re-invite creates a new `members` row for the same `users.id`,
+    // so an id left in a PRIVATE channel's `member_ids` would let the member
+    // straight back in, full history included.
+    it("takes the member off the chapter's PRIVATE channels, before the row goes", async () => {
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRepo.delete.mockResolvedValue(undefined);
+
+      await service.remove('member-1', 'chapter-1', 'actor-1');
+
+      expect(
+        mockChannelRepo.removeUserFromPrivateChannels,
+      ).toHaveBeenCalledWith('chapter-1', 'user-1');
+      expect(
+        mockChannelRepo.removeUserFromPrivateChannels.mock
+          .invocationCallOrder[0],
+      ).toBeLessThan(mockRepo.delete.mock.invocationCallOrder[0]);
+    });
+
+    it('evicts every pruned channel from the push cache and records them in the audit entry', async () => {
+      // A re-invite inside the cache's TTL would otherwise be pushed from the
+      // pre-prune list, and the audit entry is how an officer learns which
+      // channels to add a mistakenly removed member back to.
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRepo.delete.mockResolvedValue(undefined);
+      mockChannelRepo.removeUserFromPrivateChannels.mockResolvedValue([
+        'chan-a',
+        'chan-b',
+      ]);
+
+      await service.remove('member-1', 'chapter-1', 'actor-1');
+
+      expect(mockChannelCache.invalidate).toHaveBeenCalledWith('chan-a');
+      expect(mockChannelCache.invalidate).toHaveBeenCalledWith('chan-b');
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          diff: {
+            user_id: existingMember.user_id,
+            private_channel_ids: ['chan-a', 'chan-b'],
+          },
+        }),
+      );
+    });
+
+    it('does not remove the member when their channels cannot be updated', async () => {
+      // Blocking is retryable; removing the row first would leave ids behind
+      // that no later removal of this member could reach.
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockChannelRepo.removeUserFromPrivateChannels.mockRejectedValue(
+        new Error('pg down'),
+      );
+
+      await expect(
+        service.remove('member-1', 'chapter-1', 'actor-1'),
+      ).rejects.toThrow('pg down');
+      expect(mockRepo.delete).not.toHaveBeenCalled();
+    });
+
     it('writes a chapter_audit_log entry after a successful removal', async () => {
       mockRepo.findById.mockResolvedValue(existingMember);
       mockRepo.delete.mockResolvedValue(undefined);
@@ -807,7 +874,7 @@ describe('MemberService', () => {
         action: 'member_removed',
         targetType: 'member',
         targetId: 'member-1',
-        diff: { user_id: existingMember.user_id },
+        diff: { user_id: existingMember.user_id, private_channel_ids: [] },
       });
     });
 

@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import { canAccessChannel, MAX_UPLOAD_BYTES } from '@repo/validation';
@@ -141,6 +142,8 @@ describe('ChatService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       leaveGroupDm: jest.fn(),
+      addPrivateChannelMember: jest.fn(),
+      removePrivateChannelMember: jest.fn(),
     };
 
     mockCategoryRepo = {
@@ -991,6 +994,202 @@ describe('ChatService', () => {
   });
 
   // #348 and #2303: spec/behavior/chat/README.md § Direct Messages.
+  describe('private channel membership (#1302)', () => {
+    const privateChannel: ChatChannel = {
+      ...baseChannel,
+      type: 'PRIVATE',
+      member_ids: ['user-1'],
+    };
+
+    describe('addPrivateChannelMember', () => {
+      it('adds a chapter member through the atomic RPC and evicts the push cache', async () => {
+        mockChannelRepo.findById.mockResolvedValue(privateChannel);
+        const updated = { ...privateChannel, member_ids: ['user-1', 'user-2'] };
+        mockChannelRepo.addPrivateChannelMember.mockResolvedValue(updated);
+
+        const result = await service.addPrivateChannelMember(
+          'ch-chan-1',
+          'ch-1',
+          'user-2',
+        );
+
+        expect(result).toBe(updated);
+        expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+          'user-2',
+          'ch-1',
+        );
+        expect(mockChannelRepo.addPrivateChannelMember).toHaveBeenCalledWith(
+          'ch-chan-1',
+          'ch-1',
+          'user-2',
+        );
+        // `member_ids` decides who is pushed this channel's messages.
+        expect(mockChannelCache.invalidate).toHaveBeenCalledWith('ch-chan-1');
+      });
+
+      it('refuses someone who is not a member of the chapter, before writing', async () => {
+        // `member_ids` has no foreign key, so this check is the only thing
+        // keeping a foreign id out of the list.
+        mockChannelRepo.findById.mockResolvedValue(privateChannel);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+        await expect(
+          service.addPrivateChannelMember('ch-chan-1', 'ch-1', 'outsider'),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockChannelRepo.addPrivateChannelMember).not.toHaveBeenCalled();
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      });
+
+      it.each(['PUBLIC', 'ROLE_GATED', 'DM', 'GROUP_DM'] as const)(
+        'refuses a %s channel',
+        async (type) => {
+          mockChannelRepo.findById.mockResolvedValue({
+            ...privateChannel,
+            type,
+          });
+
+          await expect(
+            service.addPrivateChannelMember('ch-chan-1', 'ch-1', 'user-2'),
+          ).rejects.toThrow(BadRequestException);
+          expect(
+            mockChannelRepo.addPrivateChannelMember,
+          ).not.toHaveBeenCalled();
+        },
+      );
+
+      it('answers 404 for a channel in another chapter', async () => {
+        mockChannelRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.addPrivateChannelMember('ch-chan-1', 'ch-1', 'user-2'),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockChannelRepo.addPrivateChannelMember).not.toHaveBeenCalled();
+      });
+
+      it('answers 404 when the channel is deleted between the check and the write', async () => {
+        mockChannelRepo.findById.mockResolvedValue(privateChannel);
+        mockChannelRepo.addPrivateChannelMember.mockResolvedValue(null);
+
+        await expect(
+          service.addPrivateChannelMember('ch-chan-1', 'ch-1', 'user-2'),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      });
+
+      it('does not require the caller to be in the channel', async () => {
+        // Authorized by `channels:manage` at the controller, like PATCH and
+        // DELETE on a channel: an officer can add themselves to a private
+        // channel they cannot yet read. Nothing here takes a caller id.
+        mockChannelRepo.findById.mockResolvedValue({
+          ...privateChannel,
+          member_ids: ['someone-else'],
+        });
+        mockChannelRepo.addPrivateChannelMember.mockResolvedValue({
+          ...privateChannel,
+          member_ids: ['someone-else', 'user-1'],
+        });
+
+        await expect(
+          service.addPrivateChannelMember('ch-chan-1', 'ch-1', 'user-1'),
+        ).resolves.toEqual(
+          expect.objectContaining({ member_ids: ['someone-else', 'user-1'] }),
+        );
+      });
+    });
+
+    describe('removePrivateChannelMember', () => {
+      it('removes through the atomic RPC and evicts the push cache', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...privateChannel,
+          member_ids: ['user-1', 'user-2'],
+        });
+        mockChannelRepo.removePrivateChannelMember.mockResolvedValue(
+          privateChannel,
+        );
+
+        const result = await service.removePrivateChannelMember(
+          'ch-chan-1',
+          'ch-1',
+          'user-2',
+        );
+
+        expect(result).toBe(privateChannel);
+        expect(mockChannelRepo.removePrivateChannelMember).toHaveBeenCalledWith(
+          'ch-chan-1',
+          'ch-1',
+          'user-2',
+        );
+        expect(mockChannelCache.invalidate).toHaveBeenCalledWith('ch-chan-1');
+      });
+
+      it('does not check chapter membership, so a stale id can be cleaned out', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...privateChannel,
+          member_ids: ['user-1', 'left-the-chapter'],
+        });
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+        mockChannelRepo.removePrivateChannelMember.mockResolvedValue(
+          privateChannel,
+        );
+
+        await expect(
+          service.removePrivateChannelMember(
+            'ch-chan-1',
+            'ch-1',
+            'left-the-chapter',
+          ),
+        ).resolves.toBe(privateChannel);
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+      });
+
+      it('refuses to remove the last member with a 409', async () => {
+        // The RPC refuses (no row) and the channel is still there, so the
+        // refusal was the last-member guard, not a concurrent delete.
+        mockChannelRepo.findById.mockResolvedValue(privateChannel);
+        mockChannelRepo.removePrivateChannelMember.mockResolvedValue(null);
+
+        await expect(
+          service.removePrivateChannelMember('ch-chan-1', 'ch-1', 'user-1'),
+        ).rejects.toThrow(ConflictException);
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      });
+
+      it('answers 404 when the channel is deleted between the check and the write', async () => {
+        mockChannelRepo.findById
+          .mockResolvedValueOnce(privateChannel)
+          .mockResolvedValueOnce(null);
+        mockChannelRepo.removePrivateChannelMember.mockResolvedValue(null);
+
+        await expect(
+          service.removePrivateChannelMember('ch-chan-1', 'ch-1', 'user-1'),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('refuses a Group DM, whose membership changes only by leaving', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...privateChannel,
+          type: 'GROUP_DM',
+          member_ids: ['user-1', 'user-2', 'user-3'],
+        });
+
+        await expect(
+          service.removePrivateChannelMember('ch-chan-1', 'ch-1', 'user-2'),
+        ).rejects.toThrow(BadRequestException);
+        expect(
+          mockChannelRepo.removePrivateChannelMember,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('answers 404 for a channel in another chapter', async () => {
+        mockChannelRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.removePrivateChannelMember('ch-chan-1', 'ch-1', 'user-1'),
+        ).rejects.toThrow(NotFoundException);
+      });
+    });
+  });
+
   describe('leaveChannel', () => {
     const groupDm: ChatChannel = {
       ...baseChannel,
