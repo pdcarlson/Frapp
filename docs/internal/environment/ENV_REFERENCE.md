@@ -223,10 +223,9 @@ not written into this public repo — read them from Infisical or the Cloudflare
 dashboard. They do not live _only_ there, though: the path-`/` `render-api-staging`
 sync ([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5) pushes every Staging
 secret onward, so a copy also sits in the Render staging service env. The two
-retired staging Vercel syncs failed from each project's Git unlink on
-(`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so a project's Preview env
-holds a copy only if the credential existed before its unlink, until those rows
-are deleted (#834). Count every destination that applies in any compromise
+staging Vercel syncs that also carried it were deleted on 2026-09-28, together
+with every Preview row they wrote (#834), so no Vercel project holds a staging
+copy. Count every destination that applies in any compromise
 assessment of this credential.
 
 | Variable                      | `dev`           | `staging`                                                                                                                                                 | `prod`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

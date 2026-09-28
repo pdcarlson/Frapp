@@ -112,48 +112,40 @@ Every sync below is configured at path `/`, so **each one pushes every secret in
 environment to its destination.** Narrowing a sync means splitting the secret store into paths and
 repointing the sync — there is no filter to switch on. See the "Blast radius" note below.
 
-#### Live syncs (6 total)
+#### Live syncs (4 total)
 
-**Dashboard state last verified: 2026-08-12.** This table is a convenience copy of live
+**Dashboard state last verified: 2026-09-28.** This table is a convenience copy of live
 dashboard configuration and goes stale silently. Treat a disagreement between this table and the
 Infisical/Vercel dashboards as the table being wrong, and re-stamp the date when you correct it.
 See "Verifying this section against reality" below.
 
-| Name                        | Infisical env | Path | Destination         | Vercel/Render env | Git branch filter |
-| --------------------------- | ------------- | ---- | ------------------- | ----------------- | ----------------- |
-| `render-api-production`     | Production    | `/`  | `frapp-api-prod`    | Service           | n/a               |
-| `render-api-staging`        | Staging       | `/`  | `frapp-api-staging` | Service           | n/a               |
-| `vercel-landing-production` | Production    | `/`  | `frapp-landing`     | Production        | none              |
-| `vercel-landing-staging`    | Staging       | `/`  | `frapp-landing`     | Preview           | `main` — unverified, see below |
-| `vercel-web-production`     | Production    | `/`  | `frapp-web`         | Production        | none              |
-| `vercel-web-staging`        | Staging       | `/`  | `frapp-web`         | Preview           | `main` (read 2026-08-12) |
+| Name                        | Infisical env | Path | Destination         | Vercel/Render env |
+| --------------------------- | ------------- | ---- | ------------------- | ----------------- |
+| `render-api-production`     | Production    | `/`  | `frapp-api-prod`    | Service           |
+| `render-api-staging`        | Staging       | `/`  | `frapp-api-staging` | Service           |
+| `vercel-landing-production` | Production    | `/`  | `frapp-landing`     | Production        |
+| `vercel-web-production`     | Production    | `/`  | `frapp-web`         | Production        |
 
-**The two staging Vercel syncs are retired (2026-09-24, [#2672](https://github.com/pdcarlson/Frapp/issues/2672)).**
-Staging's web and landing builds take their app config from Infisical `staging` at build time
-([§ Staging web and landing](#staging-web-and-landing-injected-at-build-not-synced)), so nothing
-reads what `vercel-web-staging` and `vercel-landing-staging` write. Both have reported *Failed to
-Sync* since the projects lost their Git link (ADR-21), which is what holds
-[#2106](https://github.com/pdcarlson/Frapp/issues/2106) open. The owner deletes them, and their stale
-`Preview · main` rows, once a staging deploy on the new path is green (tracked on
-[#834](https://github.com/pdcarlson/Frapp/issues/834)); drop the two rows from this table then. The
-branch-filter notes below describe those two syncs and stop mattering when they go.
+All four read **Synced** in the Infisical UI on 2026-09-28.
 
-**Read the last two columns carefully — they are different things that have both been called
-"preview."** The *Vercel env* column is Vercel's own environment name (`Production` or `Preview`);
-`Preview` there is correct and permanent. The *git branch filter* is a separate field naming a
-repository branch. Conflating the two has already cost one investigation.
+**The two staging Vercel syncs are deleted (2026-09-28, [#834](https://github.com/pdcarlson/Frapp/issues/834)).**
+`vercel-web-staging` and `vercel-landing-staging` wrote Preview rows scoped to git branch `main`.
+They failed from the day ADR-21 unlinked the projects from Git
+(`Project "…" does not have a connected Git repository`), which is what held
+[#2106](https://github.com/pdcarlson/Frapp/issues/2106)'s `infisical-syncs` assertion red, and
+nothing read what they wrote: staging's web and landing builds take their app config from Infisical
+`staging` at build time ([§ Staging web and landing](#staging-web-and-landing-injected-at-build-not-synced)).
+The owner deleted both syncs with **Remove Synced Secrets** off (that option queues a removal job
+against Vercel, which would hit the same Git error and keep the sync alive), then deleted every
+**Preview · `main`** row in `frapp-web` and `frapp-landing` by hand. Both projects' env lists,
+filtered to `main`, read empty afterwards. Production rows were left alone.
 
-The branch filter is the field that keeps going wrong. A Vercel Preview env var is keyed on
-`(environment, git branch)`, so a sync pointed at a branch that does not exist writes rows no
-deployment will ever read — or fails outright, depending on how Vercel validates that day. Both
-staging syncs originally targeted a branch literally named `preview`, which has never existed in this
-repository (the only branch is `main`; `production` was retired in #1340). Never set that
-value again.
-
-`vercel-web-staging` was read in the Infisical UI on 2026-08-12 and targets `main`, which is correct —
-`main` is the branch staging deploys from. **`vercel-landing-staging` was not opened that day**; its
-`main` value is inferred from the two syncs having been repointed together and is the first thing to
-confirm if landing's env vars ever look stale.
+**Never re-create a Vercel Preview sync with a git branch filter.** The *Vercel env* column is
+Vercel's environment name (`Production` or `Preview`); a Preview sync additionally names a
+repository branch, and Infisical resolves that branch through the project's Git connection, which
+these projects deliberately don't have. Before the Git unlink the same field caused a different
+failure: both staging syncs targeted a branch literally named `preview`, which has never existed in
+this repository, and wrote rows no deployment read.
 
 To inspect or edit one: Infisical → Integrations → **Secret Syncs**. To create one from scratch on a
 fresh org, first authenticate the provider under **App Connections** (Vercel, Render), then
@@ -161,7 +153,7 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 
 #### GitHub Actions is not a sync
 
-There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. The workflows
+There is no GitHub Actions sync — the Secret Syncs list holds exactly the four above. The workflows
 that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` (pinned to that tag's commit SHA, #2647) with
 `method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
 `INFISICAL_CLIENT_SECRET` secrets, read through the GitHub environment each job names (§6). This is universal
@@ -192,8 +184,8 @@ the keys it is listed as reading (next section).
 
 **Decision (owner, 2026-09-24, [#834](https://github.com/pdcarlson/Frapp/issues/834#issuecomment-5821405063)):**
 `deploy-vercel-staging.yml` injects Infisical `staging` itself and builds each app against exactly the
-keys that app reads. No staging build reads a Vercel sync; the two staging syncs are retired and wait
-for deletion (above). Why, and what was turned down:
+keys that app reads. No staging build reads a Vercel sync; the two staging syncs were deleted on
+2026-09-28 (above). Why, and what was turned down:
 
 - **The syncs cannot address a Git-less project.** Infisical scopes a Vercel Preview write by git
   branch and resolves the branch through the project's connected repository. ADR-21 removed that link
@@ -256,16 +248,16 @@ Staging was not spared while its syncs worked: they wrote to `Preview` scope fil
 deployment received every backend credential as a server-side env var. None of them reach browsers,
 because Next.js only inlines `NEXT_PUBLIC_*` into the client bundle, but any SSRF or RCE in the staging
 web app would read through to the staging database and the Supabase account. Whether a CLI-created
-deployment still receives those `main`-scoped rows at runtime was never established. Deleting them
-(#834) settles it either way, and nothing an app reads depends on them
+deployment still received those `main`-scoped rows at runtime was never established. The rows were
+deleted on 2026-09-28 (#834), which settles it either way, and nothing an app reads depended on them
 ([§ Staging web and landing](#staging-web-and-landing-injected-at-build-not-synced)).
 
 `SUPABASE_ACCESS_TOKEN` deserves separate mention: it is a Supabase **Management API** token. The
 one these syncs delivered was scoped to the whole account, and therefore strictly more powerful than
 `SUPABASE_SERVICE_ROLE_KEY`. **Corrected 2026-09-24 ([#2583](https://github.com/pdcarlson/Frapp/issues/2583)):**
 that token is revoked, and each Infisical environment now holds its own read-only token scoped to
-its own project (`ENV_REFERENCE.md` § CD Secrets). The Vercel copies still hold a revoked value,
-because the Vercel syncs have failed since the projects were unlinked from Git (#2106). Still the
+its own project (`ENV_REFERENCE.md` § CD Secrets). The staging Vercel copies, which held the revoked
+value because those syncs failed from the Git unlink onward, were deleted on 2026-09-28 (#834). Still the
 first thing to rotate if any of this is ever believed compromised.
 
 An earlier misreading is worth recording so it is not repeated. Because the staging syncs once failed
@@ -281,7 +273,7 @@ but, unlike the current rows, were **not** marked Sensitive, so their values wer
 Vercel dashboard. They were deleted from both `frapp-web` and `frapp-landing` on 2026-08-12.
 
 Narrowing the **production** syncs so the frontend projects stop receiving backend credentials is the
-remaining work and is tracked in **#834** (the staging syncs feed no build, so they are deleted
+remaining work and is tracked in **#834** (the staging syncs fed no build, so they were deleted
 rather than narrowed). The lever is a secret-path split (for example a frontend-only path that
 the Vercel syncs read while Render and CI keep reading `/`) — there is no per-key filter, per "How a
 sync decides what it pushes" above. Note the ordering: narrow the source path *first*, then delete
@@ -417,7 +409,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | Supabase service role key | On suspected compromise | Regenerate in Supabase → update canonical value in Infisical |
 | Stripe secret key         | On suspected compromise | Regenerate in Stripe → update canonical value in Infisical   |
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
-| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The retired staging Vercel syncs left copies in a Vercel project's Preview env only if the token predates that project's unlink (landing 2026-09-01, web 2026-09-02), until those rows are deleted (#834). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
+| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The staging Vercel syncs and every Preview row they wrote were deleted on 2026-09-28 (#834), so no Vercel project holds a copy. Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
 
 **All rotations happen in one place (Infisical).** Syncs propagate changes to Render and to Vercel Production automatically; the staging web and landing builds read Infisical directly, so they pick up a change on their next deploy.
 

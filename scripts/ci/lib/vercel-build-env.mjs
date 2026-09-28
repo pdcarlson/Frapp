@@ -40,7 +40,7 @@
 // (`next/dist/build/define-env.js` spreads them unconditionally), and neither app
 // reads a non-public key at request time: `SENTRY_AUTH_TOKEN` is read only by
 // `next.config.js`. So a deployment's runtime env needs nothing from Infisical,
-// and deleting the stale `Preview · main` rows removes nothing an app reads.
+// and deleting the stale `Preview · main` rows (done 2026-09-28) removed nothing an app reads.
 //
 // Semantics: the pure functions below. Unit tests, including the guard that
 // keeps `APP_CONFIG_KEYS` equal to what the apps read:
