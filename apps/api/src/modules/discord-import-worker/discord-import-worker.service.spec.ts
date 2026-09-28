@@ -494,6 +494,57 @@ describe('DiscordImportWorkerService — importing', () => {
     });
   });
 
+  it('creates a restricted channel ROLE_GATED, with the permissions the admin chose (#2787)', async () => {
+    // Before #2787 every created channel was PUBLIC, so a private Discord
+    // channel (#cabinet) became readable by the whole chapter.
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'cabinet',
+        new_channel_type: 'ROLE_GATED',
+        new_channel_required_permissions: ['chapter-config:manage'],
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(channelRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'cabinet',
+        type: 'ROLE_GATED',
+        required_permissions: ['chapter-config:manage'],
+      }),
+    );
+  });
+
+  it('creates a public channel with no gate', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'general',
+        new_channel_type: 'PUBLIC',
+        // Ignored for PUBLIC even if a row somehow carried one.
+        new_channel_required_permissions: ['chapter-config:manage'],
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(channelRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'PUBLIC', required_permissions: null }),
+    );
+  });
+
   it('stops when the admin cancels mid-slice, instead of resurrecting the job', async () => {
     // The lease arbitrates between workers; it does nothing against an admin
     // calling cancel, which is an ordinary write on the same row. Without the

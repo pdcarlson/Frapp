@@ -92,6 +92,20 @@ export interface DiscordChannelRef {
    * the channel and silently dropping every post inside it.
    */
   holdsOnlyThreads: boolean;
+  /**
+   * Whether the bot can read this channel's history (View Channels and Read
+   * Message History after every overwrite). Null when the bot's own
+   * permissions could not be computed, in which case discovery falls back to
+   * probing. A thread carries its parent's answer.
+   */
+  readable: boolean | null;
+  /**
+   * Whether the channel is private in Discord: some member of the server
+   * could not read its history (`openToEveryone` is false), which is how a
+   * server keeps exec, bids and committees behind a role. A private thread is
+   * private whatever its parent is. Null when unknown.
+   */
+  privateInDiscord: boolean | null;
 }
 
 /** A role as the guild defines it, for the role worksheet. */
@@ -110,6 +124,12 @@ export interface DiscordRoleRef {
 export interface DiscordChannelDiscovery {
   channels: DiscordChannelRef[];
   warnings: string[];
+  /**
+   * The guild's roles, for the (informational) role worksheet: the same read
+   * discovery computes access from, so one failure cannot pass one and fail
+   * the other. Empty when they could not be read, which `warnings` says.
+   */
+  roles: DiscordRoleRef[];
 }
 
 /**
@@ -175,9 +195,6 @@ export interface IDiscordBotGateway {
    * are. Anything Discord refuses is reported in `warnings`, never dropped.
    */
   discoverChannels(guildId: string): Promise<DiscordChannelDiscovery>;
-
-  /** The guild's roles, for the (informational) role worksheet. */
-  listRoles(guildId: string): Promise<DiscordRoleRef[]>;
 
   /**
    * Re-read one channel and confirm it lives in `guildId`.

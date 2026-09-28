@@ -44,6 +44,17 @@ export interface StagedChannel {
   channelId: string;
   channelName: string;
   category: string | null;
+  /**
+   * Bot path only: whether the bot can read it (false = can only be skipped),
+   * whether it was private in Discord (some member could not read its
+   * history: `@everyone` denied, or any role or member denied), and how many
+   * private threads it holds (their messages land wherever it goes). Null
+   * means the scan could not tell. Absent on an upload, whose export carries
+   * no permissions, which the mapping step treats as needing a choice.
+   */
+  readable?: boolean | null;
+  privateInDiscord?: boolean | null;
+  privateThreads?: number;
 }
 
 export interface StagedRole {

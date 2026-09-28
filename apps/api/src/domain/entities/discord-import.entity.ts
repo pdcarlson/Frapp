@@ -159,7 +159,38 @@ export interface DiscordImportChannel {
   parent_discord_channel_id: string | null;
   /** Discovery order, pinned so a thread lists directly under its parent. */
   position: number;
+  /**
+   * Whether the bot could read this channel's history when it scanned.
+   *
+   * `false` is Discord hiding it from the bot: a channel-level View Channels or
+   * Read Message History deny that no role the bot holds overrides. Such a
+   * channel is listed (Discord returns every channel to a bot) but cannot be
+   * imported, and the mapping refuses anything but `skip` for it. Null when
+   * the scan could not tell, and always on the upload path.
+   */
+  readable: boolean | null;
+  /**
+   * Whether the channel was private in Discord: some member could not read
+   * its history (see `openToEveryone`). On a thread row, true also for a
+   * private thread.
+   *
+   * The API will not create a channel from such a row, or from a null one, in
+   * Frapp until the admin has chosen its visibility explicitly: nothing
+   * private in Discord becomes readable by the whole chapter by default. Null
+   * when unknown, and always on the upload path.
+   */
+  private_in_discord: boolean | null;
+  /**
+   * Visibility of the channel `create_new` makes: the whole chapter, or only
+   * members holding one of `new_channel_required_permissions`.
+   */
+  new_channel_type: DiscordImportNewChannelType;
+  /** Non-empty exactly when `new_channel_type` is `ROLE_GATED` (DB CHECK). */
+  new_channel_required_permissions: string[] | null;
 }
+
+/** The two `chat_channels.type` values an import may create. */
+export type DiscordImportNewChannelType = 'PUBLIC' | 'ROLE_GATED';
 
 export type DiscordImportFileKind = 'export' | 'media';
 

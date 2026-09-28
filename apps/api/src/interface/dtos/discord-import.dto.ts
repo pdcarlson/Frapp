@@ -55,7 +55,7 @@ export class DiscordDiscoveredRoleDto {
 export class DiscordDiscoveryResponseDto {
   @ApiProperty({
     description:
-      'Every channel and thread the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent.',
+      'Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord, or for a thread a private thread; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created.',
     type: 'array',
     items: { type: 'object', additionalProperties: true },
   })
@@ -169,6 +169,27 @@ export class DiscordChannelMappingDto {
   @IsOptional()
   @IsBoolean()
   new_channel_is_read_only?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ['chapter', 'restricted'],
+    description:
+      'Who can read the channel `create_new` makes: the whole chapter, or only members holding one of `new_channel_required_permissions` (a ROLE_GATED channel). Omitted or null means not chosen, which is refused unless this is a bot import whose scan saw the channel was public in Discord and holding no private thread. An uploaded export always needs it.',
+  })
+  @IsOptional()
+  @IsIn(['chapter', 'restricted'])
+  new_channel_visibility?: 'chapter' | 'restricted' | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Permission strings that can read a `restricted` new channel; a member needs any one. Required and non-empty when `new_channel_visibility` is `restricted`.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  new_channel_required_permissions?: string[];
 
   @ApiPropertyOptional({ type: Number })
   @IsOptional()
