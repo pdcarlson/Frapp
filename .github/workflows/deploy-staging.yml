@@ -34,10 +34,11 @@ name: Deploy staging
 # frontends separately, because different paths feed them. The API deploys
 # when something its image is built from changed since the commit staging
 # serves (`stale` when this isn't `main`'s tip and nothing moves it forward).
-# Web and landing always upload for the tip, and for any other commit only
-# when both staging hostnames serve older commits: an upload never replaces
-# a newer frontend, and a green web-only change whose tip run never comes
-# (its CI failed) still ships. Nothing to upload means nothing is built.
+# Web and landing upload only behind an API that carries the commit's API,
+# and then always for the tip, and for any other commit only when both
+# staging hostnames serve older commits: an upload never replaces a newer
+# frontend, and a green web-only change whose tip run never comes (its CI
+# failed) still ships. Nothing to upload means nothing is built.
 #
 # ── Why `workflow_run` and not `push` ───────────────────────────────────────
 # A push-triggered workflow starts immediately, before CI has passed. This one
@@ -85,7 +86,7 @@ jobs:
     # The steps' own ceilings: the Render poll 20 minutes, the served-commit
     # check 5, the Vercel READY poll 30 (`VERCEL_OVERALL_TIMEOUT_MS`), on top
     # of installs, two builds and the migrations (the old Deploy Vercel staging
-    # runs took 3 to 4 minutes for all of its work). 75, as production gives
+    # runs took 2.8 to 4.3 minutes for all of its work). 75, as production gives
     # the same sequence, bounds the job past all of them.
     timeout-minutes: 75
     # One staging deploy at a time, queued, never cancelled. The group keeps the
@@ -107,9 +108,10 @@ jobs:
     concurrency:
       group: db-migrate-staging
       cancel-in-progress: false
-    # `deploy-outcome` reads the plan: a `stale` run neither raises nor closes
-    # the alert, a successful `forward` one doesn't close it (a failed one
-    # raises it), and a `current` one isn't reported as an API deploy.
+    # `deploy-outcome` reads the plan: a successful `stale` run neither raises
+    # nor closes the alert, a successful `forward` one doesn't close it, a
+    # failed run of either raises it, and a `current` one isn't reported as an
+    # API deploy.
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
     steps:
@@ -180,10 +182,11 @@ jobs:
       # `deploy` when anything the API image is built from changed since the
       # served commit, `current` when nothing did (both only for the tip),
       # `forward` for a newer non-tip commit with changes, and `stale`
-      # otherwise. Web and landing: the tip uploads; another commit uploads
-      # only when both staging hostnames serve older commits, so an upload
-      # never rolls a host back and a green change whose tip run never comes
-      # still ships. The reasoning is in the script header.
+      # otherwise. Web and landing, only behind an API that carries this
+      # commit's API: the tip uploads; another commit uploads only when both
+      # staging hostnames serve older commits, so an upload never rolls a host
+      # back and a green change whose tip run never comes still ships. The
+      # reasoning is in the script header.
       #
       # First, so a run with nothing to upload doesn't build web and landing
       # while it holds the queue.

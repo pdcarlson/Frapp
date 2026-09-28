@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   API_IMAGE_PATHS,
@@ -228,8 +228,28 @@ describe("planFrontendUpload", () => {
   });
 
   it("treats the run as the tip when main's tip can't be read", () => {
-    const result = planFrontendUpload({ head: HEAD, tip: null, api: api({ plan: "deploy", verifySha: HEAD }), live: null, isAncestor: never() });
+    const result = planFrontendUpload({
+      head: HEAD,
+      tip: null,
+      api: api({ plan: "deploy", verifySha: HEAD, readyApi: HEAD }),
+      live: null,
+      isAncestor: never(),
+    });
     assert.equal(result.upload, true);
+    assert.equal(result.verifySha, HEAD);
+  });
+
+  // Staging can serve a commit newer than the tip this checkout fetched (Render
+  // auto-deploy still on, #2679): the API plan is `stale` with nothing to
+  // verify, and uploading anyway would ship frontends behind an API nobody saw
+  // ready (#2803 review).
+  it("does not upload even the tip behind an API it can't verify", () => {
+    const plan = planStagingDeploy({ head: HEAD, served: SERVED, tip: HEAD, isAncestor: linearHistory(HEAD, SERVED), changedPaths: never() });
+    assert.equal(plan.plan, "stale");
+    const result = planFrontendUpload({ head: HEAD, tip: HEAD, api: plan, live: null, isAncestor: never() });
+    assert.equal(result.upload, false);
+    assert.equal(result.verifySha, "");
+    assert.doesNotMatch(result.uploadReason, /moved on/, "the tip's reason must not claim main moved on");
   });
 
   // The review finding this rule exists for: a web-only commit that isn't the
@@ -280,7 +300,6 @@ describe("planFrontendUpload", () => {
       ["not read", null, linearHistory(OLD, HEAD, TIP)],
       ["no hosts", [], linearHistory(OLD, HEAD, TIP)],
       ["web unread", hosts(null, OLD), linearHistory(OLD, HEAD, TIP)],
-      ["no meta sha", hosts("not-a-sha", OLD), linearHistory(OLD, HEAD, TIP)],
       ["off history", hosts(OLD), () => false],
       ["git can't relate", hosts(OLD), () => { throw new Error("bad object"); }],
     ];
@@ -289,6 +308,25 @@ describe("planFrontendUpload", () => {
       assert.equal(result.upload, false, `${label}: ${result.uploadReason}`);
       assert.match(result.uploadReason, /its run uploads/, label);
     }
+  });
+
+  // A `meta.githubCommitSha` that isn't a SHA never reaches git, where a
+  // ref-shaped string would resolve to some other commit.
+  it("refuses a host commit that isn't a SHA without asking git", () => {
+    for (const bogus of ["not-a-sha", "main", "HEAD~1"]) {
+      const isAncestor = never();
+      const result = planFrontendUpload({ head: HEAD, tip: TIP, api: api(), live: hosts(bogus, OLD), isAncestor });
+      assert.equal(result.upload, false, bogus);
+      assert.match(result.uploadReason, /could not be read/, bogus);
+      assert.equal(isAncestor.calls.length, 0, bogus);
+    }
+  });
+
+  it("names why a host could not be read", () => {
+    const live = [{ host: WEB, sha: null, error: "Vercel could not resolve the deployment (HTTP 403)" }, { host: LANDING, sha: OLD }];
+    const result = planFrontendUpload({ head: HEAD, tip: TIP, api: api(), live, isAncestor: linearHistory(OLD, HEAD, TIP) });
+    assert.equal(result.upload, false);
+    assert.match(result.uploadReason, /HTTP 403/);
   });
 
   // A stale API plan that isn't "nothing changed" (staging's API is past this
@@ -320,10 +358,12 @@ describe("readStagingFrontends", () => {
       return Response.json({ id: "dpl_1", target: null, url: "x.vercel.app", meta: { githubCommitSha: SERVED } });
     };
     const live = await readStagingFrontends(["app.staging.frapp.live", "broken.example"], { apiKey: "k", teamId: "team_1", fetchImpl });
-    assert.deepEqual(live, [
-      { host: "app.staging.frapp.live", sha: SERVED },
-      { host: "broken.example", sha: null },
-    ]);
+    assert.deepEqual(live[0], { host: "app.staging.frapp.live", sha: SERVED });
+    assert.equal(live[1].host, "broken.example");
+    assert.equal(live[1].sha, null);
+    // The cause survives into the plan's reason: a revoked key reads differently
+    // from an unaliased host.
+    assert.match(live[1].error, /HTTP 403/);
     assert.ok(asked[0].startsWith("https://api.vercel.com/v13/deployments/app.staging.frapp.live?teamId=team_1"), asked[0]);
   });
 });
@@ -483,7 +523,12 @@ describe("CLI", () => {
    * throwaway repo because CI's checkout is shallow: the real repo has no
    * `HEAD~1` there.
    */
-  async function runInTwoCommitRepo(env, { serveTip = false } = {}) {
+  /**
+   * `hostsServe` ("base" or "tip") makes the staging hostnames answer with that
+   * commit: a preloaded module swaps `fetch` for `api.vercel.com` only, and
+   * records each URL asked for, so the CLI's own host read runs for real.
+   */
+  async function runInTwoCommitRepo(env, { serveTip = false, hostsServe = null } = {}) {
     const root = mkdtempSync(join(tmpdir(), "plan-tip-"));
     const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
     let server;
@@ -492,6 +537,10 @@ describe("CLI", () => {
       git("config", "user.email", "t@example.com");
       git("config", "user.name", "t");
       git("config", "commit.gpgsign", "false");
+      writeFileSync(join(root, "base.md"), "base\n");
+      git("add", "-A");
+      git("commit", "-qm", "base");
+      const base = git("rev-parse", "HEAD");
       writeFileSync(join(root, "a.md"), "a\n");
       git("add", "-A");
       git("commit", "-qm", "head");
@@ -509,6 +558,23 @@ describe("CLI", () => {
       await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
       const output = join(root, ".output");
       writeFileSync(output, "");
+      const asked = join(root, ".vercel-asked");
+      const preload = join(root, "stub-vercel.mjs");
+      if (hostsServe) {
+        const sha = hostsServe === "tip" ? tip : base;
+        writeFileSync(
+          preload,
+          [
+            'import { appendFileSync } from "node:fs";',
+            "const realFetch = globalThis.fetch;",
+            "globalThis.fetch = async (url, init) => {",
+            '  if (!String(url).startsWith("https://api.vercel.com/")) return realFetch(url, init);',
+            `  appendFileSync(${JSON.stringify(asked)}, String(url) + "\\n");`,
+            `  return Response.json({ id: "dpl_stub", target: null, url: "stub.vercel.app", meta: { githubCommitSha: ${JSON.stringify(sha)} } });`,
+            "};",
+          ].join("\n"),
+        );
+      }
       const childEnv = {
         ...process.env,
         DEPLOY_SHA: head,
@@ -519,6 +585,7 @@ describe("CLI", () => {
         VERCEL_TEAM_ID: "team_unused",
         VERCEL_STAGING_HOSTS: "app.staging.frapp.live staging.frapp.live",
         GITHUB_OUTPUT: output,
+        ...(hostsServe ? { NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` } : {}),
         ...env,
       };
       delete childEnv.GITHUB_STEP_SUMMARY;
@@ -530,7 +597,13 @@ describe("CLI", () => {
         child.stderr.on("data", (d) => { log += d; });
         child.on("close", (status) => resolve({ status, log }));
       });
-      return { ...run, head, written: readFileSync(output, "utf8") };
+      let hostsAsked = [];
+      try {
+        hostsAsked = readFileSync(asked, "utf8").split("\n").filter(Boolean);
+      } catch {
+        // Never asked.
+      }
+      return { ...run, head, written: readFileSync(output, "utf8"), hostsAsked };
     } finally {
       server?.close();
       rmSync(root, { recursive: true, force: true });
@@ -564,6 +637,31 @@ describe("CLI", () => {
       assert.equal(run.status, 1, `${key}: ${run.stdout}${run.stderr}`);
       assert.match(run.stderr + run.stdout, new RegExp(key), key);
     }
+  });
+
+  // The rule #2803's review exists for, through the CLI: a non-tip commit that
+  // changed nothing in the API, with both hosts on an older commit, uploads and
+  // verifies the served commit. Pins the host read's wiring in main(): the
+  // space-separated host list, and the key and team it passes.
+  it("uploads a non-tip commit when both staging hosts serve older commits", async () => {
+    const { status, log, written, head, hostsAsked } = await runInTwoCommitRepo({ TIP_REF: undefined }, { hostsServe: "base" });
+    assert.equal(status, 0, log);
+    assert.match(written, /^plan=stale$/m, log);
+    assert.match(written, /^upload=true$/m, log);
+    assert.match(written, new RegExp(`^verify_sha=${head}$`, "m"), written);
+    assert.deepEqual(
+      hostsAsked.map((url) => new URL(url).pathname).sort(),
+      ["/v13/deployments/app.staging.frapp.live", "/v13/deployments/staging.frapp.live"],
+    );
+    for (const url of hostsAsked) assert.equal(new URL(url).searchParams.get("teamId"), "team_unused");
+  });
+
+  it("does not upload a non-tip commit over hosts that already serve a newer one", async () => {
+    const { status, log, written } = await runInTwoCommitRepo({ TIP_REF: undefined }, { hostsServe: "tip" });
+    assert.equal(status, 0, log);
+    assert.match(written, /^upload=false$/m, log);
+    assert.match(written, /^upload_reason=.*already serves/m, written);
+    assert.match(written, /^verify_sha=$/m, written);
   });
 
   it("takes the tip from TIP_REF when it is set", async () => {

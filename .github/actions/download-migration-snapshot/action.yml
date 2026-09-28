@@ -45,10 +45,12 @@ description: >
 # is what fires the chained publish: run 35876748928's `updated_at` trailed its
 # last job by over five minutes), and the publish itself. Since #2803 a run
 # carries the web and landing builds and uploads as well as the migrations and
-# the API: about 6 to 7 minutes, derived from the two workflows it replaced
-# (Deploy API 0.9 to 3.4 minutes, Deploy Vercel staging 2.8 to 4.3, on
-# 2026-09-28), so two chained runs plus the lag and a publish of 14 to 37
-# seconds fit in 25 where they would not in the 15 this used to allow. If the snapshot is still stale
+# the API. Summing the two workflows it replaced gives 3.7 to 7.7 minutes a
+# run (the 15 most recent runs of each on `main` on 2026-09-28: Deploy API 0.9
+# to 3.4 minutes, Deploy Vercel staging 2.8 to 4.3). Two chained runs at the
+# top of that range, the five-minute lag and a publish of 14 to 37 seconds
+# come to about 21 minutes: inside 25, not inside the 15 this used to allow.
+# Derived, not measured; the first Deploy staging runs measure it. If the snapshot is still stale
 # after that, the step fails and names the publisher. Without this, a failed
 # post-deploy publish would leave the gates judging a PR against the
 # pre-deploy state until the 24-hour age limit ran out. The worst case is a PR

@@ -46,7 +46,7 @@ export const SNAPSHOT_WORKFLOW = ".github/workflows/migration-snapshot.yml";
  * snapshot must have been read after the latest completed `Deploy staging` or
  * `Deploy production` run on `main`, the only workflows that apply migrations.
  * Each of them triggers a publish. Off `main` the download action waits up to
- * 15 minutes for a lagging one, then fails the gates, naming the publisher. Runs
+ * 25 minutes for a lagging one, then fails the gates, naming the publisher. Runs
  * on `main` take the newest snapshot as it is. The drift job's `stale` verdict
  * catches a stuck publisher once a Deploy staging run has overtaken the snapshot and a
  * migration outlives its grace window. This limit covers the rest: an apply

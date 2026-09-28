@@ -117,7 +117,7 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
 - **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`). Both projects are unlinked from Git (ADR-21), so no push produces a preview; `deploy-staging.yml` builds them after CI succeeds on `main`, uploads them once the staging API serves the commit, then aliases both hostnames (#1578, #2803) — see §6 **Web and Landing (Vercel)**.
+- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`). Both projects are unlinked from Git (ADR-21), so no push produces a preview; `deploy-staging.yml` builds them after CI succeeds on `main`, uploads them once the staging API is verified, then aliases both hostnames (#1578, #2803). A run for a commit `main` has moved past uploads only over hostnames serving older commits — see §6 **Web and Landing (Vercel)**.
 - **API:** Render staging service (`frapp-api-staging`), pointing at Supabase staging. After CI and the staging migration, `deploy-staging.yml` deploys the `main` commit by commit through the Render API whenever anything the API image is built from changed since the commit staging serves; Render auto-deploy must be off (#2505; the dashboard change is #2679).
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
@@ -313,7 +313,7 @@ secrets.
 
 - API deploys are gated behind CI success using `workflow_run` triggers.
 - Production: a human dispatches **Deploy production** with a commit SHA → the workflow calls the Render API with that `commitId` (no deploy hook, and no push involved).
-- Push to `main` (after CI, the web and landing builds, then the staging migration) → `deploy-staging.yml` plans from the commit staging serves: when anything the API image is built from changed since then, it calls the Render API with that push's `commitId` and waits until `/health/ready` reports it; otherwise it verifies the served commit. A run `main` has moved past deploys only forward (its commit newer than the served one), never an older commit; its migrations still run first. No deploy hook, and Render auto-deploy must be off (#2505, #2679).
+- Push to `main` (after CI) → `deploy-staging.yml` first plans from the commit staging serves, then builds web and landing when they will ship and runs the staging migration: when anything the API image is built from changed since the served commit, it calls the Render API with that push's `commitId` and waits until `/health/ready` reports it; otherwise, when anything ships, it verifies the served commit. A run `main` has moved past deploys only forward (its commit newer than the served one), never an older commit; its migrations still run. No deploy hook, and Render auto-deploy must be off (#2505, #2679).
 - Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
 - Database migrations run automatically before deploy (see Section 8).
 - See `render.yaml` for the infrastructure-as-code definition.
