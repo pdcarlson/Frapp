@@ -123,6 +123,12 @@ export interface DiscordRoleRef {
 export interface DiscordChannelDiscovery {
   channels: DiscordChannelRef[];
   warnings: string[];
+  /**
+   * The guild's roles, for the (informational) role worksheet: the same read
+   * discovery computes access from, so one failure cannot pass one and fail
+   * the other. Empty when they could not be read, which `warnings` says.
+   */
+  roles: DiscordRoleRef[];
 }
 
 /**
@@ -188,9 +194,6 @@ export interface IDiscordBotGateway {
    * are. Anything Discord refuses is reported in `warnings`, never dropped.
    */
   discoverChannels(guildId: string): Promise<DiscordChannelDiscovery>;
-
-  /** The guild's roles, for the (informational) role worksheet. */
-  listRoles(guildId: string): Promise<DiscordRoleRef[]>;
 
   /**
    * Re-read one channel and confirm it lives in `guildId`.

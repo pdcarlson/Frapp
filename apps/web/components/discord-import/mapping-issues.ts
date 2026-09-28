@@ -96,10 +96,14 @@ export function asNewChannel(
  *  - a channel Frapp can no longer read is skipped, the only thing it can be;
  *  - a channel it can now read (it was skipped because it could not be)
  *    starts at its default, which is the point of scanning again;
- *  - a "whole chapter" visibility is asked again when the channel's privacy
- *    changed to a reason not to default (it became private, gained a private
- *    thread, or can no longer be told). It was chosen, or defaulted, for a
- *    channel that looked different.
+ *  - when a channel's privacy changed (it became private, gained a private
+ *    thread, can no longer be told, or turned out public after all), a new
+ *    channel's visibility goes back to the default for what the scan sees
+ *    now, unless it was restricted, which is safe either way; and a merge
+ *    into an existing channel is asked again if the channel is now private,
+ *    since it was decided for one that was not.
+ *
+ * A name, a skip, or anything else decided while the facts held is kept.
  */
 export function restageChoices(
   previousChannels: readonly StagedChannel[],
@@ -116,12 +120,22 @@ export function restageChoices(
     if (!was || !kept) continue;
     if (channel.readable === false || was.readable === false) continue;
     const reason = privacyReason(channel);
-    next[channel.channelId] =
-      kept.visibility === "chapter" &&
-      reason !== null &&
-      reason !== privacyReason(was)
-        ? { ...kept, visibility: undefined, requiredPermissions: undefined }
-        : kept;
+    if (reason === privacyReason(was)) {
+      next[channel.channelId] = kept;
+    } else if (kept.action === "create_new") {
+      next[channel.channelId] =
+        kept.visibility === "restricted"
+          ? kept
+          : {
+              ...kept,
+              visibility: defaultVisibility(channel),
+              requiredPermissions: undefined,
+            };
+    } else if (kept.action !== "use_existing" || reason === null) {
+      next[channel.channelId] = kept;
+    }
+    // Otherwise a merge into a channel that is now private starts over at
+    // the default, which asks who can read it.
   }
   return next;
 }

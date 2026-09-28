@@ -120,7 +120,6 @@ async function build(current: DiscordImport = job()) {
   bot = {
     isConfigured: jest.fn(() => true),
     discoverChannels: jest.fn(),
-    listRoles: jest.fn(),
     verifyChannelInGuild: jest.fn(),
     fetchMessagePage: jest.fn(),
     openAttachment: jest.fn(),
@@ -723,8 +722,8 @@ describe('DiscordImportService — discovering a guild', () => {
         },
       ],
       warnings: [],
+      roles: [{ id: '3', name: 'Exec' }],
     });
-    bot.listRoles.mockResolvedValue([{ id: '3', name: 'Exec' }]);
 
     const result = await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
 
@@ -767,8 +766,8 @@ describe('DiscordImportService — discovering a guild', () => {
         },
       ],
       warnings: [],
+      roles: [],
     });
-    bot.listRoles.mockResolvedValue([]);
 
     await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
 
@@ -790,8 +789,8 @@ describe('DiscordImportService — discovering a guild', () => {
     bot.discoverChannels.mockResolvedValue({
       channels: [],
       warnings: ['Private archived threads in #general could not be read'],
+      roles: [],
     });
-    bot.listRoles.mockResolvedValue([]);
 
     const result = await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
 
@@ -855,8 +854,8 @@ describe('DiscordImportService — what the scan saw, and who may read what (#27
         },
       ],
       warnings: [],
+      roles: [],
     });
-    bot.listRoles.mockResolvedValue([]);
 
     await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
 
@@ -986,9 +985,18 @@ describe('DiscordImportService — what the scan saw, and who may read what (#27
     ).rejects.toThrow(/#general holds private threads/);
   });
 
-  it('lets a channel the scan saw was public take the whole-chapter default', async () => {
+  it('lets a channel the scan saw was public take the whole-chapter default, ordinary threads and all', async () => {
     const svc = await build(job({ source: 'bot' }));
-    repo.findChannels.mockResolvedValue([botChannel()]);
+    repo.findChannels.mockResolvedValue([
+      botChannel(),
+      // A public thread: only a PRIVATE one makes its channel need a choice.
+      botChannel({
+        id: 'm-thread',
+        discord_channel_id: 't1',
+        parent_discord_channel_id: '900000000000000001',
+        private_in_discord: false,
+      }),
+    ]);
     await svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
       {
         discord_channel_id: '900000000000000001',

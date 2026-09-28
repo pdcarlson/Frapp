@@ -463,6 +463,84 @@ describe("ImportWizard — the bot path", () => {
     );
   });
 
+  it("asks about a public channel that holds a private thread, because the thread lands in it", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "general",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+        {
+          discord_channel_id: "t1",
+          discord_channel_name: "general › bids",
+          discord_category: "general",
+          parent_discord_channel_id: "c1",
+          readable: true,
+          private_in_discord: true,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+
+    renderAtConsent();
+    expect(
+      await screen.findByRole("button", {
+        name: /#general holds 1 private thread in Discord/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("keeps what the admin decided across a re-scan while its channel is unchanged", async () => {
+    const scan = {
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "memes",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+        {
+          discord_channel_id: "c2",
+          discord_channel_name: "exec",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: false,
+          private_in_discord: true,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    };
+    discoverChannels.mockResolvedValue(scan);
+
+    renderAtConsent();
+    await screen.findByText(/Nothing needs attention/);
+    // The "No category" group has nothing to fix, so it starts closed.
+    fireEvent.click(screen.getByRole("button", { name: /^No category/ }));
+    fireEvent.change(screen.getByLabelText("New channel name"), {
+      target: { value: "dank-memes" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+
+    await waitFor(() => expect(discoverChannels).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("New channel name") as HTMLInputElement).value,
+      ).toBe("dank-memes"),
+    );
+  });
+
   it("re-asks after a re-scan instead of trusting what the last scan defaulted", async () => {
     const row = (
       id: string,

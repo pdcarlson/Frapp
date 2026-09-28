@@ -552,10 +552,10 @@ channel that reports a different one fails the import rather than being skipped.
   `chat_channels` has no unique constraint on `(chapter_id, name)`, so a new
   name that matches another channel in the same import, or a Frapp channel the
   admin can see, is listed as something to resolve, never treated as consent
-  to merge. The check runs against the admin's own channel list, so a clash
-  with a channel hidden from them (a `PRIVATE` channel they are not in, or a
-  `ROLE_GATED` one they cannot read) goes unflagged, and a second channel with
-  that name is created. Everything that blocks the step is listed in one place
+  to merge. **Known gap (#2799):** the check runs against the admin's own
+  channel list, so a clash with a channel hidden from them (a `PRIVATE`
+  channel they are not in, or a `ROLE_GATED` one they cannot read) goes
+  unflagged today, and a second channel with that name is created. Everything that blocks the step is listed in one place
   (Needs attention), and that list is also what keeps Continue disabled.
 - **Nothing private in Discord becomes readable by the whole chapter by
   default.** A new channel is either *whole chapter* (`PUBLIC`) or *restricted*
@@ -565,8 +565,8 @@ channel that reports a different one fails the import rather than being skipped.
   holds a private thread (whose messages land in it), or whose privacy the
   scan could not read (the roles read failed, which the scan reports) starts
   with no visibility, and the API refuses to create it until the admin
-  chooses. Scanning again re-asks any whole-chapter choice whose channel has
-  since turned private. An uploaded export carries no permissions, so there
+  chooses. Scanning again re-asks any whole-chapter choice, or merge, whose
+  channel has since turned private. An uploaded export carries no permissions, so there
   the wizard says plainly that every new channel is chapter-wide unless
   restricted.
 - **The bot reads only what its roles can see.** Discord lists every channel to

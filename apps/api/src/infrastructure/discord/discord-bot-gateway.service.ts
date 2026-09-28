@@ -438,7 +438,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       }
     }
 
-    return { channels, warnings };
+    return { channels, warnings, roles: access.named };
   }
 
   /**
@@ -457,11 +457,14 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     warnings: string[],
   ): Promise<{
     roles: DiscordRolePermissions[] | null;
+    /** The same roles by name, for the role worksheet; empty on failure. */
+    named: DiscordRoleRef[];
     subject: DiscordPermissionSubject | null;
     base: bigint;
   }> {
     const rest = this.client();
     let roles: DiscordRolePermissions[] | null = null;
+    const named: DiscordRoleRef[] = [];
     try {
       const raw = (await rest.get(Routes.guildRoles(guildId))) as unknown[];
       roles = [];
@@ -470,15 +473,16 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
         const id = asString(role?.id);
         if (!id) continue;
         roles.push({ id, permissions: asString(role?.permissions) ?? '0' });
+        named.push({ id, name: asString(role?.name) ?? id });
       }
     } catch (error) {
       this.logger.warn(
         `Could not read roles for guild ${guildId}: ${this.describe(error)}. Channel access will be probed instead.`,
       );
       warnings.push(
-        `Frapp could not read this server's roles (${this.describe(error)}), so it cannot tell which channels are private in Discord. Choose who can read each new channel, or scan again.`,
+        `Frapp could not read this server's roles (${this.describe(error)}), so it cannot tell which channels are private in Discord, and no roles are listed to map. Choose who can read each new channel, or scan again.`,
       );
-      return { roles: null, subject: null, base: 0n };
+      return { roles: null, named, subject: null, base: 0n };
     }
 
     try {
@@ -492,6 +496,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       const subject = { userId: botUserId, roleIds };
       return {
         roles,
+        named,
         subject,
         base: basePermissions(guildId, roles, subject),
       };
@@ -499,7 +504,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       this.logger.warn(
         `Could not read the bot's membership in guild ${guildId}: ${this.describe(error)}. Channel readability will be probed instead.`,
       );
-      return { roles, subject: null, base: 0n };
+      return { roles, named, subject: null, base: 0n };
     }
   }
 
@@ -645,20 +650,6 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       readable: null,
       privateInDiscord: thread.type === ChannelType.PrivateThread ? true : null,
     };
-  }
-
-  async listRoles(guildId: string): Promise<DiscordRoleRef[]> {
-    const raw = (await this.client().get(
-      Routes.guildRoles(guildId),
-    )) as unknown[];
-    const roles: DiscordRoleRef[] = [];
-    for (const entry of raw) {
-      const role = asRecord(entry);
-      const id = asString(role?.id);
-      if (!id) continue;
-      roles.push({ id, name: asString(role?.name) ?? id });
-    }
-    return roles;
   }
 
   // ── reading ───────────────────────────────────────────────────────────────

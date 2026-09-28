@@ -184,9 +184,9 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
         },
       ],
       [`/guilds/${GUILD}/roles`]: [
-        { id: GUILD, permissions: READ },
-        { id: FRAPP_ROLE, permissions: READ },
-        { id: BROTHER, permissions: '0' },
+        { id: GUILD, name: '@everyone', permissions: READ },
+        { id: FRAPP_ROLE, name: 'Frapp', permissions: READ },
+        { id: BROTHER, name: 'Brother', permissions: '0' },
       ],
       '/users/@me': { id: BOT },
       [`/guilds/${GUILD}/members/${BOT}`]: { roles: [FRAPP_ROLE] },
@@ -235,7 +235,18 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
 
   it('marks the channels the bot cannot read, and says so once instead of probing each', async () => {
     serve();
-    const { channels, warnings } = await gateway().discoverChannels(GUILD);
+    const { channels, warnings, roles } =
+      await gateway().discoverChannels(GUILD);
+
+    // The worksheet's role names come from the same read, not a second one.
+    expect(roles.map((role) => role.name)).toEqual([
+      '@everyone',
+      'Frapp',
+      'Brother',
+    ]);
+    expect(
+      calls.filter((route) => route === `/guilds/${GUILD}/roles`),
+    ).toHaveLength(1);
 
     const byId = new Map(channels.map((channel) => [channel.id, channel]));
     expect(byId.get('11')).toMatchObject({
@@ -310,11 +321,14 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
         status: 500,
       }),
     });
-    const { channels, warnings } = await gateway().discoverChannels(GUILD);
+    const { channels, warnings, roles } =
+      await gateway().discoverChannels(GUILD);
     expect(channels.find((channel) => channel.id === '12')).toMatchObject({
       readable: null,
       privateInDiscord: null,
     });
+    // Nothing throws: the scan still returns, with no roles to map.
+    expect(roles).toEqual([]);
     expect(warnings).toContainEqual(
       expect.stringContaining(
         'cannot tell which channels are private in Discord',

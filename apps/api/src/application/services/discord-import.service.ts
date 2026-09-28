@@ -488,8 +488,11 @@ export class DiscordImportService {
 
     // Roles come from the guild, not from message authors: the API names roles
     // on the guild and puts only ids on a message, so this is the only place
-    // the worksheet can get readable names from.
-    const roles = await this.bot.listRoles(guildId);
+    // the worksheet can get readable names from. They are the same read the
+    // scan computed access from, so a roles failure reaches the admin as the
+    // scan's warning rather than failing the request after the rows were
+    // replaced.
+    const roles = discovery.roles;
 
     await this.importRepo.update(id, chapterId, {
       guild_id: guildId,

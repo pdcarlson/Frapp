@@ -277,10 +277,11 @@ an admin to Discord's error page. Three limits:
 - **Step 5 is invisible to it.** The Message Content Intent shows up only once
   an import is already running, so `available: true` says nothing about it.
 - **Discord's answer may not list the redirects.** `redirect_uris` is optional
-  on Discord's application object, and whether it comes back to a bot token has
-  not yet been observed from a deployment. When it is absent the flow stays
-  offered and the API logs `Discord application setup unchecked`, and step 4 is
-  back to being checked by hand, as below. Which of the two a deployment got is
+  on Discord's application object. It does come back to a bot token: staging's
+  boot log read `Discord application setup verified` on 2026-09-28, after
+  #2778 (production not yet observed). If a deployment ever gets it absent, the
+  flow stays offered and the API logs `Discord application setup unchecked`,
+  and step 4 is back to being checked by hand, as below. Which of the two a deployment got is
   in its boot log, on the line starting `Discord application setup` (or
   `Connect Discord withdrawn`), which lands a moment after the routes are
   mapped.

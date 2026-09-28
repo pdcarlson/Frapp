@@ -2172,7 +2172,7 @@ Four columns and one CHECK on `discord_import_channels` (#2787). No data is rewr
    group by i.id, i.chapter_id, i.status;
    ```
 
-   Cancel each one it lists: the chapter's admin presses Cancel on the Discord import page (`POST /v1/discord-imports/{id}/cancel`). Rows in `cancelled`, `completed` or `purged` imports are never picked up, so they do not count. After the rollback a cancelled import can only be mapped again without restrictions, so tell the chapter before cancelling.
+   Cancel each one it lists: the chapter's admin presses Cancel on the Discord import page (`POST /v1/discord-imports/{id}/cancel`). Rows in `cancelled`, `completed` or `purged` imports are never picked up, so they do not count. A cancelled import cannot be changed or restarted, and a new import started after the rollback can only create channels readable by the whole chapter, so tell the chapter before cancelling.
 
 2. **Roll back the web app and the API together.** The API that ships with this migration writes all four columns on every scan and mapping, so dropping them under it fails every Discord import write. The web client that ships with it sends `new_channel_visibility` on every new channel, and the previous API's validation pipe rejects unknown properties (`forbidNonWhitelisted`), so that client against the previous API fails every mapping save with a 400. Deploy the previous build of both.
 

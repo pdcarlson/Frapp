@@ -242,6 +242,46 @@ describe("restageChoices", () => {
     expect(next["2"]).toMatchObject({ visibility: undefined });
   });
 
+  it("gives a channel whose privacy was unknown the whole-chapter default once the scan sees it is public", () => {
+    // The first scan's roles read failed; the second worked.
+    const first = [
+      { ...open("1", "memes"), privateInDiscord: null },
+      { ...open("2", "links"), privateInDiscord: null },
+    ];
+    const choices = defaultChoices(first);
+    choices["2"] = { ...choices["2"]!, newName: "resources" };
+    const second = [open("1", "memes"), open("2", "links")];
+    const next = restageChoices(first, choices, second);
+    expect(next["1"]).toMatchObject({ visibility: "chapter" });
+    // The rename was a decision, and survives.
+    expect(next["2"]).toMatchObject({
+      newName: "resources",
+      visibility: "chapter",
+    });
+    expect(mappingIssues(second, next, [])).toEqual([]);
+  });
+
+  it("asks again about a merge whose channel turned out to be private", () => {
+    const first = [open("1", "exec")];
+    const choices = {
+      "1": {
+        action: "use_existing" as const,
+        targetChannelId: "frapp-general",
+      },
+    };
+    const next = restageChoices(first, choices, [
+      { ...open("1", "exec"), privateThreads: 1 },
+    ]);
+    expect(next["1"]).toMatchObject({
+      action: "create_new",
+      visibility: undefined,
+    });
+    // A merge made for a channel that is still public is kept.
+    expect(restageChoices(first, choices, [open("1", "exec")])).toEqual(
+      choices,
+    );
+  });
+
   it("keeps a restricted choice when the channel turns out private, since it is already safe", () => {
     const first = [open("1", "exec")];
     const choices = {
