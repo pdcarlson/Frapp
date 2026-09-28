@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { putSignedUpload } from "@repo/hooks";
 import {
   meterFillClassName,
   meterTrackClassName,
@@ -293,21 +294,18 @@ export function UploadStep({
                   continue;
                 }
                 try {
-                  const response = await fetch(ticket.upload_url, {
-                    method: "PUT",
+                  await putSignedUpload({
+                    signedUrl: ticket.upload_url,
                     body: entry.file,
-                    headers: {
-                      // The type the API resolved and validated, NOT
-                      // `entry.file.type`. The browser reports an empty type for
-                      // several formats a Discord archive is full of (.heic,
-                      // .mkv, .avif); that becomes application/octet-stream,
-                      // which the bucket allowlist rejects, and the file can
-                      // then never be marked uploaded.
-                      "content-type": ticket.content_type,
-                      "x-upsert": "true",
-                    },
+                    // The type the API resolved and validated, NOT
+                    // `entry.file.type`. The browser reports an empty type for
+                    // several formats a Discord archive is full of (.heic,
+                    // .mkv, .avif); that becomes application/octet-stream,
+                    // which the bucket allowlist rejects, and the file can
+                    // then never be marked uploaded.
+                    contentType: ticket.content_type,
+                    upsert: true,
                   });
-                  if (!response.ok) throw new Error(String(response.status));
                   landed.push(ticket.storage_path);
                 } catch {
                   failed.push(entry.relativePath);

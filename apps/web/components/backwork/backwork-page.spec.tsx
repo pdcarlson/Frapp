@@ -586,9 +586,14 @@ describe("BackworkPage upload allowlist", () => {
       filename: "notes.gif",
       content_type: "image/gif",
     });
+    // The resolved type plus x-upsert, exactly as the inline PUT sent them
+    // before it moved into `putSignedUpload` (#2614).
     expect(fetch).toHaveBeenCalledWith(
       "https://storage.example/put",
-      expect.objectContaining({ method: "PUT" }),
+      expect.objectContaining({
+        body: file,
+        headers: { "content-type": "image/gif", "x-upsert": "true" },
+      }),
     );
   });
 

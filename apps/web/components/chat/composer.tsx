@@ -1065,6 +1065,7 @@ export function Composer({
         await uploadSignedUrl.mutateAsync({
           signedUrl,
           file,
+          contentType: inspected.contentType,
         });
         // A pending chip, not text spliced into the body. The old behaviour
         // appended `📎 <name> (<storagePath>)` into the Tiptap document, which
