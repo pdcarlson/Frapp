@@ -161,6 +161,13 @@ export interface IDiscordBotGateway {
   fetchApplication(): Promise<DiscordApplicationInfo>;
 
   /**
+   * Whether Discord has refused the bot token (401) to any call in this
+   * process, the setup check or an import slice alike. Lets a cached "setup
+   * verified" learn about a reset token without waiting out its TTL.
+   */
+  hasRejectedToken(): boolean;
+
+  /**
    * Every text channel and thread the bot can read in this guild.
    *
    * Threads come back as their own entries with `parentChannelId` set —

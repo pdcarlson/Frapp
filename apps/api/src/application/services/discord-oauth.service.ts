@@ -48,12 +48,24 @@ export const DISCORD_CALLBACK_PATH = '/v1/discord/connect/callback';
 /**
  * How long a verdict on the Discord application is reused.
  *
- * A good one for long enough that the wizard never waits on Discord; a bad or
- * unsettled one briefly, so a Redirects row added in the portal brings the flow
- * back within a minute rather than at the next deploy.
+ * A settled answer (verified, or Discord not listing its redirects at all,
+ * which no re-read changes) for ten minutes. A withdrawal or an unreachable
+ * Discord for one, so a Redirects row added in the portal, or Discord coming
+ * back, shows within a minute rather than at the next deploy.
  */
-const VERIFIED_CHECK_TTL_MS = 10 * 60_000;
+const SETTLED_CHECK_TTL_MS = 10 * 60_000;
 const UNSETTLED_CHECK_TTL_MS = 60_000;
+
+function checkTtlMs(check: DiscordApplicationCheck): number {
+  if (check.status === 'verified') return SETTLED_CHECK_TTL_MS;
+  if (
+    check.status === 'unverified' &&
+    check.kind === 'redirects_not_reported'
+  ) {
+    return SETTLED_CHECK_TTL_MS;
+  }
+  return UNSETTLED_CHECK_TTL_MS;
+}
 
 /**
  * How long an admin has to finish the Discord consent screen.
@@ -337,19 +349,28 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
   /**
    * The cached verdict, re-read from Discord once it has aged out.
    *
-   * Only a good verdict is served stale while it refreshes, so the wizard
-   * never waits on Discord in the common case. A bad or unsettled one is
-   * re-read before answering: serving it once more would keep the card greyed
-   * on the first reload after someone fixes the portal, which is exactly when
-   * an operator is watching to see whether the fix worked.
+   * Only a withdrawal is re-read before answering. Serving a stale
+   * "misconfigured" once more would keep the card greyed on the first reload
+   * after someone fixes the portal, which is exactly when an operator is
+   * watching. Every other verdict already leaves the flow offered, so it is
+   * served as-is while a refresh runs behind it, and the wizard does not wait
+   * on Discord to be told what it would be told anyway.
+   *
+   * One thing short-circuits the TTL: a 401 the gateway has seen since, most
+   * likely from an import slice. That is news a cached "verified" does not
+   * have, and it costs no Discord call to act on.
    */
   private currentApplicationCheck(): Promise<DiscordApplicationCheck> {
     const cached = this.applicationCheckResult;
     if (!cached) return this.refreshApplicationCheck();
-    const verified = cached.check.status === 'verified';
-    const ttl = verified ? VERIFIED_CHECK_TTL_MS : UNSETTLED_CHECK_TTL_MS;
-    if (Date.now() - cached.at < ttl) return Promise.resolve(cached.check);
-    if (!verified) return this.refreshApplicationCheck();
+    const withdrawn = cached.check.status === 'misconfigured';
+    if (!withdrawn && this.bot.hasRejectedToken()) {
+      return this.refreshApplicationCheck();
+    }
+    if (Date.now() - cached.at < checkTtlMs(cached.check)) {
+      return Promise.resolve(cached.check);
+    }
+    if (withdrawn) return this.refreshApplicationCheck();
     // Never unhandled: a rejection here would take the process down.
     void this.refreshApplicationCheck().catch(() => undefined);
     return Promise.resolve(cached.check);

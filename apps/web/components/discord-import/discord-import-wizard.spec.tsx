@@ -28,10 +28,12 @@ const {
   beginConnect: vi.fn(),
   confirmConnect: vi.fn(),
   availability: { value: { available: true } as { available: boolean } },
-  connection: { value: { connected: false } as {
-    connected: boolean;
-    guild_name?: string;
-  } },
+  connection: {
+    value: { connected: false } as {
+      connected: boolean;
+      guild_name?: string;
+    },
+  },
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -142,6 +144,24 @@ describe("ImportWizard — choosing a path", () => {
 
     expect(upload.disabled).toBe(false);
     expect(bot.disabled).toBe(true);
+  });
+
+  it("will not continue to Connect once the bot is withdrawn, even if it was picked", () => {
+    // The choice outlives the card greying out. An admin who picked the bot,
+    // went on, and came Back after the API withdrew it must not be sent
+    // straight back to a connect that cannot work.
+    availability.value = { available: false };
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+      />,
+    );
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 });
 
@@ -319,7 +339,7 @@ describe("ImportWizard — the bot path", () => {
         },
       ],
       roles: [],
-      warnings: ['Private archived threads in #general could not be read'],
+      warnings: ["Private archived threads in #general could not be read"],
     });
 
     renderAtConsent();
@@ -560,6 +580,33 @@ describe("ConnectStep — confirming what the callback parked", () => {
     );
 
     await waitFor(() => expect(confirmConnect).toHaveBeenCalledTimes(1));
+  });
+
+  it("withdraws Add to Server, with a reason, once the API has switched Connect off", async () => {
+    // The API re-reads Discord before every connect, so it can withdraw the
+    // flow while this step is open. A button that can only fail again is a
+    // dead end; say why and point at the path that works.
+    availability.value = { available: false };
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Connecting Discord is switched off right now/),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      (
+        screen.getByRole("button", {
+          name: /Add to Server/,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 
   it("does NOT confirm when there is no handshake — a plain visit binds nothing", async () => {

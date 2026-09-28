@@ -48,13 +48,7 @@ import { ReviewStep } from "./review-step";
  * keeps working if Discord ever throttles one shared bot across every chapter.
  */
 export type WizardStep =
-  | "source"
-  | "connect"
-  | "consent"
-  | "upload"
-  | "channels"
-  | "roles"
-  | "review";
+  "source" | "connect" | "consent" | "upload" | "channels" | "roles" | "review";
 
 /**
  * Both orders, spelled out rather than computed.
@@ -391,10 +385,14 @@ export function ImportWizard({
 
         {step === "source" ? (
           <Button
-            onClick={() =>
-              setStep(source === "bot" ? "connect" : "consent")
+            onClick={() => setStep(source === "bot" ? "connect" : "consent")}
+            // `source` survives the card greying out: an admin who picked the
+            // bot, went on, and came Back after the API withdrew it would
+            // otherwise be sent straight back to a connect that cannot work.
+            disabled={
+              !source ||
+              (source === "bot" && availability.data?.available !== true)
             }
-            disabled={!source}
           >
             Continue
           </Button>

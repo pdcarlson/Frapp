@@ -146,6 +146,10 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     return this.rest !== null;
   }
 
+  hasRejectedToken(): boolean {
+    return this.tokenRejected;
+  }
+
   private client(): REST {
     if (!this.rest) {
       throw new DiscordNotConfiguredError(

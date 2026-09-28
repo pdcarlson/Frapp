@@ -29,11 +29,12 @@ export const discordConnectionKeys = {
  * Whether the bot path works in this environment.
  *
  * Not a pure deployment fact any more: the API also withdraws the flow when
- * Discord reports its application set up wrong (an unregistered redirect URI,
- * a reset bot token), and brings it back once that is fixed in the Developer
- * Portal, without a redeploy. So it is cached for a minute, matching how long
- * the API itself holds a bad verdict, rather than for the life of a session.
- * It is still not chapter state, so nothing polls it.
+ * Discord reports its application set up wrong. An unregistered redirect URI
+ * comes back once it is added in the Developer Portal, without a redeploy (a
+ * reset bot token is the exception: it needs the new token and an API
+ * restart). So it is cached for a minute, matching how long the API itself
+ * holds a bad verdict, rather than for the life of a session. It is still not
+ * chapter state, so nothing polls it.
  */
 export function useDiscordAvailability(options?: { enabled?: boolean }) {
   const client = useFrappClient();

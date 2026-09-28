@@ -54,7 +54,9 @@ const REQUIRED_ENV_VARS = [
 //                            trailing `/v1` on API_URL is dropped first), and
 //                            the callback sends the browser back to `APP_URL`.
 //                            Whether it is registered is checked against
-//                            Discord at boot, not here: see
+//                            Discord at runtime (at boot, on a TTL, and before
+//                            each connect), and only where Discord's answer
+//                            lists the redirects; not here. See
 //                            `discord-application-check.ts`.
 //
 // Also optional, same reasoning (#238): email-based bulk invites. Unset,

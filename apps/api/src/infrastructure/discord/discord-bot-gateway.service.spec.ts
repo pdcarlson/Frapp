@@ -92,6 +92,26 @@ describe('DiscordBotGatewayService.fetchApplication', () => {
     expect(get).toHaveBeenCalledTimes(1);
   });
 
+  it('reads the status-less "no token" error as 401 when the 401 landed mid-call', async () => {
+    // A concurrent import slice's 401 clears the shared client's token while
+    // this check is queued; the check then fails with no status of its own.
+    const gw = gateway();
+    get.mockImplementationOnce(function (this: REST) {
+      this.emit(
+        RESTEvents.Response,
+        { data: { auth: true } } as never,
+        { status: 401 } as never,
+      );
+      return Promise.reject(
+        new Error(
+          'Expected token to be set for this request, but none was present',
+        ),
+      );
+    });
+    await expect(gw.fetchApplication()).rejects.toMatchObject({ status: 401 });
+    expect(gw.hasRejectedToken()).toBe(true);
+  });
+
   it('ignores a 401 on an unauthenticated request', async () => {
     const gw = gateway();
     get.mockImplementationOnce(function (this: REST) {

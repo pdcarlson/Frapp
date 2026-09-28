@@ -493,7 +493,9 @@ channel that reports a different one fails the import rather than being skipped.
   rather than Discord's error page. When Discord cannot be reached, or its answer
   does not settle the question, the flow stays offered: an outage of the check
   must not look like a broken setup. It comes back on its own once the setup is
-  fixed, with no redeploy. What each check covers is in
+  fixed, with no redeploy, with one exception: a refused bot token needs the new
+  token and a restart of the API, because the token is only read at start and a
+  refused one is not retried. What each check covers is in
   [`integrations.md`](../../../docs/internal/ops/deployment/integrations.md)
   § 7A.
 - **The callback always answers with a redirect, never an error page.** Discord

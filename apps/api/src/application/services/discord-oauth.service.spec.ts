@@ -134,6 +134,7 @@ async function build(config: Record<string, string | undefined> = {}) {
   };
   bot = {
     isConfigured: jest.fn(() => true),
+    hasRejectedToken: jest.fn(() => false),
     fetchApplication: jest.fn(async () => ({
       id: CLIENT_ID,
       redirectUris: [REDIRECT_URI],
@@ -508,6 +509,61 @@ describe('DiscordOAuthService — how long a verdict is trusted', () => {
     now.mockReturnValue(NOW.getTime() + 61_000);
     await expect(service.isAvailable()).resolves.toBe(true);
     expect(bot.fetchApplication).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves a stale "Discord unreachable" at once and refreshes behind it', async () => {
+    // It already leaves the flow offered, so re-reading before answering
+    // would make every wizard mount during an outage wait out the deadline.
+    const service = await build();
+    bot.fetchApplication.mockRejectedValue(
+      new DiscordApiError(
+        'GET /applications/@me did not answer within 5000 ms',
+      ),
+    );
+    await expect(service.isAvailable()).resolves.toBe(true);
+
+    let release: (value: unknown) => void = () => undefined;
+    bot.fetchApplication.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    now.mockReturnValue(NOW.getTime() + 61_000);
+    // Answers without waiting for the refresh that is still in flight.
+    await expect(service.isAvailable()).resolves.toBe(true);
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(2);
+    release({ id: CLIENT_ID, redirectUris: [REDIRECT_URI] });
+  });
+
+  it('treats "Discord did not list its redirects" as settled for ten minutes', async () => {
+    // No re-read changes that answer, so it is not worth one a minute.
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({
+      id: CLIENT_ID,
+      redirectUris: null,
+    });
+    await service.isAvailable();
+    now.mockReturnValue(NOW.getTime() + 9 * 60_000);
+    await service.isAvailable();
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+  });
+
+  it('withdraws at once when an import met a 401 after the setup was verified', async () => {
+    const service = await build();
+    await expect(service.isAvailable()).resolves.toBe(true);
+
+    // An import slice's 401 flips the gateway; the cached "verified" is
+    // two seconds old and would otherwise stand for ten minutes.
+    bot.hasRejectedToken.mockReturnValue(true);
+    bot.fetchApplication.mockRejectedValue(
+      new DiscordApiError('Discord refused DISCORD_BOT_TOKEN (401)', 401),
+    );
+    now.mockReturnValue(NOW.getTime() + 2_000);
+    await expect(service.isAvailable()).resolves.toBe(false);
+    expect(captureMessage).toHaveBeenCalledWith(
+      'Discord setup: bot_token_rejected',
+      expect.anything(),
+    );
   });
 
   it('holds a good verdict for ten minutes', async () => {

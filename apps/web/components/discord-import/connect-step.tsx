@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   useBeginDiscordConnect,
   useConfirmDiscordConnect,
+  useDiscordAvailability,
   useDiscordConnection,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -52,10 +53,16 @@ export function ConnectStep({
 }) {
   const { toast } = useToast();
   const connection = useDiscordConnection();
+  const availability = useDiscordAvailability();
   const beginConnect = useBeginDiscordConnect();
   const confirmConnect = useConfirmDiscordConnect();
 
   const connected = connection.data?.connected === true;
+  // The API can withdraw the flow while this step is open: it re-reads
+  // Discord before every connect, and a refusal re-asks for availability. Only
+  // an explicit `false` withdraws; a pending or failed availability read leaves
+  // the button alone and lets the connect answer for itself.
+  const withdrawn = availability.data?.available === false;
 
   // Confirmed automatically, and exactly once. The admin who started this in
   // this chapter has nothing to decide — their session and the parked guild
@@ -146,7 +153,7 @@ export function ConnectStep({
           <Button
             variant="ghost"
             onClick={() => void startConnect()}
-            disabled={beginConnect.isPending}
+            disabled={beginConnect.isPending || withdrawn}
           >
             Connect a different server
           </Button>
@@ -185,9 +192,21 @@ export function ConnectStep({
         remove it from your server at any time.
       </p>
 
+      {withdrawn ? (
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-sm font-medium">
+            Connecting Discord is switched off right now
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Frapp has been alerted. Go back and choose Upload an export, which
+            does the same job.
+          </p>
+        </div>
+      ) : null}
+
       <Button
         onClick={() => void startConnect()}
-        disabled={beginConnect.isPending}
+        disabled={beginConnect.isPending || withdrawn}
       >
         {beginConnect.isPending ? "Opening Discord…" : "Add to Server"}
       </Button>
