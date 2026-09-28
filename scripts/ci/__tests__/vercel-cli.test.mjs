@@ -643,8 +643,8 @@ describe("deployPrebuiltVercelProject", () => {
 });
 
 // Every build since #2673 (staging since #2672): app config from Infisical,
-// handed in as a `buildEnv`, and the pulled env stripped of every key the app
-// reads.
+// handed in as a `buildEnv`, and the pulled env reduced to Vercel's system
+// variables (#2810).
 describe("buildVercelProject with an Infisical build env", () => {
   const ENV_FILE = pulledEnvFileFor(CWD, VERCEL_TARGET_PREVIEW);
   const INJECTED_SECRET = "sk_live_should_never_reach_the_cli";
@@ -662,12 +662,14 @@ describe("buildVercelProject with an Infisical build env", () => {
   };
 
   // The shape the CLI writes: sorted `KEY="value"` lines under a header, with
-  // Vercel's system variables alongside the project's rows.
+  // Vercel's system variables alongside the project's rows, and a Sensitive
+  // row's value written as the placeholder (run 36458267082's `PORT`).
   const PULLED = [
     "# Created by Vercel CLI",
     'NEXT_PUBLIC_API_URL="https://stale.example"',
-    'NEXT_PUBLIC_API_URL_V2="kept, a different key"',
+    'NEXT_PUBLIC_API_URL_V2="a project row the app does not read"',
     'NEXT_PUBLIC_POSTHOG_KEY="phc_stale"',
+    'PORT="[SENSITIVE]"',
     'VERCEL_ENV="preview"',
     'VERCEL_OIDC_TOKEN="oidc"',
     "",
@@ -774,22 +776,26 @@ describe("buildVercelProject with an Infisical build env", () => {
     assert.equal(byStep.deploy.NEXT_PUBLIC_API_URL, undefined);
   });
 
-  it("removes every app key from the pulled env, set in Infisical or not, and keeps the rest", async () => {
+  it("keeps only Vercel's system variables in the pulled env", async () => {
     // NEXT_PUBLIC_POSTHOG_KEY is not in appEnv (Infisical had no value). Left in
     // the file, dotenv would load it and the bundle would carry Vercel's stale
-    // value while the log said the config came from Infisical.
+    // value while the log said the config came from Infisical. PORT and
+    // NEXT_PUBLIC_API_URL_V2 are rows the app does not read, and still reached
+    // the build before #2810: PORT's placeholder broke landing's prerender.
     const t = setup();
     await buildVercelProject(t.options);
     const after = t.envFiles.files.get(ENV_FILE);
-    assert.doesNotMatch(after, /^NEXT_PUBLIC_API_URL=/m);
-    assert.doesNotMatch(after, /^NEXT_PUBLIC_POSTHOG_KEY=/m);
-    assert.match(after, /^NEXT_PUBLIC_API_URL_V2=/m, "a longer key sharing a prefix is a different key");
+    assert.doesNotMatch(after, /^NEXT_PUBLIC_API_URL=/m, "an app key Infisical supplied");
+    assert.doesNotMatch(after, /^NEXT_PUBLIC_POSTHOG_KEY=/m, "an app key Infisical did not supply");
+    assert.doesNotMatch(after, /^NEXT_PUBLIC_API_URL_V2=/m, "a project row the app does not read");
+    assert.doesNotMatch(after, /^PORT=/m, "a Sensitive project row, written as the placeholder");
+    assert.ok(!after.includes("[SENSITIVE]"));
     assert.match(after, /^VERCEL_ENV="preview"$/m, "next.config.js derives the Sentry environment from it");
     assert.match(after, /^VERCEL_OIDC_TOKEN=/m);
     assert.match(after, /^# Created by Vercel CLI$/m);
   });
 
-  it("strips the file after the pull and before the build", async () => {
+  it("filters the file after the pull and before the build", async () => {
     const t = setup();
     const origWrite = t.envFiles.fs.write;
     t.envFiles.fs.write = async (p, text) => {
@@ -800,20 +806,50 @@ describe("buildVercelProject with an Infisical build env", () => {
     assert.deepEqual(t.events, [`remove ${VERCEL_DIR}`, "pull", "strip", "build"]);
   });
 
-  it("logs the names it removed and never a value", async () => {
+  it("logs the names it kept and removed, and never a value", async () => {
     const t = setup();
     await buildVercelProject(t.options);
     const text = t.logged.join("\n");
-    assert.match(text, /Removed NEXT_PUBLIC_API_URL, NEXT_PUBLIC_POSTHOG_KEY from the pulled preview env/);
-    for (const value of ["https://stale.example", "phc_stale", "oidc", "https://api-staging.example"]) {
+    assert.match(text, /Kept Vercel's system variables from the pulled preview env: VERCEL_ENV, VERCEL_OIDC_TOKEN\./);
+    assert.match(
+      text,
+      /Removed NEXT_PUBLIC_API_URL, NEXT_PUBLIC_API_URL_V2, NEXT_PUBLIC_POSTHOG_KEY, PORT from the pulled preview env/,
+    );
+    for (const value of ["https://stale.example", "phc_stale", "oidc", "https://api-staging.example", "[SENSITIVE]"]) {
       assert.ok(!text.includes(value), `the log printed a value: ${value}`);
     }
   });
 
-  it("leaves the file untouched when it holds no app key", async () => {
+  it("leaves the file untouched when it holds only system rows", async () => {
     const t = setup({ pulled: '# Created by Vercel CLI\nVERCEL_ENV="preview"\n' });
     await buildVercelProject(t.options);
     assert.deepEqual(t.envFiles.writes, []);
+    assert.match(t.logged.join("\n"), /holds no project rows/);
+  });
+
+  it("refuses to build when a kept system row holds the placeholder", async () => {
+    // A Sensitive row under a `VERCEL_` name passes the allowlist. Its value
+    // is not one the build can use, and dotenv would load it.
+    const t = setup({ pulled: '# Created by Vercel CLI\nVERCEL_ENV="preview"\nVERCEL_FOO="[SENSITIVE]"\n' });
+    await assert.rejects(
+      buildVercelProject(t.options),
+      /\[frapp-web\] The pulled preview env holds VERCEL_FOO with the value "\[SENSITIVE\]".*nothing was built/s,
+    );
+    assert.deepEqual(t.calls.map((c) => c.args[0]), ["pull"], "nothing was built");
+  });
+
+  it("refuses to build when the build's own environment holds the placeholder", async () => {
+    // `infisicalBuildEnv` refuses this first; the boundary check is what holds
+    // for a `buildEnv` assembled any other way.
+    const t = setup();
+    await assert.rejects(
+      buildVercelProject({
+        ...t.options,
+        buildEnv: { ...buildEnv, appEnv: { ...buildEnv.appEnv, NEXT_PUBLIC_API_URL: "[SENSITIVE]" } },
+      }),
+      /The environment for `vercel build` holds NEXT_PUBLIC_API_URL with the value "\[SENSITIVE\]"/,
+    );
+    assert.deepEqual(t.calls.map((c) => c.args[0]), ["pull"], "nothing was built");
   });
 
   it("refuses to build when the pull left no env file where the strip looks", async () => {
@@ -840,6 +876,7 @@ describe("buildVercelProject with an Infisical build env", () => {
     assert.equal(warned.length, 1);
     assert.match(warned[0], /^::warning::\[frapp-web\].*holds NEXT_PUBLIC_POSTHOG_KEY, but the Infisical injection supplied no value/);
     assert.doesNotMatch(warned[0], /NEXT_PUBLIC_API_URL\b/, "a key Infisical supplied is not lost");
+    assert.doesNotMatch(warned[0], /PORT|NEXT_PUBLIC_API_URL_V2/, "a row the app does not read is not lost");
     assert.ok(!warned[0].includes("phc_stale"), "the warning printed a value");
   });
 
@@ -854,10 +891,10 @@ describe("buildVercelProject with an Infisical build env", () => {
       logger: { log: () => {}, warn: (line) => warned.push(line) },
     });
     assert.deepEqual(warned, []);
-    assert.doesNotMatch(t.envFiles.files.get(ENV_FILE), /^NEXT_PUBLIC_POSTHOG_KEY=/m, "still stripped");
+    assert.doesNotMatch(t.envFiles.files.get(ENV_FILE), /^NEXT_PUBLIC_POSTHOG_KEY=/m, "still removed");
   });
 
-  it("builds production the same way: stripped file, base env, app keys", async () => {
+  it("builds production the same way: system rows only, base env, app keys", async () => {
     await inAmbient(async () => {
       const t = setup();
       const prodFile = pulledEnvFileFor(CWD, VERCEL_TARGET_PRODUCTION);
@@ -870,6 +907,7 @@ describe("buildVercelProject with an Infisical build env", () => {
       await buildVercelProject({ ...t.options, target: VERCEL_TARGET_PRODUCTION, runCommand });
       const after = t.envFiles.files.get(prodFile);
       assert.doesNotMatch(after, /^NEXT_PUBLIC_API_URL=/m);
+      assert.doesNotMatch(after, /^PORT=/m, "the row run 36458267082 built landing with");
       assert.match(after, /^VERCEL_ENV="production"$/m, "assertProductionWebPublicEnv reads it");
       const build = calls.find((c) => c.args[0] === "build");
       assert.deepEqual(build.args, ["build", "--prod"]);

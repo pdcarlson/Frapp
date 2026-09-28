@@ -71,12 +71,13 @@
 // ── Where a build's app config comes from ───────────────────────────────────
 // Every build is handed its app config: `deploy-vercel.mjs` passes a `buildEnv`
 // built from the job's Infisical injection (`staging` or `prod`), and
-// `buildVercelProject` removes those keys from the pulled file so no Vercel row
-// can supply one. The pull still runs for the project settings and the Vercel
-// system variables. Every CLI step runs on `buildEnv.baseEnv`, never on the
-// ambient job environment, which holds the whole injected store. A call without
-// a `buildEnv` is refused rather than falling back to it (#2673). Rules and
-// evidence: the header of `lib/vercel-build-env.mjs`.
+// `buildVercelProject` removes every row but Vercel's system variables from the
+// pulled file, so no Vercel row reaches the build (#2810). The pull still runs
+// for the project settings and those system variables. Every CLI step runs on
+// `buildEnv.baseEnv`, never on the ambient job environment, which holds the
+// whole injected store. A call without a `buildEnv` is refused rather than
+// falling back to it (#2673). Rules and evidence: the header of
+// `lib/vercel-build-env.mjs`.
 //
 // A build also starts from an empty `.vercel`. `vercel pull` MERGES into an
 // env file it finds there, keeping keys the new project does not have, so in
@@ -90,7 +91,7 @@
 import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { withoutEnvKeys } from "./vercel-build-env.mjs";
+import { onlyVercelSystemRows, refuseSensitivePlaceholders, SENSITIVE_PLACEHOLDER } from "./vercel-build-env.mjs";
 
 /**
  * The Vercel deployment target this repo understands.
@@ -373,41 +374,57 @@ async function runVercelStep({ label, args, env, cwd, cliCommand, runCommand, lo
 }
 
 /**
- * Remove `keys` from the env file `vercel pull` just wrote, so the build can
- * only get them from the injected environment. Logs names, never values.
+ * Reduce the env file `vercel pull` just wrote to Vercel's system variables, so
+ * no project row reaches the build (#2810) and the app keys can only come from
+ * the injected environment. Logs names, never values.
  *
  * A missing file is a failure, not "nothing to remove". `.vercel` was emptied
  * just before the pull, so a missing file means this CLI writes it somewhere
  * `pulledEnvFileFor` does not look, and `vercel build` would then load a file
- * nobody stripped: a Vercel row could fill any app key Infisical left empty,
- * with the log still saying the config came from Infisical. That is the strip
+ * nobody filtered: a Vercel row could fill any app key Infisical left empty,
+ * with the log still saying the config came from Infisical. That is the filter
  * that silently matches nothing, and it fails here instead.
  */
-async function dropPulledAppKeys({ label, cwd, target, keys, supplied, withheld, envFileFs, logger }) {
+async function keepOnlySystemRows({ label, cwd, target, keys, supplied, withheld, envFileFs, logger }) {
   const file = pulledEnvFileFor(cwd, target);
+  const environment = vercelEnvironmentFor(target);
   const text = await envFileFs.read(file);
   if (text === null) {
     throw new Error(
       `[${label}] \`vercel pull\` exited 0 but wrote no ${file}. This CLI keeps the pulled ` +
-        `env somewhere else, so the app keys could not be removed from it and a Vercel row ` +
+        `env somewhere else, so its project rows could not be removed and a Vercel row ` +
         `could reach the build. Refusing to build; update \`pulledEnvFileFor\` for this CLI.`,
     );
   }
-  const { text: kept, removed } = withoutEnvKeys(text, keys);
+  const { text: filtered, kept, removed, placeholders } = onlyVercelSystemRows(text);
+  // A system variable Vercel could not reveal: nothing the build could use, and
+  // the build would load it. Refused before the file is even rewritten.
+  if (placeholders.length > 0) {
+    throw new Error(
+      `[${label}] The pulled ${environment} env holds ${placeholders.join(", ")} with the value ` +
+        `"${SENSITIVE_PLACEHOLDER}", which \`vercel pull\` writes for a Sensitive row it may not read. ` +
+        `A build would load it, so nothing was built. Remove the row from the Vercel project (#2810).`,
+    );
+  }
+  // Names only, so a run's log records which system variables Vercel sent.
+  logger.log?.(
+    `[${label}] Kept Vercel's system variables from the pulled ${environment} env: ${kept.join(", ") || "none"}.`,
+  );
   if (removed.length === 0) {
-    logger.log?.(`[${label}] The pulled ${vercelEnvironmentFor(target)} env holds no app config keys.`);
+    logger.log?.(`[${label}] The pulled ${environment} env holds no project rows.`);
     return;
   }
-  await envFileFs.write(file, kept);
+  await envFileFs.write(file, filtered);
   logger.log?.(
-    `[${label}] Removed ${removed.join(", ")} from the pulled ${vercelEnvironmentFor(target)} env. ` +
-      `This build takes app config from Infisical only; those Vercel rows are unused.`,
+    `[${label}] Removed ${removed.join(", ")} from the pulled ${environment} env. A build loads only ` +
+      `Vercel's system variables from it and takes app config from Infisical; those Vercel rows are unused.`,
   );
   // A key Vercel held but the injection did not supply is one this build now
   // goes without. Required keys already failed the run, so these are optional
   // ones: loud, not fatal, because the app has a default for each. A key the
-  // injection supplied and a dry run withheld on purpose is not lost.
-  const lost = removed.filter((key) => !(key in supplied) && !withheld.includes(key));
+  // injection supplied and a dry run withheld on purpose is not lost. A removed
+  // row the app does not read is not lost either: nothing read it.
+  const lost = removed.filter((key) => keys.includes(key) && !(key in supplied) && !withheld.includes(key));
   if (lost.length > 0) {
     logger.warn?.(
       `::warning::[${label}] Vercel's ${vercelEnvironmentFor(target)} env holds ${lost.join(", ")}, ` +
@@ -441,8 +458,9 @@ function requireBuildEnv(buildEnv, label) {
  * which is what `buildAndDeployVercelProject` does.
  *
  * `buildEnv` (from `infisicalBuildEnv`) is required: `.vercel` is emptied
- * first, every step runs on its `baseEnv`, its `appKeys` are removed from the
- * pulled env file, and `vercel build` alone gets its `appEnv`.
+ * first, every step runs on its `baseEnv`, the pulled env file is reduced to
+ * Vercel's system variables, and `vercel build` alone gets its `appEnv`. A
+ * `[SENSITIVE]` value in the file or the build's environment is refused.
  *
  * A non-zero exit from either step throws: a failed pull produces a build with
  * the wrong environment variables, and a failed build has nothing to upload.
@@ -478,11 +496,16 @@ export async function buildVercelProject({
     args: vercelPullArgs({ target }),
   });
 
-  await dropPulledAppKeys({ label, cwd, target, keys: appKeys, supplied: appEnv, withheld, envFileFs, logger });
+  await keepOnlySystemRows({ label, cwd, target, keys: appKeys, supplied: appEnv, withheld, envFileFs, logger });
+
+  // The pulled file is clean by now; this is the environment itself, CLI
+  // identity included, the last place a placeholder could come from.
+  const buildProcessEnv = vercelCliEnv({ ...identity, baseEnv, extraEnv: appEnv });
+  refuseSensitivePlaceholders({ label, source: "The environment for `vercel build`", env: buildProcessEnv });
 
   await runVercelStep({
     ...common,
-    env: vercelCliEnv({ ...identity, baseEnv, extraEnv: appEnv }),
+    env: buildProcessEnv,
     args: vercelBuildArgs({ target }),
   });
 

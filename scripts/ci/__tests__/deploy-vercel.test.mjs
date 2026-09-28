@@ -1080,15 +1080,16 @@ describe("deployVercel on the staging path", () => {
     });
 
     const stash = makeStashFs([vercelDirFor(CWD)]);
-    // Every project's pull writes the same stale row for both apps' keys; what
-    // each build may keep of it depends on which app it is.
+    // Every project's pull writes the same stale row for both apps' keys. Each
+    // build keeps neither: not its own app's, and not the other app's either,
+    // which before #2810 reached the build as an ordinary project row.
     const envFile = `${vercelDirFor(CWD)}/.env.preview.local`;
     const files = new Map();
-    const stripped = [];
+    const filtered = [];
     const envFileFs = {
       read: async (p) => files.get(p) ?? null,
       write: async (p, text) => {
-        stripped.push(text);
+        filtered.push(text);
         files.set(p, text);
       },
     };
@@ -1120,11 +1121,8 @@ describe("deployVercel on the staging path", () => {
     });
 
     assert.equal(outcome.ok, true, JSON.stringify(outcome.failures));
-    // Each project removes its OWN app's keys from the pulled file.
-    assert.deepEqual(stripped, [
-      'NEXT_PUBLIC_APP_URL="stale"\nVERCEL_ENV="preview"\n',
-      'NEXT_PUBLIC_API_URL="stale"\nVERCEL_ENV="preview"\n',
-    ]);
+    // Each project's pulled file keeps only Vercel's system variables.
+    assert.deepEqual(filtered, ['VERCEL_ENV="preview"\n', 'VERCEL_ENV="preview"\n']);
     const build = (project) => steps.find((s) => s.project === project && s.step === "build").env;
     assert.equal(build("prj_web").NEXT_PUBLIC_API_URL, "https://api-staging.example");
     assert.equal(build("prj_landing").NEXT_PUBLIC_APP_URL, "https://app.staging.example");
