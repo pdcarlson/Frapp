@@ -139,10 +139,10 @@ export interface ChannelMappingInput {
   new_channel_is_read_only?: boolean;
   /**
    * Who can read the channel `create_new` makes. Omitted, or null, means "not
-   * chosen": allowed on a channel the scan saw was public in Discord (it
-   * defaults to the whole chapter), refused on the bot path for one that was
-   * private there, holds private threads, or whose privacy the scan could not
-   * read.
+   * chosen": allowed only on a bot channel the scan saw was public in Discord
+   * (it defaults to the whole chapter); refused for one that was private
+   * there, holds private threads, or whose privacy the scan could not read,
+   * and for every channel of an uploaded export, which says nothing either way.
    */
   new_channel_visibility?: 'chapter' | 'restricted' | null;
   /** Required, and non-empty, when `new_channel_visibility` is `restricted`. */
@@ -572,7 +572,7 @@ export class DiscordImportService {
       // Discord's own permissions at scan time.
       if (scanned.readable === false && decision.mapping_action !== 'skip') {
         throw new BadRequestException(
-          `Frapp cannot read #${scanned.discord_channel_name} in Discord. Give the Frapp bot a role that can see it and scan again, or skip it.`,
+          `Frapp cannot read #${scanned.discord_channel_name} in Discord. Allow the Frapp role on it (or give the Frapp bot a role that can see it) and scan again, or skip it.`,
         );
       }
       // Nothing private in Discord becomes readable by the whole chapter by
@@ -723,6 +723,17 @@ export class DiscordImportService {
     // `applyDiscoveredChannelMapping`: the `use_existing` cross-chapter check
     // is the one that must never differ between the two.
     for (const channel of channels) {
+      // An export carries no permissions, so nothing says a channel was
+      // public in Discord: the whole-chapter default is refused here exactly
+      // as it is for a bot channel whose privacy could not be read.
+      if (
+        channel.mapping_action === 'create_new' &&
+        channel.new_channel_visibility == null
+      ) {
+        throw new BadRequestException(
+          `An export does not say whether #${channel.discord_channel_name} was private in Discord. Choose who can read it in Frapp before importing it.`,
+        );
+      }
       await this.assertDecisionResolvable(channel, chapterId);
     }
 

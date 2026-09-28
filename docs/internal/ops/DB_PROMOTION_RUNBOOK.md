@@ -560,6 +560,21 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-28: Discord import channel visibility and scan readability (#2787)
+
+### 20260928171600_discord_import_channel_visibility.sql
+
+- **Purpose**: Adds four columns to `public.discord_import_channels`: `readable boolean` and `private_in_discord boolean` (what the bot saw when it scanned; null when unknown, as on the upload path), `new_channel_type text not null default 'PUBLIC'`, and `new_channel_required_permissions text[]`. Adds `discord_import_channels_new_channel_type_check`, which allows `PUBLIC` or `ROLE_GATED` and requires at least one permission for `ROLE_GATED`. Existing rows take `PUBLIC` and nulls, which is what every import created until now, and which leaves one gap (below). The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Checks**: After `db push`,
+  `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_import_channels' and column_name in ('readable','private_in_discord','new_channel_type','new_channel_required_permissions') order by 1;` returns four rows: `new_channel_required_permissions | ARRAY | YES`, `new_channel_type | text | NO | 'PUBLIC'::text`, `private_in_discord | boolean | YES`, `readable | boolean | YES`.
+  `select pg_get_constraintdef(oid) from pg_constraint where conname = 'discord_import_channels_new_channel_type_check';` names both `PUBLIC` and `ROLE_GATED` and `array_length`.
+- **Promoter notes**: Ship it before, or with, the API that writes the columns. An older API ignores them and keeps creating `PUBLIC` channels, which is its existing behaviour. A newer API against an unmigrated database fails discovery and mapping writes on the unknown columns. Re-applying is idempotent (`add column if not exists`, and the constraint is dropped and re-added). Hosted projects are not applied from a cloud-agent session.
+- **Before promoting, find bot imports mapped under the previous release.** Their new-channel rows keep `PUBLIC`, and neither starting nor resuming an import re-checks its mapping, so a channel that was private in Discord would still be created readable by the whole chapter. `running` counts because the worker resumes a running import, and `failed` because a failed import can be started again. The worker creates a channel for any row with no `target_channel_id` that is not `completed` or `skipped`, a `failed` row included, so those are the rows counted:
+  `select i.id, i.chapter_id, i.status, count(*) as new_channels from public.discord_import_channels c join public.discord_imports i on i.id = c.import_id where i.source = 'bot' and i.status in ('draft', 'ready', 'running', 'failed') and c.mapping_action = 'create_new' and c.target_channel_id is null and c.status not in ('completed', 'skipped') and c.parent_discord_channel_id is null group by i.id, i.chapter_id, i.status;`
+  Cancel each one it lists (Cancel on the chapter's Discord import page, `POST /v1/discord-imports/{id}/cancel`; a running import stops at its next checkpoint). A cancelled import cannot be changed or restarted, so tell the chapter's admin to start a new one, whose mapping step asks who can read each private channel. Staging had none on 2026-09-28: its only bot import was a draft with every channel skipped.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-import-channel-visibility-20260928171600) § Rollback Discord import channel visibility.
+
 ## 2026-09-28: Add and remove a PRIVATE channel's members (#1302)
 
 ### 20260928170000_chat_private_channel_members.sql
@@ -576,21 +591,6 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Promoter notes**: Apply before, or with, the API that carries #1302; both the staging merge and a `full` production run migrate before deploying. An API that reaches a database without it answers 500 on the two new routes, and **refuses to remove any member from a chapter** (500), because `MemberService.remove` calls `remove_user_from_private_channels` first. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-private-channel-membership-20260928170000) § Rollback PRIVATE channel membership.
-
-## 2026-09-28: Discord import channel visibility and scan readability (#2787)
-
-### 20260928160000_discord_import_channel_visibility.sql
-
-- **Purpose**: Adds four columns to `public.discord_import_channels`: `readable boolean` and `private_in_discord boolean` (what the bot saw when it scanned; null when unknown, as on the upload path), `new_channel_type text not null default 'PUBLIC'`, and `new_channel_required_permissions text[]`. Adds `discord_import_channels_new_channel_type_check`, which allows `PUBLIC` or `ROLE_GATED` and requires at least one permission for `ROLE_GATED`. Existing rows take `PUBLIC` and nulls, which is what every import created until now, and which leaves one gap (below). The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
-- **Checks**: After `db push`,
-  `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_import_channels' and column_name in ('readable','private_in_discord','new_channel_type','new_channel_required_permissions') order by 1;` returns four rows: `new_channel_required_permissions | ARRAY | YES`, `new_channel_type | text | NO | 'PUBLIC'::text`, `private_in_discord | boolean | YES`, `readable | boolean | YES`.
-  `select pg_get_constraintdef(oid) from pg_constraint where conname = 'discord_import_channels_new_channel_type_check';` names both `PUBLIC` and `ROLE_GATED` and `array_length`.
-- **Promoter notes**: Ship it before, or with, the API that writes the columns. An older API ignores them and keeps creating `PUBLIC` channels, which is its existing behaviour. A newer API against an unmigrated database fails discovery and mapping writes on the unknown columns. Re-applying is idempotent (`add column if not exists`, and the constraint is dropped and re-added). Hosted projects are not applied from a cloud-agent session.
-- **Before promoting, find bot imports mapped under the previous release.** Their new-channel rows keep `PUBLIC`, and neither starting nor resuming an import re-checks its mapping, so a channel that was private in Discord would still be created readable by the whole chapter. `running` counts because the worker resumes a running import, and `failed` because a failed import can be started again. The worker creates a channel for any row with no `target_channel_id` that is not `completed` or `skipped`, a `failed` row included, so those are the rows counted:
-  `select i.id, i.chapter_id, i.status, count(*) as new_channels from public.discord_import_channels c join public.discord_imports i on i.id = c.import_id where i.source = 'bot' and i.status in ('draft', 'ready', 'running', 'failed') and c.mapping_action = 'create_new' and c.target_channel_id is null and c.status not in ('completed', 'skipped') and c.parent_discord_channel_id is null group by i.id, i.chapter_id, i.status;`
-  Cancel each one it lists (Cancel on the chapter's Discord import page, `POST /v1/discord-imports/{id}/cancel`; a running import stops at its next checkpoint). A cancelled import cannot be changed or restarted, so tell the chapter's admin to start a new one, whose mapping step asks who can read each private channel. Staging had none on 2026-09-28: its only bot import was a draft with every channel skipped.
-
-**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-import-channel-visibility-20260928160000) § Rollback Discord import channel visibility.
 
 ## 2026-09-27: Unread and mention counts skip a blocked sender (#2521)
 

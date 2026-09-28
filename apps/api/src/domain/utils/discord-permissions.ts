@@ -3,7 +3,7 @@
  * of every channel before any message is read:
  *
  *  1. can the bot read this channel's history at all, and
- *  2. could a member holding only `@everyone` see it (was it private)?
+ *  2. could every member of the server read it (or was it private)?
  *
  * Why compute rather than probe. Discord returns EVERY guild channel to a bot,
  * including ones it cannot open, so the channel list says nothing about
@@ -130,18 +130,36 @@ export function canReadHistory(permissions: bigint): boolean {
 }
 
 /**
- * Whether a member with nothing but `@everyone` could see the channel. False is
- * what "private in Discord" means here.
+ * Whether every member of the server could read the channel's history. False
+ * is what "private in Discord" means here, and it takes either of two shapes:
+ *
+ *  - a member holding nothing but `@everyone` cannot read it: the channel is
+ *    hidden, or it shows only what arrives while you watch (Read Message
+ *    History denied), and it is the backlog that an import copies;
+ *  - some role or member overwrite denies View Channels or Read Message
+ *    History: `@everyone` can read #brothers but `Pledge` cannot. Frapp has no
+ *    deny, so importing it chapter-wide shows it to exactly the members Discord
+ *    hid it from. An allow only widens the audience, so it never counts.
+ *
+ * A deny on a role nobody holds still counts. The cost is one extra question
+ * to the admin, where the other mistake publishes a channel.
  */
-export function visibleToEveryone(
+export function openToEveryone(
   guildId: string,
   roles: readonly DiscordRolePermissions[],
   overwrites: readonly DiscordPermissionOverwrite[],
 ): boolean {
   const nobody: DiscordPermissionSubject = { userId: null, roleIds: [] };
   const base = basePermissions(guildId, roles, nobody);
-  const permissions = channelPermissions(base, guildId, overwrites, nobody);
-  return (permissions & VIEW_CHANNEL) !== 0n;
+  if (!canReadHistory(channelPermissions(base, guildId, overwrites, nobody))) {
+    return false;
+  }
+  const hiding = VIEW_CHANNEL | READ_MESSAGE_HISTORY;
+  return !overwrites.some(
+    (overwrite) =>
+      !(overwrite.type === 0 && overwrite.id === guildId) &&
+      (bits(overwrite.deny) & hiding) !== 0n,
+  );
 }
 
 /** Parse `permission_overwrites` off a raw channel, dropping malformed rows. */

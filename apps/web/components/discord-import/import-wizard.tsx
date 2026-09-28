@@ -271,20 +271,38 @@ export function ImportWizard({
   // One list decides both whether Continue is enabled and what Needs
   // attention shows, so the step can never be blocked for a reason it does
   // not state. A same-name Frapp channel is an issue, never a merge:
-  // `chat_channels` has no unique (chapter_id, name).
-  const channelIssues = useMemo(
-    () =>
-      staged
-        ? mappingIssues(
-            staged.channels,
-            channelChoices,
-            asArray<{ name: string }>(existingChannels.data).map(
-              (channel) => channel.name,
-            ),
-          )
-        : [],
-    [staged, channelChoices, existingChannels.data],
-  );
+  // `chat_channels` has no unique (chapter_id, name). Until the existing
+  // channels have loaded, a clash cannot be ruled out, so that is an issue
+  // too rather than a silent pass.
+  const channelIssues = useMemo(() => {
+    if (!staged) return [];
+    const issues = mappingIssues(
+      staged.channels,
+      channelChoices,
+      asArray<{ name: string }>(existingChannels.data).map(
+        (channel) => channel.name,
+      ),
+    );
+    if (existingChannels.isError) {
+      issues.unshift({
+        channelId: null,
+        message:
+          "Frapp could not load your existing channels to check the new names against. Reload the page to try again.",
+      });
+    } else if (existingChannels.isPending) {
+      issues.unshift({
+        channelId: null,
+        message: "Checking the new names against your existing channels…",
+      });
+    }
+    return issues;
+  }, [
+    staged,
+    channelChoices,
+    existingChannels.data,
+    existingChannels.isError,
+    existingChannels.isPending,
+  ]);
   const channelsReady = !!staged && channelIssues.length === 0;
 
   async function submitMappings() {

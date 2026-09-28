@@ -170,11 +170,14 @@ export interface DiscordImportChannel {
    */
   readable: boolean | null;
   /**
-   * Whether the channel was hidden from `@everyone` in Discord.
+   * Whether the channel was private in Discord: some member could not read
+   * its history (see `openToEveryone`). On a thread row, true also for a
+   * private thread.
    *
-   * The API will not create such a channel in Frapp until the admin has chosen
-   * its visibility explicitly: nothing private in Discord becomes readable by
-   * the whole chapter by default. Null when unknown.
+   * The API will not create a channel from such a row, or from a null one, in
+   * Frapp until the admin has chosen its visibility explicitly: nothing
+   * private in Discord becomes readable by the whole chapter by default. Null
+   * when unknown, and always on the upload path.
    */
   private_in_discord: boolean | null;
   /**

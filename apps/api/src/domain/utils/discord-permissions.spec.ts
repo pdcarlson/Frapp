@@ -6,7 +6,7 @@ import {
   canReadHistory,
   channelPermissions,
   parseOverwrites,
-  visibleToEveryone,
+  openToEveryone,
   type DiscordPermissionOverwrite,
   type DiscordRolePermissions,
 } from './discord-permissions';
@@ -54,7 +54,7 @@ function botCanRead(
 describe('Discord channel permissions', () => {
   it('reads a channel with no overwrites', () => {
     expect(botCanRead([])).toBe(true);
-    expect(visibleToEveryone(GUILD, roles, [])).toBe(true);
+    expect(openToEveryone(GUILD, roles, [])).toBe(true);
   });
 
   it('cannot read a channel @everyone is denied, even with View Channels on its own role', () => {
@@ -62,7 +62,7 @@ describe('Discord channel permissions', () => {
     // guild level, but a channel-level @everyone deny still hides the channel,
     // because only a channel-level allow on a held role overrides it.
     expect(botCanRead([everyoneDenied, allow(BROTHER)])).toBe(false);
-    expect(visibleToEveryone(GUILD, roles, [everyoneDenied])).toBe(false);
+    expect(openToEveryone(GUILD, roles, [everyoneDenied])).toBe(false);
   });
 
   it('reads it once the bot holds a role the channel allows', () => {
@@ -95,8 +95,32 @@ describe('Discord channel permissions', () => {
       deny: String(READ_MESSAGE_HISTORY),
     };
     expect(botCanRead([noHistory])).toBe(false);
-    // Hidden from the bot but still visible to @everyone: not "private".
-    expect(visibleToEveryone(GUILD, roles, [noHistory])).toBe(true);
+    // @everyone sees the channel but not its backlog, and the backlog is what
+    // an import copies: private.
+    expect(openToEveryone(GUILD, roles, [noHistory])).toBe(false);
+  });
+
+  it('calls a channel private when any role or member is denied it, even if @everyone can read it', () => {
+    // The "hide it from pledges" shape: Frapp has no deny, so a chapter-wide
+    // import would show #brothers to exactly the members Discord hid it from.
+    const PLEDGE = '600000000000000006';
+    expect(
+      openToEveryone(GUILD, roles, [
+        { id: PLEDGE, type: 0, allow: '0', deny: VIEW },
+      ]),
+    ).toBe(false);
+    expect(
+      openToEveryone(GUILD, roles, [
+        { id: BOT, type: 1, allow: '0', deny: String(READ_MESSAGE_HISTORY) },
+      ]),
+    ).toBe(false);
+    // An allow only widens the audience; a deny of something else hides nothing.
+    expect(
+      openToEveryone(GUILD, roles, [
+        allow(BROTHER),
+        { id: PLEDGE, type: 0, allow: '0', deny: String(1n << 11n) },
+      ]),
+    ).toBe(true);
   });
 
   it('treats Administrator as every permission, overwrites included', () => {
@@ -118,7 +142,11 @@ describe('Discord channel permissions', () => {
     const subject = { userId: BOT, roleIds: [] };
     expect(
       canReadHistory(
-        basePermissions(GUILD, [{ id: GUILD, permissions: String(high) }], subject),
+        basePermissions(
+          GUILD,
+          [{ id: GUILD, permissions: String(high) }],
+          subject,
+        ),
       ),
     ).toBe(true);
   });

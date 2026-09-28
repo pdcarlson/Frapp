@@ -13,15 +13,16 @@
 --                       deny it holds no role to override). Null means the
 --                       scan could not tell, as on the upload path, which has
 --                       no permissions to read.
---   private_in_discord  was it hidden from @everyone in Discord? The API
---                       refuses to create such a channel in Frapp unless the
---                       admin chose its visibility explicitly.
+--   private_in_discord  was it private in Discord (some member could not read
+--                       its history)? The API refuses to create such a
+--                       channel in Frapp, or one whose privacy is unknown,
+--                       unless the admin chose its visibility explicitly.
 --   new_channel_type    PUBLIC (whole chapter) or ROLE_GATED (members holding
 --                       one of new_channel_required_permissions). The same two
 --                       values chat_channels.type takes for them.
 --
--- All nullable or defaulted, so existing rows and the upload path are
--- untouched: an upload mapping keeps PUBLIC unless its admin picks otherwise.
+-- All nullable or defaulted, so existing rows are untouched. An upload has no
+-- permissions to read, so its new channels always carry an explicit choice.
 
 alter table public.discord_import_channels
   add column if not exists readable boolean,

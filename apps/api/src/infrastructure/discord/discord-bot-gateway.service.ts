@@ -19,7 +19,7 @@ import {
   canReadHistory,
   channelPermissions,
   parseOverwrites,
-  visibleToEveryone,
+  openToEveryone,
   type DiscordPermissionSubject,
   type DiscordRolePermissions,
 } from '#domain/utils/discord-permissions';
@@ -301,7 +301,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
           )
         : null;
       const privateInDiscord = access.roles
-        ? !visibleToEveryone(guildId, access.roles, overwrites)
+        ? !openToEveryone(guildId, access.roles, overwrites)
         : null;
       // A forum IS offered as a destination — `#questions` is what an admin
       // recognises, and its posts inherit whatever they choose for it. What it
@@ -410,7 +410,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     // everything an admin actually needed to read.
     if (unreadable.length > 0) {
       warnings.push(
-        `Frapp cannot read ${unreadable.length} channel(s) (${nameList(unreadable)}): Discord hides them from the bot. Give the Frapp bot a role that can see them, then scan again. Until then they can only be skipped.`,
+        `Frapp cannot read ${unreadable.length} channel(s) (${nameList(unreadable)}): Discord hides them from the bot. Allow the Frapp role on those channels or their categories (read-only), or give the Frapp bot a role that can see them, then scan again. Until then they can only be skipped.`,
       );
     }
     if (privateDenied.length > 0) {

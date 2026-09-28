@@ -150,7 +150,7 @@ export interface DiscoveredDiscordChannel {
    * can see it and the server is scanned again. Null: unknown.
    */
   readable: boolean | null;
-  /** Hidden from @everyone in Discord. Such a channel needs an explicit visibility. */
+  /** Private in Discord (some member could not read it); null when unknown. Either needs an explicit visibility. */
   private_in_discord: boolean | null;
 }
 

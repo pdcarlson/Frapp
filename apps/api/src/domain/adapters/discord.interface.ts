@@ -100,9 +100,10 @@ export interface DiscordChannelRef {
    */
   readable: boolean | null;
   /**
-   * Whether a member holding only `@everyone` could see this channel. False
-   * means the server keeps it behind a role (exec, bids, committees). Null
-   * when unknown.
+   * Whether the channel is private in Discord: some member of the server
+   * could not read its history (`openToEveryone` is false), which is how a
+   * server keeps exec, bids and committees behind a role. A private thread is
+   * private whatever its parent is. Null when unknown.
    */
   privateInDiscord: boolean | null;
 }

@@ -15,22 +15,24 @@ export interface ChannelChoice {
 }
 
 /** Why a channel may not default to readable by the whole chapter. */
-export type PrivacyReason = "private" | "private-threads" | "unknown";
+export type PrivacyReason =
+  "private" | "private-threads" | "unknown" | "export";
 
 /**
  * Why a channel may not default to readable by the whole chapter, or null
  * when it may.
  *
- * The API applies the same rule on the bot path: only a channel the scan SAW
- * was public, holding no private thread, takes the whole-chapter default.
- * Unknown counts as private, because the roles read that answers it can fail
- * on its own. An upload (privacy absent) says nothing either way and defaults
- * to the whole chapter, which the step says out loud.
+ * The API applies the same rule: only a channel the scan SAW was public,
+ * holding no private thread, takes the whole-chapter default. Unknown counts
+ * as private, because the roles read that answers it can fail on its own, and
+ * so does an uploaded export, which carries no permissions at all (the
+ * "Set who can read…" control answers a whole export in one click).
  */
 export function privacyReason(channel: StagedChannel): PrivacyReason | null {
   if (channel.privateInDiscord === true) return "private";
   if ((channel.privateThreads ?? 0) > 0) return "private-threads";
   if (channel.privateInDiscord === null) return "unknown";
+  if (channel.privateInDiscord === undefined) return "export";
   return null;
 }
 
@@ -248,6 +250,8 @@ function visibilityPrompt(channel: StagedChannel, label: string): string {
     }
     case "unknown":
       return `Frapp could not tell whether ${label} was private in Discord. Choose who can read it in Frapp.`;
+    case "export":
+      return `An export does not say whether ${label} was private in Discord. Choose who can read it in Frapp.`;
     default:
       return `Choose who can read the new channel for ${label}.`;
   }

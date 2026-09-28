@@ -571,21 +571,27 @@ channel that reports a different one fails the import rather than being skipped.
 - **Nothing private in Discord becomes readable by the whole chapter by
   default.** A new channel is either *whole chapter* (`PUBLIC`) or *restricted*
   (`ROLE_GATED`, readable by members holding any of the permissions the admin
-  picks). The scan records which channels were hidden from `@everyone` in
-  Discord, and which threads were private threads. A channel that was private,
-  holds a private thread (whose messages land in it), or whose privacy the
-  scan could not read (the roles read failed, which the scan reports) starts
-  with no visibility, and the API refuses to create it until the admin
-  chooses. Scanning again re-asks any whole-chapter choice, or merge, whose
-  channel has since turned private. An uploaded export carries no permissions, so there
-  the wizard says plainly that every new channel is chapter-wide unless
-  restricted.
+  picks). A channel counts as private in Discord when some member of the
+  server could not read its history there: `@everyone` is denied View Channels
+  or Read Message History, or any role or member overwrite denies either (the
+  "hide it from pledges" shape, which Frapp has no way to express). The scan
+  also records which threads were private threads. A channel that was
+  private, holds a private thread (whose messages land in it), or whose
+  privacy the scan could not read (the roles read failed, which the scan
+  reports) starts with no visibility, and the API refuses to create it until
+  the admin chooses. Scanning again re-asks any whole-chapter choice, or
+  merge, whose channel has since turned private. An uploaded export carries no
+  permissions, so every new channel from one needs the same choice; "Set who
+  can read…" answers a whole category, or the whole server, in one go.
 - **The bot reads only what its roles can see.** Discord lists every channel to
   a bot, including ones hidden from it, so the scan works out the bot's own
   access per channel from Discord's permission overwrites rather than finding
   out by failing. A channel it cannot read is listed separately and can only be
-  skipped; the chapter gives the Frapp bot a role that can see it in Discord
-  and scans again. Nothing is probed that is already known unreadable, because
+  skipped until the chapter lets the bot see it and scans again: either by
+  allowing the bot's own Frapp role on the channel or its category, which
+  keeps the install read-only, or by giving the bot a role that can see it,
+  which is quicker but lends the shared bot token whatever else that role can
+  do ([`integrations.md` § 7A](../../../docs/internal/ops/deployment/integrations.md#7a-discord-application-setup-the-archive-importers-bot-path)). Nothing is probed that is already known unreadable, because
   every refused request spends a rate-limit budget one bot token shares across
   every chapter. When access cannot be worked out (the bot's roles could not be
   read), each channel is probed once and a refusal is reported the same way.

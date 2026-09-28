@@ -55,10 +55,19 @@ describe("defaultChoice", () => {
     ).toMatchObject({ visibility: undefined });
   });
 
-  it("treats an upload's unknown privacy as public, which the step says out loud", () => {
+  it("asks about every channel of an uploaded export, which says nothing about privacy", () => {
+    const exported = { channelId: "1", channelName: "general", category: null };
+    expect(defaultChoice(exported)).toMatchObject({
+      action: "create_new",
+      visibility: undefined,
+    });
     expect(
-      defaultChoice({ channelId: "1", channelName: "general", category: null }),
-    ).toMatchObject({ visibility: "chapter" });
+      mappingIssues([exported], defaultChoices([exported]), []).map(
+        (issue) => issue.message,
+      ),
+    ).toEqual([
+      "An export does not say whether #general was private in Discord. Choose who can read it in Frapp.",
+    ]);
   });
 });
 

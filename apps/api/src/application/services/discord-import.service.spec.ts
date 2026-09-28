@@ -505,6 +505,7 @@ describe('DiscordImportService — channel mapping', () => {
           discord_channel_name: 'general',
           mapping_action: 'create_new',
           new_channel_name: '   ',
+          new_channel_visibility: 'chapter',
         },
       ]),
     ).rejects.toThrow(/Name the new channel/);
@@ -888,6 +889,24 @@ describe('DiscordImportService — what the scan saw, and who may read what (#27
     expect(repo.replaceChannels).not.toHaveBeenCalled();
   });
 
+  it('REFUSES to merge a channel the bot cannot read, not only to create one', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_name: 'cabinet', readable: false }),
+    ]);
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '900000000000000001',
+          discord_channel_name: 'cabinet',
+          mapping_action: 'use_existing',
+          target_channel_id: OWN_CHANNEL,
+        },
+      ]),
+    ).rejects.toThrow(/cannot read #cabinet/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
   it('still lets an unreadable channel be skipped', async () => {
     const svc = await build(job({ source: 'bot' }));
     repo.findChannels.mockResolvedValue([botChannel({ readable: false })]);
@@ -1096,7 +1115,23 @@ describe('DiscordImportService — what the scan saw, and who may read what (#27
     ).rejects.toThrow(/at least one permission/);
   });
 
-  it('keeps the upload path public unless its admin restricts it', async () => {
+  it('REFUSES a new channel from an export with no visibility, since an export says nothing about privacy', async () => {
+    const svc = await build(job({ source: 'upload' }));
+    await expect(
+      svc.setChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: 'u1',
+          discord_channel_name: 'cabinet',
+          mapping_action: 'create_new',
+          new_channel_name: 'cabinet',
+          new_channel_visibility: null,
+        },
+      ]),
+    ).rejects.toThrow(/An export does not say whether #cabinet was private/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('creates a channel from an export public or restricted as its admin chose', async () => {
     const svc = await build(job({ source: 'upload' }));
     await svc.setChannelMapping(IMPORT_ID, CHAPTER, [
       {
@@ -1104,6 +1139,7 @@ describe('DiscordImportService — what the scan saw, and who may read what (#27
         discord_channel_name: 'general',
         mapping_action: 'create_new',
         new_channel_name: 'general',
+        new_channel_visibility: 'chapter',
       },
       {
         discord_channel_id: 'u2',

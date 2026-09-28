@@ -21,6 +21,7 @@ import {
   privacyReason,
   type ChannelChoice,
   type MappingIssue,
+  type PrivacyReason,
 } from "./mapping-issues";
 
 export type { ChannelChoice } from "./mapping-issues";
@@ -142,12 +143,27 @@ export function ChannelMappingStep({
 
   // A group opens itself when it has something to fix; otherwise the admin
   // decides. With eighty channels, closed-and-summarised is what makes the
-  // step scannable.
+  // step scannable. Once open it stays open until the admin closes it:
+  // closing on the keystroke that clears its last issue would unmount the
+  // very input being typed in.
   const [opened, setOpened] = useState<Record<string, boolean>>({});
+  const flagged = groups
+    .filter((group) =>
+      group.channels.some((channel) => issuesByChannel.has(channel.channelId)),
+    )
+    .map((group) => group.name);
+  const [autoOpened, setAutoOpened] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  if (flagged.some((name) => !autoOpened.has(name))) {
+    // Recorded during render, React's pattern for state derived from props:
+    // it re-renders before committing, so nothing flickers closed.
+    setAutoOpened(new Set([...autoOpened, ...flagged]));
+  }
   function isOpen(group: Group): boolean {
     return (
       opened[group.name] ??
-      group.channels.some((channel) => issuesByChannel.has(channel.channelId))
+      (autoOpened.has(group.name) || flagged.includes(group.name))
     );
   }
 
@@ -188,8 +204,11 @@ export function ChannelMappingStep({
     });
   }
 
-  const serverVisibility = useBulkVisibility((visibility, permissions) =>
-    update(readable, withVisibility(visibility, permissions)),
+  const serverVisibility = useBulkVisibility(
+    readable,
+    choices,
+    (visibility, permissions) =>
+      update(readable, withVisibility(visibility, permissions)),
   );
 
   if (channels.length === 0) {
@@ -223,8 +242,10 @@ export function ChannelMappingStep({
       </p>
       {knowsPrivacy ? null : (
         <p className="text-sm text-muted-foreground">
-          An export does not say which channels were private in Discord. Every
-          new channel is readable by the whole chapter unless you restrict it.
+          An export does not say which channels were private in Discord, so
+          choose who can read each new channel. &ldquo;Set who can
+          read&hellip;&rdquo; answers every channel, or a whole category, at
+          once.
         </p>
       )}
 
@@ -380,8 +401,11 @@ function CategoryGroup({
   catalogLoading: boolean;
   catalogUnavailable: boolean;
 }) {
-  const groupVisibility = useBulkVisibility((visibility, permissions) =>
-    onBulk(withVisibility(visibility, permissions)),
+  const groupVisibility = useBulkVisibility(
+    group.channels,
+    choices,
+    (visibility, permissions) =>
+      onBulk(withVisibility(visibility, permissions)),
   );
   const permissionProps = {
     catalog,
@@ -472,17 +496,19 @@ function CategoryGroup({
   );
 }
 
-const PRIVACY_BADGES = {
+// An export's rows carry no badge: every one would say the same thing, and
+// the step says it once.
+const PRIVACY_BADGES: Record<PrivacyReason, string | null> = {
   private: "Private in Discord",
   "private-threads": "Has private threads",
   unknown: "Privacy unknown",
-} as const;
+  export: null,
+};
 
 function PrivacyBadge({ channel }: { channel: StagedChannel }) {
   const reason = privacyReason(channel);
-  return reason ? (
-    <Badge variant="outline">{PRIVACY_BADGES[reason]}</Badge>
-  ) : null;
+  const label = reason ? PRIVACY_BADGES[reason] : null;
+  return label ? <Badge variant="outline">{label}</Badge> : null;
 }
 
 /** A bulk patch setting who can read every new channel it reaches. */
@@ -511,17 +537,22 @@ interface BulkVisibility {
 /**
  * One "Set who can read…" control: the whole chapter applies at once;
  * restricted opens a permission grid that applies on every tick.
+ *
+ * The ticks are read off the choices, never kept beside them: a permission
+ * shows ticked only while every new channel in scope is restricted to it. So
+ * the grid cannot show a restriction the channels do not hold, whether a
+ * whole-chapter choice came from this control, another level's, or a row.
  */
 function useBulkVisibility(
+  targets: readonly StagedChannel[],
+  choices: Record<string, ChannelChoice>,
   apply: (
     visibility: "chapter" | "restricted",
     permissions: ReadonlySet<string>,
   ) => void,
 ): BulkVisibility {
   const [restricting, setRestricting] = useState(false);
-  const [permissions, setPermissions] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
+  const permissions = sharedRestriction(targets, choices);
   return {
     restricting,
     permissions,
@@ -537,10 +568,31 @@ function useBulkVisibility(
       const next = new Set(permissions);
       if (next.has(permission)) next.delete(permission);
       else next.add(permission);
-      setPermissions(next);
       apply("restricted", next);
     },
   };
+}
+
+/** The permissions every new channel in scope is restricted to, if all are. */
+function sharedRestriction(
+  targets: readonly StagedChannel[],
+  choices: Record<string, ChannelChoice>,
+): ReadonlySet<string> {
+  const creating = targets
+    .map((channel) => choices[channel.channelId])
+    .filter((choice) => choice?.action === "create_new");
+  if (
+    creating.length === 0 ||
+    creating.some((choice) => choice?.visibility !== "restricted")
+  ) {
+    return new Set();
+  }
+  let shared = new Set(creating[0]?.requiredPermissions ?? []);
+  for (const choice of creating.slice(1)) {
+    const held = new Set(choice?.requiredPermissions ?? []);
+    shared = new Set([...shared].filter((permission) => held.has(permission)));
+  }
+  return shared;
 }
 
 function BulkVisibilitySelect({
@@ -798,8 +850,11 @@ function UnreadableGroup({
           </p>
           <p className="text-sm text-muted-foreground">
             Discord hides them from the Frapp bot, so they will be skipped. To
-            import them, give the Frapp bot a role that can see them in Discord
-            (Server Settings → Members → Frapp), then scan again.
+            import them, either allow the bot&apos;s own Frapp role on those
+            channels or their categories (Edit Channel → Permissions), which
+            keeps it read-only, or give the Frapp bot a role that can see them
+            (Server Settings → Members → Frapp), which is quicker but lends it
+            everything that role can do. Then scan again.
           </p>
           <button
             type="button"

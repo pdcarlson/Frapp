@@ -16,6 +16,7 @@ const {
   confirmConnect,
   availability,
   connection,
+  channelsQuery,
 } = vi.hoisted(() => ({
   createImport: vi.fn(),
   setChannelMapping: vi.fn(),
@@ -28,6 +29,13 @@ const {
   beginConnect: vi.fn(),
   confirmConnect: vi.fn(),
   availability: { value: { available: true } as { available: boolean } },
+  channelsQuery: {
+    value: {
+      data: [{ id: "ch-1", name: "general" }] as unknown,
+      isPending: false,
+      isError: false,
+    },
+  },
   connection: {
     value: { connected: false } as {
       connected: boolean;
@@ -59,7 +67,7 @@ vi.mock("@repo/hooks", () => ({
   }),
   useStartDiscordImport: () => ({ mutateAsync: startImport, isPending: false }),
   useDiscordImportFiles: () => ({ data: [] }),
-  useChannels: () => ({ data: [{ id: "ch-1", name: "general" }] }),
+  useChannels: () => channelsQuery.value,
   usePermissionsCatalog: () => ({
     data: [
       { key: "CHAPTER_CONFIG_MANAGE", permission: "chapter-config:manage" },
@@ -287,6 +295,11 @@ describe("ImportWizard — the bot path", () => {
     discoverChannels.mockReset();
     setDiscoveredMapping.mockReset();
     setDiscoveredMapping.mockResolvedValue([]);
+    channelsQuery.value = {
+      data: [{ id: "ch-1", name: "general" }],
+      isPending: false,
+      isError: false,
+    };
   });
 
   function renderAtConsent() {
@@ -541,6 +554,33 @@ describe("ImportWizard — the bot path", () => {
     );
   });
 
+  it("holds Continue when the existing channels could not be loaded, since a clash cannot be ruled out", async () => {
+    channelsQuery.value = { data: undefined, isPending: false, isError: true };
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "general",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+
+    renderAtConsent();
+    expect(
+      await screen.findByText(/could not load your existing channels/),
+    ).toBeInTheDocument();
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
   it("re-asks after a re-scan instead of trusting what the last scan defaulted", async () => {
     const row = (
       id: string,
@@ -678,7 +718,8 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     expect(screen.queryByText("#announcements")).not.toBeInTheDocument();
   });
 
-  it("lists what blocks Continue, and jumping to one opens its row", () => {
+  it("lists what blocks Continue, and jumping to one opens its row, scrolls to it and focuses it", async () => {
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView");
     renderStep();
     const panel = screen.getByRole("region", { name: "Needs attention" });
     expect(panel).toHaveTextContent("Needs attention (1)");
@@ -689,6 +730,97 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
       screen.getByRole("button", { name: /#cabinet was private in Discord/ }),
     );
     expect(screen.getByText("#cabinet")).toBeInTheDocument();
+    const row = document.getElementById("discord-channel-3");
+    await waitFor(() =>
+      expect(row?.contains(document.activeElement)).toBe(true),
+    );
+    expect(scroll.mock.contexts).toContain(row);
+    scroll.mockRestore();
+  });
+
+  it("keeps a group that opened itself open once its last issue is fixed, so the row being edited stays put", () => {
+    const onChange = vi.fn();
+    const props = {
+      channels,
+      onChange,
+      knowsPrivacy: true,
+    };
+    const unresolved = defaultChoices(channels);
+    const { rerender } = render(
+      <ChannelMappingStep
+        {...props}
+        choices={unresolved}
+        issues={mappingIssues(channels, unresolved, [])}
+      />,
+    );
+    expect(screen.getByText("#cabinet")).toBeInTheDocument();
+    // The admin answers #cabinet in place: Exec has nothing left to fix.
+    const resolved = {
+      ...unresolved,
+      "3": { ...unresolved["3"]!, visibility: "chapter" as const },
+    };
+    rerender(
+      <ChannelMappingStep
+        {...props}
+        choices={resolved}
+        issues={mappingIssues(channels, resolved, [])}
+      />,
+    );
+    expect(screen.getByText("#cabinet")).toBeInTheDocument();
+  });
+
+  it("ticks a bulk permission only while every new channel in scope holds it", () => {
+    const restricted = {
+      ...defaultChoices(channels),
+      "3": {
+        action: "create_new" as const,
+        newName: "cabinet",
+        visibility: "restricted" as const,
+        requiredPermissions: ["chapter-config:manage"],
+      },
+    };
+    const { unmount } = render(
+      <ChannelMappingStep
+        channels={channels}
+        choices={restricted}
+        onChange={vi.fn()}
+        issues={mappingIssues(channels, restricted, [])}
+        knowsPrivacy
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Who can read the new channels in Exec"),
+      { target: { value: "restricted" } },
+    );
+    expect(
+      (screen.getByLabelText(/chapter-config:manage/) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    unmount();
+
+    // Once the channels are whole-chapter again (from any control), the grid
+    // shows nothing ticked rather than a restriction nobody holds.
+    const open = {
+      ...restricted,
+      "3": { ...restricted["3"], visibility: "chapter" as const },
+    };
+    render(
+      <ChannelMappingStep
+        channels={channels}
+        choices={open}
+        onChange={vi.fn()}
+        issues={mappingIssues(channels, open, [])}
+        knowsPrivacy
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Who can read the new channels in Exec"),
+      { target: { value: "restricted" } },
+    );
+    expect(
+      (screen.getByLabelText(/chapter-config:manage/) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
   });
 
   it("restricts every new channel in a category at once, and nothing outside it", () => {
