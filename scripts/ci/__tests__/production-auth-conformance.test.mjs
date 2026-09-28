@@ -679,12 +679,20 @@ describe("alert contract", () => {
     assert.ok(!lines.some((l) => /still open/.test(l)));
   });
 
-  it("a conformant run whose second alert lookup (resolveAlert's) fails is red", async () => {
+  it("a conformant run whose second alert lookup (resolveAlert's) fails is red, with an ::error::", async () => {
     const lines = [];
-    const result = await run(issueLookups([[], 502]), lines);
+    const open = [{ number: 700, state: "open", title: ALERT_ISSUE_TITLE, body: "" }];
+    const result = await run(issueLookups([open, 502]), lines);
     assert.deepEqual(result.alert, { action: "unread", closed: [] });
     assert.equal(conformanceExitCode(result), 1);
+    assert.ok(lines.some((l) => /^::error::.*could not be read/.test(l)));
     assert.ok(!lines.some((l) => /still open/.test(l)));
+  });
+
+  it("a conformant run whose gate read nothing open does not look again, and stays green", async () => {
+    const result = await run(issueLookups([[], 502]));
+    assert.deepEqual(result.alert, { action: "none", closed: [] });
+    assert.equal(conformanceExitCode(result), 0);
   });
 
   it("a conformant run whose alert close fails is red", async () => {
@@ -820,6 +828,14 @@ describe("workflow wiring", () => {
     assert.doesNotMatch(script, /rewriteStagingCopy/);
     assert.doesNotMatch(script, /replaceAll\(/);
     assert.match(script, /PRODUCTION_AUTH_COPY/);
+  });
+
+  it("main() exits with conformanceExitCode, not on the outcome alone", () => {
+    // Reverting this to `outcome === "failed"` left every other test green
+    // while a clean run with an unclosable alert exited 0 (#2627).
+    const main = script.slice(script.indexOf("async function main()"));
+    assert.match(main, /const code = conformanceExitCode\(await runProductionAuthConformance\(/);
+    assert.match(main, /if \(code !== 0\) process\.exit\(code\)/);
   });
 
   it("requires GitHub credentials before asserting when invoked as main", () => {

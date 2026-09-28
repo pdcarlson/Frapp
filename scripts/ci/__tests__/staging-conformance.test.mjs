@@ -2074,10 +2074,11 @@ test("a conformant run whose first alert lookup fails is red, and never says an 
   assert.ok(!lines.some((l) => /still open/.test(l)));
 });
 
-test("a conformant run whose second alert lookup (resolveAlert's) fails is red", async () => {
-  // The gate's lookup reads no alert; resolveAlert's own lookup then 502s.
-  // Before #2627 that read as "none" and the run went green.
-  const { fetchImpl, writes, lookupCount } = issueLookups([[], 502]);
+test("a conformant run whose second alert lookup (resolveAlert's) fails is red, with an ::error::", async () => {
+  // The gate reads an open alert it may close; resolveAlert's own lookup then
+  // 502s. Before #2627 that read as "none" and the run went green.
+  const open = [{ number: 700, state: "open", title: ALERT_ISSUE_TITLE, body: "" }];
+  const { fetchImpl, writes, lookupCount } = issueLookups([open, 502]);
   const { logger, lines } = linesLogger();
   const run = await runStagingConformance({
     token: "t", repo: "o/r", fetchImpl, checks: allPass, writeSummary: () => {}, logger,
@@ -2086,7 +2087,20 @@ test("a conformant run whose second alert lookup (resolveAlert's) fails is red",
   assert.deepEqual(run.alert, { action: "unread", closed: [] });
   assert.equal(conformanceExitCode(run), 1);
   assert.equal(writes.length, 0);
+  assert.ok(lines.some((l) => /^::error::.*could not be read/.test(l)));
   assert.ok(!lines.some((l) => /still open/.test(l)));
+});
+
+test("a conformant run whose gate read nothing open does not look again, and stays green", async () => {
+  // A second read could only fail: the gate already knows nothing is open.
+  const { fetchImpl, writes, lookupCount } = issueLookups([[], 502]);
+  const run = await runStagingConformance({
+    token: "t", repo: "o/r", fetchImpl, checks: allPass, writeSummary: () => {}, logger: quiet,
+  });
+  assert.equal(lookupCount(), 1);
+  assert.deepEqual(run.alert, { action: "none", closed: [] });
+  assert.equal(conformanceExitCode(run), 0);
+  assert.equal(writes.length, 0);
 });
 
 test("a conformant run whose alert close fails is red", async () => {
@@ -2097,6 +2111,15 @@ test("a conformant run whose alert close fails is red", async () => {
   });
   assert.deepEqual(run.alert, { action: "failed", closed: [] });
   assert.equal(conformanceExitCode(run), 1);
+});
+
+test("main() exits with conformanceExitCode, not on the outcome alone", () => {
+  // The only line that turns an unreadable or unclosable alert into a red
+  // run; reverting it to `outcome === "failed"` left every other test green.
+  const source = readFileSync(new URL("../staging-conformance.mjs", import.meta.url), "utf8");
+  const main = source.slice(source.indexOf("async function main()"));
+  assert.match(main, /const code = conformanceExitCode\(await runStagingConformance\(/);
+  assert.match(main, /if \(code !== 0\) process\.exit\(code\)/);
 });
 
 test("conformanceExitCode: only drift or an alert left unknown or open reds the run", () => {

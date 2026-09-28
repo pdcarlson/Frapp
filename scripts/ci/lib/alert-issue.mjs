@@ -274,10 +274,15 @@ export async function raiseAlert({
  * - "none": the lookup worked and nothing was open.
  * - "failed": a close left a match open; `closed` lists the ones that did close.
  * - "unread": the lookup failed, so nothing was closed and whether an alert is
- *   open is unknown. It is kept apart from "failed" because the callers'
- *   policies differ: a watchdog whose run is the check goes red on it, while
- *   production-uptime passes with a warning. And a caller must never say an
- *   alert "is still open" when it could not look.
+ *   open is unknown. A lookup that fails on a later page closes nothing either,
+ *   not even the open matches an earlier page returned; the next run with a
+ *   clean read closes them. "unread" is kept apart from "failed" because the
+ *   callers' policies differ. check-migration-drift, production-guardrails and
+ *   the two conformance watchdogs go red on it. production-uptime, the two
+ *   backup-freshness watchdogs, production-backup-env and production-release-pin
+ *   pass with a warning, as an unreadable tracker says nothing about what they
+ *   watch. deploy-alert and pr-base-sync warn. Whatever its policy, a caller
+ *   must never say an alert "is still open" when it could not look.
  */
 export async function resolveAlert({
   token,

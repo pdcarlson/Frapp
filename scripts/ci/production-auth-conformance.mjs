@@ -300,6 +300,14 @@ export async function runProductionAuthConformance({
 
   const openAlerts = allAlerts.filter((issue) => issue.state === "open");
 
+  // The gate just read that nothing is open, so there is nothing to close.
+  // resolveAlert would look again, and a transient failure of that second read
+  // would red a run that already knows the answer.
+  if (openAlerts.length === 0) {
+    writeSummary(buildRunSummary({ outcome, results, runUrl }));
+    return { outcome, results, alert: { action: "none", closed: [] } };
+  }
+
   const failingIds = openAlerts.flatMap((issue) => parseFailingIds(issue.body));
   if (openAlerts.length > 0 && !canResolveAlert({ results, failingIds })) {
     const unresolved = failingIds.filter(

@@ -425,6 +425,15 @@ describe("syncGuardrailsAlert — a clean run whose alert can't be read or close
     assert.ok(lines.some((l) => /^::error::.*could not be closed/.test(l)));
   });
 
+  it("main() exits with syncGuardrailsAlert's exit code", () => {
+    // The only line that turns an unreadable or unclosable alert into a red
+    // scheduled run; `process.exit(findings.length ? 1 : 0)` left the rest green.
+    const source = readFileSync(new URL("../production-guardrails.mjs", import.meta.url), "utf8");
+    const main = source.slice(source.indexOf("async function main()"));
+    assert.match(main, /const \{ exitCode \} = await syncGuardrailsAlert\(/);
+    assert.match(main, /process\.exit\(exitCode\);\n\}/);
+  });
+
   it("exits 1 on a violation, whatever the alert write did", async () => {
     const { fetchImpl } = issuesFetch({ lookup: [] });
     const out = await syncGuardrailsAlert({
