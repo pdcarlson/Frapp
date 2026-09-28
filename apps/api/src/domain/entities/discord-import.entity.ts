@@ -117,6 +117,11 @@ export interface DiscordImport {
   updated_at: string;
   completed_at: string | null;
   purged_at: string | null;
+  /**
+   * When the chapter took this import's record off its list. Only a purged
+   * import is cleared, so nothing it brought in is left behind unlisted.
+   */
+  cleared_at: string | null;
 }
 
 export interface DiscordImportChannel {

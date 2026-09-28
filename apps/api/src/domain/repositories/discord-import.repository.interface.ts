@@ -81,7 +81,19 @@ export interface IDiscordImportRepository {
   ): Promise<DiscordImport>;
 
   findById(id: string, chapterId: string): Promise<DiscordImport | null>;
+  /** The chapter's imports, newest first, leaving out the ones it cleared. */
   findByChapter(chapterId: string): Promise<DiscordImport[]>;
+
+  /**
+   * Take an import off the list, but only while its status is one of
+   * `clearable`, in the same write. Null when it is not.
+   */
+  markCleared(
+    id: string,
+    chapterId: string,
+    clearable: DiscordImportStatus[],
+    at: string,
+  ): Promise<DiscordImport | null>;
 
   update(
     id: string,
@@ -127,6 +139,16 @@ export interface IDiscordImportRepository {
     importId: string,
     chapterId: string,
   ): Promise<DiscordImportChannel[]>;
+  /**
+   * How many of this import's rows (channels and threads) are being imported,
+   * and how many of those are done: imported, or skipped by the worker because
+   * Discord no longer showed the channel to the bot. Rows mapped to skip are
+   * not counted.
+   */
+  countChannels(
+    importId: string,
+    chapterId: string,
+  ): Promise<{ total: number; done: number }>;
   updateChannel(
     id: string,
     importId: string,

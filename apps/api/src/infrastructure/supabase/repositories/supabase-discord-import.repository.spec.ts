@@ -1,5 +1,6 @@
 import { SupabaseDiscordImportRepository } from './supabase-discord-import.repository';
 import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.repository.interface';
+import { ID_CHUNK_SIZE } from '#domain/utils/chunk-ids';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -179,6 +180,50 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
     expect(harness.rows('discord_import_channels')).toHaveLength(before);
   });
 
+  it('findByChapter leaves out an import the chapter cleared', async () => {
+    await repo.findByChapter(CHAPTER_A);
+    expect(
+      harness.ops[0].filters.map((f) => [f.column, f.op, f.value]),
+    ).toContainEqual(['cleared_at', 'is', null]);
+  });
+
+  it('markCleared cannot reach another chapter row, and only clears a clearable import', async () => {
+    // IMPORT_B is `ready` in the fixture: not clearable, so nothing changes.
+    const result = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.markCleared(IMPORT_B, CHAPTER_B, ['purged'], 'now'),
+    );
+    expect(result).toBeNull();
+    expect(
+      harness.rows('discord_imports').find((r) => r.id === IMPORT_A)
+        ?.cleared_at,
+    ).toBeUndefined();
+  });
+
+  it('countChannels filters through the import embed', async () => {
+    await repo.countChannels(IMPORT_B, CHAPTER_B);
+    for (const op of harness.ops) {
+      expect(op.filters.map((f) => [f.column, f.value])).toContainEqual([
+        'discord_imports.chapter_id',
+        CHAPTER_B,
+      ]);
+    }
+  });
+
+  it('countChannels counts the rows being imported, and a skipped one as done', async () => {
+    await repo.countChannels(IMPORT_B, CHAPTER_B);
+    const [total, done] = harness.ops.map((op) =>
+      op.filters.map((f) => [f.column, f.op, f.value]),
+    );
+    expect(harness.ops).toHaveLength(2);
+    // A row mapped to skip is not being imported, so it is in neither count.
+    expect(total).toContainEqual(['mapping_action', 'neq', 'skip']);
+    expect(done).toContainEqual(['mapping_action', 'neq', 'skip']);
+    expect(total.some(([column]) => column === 'status')).toBe(false);
+    // The worker skips a channel Discord no longer shows the bot; it is
+    // finished, or progress would stop short of the total for good.
+    expect(done).toContainEqual(['status', 'in', ['completed', 'skipped']]);
+  });
+
   it('findFiles is scoped to the caller chapter', async () => {
     const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
       repo.findFiles(IMPORT_A, CHAPTER_A),
@@ -204,6 +249,30 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
       harness.rows('discord_import_files').find((r) => r.id === FILE_A)
         ?.uploaded_at,
     ).toBeNull();
+  });
+
+  it('markFilesUploaded splits a long path list so no request line overflows', async () => {
+    // One bot slice marks a busy channel's attachments at once: on staging,
+    // about 230 paths made a 30 KB request line the gateway refused (#2825).
+    harness.reset();
+    const paths = Array.from(
+      { length: 230 },
+      (_, i) =>
+        `chapters/${CHAPTER_B}/chat-archive/imports/${IMPORT_B}/media/${i}/attachment-${i}.png`,
+    );
+    await repo.markFilesUploaded(IMPORT_B, CHAPTER_B, paths, 'now');
+    const lists = harness.ops.map(
+      (op) =>
+        op.filters.find((f) => f.column === 'storage_path')?.value as string[],
+    );
+    expect(lists.length).toBeGreaterThan(1);
+    expect(lists.flat()).toEqual(paths);
+    for (const op of harness.ops) {
+      expect(op.filters.map((f) => [f.column, f.value])).toContainEqual([
+        'chapter_id',
+        CHAPTER_B,
+      ]);
+    }
   });
 
   it('deleteImportedMessages binds the chapter into the lookup', async () => {
@@ -283,6 +352,239 @@ describe('SupabaseDiscordImportRepository — findFiles paging', () => {
       [0, PAGE_SIZE - 1],
       [PAGE_SIZE, PAGE_SIZE * 2 - 1],
     ]);
+  });
+});
+
+describe('SupabaseDiscordImportRepository — purging a large import', () => {
+  it('deletes a round of message ids in batches small enough for the request line', async () => {
+    // A purge round reads up to 500 ids; one `in` list of 500 UUIDs is ~19 KB,
+    // past what the local gateway takes (`chunkIds`' measurement, #2825).
+    const candidates = Array.from({ length: 500 }, (_, i) => ({
+      id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+    }));
+    const deleted: string[][] = [];
+    const reader: Record<string, unknown> = {};
+    for (const method of ['select', 'eq']) {
+      reader[method] = jest.fn(() => reader);
+    }
+    reader.limit = jest.fn(() =>
+      Promise.resolve({ data: candidates, error: null }),
+    );
+    const writer = {
+      delete: jest.fn(() => writer),
+      in: jest.fn((_column: string, ids: string[]) => {
+        deleted.push(ids);
+        return Promise.resolve({ error: null });
+      }),
+    };
+    let calls = 0;
+    const client = {
+      from: jest.fn(() => (calls++ === 0 ? reader : writer)),
+    };
+    const repo = new SupabaseDiscordImportRepository(
+      client as unknown as ConstructorParameters<
+        typeof SupabaseDiscordImportRepository
+      >[0],
+    );
+
+    expect(await repo.deleteImportedMessages(IMPORT_A, CHAPTER_A, 500)).toBe(
+      500,
+    );
+    expect(deleted.flat()).toEqual(candidates.map((row) => row.id));
+    for (const batch of deleted) {
+      expect(batch.length).toBeLessThanOrEqual(ID_CHUNK_SIZE);
+    }
+  });
+});
+
+/**
+ * What the counts and the clear actually write and answer, against rows with
+ * the statuses the workers leave. The tenant block above pins the scoping; this
+ * one pins the numbers a progress bar and a hidden row depend on.
+ */
+describe('SupabaseDiscordImportRepository — progress counts and clearing', () => {
+  const channel = (
+    id: string,
+    fields: Record<string, unknown>,
+    importId = IMPORT_A,
+    chapterId = CHAPTER_A,
+  ) => ({
+    id,
+    import_id: importId,
+    discord_channel_id: id,
+    discord_channel_name: id,
+    discord_imports: { chapter_id: chapterId },
+    ...fields,
+  });
+
+  function build(importStatus: string) {
+    const harness = createTenantHarness({
+      tenantColumns: {
+        discord_import_channels: 'discord_imports.chapter_id',
+      },
+      untenantedTables: ['discord_import_channels'],
+      parentTenant: {
+        discord_import_channels: {
+          column: 'import_id',
+          table: 'discord_imports',
+        },
+      },
+      collisionExempt: {
+        discord_import_channels: ['import_id', 'discord_imports'],
+      },
+      tables: {
+        discord_imports: [
+          inA({ id: IMPORT_A, status: importStatus }),
+          inB({ id: IMPORT_B, status: importStatus }),
+        ],
+        discord_import_channels: [
+          // Another chapter's finished row, which neither count may see.
+          channel(
+            'elsewhere',
+            { mapping_action: 'create_new', status: 'completed' },
+            IMPORT_B,
+            CHAPTER_B,
+          ),
+          channel('imported', {
+            mapping_action: 'create_new',
+            status: 'completed',
+          }),
+          // Discord no longer showed it to the bot: finished all the same.
+          channel('vanished', {
+            mapping_action: 'use_existing',
+            status: 'skipped',
+          }),
+          channel('waiting', {
+            mapping_action: 'create_new',
+            status: 'pending',
+          }),
+          channel('reading', {
+            mapping_action: 'create_new',
+            status: 'running',
+          }),
+          // Mapped to skip: not being imported, so in neither count.
+          channel('left-out', { mapping_action: 'skip', status: 'skipped' }),
+        ],
+      },
+    });
+    return {
+      harness,
+      repo: new SupabaseDiscordImportRepository(harness.client),
+    };
+  }
+
+  it('counts the rows being imported as the total, and the finished ones as done', async () => {
+    const { repo } = build('running');
+    expect(await repo.countChannels(IMPORT_A, CHAPTER_A)).toEqual({
+      total: 4,
+      done: 2,
+    });
+  });
+
+  it('writes cleared_at on a clearable import', async () => {
+    const { harness, repo } = build('purged');
+    const cleared = await repo.markCleared(
+      IMPORT_A,
+      CHAPTER_A,
+      ['purged'],
+      '2026-09-28T19:00:00Z',
+    );
+    expect(cleared?.cleared_at).toBe('2026-09-28T19:00:00Z');
+    expect(
+      harness.rows('discord_imports').find((r) => r.id === IMPORT_A)
+        ?.cleared_at,
+    ).toBe('2026-09-28T19:00:00Z');
+  });
+});
+
+describe('SupabaseDiscordImportRepository — channel rows past the response cap', () => {
+  /** Mirrors `CHANNEL_PAGE_SIZE` in the repository under test. */
+  const PAGE_SIZE = 500;
+
+  function repoWithChannelPages(pages: Array<{ data: unknown[] | null }>) {
+    const ranges: Array<[number, number]> = [];
+    const inserts: unknown[][] = [];
+    const orders: string[] = [];
+    let index = 0;
+    const builder: Record<string, unknown> = {};
+    for (const method of ['select', 'eq', 'delete', 'maybeSingle']) {
+      builder[method] = jest.fn(() => builder);
+    }
+    builder.order = jest.fn((column: string) => {
+      orders.push(column);
+      return builder;
+    });
+    builder.range = jest.fn((from: number, to: number) => {
+      ranges.push([from, to]);
+      return Promise.resolve(pages[index++] ?? { data: [], error: null });
+    });
+    builder.insert = jest.fn((rows: unknown[]) => {
+      inserts.push(rows);
+      return Promise.resolve({ error: null });
+    });
+    // `delete().eq()` and `findById(...).maybeSingle()` resolve through `then`.
+    builder.then = (resolve: (value: unknown) => unknown) =>
+      resolve({ data: { id: IMPORT_A }, error: null });
+    const client = { from: jest.fn(() => builder) };
+    const repo = new SupabaseDiscordImportRepository(
+      client as unknown as ConstructorParameters<
+        typeof SupabaseDiscordImportRepository
+      >[0],
+    );
+    return { repo, ranges, inserts, orders };
+  }
+
+  const channelRows = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({
+      id: `map-${i}`,
+      discord_imports: { chapter_id: CHAPTER_A },
+    }));
+
+  it('reads every channel row, not just the first response', async () => {
+    // A bot import keeps a row per thread: the first real server had 945.
+    const { repo, ranges } = repoWithChannelPages([
+      { data: channelRows(PAGE_SIZE) },
+      { data: channelRows(PAGE_SIZE) },
+      { data: channelRows(200) },
+      { data: [] },
+    ]);
+    const rows = await repo.findChannels(IMPORT_A, CHAPTER_A);
+    expect(rows).toHaveLength(1200);
+    expect(rows[0]).not.toHaveProperty('discord_imports');
+    expect(ranges[0]).toEqual([0, PAGE_SIZE - 1]);
+  });
+
+  it('pages over an order with no ties', async () => {
+    // Upload rows all sit at position 0, and two channels can share a name:
+    // without the id last, `.range()` pages over an order Postgres may change
+    // between requests, repeating some rows and dropping others.
+    const { repo, orders } = repoWithChannelPages([
+      { data: channelRows(PAGE_SIZE) },
+      { data: [] },
+    ]);
+    await repo.findChannels(IMPORT_A, CHAPTER_A);
+    expect(orders.slice(0, 3)).toEqual([
+      'position',
+      'discord_channel_name',
+      'id',
+    ]);
+  });
+
+  it('inserts the set in one write and answers with the paged read', async () => {
+    const { repo, inserts } = repoWithChannelPages([
+      { data: channelRows(PAGE_SIZE) },
+      { data: channelRows(PAGE_SIZE) },
+      { data: channelRows(200) },
+      { data: [] },
+    ]);
+    const rows = Array.from({ length: 1200 }, (_, i) => ({
+      discord_channel_id: String(i),
+    })) as unknown as Parameters<typeof repo.replaceChannels>[2];
+    const result = await repo.replaceChannels(IMPORT_A, CHAPTER_A, rows);
+    // One statement, so a failure leaves no partial set for the "has it been
+    // scanned" checks to accept.
+    expect(inserts.map((batch) => batch.length)).toEqual([1200]);
+    expect(result).toHaveLength(1200);
   });
 });
 

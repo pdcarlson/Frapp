@@ -94,7 +94,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Import detail and progress',
     description:
-      'Poll this while an import is running: `imported_messages` / `total_messages` and per-channel status.',
+      "Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, failed or cancelled.",
   })
   get(
     @Param('id', ParseUUIDPipe) id: string,
@@ -250,6 +250,21 @@ export class DiscordImportController {
     @CurrentChapterId() chapterId: string,
   ) {
     return this.importService.cancel(id, chapterId);
+  }
+
+  @Post(':id/clear')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({
+    summary: 'Take a deleted import off the list',
+    description:
+      'Hides a purged (deleted) import’s record from the list. 409 for an import in any other status: the list is where an import is deleted from, so one that still holds what it brought in stays listed until it is deleted.',
+  })
+  clear(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.importService.clear(id, chapterId);
   }
 
   @Delete(':id')
