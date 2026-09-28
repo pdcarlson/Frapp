@@ -307,8 +307,8 @@ Features
 > iOS binary (Guideline 2.3).** "direct messages" → "direct messages your chapter has
 > started": a member can read and reply in an existing DM, but **nothing in the iOS app
 > can start one** — the DIRECT section is hidden entirely when the list is empty
-> (`app/(tabs)/index.tsx`), and the one mobile call of `useGetOrCreateDm` reopens a DM
-> the member hid, from the Hidden conversations group: it passes the other member of a
+> (`app/(tabs)/index.tsx`), and the one mobile call of `useGetOrCreateDm` (before #2773,
+> below) reopens a DM the member hid, from the Hidden conversations group: it passes the other member of a
 > DM row the list already returned, so `findDm` matches the existing pair rather than
 > creating one. *(Corrected 2026-09-25, #2303: this used to say the hook's only consumer
 > was the web dashboard.)* `frapp-prod` has **0** DM channels, so a reviewer would have
@@ -319,6 +319,14 @@ Features
 > The officer paragraph is reconciled as of 2026-09-21 — see the verdict table under it.
 > (This note used to say the opposite and to hold the paste pending #2304; it was written
 > before that work was done and quoted two verbs the paragraph no longer contains.)
+>
+> **Added 2026-09-28: #2773 changes the first bullet's premise.** Its directory Message
+> action, a second mobile call of `useGetOrCreateDm`, starts a DM
+> (`POST /v1/channels/dm`, get-or-create), so a binary built from `main` after #2773
+> merged *can* start one; the "nothing in the iOS app can start one" above describes
+> builds before it. The narrowed bullet stays true either way but undersells such a
+> build: widen it back to "direct messages" only for a submitted build that contains
+> #2773.
 
 ## Keywords (iOS, 100 chars)
 

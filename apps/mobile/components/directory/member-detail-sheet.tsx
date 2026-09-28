@@ -1,10 +1,12 @@
-import { forwardRef, useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   useBlockedUserIds,
   useCustomRoles,
+  useGetOrCreateDm,
   useMember,
   usePermissionList,
   useRoles,
@@ -18,7 +20,6 @@ import {
   UNBLOCK_ROW_DESCRIPTION,
   useBlockActions,
 } from "@/lib/chat/block-actions";
-import { isBlockableSender } from "@repo/chat-core/blocks";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
@@ -32,6 +33,14 @@ import {
   resolveRoleNames,
   selectMemberDetail,
 } from "@/lib/directory/member-detail";
+import {
+  dmChannelIdOf,
+  messageRowDescription,
+  messageRowState,
+  otherRealMemberId,
+  START_DM_FAILED_BODY,
+  startDmFailedTitle,
+} from "@/lib/directory/start-dm";
 
 /**
  * s13 member profile detail — a sheet, not a route, per the issue's own scope
@@ -46,12 +55,15 @@ import {
  * the same "omit, don't fake" call `profile.tsx` makes for the drawn
  * attendance stat no member can read.
  *
- * **No DM entry.** The issue that filed this scopes DM entry to #316
- * explicitly ("Distinct from #316 — this gap is mobile profile *viewing*").
+ * **Message** (#2773) opens a 1:1 DM with the member, or the one you already
+ * have. It comes before the profile's details because starting a DM is the
+ * thing a member most often opens a profile to do. Who it is offered for is
+ * `spec/ui/mobile/screens.md` s13's rule, implemented in
+ * `lib/directory/start-dm.ts`.
  *
- * **Block / Unblock** (#2257) sits at the foot of another member's profile —
- * the one chat control here, because the directory is where a member you have
- * blocked is still listed and so where you would look for them.
+ * **Block / Unblock** (#2257) sits at the foot of another member's profile,
+ * because the directory is where a member you have blocked is still listed and
+ * so where you would look for them.
  *
  * ## Fixed snap points, not `enableDynamicSizing`
  *
@@ -124,20 +136,61 @@ export const MemberDetailSheet = forwardRef<
   const viewerUserId = useViewerUserId();
   const blockList = useBlockedUserIds();
   const blockActions = useBlockActions();
-  const blockTarget =
-    detail &&
-    viewerUserId !== null &&
-    detail.userId !== viewerUserId &&
-    isBlockableSender(detail.userId)
-      ? detail
-      : null;
+  const otherMemberId = otherRealMemberId(detail?.userId ?? null, viewerUserId);
+  const blockTarget = detail && otherMemberId ? detail : null;
   // Read off the floor: an id on any list the server returned is blocked. A
   // list that has not loaded offers Block, which the API treats idempotently.
   const isBlocked = blockTarget ? blockList.ids.has(blockTarget.userId) : false;
 
+  const router = useRouter();
+  // Not waiting on the channel-list refetch: chat home observes it and picks
+  // the DM up when it lands, and a refetch that fails offline would otherwise
+  // hold this request pending until the app is back online.
+  const dmMutation = useGetOrCreateDm({ awaitRefetch: false });
+  const messageRow = messageRowState({ memberId: otherMemberId, blockList });
+  // Every member a DM request is in flight for. The ref closes a double tap
+  // inside one render (both taps would otherwise read the same state and send
+  // twice, and the API's find-then-create can make two DMs for one pair, #2788);
+  // the state disables those members' rows only. It is a set because the sheet
+  // can move to another member and start a second request while the first is
+  // still out, and neither may re-enable the other's row.
+  const dmInFlightRef = useRef(new Set<string>());
+  const [dmPending, setDmPending] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  // The sheet stays mounted and swaps `userId` as directory rows are tapped,
+  // so a slow DM request for one member can resolve after the sheet has moved
+  // to another. The ref lets that continuation see it is stale rather than
+  // opening the wrong conversation (web's member sheet does the same).
+  const openUserIdRef = useRef(userId);
+  useEffect(() => {
+    openUserIdRef.current = userId;
+  }, [userId]);
+
   function dismiss() {
     if (typeof ref === "function" || !ref?.current) return;
     ref.current.dismiss();
+  }
+
+  async function startDm(memberUserId: string, name: string) {
+    if (dmInFlightRef.current.has(memberUserId)) return;
+    dmInFlightRef.current.add(memberUserId);
+    setDmPending(new Set(dmInFlightRef.current));
+    try {
+      const channelId = dmChannelIdOf(
+        await dmMutation.mutateAsync({ member_id: memberUserId }),
+      );
+      if (openUserIdRef.current !== memberUserId) return;
+      if (!channelId) throw new Error("No channel id returned");
+      dismiss();
+      router.push({ pathname: "/chat-thread", params: { channelId } });
+    } catch {
+      if (openUserIdRef.current !== memberUserId) return;
+      Alert.alert(startDmFailedTitle(name), START_DM_FAILED_BODY);
+    } finally {
+      dmInFlightRef.current.delete(memberUserId);
+      setDmPending(new Set(dmInFlightRef.current));
+    }
   }
 
   return (
@@ -191,6 +244,24 @@ export const MemberDetailSheet = forwardRef<
                 <Text style={styles.meta}>{detail.meta}</Text>
               ) : null}
             </View>
+
+            {messageRow.kind !== "hidden" ? (
+              <ListSection>
+                <ListRow
+                  label="Message"
+                  description={messageRowDescription(messageRow)}
+                  disabled={
+                    messageRow.kind === "ready"
+                      ? dmPending.has(detail.userId)
+                      : messageRow.kind !== "retry"
+                  }
+                  onPress={() => {
+                    if (messageRow.kind === "retry") blockList.retry();
+                    else void startDm(detail.userId, detail.displayName);
+                  }}
+                />
+              </ListSection>
+            ) : null}
 
             <ListSection>
               <ListRow label="Email" value={detail.email ?? "Not set"} />
