@@ -39,11 +39,12 @@ const OAUTH_TIMEOUT_MS = 10_000;
 @Injectable()
 export class DiscordOAuthClientService implements IDiscordOAuthClient {
   private readonly logger = new Logger(DiscordOAuthClientService.name);
-  private readonly clientId: string | null;
+  private readonly configuredClientId: string | null;
   private readonly clientSecret: string | null;
 
   constructor(config: ConfigService) {
-    this.clientId = config.get<string>('DISCORD_CLIENT_ID')?.trim() || null;
+    this.configuredClientId =
+      config.get<string>('DISCORD_CLIENT_ID')?.trim() || null;
     this.clientSecret =
       config.get<string>('DISCORD_CLIENT_SECRET')?.trim() || null;
     if (!this.isConfigured()) {
@@ -54,16 +55,20 @@ export class DiscordOAuthClientService implements IDiscordOAuthClient {
   }
 
   isConfigured(): boolean {
-    return this.clientId !== null && this.clientSecret !== null;
+    return this.configuredClientId !== null && this.clientSecret !== null;
+  }
+
+  clientId(): string | null {
+    return this.configuredClientId;
   }
 
   private credentials(): { id: string; secret: string } {
-    if (!this.clientId || !this.clientSecret) {
+    if (!this.configuredClientId || !this.clientSecret) {
       throw new DiscordNotConfiguredError(
         'The Discord application is not configured in this environment.',
       );
     }
-    return { id: this.clientId, secret: this.clientSecret };
+    return { id: this.configuredClientId, secret: this.clientSecret };
   }
 
   buildAuthorizeUrl(args: { state: string; redirectUri: string }): string {

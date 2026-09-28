@@ -72,8 +72,10 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 > only the health routes sit outside it) and declares no `servers` entry, so the SDK
 > concatenates `API_URL` + path. Setting `http://localhost:3001/v1` produces
 > `/v1/v1/users/me` and **404s every request**. `createFrappClient` strips a
-> trailing `/v1` defensively so a stale deployed value degrades to a no-op, but
-> do not rely on that — set the bare origin.
+> trailing `/v1` defensively so a stale deployed value degrades to a no-op, and
+> the API's Discord redirect URI does the same (`apiBaseUrl`, after a `/v1` here
+> built `/v1/v1/discord/connect/callback` on staging), but do not rely on that —
+> set the bare origin.
 
 > **The Stripe account is `acct_1U930c3Dzz3XLCb6`, and it started empty.** The account is named "Frapp", in the organization "Frapp Organization", which only groups accounts in the dashboard. *2026-09-24: the organization was renamed from "Signet" by the owner, as their dashboard screenshots show ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)).* What Checkout, the billing portal and receipts show is in [`integrations.md` § 7.3](../ops/deployment/integrations.md#73-what-customers-see-live-mode). Every Stripe object referenced above was created from scratch on 2026-08-27; nothing carried over from the previous org. **A `price_...` from the old org is a non-empty string, so it still passes `validateEnv`.** With a real-looking `STRIPE_SECRET_KEY` (`sk_test_` / `sk_live_`), boot retrieves that Price and **refuses to start** (and `GET /health/ready` 503s) when Stripe reports `resource_missing` or the Price is inactive — so a staging/prod deploy cannot stay healthy on this mismatch. Placeholder secrets used by CI, E2E, OpenAPI export, and the cloud sandbox skip the retrieve. Mocked billing unit tests cannot catch a cross-account Infisical mismatch; this runtime check is the gate.
 >
@@ -114,7 +116,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 > upload flow is a separate path, not a fallback that switches on** — it works identically whether or
 > not these are set, which is the whole point of keeping it.
 >
-> `DiscordOAuthService.isAvailable()` requires **all five** of `DISCORD_BOT_TOKEN`,
+> `DiscordOAuthService.isConfigured()` requires **all five** of `DISCORD_BOT_TOKEN`,
 > `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `API_URL` and `APP_URL` (the last two below, in
 > [§ Canonical Variables — The Complete Grid](#canonical-variables--the-complete-grid) — they are
 > not in the table above). Four of five is not
@@ -144,13 +146,13 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 > inert without an install behind it. Do not go looking for per-chapter Discord secrets; there are
 > none by design.
 >
-> **Two things live outside Infisical, no CI check can detect either, and `available: true` does
-> not cover them.** `isAvailable()` reads the five variables above and makes no call to Discord, so
-> a green availability check says nothing about either: (1) the OAuth redirect URI, registered by
-> hand in the Developer Portal → OAuth2 → Redirects as exactly
-> `${API_URL}/v1/discord/connect/callback`, and (2) the **Message Content Intent** under Bot →
-> Privileged Gateway Intents. Both fail at runtime, in different places, with different symptoms —
-> and how each one presents, including what evidence it does and does not leave server-side, is in
+> **Two things live outside Infisical, and no CI check can detect either.** (1) The OAuth redirect
+> URI, registered by hand in the Developer Portal → OAuth2 → Redirects as exactly
+> `${API_URL}/v1/discord/connect/callback`: the running API checks that one against Discord's own
+> record and withdraws the flow when it is missing, so `available` goes `false` rather than an admin
+> meeting Discord's error page. (2) The **Message Content Intent** under Bot → Privileged Gateway
+> Intents: nothing checks that before an import runs, and `available: true` says nothing about it.
+> What each check covers, how each failure presents, and what evidence it leaves server-side is in
 > [`integrations.md`](../ops/deployment/integrations.md) § 7A. Discord Application Setup, which owns
 > that mechanism. Do not restate it here; provider behavior falsifies these facts, and a second copy
 > is how it drifts.
@@ -293,7 +295,7 @@ Reads these directly (no prefix needed):
 | `DISCORD_BOT_TOKEN`           | `infrastructure/discord/discord-bot-gateway.service.ts` (the one global Frapp bot token; unset → the bot import path reports itself unavailable and every `/v1/discord/*` route 503s)                                                                                                                                                                                                                                                                   | ❌       |
 | `DISCORD_CLIENT_ID`           | `infrastructure/discord/discord-oauth-client.service.ts` (builds the authorize URL)                                                                                                                                                                                                                                                                                                                                                                      | ❌       |
 | `DISCORD_CLIENT_SECRET`       | `infrastructure/discord/discord-oauth-client.service.ts` (HTTP Basic on the token exchange and revoke — the step that proves the authorizing human administers the guild)                                                                                                                                                                                                                                                                                | ❌       |
-| `API_URL`                     | `application/services/discord-oauth.service.ts` — **the API reads this too, not just the web/mobile twins.** The Discord redirect URI is this value string-concatenated with `/v1/discord/connect/callback`, and it must match the Developer Portal registration exactly                                                                                                                                                                                 | ❌       |
+| `API_URL`                     | `application/services/discord-oauth.service.ts` — **the API reads this too, not just the web/mobile twins.** The Discord redirect URI is this value, less any trailing `/v1`, with `/v1/discord/connect/callback` appended, and it must match the Developer Portal registration exactly (checked against Discord at boot: `integrations.md` § 7A)                                                                                                                                                                                 | ❌       |
 | `APP_URL`                     | `application/services/discord-oauth.service.ts` — where the OAuth callback sends the browser back to. Every return path is resolved against this origin, which is what stops the callback becoming an open redirect                                                                                                                                                                                                                                      | ❌       |
 
 ### apps/web (Next.js — Vercel)

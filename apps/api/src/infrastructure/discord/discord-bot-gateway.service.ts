@@ -6,6 +6,7 @@ import {
   DISCORD_MESSAGE_PAGE_LIMIT,
   DiscordApiError,
   DiscordNotConfiguredError,
+  type DiscordApplicationInfo,
   type DiscordAttachmentStream,
   type DiscordChannelDiscovery,
   type DiscordChannelRef,
@@ -74,6 +75,9 @@ const MAX_ARCHIVED_THREAD_PAGES = 50;
 /** Attachment fetches that hang must not hold a slice's whole budget. */
 const ATTACHMENT_FETCH_TIMEOUT_MS = 30_000;
 
+/** The setup check answers a wizard request; it gives up well before that does. */
+const APPLICATION_FETCH_TIMEOUT_MS = 5_000;
+
 /** The HTTP status behind a `@discordjs/rest` rejection, when it carried one. */
 function statusOf(error: unknown): number | null {
   const status = (error as { status?: unknown })?.status;
@@ -126,6 +130,39 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       );
     }
     return this.rest;
+  }
+
+  // ── setup check ───────────────────────────────────────────────────────────
+
+  async fetchApplication(): Promise<DiscordApplicationInfo> {
+    const rest = this.client();
+    let raw: unknown;
+    try {
+      raw = await rest.get(Routes.currentApplication(), {
+        // Bounded here because the queue is shared: a 5xx retried by the
+        // client, or a wait behind a running import's bucket, must not hold
+        // the wizard's availability request open.
+        signal: AbortSignal.timeout(APPLICATION_FETCH_TIMEOUT_MS),
+      });
+    } catch (error) {
+      throw new DiscordApiError(
+        `Discord refused GET /applications/@me: ${this.describe(error)}`,
+        statusOf(error),
+      );
+    }
+
+    const body = asRecord(raw);
+    const id = asString(body?.id);
+    if (!id) {
+      throw new DiscordApiError('Discord returned no application id.');
+    }
+    const redirectUris = body?.redirect_uris;
+    return {
+      id,
+      redirectUris: Array.isArray(redirectUris)
+        ? redirectUris.filter((uri): uri is string => typeof uri === 'string')
+        : null,
+    };
   }
 
   // ── discovery ─────────────────────────────────────────────────────────────

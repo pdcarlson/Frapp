@@ -49,8 +49,12 @@ const REQUIRED_ENV_VARS = [
 //                            what proves the authorizing human runs the server.
 //   - API_URL / APP_URL      the redirect URI must be registered in the Discord
 //                            Developer Portal EXACTLY as
-//                            `${API_URL}/v1/discord/connect/callback`, and the
-//                            callback sends the browser back to `APP_URL`.
+//                            `${API_URL}/v1/discord/connect/callback` (a stray
+//                            trailing `/v1` on API_URL is dropped first), and
+//                            the callback sends the browser back to `APP_URL`.
+//                            Whether it is registered is checked against
+//                            Discord at boot, not here: see
+//                            `discord-application-check.ts`.
 //
 // Also optional, same reasoning (#238): email-based bulk invites. Unset,
 // `selectEmailProvider()` uses a no-op provider that logs instead of sending,

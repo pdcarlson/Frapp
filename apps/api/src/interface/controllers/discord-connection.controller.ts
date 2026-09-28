@@ -61,13 +61,13 @@ export class DiscordConnectionController {
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({
-    summary: 'Whether the bot path is configured in this environment',
+    summary: 'Whether the bot path works in this environment',
     description:
-      'The wizard offers "Connect Discord" only when this is true, and always offers the export-upload path regardless.',
+      'True when the Discord settings are present and Discord has not reported the application misconfigured (an unregistered redirect URI, a bot token from another application, or a rejected token). The wizard offers "Connect Discord" only when this is true, and always offers the export-upload path regardless.',
   })
   @ApiOkResponse({ type: DiscordAvailabilityDto })
-  availability(): DiscordAvailabilityDto {
-    return { available: this.oauthService.isAvailable() };
+  async availability(): Promise<DiscordAvailabilityDto> {
+    return { available: await this.oauthService.isAvailable() };
   }
 
   @Get('connection')

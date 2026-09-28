@@ -112,6 +112,23 @@ export interface DiscordChannelDiscovery {
   warnings: string[];
 }
 
+/**
+ * The Discord application the bot token belongs to, as `GET /applications/@me`
+ * reports it.
+ *
+ * Read only to check this environment's setup against Discord's own record of
+ * it; see `DiscordOAuthService`'s application check.
+ */
+export interface DiscordApplicationInfo {
+  id: string;
+  /**
+   * The Developer Portal's OAuth2 → Redirects list. Null when Discord's answer
+   * carried no such field: it is optional on the application object, and
+   * "absent" must not be read as "empty".
+   */
+  redirectUris: string[] | null;
+}
+
 /** An attachment being streamed out of Discord's CDN. */
 export interface DiscordAttachmentStream {
   body: ReadableStream<Uint8Array>;
@@ -133,6 +150,15 @@ export interface DiscordAttachmentStream {
 export interface IDiscordBotGateway {
   /** False when `DISCORD_BOT_TOKEN` is unset, so callers can 503 cleanly. */
   isConfigured(): boolean;
+
+  /**
+   * The application this bot token belongs to (`GET /applications/@me`).
+   *
+   * Throws `DiscordApiError` carrying Discord's status when it refuses: a 401
+   * here means the token itself is dead, which no other call distinguishes
+   * from a guild that removed the bot.
+   */
+  fetchApplication(): Promise<DiscordApplicationInfo>;
 
   /**
    * Every text channel and thread the bot can read in this guild.
@@ -235,6 +261,9 @@ export interface DiscordUserGuild {
 export interface IDiscordOAuthClient {
   /** False when the client id/secret are unset in this environment. */
   isConfigured(): boolean;
+
+  /** `DISCORD_CLIENT_ID`, the application the authorize URL names; null when unset. */
+  clientId(): string | null;
 
   /** The `https://discord.com/oauth2/authorize?...` URL to send the admin to. */
   buildAuthorizeUrl(args: { state: string; redirectUri: string }): string;
