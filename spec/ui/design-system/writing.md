@@ -628,8 +628,24 @@ clients import it from `@repo/hooks`.
 uneasy about wants to know that nothing is destroyed and the other member is not
 told, and it says the thread comes back so that nobody mistakes a hide for a block.
 The confirm is not styled destructive, because nothing is destroyed. It names the
-Hidden conversations group as the way back, not "message them": the mobile app has no
-way to start a DM, so that promise would have nothing behind it there.
+Hidden conversations group as the way back, not "message them": the group sits at the
+end of the same list the member is hiding from, while messaging them means finding them
+in the directory first. *(Corrected 2026-09-28, #2773: the reason given here was that the
+mobile app had no way to start a DM, which stopped being true when its directory gained
+Message.)*
+
+### Start a DM (mobile s13)
+
+The directory member sheet's Message action (#2773). The behavior is owned by
+[`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Direct Messages, and
+who it is offered for by [`../mobile/screens.md`](../mobile/screens.md) s13. Web's member
+sheet has its own Message button with older failure copy; bringing it onto these strings
+through a shared module is #2791.
+
+| State | Title | Description | Home |
+|---|---|---|---|
+| The control | — | `Message`: a row under the member's name, on another member's profile | mobile `components/directory/member-detail-sheet.tsx` |
+| Start failed | `Couldn't message <name>` | `The conversation couldn't be opened. Check your connection and try again.` (an alert) | mobile `lib/directory/start-dm.ts` (`startDmFailedTitle`, `START_DM_FAILED_BODY`) |
 
 ### Alumni (dashboard)
 

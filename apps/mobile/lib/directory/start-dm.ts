@@ -1,4 +1,5 @@
 import { isBlockableSender } from "@repo/chat-core/blocks";
+import type { BlockListStatus } from "@repo/validation";
 
 /**
  * The member sheet's Message action (#2773): start, or reopen, a 1:1 DM with
@@ -8,40 +9,57 @@ import { isBlockableSender } from "@repo/chat-core/blocks";
  * the same route).
  */
 
+/**
+ * The member's id when they are another real member of the chapter, else
+ * `null`. Both of the sheet's chat actions, Block and Message, are offered only
+ * for such a member, and both read it from here so the two cannot drift.
+ *
+ * - **Never while the viewer is unknown**, so an unresolved viewer never reads
+ *   as "someone else". The API refuses a self-block, but not a DM with
+ *   yourself: two identical ids pass its "exactly 2 members" check and create
+ *   a degenerate channel.
+ * - **Never on your own profile or the system actor's.** `isBlockableSender`
+ *   is the one list of senders that are not real members.
+ */
+export function otherRealMemberId(
+  memberUserId: string | null,
+  viewerUserId: string | null,
+): string | null {
+  if (!memberUserId || viewerUserId === null) return null;
+  if (memberUserId === viewerUserId) return null;
+  return isBlockableSender(memberUserId) ? memberUserId : null;
+}
+
 export interface MessageTargetInput {
-  /** The member the sheet shows, or `null` before their profile loads. */
-  memberUserId: string | null;
-  /** The viewer's `users.id`, or `null` until it resolves. */
-  viewerUserId: string | null;
-  /** Whether the viewer has this member on their block list. */
-  isBlocked: boolean;
+  /** {@link otherRealMemberId} for the member on screen. */
+  memberId: string | null;
+  /** The viewer's block list, as `useBlockedUserIds` returns it. */
+  blockList: { status: BlockListStatus; ids: ReadonlySet<string> };
 }
 
 /**
  * Whether the sheet offers Message.
  *
- * - **Never while the viewer is unknown.** The API does not refuse a DM with
- *   yourself (two identical ids pass its "exactly 2 members" check and create
- *   a degenerate channel), so an unresolved viewer must not read as "someone
- *   else".
- * - **Never on your own profile or the system actor's.** The system actor has
- *   no inbox; `isBlockableSender` is the one list of senders that are not
- *   real members.
- * - **Not for a member you blocked.** Their replies would never reach you
- *   (spec/behavior/chat/README.md § Block), so the sheet offers Unblock
- *   instead. This is the viewer's own block, so hiding the action reveals
- *   nothing; the member you blocked still sees Message on your profile, since
- *   a block is enforced by not delivering, never by refusing.
+ * **Not for a member you blocked.** Their replies would never reach you
+ * (spec/behavior/chat/README.md § Block), so the sheet offers Unblock instead.
+ * It's the viewer's own block, so hiding the action reveals nothing; the member
+ * you blocked still sees Message on your profile, since a block is enforced by
+ * not delivering, never by refusing.
+ *
+ * **Only against a ready list.** `ids` is a floor, never a ceiling: while the
+ * list is loading or unavailable it holds only the blocks this client confirmed
+ * this session, so a block made earlier or on another device is missing from
+ * it. Block can be offered off the floor, because the API treats a repeat block
+ * as a no-op. Message cannot, because it would open a DM with that member.
+ * Starting a DM needs the network anyway, so waiting for the list costs nothing.
  */
 export function canMessageMember({
-  memberUserId,
-  viewerUserId,
-  isBlocked,
+  memberId,
+  blockList,
 }: MessageTargetInput): boolean {
-  if (!memberUserId || viewerUserId === null) return false;
-  if (memberUserId === viewerUserId) return false;
-  if (!isBlockableSender(memberUserId)) return false;
-  return !isBlocked;
+  if (memberId === null) return false;
+  if (blockList.status !== "ready") return false;
+  return !blockList.ids.has(memberId);
 }
 
 /**

@@ -312,7 +312,13 @@ Features
 > DM row the list already returned, so `findDm` matches the existing pair rather than
 > creating one. *(Corrected 2026-09-25, #2303: this used to say the hook's only consumer
 > was the web dashboard.)* `frapp-prod` has **0** DM channels, so a reviewer would have
-> found neither the feature nor a way to produce it. "leaderboards" → "house rank": the
+> found neither the feature nor a way to produce it.
+>
+> **Superseded on `main` 2026-09-28 (#2773):** the directory's member sheet now has
+> Message, which starts a DM (`POST /v1/channels/dm`, get-or-create), so a binary built
+> after that PR merged *can* start one. The narrowed bullet stays true of such a build but
+> undersells it. Widen it back to "direct messages" only for a submitted build that
+> contains #2773; a build from before it still cannot start a DM. "leaderboards" → "house rank": the
 > leaderboard *routes* were deleted and what survives is the viewer's own rank tile
 > ("House rank #N of M", composed in `components/tasks/points-summary-card.tsx` from the
 > `{rank, of}` that `lib/tasks/points-card.ts` selects); the leaderboard list is web-only.

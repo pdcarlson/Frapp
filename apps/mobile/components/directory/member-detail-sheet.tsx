@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
@@ -20,7 +20,6 @@ import {
   UNBLOCK_ROW_DESCRIPTION,
   useBlockActions,
 } from "@/lib/chat/block-actions";
-import { isBlockableSender } from "@repo/chat-core/blocks";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
@@ -37,6 +36,7 @@ import {
 import {
   canMessageMember,
   dmChannelIdOf,
+  otherRealMemberId,
   START_DM_FAILED_BODY,
   startDmFailedTitle,
 } from "@/lib/directory/start-dm";
@@ -55,13 +55,13 @@ import {
  * attendance stat no member can read.
  *
  * **Message** (#2773) opens a 1:1 DM with the member, or the one you already
- * have. It is the sheet's first action because starting a DM is the thing a
- * member most often opens a profile to do. `lib/directory/start-dm.ts` owns
- * who it is offered for.
+ * have. It comes before the profile's details because starting a DM is the
+ * thing a member most often opens a profile to do. `lib/directory/start-dm.ts`
+ * owns who it is offered for.
  *
- * **Block / Unblock** (#2257) sits at the foot of another member's profile —
- * the one chat control here, because the directory is where a member you have
- * blocked is still listed and so where you would look for them.
+ * **Block / Unblock** (#2257) sits at the foot of another member's profile,
+ * because the directory is where a member you have blocked is still listed and
+ * so where you would look for them.
  *
  * ## Fixed snap points, not `enableDynamicSizing`
  *
@@ -134,24 +134,27 @@ export const MemberDetailSheet = forwardRef<
   const viewerUserId = useViewerUserId();
   const blockList = useBlockedUserIds();
   const blockActions = useBlockActions();
-  const blockTarget =
-    detail &&
-    viewerUserId !== null &&
-    detail.userId !== viewerUserId &&
-    isBlockableSender(detail.userId)
-      ? detail
-      : null;
+  const otherMemberId = otherRealMemberId(detail?.userId ?? null, viewerUserId);
+  const blockTarget = detail && otherMemberId ? detail : null;
   // Read off the floor: an id on any list the server returned is blocked. A
   // list that has not loaded offers Block, which the API treats idempotently.
   const isBlocked = blockTarget ? blockList.ids.has(blockTarget.userId) : false;
 
   const router = useRouter();
-  const dmMutation = useGetOrCreateDm();
+  // Not waiting on the channel-list refetch: chat home observes it and picks
+  // the DM up when it lands, and a refetch that fails offline would otherwise
+  // hold this request pending until the app is back online.
+  const dmMutation = useGetOrCreateDm({ awaitRefetch: false });
   const canMessage = canMessageMember({
-    memberUserId: detail?.userId ?? null,
-    viewerUserId,
-    isBlocked,
+    memberId: otherMemberId,
+    blockList,
   });
+  // Which member a DM request is in flight for. The ref closes a double tap
+  // inside one render (both taps would otherwise read the same state and send
+  // twice, and the API's find-then-create can make two DMs for one pair); the
+  // state disables that member's row only, not whoever the sheet shows next.
+  const dmInFlightRef = useRef<string | null>(null);
+  const [dmPendingFor, setDmPendingFor] = useState<string | null>(null);
   // The sheet stays mounted and swaps `userId` as directory rows are tapped,
   // so a slow DM request for one member can resolve after the sheet has moved
   // to another. The ref lets that continuation see it is stale rather than
@@ -167,6 +170,9 @@ export const MemberDetailSheet = forwardRef<
   }
 
   async function startDm(memberUserId: string, name: string) {
+    if (dmInFlightRef.current === memberUserId) return;
+    dmInFlightRef.current = memberUserId;
+    setDmPendingFor(memberUserId);
     try {
       const channelId = dmChannelIdOf(
         await dmMutation.mutateAsync({ member_id: memberUserId }),
@@ -174,12 +180,15 @@ export const MemberDetailSheet = forwardRef<
       if (openUserIdRef.current !== memberUserId) return;
       if (!channelId) throw new Error("No channel id returned");
       dismiss();
-      // `useGetOrCreateDm` refetches every `["channels"]` entry before it
-      // resolves, so chat home's DIRECT section already lists the new DM.
       router.push({ pathname: "/chat-thread", params: { channelId } });
     } catch {
       if (openUserIdRef.current !== memberUserId) return;
       Alert.alert(startDmFailedTitle(name), START_DM_FAILED_BODY);
+    } finally {
+      if (dmInFlightRef.current === memberUserId) {
+        dmInFlightRef.current = null;
+        setDmPendingFor(null);
+      }
     }
   }
 
@@ -235,6 +244,18 @@ export const MemberDetailSheet = forwardRef<
               ) : null}
             </View>
 
+            {canMessage ? (
+              <ListSection>
+                <ListRow
+                  label="Message"
+                  disabled={dmPendingFor === detail.userId}
+                  onPress={() =>
+                    void startDm(detail.userId, detail.displayName)
+                  }
+                />
+              </ListSection>
+            ) : null}
+
             <ListSection>
               <ListRow label="Email" value={detail.email ?? "Not set"} />
               <ListRow
@@ -249,18 +270,6 @@ export const MemberDetailSheet = forwardRef<
               />
               <ListRow label="Joined" value={detail.joinedLabel ?? "—"} />
             </ListSection>
-
-            {canMessage ? (
-              <ListSection>
-                <ListRow
-                  label="Message"
-                  disabled={dmMutation.isPending}
-                  onPress={() =>
-                    void startDm(detail.userId, detail.displayName)
-                  }
-                />
-              </ListSection>
-            ) : null}
 
             {detail.customFields.length > 0 ? (
               <>

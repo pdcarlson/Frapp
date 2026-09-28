@@ -343,7 +343,21 @@ export function useDeleteChannel() {
   });
 }
 
-export function useGetOrCreateDm() {
+export interface GetOrCreateDmOptions {
+  /**
+   * Whether `mutateAsync` waits for the channel-list refetch below (default
+   * `true`). A caller whose screen already observes `["channels"]` can pass
+   * `false`, so it is answered as soon as the DM exists. Waiting has a cost on
+   * mobile: under its `offlineFirst` query defaults, a refetch that fails
+   * while the device goes offline pauses its retry until the app is online
+   * and foregrounded again, and the mutation would stay pending with it.
+   */
+  awaitRefetch?: boolean;
+}
+
+export function useGetOrCreateDm({
+  awaitRefetch = true,
+}: GetOrCreateDmOptions = {}) {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
@@ -362,7 +376,7 @@ export function useGetOrCreateDm() {
     // later background refetch caught up. `refetchType: "all"` refetches the
     // cache entry regardless of whether anything currently observes it.
     onSuccess: () => {
-      return Promise.all([
+      const refetched = Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["channels"],
           refetchType: "all",
@@ -371,6 +385,7 @@ export function useGetOrCreateDm() {
           queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
         }),
       ]);
+      return awaitRefetch ? refetched : undefined;
     },
   });
 }
