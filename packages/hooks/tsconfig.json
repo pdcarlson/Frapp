@@ -1,9 +1,16 @@
 {
   "extends": "@repo/typescript-config/react-library.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src"
+    // This package has no build, like `@repo/theme`: every export in
+    // package.json points at `src/*.ts`, and `apps/web` and `apps/mobile`
+    // consume it as source through their own bundlers. So imports resolve the
+    // way those bundlers resolve them. NodeNext read a `"type": "module"`
+    // source package like `@repo/theme` as Node ESM and rejected its
+    // extensionless relative imports, which no bundler requires.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules"]
 }
