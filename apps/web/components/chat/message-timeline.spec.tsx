@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import {
@@ -17,20 +17,47 @@ import { blockState, timelineBlockProps } from "@/tests/block-list";
  * component passes it — which is the part under test: what `MessageTimeline`
  * hands each row, not how Virtuoso windows them.
  */
+// The last props Virtuoso was rendered with, for the older-history cases
+// (#1571) that assert what the timeline hands it rather than what it draws.
+const virtuosoProps = vi.hoisted(() => ({
+  current: {} as {
+    firstItemIndex?: number;
+    followOutput?: unknown;
+    atTopStateChange?: (atTop: boolean) => void;
+  },
+}));
+
 vi.mock("react-virtuoso", () => ({
   Virtuoso: ({
     data,
     itemContent,
+    firstItemIndex,
+    followOutput,
+    atTopStateChange,
+    components,
+    context,
   }: {
     data: unknown[];
     itemContent: (index: number, item: unknown) => React.ReactNode;
-  }) => (
-    <div>
-      {data.map((item, index) => (
-        <div key={index}>{itemContent(index, item)}</div>
-      ))}
-    </div>
-  ),
+    firstItemIndex?: number;
+    followOutput?: unknown;
+    atTopStateChange?: (atTop: boolean) => void;
+    components?: {
+      Header?: (props: { context?: unknown }) => React.ReactNode;
+    };
+    context?: unknown;
+  }) => {
+    virtuosoProps.current = { firstItemIndex, followOutput, atTopStateChange };
+    const Header = components?.Header;
+    return (
+      <div>
+        {Header ? <Header context={context} /> : null}
+        {data.map((item, index) => (
+          <div key={index}>{itemContent(index, item)}</div>
+        ))}
+      </div>
+    );
+  },
 }));
 
 // `useAuthorAvatars` reaches for `FrappClientProvider`, which a bare `render()`
@@ -628,5 +655,212 @@ describe("MessageTimeline — the viewer's block list (#2313)", () => {
 
     expect(screen.getByText(SERVER_SENTINEL)).toBeInTheDocument();
     expect(screen.queryByText(TOMBSTONE_TEXT)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * #1571 — older history. The timeline asks for the next page while the member
+ * sits at the top, and lowers `firstItemIndex` by what a page prepends so
+ * Virtuoso keeps the rows on screen where they were.
+ */
+describe("MessageTimeline older history (#1571)", () => {
+  function history(from: number, to: number): ChatMessage[] {
+    const rows: ChatMessage[] = [];
+    for (let n = from; n <= to; n += 1) {
+      rows.push(
+        message({
+          id: `msg-${n}`,
+          client_message_id: `cm-${n}`,
+          content: `message ${n}`,
+          created_at: new Date(Date.UTC(2026, 8, 1) + n * 60_000).toISOString(),
+        }),
+      );
+    }
+    return rows;
+  }
+
+  it("lowers firstItemIndex by the rows a page prepends, and not for an append", () => {
+    const { rerender } = renderTimeline(history(11, 20));
+    const start = virtuosoProps.current.firstItemIndex!;
+
+    const prepended = history(1, 20);
+    rerender(
+      <MessageTimeline
+        channelId="chan-1"
+        messages={prepended}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(prepended, VIEWER)}
+      />,
+    );
+    expect(virtuosoProps.current.firstItemIndex).toBe(start - 10);
+
+    const appended = history(1, 21);
+    rerender(
+      <MessageTimeline
+        channelId="chan-1"
+        messages={appended}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(appended, VIEWER)}
+      />,
+    );
+    expect(virtuosoProps.current.firstItemIndex).toBe(start - 10);
+  });
+
+  /** The list settles onto its bottom, then the member scrolls to the top. */
+  function scrollToTop() {
+    act(() => virtuosoProps.current.atTopStateChange?.(false));
+    act(() => virtuosoProps.current.atTopStateChange?.(true));
+  }
+
+  it("asks for older history once the member scrolls to the top", () => {
+    const onLoadOlder = vi.fn();
+    renderTimeline(history(1, 5), { hasOlder: true, onLoadOlder });
+    expect(onLoadOlder).not.toHaveBeenCalled();
+
+    scrollToTop();
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores the moment at the top every open passes through", () => {
+    // Virtuoso renders from the top before it scrolls to the newest row, so
+    // "at the top" arrives before the list has ever left it.
+    const onLoadOlder = vi.fn();
+    renderTimeline(history(1, 5), { hasOlder: true, onLoadOlder });
+
+    act(() => virtuosoProps.current.atTopStateChange?.(true));
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it("asks for one page per arrival at the top, not again as it lands", () => {
+    const onLoadOlder = vi.fn();
+    const props = (messages: ChatMessage[], isLoadingOlder: boolean) => (
+      <MessageTimeline
+        channelId="chan-1"
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        hasOlder
+        isLoadingOlder={isLoadingOlder}
+        onLoadOlder={onLoadOlder}
+        {...timelineBlockProps(messages, VIEWER)}
+      />
+    );
+    const { rerender } = render(props(history(11, 20), false));
+    scrollToTop();
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    // The page is in flight, then lands above the rows. Virtuoso has not yet
+    // reported leaving the top, which is when a second page used to follow.
+    rerender(props(history(11, 20), true));
+    rerender(props(history(1, 20), false));
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    // The member scrolls up to the new top: the next page.
+    scrollToTop();
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks for nothing once the channel's start is loaded", () => {
+    const onLoadOlder = vi.fn();
+    renderTimeline(history(1, 5), { hasOlder: false, onLoadOlder });
+
+    scrollToTop();
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it("does not follow a prepend to the bottom once the list has settled", () => {
+    // Followed, a page landing while the member sat at the bottom snapped the
+    // list back there, half a second after a jump had scrolled to the message
+    // the page was loaded for.
+    const view = (messages: ChatMessage[]) => (
+      <MessageTimeline
+        channelId="chan-1"
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(messages, VIEWER)}
+      />
+    );
+    const { rerender } = render(view(history(11, 20)));
+    act(() => virtuosoProps.current.atTopStateChange?.(false));
+
+    rerender(view(history(1, 20)));
+    expect(virtuosoProps.current.followOutput).toBe(false);
+
+    // A new message at the end is followed as ever.
+    rerender(view(history(1, 21)));
+    expect(virtuosoProps.current.followOutput).toBe("smooth");
+  });
+
+  it("still follows while a cold open settles onto its newest row", () => {
+    // The live page landing over the cached tail prepends rows before the list
+    // has left its top; following those is what keeps the open at the bottom.
+    const view = (messages: ChatMessage[]) => (
+      <MessageTimeline
+        channelId="chan-1"
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(messages, VIEWER)}
+      />
+    );
+    const { rerender } = render(view(history(11, 20)));
+
+    rerender(view(history(1, 20)));
+
+    expect(virtuosoProps.current.followOutput).toBe("smooth");
+  });
+
+  it("says a page is loading above the oldest row", () => {
+    renderTimeline(history(1, 5), { hasOlder: true, isLoadingOlder: true });
+
+    expect(
+      screen
+        .getAllByRole("status")
+        .some((node) => node.textContent === "Loading earlier messages..."),
+    ).toBe(true);
+  });
+
+  it("stops asking after a failure and offers Retry instead", async () => {
+    const onLoadOlder = vi.fn();
+    renderTimeline(history(1, 5), {
+      hasOlder: true,
+      olderError: true,
+      onLoadOlder,
+    });
+
+    scrollToTop();
+    expect(onLoadOlder).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Couldn't load earlier messages.",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
   });
 });

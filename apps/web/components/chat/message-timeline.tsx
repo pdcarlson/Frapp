@@ -6,6 +6,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import {
@@ -13,6 +14,7 @@ import {
   ErrorState,
   Skeleton,
 } from "@/components/shared/async-states";
+import { Button } from "@/components/ui/button";
 import { useTapRevealedMessage } from "@/hooks/use-tap-revealed-message";
 import { cn } from "@/lib/utils";
 import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
@@ -172,6 +174,108 @@ const TimelineScroller = forwardRef<
   );
 });
 
+/**
+ * Where Virtuoso's index space starts. Prepending older history (#1571) lowers
+ * `firstItemIndex` by the rows it added, which is how Virtuoso keeps the rows
+ * on screen where they are instead of jumping to the top; it must stay
+ * positive, and no member scrolls back a hundred million rows.
+ */
+const FIRST_ITEM_INDEX_BASE = 100_000_000;
+
+/**
+ * The index of the first row, lowered by what a load prepended, and whether
+ * the rows as they stand arrived by a prepend.
+ *
+ * Derived by comparing the drawn keys with the previous render's, during
+ * render, so the new data and its index reach Virtuoso in the same pass —
+ * an effect would hand it one frame of new rows at the old index, which is
+ * the jump this exists to prevent. Rows can also leave the top (a refetch
+ * that could not keep the older pages); then the index rises by as many.
+ * A change at neither edge (a channel switch) leaves it where it is.
+ *
+ * `prepended` exists for `followOutput`. Virtuoso follows a count increase
+ * while the list is at the bottom, and a page prepended while the member sits
+ * there raises the count too: followed, it snapped the list back to the
+ * bottom half a second after a jump had scrolled to the message it paged back
+ * for.
+ */
+function usePrependAwareFirstIndex(keys: readonly string[]): {
+  firstItemIndex: number;
+  prepended: boolean;
+} {
+  const [tracked, setTracked] = useState<{
+    keys: readonly string[];
+    firstItemIndex: number;
+    prependedAt: readonly string[] | null;
+  }>({ keys, firstItemIndex: FIRST_ITEM_INDEX_BASE, prependedAt: null });
+  if (tracked.keys === keys) {
+    return {
+      firstItemIndex: tracked.firstItemIndex,
+      prepended: tracked.prependedAt === keys,
+    };
+  }
+  let firstItemIndex = tracked.firstItemIndex;
+  let prependedAt: readonly string[] | null = null;
+  const previousFirst = tracked.keys[0];
+  const nextFirst = keys[0];
+  if (previousFirst !== undefined && nextFirst !== undefined) {
+    const prepended = keys.indexOf(previousFirst);
+    const removed = prepended < 0 ? tracked.keys.indexOf(nextFirst) : -1;
+    if (prepended > 0) {
+      firstItemIndex -= prepended;
+      prependedAt = keys;
+    } else if (removed > 0) {
+      firstItemIndex += removed;
+    }
+  }
+  setTracked({ keys, firstItemIndex, prependedAt });
+  return { firstItemIndex, prepended: prependedAt === keys };
+}
+
+/** What the row above the oldest loaded message says, if anything. */
+interface TimelineHeaderContext {
+  olderStatus: "idle" | "loading" | "error";
+  onRetryOlder?: () => void;
+}
+
+/**
+ * The row above the oldest loaded message: the older-history read in flight,
+ * or its failure with a Retry. Nothing otherwise — the day divider under it
+ * already says where the history starts.
+ */
+function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
+  if (context?.olderStatus === "loading") {
+    return (
+      <p
+        role="status"
+        className="py-3 text-center text-[12.5px] text-muted-foreground"
+      >
+        Loading earlier messages...
+      </p>
+    );
+  }
+  if (context?.olderStatus === "error") {
+    return (
+      <div className="flex items-center justify-center gap-2 py-3">
+        <p role="alert" className="text-[12.5px] text-muted-foreground">
+          Couldn&apos;t load earlier messages.
+        </p>
+        {context.onRetryOlder ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8"
+            onClick={context.onRetryOlder}
+          >
+            Retry
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+  return null;
+}
+
 /** Local calendar day, so "yesterday" breaks where the reader's day breaks. */
 function dayKey(iso: string): string {
   const at = parseInstant(iso);
@@ -202,11 +306,11 @@ export interface MessageTimelineHandle {
   /**
    * Scrolls to a message, returning whether it was actually reachable.
    *
-   * It still no-ops for a message outside the loaded window — but it now says
-   * so, because callers cannot otherwise tell "scrolled" from "did nothing".
-   * Pins could ignore that (a pin you can see is by definition loaded); search
-   * cannot, since its whole purpose is reaching messages beyond the window, and
-   * a silent `void` made every such hit an inert row.
+   * It no-ops for a message outside the loaded window and says so, because
+   * callers cannot otherwise tell "scrolled" from "did nothing". Pins could
+   * ignore that (a pin you can see is by definition loaded); search cannot,
+   * since its whole purpose is reaching messages beyond the window. The shell
+   * answers a `false` by loading older history and asking again (#1571).
    */
   scrollToMessage: (messageId: string) => boolean;
 }
@@ -280,6 +384,14 @@ export interface MessageTimelineProps {
   bookmarkedMessageIds?: Set<string>;
   onToggleBookmark?: (messageId: string, next: boolean) => void;
   canManageChannel?: boolean;
+  /**
+   * Older history (#1571). The timeline asks for the next page when the member
+   * reaches the top of what is loaded, while `hasOlder` says there may be one.
+   */
+  hasOlder?: boolean;
+  isLoadingOlder?: boolean;
+  olderError?: boolean;
+  onLoadOlder?: () => void;
 }
 
 /**
@@ -325,6 +437,10 @@ export const MessageTimeline = forwardRef<
     bookmarkedMessageIds,
     onToggleBookmark,
     canManageChannel,
+    hasOlder = false,
+    isLoadingOlder = false,
+    olderError = false,
+    onLoadOlder,
   },
   ref,
 ) {
@@ -436,6 +552,77 @@ export const MessageTimeline = forwardRef<
     });
   }, [thread.rows]);
 
+  const rowKeys = useMemo(
+    () =>
+      decorated.map(
+        (entry) => entry.message.client_message_id ?? entry.message.id,
+      ),
+    [decorated],
+  );
+  const { firstItemIndex, prepended } = usePrependAwareFirstIndex(rowKeys);
+
+  /*
+    Load the next older page while the member sits at the top of what is
+    loaded. Tracked as a state rather than answered from `startReached`, which
+    fires once per arrival at the top: a page whose rows are all held by the
+    block list draws nothing, the member is still at the top, and a one-shot
+    callback would never ask again. A failure stops the loop; the header's
+    Retry resumes it.
+
+    Armed only once the list has left its top in this channel. Virtuoso
+    renders from the top before it scrolls to `initialTopMostItemIndex`, so it
+    reports "at the top" for a moment on every open, and unarmed that spent an
+    older-page read on every channel a member opened without scrolling. A
+    channel short enough to fit never leaves its top and never arms, which
+    costs nothing: a first page that short already said there is nothing
+    older (`hasOlder`), and a jump pages through `loadOlder` directly.
+  */
+  //
+  // One page per arrival at the top. Virtuoso reports leaving the top a frame
+  // after a prepend moves the rows down, so without this the load settling
+  // re-ran the effect while it still read "at the top" and a second page
+  // followed the first before the member had scrolled at all. A page that
+  // drew nothing (the first row did not change) may ask again.
+  const [atTop, setAtTop] = useState(false);
+  const [topArrival, setTopArrival] = useState(0);
+  const [armedFor, setArmedFor] = useState<string | undefined>(undefined);
+  const armed = armedFor === channelId;
+  const firstRowKey = rowKeys[0];
+  const lastTopLoad = useRef<{ arrival: number; firstRowKey?: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!armed || !atTop || !hasOlder || isLoadingOlder || olderError) return;
+    const last = lastTopLoad.current;
+    if (last?.arrival === topArrival && last.firstRowKey !== firstRowKey) {
+      return;
+    }
+    lastTopLoad.current = { arrival: topArrival, firstRowKey };
+    onLoadOlder?.();
+  }, [
+    armed,
+    atTop,
+    topArrival,
+    firstRowKey,
+    hasOlder,
+    isLoadingOlder,
+    olderError,
+    onLoadOlder,
+  ]);
+  const handleAtTop = (next: boolean) => {
+    setAtTop(next);
+    if (next) setTopArrival((n) => n + 1);
+    else if (channelId) setArmedFor(channelId);
+  };
+
+  const headerContext = useMemo<TimelineHeaderContext>(
+    () => ({
+      olderStatus: isLoadingOlder ? "loading" : olderError ? "error" : "idle",
+      onRetryOlder: onLoadOlder,
+    }),
+    [isLoadingOlder, olderError, onLoadOlder],
+  );
+
   useImperativeHandle(
     ref,
     () => ({
@@ -444,9 +631,11 @@ export const MessageTimeline = forwardRef<
           (entry) => entry.message.id === messageId,
         );
         // A message older than the loaded window has no index to scroll to.
-        // Not scrolling is still the honest outcome — backfilling to reach it
-        // is its own piece of work (#1571) — but the caller is now told, so it
-        // can say so rather than leaving a row that appears to do nothing.
+        // The caller is told, so it can load older history and ask again
+        // (#1571) or say it could not, rather than leaving a row that appears
+        // to do nothing. The index is into `data`, not offset by
+        // `firstItemIndex`: Virtuoso's `scrollToIndex` clamps to
+        // `0..totalCount - 1`.
         if (index < 0) return false;
         // Reports what actually happened, not what was attempted: with no
         // attached virtualizer (the error branch renders before `<Virtuoso>`)
@@ -584,9 +773,19 @@ export const MessageTimeline = forwardRef<
       <Virtuoso
         ref={virtuoso}
         data={decorated}
-        followOutput="smooth"
+        firstItemIndex={firstItemIndex}
+        // Until the list is armed it is still settling onto its bottom, and
+        // the live page landing over the cached tail prepends rows; following
+        // those is what keeps a cold open at the newest message.
+        followOutput={prepended && armed ? false : "smooth"}
         initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
-        components={{ List: TimelineList, Scroller: TimelineScroller }}
+        atTopStateChange={handleAtTop}
+        context={headerContext}
+        components={{
+          List: TimelineList,
+          Scroller: TimelineScroller,
+          Header: TimelineHeader,
+        }}
         itemContent={(_, entry) => (
           <>
             {entry.startsDay ? (

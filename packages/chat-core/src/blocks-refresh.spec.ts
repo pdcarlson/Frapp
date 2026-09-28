@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  MASKED_REFRESH_PAGE_LIMIT,
   MASKED_REFRESH_RETRY_DELAYS_MS,
   blockClearance,
   maskedRefresh,
@@ -165,6 +166,70 @@ describe("refreshMaskedCopies — retries (#2257 review)", () => {
     ).resolves.toBe(true);
     expect(api.GET).not.toHaveBeenCalled();
     expect(maskedRefresh.snapshot().has(BLOCKED)).toBe(false);
+  });
+});
+
+/** Row `n` of a long thread, `n` seconds after a base instant: higher is newer. */
+function historyRow(
+  n: number,
+  senderId: string,
+  overrides: Partial<RawChatMessage> = {},
+): RawChatMessage {
+  return restRow(`h${n}`, senderId, {
+    created_at: new Date(Date.UTC(2026, 8, 15, 18, 0, 0) + n * 1000).toISOString(),
+    ...overrides,
+  });
+}
+
+/** Rows `from`..`to`, newest first, as the API serves a page. */
+function historyPage(from: number, to: number, senderId: string) {
+  const rows: RawChatMessage[] = [];
+  for (let n = to; n >= from; n -= 1) rows.push(historyRow(n, senderId));
+  return page(rows);
+}
+
+describe("refreshMaskedCopies — older history (#1571)", () => {
+  it("reads back page by page to the oldest masked copy the thread holds", async () => {
+    const queryClient = new QueryClient();
+    const limit = MASKED_REFRESH_PAGE_LIMIT;
+    // The member scrolled back past the newest page: a masked copy sits at
+    // row 5, and the newest page covers only the last `limit` rows.
+    seed(queryClient, "chan-1", [
+      historyRow(5, BLOCKED, { sender_blocked: true }),
+      historyRow(limit + 50, BLOCKED, { sender_blocked: true }),
+    ]);
+    api.GET.mockResolvedValueOnce(historyPage(51, limit + 50, BLOCKED));
+    api.GET.mockResolvedValueOnce(historyPage(1, 51, BLOCKED));
+
+    await expect(
+      refreshMaskedCopies(queryClient, api as never, BLOCKED, []),
+    ).resolves.toBe(true);
+
+    expect(api.GET).toHaveBeenCalledTimes(2);
+    const second = api.GET.mock.calls[1]![1].params.query;
+    // One millisecond past the first page's oldest row, so a row sharing its
+    // instant is not skipped.
+    expect(second.before).toBe(
+      new Date(Date.parse(historyRow(51, BLOCKED).created_at) + 1).toISOString(),
+    );
+    const cache = cacheOf(queryClient, "chan-1");
+    expect(cache.byId.h5?.sender_blocked).toBe(false);
+    expect(cache.byId[`h${limit + 50}`]?.sender_blocked).toBe(false);
+  });
+
+  it("stops after the page that reaches the oldest masked copy", async () => {
+    const queryClient = new QueryClient();
+    const limit = MASKED_REFRESH_PAGE_LIMIT;
+    seed(queryClient, "chan-1", [
+      historyRow(limit + 10, BLOCKED, { sender_blocked: true }),
+    ]);
+    // A full page, so only the copy's position can end the read.
+    api.GET.mockResolvedValueOnce(historyPage(11, limit + 10, BLOCKED));
+
+    await expect(
+      refreshMaskedCopies(queryClient, api as never, BLOCKED, []),
+    ).resolves.toBe(true);
+    expect(api.GET).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -594,10 +594,21 @@ vi.mock("./message-timeline", async () => {
 import { blockClearance } from "@repo/chat-core/blocks";
 import { ChatShell } from "./chat-shell";
 
+/**
+ * The notice for a jump target the channel's whole history did not hold. The
+ * mocked channel has no older history unless a case says so, so this is what
+ * a miss reads as by default (#1571).
+ */
+const NOT_IN_CHANNEL = /isn't in this channel anymore/i;
+
 function chatChannelResult(
   overrides: Partial<{
     isLoading: boolean;
     messages: typeof MESSAGES;
+    hasOlder: boolean;
+    isLoadingOlder: boolean;
+    olderError: boolean;
+    loadOlder: () => Promise<string>;
     // The composer-shell handoff (#2176) runs through both of these: the shell
     // writes with `setDraft`, and `draft` is what the editor is built from.
     draft: string;
@@ -623,6 +634,10 @@ function chatChannelResult(
     discard: vi.fn(),
     dispatchSlash: vi.fn(),
     act: vi.fn(),
+    hasOlder: overrides.hasOlder ?? false,
+    isLoadingOlder: overrides.isLoadingOlder ?? false,
+    olderError: overrides.olderError ?? false,
+    loadOlder: overrides.loadOlder ?? vi.fn(async () => "start"),
   };
 }
 
@@ -795,9 +810,122 @@ describe("ChatShell deep-link targets", () => {
     // that is stated. Search exists to reach messages beyond the loaded
     // window, so this is the common path, not an edge case.
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
     expect(mockScrollToMessage).not.toHaveBeenCalled();
+  });
+
+  it("pages older history toward a jump target before saying anything is wrong (#1571)", async () => {
+    const loadOlder = vi.fn(async () => "loaded");
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "msg-old" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(await screen.findByText("Finding that message...")).toBeTruthy();
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
+
+    // The page lands with the target in it: the jump happens, and the line
+    // that said it was looking goes.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        hasOlder: true,
+        loadOlder,
+        messages: [
+          {
+            id: "msg-old",
+            content: "from last spring",
+            created_at: "2025-04-01T00:00:00Z",
+          },
+          ...MESSAGES,
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    await waitFor(() => {
+      expect(mockScrollToMessage).toHaveBeenCalledWith("msg-old");
+    });
+    expect(screen.queryByText("Finding that message...")).toBeNull();
+  });
+
+  it("stops paging at the bound and says the target is further back", async () => {
+    const loadOlder = vi.fn(async () => "loaded");
+    searchHit.mockReturnValue({
+      message: { id: "msg-ancient" },
+      channelId: "chan-general",
+    });
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder }),
+    );
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    // Every page lands without the target. A fresh array is a changed
+    // `messages`, which is what re-runs the jump in the app.
+    for (let round = 0; round < 30; round += 1) {
+      mockUseChatChannel.mockReturnValue(
+        chatChannelResult({ hasOlder: true, loadOlder, messages: [...MESSAGES] }),
+      );
+      rerender(<ChatShell initialChannelId="chan-general" />);
+    }
+
+    expect(
+      await screen.findByText(/further back than the history loaded here/i),
+    ).toBeTruthy();
+    expect(loadOlder).toHaveBeenCalledTimes(20);
+  });
+
+  it("says loading failed when a page the jump asked for fails", async () => {
+    const loadOlder = vi.fn(async () => "error");
+    searchHit.mockReturnValue({
+      message: { id: "msg-old" },
+      channelId: "chan-general",
+    });
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder }),
+    );
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder, olderError: true }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(
+      await screen.findByText(
+        "Couldn't load earlier messages to reach that message.",
+      ),
+    ).toBeTruthy();
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it("still tries when an earlier scroll-up had failed", async () => {
+    // `olderError` is left over from the member scrolling up; a new jump is a
+    // new request and gets its own attempt rather than inheriting the failure.
+    const loadOlder = vi.fn(async () => "loaded");
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, olderError: true, loadOlder }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "msg-old" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(await screen.findByText("Finding that message...")).toBeTruthy();
+    expect(loadOlder).toHaveBeenCalledTimes(1);
   });
 
   it("waits for the live window before calling a jump target unreachable (#2249)", async () => {
@@ -827,7 +955,7 @@ describe("ChatShell deep-link targets", () => {
 
     await waitFor(() => expect(searchHit).toHaveBeenCalled());
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).not.toBeInTheDocument();
     expect(mockScrollToMessage).not.toHaveBeenCalled();
   });
@@ -840,7 +968,7 @@ describe("ChatShell deep-link targets", () => {
     render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
 
     // Switching channels from the rail must not leave #general's notice
@@ -852,7 +980,7 @@ describe("ChatShell deep-link targets", () => {
       expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
     });
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).toBeNull();
   });
 
@@ -864,7 +992,7 @@ describe("ChatShell deep-link targets", () => {
     render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
 
     // The natural "did that work?" second click. Without a nonce in the effect
@@ -874,7 +1002,7 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
 
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
   });
 
@@ -886,12 +1014,12 @@ describe("ChatShell deep-link targets", () => {
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).toBeNull();
 
     // A new message lands. Dismiss abandons the target, so this must not
@@ -907,7 +1035,7 @@ describe("ChatShell deep-link targets", () => {
     rerender(<ChatShell initialChannelId="chan-general" />);
 
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).toBeNull();
   });
 
@@ -919,7 +1047,7 @@ describe("ChatShell deep-link targets", () => {
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
 
     // The target stays pending, so a message that arrives later still gets its
@@ -943,7 +1071,7 @@ describe("ChatShell deep-link targets", () => {
       expect(mockScrollToMessage).toHaveBeenCalledWith("msg-late");
     });
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).toBeNull();
   });
 
@@ -2502,7 +2630,7 @@ describe("ChatShell block list (#2313)", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
 
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(/waiting on your block list/i),
@@ -2528,7 +2656,7 @@ describe("ChatShell block list (#2313)", () => {
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(
-      screen.getByText(/older than the history loaded here/i),
+      screen.getByText(NOT_IN_CHANNEL),
     ).toBeInTheDocument();
 
     // It then arrives over the echo while the list is still unreadable.
@@ -2548,7 +2676,7 @@ describe("ChatShell block list (#2313)", () => {
     rerender(<ChatShell initialChannelId="chan-general" />);
 
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(/waiting on your block list/i),

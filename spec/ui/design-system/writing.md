@@ -442,6 +442,12 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 |---|---|---|
 | Loading channels | — | `Loading chapter channels...` |
 | Loading messages | — | `Loading messages...` |
+| Loading older messages (above the oldest row, #1571) | — | `Loading earlier messages...` |
+| Older messages failed | — | `Couldn't load earlier messages.` · `Retry` |
+| Jump paging back for its target | — | `Finding that message...` · `Dismiss` |
+| Jump target past the paging bound | — | `That message is further back than the history loaded here. Scrolling up loads more, and it opens once it loads.` · `Dismiss` |
+| Jump target not in the channel's history | — | `That message isn't in this channel anymore.` · `Dismiss` |
+| Jump paging failed | — | `Couldn't load earlier messages to reach that message.` · `Dismiss` |
 | No channels | `No channels yet` | `New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear.` |
 | Empty timeline | `Nothing in this channel yet` | `Be the first to post — everyone in the channel sees it right away.` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |

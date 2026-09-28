@@ -420,3 +420,131 @@ export function selectMessages(cache: ChannelCache | undefined): ChatMessage[] {
     .map((key) => cache.byId[key])
     .filter((m): m is ChatMessage => m != null);
 }
+
+/** Epoch ms of a row's `created_at`; comparing strings breaks on mixed offsets. */
+function timeOf(message: ChatMessage): number {
+  return Date.parse(message.created_at);
+}
+
+/**
+ * The oldest row the server has confirmed, or `null` when there is none.
+ *
+ * The cursor for loading older history (#1571). Only a confirmed row has a
+ * server `created_at`; an optimistic row's is the device clock at send time.
+ */
+export function oldestConfirmed(
+  cache: ChannelCache | undefined,
+): ChatMessage | null {
+  if (!cache) return null;
+  for (const key of cache.order) {
+    const message = cache.byId[key];
+    if (message?._status === "confirmed") return message;
+  }
+  return null;
+}
+
+/**
+ * Folds a freshly fetched newest page into the cache as it stands when the
+ * fetch lands, instead of replacing it (#2486, #1571).
+ *
+ * `fresh` is the page rebuilt from nothing (rows, their reactions). A plain
+ * replace, which is what the channel query used to return, dropped three
+ * things the page cannot know about:
+ *
+ * - **Optimistic rows** — queued, failed and unconfirmed sends. The outbox
+ *   hydrate and the first-chunk seed both write them before a fetch lands, and
+ *   the replace hid them until the next channel switch (#2486): a queued
+ *   message that vanished, or a failed one whose Retry went with it. They are
+ *   kept unless the page carries the server row that confirms them.
+ * - **Rows newer than the page** — Realtime arrivals that landed while the
+ *   request was in flight.
+ * - **Older pages the member loaded** (#1571). Kept only when they are
+ *   contiguous with the page, which `current` proves by holding the page's
+ *   oldest row: a reconnect after more than a page of traffic returns a page
+ *   with a hole between it and what is cached, and keeping both would draw
+ *   the hole as if nothing had been said in it. A page shorter than
+ *   `pageLimit` reached the start of the channel, so nothing older exists on
+ *   the server and nothing older is kept.
+ *
+ * Inside the page's range the server is authoritative: a cached row there that
+ * the page does not carry was deleted, and goes.
+ */
+export function reconcileNewestPage(
+  current: ChannelCache | undefined,
+  fresh: ChannelCache,
+  pageLimit: number,
+): ChannelCache {
+  if (!current || current.order.length === 0) return fresh;
+  const firstKey = fresh.order[0];
+  const lastKey = fresh.order[fresh.order.length - 1];
+  const pageOldest = firstKey ? fresh.byId[firstKey] : undefined;
+  const pageNewest = lastKey ? fresh.byId[lastKey] : undefined;
+  const oldestTime = pageOldest ? timeOf(pageOldest) : Number.NEGATIVE_INFINITY;
+  // An empty page says the channel holds nothing, so no cached row is newer.
+  const newestTime = pageNewest ? timeOf(pageNewest) : Number.POSITIVE_INFINITY;
+  const keepOlder =
+    !!pageOldest &&
+    fresh.order.length >= pageLimit &&
+    current.byId[pageOldest.id]?._status === "confirmed";
+
+  const byId = { ...fresh.byId };
+  const older: string[] = [];
+  const newer: string[] = [];
+  const optimistic: string[] = [];
+  for (const key of current.order) {
+    const message = current.byId[key];
+    if (!message || byId[key]) continue;
+    if (message._status !== "confirmed") {
+      if (locateRow(fresh, message.client_message_id) === "confirmed") continue;
+      optimistic.push(key);
+    } else if (timeOf(message) > newestTime) {
+      newer.push(key);
+    } else if (keepOlder && timeOf(message) <= oldestTime) {
+      older.push(key);
+    } else {
+      continue;
+    }
+    byId[key] = message;
+  }
+
+  const kept = new Set([...older, ...newer, ...optimistic]);
+  if (kept.size === 0) return fresh;
+  const actionIndex = { ...fresh.actionIndex };
+  for (const [actionId, entry] of Object.entries(current.actionIndex)) {
+    if (kept.has(entry.messageKey) && !actionIndex[actionId]) {
+      actionIndex[actionId] = entry;
+    }
+  }
+  let next: ChannelCache = {
+    byId,
+    order: [...older, ...fresh.order, ...newer],
+    actionIndex,
+  };
+  for (const key of optimistic) {
+    next = { ...next, order: withOrderedKey(next, key) };
+  }
+  return next;
+}
+
+/**
+ * Merges a page of older history into the cache (#1571), skipping rows it
+ * already holds so a boundary overlap cannot re-merge a row over the
+ * reactions it has accumulated since. Returns how many rows were new, which
+ * is how the caller tells a page that moved the cursor from one that did not.
+ */
+export function mergeOlderPage(
+  cache: ChannelCache,
+  rows: readonly RawChatMessage[],
+  actions: readonly RawChatMessageAction[],
+): { cache: ChannelCache; added: number } {
+  const incoming = rows.filter((row) => !cache.byId[row.id]);
+  if (incoming.length === 0) return { cache, added: 0 };
+  let next = mergeServerRows(cache, incoming);
+  const incomingIds = new Set(incoming.map((row) => row.id));
+  for (const action of actions) {
+    if (incomingIds.has(action.message_id)) {
+      next = applyReactionInsert(next, action);
+    }
+  }
+  return { cache: next, added: incoming.length };
+}

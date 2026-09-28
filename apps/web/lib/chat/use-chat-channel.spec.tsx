@@ -8,9 +8,14 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SlashCommand } from "@repo/chat-integrations";
 import type { OutboxStore } from "@repo/chat-core/adapters";
-import { chatMessagesKey } from "@repo/chat-core/types";
+import { emptyCache, upsertOptimistic } from "@repo/chat-core/cache";
+import {
+  chatMessagesKey,
+  optimisticMessage,
+  type ChannelCache,
+} from "@repo/chat-core/types";
 import { QueryProvider } from "@/lib/providers/query-provider";
-import { useChatChannel } from "./use-chat-channel";
+import { OLDER_PAGE_LIMIT, useChatChannel } from "./use-chat-channel";
 
 /**
  * #1909 — an `unconfirmed` `/points` row, and the Retry that replays its
@@ -306,5 +311,225 @@ describe("useChatChannel — an unconfirmed /points row survives a rebuild (#190
     );
     // A fresh backfill really ran: the in-memory copy was gone.
     expect(mocks.GET).toHaveBeenCalledTimes(2);
+  });
+});
+
+/** Row `n` of a channel's history, `n` minutes after a base instant. */
+function historyRow(n: number) {
+  return {
+    id: `msg-${n}`,
+    channel_id: CHANNEL_ID,
+    sender_id: "user-3",
+    kind: "text",
+    content: `message ${n}`,
+    client_message_id: `cm-${n}`,
+    created_at: new Date(Date.UTC(2026, 8, 1) + n * 60_000).toISOString(),
+  };
+}
+
+/** Rows `from`..`to`, newest first, as the API serves a page. */
+function historyPage(from: number, to: number) {
+  const rows = [];
+  for (let n = to; n >= from; n -= 1) rows.push(historyRow(n));
+  return { data: rows, error: undefined };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+function queuedRow(clientId: string, status: "pending" | "failed") {
+  return {
+    ...optimisticMessage({
+      clientMessageId: clientId,
+      channelId: CHANNEL_ID,
+      senderId: VIEWER,
+      content: `unsent ${clientId}`,
+    }),
+    _status: status,
+  };
+}
+
+describe("useChatChannel — a refetch keeps the member's unsent rows (#2486)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    onlineManager.setOnline(true);
+    mocks.GET.mockReset();
+  });
+
+  afterEach(() => {
+    client?.clear();
+  });
+
+  it("keeps rows the outbox hydrate wrote while the first fetch was in flight", async () => {
+    const firstPage = deferred<ReturnType<typeof historyPage>>();
+    mocks.GET.mockReturnValueOnce(firstPage.promise);
+    const { result } = renderHook(
+      () => {
+        client = useQueryClient();
+        return useChatChannel(CHANNEL_ID);
+      },
+      { wrapper },
+    );
+
+    // What `hydrateOutboxIntoCache` does on a cold load: it writes the queued
+    // and failed rows into the cache before the GET answers.
+    act(() => {
+      client!.setQueryData<ChannelCache>(chatMessagesKey(CHANNEL_ID), () => {
+        let cache = upsertOptimistic(emptyCache(), queuedRow("q-1", "pending"));
+        cache = upsertOptimistic(cache, queuedRow("f-1", "failed"));
+        return cache;
+      });
+    });
+    firstPage.resolve(historyPage(1, 3));
+
+    await waitFor(() =>
+      expect(result.current.messages.map((m) => m.id)).toEqual([
+        "msg-1",
+        "msg-2",
+        "msg-3",
+        "q-1",
+        "f-1",
+      ]),
+    );
+    expect(result.current.messages.find((m) => m.id === "f-1")?._status).toBe(
+      "failed",
+    );
+  });
+
+  it("keeps them through the refetch the first-chunk seed triggers", async () => {
+    mocks.GET.mockResolvedValue(historyPage(1, 3));
+    const { result } = await mountChannel();
+
+    // `seedFirstChunk` merges onto the cache, then invalidates with
+    // `refetchType: "all"`.
+    act(() => {
+      client!.setQueryData<ChannelCache>(
+        chatMessagesKey(CHANNEL_ID),
+        (current) => upsertOptimistic(current!, queuedRow("q-1", "pending")),
+      );
+    });
+    mocks.GET.mockResolvedValue(historyPage(1, 4));
+    await act(async () => {
+      await client!.invalidateQueries({
+        queryKey: chatMessagesKey(CHANNEL_ID),
+        refetchType: "all",
+      });
+    });
+
+    await waitFor(() =>
+      expect(result.current.messages.map((m) => m.id)).toEqual([
+        "msg-1",
+        "msg-2",
+        "msg-3",
+        "msg-4",
+        "q-1",
+      ]),
+    );
+  });
+});
+
+describe("useChatChannel — older history (#1571)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    onlineManager.setOnline(true);
+    mocks.GET.mockReset();
+  });
+
+  afterEach(() => {
+    client?.clear();
+  });
+
+  it("reads the next page one millisecond past the oldest row and merges it", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
+    const { result } = await mountChannel();
+    expect(result.current.hasOlder).toBe(true);
+
+    // A full page, overlapping the edge row by the millisecond the cursor adds.
+    mocks.GET.mockResolvedValueOnce(historyPage(2, 101));
+    let outcome: string | undefined;
+    await act(async () => {
+      outcome = await result.current.loadOlder();
+    });
+
+    expect(outcome).toBe("loaded");
+    const query = mocks.GET.mock.calls[1]![1].params.query;
+    expect(query).toEqual({
+      limit: OLDER_PAGE_LIMIT,
+      before: new Date(Date.parse(historyRow(101).created_at) + 1).toISOString(),
+    });
+    await waitFor(() => expect(result.current.messages).toHaveLength(149));
+    // A full page says nothing about what is left, so there may be more.
+    expect(result.current.hasOlder).toBe(true);
+  });
+
+  it("says there is nothing older once a page comes back short", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
+    const { result } = await mountChannel();
+
+    mocks.GET.mockResolvedValueOnce(historyPage(90, 101));
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+
+    await waitFor(() => expect(result.current.hasOlder).toBe(false));
+    expect(result.current.messages).toHaveLength(61);
+  });
+
+  it("knows a channel shorter than one page has nothing older", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(1, 3));
+    const { result } = await mountChannel();
+
+    await waitFor(() => expect(result.current.hasOlder).toBe(false));
+  });
+
+  it("discards a page whose edge a refetch moved while it was in flight", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
+    const { result } = await mountChannel();
+
+    const older = deferred<ReturnType<typeof historyPage>>();
+    mocks.GET.mockReturnValueOnce(older.promise);
+    let pending: Promise<string> | undefined;
+    act(() => {
+      pending = result.current.loadOlder();
+    });
+    // A reconnect after a long outage: the newest page no longer touches the
+    // cached one, so the refetch drops the older rows.
+    mocks.GET.mockResolvedValueOnce(historyPage(201, 250));
+    await act(async () => {
+      await client!.refetchQueries({ queryKey: chatMessagesKey(CHANNEL_ID) });
+    });
+    older.resolve(historyPage(1, 100));
+
+    let outcome: string | undefined;
+    await act(async () => {
+      outcome = await pending;
+    });
+    expect(outcome).toBe("stale");
+    expect(result.current.messages.map((m) => m.id)).not.toContain("msg-1");
+  });
+
+  it("reports a failed read, and clears it on the next attempt", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
+    const { result } = await mountChannel();
+
+    mocks.GET.mockResolvedValueOnce({
+      data: undefined,
+      error: { message: "Bad Gateway" },
+    });
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+    await waitFor(() => expect(result.current.olderError).toBe(true));
+
+    mocks.GET.mockResolvedValueOnce(historyPage(2, 101));
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+    await waitFor(() => expect(result.current.olderError).toBe(false));
   });
 });
