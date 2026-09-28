@@ -27,8 +27,8 @@ export function hideConversationConfirmTitle(name: string): string {
  * when there is something new in it).
  *
  * It names Hidden conversations, not "message them", as the way back: the
- * mobile app has no way to start a DM, so a promise to "message them" would
- * have nothing behind it there.
+ * group sits at the end of the same list the member is hiding from, while
+ * messaging them means finding them in the directory first.
  */
 export const HIDE_CONVERSATION_CONFIRM_BODY =
   "It leaves your list, and nothing in it is deleted. They aren't told. It comes back when there's something new in it, and you can open it from Hidden conversations anytime.";
