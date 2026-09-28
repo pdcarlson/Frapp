@@ -555,3 +555,21 @@ describe("ServiceHoursPage proof upload ticket contract", () => {
     expect(mockCreateEntry).not.toHaveBeenCalled();
   });
 });
+
+describe("ServiceHoursPage member labels", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFrappUser.mockReturnValue({ userId: "admin-9", isLoading: false });
+    chapter.active();
+  });
+
+  it("names a submitter missing from the roster with the shared member label", () => {
+    // #2422: the roster mock is empty, so `u-1` resolves no name. Its approval
+    // row and history row read `Member u-1`, the label every other surface
+    // gives an unnamed member, never the raw id alone in the name slot.
+    render(<ServiceHoursPage />);
+
+    expect(screen.getAllByText("Member u-1").length).toBeGreaterThan(0);
+    expect(screen.queryByText("u-1", { exact: true })).toBeNull();
+  });
+});

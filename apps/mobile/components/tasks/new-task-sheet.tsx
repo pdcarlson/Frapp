@@ -7,7 +7,12 @@ import {
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
-import { useChapterRoster, useCreateTask, useViewerUserId } from "@repo/hooks";
+import {
+  memberFallbackLabel,
+  useChapterRoster,
+  useCreateTask,
+  useViewerUserId,
+} from "@repo/hooks";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/more/narrow";
@@ -146,7 +151,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
      */
     const assigneeLabel = assigneeIsViewer
       ? (assigneeName ?? "You")
-      : (assigneeName ?? "Member");
+      : (assigneeName ??
+        (effectiveAssigneeId
+          ? memberFallbackLabel(effectiveAssigneeId)
+          : "Member"));
 
     const draft = {
       title,
@@ -401,7 +409,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 <Text style={styles.avatarText}>{initialsFor(item.name)}</Text>
               </View>
               <Text style={styles.fieldValue} numberOfLines={1}>
-                {item.name ?? "Member"}
+                {item.name ?? memberFallbackLabel(item.userId)}
               </Text>
             </Pressable>
           )}

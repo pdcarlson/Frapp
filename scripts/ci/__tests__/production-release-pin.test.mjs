@@ -602,7 +602,7 @@ describe("runWatchdog", () => {
     assert.ok(calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/42")));
   });
 
-  it("does not close an alert when the lookup itself failed", async () => {
+  it("does not close an alert when the lookup itself failed, and goes red", async () => {
     const { fetchImpl, calls } = makeFetchMock([
       { method: "GET", path: "/issues?state=all", status: 500, body: {} },
     ]);
@@ -612,7 +612,7 @@ describe("runWatchdog", () => {
       repo: "pdcarlson/Frapp",
       fetchImpl,
     });
-    assert.equal(out.outcome, "pass");
+    assert.equal(out.outcome, "fail");
     assert.equal(out.resolved, false);
     assert.equal(out.lookupOk, false);
     assert.equal(
@@ -729,5 +729,25 @@ describe("workflow wiring", () => {
   it("runs the pin script with no npm ci", () => {
     assert.match(liveYaml, /node scripts\/ci\/production-release-pin\.mjs/);
     assert.doesNotMatch(liveYaml, /npm ci/);
+  });
+});
+
+describe("main() annotates an unreadable tracker as could-not-read, never could-not-close", () => {
+  // The annotation lives in main(), which no test runs. Reverting it to a
+  // ::warning:: plus a false "could not be closed" error left every other
+  // test green.
+  const source = readFileSync(new URL("../production-release-pin.mjs", import.meta.url), "utf8");
+  const main = source.slice(source.indexOf("async function main()"));
+
+  it("errors, not warns, when the alert issues could not be read", () => {
+    assert.match(main, /console\.error\("::error::Could not read the alert issues, so no alert was closed this run"\)/);
+    assert.doesNotMatch(main, /::warning::Could not read the alert issues/);
+  });
+
+  it("prints 'could not be closed' only when the lookup worked", () => {
+    const unread = main.indexOf("watchdog.lookupOk === false");
+    const closed = main.indexOf("could not be closed");
+    assert.ok(unread !== -1 && closed > unread);
+    assert.match(main.slice(unread, closed), /\} else if \(/);
   });
 });
