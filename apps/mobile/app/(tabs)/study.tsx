@@ -45,6 +45,7 @@ import {
 } from "@/lib/notifications/study-pause";
 import {
   isActiveSessionConflict,
+  MODULE_OFF_COPY,
   sessionErrorCopy,
   startErrorCopy,
 } from "@/lib/study/errors";
@@ -712,7 +713,7 @@ export default function StudyScreen() {
         <EmptyState
           glyph="◷"
           title="Study hours are turned off"
-          body="Your chapter isn't tracking study hours right now. An officer can turn the module back on."
+          body={MODULE_OFF_COPY.start}
         />
       );
     }

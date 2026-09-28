@@ -5,6 +5,8 @@ import {
   CurrentChapterPayloadSchema,
   CustomFieldOptionsSchema,
   EmailInviteSchema,
+  moduleDisabledMessage,
+  moduleRefusalFromServerMessage,
   PatchChapterConfigSchema,
   SendChatMessageSchema,
 } from "./index";
@@ -127,5 +129,45 @@ describe("canAccessChannel — archived channel", () => {
         operation: "post",
       }),
     ).toBe(true);
+  });
+});
+
+describe("moduleRefusalFromServerMessage", () => {
+  it("names the module in the guard's own refusal", () => {
+    expect(moduleRefusalFromServerMessage(moduleDisabledMessage("hours"))).toEqual({
+      moduleKey: "hours",
+    });
+    expect(
+      moduleRefusalFromServerMessage(moduleDisabledMessage("geofences")),
+    ).toEqual({ moduleKey: "geofences" });
+  });
+
+  it("is the sentence the guard has always sent, so shipped builds keep matching", () => {
+    // Installed mobile builds match on this exact text. Rewording it is a
+    // contract change for every binary already in members' hands.
+    expect(moduleDisabledMessage("hours")).toBe(
+      'The "hours" module is disabled for this chapter. Re-enable it in Settings → Modules to make changes.',
+    );
+  });
+
+  it("does not claim any other 403 message", () => {
+    for (const message of [
+      "Alumni members cannot record study hours in this chapter",
+      "Chapter subscription is not active; complete checkout to use this feature.",
+      "Missing required permission",
+      "",
+      null,
+      undefined,
+    ]) {
+      expect(moduleRefusalFromServerMessage(message)).toBeNull();
+    }
+  });
+
+  it("matches the whole sentence, not a prefix or a suffix", () => {
+    const full = moduleDisabledMessage("hours");
+    expect(moduleRefusalFromServerMessage(full.slice(0, -1))).toBeNull();
+    expect(moduleRefusalFromServerMessage(`${full} Extra.`)).toBeNull();
+    expect(moduleRefusalFromServerMessage(full.slice(1))).toBeNull();
+    expect(moduleRefusalFromServerMessage(moduleDisabledMessage(""))).toBeNull();
   });
 });

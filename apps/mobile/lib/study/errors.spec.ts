@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { moduleDisabledMessage } from "@repo/validation";
 import {
   isActiveSessionConflict,
+  MODULE_OFF_COPY,
   serverMessageOf,
   sessionErrorCopy,
   startErrorCopy,
@@ -51,22 +53,6 @@ describe("startErrorCopy", () => {
     expect(startErrorCopy({ statusCode: 403, message })).toBe(message);
   });
 
-  it("does not hand a member the officer instructions the module gate returns", () => {
-    // `ChapterGuard.enforceModule` throws
-    // `{ code: 'chapter.module.disabled', message: 'The "hours" module is
-    // disabled for this chapter. Re-enable it in Settings → Modules to make
-    // changes.' }` — a sentence a member cannot act on. The structured code is
-    // what tells it apart from an ordinary 403, since both arrive as 403.
-    const copy = startErrorCopy({
-      statusCode: 403,
-      code: "chapter.module.disabled",
-      message:
-        'The "hours" module is disabled for this chapter. Re-enable it in Settings → Modules to make changes.',
-    });
-    expect(copy).not.toContain("Settings");
-    expect(copy).toContain("An officer can turn the module back on.");
-  });
-
   it("tells a member whose zone vanished to pick another", () => {
     expect(startErrorCopy({ statusCode: 404 })).toContain("Pick another");
   });
@@ -95,9 +81,8 @@ describe("sessionErrorCopy", () => {
 describe("the subscription gate, on both study paths", () => {
   /**
    * The real wire shape: `AllExceptionsFilter` emits exactly these four keys
-   * and drops the guard's `code` (#1020), which is why the module-gate branch
-   * above is keyed on something that is always `null` in production (#2393)
-   * and why this one is keyed on the message instead.
+   * and drops the guard's `code` (#1020), which is why this is keyed on the
+   * message instead.
    */
   const refusal = {
     statusCode: 403,
@@ -138,5 +123,49 @@ describe("the subscription gate, on both study paths", () => {
   it("leaves the 404 and 409 cases untouched", () => {
     expect(sessionErrorCopy({ statusCode: 404 })).toMatch(/already been closed/i);
     expect(startErrorCopy({ statusCode: 404 })).toMatch(/no longer available/i);
+  });
+});
+
+describe("the module gate, on both study paths (#2393)", () => {
+  /**
+   * The real wire shape, and the whole bug: `AllExceptionsFilter` emits
+   * exactly these four keys, with no `code`. The branch this replaced keyed on
+   * `code` and was tested with a hand-built body that carried it, so it was
+   * green in the suite and dead in every shipped build. Don't add `code` here.
+   */
+  const moduleOff = {
+    statusCode: 403,
+    error: "Forbidden",
+    message: moduleDisabledMessage("hours"),
+    requestId: "req_test",
+  };
+
+  it("gives a member their own copy on start, not the officer instruction", () => {
+    const copy = startErrorCopy(moduleOff);
+    expect(copy).toBe(MODULE_OFF_COPY.start);
+    expect(copy).not.toContain("Settings");
+  });
+
+  it("gives a running session its own copy on pause/resume/stop", () => {
+    const copy = sessionErrorCopy(moduleOff);
+    expect(copy).toBe(MODULE_OFF_COPY.session);
+    expect(copy).not.toContain("Settings");
+  });
+
+  it("needs the 403: the same sentence on another status is not the gate", () => {
+    expect(startErrorCopy({ ...moduleOff, statusCode: 400 })).toBe(
+      moduleOff.message,
+    );
+  });
+
+  it("leaves an ordinary permission denial relayed as it was", () => {
+    const denial = {
+      statusCode: 403,
+      error: "Forbidden",
+      message: "Alumni cannot record study hours.",
+      requestId: "req_test",
+    };
+    expect(startErrorCopy(denial)).toBe(denial.message);
+    expect(sessionErrorCopy(denial)).toBe(denial.message);
   });
 });
