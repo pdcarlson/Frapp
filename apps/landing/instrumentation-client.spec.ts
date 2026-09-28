@@ -43,7 +43,7 @@ describe("landing browser Sentry init", () => {
 
     expect(sentry.init).toHaveBeenCalledTimes(1);
     expect(sentry.browserTracingIntegration).toHaveBeenCalledWith({
-      enableInp: false,
+      webVitals: { ignore: ["inp"] },
     });
     const [options] = sentry.init.mock.calls[0] as [
       { integrations: { name: string }[] },

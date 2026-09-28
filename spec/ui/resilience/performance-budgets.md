@@ -144,9 +144,10 @@ Three things the split makes true, none of them visible from the number alone:
   before it. So a rise in this number can mean the navigation mix changed rather than that the
   shell got slower; `composer-editor-ready` is what separates the two.
 
-They need no reporting code. `@sentry/nextjs` keeps its default integrations and `apps/web` adds
-one, `userTimingIntegration`, which turns `mark` and `measure` entries into spans on the pageload
-transaction. **Correction (2026-09-28, #2722):** this used to say the SDK defaults alone did it;
+They need no reporting code. `apps/web` adds `userTimingIntegration` to the SDK's default
+integrations, which turns `mark` and `measure` entries into spans on the pageload transaction. (It
+also replaces the default `browserTracingIntegration` with one that has INP off; see
+`SENTRY_BROWSER_TRACING_OPTIONS`. Dropping that replacement turns INP back on.) **Correction (2026-09-28, #2722):** this used to say the SDK defaults alone did it;
 that was SDK v10 (`_addMeasureSpans` inside `browserTracingIntegration`), and v11 made it opt-in.
 `browserTracingIntegration` is still the source of FCP, LCP, CLS and TTFB (INP is off until #2736) — which is why this repo does **not** add a
 `web-vitals` dependency or a second reporting path. Sampling is `tracesSampleRate` (0.1) and

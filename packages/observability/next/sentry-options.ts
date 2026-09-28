@@ -56,7 +56,7 @@ function sharedRuntimeOptions(runtime: AnonymousNextSentryRuntime) {
  * SDK's default one). This package does not depend on `@sentry/*`, so it
  * holds the options and the apps build the integration.
  *
- * **INP is off.** The SDK (v10 and v11 alike) sends each INP measurement as
+ * **INP is off** (`webVitals.ignore: ['inp']`). The SDK (v10 and v11 alike) sends each INP measurement as
  * a standalone span, past `beforeSend` and `beforeSendTransaction`, and names
  * it after the clicked element's selector. That selector includes the
  * element's `aria-label`, `title`, `name` and `alt`, which in `apps/web` can
@@ -69,7 +69,11 @@ function sharedRuntimeOptions(runtime: AnonymousNextSentryRuntime) {
  * (#2736). LCP, CLS, FCP and TTFB are unaffected: they ride on the pageload
  * transaction, through the transaction scrubber.
  */
-export const SENTRY_BROWSER_TRACING_OPTIONS = { enableInp: false } as const;
+export const SENTRY_BROWSER_TRACING_OPTIONS = {
+  // The v11 spelling. The older `enableInp: false` still works but is
+  // deprecated, and would stop existing at the next major.
+  webVitals: { ignore: ["inp" as const] },
+};
 
 /**
  * Browser Sentry options. Replay sample rates stay 0 while
