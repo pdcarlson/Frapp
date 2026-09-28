@@ -1,4 +1,3 @@
-import * as path from 'path';
 import {
   Inject,
   Injectable,
@@ -36,6 +35,7 @@ import {
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
+import { safeObjectFilename } from '#domain/constants/storage';
 
 const BACKWORK_BUCKET = 'backwork';
 
@@ -102,7 +102,7 @@ export class BackworkService {
     }
 
     const resourceId = crypto.randomUUID();
-    const storagePath = `chapters/${input.chapterId}/backwork/${resourceId}/${path.basename(input.filename)}`;
+    const storagePath = `chapters/${input.chapterId}/backwork/${resourceId}/${safeObjectFilename(input.filename)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       BACKWORK_BUCKET,

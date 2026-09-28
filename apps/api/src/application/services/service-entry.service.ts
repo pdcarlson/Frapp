@@ -1,4 +1,3 @@
-import * as path from 'path';
 import {
   BadRequestException,
   ForbiddenException,
@@ -31,6 +30,7 @@ import {
   WORKFLOW_HOURS_RECEIPT,
 } from './chapter-workflows.service';
 import { isUnsafeStoragePath } from '#domain/utils/storage-path';
+import { safeObjectFilename } from '#domain/constants/storage';
 import { ChapterServiceConfigService } from './chapter-service-config.service';
 import { ChatService } from './chat.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
@@ -133,17 +133,8 @@ export class ServiceEntryService {
       );
     }
 
-    // storage-api rejects keys with characters outside its ASCII allowed set
-    // (accented letters, '#', '%', backslashes — which posix basename does
-    // not strip), and the raw StorageApiError would surface as a 500. The
-    // uuid folder already guarantees uniqueness; the filename is only for
-    // reviewer readability, so squash anything unsafe to '_'.
-    const safeFilename = path
-      .basename(input.filename)
-      .replace(/[^A-Za-z0-9._-]/g, '_');
-
     const proofId = crypto.randomUUID();
-    const storagePath = `${serviceProofPrefix(input.chapterId)}${proofId}/${safeFilename}`;
+    const storagePath = `${serviceProofPrefix(input.chapterId)}${proofId}/${safeObjectFilename(input.filename)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       SERVICE_BUCKET,
