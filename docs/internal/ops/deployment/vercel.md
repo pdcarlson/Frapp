@@ -83,10 +83,25 @@ In each Vercel project → Settings → Domains:
 | `frapp-web`     | `app.frapp.live`                |
 | `frapp-landing` | `frapp.live` + `www.frapp.live` |
 
+`www.frapp.live` serves the landing. `frapp.live` is a redirect domain: Vercel answers it with its
+default 307 to `www.frapp.live` and keeps the path (read from the project's domain list,
+2026-09-28).
+
+A merge to `main` never moves these hostnames. Only the `--prod` upload re-points them, and only a
+Deploy production run with scope `full` that isn't a dry run and gets past the migration apply,
+the Render deploy and the health check reaches that upload. A dry run, a `migrations-only` run,
+or a run that fails earlier leaves them where they were. The run's `release` job then tags the
+shipped commit `vX.Y.Z`. If tagging fails after a live ship, `production-release-pin.mjs` raises
+its own alert. Anything merged since the last such run is on the staging hostnames, not here. On 2026-09-28 the
+landing reskin had been on `main` for ten days while `www.frapp.live` still served `v1.2.0`, the
+2026-09-17 deploy. That was a deploy that hadn't happened yet, not a broken alias.
+
 #### Staging hostnames
 
 CI aliases these after each staging deploy (`deploy-vercel-staging.yml` →
-`ensure-vercel-staging-alias.mjs`, lookup by `githubCommitSha`). Dashboard Preview + `main`
+`ensure-vercel-staging-alias.mjs`), pointing each hostname at the deployment id that the deploy
+step printed. The workflow fails on an empty id rather than letting the script fall back to its
+`githubCommitSha` search, which can exit 0 having aliased nothing. Dashboard Preview + `main`
 branch filters are leftover from the Git integration and do not attach hostnames any more.
 
 | Project         | Domain                   |

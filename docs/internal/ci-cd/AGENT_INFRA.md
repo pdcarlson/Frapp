@@ -1190,8 +1190,8 @@ carries and why:
   isn't backed by the owner reporting what they saw.**
 - GitHub MCP reads: `get_me`, `pull_request_read`, `list_pull_requests`, `search_pull_requests`,
   `actions_get`, `actions_list`, `get_job_logs`, `get_check_run`, `get_commit`, `list_commits`,
-  `list_branches`, `get_file_contents`, `issue_read`, `list_issues`, `search_issues`, `get_label`,
-  `list_issue_types`, `list_issue_fields` (each as `mcp__github__<tool>`).
+  `list_tags`, `list_branches`, `get_file_contents`, `issue_read`, `list_issues`, `search_issues`,
+  `get_label`, `list_issue_types`, `list_issue_fields` (each as `mcp__github__<tool>`).
 - GitHub MCP tracker writes (added 2026-08-08 with the GitHub Issues migration, at the owner's
   request that agents "interact freely with GitHub issues"): `issue_write`, `sub_issue_write`.
   GitHub Issues is now the work tracker, so these are the same class of write Linear's `save_issue`
