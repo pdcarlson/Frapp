@@ -520,10 +520,11 @@ function stepEnvAt(lines, stepStart, stepEnd, keyIndent) {
  *
  * `env` resolves workflow → job → step, innermost winning, which is not a
  * nicety: `deploy-vercel-staging.yml` supplied three of its required variables
- * from a JOB-level block (until #2803 merged it into `deploy-staging.yml`) and
- * `deploy-production.yml` declares the same three at WORKFLOW level. A reader that saw only a step's own `env:` would report a bug
- * neither file has — and the usual fix for a guard that cries wolf is to delete
- * the guard.
+ * from a JOB-level block (until #2803 merged it into `deploy-staging.yml`), and
+ * `deploy-production.yml` declared the same three at WORKFLOW level (until
+ * #2805 moved its steps into `_deploy.yml`). A reader that saw only a step's
+ * own `env:` would have reported a bug neither file had, and the usual fix for
+ * a guard that cries wolf is to delete the guard.
  *
  * Returns `{ workflowFile, jobId, name, if: <raw expression|null>, env: Map,
  * body: <the step's raw text> }` per step.

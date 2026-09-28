@@ -282,8 +282,8 @@ describe("buildSummary", () => {
 
 describe("provider identifiers are inputs, never defaults", () => {
   // The failure this guards: `frapp-api-prod` is recreated and gets a new
-  // service id. Whoever updates deploy-production.yml (which is what actually
-  // deploys) has no reason to touch this script — so a default baked in here
+  // service id. Whoever updates `_deploy.yml` (which is what actually deploys)
+  // has no reason to touch this script — so a default baked in here
   // would keep the daily watchdog asserting auto-deploy against the OLD
   // service, reporting green forever about an object nothing deploys to. Every
   // sibling script requires its ids from env for the same reason.

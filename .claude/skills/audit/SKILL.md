@@ -175,7 +175,7 @@ Workflows with specific audit concerns (the full set is `.github/workflows/`):
 |----------|------|--------------|
 | CI | `ci.yml` | Required jobs passing, correct triggers |
 | Deploy (staging) | `deploy-staging.yml`, calling `_deploy.yml` | Secret handling (the called job names its environment and the call passes `secrets: inherit`, without which they read empty; its first step checks the secrets arrived), migration gating, health checks, order (web and landing build before the migration, upload only after the API verify) |
-| Deploy (production) | `deploy-production.yml` | SHA must be an ancestor of `main` and CI-green, the migration replay and working-tree fence, the provider guardrail preflight, deploy-by-commit, `CANCELED` treated as failure |
+| Deploy (production) | `deploy-production.yml`, calling `_deploy.yml` (#2805) | SHA must be an ancestor of `main` and CI-green, one approval, the call passes `secrets: inherit`, installs before any secret and local actions from the trusted ref, the migration replay and working-tree fence, the provider guardrail preflight, deploy-by-commit, the served-commit check, `CANCELED` treated as failure, the alert on a failed ship |
 | Production guardrails | `production-guardrails.yml` | Render `frapp-api-prod` auto-deploy off, tracking `main`, health check path `/health`; Vercel `frapp-web` and `frapp-landing` not linked to Git |
 | Release | `release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
 | Docs | `docs.yml` | Not a documentation gate — what its job checks: [`DOCS_CI.md` § What runs](../../../docs/internal/ci-cd/DOCS_CI.md#what-runs) |

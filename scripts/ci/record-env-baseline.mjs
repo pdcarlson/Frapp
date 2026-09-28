@@ -3,7 +3,7 @@
 // Record the NAMES in this step's environment, and never a value, to the file
 // `VERCEL_BUILD_ENV_BASELINE` names.
 //
-// `_deploy.yml` (staging's deploy job) and `deploy-production.yml` run this immediately
+// `_deploy.yml`, the deploy job both environments share, runs this immediately
 // before the step that injects Infisical (`staging` or `prod`). That injection
 // exports the whole store to every later step in the job, and `deploy-vercel.mjs` builds each Vercel CLI
 // process's environment from these names plus the project's own app keys, so

@@ -71,7 +71,7 @@
 // from Infisical `prod`, a registry blip — and it used to run last,
 // after the migration had applied and the Render API had shipped. Run
 // 33275321347 is what that looks like: a migrated database, a new API, old
-// frontends, no tag. `deploy-production.yml` therefore calls this script twice:
+// frontends, no tag. The deploy job (`_deploy.yml`) therefore calls this script twice:
 // `DEPLOY_PHASE=build` before anything is applied, which pulls and builds both
 // projects and stashes each `.vercel` directory under `VERCEL_BUILD_STASH_DIR`,
 // and `DEPLOY_PHASE=upload` after Render reports healthy, which restores each

@@ -18,7 +18,7 @@
 // #2803 merged the two staging workflows into `deploy-staging.yml`, one
 // ordered job, and their two configs into `DEPLOY_STAGING_CONFIG` below. The
 // config machinery stays general: `gateJob` and `gateOutputRows` have no user
-// today, and production's alert (#2805) is the next config.
+// today. #2805 added `DEPLOY_PRODUCTION_CONFIG`, for `deploy-production.yml`.
 //
 // Closes the visibility gap recorded in issue #763:
 // `Deploy API` failed 44 of 44 executing runs for 71 days and nobody noticed,
@@ -58,7 +58,8 @@
 // (which post to PRs) and the tracker itself (#680 retired Linear). A staging
 // deploy is merge-driven with no PR to comment on, so an issue is the
 // equivalent target.
-// No new service, no new token — `GITHUB_TOKEN` with job-scoped `issues: write`.
+// No new service, no new token — `GITHUB_TOKEN` with job-scoped `issues: write`,
+// plus `actions: read` where the config sets `quietWhenNeverStarted`.
 //
 // Env inputs:
 //   GITHUB_TOKEN       — required (issues: write)
@@ -67,8 +68,14 @@
 //   ALERT_CONFIG       — required, which ALERT_CONFIGS entry to use. There is
 //                        no default: every call site names itself
 //   RUN_URL            — required, html_url of this run
+//   RUN_ID, RUN_ATTEMPT — `github.run_id` and `github.run_attempt`; needed where
+//                        the config sets `quietWhenNeverStarted` (without them
+//                        a never-started deploy raises)
 //   HEAD_BRANCH        — the deployed ref (always `main` since #1340)
 //   HEAD_SHA           — the deployed commit
+//
+// Writes `outcome=<outcome>` to GITHUB_OUTPUT when it is set, for a later step
+// (production's summary reads `not-started`).
 //
 // Exits 0 on every handled outcome — a watchdog that reds the run creates the
 // noise it exists to remove, and the underlying deploy job is already red.
@@ -83,6 +90,7 @@ import {
   resolveAlert as resolveAlertIssue,
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 // ── Alert issue identity ────────────────────────────────────────────────────
@@ -174,8 +182,67 @@ export const DEPLOY_STAGING_CONFIG = {
   ],
 };
 
+/**
+ * `.github/workflows/deploy-production.yml`, the only path to production
+ * (#2805). Its `deploy` job is `_deploy.yml` called with `environment:
+ * production`, so this reads the same one job staging's config does.
+ *
+ * Which runs reach this script is decided by the step's `if:` in that
+ * workflow: a dry run never does (nothing was applied, and the dispatcher is
+ * watching), a cancelled run never does, and a green `migrations-only` run
+ * never does, because the code didn't ship and so it can't close the alert.
+ * The one case decided here is a deploy job that ran no step, such as one
+ * whose approval was declined. Its result is `failure` like a real one, and
+ * production is unchanged, so `deployNeverStarted` reads this attempt's jobs
+ * and the script files nothing. Every other run that arrives
+ * either raises (the deploy job failed) or closes (a real `full` release
+ * succeeded).
+ *
+ * `gateJob` is null and `validate` is not a deploy job: a mistyped
+ * confirmation or a red-CI SHA fails before anyone approves and costs nothing,
+ * so it must never open an incident. The workflow skips `deploy` then, and the
+ * outcome job with it. The tag (`release`) is not watched either: its failure
+ * after a live ship reds the run's summary, and `production-release-pin.yml`
+ * raises its own P1 when the hosts are left untagged.
+ *
+ * P1, like every production alert in ALERT_ROUTING.md.
+ */
+export const DEPLOY_PRODUCTION_CONFIG = {
+  name: "deploy-production",
+  workflowLabel: "Deploy production",
+  workflowFile: ".github/workflows/deploy-production.yml",
+  gateJob: null,
+  deployJobs: ["deploy"],
+  gateOutputRows: [],
+  planOutput: null,
+  closesOn: "a later real `full` Deploy production run ships successfully",
+  alertTitle: "Deploy production failed — production may be partly deployed",
+  alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
+  retiredAlertTitles: [],
+  // A deploy job that never ran a step changed nothing, so it isn't an
+  // outage. Its display name as the jobs API lists it: the caller job's
+  // `name:`, then ` / deploy` once the call to `_deploy.yml` expands.
+  quietWhenNeverStarted: "Migrate, then ship Render + Vercel",
+  noOpReason: "the deploy job did not run",
+  // Unreachable through the workflow (its outcome job skips a skipped
+  // `deploy`), and loud if that ever drifts.
+  noOpIsUnexpected: true,
+  noOpNote:
+    "The `deploy` job did not run, so nothing was migrated, deployed or verified. This is not " +
+    "expected: `deploy-outcome` runs only when `deploy` was attempted, so reaching this state " +
+    "means the workflow's conditions have drifted.",
+  whyLines: [
+    "`Deploy production` is dispatched by hand, and a failed dispatch reds one row in the Actions",
+    "list and emails only the person who ran it. Nothing durable recorded that production was left",
+    "half-shipped: a migrated database under the previous API, or a new API under the previous",
+    "frontends. The run log names the step that failed, and what each step leaves behind is in",
+    "`docs/internal/ops/ALERT_ROUTING.md`. Recovery: `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.",
+  ],
+};
+
 export const ALERT_CONFIGS = {
   [DEPLOY_STAGING_CONFIG.name]: DEPLOY_STAGING_CONFIG,
+  [DEPLOY_PRODUCTION_CONFIG.name]: DEPLOY_PRODUCTION_CONFIG,
 };
 
 /** When an alert closes, unless a config says otherwise (`closesOn`). */
@@ -197,6 +264,8 @@ export const OUTCOME_COPY = {
     deployed: "✅ **DEPLOYED**",
     "no-op": "⏭️ **NO-OP — nothing deployed**",
     superseded: "⏭️ **SUPERSEDED — a newer run decides**",
+    "not-started":
+      "⏭️ **NOT STARTED — the deploy job ran no step (a declined approval, say); production is unchanged**",
   },
   brokenLines: (label, closesOn = DEFAULT_CLOSES_ON) => [
     `deploy path is broken: the most recent \`${label}\` run that actually tried to deploy did`,
@@ -348,6 +417,9 @@ export function buildHeadline({
   const label = config.workflowLabel;
   if (outcome === "superseded") {
     return `${label} on ${ref} is superseded: ${supersededReason}. It neither raises nor closes the alert; the run for the newest commit decides.`;
+  }
+  if (outcome === "not-started") {
+    return `${label} on ${ref} never started its deploy job, so nothing ran and production is unchanged. It neither raises nor closes the alert.`;
   }
   if (outcome === "failed") {
     // An escalated no-op needs its own sentence. Saying "did not succeed" of a
@@ -667,6 +739,37 @@ function defaultWriteSummary(summary) {
 }
 
 /**
+ * Whether this attempt's deploy job never ran a step (#2805): true, false, or
+ * null when that can't be read.
+ *
+ * A declined approval ends the job before any step, with a result a real
+ * failure also has. The jobs API tells them apart: a job that ran nothing
+ * lists no steps. (Derived from a skipped job's shape, run 34916333773: no
+ * `steps`, no `runner_id`. Any other pre-step end is quiet if it lists no
+ * steps too, and raises if it doesn't.) It is read for THIS attempt
+ * (`/actions/runs/{id}/attempts/{n}/jobs`, `actions: read`), because a re-run
+ * keeps the run id and an earlier attempt's never-started job must not quiet a
+ * later attempt's real failure. An output the called job's first step writes
+ * would say the same, but a reusable workflow's outputs may not reach the
+ * caller when its job fails, and a lost output would drop a real alert.
+ * Unreadable, or no job by that name, reads as started: the alert is raised.
+ */
+export async function deployNeverStarted({ token, repo, runId, runAttempt, jobName, fetchImpl = fetch }) {
+  if (!runId || !runAttempt || !jobName) return null;
+  const res = await ghRequest({
+    token,
+    fetchImpl,
+    path: `/repos/${repo}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`,
+  });
+  if (!res.ok || !Array.isArray(res.data?.jobs)) return null;
+  const jobs = res.data.jobs.filter((job) => job?.name === jobName || String(job?.name ?? "").startsWith(`${jobName} / `));
+  // A job carried over from an earlier attempt (when only a later job was
+  // re-run) says nothing about this one, so it isn't a verdict either.
+  if (jobs.length === 0 || jobs.some((job) => String(job.run_attempt) !== String(runAttempt))) return null;
+  return jobs.every((job) => !Array.isArray(job.steps) || job.steps.length === 0);
+}
+
+/**
  * Full flow for one completed run of the watched workflow. Everything network-bound goes
  * through fetchImpl, and the summary write through writeSummary, so tests run
  * offline with no filesystem side effects.
@@ -676,6 +779,8 @@ export async function runDeployAlert({
   repo,
   needs,
   runUrl,
+  runId = "",
+  runAttempt = "",
   headBranch,
   headSha,
   fetchImpl = fetch,
@@ -736,6 +841,39 @@ export async function runDeployAlert({
       needs?.[config.gateJob]?.outputs?.[output] === "true",
     ]),
   );
+  if (outcome === "failed" && config.quietWhenNeverStarted && !escalated) {
+    const neverStarted = await deployNeverStarted({
+      token,
+      repo,
+      runId,
+      runAttempt,
+      jobName: config.quietWhenNeverStarted,
+      fetchImpl,
+    });
+    if (neverStarted === true) {
+      writeSummary(
+        buildRunSummary({
+          outcome: "not-started",
+          failed,
+          deployed,
+          jobResults,
+          headBranch,
+          headSha,
+          runUrl,
+          gateOutputs,
+          gateSucceeded: false,
+          plan,
+          config,
+        }),
+      );
+      logger.log?.(`::notice::${buildHeadline({ outcome: "not-started", failed, deployed, headBranch, config })}`);
+      return { outcome: "not-started", failed, deployed, alert: { action: "none" } };
+    }
+    if (neverStarted === null) {
+      logger.log?.("::warning::[deploy-alert] could not read whether this attempt's deploy job started; treating the failure as a failed deploy");
+    }
+  }
+
   // `escalated` matters here, not only in the summary: this headline is what
   // the annotation and the ALERT ISSUE carry. Omitting it put the escalated
   // sentence on the step summary alone — the one surface this script's own
@@ -851,7 +989,7 @@ export async function runDeployAlert({
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
 
-async function main() {
+export async function main({ fetchImpl = fetch, writeSummary = defaultWriteSummary, logger = console } = {}) {
   const token = requireEnv("GITHUB_TOKEN");
   const repo = requireEnv("GITHUB_REPOSITORY");
   const needs = JSON.parse(requireEnv("DEPLOY_NEEDS"));
@@ -860,15 +998,23 @@ async function main() {
   // absent ALERT_CONFIG would otherwise write the staging alert's issue from
   // the wrong workflow's job results.
   const config = resolveAlertConfig(requireEnv("ALERT_CONFIG"));
-  await runDeployAlert({
+  const { outcome } = await runDeployAlert({
     token,
     repo,
     needs,
     runUrl: process.env.RUN_URL ?? "",
+    runId: process.env.RUN_ID ?? "",
+    runAttempt: process.env.RUN_ATTEMPT ?? "",
     headBranch: process.env.HEAD_BRANCH ?? "",
     headSha: process.env.HEAD_SHA ?? "",
     config,
+    fetchImpl,
+    writeSummary,
+    logger,
   });
+  // For a later step: production's summary reads it to tell a deploy that
+  // never started from one that failed.
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `outcome=${outcome}\n`);
 }
 
 if (isInvokedDirectly(import.meta.url)) {

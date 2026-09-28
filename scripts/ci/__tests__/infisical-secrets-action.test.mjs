@@ -9,9 +9,9 @@ import { dirname, join } from "node:path";
 import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 
 // Pins the second and third cutover of stage 4's composite-action work (#1382):
-// the Infisical preamble+injection (14 call sites across 7 workflows since #2803;
+// the Infisical preamble+injection (14 call sites across 6 workflows since #2805;
 // the roster below names each) and the
-// Supabase CLI version pin (4 sites).
+// Supabase CLI version pin (3 sites).
 //
 // Why this file has teeth beyond "the copies stayed gone": NONE of the
 // Infisical call sites runs on a pull request, and none may (#2518). A
@@ -26,8 +26,9 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 //     snapshot publisher (migration-snapshot.yml), which
 //     proves the MECHANISM after every staging deploy: a composite-nested
 //     `secrets-action` still exports to the calling job.
-//   * The rest are scheduled or dispatch-only, two of them on the
-//     production deploy path.
+//   * The rest are scheduled or dispatch-only. Production's deploy is
+//     `_deploy.yml`'s `prod` site, reached only by `deploy-production.yml`'s
+//     dispatch (#2805).
 //
 // So no PR can prove the mechanism or the TRANSCRIPTION, and this file has to:
 // that all eleven original were converted, that none was left hand-written, that each
@@ -307,15 +308,15 @@ describe("Infisical call sites", () => {
       ["db-backup.yml", "backup-production", "prod"],
       ["db-backup.yml", "backup-production-storage", "staging"],
       ["db-backup.yml", "backup-production-storage", "prod"],
-      ["deploy-production.yml", "deploy", "prod"],
       // One injection for the whole staging deploy since #2803: the migration,
       // the API deploy and the web and landing builds all read it. The job
       // hands each build only its app's keys; the rest of the store stays out
       // of the Vercel CLI (`lib/vercel-build-env.mjs`, #834 option b, #2672).
-      // In `_deploy.yml` since #2804, the job `deploy-staging.yml` calls. Its
-      // slug stays the literal `staging` while that job refuses every other
-      // environment; #2805 maps production to `prod`.
+      // In `_deploy.yml` since #2804, the job both deploy workflows call: one
+      // step per environment, each with a literal slug and named by
+      // `inputs.environment` (#2805). Production's slug is `prod`.
       ["_deploy.yml", "deploy", "staging"],
+      ["_deploy.yml", "deploy", "prod"],
       // The migration gates on pull_request read the published snapshot and
       // inject nothing (#2518). This is the read that publishes it, in the
       // `automation` environment (main-only, #2583). It injects both, because
@@ -496,15 +497,16 @@ describe("supabase-cli composite action", () => {
     }
   });
 
-  it("is called at all 4 sites", () => {
-    // Three in workflows; the fourth moved into the db-offsite-backup composite
+  it("is called at all 3 sites", () => {
+    // Two in workflows; the third moved into the db-offsite-backup composite
     // when db-backup.yml's dump sequence was extracted (#1435), which is why the
     // sibling actions are counted here too — a call site that migrates into a
-    // composite is still a call site.
+    // composite is still a call site. Production's deploy and staging's share
+    // one since #2805, in `_deploy.yml`.
     const total = [...workflows, ...otherActions]
       .filter(({ name }) => name !== "supabase-cli")
       .reduce((n, w) => n + countMatching(w.text, USES_SUPABASE), 0);
-    assert.equal(total, 4);
+    assert.equal(total, 3);
   });
 
   it("agrees with db-backup.sh's fallback pin", () => {
@@ -542,66 +544,160 @@ describe("supabase-cli composite action", () => {
 });
 
 describe("local actions resolve at every call site", () => {
-  it("every job calling a local action checks out first", () => {
-    // `uses: ./…` resolves against the runner workspace, so without an earlier
-    // actions/checkout in the SAME job the step fails with "Can't find
-    // 'action.yml'". deploy-api.yml's deploy-staging job had no checkout at all
-    // -- it only curled a deploy hook then -- and gained one for exactly this reason.
-    // That job runs on workflow_run after merge, so no PR would have caught it.
+  // The workspace a job is in, as a state machine over its lines:
+  //
+  //   none      — nothing checked out yet;
+  //   trusted   — the workflow's own commit: a first `actions/checkout` with no
+  //               `ref:` (or `ref: ${{ github.sha }}`), or the one sanctioned
+  //               move back to it, `git checkout --force --detach
+  //               "$TRUSTED_SHA"` in a step whose `TRUSTED_SHA` is
+  //               `${{ github.sha }}` (`_deploy.yml`, #2805);
+  //   untrusted — anything else: a checkout with any other `ref:`, a later
+  //               checkout, or any other rewrite of the tree.
+  //
+  // A local action may run only in `trusted`. `uses: ./…` resolves from the
+  // workspace at step-execution time, so after a move to another commit it
+  // loads THAT commit's copy: deploying anything older than the action fails
+  // with "Can't find 'action.yml'" (the rollback path), and anything newer
+  // silently uses that commit's copy of the CLI pin.
+  const TRUSTED_MOVE = /^\s*git checkout --force --detach "\$TRUSTED_SHA"\s*$/;
+  const TRUSTED_REF = /^\s*TRUSTED_SHA:\s*\$\{\{\s*github\.sha\s*\}\}\s*$/;
+  const STEP_START = /^\s{4,}-\s/;
+
+  /** Every local-action call, with the workspace state it runs in. */
+  function localActionCalls(text) {
+    // Comments blanked: a commented-out `# uses: actions/checkout@v4` must not
+    // satisfy the requirement for a real one.
+    const lines = linesOf(text).map((l) => (/^\s*#/.test(l) ? "" : l));
+    const calls = [];
+    let state = "none";
+    let movedAt = null;
+    let stepStart = 0;
+    lines.forEach((line, i) => {
+      // Job boundary. Tolerates a quoted id and a trailing comment: the
+      // stricter `/^ {2}[a-z0-9_-]+:\s*$/` never matched `deploy-prod: # note`
+      // or `"deploy-prod":`, so one job's checkout leaked into the next.
+      if (JOB_KEY_RE.test(line) && i > 3) {
+        state = "none";
+        movedAt = null;
+      }
+      if (STEP_START.test(line)) stepStart = i;
+      if (/uses:\s*actions\/checkout@/.test(line)) {
+        // The step's own `ref:`, if any: the whole step, since `with:` may
+        // come before `uses:`, bounded by the next step.
+        let next = lines.findIndex((l, j) => j > i && STEP_START.test(l));
+        if (next === -1) next = lines.length;
+        const ref = lines.slice(stepStart, next).map((l) => l.match(/^\s+ref:\s*(.+?)\s*$/)?.[1]).find(Boolean);
+        const own = !ref || /^\$\{\{\s*github\.sha\s*\}\}$/.test(ref);
+        // Only the FIRST checkout can establish trust; a later one moves the
+        // workspace like `git checkout --detach` does, and must read that way.
+        if (state === "none" && own) state = "trusted";
+        else {
+          state = "untrusted";
+          movedAt = i + 1;
+        }
+      } else if (TRUSTED_MOVE.test(line) && state !== "none") {
+        let next = lines.findIndex((l, j) => j > i && STEP_START.test(l));
+        if (next === -1) next = lines.length;
+        const step = lines.slice(stepStart, next);
+        // A move under an `if:` leaves the workspace on the deployed commit
+        // whenever the condition is false.
+        if (step.some((l) => TRUSTED_REF.test(l)) && !step.some((l) => /^\s+if:/.test(l))) {
+          state = "trusted";
+          movedAt = null;
+        } else {
+          state = "untrusted";
+          movedAt = i + 1;
+        }
+      } else if (WORKSPACE_REWRITE_RE.test(line) && state !== "none") {
+        state = "untrusted";
+        movedAt = i + 1;
+      }
+      if (USES_INFISICAL.test(line) || USES_SUPABASE.test(line)) {
+        calls.push({ line: i + 1, state, movedAt });
+      }
+    });
+    return calls;
+  }
+
+  it("every job calling a local action runs it from the trusted workspace", () => {
+    let seen = 0;
     for (const { name, text } of workflows) {
-      // Comments blanked for the same reason as above: a commented-out
-      // `# uses: actions/checkout@v4` must not satisfy the requirement for a
-      // real one.
-      const lines = linesOf(text).map((l) => (/^\s*#/.test(l) ? "" : l));
-      let checkedOut = false;
-      let workspaceMoved = null;
-      lines.forEach((line, i) => {
-        // Job boundary. Tolerates a quoted id and a trailing comment: the
-        // stricter `/^ {2}[a-z0-9_-]+:\s*$/` never matched `deploy-prod: # note`
-        // or `"deploy-prod":`, so one job's checkout leaked into the next and
-        // the guard passed over a job that had none — the exact bug it exists
-        // to catch. The sibling turbo guard already handles both spellings.
-        if (JOB_KEY_RE.test(line) && i > 3) {
-          checkedOut = false;
-          workspaceMoved = null;
-        }
-        if (/uses:\s*actions\/checkout@/.test(line)) {
-          // The FIRST checkout in a job establishes the workspace. A LATER one
-          // moves it, and must be treated exactly like `git checkout --detach`
-          // — otherwise rewriting the detach as `actions/checkout` with
-          // `ref: ${{ inputs.sha }}` both re-breaks the rollback path and
-          // clears the flag that would have caught it. Confirmed by mutation.
-          if (checkedOut) workspaceMoved = i + 1;
-          else checkedOut = true;
-        }
-        // A step that rewrites the tree invalidates every LATER local action in
-        // the job, because `uses: ./…` resolves from the workspace at
-        // step-execution time. deploy-production.yml detaches to the deployed
-        // SHA, so calling a local action after that point loads it from THAT
-        // commit: deploying anything older than the action fails with "Can't
-        // find 'action.yml'" — the rollback path — and deploying anything newer
-        // silently uses that commit's copy of the CLI pin. A checkout earlier
-        // in the job is necessary but NOT sufficient, which is why this is
-        // tracked separately.
-        if (WORKSPACE_REWRITE_RE.test(line) && checkedOut) {
-          workspaceMoved = i + 1;
-        }
-        if (USES_INFISICAL.test(line) || USES_SUPABASE.test(line)) {
-          assert.ok(
-            checkedOut,
-            `${name}:${i + 1} calls a local composite action with no actions/checkout ` +
-              `earlier in the same job — the action file will not be on disk`,
-          );
-          assert.equal(
-            workspaceMoved,
-            null,
-            `${name}:${i + 1} calls a local composite action AFTER the workspace was ` +
-              `rewritten at line ${workspaceMoved} — it would load the action from that ` +
-              `tree, not the trusted ref. Move the action call before the checkout.`,
-          );
-        }
-      });
+      for (const call of localActionCalls(text)) {
+        seen += 1;
+        assert.notEqual(
+          call.state,
+          "none",
+          `${name}:${call.line} calls a local composite action with no actions/checkout ` +
+            `earlier in the same job — the action file will not be on disk`,
+        );
+        assert.equal(
+          call.state,
+          "trusted",
+          `${name}:${call.line} calls a local composite action after the workspace was ` +
+            `moved to another commit at line ${call.movedAt} — it would load the action from that ` +
+            `tree, not the trusted ref. Call it before the move, or after the move back ` +
+            `(\`git checkout --force --detach "$TRUSTED_SHA"\` with TRUSTED_SHA: \${{ github.sha }}).`,
+        );
+      }
     }
+    assert.ok(seen >= 14, `expected every Infisical and Supabase call site, saw ${seen}`);
+  });
+
+  // The guard's own teeth, on the one file whose trust changes mid-job.
+  describe("fails on the moves that would break _deploy.yml's trust split", () => {
+    const deploy = workflows.find((w) => w.name === "_deploy.yml").text;
+    const verdicts = (text) => localActionCalls(text).map((c) => c.state);
+
+    it("passes the file as it is", () => {
+      assert.deepEqual(verdicts(deploy), ["trusted", "trusted", "trusted"]);
+    });
+
+    it("fails without the move to the trusted ref", () => {
+      const mutated = deploy.replace(/^(\s*)git checkout --force --detach "\$TRUSTED_SHA"$/m, "$1true");
+      assert.notEqual(mutated, deploy);
+      assert.ok(verdicts(mutated).every((v) => v === "untrusted"));
+    });
+
+    it("fails when TRUSTED_SHA names the deployed commit instead", () => {
+      const mutated = deploy.replace(/TRUSTED_SHA: \$\{\{ github\.sha \}\}/, "TRUSTED_SHA: ${{ inputs.sha }}");
+      assert.notEqual(mutated, deploy);
+      assert.ok(verdicts(mutated).every((v) => v === "untrusted"));
+    });
+
+    it("fails when the move is not forced", () => {
+      const mutated = deploy.replace('git checkout --force --detach "$TRUSTED_SHA"', 'git checkout --detach "$TRUSTED_SHA"');
+      assert.notEqual(mutated, deploy);
+      assert.ok(verdicts(mutated).every((v) => v === "untrusted"));
+    });
+
+    it("fails when the move runs only on some runs", () => {
+      const mutated = deploy.replace(
+        /(- name: Move the workspace to the trusted ref\n)/,
+        "$1        if: inputs.environment == 'production'\n",
+      );
+      assert.notEqual(mutated, deploy);
+      assert.ok(verdicts(mutated).every((v) => v === "untrusted"));
+    });
+
+    it("reads a checkout's ref wherever it sits in the step", () => {
+      const job = (checkout) =>
+        ["jobs:", "  x:", "    runs-on: ubuntu-latest", "    steps:", ...checkout, "      - uses: ./.github/actions/supabase-cli"].join("\n");
+      const refFirst = ["      - name: co", "        with:", "          ref: ${{ inputs.sha }}", "        uses: actions/checkout@v4"];
+      const usesFirst = ["      - name: co", "        uses: actions/checkout@v4", "        with:", "          ref: ${{ inputs.sha }}"];
+      assert.deepEqual(verdicts(job(refFirst)), ["untrusted"]);
+      assert.deepEqual(verdicts(job(usesFirst)), ["untrusted"]);
+      assert.deepEqual(verdicts(job(["      - uses: actions/checkout@v4"])), ["trusted"]);
+    });
+
+    it("fails on a local action after the detach to the deployed commit", () => {
+      const mutated = deploy.replace(
+        /(\n {6}- name: Plan the deploy\n)/,
+        "\n      - name: Late\n        uses: ./.github/actions/supabase-cli\n$1",
+      );
+      assert.notEqual(mutated, deploy);
+      assert.equal(verdicts(mutated).at(-1), "untrusted");
+    });
   });
 });
 

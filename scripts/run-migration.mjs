@@ -108,7 +108,7 @@ export function validateInvocation({
   // cannot initialise its `cli_login_postgres` role and dies with
   // `42501: permission denied to alter role` — which reads as a privilege
   // problem on the production database and is a CLI bug (supabase/cli#5091).
-  // `deploy-production.yml`'s fence already checks it for the workflow path;
+  // The production deploy's fence (`_deploy.yml`) already checks it for the workflow path;
   // the documented human recovery run had nothing checking it at all, so an
   // operator following the runbook mid-incident would have spent the incident
   // debugging a misleading permissions error.
@@ -233,7 +233,7 @@ export function createSupabaseRunner({ log = console.log } = {}) {
  * `scripts/`, does exactly that — every safety layer in this file passes, the
  * step records success, and zero migrations were applied. That is the same
  * "reports migrations applied having applied zero" outcome the entry guard
- * below and deploy-production.yml's working-tree fence both exist to prevent,
+ * below and the production deploy's working-tree fence (`_deploy.yml`) both exist to prevent,
  * arriving by a third door.
  *
  * Both sibling gates already treat this state as fatal: check-migration-drift.mjs
@@ -366,7 +366,7 @@ export function runMigrationCli({
 // runs nothing and exits 0, the workflow step records `success`, the run
 // summary says the migrations applied, and Render then deploys new code against
 // the old schema — the precise "reports migrations applied having applied zero"
-// outcome the working-tree fence in deploy-production.yml exists to prevent,
+// outcome the production deploy's working-tree fence (`_deploy.yml`) exists to prevent,
 // arriving by a different door. The documented laptop recovery would no-op the
 // same way. isInvokedDirectly's JSDoc says why its body can't be falsely false
 // on a path with a space or through a symlink.

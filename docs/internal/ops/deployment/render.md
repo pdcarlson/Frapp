@@ -68,6 +68,10 @@ reachable. The JSON body is the liveness payload in
 > `/health` is the right value here because it is the plain liveness probe that always 2xxs; the
 > readiness half is the `/health/ready` smoke loop in `deploy-production.yml`.
 >
+> **2026-09-28 (#2805):** that loop is gone. Both environments' deploys now run
+> `verify-served-commit.mjs` in the shared `_deploy.yml` job, which requires `/health/ready` to
+> answer 2xx **and** report the deployed commit.
+>
 > **2026-09-08:** `scripts/ci/production-guardrails.mjs` asserts the live
 > `serviceDetails.healthCheckPath` on `frapp-api-prod` is `/health`, daily at 07:15
 > and as the `deploy-production.yml` preflight. Empty (TCP-only) and `/health/ready`
@@ -130,7 +134,7 @@ Splitting these into a standalone Render Background Worker is not currently warr
 
 ### 5.7 Deploy Hooks (for GitHub Actions)
 
-No deploy hook is used. Both API services deploy by commit through the Render API with `RENDER_API_KEY` (a GitHub environment secret): `deploy-production.yml` for `frapp-api-prod`, and `deploy-staging.yml` for `frapp-api-staging` (by commit since [#2505](https://github.com/pdcarlson/Frapp/issues/2505)). A deploy hook can't name a commit; it builds the branch tip. A hook URL is also a bearer credential, so don't store one anywhere.
+No deploy hook is used. Both API services deploy by commit through the Render API with `RENDER_API_KEY` (a GitHub environment secret): `deploy-production.yml` for `frapp-api-prod`, and `deploy-staging.yml` for `frapp-api-staging` (by commit since [#2505](https://github.com/pdcarlson/Frapp/issues/2505)), both through the `_deploy.yml` job they call. A deploy hook can't name a commit; it builds the branch tip. A hook URL is also a bearer credential, so don't store one anywhere.
 
 The one value the deploy workflows still take from **Infisical**, not GitHub, injected at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
 

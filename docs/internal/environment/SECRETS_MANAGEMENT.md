@@ -174,7 +174,7 @@ that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1
 `method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
 `INFISICAL_CLIENT_SECRET` secrets, read through the GitHub environment each job names (§6). This is universal
 auth, not OIDC. Every workflow that calls the composite action below does this — today
-`_deploy.yml` (the job `deploy-staging.yml` calls), `deploy-production.yml`, `db-backup.yml`,
+`_deploy.yml` (the job `deploy-staging.yml` and `deploy-production.yml` call), `db-backup.yml`,
 `check-migration-drift.yml`, `migration-snapshot.yml`, `staging-conformance.yml` and
 `production-auth-conformance.yml` (re-derive with
 `git grep -l 'actions/infisical-secrets' .github/workflows`) — not the deploy workflows alone. No pull-request job is among them: `migration-drift-gate.yml` reads the snapshot
@@ -238,8 +238,9 @@ code at build, and the only non-public key either app receives, `SENTRY_AUTH_TOK
 deployment reads at request time.
 
 **Production takes the same path (owner, 2026-09-28, [#2673](https://github.com/pdcarlson/Frapp/issues/2673)).**
-`deploy-production.yml` records its env names immediately before its Infisical `prod` injection, and
-both Vercel steps (build and upload) run on those names plus each app's `APP_CONFIG_KEYS`. Before
+Production's deploy job (`_deploy.yml`, called by `deploy-production.yml`) records its env names
+immediately before its Infisical `prod` injection, and both production Vercel steps (build and
+upload) run on those names plus each app's `APP_CONFIG_KEYS`. Before
 this, every production Vercel CLI process ran on the whole `prod` store, and a Production row filled
 any app key the injection lacked. A dry run withholds `SENTRY_AUTH_TOKEN` from the build, and the
 pulled file keeps no app key, so it mints no Sentry release

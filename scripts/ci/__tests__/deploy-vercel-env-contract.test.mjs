@@ -2,10 +2,10 @@
 // environment that script's phase requires.
 //
 // ── Why this file exists rather than one more assertion in the fence test ───
-// `deploy-vercel.mjs` is invoked from TWO workflows — `deploy-production.yml`
-// and `_deploy.yml` (the job `deploy-staging.yml` calls, since #2804), each
-// twice: a `build` phase and an `upload` phase (staging since #2803; before it,
-// one unphased call) — so the contract is not a property of either file. The guard that came out of #2265 lived in
+// `deploy-vercel.mjs` is invoked four times from one workflow, `_deploy.yml`
+// (the job both deploy workflows call, since #2804 and #2805): a `build` phase
+// and an `upload` phase for each of preview and production. It used to be two
+// workflows, and the guard that came out of #2265 lived in
 // `deploy-production-fence.test.mjs` and was production-only and
 // `DEPLOY_SHA`-only; the same class of bug in the staging caller had nothing
 // looking at it at all.
@@ -31,11 +31,13 @@
 //
 // ── Why the env lookup walks three scopes ──────────────────────────────────
 // A per-step guard that only reads the step's own `env:` block would be wrong,
-// not merely strict. `deploy-production.yml` declares `VERCEL_WEB_PROJECT_ID`,
-// `VERCEL_LANDING_PROJECT_ID` and `VERCEL_TEAM_ID` at WORKFLOW level, and the
-// staging caller this replaced (`deploy-vercel-staging.yml`, #2803) declared
-// them at JOB level. Both are correct and both are how Actions resolves
-// `env` — workflow, then job, then step, innermost winning. A guard that
+// not merely strict. `deploy-production.yml` used to declare
+// `VERCEL_WEB_PROJECT_ID`, `VERCEL_LANDING_PROJECT_ID` and `VERCEL_TEAM_ID` at
+// WORKFLOW level (until #2805: a caller's `env:` doesn't reach a called
+// workflow, so `_deploy.yml` passes them per step), and the staging caller
+// `deploy-vercel-staging.yml` declared them at JOB level (until #2803). Both
+// are how Actions resolves `env` — workflow, then job, then step, innermost
+// winning. A guard that
 // ignored the outer two would fail a caller for a bug it does not have, and
 // the fix for a false failure is usually to delete the guard.
 
@@ -99,25 +101,18 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
         `${sites().map((s) => s.name).join(", ") || "none"}`,
     );
 
-    // Both callers run both phases, one call site each (#2803 for staging). A
-    // caller missing its build ships whatever `.vercel` holds; one missing its
-    // upload builds and ships nothing.
-    for (const workflowFile of ["deploy-production.yml", "_deploy.yml"]) {
-      const callSites = sites().filter((s) => s.workflowFile === workflowFile);
-      assert.equal(callSites.length, 2, `${workflowFile} should have a build and an upload call site`);
+    // Both channels run both phases, one call site each. A channel missing its
+    // build ships whatever `.vercel` holds; one missing its upload builds and
+    // ships nothing.
+    assert.deepEqual([...new Set(sites().map((s) => s.workflowFile))], ["_deploy.yml"]);
+    for (const target of [VERCEL_TARGET_PREVIEW, VERCEL_TARGET_PRODUCTION]) {
+      const callSites = sites().filter((s) => s.target === target);
       assert.deepEqual(
         callSites.map((s) => s.phase).sort(),
         [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD],
-        `the two ${workflowFile} call sites should be one build phase and one upload phase`,
+        `the ${target} call sites should be one build phase and one upload phase`,
       );
     }
-
-    // Each workflow must be read as the target it ships to: a staging caller
-    // read as production would pass here while deploying to the wrong channel.
-    assert.deepEqual(
-      [...new Set(sites().map((s) => `${s.workflowFile}:${s.target}`))].sort(),
-      [`_deploy.yml:${VERCEL_TARGET_PREVIEW}`, `deploy-production.yml:${VERCEL_TARGET_PRODUCTION}`],
-    );
   });
 
   // The generalisation of the #2265 guard: not `DEPLOY_SHA` alone, and not
@@ -154,19 +149,20 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
   // the loops above cannot quietly stop covering it.
   it("still covers the exact #2265 case: the production build step passes DEPLOY_SHA", () => {
     const build = sites().find(
-      (s) => s.workflowFile === "deploy-production.yml" && s.phase === DEPLOY_PHASE_BUILD,
+      (s) => s.target === VERCEL_TARGET_PRODUCTION && s.phase === DEPLOY_PHASE_BUILD,
     );
     assert.ok(build, "no production build-phase call site found");
-    assert.equal(build.env.get("DEPLOY_SHA"), "${{ steps.sha.outputs.sha }}");
+    assert.equal(build.env.get("DEPLOY_SHA"), "${{ inputs.sha }}");
   });
 
-  // `DEPLOY_SHA` is `${{ steps.sha.outputs.sha }}`, and the `steps` context does
-  // NOT exist in a job-level `env:`. So this value is only correct at STEP
+  // Some values are `${{ steps.* }}` references (production's DEPLOY_SHA was
+  // one until #2805), and the `steps` context does NOT exist in a job-level
+  // `env:`. So such a value is only correct at STEP
   // level — and because the reader merges three scopes, a well-meant "stop
-  // repeating it five times" refactor that hoists it to the job would satisfy
-  // every other assertion here while making the workflow fail at dispatch, on
-  // the only path to production. The merged map is right for everything else;
-  // this is the exception it cannot express.
+  // repeating it" refactor that hoists one to the job would satisfy every
+  // other assertion here while making the workflow fail at dispatch. The
+  // merged map is right for everything else; this is the exception it cannot
+  // express.
   it("declares steps.* values on the step itself, where that context exists", () => {
     for (const site of sites()) {
       for (const [name, value] of site.env) {

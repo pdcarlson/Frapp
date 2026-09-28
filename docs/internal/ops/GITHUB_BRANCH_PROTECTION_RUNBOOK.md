@@ -397,7 +397,7 @@ Separately, in Settings → **Environments** → `production`:
 
 - [ ] **Required reviewers** is enabled. This is the only human gate on a production
       deploy since #1340. To confirm it is actually active, dispatch **Deploy production**
-      with *Stop after the dry run* checked and watch the job: an environment-gated job
+      with the dry-run box (`dry_run_only`) checked and watch the job: an environment-gated job
       parks on "Waiting for approval", while an ungated one starts in about two seconds.
       Read 2026-09-02: `GET /repos/pdcarlson/Frapp/environments/production` reported
       `protection_rules: ["required_reviewers"]`, which answers it directly rather than by

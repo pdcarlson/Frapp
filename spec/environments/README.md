@@ -129,7 +129,8 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
 
 - **Git branch:** none. Production is deployed from a **named commit on `main`** by
   `.github/workflows/deploy-production.yml` (`workflow_dispatch`, typed confirmation,
-  and the `production` environment's Required reviewers).
+  and the `production` environment's Required reviewers), which calls the deploy job
+  staging shares (`_deploy.yml`) with production's layers switched on (#2805).
 - **Supabase:** Dedicated production project. Fully isolated users, database, storage.
 - **Web App:** `app.frapp.live` (Vercel, production deployment created by the workflow, which
   builds the named commit on the runner with `vercel build --prod` and uploads it with
@@ -255,12 +256,12 @@ Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-stagi
 ### Deploy Pipeline (on merge)
 
 ```text
-staging:     merge to main → CI passes → deploy-staging.yml → _deploy.yml, one job: vercel build (web, landing)
-             → DB migration (dry-run then apply) → API deploy (Render) → verify served commit
-             → vercel deploy --prebuilt (web, landing) → alias the staging hostnames
-production:  dispatch a SHA → validate (ancestor of main + CI green) → provider preflight
-             → migration replay → vercel build --prod → apply → Render deploy by commit
-             → health check → vercel deploy --prebuilt --prod → tag
+staging:     merge to main → CI passes → deploy-staging.yml → _deploy.yml, one job: plan
+             → DB migration dry-run → vercel build (web, landing) → apply → API deploy (Render)
+             → verify served commit → vercel deploy --prebuilt (web, landing) → alias the staging hostnames
+production:  dispatch a SHA → validate (ancestor of main + CI green) → approve → _deploy.yml, the
+             same job: provider preflight → migration replay → dry-run → vercel build --prod → apply
+             → Render deploy by commit → verify served commit → vercel deploy --prebuilt --prod → tag
 ```
 
 Production deployments run only when a human dispatches **Deploy production** with a

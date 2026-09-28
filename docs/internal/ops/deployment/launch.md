@@ -26,7 +26,7 @@
 - [ ] Configure DNS records for production domains
 - [ ] Set up Stripe live mode (after business verification)
 - [ ] Enable **Required reviewers** on the `production` GitHub Environment
-- [ ] Run **Deploy production** with a green `main` SHA (start with *Stop after the dry run*)
+- [ ] Run **Deploy production** with a green `main` SHA (start with the dry-run box, `dry_run_only`, checked)
 - [ ] Verify all production sites deploy
 - [ ] Set up Sentry for error tracking (API + web)
 - [ ] Build production mobile app with EAS
