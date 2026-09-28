@@ -5,6 +5,7 @@ import {
   useConfirmDiscordUploads,
   useCreateDiscordImport,
   useDiscordAvailability,
+  useDiscordConnection,
   useDiscordImportFiles,
   useDiscoverDiscordChannels,
   useRequestDiscordUploadUrls,
@@ -102,6 +103,15 @@ export function ImportWizard({
   const [roleChoices, setRoleChoices] = useState<Record<string, string>>({});
 
   const availability = useDiscordAvailability();
+  const botConnection = useDiscordConnection();
+  // Availability is about STARTING a connect. A chapter that is already
+  // connected can import whatever it says: the import reads through the bot
+  // token and the stored guild, and fails loudly on its own if the token is
+  // dead. Gating it on availability would block an import the API accepts
+  // just because, say, the portal lost a redirect row nobody now needs.
+  const botUsable =
+    availability.data?.available === true ||
+    botConnection.data?.connected === true;
   const createImport = useCreateDiscordImport();
   const requestUrls = useRequestDiscordUploadUrls();
   const confirmUploads = useConfirmDiscordUploads();
@@ -300,7 +310,7 @@ export function ImportWizard({
           <SourceStep
             value={source}
             onChange={setSource}
-            botAvailable={availability.data?.available === true}
+            botAvailable={botUsable}
           />
         ) : null}
 
@@ -389,10 +399,7 @@ export function ImportWizard({
             // `source` survives the card greying out: an admin who picked the
             // bot, went on, and came Back after the API withdrew it would
             // otherwise be sent straight back to a connect that cannot work.
-            disabled={
-              !source ||
-              (source === "bot" && availability.data?.available !== true)
-            }
+            disabled={!source || (source === "bot" && !botUsable)}
           >
             Continue
           </Button>

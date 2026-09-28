@@ -240,10 +240,14 @@ names which (table below).
 
 **What `available` checks, and what it cannot.** `DiscordOAuthService.isAvailable()`
 needs the five variables named above, then reads Discord's own record of the
-application: `GET /applications/@me` under the bot token, once at boot, again
-whenever a cached answer is more than ten minutes old (one minute when the last
-answer was bad or unsettled), and fresh before every "Add to Server"
-(`apps/api/src/application/services/discord-application-check.ts`). That record
+application: `GET /applications/@me` under the bot token, once at boot, and fresh
+before every "Add to Server"
+(`apps/api/src/application/services/discord-application-check.ts`). In between,
+`availability` answers from a cached verdict: ten minutes for a verified setup or
+one Discord answered without listing its redirects ("unchecked"), one minute for
+a withdrawal or an unreachable Discord. A withdrawal is re-read before it is
+answered again; the others answer at once and refresh behind. A 401 the bot has
+met since, from an import say, skips the cache. That record
 settles three things: the redirect URI is registered (step 4), the bot token is
 live (step 2), and the token and `DISCORD_CLIENT_ID` belong to one application
 (steps 2 and 3). A mistake in any of them withdraws the flow instead of sending

@@ -195,11 +195,10 @@ export function ConnectStep({
       {withdrawn ? (
         <div className="rounded-lg border border-border p-3">
           <p className="text-sm font-medium">
-            Connecting Discord is switched off right now
+            Connecting Discord is not available here right now
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Frapp has been alerted. Go back and choose Upload an export, which
-            does the same job.
+            Go back and choose Upload an export, which does the same job.
           </p>
         </div>
       ) : null}

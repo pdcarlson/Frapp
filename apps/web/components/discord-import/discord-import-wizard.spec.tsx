@@ -146,6 +146,20 @@ describe("ImportWizard — choosing a path", () => {
     expect(bot.disabled).toBe(true);
   });
 
+  it("still lets an already-connected chapter take the bot path while connecting is withdrawn", () => {
+    // Availability is about starting a connect. The import itself reads
+    // through the stored guild, and the API accepts it.
+    availability.value = { available: false };
+    connection.value = { connected: true, guild_name: "Tau Nu" };
+    render(<ImportWizard onStarted={() => {}} onCancel={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Connect Discord/ }));
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
   it("will not continue to Connect once the bot is withdrawn, even if it was picked", () => {
     // The choice outlives the card greying out. An admin who picked the bot,
     // went on, and came Back after the API withdrew it must not be sent
@@ -597,7 +611,7 @@ describe("ConnectStep — confirming what the callback parked", () => {
     );
     await waitFor(() =>
       expect(
-        screen.getByText(/Connecting Discord is switched off right now/),
+        screen.getByText(/Connecting Discord is not available here right now/),
       ).toBeInTheDocument(),
     );
     expect(
