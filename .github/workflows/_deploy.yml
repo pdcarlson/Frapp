@@ -143,10 +143,11 @@ jobs:
     # `cancel-in-progress: false` is the important half: cancelling mid-`db push`
     # is how a database ends up half-migrated, and cancelling between the API
     # and the upload leaves the hosts on different commits. GitHub still
-    # replaces a PENDING run when a third arrives; that job ends `cancelled`,
-    # which `deploy-outcome` reports as a failure. For staging it closes on the
-    # next run, which plans from the served commit and so carries the replaced
-    # run's changes too.
+    # replaces a PENDING run when a third arrives; that job ends `cancelled`.
+    # Staging's `deploy-outcome` reports it as a failure, which closes on the
+    # next run: that run plans from the served commit and so carries the
+    # replaced run's changes too. Production's files nothing if the job lists
+    # no steps (deploy-alert.mjs's never-started rule).
     #
     # A `full` production dry run holds the group for an install and two
     # builds on top of the rehearsal, so a `migrations-only` recovery dispatch

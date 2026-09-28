@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -10,6 +11,7 @@ import {
   DEPLOY_STAGING_CONFIG,
   alertJobNames,
   deployNeverStarted,
+  main,
   buildAlertCommentBody,
   buildAlertIssueBody,
   buildHeadline,
@@ -1772,6 +1774,8 @@ test("readPlan and isSuperseded ignore a config without planOutput", () => {
 const JOBS_PATH = "/repos/o/r/actions/runs/77/attempts/2/jobs?per_page=100";
 const DEPLOY_JOB = DEPLOY_PRODUCTION_CONFIG.quietWhenNeverStarted;
 const ranSteps = [{ name: "Set up job", status: "completed", conclusion: "success" }];
+/** The production deploy job as attempt 2 lists it. */
+const deployJob = (fields = {}) => ({ name: `${DEPLOY_JOB} / deploy`, run_attempt: 2, ...fields });
 
 /** makeFetchStub, plus attempt 2's jobs. `jobs === null` answers 403. */
 function withJobs(jobs, base = makeFetchStub({ issues: [] })) {
@@ -1796,14 +1800,16 @@ test("deployNeverStarted reads this attempt's deploy job, and says when it can't
       fetchImpl: withJobs(jobs).fetchImpl,
       ...overrides,
     });
-  const validate = { name: "Confirm and validate the SHA", steps: ranSteps };
-  // The expanded call's name, with no steps: it never got a runner.
-  assert.equal(await read([validate, { name: `${DEPLOY_JOB} / deploy`, conclusion: "failure" }]), true);
-  assert.equal(await read([validate, { name: `${DEPLOY_JOB} / deploy`, steps: [] }]), true);
-  assert.equal(await read([validate, { name: DEPLOY_JOB, conclusion: "cancelled" }]), true, "the unexpanded name too");
-  assert.equal(await read([validate, { name: `${DEPLOY_JOB} / deploy`, steps: ranSteps }]), false);
+  const validate = { name: "Confirm and validate the SHA", run_attempt: 1, steps: ranSteps };
+  // The expanded call's name, with no steps: it ran nothing.
+  assert.equal(await read([validate, deployJob({ conclusion: "failure" })]), true);
+  assert.equal(await read([validate, deployJob({ steps: [] })]), true);
+  assert.equal(await read([validate, deployJob({ name: DEPLOY_JOB, conclusion: "cancelled" })]), true, "the unexpanded name too");
+  assert.equal(await read([validate, deployJob({ steps: ranSteps })]), false);
   // Every job by that name must be step-less: one that ran is enough to raise.
-  assert.equal(await read([{ name: DEPLOY_JOB }, { name: `${DEPLOY_JOB} / deploy`, steps: ranSteps }]), false);
+  assert.equal(await read([deployJob({ name: DEPLOY_JOB }), deployJob({ steps: ranSteps })]), false);
+  // Carried over from attempt 1 (only a later job re-run): not this attempt's verdict.
+  assert.equal(await read([deployJob({ run_attempt: 1 })]), null);
   assert.equal(await read([validate]), null, "no deploy job is not a verdict");
   assert.equal(await read(null), null, "an unreadable list is not a verdict");
   assert.equal(await read([], { runAttempt: "" }), null, "no attempt, no read");
@@ -1830,23 +1836,56 @@ const productionFailure = (jobs) => {
 };
 
 test("a production deploy job that never started neither raises nor closes the alert", async () => {
-  const { stub, run } = productionFailure([{ name: `${DEPLOY_JOB} / deploy`, conclusion: "failure" }]);
+  const { stub, run } = productionFailure([deployJob({ conclusion: "failure" })]);
   let summary = "";
   const result = await run({ writeSummary: (text) => (summary = text) });
   assert.equal(result.outcome, "not-started");
   assert.deepEqual(result.alert, { action: "none" });
   assert.deepEqual(stub.calls.map((c) => c.path), [JOBS_PATH], "no issue read or written");
-  assert.match(summary, /NOT STARTED — the deploy job never ran a step/);
+  assert.match(summary, /NOT STARTED — the deploy job ran no step/);
   assert.doesNotMatch(summary, /FAILED/);
 });
 
 test("a failed production deploy still raises when its job ran, or when that can't be read", async () => {
-  for (const jobs of [[{ name: `${DEPLOY_JOB} / deploy`, steps: ranSteps }], [], null]) {
+  for (const jobs of [[deployJob({ steps: ranSteps })], [], null]) {
     const { stub, run } = productionFailure(jobs);
     const result = await run();
     assert.equal(result.outcome, "failed", JSON.stringify(jobs));
     assert.equal(result.alert.action, "created", JSON.stringify(jobs));
     assert.ok(stub.calls.some((c) => c.method === "POST" && c.path === "/repos/o/r/issues"));
+  }
+});
+
+// The CLI wiring: RUN_ATTEMPT reaches the check, and the outcome reaches the
+// later summary step through GITHUB_OUTPUT.
+test("main reads RUN_ATTEMPT and writes the outcome for the summary step", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "deploy-alert-"));
+  const saved = { ...process.env };
+  const runMain = async (env) => {
+    const output = join(dir, `out-${Object.keys(env).length}-${env.RUN_ATTEMPT ?? "none"}`);
+    writeFileSync(output, "");
+    for (const key of ["RUN_ATTEMPT", "RUN_ID"]) delete process.env[key];
+    Object.assign(process.env, {
+      GITHUB_TOKEN: "t",
+      GITHUB_REPOSITORY: "o/r",
+      DEPLOY_NEEDS: JSON.stringify(productionNeeds("failure")),
+      ALERT_CONFIG: "deploy-production",
+      RUN_URL: "https://example.test/run/77",
+      HEAD_BRANCH: "main",
+      HEAD_SHA: "4de96af",
+      GITHUB_OUTPUT: output,
+      ...env,
+    });
+    await main({ fetchImpl: withJobs([deployJob()]).fetchImpl, writeSummary: () => {}, logger: silentLogger });
+    return readFileSync(output, "utf8");
+  };
+  try {
+    assert.equal(await runMain({ RUN_ID: "77", RUN_ATTEMPT: "2" }), "outcome=not-started\n");
+    assert.equal(await runMain({ RUN_ID: "77" }), "outcome=failed\n", "without RUN_ATTEMPT it can't tell, so it raises");
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

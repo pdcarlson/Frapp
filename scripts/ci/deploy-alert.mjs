@@ -58,7 +58,8 @@
 // (which post to PRs) and the tracker itself (#680 retired Linear). A staging
 // deploy is merge-driven with no PR to comment on, so an issue is the
 // equivalent target.
-// No new service, no new token — `GITHUB_TOKEN` with job-scoped `issues: write`.
+// No new service, no new token — `GITHUB_TOKEN` with job-scoped `issues: write`,
+// plus `actions: read` where the config sets `quietWhenNeverStarted`.
 //
 // Env inputs:
 //   GITHUB_TOKEN       — required (issues: write)
@@ -67,8 +68,14 @@
 //   ALERT_CONFIG       — required, which ALERT_CONFIGS entry to use. There is
 //                        no default: every call site names itself
 //   RUN_URL            — required, html_url of this run
+//   RUN_ID, RUN_ATTEMPT — `github.run_id` and `github.run_attempt`; needed where
+//                        the config sets `quietWhenNeverStarted` (without them
+//                        a never-started deploy raises)
 //   HEAD_BRANCH        — the deployed ref (always `main` since #1340)
 //   HEAD_SHA           — the deployed commit
+//
+// Writes `outcome=<outcome>` to GITHUB_OUTPUT when it is set, for a later step
+// (production's summary reads `not-started`).
 //
 // Exits 0 on every handled outcome — a watchdog that reds the run creates the
 // noise it exists to remove, and the underlying deploy job is already red.
@@ -184,11 +191,10 @@ export const DEPLOY_STAGING_CONFIG = {
  * workflow: a dry run never does (nothing was applied, and the dispatcher is
  * watching), a cancelled run never does, and a green `migrations-only` run
  * never does, because the code didn't ship and so it can't close the alert.
- * The one case decided here is a deploy job that never ran a step: a declined
- * or expired approval, the environment's branch rule, or a pending run
- * replaced in the queue. Its result is `failure` or `cancelled` like a real
- * one, and production is unchanged, so `deployNeverStarted` reads this
- * attempt's jobs and the script files nothing. Every other run that arrives
+ * The one case decided here is a deploy job that ran no step, such as one
+ * whose approval was declined. Its result is `failure` like a real one, and
+ * production is unchanged, so `deployNeverStarted` reads this attempt's jobs
+ * and the script files nothing. Every other run that arrives
  * either raises (the deploy job failed) or closes (a real `full` release
  * succeeded).
  *
@@ -259,8 +265,7 @@ export const OUTCOME_COPY = {
     "no-op": "⏭️ **NO-OP — nothing deployed**",
     superseded: "⏭️ **SUPERSEDED — a newer run decides**",
     "not-started":
-      "⏭️ **NOT STARTED — the deploy job never ran a step (a declined or expired approval, the " +
-      "environment's branch rule, or a pending run replaced in the queue); production is unchanged**",
+      "⏭️ **NOT STARTED — the deploy job ran no step (a declined approval, say); production is unchanged**",
   },
   brokenLines: (label, closesOn = DEFAULT_CLOSES_ON) => [
     `deploy path is broken: the most recent \`${label}\` run that actually tried to deploy did`,
@@ -737,10 +742,11 @@ function defaultWriteSummary(summary) {
  * Whether this attempt's deploy job never ran a step (#2805): true, false, or
  * null when that can't be read.
  *
- * A declined or expired approval, the environment's branch rule and a pending
- * run replaced in the queue all end the job before any step, with a result a
- * real failure also has. The jobs API tells them apart: a job that never got
- * a runner lists no steps. It is read for THIS attempt
+ * A declined approval ends the job before any step, with a result a real
+ * failure also has. The jobs API tells them apart: a job that ran nothing
+ * lists no steps. (Derived from a skipped job's shape, run 34916333773: no
+ * `steps`, no `runner_id`. Any other pre-step end is quiet if it lists no
+ * steps too, and raises if it doesn't.) It is read for THIS attempt
  * (`/actions/runs/{id}/attempts/{n}/jobs`, `actions: read`), because a re-run
  * keeps the run id and an earlier attempt's never-started job must not quiet a
  * later attempt's real failure. An output the called job's first step writes
@@ -757,7 +763,9 @@ export async function deployNeverStarted({ token, repo, runId, runAttempt, jobNa
   });
   if (!res.ok || !Array.isArray(res.data?.jobs)) return null;
   const jobs = res.data.jobs.filter((job) => job?.name === jobName || String(job?.name ?? "").startsWith(`${jobName} / `));
-  if (jobs.length === 0) return null;
+  // A job carried over from an earlier attempt (when only a later job was
+  // re-run) says nothing about this one, so it isn't a verdict either.
+  if (jobs.length === 0 || jobs.some((job) => String(job.run_attempt) !== String(runAttempt))) return null;
   return jobs.every((job) => !Array.isArray(job.steps) || job.steps.length === 0);
 }
 
@@ -981,7 +989,7 @@ export async function runDeployAlert({
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
 
-async function main() {
+export async function main({ fetchImpl = fetch, writeSummary = defaultWriteSummary, logger = console } = {}) {
   const token = requireEnv("GITHUB_TOKEN");
   const repo = requireEnv("GITHUB_REPOSITORY");
   const needs = JSON.parse(requireEnv("DEPLOY_NEEDS"));
@@ -1000,6 +1008,9 @@ async function main() {
     headBranch: process.env.HEAD_BRANCH ?? "",
     headSha: process.env.HEAD_SHA ?? "",
     config,
+    fetchImpl,
+    writeSummary,
+    logger,
   });
   // For a later step: production's summary reads it to tell a deploy that
   // never started from one that failed.

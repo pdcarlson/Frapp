@@ -26,7 +26,7 @@
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
@@ -929,14 +929,43 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.equal(workflowJobs(SHARED)[0].keys.get("outputs").has("started"), false);
   });
 
-  // The summary must not send a run where nothing ran to the rollback playbook.
-  it("the summary reads the alert's outcome and says nothing ran when the job never started", () => {
+  // The summary must not send a run where nothing was applied to the rollback
+  // playbook: a deploy job that ran no step, or any dry run.
+  it("the summary points at the rollback playbook only when something may have been applied", () => {
     const summary = outcomeSteps().at(-1);
     assert.equal(summary.env.get("ALERT_OUTCOME"), "${{ steps.alert.outputs.outcome }}");
-    const body = summary.body;
-    const notStarted = body.indexOf('if [ "$ALERT_OUTCOME" = "not-started" ]; then');
-    assert.ok(notStarted > 0 && notStarted < body.indexOf('if [ "$DEPLOY_RESULT" != "success" ]; then'));
-    assert.match(body.slice(notStarted, body.indexOf("fi", notStarted)), /production is unchanged/);
+    const script = extractStepScript(CALLER, summary.name);
+    const dir = mkdtempSync(join(tmpdir(), "summary-"));
+    const run = (env) => {
+      const file = join(dir, "summary.md");
+      writeFileSync(file, "");
+      const base = { SHA: SHA, SCOPE: "full", DRY_RUN: "false", DEPLOY_RESULT: "failure", RELEASE_RESULT: "skipped", ALERT_OUTCOME: "" };
+      const result = spawnSync("bash", ["-c", script], {
+        env: { PATH: process.env.PATH, GITHUB_STEP_SUMMARY: file, ...base, ...env },
+        encoding: "utf8",
+      });
+      return { code: result.status, out: result.stdout };
+    };
+    const ROLLBACK = /DB_ROLLBACK_PLAYBOOK/;
+    try {
+      const notStarted = run({ ALERT_OUTCOME: "not-started" });
+      assert.equal(notStarted.code, 1);
+      assert.match(notStarted.out, /production is unchanged/);
+      assert.doesNotMatch(notStarted.out, ROLLBACK);
+
+      const dryRun = run({ DRY_RUN: "true" });
+      assert.equal(dryRun.code, 1);
+      assert.match(dryRun.out, /A dry run applies nothing/);
+      assert.doesNotMatch(dryRun.out, ROLLBACK);
+
+      const failed = run({ ALERT_OUTCOME: "failed" });
+      assert.equal(failed.code, 1);
+      assert.match(failed.out, ROLLBACK);
+
+      assert.equal(run({ DEPLOY_RESULT: "success", RELEASE_RESULT: "success", ALERT_OUTCOME: "deployed" }).code, 0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

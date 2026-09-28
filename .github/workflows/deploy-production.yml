@@ -314,11 +314,9 @@ jobs:
       # FAILED; never on a dry run (nothing was applied, and the dispatcher is
       # watching) and never on a cancelled run (a human stopped it). A green
       # migrations-only run doesn't run them either: the code didn't ship, so
-      # it can't close the alert. A `deploy` job that never ran a step (a
-      # declined or expired approval, the environment's branch rule, a pending
-      # run replaced in the queue) fails or cancels with production unchanged;
-      # deploy-alert.mjs reads this attempt's jobs (`actions: read`) and files
-      # nothing for it. The tag is not the alert's: a failed `release` reds the
+      # it can't close the alert. A `deploy` job that ran no step (a declined
+      # approval, say) fails with production unchanged; deploy-alert.mjs reads
+      # this attempt's jobs (`actions: read`) and files nothing for it. The tag is not the alert's: a failed `release` reds the
       # summary below, and `production-release-pin.yml`'s P1 alert catches
       # hosts left untagged.
       - name: Checkout
@@ -401,7 +399,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$ALERT_OUTCOME" = "not-started" ]; then
-            echo "::error::Production deploy did not start ($DEPLOY_RESULT): the deploy job ran no step (a declined or expired approval, the environment's branch rule, or a pending run replaced in the queue). Nothing ran; production is unchanged."
+            echo "::error::Production deploy did not start ($DEPLOY_RESULT): the deploy job ran no step (a declined approval, say). Nothing ran; production is unchanged."
+            exit 1
+          fi
+          # A dry run applies nothing, so its failure never needs the rollback.
+          if [ "$DEPLOY_RESULT" != "success" ] && [ "$DRY_RUN" = "true" ]; then
+            echo "::error::Production dry run did not succeed ($DEPLOY_RESULT). A dry run applies nothing; read the failing step above."
             exit 1
           fi
           if [ "$DEPLOY_RESULT" != "success" ]; then
