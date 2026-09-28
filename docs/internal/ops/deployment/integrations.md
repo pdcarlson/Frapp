@@ -58,8 +58,8 @@ was not matched to it; of these settings, staging depends only on the portal (§
 
 | Where | Field | Value |
 | --- | --- | --- |
-| Settings → Business → Business details → Public details | Public business name | Frapp (the value before wasn't recorded) |
-| Business details → Public details | Statement descriptor | `FRAPP.LIVE` (the value before wasn't recorded) |
+| Settings → Business → Business details → Public details | Public business name | Frapp (the value before was not reported) |
+| Business details → Public details | Statement descriptor | `FRAPP.LIVE` (the value before was not reported) |
 | Business details → Business information | Business website | `https://www.frapp.live`, because the apex only redirects there ([`vercel.md`](vercel.md)) |
 | Business details → Public details | Support email | `team@frapp.live`, the address the landing, Privacy and Support pages publish |
 | Business details → Public details | Customer support, privacy and terms URLs | Set. The portal links `https://www.frapp.live/terms` and `https://www.frapp.live/privacy` from them. |
