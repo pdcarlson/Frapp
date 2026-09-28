@@ -137,6 +137,10 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_getOrCreateDm_v1: CHANNEL_METADATA,
   ChatController_createGroupDm_v1: CHANNEL_METADATA,
   ChatController_leaveGroupDm_v1: CHANNEL_METADATA,
+  // PRIVATE membership (#1302). Returns the channel row, whose `member_ids` a
+  // `channels:manage` holder is managing; no message content.
+  ChatController_addChannelMember_v1: CHANNEL_METADATA,
+  ChatController_removeChannelMember_v1: CHANNEL_METADATA,
   ChatController_listCategories_v1: CHANNEL_METADATA,
   ChatController_createCategory_v1: CHANNEL_METADATA,
   ChatController_updateCategory_v1: CHANNEL_METADATA,
