@@ -31,22 +31,21 @@ Both run [`scripts/ci/deploy-vercel.mjs`](../../../../scripts/ci/deploy-vercel.m
 
 **No deploy consumes Vercel env vars for app config.** Both workflows inject Infisical (`staging` for
 staging since #2672, `prod` for production since [#2673](https://github.com/pdcarlson/Frapp/issues/2673)),
-give each app's build exactly the keys it reads, and keep only Vercel's system variables (`VERCEL`,
-`VERCEL_*`, `NEXT_PUBLIC_VERCEL_*`) from the env `vercel pull` writes. The pull still supplies the
-project settings and `VERCEL_ENV` (`preview` or `production`).
+give each app's build exactly the keys it reads, and keep only Vercel's system variables from the
+env `vercel pull` writes. The pull still supplies the project settings and `VERCEL_ENV` (`preview`
+or `production`).
 Production rebuilds a named commit rather than promoting a preview
 ([`SECRETS_MANAGEMENT.md` § Staging web and landing](../../environment/SECRETS_MANAGEMENT.md#staging-web-and-landing-injected-at-build-not-synced),
 which covers both).
 
 **These values are not typed into the Vercel dashboard.** Infisical is the canonical store, and
-the deploy jobs read it directly. The pulled env keeps only the names Vercel's system variables use
-(`VERCEL`, `VERCEL_*`, `NEXT_PUBLIC_VERCEL_*`), so no project row outside that namespace reaches a
-build ([#2810](https://github.com/pdcarlson/Frapp/issues/2810)). The filter reads names only, so a
-project row given one of those names would still pass: don't name one that way. Vercel's own
-`NX_DAEMON` and `TURBO_*` build-tool rows are removed with the rest. The build's log names each row it
-kept and each it removed, never a value. A value of exactly `[SENSITIVE]`, which `vercel pull`
-writes for a Sensitive row it can't read, fails the build naming the key, whichever source it came
-from. Both projects' Preview env is empty and their Preview **Branch Tracking** is off (2026-09-28):
+the deploy jobs read it directly. An ordinary project row doesn't reach a build
+([#2810](https://github.com/pdcarlson/Frapp/issues/2810)); the filter reads names, so a row named
+like one of Vercel's system variables would, and none should be. The build's log names each row it
+kept and each it removed, never a value. Which names count as system variables, and where a
+`[SENSITIVE]` placeholder is refused rather than just removed, is the header of
+[`scripts/ci/lib/vercel-build-env.mjs`](../../../../scripts/ci/lib/vercel-build-env.mjs). Both
+projects' Preview env is empty and their Preview **Branch Tracking** is off (2026-09-28):
 the staging syncs, their `Preview · main` rows and the unscoped Preview rows are deleted
 ([#834](https://github.com/pdcarlson/Frapp/issues/834)). The two production `vercel-*` syncs and their
 Production rows were deleted the same day, so neither project holds an env variable in any

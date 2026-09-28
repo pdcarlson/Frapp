@@ -986,13 +986,16 @@ describe("buildEnvsFor", () => {
   });
 
   // #2275: a dry run must mint no Sentry release. The token is withheld from
-  // the build and still stripped from the pulled file, so neither channel has it.
-  it("withholds the Sentry token from a dry run's build, and still strips it from the pulled file", () => {
+  // the build's app config; the pulled file never carries it either, since it
+  // keeps only Vercel's system variables (#2810; `vercel-build-env.test.mjs`
+  // pins that no app key is one). It stays an app key, so it is still named,
+  // and `withheld` is what keeps the lost-key warning from calling it lost.
+  it("withholds the Sentry token from a dry run's build, and marks it withheld rather than lost", () => {
     const withToken = { ...env, SENTRY_AUTH_TOKEN: "sntrys_realtoken" };
     assert.deepEqual(DRY_RUN_WITHHELD_KEYS, ["SENTRY_AUTH_TOKEN"]);
     for (const project of buildEnvsFor({ projects, env: withToken, readBaseline: baseline, dryRun: true })) {
       assert.equal(project.buildEnv.appEnv.SENTRY_AUTH_TOKEN, undefined, project.label);
-      assert.ok(project.buildEnv.appKeys.includes("SENTRY_AUTH_TOKEN"), `${project.label} must still strip it`);
+      assert.ok(project.buildEnv.appKeys.includes("SENTRY_AUTH_TOKEN"), `${project.label} still names it as an app key`);
       assert.deepEqual(project.buildEnv.withheld, ["SENTRY_AUTH_TOKEN"], "so the lost-key warning skips it");
     }
   });

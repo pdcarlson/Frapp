@@ -469,8 +469,10 @@ build does not prove the real build's Sentry upload will succeed.
 
 A green dry run means the commit validates, the pending migrations replay cleanly
 against production's applied state, and both bundles compile against the app
-config currently in Infisical `prod` (no Vercel Production row reaches the build
-since #2810; a `::warning::` names any app key Vercel held that Infisical didn't). It is not a promise that the apply or the upload
+config currently in Infisical `prod` (no Vercel row supplies an app key since #2673, and
+since #2810 no other Production row reaches the build unless it is named like a Vercel
+system variable; the build log names every row kept, and a `::warning::` names any app key
+Vercel held that Infisical didn't). It is not a promise that the apply or the upload
 will succeed.
 
 If you need to apply migrations _without_ shipping code — recovering a failed

@@ -353,7 +353,7 @@ describe("infisicalBuildEnv", () => {
     // a pulled row replace an empty value anyway.
     const web = infisicalBuildEnv({ label: "frapp-web", env, baselineNames });
     assert.ok(!("NEXT_PUBLIC_POSTHOG_KEY" in web.appEnv));
-    assert.ok(web.appKeys.includes("NEXT_PUBLIC_POSTHOG_KEY"), "still removed from the pulled env");
+    assert.ok(web.appKeys.includes("NEXT_PUBLIC_POSTHOG_KEY"), "still named, so the lost-key warning can report it");
   });
 
   it("fails, naming keys and never values, when a required key has no value", () => {
@@ -440,10 +440,10 @@ describe("onlyVercelSystemRows", () => {
   ].join("\n");
 
   it("keeps the system rows, removes every project row, and reports both in file order", () => {
-    const { text, kept, removed, placeholders } = onlyVercelSystemRows(PULLED);
+    const { text, kept, removed, keptEnv } = onlyVercelSystemRows(PULLED);
     assert.deepEqual(kept, ["NEXT_PUBLIC_VERCEL_ENV", "VERCEL", "VERCEL_ENV", "VERCEL_URL"]);
     assert.deepEqual(removed, ["NEXT_PUBLIC_APP_URL", "PORT", "SENTRY_AUTH_TOKEN"]);
-    assert.deepEqual(placeholders, []);
+    assert.deepEqual(keptEnv, { NEXT_PUBLIC_VERCEL_ENV: "production", VERCEL: "1", VERCEL_ENV: "production", VERCEL_URL: "" });
     assert.equal(
       text,
       [
@@ -457,24 +457,34 @@ describe("onlyVercelSystemRows", () => {
     );
   });
 
-  it("removes a placeholder project row: the #2810 failure, PORT reaching landing's prerender", () => {
-    const { text, removed } = onlyVercelSystemRows(`PORT="${SENSITIVE_PLACEHOLDER}"\nVERCEL_ENV="production"\n`);
+  it("removes a placeholder project row, the #2810 shape (most likely `PORT`, reaching landing's prerender)", () => {
+    const { text, removed, keptEnv } = onlyVercelSystemRows(`PORT="${SENSITIVE_PLACEHOLDER}"\nVERCEL_ENV="production"\n`);
     assert.deepEqual(removed, ["PORT"]);
     assert.ok(!text.includes(SENSITIVE_PLACEHOLDER));
+    assert.deepEqual(keysHoldingPlaceholder(keptEnv), [], "a removed row never reaches the build, so nothing to refuse");
   });
 
-  it("reports a system row holding the placeholder, as dotenv@4 would read it", () => {
+  it("reads each kept value exactly as dotenv@4 loads it, so the placeholder check sees what the build would", () => {
+    // Padding included: dotenv@4 strips the quotes, then trims. A value it
+    // loads as exactly `[SENSITIVE]` must read that way here too.
     for (const line of [
       `VERCEL_FOO="${SENSITIVE_PLACEHOLDER}"`,
       `VERCEL_FOO=${SENSITIVE_PLACEHOLDER}`,
       `VERCEL_FOO = '${SENSITIVE_PLACEHOLDER}'`,
+      `VERCEL_FOO="${SENSITIVE_PLACEHOLDER} "`,
+      `VERCEL_FOO=${SENSITIVE_PLACEHOLDER}   `,
     ]) {
-      assert.deepEqual(onlyVercelSystemRows(`${line}\n`).placeholders, ["VERCEL_FOO"], line);
+      assert.deepEqual(onlyVercelSystemRows(`${line}\n`).keptEnv, { VERCEL_FOO: SENSITIVE_PLACEHOLDER }, line);
     }
+    // A trailing space after the closing quote defeats dotenv@4's unquoting,
+    // so it loads `[SENSITIVE]'`, which is not the placeholder.
+    assert.deepEqual(onlyVercelSystemRows(`VERCEL_FOO = '${SENSITIVE_PLACEHOLDER}' \n`).keptEnv, {
+      VERCEL_FOO: `${SENSITIVE_PLACEHOLDER}'`,
+    });
   });
 
   it("keeps lines dotenv skips, and returns the text unchanged when every row is a system row", () => {
     const text = '# Created by Vercel CLI\nexport PORT=1\nVERCEL_ENV="preview"\n';
-    assert.deepEqual(onlyVercelSystemRows(text), { text, kept: ["VERCEL_ENV"], removed: [], placeholders: [] });
+    assert.deepEqual(onlyVercelSystemRows(text), { text, kept: ["VERCEL_ENV"], removed: [], keptEnv: { VERCEL_ENV: "preview" } });
   });
 });

@@ -92,7 +92,7 @@
 import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { onlyVercelSystemRows, refuseSensitivePlaceholders, SENSITIVE_PLACEHOLDER } from "./vercel-build-env.mjs";
+import { onlyVercelSystemRows, refuseSensitivePlaceholders } from "./vercel-build-env.mjs";
 
 /**
  * The Vercel deployment target this repo understands.
@@ -395,16 +395,11 @@ async function keepOnlySystemRows({ label, cwd, target, keys, supplied, withheld
         `could reach the build. Refusing to build; update \`pulledEnvFileFor\` for this CLI.`,
     );
   }
-  const { text: filtered, kept, removed, placeholders } = onlyVercelSystemRows(text);
-  // A system variable Vercel could not reveal: nothing the build could use, and
-  // the build would load it. Refused before the file is even rewritten.
-  if (placeholders.length > 0) {
-    throw new Error(
-      `[${label}] The pulled ${environment} env holds ${placeholders.join(", ")} with the value ` +
-        `"${SENSITIVE_PLACEHOLDER}", which \`vercel pull\` writes for a Sensitive row it may not read. ` +
-        `A build would load it, so nothing was built. Remove the row from the Vercel project (#2810).`,
-    );
-  }
+  const { text: filtered, kept, removed, keptEnv } = onlyVercelSystemRows(text);
+  // A kept row Vercel could not reveal: nothing the build could use, and the
+  // build would load it. Refused before the file is even rewritten, by the same
+  // check the environments get.
+  refuseSensitivePlaceholders({ label, source: `The pulled ${environment} env`, env: keptEnv });
   // Names only, so a run's log records which system variables Vercel sent.
   logger.log?.(
     `[${label}] Kept Vercel's system variables from the pulled ${environment} env: ${kept.join(", ") || "none"}.`,

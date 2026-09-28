@@ -172,7 +172,7 @@ export function parseEnvBaseline(text) {
  *
  * Throws, naming keys and never values, when a required key is missing, when
  * either env holds a `[SENSITIVE]` placeholder, or when the baseline already
- * holds an app key. The second means the baseline was
+ * holds an app key. That last one means the baseline was
  * recorded after the injection (so it would pass the whole store through) or
  * that an app key is set outside Infisical. Both are wrong for a build whose
  * config is supposed to come from Infisical alone.
@@ -235,7 +235,7 @@ export function refuseSensitivePlaceholders({ label, source, env }) {
   throw new Error(
     `[${label}] ${source} holds ${keys.join(", ")} with the value "${SENSITIVE_PLACEHOLDER}", which is ` +
       `\`vercel pull\`'s placeholder for a Sensitive row it may not read. A build would compile the ` +
-      `placeholder in, so nothing was built. Set a real value at the source (#2810).`,
+      `placeholder in, so nothing was built. Set a real value at the source, or remove the row (#2810).`,
   );
 }
 
@@ -274,14 +274,16 @@ function parseDotenvLine(line) {
  * which come from Infisical, and any other project row, which no build should
  * load (#2810). Comments and blank lines, which dotenv skips, are kept.
  *
- * Returns the names kept and removed, in file order, for the log, and the
- * names of kept rows whose value is `[SENSITIVE]`, for the caller to refuse.
- * Never a value.
+ * Returns the names kept and removed, in file order, for the log, and
+ * `keptEnv`: each kept row's value exactly as dotenv@4 would load it, for the
+ * caller's `refuseSensitivePlaceholders`. The one placeholder check covers the
+ * file and the environments alike. A removed row needs no check: it never
+ * reaches the build. Never log `keptEnv`.
  */
 export function onlyVercelSystemRows(text) {
   const kept = [];
   const removed = [];
-  const placeholders = [];
+  const keptEnv = {};
   const lines = text.split("\n").filter((line) => {
     const row = parseDotenvLine(line);
     if (!row) return true;
@@ -290,8 +292,8 @@ export function onlyVercelSystemRows(text) {
       return false;
     }
     kept.push(row.key);
-    if (row.value === SENSITIVE_PLACEHOLDER) placeholders.push(row.key);
+    keptEnv[row.key] = row.value;
     return true;
   });
-  return { text: lines.join("\n"), kept, removed, placeholders };
+  return { text: lines.join("\n"), kept, removed, keptEnv };
 }

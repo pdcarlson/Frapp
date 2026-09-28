@@ -663,7 +663,8 @@ describe("buildVercelProject with an Infisical build env", () => {
 
   // The shape the CLI writes: sorted `KEY="value"` lines under a header, with
   // Vercel's system variables alongside the project's rows, and a Sensitive
-  // row's value written as the placeholder (run 36458267082's `PORT`).
+  // row's value written as the placeholder (the shape run 36458267082 hit,
+  // most likely `PORT`; the log never names the row).
   const PULLED = [
     "# Created by Vercel CLI",
     'NEXT_PUBLIC_API_URL="https://stale.example"',
@@ -781,7 +782,8 @@ describe("buildVercelProject with an Infisical build env", () => {
     // the file, dotenv would load it and the bundle would carry Vercel's stale
     // value while the log said the config came from Infisical. PORT and
     // NEXT_PUBLIC_API_URL_V2 are rows the app does not read, and still reached
-    // the build before #2810: PORT's placeholder broke landing's prerender.
+    // the build before #2810, which is how a placeholder broke landing's
+    // prerender in run 36458267082.
     const t = setup();
     await buildVercelProject(t.options);
     const after = t.envFiles.files.get(ENV_FILE);
@@ -907,7 +909,7 @@ describe("buildVercelProject with an Infisical build env", () => {
       await buildVercelProject({ ...t.options, target: VERCEL_TARGET_PRODUCTION, runCommand });
       const after = t.envFiles.files.get(prodFile);
       assert.doesNotMatch(after, /^NEXT_PUBLIC_API_URL=/m);
-      assert.doesNotMatch(after, /^PORT=/m, "the row run 36458267082 built landing with");
+      assert.doesNotMatch(after, /^PORT=/m, "a Sensitive project row, the shape run 36458267082 hit");
       assert.match(after, /^VERCEL_ENV="production"$/m, "assertProductionWebPublicEnv reads it");
       const build = calls.find((c) => c.args[0] === "build");
       assert.deepEqual(build.args, ["build", "--prod"]);
