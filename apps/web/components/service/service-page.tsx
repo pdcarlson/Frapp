@@ -11,6 +11,7 @@ import {
   useRequestServiceProofUploadUrl,
   useReviewServiceEntry,
   useServiceEntries,
+  putSignedUpload,
 } from "@repo/hooks";
 import { displayNameOrNull } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
@@ -241,19 +242,14 @@ export function ServiceHoursPage() {
           content_type: contentType,
         });
         const { signedUrl, storagePath } = readSignedUpload(signed);
-        const response = await fetch(signedUrl, {
-          method: "PUT",
+        await putSignedUpload({
+          signedUrl,
           body: proofFile,
-          headers: {
-            "content-type": contentType,
-            "x-upsert": "true",
-          },
+          contentType,
+          upsert: true,
+          describeRejection: (status) =>
+            `Storage rejected upload (${status}). Proof accepts images/PDF up to ${MAX_UPLOAD_LABEL}.`,
         });
-        if (!response.ok) {
-          throw new Error(
-            `Storage rejected upload (${response.status}). Proof accepts images/PDF up to ${MAX_UPLOAD_LABEL}.`,
-          );
-        }
         proofPath = storagePath;
       }
       await createEntry.mutateAsync({

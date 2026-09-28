@@ -638,6 +638,36 @@ describe("Composer attachment ticket contract", () => {
     expect(mockToast).not.toHaveBeenCalled();
   });
 
+  it("PUTs with the resolved content type, not the browser's empty one", async () => {
+    // A legacy .doc often arrives with `type: ""`. The composer mints the URL
+    // with the extension-resolved type, and the chat bucket's MIME allowlist
+    // rejects an empty Content-Type, so the PUT must carry the resolved one.
+    mockRequestUploadUrl.mockResolvedValueOnce({
+      upload_url: "https://storage.example/put",
+      storage_path: "chapters/c/chat/ch/m/minutes.doc",
+      message_id: "m",
+    });
+
+    const { container } = render(<Composer {...baseProps()} />);
+    const file = new File(["bytes"], "minutes.doc", { type: "" });
+    fireEvent.change(fileInputOf(container), { target: { files: [file] } });
+
+    await waitFor(() =>
+      expect(mockRequestUploadUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({ content_type: "application/msword" }),
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(mockUploadSignedUrl).toHaveBeenCalledWith({
+        signedUrl: "https://storage.example/put",
+        file,
+        contentType: "application/msword",
+      }),
+    );
+  });
+
   it("toasts when the ticket omits the signed URL", async () => {
     mockRequestUploadUrl.mockResolvedValueOnce({
       storage_path: "chapters/c/chat/ch/m/notes.pdf",
