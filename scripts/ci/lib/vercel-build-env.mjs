@@ -37,9 +37,10 @@
 //    bundle while the log said Infisical did. Removing only the app's own keys
 //    was not enough (#2810): every other project row still reached the build,
 //    and `vercel pull` writes a Sensitive row's value as the literal
-//    `[SENSITIVE]`. Production dry run 36458267082 died on it, prerendering
-//    landing's `/` against `http://localhost:[SENSITIVE]`, most likely `PORT`
-//    from the path-`/` production sync (inferred from the value's shape). So
+//    `[SENSITIVE]`. Production dry run 36458267082 (attempt 3) died on it,
+//    prerendering landing's `/` against `http://localhost:[SENSITIVE]`, most
+//    likely `PORT` from the path-`/` production sync (inferred from the value's
+//    shape; attempt 4 went green once the owner deleted those rows). So
 //    the file is filtered to an allowlist, not a denylist: a row added to a
 //    project later, by hand or by an integration, reaches a build only if it
 //    is named like a system variable, and the log names every row kept.

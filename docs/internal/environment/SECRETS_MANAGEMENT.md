@@ -35,7 +35,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 │    ...                                                            │
 │                                                                   │
 │  3 environments: dev, staging, prod                               │
-│  Syncs: Render ×2 (the Vercel ones are deleted) — §5              │
+│  Syncs: Render ×2; Vercel none (builds inject Infisical) — §5     │
 │  Web/landing (both envs): built from an Infisical injection — §5  │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -47,7 +47,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | Identities   | 5     | 1 (admin)                      |
 | Projects     | 3     | 1 (Frapp)                      |
 | Environments | 3     | 3 — [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#infisical-environments) |
-| Integrations | 10    | 4 secret syncs — see §5        |
+| Integrations | 10    | 2 secret syncs — see §5        |
 
 The integration count is derived from the sync inventory in §5, not tracked independently — this row
 and `ENV_REFERENCE.md` previously disagreed (7 vs 6) because both counted by hand. Infisical's own
@@ -114,8 +114,7 @@ repointing the sync — there is no filter to switch on. See the "Blast radius" 
 
 #### Live syncs (2 total)
 
-**Dashboard state last verified: 2026-09-28**, for the two Render rows; the Vercel deletions below
-are the owner's report. This table is a convenience copy of live
+**Dashboard state last verified: 2026-09-28.** This table is a convenience copy of live
 dashboard configuration and goes stale silently. Treat a disagreement between this table and the
 Infisical/Vercel dashboards as the table being wrong, and re-stamp the date when you correct it.
 See "Verifying this section against reality" below.
@@ -125,20 +124,18 @@ See "Verifying this section against reality" below.
 | `render-api-production`     | Production    | `/`  | `frapp-api-prod`    | Service           |
 | `render-api-staging`        | Staging       | `/`  | `frapp-api-staging` | Service           |
 
-All four syncs then live read **Synced** in the Infisical UI on 2026-09-28, before the two
-production Vercel syncs were deleted.
+Both read **Synced** in the Infisical UI on 2026-09-28. No sync targets Vercel.
 
-**The two production Vercel syncs are deleted (2026-09-28, [#834](https://github.com/pdcarlson/Frapp/issues/834)).**
-`vercel-web-production` and `vercel-landing-production` copied the whole `prod` store into each
-project's Production scope, and since [#2673](https://github.com/pdcarlson/Frapp/issues/2673) no build
-read it ([§ Staging web and landing](#staging-web-and-landing-injected-at-build-not-synced)). The owner
-deleted both with **Remove Synced Secrets** on, so Infisical removes the rows each wrote before it
-deletes the sync. That record is the owner's report; the dashboards were not re-read from an agent
-session, whose tokens can list neither Infisical's syncs nor Vercel's env rows. The next production
-build reads the result: its log names every row it removed from the pulled env
-([#2810](https://github.com/pdcarlson/Frapp/issues/2810)). Vercel's own `NX_DAEMON` and `TURBO_*`
-build-tool rows are expected there. Any other name, above all one Infisical `prod` holds, is a
-Production row the removal left behind.
+**The two production Vercel syncs are deleted too (2026-09-28, #834).** Since #2673 no build reads a
+Vercel env row, so `vercel-web-production` and `vercel-landing-production` only copied the whole
+`prod` store into two frontend projects. The owner deleted both with **Remove Synced Secrets** on,
+which removed the rows they had written, and both projects' Production env lists read empty
+afterwards. The production dry run that followed,
+[36458267082 attempt 4](https://github.com/pdcarlson/Frapp/actions/runs/36458267082), built both
+frontends green from Infisical `prod` alone. Its earlier attempt had failed on a `[SENSITIVE]`
+placeholder that a synced row leaked into the landing build (#2810). Since that fix, a build keeps
+only Vercel's system variables from the pulled env, so a row added to either project again doesn't
+reach a build unless it's named like one, and the build log names every row it kept and removed.
 
 **The two staging Vercel syncs are deleted (2026-09-28, [#834](https://github.com/pdcarlson/Frapp/issues/834)).**
 `vercel-web-staging` and `vercel-landing-staging` wrote Preview rows scoped to git branch `main`.
@@ -249,8 +246,8 @@ pulled file keeps no app key, so it mints no Sentry release
 ([#2275](https://github.com/pdcarlson/Frapp/issues/2275)). A key Vercel's Production env holds that
 Infisical `prod` doesn't supply prints a `::warning::` naming it, which is how a value that only
 ever lived in Vercel shows up. With that, **no build reads a Vercel env row**, so the two production
-Vercel syncs only copied the whole `prod` store into two frontend projects, and the owner deleted
-them on 2026-09-28 (§5, #834). Nothing
+Vercel syncs, which only copied the whole `prod` store into two frontend projects, were deleted with
+their Production rows on 2026-09-28 (§5, #834). Nothing
 here depends on Vercel's Git link or branch tracking, both of which are off.
 
 #### Blast radius
@@ -264,15 +261,14 @@ behind). Everything else in the environment — database passwords, service-role
 deploy hook URLs — was pushed toward those projects without being used by them, until the syncs were
 deleted (staging and production both on 2026-09-28).
 
-**The Vercel syncs delivered, until they were deleted.** On 2026-08-12 the `frapp-web`
+**The Vercel syncs delivered, all four of them, until they were deleted on 2026-09-28.** On 2026-08-12 the `frapp-web`
 environment-variable list was read directly, and both its `Preview` and `Production` scopes held the
 full backend store: `SUPABASE_DB_PASSWORD`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ACCESS_TOKEN`,
 `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RENDER_DEPLOY_HOOK_URL`.
 
 `frapp-landing` was **not** inspected variable-by-variable that day, so treat its contents as
-expected-but-unconfirmed. The expectation is well founded — its Production scope was fed by a sync
-with the same `/` path from the same environment — but it is an inference, not a reading. Confirm it before
-relying on it, and see the verification steps below.
+expected-but-unconfirmed. The expectation was well founded (its syncs had the same `/` path from the
+same environments), but it was never read. Moot since 2026-09-28: every row is deleted.
 
 Staging was not spared while its syncs worked: they wrote to `Preview` scope filtered to branch
 `main`, and under the Git integration `main` is what staging deployed from, so the `frapp-web` staging
@@ -303,11 +299,10 @@ behind by the original misconfiguration. Those were inert (no deployment reads a
 but, unlike the current rows, were **not** marked Sensitive, so their values were readable in the
 Vercel dashboard. They were deleted from both `frapp-web` and `frapp-landing` on 2026-08-12.
 
-The **production** syncs delivered the whole `prod` store into both frontend projects until the
-owner deleted them on 2026-09-28. Since #2673 no build read what they wrote, so they were deleted
-rather than narrowed, like the staging ones (owner decision 2026-09-28, #834; a secret-path split was
-the rejected alternative). They went with **Remove Synced Secrets** on, which deletes the rows a sync
-wrote before the sync itself; had the rows gone first, the next sync would have rewritten them.
+The **production** syncs delivered the whole `prod` store into both frontend projects until
+2026-09-28. Since #2673 no build read what they wrote, so they were deleted rather than narrowed, like
+the staging ones (owner decision, #834; a secret-path split was the rejected alternative), and their
+Production rows went with them. No Vercel project holds an Infisical secret now.
 
 #### Verifying this section against reality
 

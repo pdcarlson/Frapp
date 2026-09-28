@@ -46,14 +46,11 @@ project row given one of those names would still pass: don't name one that way. 
 `NX_DAEMON` and `TURBO_*` build-tool rows are removed with the rest. The build's log names each row it
 kept and each it removed, never a value. A value of exactly `[SENSITIVE]`, which `vercel pull`
 writes for a Sensitive row it can't read, fails the build naming the key, whichever source it came
-from. Both projects' Preview env is empty and their Preview
-**Branch Tracking** is off (2026-09-28): the staging syncs, their `Preview · main` rows and the
-unscoped Preview rows are deleted ([#834](https://github.com/pdcarlson/Frapp/issues/834)). The owner
-deleted the two production `vercel-*` syncs on 2026-09-28 with **Remove Synced Secrets** on, which is
-meant to remove the Production rows they wrote. That is the owner's report, not a dashboard read, and
-the next production build's log is the check
-([`SECRETS_MANAGEMENT.md` § 5](../../environment/SECRETS_MANAGEMENT.md#live-syncs-2-total)). The
-authoritative sync map and
+from. Both projects' Preview env is empty and their Preview **Branch Tracking** is off (2026-09-28):
+the staging syncs, their `Preview · main` rows and the unscoped Preview rows are deleted
+([#834](https://github.com/pdcarlson/Frapp/issues/834)). The two production `vercel-*` syncs and their
+Production rows were deleted the same day, so neither project holds an env variable in any
+environment. The authoritative sync map and
 the setup procedure live in
 [`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md), and the complete
 variable list in [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md). The tables

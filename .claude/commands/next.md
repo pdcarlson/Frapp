@@ -440,9 +440,9 @@ a doc describes, change no doc ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI
 Push and open the PR with one `Fixes #N` line per member in the PR body. GitHub ignores closing
 keywords in the title, and a prose mention doesn't close. The body follows
 [`.github/pull_request_template.md`](../../.github/pull_request_template.md), which the MCP doesn't
-apply for you. It covers what changed, why, the before/after diagram when the change moves an arrow
-(§ Diagram), which acceptance criteria each member satisfies, the *Flagged for review* list, and any
-step you reduced or skipped. Each member's §1.2 drift items get their own fix or an explicit note that none was
+apply for you. It covers what changed, why, which acceptance criteria each member satisfies, the
+*Flagged for review* list, any step you reduced or skipped, and a link to any artifact page you
+published for Paul while working it (`AGENTS.md` § Operating mindset). Each member's §1.2 drift items get their own fix or an explicit note that none was
 needed; nothing mechanical catches a batch that documents only one of its issues.
 
 **Never `Fixes` a parent with open children.** Before writing each line, `issue_read get` the member.
