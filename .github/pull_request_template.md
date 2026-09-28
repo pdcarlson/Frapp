@@ -6,6 +6,13 @@
 
 -
 
+## Diagram
+
+- Required when the change moves an arrow: a pipeline or workflow, a request or data path, who calls whom, a state machine, a schema relationship. Skip it (write "None: no flow changes") for copy, docs, or a fix inside one function.
+- Draw **before and after** in a `mermaid` block (`flowchart`, `sequenceDiagram` or `stateDiagram-v2`), which GitHub renders in the PR body. Label the arrows with what they do, and mark what changed (a new edge, a removed one, a reordered step).
+- Follow it with 2–4 lines: what moved, and why that's the intended behavior.
+- For a change too big for one diagram (a redesign, a series of PRs), also link a published page that walks through it.
+
 ## Docs / Spec impact
 
 - **Docs impact**: (None / Updated / Follow-up) — prefer `docs/` (e.g. `docs/guides/`) or internal runbooks.
