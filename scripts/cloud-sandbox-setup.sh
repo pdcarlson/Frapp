@@ -23,6 +23,19 @@ cd "$ROOT"
 # Written first so per-session bringup is gated even if the image pre-pull below fails.
 touch /etc/frapp-cloud-sandbox 2>/dev/null || cs_log "WARN: could not write /etc/frapp-cloud-sandbox marker (set FRAPP_CLOUD_SANDBOX=1 instead)."
 
+# Node that satisfies engines.node, installed into the cached filesystem (/opt/node24) so
+# sessions find it instead of downloading it, and put on PATH BEFORE `npm ci` so the tree is
+# installed by the engine it runs on. The image puts Node 22 first; see
+# scripts/lib/node-toolchain.sh for what that breaks. Non-fatal: the session-start hook
+# retries the install and reports if it still fails.
+# shellcheck source=scripts/lib/node-toolchain.sh
+. "$ROOT/scripts/lib/node-toolchain.sh"
+if ensure_node_toolchain "$ROOT"; then
+  cs_log "Node toolchain: $(node --version 2>/dev/null) (${NODE_TOOLCHAIN_STATUS})."
+else
+  cs_log "WARN: could not install a Node that satisfies package.json engines.node into ${FRAPP_NODE_DIR}; npm ci runs on $(node --version 2>/dev/null || echo 'no node')."
+fi
+
 cs_log "Installing node dependencies..."
 npm ci || npm install || cs_log "WARN: dependency install failed; the session may need 'npm install'."
 

@@ -153,8 +153,24 @@ fail() {
   cs_log "ERROR: $1"
   printf '%s — %s\n' "$(date -u +%FT%TZ)" "$1" >"$FAILED_SENTINEL"
   [ -n "$packages_build_failed" ] && printf '%s\n' "$PACKAGES_BUILD_WARN" >>"$FAILED_SENTINEL"
+  [ -n "$node_toolchain_warn" ] && printf '%s\n' "$node_toolchain_warn" >>"$FAILED_SENTINEL"
   exit 1
 }
+
+# Node that satisfies engines.node, before anything below runs npm or turbo. Launched by the
+# SessionStart hook this is a no-op, because the hook already put it on the PATH this script
+# inherits; it matters for a hand run from a shell where Node 22 comes first. Non-fatal like
+# the package build: the stack does not need it, so the warning rides in whichever sentinel
+# this run ends with.
+node_toolchain_warn=""
+# shellcheck source=scripts/lib/node-toolchain.sh
+. "$ROOT/scripts/lib/node-toolchain.sh"
+if ensure_node_toolchain "$ROOT"; then
+  cs_log "Node toolchain: $(node --version 2>/dev/null) (${NODE_TOOLCHAIN_STATUS})."
+else
+  node_toolchain_warn="WARN: node on PATH is $(node --version 2>/dev/null || echo missing), below package.json engines.node, and installing one into ${FRAPP_NODE_DIR} failed (see /tmp/cloud-sandbox-up.log). The API's Jest suites that load ESM-only packages fail on it with \"Must use import to load ES Module\"."
+  cs_log "$node_toolchain_warn"
+fi
 
 # Egress capability probe — deliberately FIRST, before any Docker or Supabase work.
 #
@@ -460,6 +476,9 @@ cs_verify_node_deps "$ROOT" \
 printf '%s\n' "$(date -u +%FT%TZ)" >"$DONE_SENTINEL"
 if [ -n "$packages_build_failed" ]; then
   printf '%s\n' "$PACKAGES_BUILD_WARN" >>"$DONE_SENTINEL"
+fi
+if [ -n "$node_toolchain_warn" ]; then
+  printf '%s\n' "$node_toolchain_warn" >>"$DONE_SENTINEL"
 fi
 if [ "${CS_NODE_DEPS_WHY:-}" = "incomplete" ]; then
   printf 'WARN: npm ls --depth=0 reports a missing declared dependency; run `npm ci` if a workspace hits "Cannot find module".\n' \

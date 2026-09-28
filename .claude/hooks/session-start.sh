@@ -18,6 +18,33 @@ if [ -f "$CLOUD_MARKER" ] || [ "${FRAPP_CLOUD_SANDBOX:-}" = "1" ]; then
   in_cloud=1
 fi
 
+# Node that satisfies package.json engines.node, first thing, because everything after it
+# runs node: the git-hooks installer below, the bringup this hook launches (which inherits
+# PATH), and every command the session runs. The image puts Node 22 first on PATH, and on 22
+# the API's Jest suites that load ESM-only packages die with "Must use import to load ES
+# Module" while the rest pass (scripts/lib/node-toolchain.sh). cloud-sandbox-setup.sh
+# installs it into the cached filesystem, so here it is normally found, not downloaded; an
+# environment whose cache predates that pays one ~5s download.
+#
+# CLAUDE_ENV_FILE is how a SessionStart hook sets the environment of the session's later
+# Bash commands; PATH set here reaches only this hook and what it launches. Cloud only, like
+# everything else that changes the machine here: a laptop's Node is its owner's to choose.
+# Never fatal, and it reports only what a session should act on.
+if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/lib/node-toolchain.sh" ]; then
+  # shellcheck source=scripts/lib/node-toolchain.sh
+  . "$ROOT/scripts/lib/node-toolchain.sh"
+  if ensure_node_toolchain "$ROOT" 2>/dev/null; then
+    case "$NODE_TOOLCHAIN_STATUS" in
+      cached | installed)
+        if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+          printf 'export PATH="%s/bin:$PATH"\n' "$FRAPP_NODE_DIR" >>"$CLAUDE_ENV_FILE" 2>/dev/null || true
+        fi ;;
+    esac
+  else
+    msg="${msg} Node toolchain: node on PATH is $(node --version 2>/dev/null || echo missing), below package.json engines.node, and installing one into ${FRAPP_NODE_DIR} failed. API Jest suites that load ESM-only packages will fail with \"Must use import to load ES Module\"; tell the user the environment needs nodejs.org reachable, or Node 24 on PATH."
+  fi
+fi
+
 # Arm the review gate before anything else (#2488). `.githooks/pre-push` is the only
 # pre-PR review gate, and git runs it only once `core.hooksPath` names that directory.
 # The one thing that set it was the root `prepare` script, so the gate was OFF in any

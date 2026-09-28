@@ -128,12 +128,25 @@ The filesystem is cached but running processes are not, so work is split:
 
 | Phase | Script | Runs | Does |
 |-------|--------|------|------|
-| Setup (cached) | `scripts/cloud-sandbox-setup.sh` | once, as root, before the agent | writes the `/etc/frapp-cloud-sandbox` marker; `npm ci`; transient dockerd + `docker login` + `supabase start`/`stop` purely to **pull + cache images** |
+| Setup (cached) | `scripts/cloud-sandbox-setup.sh` | once, as root, before the agent | writes the `/etc/frapp-cloud-sandbox` marker; installs Node 24 into `/opt/node24` (see below); `npm ci` on it; transient dockerd + `docker login` + `supabase start`/`stop` purely to **pull + cache images** |
 | Per-session | `scripts/cloud-sandbox-up.sh` | every session, in the background | build the workspace packages (`packages/*`), non-fatally and before any Docker step; start dockerd; `docker login`; `supabase start` (fast — images cached); `db push --local`; repair local Postgres default ACLs; write `apps/api/.env.local` + `apps/web/.env.local`; verify `node_modules` is usable (**last**, so a broken npm never costs the database) |
 
 Both source `scripts/lib/cloud-sandbox-common.sh` (`cs_log`, `cs_ensure_docker_daemon`,
 `cs_docker_login_if_creds`, `cs_supabase`, `cs_retry`, `cs_classify_failure`,
 `cs_failure_hint`, `cs_node_deps_ok`, `cs_verify_node_deps`).
+
+**Node comes from `/opt/node24`, not the image.** The image puts Node 22 first on `PATH`, and
+the repo needs the root `package.json` `engines.node` (Node 24.9+). Nothing failed loudly on 22:
+API Jest suites that load ESM-only packages died with "Must use import to load ES Module" while
+the rest passed ([why 24.9+](../../guides/testing.md#2a-esm-only-dependencies-break-the-unit-suite-and-only-the-unit-suite)). `scripts/lib/node-toolchain.sh` fixes
+it in three places. The setup script downloads the latest release of that major line from
+nodejs.org into `/opt/node24`, checksum-verified, before `npm ci`, so the cached filesystem
+carries it. The SessionStart hook puts it first on `PATH` for bringup and, through
+`CLAUDE_ENV_FILE`, for every later command in the session; if the cache predates this, the
+hook downloads it itself (about 5 seconds). Bringup does the same for a hand run. When
+`node --version` already meets the floor, all three do nothing. If the download fails, the
+hook says so at session start and the sentinel carries a `WARN` line; the fix is making
+`nodejs.org` reachable, or putting Node 24 on `PATH`.
 
 **Bringup never writes to `node_modules`.** It reports on it and lets the session run `npm ci`
 itself. The session's own gates and `npm install` are sanctioned to run while bringup is still
