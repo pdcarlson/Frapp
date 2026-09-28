@@ -11,11 +11,11 @@ name: Nightly Backup
 # via the Storage API, as the database only includes metadata about these objects."
 # A restore needs both halves or it produces rows referencing files nobody kept.
 #
-# This is not redundancy on top of a provider snapshot. The `Frapp Live` org is on
-# the Supabase FREE plan, which gets no dashboard-accessible daily backups and no
-# PITR — so until that changes (#1403), this workflow is the ONLY source of a
-# restorable backup for either project (for production, from its first successful
-# scheduled run onward). Supabase's own free-tier guidance is exactly this:
+# Since 2026-09-28 the `Frapp Live` org is on Supabase Pro (#1403), which keeps its
+# own daily backups for 7 days. Those live inside Supabase: they are deleted with the
+# project and hold no Storage files. This workflow is still the ONLY copy outside
+# Supabase, and the only backup of Storage, for either project. Before Pro it was the
+# only restorable backup of any kind, as Supabase's free-tier guidance says:
 # https://supabase.com/docs/guides/platform/backups
 #
 # ── Why the production jobs do NOT say `environment: production` ─────────────
