@@ -74,7 +74,7 @@ in the last row; path-gated jobs are still required.
 | `chapter-directory-seed` | `npm run check:chapter-directory-seed` |
 | `web-responsive-floor` (path-gated) | `npm run test:floor -w apps/web` (every dashboard route at 375px without horizontal scroll) |
 | `landing-fold` (path-gated) | `npm run test:fold -w apps/landing` (fold geometry at 1440x900 and 390x844) |
-| `pglite-migrations` (path-gated) | `npm run check:pglite-migrations` (every migration from empty, plus the RLS posture) |
+| `pglite-migrations` (path-gated) | `npm run check:pglite-migrations` (every migration from empty, plus the RLS posture), then `npx vitest run lib/realtime/change-topics.spec.ts` in `apps/web` (the change-ping contract against the applied migrations) |
 | `web-production-build` | The Vercel-parity build below |
 | `packages-build` | `npx turbo run build --filter='./packages/*'` |
 | `changes` | Nothing to run locally. It computes the path filter for the path-gated jobs and is required because `web-tests` needs it |

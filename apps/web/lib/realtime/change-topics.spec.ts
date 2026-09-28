@@ -271,33 +271,39 @@ async function checkPingTriggers(db: PGlite) {
  * `change-topics.ts`; the other two share the policy, so an arm broken there
  * breaks it for all. Directory presence is `presence-topics.ts`; the chat topic
  * is built inline in `packages/chat-core/src/realtime-manager.ts`.
+ *
+ * `writes` is the client extensions `realtime_messages_scoped_insert` must
+ * admit, through the same scope check: none on a change-ping topic, which
+ * only the database's triggers send; `track()` on Directory presence; and
+ * `track()` plus the typing broadcast on a chat channel.
  */
 const TOPIC_FAMILIES = [
   ...TABLES.map((table) => ({
     label: table,
     topic: (id: string) => changeTopic(table, id),
     authorise: SCOPES[table].authorise,
-    changePing: true,
+    writes: [] as string[],
   })),
   {
     label: "Directory presence",
     topic: chapterPresenceTopic,
     authorise: "realtime_can_read_chapter_scope",
-    changePing: false,
+    writes: ["presence"],
   },
   {
     label: "chat channel",
     topic: (id: string) => `chat:channel:${id}`,
     authorise: "can_read_chat_channel",
-    changePing: false,
+    writes: ["presence", "broadcast"],
   },
 ];
 
 /**
- * `realtime.messages` lets a signed-in subscriber read a topic exactly when its
- * family's scope function says so, called with the id parsed from the topic.
- * Everything else is denied: other topics, the `anon` role, and any write to a
- * change-ping topic, which only the database's own triggers send.
+ * `realtime.messages` lets a signed-in client read a topic, and make the
+ * writes its family allows, exactly when that family's scope function says so,
+ * called with the id parsed from the topic. Everything else is denied: other
+ * topics, other extensions, every `anon` read and write, and any client write
+ * to a change-ping topic, which only the database's own triggers send.
  *
  * Driven, not read. The scope functions are swapped (inside the rolled-back
  * transaction) for stand-ins that log their call and return a chosen answer,
@@ -360,7 +366,8 @@ async function checkChangePolicy(db: PGlite) {
 
   type Outcome =
     | { visible: number | undefined; calls: { fn: string; id: string }[] }
-    | { wrote: boolean }
+    | { wrote: false }
+    | { wrote: true; calls: { fn: string; id: string }[] }
     | { error: string };
   /** Runs `probe` as `role` under `topic`, and reports what it saw or did. */
   const as = async (
@@ -382,7 +389,11 @@ async function checkChangePolicy(db: PGlite) {
             `insert into realtime.messages (topic, extension) values ($1, $2)`,
             [topic, probe],
           );
-          return { wrote: true };
+          await db.exec("reset role");
+          const calls = await db.query<{ fn: string; id: string }>(
+            `select fn, id::text from scope_calls`,
+          );
+          return { wrote: true, calls: calls.rows };
         } catch (error) {
           if (/row-level security/.test(String(error))) return { wrote: false };
           throw error;
@@ -432,20 +443,23 @@ async function checkChangePolicy(db: PGlite) {
         `${other} is not a ${family.label} topic`,
       ).toEqual(denied);
     }
-    if (family.changePing) {
-      for (const extension of ["broadcast", "presence"] as const) {
-        expect(
-          await as("signed_in_probe", topic, true, extension),
-          `a client ${extension} on ${topic}`,
-        ).toEqual({ wrote: false });
-      }
-    } else {
-      // The control: the same write where a client may make it, so a
-      // `wrote: false` above can't come from the harness refusing every write.
+    // Writes. A refused write rolls back the scope calls its check made, so
+    // only an admitted one reports them; the admitted cases are also the
+    // control that a `wrote: false` isn't the harness refusing every write.
+    for (const extension of ["presence", "broadcast"] as const) {
+      const admitted = family.writes.includes(extension);
       expect(
-        await as("signed_in_probe", topic, true, "presence"),
-        `a client presence on ${topic}`,
-      ).toEqual({ wrote: true });
+        await as("signed_in_probe", topic, true, extension),
+        `a client ${extension} on ${topic} when its scope allows`,
+      ).toEqual(admitted ? { wrote: true, calls: call } : { wrote: false });
+      expect(
+        await as("signed_in_probe", topic, false, extension),
+        `a client ${extension} on ${topic} when its scope denies`,
+      ).toEqual({ wrote: false });
+      expect(
+        await as("anon_probe", topic, true, extension),
+        `an anon ${extension} on ${topic}`,
+      ).toEqual({ wrote: false });
     }
   }
   expect(
@@ -600,6 +614,17 @@ describe("change-ping topic contract", () => {
            and policyname = 'realtime_messages_scoped_select'`,
         )
       ).rows[0]?.qual as string;
+    const insertPolicyCheck = async () =>
+      (
+        await db.query<{ check: string }>(
+          `select with_check as check from pg_policies where schemaname = 'realtime'
+           and policyname = 'realtime_messages_scoped_insert'`,
+        )
+      ).rows[0]?.check as string;
+    const recreateInsertPolicy = (check: string) => `
+      drop policy "realtime_messages_scoped_insert" on realtime.messages;
+      create policy "realtime_messages_scoped_insert" on realtime.messages
+        for insert to authenticated with check (${check});`;
     const recreatePolicy = (qual: string) => `
       drop policy "realtime_messages_scoped_select" on realtime.messages;
       create policy "realtime_messages_scoped_select" on realtime.messages
@@ -717,6 +742,36 @@ describe("change-ping topic contract", () => {
           drop policy "realtime_messages_scoped_select" on realtime.messages;
           create policy "realtime_messages_scoped_select" on realtime.messages
             for all to authenticated using (${await changePolicyQual()});`,
+      ],
+      [
+        "narrows the chat write arm so typing broadcasts are refused",
+        async () =>
+          recreateInsertPolicy(
+            swap(
+              await insertPolicyCheck(),
+              /ARRAY\['presence'::text, 'broadcast'::text\]/,
+              "ARRAY['presence'::text]",
+            ),
+          ),
+      ],
+      [
+        "asks another scope function for Directory presence writes",
+        async () =>
+          recreateInsertPolicy(
+            swap(
+              await insertPolicyCheck(),
+              "THEN realtime_can_read_chapter_scope(",
+              "THEN realtime_can_read_user_scope(",
+            ),
+          ),
+      ],
+      [
+        "adds an anon write policy behind the usual role guard",
+        `do $x$ begin
+           if exists (select 1 from pg_roles where rolname = 'anon') then
+             execute 'create policy "anon_write" on realtime.messages for insert to anon with check (true)';
+           end if;
+         end $x$;`,
       ],
       [
         "adds an anon read policy behind the usual role guard",

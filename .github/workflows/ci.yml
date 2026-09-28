@@ -1013,6 +1013,12 @@ jobs:
         run: node scripts/scan-secrets.mjs --base "${{ github.event.before }}" --head "${{ github.sha }}"
 
   # ── PGlite migration + RLS smoke validator (ADR-11 / ADR-12) ────────────
+  # Two steps. The first, below, is `check:pglite-migrations`. The second runs
+  # the change-ping contract spec (`apps/web/lib/realtime/change-topics.spec.ts`),
+  # which replays the migrations onto a stand-in `realtime` schema with an `anon`
+  # role, so it does reach the Realtime triggers and `realtime.messages`
+  # policies the "Out of reach" note below says the first step can't.
+  #
   # Applies every `supabase/migrations/*.sql` to a fresh Postgres-in-WASM
   # and asserts structural landmarks (unique indexes, generated columns) plus
   # an RLS smoke tier: every public table enables RLS (default-deny invariant)
