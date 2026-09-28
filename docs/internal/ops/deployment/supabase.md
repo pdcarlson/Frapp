@@ -36,8 +36,8 @@ Checked against Supabase's documentation on 2026-09-28; the linked pages own the
 | [Storage size](https://supabase.com/docs/guides/platform/manage-your-usage/storage-size) | 1 GB | 100 GB, then $0.0213 per GB-month |
 | [Egress](https://supabase.com/docs/guides/platform/manage-your-usage/egress), uncached / cached | 5 GB / 5 GB | 250 GB / 250 GB, then $0.09 / $0.03 per GB |
 | [Database](https://supabase.com/docs/guides/platform/database-size), per project | read-only past 500 MB of data | 8 GB disk included. It grows past 8 GB ($0.125 per GB-month) only with the spend cap off; with it on, the project goes read-only near 8 GB |
-| [Largest upload](https://supabase.com/docs/guides/storage/uploads/file-limits) (the project's global file-size limit) | 50 MB at most | up to 500 GB; each project still has to raise its own setting |
-| [Daily backups](https://supabase.com/docs/guides/platform/backups), per project | none | taken daily, last 7 days restorable from the dashboard |
+| [Largest upload](https://supabase.com/docs/guides/storage/uploads/file-limits) (the project's global file-size limit) | 50 MB at most | up to 500 GB with the spend cap off. With it on, the dashboard lowers the maximum without saying to what. Both projects are set to 100 MB |
+| [Daily backups](https://supabase.com/docs/guides/platform/backups), per project | none shown | taken daily, the last 7 days restorable from the dashboard, which also offers restoring one into a new project |
 | [Point-in-time recovery](https://supabase.com/docs/guides/platform/backups#point-in-time-recovery) | not available | a paid add-on, **not enabled** |
 | [Pausing for inactivity](https://supabase.com/docs/guides/platform/free-project-pausing) | after about 7 quiet days | never |
 | Support | community | the dashboard's support form |
@@ -56,15 +56,15 @@ as on Free apply to both projects. Turning the cap off (organization **Billing �
 bills the overage at the rates in the table instead. The cap does not cover add-ons such as
 point-in-time recovery. The organization's **Usage** page shows how close each quota is.
 
-**Unlocked by Pro, and still to do by hand:**
+**Set up after the upgrade (2026-09-28):**
 
-- **Raise each project's upload limit to 100 MB (#1235).** In each project, go to **Storage → Settings →
-  Global file size limit**. Discord allows 100 MB attachments and the `chat-archive` bucket accepts
-  100 MB, but the lower of the project and bucket limits wins. Free could not go above 50 MB, so
-  this step was impossible before the upgrade.
-- **Confirm Supabase is taking daily backups of `frapp-prod` (#1403).** Look under **Database →
-  Backups** in `frapp-prod`. The nightly offsite dump still runs, and it is still the only copy that survives
-  deleting the project, and the only backup of Storage files:
+- **Each project's upload limit is 100 MB (#1235).** It lives under **Storage → Settings → Global file
+  size limit**, which Free capped at 50 MB. Discord allows 100 MB attachments and the `chat-archive`
+  bucket accepts 100 MB, but the lower of the project and bucket limits wins, so both have to allow
+  it. A new project needs this set by hand; migrations don't carry it.
+- **`frapp-prod` shows Supabase's daily backups (#1403),** under **Database → Backups**. The nightly offsite dump
+  still runs, and it is still the only copy that survives deleting the project, and the only
+  backup of Storage files:
   [`DB_ROLLBACK_PLAYBOOK.md` § Backup reality](../DB_ROLLBACK_PLAYBOOK.md#backup-reality).
 
 ### Apply Migrations
