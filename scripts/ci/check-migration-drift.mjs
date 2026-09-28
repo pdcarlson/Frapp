@@ -55,7 +55,8 @@
 //   0 — every target matched the repo (or pending only within the grace window)
 //       and any open drift alert was closed
 //   1 — drift found, a target could not be read, or every target matched but
-//       the open alert issue could not be read or closed (annotated ::error::)
+//       the alert issues could not be read, or an open one could not be closed
+//       (annotated ::error::)
 //
 // Unlike the sibling watchdogs (`ci-wake.mjs`, `deploy-alert.mjs`) this one DOES
 // exit non-zero. Those annotate a run that is already red; this script *is* the
@@ -67,7 +68,6 @@ import { join } from "node:path";
 
 import {
   ALERT_LOOKUP_LABEL,
-  findAlertIssuesDetailed,
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
@@ -563,30 +563,18 @@ export async function runMigrationDriftCheck({
         : `[migration-drift] alert issue #${alert.issueNumber} ${alert.action}`,
     );
   } else if (status === "clean") {
-    // Resolve only on a lookup that actually worked. A failed lookup returns an
-    // empty list, which reads exactly like "no alert is open", so the run has
-    // to say it could not read the alert state rather than report nothing to
-    // close.
-    const lookup = await findAlertIssuesDetailed(alertIdentity);
-    if (!lookup.lookupOk) {
-      alert = { action: "failed", closed: [] };
+    alert = await resolveAlert({
+      ...alertIdentity,
+      buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
+    });
+    if (alert.action === "closed") {
+      logger.log?.(`[migration-drift] closed alert issue(s): ${alert.closed.join(", ")}`);
+    } else if (alert.action === "unread") {
+      // "I could not look" is not "nothing is open": the run cannot say the
+      // alert state is clean, so it fails rather than report nothing to close.
       logger.log?.("::error::[migration-drift] could not read the alert issues; none closed");
-    } else {
-      const hadOpen = lookup.issues.some((issue) => issue.state === "open");
-      alert = await resolveAlert({
-        ...alertIdentity,
-        buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
-      });
-      // resolveAlert looks the alert up again, and a failed second lookup
-      // returns [] and so "none". If this run already saw an open alert, that
-      // is a failed close, not nothing to close (production-uptime.mjs has the
-      // same guard; #2627 moves it into the lib).
-      if (hadOpen && alert.action === "none") alert = { action: "failed", closed: [] };
-      if (alert.action === "closed") {
-        logger.log?.(`[migration-drift] closed alert issue(s): ${alert.closed.join(", ")}`);
-      } else if (alert.action === "failed") {
-        logger.log?.("::error::[migration-drift] could not close the open alert issue");
-      }
+    } else if (alert.action === "failed") {
+      logger.log?.("::error::[migration-drift] could not close the open alert issue");
     }
   } else {
     // unknown: never raise (nothing was observed to be drifting) and never
@@ -596,7 +584,8 @@ export async function runMigrationDriftCheck({
 
   // A clean run whose alert could not be read or closed still fails: a green
   // job would hide a P1 left open on a healthy environment, every day.
-  const exitCode = status === "clean" && alert.action !== "failed" ? 0 : 1;
+  const exitCode =
+    status === "clean" && alert.action !== "failed" && alert.action !== "unread" ? 0 : 1;
   return { status, results, alert, exitCode };
 }
 

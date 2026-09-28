@@ -26,7 +26,6 @@
 
 import {
   ALERT_LOOKUP_LABEL,
-  findAlertIssuesDetailed,
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
@@ -164,17 +163,6 @@ export async function runWatchdog({
   runUrl = "",
   fetchImpl,
 }) {
-  const lookup = await findAlertIssuesDetailed({
-    token,
-    repo,
-    fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
-  });
-  const open = lookup.lookupOk
-    ? lookup.issues.find((issue) => issue.state === "open")
-    : null;
-
   if (!verdict.ok) {
     const raised = await raiseAlert({
       token,
@@ -188,14 +176,9 @@ export async function runWatchdog({
         `${reopened ? "Reopened — " : ""}still protected: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
       refreshBodyOnRaise: true,
     });
-    return { outcome: "fail", alert: raised, lookupOk: lookup.lookupOk, open };
+    return { outcome: "fail", alert: raised };
   }
 
-  if (!lookup.lookupOk) {
-    return { outcome: "pass", resolved: false, lookupOk: false };
-  }
-
-  const hadOpen = lookup.issues.some((issue) => issue.state === "open");
   const resolved = await resolveAlert({
     token,
     repo,
@@ -205,14 +188,14 @@ export async function runWatchdog({
     buildRecoveryBody: () =>
       `production-backup has no required reviewers or wait timer again: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });
-  if (resolved.action === "failed") {
-    return { outcome: "fail", resolved: false, lookupOk: true };
-  }
-  if (hadOpen && resolved.action === "none") {
-    return { outcome: "fail", resolved: false, lookupOk: true };
+  // An unreadable tracker is not a failure of the thing this watches, so the
+  // run passes and main() warns that nothing was closed. A close that left the
+  // alert open is: a green run would hide a P1 open on a healthy system.
+  if (resolved.action === "unread") {
+    return { outcome: "pass", resolved: false, lookupOk: false };
   }
   return {
-    outcome: "pass",
+    outcome: resolved.action === "failed" ? "fail" : "pass",
     resolved: resolved.action === "closed",
     lookupOk: true,
   };
