@@ -1005,7 +1005,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Remove someone from a private channel (409 if they are its last member) */
+        /** Remove someone from a private channel (409 if it would leave no chapter member who can read it) */
         delete: operations["ChatController_removeChannelMember_v1"];
         options?: never;
         head?: never;

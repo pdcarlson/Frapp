@@ -709,17 +709,17 @@ export class ChatService {
    * PRIVATE channel. Authorized like {@link addPrivateChannelMember}.
    *
    * No chapter-membership check on the target, so an id that should never
-   * have been listed can always be cleaned out. Idempotent for someone not
-   * listed, including on a NULL or empty list.
+   * have been listed, or whose member has left the chapter, can always be
+   * cleaned out: it admits nobody, so removing it takes no reader away.
+   * Idempotent for someone not listed, including on a NULL or empty list.
    *
-   * **A removal that would leave no current chapter member listed is refused
-   * (409).** A PRIVATE channel nobody in the chapter can read drops out of
-   * every access-filtered list, officers' included, which is #1008's defect
-   * by another route. The RPC counts chapter members rather than array
-   * entries, since an id whose member has left the chapter admits nobody, and
-   * holds the guard in its `WHERE`, so two concurrent removals of the last two
-   * members cannot both pass it. A caller who wants the channel gone deletes
-   * it.
+   * **Removing the last current chapter member listed is refused (409).** A
+   * PRIVATE channel nobody in the chapter can read drops out of every
+   * access-filtered list, officers' included, which is #1008's defect by
+   * another route. The RPC counts chapter members rather than array entries,
+   * since an id whose member has left admits nobody, and holds the guard in
+   * its `WHERE`, so two concurrent removals of the last two members cannot
+   * both pass it. A caller who wants the channel gone deletes it.
    */
   async removePrivateChannelMember(
     channelId: string,
@@ -735,9 +735,9 @@ export class ChatService {
     );
     if (!updated) {
       // The RPC matches nothing either because the channel went away after
-      // the check above, or because this removal would leave no current
-      // chapter member listed. Re-read to tell the two apart; a type never
-      // changes.
+      // the check above, or because this removal would take away the last
+      // current chapter member listed. Re-read to tell the two apart; a type
+      // never changes.
       const stillThere = await this.channelRepo.findById(channelId, chapterId);
       if (!stillThere) throw new NotFoundException('Channel not found');
       throw new ConflictException(

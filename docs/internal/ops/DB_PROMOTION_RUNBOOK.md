@@ -566,7 +566,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 - **Purpose**: Adds three `security invoker` RPCs, each with `search_path = public, pg_temp` and EXECUTE for `service_role` only.
   - `add_private_channel_member(p_channel_id, p_chapter_id, p_user_id)` appends the user to a PRIVATE channel's `member_ids` unless already listed, treating a NULL list as empty.
-  - `remove_private_channel_member(...)` removes them. It refuses (returns no row) when that would leave no current member of the chapter in the list, and is a no-op that returns the row for someone not listed.
+  - `remove_private_channel_member(...)` removes them. It refuses (returns no row) when that would take away the last current member of the chapter in the list. Removing an id whose member has left the chapter is always allowed, and removing someone not listed is a no-op that returns the row.
   - `remove_user_from_private_channels(p_chapter_id, p_user_id)` takes a member leaving the chapter off every PRIVATE list in it and returns the ids it changed. `MemberService.remove` calls it before deleting the membership.
 
   All three match only `PRIVATE` channels in the named chapter, and compute each new array from the row's own column, so concurrent calls serialize on the row lock. No table, column, policy or data changes. The rules are in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#channels) § Channels.

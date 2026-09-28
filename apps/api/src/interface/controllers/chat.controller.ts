@@ -293,7 +293,7 @@ export class ChatController {
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({
     summary:
-      'Remove someone from a private channel (409 if they are its last member)',
+      'Remove someone from a private channel (409 if it would leave no chapter member who can read it)',
   })
   async removeChannelMember(
     @CurrentChapterId() chapterId: string,

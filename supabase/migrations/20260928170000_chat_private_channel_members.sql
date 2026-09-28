@@ -58,16 +58,17 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- 2. Remove a member. Refuses (returns no row) when the removal would leave
---    no current member of the chapter in the list: a PRIVATE channel nobody
---    in the chapter can read drops out of every access-filtered list,
---    officers' included, and only someone who still holds its id could add
---    to it again. That is the #1008 defect by another route.
+-- 2. Remove a member. Refuses (returns no row) when the removal would take
+--    away the last current member of the chapter in the list: a PRIVATE
+--    channel nobody in the chapter can read drops out of every access-filtered
+--    list, officers' included, and only someone who still holds its id could
+--    add to it again. That is the #1008 defect by another route.
 --
---    The guard counts chapter members, not array entries.
+--    The guard counts chapter members, not array entries, on both sides.
 --    `canAccessChannel` and `can_read_chat_channel` both require chapter
 --    membership before they read the list, so an id whose member has left
---    the chapter admits nobody and must not count as the one who remains.
+--    the chapter admits nobody: it does not count as the one who remains,
+--    and removing it takes no reader away, so that removal is always allowed.
 --
 --    Someone not listed is a no-op that still returns the row, including on a
 --    NULL or empty list, where there is nobody to keep.
@@ -92,7 +93,17 @@ as $$
      and chapter_id = p_chapter_id
      and type = 'PRIVATE'
      and (
+       -- Not listed: a no-op.
        not (p_user_id = any(coalesce(member_ids, '{}'::uuid[])))
+       -- Not a current member of the chapter: their id admits nobody, so
+       -- removing it takes no reader away and is always allowed.
+       or not exists (
+         select 1
+           from members m
+          where m.chapter_id = p_chapter_id
+            and m.user_id = p_user_id
+       )
+       -- Otherwise someone else in the chapter must remain.
        or exists (
          select 1
            from members m

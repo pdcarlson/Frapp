@@ -3450,10 +3450,13 @@ try {
 // What each check pins, and the edit it catches:
 // - an add appends once: dropping the `any(...)` guard lists a member twice;
 // - an add repairs a NULL list (a PRIVATE row from before #1008);
-// - the last-member guard counts current chapter members: dropping it (or its
-//   coalesce) lets a removal empty the channel, and counting array entries
-//   instead lets a removal leave only an id whose member has left, which
-//   admits nobody. Either is #1008's defect again;
+// - the last-member guard counts current members of THIS chapter: dropping it
+//   lets a removal empty the channel, counting array entries instead lets a
+//   removal leave only an id whose member has left, and dropping its chapter
+//   filter lets a member of another chapter count (U.gone is one). Each is
+//   #1008's defect again;
+// - an id whose member has left the chapter can always be removed, even when
+//   nobody would remain, since it admits nobody;
 // - removing someone not listed is a no-op that still returns the row, on a
 //   NULL list too;
 // - add and remove match only a PRIVATE channel in the named chapter (the
@@ -3473,6 +3476,7 @@ try {
   const PRIV_NULL = "d2d2d2d2-0000-4000-8000-000000011302";
   const PRIV_NULL_2 = "d2d2d2d2-0000-4000-8000-000000041302";
   const PRIV_STALE = "d2d2d2d2-0000-4000-8000-000000051302";
+  const PRIV_ONLY_STALE = "d2d2d2d2-0000-4000-8000-000000061302";
   const GROUP = "d2d2d2d2-0000-4000-8000-000000021302";
   const PRIV_FOREIGN = "d2d2d2d2-0000-4000-8000-000000031302";
   await db.exec(`
@@ -3482,15 +3486,18 @@ try {
       ('${U.a}', gen_random_uuid(), 'priv-a@example.com', 'A'),
       ('${U.b}', gen_random_uuid(), 'priv-b@example.com', 'B'),
       ('${U.gone}', gen_random_uuid(), 'priv-gone@example.com', 'Gone');
-    -- U.gone has no members row in CH: an id whose member has left.
+    -- U.gone has left CH but is still a member of CH_OTHER, so a guard
+    -- that forgot its chapter filter would count them as someone remaining.
     insert into members (user_id, chapter_id) values
       ('${U.a}', '${CH}'), ('${U.b}', '${CH}'),
-      ('${U.a}', '${CH_OTHER}'), ('${U.b}', '${CH_OTHER}');
+      ('${U.a}', '${CH_OTHER}'), ('${U.b}', '${CH_OTHER}'),
+      ('${U.gone}', '${CH_OTHER}');
     insert into chat_channels (id, chapter_id, name, type, member_ids) values
       ('${PRIV}', '${CH}', 'exec', 'PRIVATE', array['${U.a}']::uuid[]),
       ('${PRIV_NULL}', '${CH}', 'legacy', 'PRIVATE', null),
       ('${PRIV_NULL_2}', '${CH}', 'legacy-2', 'PRIVATE', null),
       ('${PRIV_STALE}', '${CH}', 'stale', 'PRIVATE', array['${U.a}', '${U.gone}']::uuid[]),
+      ('${PRIV_ONLY_STALE}', '${CH}', 'only-stale', 'PRIVATE', array['${U.gone}']::uuid[]),
       ('${GROUP}', '${CH}', 'group-dm', 'GROUP_DM', array['${U.a}', '${U.b}']::uuid[]),
       ('${PRIV_FOREIGN}', '${CH_OTHER}', 'exec', 'PRIVATE', array['${U.a}', '${U.b}']::uuid[]);
   `);
@@ -3562,6 +3569,14 @@ try {
     [
       same(await members(PRIV_STALE), [U.a, U.gone]),
       "the refused stale-id removal changed nothing",
+    ],
+    [
+      same((await remove(PRIV_STALE, U.gone))[0]?.m, [U.a]),
+      "an id whose member has left can be removed",
+    ],
+    [
+      same((await remove(PRIV_ONLY_STALE, U.gone))[0]?.m, []),
+      "an id whose member has left can be removed even when nobody remains",
     ],
     [
       (await remove(GROUP, U.b)).length === 0,

@@ -2435,7 +2435,7 @@
             "bearer": []
           }
         ],
-        "summary": "Remove someone from a private channel (409 if they are its last member)",
+        "summary": "Remove someone from a private channel (409 if it would leave no chapter member who can read it)",
         "tags": [
           "Chat"
         ]

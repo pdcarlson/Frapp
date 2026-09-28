@@ -7,6 +7,7 @@ import {
 import { MemberService } from './member.service';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -41,6 +42,7 @@ describe('MemberService', () => {
   let mockAuditLogService: AuditLogServiceMock;
   let mockStorageProvider: { listFiles: jest.Mock; deleteFiles: jest.Mock };
   let mockChannelRepo: { removeUserFromPrivateChannels: jest.Mock };
+  let mockChannelCache: { invalidate: jest.Mock };
 
   beforeEach(async () => {
     mockRepo = {
@@ -93,6 +95,7 @@ describe('MemberService', () => {
     mockChannelRepo = {
       removeUserFromPrivateChannels: jest.fn().mockResolvedValue([]),
     };
+    mockChannelCache = { invalidate: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -106,6 +109,7 @@ describe('MemberService', () => {
         { provide: ChapterAuditLogService, useValue: mockAuditLogService },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: CHAT_CHANNEL_REPOSITORY, useValue: mockChannelRepo },
+        { provide: ChannelCacheService, useValue: mockChannelCache },
       ],
     }).compile();
 
@@ -819,6 +823,31 @@ describe('MemberService', () => {
       ).toBeLessThan(mockRepo.delete.mock.invocationCallOrder[0]);
     });
 
+    it('evicts every pruned channel from the push cache and records them in the audit entry', async () => {
+      // A re-invite inside the cache's TTL would otherwise be pushed from the
+      // pre-prune list, and the audit entry is how an officer learns which
+      // channels to add a mistakenly removed member back to.
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRepo.delete.mockResolvedValue(undefined);
+      mockChannelRepo.removeUserFromPrivateChannels.mockResolvedValue([
+        'chan-a',
+        'chan-b',
+      ]);
+
+      await service.remove('member-1', 'chapter-1', 'actor-1');
+
+      expect(mockChannelCache.invalidate).toHaveBeenCalledWith('chan-a');
+      expect(mockChannelCache.invalidate).toHaveBeenCalledWith('chan-b');
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          diff: {
+            user_id: existingMember.user_id,
+            private_channel_ids: ['chan-a', 'chan-b'],
+          },
+        }),
+      );
+    });
+
     it('does not remove the member when their channels cannot be updated', async () => {
       // Blocking is retryable; removing the row first would leave ids behind
       // that no later removal of this member could reach.
@@ -845,7 +874,7 @@ describe('MemberService', () => {
         action: 'member_removed',
         targetType: 'member',
         targetId: 'member-1',
-        diff: { user_id: existingMember.user_id },
+        diff: { user_id: existingMember.user_id, private_channel_ids: [] },
       });
     });
 
