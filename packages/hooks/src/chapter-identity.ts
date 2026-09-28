@@ -51,37 +51,58 @@ export const EMPTY_CHAPTER_IDENTITY: Readonly<ChapterIdentityForm> =
   });
 
 /**
- * Parses what a founder typed or pasted into the accent field, or `fallback`
- * when it isn't a colour.
+ * Parses what a founder typed or pasted into the accent field into the value
+ * the chapter stores. Anything that isn't a colour becomes
+ * {@link DEFAULT_CHAPTER_ACCENT}.
  *
  * The contract is `@repo/color`'s `normalizeHex`, the one Settings saves
  * through, so the wizard and Settings store the same string for the same
- * colour. That means uppercase `#RRGGBB`, with a 3-digit shorthand expanded
- * (the API's DTO accepts only six digits).
+ * colour: uppercase `#RRGGBB`, with a 3-digit shorthand expanded (the API's DTO
+ * accepts only six digits).
  *
  * One affordance sits on top: a bare hex with no `#` (`DDB844`, as colour
- * pickers often copy it) is accepted. Neither wizard can tell the founder what
- * it rejected: web substitutes the default without a word, and mobile, which
- * passes the raw input as `fallback`, fails the whole create with the API's
- * validation error. Neither is a fair answer to a value that unambiguously
- * names a colour. Settings can stay strict because it shows an explicit
- * unsavable state instead.
+ * pickers often copy it) is accepted. A value that unambiguously names a colour
+ * shouldn't be swapped for the default. Settings can stay strict because it
+ * shows an explicit unsavable state; the wizard has none, so a blank or
+ * unparseable field takes the default instead. Web's native colour input can't
+ * produce one, and mobile's swatch previews this function's result, so the
+ * founder sees the colour that will be stored.
  */
-export function normalizeAccentInput(
-  value: string | null | undefined,
-  fallback: string,
-): string {
+export function normalizeAccentInput(value: string | null | undefined): string {
   const trimmed = value?.trim() ?? "";
-  if (!trimmed) return fallback;
+  if (!trimmed) return DEFAULT_CHAPTER_ACCENT;
   const withHash = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
-  return normalizeHex(withHash) || fallback;
+  return normalizeHex(withHash) || DEFAULT_CHAPTER_ACCENT;
 }
 
-/** Guard-parse a founded-year input. Returns a finite year >= 1776 or undefined. */
-export function parseFoundedYear(raw: string): number | undefined {
+/** The earliest founded year any chapter form accepts. */
+export const FOUNDED_YEAR_MIN = 1776;
+
+/**
+ * The latest founded year any chapter form accepts: next year, so a chapter
+ * chartering over New Year isn't refused. The wizards and Settings share this
+ * bound. When the wizards allowed up to 9999, a mistyped `2999` was stored and
+ * then blocked every later Settings > Org save until someone fixed the year.
+ */
+export function latestFoundedYear(now: Date = new Date()): number {
+  return now.getFullYear() + 1;
+}
+
+/**
+ * Guard-parse a founded-year input. Returns a year between
+ * {@link FOUNDED_YEAR_MIN} and {@link latestFoundedYear}, or undefined.
+ */
+export function parseFoundedYear(
+  raw: string,
+  now: Date = new Date(),
+): number | undefined {
   if (!raw.trim()) return undefined;
   const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed < 1776 || parsed > 9999)
+  if (
+    !Number.isFinite(parsed) ||
+    parsed < FOUNDED_YEAR_MIN ||
+    parsed > latestFoundedYear(now)
+  )
     return undefined;
   return parsed;
 }
@@ -95,4 +116,28 @@ export function chapterIdentityIsValid(identity: ChapterIdentityForm): boolean {
   return (
     identity.name.trim().length >= 3 && identity.university.trim().length >= 2
   );
+}
+
+export type ChapterIdentityBranding = {
+  greek_letters?: string;
+  designation?: string;
+  school_short?: string;
+  founded_at?: number;
+  colors: { accent: string };
+};
+
+/**
+ * The `branding` block of `POST /v1/chapters/onboard`, built the same way on
+ * both surfaces, so the same identity form always sends the same payload.
+ */
+export function chapterIdentityBranding(
+  identity: ChapterIdentityForm,
+): ChapterIdentityBranding {
+  return {
+    greek_letters: identity.greekLetters.trim() || undefined,
+    designation: identity.designation.trim() || undefined,
+    school_short: identity.schoolShort.trim() || undefined,
+    founded_at: parseFoundedYear(identity.foundedYear),
+    colors: { accent: normalizeAccentInput(identity.colorAccent) },
+  };
 }

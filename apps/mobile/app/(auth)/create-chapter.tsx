@@ -31,9 +31,9 @@ import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import {
   DEFAULT_CHAPTER_ACCENT,
   EMPTY_CHAPTER_IDENTITY,
+  chapterIdentityBranding,
   chapterIdentityIsValid,
   normalizeAccentInput,
-  parseFoundedYear,
   type ChapterIdentityForm,
 } from "@repo/hooks/chapter-identity";
 import {
@@ -110,7 +110,7 @@ export default function CreateChapter() {
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorAccent: normalizeAccentInput(row.default_colors?.accent, DEFAULT_CHAPTER_ACCENT),
+      colorAccent: normalizeAccentInput(row.default_colors?.accent),
     });
     setAcceptedLegal(false);
     setError(null);
@@ -144,15 +144,7 @@ export default function CreateChapter() {
         org_archetype: archetype,
         directory_id: directoryId ?? undefined,
         accept_terms_privacy: true,
-        branding: {
-          greek_letters: identity.greekLetters.trim() || undefined,
-          designation: identity.designation.trim() || undefined,
-          school_short: identity.schoolShort.trim() || undefined,
-          founded_at: parseFoundedYear(identity.foundedYear),
-          colors: {
-            accent: normalizeAccentInput(identity.colorAccent, identity.colorAccent),
-          },
-        },
+        branding: chapterIdentityBranding(identity),
       });
       const id = onboardedChapterId(chapter);
       if (id) {
@@ -591,7 +583,7 @@ function IdentityStep({
         mono
         styles={styles}
         tokens={tokens}
-        swatch={normalizeAccentInput(identity.colorAccent, identity.colorAccent)}
+        swatch={normalizeAccentInput(identity.colorAccent)}
       />
 
       {/*

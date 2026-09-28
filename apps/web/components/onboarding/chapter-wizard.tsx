@@ -19,11 +19,12 @@ import {
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
-  DEFAULT_CHAPTER_ACCENT,
   EMPTY_CHAPTER_IDENTITY,
+  FOUNDED_YEAR_MIN,
+  chapterIdentityBranding,
   chapterIdentityIsValid,
+  latestFoundedYear,
   normalizeAccentInput,
-  parseFoundedYear,
   type ChapterIdentityForm,
 } from "@repo/hooks/chapter-identity";
 import {
@@ -133,10 +134,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorAccent: normalizeAccentInput(
-        row.default_colors?.accent,
-        DEFAULT_CHAPTER_ACCENT,
-      ),
+      colorAccent: normalizeAccentInput(row.default_colors?.accent),
     });
     // A different chapter identity invalidates any prior consent — re-affirm.
     setAcceptedLegal(false);
@@ -175,18 +173,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
         org_archetype: archetype,
         directory_id: directoryId ?? undefined,
         accept_terms_privacy: true,
-        branding: {
-          greek_letters: identity.greekLetters.trim() || undefined,
-          designation: identity.designation.trim() || undefined,
-          school_short: identity.schoolShort.trim() || undefined,
-          founded_at: parseFoundedYear(identity.foundedYear),
-          colors: {
-            accent: normalizeAccentInput(
-              identity.colorAccent,
-              DEFAULT_CHAPTER_ACCENT,
-            ),
-          },
-        },
+        branding: chapterIdentityBranding(identity),
       });
       const id =
         chapter && typeof chapter === "object" && "id" in chapter
@@ -752,8 +739,8 @@ function IdentityStep({
             id="wiz-founded"
             type="number"
             inputMode="numeric"
-            min={1776}
-            max={9999}
+            min={FOUNDED_YEAR_MIN}
+            max={latestFoundedYear()}
             value={identity.foundedYear}
             onChange={(e) => set("foundedYear", e.target.value)}
             placeholder="1948"

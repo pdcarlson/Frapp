@@ -8,7 +8,6 @@
     "./chapter-identity": "./src/chapter-identity.ts"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit",
     "test": "vitest run",

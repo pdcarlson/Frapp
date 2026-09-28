@@ -203,9 +203,7 @@ describe("ChapterWizard accent", () => {
 
     const accent = await submittedAccent();
     expect(accent).toBe("#8B0000");
-    expect(accent).toBe(
-      normalizeAccentInput("#8b0000", DEFAULT_CHAPTER_ACCENT),
-    );
+    expect(accent).toBe(normalizeAccentInput("#8b0000"));
   });
 });
 
