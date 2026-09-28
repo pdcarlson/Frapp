@@ -722,6 +722,30 @@ describe("MessageTimeline older history (#1571)", () => {
     act(() => virtuosoProps.current.atTopStateChange?.(true));
   }
 
+  it("raises firstItemIndex by the rows that leave the top", () => {
+    // A refetch past its re-read cap drops the oldest rows; the index has to
+    // rise with them, or Virtuoso reads the shrink as rows lost at the end.
+    const view = (messages: ChatMessage[]) => (
+      <MessageTimeline
+        channelId="chan-1"
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(messages, VIEWER)}
+      />
+    );
+    const { rerender } = render(view(history(1, 20)));
+    const start = virtuosoProps.current.firstItemIndex!;
+
+    rerender(view(history(6, 20)));
+
+    expect(virtuosoProps.current.firstItemIndex).toBe(start + 5);
+  });
+
   it("asks for older history once the member scrolls to the top", () => {
     const onLoadOlder = vi.fn();
     renderTimeline(history(1, 5), { hasOlder: true, onLoadOlder });

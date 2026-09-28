@@ -771,6 +771,12 @@ export const MessageTimeline = forwardRef<
   return (
     <div className="h-full">
       <Virtuoso
+        // One list per channel. A switch to a channel already in the cache
+        // skips the skeleton, so without a key the same instance carried on:
+        // it never reported leaving the top in the new channel, which is what
+        // arms the older-history load, and `initialTopMostItemIndex` (open at
+        // the newest row) applies only on mount.
+        key={channelId}
         ref={virtuoso}
         data={decorated}
         firstItemIndex={firstItemIndex}

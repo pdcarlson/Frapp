@@ -33,9 +33,11 @@ import {
 } from "@repo/chat-core/types";
 import {
   applyReactionInsert,
+  confirmedDepth,
   emptyCache,
-  mergeOlderPage,
+  mergeUnheldRows,
   mergeServerRows,
+  newestConfirmed,
   oldestConfirmed,
   reconcileNewestPage,
   selectMessages,
@@ -73,6 +75,35 @@ export const FIRST_PAGE_LIMIT = 50;
 /** Each older page (#1571). Under the API's 200 cap, and small enough that the
  *  reaction read's `in (…)` list of ids stays a reasonable URL. */
 export const OLDER_PAGE_LIMIT = 100;
+/** Older pages a refetch re-reads to keep loaded history (#1571). */
+export const REFETCH_MAX_OLDER_PAGES = 10;
+
+/**
+ * Whether a refetch's read has not yet reached as far back as the cache it
+ * replaces. Two ways to be done: the read has gone past the cache's oldest row
+ * (strictly, in milliseconds — a row sharing that millisecond may still be
+ * unread), or it holds as many rows as the cache did, not counting rows newer
+ * than the cache's newest, which are what arrived since.
+ */
+function needsDeeperRead(
+  fresh: ChannelCache,
+  depth: ReturnType<typeof confirmedDepth>,
+): boolean {
+  if (depth.oldestTime === null || depth.newestTime === null) return false;
+  const edge = oldestConfirmed(fresh);
+  if (!edge || Date.parse(edge.created_at) < depth.oldestTime) return false;
+  let covered = 0;
+  for (const key of fresh.order) {
+    const message = fresh.byId[key];
+    if (
+      message?._status === "confirmed" &&
+      Date.parse(message.created_at) <= depth.newestTime
+    ) {
+      covered += 1;
+    }
+  }
+  return covered < depth.rows;
+}
 
 /**
  * What one `loadOlder` call did.
@@ -101,6 +132,13 @@ export interface UseChatChannelResult {
   olderError: boolean;
   /** Loads the next page of older history. Concurrent calls share one read. */
   loadOlder: () => Promise<LoadOlderResult>;
+  /**
+   * Reads what arrived after the newest loaded row, once, and merges it:
+   * a jump's first move, since its target may be a message Realtime has not
+   * delivered yet rather than an old one. Resolves how many rows were new,
+   * or `null` when the read failed.
+   */
+  loadNewer: () => Promise<number | null>;
   send: (
     content: string,
     opts?: { replyToId?: string | null; attachments?: OutboxAttachment[] },
@@ -243,7 +281,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const fetchPage = useCallback(
     async (
       id: string,
-      query: { limit: number; before?: string },
+      query: { limit: number; before?: string; since?: string },
     ): Promise<{
       rows: RawChatMessage[];
       actions: RawChatMessageAction[];
@@ -283,34 +321,66 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     });
   }, []);
 
-  // The newest page. A refetch (`refetchOnReconnect: "always"`, the first-chunk
-  // seed's invalidate) folds it into the cache as it stands rather than
-  // replacing it — see `reconcileNewestPage` for what that keeps and why.
+  /*
+    The newest page, and on a refetch every older page the member has loaded.
+
+    A refetch (`refetchOnReconnect: "always"`, the first-chunk seed's
+    invalidate, `refetchTimelinesHolding` after a report removal) is how a
+    thread gets back to server truth after something it missed: an outage, a
+    removal whose response was lost, a week-old disk tail. So it re-reads the
+    history it keeps instead of trusting it, page by page back to the oldest
+    row the cache held, and `reconcileNewestPage` drops whatever the read did
+    not reach. Rows newer than the cache (what arrived while it was stale) do
+    not count toward that depth, so a cold open over a 30-row disk tail reads
+    one page unless more than 20 messages arrived meanwhile. Capped at
+    `REFETCH_MAX_OLDER_PAGES`; history beyond it is dropped and reads again,
+    fresh, when the member next scrolls to it.
+  */
   const query = useQuery<ChannelCache, Error>({
     queryKey: channelId ? chatMessagesKey(channelId) : ["chat", "none"],
     enabled: !!channelId,
     staleTime: Infinity,
     queryFn: async () => {
       if (!channelId) return emptyCache();
-      const { rows, actions } = await fetchPage(channelId, {
-        limit: FIRST_PAGE_LIMIT,
-      });
-      let fresh = mergeServerRows(emptyCache(), rows);
+      const key = chatMessagesKey(channelId);
+      const depth = confirmedDepth(queryClient.getQueryData<ChannelCache>(key));
+      const first = await fetchPage(channelId, { limit: FIRST_PAGE_LIMIT });
+      let fresh = mergeServerRows(emptyCache(), first.rows);
       // The canonical merge, not a local copy: it also appends each raw
       // row to `message.actions`, which the poll-card tallies read — a
       // local variant that skipped that step left reloaded polls at zero
       // votes until a live echo happened to re-deliver them.
-      for (const action of actions) {
+      for (const action of first.actions) {
         fresh = applyReactionInsert(fresh, action);
+      }
+      let reachedStart = first.rows.length < FIRST_PAGE_LIMIT;
+      for (
+        let pageNo = 0;
+        !reachedStart &&
+        pageNo < REFETCH_MAX_OLDER_PAGES &&
+        needsDeeperRead(fresh, depth);
+        pageNo += 1
+      ) {
+        const edge = oldestConfirmed(fresh)!;
+        const older = await fetchPage(channelId, {
+          limit: OLDER_PAGE_LIMIT,
+          before: new Date(Date.parse(edge.created_at) + 1).toISOString(),
+        });
+        const merged = mergeUnheldRows(fresh, older.rows, older.actions);
+        fresh = merged.cache;
+        reachedStart = older.rows.length < OLDER_PAGE_LIMIT;
+        // A full page inside one millisecond moves nothing; stop rather than
+        // spend the cap on it. What it left unread goes, and reads again when
+        // the member scrolls to it.
+        if (merged.added === 0) break;
       }
       // Read after every await, so it is the cache as it is now: an outbox
       // hydrate or a Realtime row that landed during the read is in it (#2486).
       let cache = reconcileNewestPage(
-        queryClient.getQueryData<ChannelCache>(chatMessagesKey(channelId)),
+        queryClient.getQueryData<ChannelCache>(key),
         fresh,
-        FIRST_PAGE_LIMIT,
       );
-      if (rows.length < FIRST_PAGE_LIMIT) {
+      if (reachedStart) {
         recordStart(channelId, oldestConfirmed(cache)?.id ?? null);
       }
       // Re-merge the viewer's persisted heavy-command rows: `recorded`
@@ -338,29 +408,34 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     that millisecond, and only then does it fall back to the strict cursor.
   */
   const olderInFlight = useRef(new Map<string, Promise<LoadOlderResult>>());
-  const [olderStatus, setOlderStatus] = useState<{
-    channelId: string;
-    status: "loading" | "error";
-  } | null>(null);
+  // Per channel: one hook serves every channel the shell switches through, and
+  // a read that settles after a switch must only ever write its own channel's
+  // status, never the one now on screen.
+  const [olderStatus, setOlderStatus] = useState<
+    ReadonlyMap<string, "loading" | "error">
+  >(() => new Map());
 
   const loadOlder = useCallback((): Promise<LoadOlderResult> => {
     if (!channelId) return Promise.resolve("start");
     const inFlight = olderInFlight.current.get(channelId);
     if (inFlight) return inFlight;
     const key = chatMessagesKey(channelId);
-    // Only this channel's: a read that settles after a channel switch must not
-    // clear the status of the channel now on screen.
-    const clearOlderStatus = () =>
-      setOlderStatus((current) =>
-        current?.channelId === channelId ? null : current,
-      );
+    const setStatus = (status: "loading" | "error" | null) =>
+      setOlderStatus((current) => {
+        if ((current.get(channelId) ?? null) === status) return current;
+        const next = new Map(current);
+        if (status === null) next.delete(channelId);
+        else next.set(channelId, status);
+        return next;
+      });
+    const clearOlderStatus = () => setStatus(null);
     const run = async (): Promise<LoadOlderResult> => {
       const edge = oldestConfirmed(queryClient.getQueryData<ChannelCache>(key));
       if (!edge) {
         recordStart(channelId, null);
         return "start";
       }
-      setOlderStatus({ channelId, status: "loading" });
+      setStatus("loading");
       try {
         const cursors = [
           new Date(Date.parse(edge.created_at) + 1).toISOString(),
@@ -381,7 +456,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
             if (!current || oldestConfirmed(current)?.id !== edge.id) {
               return current;
             }
-            const merged = mergeOlderPage(current, rows, actions);
+            const merged = mergeUnheldRows(current, rows, actions);
             result.outcome = merged.added > 0 ? "loaded" : "start";
             return merged.cache;
           });
@@ -405,7 +480,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         clearOlderStatus();
         return "stale";
       } catch {
-        setOlderStatus({ channelId, status: "error" });
+        setStatus("error");
         return "error";
       }
     };
@@ -415,6 +490,29 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     olderInFlight.current.set(channelId, promise);
     return promise;
   }, [channelId, fetchPage, queryClient, recordStart]);
+
+  const loadNewer = useCallback(async (): Promise<number | null> => {
+    if (!channelId) return 0;
+    const key = chatMessagesKey(channelId);
+    const newest = newestConfirmed(queryClient.getQueryData<ChannelCache>(key));
+    if (!newest) return 0;
+    try {
+      const { rows, actions } = await fetchPage(channelId, {
+        limit: OLDER_PAGE_LIMIT,
+        since: newest.id,
+      });
+      let added = 0;
+      queryClient.setQueryData<ChannelCache>(key, (current) => {
+        if (!current) return current;
+        const merged = mergeUnheldRows(current, rows, actions);
+        added = merged.added;
+        return merged.cache;
+      });
+      return added;
+    } catch {
+      return null;
+    }
+  }, [channelId, fetchPage, queryClient]);
 
   /*
     Ref-counted subscription to the realtime manager. Cleans up when the active
@@ -625,12 +723,15 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   usePersistedChannelTail(channelId, messages, query.dataUpdatedAt);
 
   const edgeId = oldestConfirmed(query.data)?.id ?? null;
+  // On the data, not on `isSuccess`: a refetch that failed keeps its data and
+  // reads `error`, and the history it holds can still be paged from.
   const hasOlder =
     !!channelId &&
-    query.isSuccess &&
+    query.data !== undefined &&
     !(channelStarts.has(channelId) && channelStarts.get(channelId) === edgeId);
-  const olderForChannel =
-    olderStatus?.channelId === channelId ? olderStatus.status : null;
+  const olderForChannel = channelId
+    ? (olderStatus.get(channelId) ?? null)
+    : null;
 
   return {
     messages,
@@ -640,6 +741,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     isLoadingOlder: olderForChannel === "loading",
     olderError: olderForChannel === "error",
     loadOlder,
+    loadNewer,
     send,
     react: reactCb,
     unreact: unreactCb,

@@ -44,7 +44,7 @@ import {
   TOMBSTONE_STALE_TEXT,
   TOMBSTONE_TEXT,
 } from "./block-copy";
-import { mergeServerRow } from "./cache";
+import { mergeServerRow, trimOlderThan } from "./cache";
 import {
   CHAT_MESSAGE_QUERY_ROOT,
   chatMessagesKey,
@@ -615,8 +615,9 @@ function channelIdOf(queryKey: readonly unknown[]): string | null {
 export const MASKED_REFRESH_PAGE_LIMIT = 100;
 
 /**
- * Pages one thread's re-read may take. A backstop, far past any history a
- * member loads by scrolling; a thread that reaches it counts as not read.
+ * Pages one thread's re-read may take: five thousand messages. Past it the
+ * rows the read did not reach are trimmed from the thread rather than left as
+ * copies no read will clear (`refreshMaskedCopies`).
  */
 export const MASKED_REFRESH_MAX_PAGES = 50;
 
@@ -709,20 +710,33 @@ export async function refreshMaskedCopies(
   maskedRefresh.set(userId, "refreshing");
 
   /**
-   * One read of a thread, newest page back to its oldest masked copy, folded
-   * in page by page. `false` on any failure.
+   * One thread's read, newest page back to its oldest masked copy, folded in
+   * page by page. `false` on a failed request; the retry resumes from `read`,
+   * the cursor the last successful page left, rather than re-reading the
+   * pages before it.
    *
    * The cursor overlaps by a millisecond, as the timeline's older-history read
    * does, so a copy sharing the boundary instant with the page before it is
    * not skipped; `replaceMaskedCopies` is idempotent, so the overlap costs
-   * nothing.
+   * nothing. The stop is strict for the same reason: a page whose oldest row
+   * shares the copy's millisecond may still have cut it off.
+   *
+   * **The bound is not a failure.** Past `MASKED_REFRESH_MAX_PAGES` the rows
+   * the read did not reach are trimmed from the thread, masked copies with
+   * them, and the read counts as done. They load again, from the server and
+   * so unmasked, when the member next scrolls back to them. Reporting it as a
+   * failure instead offered a Reload that walked the same pages and failed
+   * the same way, every time.
    */
-  async function readMaskedRange(channelId: string): Promise<boolean> {
+  async function readMaskedRange(
+    channelId: string,
+    read: { before?: string; pages: number; reachedTime?: number },
+  ): Promise<boolean> {
+    const key = chatMessagesKey(channelId);
     try {
-      let before: string | undefined;
-      for (let pageNo = 0; pageNo < MASKED_REFRESH_MAX_PAGES; pageNo += 1) {
+      while (read.pages < MASKED_REFRESH_MAX_PAGES) {
         const target = oldestMaskedCopyTime(
-          queryClient.getQueryData<ChannelCache>(chatMessagesKey(channelId)),
+          queryClient.getQueryData<ChannelCache>(key),
           userId,
         );
         if (target === null) return true;
@@ -731,16 +745,15 @@ export async function refreshMaskedCopies(
             path: { id: channelId },
             query: {
               limit: MASKED_REFRESH_PAGE_LIMIT,
-              ...(before ? { before } : {}),
+              ...(read.before ? { before: read.before } : {}),
             },
           },
         });
         if (!result.response.ok || !Array.isArray(result.data)) return false;
         const rows = result.data as RawChatMessage[];
-        queryClient.setQueryData<ChannelCache>(
-          chatMessagesKey(channelId),
-          (current) =>
-            current ? replaceMaskedCopies(current, rows, userId) : current,
+        read.pages += 1;
+        queryClient.setQueryData<ChannelCache>(key, (current) =>
+          current ? replaceMaskedCopies(current, rows, userId) : current,
         );
         if (rows.length < MASKED_REFRESH_PAGE_LIMIT) return true;
         const pageOldest = rows.reduce((oldest, row) =>
@@ -749,13 +762,21 @@ export async function refreshMaskedCopies(
             : oldest,
         );
         const pageOldestTime = Date.parse(pageOldest.created_at);
-        if (pageOldestTime <= target) return true;
+        if (pageOldestTime < target) return true;
         const overlapping = new Date(pageOldestTime + 1).toISOString();
         // A full page inside one millisecond would never move the overlapping
         // cursor, so the strict one takes over.
-        before = overlapping === before ? pageOldest.created_at : overlapping;
+        read.before =
+          overlapping === read.before ? pageOldest.created_at : overlapping;
+        read.reachedTime = pageOldestTime;
       }
-      return false;
+      if (read.reachedTime !== undefined) {
+        const reached = read.reachedTime;
+        queryClient.setQueryData<ChannelCache>(key, (current) =>
+          current ? trimOlderThan(current, reached) : current,
+        );
+      }
+      return true;
     } catch {
       return false;
     }
@@ -763,8 +784,11 @@ export async function refreshMaskedCopies(
 
   const results = await Promise.all(
     channelIds.map(async (channelId) => {
+      const read: { before?: string; pages: number; reachedTime?: number } = {
+        pages: 0,
+      };
       for (let attempt = 0; ; attempt += 1) {
-        if (await readMaskedRange(channelId)) return true;
+        if (await readMaskedRange(channelId, read)) return true;
         const delay = retryDelaysMs[attempt];
         if (delay === undefined) return false;
         await wait(delay);

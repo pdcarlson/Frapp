@@ -1,21 +1,23 @@
 /**
- * Pins the two cache operations older history rests on (#1571), and the
- * refetch half of it that #2486 is about: a channel query that re-reads its
- * newest page must fold that page into the cache as it stands, never replace
- * it, or queued sends vanish and older pages the member scrolled through are
- * dropped out from under them.
+ * Pins the cache operations older history rests on (#1571), and the refetch
+ * half of it that #2486 is about: a channel query's read must fold into the
+ * cache as it stands, never replace it, or queued sends vanish; and it must
+ * not keep a cached row it did not re-read, or a removal made during an
+ * outage stays on screen.
  */
 
 import { describe, expect, test } from "vitest";
 import {
   applyReactionInsert,
+  confirmedDepth,
   emptyCache,
   markFailed,
-  mergeOlderPage,
+  mergeUnheldRows,
   mergeServerRows,
   oldestConfirmed,
   reconcileNewestPage,
   selectMessages,
+  trimOlderThan,
   upsertOptimistic,
 } from "./cache";
 import {
@@ -78,78 +80,75 @@ function ids(cache: ChannelCache): string[] {
 }
 
 describe("reconcileNewestPage", () => {
-  test("returns the page itself when nothing is cached yet", () => {
+  test("returns the read itself when nothing is cached yet", () => {
     const fresh = page(1, 3);
-    expect(reconcileNewestPage(undefined, fresh, 50)).toBe(fresh);
-    expect(reconcileNewestPage(emptyCache(), fresh, 50)).toBe(fresh);
+    expect(reconcileNewestPage(undefined, fresh)).toBe(fresh);
+    expect(reconcileNewestPage(emptyCache(), fresh)).toBe(fresh);
   });
 
   test("keeps queued and failed sends written before the fetch landed (#2486)", () => {
     // The outbox hydrate (or the first-chunk seed) ran while the GET was in
-    // flight, so the cache holds unsent rows the page cannot know about.
+    // flight, so the cache holds unsent rows the read cannot know about.
     let current = upsertOptimistic(emptyCache(), queued("q1"));
     current = upsertOptimistic(current, queued("f1"));
     current = markFailed(current, "f1", "Send failed");
 
-    const next = reconcileNewestPage(current, page(1, 3), 50);
+    const next = reconcileNewestPage(current, page(1, 3));
 
     expect(ids(next)).toEqual(["m1", "m2", "m3", "q1", "f1"]);
     expect(next.byId.q1?._status).toBe("pending");
     expect(next.byId.f1?._status).toBe("failed");
   });
 
-  test("drops an optimistic row the page confirms", () => {
+  test("drops an optimistic row the read confirms", () => {
     const current = upsertOptimistic(emptyCache(), queued("cm3"));
 
-    const next = reconcileNewestPage(current, page(1, 3), 50);
+    const next = reconcileNewestPage(current, page(1, 3));
 
     expect(ids(next)).toEqual(["m1", "m2", "m3"]);
     expect(next.byId.cm3).toBeUndefined();
   });
 
-  test("keeps older loaded pages that are contiguous with the page", () => {
-    // Loaded 1..6 by scrolling back; the refetch returns the newest three.
+  test("drops cached rows older than the read, which it cannot vouch for", () => {
+    // Deleted, edited or report-removed during an outage, or a week-old disk
+    // tail: a caller that wants them kept re-reads them into `fresh`.
     const current = page(1, 6);
 
-    const next = reconcileNewestPage(current, page(4, 6), 3);
-
-    expect(ids(next)).toEqual(["m1", "m2", "m3", "m4", "m5", "m6"]);
+    expect(ids(reconcileNewestPage(current, page(4, 6)))).toEqual([
+      "m4",
+      "m5",
+      "m6",
+    ]);
   });
 
-  test("drops older pages when the page leaves a hole between them", () => {
-    // More than a page arrived while disconnected: the page is 8..10, the
-    // cache holds 1..5, and 6..7 are on neither side.
-    const current = page(1, 5);
+  test("takes the read's copy of every row it carries", () => {
+    const current = page(1, 3);
+    const fresh = mergeServerRows(emptyCache(), [
+      row(1),
+      row(2, { content: "[message deleted]", is_deleted: true }),
+      row(3),
+    ]);
 
-    const next = reconcileNewestPage(current, page(8, 10), 3);
+    const next = reconcileNewestPage(current, fresh);
 
-    expect(ids(next)).toEqual(["m8", "m9", "m10"]);
+    expect(next.byId.m2?.content).toBe("[message deleted]");
   });
 
-  test("drops older rows when a short page says the channel starts inside it", () => {
-    const current = page(1, 5);
-
-    // Two rows under a limit of three: nothing older exists on the server.
-    const next = reconcileNewestPage(current, page(4, 5), 3);
-
-    expect(ids(next)).toEqual(["m4", "m5"]);
-  });
-
-  test("drops a cached row inside the page's range that the page does not carry", () => {
+  test("drops a cached row inside the read's range that the read does not carry", () => {
     const current = page(1, 4);
     const fresh = mergeServerRows(emptyCache(), [row(1), row(2), row(4)]);
 
-    expect(ids(reconcileNewestPage(current, fresh, 50))).toEqual([
+    expect(ids(reconcileNewestPage(current, fresh))).toEqual([
       "m1",
       "m2",
       "m4",
     ]);
   });
 
-  test("keeps a row newer than the page, which arrived while the fetch was in flight", () => {
+  test("keeps a row newer than the read, which arrived while the fetch was in flight", () => {
     const current = page(1, 4);
 
-    expect(ids(reconcileNewestPage(current, page(1, 3), 50))).toEqual([
+    expect(ids(reconcileNewestPage(current, page(1, 3)))).toEqual([
       "m1",
       "m2",
       "m3",
@@ -157,25 +156,67 @@ describe("reconcileNewestPage", () => {
     ]);
   });
 
-  test("keeps nothing confirmed when the page says the channel is empty", () => {
-    const current = upsertOptimistic(page(1, 2), queued("q1"));
+  test("keeps a row in the same millisecond as the read's newest", () => {
+    // `created_at` carries microseconds the comparison cannot see.
+    const tied = row(9, { created_at: row(3).created_at });
+    const current = mergeServerRows(page(1, 3), [tied]);
 
-    expect(ids(reconcileNewestPage(current, emptyCache(), 50))).toEqual(["q1"]);
+    expect(ids(reconcileNewestPage(current, page(1, 3)))).toContain("m9");
   });
 
-  test("carries the reactions of the older rows it keeps", () => {
-    const current = applyReactionInsert(page(1, 4), reaction("a1", "m1"));
+  test("keeps nothing confirmed when the read says the channel is empty", () => {
+    const current = upsertOptimistic(page(1, 2), queued("q1"));
 
-    const next = reconcileNewestPage(current, page(3, 4), 2);
+    expect(ids(reconcileNewestPage(current, emptyCache()))).toEqual(["q1"]);
+  });
 
-    expect(next.byId.m1?.reactions["reaction:👍"]).toEqual(["u2"]);
-    expect(next.actionIndex.a1?.messageKey).toBe("m1");
+  test("carries the reactions of the newer rows it keeps", () => {
+    const current = applyReactionInsert(page(1, 4), reaction("a1", "m4"));
+
+    const next = reconcileNewestPage(current, page(1, 3));
+
+    expect(next.byId.m4?.reactions["reaction:👍"]).toEqual(["u2"]);
+    expect(next.actionIndex.a1?.messageKey).toBe("m4");
   });
 });
 
-describe("mergeOlderPage", () => {
+describe("confirmedDepth", () => {
+  test("counts confirmed rows and times the oldest, skipping optimistic ones", () => {
+    const cache = upsertOptimistic(page(2, 4), queued("q1"));
+
+    expect(confirmedDepth(cache)).toEqual({
+      rows: 3,
+      oldestTime: Date.parse(row(2).created_at),
+      newestTime: Date.parse(row(4).created_at),
+    });
+    expect(confirmedDepth(undefined)).toEqual({
+      rows: 0,
+      oldestTime: null,
+      newestTime: null,
+    });
+  });
+});
+
+describe("trimOlderThan", () => {
+  test("drops confirmed rows strictly older than the time, with their reactions", () => {
+    let cache = applyReactionInsert(page(1, 4), reaction("a1", "m1"));
+    cache = upsertOptimistic(cache, queued("q1"));
+
+    const next = trimOlderThan(cache, Date.parse(row(3).created_at));
+
+    expect(ids(next)).toEqual(["m3", "m4", "q1"]);
+    expect(next.actionIndex.a1).toBeUndefined();
+  });
+
+  test("returns the cache untouched when nothing is older", () => {
+    const cache = page(3, 4);
+    expect(trimOlderThan(cache, Date.parse(row(1).created_at))).toBe(cache);
+  });
+});
+
+describe("mergeUnheldRows", () => {
   test("adds the rows it does not hold and reports how many", () => {
-    const { cache, added } = mergeOlderPage(page(3, 4), rows(1, 3), []);
+    const { cache, added } = mergeUnheldRows(page(3, 4), rows(1, 3), []);
 
     expect(added).toBe(2);
     expect(ids(cache)).toEqual(["m1", "m2", "m3", "m4"]);
@@ -184,7 +225,7 @@ describe("mergeOlderPage", () => {
   test("leaves a row it already holds alone, reactions included", () => {
     const current = applyReactionInsert(page(3, 4), reaction("a1", "m3"));
 
-    const { cache, added } = mergeOlderPage(
+    const { cache, added } = mergeUnheldRows(
       current,
       [row(3, { content: "stale copy" })],
       [reaction("a2", "m3")],
@@ -196,7 +237,7 @@ describe("mergeOlderPage", () => {
   });
 
   test("hydrates reactions only onto the rows the page added", () => {
-    const { cache } = mergeOlderPage(page(3, 3), rows(1, 2), [
+    const { cache } = mergeUnheldRows(page(3, 3), rows(1, 2), [
       reaction("a1", "m1"),
       reaction("a2", "m3"),
     ]);
