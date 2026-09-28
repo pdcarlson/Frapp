@@ -11,8 +11,11 @@ import {
   appConfigKeysFor,
   formatEnvBaseline,
   infisicalBuildEnv,
+  isVercelSystemVariable,
+  keysHoldingPlaceholder,
+  onlyVercelSystemRows,
   parseEnvBaseline,
-  withoutEnvKeys,
+  SENSITIVE_PLACEHOLDER,
 } from "../lib/vercel-build-env.mjs";
 
 // Pins `lib/vercel-build-env.mjs` (#2672). The first describe is the one that
@@ -234,7 +237,9 @@ describe("APP_CONFIG_KEYS shape", () => {
     for (const label of Object.keys(APP_CONFIG_KEYS)) {
       for (const key of appConfigKeysFor(label)) {
         assert.ok(!NOT_FROM_THE_STORE.has(key), `${label} lists ${key}: ${NOT_FROM_THE_STORE.get(key)}`);
-        assert.ok(!key.startsWith("VERCEL_"), `${label} lists ${key}, which Vercel's namespace owns`);
+        // The pulled file keeps exactly these names (#2810), so an app key
+        // among them would let a Vercel row supply it.
+        assert.ok(!isVercelSystemVariable(key), `${label} lists ${key}, which Vercel's namespace owns`);
       }
     }
   });
@@ -348,7 +353,7 @@ describe("infisicalBuildEnv", () => {
     // a pulled row replace an empty value anyway.
     const web = infisicalBuildEnv({ label: "frapp-web", env, baselineNames });
     assert.ok(!("NEXT_PUBLIC_POSTHOG_KEY" in web.appEnv));
-    assert.ok(web.appKeys.includes("NEXT_PUBLIC_POSTHOG_KEY"), "still removed from the pulled env");
+    assert.ok(web.appKeys.includes("NEXT_PUBLIC_POSTHOG_KEY"), "still named, so the lost-key warning can report it");
   });
 
   it("fails, naming keys and never values, when a required key has no value", () => {
@@ -376,28 +381,110 @@ describe("infisicalBuildEnv", () => {
   it("refuses an unknown project", () => {
     assert.throws(() => infisicalBuildEnv({ label: "frapp-docs", env, baselineNames }), /No app config keys/);
   });
-});
 
-describe("withoutEnvKeys", () => {
-  it("removes exactly the named keys and reports them in file order", () => {
-    const text = [
-      "# Created by Vercel CLI",
-      'NEXT_PUBLIC_APP_URL="https://stale"',
-      'NEXT_PUBLIC_APP_URL_OLD="other key"',
-      "  SENTRY_AUTH_TOKEN = spaced",
-      'VERCEL_ENV="preview"',
-      "",
-    ].join("\n");
-    const { text: kept, removed } = withoutEnvKeys(text, ["SENTRY_AUTH_TOKEN", "NEXT_PUBLIC_APP_URL"]);
-    assert.deepEqual(removed, ["NEXT_PUBLIC_APP_URL", "SENTRY_AUTH_TOKEN"]);
-    assert.equal(
-      kept,
-      ["# Created by Vercel CLI", 'NEXT_PUBLIC_APP_URL_OLD="other key"', 'VERCEL_ENV="preview"', ""].join("\n"),
+  it("refuses a placeholder in the injected app config, naming the key", () => {
+    // A value copied out of a pulled file into Infisical would otherwise be
+    // compiled into the bundle.
+    const copied = { ...env, NEXT_PUBLIC_POSTHOG_KEY: SENSITIVE_PLACEHOLDER };
+    assert.throws(
+      () => infisicalBuildEnv({ label: "frapp-web", env: copied, baselineNames }),
+      /\[frapp-web\] The Infisical injection holds NEXT_PUBLIC_POSTHOG_KEY with the value "\[SENSITIVE\]"/,
     );
   });
 
-  it("returns the text unchanged when none of the keys is present", () => {
-    const text = 'VERCEL_ENV="preview"\n';
-    assert.deepEqual(withoutEnvKeys(text, ["NEXT_PUBLIC_API_URL"]), { text, removed: [] });
+  it("refuses a placeholder in the pre-injection environment every CLI step runs on", () => {
+    const tainted = { ...env, HOME: SENSITIVE_PLACEHOLDER };
+    assert.throws(
+      () => infisicalBuildEnv({ label: "frapp-landing", env: tainted, baselineNames }),
+      /\[frapp-landing\] The job environment before the injection holds HOME/,
+    );
+  });
+
+  it("ignores a placeholder in a key the build never receives", () => {
+    const elsewhere = { ...env, STRIPE_SECRET_KEY: SENSITIVE_PLACEHOLDER };
+    assert.doesNotThrow(() => infisicalBuildEnv({ label: "frapp-web", env: elsewhere, baselineNames }));
+  });
+});
+
+describe("isVercelSystemVariable", () => {
+  it("is VERCEL, VERCEL_* and NEXT_PUBLIC_VERCEL_*, and nothing else", () => {
+    for (const name of ["VERCEL", "VERCEL_ENV", "VERCEL_URL", "VERCEL_OIDC_TOKEN", "NEXT_PUBLIC_VERCEL_ENV"]) {
+      assert.ok(isVercelSystemVariable(name), name);
+    }
+    for (const name of ["PORT", "NEXT_PUBLIC_APP_URL", "VERCELX", "MY_VERCEL_ENV", "NEXT_PUBLIC_VERCELX", "vercel_env"]) {
+      assert.ok(!isVercelSystemVariable(name), name);
+    }
+  });
+});
+
+describe("keysHoldingPlaceholder", () => {
+  it("names exactly the keys whose value is the placeholder", () => {
+    const env = { A: SENSITIVE_PLACEHOLDER, B: "real", C: ` ${SENSITIVE_PLACEHOLDER} `, D: "x[SENSITIVE]", E: "" };
+    assert.deepEqual(keysHoldingPlaceholder(env), ["A", "C"]);
+  });
+});
+
+describe("onlyVercelSystemRows", () => {
+  // The shape CLI 59.11.7 writes: a header, then sorted `KEY="value"` lines,
+  // with a Sensitive row's value replaced by the placeholder.
+  const PULLED = [
+    "# Created by Vercel CLI",
+    'NEXT_PUBLIC_APP_URL="https://stale"',
+    'NEXT_PUBLIC_VERCEL_ENV="production"',
+    `PORT="${SENSITIVE_PLACEHOLDER}"`,
+    "  SENTRY_AUTH_TOKEN = spaced",
+    'VERCEL="1"',
+    'VERCEL_ENV="production"',
+    'VERCEL_URL=""',
+    "",
+  ].join("\n");
+
+  it("keeps the system rows, removes every project row, and reports both in file order", () => {
+    const { text, kept, removed, keptEnv } = onlyVercelSystemRows(PULLED);
+    assert.deepEqual(kept, ["NEXT_PUBLIC_VERCEL_ENV", "VERCEL", "VERCEL_ENV", "VERCEL_URL"]);
+    assert.deepEqual(removed, ["NEXT_PUBLIC_APP_URL", "PORT", "SENTRY_AUTH_TOKEN"]);
+    assert.deepEqual(keptEnv, { NEXT_PUBLIC_VERCEL_ENV: "production", VERCEL: "1", VERCEL_ENV: "production", VERCEL_URL: "" });
+    assert.equal(
+      text,
+      [
+        "# Created by Vercel CLI",
+        'NEXT_PUBLIC_VERCEL_ENV="production"',
+        'VERCEL="1"',
+        'VERCEL_ENV="production"',
+        'VERCEL_URL=""',
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("removes a placeholder project row, the #2810 shape (most likely `PORT`, reaching landing's prerender)", () => {
+    const { text, removed, keptEnv } = onlyVercelSystemRows(`PORT="${SENSITIVE_PLACEHOLDER}"\nVERCEL_ENV="production"\n`);
+    assert.deepEqual(removed, ["PORT"]);
+    assert.ok(!text.includes(SENSITIVE_PLACEHOLDER));
+    assert.deepEqual(keysHoldingPlaceholder(keptEnv), [], "a removed row never reaches the build, so nothing to refuse");
+  });
+
+  it("reads each kept value exactly as dotenv@4 loads it, so the placeholder check sees what the build would", () => {
+    // Padding included: dotenv@4 strips the quotes, then trims. A value it
+    // loads as exactly `[SENSITIVE]` must read that way here too.
+    for (const line of [
+      `VERCEL_FOO="${SENSITIVE_PLACEHOLDER}"`,
+      `VERCEL_FOO=${SENSITIVE_PLACEHOLDER}`,
+      `VERCEL_FOO = '${SENSITIVE_PLACEHOLDER}'`,
+      `VERCEL_FOO="${SENSITIVE_PLACEHOLDER} "`,
+      `VERCEL_FOO=${SENSITIVE_PLACEHOLDER}   `,
+    ]) {
+      assert.deepEqual(onlyVercelSystemRows(`${line}\n`).keptEnv, { VERCEL_FOO: SENSITIVE_PLACEHOLDER }, line);
+    }
+    // A trailing space after the closing quote defeats dotenv@4's unquoting,
+    // so it loads `[SENSITIVE]'`, which is not the placeholder.
+    assert.deepEqual(onlyVercelSystemRows(`VERCEL_FOO = '${SENSITIVE_PLACEHOLDER}' \n`).keptEnv, {
+      VERCEL_FOO: `${SENSITIVE_PLACEHOLDER}'`,
+    });
+  });
+
+  it("keeps lines dotenv skips, and returns the text unchanged when every row is a system row", () => {
+    const text = '# Created by Vercel CLI\nexport PORT=1\nVERCEL_ENV="preview"\n';
+    assert.deepEqual(onlyVercelSystemRows(text), { text, kept: ["VERCEL_ENV"], removed: [], keptEnv: { VERCEL_ENV: "preview" } });
   });
 });

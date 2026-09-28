@@ -884,12 +884,12 @@ function UnreadableGroup({
           </p>
           <p className="text-sm text-muted-foreground">
             Discord hides them from the Frapp bot, so they will be skipped. To
-            import them, either allow the bot&apos;s own Frapp role on each
-            channel (Edit Channel → Permissions; a category allow reaches only
-            the channels still synced to it), which keeps it read-only, or give
-            the Frapp bot a role that can see them (Server Settings → Members →
-            Frapp), which is quicker but lends it everything that role can do.
-            Then scan again.
+            import them, either allow the bot&apos;s own Frapp role View Channel
+            and Read Message History on each channel (Edit Channel →
+            Permissions; a category allow reaches only the channels still synced
+            to it), which keeps it read-only, or give the Frapp bot a role that
+            can see them (Server Settings → Members → Frapp), which is quicker
+            but lends it everything that role can do. Then scan again.
           </p>
           <button
             type="button"

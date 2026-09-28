@@ -771,8 +771,9 @@ export const DRY_RUN_WITHHELD_KEYS = Object.freeze(["SENTRY_AUTH_TOKEN"]);
  * in landing stops the run before web has built, rather than after.
  *
  * With `dryRun`, `DRY_RUN_WITHHELD_KEYS` are dropped from each `appEnv` and
- * listed in `withheld`. They stay in `appKeys`, so the pulled env file loses
- * them too: neither channel can hand the build a Sentry token. `withheld` is
+ * listed in `withheld`. The pulled env file keeps only Vercel's system
+ * variables, so it loses them too: neither channel can hand the build a Sentry
+ * token. `withheld` is
  * what keeps the lost-key warning from calling a key Infisical did supply
  * missing.
  */
