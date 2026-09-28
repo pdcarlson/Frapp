@@ -969,7 +969,18 @@ real:
 period it was needed — a dead pipeline must not be able to hide drift. The schedule is what would
 have caught February.
 
-**Classification.** `pending` (repo, not applied) · `foreign` (applied, not in repo) · `matched`.
+**What each database is judged against.** Staging deploys on every merge, so it is expected to hold
+every migration on `main`. Production moves only when a ship is dispatched, so it is expected to
+hold the migrations of the latest `vX.Y.Z` tag, which `deploy-production.yml` mints only after its
+migrate step succeeded (`DRIFT_RELEASED_TARGETS: "production"` in the workflow, which fetches the
+`v*` tags into its shallow checkout). A migration merged since that tag is reported as
+**unreleased** and never alerts: until 2026-09-28 production was judged against `main`, so every
+merged migration reopened the P1 a day later and kept it open until the next ship. How far
+production lags `main` is `/needs-me`'s to report, not an incident. A tag that cannot be read makes
+production `unknown` (below), never a fallback to `main`.
+
+**Classification.** `pending` (expected, not applied) · `foreign` (applied, not in the repo or the
+tag) · `unreleased` (on `main`, not in the tag, not applied; reported only) · `matched`.
 Foreign rows are never graced: a version the repo has never contained is wrong the moment it
 appears. Pending rows are tolerated for `PENDING_GRACE_HOURS` (default 24) measured from the
 migration's **own 14-digit version timestamp**, which is the only "when was this authored" signal

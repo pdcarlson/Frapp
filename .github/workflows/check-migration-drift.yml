@@ -15,6 +15,10 @@ name: Check migration drift
 # endpoint and sends no SQL. It reports drift and never repairs it — reconciling
 # a hosted database is a human action (see DB_PROMOTION_RUNBOOK.md).
 #
+# Staging is judged against `main`. Production is judged against the latest
+# `v*` tag, because it only moves when a ship is dispatched: a migration merged
+# since the last ship is unreleased, not drift (DRIFT_RELEASED_TARGETS below).
+#
 # Semantics live in scripts/ci/check-migration-drift.mjs.
 # Unit tests: scripts/ci/__tests__/ (run via `npm run test:ci-scripts`).
 
@@ -59,6 +63,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # The checkout is shallow and holds no tags; production's baseline is the
+      # latest `v*` tag's `supabase/migrations/`, read with `git ls-tree`.
+      - name: Fetch the release tags
+        run: git fetch --no-tags --depth=1 origin '+refs/tags/v*:refs/tags/v*'
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -125,6 +134,7 @@ jobs:
           # Each label reads with its own SUPABASE_ACCESS_TOKEN_<LABEL>,
           # captured above.
           DRIFT_TARGETS: "staging=${{ env.STAGING_PROJECT_REF }},production=${{ env.PRODUCTION_PROJECT_REF }}"
+          DRIFT_RELEASED_TARGETS: "production"
           PENDING_GRACE_HOURS: ${{ inputs.grace_hours || '24' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/ci/check-migration-drift.mjs

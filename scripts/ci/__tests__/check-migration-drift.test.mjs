@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,10 +11,12 @@ import {
   classifyDrift,
   describeTarget,
   fetchAppliedMigrations,
+  latestReleaseTag,
   overallStatus,
   parseMigrationFilename,
   parseTargets,
   readLocalMigrations,
+  readReleaseBaseline,
   runMigrationDriftCheck,
   versionToEpochMs,
 } from "../check-migration-drift.mjs";
@@ -762,4 +764,177 @@ test("a failed issue-create is reported without throwing", async () => {
   assert.equal(result.alert.action, "failed");
   // Drift is still the verdict — a write failure must not turn the run green.
   assert.equal(result.exitCode, 1);
+});
+
+// ── Release baseline (production is judged against its latest v* tag) ──────
+
+test("latestReleaseTag picks the highest vX.Y.Z by version, not by string order", () => {
+  assert.equal(latestReleaseTag(["v1.9.0", "v1.10.0", "v1.2.3", ""]), "v1.10.0");
+  assert.equal(latestReleaseTag(["v2.0.0-rc1", "v1.3.0", "release-9", "v9"]), "v1.3.0");
+  assert.equal(latestReleaseTag(["", "not-a-tag"]), null);
+});
+
+function fakeGit({ tags = "v1.2.0\nv1.3.0\n", tree, fail } = {}) {
+  const calls = [];
+  const git = (args) => {
+    calls.push(args);
+    if (fail === args[0]) throw new Error(`${args[0]} exploded`);
+    if (args[0] === "tag") return tags;
+    return tree;
+  };
+  return { git, calls };
+}
+
+test("readReleaseBaseline reads the latest tag's migrations from its tree", () => {
+  const { git, calls } = fakeGit({
+    tree: [
+      "supabase/migrations/00000000000000_initial_schema.sql",
+      "supabase/migrations/20260809000010_second.sql",
+      "supabase/migrations/README.md",
+      "",
+    ].join("\n"),
+  });
+  const baseline = readReleaseBaseline({ git });
+  assert.equal(baseline.ok, true);
+  assert.equal(baseline.tag, "v1.3.0");
+  assert.deepEqual(
+    baseline.migrations.map((m) => m.version),
+    ["00000000000000", "20260809000010"],
+  );
+  assert.deepEqual(calls[1], ["ls-tree", "--name-only", "refs/tags/v1.3.0", "supabase/migrations/"]);
+});
+
+test("readReleaseBaseline reports an error, never an empty baseline", () => {
+  // An empty baseline would expect nothing, so every database would pass.
+  assert.match(readReleaseBaseline({ git: fakeGit({ tags: "" }).git }).error, /no vX\.Y\.Z tag/);
+  assert.match(
+    readReleaseBaseline({ git: fakeGit({ tree: "supabase/migrations/README.md\n" }).git }).error,
+    /v1\.3\.0 holds no migrations/,
+  );
+  assert.match(readReleaseBaseline({ git: fakeGit({ fail: "tag" }).git }).error, /listing the v\* tags failed/);
+  const unreadable = readReleaseBaseline({ git: fakeGit({ fail: "ls-tree" }).git });
+  assert.equal(unreadable.ok, false);
+  assert.match(unreadable.error, /reading v1\.3\.0's migrations failed/);
+});
+
+test("classifyDrift against a release: a migration merged since the tag is unreleased, not drift", () => {
+  // The 2026-09-28 shape: v1.3.0 shipped, then #2809 merged one more migration.
+  // Judged against main, that migration went overdue a day later and opened a P1.
+  const released = localFixture(4);
+  const local = [...released, { version: "20260809000099", name: "merged_after_ship" }];
+  const result = classifyDrift({ local, released, remote: released, nowMs: NOW, graceMs: GRACE_MS });
+  assert.equal(result.status, "clean");
+  assert.deepEqual(result.unreleased.map((m) => m.name), ["merged_after_ship"]);
+  assert.equal(result.overdue.length, 0);
+});
+
+test("classifyDrift against a release still alerts on a released migration the database lacks", () => {
+  const released = localFixture(4);
+  const result = classifyDrift({
+    local: released,
+    released,
+    remote: released.slice(0, 3),
+    nowMs: NOW,
+    graceMs: GRACE_MS,
+  });
+  assert.equal(result.status, "drift");
+  assert.deepEqual(result.overdue, [released[3]]);
+});
+
+test("classifyDrift against a release: applied past the tag is matched, and foreign stays foreign", () => {
+  // A `migrations-only` ship applies migrations without minting a tag, so the
+  // database may hold main's migrations beyond the tag. Those are known, not foreign.
+  const released = localFixture(3);
+  const extra = { version: "20260809000099", name: "applied_by_migrations_only" };
+  const local = [...released, extra];
+  const result = classifyDrift({
+    local,
+    released,
+    remote: [...local, FOREIGN_FEB],
+    nowMs: NOW,
+    graceMs: GRACE_MS,
+  });
+  assert.equal(result.status, "drift");
+  assert.deepEqual(result.foreign, [FOREIGN_FEB]);
+  assert.equal(result.unreleased.length, 0);
+  assert.ok(result.matched.some((m) => m.version === extra.version));
+});
+
+test("describeTarget names the release a target is judged against", () => {
+  assert.equal(
+    describeTarget({
+      status: "clean",
+      baseline: "v1.3.0",
+      withinGrace: [],
+      unreleased: [1],
+      overdue: [],
+      foreign: [],
+    }),
+    "in sync with `v1.3.0` (1 on main, not released yet)",
+  );
+  assert.equal(
+    describeTarget({ status: "drift", baseline: "v1.3.0", withinGrace: [], overdue: [1], foreign: [] }),
+    "DRIFTING from `v1.3.0` — 1 pending",
+  );
+});
+
+test("production judged against its release closes the alert while main is ahead of it", async () => {
+  const released = localFixture(3);
+  const local = [...released, { version: "20260809000099", name: "merged_after_ship" }];
+  const { fetchImpl } = makeFetchMock([
+    supabaseRoute("stg", local),
+    supabaseRoute("prod", released),
+    ...githubRoutes({ issues: [{ number: 919, state: "open", title: ALERT_ISSUE_TITLE }] }),
+  ]);
+  let summary = "";
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [
+      { label: "staging", ref: "stg", accessToken: SB_TOKEN },
+      {
+        label: "production",
+        ref: "prod",
+        accessToken: SB_TOKEN,
+        released: { tag: "v1.3.0", migrations: released },
+      },
+    ],
+    local,
+    fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
+  });
+  assert.equal(result.status, "clean");
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(result.alert.closed, [919]);
+  assert.match(summary, /\| `production` \| 3 \| 3 \| in sync with `v1\.3\.0` \(1 on main, not released yet\) \|/);
+});
+
+test("an unreadable release baseline leaves the target unverified, never judged against main", async () => {
+  const local = localFixture(3);
+  const { fetchImpl, calls } = makeFetchMock([
+    supabaseRoute("prod", local.slice(0, 1)),
+    ...githubRoutes({ issues: [{ number: 919, state: "open", title: ALERT_ISSUE_TITLE }] }),
+  ]);
+  const result = await runMigrationDriftCheck({
+    ...baseRun,
+    targets: [
+      { label: "production", ref: "prod", accessToken: SB_TOKEN, releaseError: "the checkout holds no vX.Y.Z tag" },
+    ],
+    local,
+    fetchImpl,
+  });
+  assert.equal(result.status, "unknown");
+  assert.equal(result.exitCode, 1);
+  assert.match(describeTarget(result.results[0]), /release baseline could not be read — the checkout holds no/);
+  assert.equal(calls.filter((c) => c.method !== "GET").length, 0, "the alert is neither raised nor closed");
+  assert.equal(calls.filter((c) => c.url.includes("supabase")).length, 0, "the database is not read");
+});
+
+test("the workflow judges production against its release, and fetches the tags that needs", () => {
+  const workflow = readFileSync(".github/workflows/check-migration-drift.yml", "utf8");
+  assert.match(workflow, /DRIFT_RELEASED_TARGETS: "production"\n/);
+  const fetchTags = workflow.indexOf("git fetch --no-tags --depth=1 origin '+refs/tags/v*:refs/tags/v*'");
+  const check = workflow.indexOf("run: node scripts/ci/check-migration-drift.mjs");
+  assert.ok(fetchTags !== -1 && fetchTags < check, "the v* tags are fetched before the check runs");
 });
