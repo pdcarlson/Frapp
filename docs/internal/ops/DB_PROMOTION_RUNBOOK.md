@@ -454,20 +454,23 @@ deploy, the health check, and the Vercel upload. Those are withheld by choice �
 each one writes to production or takes production traffic — not because they are
 impossible to rehearse, so do not read the list as a technical limit.
 
-One difference sits _inside_ the build, and it is the easiest thing here to
-misread: a real run compiles with `SENTRY_AUTH_TOKEN` whenever the deploy
-environment carries it, and then uploads source maps and creates a Sentry release. A dry run clears that token —
-but only the copy in the job environment, **not** the copy `vercel pull` writes
-into the pulled env file. So whenever that token is in Infisical `prod`
+One difference sits _inside_ the build: a real run compiles with
+`SENTRY_AUTH_TOKEN` when Infisical `prod` holds it
 ([which environments carry it](../environment/ENV_REFERENCE.md#appsapi-nestjs--render)),
-**a dry run may still create a Sentry release** for a commit that never shipped.
-If you are chasing production errors attributed to a version that was never
-deployed, a dry run is a live suspect, not a ruled-out one. Either way, a green
-dry-run build does not prove the real build's Sentry upload will succeed.
+and then uploads source maps and creates a Sentry release. A dry run withholds the
+token from the build and strips it from the file `vercel pull` writes, so it mints
+no release (#2275, since #2673). **Corrected 2026-09-28:** before that, the dry run
+cleared only the job-env copy, so a dry run could mint a release through the
+pulled file. That still holds for a dry run of a commit from before #2673 (for
+example a rollback rehearsal), because the build runs that commit's copy of
+`deploy-vercel.mjs`: if you are chasing production errors attributed to a version
+that never shipped, such a dry run is a live suspect. Either way, a green dry-run
+build does not prove the real build's Sentry upload will succeed.
 
 A green dry run means the commit validates, the pending migrations replay cleanly
-against production's applied state, and both bundles compile against Vercel's
-current Production variables. It is not a promise that the apply or the upload
+against production's applied state, and both bundles compile against the app
+config currently in Infisical `prod` (no Vercel Production row reaches the build
+since #2673; a `::warning::` names any key Vercel held that Infisical didn't). It is not a promise that the apply or the upload
 will succeed.
 
 If you need to apply migrations _without_ shipping code — recovering a failed
