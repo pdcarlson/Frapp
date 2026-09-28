@@ -669,6 +669,34 @@ function botChannel(overrides: Record<string, unknown> = {}) {
 }
 
 describe('DiscordImportService — progress and clearing (#2816, #2817)', () => {
+  it.each(['ready', 'running', 'failed', 'cancelled'] as const)(
+    'counts progress for a %s bot import, which the list shows part-way',
+    async (status) => {
+      await build(job({ source: 'bot', status }));
+      repo.countChannels.mockResolvedValue({ total: 900, done: 201 });
+      expect(await service.get(IMPORT_ID, CHAPTER)).toMatchObject({
+        channels_total: 900,
+        channels_done: 201,
+      });
+    },
+  );
+
+  it('still lists the imports when a progress count fails', async () => {
+    // The list is where the admin stops or deletes an import, so a count
+    // that fails must not take it down with it.
+    await build(job({ source: 'bot', status: 'running' }));
+    repo.countChannels.mockRejectedValue(new Error('count timed out'));
+    const [listed] = await service.list(CHAPTER);
+    expect(listed).toMatchObject({
+      id: IMPORT_ID,
+      channels_total: null,
+      channels_done: null,
+    });
+    expect(await service.get(IMPORT_ID, CHAPTER)).toMatchObject({
+      channels_total: null,
+    });
+  });
+
   it("reports a bot import's progress in channel rows, since its message total grows as it reads", async () => {
     await build(
       job({
@@ -709,13 +737,33 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
     },
   );
 
-  it('stops or deletes a bot import without waiting on its progress counts', async () => {
-    await build(job({ source: 'bot', status: 'running' }));
-    repo.countChannels.mockRejectedValue(new Error('count timed out'));
-    await service.cancel(IMPORT_ID, CHAPTER);
-    expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
-      status: 'cancelled',
-    });
+  it.each([
+    ['stops', 'cancelled'],
+    ['deletes', 'purging'],
+  ] as const)(
+    '%s a bot import without waiting on its progress counts',
+    async (_verb, next) => {
+      await build(job({ source: 'bot', status: 'cancelled' }));
+      const act =
+        next === 'cancelled'
+          ? service.cancel(IMPORT_ID, CHAPTER)
+          : service.requestPurge(IMPORT_ID, CHAPTER);
+      await act;
+      expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
+        status: next,
+      });
+      expect(repo.countChannels).not.toHaveBeenCalled();
+    },
+  );
+
+  it('answers a clear without waiting on progress counts', async () => {
+    // A stopped bot import is counted for the list, so reading it through
+    // the counted path would make the refusal wait on (and fail with) them.
+    await build(job({ source: 'bot', status: 'cancelled' }));
+    repo.markCleared.mockResolvedValue(null);
+    await expect(service.clear(IMPORT_ID, CHAPTER)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(repo.countChannels).not.toHaveBeenCalled();
   });
 

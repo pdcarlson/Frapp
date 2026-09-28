@@ -22,7 +22,11 @@ export type ImportRow = {
 };
 
 /**
- * How far along an import is, in whole percent.
+ * How far along an import is, in whole percent, or null when there is no
+ * honest measure to show: a deleted import, or a bot import whose channel
+ * counts the API did not send (not started, or the count failed). A bot
+ * import's message ratio is never a stand-in, since it reads full from the
+ * first page.
  *
  * A bot import is measured in channel rows: it reads Discord as it goes, so
  * its message total rises with every page and `imported / total` would read
@@ -30,12 +34,15 @@ export type ImportRow = {
  * total also grows, a part at a time, so it can briefly read full between
  * parts. Either way, 100% is kept for an import that has actually finished.
  */
-export function importPercent(row: ImportRow): number {
+export function importPercent(row: ImportRow): number | null {
   if (row.status === "completed") return 100;
-  const [done, total] =
-    row.channels_total !== null && row.channels_total !== undefined
-      ? [row.channels_done ?? 0, row.channels_total]
-      : [row.imported_messages, row.total_messages];
+  if (row.status === "purging" || row.status === "purged") return null;
+  const hasChannelCounts =
+    row.channels_total !== null && row.channels_total !== undefined;
+  if (row.source === "bot" && !hasChannelCounts) return null;
+  const [done, total] = hasChannelCounts
+    ? [row.channels_done ?? 0, row.channels_total as number]
+    : [row.imported_messages, row.total_messages];
   if (total === 0) return 0;
   return Math.min(99, Math.floor((done / total) * 100));
 }

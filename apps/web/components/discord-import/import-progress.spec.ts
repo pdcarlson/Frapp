@@ -48,6 +48,32 @@ describe("importPercent", () => {
     ).toBe(100);
   });
 
+  it("shows no progress where no honest measure exists", () => {
+    // A bot import's message ratio reads full from the first page, and the
+    // purge leaves the counters as they were: never a stand-in.
+    const readFull = { total_messages: 5307, imported_messages: 5307 };
+    for (const status of ["purging", "purged"]) {
+      expect(importPercent(row({ source: "bot", status, ...readFull }))).toBe(
+        null,
+      );
+      expect(importPercent(row({ source: "upload", status }))).toBe(null);
+    }
+    // Not started, or its count failed: the API sends no channel counts.
+    expect(
+      importPercent(row({ source: "bot", status: "draft", ...readFull })),
+    ).toBe(null);
+    expect(
+      importPercent(
+        row({
+          source: "bot",
+          channels_total: null,
+          channels_done: null,
+          ...readFull,
+        }),
+      ),
+    ).toBe(null);
+  });
+
   it("measures an upload in messages, as before", () => {
     expect(
       importPercent(row({ total_messages: 400, imported_messages: 100 })),

@@ -118,8 +118,8 @@ export interface DiscordImport {
   completed_at: string | null;
   purged_at: string | null;
   /**
-   * When the chapter took this finished import off its list. Clearing hides
-   * the row and nothing else: whatever the import brought in stays.
+   * When the chapter took this import's record off its list. Only a purged
+   * import is cleared, so nothing it brought in is left behind unlisted.
    */
   cleared_at: string | null;
 }

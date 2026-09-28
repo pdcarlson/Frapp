@@ -323,18 +323,30 @@ export class DiscordImportService {
    * `imported_messages / total_messages` is always 1 and read as 100% from the
    * first slice (#2816). Rows are known from the scan, so they are the honest
    * measure. An upload's messages stay its measure.
+   *
+   * A count that fails leaves the progress unknown rather than failing the
+   * read: the list is where the admin stops or deletes an import, so it has
+   * to load even when a count doesn't.
    */
   private async withProgress(
     job: DiscordImport,
   ): Promise<DiscordImportWithProgress> {
+    const unknown = { ...job, channels_total: null, channels_done: null };
     if (job.source !== 'bot' || !PROGRESS_STATUSES.has(job.status)) {
-      return { ...job, channels_total: null, channels_done: null };
+      return unknown;
     }
-    const { total, done } = await this.importRepo.countChannels(
-      job.id,
-      job.chapter_id,
-    );
-    return { ...job, channels_total: total, channels_done: done };
+    try {
+      const { total, done } = await this.importRepo.countChannels(
+        job.id,
+        job.chapter_id,
+      );
+      return { ...job, channels_total: total, channels_done: done };
+    } catch (error) {
+      this.logger.warn(
+        `Could not count channel progress for import ${job.id}; listing it without: ${toReportableError(error).message}`,
+      );
+      return unknown;
+    }
   }
 
   /**

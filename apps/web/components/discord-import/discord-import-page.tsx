@@ -303,14 +303,16 @@ function DiscordImportBody({
                             : ""}
                         </span>
                         {/* The bar is aria-hidden; this is the accessible signal. */}
-                        <span>{percent}%</span>
+                        {percent !== null ? <span>{percent}%</span> : null}
                       </div>
-                      <div aria-hidden="true" className={meterTrackClassName}>
-                        <div
-                          className={meterFillClassName}
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
+                      {percent !== null ? (
+                        <div aria-hidden="true" className={meterTrackClassName}>
+                          <div
+                            className={meterFillClassName}
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      ) : null}
                     </div>
 
                     {live.error ? (
