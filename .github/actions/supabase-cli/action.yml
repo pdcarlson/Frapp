@@ -24,7 +24,9 @@ runs:
     # moving `v2` branch. Resolved 2026-09-28 with
     # `git ls-remote https://github.com/supabase/setup-cli refs/heads/v2`, whose
     # head is the same commit as the lightweight tag `v2.1.2`, so behaviour is
-    # unchanged. To bump: resolve a release tag and change both SHA and comment.
+    # unchanged. To bump: `git ls-remote` the release tag; this publisher also
+    # ships annotated tags, whose `^{}` line is the commit to pin (the other SHA
+    # is the tag object). Change the SHA and the version comment together.
     - name: Setup Supabase CLI
       uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
       with:

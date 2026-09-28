@@ -50,7 +50,6 @@ import { fileURLToPath } from "node:url";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOWS = join(REPO, ".github", "workflows");
-const ACTIONS = join(REPO, ".github", "actions");
 
 /** Owners whose actions are GitHub's own, and so held to no SHA rule here. */
 const FIRST_PARTY_OWNERS = ["actions", "github"];
@@ -159,10 +158,21 @@ function reusableCallOf(body) {
   return m ? m[1] : null;
 }
 
-/** Every `uses:` value in these lines: a step's (`- uses:`) or a job's. */
+/**
+ * Every `uses:` value in these lines: a step's (`- uses:`), a job's, or one in a
+ * flow mapping (`- { uses: x@v1 }`). A block scalar (`uses: >-`) yields `>-`,
+ * which no rule treats as pinned, so it fails loudly rather than being skipped.
+ */
 function usesOf(lines) {
+  return lines.flatMap((l) =>
+    [...l.replace(TRAILING_COMMENT, "").matchAll(/(?:^|[\s{,])uses:\s*["']?([^"'\s,}]+)/g)].map((m) => m[1]),
+  );
+}
+
+/** A Docker action's `runs.image`, when it names a registry image rather than a Dockerfile. */
+function dockerImagesOf(lines) {
   return lines
-    .map((l) => l.replace(TRAILING_COMMENT, "").match(/^\s*(?:-\s+)?uses:\s*["']?([^"'\s]+)["']?\s*$/)?.[1])
+    .map((l) => l.replace(TRAILING_COMMENT, "").match(/^\s+image:\s*["']?(docker:\/\/[^"'\s]+)/)?.[1])
     .filter(Boolean);
 }
 
@@ -180,23 +190,27 @@ function pinningOf(ref) {
 }
 
 /**
- * The non-local `uses:` refs a job runs, following each local composite action
- * (`./.github/actions/<name>`) it calls into that action's own steps, however
- * deep. `via` names the local action a ref was reached through.
+ * The non-local refs a job runs: its `uses:` values, following every local
+ * action it calls (any `./<path>` except a reusable workflow, which rule D
+ * checks as its own jobs) into that action's own steps and Docker image,
+ * however deep. `via` names the local action a ref was reached through.
  */
 function actionRefsOf(lines, via = "", seen = new Set()) {
   const refs = [];
   for (const ref of usesOf(lines)) {
-    const local = ref.match(/^\.\/\.github\/actions\/([^/@]+)\/?$/);
-    if (local) {
-      if (seen.has(local[1])) continue;
-      seen.add(local[1]);
+    if (ref.startsWith("./.github/workflows/")) continue;
+    if (ref.startsWith("./")) {
+      const dir = ref.replace(/\/+$/, "");
+      if (seen.has(dir)) continue;
+      seen.add(dir);
       const file = ["action.yml", "action.yaml"]
-        .map((f) => join(ACTIONS, local[1], f))
+        .map((f) => join(REPO, dir, f))
         .find((f) => existsSync(f));
       assert.ok(file, `${ref} names a local action with no action.yml`);
-      refs.push(...actionRefsOf(codeLines(readFileSync(file, "utf8")), ` (via ${ref})`, seen));
-    } else if (!ref.startsWith("./")) {
+      const action = codeLines(readFileSync(file, "utf8"));
+      for (const image of dockerImagesOf(action)) refs.push({ ref: image, via: ` (via ${ref})` });
+      refs.push(...actionRefsOf(action, ` (via ${ref})`, seen));
+    } else {
       refs.push({ ref, via });
     }
   }
@@ -385,6 +399,8 @@ describe("workflow secrets scope (#2518)", () => {
         "      # - uses: commented/out@v1",
         "      - name: x",
         "        uses: docker://alpine:3",
+        "      - { name: flow, uses: flow/style@v1 }",
+        "      - uses: >-",
       ].join("\n"),
     );
     assert.deepEqual(usesOf(steps), [
@@ -393,8 +409,22 @@ describe("workflow secrets scope (#2518)", () => {
       "owner/action/sub@0123456789abcdef0123456789abcdef01234567",
       "./.github/actions/local-thing",
       "docker://alpine:3",
+      "flow/style@v1",
+      ">-",
     ]);
-    assert.deepEqual(usesOf(steps).map(pinningOf), ["first-party", "unpinned", "pinned", "local", "unpinned"]);
+    assert.deepEqual(usesOf(steps).map(pinningOf), [
+      "first-party",
+      "unpinned",
+      "pinned",
+      "local",
+      "unpinned",
+      "unpinned",
+      "unpinned",
+    ]);
+    assert.deepEqual(dockerImagesOf(codeLines("runs:\n  using: docker\n  image: docker://foo:latest\n")), [
+      "docker://foo:latest",
+    ]);
+    assert.deepEqual(dockerImagesOf(codeLines("runs:\n  using: docker\n  image: Dockerfile\n")), []);
     assert.equal(pinningOf("github/codeql-action/init@v3"), "first-party");
     assert.equal(pinningOf(`docker://alpine@sha256:${"a".repeat(64)}`), "pinned");
     assert.equal(pinningOf("owner/action@0123456"), "unpinned", "a short SHA is not a pin");
