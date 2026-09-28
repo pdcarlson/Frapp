@@ -225,12 +225,14 @@ GoTrue's own provider callback (what you paste into Google Cloud / Apple, **not*
 
 #### Done / Not done
 
-Observation 2026-09-10 for the Google rows, **2026-09-13 for the Apple rows** (owner confirmation, **names only**; values not opened — the Apple rows were recorded while the owner drove the consoles). Secrets stay in the Google Cloud / Apple / Supabase dashboards. Dashboard-only: did **not** Deploy. Tracker: #2120.
+Observation 2026-09-10 for the first two Google rows, **2026-09-13 for the Apple rows** (owner confirmation, **names only**; values not opened — the Apple rows were recorded while the owner drove the consoles). Secrets stay in the Google Cloud / Apple / Supabase dashboards. Dashboard-only: did **not** Deploy. Tracker: #2120.
 
 | Item | State |
 | --- | --- |
-| Google Cloud OAuth 2.0 **Web** client (JS origins `https://app.frapp.live`, `https://app.staging.frapp.live`; redirect URIs the two hosted `/auth/v1/callback` URLs; client id + secret pasted into each project's Google provider) | **Done** |
+| Google Cloud OAuth 2.0 **Web** client (JS origins `https://app.frapp.live`, `https://app.staging.frapp.live`; redirect URIs the two hosted `/auth/v1/callback` URLs; client id + secret pasted into each project's Google provider) | **Done**. It lives in Cloud project `signet-frapp` and is named "Frapp Web client 1" under Google Auth Platform → Clients, a dashboard label only. *2026-09-24: renamed from "Signet Web client 1" by the owner ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)).* |
 | Google provider enabled on hosted `frapp-staging` and `frapp-prod` | **Done** |
+| Google Auth Platform → **Audience** (publishing) | **Not done: no Google sign-in has ever completed.** Publishing status **Testing**, user type External, **0 test users**, and the OAuth user cap reads "0 users … counted over the entire lifetime of the app". The rows above configure the client; they never admitted anyone. Publishing follows brand verification, [#2758](https://github.com/pdcarlson/Frapp/issues/2758). *2026-09-28: the owner's screenshots ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)).* |
+| Google Auth Platform → **Branding** | App name **Frapp**. Home page `https://www.frapp.live`; privacy and terms `https://frapp.live/privacy` and `https://frapp.live/terms`; authorized domains `frapp.live`, `hnoyzpidbmizhbqaiity.supabase.co` and `unttyvyfezddlyafcydh.supabase.co`; `team@frapp.live` among the developer contacts; a crest logo that looks, by eye, like the more orange pre-#2153 export. Brand verification: Google's panel showed an earlier attempt flagged with two issues. The first, that the home page isn't registered to the Cloud project's owner, was addressed on 2026-09-28 by the Search Console record in [`vercel.md` § 4.4](vercel.md#44-dns-records-squarespace-domains): Search Console reported ownership verified under that account, but Google hasn't re-reviewed the brand. The second, the app name not matching the home page, waits on production serving the Frapp landing. [#2758](https://github.com/pdcarlson/Frapp/issues/2758) owns answering Google once it does. *2026-09-24: the owner renamed the app name from Signet, with no verification prompt on save. 2026-09-28: the rest, from the owner's screenshots ([#2669](https://github.com/pdcarlson/Frapp/issues/2669), [#2758](https://github.com/pdcarlson/Frapp/issues/2758)).* |
 | Automatic linking | **On** (a later Google/Apple identity can attach to an existing email/password or magic-link user; do not merge `public.users` rows — unique on `supabase_auth_id` only) |
 | Skip nonce (Google provider) | **Off** |
 | Allow users without email — **Google** | **Off** |
@@ -268,10 +270,9 @@ machine that downloaded it.
    Email Communication service, and a `supabase.co` host could not serve it in
    any case. The Services ID **Description** is member-facing on the web
    consent sheet, so it reads the product name, `Frapp`, not an internal label.
-   *2026-09-24: it was set to `Signet`. ADR-25 step 4
-   ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)) moves it to
-   `Frapp`, an owner step on the day that step merges
-   ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)).* Saving is four
+   *2026-09-24: the owner renamed it from "Signet Web" to `Frapp`, and their
+   screenshot of the Services IDs list shows `Frapp` ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)). Before
+   anyone had read the console, this note said it was `Signet`.* Saving is four
    clicks deep (Next → Done → Continue → Save); stopping at Done loses the
    configuration silently.
 3. **Key** — Keys → new key with Sign in with Apple → Primary App ID
@@ -333,7 +334,8 @@ relay address from either domain.
 **Not proven — and not only for Apple.** The strongest evidence ever recorded for
 **Google** is that kickoff can 2xx on hosted Auth (2026-09-10): a redirect the
 provider accepted, *not* a completed round-trip. The Google rows above should not
-be read as a proven sign-in either. For Apple it is weaker still — no live Apple
+be read as a proven sign-in either. *2026-09-28: for Google it is now known that
+none has happened; see the Audience row.* For Apple it is weaker still — no live Apple
 sign-in has been run against either project. The
 provider is enabled and configured; that is not the same as a verified
 round-trip on web or native iOS, and this table is not evidence of one. The
