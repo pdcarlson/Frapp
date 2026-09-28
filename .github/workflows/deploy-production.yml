@@ -817,10 +817,14 @@ jobs:
       contents: write
       pull-requests: read
       issues: read
-    # No `secrets:` pass-through. The called job names the `automation`
-    # environment and reads RELEASE_GITHUB_TOKEN from it; this job can name no
-    # environment, and no repository copy exists (#2518), so a pass-through
-    # could only ever be empty (#2630).
+    # `secrets: inherit`, so the called job sees RELEASE_GITHUB_TOKEN from its
+    # `automation` environment. Without it GitHub releases none of that
+    # environment's secrets to the called job, and the tag step falls back to
+    # the Actions token, which is refused a tag whose workflows differ from
+    # `main` (run 34254679932). v1.3.0's tag object was made by that token, not
+    # the PAT, which is how this was seen (#2804 follow-up; actions/runner#4453).
+    # No repository secret exists to pass (#2518).
+    secrets: inherit
     with:
       sha: ${{ needs.deploy.outputs.sha }}
       bump: ${{ inputs.bump }}

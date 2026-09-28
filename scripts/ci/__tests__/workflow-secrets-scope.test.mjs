@@ -313,6 +313,8 @@ describe("workflow secrets scope (#2518)", () => {
     const caller = byName.get("deploy-staging.yml")?.jobs.find((j) => j.id === "deploy");
     assert.equal(reusableCallOf(caller.body), "_deploy.yml");
     assert.equal(withValueOf(caller.body, "environment"), "staging");
+    // Rule E requires it: without it the called job reads its secrets empty.
+    assert.deepEqual(secretsOf(caller.body), ["(inherit)"]);
 
     const publish = byName.get("migration-snapshot.yml")?.jobs.find((j) => j.id === "publish");
     assert.ok(publish, "migration-snapshot.yml's publish job must be parsed");
@@ -327,7 +329,7 @@ describe("workflow secrets scope (#2518)", () => {
         const secrets = secretsOf(job.body);
         if (secrets.length > 0) offenders.push(`${wf.name} / ${job.id}: ${secrets.join(", ")}`);
         // A call reaches the called workflow's secrets without naming one here
-        // (`_deploy.yml` reads its environment's own, #2804).
+        // (`_deploy.yml` reads its environment's own, #2804), inherit or not.
         const called = reusableCallOf(job.body);
         const reached = (byName.get(called)?.jobs ?? []).flatMap((j) => secretsOf(j.body));
         if (reached.length > 0) offenders.push(`${wf.name} / ${job.id}: calls ${called}, which reads ${[...new Set(reached)].join(", ")}`);
@@ -368,10 +370,20 @@ describe("workflow secrets scope (#2518)", () => {
         // secret over the one passed in. Hold the called file to rule B.
         const called = reusableCallOf(job.body);
         if (called) {
+          // A secret the caller names can only be a repository copy, since
+          // the caller has no environment, and #2518 allows none. `inherit`
+          // names nothing; it is what releases the environment's (rule E).
+          const named = secrets.filter((s) => s !== "(inherit)");
+          if (named.length > 0) {
+            offenders.push(`${wf.name} / ${job.id}: names ${named.join(", ")} for ${called}, which only a repository secret could fill`);
+          }
           const target = byName.get(called);
+          // `_deploy.yml`'s `${{ inputs.environment }}` passes on the same
+          // terms as below: callable only, every caller literal and off PRs.
           const unscoped = (target?.jobs ?? []).filter((j) => {
             const env = environmentOf(j.body);
-            return !env?.literal || !CREDENTIAL_ENVIRONMENTS.includes(env.name);
+            if (env?.literal) return !CREDENTIAL_ENVIRONMENTS.includes(env.name);
+            return !(env?.name === "${{ inputs.environment }}" && inputEnvironmentProblems(target).length === 0);
           });
           if (!target || unscoped.length > 0) {
             offenders.push(`${wf.name} / ${job.id}: passes ${secrets.join(", ")} to ${called}, whose jobs do not all name a main-only environment`);
@@ -397,6 +409,39 @@ describe("workflow secrets scope (#2518)", () => {
         "must name that environment. Add `environment: { name: <one of the list>, deployment: " +
         "false }` to the job, or, for a new environment, have the owner create it with a main-only " +
         "branch policy first and then add it to CREDENTIAL_ENVIRONMENTS.",
+    );
+  });
+
+  // Run 36479856561: the staging secrets read empty in `_deploy.yml`'s called
+  // job, which names `environment: staging`, because the caller passed no
+  // `secrets:`. GitHub releases an environment's secrets to a called job only
+  // when the caller passes `secrets: inherit` (actions/runner#4453), and
+  // v1.3.0's tag shows `release.yml` had lost its PAT the same way. It fails
+  // safe (empty secrets), but only at run time, after merge.
+  it("E: every call into a workflow that reads secrets passes `secrets: inherit`", () => {
+    const offenders = [];
+    let calls = 0;
+    for (const wf of workflows) {
+      for (const job of wf.jobs) {
+        const called = reusableCallOf(job.body);
+        if (!called) continue;
+        const reads = (byName.get(called)?.jobs ?? []).flatMap((j) => secretsOf(j.body));
+        if (reads.length === 0) continue;
+        calls += 1;
+        if (!secretsOf(job.body).includes("(inherit)")) {
+          offenders.push(`${wf.name} / ${job.id}: calls ${called}, which reads ${[...new Set(reads)].join(", ")}, without secrets: inherit`);
+        }
+      }
+    }
+    // Non-vacuity: deploy-staging.yml's call into _deploy.yml and
+    // deploy-production.yml's into release.yml.
+    assert.ok(calls >= 2, `expected at least two calls into secret-reading workflows, saw ${calls}`);
+    assert.deepEqual(
+      offenders,
+      [],
+      "A called job gets none of its environment's secrets unless its caller passes `secrets: " +
+        "inherit`; every one reads empty, even with the called job's `environment:` set. Add " +
+        "`secrets: inherit` to the calling job.",
     );
   });
 
