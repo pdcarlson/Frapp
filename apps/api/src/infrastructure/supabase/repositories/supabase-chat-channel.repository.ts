@@ -150,7 +150,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
 
   /**
    * The RPC holds the last-member guard in its `WHERE`, so two concurrent
-   * removals of a channel's last two members cannot both succeed.
+   * removals of a channel's last two current members cannot both succeed.
    */
   async removePrivateChannelMember(
     channelId: string,
@@ -163,5 +163,17 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     );
     if (error) throw error;
     return (data ?? [])[0] ?? null;
+  }
+
+  async removeUserFromPrivateChannels(
+    chapterId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const { data, error } = await this.supabase.rpc(
+      'remove_user_from_private_channels',
+      { p_chapter_id: chapterId, p_user_id: userId },
+    );
+    if (error) throw error;
+    return data ?? [];
   }
 }

@@ -3444,25 +3444,35 @@ try {
 
 // ─── Add and remove a PRIVATE channel's members (#1302) ─────────────────────
 //
-// `add_private_channel_member` and `remove_private_channel_member` are called
-// only through mocked repositories in the Jest suites, so this is the one place
-// their SQL runs. What each check pins, and the edit it catches:
+// `add_private_channel_member`, `remove_private_channel_member` and
+// `remove_user_from_private_channels` are called only through mocked
+// repositories in the Jest suites, so this is the one place their SQL runs.
+// What each check pins, and the edit it catches:
 // - an add appends once: dropping the `any(...)` guard lists a member twice;
 // - an add repairs a NULL list (a PRIVATE row from before #1008);
-// - the last-member guard: moving it out of the WHERE clause (or dropping the
-//   coalesce, since array_length of an empty array is NULL) lets a removal
-//   empty the channel, which is #1008's defect again;
-// - removing someone not listed is a no-op that still returns the row;
-// - both match only a PRIVATE channel in the named chapter.
+// - the last-member guard counts current chapter members: dropping it (or its
+//   coalesce) lets a removal empty the channel, and counting array entries
+//   instead lets a removal leave only an id whose member has left, which
+//   admits nobody. Either is #1008's defect again;
+// - removing someone not listed is a no-op that still returns the row, on a
+//   NULL list too;
+// - add and remove match only a PRIVATE channel in the named chapter (the
+//   remove probe uses a no-op removal, which returns the row whenever the
+//   chapter predicate is missing);
+// - the chapter-removal prune takes the member off this chapter's PRIVATE
+//   channels only: no Group DM, no other chapter.
 try {
   const CH = "d0d0d0d0-0000-4000-8000-000000001302";
   const CH_OTHER = "d0d0d0d0-0000-4000-8000-000000011302";
   const U = {
     a: "d1d1d1d1-0000-4000-8000-0000000013a0",
     b: "d1d1d1d1-0000-4000-8000-0000000013b0",
+    gone: "d1d1d1d1-0000-4000-8000-0000000013f0",
   };
   const PRIV = "d2d2d2d2-0000-4000-8000-000000001302";
   const PRIV_NULL = "d2d2d2d2-0000-4000-8000-000000011302";
+  const PRIV_NULL_2 = "d2d2d2d2-0000-4000-8000-000000041302";
+  const PRIV_STALE = "d2d2d2d2-0000-4000-8000-000000051302";
   const GROUP = "d2d2d2d2-0000-4000-8000-000000021302";
   const PRIV_FOREIGN = "d2d2d2d2-0000-4000-8000-000000031302";
   await db.exec(`
@@ -3470,12 +3480,19 @@ try {
       ('${CH}', 'Private members', 'U'), ('${CH_OTHER}', 'Private members other', 'U');
     insert into users (id, supabase_auth_id, email, display_name) values
       ('${U.a}', gen_random_uuid(), 'priv-a@example.com', 'A'),
-      ('${U.b}', gen_random_uuid(), 'priv-b@example.com', 'B');
+      ('${U.b}', gen_random_uuid(), 'priv-b@example.com', 'B'),
+      ('${U.gone}', gen_random_uuid(), 'priv-gone@example.com', 'Gone');
+    -- U.gone has no members row in CH: an id whose member has left.
+    insert into members (user_id, chapter_id) values
+      ('${U.a}', '${CH}'), ('${U.b}', '${CH}'),
+      ('${U.a}', '${CH_OTHER}'), ('${U.b}', '${CH_OTHER}');
     insert into chat_channels (id, chapter_id, name, type, member_ids) values
       ('${PRIV}', '${CH}', 'exec', 'PRIVATE', array['${U.a}']::uuid[]),
       ('${PRIV_NULL}', '${CH}', 'legacy', 'PRIVATE', null),
+      ('${PRIV_NULL_2}', '${CH}', 'legacy-2', 'PRIVATE', null),
+      ('${PRIV_STALE}', '${CH}', 'stale', 'PRIVATE', array['${U.a}', '${U.gone}']::uuid[]),
       ('${GROUP}', '${CH}', 'group-dm', 'GROUP_DM', array['${U.a}', '${U.b}']::uuid[]),
-      ('${PRIV_FOREIGN}', '${CH_OTHER}', 'exec', 'PRIVATE', array['${U.a}']::uuid[]);
+      ('${PRIV_FOREIGN}', '${CH_OTHER}', 'exec', 'PRIVATE', array['${U.a}', '${U.b}']::uuid[]);
   `);
   const call = async (fn, channel, user, chapter = CH) =>
     (
@@ -3514,12 +3531,8 @@ try {
   checks.push(
     [(await add(GROUP, U.a)).length === 0, "an add never matches a Group DM"],
     [
-      (await add(PRIV, U.b, CH_OTHER)).length === 0,
+      (await add(PRIV_FOREIGN, U.b, CH)).length === 0,
       "an add never matches a channel named under another chapter",
-    ],
-    [
-      same(await members(PRIV_FOREIGN), [U.a]),
-      "the foreign chapter's channel is untouched",
     ],
   );
 
@@ -3531,6 +3544,11 @@ try {
     same((await remove(PRIV, U.b))[0]?.m, [U.a]),
     "removing someone not listed is a no-op that returns the row",
   ]);
+  const nullRemove = await remove(PRIV_NULL_2, U.b);
+  checks.push([
+    nullRemove.length === 1 && nullRemove[0].m === null,
+    "removing from a NULL list is a no-op that returns the row",
+  ]);
   checks.push(
     [
       (await remove(PRIV, U.a)).length === 0,
@@ -3538,12 +3556,56 @@ try {
     ],
     [same(await members(PRIV), [U.a]), "the refused removal changed nothing"],
     [
+      (await remove(PRIV_STALE, U.a)).length === 0,
+      "a removal that leaves only an id whose member has left is refused",
+    ],
+    [
+      same(await members(PRIV_STALE), [U.a, U.gone]),
+      "the refused stale-id removal changed nothing",
+    ],
+    [
       (await remove(GROUP, U.b)).length === 0,
       "a removal never matches a Group DM",
     ],
     [
+      (await remove(PRIV_FOREIGN, U.gone, CH)).length === 0,
+      "a removal never matches a channel named under another chapter",
+    ],
+    [
+      same(await members(PRIV_FOREIGN), [U.a, U.b]),
+      "the foreign chapter's channel is untouched",
+    ],
+  );
+
+  // Chapter removal: U.b is listed in PRIV (re-added), PRIV_NULL, GROUP and
+  // the other chapter's PRIV_FOREIGN.
+  await add(PRIV, U.b);
+  const pruned = (
+    await db.query(
+      `select c::text as id from public.remove_user_from_private_channels($1, $2) as c`,
+      [CH, U.b],
+    )
+  ).rows
+    .map((r) => r.id)
+    .sort()
+    .join(",");
+  checks.push(
+    [
+      pruned === [PRIV, PRIV_NULL].sort().join(","),
+      "the prune returns exactly the chapter's PRIVATE channels it changed",
+    ],
+    [same(await members(PRIV), [U.a]), "the prune takes the member off"],
+    [
+      same(await members(PRIV_NULL), []),
+      "the prune empties a channel whose only member leaves",
+    ],
+    [
       same(await members(GROUP), [U.a, U.b]),
-      "the Group DM's members are untouched",
+      "the prune leaves Group DMs alone",
+    ],
+    [
+      same(await members(PRIV_FOREIGN), [U.a, U.b]),
+      "the prune leaves other chapters alone",
     ],
   );
 
@@ -3558,7 +3620,7 @@ try {
 
   await db.exec(`
     delete from chapters where id in ('${CH}', '${CH_OTHER}');
-    delete from users where id in ('${U.a}', '${U.b}');
+    delete from users where id in ('${U.a}', '${U.b}', '${U.gone}');
   `);
 } catch (e) {
   missing += 1;

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { MemberService } from './member.service';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -39,6 +40,7 @@ describe('MemberService', () => {
   };
   let mockAuditLogService: AuditLogServiceMock;
   let mockStorageProvider: { listFiles: jest.Mock; deleteFiles: jest.Mock };
+  let mockChannelRepo: { removeUserFromPrivateChannels: jest.Mock };
 
   beforeEach(async () => {
     mockRepo = {
@@ -88,6 +90,9 @@ describe('MemberService', () => {
       listFiles: jest.fn().mockResolvedValue([]),
       deleteFiles: jest.fn().mockResolvedValue(undefined),
     };
+    mockChannelRepo = {
+      removeUserFromPrivateChannels: jest.fn().mockResolvedValue([]),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -100,6 +105,7 @@ describe('MemberService', () => {
         { provide: RbacService, useValue: mockRbacService },
         { provide: ChapterAuditLogService, useValue: mockAuditLogService },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
+        { provide: CHAT_CHANNEL_REPOSITORY, useValue: mockChannelRepo },
       ],
     }).compile();
 
@@ -793,6 +799,38 @@ describe('MemberService', () => {
 
       expect(mockRepo.findById).toHaveBeenCalledWith('member-1');
       expect(mockRepo.delete).toHaveBeenCalledWith('member-1');
+    });
+
+    // #1302: a re-invite creates a new `members` row for the same `users.id`,
+    // so an id left in a PRIVATE channel's `member_ids` would let the member
+    // straight back in, full history included.
+    it("takes the member off the chapter's PRIVATE channels, before the row goes", async () => {
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRepo.delete.mockResolvedValue(undefined);
+
+      await service.remove('member-1', 'chapter-1', 'actor-1');
+
+      expect(
+        mockChannelRepo.removeUserFromPrivateChannels,
+      ).toHaveBeenCalledWith('chapter-1', 'user-1');
+      expect(
+        mockChannelRepo.removeUserFromPrivateChannels.mock
+          .invocationCallOrder[0],
+      ).toBeLessThan(mockRepo.delete.mock.invocationCallOrder[0]);
+    });
+
+    it('does not remove the member when their channels cannot be updated', async () => {
+      // Blocking is retryable; removing the row first would leave ids behind
+      // that no later removal of this member could reach.
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockChannelRepo.removeUserFromPrivateChannels.mockRejectedValue(
+        new Error('pg down'),
+      );
+
+      await expect(
+        service.remove('member-1', 'chapter-1', 'actor-1'),
+      ).rejects.toThrow('pg down');
+      expect(mockRepo.delete).not.toHaveBeenCalled();
     });
 
     it('writes a chapter_audit_log entry after a successful removal', async () => {

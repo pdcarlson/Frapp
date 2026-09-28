@@ -6,6 +6,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -91,6 +93,8 @@ export class MemberService {
     private readonly auditLogService: ChapterAuditLogService,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channelRepo: IChatChannelRepository,
   ) {}
 
   async findByChapter(chapterId: string): Promise<MemberSummary[]> {
@@ -393,6 +397,22 @@ export class MemberService {
     if (user?.avatar_url?.includes(`${photoFolder}/`)) {
       await this.userRepo.update(member.user_id, { avatar_url: null });
     }
+    // #1302: off every PRIVATE channel in this chapter before the row goes.
+    // A left-behind id admits nobody while they are out of the chapter
+    // (`canAccessChannel` requires chapter membership first), but a re-invite
+    // creates a new `members` row for the same `users.id`, and that id would
+    // let them straight back into every private channel they were added to,
+    // full history included. Before the row delete for the photo purge's
+    // reason: a failure here blocks the removal, which is retryable, instead
+    // of leaving ids behind that no later removal can reach.
+    //
+    // No push-cache eviction: the push worker only ever notifies current
+    // chapter members, so the stale cached list can't reach them, and it
+    // expires on its own TTL.
+    await this.channelRepo.removeUserFromPrivateChannels(
+      chapterId,
+      member.user_id,
+    );
     await this.memberRepo.delete(memberId);
     // Written before the orphan-presidency check below, not after: that check
     // deliberately fails loud (spec/behavior/rbac.md's flag is security-load-
