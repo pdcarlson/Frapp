@@ -52,7 +52,7 @@
 //   STAGING_SMOKE_USER_EMAIL    — optional; enables the end-to-end sign-in probe
 //   STAGING_SMOKE_USER_PASSWORD
 //   RENDER_API_KEY             — optional; enables the Render healthCheckPath and auto-deploy assertions
-//   RENDER_SERVICE_ID          — frapp-api-staging service id (same as deploy-api.yml's deploy-staging)
+//   RENDER_SERVICE_ID          — frapp-api-staging service id (same as deploy-staging.yml's deploy job)
 //   RUN_URL                     — html_url of this run, for the alert body
 
 import { appendFileSync, readFileSync } from "node:fs";
@@ -226,7 +226,7 @@ export async function checkProjectStatus({ accessToken, projectRef, fetchImpl = 
 /**
  * Render `frapp-api-staging` `serviceDetails.healthCheckPath` is `/health`.
  *
- * This path is Render's gate on every staging deploy: `deploy-api.yml` waits
+ * This path is Render's gate on every staging deploy: `deploy-staging.yml` waits
  * for the deploy to go `live`, which means the new instance passed it. Empty
  * is a TCP socket check (documented 2026-09-06). `/health/ready` would cancel
  * a deploy when a dependency is degraded. Production's copy of this assertion
@@ -284,19 +284,19 @@ export async function checkRenderHealthCheckPath({
 /**
  * Render `frapp-api-staging` does NOT auto-deploy, and tracks `main`.
  *
- * Since #2505 `deploy-api.yml` deploys staging by commit, after CI and
- * `migrate-staging`, through the Render API. Auto-deploy fires on push,
- * before either: it builds a commit CI may yet fail, against a schema its
+ * Since #2505 staging deploys by commit (`deploy-staging.yml` since #2803),
+ * after CI and the staging migrations, through the Render API. Auto-deploy
+ * fires on push, before either: it builds a commit CI may yet fail, against a schema its
  * migration has not reached, and every API commit builds twice. The deploy
- * `deploy-api.yml` then creates is superseded by, or supersedes, the one
+ * `deploy-staging.yml` then creates is superseded by, or supersedes, the one
  * auto-deploy started, and a cancelled deploy fails that job. So auto-deploy
  * on is drift, exactly as it is on production.
  *
  * (Until #2505 this asserted the opposite, `autoDeploy: "yes"`, because
- * auto-deploy was what kept staging current. `deploy-api.yml` does that now.)
+ * auto-deploy was what kept staging current. `deploy-staging.yml` does that now.)
  *
  * `branch` must still be `main`: a service linked to another branch is not the
- * staging `deploy-api.yml` deploys `main`'s commits to. Live GET
+ * staging `deploy-staging.yml` deploys `main`'s commits to. Live GET
  * `/v1/services/{id}` puts `autoDeploy` and `branch` on the service root
  * (2026-09-09), not under `serviceDetails` — a nested decoy is not the live
  * field. Production-guardrails asserts production's copy under a different
@@ -327,8 +327,8 @@ export async function checkRenderAutoDeploy({
   if (autoDeploy !== "no") {
     findings.push(
       `autoDeploy='${autoDeploy ?? "unreadable"}' (expected 'no'). ` +
-        `With auto-deploy on, every push builds before CI and migrate-staging, and races the ` +
-        `deploy Deploy API creates for the same commit. Render dashboard → frapp-api-staging → ` +
+        `With auto-deploy on, every push builds before CI and the staging migrations, and races the ` +
+        `deploy Deploy staging creates for the same commit. Render dashboard → frapp-api-staging → ` +
         `Settings → Auto-Deploy → Off.`,
     );
   }

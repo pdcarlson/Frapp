@@ -11,7 +11,7 @@ Create **two** Render Web Services: one for production, one for staging.
 | ------------------- | ----------------------------------------- | --------------------- |
 | **Name**            | `frapp-api-prod`                          | `frapp-api-staging`   |
 | **Branch**          | `main`                                    | `main`                |
-| **Auto-Deploy**     | **No** — deploys are API-driven by commit | **No** — same, from `deploy-api.yml` (#2505) |
+| **Auto-Deploy**     | **No** — deploys are API-driven by commit | **No** — same, from `deploy-staging.yml` (#2505, #2803) |
 | **Root Directory**  | (leave empty — Dockerfile uses repo root) | (same)                |
 | **Runtime**         | Docker                                    | Docker                |
 | **Dockerfile Path** | `apps/api/Dockerfile`                     | `apps/api/Dockerfile` |
@@ -92,7 +92,8 @@ reachable. The JSON body is the liveness payload in
 > API, after CI and `migrate-staging`, so auto-deploy is no longer what keeps
 > staging current. Left on, it builds every push before either gate, and its
 > deploy races the one `deploy-api.yml` creates. The `branch: "main"`
-> assertion stands.
+> assertion stands. Since [#2803](https://github.com/pdcarlson/Frapp/issues/2803)
+> that workflow is `deploy-staging.yml`; the reasoning is unchanged.
 
 ### 5.5 In-process chat workers (Chunk 05)
 
@@ -129,7 +130,7 @@ Splitting these into a standalone Render Background Worker is not currently warr
 
 ### 5.7 Deploy Hooks (for GitHub Actions)
 
-No deploy hook is used. Both API services deploy by commit through the Render API with `RENDER_API_KEY` (a GitHub environment secret): `deploy-production.yml` for `frapp-api-prod`, and since [#2505](https://github.com/pdcarlson/Frapp/issues/2505) `deploy-api.yml` for `frapp-api-staging`. A deploy hook can't name a commit; it builds the branch tip. A hook URL is also a bearer credential, so don't store one anywhere.
+No deploy hook is used. Both API services deploy by commit through the Render API with `RENDER_API_KEY` (a GitHub environment secret): `deploy-production.yml` for `frapp-api-prod`, and `deploy-staging.yml` for `frapp-api-staging` (by commit since [#2505](https://github.com/pdcarlson/Frapp/issues/2505)). A deploy hook can't name a commit; it builds the branch tip. A hook URL is also a bearer credential, so don't store one anywhere.
 
 The one value the deploy workflows still take from **Infisical**, not GitHub, injected at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
 

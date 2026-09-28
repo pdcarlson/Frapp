@@ -393,7 +393,7 @@ changes would break the first, and none should ever be made:**
 1. Adding a `pull_request_target` workflow that checks out PR-head code.
 2. Adding a `workflow_run` workflow that carries the App key. `workflow_run` also runs base-repo
    code with secrets off a fork-PR-derived event; today `ci-wake.yml` uses it with no fork guard,
-   which is safe only because it carries `GITHUB_TOKEN` and never the key (`deploy-api.yml` does
+   which is safe only because it carries `GITHUB_TOKEN` and never the key (`deploy-staging.yml` does
    guard, on `head_repository.full_name`).
 3. Interpolating untrusted event data (a PR title, branch name, or comment body) into a `run:`
    block in any workflow that holds secrets.

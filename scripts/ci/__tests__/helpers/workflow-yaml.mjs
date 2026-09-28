@@ -440,7 +440,7 @@ function stepName(lines, stepStart, stepEnd, keyIndent) {
  * A step's `if:` expression, including the block-scalar forms.
  *
  * `if: >-` and `if: |` put the condition on the FOLLOWING lines, and this repo
- * already writes conditions that way (`deploy-vercel-staging.yml`). Returning
+ * already writes conditions that way (`deploy-staging.yml`). Returning
  * the indicator (`">-"`) instead of the expression is fail-open for a
  * `doesNotMatch` assertion: a step re-gated on `dry_run_only` in block form
  * would read as ungated and the guard would stay green.
@@ -519,9 +519,9 @@ function stepEnvAt(lines, stepStart, stepEnd, keyIndent) {
  * give it.
  *
  * `env` resolves workflow → job → step, innermost winning, which is not a
- * nicety: `deploy-vercel-staging.yml` supplies three of its required variables
- * from a JOB-level block and `deploy-production.yml` declares the same three at
- * WORKFLOW level. A reader that saw only a step's own `env:` would report a bug
+ * nicety: `deploy-vercel-staging.yml` supplied three of its required variables
+ * from a JOB-level block (until #2803 merged it into `deploy-staging.yml`) and
+ * `deploy-production.yml` declares the same three at WORKFLOW level. A reader that saw only a step's own `env:` would report a bug
  * neither file has — and the usual fix for a guard that cries wolf is to delete
  * the guard.
  *

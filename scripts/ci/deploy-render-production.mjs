@@ -2,8 +2,8 @@
 
 // Deploy ONE named commit to a Render service, and watch that deploy — not "a
 // deploy" — to a terminal state. Both API environments deploy through it:
-// `deploy-production.yml` for `frapp-api-prod`, and `deploy-api.yml`'s
-// `deploy-staging` for `frapp-api-staging` (#2505).
+// `deploy-production.yml` for `frapp-api-prod`, and `deploy-staging.yml`'s
+// `deploy` job for `frapp-api-staging` (#2505).
 //
 // ── Why it is still called `-production` ────────────────────────────────────
 // `deploy-production.yml` checks out the commit being deployed and runs THIS

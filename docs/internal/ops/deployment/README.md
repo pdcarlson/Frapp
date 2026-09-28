@@ -10,18 +10,20 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
   **Both Vercel projects are disconnected from Git** by deliberate owner decision —
   `frapp-landing` on 2026-09-01 and `frapp-web` about six and a half hours later on 2026-09-02
   (ADR-21) — so no push deploys either one. Both are deployed **from CI** instead, by
-  `deploy-vercel-staging.yml` (after green CI on `main`) and `deploy-production.yml` (on a
+  `deploy-staging.yml` (after green CI on `main`) and `deploy-production.yml` (on a
   dispatched SHA), since #1578. See [§ 4 Vercel Setup](vercel.md).
 - ✅ CI pipeline uses domain-specific parallel jobs with required status checks.
 - ✅ Branch protection enforced on `main`, the only long-lived branch (#1340).
-- ✅ Staging API deployment is automated: after green CI on `main`,
-  `.github/workflows/deploy-api.yml` applies staging migrations, then, when anything the API
-  image is built from changed since the commit staging serves, deploys **that commit** to
-  `frapp-api-staging` through the Render API and waits until `/health/ready` reports it
-  ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)). [Deploy verification](ci-cd.md#deploy-verification) has the details.
+- ✅ Staging deployment is automated, in one ordered job: after green CI on `main`,
+  `.github/workflows/deploy-staging.yml` builds web and landing, applies staging migrations,
+  deploys **that commit** to `frapp-api-staging` by commit and verifies it, and only then uploads
+  web and landing ([#2505](https://github.com/pdcarlson/Frapp/issues/2505),
+  [#2803](https://github.com/pdcarlson/Frapp/issues/2803)). The order is
+  [How Deployments Are Gated](ci-cd.md#how-deployments-are-gated), and
+  [Deploy verification](ci-cd.md#deploy-verification) has the details.
 - ⚠️ Render-side auto-deploy **must be off** on staging too (`staging-conformance.yml` asserts
   it): it builds every push before CI and before the migration, and its deploy can cancel the one
-  `deploy-api.yml` creates. It was still **on** when read on 2026-09-25; turning it off is owner
+  `deploy-staging.yml` creates. It was still **on** when read on 2026-09-25; turning it off is owner
   step [#2679](https://github.com/pdcarlson/Frapp/issues/2679).
 - ✅ Production API deployment does **not** use auto-deploy either. `deploy-production.yml` calls
   the Render API with an explicit `commitId`, so what ships is the commit a human named.
@@ -33,8 +35,8 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
   before those settings were changed and was stale by 2026-09-06.
 - ✅ Infisical is the central secrets store; deploy workflows inject secrets from it, and provider
   syncs are inventoried in [`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md).
-- ✅ Staging database migrations apply automatically on every green `main` run (`migrate-staging`
-  in `deploy-api.yml`, since #1265). Production migrations run inside `deploy-production.yml`,
+- ✅ Staging database migrations apply automatically on every green `main` run (in
+  `deploy-staging.yml`'s `deploy` job; automatic since #1265). Production migrations run inside `deploy-production.yml`,
   after a replay against production's live applied state —
   [`DB_PROMOTION_RUNBOOK.md`](../DB_PROMOTION_RUNBOOK.md) has the current production state.
 - 🚧 Mobile store distribution is planned; local and EAS workflows are documented.

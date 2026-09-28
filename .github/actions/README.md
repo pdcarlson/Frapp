@@ -66,8 +66,9 @@ action file is not on disk yet when the runner resolves it.
   checkout earlier in the job is necessary but **not sufficient**. Both halves are enforced by
   `scripts/ci/__tests__/infisical-secrets-action.test.mjs`.
 
-  The first half: `deploy-api.yml`'s `deploy-staging` job had no checkout at all — it only
-  fired a deploy hook then — and had to gain one. It runs on `workflow_run` after merge, so no PR
+  The first half: `deploy-api.yml`'s `deploy-staging` job (the staging deploy, now
+  `deploy-staging.yml`'s `deploy` job) had no checkout at all — it only fired a deploy hook
+  then — and had to gain one. It runs on `workflow_run` after merge, so no PR
   would ever have caught the failure.
 
   The second half is the one that bites hardest. `deploy-production.yml` runs

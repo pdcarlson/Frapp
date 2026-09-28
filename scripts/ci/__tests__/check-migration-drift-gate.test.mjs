@@ -474,7 +474,7 @@ test("against a snapshot, grace runs from now, and a deploy since the capture ma
   assert.equal(failed.status, "drift");
   assert.equal(failed.overdue.length, 1);
 
-  // Past grace, and a Deploy API run has finished since the snapshot whose publish
+  // Past grace, and a Deploy staging run has finished since the snapshot whose publish
   // has not landed: that deploy may have applied it. Stale, naming the
   // publisher, never green and never blamed on staging.
   const stale = classify(late, true);
@@ -538,7 +538,7 @@ test("drift beside unverifiable migrations reports both, so one run names the st
   assert.ok(errors.some((line) => /do not exist on/.test(line)));
 });
 
-test("a snapshot a Deploy API run has overtaken fails the gate, and the summary says why, not blaming staging", async () => {
+test("a snapshot a Deploy staging run has overtaken fails the gate, and the summary says why, not blaming staging", async () => {
   const stagingDeploy = new Date(NOW - 2 * HOUR).toISOString();
   const { code, summary, errors } = await runAgainstSnapshot(snapshotOf(NOW - 3 * HOUR, applied(MAIN.slice(0, 2))), {
     snapshotBehind: true,
@@ -551,7 +551,7 @@ test("a snapshot a Deploy API run has overtaken fails the gate, and the summary 
   assert.doesNotMatch(summary, /Drift detected/);
   assert.equal(errors.length, 1);
 
-  // A Deploy API run still in flight: the same verdict, and the advice is to
+  // A Deploy staging run still in flight: the same verdict, and the advice is to
   // wait for it, not to fix anything.
   const running = await runAgainstSnapshot(snapshotOf(NOW - 3 * HOUR, applied(MAIN.slice(0, 2))), {
     snapshotBehind: true,
@@ -573,7 +573,7 @@ test("a snapshot a Deploy API run has overtaken fails the gate, and the summary 
   assert.doesNotMatch(unknown.summary, /If it failed, fix it/);
 });
 
-test("a snapshot no Deploy API run has overtaken reports a missing migration as drift", async () => {
+test("a snapshot no Deploy staging run has overtaken reports a missing migration as drift", async () => {
   // The same data as above, but current: the publish after the failed apply
   // succeeded, so staging really lacks the migration.
   const { code, summary } = await runAgainstSnapshot(snapshotOf(NOW - 3 * HOUR, applied(MAIN.slice(0, 2))), {

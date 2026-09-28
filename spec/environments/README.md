@@ -22,7 +22,7 @@ Each Supabase project (local, staging, production) is fully isolated: separate d
 
 | Branch      | Purpose                              | Deployment behavior                                    |
 | ----------- | ------------------------------------ | ------------------------------------------------------ |
-| `main`      | Pre-production / staging integration | Green CI on `main` triggers the Render staging deploy and the Vercel staging deploys (`deploy-vercel-staging.yml`, #1578). Push-triggered Vercel Previews were retired with the Git unlink (ADR-21) — see §6 |
+| `main`      | Pre-production / staging integration | Green CI on `main` triggers the staging deploy (`deploy-staging.yml`): migrations, the Render API and the Vercel web and landing deploys, in that order (#2803). Push-triggered Vercel Previews were retired with the Git unlink (ADR-21) — see §6 |
 | `feature/*` | Short-lived feature work             | No automatic Vercel deployments; merged into `main`    |
 
 Production is **not** mapped to a branch. It is deployed by running the **Deploy
@@ -117,8 +117,8 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
 - **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`). Both projects are unlinked from Git (ADR-21), so no push produces a preview; `deploy-vercel-staging.yml` builds and uploads them after CI succeeds on `main`, then aliases both hostnames (#1578) — see §6 **Web and Landing (Vercel)**.
-- **API:** Render staging service (`frapp-api-staging`), pointing at Supabase staging. After CI and the staging migration, `deploy-api.yml` deploys the `main` commit by commit through the Render API whenever anything the API image is built from changed since the commit staging serves; Render auto-deploy must be off (#2505; the dashboard change is #2679).
+- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`). Both projects are unlinked from Git (ADR-21), so no push produces a preview; `deploy-staging.yml` builds them after CI succeeds on `main`, uploads them once the staging API is verified, then aliases both hostnames (#1578, #2803). A run for a commit `main` has moved past uploads only over hostnames serving older commits — see §6 **Web and Landing (Vercel)**.
+- **API:** Render staging service (`frapp-api-staging`), pointing at Supabase staging. After CI and the staging migration, `deploy-staging.yml` deploys the `main` commit by commit through the Render API whenever anything the API image is built from changed since the commit staging serves; Render auto-deploy must be off (#2505; the dashboard change is #2679).
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
 - **Data:** May contain seed data. Never production user data.
@@ -246,21 +246,21 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 > require the *absence* of a Git link and removed `verify-deployments.yml`'s two Vercel verify jobs;
 > **#1578** (2026-09-04) built the replacement deploys — `vercel build` on the runner, then
 > `vercel deploy --prebuilt`, for both staging and production. Render **staging** (the
-> `deploy-api.yml` push path) and EAS were unaffected throughout. **ADR-21** in
+> `deploy-api.yml` push path, now `deploy-staging.yml`) and EAS were unaffected throughout. **ADR-21** in
 > [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the freeze points and the repairs.
 
-Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-api.yml` runs database migrations and triggers the Render staging deploy, and `deploy-vercel-staging.yml` builds and uploads web and landing. Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
+Staging deploy steps are gated by CI: after CI succeeds on `main`, one job in `deploy-staging.yml` deploys the database, API, web and landing, with the frontends uploaded only after the API is verified. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
 
 ### Deploy Pipeline (on merge)
 
 ```text
-staging:     merge to main → CI passes → DB migration (dry-run then apply) → API deploy (Render)
-             → in parallel, deploy-vercel-staging.yml: vercel build + deploy --prebuilt
-               (web then landing), then alias the staging hostnames
+staging:     merge to main → CI passes → deploy-staging.yml, one job: vercel build (web, landing)
+             → DB migration (dry-run then apply) → API deploy (Render) → verify served commit
+             → vercel deploy --prebuilt (web, landing) → alias the staging hostnames
 production:  dispatch a SHA → validate (ancestor of main + CI green) → provider preflight
-             → migration replay → apply → Render deploy by commit → vercel build --prod
-             + deploy --prebuilt --prod → tag
+             → migration replay → vercel build --prod → apply → Render deploy by commit
+             → health check → vercel deploy --prebuilt --prod → tag
 ```
 
 Production deployments run only when a human dispatches **Deploy production** with a
@@ -279,11 +279,13 @@ secrets.
 > the per-project freeze points and the repairs; **#1579** (2026-09-02) fixed the guardrails half
 > and **#1578** (2026-09-04) built the deploys described below.
 
-- **Staging:** `deploy-vercel-staging.yml` runs after CI succeeds on `main` (a `workflow_run`
-  trigger, like `deploy-api.yml` — a push trigger would deploy before CI finished). It runs
-  `vercel pull --environment=preview`, `vercel build`, then `vercel deploy --prebuilt` for web
-  and then landing, and finally points `app.staging.frapp.live` and `staging.frapp.live` at the
-  new deployments. Nothing is push-triggered on Vercel any more. Each build compiles against the
+- **Staging:** `deploy-staging.yml` runs after CI succeeds on `main` (a `workflow_run`
+  trigger: a push trigger would deploy before CI finished). Its one job runs
+  `vercel pull --environment=preview` and `vercel build` for web and landing before the
+  migrations, and `vercel deploy --prebuilt` for both only once the staging API serves the
+  commit. It then points `app.staging.frapp.live` and `staging.frapp.live` at the new
+  deployments. A failed build, migration or API verify ships no frontend (#2803). Nothing is
+  push-triggered on Vercel any more. Each build compiles against the
   keys its app reads from Infisical `staging`, which the job injects, and never against a Vercel
   Preview row. No staging build reads an Infisical→Vercel sync; the two staging syncs were deleted
   on 2026-09-28 (#834, #2672).
@@ -311,7 +313,7 @@ secrets.
 
 - API deploys are gated behind CI success using `workflow_run` triggers.
 - Production: a human dispatches **Deploy production** with a commit SHA → the workflow calls the Render API with that `commitId` (no deploy hook, and no push involved).
-- Push to `main` (after CI, then the staging migration) → `deploy-api.yml` plans from the commit staging serves: when anything the API image is built from changed since then, it calls the Render API with that push's `commitId` and waits until `/health/ready` reports it; otherwise it verifies the served commit. A run `main` has moved past deploys only forward (its commit newer than the served one), never an older commit; its `migrate-staging` still runs first. No deploy hook, and Render auto-deploy must be off (#2505, #2679).
+- Push to `main` (after CI) → `deploy-staging.yml` first plans from the commit staging serves, then builds web and landing when they will ship and runs the staging migration: when anything the API image is built from changed since the served commit, it calls the Render API with that push's `commitId` and waits until `/health/ready` reports it; otherwise, when anything ships, it verifies the served commit. A run `main` has moved past deploys only forward (its commit newer than the served one), never an older commit; its migrations still run. No deploy hook, and Render auto-deploy must be off (#2505, #2679).
 - Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
 - Database migrations run automatically before deploy (see Section 8).
 - See `render.yaml` for the infrastructure-as-code definition.
@@ -329,7 +331,12 @@ secrets.
 
 ### Deploy Ordering
 
-**Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge — as two workflows both gated on CI success (`deploy-vercel-staging.yml` and `deploy-api.yml`) since #1578 restored the Vercel half; see §6 **Web and Landing (Vercel)**. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
+**Default:** the frontends ship after the API. On staging, one job in `deploy-staging.yml` runs the migrations, deploys and verifies the Render API, and only then uploads the Vercel frontends it built at the start (#2803); production uses the same order. Database migrations always run before the API deploy. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated).
+
+> **Corrected 2026-09-28 (#2803):** this default used to read "Vercel (frontends) and Render (API)
+> deployments run in parallel after merge", as two workflows both gated on CI success
+> (`deploy-vercel-staging.yml` and `deploy-api.yml`, since #1578). Nothing ordered them, so a new
+> frontend could go live before the migration or API it calls. `deploy-staging.yml` replaced both.
 
 **Exception — breaking API changes:** When compatibility is not maintained, split the change into PRs and ship them in this order:
 
@@ -337,7 +344,7 @@ secrets.
 2. Verify the API health check passes.
 3. Merge frontend follow-up PRs only after API verification.
 
-Because a merge to `main` deploys the frontends once CI passes, hold frontend merges until the API is confirmed healthy. No Vercel deploy is push-*triggered* since the ADR-21 unlink, but #1578 restored the automatic path through `deploy-vercel-staging.yml`, so this ordering rule governs again: the gap between merge and deployed frontend is now CI plus a build, not indefinite. Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
+Since #2803 the staging pipeline orders each run: a frontend uploads only after the API deployed with it is verified, so a frontend merged on top of a failed API deploy does not ship. The split is still needed for a breaking change, because the previous frontends keep calling the new API from the moment it is live until the upload finishes. Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
 
 ### Release labels for version tags
 

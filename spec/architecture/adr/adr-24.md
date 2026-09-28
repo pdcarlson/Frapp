@@ -30,7 +30,9 @@ a successful deploy, and nothing noticed for 171 days (#1273). Five causes recur
    `API_HEALTHCHECK_URL` is unset, the poll warns and exits 0. #1160 and #2431 were Render build or
    boot failures behind a green workflow. *(Corrected 2026-09-25: no longer true of staging. Since
    #2505 `deploy-api.yml` deploys the commit through the Render API, polls that deploy, and requires
-   `/health/ready` to report that commit; a missing `API_HEALTHCHECK_URL` fails.)*
+   `/health/ready` to report that commit; a missing `API_HEALTHCHECK_URL` fails.)* *(Corrected
+   2026-09-28 (#2803): that workflow is now `deploy-staging.yml`, and the same check also gates the
+   staging web and landing upload.)*
 3. **Monitoring runs on a best-effort scheduler.** `production-uptime.yml` is scheduled `*/15`.
    Its last 30 scheduled runs had a median gap of 3.1 hours and a maximum of 6 hours. (GitHub MCP
    `actions_list list_workflow_runs`, `production-uptime.yml`, `event: schedule`, read 2026-09-23.)
@@ -96,6 +98,9 @@ digest 07).
     `spec/environments/README.md` § Deploy Ordering requires. *(Built 2026-09-25 in #2505's PR,
     which also requires `/health/ready` to report the deployed commit and retires the push-time `verify-deployments.yml`.
     Turning auto-deploy off is the owner's dashboard step; `staging-conformance.yml` asserts it.)*
+    *(Corrected 2026-09-28 (#2803): `deploy-api.yml` and `deploy-vercel-staging.yml` became one
+    workflow, `deploy-staging.yml`. Its one job migrates, deploys the commit and verifies it as
+    above, and uploads web and landing only after that, so the frontends are ordered too.)*
   - **Then (#2506).** Staging and production both switch to deploying the CI-built image by
     digest (decision 1). The commit-based path is the interim step.
 - **The API isn't replica-safe yet.** The push and audit-bridge Realtime subscribers double-send
