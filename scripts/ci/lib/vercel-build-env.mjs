@@ -1,10 +1,10 @@
-// What a CI-built Vercel bundle compiles against, when the app config comes
-// from Infisical rather than from the Vercel project (#834, #2672).
+// What a CI-built Vercel bundle compiles against: app config from Infisical,
+// never from the Vercel project (#834; staging #2672, production #2673).
 //
 // ── Why staging stopped reading Vercel's Preview env ───────────────────────
 // Staging's app config used to reach Vercel through two Infisical→Vercel syncs
-// (`vercel-web-staging`, `vercel-landing-staging`). Those have failed since
-// ADR-21 unlinked both projects from Git: Infisical scopes a Preview write by
+// (`vercel-web-staging`, `vercel-landing-staging`, deleted 2026-09-28). Those
+// failed from the day ADR-21 unlinked both projects from Git: Infisical scopes a Preview write by
 // git branch, and a Git-less project has no branch to resolve. They also pushed
 // the WHOLE staging store, backend credentials included, into two frontend
 // projects. The owner chose #834's option (b) on 2026-09-24: the staging deploy
@@ -12,6 +12,12 @@
 // its app reads. Reconnecting Git (option c) stays off the table, and an
 // unfiltered Preview target (option a) was declined because it keeps fanning the
 // backend store into the frontends.
+//
+// Production followed on 2026-09-28 (#2673). Its job already injected Infisical
+// `prod` before the Vercel steps, so every production CLI process saw the whole
+// store, and a Production row filled any app key the injection lacked. It now
+// records the same baseline and builds the same way; a dry run also withholds
+// `SENTRY_AUTH_TOKEN` (`deploy-vercel.mjs`, #2275).
 //
 // The syncs had also stopped mattering to the build before anyone noticed:
 // `vercel pull --environment=preview` with no `--git-branch` requests
@@ -40,7 +46,7 @@
 // (`next/dist/build/define-env.js` spreads them unconditionally), and neither app
 // reads a non-public key at request time: `SENTRY_AUTH_TOKEN` is read only by
 // `next.config.js`. So a deployment's runtime env needs nothing from Infisical,
-// and deleting the stale `Preview · main` rows removes nothing an app reads.
+// and deleting the stale `Preview · main` rows (done 2026-09-28) removed nothing an app reads.
 //
 // Semantics: the pure functions below. Unit tests, including the guard that
 // keeps `APP_CONFIG_KEYS` equal to what the apps read:

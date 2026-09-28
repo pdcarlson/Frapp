@@ -21,7 +21,7 @@
 
 - [ ] Create Supabase production project, apply migrations
 - [ ] Create Render production service (`main` branch, **Auto-Deploy: No**), add env vars
-- [ ] Add Production env vars to each Vercel project
+- [ ] Add production values to Infisical `prod` (web and landing read them at build time; nothing goes into Vercel's env settings, [`vercel.md` §4.2](vercel.md#42-environment-variables-per-project))
 - [ ] Assign production domains in Vercel
 - [ ] Configure DNS records for production domains
 - [ ] Set up Stripe live mode (after business verification)

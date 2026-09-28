@@ -29,22 +29,21 @@ Both run [`scripts/ci/deploy-vercel.mjs`](../../../../scripts/ci/deploy-vercel.m
 
 ### 4.2 Environment Variables per Project
 
-Vercel scopes env vars to **Production** and **Preview**. Production deploys pull Production vars
-(`vercel pull --environment=production` in `deploy-production.yml`), but the build runs in a job that
-has already injected Infisical `prod`, so a key Infisical holds beats the Production row and the rows
-fill only keys it lacks ([#2673](https://github.com/pdcarlson/Frapp/issues/2673)). The workflow
-rebuilds a named commit rather than promoting a preview. **Staging deploys do not consume Preview vars for app
-config** (since #2672): `deploy-vercel-staging.yml` injects Infisical `staging`, gives each app's
-build exactly the keys it reads, and removes those keys from the Preview env `vercel pull` writes.
-The pull still supplies the project settings and `VERCEL_ENV=preview`
-([`SECRETS_MANAGEMENT.md` § Staging web and landing](../../environment/SECRETS_MANAGEMENT.md#staging-web-and-landing-injected-at-build-not-synced)).
+**No deploy consumes Vercel env vars for app config.** Both workflows inject Infisical (`staging` for
+staging since #2672, `prod` for production since [#2673](https://github.com/pdcarlson/Frapp/issues/2673)),
+give each app's build exactly the keys it reads, and remove those keys from the env `vercel pull`
+writes. The pull still supplies the project settings and `VERCEL_ENV` (`preview` or `production`).
+Production rebuilds a named commit rather than promoting a preview
+([`SECRETS_MANAGEMENT.md` § Staging web and landing](../../environment/SECRETS_MANAGEMENT.md#staging-web-and-landing-injected-at-build-not-synced),
+which covers both).
 
-**These values are not typed into the Vercel dashboard.** Infisical is the canonical store. The two
-production `vercel-*` syncs push the values into each project's Production scope, and the staging job
-reads Infisical `staging` directly; the dashboard is a destination, not the place a human enters
-anything. A Preview row can no longer supply a key an app reads, though a row under any other name
-still reaches the staging build's environment; delete the stale rows once a staging deploy on this
-path is green ([#834](https://github.com/pdcarlson/Frapp/issues/834)). The authoritative sync map and
+**These values are not typed into the Vercel dashboard.** Infisical is the canonical store, and
+the deploy jobs read it directly. A Vercel row can't supply a key an app reads, though a row under
+any other name still reaches the build's environment. Both projects' Preview env is empty and their
+Preview **Branch Tracking** is off (2026-09-28): the staging syncs, their `Preview · main` rows and
+the unscoped Preview rows are deleted ([#834](https://github.com/pdcarlson/Frapp/issues/834)). The
+two production `vercel-*` syncs still fill each project's Production scope, which no build reads;
+they are deleted once a production run on this path is green. The authoritative sync map and
 the setup procedure live in
 [`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md), and the complete
 variable list in [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md). The tables
