@@ -623,8 +623,10 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     if (selectError) throw selectError;
 
     const ids = (candidates ?? []).map((row) => row.id);
-    // A purge round reads up to 500 ids, and 500 UUIDs in one `in` list is a
-    // request line past what the gateway takes (#2825; see `chunkIds`).
+    // A purge round reads up to 500 ids: ~19 KB in one `in` list. Hosted
+    // staging accepted that (a 46k-message purge, 2026-09-28) but refused a
+    // 30 KB list (#2825), and the local gateway refuses 250 ids (`chunkIds`),
+    // so the margin is thin; batched like the other long id lists.
     for (const batch of chunkIds(ids)) {
       const { error: deleteError } = await this.supabase
         .from('chat_messages')

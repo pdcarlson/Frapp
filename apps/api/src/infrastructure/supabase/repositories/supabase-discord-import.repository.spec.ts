@@ -358,7 +358,7 @@ describe('SupabaseDiscordImportRepository — findFiles paging', () => {
 describe('SupabaseDiscordImportRepository — purging a large import', () => {
   it('deletes a round of message ids in batches small enough for the request line', async () => {
     // A purge round reads up to 500 ids; one `in` list of 500 UUIDs is ~19 KB,
-    // past what the gateway takes (#2825).
+    // past what the local gateway takes (`chunkIds`' measurement, #2825).
     const candidates = Array.from({ length: 500 }, (_, i) => ({
       id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
     }));
