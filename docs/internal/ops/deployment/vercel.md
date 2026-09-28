@@ -2,7 +2,7 @@
 
 Two projects: `frapp-web` (`apps/web`) and `frapp-landing` (`apps/landing`), in one team; their ids
 are the `vercel` block of [`.github/environments.json`](../../../../.github/environments.json), which
-every workflow reads through `scripts/ci/provider-ids.mjs` (#2806). Both are
+every workflow reads through `scripts/ci/provider-ids.mjs` ([why there](../../../../spec/environments/README.md#environment-identity), #2806). Both are
 **disconnected from Git** ([ADR-21](../../../../spec/architecture/adr/adr-21.md)). Do not re-import
 the repo or set a Production Branch — a present Git link is a guardrail violation
 (`assertVercelNoGitLink` in `scripts/ci/production-guardrails.mjs`). The decision, dates, freeze

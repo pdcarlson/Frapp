@@ -13,7 +13,8 @@ name: Deploy
 #
 # ── The order ───────────────────────────────────────────────────────────────
 #   install (no secrets yet) → move to the trusted ref → local actions,
-#   preflight, env baseline, inject Infisical → back to the deployed commit →
+#   provider ids, preflight, env baseline, inject Infisical → back to the
+#   deployed commit →
 #   plan (staging) / rehearse (production) → migration dry run → BUILD web +
 #   landing → [production dry run stops here] → apply the migrations → deploy
 #   the API by commit → verify it serves the commit → UPLOAD web + landing →
@@ -29,8 +30,11 @@ name: Deploy
 # build, verify and upload follow the plan's outputs. Production's: the
 # provider preflight, the migration rehearsal and its fence, the dry-run stop,
 # the `config.toml` assert and `scope: migrations-only`. Where the two differ
-# in a value (a slug, a service id, `DEPLOY_TARGET`), each has its own step
-# with literals, never an `a && 'x' || 'y'` expression.
+# in a value (a slug, `DEPLOY_TARGET`), each has its own step with literals,
+# never an `a && 'x' || 'y'` expression. The provider ids are the one
+# exception: a single step reads the named environment's Render service id and
+# the Vercel ids from `.github/environments.json` (`provider-ids.mjs`, #2806),
+# and every step that needs one takes that step's output.
 #
 # ── The trust split ─────────────────────────────────────────────────────────
 # Two trees, used in turn. The deployed commit (`inputs.sha`) is what gets
@@ -47,6 +51,9 @@ name: Deploy
 #   * The provider preflight and the served-commit check are verdicts on the
 #     deploy, so they run trusted code: the preflight before the detach, the
 #     served-commit check from a copy taken before it.
+#   * The provider ids are read from the trusted ref's
+#     `.github/environments.json`, so a rollback deploys to the services
+#     today's config names, not the ones an older commit named.
 # The installs come first, on the deployed commit and before any secret is
 # injected (#2801): no install script runs with the Infisical store in its
 # environment. That is all it buys; an install script can still leave

@@ -55,6 +55,21 @@ describe("the committed config", () => {
     }
     assert.equal(seen.size, ENVIRONMENTS.length);
   });
+
+  // Which id is which environment's, and which project is web's, can't be told
+  // from the format. A swap would send every merge to production's API, or
+  // web's bundle to the landing project, with CI green. So the committed
+  // values are pinned here, as environments.test.mjs pins the Supabase refs,
+  // and moving one is a reviewed change in two files. These are the literals
+  // each workflow step used before #2806 moved them.
+  it("pins which service and project each id is", () => {
+    assert.equal(providerIdsFor("staging").renderServiceId, "srv-d6lqsq75r7bs73c2fdc0", "frapp-api-staging");
+    assert.equal(providerIdsFor("production").renderServiceId, "srv-d6lqu41aae7s73f62df0", "frapp-api-prod");
+    const ids = providerIdsFor("production");
+    assert.equal(ids.vercelWebProjectId, "prj_xkn32taKrJCgYRZoN6pZRfGfPT9T", "frapp-web");
+    assert.equal(ids.vercelLandingProjectId, "prj_aAkER9EZJcxR51vUY0mwNDnCf8vy", "frapp-landing");
+    assert.equal(ids.vercelTeamId, "team_j9XLIANou5EpvALrr4bM9Nee");
+  });
 });
 
 describe("parseProviderIds", () => {
@@ -122,9 +137,11 @@ describe("provider-ids.mjs", () => {
 // The acceptance criterion of #2806, as a grep: the ids' own prefixes.
 describe("no workflow or action names a provider id", () => {
   const LITERAL = /\b(?:srv-[a-z0-9]{6,}|prj_[A-Za-z0-9]{6,}|team_[A-Za-z0-9]{6,})\b/;
+  // Every file, not only YAML: an action's shell helper or README could carry
+  // a literal just as well.
   const files = (dir) =>
     readdirSync(dir, { recursive: true, withFileTypes: true })
-      .filter((e) => e.isFile() && /\.ya?ml$/.test(e.name))
+      .filter((e) => e.isFile())
       .map((e) => join(e.parentPath ?? e.path, e.name));
 
   it("finds the files it scans", () => {

@@ -657,14 +657,8 @@ describe("the preflight asserts against the services production ships to", () =>
         assert.equal(preflight.env.get(key), byName().get(name).env.get(key), `${key} differs from "${name}"'s`);
       }
     }
-    // The daily watchdog reads production's entry of the same file.
-    const guardrails = withoutComments(readFileSync(join(REPO_ROOT, ".github", "workflows", "production-guardrails.yml"), "utf8"));
-    assert.match(guardrails, /TARGET_ENVIRONMENT: production\n\s+run: node scripts\/ci\/provider-ids\.mjs/);
-    for (const key of ["RENDER_SERVICE_ID", "VERCEL_WEB_PROJECT_ID", "VERCEL_LANDING_PROJECT_ID", "VERCEL_TEAM_ID"]) {
-      const output = `\${{ steps.ids.outputs.${key.toLowerCase()} }}`;
-      assert.equal(preflight.env.get(key), output, `${key} comes from environments.json`);
-      assert.ok(guardrails.includes(`${key}: ${output}`), `${key} differs from production-guardrails.yml's`);
-    }
+    // Where those come from, here and in the daily watchdog, is
+    // `provider-ids.test.mjs`'s to pin.
     assert.match(preflight.body, /production-guardrails\.mjs --preflight --migrations-only/);
   });
 

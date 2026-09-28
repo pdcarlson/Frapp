@@ -673,20 +673,8 @@ describe("workflow wiring", () => {
   });
 
   // Both watchdogs read production's ids from `.github/environments.json`
-  // (#2806), so they can't drift apart; `provider-ids.test.mjs` pins the read.
-  it("service and project ids come from production's entry, like production-guardrails.yml's", () => {
-    for (const yaml of [liveYaml, uncommented(guardrails)]) {
-      assert.match(yaml, /- name: Read production's provider ids\n\s+id: ids\n\s+env:\n\s+TARGET_ENVIRONMENT: production\n\s+run: node scripts\/ci\/provider-ids\.mjs/);
-      for (const [name, output] of [
-        ["RENDER_SERVICE_ID", "render_service_id"],
-        ["VERCEL_WEB_PROJECT_ID", "vercel_web_project_id"],
-        ["VERCEL_LANDING_PROJECT_ID", "vercel_landing_project_id"],
-        ["VERCEL_TEAM_ID", "vercel_team_id"],
-      ]) {
-        assert.ok(yaml.includes(`${name}: \${{ steps.ids.outputs.${output} }}`), name);
-      }
-    }
-  });
+  // (#2806), so they can't drift apart. `provider-ids.test.mjs` pins every
+  // consumer's read, this one's included.
 
   it("does not bake those ids into the script as defaults", () => {
     assert.doesNotMatch(script, /srv-d6lqu41aae7s73f62df0/);

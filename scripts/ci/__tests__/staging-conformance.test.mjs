@@ -929,11 +929,8 @@ test("staging-conformance.yml wires Render creds to the staging service, never p
     yaml.includes("RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}"),
     "the job must pass the Render secret or the check is permanently SKIPPED",
   );
-  // Staging's id, from `.github/environments.json` (#2806).
-  assert.match(yaml, /RENDER_SERVICE_ID: \$\{\{ steps\.ids\.outputs\.render_service_id \}\}/);
-  assert.match(yaml, /id: ids\n\s+env:\n\s+TARGET_ENVIRONMENT: staging\n\s+run: node scripts\/ci\/provider-ids\.mjs/);
-  assert.doesNotMatch(yaml, /TARGET_ENVIRONMENT: production/);
-  assert.doesNotMatch(yaml, /srv-d6lqu41aae7s73f62df0/);
+  // Staging's service id comes from `.github/environments.json` (#2806);
+  // `provider-ids.test.mjs` pins that this job reads staging's entry.
   const infra = readFileSync(
     new URL("../../../docs/internal/ci-cd/AGENT_INFRA.md", import.meta.url),
     "utf8",
