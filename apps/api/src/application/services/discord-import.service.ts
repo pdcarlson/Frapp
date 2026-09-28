@@ -57,6 +57,7 @@ import {
 } from '#domain/adapters/discord.interface';
 import { DiscordOAuthService } from './discord-oauth.service';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** How many files one mint request may register. */
 export const MAX_UPLOAD_URL_BATCH = 100;
@@ -342,8 +343,11 @@ export class DiscordImportService {
       );
       return { ...job, channels_total: total, channels_done: done };
     } catch (error) {
-      this.logger.warn(
-        `Could not count channel progress for import ${job.id}; listing it without: ${toReportableError(error).message}`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not count channel progress for import ${job.id}; listing it without`,
+        error,
       );
       return unknown;
     }

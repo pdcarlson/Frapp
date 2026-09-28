@@ -1,5 +1,6 @@
 import { SupabaseDiscordImportRepository } from './supabase-discord-import.repository';
 import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.repository.interface';
+import { ID_CHUNK_SIZE } from '#domain/utils/chunk-ids';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -250,6 +251,30 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
     ).toBeNull();
   });
 
+  it('markFilesUploaded splits a long path list so no request line overflows', async () => {
+    // One bot slice marks a busy channel's attachments at once: on staging,
+    // about 230 paths made a 30 KB request line the gateway refused (#2825).
+    harness.reset();
+    const paths = Array.from(
+      { length: 230 },
+      (_, i) =>
+        `chapters/${CHAPTER_B}/chat-archive/imports/${IMPORT_B}/media/${i}/attachment-${i}.png`,
+    );
+    await repo.markFilesUploaded(IMPORT_B, CHAPTER_B, paths, 'now');
+    const lists = harness.ops.map(
+      (op) =>
+        op.filters.find((f) => f.column === 'storage_path')?.value as string[],
+    );
+    expect(lists.length).toBeGreaterThan(1);
+    expect(lists.flat()).toEqual(paths);
+    for (const op of harness.ops) {
+      expect(op.filters.map((f) => [f.column, f.value])).toContainEqual([
+        'chapter_id',
+        CHAPTER_B,
+      ]);
+    }
+  });
+
   it('deleteImportedMessages binds the chapter into the lookup', async () => {
     harness.reset();
     await repo.deleteImportedMessages(IMPORT_B, CHAPTER_B, 100);
@@ -327,6 +352,48 @@ describe('SupabaseDiscordImportRepository — findFiles paging', () => {
       [0, PAGE_SIZE - 1],
       [PAGE_SIZE, PAGE_SIZE * 2 - 1],
     ]);
+  });
+});
+
+describe('SupabaseDiscordImportRepository — purging a large import', () => {
+  it('deletes a round of message ids in batches small enough for the request line', async () => {
+    // A purge round reads up to 500 ids; one `in` list of 500 UUIDs is ~19 KB,
+    // past what the gateway takes (#2825).
+    const candidates = Array.from({ length: 500 }, (_, i) => ({
+      id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+    }));
+    const deleted: string[][] = [];
+    const reader: Record<string, unknown> = {};
+    for (const method of ['select', 'eq']) {
+      reader[method] = jest.fn(() => reader);
+    }
+    reader.limit = jest.fn(() =>
+      Promise.resolve({ data: candidates, error: null }),
+    );
+    const writer = {
+      delete: jest.fn(() => writer),
+      in: jest.fn((_column: string, ids: string[]) => {
+        deleted.push(ids);
+        return Promise.resolve({ error: null });
+      }),
+    };
+    let calls = 0;
+    const client = {
+      from: jest.fn(() => (calls++ === 0 ? reader : writer)),
+    };
+    const repo = new SupabaseDiscordImportRepository(
+      client as unknown as ConstructorParameters<
+        typeof SupabaseDiscordImportRepository
+      >[0],
+    );
+
+    expect(await repo.deleteImportedMessages(IMPORT_A, CHAPTER_A, 500)).toBe(
+      500,
+    );
+    expect(deleted.flat()).toEqual(candidates.map((row) => row.id));
+    for (const batch of deleted) {
+      expect(batch.length).toBeLessThanOrEqual(ID_CHUNK_SIZE);
+    }
   });
 });
 

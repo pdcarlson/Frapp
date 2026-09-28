@@ -20,6 +20,7 @@ import type {
   ImportedAttachmentRow,
   ImportedMessageRow,
 } from '#domain/utils/discord-export';
+import { chunkByEncodedLength, chunkIds } from '#domain/utils/chunk-ids';
 
 /**
  * PostgREST caps a response at `max_rows` (1000 — `supabase/config.toml`) and
@@ -395,16 +396,21 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     storagePaths: string[],
     at: string,
   ): Promise<number> {
-    if (storagePaths.length === 0) return 0;
-    const { data, error } = await this.supabase
-      .from('discord_import_files')
-      .update({ uploaded_at: at })
-      .eq('import_id', importId)
-      .eq('chapter_id', chapterId)
-      .in('storage_path', storagePaths)
-      .select('id');
-    if (error) throw error;
-    return (data ?? []).length;
+    // Batched by encoded length: the paths end in Discord filenames, and one
+    // slice's worth in a single `in` list outgrew the request line (#2825).
+    let marked = 0;
+    for (const batch of chunkByEncodedLength(storagePaths)) {
+      const { data, error } = await this.supabase
+        .from('discord_import_files')
+        .update({ uploaded_at: at })
+        .eq('import_id', importId)
+        .eq('chapter_id', chapterId)
+        .in('storage_path', batch)
+        .select('id');
+      if (error) throw error;
+      marked += (data ?? []).length;
+    }
+    return marked;
   }
 
   // ── the worker's lease ────────────────────────────────────────────────────
@@ -617,13 +623,15 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     if (selectError) throw selectError;
 
     const ids = (candidates ?? []).map((row) => row.id);
-    if (ids.length === 0) return 0;
-
-    const { error: deleteError } = await this.supabase
-      .from('chat_messages')
-      .delete()
-      .in('id', ids);
-    if (deleteError) throw deleteError;
+    // A purge round reads up to 500 ids, and 500 UUIDs in one `in` list is a
+    // request line past what the gateway takes (#2825; see `chunkIds`).
+    for (const batch of chunkIds(ids)) {
+      const { error: deleteError } = await this.supabase
+        .from('chat_messages')
+        .delete()
+        .in('id', batch);
+      if (deleteError) throw deleteError;
+    }
     return ids.length;
   }
 }

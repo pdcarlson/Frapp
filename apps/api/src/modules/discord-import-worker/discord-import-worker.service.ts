@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomUUID } from 'node:crypto';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import {
   DISCORD_IMPORT_REPOSITORY,
   type IDiscordImportRepository,
@@ -202,10 +203,14 @@ export class DiscordImportWorkerService {
         }
         return await this.runImportSlice(job, lockToken, now);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.error(
-          `Discord import ${job.id} failed: ${message}`,
-          error instanceof Error ? error.stack : undefined,
+        // A repository throws PostgREST's plain `{ code, message }` object, which
+        // `String()` turned into "[object Object]" in the log and on the page.
+        const message = toReportableError(error).message;
+        logThrowable(
+          this.logger,
+          'error',
+          `Discord import ${job.id} failed`,
+          error,
         );
         await this.importRepo.updateIfStatus(
           job.id,

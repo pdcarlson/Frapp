@@ -5,6 +5,7 @@ import {
   type IDiscordImportRepository,
 } from '#domain/repositories/discord-import.repository.interface';
 import { archiveQuotaMessage } from '../../application/services/discord-import.service';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
@@ -726,7 +727,7 @@ export class DiscordExportWorkerService {
         } catch (error) {
           totals.warnings.push(
             `Could not import attachment "${attachment.filename ?? key}": ${
-              error instanceof Error ? error.message : String(error)
+              toReportableError(error).message
             }`,
           );
           skipped += 1;
