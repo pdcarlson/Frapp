@@ -33,7 +33,7 @@
 // Identifiers are not copy and stay: the `--signet-*` tokens, `SignetMark`,
 // `signet-emblem-B.png`, `@repo/theme/signet.css` and the `signet-accent-cache`
 // style id. Landing renames in step 5 and has its own lock
-// (signet-landing-copy). The @frapp.live ICS UID host is ics-uid-host's.
+// (frapp-landing-copy). The @frapp.live ICS UID host is ics-uid-host's.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

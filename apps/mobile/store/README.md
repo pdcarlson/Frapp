@@ -632,7 +632,7 @@ Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 | --- | --- |
 | Is all user data encrypted in transit? | **Yes.** Every endpoint the binary calls is HTTPS: `api.frapp.live`, Supabase, Sentry, PostHog and Expo |
 | Do you provide a way for users to request that their data is deleted? | **Yes.** In the app: More → Settings → Delete account, or Delete account on the join screen or the Terms prompt. On the web dashboard: My Profile → Delete account. Anyone who can't sign in can email team@frapp.live. What deletion keeps, anonymised, is in the table's *On account deletion* column |
-| Delete account URL | `https://frapp.live/support`; § 4 of that page describes all three routes. **It still says "Signet"**, and Play wants this page to name the app as the listing does *(rule unverified)*. [#2580](https://github.com/pdcarlson/Frapp/issues/2580) (ADR-25 step 5) renames the page. Enter this URL only after that's live on production |
+| Delete account URL | `https://frapp.live/support`; § 4 of that page describes all three routes. Play wants this page to name the app as the listing does *(rule unverified)*. It says Frapp on `main` since ADR-25 step 5 ([#2580](https://github.com/pdcarlson/Frapp/issues/2580)); enter this URL only after that's live on production |
 | Independent security review | No |
 | Families policy | Not applicable. The app isn't in the Families program, and its target audience is adults (§ Android-specific) |
 

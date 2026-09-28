@@ -22,8 +22,9 @@
 //   a material change also moves the page's date (and, for Terms or Privacy,
 //   the constant); one that isn't (a typo fix) updates only the pin, and the
 //   PR says so. This lock doesn't judge what is material. It makes someone
-//   decide. Whether a name-only change bumps the constant is the owner's call
-//   (ADR-25).
+//   decide. A name-only change doesn't bump the constant: the owner ruled the
+//   Signet-to-Frapp rename of Privacy and FERPA non-material on 2026-09-28
+//   (ADR-25 step 5, #2580), so it moved only their pins.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `@repo/validation` (`'test-version'`, `'current-version'`) can't satisfy it.
@@ -55,12 +56,12 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "September 2026",
-    fingerprint: "65adf7c03a68f38d",
+    fingerprint: "4bb8094032fc5ebb",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",
     lastUpdated: "September 2026",
-    fingerprint: "e2975174cc90ae6c",
+    fingerprint: "8e8caca0ed2896b1",
   },
 };
 

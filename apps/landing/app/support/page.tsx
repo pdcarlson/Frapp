@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
+import { routeMetadata } from "../../lib/route-metadata";
 import { LegalDocument } from "../components/legal-document";
 
-export const metadata: Metadata = {
-  title: "Support · Signet",
+export const metadata: Metadata = routeMetadata({
+  title: "Support · Frapp",
   description:
-    "How to get help with the Signet mobile app and web dashboard, report a problem, or request account deletion.",
-};
+    "How to get help with the Frapp mobile app and web dashboard, report a problem, or request account deletion.",
+  path: "/support",
+});
 
 // Both app stores require a public support URL on the listing, and Apple's
 // review checks that it answers the questions a member would actually have:
@@ -16,7 +18,7 @@ const sections = [
   {
     heading: "1. Contact",
     paragraphs: [
-      "Email team@frapp.live for anything about the Signet mobile app or the web dashboard: sign-in trouble, a chapter that is not appearing, a billing question, or a bug. Include the email address on your Signet account and, for a bug, what you were doing when it happened and which device you were using.",
+      "Email team@frapp.live for anything about the Frapp mobile app or the web dashboard: sign-in trouble, a chapter that is not appearing, a billing question, or a bug. Include the email address on your Frapp account and, for a bug, what you were doing when it happened and which device you were using.",
       "We aim to respond within two business days. Chapter officers with an active subscription can also reach us from the dashboard's Billing page.",
     ],
   },
@@ -30,13 +32,13 @@ const sections = [
   {
     heading: "3. Notifications",
     paragraphs: [
-      "Push notifications are optional. Turn them on or off in the app's Notifications settings, or in the device's system settings for Signet. Quiet hours and notification categories live in the app. Mute an individual channel from the web dashboard.",
+      "Push notifications are optional. Turn them on or off in the app's Notifications settings, or in the device's system settings for Frapp. Quiet hours and notification categories live in the app. Mute an individual channel from the web dashboard.",
     ],
   },
   {
     heading: "4. Deleting your account",
     paragraphs: [
-      "Signed-in members delete their Signet account themselves. On the web dashboard, open My Profile and choose Delete account. In the mobile app, open More, then Settings, then Delete account — or, if you have not joined a chapter yet, Delete account on the join screen. Deletion is irreversible.",
+      "Signed-in members delete their Frapp account themselves. On the web dashboard, open My Profile and choose Delete account. In the mobile app, open More, then Settings, then Delete account — or, if you have not joined a chapter yet, Delete account on the join screen. Deletion is irreversible.",
       "We remove your profile and personal information; records a chapter is required to keep for its own compliance obligations (for example dues ledgers and audit history) are retained in anonymized form, as described in the Privacy Policy.",
       "If you cannot sign in, email team@frapp.live from the address on the account and we will complete the same deletion.",
     ],

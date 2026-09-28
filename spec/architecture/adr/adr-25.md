@@ -81,6 +81,7 @@
      - *Owner:*
        - decide whether a name-only change to the Privacy Policy bumps `LEGAL_POLICY_VERSION` (the Terms no longer need the call; see above);
        - after deploy, re-scrape the social previews and request a recrawl.
+     - *2026-09-28: code and specs done in step 5 ([#2580](https://github.com/pdcarlson/Frapp/issues/2580)). The owner ruled the name-only change to Privacy and FERPA non-material, so `LEGAL_POLICY_VERSION` stays `2026-09` and only the pages' pins in `legal-policy-version.test.mjs` moved. The same PR gave `/terms`, `/privacy` and `/ferpa` their own `metadata`, and, by the owner's same-day decision, drew the header lockup's crest straight on the page background with no tile. `signet-landing-copy` flipped and became `frapp-landing-copy`. The post-deploy re-scrape and recrawl remain the owner's.*
   6. **Store console (owner).** After step 2 is in a build, update the App Store Connect description and review notes, then capture and upload the screenshots ([#2454](https://github.com/pdcarlson/Frapp/issues/2454)).
 
   **Every step updates, in the same PR, every test and gate that pins a string it changes.** That means:

@@ -29,6 +29,7 @@ import {
   FIELD_HEX,
   GOLD_HEX,
   ICO_SIZES,
+  SHIPPED_VECTORS,
   assertFullyOpaque,
   assertGlyphCoverage,
   assertIcoShape,
@@ -263,18 +264,9 @@ async function main() {
   // Every shipped SVG, not just the two the rasters render from: the rounded
   // tile and the lockup are `@repo/brand-assets` exports that reach consumers
   // directly, and no raster check can see them.
-  assertSvgLocked(readFileSync(MASTER_SVG, "utf8"), "signet-emblem-B.svg");
-  assertSvgLocked(readFileSync(GLYPH_SVG, "utf8"), "signet-emblem-B-glyph.svg", {
-    requireField: false,
-  });
-  assertSvgLocked(
-    readFileSync(join(assets, "signet-emblem-B-rounded.svg"), "utf8"),
-    "signet-emblem-B-rounded.svg",
-  );
-  assertSvgLocked(
-    readFileSync(join(assets, "frapp-lockup.svg"), "utf8"),
-    "frapp-lockup.svg",
-  );
+  for (const { name, requireField } of SHIPPED_VECTORS) {
+    assertSvgLocked(readFileSync(join(assets, name), "utf8"), name, { requireField });
+  }
 
   mkdirSync(mobileImages, { recursive: true });
 
