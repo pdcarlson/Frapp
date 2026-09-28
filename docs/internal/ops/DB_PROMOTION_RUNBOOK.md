@@ -1452,7 +1452,9 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   setting that is dashboard-only and is **not** carried by promoting migrations —
   a 100 MB object will be rejected until someone raises it under
   Storage → Settings. Do this before running the importer, or attachments over
-  25 MB fail with a 413 that looks like a bucket misconfiguration.
+  25 MB fail with a 413 that looks like a bucket misconfiguration. *(Done
+  2026-09-28 on both hosted projects, after the org moved to Pro, whose 50 MB
+  Free cap had made it impossible (#1235). A new project needs the same step.)*
 - **Checks** (after promotion):
   - `select id, public, file_size_limit, array_length(allowed_mime_types,1) from storage.buckets where id='chat-archive';`
     → `chat-archive | f | 104857600 | 33`

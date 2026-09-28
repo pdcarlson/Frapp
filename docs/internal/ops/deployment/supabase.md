@@ -26,7 +26,7 @@ first real Discord import on staging stored 2.85 GB of attachments from a single
 server. Once the grace period for going over quota ends, Supabase restricts **every** project in
 the organization, production included: it can pause projects, make databases read-only, or answer
 402 to every request ([Fair Use Policy](https://supabase.com/docs/guides/platform/billing-faq#fair-use-policy)).
-Free also had no Supabase daily backups (#1403), and it capped uploads at 50 MB (#1235).
+Free also showed no Supabase daily backups (#1403), and it capped uploads at 50 MB (#1235).
 
 **What Pro includes.** These are the organization-wide quotas unless a row says "per project".
 Checked against Supabase's documentation on 2026-09-28; the linked pages own the current numbers.
@@ -60,8 +60,9 @@ point-in-time recovery. The organization's **Usage** page shows how close each q
 
 - **Each project's upload limit is 100 MB (#1235).** It lives under **Storage → Settings → Global file
   size limit**, which Free capped at 50 MB. Discord allows 100 MB attachments and the `chat-archive`
-  bucket accepts 100 MB, but the lower of the project and bucket limits wins, so both have to allow
-  it. A new project needs this set by hand; migrations don't carry it.
+  bucket accepts 100 MB, but the lower of the two limits wins. Why a new project needs it set by hand,
+  and the upload that proves it took effect:
+  [`DB_PROMOTION_RUNBOOK.md` § 20260823124000_chat_archive_bucket.sql](../DB_PROMOTION_RUNBOOK.md#20260823124000_chat_archive_bucketsql).
 - **`frapp-prod` shows Supabase's daily backups (#1403),** under **Database → Backups**. The nightly offsite dump
   still runs, and it is still the only copy that survives deleting the project, and the only
   backup of Storage files:
