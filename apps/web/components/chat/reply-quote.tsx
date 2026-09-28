@@ -16,9 +16,9 @@ interface QuotedMessageProps {
    * when the message is not in the loaded window, which renders the
    * unavailable variant and ignores `preview`.
    *
-   * Nothing backfills older history today (`useChatChannel` fetches one window
-   * and exposes no pagination — #1571), so the unavailable case is not an edge:
-   * any reply to a message older than the window lands there. It is a variant
+   * Older history loads only as the member scrolls up (#1571), so the
+   * unavailable case is not an edge: any reply to a message older than what is
+   * loaded so far lands there. It is a variant
    * of this component rather than its own, because the two must share the rule,
    * the indent and the type treatment — a fallback that drifts to a different
    * indent is exactly the branch nobody re-screenshots.
