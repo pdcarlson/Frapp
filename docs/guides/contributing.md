@@ -65,7 +65,7 @@ When opening a PR:
 - Describe changes in terms of **behavior** and **domains** (e.g. "Backwork upload metadata", not "added 3 columns").
 - List test coverage: unit tests, E2E, and any manual scenarios you ran.
 - Call out any follow-up work or tech debt explicitly.
-- Fill out the **Diagram** section (a before/after `mermaid` diagram when the change moves an arrow) and the **Docs / Spec impact** section, both from the PR template.
+- Fill out the **Docs / Spec impact** section (from the PR template).
 
 PR targets:
 

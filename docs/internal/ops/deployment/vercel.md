@@ -41,9 +41,9 @@ which covers both).
 the deploy jobs read it directly. A Vercel row can't supply a key an app reads, though a row under
 any other name still reaches the build's environment. Both projects' Preview env is empty and their
 Preview **Branch Tracking** is off (2026-09-28): the staging syncs, their `Preview · main` rows and
-the unscoped Preview rows are deleted ([#834](https://github.com/pdcarlson/Frapp/issues/834)). The
-two production `vercel-*` syncs still fill each project's Production scope, which no build reads;
-they are deleted once a production run on this path is green. The authoritative sync map and
+the unscoped Preview rows are deleted ([#834](https://github.com/pdcarlson/Frapp/issues/834)). The two
+production `vercel-*` syncs and their Production rows were deleted the same day, so neither project
+holds an env variable in any environment. The authoritative sync map and
 the setup procedure live in
 [`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md), and the complete
 variable list in [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md). The tables
