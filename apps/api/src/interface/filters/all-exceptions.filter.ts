@@ -103,6 +103,16 @@ function extractMessage(exception: HttpException): string | string[] {
   return exception.message;
 }
 
+/**
+ * The request's correlation id, or `undefined` when neither the request-id
+ * middleware nor its AsyncLocalStorage run reached this request. Undefined is
+ * also the PostHog sample key there, so the runtime samples each such record
+ * on its own instead of giving every one the verdict of `'unknown'` (#2374).
+ */
+function correlationId(request: RequestContext): string | undefined {
+  return request.requestId ?? getRequestId();
+}
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
@@ -133,7 +143,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? extractMessage(exception)
         : 'Internal server error';
 
-    const requestId = request.requestId ?? getRequestId() ?? 'unknown';
+    const requestId = correlationId(request) ?? 'unknown';
 
     if (status >= 500) {
       this.logger.error(
@@ -367,7 +377,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ...(chapterHash ? { chapter_hash: chapterHash } : {}),
         },
       },
-      requestId,
+      correlationId(request),
     );
   }
 
@@ -396,7 +406,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ...(chapterHash ? { chapter_hash: chapterHash } : {}),
         },
       },
-      requestId,
+      correlationId(request),
     );
   }
 }

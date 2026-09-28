@@ -172,6 +172,24 @@ describe('LoggingInterceptor', () => {
     expect(logged[0]).not.toContain('x-forwarded-for');
   });
 
+  it('samples a request on its request id, so its records share one verdict', async () => {
+    await run(context(request), { handle: () => of({ ok: true }) });
+
+    expect(jest.mocked(enqueueSanitizedLog).mock.calls[0][1]).toBe('req-1');
+  });
+
+  it('hands PostHog no sample key when the request has no id, never one built from method, path and status (#2374)', async () => {
+    const { requestId: _omitted, ...withoutId } = request;
+    await run(context(withoutId), { handle: () => of({ ok: true }) });
+    await run(context(withoutId), { handle: () => of({ ok: true }) });
+
+    const calls = jest.mocked(enqueueSanitizedLog).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0][0].attributes.request_id).toBe('unknown');
+    expect(calls[0][1]).toBeUndefined();
+    expect(calls[1][1]).toBeUndefined();
+  });
+
   it('keeps raw user/chapter ids on stdout and hashes them for PostHog', async () => {
     const originalSalt = process.env.ANALYTICS_HMAC_SALT;
     process.env.ANALYTICS_HMAC_SALT = 'interceptor-spec-salt';

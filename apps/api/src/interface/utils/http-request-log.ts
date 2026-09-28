@@ -133,6 +133,6 @@ export function emitSanitizedHttpRequestLog(
         ...(chapterHash ? { chapter_hash: chapterHash } : {}),
       },
     },
-    request.requestId ?? `${request.method}:${path}:${status}`,
+    request.requestId,
   );
 }

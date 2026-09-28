@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -151,9 +151,9 @@ export class PosthogRuntime {
     });
   }
 
-  enqueueSanitizedLog(record: SanitizedLogRecord, sampleKey: string): void {
+  enqueueSanitizedLog(record: SanitizedLogRecord, sampleKey?: string): void {
     if (this.shuttingDown) return;
-    if (!shouldSample(sampleKey, this.logsSampleRate)) return;
+    if (!shouldSample(sampleKey ?? randomUUID(), this.logsSampleRate)) return;
     this.logQueue.push(record);
     if (this.logQueue.length >= 20) {
       void this.flushLogs();
@@ -396,9 +396,21 @@ export function captureSentryErrorCorrelated(
   }
 }
 
+/**
+ * Queue a sanitized log record for PostHog, subject to
+ * `POSTHOG_LOGS_SAMPLE_RATE`.
+ *
+ * `sampleKey` decides the sampling verdict, deterministically: one key always
+ * gets the same answer. So it must identify one occurrence, never be composed
+ * from the record's own fields — a key like `push_delivery:billing:1:0` keeps
+ * or drops that whole class of records forever instead of sampling it (#2374).
+ * Pass the request id when the record belongs to a request, so every record of
+ * that request shares one verdict; omit it otherwise, and the record is
+ * sampled on its own.
+ */
 export function enqueueSanitizedLog(
   record: SanitizedLogRecord,
-  sampleKey: string,
+  sampleKey?: string,
 ): void {
   try {
     singleton?.enqueueSanitizedLog(record, sampleKey);

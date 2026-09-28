@@ -181,6 +181,39 @@ describe('AllExceptionsFilter', () => {
     );
   });
 
+  it.each([
+    ['error', new Error('Missing ID')],
+    ['security_event', new ForbiddenException()],
+  ])(
+    'hands PostHog no sample key for a %s record with no request id, never the shared "unknown" (#2374)',
+    (body, exception) => {
+      new AllExceptionsFilter().catch(
+        exception,
+        host({ requestId: undefined }),
+      );
+
+      expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);
+      const [record, sampleKey] =
+        jest.mocked(enqueueSanitizedLog).mock.calls[0];
+      expect(record.body).toBe(body);
+      expect(record.attributes.request_id).toBe('unknown');
+      expect(sampleKey).toBeUndefined();
+    },
+  );
+
+  it('samples on the ALS request id when the request object is unbound', () => {
+    runWithRequestLogStore({ requestId: 'req_from_als' }, () => {
+      new AllExceptionsFilter().catch(
+        new Error('ALS fallback'),
+        host({ requestId: undefined }),
+      );
+    });
+
+    expect(jest.mocked(enqueueSanitizedLog).mock.calls[0][1]).toBe(
+      'req_from_als',
+    );
+  });
+
   it('never writes the client address, and strips the query string', () => {
     new AllExceptionsFilter().catch(new UnauthorizedException(), host());
 

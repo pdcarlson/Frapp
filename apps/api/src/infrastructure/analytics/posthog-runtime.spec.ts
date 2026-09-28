@@ -18,7 +18,7 @@ const FIXTURES = [USER_UUID, EMAIL, IP, STACK, 'secret-invite'];
 
 function startRuntime(
   transport: RecordingPosthogTransport,
-  extras: { flushAt?: number } = {},
+  extras: { flushAt?: number; logsSampleRate?: number } = {},
 ): PosthogRuntime {
   return startPosthogRuntime({
     config: { apiKey: 'phc_testkey', host: 'https://ph.example.test' },
@@ -28,7 +28,7 @@ function startRuntime(
     fetchRetryCount: 2,
     fetchRetryDelay: 0,
     disableCompression: true,
-    logsSampleRate: 1,
+    logsSampleRate: extras.logsSampleRate ?? 1,
   });
 }
 
@@ -188,9 +188,62 @@ describe('PosthogRuntime', () => {
     ).resolves.toBe(true);
   });
 
-  it('samples logs deterministically from the key, not Math.random', () => {
-    expect(shouldSample('same-key', 0)).toBe(false);
-    expect(shouldSample('same-key', 1)).toBe(true);
-    expect(shouldSample('same-key', 0.5)).toBe(shouldSample('same-key', 0.5));
+  describe('log sampling (#2374)', () => {
+    it('keeps everything at rate 1 and nothing at rate 0', () => {
+      expect(shouldSample('same-key', 0)).toBe(false);
+      expect(shouldSample('same-key', 1)).toBe(true);
+    });
+
+    it('decides from the key: two pinned keys straddle rate 0.5', () => {
+      // sha256 places `key-c` at 0.285 and `key-b` at 0.637 of the range, so
+      // a sampler that ignores its key cannot answer both correctly.
+      expect(shouldSample('key-c', 0.5)).toBe(true);
+      expect(shouldSample('key-b', 0.5)).toBe(false);
+      expect(shouldSample('key-b', 0.7)).toBe(true);
+    });
+
+    it('keeps about half of 1000 distinct keys at rate 0.5', () => {
+      let kept = 0;
+      for (let i = 0; i < 1000; i++) {
+        if (shouldSample(`key-${i}`, 0.5)) kept++;
+      }
+      expect(kept).toBe(511);
+      expect(kept).toBeGreaterThan(450);
+      expect(kept).toBeLessThan(550);
+    });
+
+    async function exportedCount(
+      rate: number,
+      sampleKey: (i: number) => string | undefined,
+    ): Promise<number> {
+      const transport = new RecordingPosthogTransport(FIXTURES);
+      const runtime = startRuntime(transport, { logsSampleRate: rate });
+      for (let i = 0; i < 200; i++) {
+        runtime.enqueueSanitizedLog(
+          { body: 'sample_probe', severity: 'INFO', attributes: {} },
+          sampleKey(i),
+        );
+      }
+      await runtime.flush();
+      return transport.calls
+        .filter((call) => call.url.includes('/i/v1/logs'))
+        .reduce(
+          (n, call) =>
+            n + (call.decodedBody?.split('sample_probe').length ?? 1) - 1,
+          0,
+        );
+    }
+
+    it('gives every record that shares a key one verdict', async () => {
+      expect([0, 200]).toContain(await exportedCount(0.5, () => 'one-key'));
+    });
+
+    it('samples each keyless record on its own', async () => {
+      // 200 fair coin flips: the band is more than five standard deviations
+      // wide on each side, and all-or-nothing is what a shared key gives.
+      const kept = await exportedCount(0.5, () => undefined);
+      expect(kept).toBeGreaterThan(60);
+      expect(kept).toBeLessThan(140);
+    });
   });
 });

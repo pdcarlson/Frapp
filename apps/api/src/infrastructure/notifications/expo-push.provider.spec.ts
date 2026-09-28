@@ -15,7 +15,12 @@ jest.mock('expo-server-sdk', () => {
   return { __esModule: true, default: MockExpo, Expo: MockExpo };
 });
 
-// Imported after the mock so the provider's `new Expo()` field picks it up.
+jest.mock('../analytics/posthog-runtime', () => ({
+  enqueueSanitizedLog: jest.fn(),
+}));
+
+// Imported after the mocks so the provider's `new Expo()` field picks it up.
+import { enqueueSanitizedLog } from '../analytics/posthog-runtime';
 import { ExpoPushProvider, redactPushTokens } from './expo-push.provider';
 
 const VALID_A = 'ExponentPushToken[aaaaaaaaaaaaaaaaaaaaaa]';
@@ -110,6 +115,27 @@ describe('ExpoPushProvider', () => {
         priority: 'NORMAL',
         category: 'default',
       });
+    });
+  });
+
+  describe('PostHog log export', () => {
+    it('hands two identical deliveries no sample key, so each is sampled on its own (#2374)', async () => {
+      mockSendPushNotificationsAsync.mockResolvedValue([
+        { status: 'ok', id: 'r-1' },
+      ]);
+      const payload = { title: 'Hi', body: 'There', category: 'billing' };
+
+      await provider.sendToUser([VALID_A], payload);
+      await provider.sendToUser([VALID_A], payload);
+
+      // A key composed from category/attempted/failures gave every such
+      // delivery one fixed verdict: kept forever or dropped forever.
+      const calls = jest.mocked(enqueueSanitizedLog).mock.calls;
+      expect(calls).toHaveLength(2);
+      expect(calls[0][0]).toEqual(calls[1][0]);
+      expect(calls[0][0].body).toBe('push_delivery');
+      expect(calls[0]).toHaveLength(1);
+      expect(calls[1]).toHaveLength(1);
     });
   });
 
