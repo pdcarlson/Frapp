@@ -643,9 +643,9 @@ describe("installs run before any secret, and the trust split holds", () => {
 });
 
 // The preflight used to read the SAME workflow-level env the deploy steps did,
-// so it could only assert against the services the run shipped to. The ids
-// are literals per step now (a caller's `env:` doesn't reach a called
-// workflow), so this keeps them equal, and equal to the daily watchdog's.
+// so it could only assert against the services the run shipped to. A caller's
+// `env:` doesn't reach a called workflow, so each step reads the ids step's
+// outputs (#2806), and this keeps them the same outputs.
 describe("the preflight asserts against the services production ships to", () => {
   const byName = () => new Map(sharedSteps().map((step) => [step.name, step]));
   it("uses the production Render service and Vercel projects the deploy steps use", () => {
@@ -657,10 +657,13 @@ describe("the preflight asserts against the services production ships to", () =>
         assert.equal(preflight.env.get(key), byName().get(name).env.get(key), `${key} differs from "${name}"'s`);
       }
     }
+    // The daily watchdog reads production's entry of the same file.
     const guardrails = withoutComments(readFileSync(join(REPO_ROOT, ".github", "workflows", "production-guardrails.yml"), "utf8"));
+    assert.match(guardrails, /TARGET_ENVIRONMENT: production\n\s+run: node scripts\/ci\/provider-ids\.mjs/);
     for (const key of ["RENDER_SERVICE_ID", "VERCEL_WEB_PROJECT_ID", "VERCEL_LANDING_PROJECT_ID", "VERCEL_TEAM_ID"]) {
-      assert.match(preflight.env.get(key), /^[\w-]+$/, `${key} is a literal id`);
-      assert.match(guardrails, new RegExp(`${key}:\\s*${preflight.env.get(key)}\\b`), `${key} differs from production-guardrails.yml's`);
+      const output = `\${{ steps.ids.outputs.${key.toLowerCase()} }}`;
+      assert.equal(preflight.env.get(key), output, `${key} comes from environments.json`);
+      assert.ok(guardrails.includes(`${key}: ${output}`), `${key} differs from production-guardrails.yml's`);
     }
     assert.match(preflight.body, /production-guardrails\.mjs --preflight --migrations-only/);
   });

@@ -124,6 +124,66 @@ export function loadEnvironments(options = {}) {
   return parsed;
 }
 
+// ── Provider ids (#2806) ─────────────────────────────────────────────────────
+// The Render API service per environment, and the Vercel team and the two
+// projects both environments deploy to (preview for staging, production for
+// production). Workflows used to carry these as literals, in several files, with
+// comments asking humans to keep them in step. They live here now, and a
+// workflow reads them through `scripts/ci/provider-ids.mjs`.
+
+export const RENDER_SERVICE_ID_PATTERN = /^srv-[a-z0-9]+$/;
+export const VERCEL_TEAM_ID_PATTERN = /^team_[A-Za-z0-9]+$/;
+export const VERCEL_PROJECT_ID_PATTERN = /^prj_[A-Za-z0-9]+$/;
+
+/**
+ * One environment's provider ids, from the config's text. Throws on anything
+ * missing or malformed: a wrong id deploys to, or asserts against, some other
+ * service, so there is no default. The Supabase half is `parseEnvironments`.
+ */
+export function parseProviderIds(text, name, { source = CONFIG_PATH } = {}) {
+  const all = parseEnvironments(text, { source });
+  if (!Object.hasOwn(all, name)) {
+    throw new Error(`Unknown environment "${name}". Known: ${ENVIRONMENTS.join(", ")}.`);
+  }
+  const parsed = JSON.parse(text);
+  const check = (value, pattern, what) => {
+    if (typeof value !== "string" || !pattern.test(value)) {
+      throw new Error(`${source}: ${what} must match ${pattern} (got ${JSON.stringify(value)}).`);
+    }
+    return value;
+  };
+  const services = ENVIRONMENTS.map((env) =>
+    check(parsed.environments[env].renderServiceId, RENDER_SERVICE_ID_PATTERN, `"${env}".renderServiceId`),
+  );
+  // Two environments on one Render service would let a staging deploy ship
+  // production's API, with every check here reading green.
+  if (new Set(services).size !== services.length) {
+    throw new Error(`${source}: two environments share a renderServiceId.`);
+  }
+  const vercel = parsed.vercel ?? {};
+  const web = check(vercel.webProjectId, VERCEL_PROJECT_ID_PATTERN, "vercel.webProjectId");
+  const landing = check(vercel.landingProjectId, VERCEL_PROJECT_ID_PATTERN, "vercel.landingProjectId");
+  if (web === landing) throw new Error(`${source}: vercel.webProjectId and vercel.landingProjectId are the same project.`);
+  return {
+    environment: name,
+    renderServiceId: services[ENVIRONMENTS.indexOf(name)],
+    vercelTeamId: check(vercel.teamId, VERCEL_TEAM_ID_PATTERN, "vercel.teamId"),
+    vercelWebProjectId: web,
+    vercelLandingProjectId: landing,
+  };
+}
+
+/** One environment's provider ids from the committed config (or an injected one). */
+export function providerIdsFor(name, { path = CONFIG_PATH, readFile = readFileSync } = {}) {
+  let text;
+  try {
+    text = readFile(path, "utf8");
+  } catch (error) {
+    throw new Error(`Could not read ${path}: ${error.message}`);
+  }
+  return parseProviderIds(text, name, { source: path });
+}
+
 /**
  * The Supabase Management API token for one environment.
  *

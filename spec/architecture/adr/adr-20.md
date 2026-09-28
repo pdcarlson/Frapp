@@ -266,6 +266,15 @@ the ones a later reader would otherwise re-litigate.
     production dump, and the rest of that risk (a restore proven to work) now sits under ADR-24
     decision 4. This ADR's earlier amendments stand as records of their dates.
 
+- **Amendment (2026-09-28, #2806) — the provider ids are in `.github/environments.json`.**
+  `.github/environments.json`'s own note said this program's stage 3 would fold the Render service
+  id and the Vercel project ids into it. Stage 3 as recorded above is this ADR and its standard,
+  and it never did: the ids stayed literals, copied across several workflow files, with comments asking
+  humans to keep them in step. Epic #2802 finished it once staging and production shared one deploy
+  job (`_deploy.yml`). The file now holds each environment's `renderServiceId` and the Vercel team
+  and project ids; workflows read them through `scripts/ci/provider-ids.mjs`, and a test fails on a
+  literal id anywhere under `.github/workflows` or `.github/actions`.
+
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an
 agent session, which would retire the write-only rollout step.

@@ -87,6 +87,13 @@ jobs:
         with:
           node-version: 24
 
+      # From `.github/environments.json`, the one place the ids live (#2806).
+      - name: Read staging's provider ids
+        id: ids
+        env:
+          TARGET_ENVIRONMENT: staging
+        run: node scripts/ci/provider-ids.mjs
+
       # continue-on-error is load-bearing, not laziness. A revoked or rotated
       # machine identity — the #696/#763 incident this workflow exists to catch —
       # makes this action exit non-zero. Failing the job here would kill the run
@@ -127,8 +134,8 @@ jobs:
           # chapter membership; see the script's note on the claimless-token trap.
           STAGING_SMOKE_USER_EMAIL: ${{ secrets.STAGING_SMOKE_USER_EMAIL }}
           STAGING_SMOKE_USER_PASSWORD: ${{ secrets.STAGING_SMOKE_USER_PASSWORD }}
-          # Same service id as _deploy.yml's deploy job. environments.json
-          # does not yet hold Render ids (known Stage-3 leftover).
+          # From `.github/environments.json`, the file the staging deploy reads
+          # its service id from too (#2806).
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: srv-d6lqsq75r7bs73c2fdc0
+          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
         run: node scripts/ci/staging-conformance.mjs

@@ -118,12 +118,6 @@ function uncommented(text) {
     .join("\n");
 }
 
-function envValue(yaml, name) {
-  const match = yaml.match(new RegExp(`^\\s*${name}:\\s*(\\S+)\\s*$`, "m"));
-  assert.ok(match, `${name} must be set in the workflow`);
-  return match[1];
-}
-
 describe("isFullSha / V_TAG_REF", () => {
   it("accepts a 40-hex SHA and rejects an abbreviation", () => {
     assert.equal(isFullSha(LIVE_SHA), true);
@@ -678,14 +672,19 @@ describe("workflow wiring", () => {
     }
   });
 
-  it("service and project ids stay in step with production-guardrails.yml", () => {
-    for (const name of [
-      "RENDER_SERVICE_ID",
-      "VERCEL_WEB_PROJECT_ID",
-      "VERCEL_LANDING_PROJECT_ID",
-      "VERCEL_TEAM_ID",
-    ]) {
-      assert.equal(envValue(liveYaml, name), envValue(uncommented(guardrails), name));
+  // Both watchdogs read production's ids from `.github/environments.json`
+  // (#2806), so they can't drift apart; `provider-ids.test.mjs` pins the read.
+  it("service and project ids come from production's entry, like production-guardrails.yml's", () => {
+    for (const yaml of [liveYaml, uncommented(guardrails)]) {
+      assert.match(yaml, /- name: Read production's provider ids\n\s+id: ids\n\s+env:\n\s+TARGET_ENVIRONMENT: production\n\s+run: node scripts\/ci\/provider-ids\.mjs/);
+      for (const [name, output] of [
+        ["RENDER_SERVICE_ID", "render_service_id"],
+        ["VERCEL_WEB_PROJECT_ID", "vercel_web_project_id"],
+        ["VERCEL_LANDING_PROJECT_ID", "vercel_landing_project_id"],
+        ["VERCEL_TEAM_ID", "vercel_team_id"],
+      ]) {
+        assert.ok(yaml.includes(`${name}: \${{ steps.ids.outputs.${output} }}`), name);
+      }
     }
   });
 

@@ -65,6 +65,13 @@ jobs:
         with:
           node-version: 24
 
+      # From `.github/environments.json`, the one place the ids live (#2806).
+      - name: Read production's provider ids
+        id: ids
+        env:
+          TARGET_ENVIRONMENT: production
+        run: node scripts/ci/provider-ids.mjs
+
       # Dependency-free (global fetch + the alert-issue helper), so no npm ci —
       # matching production-guardrails.yml's deliberately minimal action surface.
       - name: Assert production hosts share a tagged commit
@@ -76,11 +83,12 @@ jobs:
           # Passed rather than defaulted in the script: a watchdog that carries
           # its own copy of a service id keeps asserting against the old service
           # after a recreate, and reports green about an object nothing deploys
-          # to. Keep these in step with production-guardrails.yml's `env:` block.
-          RENDER_SERVICE_ID: srv-d6lqu41aae7s73f62df0
-          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
-          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
-          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          # to. These come from `.github/environments.json`, the file the
+          # production deploy reads its ids from too (#2806).
+          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
+          VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
+          VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
+          VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
           API_HEALTH_URL: https://api.frapp.live/health
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/ci/production-release-pin.mjs
