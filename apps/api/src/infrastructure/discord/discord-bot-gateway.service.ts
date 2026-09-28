@@ -20,6 +20,7 @@ import {
   channelPermissions,
   parseOverwrites,
   openToEveryone,
+  readerRoleIds,
   type DiscordPermissionSubject,
   type DiscordRolePermissions,
 } from '#domain/utils/discord-permissions';
@@ -303,6 +304,17 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       const privateInDiscord = access.roles
         ? !openToEveryone(guildId, access.roles, overwrites)
         : null;
+      // Worked from the overwrites, not from what the bot can read: the roles
+      // gating a channel the bot cannot see are still named on it.
+      const readers =
+        access.roles && privateInDiscord === true
+          ? readerRoleIds(
+              guildId,
+              access.roles,
+              overwrites,
+              access.named.map((role) => role.id),
+            )
+          : null;
       // A forum IS offered as a destination — `#questions` is what an admin
       // recognises, and its posts inherit whatever they choose for it. What it
       // is not is message-fetchable, so it carries `holdsOnlyThreads` and the
@@ -319,6 +331,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
         holdsOnlyThreads: threadParentOnly,
         readable,
         privateInDiscord,
+        readerRoleIds: readers,
       };
       channels.push(ref);
       // Discord lists every channel to a bot, readable or not. Asking one it
@@ -457,7 +470,14 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     warnings: string[],
   ): Promise<{
     roles: DiscordRolePermissions[] | null;
-    /** The same roles by name, for the role worksheet; empty on failure. */
+    /**
+     * The roles a chapter could map, highest first; empty on failure. Leaves
+     * out `@everyone` (the whole server, which is what "public" means) and
+     * managed roles: Discord makes one per bot and one for boosters, and none
+     * of them is a position in the chapter. The Frapp bot's own role is one,
+     * and it is allowed on every channel the bot was let into, so counting it
+     * would name the bot as a reader of every private channel.
+     */
     named: DiscordRoleRef[];
     subject: DiscordPermissionSubject | null;
     base: bigint;
@@ -468,13 +488,20 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     try {
       const raw = (await rest.get(Routes.guildRoles(guildId))) as unknown[];
       roles = [];
+      const ranked: { ref: DiscordRoleRef; position: number }[] = [];
       for (const entry of raw) {
         const role = asRecord(entry);
         const id = asString(role?.id);
         if (!id) continue;
         roles.push({ id, permissions: asString(role?.permissions) ?? '0' });
-        named.push({ id, name: asString(role?.name) ?? id });
+        if (id === guildId || role?.managed === true) continue;
+        ranked.push({
+          ref: { id, name: asString(role?.name) ?? id },
+          position: typeof role?.position === 'number' ? role.position : 0,
+        });
       }
+      ranked.sort((a, b) => b.position - a.position);
+      named.push(...ranked.map((entry) => entry.ref));
     } catch (error) {
       this.logger.warn(
         `Could not read roles for guild ${guildId}: ${this.describe(error)}. Channel access will be probed instead.`,
@@ -649,6 +676,8 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       // except that a private thread is private whatever its parent is.
       readable: null,
       privateInDiscord: thread.type === ChannelType.PrivateThread ? true : null,
+      // A thread is mapped through its parent, whose readers are what count.
+      readerRoleIds: null,
     };
   }
 
@@ -709,6 +738,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       // asked here and does not matter to the export.
       readable: true,
       privateInDiscord: null,
+      readerRoleIds: null,
     };
   }
 

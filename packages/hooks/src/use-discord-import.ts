@@ -314,7 +314,9 @@ export function useSetDiscordChannelMapping() {
         // Required, not optional: the DTO declares a default, so the generated
         // contract type makes it non-optional. Callers state it explicitly.
         new_channel_is_read_only: boolean;
-        new_channel_visibility?: "chapter" | "restricted";
+        // `discord` is typed for the wizard's shared payload; an export has
+        // no roles to copy, so the API refuses it here with a sentence.
+        new_channel_visibility?: "chapter" | "restricted" | "discord";
         new_channel_required_permissions?: string[];
         message_count?: number;
       }[];
@@ -348,7 +350,10 @@ export function useSetDiscordRoleMapping() {
       roles: {
         discord_role_id: string;
         discord_role_name: string;
-        signet_role_key: string;
+        /** Never assigns anyone: it decides who reads "Same as Discord" channels. */
+        action: "existing" | "new" | "ignore";
+        frapp_role_id?: string;
+        new_role_name?: string;
       }[];
     }) => {
       const { data, error } = await client.PUT(

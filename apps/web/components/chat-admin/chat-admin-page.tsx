@@ -70,6 +70,7 @@ import {
   PermissionCheckboxGrid,
   type PermissionCatalogEntry,
 } from "@/components/shared/permission-checkbox-grid";
+import { useGateCatalog } from "@/components/shared/use-gate-catalog";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -208,9 +209,14 @@ function ChatAdminBody() {
     () => asArray<AdminCategory>(categoriesQuery.data),
     [categoriesQuery.data],
   );
-  const catalog = useMemo(
-    () => asArray<PermissionCatalogEntry>(catalogQuery.data),
-    [catalogQuery.data],
+  // Custom gates too, with the roles that hold each: a channel imported
+  // "Same as Discord" is gated on `channels:read:<role>` strings the system
+  // catalog does not list (#2818).
+  const { catalog, holders } = useGateCatalog(
+    useMemo(
+      () => asArray<PermissionCatalogEntry>(catalogQuery.data),
+      [catalogQuery.data],
+    ),
   );
   const categoryName = useMemo(() => {
     const byId = new Map(categories.map((c) => [c.id, c.name]));
@@ -618,6 +624,7 @@ function ChatAdminBody() {
                     catalogLoading={catalogLoading}
                     catalogUnavailable={catalogUnavailable}
                     selected={createPermissions}
+                    holders={holders}
                     onToggle={toggleCreatePermission}
                   />
                 </div>
@@ -893,6 +900,7 @@ function ChatAdminBody() {
                       catalogLoading={catalogLoading}
                       catalogUnavailable={catalogUnavailable}
                       selected={permissionsDraft}
+                      holders={holders}
                       onToggle={togglePermission}
                     />
                   </div>

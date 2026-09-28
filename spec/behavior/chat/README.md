@@ -589,20 +589,29 @@ channel that reports a different one fails the import rather than being skipped.
   unflagged today, and a second channel with that name is created. Everything that blocks the step is listed in one place
   (Needs attention), and that list is also what keeps Continue disabled.
 - **Nothing private in Discord becomes readable by the whole chapter by
-  default.** A new channel is either *whole chapter* (`PUBLIC`) or *restricted*
+  default.** A new channel is *whole chapter* (`PUBLIC`), *restricted*
   (`ROLE_GATED`, readable by members holding any of the permissions the admin
-  picks). A channel counts as private in Discord when some member of the
-  server could not read its history there: `@everyone` is denied View Channels
-  or Read Message History, or any role or member overwrite denies either (the
-  "hide it from pledges" shape, which Frapp has no way to express). The scan
-  also records which threads were private threads. A channel that was
-  private, holds a private thread (whose messages land in it), or whose
-  privacy the scan could not read (the roles read failed, which the scan
-  reports) starts with no visibility, and the API refuses to create it until
-  the admin chooses. Scanning again re-asks any whole-chapter choice, or
-  merge, whose channel has since turned private. An uploaded export carries no
-  permissions, so every new channel from one needs the same choice; "Set who
-  can read…" answers a whole category, or the whole server, in one go.
+  picks), or *Same as Discord* (below). A channel counts as private in Discord
+  when some member of the server could not read its history there:
+  `@everyone` is denied View Channels or Read Message History, or any role or
+  member overwrite denies either (the "hide it from pledges" shape, which
+  Frapp has no way to express). The scan also records which threads were
+  private threads. A private channel starts as Same as Discord when that is
+  on offer for it. Otherwise a channel that was private, holds a private
+  thread (whose messages land in it), or whose privacy the scan could not
+  read (the roles read failed, which the scan reports) starts with no
+  visibility, and the API refuses to create it until the admin chooses.
+  Threads do not take a private channel's default away: every thread in one
+  reads as private, because it inherits the channel's answer, and it lands
+  with the channel's readers, who could see it in Discord. A genuinely private
+  thread is read only when the bot can see it (it was added to the thread, or
+  the chapter gave it Manage Threads, which listing archived private threads
+  needs), and it lands there too. Scanning again re-asks any whole-chapter choice, or merge, whose
+  channel has since turned private, and any Same as Discord choice whose
+  readers the new scan no longer names. An
+  uploaded export carries no permissions, so every new channel from one needs
+  the same choice; "Set who can read…" answers a whole category, or the whole
+  server, in one go.
 - **The bot reads only what its roles can see.** Discord lists every channel to
   a bot, including ones hidden from it, so the scan works out the bot's own
   access per channel from Discord's permission overwrites rather than finding
@@ -618,11 +627,59 @@ channel that reports a different one fails the import rather than being skipped.
   every refused request spends a rate-limit budget one bot token shares across
   every chapter. When access cannot be worked out (the bot's roles could not be
   read), each channel is probed once and a refusal is reported the same way.
-- **The Discord → Frapp role mapping grants nothing.** The wizard records which
-  Frapp role each Discord role corresponds to, and shows it back to the admin as
-  a worksheet for promoting people by hand. Nothing reads it to grant a
-  permission and the importer never touches a `members` row — there are no
-  accounts behind imported messages to grant anything to.
+- **Discord roles gate the imported private channels; they never assign
+  anyone.** *2026-09-28, owner's decision (#2818), replacing "the Discord →
+  Frapp role mapping grants nothing": 30 of the first real server's 33
+  imported channels were private, and with visibility chosen by hand they
+  had all been set to whole chapter.*
+  - **Roles are mapped before channels**, bot path only (an export names no
+    roles). Each Discord role becomes an existing Frapp role, a new role
+    named after it, or nothing (Ignore). The default is the Frapp role with
+    the same name, ignoring case and punctuation (letters of any script
+    count, so "ΔΔ Class" and "ΓΓ Class" differ); then a close match to a
+    seeded role, read from the end of the Discord name ("Recording Secretary"
+    is a Secretary, "Pledges" are New Members, but "Pledge Educator" is not a
+    pledge), except Member, the widest role, which matches only a whole name
+    ("Brothers", never "Board Member"); then a new role if it could read a
+    private channel, and Ignore if it could not, so colour, class-year and
+    game roles create nothing. A viewer who cannot manage roles, or cannot
+    load the chapter's roles, keeps every role on Ignore and can still import.
+    `@everyone`, and the managed roles Discord gives bots and boosters, are
+    not offered: the Frapp bot's own role is allowed on every channel it was
+    let into.
+  - **The scan records, for each private channel, the roles that could read
+    it**, each asked on its own, from Discord's overwrites rather than from
+    what the bot can read. A channel hidden only by a deny ("everyone but
+    pledges") records none: every other role reads it by inheriting from
+    `@everyone`, colour roles included, and Frapp has no deny to copy, so it
+    needs a choice.
+  - **Same as Discord** makes the channel `ROLE_GATED`, readable by the Frapp
+    roles mapped from those Discord roles. It is on offer only for a channel
+    the scan saw was private and named readers for, and counts as chosen
+    only while one of them is mapped: a Discord role set to Ignore is left
+    out, which is narrower than Discord and never wider, and a channel none of
+    whose readers is mapped needs a choice like any other private channel.
+    Discord answers per combination of roles and Frapp's gate has no deny, so
+    a member holding a reader role plus a role the channel denies reads it in
+    Frapp.
+  - **The gate is a permission per role.** `ROLE_GATED` gates on permission
+    strings, so each mapped Frapp role gets its own `channels:read:<name>`,
+    held by that role alone, and the channel requires any of them. A string
+    is never reissued while a role holds it, a channel is gated on it (its role
+    since deleted), or another import's saved mapping has it; starting the
+    import checks this again and refuses rather than open a channel to a role
+    nobody chose. A chapter edits the gate afterwards in chat admin like any
+    other, which lists these strings with the roles that hold them.
+  - **Starting the import creates the new roles and grants the read
+    permissions**, and nothing else: a new role gets only the read permissions
+    of the imported channels gated on it. It never touches a `members` row;
+    imported authors are names on messages, not accounts, and people are put
+    into roles by hand. Mapping anything but Ignore, and starting an import
+    that creates a role or grants a permission, need `roles:manage` as well
+    as `channels:manage`, as Settings → Roles would.
+    Deleting the import keeps the roles and permissions it made. Importing who
+    holds each Discord role (account linking, and the bot's Server Members
+    intent) is out of scope.
 - **Consent is a deliberate friction point.** The admin must confirm they posted
   an in-channel notice in their Discord server before an import can be created.
   Frapp cannot verify it, and says so — but

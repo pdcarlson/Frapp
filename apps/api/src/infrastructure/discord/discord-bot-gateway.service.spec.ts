@@ -158,8 +158,12 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
   const BOT = '500000000000000005';
   const FRAPP_ROLE = '400000000000000004';
   const BROTHER = '200000000000000002';
+  const EXEC = '300000000000000003';
+  const PLEDGE = '600000000000000006';
+  const BOOSTER = '700000000000000007';
   const READ = String((1n << 10n) | (1n << 16n));
   const VIEW = String(1n << 10n);
+  const ADMINISTRATOR = String(1n << 3n);
 
   let get: jest.SpyInstance;
   let calls: string[];
@@ -183,10 +187,27 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
           ],
         },
       ],
+      // Discord's order, which is not its hierarchy: `position` is.
       [`/guilds/${GUILD}/roles`]: [
-        { id: GUILD, name: '@everyone', permissions: READ },
-        { id: FRAPP_ROLE, name: 'Frapp', permissions: READ },
-        { id: BROTHER, name: 'Brother', permissions: '0' },
+        { id: GUILD, name: '@everyone', permissions: READ, position: 0 },
+        // The managed role Discord makes for the bot at install.
+        {
+          id: FRAPP_ROLE,
+          name: 'Frapp',
+          permissions: READ,
+          position: 5,
+          managed: true,
+        },
+        { id: BROTHER, name: 'Brother', permissions: '0', position: 2 },
+        { id: PLEDGE, name: 'Pledge', permissions: '0', position: 1 },
+        { id: EXEC, name: 'Exec', permissions: ADMINISTRATOR, position: 4 },
+        {
+          id: BOOSTER,
+          name: 'Server Booster',
+          permissions: '0',
+          position: 3,
+          managed: true,
+        },
       ],
       '/users/@me': { id: BOT },
       [`/guilds/${GUILD}/members/${BOT}`]: { roles: [FRAPP_ROLE] },
@@ -238,11 +259,12 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
     const { channels, warnings, roles } =
       await gateway().discoverChannels(GUILD);
 
-    // The worksheet's role names come from the same read, not a second one.
+    // The role step's names come from the same read, not a second one:
+    // highest first, without @everyone or the managed bot and booster roles.
     expect(roles.map((role) => role.name)).toEqual([
-      '@everyone',
-      'Frapp',
+      'Exec',
       'Brother',
+      'Pledge',
     ]);
     expect(
       calls.filter((route) => route === `/guilds/${GUILD}/roles`),
@@ -257,11 +279,17 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
       readable: false,
       privateInDiscord: true,
       categoryName: 'Brothers',
+      // Brother by its allow, Exec by Administrator. Worked out from the
+      // overwrites even though the bot itself cannot read the channel.
+      readerRoleIds: [EXEC, BROTHER],
     });
+    // A public channel has no audience to copy.
+    expect(byId.get('11')).toMatchObject({ readerRoleIds: null });
     // A thread carries its parent's answers...
     expect(byId.get('21')).toMatchObject({
       readable: true,
       privateInDiscord: false,
+      readerRoleIds: null,
     });
     // ...except that a private thread stays private under a public parent.
     expect(byId.get('22')).toMatchObject({
@@ -275,6 +303,48 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
       warnings.filter((warning) => warning.includes('Frapp cannot read')),
     ).toEqual([expect.stringContaining('1 channel(s) (#brothers)')]);
     expect(warnings.join(' ')).not.toMatch(/were not imported|was imported/);
+  });
+
+  it("never names the bot's own role as a reader, nor a role that only inherits from @everyone", async () => {
+    // The read-only setup: the Frapp role is allowed on each private channel.
+    serve({
+      [`/guilds/${GUILD}/channels`]: [
+        {
+          id: '13',
+          type: 0,
+          name: 'exec',
+          permission_overwrites: [
+            { id: GUILD, type: 0, allow: '0', deny: VIEW },
+            { id: FRAPP_ROLE, type: 0, allow: READ, deny: '0' },
+            { id: BOOSTER, type: 0, allow: READ, deny: '0' },
+          ],
+        },
+        {
+          // The "hide it from pledges" shape: every role but Pledge reads it,
+          // by inheriting from @everyone, so there is no audience to copy.
+          id: '14',
+          type: 0,
+          name: 'brothers-only',
+          permission_overwrites: [
+            { id: PLEDGE, type: 0, allow: '0', deny: VIEW },
+          ],
+        },
+      ],
+      '/channels/13/threads/archived/public': { threads: [], has_more: false },
+      '/channels/13/threads/archived/private': forbidden(),
+      '/channels/14/threads/archived/public': { threads: [], has_more: false },
+    });
+    const { channels } = await gateway().discoverChannels(GUILD);
+    const byId = new Map(channels.map((channel) => [channel.id, channel]));
+    expect(byId.get('13')).toMatchObject({
+      readable: true,
+      privateInDiscord: true,
+      readerRoleIds: [EXEC],
+    });
+    expect(byId.get('14')).toMatchObject({
+      privateInDiscord: true,
+      readerRoleIds: [],
+    });
   });
 
   it('reads it once the bot holds the role the channel allows', async () => {
@@ -326,6 +396,7 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
     expect(channels.find((channel) => channel.id === '12')).toMatchObject({
       readable: null,
       privateInDiscord: null,
+      readerRoleIds: null,
     });
     // Nothing throws: the scan still returns, with no roles to map.
     expect(roles).toEqual([]);

@@ -21,6 +21,10 @@ export interface PermissionCatalogEntry {
  * `holders` names the chapter's roles that hold each permission, when the
  * caller has them. A permission string alone ("chapter-config:manage") does
  * not tell an admin who will be able to read the channel; the roles do.
+ *
+ * A selected permission missing from `catalog` is listed too: a gate can
+ * outlive every role that held it, and an option that is not shown can be
+ * neither seen nor unticked.
  */
 export function PermissionCheckboxGrid({
   catalog,
@@ -51,9 +55,16 @@ export function PermissionCheckboxGrid({
       <p className="mt-2 text-xs text-muted-foreground">Loading permissions…</p>
     );
   }
+  const listed = new Set(catalog.map((entry) => entry.permission));
+  const entries = [
+    ...catalog,
+    ...[...selected]
+      .filter((permission) => !listed.has(permission))
+      .map((permission) => ({ key: permission, permission })),
+  ];
   return (
     <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-48 overflow-y-auto">
-      {catalog
+      {entries
         .filter((entry) => entry.permission !== "*")
         .map((entry) => {
           const roles = holders?.get(entry.permission) ?? [];

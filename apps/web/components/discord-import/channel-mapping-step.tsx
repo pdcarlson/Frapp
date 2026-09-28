@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useChannels, usePermissionsCatalog, useRoles } from "@repo/hooks";
+import { useChannels, usePermissionsCatalog } from "@repo/hooks";
 import { asArray, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import {
   PermissionCheckboxGrid,
   type PermissionCatalogEntry,
 } from "@/components/shared/permission-checkbox-grid";
+import { useGateCatalog } from "@/components/shared/use-gate-catalog";
 import type { StagedChannel } from "./upload-step";
 import {
   asNewChannel,
@@ -23,6 +24,10 @@ import {
   type MappingIssue,
   type PrivacyReason,
 } from "./mapping-issues";
+import type { SameAsDiscordReaders } from "./role-matching";
+
+type Visibility = NonNullable<ChannelChoice["visibility"]>;
+type ReadersOf = (channel: StagedChannel) => SameAsDiscordReaders | null;
 
 export type { ChannelChoice } from "./mapping-issues";
 
@@ -61,7 +66,10 @@ function rowId(channelId: string): string {
  * What still needs a decision is listed in Needs attention, which is the same
  * list that keeps Continue disabled: a name clash, a merge with no target, or
  * a channel that was (or may have been) private in Discord with no
- * visibility chosen yet.
+ * visibility chosen yet. A private channel starts "Same as Discord" (#2818)
+ * when the scan named the roles that could read it, and reads through the
+ * role step's answers, so it needs attention only when none of them is
+ * mapped.
  *
  * Merging is never inferred. `chat_channels` has no unique (chapter_id, name),
  * so a same-name Frapp channel is listed as a clash to resolve, not treated as
@@ -73,6 +81,7 @@ export function ChannelMappingStep({
   onChange,
   issues,
   knowsPrivacy,
+  readersOf = () => null,
   onRescan,
   rescanning = false,
 }: {
@@ -82,13 +91,14 @@ export function ChannelMappingStep({
   issues: MappingIssue[];
   /** False on the upload path: an export does not say what was private. */
   knowsPrivacy: boolean;
+  /** Who "Same as Discord" resolves to; null where it is not on offer. */
+  readersOf?: ReadersOf;
   /** Bot path: scan the server again, after the bot has been given access. */
   onRescan?: () => void;
   rescanning?: boolean;
 }) {
   const existingChannels = useChannels();
   const catalogQuery = usePermissionsCatalog();
-  const rolesQuery = useRoles();
 
   const readable = useMemo(
     () => channels.filter((channel) => channel.readable !== false),
@@ -100,34 +110,12 @@ export function ChannelMappingStep({
   );
   const groups = useMemo(() => groupByCategory(readable), [readable]);
 
-  const roles = useMemo(
-    () => asArray<{ name?: string; permissions?: string[] }>(rolesQuery.data),
-    [rolesQuery.data],
+  const { catalog, holders } = useGateCatalog(
+    useMemo(
+      () => asArray<PermissionCatalogEntry>(catalogQuery.data),
+      [catalogQuery.data],
+    ),
   );
-  // Custom permissions a role holds are gates too, and the system catalog
-  // does not list them.
-  const catalog = useMemo(() => {
-    const entries = asArray<PermissionCatalogEntry>(catalogQuery.data);
-    const known = new Set(entries.map((entry) => entry.permission));
-    const extra: PermissionCatalogEntry[] = [];
-    for (const role of roles) {
-      for (const permission of role.permissions ?? []) {
-        if (permission === "*" || known.has(permission)) continue;
-        known.add(permission);
-        extra.push({ key: permission, permission });
-      }
-    }
-    return [...entries, ...extra];
-  }, [catalogQuery.data, roles]);
-  const holders = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const role of roles) {
-      for (const permission of role.permissions ?? []) {
-        map.set(permission, [...(map.get(permission) ?? []), role.name ?? ""]);
-      }
-    }
-    return map;
-  }, [roles]);
 
   const issuesByChannel = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -225,8 +213,9 @@ export function ChannelMappingStep({
     readable,
     choices,
     (visibility, permissions) =>
-      bulk(readable, withVisibility(visibility, permissions)),
+      bulk(readable, withVisibility(visibility, permissions, readersOf)),
   );
+  const offersDiscord = readable.some((channel) => readersOf(channel));
 
   if (channels.length === 0) {
     return (
@@ -295,6 +284,7 @@ export function ChannelMappingStep({
           <BulkVisibilitySelect
             label="Who can read every new channel"
             bulk={serverVisibility}
+            offersDiscord={offersDiscord}
           />
         </div>
         <BulkRestrictPanel
@@ -324,6 +314,7 @@ export function ChannelMappingStep({
               update([channel], (current) => ({ ...current, ...patch }))
             }
             existingNames={existingNames}
+            readersOf={readersOf}
             {...permissionProps}
           />
         ))}
@@ -413,6 +404,7 @@ function CategoryGroup({
   asSkip,
   onRow,
   existingNames,
+  readersOf,
   catalog,
   holders,
   catalogLoading,
@@ -430,8 +422,9 @@ function CategoryGroup({
   asSkip: (current: ChannelChoice) => ChannelChoice;
   onRow: (channel: StagedChannel, patch: Partial<ChannelChoice>) => void;
   existingNames: { id: string; name: string }[];
+  readersOf: ReadersOf;
   catalog: PermissionCatalogEntry[];
-  holders: ReadonlyMap<string, readonly string[]>;
+  holders: ReadonlyMap<string, readonly string[]> | undefined;
   catalogLoading: boolean;
   catalogUnavailable: boolean;
 }) {
@@ -439,7 +432,7 @@ function CategoryGroup({
     group.channels,
     choices,
     (visibility, permissions) =>
-      onBulk(withVisibility(visibility, permissions)),
+      onBulk(withVisibility(visibility, permissions, readersOf)),
   );
   const permissionProps = {
     catalog,
@@ -502,6 +495,7 @@ function CategoryGroup({
           <BulkVisibilitySelect
             label={`Who can read the new channels in ${group.name}`}
             bulk={groupVisibility}
+            offersDiscord={group.channels.some((channel) => readersOf(channel))}
           />
         </div>
         <BulkRestrictPanel
@@ -521,6 +515,7 @@ function CategoryGroup({
               problems={issuesByChannel.get(channel.channelId) ?? []}
               onPatch={(patch) => onRow(channel, patch)}
               existingNames={existingNames}
+              readers={readersOf(channel)}
               {...permissionProps}
             />
           ))}
@@ -545,20 +540,26 @@ function PrivacyBadge({ channel }: { channel: StagedChannel }) {
   return label ? <Badge variant="outline">{label}</Badge> : null;
 }
 
-/** A bulk patch setting who can read every new channel it reaches. */
+/**
+ * A bulk patch setting who can read every new channel it reaches. "Same as
+ * Discord" reaches only the channels it is on offer for, and leaves the rest
+ * as they were.
+ */
 function withVisibility(
-  visibility: "chapter" | "restricted",
+  visibility: Visibility,
   permissions: ReadonlySet<string>,
+  readersOf: ReadersOf,
 ) {
-  return (current: ChannelChoice): ChannelChoice =>
-    current.action === "create_new"
-      ? {
-          ...current,
-          visibility,
-          requiredPermissions:
-            visibility === "restricted" ? [...permissions] : undefined,
-        }
-      : current;
+  return (current: ChannelChoice, channel: StagedChannel): ChannelChoice => {
+    if (current.action !== "create_new") return current;
+    if (visibility === "discord" && !readersOf(channel)) return current;
+    return {
+      ...current,
+      visibility,
+      requiredPermissions:
+        visibility === "restricted" ? [...permissions] : undefined,
+    };
+  };
 }
 
 interface BulkVisibility {
@@ -580,10 +581,7 @@ interface BulkVisibility {
 function useBulkVisibility(
   targets: readonly StagedChannel[],
   choices: Record<string, ChannelChoice>,
-  apply: (
-    visibility: "chapter" | "restricted",
-    permissions: ReadonlySet<string>,
-  ) => void,
+  apply: (visibility: Visibility, permissions: ReadonlySet<string>) => void,
 ): BulkVisibility {
   const [restricting, setRestricting] = useState(false);
   const permissions = sharedRestriction(targets, choices);
@@ -591,9 +589,9 @@ function useBulkVisibility(
     restricting,
     permissions,
     choose(value) {
-      if (value === "chapter") {
+      if (value === "chapter" || value === "discord") {
         setRestricting(false);
-        apply("chapter", new Set());
+        apply(value, new Set());
       } else if (value === "restricted") {
         setRestricting(true);
       }
@@ -632,9 +630,12 @@ function sharedRestriction(
 function BulkVisibilitySelect({
   label,
   bulk,
+  offersDiscord,
 }: {
   label: string;
   bulk: BulkVisibility;
+  /** Some channel in scope was private in Discord with its readers known. */
+  offersDiscord: boolean;
 }) {
   return (
     <select
@@ -644,6 +645,9 @@ function BulkVisibilitySelect({
       onChange={(event) => bulk.choose(event.target.value)}
     >
       <option value="">Set who can read…</option>
+      {offersDiscord ? (
+        <option value="discord">Private ones: same as Discord</option>
+      ) : null}
       <option value="chapter">All: whole chapter</option>
       <option value="restricted">All: restricted…</option>
     </select>
@@ -661,7 +665,7 @@ function BulkRestrictPanel({
   scope: string;
   bulk: BulkVisibility;
   catalog: PermissionCatalogEntry[];
-  holders: ReadonlyMap<string, readonly string[]>;
+  holders: ReadonlyMap<string, readonly string[]> | undefined;
   catalogLoading: boolean;
   catalogUnavailable: boolean;
 }) {
@@ -692,6 +696,7 @@ function ChannelRow({
   problems,
   onPatch,
   existingNames,
+  readers,
   catalog,
   holders,
   catalogLoading,
@@ -702,13 +707,25 @@ function ChannelRow({
   problems: string[];
   onPatch: (patch: Partial<ChannelChoice>) => void;
   existingNames: { id: string; name: string }[];
+  /** Who "Same as Discord" resolves to; null where it is not on offer. */
+  readers: SameAsDiscordReaders | null;
   catalog: PermissionCatalogEntry[];
-  holders: ReadonlyMap<string, readonly string[]>;
+  holders: ReadonlyMap<string, readonly string[]> | undefined;
   catalogLoading: boolean;
   catalogUnavailable: boolean;
 }) {
   const action = choice?.action ?? "skip";
   const selected = new Set(choice?.requiredPermissions ?? []);
+  // "Same as Discord" with none of its roles mapped gates on nothing, so it
+  // shows as not yet chosen, which is what Needs attention says too.
+  const discordReaders =
+    choice?.visibility === "discord" && readers && readers.roles.length > 0
+      ? readers
+      : null;
+  const shownVisibility =
+    choice?.visibility === "discord" && !discordReaders
+      ? undefined
+      : choice?.visibility;
 
   return (
     <div
@@ -783,12 +800,14 @@ function ChannelRow({
             <select
               id={`visibility-${channel.channelId}`}
               className={dashboardFormSelectClassName}
-              value={choice?.visibility ?? ""}
+              value={shownVisibility ?? ""}
               onChange={(event) => {
                 const value = event.target.value;
                 onPatch({
                   visibility:
-                    value === "chapter" || value === "restricted"
+                    value === "chapter" ||
+                    value === "restricted" ||
+                    value === "discord"
                       ? value
                       : undefined,
                   requiredPermissions:
@@ -798,14 +817,28 @@ function ChannelRow({
                 });
               }}
             >
-              {choice?.visibility === undefined ? (
+              {shownVisibility === undefined ? (
                 <option value="">Choose…</option>
+              ) : null}
+              {readers ? (
+                <option value="discord" disabled={readers.roles.length === 0}>
+                  Same as Discord
+                </option>
               ) : null}
               <option value="chapter">Whole chapter</option>
               <option value="restricted">Restricted</option>
             </select>
           </div>
         </div>
+      ) : null}
+
+      {action === "create_new" && discordReaders ? (
+        <p className="text-xs text-muted-foreground">
+          Readable by {discordReaders.roles.join(", ")}.
+          {discordReaders.ignored.length > 0
+            ? ` Left out, because they are set to Ignore: ${discordReaders.ignored.join(", ")}.`
+            : ""}
+        </p>
       ) : null}
 
       {action === "create_new" && choice?.visibility === "restricted" ? (

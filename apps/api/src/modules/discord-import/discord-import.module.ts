@@ -11,6 +11,7 @@ import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/rep
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { DiscordBotGatewayService } from '../../infrastructure/discord/discord-bot-gateway.service';
 import { DiscordOAuthClientService } from '../../infrastructure/discord/discord-oauth-client.service';
+import { RbacModule } from '../rbac/rbac.module';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
@@ -43,6 +44,10 @@ import {
  * and the DiscordChatExporter upload path is unaffected by their absence.
  */
 @Module({
+  // RbacModule → RbacService: the role step needs `roles:manage` resolved,
+  // and starting an import creates roles and grants their read permissions
+  // through the same service Settings → Roles uses (#2818).
+  imports: [RbacModule],
   controllers: [DiscordImportController, DiscordConnectionController],
   providers: [
     DiscordImportService,

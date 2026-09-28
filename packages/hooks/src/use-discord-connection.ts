@@ -152,10 +152,17 @@ export interface DiscoveredDiscordChannel {
   readable: boolean | null;
   /** Private in Discord (some member could not read it); null when unknown. Either needs an explicit visibility. */
   private_in_discord: boolean | null;
+  /**
+   * For a top-level channel private in Discord: the Discord roles (from
+   * `roles`) that could read it, which "Same as Discord" gates it on. Null
+   * when unknown or not private.
+   */
+  discord_reader_role_ids?: string[] | null;
 }
 
 export interface DiscordDiscoveryResult {
   channels: DiscoveredDiscordChannel[];
+  /** The roles the chapter can map, highest first; no @everyone, no bot roles. */
   roles: { discord_role_id: string; discord_role_name: string }[];
   /** What could not be enumerated. Shown to the admin, never swallowed. */
   warnings: string[];
@@ -207,7 +214,8 @@ export function useSetDiscoveredChannelMapping() {
         target_channel_id?: string;
         new_channel_name?: string;
         new_channel_is_read_only: boolean;
-        new_channel_visibility?: "chapter" | "restricted";
+        /** `discord`: the API gates it on the saved role mapping (#2818). */
+        new_channel_visibility?: "chapter" | "restricted" | "discord";
         new_channel_required_permissions?: string[];
         message_count?: number;
       }[];

@@ -2230,3 +2230,49 @@ alter table public.discord_imports drop column if exists cleared_at;
 ```
 
 Imports a chapter cleared reappear on its list; nothing else changes.
+
+## Rollback Discord import role gates (20260928203000)
+
+* **Migration**: `20260928203000_discord_import_role_gates.sql`
+
+Two columns and one CHECK on `discord_import_channels` (#2818). No data is rewritten.
+
+**The roles and permissions imports already made stay.** Starting an import under this release creates the roles its mapping named as new and adds a `channels:read:<name>` permission to each role a "Same as Discord" channel is gated on. Those are ordinary rows in `roles`, and the channels already created keep their gates. A rollback removes neither, and nothing requires it. To see what imports made (none of these roles is assigned to anyone by the import):
+
+```sql
+select chapter_id, name, permissions
+from public.roles
+where exists (select 1 from unnest(permissions) as p where p like 'channels:read:%');
+```
+
+Work in this order.
+
+1. **Before deploying anything, find the imports that have a "Same as Discord" channel still to create and have not started.** Their gate is already written into `new_channel_required_permissions`, so the previous worker creates the channel `ROLE_GATED` on it. But the previous API's start does not create roles or grant permissions, so if the import had not been started, nobody holds the gate and only the President can read the channel. `draft` and `failed` count, because either can still be started:
+
+   ```sql
+   select i.id, i.chapter_id, i.status, count(*) as same_as_discord_channels
+   from public.discord_import_channels c
+   join public.discord_imports i on i.id = c.import_id
+   where c.new_channel_same_as_discord
+     and c.target_channel_id is null
+     and c.status not in ('completed', 'skipped')
+     and c.parent_discord_channel_id is null
+     and i.status in ('draft', 'failed')
+   group by i.id, i.chapter_id, i.status;
+   ```
+
+   Cancel each one it lists (Cancel on the chapter's Discord import page, `POST /v1/discord-imports/{id}/cancel`) and tell the chapter's admin to start a new import after the rollback, choosing who can read each private channel by hand. A `ready` or `running` import was started under this release, so its roles and grants already exist and it can finish.
+
+2. **Revert the web app and the API together, forward, and keep the migration file.** The API that ships with this migration writes both columns on every scan and mapping, so dropping them under it fails every Discord import write. The role route's body changed shape in both directions (`action` in, `signet_role_key` out), and each side's validation pipe rejects the other's (`forbidNonWhitelisted`), so a web and API from different sides of #2818 fail the role step with a 400. Revert the #2818 code in both on `main` and ship that, but **keep `supabase/migrations/20260928203000_discord_import_role_gates.sql`** in the tree. Do not deploy a commit from before #2818, and do not `git revert` the whole PR: either leaves the repo without a version production has applied, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+
+3. **Remove the columns with a new forward migration**, not by hand. Hand DDL leaves the ledger recording `20260928203000` as applied, so a later re-land would apply nothing:
+
+   ```sql
+   alter table public.discord_import_channels
+     drop constraint if exists discord_import_channels_same_as_discord_check;
+   alter table public.discord_import_channels
+     drop column if exists new_channel_same_as_discord,
+     drop column if exists discord_reader_role_ids;
+   ```
+
+   Role mappings saved under this release stay in `discord_imports.role_mapping` in the new shape. The previous code only stores and returns that column, so they are inert.

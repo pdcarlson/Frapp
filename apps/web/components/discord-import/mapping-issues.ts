@@ -1,4 +1,5 @@
 import type { StagedChannel } from "./upload-step";
+import type { SameAsDiscordReaders } from "./role-matching";
 
 export interface ChannelChoice {
   action: "create_new" | "use_existing" | "skip";
@@ -6,10 +7,12 @@ export interface ChannelChoice {
   newName?: string;
   readOnly?: boolean;
   /**
-   * Who can read the channel `create_new` makes. Undefined means not chosen,
-   * which is where a channel that was private in Discord starts.
+   * Who can read the channel `create_new` makes. Undefined means not chosen.
+   * `discord` is "Same as Discord" (#2818): the Frapp roles mapped from the
+   * Discord roles that could read it, which is where a private channel
+   * starts; it counts as chosen only while one of those roles is mapped.
    */
-  visibility?: "chapter" | "restricted";
+  visibility?: "chapter" | "restricted" | "discord";
   /** For `restricted`: a member needs any one of these to read it. */
   requiredPermissions?: string[];
 }
@@ -36,8 +39,28 @@ export function privacyReason(channel: StagedChannel): PrivacyReason | null {
   return null;
 }
 
-function defaultVisibility(channel: StagedChannel): "chapter" | undefined {
-  return privacyReason(channel) ? undefined : "chapter";
+/**
+ * Who reads a channel before the admin says otherwise: the whole chapter when
+ * the scan saw it was public; "Same as Discord" when it was private and the
+ * scan named the roles that could read it (owner's decision on #2818);
+ * otherwise nobody until the admin chooses.
+ *
+ * Threads don't change a private channel's default. Every thread in a private
+ * channel reads as private (it inherits the channel's answer), so counting
+ * them would withhold the default from any private channel with a thread in
+ * it. A thread the bot can read lands with the channel's readers, which is
+ * who could see it in Discord; a genuinely private one the bot reads only
+ * when the chapter gives it Manage Threads, and it lands there too.
+ */
+export function defaultVisibility(
+  channel: StagedChannel,
+): "chapter" | "discord" | undefined {
+  const reason = privacyReason(channel);
+  if (reason === null) return "chapter";
+  if (reason === "private" && (channel.readerRoleIds?.length ?? 0) > 0) {
+    return "discord";
+  }
+  return undefined;
 }
 
 /**
@@ -50,9 +73,10 @@ function defaultVisibility(channel: StagedChannel): "chapter" | undefined {
  * merging never is. Two exceptions:
  *
  *  - a channel the bot cannot read starts, and stays, skipped;
- *  - a channel with a `privacyReason` gets no visibility, which is a "Needs
- *    attention" item until the admin chooses. Nothing private becomes
- *    readable by the whole chapter by default, and the API refuses it too.
+ *  - a channel with a `privacyReason` is never readable by the whole chapter
+ *    by default, and the API refuses it too. A private one starts "Same as
+ *    Discord" when the scan named who could read it; the rest start with no
+ *    visibility, a "Needs attention" item until the admin chooses.
  */
 export function defaultChoice(channel: StagedChannel): ChannelChoice {
   if (channel.readable === false) return { action: "skip" };
@@ -99,11 +123,12 @@ export function asNewChannel(
  *  - a channel it can now read (it was skipped because it could not be)
  *    starts at its default, which is the point of scanning again;
  *  - when a channel's privacy changed (it became private, gained a private
- *    thread, can no longer be told, or turned out public after all), a new
- *    channel's visibility goes back to the default for what the scan sees
- *    now, unless it was restricted, which is safe either way; and a merge
- *    into an existing channel is asked again if the channel is now private,
- *    since it was decided for one that was not.
+ *    thread, can no longer be told, or turned out public after all), or
+ *    whether "Same as Discord" is on offer for it changed, a new channel's
+ *    visibility goes back to the default for what the scan sees now, unless
+ *    it was restricted, which is safe either way; and a merge into an
+ *    existing channel is asked again if the channel is now private, since it
+ *    was decided for one that was not.
  *
  * A name, a skip, or anything else decided while the facts held is kept.
  */
@@ -122,7 +147,17 @@ export function restageChoices(
     if (!was || !kept) continue;
     if (channel.readable === false || was.readable === false) continue;
     const reason = privacyReason(channel);
-    if (reason === privacyReason(was)) {
+    // "Same as Discord" is a fact of the scan too: a new channel whose
+    // visibility is its default (or unchosen) goes back to the default when
+    // whether Same as Discord is on offer changed. A merge, or a visibility
+    // the admin picked, is not tied to it.
+    const tiedToDefault =
+      kept.action === "create_new" &&
+      (kept.visibility === "discord" || kept.visibility === undefined);
+    if (
+      reason === privacyReason(was) &&
+      (!tiedToDefault || defaultVisibility(channel) === defaultVisibility(was))
+    ) {
       next[channel.channelId] = kept;
     } else if (kept.action === "create_new") {
       next[channel.channelId] =
@@ -169,6 +204,9 @@ export function mappingIssues(
   channels: StagedChannel[],
   choices: Record<string, ChannelChoice>,
   existingChannelNames: readonly string[],
+  /** Who "Same as Discord" resolves to; null where it is not on offer. */
+  readersOf: (channel: StagedChannel) => SameAsDiscordReaders | null = () =>
+    null,
 ): MappingIssue[] {
   const issues: MappingIssue[] = [];
   const existing = new Set(existingChannelNames.map(normaliseChannelName));
@@ -217,7 +255,17 @@ export function mappingIssues(
       });
     }
 
-    if (choice.visibility === undefined) {
+    if (choice.visibility === "discord") {
+      // Chosen only while one of its Discord readers is mapped: the gate the
+      // API builds is the mapped roles, and with none it would gate on
+      // nothing (owner's decision on #2818: such a channel needs a choice).
+      if ((readersOf(channel)?.roles.length ?? 0) === 0) {
+        issues.push({
+          channelId: channel.channelId,
+          message: `${label} was private in Discord, and none of the roles that could read it is mapped to a Frapp role. Choose who can read it in Frapp, or map one of its roles.`,
+        });
+      }
+    } else if (choice.visibility === undefined) {
       issues.push({
         channelId: channel.channelId,
         message: visibilityPrompt(channel, label),

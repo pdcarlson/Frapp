@@ -35,6 +35,24 @@ describe("defaultChoice", () => {
     });
   });
 
+  it("starts a private channel as Same as Discord when the scan named who could read it (#2818)", () => {
+    const exec = {
+      ...open("1", "exec"),
+      privateInDiscord: true,
+      readerRoleIds: ["r-exec"],
+    };
+    expect(defaultChoice(exec).visibility).toBe("discord");
+    // No roles named (only bots or single members could read it): a choice.
+    expect(defaultChoice({ ...exec, readerRoleIds: [] }).visibility).toBe(
+      undefined,
+    );
+    // Every thread in a private channel reads as private (it inherits the
+    // channel's answer), so threads do not take the default away.
+    expect(defaultChoice({ ...exec, privateThreads: 3 }).visibility).toBe(
+      "discord",
+    );
+  });
+
   it("skips a channel the bot cannot read", () => {
     expect(defaultChoice({ ...open("1", "jboard"), readable: false })).toEqual({
       action: "skip",
@@ -152,6 +170,45 @@ describe("mappingIssues", () => {
       {
         channelId: null,
         message: "Every channel is skipped. Choose at least one to import.",
+      },
+    ]);
+  });
+});
+
+describe("mappingIssues — Same as Discord (#2818)", () => {
+  const exec = {
+    ...open("1", "exec"),
+    privateInDiscord: true,
+    readerRoleIds: ["r-exec", "r-pledge"],
+  };
+  const choices = {
+    "1": {
+      action: "create_new" as const,
+      newName: "exec",
+      visibility: "discord" as const,
+    },
+  };
+
+  it("counts as chosen while one of its Discord readers is mapped, even if another is ignored", () => {
+    expect(
+      mappingIssues([exec], choices, [], () => ({
+        roles: ["Exec"],
+        ignored: ["Pledge"],
+      })),
+    ).toEqual([]);
+  });
+
+  it("needs a choice once none of its readers is mapped", () => {
+    expect(
+      mappingIssues([exec], choices, [], () => ({
+        roles: [],
+        ignored: ["Exec", "Pledge"],
+      })),
+    ).toEqual([
+      {
+        channelId: "1",
+        message:
+          "#exec was private in Discord, and none of the roles that could read it is mapped to a Frapp role. Choose who can read it in Frapp, or map one of its roles.",
       },
     ]);
   });
@@ -289,6 +346,35 @@ describe("restageChoices", () => {
     expect(restageChoices(first, choices, [open("1", "exec")])).toEqual(
       choices,
     );
+  });
+
+  it("asks again about a Same as Discord channel whose readers the new scan cannot name", () => {
+    const exec = {
+      ...open("1", "exec"),
+      privateInDiscord: true,
+      readerRoleIds: ["r-exec"],
+    };
+    const next = restageChoices(
+      [exec],
+      { "1": { action: "create_new", newName: "exec", visibility: "discord" } },
+      // Now hidden only by a deny: no audience to copy.
+      [{ ...exec, readerRoleIds: [] }],
+    );
+    expect(next["1"]?.visibility).toBeUndefined();
+  });
+
+  it("keeps a merge into a channel that was private before and after, whoever its readers now are", () => {
+    const officers = {
+      ...open("1", "officers"),
+      privateInDiscord: true,
+      readerRoleIds: ["r-exec"],
+    };
+    const merge = { action: "use_existing" as const, targetChannelId: "X" };
+    expect(
+      restageChoices([officers], { "1": merge }, [
+        { ...officers, readerRoleIds: [] },
+      ])["1"],
+    ).toEqual(merge);
   });
 
   it("keeps a restricted choice when the channel turns out private, since it is already safe", () => {

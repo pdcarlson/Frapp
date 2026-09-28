@@ -29,7 +29,7 @@ function apiMessage(
       global_name: 'Paul',
       bot: false,
     },
-    member: { nick: 'Prez', roles: ['3000000000000000003'] },
+    member: { nick: 'Prez' },
     attachments: [],
     embeds: [],
     ...overrides,
@@ -103,22 +103,6 @@ describe('toExportShapeMessage', () => {
     expect(toExportShapeMessage(apiMessage({ type: 19 })).type).toBe('Reply');
     // An unknown type keeps the fact rather than dropping it to null.
     expect(toExportShapeMessage(apiMessage({ type: 44 })).type).toBe('44');
-  });
-
-  it('expands role ids into named roles, which the API only gives per-guild', () => {
-    const shaped = toExportShapeMessage(apiMessage(), {
-      roleNamesById: new Map([['3000000000000000003', 'Exec']]),
-    });
-    expect(shaped.author?.roles).toEqual([
-      { id: '3000000000000000003', name: 'Exec' },
-    ]);
-  });
-
-  it('falls back to the bare id when the guild did not name a role', () => {
-    const shaped = toExportShapeMessage(apiMessage());
-    expect(shaped.author?.roles).toEqual([
-      { id: '3000000000000000003', name: '3000000000000000003' },
-    ]);
   });
 
   it('maps a reply reference so the importer can resolve it', () => {
