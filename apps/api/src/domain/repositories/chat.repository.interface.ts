@@ -81,6 +81,33 @@ export interface IChatChannelRepository {
     chapterId: string,
     userId: string,
   ): Promise<ChatChannel | null>;
+  /**
+   * Atomic PRIVATE-channel add (#1302). `null` when no PRIVATE channel with
+   * that id sits in `chapterId`.
+   */
+  addPrivateChannelMember(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel | null>;
+  /**
+   * Atomic PRIVATE-channel removal (#1302). `null` when no PRIVATE channel
+   * with that id sits in `chapterId`, or when the removal would leave no
+   * current chapter member listed, which the RPC refuses.
+   */
+  removePrivateChannelMember(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel | null>;
+  /**
+   * Take a member leaving the chapter off every PRIVATE channel in it
+   * (#1302). Returns the ids of the channels it changed.
+   */
+  removeUserFromPrivateChannels(
+    chapterId: string,
+    userId: string,
+  ): Promise<string[]>;
 }
 
 export interface IChatCategoryRepository {
