@@ -134,7 +134,9 @@ describe("canAccessChannel — archived channel", () => {
 
 describe("moduleRefusalFromServerMessage", () => {
   it("names the module in the guard's own refusal", () => {
-    expect(moduleRefusalFromServerMessage(moduleDisabledMessage("hours"))).toEqual({
+    expect(
+      moduleRefusalFromServerMessage(moduleDisabledMessage("hours")),
+    ).toEqual({
       moduleKey: "hours",
     });
     expect(
@@ -168,6 +170,8 @@ describe("moduleRefusalFromServerMessage", () => {
     expect(moduleRefusalFromServerMessage(full.slice(0, -1))).toBeNull();
     expect(moduleRefusalFromServerMessage(`${full} Extra.`)).toBeNull();
     expect(moduleRefusalFromServerMessage(full.slice(1))).toBeNull();
-    expect(moduleRefusalFromServerMessage(moduleDisabledMessage(""))).toBeNull();
+    expect(
+      moduleRefusalFromServerMessage(moduleDisabledMessage("")),
+    ).toBeNull();
   });
 });
