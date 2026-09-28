@@ -2160,14 +2160,15 @@ Four columns and one CHECK on `discord_import_channels` (#2787). No data is rewr
 
 **This is a safety regression, not a neutral rollback.** Afterwards every channel an import creates is `PUBLIC` again, so a channel that was private in Discord (exec, bids, committees) becomes readable by the whole chapter when imported, and mapping rows saved as `ROLE_GATED` lose that choice. Work in this order.
 
-1. **Before deploying anything, find the imports that would publish a restricted channel.** The import worker runs inside the API process on a one-minute cron, and the previous worker creates every channel `PUBLIC`, so once the previous API is live it is too late to look. List the imports that still have `ROLE_GATED` channels to create. `failed` is included because a failed import can be started again:
+1. **Before deploying anything, find the imports that would publish a restricted channel.** The import worker runs inside the API process on a one-minute cron, and the previous worker creates every channel `PUBLIC`, so once the previous API is live it is too late to look. List the imports that still have `ROLE_GATED` channels to create: the worker creates one for any row with no `target_channel_id` that is not `completed` or `skipped`. `failed` imports are included because a failed import can be started again:
 
    ```sql
    select i.id, i.chapter_id, i.status, count(*) as restricted_channels
    from public.discord_import_channels c
    join public.discord_imports i on i.id = c.import_id
    where c.new_channel_type = 'ROLE_GATED'
-     and c.status in ('pending', 'running')
+     and c.target_channel_id is null
+     and c.status not in ('completed', 'skipped')
      and i.status in ('draft', 'ready', 'running', 'failed')
    group by i.id, i.chapter_id, i.status;
    ```
