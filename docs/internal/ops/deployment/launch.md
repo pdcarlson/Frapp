@@ -45,10 +45,10 @@
 | ------------ | ------------------- | ---------------------- | --------------------------------- |
 | **Vercel**   | Free (Preview)      | Free (Hobby, 1 member) | Upgrade to Pro ($20/mo) for team  |
 | **Render**   | Free                | $7/mo (Starter)        | Free tier sleeps after inactivity |
-| **Supabase** | Free                | Free                   | 2 free projects; Pro is $25/mo    |
+| **Supabase** | ~$10/mo (compute)   | $25/mo (Pro plan)      | Org on Pro since 2026-09-28; one project's compute is covered by the plan's credit. [Details](supabase.md#plan-and-quotas) |
 | **Stripe**   | Free (test mode)    | 2.9% + $0.30 per txn   | No monthly fee                    |
 | **EAS**      | Free (30 builds/mo) | Free                   | Priority builds are $99/mo        |
 | **Domain**   | —                   | ~$12/yr                | frapp.live                        |
-| **Total**    | ~$0/mo              | ~$7–19/mo              | Before Stripe transaction fees    |
+| **Total**    | ~$10/mo             | ~$32–44/mo             | Before Stripe transaction fees    |
 
 ---

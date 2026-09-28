@@ -20,6 +20,7 @@ import type {
   ImportedAttachmentRow,
   ImportedMessageRow,
 } from '#domain/utils/discord-export';
+import { chunkByEncodedLength, chunkIds } from '#domain/utils/chunk-ids';
 
 /**
  * PostgREST caps a response at `max_rows` (1000 — `supabase/config.toml`) and
@@ -43,6 +44,13 @@ const MESSAGE_BATCH_SIZE = 200;
 
 /** Manifest rows read per round trip. See the note above. */
 const FILE_PAGE_SIZE = 500;
+
+/**
+ * Channel-mapping rows read per round trip. A bot import holds a row per
+ * thread as well as per channel, so a chapter's first real server already had
+ * 945 of them, within sight of the cap; see the note above.
+ */
+const CHANNEL_PAGE_SIZE = 500;
 
 /**
  * The message `discord_import_register_files` raises on a ceiling, parsed back
@@ -124,9 +132,28 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .from('discord_imports')
       .select('*')
       .eq('chapter_id', chapterId)
+      .is('cleared_at', null)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return data ?? [];
+  }
+
+  async markCleared(
+    id: string,
+    chapterId: string,
+    clearable: DiscordImportStatus[],
+    at: string,
+  ): Promise<DiscordImport | null> {
+    const { data, error } = await this.supabase
+      .from('discord_imports')
+      .update({ cleared_at: at, updated_at: at })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .in('status', clearable)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    return data ?? null;
   }
 
   async update(
@@ -188,31 +215,74 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     const payload: TablesInsert<'discord_import_channels'>[] = rows.map(
       (row) => ({ ...row, import_id: importId }),
     );
-    const { data, error } = await this.supabase
+    // One insert, so the set lands whole or not at all: a partial set would
+    // pass every "has the server been scanned" check and silently drop the
+    // rest. Read back through the paged read, never from `.insert().select()`,
+    // whose answer is capped like any other response and would hand discovery
+    // a shortened channel list.
+    const { error } = await this.supabase
       .from('discord_import_channels')
-      .insert(payload)
-      .select();
+      .insert(payload);
     if (error) throw error;
-    return data ?? [];
+    return this.findChannels(importId, chapterId);
   }
 
   async findChannels(
     importId: string,
     chapterId: string,
   ): Promise<DiscordImportChannel[]> {
-    const { data, error } = await this.supabase
-      .from('discord_import_channels')
-      .select('*, discord_imports!inner(chapter_id)')
-      .eq('import_id', importId)
-      .eq('discord_imports.chapter_id', chapterId)
-      // `position` then name. Upload-path rows all sit at the default 0, so
-      // they keep their original name ordering; bot-path rows carry a position
-      // pinned at discovery, which is what keeps a thread listed under its
-      // parent and keeps a resumed import walking the same sequence.
-      .order('position', { ascending: true })
-      .order('discord_channel_name', { ascending: true });
-    if (error) throw error;
-    return (data ?? []).map(stripImportEmbed);
+    // Paged, because a bot import holds a row per thread: past the cap an
+    // unpaged read would drop the tail, the worker would never import those
+    // channels, and a re-map (which replaces the set from this read) would
+    // delete them.
+    const rows = await fetchAllPages(
+      (from, to) =>
+        this.supabase
+          .from('discord_import_channels')
+          .select('*, discord_imports!inner(chapter_id)')
+          .eq('import_id', importId)
+          .eq('discord_imports.chapter_id', chapterId)
+          // `position` then name. Upload-path rows all sit at the default 0, so
+          // they keep their original name ordering; bot-path rows carry a
+          // position pinned at discovery, which is what keeps a thread listed
+          // under its parent and keeps a resumed import walking the same
+          // sequence. `id` breaks the remaining ties so `.range()` pages over a
+          // stable order.
+          .order('position', { ascending: true })
+          .order('discord_channel_name', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: CHANNEL_PAGE_SIZE },
+    );
+    return rows.map(stripImportEmbed);
+  }
+
+  async countChannels(
+    importId: string,
+    chapterId: string,
+  ): Promise<{ total: number; done: number }> {
+    // Counted, not listed: a progress poll every few seconds should not pull
+    // every mapping row to add them up.
+    const base = () =>
+      this.supabase
+        .from('discord_import_channels')
+        .select('id, discord_imports!inner(chapter_id)', {
+          count: 'exact',
+          head: true,
+        })
+        .eq('import_id', importId)
+        .eq('discord_imports.chapter_id', chapterId)
+        .neq('mapping_action', 'skip');
+    // A row the worker skipped (its channel was deleted, or hidden from the
+    // bot, by the time it got there) is finished too, or the count would stop
+    // short of the total for good.
+    const [total, done] = await Promise.all([
+      base(),
+      base().in('status', ['completed', 'skipped']),
+    ]);
+    if (total.error) throw total.error;
+    if (done.error) throw done.error;
+    return { total: total.count ?? 0, done: done.count ?? 0 };
   }
 
   async updateChannel(
@@ -326,16 +396,21 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     storagePaths: string[],
     at: string,
   ): Promise<number> {
-    if (storagePaths.length === 0) return 0;
-    const { data, error } = await this.supabase
-      .from('discord_import_files')
-      .update({ uploaded_at: at })
-      .eq('import_id', importId)
-      .eq('chapter_id', chapterId)
-      .in('storage_path', storagePaths)
-      .select('id');
-    if (error) throw error;
-    return (data ?? []).length;
+    // Batched by encoded length: the paths end in Discord filenames, and one
+    // slice's worth in a single `in` list outgrew the request line (#2825).
+    let marked = 0;
+    for (const batch of chunkByEncodedLength(storagePaths)) {
+      const { data, error } = await this.supabase
+        .from('discord_import_files')
+        .update({ uploaded_at: at })
+        .eq('import_id', importId)
+        .eq('chapter_id', chapterId)
+        .in('storage_path', batch)
+        .select('id');
+      if (error) throw error;
+      marked += (data ?? []).length;
+    }
+    return marked;
   }
 
   // ── the worker's lease ────────────────────────────────────────────────────
@@ -548,13 +623,17 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     if (selectError) throw selectError;
 
     const ids = (candidates ?? []).map((row) => row.id);
-    if (ids.length === 0) return 0;
-
-    const { error: deleteError } = await this.supabase
-      .from('chat_messages')
-      .delete()
-      .in('id', ids);
-    if (deleteError) throw deleteError;
+    // A purge round reads up to 500 ids: ~19 KB in one `in` list. Hosted
+    // staging accepted that (a 46k-message purge, 2026-09-28) but refused a
+    // 30 KB list (#2825), and the local gateway refuses 250 ids (`chunkIds`),
+    // so the margin is thin; batched like the other long id lists.
+    for (const batch of chunkIds(ids)) {
+      const { error: deleteError } = await this.supabase
+        .from('chat_messages')
+        .delete()
+        .in('id', batch);
+      if (deleteError) throw deleteError;
+    }
     return ids.length;
   }
 }

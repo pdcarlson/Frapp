@@ -356,8 +356,9 @@ Two other refusals, both deliberate:
       there is no recovery path for this promotion. Nothing takes one for you at
       promotion time: `db-backup.yml` dumps `frapp-prod` nightly since 2026-09-06
       (the most recent `production/<label>/` in the bucket may be up to a day old,
-      and the job is only as real as its last green run), and the free plan offers
-      neither a snapshot nor PITR
+      and the job is only as real as its last green run). Supabase's own daily backup, which
+      the org has on Pro since 2026-09-28, can be up to a day old too, and point-in-time
+      recovery is not enabled
       ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality),
       so this box cannot be ticked by having read it. This replaced an older item
       that asked you to _confirm_ Supabase backups: there were none to confirm, so
@@ -567,6 +568,17 @@ That list is **shrink-only** and enforced by a version ceiling: a migration
 created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
+
+## 2026-09-28: Clear a deleted Discord import off the list (#2817)
+
+### 20260928183000_discord_import_cleared_at.sql
+
+- **Purpose**: Adds `cleared_at timestamptz` (nullable, no default) to `public.discord_imports`. The API sets it when a chapter clears an import it has already deleted (status `purged`), and the import list leaves those rows out. The job row stays, as the record that the import happened. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Checks**: After `db push`,
+  `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_imports' and column_name = 'cleared_at';` returns one row: `cleared_at | timestamp with time zone | YES | null`.
+- **Promoter notes**: Ship it before, or with, the API that reads it. The API's import list filters on the column, so a newer API against an unmigrated database fails the list. An older API ignores it. Every existing import stays listed. Re-applying is idempotent (`add column if not exists`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-import-clearing-20260928183000) § Rollback Discord import clearing.
 
 ## 2026-09-28: Discord import channel visibility and scan readability (#2787)
 

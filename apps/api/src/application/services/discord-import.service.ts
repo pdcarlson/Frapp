@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { basename } from 'node:path';
 import {
+  DISCORD_IMPORT_CLEARABLE_STATUSES,
   MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_EXPORT_PART_BYTES,
   MAX_ARCHIVE_IMPORT_BYTES,
@@ -45,6 +46,7 @@ import type {
   DiscordImportFile,
   DiscordImportNewChannelType,
   DiscordImportSource,
+  DiscordImportStatus,
   DiscordRoleMapping,
 } from '#domain/entities/discord-import.entity';
 import {
@@ -55,6 +57,7 @@ import {
 } from '#domain/adapters/discord.interface';
 import { DiscordOAuthService } from './discord-oauth.service';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** How many files one mint request may register. */
 export const MAX_UPLOAD_URL_BATCH = 100;
@@ -128,6 +131,28 @@ export interface RequestUploadInput {
   byte_size: number;
   part_index?: number;
 }
+
+/**
+ * Statuses in which a bot import's progress is shown: waiting to run, running,
+ * or stopped part-way. A finished one reads 100%, and a deleted or unstarted
+ * one has no progress to show, so neither pays for the counts.
+ */
+const PROGRESS_STATUSES: ReadonlySet<DiscordImportStatus> = new Set([
+  'ready',
+  'running',
+  'failed',
+  'cancelled',
+]);
+
+/**
+ * An import as the API returns it: the row, plus a bot import's progress in
+ * channel rows. Null for an upload, whose message counts are its progress, and
+ * for a bot import with no progress to show (see `PROGRESS_STATUSES`).
+ */
+export type DiscordImportWithProgress = DiscordImport & {
+  channels_total: number | null;
+  channels_done: number | null;
+};
 
 export interface ChannelMappingInput {
   discord_channel_id: string;
@@ -271,14 +296,82 @@ export class DiscordImportService {
     });
   }
 
-  list(chapterId: string): Promise<DiscordImport[]> {
-    return this.importRepo.findByChapter(chapterId);
+  async list(chapterId: string): Promise<DiscordImportWithProgress[]> {
+    const imports = await this.importRepo.findByChapter(chapterId);
+    return Promise.all(imports.map((job) => this.withProgress(job)));
   }
 
-  async get(id: string, chapterId: string): Promise<DiscordImport> {
+  async get(id: string, chapterId: string): Promise<DiscordImportWithProgress> {
+    return this.withProgress(await this.load(id, chapterId));
+  }
+
+  /**
+   * The row alone, for the service's own reads. The progress counts are for
+   * the admin's list; a stop or a delete must not wait on them, or fail when
+   * they do.
+   */
+  private async load(id: string, chapterId: string): Promise<DiscordImport> {
     const found = await this.importRepo.findById(id, chapterId);
     if (!found) throw new NotFoundException('Import not found');
     return found;
+  }
+
+  /**
+   * A bot import's progress, counted in channels and threads.
+   *
+   * Its message total cannot be known up front, because Discord is read as
+   * the import goes: the worker adds to `total_messages` as it reads, so
+   * `imported_messages / total_messages` is always 1 and read as 100% from the
+   * first slice (#2816). Rows are known from the scan, so they are the honest
+   * measure. An upload's messages stay its measure.
+   *
+   * A count that fails leaves the progress unknown rather than failing the
+   * read: the list is where the admin stops or deletes an import, so it has
+   * to load even when a count doesn't.
+   */
+  private async withProgress(
+    job: DiscordImport,
+  ): Promise<DiscordImportWithProgress> {
+    const unknown = { ...job, channels_total: null, channels_done: null };
+    if (job.source !== 'bot' || !PROGRESS_STATUSES.has(job.status)) {
+      return unknown;
+    }
+    try {
+      const { total, done } = await this.importRepo.countChannels(
+        job.id,
+        job.chapter_id,
+      );
+      return { ...job, channels_total: total, channels_done: done };
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not count channel progress for import ${job.id}; listing it without`,
+        error,
+      );
+      return unknown;
+    }
+  }
+
+  /**
+   * Take a deleted import's record off the chapter's list (#2817). Refused for
+   * any other: the list is the only place that offers Delete, so an import
+   * that still holds what it brought in stays listed until it is deleted.
+   */
+  async clear(id: string, chapterId: string): Promise<DiscordImport> {
+    await this.load(id, chapterId);
+    const cleared = await this.importRepo.markCleared(
+      id,
+      chapterId,
+      [...DISCORD_IMPORT_CLEARABLE_STATUSES],
+      new Date().toISOString(),
+    );
+    if (!cleared) {
+      throw new ConflictException(
+        'Only a deleted import can be cleared. Delete it first.',
+      );
+    }
+    return cleared;
   }
 
   getChannels(id: string, chapterId: string): Promise<DiscordImportChannel[]> {
@@ -301,7 +394,7 @@ export class DiscordImportService {
     chapterId: string,
     files: RequestUploadInput[],
   ): Promise<UploadTicket[]> {
-    const job = await this.get(id, chapterId);
+    const job = await this.load(id, chapterId);
     this.assertMutable(job);
 
     if (files.length === 0) return [];
@@ -354,7 +447,7 @@ export class DiscordImportService {
     chapterId: string,
     storagePaths: string[],
   ): Promise<{ confirmed: number }> {
-    const job = await this.get(id, chapterId);
+    const job = await this.load(id, chapterId);
     this.assertMutable(job);
     const confirmed = await this.importRepo.markFilesUploaded(
       id,
@@ -392,7 +485,7 @@ export class DiscordImportService {
     roles: { discord_role_id: string; discord_role_name: string }[];
     warnings: string[];
   }> {
-    const job = await this.get(id, chapterId);
+    const job = await this.load(id, chapterId);
     this.assertMutable(job);
     if (job.source !== 'bot') {
       throw new BadRequestException(
@@ -531,7 +624,7 @@ export class DiscordImportService {
     chapterId: string,
     decisions: ChannelMappingInput[],
   ): Promise<DiscordImportChannel[]> {
-    const job = await this.get(id, chapterId);
+    const job = await this.load(id, chapterId);
     this.assertMutable(job);
     if (job.source !== 'bot') {
       throw new BadRequestException(
@@ -701,7 +794,7 @@ export class DiscordImportService {
     chapterId: string,
     channels: ChannelMappingInput[],
   ): Promise<DiscordImportChannel[]> {
-    const job = await this.get(id, chapterId);
+    const job = await this.load(id, chapterId);
     this.assertMutable(job);
     // A bot import's channel set is established by discovery, and
     // `applyDiscoveredChannelMapping` enforces that it is the ONLY set the
@@ -780,13 +873,13 @@ export class DiscordImportService {
     chapterId: string,
     roleMapping: DiscordRoleMapping[],
   ): Promise<DiscordImport> {
-    const job = await this.get(id, chapterId);
+    const job = await this.load(id, chapterId);
     this.assertMutable(job);
     return this.importRepo.update(id, chapterId, { role_mapping: roleMapping });
   }
 
   async start(id: string, chapterId: string): Promise<DiscordImport> {
-    const job = await this.get(id, chapterId);
+    const job = await this.load(id, chapterId);
     this.assertMutable(job);
 
     // A bot import has nothing uploaded — it fetches. What it needs instead is
@@ -845,7 +938,7 @@ export class DiscordImportService {
   }
 
   async cancel(id: string, chapterId: string): Promise<DiscordImport> {
-    const job = await this.get(id, chapterId);
+    const job = await this.load(id, chapterId);
     if (job.status === 'purged' || job.status === 'purging') {
       throw new ConflictException('This import is being deleted.');
     }
@@ -861,7 +954,7 @@ export class DiscordImportService {
    * checkpoint.
    */
   async requestPurge(id: string, chapterId: string): Promise<DiscordImport> {
-    const job = await this.get(id, chapterId);
+    const job = await this.load(id, chapterId);
     if (job.status === 'running') {
       throw new ConflictException(
         'Cancel the running import before deleting it.',

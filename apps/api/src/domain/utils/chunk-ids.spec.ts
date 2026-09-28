@@ -1,4 +1,9 @@
-import { ID_CHUNK_SIZE, chunkIds } from './chunk-ids';
+import {
+  ID_CHUNK_SIZE,
+  IN_FILTER_CHAR_BUDGET,
+  chunkByEncodedLength,
+  chunkIds,
+} from './chunk-ids';
 
 describe('chunkIds', () => {
   it('returns no chunks for an empty list', () => {
@@ -32,5 +37,44 @@ describe('chunkIds', () => {
     expect(chunks).toHaveLength(2);
     expect(chunks[0]).toHaveLength(ID_CHUNK_SIZE);
     expect(chunks[1]).toEqual([`id-${ID_CHUNK_SIZE}`]);
+  });
+});
+
+describe('chunkByEncodedLength', () => {
+  const path = (i: number, name: string) =>
+    `chapters/0a000000-0000-4000-8000-000000000001/chat-archive/imports/0a000000-0000-4000-8000-0000000001a0/media/${i}/${name}`;
+
+  it('keeps every batch within the budget, however long the paths', () => {
+    // Staging's failing slice: a busy channel's attachments, about 230 paths
+    // and a 30 KB request line in one `in` list (#2825).
+    const paths = Array.from({ length: 230 }, (_, i) =>
+      path(
+        i,
+        i % 3 === 0 ? `Budget Planner (final, v${i}).xlsm` : `img_${i}.png`,
+      ),
+    );
+    const chunks = chunkByEncodedLength(paths);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.flat()).toEqual(paths);
+    for (const chunk of chunks) {
+      const encoded = chunk.reduce(
+        (sum, value) => sum + encodeURIComponent(value).length + 3,
+        0,
+      );
+      expect(encoded).toBeLessThanOrEqual(IN_FILTER_CHAR_BUDGET);
+    }
+  });
+
+  it('gives a value longer than the budget a batch of its own', () => {
+    const long = 'x'.repeat(IN_FILTER_CHAR_BUDGET + 10);
+    expect(chunkByEncodedLength(['a', long, 'b'])).toEqual([
+      ['a'],
+      [long],
+      ['b'],
+    ]);
+  });
+
+  it('returns no chunks for an empty list', () => {
+    expect(chunkByEncodedLength([])).toEqual([]);
   });
 });

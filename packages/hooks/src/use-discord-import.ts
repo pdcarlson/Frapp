@@ -35,7 +35,8 @@ export const DISCORD_IMPORT_ACTIVE_STATUSES: readonly DiscordImportStatus[] = [
  * The worker checkpoints roughly once a minute, so a shorter interval does not
  * surface progress sooner — but an import runs for minutes to tens of minutes
  * and a page that looks frozen for a minute reads as broken. Three seconds is
- * the compromise: cheap (one small row), and the bar visibly moves.
+ * the compromise: cheap (the row, plus two row counts for a bot import's
+ * channel progress), and the bar visibly moves.
  *
  * Polling stops entirely on a terminal status, so an idle admin sitting on a
  * finished import costs nothing.
@@ -54,6 +55,23 @@ export const discordImportKeys = {
     ["discord-imports", chapterId, "files", id] as const,
 };
 
+/**
+ * How often the list is polled: only while an import on it is being deleted.
+ *
+ * A purge runs in the background, and Clear is offered only once a row reads
+ * `purged`, so a list that never asked again would leave a deleted row at
+ * `purging` with nothing to click. The detail poll can't carry it: it follows
+ * the one import the admin is watching, often a running one. A purge is short,
+ * so the list goes back to not polling once it lands.
+ */
+export function discordImportListPollMs(
+  rows: ReadonlyArray<{ status?: string }> | undefined,
+): number | false {
+  return rows?.some((row) => row.status === "purging")
+    ? DISCORD_IMPORT_POLL_MS
+    : false;
+}
+
 export function useDiscordImports(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
@@ -67,6 +85,10 @@ export function useDiscordImports(options?: { enabled?: boolean }) {
     },
     enabled: !!chapterId && (options?.enabled ?? true),
     staleTime: 30_000,
+    refetchInterval: (query) =>
+      discordImportListPollMs(
+        query.state.data as ReadonlyArray<{ status?: string }> | undefined,
+      ),
   });
 }
 
@@ -129,6 +151,33 @@ export function useDiscordImportFiles(
     enabled: !!chapterId && !!id && (options?.enabled ?? true),
     staleTime: 0,
     retry: false,
+  });
+}
+
+/**
+ * Take a deleted import's record off the list. The API refuses (409) any
+ * other: an import that still holds what it brought in stays listed until it
+ * is deleted, since the list is where Delete lives.
+ */
+export function useClearDiscordImport() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+
+  return useMutation({
+    mutationFn: async (vars: { id: string }) => {
+      const { data, error } = await client.POST(
+        "/v1/discord-imports/{id}/clear",
+        { params: { path: { id: vars.id } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: discordImportKeys.list(chapterId),
+      });
+    },
   });
 }
 

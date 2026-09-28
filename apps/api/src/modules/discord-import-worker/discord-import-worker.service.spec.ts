@@ -76,6 +76,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     updated_at: NOW.toISOString(),
     completed_at: null,
     purged_at: null,
+    cleared_at: null,
     ...overrides,
   };
 }
@@ -698,6 +699,25 @@ describe('DiscordImportWorkerService — importing', () => {
       error: 'storage exploded',
     });
     expect(repoRef.releaseLease).toHaveBeenCalled();
+  });
+
+  it('records a repository\'s error text, not "[object Object]"', async () => {
+    // A repository throws PostgREST's plain object, not an Error. Staging's
+    // first real bot import failed with its cause reduced to "[object Object]"
+    // on the page and in the log (#2825).
+    const storage = makeStorage(part000());
+    storage.downloadFile = jest.fn().mockRejectedValue({
+      code: 'PGRST000',
+      message: 'request line too long',
+    });
+    const { worker } = await buildWorker(repoRef, storage);
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.updates.at(-1)).toMatchObject({
+      status: 'failed',
+      error: 'PGRST000: request line too long',
+    });
   });
 
   it('never lets a sweep failure escape the cron handler', async () => {

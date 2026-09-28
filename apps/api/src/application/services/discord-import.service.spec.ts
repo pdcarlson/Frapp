@@ -61,6 +61,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     updated_at: '2026-08-24T12:00:00Z',
     completed_at: null,
     purged_at: null,
+    cleared_at: null,
     ...overrides,
   };
 }
@@ -84,6 +85,8 @@ async function build(current: DiscordImport = job()) {
     update: jest.fn(async (_id, _chapter, patch) => ({ ...current, ...patch })),
     replaceChannels: jest.fn(async (_id, _chapter, rows) => rows),
     findChannels: jest.fn(async () => []),
+    countChannels: jest.fn(async () => ({ total: 0, done: 0 })),
+    markCleared: jest.fn(async () => ({ ...current, cleared_at: 'now' })),
     updateChannel: jest.fn(),
     // Registration enforces the archive ceilings itself now, so the default
     // admits everything and the quota tests make it throw. That mirrors the
@@ -664,6 +667,146 @@ function botChannel(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe('DiscordImportService — progress and clearing (#2816, #2817)', () => {
+  it.each(['ready', 'running', 'failed', 'cancelled'] as const)(
+    'counts progress for a %s bot import, which the list shows part-way',
+    async (status) => {
+      await build(job({ source: 'bot', status }));
+      repo.countChannels.mockResolvedValue({ total: 900, done: 201 });
+      expect(await service.get(IMPORT_ID, CHAPTER)).toMatchObject({
+        channels_total: 900,
+        channels_done: 201,
+      });
+    },
+  );
+
+  it('still lists the imports when a progress count fails', async () => {
+    // The list is where the admin stops or deletes an import, so a count
+    // that fails must not take it down with it.
+    await build(job({ source: 'bot', status: 'running' }));
+    repo.countChannels.mockRejectedValue(new Error('count timed out'));
+    const [listed] = await service.list(CHAPTER);
+    expect(listed).toMatchObject({
+      id: IMPORT_ID,
+      channels_total: null,
+      channels_done: null,
+    });
+    expect(await service.get(IMPORT_ID, CHAPTER)).toMatchObject({
+      channels_total: null,
+    });
+  });
+
+  it("reports a bot import's progress in channel rows, since its message total grows as it reads", async () => {
+    await build(
+      job({
+        source: 'bot',
+        status: 'running',
+        total_messages: 5307,
+        imported_messages: 5307,
+      }),
+    );
+    repo.countChannels.mockResolvedValue({ total: 900, done: 201 });
+
+    const detail = await service.get(IMPORT_ID, CHAPTER);
+    expect(detail).toMatchObject({ channels_total: 900, channels_done: 201 });
+    const [listed] = await service.list(CHAPTER);
+    expect(listed).toMatchObject({ channels_total: 900, channels_done: 201 });
+    expect(repo.countChannels).toHaveBeenCalledWith(IMPORT_ID, CHAPTER);
+  });
+
+  it("leaves an upload's progress to its message counts", async () => {
+    await build(job({ source: 'upload' }));
+    expect(await service.get(IMPORT_ID, CHAPTER)).toMatchObject({
+      channels_total: null,
+      channels_done: null,
+    });
+    expect(repo.countChannels).not.toHaveBeenCalled();
+  });
+
+  it.each(['draft', 'completed', 'purged'] as const)(
+    'skips the counts for a %s bot import, which has no progress to show',
+    async (status) => {
+      await build(job({ source: 'bot', status }));
+      expect(await service.get(IMPORT_ID, CHAPTER)).toMatchObject({
+        channels_total: null,
+        channels_done: null,
+      });
+      await service.list(CHAPTER);
+      expect(repo.countChannels).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['stops', 'cancelled'],
+    ['deletes', 'purging'],
+  ] as const)(
+    '%s a bot import without waiting on its progress counts',
+    async (_verb, next) => {
+      await build(job({ source: 'bot', status: 'cancelled' }));
+      const act =
+        next === 'cancelled'
+          ? service.cancel(IMPORT_ID, CHAPTER)
+          : service.requestPurge(IMPORT_ID, CHAPTER);
+      await act;
+      expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
+        status: next,
+      });
+      expect(repo.countChannels).not.toHaveBeenCalled();
+    },
+  );
+
+  it('starts a queued bot import without waiting on its progress counts', async () => {
+    // Queued (`ready`) is counted for the list, so a start read through the
+    // counted path would wait on them first.
+    await build(job({ source: 'bot', status: 'ready', guild_id: GUILD }));
+    repo.findChannels.mockResolvedValue([
+      { id: 'map-1', mapping_action: 'create_new' },
+    ]);
+    await service.start(IMPORT_ID, CHAPTER);
+    expect(repo.countChannels).not.toHaveBeenCalled();
+  });
+
+  it('answers a clear without waiting on progress counts', async () => {
+    // A stopped bot import is counted for the list, so reading it through
+    // the counted path would make the refusal wait on (and fail with) them.
+    await build(job({ source: 'bot', status: 'cancelled' }));
+    repo.markCleared.mockResolvedValue(null);
+    await expect(service.clear(IMPORT_ID, CHAPTER)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(repo.countChannels).not.toHaveBeenCalled();
+  });
+
+  it('clears only a deleted import', async () => {
+    await build(job({ status: 'purged' }));
+    await service.clear(IMPORT_ID, CHAPTER);
+    expect(repo.markCleared).toHaveBeenCalledWith(
+      IMPORT_ID,
+      CHAPTER,
+      ['purged'],
+      expect.any(String),
+    );
+  });
+
+  it('refuses to clear an import that still holds what it brought in', async () => {
+    await build(job({ status: 'completed' }));
+    // The conditional write matches nothing for an import that is not purged.
+    repo.markCleared.mockResolvedValue(null);
+    await expect(service.clear(IMPORT_ID, CHAPTER)).rejects.toThrow(
+      'Only a deleted import can be cleared. Delete it first.',
+    );
+  });
+
+  it('404s clearing an import from another chapter', async () => {
+    await build();
+    repo.findById.mockResolvedValue(null);
+    await expect(service.clear(IMPORT_ID, CHAPTER)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(repo.markCleared).not.toHaveBeenCalled();
+  });
+});
 
 describe('DiscordImportService — creating a bot import', () => {
   it('binds the guild through the chapter, never from anything the caller sent', async () => {

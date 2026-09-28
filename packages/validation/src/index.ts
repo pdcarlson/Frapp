@@ -554,11 +554,7 @@ export const SendChatMessageSchema = z.object({
 // "keep it inline" rule stays so any future Deno consumer can reuse it.)
 
 export type ChatChannelType =
-  | "PUBLIC"
-  | "PRIVATE"
-  | "ROLE_GATED"
-  | "DM"
-  | "GROUP_DM";
+  "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
 /** The trusted channel fields the access decision depends on. */
 export interface ChannelAccessRecord {
@@ -946,7 +942,8 @@ export function validateIndexedPollVote(input: {
   now?: Date;
 }): PollVoteRejection | null {
   const unknown = input.optionIndexes.find(
-    (index) => !Number.isInteger(index) || index < 0 || index >= input.optionCount,
+    (index) =>
+      !Number.isInteger(index) || index < 0 || index >= input.optionCount,
   );
 
   return evaluatePollVote({
@@ -1058,6 +1055,13 @@ export type { UploadKind, InspectedUpload } from "./upload-allowlists";
 // this used to be two copies of the same scanner.
 export { parseExportPreamble } from "./discord-export";
 export type { DiscordExportPreamble } from "./discord-export";
+
+// Which Discord imports may be cleared off the list, shared so the web never
+// offers a Clear the API refuses. See ./discord-import.
+export {
+  DISCORD_IMPORT_CLEARABLE_STATUSES,
+  isDiscordImportClearable,
+} from "./discord-import";
 
 // Invite paste/URL extraction and https minting, shared so web `/join`,
 // mobile s02, the API email helper, and the landing `/join` redirect cannot
