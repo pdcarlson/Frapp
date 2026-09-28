@@ -144,6 +144,14 @@ export interface DiscoveredDiscordChannel {
    */
   parent_discord_channel_id: string | null;
   position: number;
+  /**
+   * Whether the bot can read this channel's history. False: Discord hides it
+   * from the bot, so it can only be skipped until the bot is given a role that
+   * can see it and the server is scanned again. Null: unknown.
+   */
+  readable: boolean | null;
+  /** Hidden from @everyone in Discord. Such a channel needs an explicit visibility. */
+  private_in_discord: boolean | null;
 }
 
 export interface DiscordDiscoveryResult {
@@ -199,6 +207,8 @@ export function useSetDiscoveredChannelMapping() {
         target_channel_id?: string;
         new_channel_name?: string;
         new_channel_is_read_only: boolean;
+        new_channel_visibility?: "chapter" | "restricted";
+        new_channel_required_permissions?: string[];
         message_count?: number;
       }[];
     }) => {

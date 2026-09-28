@@ -541,9 +541,35 @@ channel that reports a different one fails the import rather than being skipped.
   put it somewhere else, not a duplicate. Re-running the wizard from the start
   therefore does not deduplicate against an earlier import; delete the first one
   instead.
-- **Where it lands is the operator's choice, per channel**, and it is always
-  asked: `chat_channels` has no unique constraint on `(chapter_id, name)`, so a
-  same-named Frapp channel is never treated as consent to merge into it.
+- **Where it lands is the operator's choice, per channel, starting from a safe
+  default.** Every channel the bot can read starts as a *new* Frapp channel
+  with its Discord name, so a server with no conflicts needs no per-channel
+  clicks; the channels are grouped by Discord category, with bulk actions per
+  category and for the whole server. *2026-09-28, owner's decision (#2787),
+  replacing "always asked": the first real import (78 channels) had to be
+  clicked through one by one.* A new channel is the default because it cannot
+  interleave anything into a live one. **Merging is still never inferred**:
+  `chat_channels` has no unique constraint on `(chapter_id, name)`, so a new
+  name that matches an existing Frapp channel, or another channel in the same
+  import, is listed as something to resolve, never treated as consent to
+  merge. Everything that blocks the step is listed in one place (Needs
+  attention), and that list is also what keeps Continue disabled.
+- **Nothing private in Discord becomes readable by the whole chapter by
+  default.** A new channel is either *whole chapter* (`PUBLIC`) or *restricted*
+  (`ROLE_GATED`, readable by members holding any of the permissions the admin
+  picks). The scan records which channels were hidden from `@everyone` in
+  Discord. Those start with no visibility, and the API refuses to create one
+  until the admin chooses. An uploaded export carries no permissions, so
+  there the wizard says plainly that every new channel is chapter-wide unless
+  restricted.
+- **The bot reads only what its roles can see.** Discord lists every channel to
+  a bot, including ones hidden from it, so the scan works out the bot's own
+  access per channel from Discord's permission overwrites rather than finding
+  out by failing. A channel it cannot read is listed separately and can only be
+  skipped; the chapter gives the Frapp bot a role that can see it in Discord
+  and scans again. Nothing is probed that is already known unreadable, because
+  every refused request spends a rate-limit budget one bot token shares across
+  every chapter.
 - **The Discord → Frapp role mapping grants nothing.** The wizard records which
   Frapp role each Discord role corresponds to, and shows it back to the admin as
   a worksheet for promoting people by hand. Nothing reads it to grant a

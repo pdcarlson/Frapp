@@ -5,6 +5,7 @@ import {
   useConfirmDiscordUploads,
   useCreateDiscordImport,
   useDiscordAvailability,
+  useChannels,
   useDiscordConnection,
   useDiscordImportFiles,
   useDiscoverDiscordChannels,
@@ -17,12 +18,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { StepDots } from "@/components/onboarding/step-dots";
 import { useToast } from "@/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 import { ConsentStep } from "./consent-step";
 import { SourceStep, type ImportSource } from "./source-step";
 import { ConnectStep } from "./connect-step";
 import { UploadStep, type StagedExport } from "./upload-step";
 import { ChannelMappingStep, type ChannelChoice } from "./channel-mapping-step";
+import { defaultChoices, mappingIssues } from "./mapping-issues";
 import { RoleMappingStep } from "./role-mapping-step";
 import { ReviewStep } from "./review-step";
 
@@ -157,6 +159,71 @@ export function ImportWizard({
    * channel list is something only the API can produce and the admin has
    * nothing to do between the two.
    */
+  /**
+   * Stage a channel set and start every channel at its default answer.
+   *
+   * A choice the admin already made survives a re-stage (a second scan after
+   * giving the bot access, or a resumed upload), unless the channel has become
+   * unreadable, which can only be skipped.
+   */
+  const stage = useCallback((next: StagedExport) => {
+    setStaged(next);
+    setChannelChoices((previous) => {
+      const merged = defaultChoices(next.channels);
+      for (const channel of next.channels) {
+        const kept = previous[channel.channelId];
+        if (kept && channel.readable !== false) {
+          merged[channel.channelId] = kept;
+        }
+      }
+      return merged;
+    });
+  }, []);
+
+  /** Scan the connected server and stage what it found. */
+  const scan = useCallback(
+    async (id: string) => {
+      const discovery = await discoverChannels.mutateAsync({ id });
+      setScanWarnings(discovery.warnings ?? []);
+      stage({
+        guildName: null,
+        // Threads are deliberately not listed. Each one follows its parent's
+        // destination server-side; asking about two hundred archived threads
+        // one at a time is not a mapping step, it is a punishment.
+        channels: (discovery.channels ?? [])
+          .filter((channel) => channel.parent_discord_channel_id === null)
+          .map((channel) => ({
+            channelId: channel.discord_channel_id,
+            channelName: channel.discord_channel_name,
+            category: channel.discord_category,
+            readable: channel.readable ?? null,
+            privateInDiscord: channel.private_in_discord ?? null,
+          })),
+        roles: (discovery.roles ?? []).map((role) => ({
+          roleId: role.discord_role_id,
+          roleName: role.discord_role_name,
+        })),
+        exportCount: 0,
+        mediaCount: 0,
+        resumedCount: 0,
+        pendingUploads: 0,
+      });
+    },
+    [discoverChannels, stage],
+  );
+
+  async function rescan() {
+    if (!importId) return;
+    try {
+      await scan(importId);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        description: getErrorMessage(error, "Could not scan the server again."),
+      });
+    }
+  }
+
   const beginImport = useCallback(async () => {
     if (!acknowledged || !source) return;
     try {
@@ -183,29 +250,7 @@ export function ImportWizard({
         return;
       }
 
-      const discovery = await discoverChannels.mutateAsync({ id: createdId });
-      setScanWarnings(discovery.warnings ?? []);
-      setStaged({
-        guildName: null,
-        // Threads are deliberately not listed. Each one follows its parent's
-        // destination server-side; asking about two hundred archived threads
-        // one at a time is not a mapping step, it is a punishment.
-        channels: (discovery.channels ?? [])
-          .filter((channel) => channel.parent_discord_channel_id === null)
-          .map((channel) => ({
-            channelId: channel.discord_channel_id,
-            channelName: channel.discord_channel_name,
-            category: channel.discord_category,
-          })),
-        roles: (discovery.roles ?? []).map((role) => ({
-          roleId: role.discord_role_id,
-          roleName: role.discord_role_name,
-        })),
-        exportCount: 0,
-        mediaCount: 0,
-        resumedCount: 0,
-        pendingUploads: 0,
-      });
+      await scan(createdId);
       setStep("channels");
     } catch (error) {
       toast({
@@ -213,22 +258,27 @@ export function ImportWizard({
         description: getErrorMessage(error, "Could not start the import."),
       });
     }
-  }, [acknowledged, source, importId, createImport, discoverChannels, toast]);
+  }, [acknowledged, source, importId, createImport, scan, toast]);
 
-  const channelsReady = useMemo(() => {
-    if (!staged) return false;
-    // Every discovered channel needs an explicit answer. The step cannot be
-    // advanced by doing nothing, which is what "ask, never guess" means here:
-    // `chat_channels` has no unique (chapter_id, name), so a same-name match is
-    // never treated as consent to merge.
-    return staged.channels.every((channel) => {
-      const choice = channelChoices[channel.channelId];
-      if (!choice) return false;
-      if (choice.action === "use_existing") return !!choice.targetChannelId;
-      if (choice.action === "create_new") return !!choice.newName?.trim();
-      return true;
-    });
-  }, [staged, channelChoices]);
+  const existingChannels = useChannels();
+  // One list decides both whether Continue is enabled and what Needs
+  // attention shows, so the step can never be blocked for a reason it does
+  // not state. A same-name Frapp channel is an issue, never a merge:
+  // `chat_channels` has no unique (chapter_id, name).
+  const channelIssues = useMemo(
+    () =>
+      staged
+        ? mappingIssues(
+            staged.channels,
+            channelChoices,
+            asArray<{ name: string }>(existingChannels.data).map(
+              (channel) => channel.name,
+            ),
+          )
+        : [],
+    [staged, channelChoices, existingChannels.data],
+  );
+  const channelsReady = !!staged && channelIssues.length === 0;
 
   async function submitMappings() {
     if (!importId || !staged || !source) return;
@@ -244,6 +294,14 @@ export function ImportWizard({
         target_channel_id: choice.targetChannelId ?? undefined,
         new_channel_name: choice.newName?.trim() || undefined,
         new_channel_is_read_only: choice.readOnly ?? true,
+        // Only a new channel has a visibility; the API refuses a channel that
+        // was private in Discord without one, so it is sent as chosen.
+        new_channel_visibility:
+          choice.action === "create_new" ? choice.visibility : undefined,
+        new_channel_required_permissions:
+          choice.action === "create_new" && choice.visibility === "restricted"
+            ? (choice.requiredPermissions ?? [])
+            : undefined,
         message_count: 0,
       };
     });
@@ -331,7 +389,7 @@ export function ImportWizard({
             alreadyUploaded={alreadyUploaded}
             requestUrls={requestUrls}
             confirmUploads={confirmUploads}
-            onStaged={setStaged}
+            onStaged={stage}
           />
         ) : null}
 
@@ -360,6 +418,10 @@ export function ImportWizard({
               channels={staged.channels}
               choices={channelChoices}
               onChange={setChannelChoices}
+              issues={channelIssues}
+              knowsPrivacy={source === "bot"}
+              onRescan={source === "bot" ? () => void rescan() : undefined}
+              rescanning={discoverChannels.isPending}
             />
           </>
         ) : null}

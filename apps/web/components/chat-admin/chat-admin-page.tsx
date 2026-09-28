@@ -60,16 +60,16 @@ import {
 } from "@/components/shared/async-states";
 import { PageHeader } from "@/components/layout/page-header";
 import { NestedEmpty } from "@/components/shared/nested-states";
-import {
-  dashboardCheckboxHitAreaClassName,
-  dashboardTableCheckboxClassName,
-} from "@/components/shared/table-controls";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { ChatReportsCard } from "./chat-reports-card";
+import {
+  PermissionCheckboxGrid,
+  type PermissionCatalogEntry,
+} from "@/components/shared/permission-checkbox-grid";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -87,11 +87,6 @@ interface AdminCategory {
   id: string;
   name: string;
   display_order: number;
-}
-
-interface PermissionCatalogEntry {
-  key: string;
-  permission: string;
 }
 
 interface PinnedMessageRow {
@@ -134,62 +129,6 @@ function useToggleSet(
       });
     },
     [setState],
-  );
-}
-
-/**
- * The required-permissions picker, shared by the create dialog and the edit
- * panel — both need the identical catalog checkbox grid, and both need to
- * degrade the same way when the catalog can't load.
- */
-function PermissionCheckboxGrid({
-  catalog,
-  catalogLoading,
-  catalogUnavailable,
-  selected,
-  onToggle,
-}: {
-  catalog: PermissionCatalogEntry[];
-  catalogLoading: boolean;
-  catalogUnavailable: boolean;
-  selected: Set<string>;
-  onToggle: (permission: string) => void;
-}) {
-  if (catalogUnavailable) {
-    return (
-      <p className="mt-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
-        Couldn&apos;t load the permission catalog. You may be missing the{" "}
-        <code>members:view</code> permission it requires. Existing selections
-        are unaffected; ask your chapter president for access to change them.
-      </p>
-    );
-  }
-  if (catalogLoading) {
-    return (
-      <p className="mt-2 text-xs text-muted-foreground">Loading permissions…</p>
-    );
-  }
-  return (
-    <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-48 overflow-y-auto">
-      {catalog
-        .filter((entry) => entry.permission !== "*")
-        .map((entry) => (
-          <label
-            key={entry.permission}
-            className="flex cursor-pointer items-center gap-2 text-sm"
-          >
-            <span className={dashboardCheckboxHitAreaClassName}>
-              <input
-                type="checkbox"
-                className={dashboardTableCheckboxClassName}
-                checked={selected.has(entry.permission)}
-                onChange={() => onToggle(entry.permission)}
-              />
-            </span>
-            <code className="text-xs">{entry.permission}</code>
-          </label>
-        ))}
-    </div>
   );
 }
 

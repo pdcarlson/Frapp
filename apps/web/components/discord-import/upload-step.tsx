@@ -44,6 +44,13 @@ export interface StagedChannel {
   channelId: string;
   channelName: string;
   category: string | null;
+  /**
+   * Bot path only: whether the bot can read it (false = can only be skipped)
+   * and whether it was hidden from @everyone in Discord. Absent on an upload,
+   * whose export carries no permissions.
+   */
+  readable?: boolean | null;
+  privateInDiscord?: boolean | null;
 }
 
 export interface StagedRole {
