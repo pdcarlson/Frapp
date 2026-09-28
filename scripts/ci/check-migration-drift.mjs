@@ -44,10 +44,13 @@
 // unreleased, not drift: judging production against `main` opened a P1 the day
 // after any migration merged, every time, until the next ship. A target listed
 // in DRIFT_RELEASED_TARGETS is judged against the migrations in the latest `v*`
-// tag instead, which `deploy-production.yml` mints only after its migrate step
-// succeeded. Foreign rows are still judged against everything the repo holds.
-// The gap between the tag and `main` is reported, never alerted on; /needs-me
-// owns "production is behind main".
+// tag instead. `deploy-production.yml` mints that tag only after its migrate
+// step succeeded; a tag minted any other way (a `release.yml` dispatch, or by
+// hand) asserts the same thing without having proved it. Foreign rows are still
+// judged against `main` alone: a version renamed or deleted there since the tag
+// shipped blocks the next production `db push` all the same. The gap between
+// the tag and `main` is reported, never alerted on; /needs-me owns "production
+// is behind main".
 //
 // Env inputs:
 //   GITHUB_TOKEN           — required (issues: write)
@@ -55,7 +58,10 @@
 //   DRIFT_TARGETS          — required, `label=ref` pairs, comma-separated
 //   DRIFT_RELEASED_TARGETS — optional, comma-separated labels judged against the
 //                            latest `v*` tag's migrations rather than `main`'s.
-//                            The checkout must hold the `v*` tags
+//                            Unset means `production` (when DRIFT_TARGETS names
+//                            it), so a hand run judges production the way the
+//                            schedule does; set it empty to judge every target
+//                            against `main`. The checkout must hold the `v*` tags
 //   SUPABASE_ACCESS_TOKEN_<LABEL>
 //                          — each target's Supabase Management API token, e.g.
 //                            SUPABASE_ACCESS_TOKEN_STAGING. Each Infisical
@@ -66,7 +72,7 @@
 //   RUN_URL                — optional, html_url of this run
 //
 // Exit codes:
-//   0 — every target matched the repo (or pending only within the grace window)
+//   0 — every target matched what it should hold (or pending only within the grace window)
 //       and any open drift alert was closed
 //   1 — drift found, a target could not be read, or every target matched but
 //       the alert issues could not be read, or an open one could not be closed
@@ -79,7 +85,7 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { appendFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 import {
   ALERT_LOOKUP_LABEL,
@@ -167,61 +173,66 @@ export function versionToEpochMs(version) {
 
 // ── Release baseline ────────────────────────────────────────────────────────
 
-const RELEASE_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
-
-/**
- * The highest `vX.Y.Z` tag by version, or null. Anything else (a prerelease
- * suffix, a non-`v` tag) is ignored: `release.yml` mints only plain `vX.Y.Z`.
- */
-export function latestReleaseTag(tags) {
-  let best = null;
-  for (const tag of tags) {
-    const match = RELEASE_TAG_PATTERN.exec(tag);
-    if (!match) continue;
-    const parts = match.slice(1).map(Number);
-    if (
-      !best ||
-      parts[0] > best.parts[0] ||
-      (parts[0] === best.parts[0] &&
-        (parts[1] > best.parts[1] || (parts[1] === best.parts[1] && parts[2] > best.parts[2])))
-    ) {
-      best = { tag, parts };
-    }
-  }
-  return best?.tag ?? null;
-}
+const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+$/;
 
 function defaultGit(args) {
   return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
 /**
+ * The versioned migrations in the tree at `ref`, in ONE git call. The drift
+ * gate's `readMigrationsAtRef` is the same query plus a per-file `git log` for
+ * its grace window, which a caller that needs only `version` and `file` must
+ * not pay for.
+ */
+export function readMigrationVersionsAtRef({ ref, runGit = defaultGit }) {
+  const listing = runGit(["ls-tree", "-r", "--name-only", ref, "--", "supabase/migrations"]);
+  return listing
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((path) => {
+      const parsed = parseMigrationFilename(path.split("/").pop());
+      return parsed ? { ...parsed, path } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.version.localeCompare(b.version));
+}
+
+/**
  * The migrations in the latest `v*` tag, as { ok, tag, migrations, error }.
+ *
+ * "Latest" is `release.yml`'s own rule (`git tag --list 'v*'
+ * --sort=-version:refname | head -n1`), so both agree on what production's
+ * release is. That tag must be a plain `vX.Y.Z`, which is all `release.yml`
+ * mints; anything else is an error rather than a quiet step past it.
+ *
  * Never throws. A missing tag, an unreadable tree or a tag with no migrations is
  * an error, never an empty list: an empty baseline would pass every database.
  */
 export function readReleaseBaseline({ git = defaultGit } = {}) {
   let tag;
   try {
-    tag = latestReleaseTag(git(["tag", "--list", "v*"]).split("\n").map((t) => t.trim()));
+    tag = git(["tag", "--list", "v*", "--sort=-version:refname"])
+      .split("\n")
+      .map((t) => t.trim())
+      .find(Boolean);
   } catch (error) {
     return { ok: false, tag: null, migrations: [], error: `listing the v* tags failed: ${error.message}` };
   }
   if (!tag) {
-    return { ok: false, tag: null, migrations: [], error: "the checkout holds no vX.Y.Z tag" };
+    return { ok: false, tag: null, migrations: [], error: "the checkout holds no v* tag" };
+  }
+  if (!RELEASE_TAG_PATTERN.test(tag)) {
+    return { ok: false, tag, migrations: [], error: `the latest v* tag, ${tag}, is not a vX.Y.Z release` };
   }
 
-  let listing;
+  let migrations;
   try {
-    listing = git(["ls-tree", "--name-only", `refs/tags/${tag}`, "supabase/migrations/"]);
+    migrations = readMigrationVersionsAtRef({ ref: `refs/tags/${tag}`, runGit: git });
   } catch (error) {
     return { ok: false, tag, migrations: [], error: `reading ${tag}'s migrations failed: ${error.message}` };
   }
-  const migrations = listing
-    .split("\n")
-    .map((path) => parseMigrationFilename(basename(path.trim())))
-    .filter(Boolean)
-    .sort((a, b) => a.version.localeCompare(b.version));
   if (migrations.length === 0) {
     return { ok: false, tag, migrations: [], error: `${tag} holds no migrations in supabase/migrations/` };
   }
@@ -249,6 +260,44 @@ export function parseTargets(spec) {
     targets.push({ label, ref });
   }
   return targets;
+}
+
+/** Labels judged against the release when DRIFT_RELEASED_TARGETS is unset. */
+export const DEFAULT_RELEASED_TARGETS = ["production"];
+
+/**
+ * Marks each target named in `releasedSpec` (DRIFT_RELEASED_TARGETS) with the
+ * release baseline it is judged against: `released` when the tag was read,
+ * `releaseError` when it was not, which leaves that target unverified rather
+ * than judged against `main`. An unset spec means DEFAULT_RELEASED_TARGETS,
+ * among the targets present; an explicit one must name only real targets.
+ * Returns { ok, error }; mutates the targets.
+ */
+export function attachReleaseBaselines({ targets, releasedSpec, readBaseline = readReleaseBaseline }) {
+  const explicit = releasedSpec !== undefined;
+  const labels = explicit
+    ? releasedSpec
+        .split(",")
+        .map((label) => label.trim())
+        .filter(Boolean)
+    : DEFAULT_RELEASED_TARGETS.filter((label) => targets.some((target) => target.label === label));
+
+  const unknown = labels.filter((label) => !targets.some((target) => target.label === label));
+  if (unknown.length > 0) {
+    return {
+      ok: false,
+      error: `DRIFT_RELEASED_TARGETS names ${unknown.join(", ")}, which DRIFT_TARGETS does not.`,
+    };
+  }
+  if (labels.length === 0) return { ok: true, error: null };
+
+  const release = readBaseline();
+  for (const target of targets) {
+    if (!labels.includes(target.label)) continue;
+    if (release.ok) target.released = { tag: release.tag, migrations: release.migrations };
+    else target.releaseError = release.error;
+  }
+  return { ok: true, error: null };
 }
 
 // ── Remote migrations ───────────────────────────────────────────────────────
@@ -325,25 +374,26 @@ export async function fetchAppliedMigrations({
 /**
  * Pure set comparison between the repo and one database.
  *
- *   pending    — expected, not applied         (split into overdue / withinGrace)
- *   foreign    — applied, absent from the repo (always wrong, never graced)
+ *   pending    — expected, not applied       (split into overdue / withinGrace)
+ *   foreign    — applied, absent from `main` (always wrong, never graced)
  *   unreleased — on `main`, not in the release baseline, not applied (reported only)
- *   matched    — applied and known to the repo
+ *   matched    — applied and on `main`
  *
  * "Expected" is `main`'s migrations, or the release baseline's when `released`
- * is given. `foreign` is never subject to the grace window: a version the repo
- * has never contained is wrong the moment it appears, and it blocks `db push`
- * outright.
+ * is given. `foreign` is judged against `main` either way and is never subject
+ * to the grace window: a version `main` does not hold blocks the next
+ * `db push` outright, including one the release shipped and `main` later
+ * renamed or deleted.
  */
 export function classifyDrift({ local, released = null, remote, nowMs, graceMs }) {
   const expected = released ?? local;
   const remoteVersions = new Set(remote.map((m) => m.version));
   const expectedVersions = new Set(expected.map((m) => m.version));
-  const knownVersions = new Set([...local, ...expected].map((m) => m.version));
+  const localVersions = new Set(local.map((m) => m.version));
 
-  const matched = remote.filter((m) => knownVersions.has(m.version));
+  const matched = remote.filter((m) => localVersions.has(m.version));
   const pending = expected.filter((m) => !remoteVersions.has(m.version));
-  const foreign = remote.filter((m) => !knownVersions.has(m.version));
+  const foreign = remote.filter((m) => !localVersions.has(m.version));
   const unreleased = released
     ? local.filter((m) => !expectedVersions.has(m.version) && !remoteVersions.has(m.version))
     : [];
@@ -394,6 +444,7 @@ function migrationList(migrations, limit = 10) {
 
 /** One-line verdict per target, used in the summary table and the issue body. */
 export function describeTarget(result) {
+  if (result.baselineUnread) return `not checked — its release baseline could not be read: ${result.error}`;
   if (result.status === "unknown") return `could not be read — ${result.error}`;
   const against = result.baseline ? ` with \`${result.baseline}\`` : "";
   if (result.status === "clean") {
@@ -429,7 +480,7 @@ export function buildRunSummary({ status, results, graceHours, runUrl }) {
     "| --- | --- | --- | --- |",
     ...results.map(
       (r) =>
-        `| \`${r.label}\` | ${r.status === "unknown" ? "—" : r.remoteCount} | ${r.expectedCount} | ${describeTarget(r)} |`,
+        `| \`${r.label}\` | ${r.status === "unknown" ? "—" : r.remoteCount} | ${r.expectedCount ?? "—"} | ${describeTarget(r)} |`,
     ),
   ];
 
@@ -514,8 +565,9 @@ export function buildAlertIssueBody({ results, graceHours, runUrl }) {
     "**Pending** rows mean migrations the environment should hold never reached its database. For",
     "staging that is everything on `main`: check whether `Deploy API` is running at all (#763) before",
     "assuming a migration problem. For production it is the latest `v*` tag's migrations, which",
-    "`deploy-production.yml` applies before it mints the tag, so a pending row there means the history",
-    "was changed by hand after the ship.",
+    "`deploy-production.yml` applies before it mints the tag. A pending row there means the tag was",
+    "minted some other way (a `release.yml` dispatch, or by hand) on a commit whose migrations never",
+    "shipped, or the history was changed by hand after the ship. Check how the tag was made first.",
     "",
     "**Foreign** rows mean the database carries a version this repository has never contained.",
     "`supabase db push` refuses to run in that state. The CLI suggests",
@@ -597,7 +649,7 @@ export async function runMigrationDriftCheck({
 
   for (const target of targets) {
     const baseline = target.released?.tag ?? null;
-    const expectedCount = target.released?.migrations.length ?? local.length;
+    const expectedCount = target.releaseError ? null : (target.released?.migrations.length ?? local.length);
     const unread = (error) => ({
       label: target.label,
       ref: target.ref,
@@ -618,7 +670,7 @@ export async function runMigrationDriftCheck({
     // not be read, is unverified. Falling back to `main` would raise the very
     // alert the baseline exists to stop; passing it would hide real drift.
     if (target.releaseError) {
-      results.push(unread(`its release baseline could not be read — ${target.releaseError}`));
+      results.push({ ...unread(target.releaseError), baselineUnread: true });
       continue;
     }
 
@@ -722,28 +774,13 @@ async function main() {
     process.exit(1);
   }
 
-  const releasedLabels = new Set(
-    (process.env.DRIFT_RELEASED_TARGETS ?? "")
-      .split(",")
-      .map((label) => label.trim())
-      .filter(Boolean),
-  );
-  const unknownLabels = [...releasedLabels].filter(
-    (label) => !targets.some((target) => target.label === label),
-  );
-  if (unknownLabels.length > 0) {
-    console.error(
-      `Error: DRIFT_RELEASED_TARGETS names ${unknownLabels.join(", ")}, which DRIFT_TARGETS does not.`,
-    );
+  const released = attachReleaseBaselines({
+    targets,
+    releasedSpec: process.env.DRIFT_RELEASED_TARGETS,
+  });
+  if (!released.ok) {
+    console.error(`Error: ${released.error}`);
     process.exit(1);
-  }
-  if (releasedLabels.size > 0) {
-    const release = readReleaseBaseline();
-    for (const target of targets) {
-      if (!releasedLabels.has(target.label)) continue;
-      if (release.ok) target.released = { tag: release.tag, migrations: release.migrations };
-      else target.releaseError = release.error;
-    }
   }
   const untokened = targets.filter((target) => !target.accessToken);
   if (untokened.length > 0) {

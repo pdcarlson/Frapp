@@ -168,7 +168,11 @@ run tests the `main` commit of the moment GitHub queued it, which is often late)
 deploy production the same day. A slip opens alerts that close on the first run that
 passes: Staging conformance or Production Auth drift for a console not yet retyped, and
 Migration drift for `20260924190000` if production hasn't deployed by the 07:00 UTC check
-more than 24 hours after 2026-09-24 19:00 UTC:
+more than 24 hours after 2026-09-24 19:00 UTC. *Corrected 2026-09-28: that last alert no
+longer fires. Production is now judged against its latest `v*` tag, not `main`, so a
+migration merged and not yet shipped reads as unreleased
+([`AGENT_INFRA.md` § Schema drift detection](../../ci-cd/AGENT_INFRA.md#schema-drift-detection-scriptscicheck-migration-driftmjs)).
+`20260924190000` shipped in v1.3.0.*
 
 1. **Staging.** Once the merge's staging deploy is live, in `frapp-staging` →
    Authentication: SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the

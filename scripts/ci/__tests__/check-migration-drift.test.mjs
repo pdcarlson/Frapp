@@ -10,8 +10,8 @@ import {
   buildAlertIssueBody,
   classifyDrift,
   describeTarget,
+  attachReleaseBaselines,
   fetchAppliedMigrations,
-  latestReleaseTag,
   overallStatus,
   parseMigrationFilename,
   parseTargets,
@@ -768,13 +768,7 @@ test("a failed issue-create is reported without throwing", async () => {
 
 // ── Release baseline (production is judged against its latest v* tag) ──────
 
-test("latestReleaseTag picks the highest vX.Y.Z by version, not by string order", () => {
-  assert.equal(latestReleaseTag(["v1.9.0", "v1.10.0", "v1.2.3", ""]), "v1.10.0");
-  assert.equal(latestReleaseTag(["v2.0.0-rc1", "v1.3.0", "release-9", "v9"]), "v1.3.0");
-  assert.equal(latestReleaseTag(["", "not-a-tag"]), null);
-});
-
-function fakeGit({ tags = "v1.2.0\nv1.3.0\n", tree, fail } = {}) {
+function fakeGit({ tags = "v1.3.0\nv1.2.0\n", tree, fail } = {}) {
   const calls = [];
   const git = (args) => {
     calls.push(args);
@@ -785,15 +779,15 @@ function fakeGit({ tags = "v1.2.0\nv1.3.0\n", tree, fail } = {}) {
   return { git, calls };
 }
 
-test("readReleaseBaseline reads the latest tag's migrations from its tree", () => {
-  const { git, calls } = fakeGit({
-    tree: [
-      "supabase/migrations/00000000000000_initial_schema.sql",
-      "supabase/migrations/20260809000010_second.sql",
-      "supabase/migrations/README.md",
-      "",
-    ].join("\n"),
-  });
+const V130_TREE = [
+  "supabase/migrations/00000000000000_initial_schema.sql",
+  "supabase/migrations/20260809000010_second.sql",
+  "supabase/migrations/README.md",
+  "",
+].join("\n");
+
+test("readReleaseBaseline reads the latest tag, by release.yml's rule, and its migrations", () => {
+  const { git, calls } = fakeGit({ tree: V130_TREE });
   const baseline = readReleaseBaseline({ git });
   assert.equal(baseline.ok, true);
   assert.equal(baseline.tag, "v1.3.0");
@@ -801,12 +795,21 @@ test("readReleaseBaseline reads the latest tag's migrations from its tree", () =
     baseline.migrations.map((m) => m.version),
     ["00000000000000", "20260809000010"],
   );
-  assert.deepEqual(calls[1], ["ls-tree", "--name-only", "refs/tags/v1.3.0", "supabase/migrations/"]);
+  // The same selection release.yml makes: git's version sort, first line.
+  assert.deepEqual(calls[0], ["tag", "--list", "v*", "--sort=-version:refname"]);
+  assert.deepEqual(calls[1], [
+    "ls-tree",
+    "-r",
+    "--name-only",
+    "refs/tags/v1.3.0",
+    "--",
+    "supabase/migrations",
+  ]);
 });
 
 test("readReleaseBaseline reports an error, never an empty baseline", () => {
   // An empty baseline would expect nothing, so every database would pass.
-  assert.match(readReleaseBaseline({ git: fakeGit({ tags: "" }).git }).error, /no vX\.Y\.Z tag/);
+  assert.match(readReleaseBaseline({ git: fakeGit({ tags: "" }).git }).error, /holds no v\* tag/);
   assert.match(
     readReleaseBaseline({ git: fakeGit({ tree: "supabase/migrations/README.md\n" }).git }).error,
     /v1\.3\.0 holds no migrations/,
@@ -815,6 +818,73 @@ test("readReleaseBaseline reports an error, never an empty baseline", () => {
   const unreadable = readReleaseBaseline({ git: fakeGit({ fail: "ls-tree" }).git });
   assert.equal(unreadable.ok, false);
   assert.match(unreadable.error, /reading v1\.3\.0's migrations failed/);
+});
+
+test("readReleaseBaseline refuses a latest tag release.yml would bump from but never mints", () => {
+  // release.yml takes the first line of the same sort, so stepping past it
+  // would judge production against a different release than release.yml sees.
+  const result = readReleaseBaseline({ git: fakeGit({ tags: "v2.0.0-rc1\nv1.3.0\n", tree: V130_TREE }).git });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /v2\.0\.0-rc1, is not a vX\.Y\.Z release/);
+});
+
+test("attachReleaseBaselines judges only the named targets against the release", () => {
+  const released = localFixture(2);
+  const targets = [{ label: "staging" }, { label: "production" }];
+  const result = attachReleaseBaselines({
+    targets,
+    releasedSpec: "production",
+    readBaseline: () => ({ ok: true, tag: "v1.3.0", migrations: released, error: null }),
+  });
+  assert.deepEqual(result, { ok: true, error: null });
+  assert.deepEqual(targets[1].released, { tag: "v1.3.0", migrations: released });
+  assert.equal(targets[1].releaseError, undefined);
+  assert.equal(targets[0].released, undefined, "staging stays judged against main");
+});
+
+test("attachReleaseBaselines marks an unread release as an error, never as no baseline", () => {
+  // Without releaseError, runMigrationDriftCheck would judge production
+  // against main: the daily P1 this baseline exists to stop.
+  const targets = [{ label: "production" }];
+  attachReleaseBaselines({
+    targets,
+    releasedSpec: "production",
+    readBaseline: () => ({ ok: false, tag: null, migrations: [], error: "the checkout holds no v* tag" }),
+  });
+  assert.equal(targets[0].released, undefined);
+  assert.equal(targets[0].releaseError, "the checkout holds no v* tag");
+});
+
+test("attachReleaseBaselines defaults to production when unset, and reads no tag when told none", () => {
+  let reads = 0;
+  const readBaseline = () => {
+    reads += 1;
+    return { ok: true, tag: "v1.3.0", migrations: localFixture(2), error: null };
+  };
+
+  const handRun = [{ label: "staging" }, { label: "production" }];
+  attachReleaseBaselines({ targets: handRun, releasedSpec: undefined, readBaseline });
+  assert.equal(handRun[1].released.tag, "v1.3.0", "a hand run judges production like the schedule");
+
+  const stagingOnly = [{ label: "staging" }];
+  assert.deepEqual(attachReleaseBaselines({ targets: stagingOnly, releasedSpec: undefined, readBaseline }), {
+    ok: true,
+    error: null,
+  });
+  const none = [{ label: "production" }];
+  attachReleaseBaselines({ targets: none, releasedSpec: "", readBaseline });
+  assert.equal(none[0].released, undefined);
+  assert.equal(reads, 1, "only the hand run needed the tag");
+});
+
+test("attachReleaseBaselines rejects a label DRIFT_TARGETS does not name", () => {
+  const result = attachReleaseBaselines({
+    targets: [{ label: "staging" }],
+    releasedSpec: "prod",
+    readBaseline: () => assert.fail("no tag is read for a bad spec"),
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /names prod, which DRIFT_TARGETS does not/);
 });
 
 test("classifyDrift against a release: a migration merged since the tag is unreleased, not drift", () => {
@@ -858,6 +928,24 @@ test("classifyDrift against a release: applied past the tag is matched, and fore
   assert.deepEqual(result.foreign, [FOREIGN_FEB]);
   assert.equal(result.unreleased.length, 0);
   assert.ok(result.matched.some((m) => m.version === extra.version));
+});
+
+test("classifyDrift against a release: a shipped version main renamed since is foreign", () => {
+  // A back-dated migration renamed on main after it shipped leaves production
+  // holding the old version, which the next production `db push` refuses.
+  const shipped = { version: "20260809000050", name: "backdated" };
+  const renamed = { version: "20260809000060", name: "backdated" };
+  const base = localFixture(3);
+  const result = classifyDrift({
+    local: [...base, renamed],
+    released: [...base, shipped],
+    remote: [...base, shipped],
+    nowMs: NOW,
+    graceMs: GRACE_MS,
+  });
+  assert.equal(result.status, "drift");
+  assert.deepEqual(result.foreign, [shipped]);
+  assert.deepEqual(result.unreleased, [renamed]);
 });
 
 test("describeTarget names the release a target is judged against", () => {
@@ -916,25 +1004,38 @@ test("an unreadable release baseline leaves the target unverified, never judged 
     supabaseRoute("prod", local.slice(0, 1)),
     ...githubRoutes({ issues: [{ number: 919, state: "open", title: ALERT_ISSUE_TITLE }] }),
   ]);
+  let summary = "";
   const result = await runMigrationDriftCheck({
     ...baseRun,
     targets: [
-      { label: "production", ref: "prod", accessToken: SB_TOKEN, releaseError: "the checkout holds no vX.Y.Z tag" },
+      { label: "production", ref: "prod", accessToken: SB_TOKEN, releaseError: "the checkout holds no v* tag" },
     ],
     local,
     fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
   });
   assert.equal(result.status, "unknown");
   assert.equal(result.exitCode, 1);
-  assert.match(describeTarget(result.results[0]), /release baseline could not be read — the checkout holds no/);
+  assert.equal(
+    describeTarget(result.results[0]),
+    "not checked — its release baseline could not be read: the checkout holds no v* tag",
+  );
+  // Expected is unknown too: not main's count, which would say the opposite of the rule.
+  assert.match(summary, /\| `production` \| — \| — \| not checked/);
   assert.equal(calls.filter((c) => c.method !== "GET").length, 0, "the alert is neither raised nor closed");
   assert.equal(calls.filter((c) => c.url.includes("supabase")).length, 0, "the database is not read");
 });
 
-test("the workflow judges production against its release, and fetches the tags that needs", () => {
+test("the workflow judges production against its release, and a failed tag fetch cannot stop staging's check", () => {
   const workflow = readFileSync(".github/workflows/check-migration-drift.yml", "utf8");
   assert.match(workflow, /DRIFT_RELEASED_TARGETS: "production"\n/);
   const fetchTags = workflow.indexOf("git fetch --no-tags --depth=1 origin '+refs/tags/v*:refs/tags/v*'");
   const check = workflow.indexOf("run: node scripts/ci/check-migration-drift.mjs");
   assert.ok(fetchTags !== -1 && fetchTags < check, "the v* tags are fetched before the check runs");
+  // A failed fetch leaves production to read as unknown in the script; it
+  // must not kill the job before staging is checked.
+  const fetchLine = workflow.slice(fetchTags, workflow.indexOf("\n", fetchTags));
+  assert.match(fetchLine, /\|\| echo "::warning::/);
 });

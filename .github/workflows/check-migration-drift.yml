@@ -65,9 +65,11 @@ jobs:
         uses: actions/checkout@v4
 
       # The checkout is shallow and holds no tags; production's baseline is the
-      # latest `v*` tag's `supabase/migrations/`, read with `git ls-tree`.
+      # latest `v*` tag's `supabase/migrations/`, read with `git ls-tree`. A
+      # failed fetch must not stop staging's check: the script reads no tag,
+      # reports production unchecked, and the run still goes red.
       - name: Fetch the release tags
-        run: git fetch --no-tags --depth=1 origin '+refs/tags/v*:refs/tags/v*'
+        run: git fetch --no-tags --depth=1 origin '+refs/tags/v*:refs/tags/v*' || echo "::warning::Could not fetch the v* tags; production will read as not checked."
 
       - name: Setup Node
         uses: actions/setup-node@v4
