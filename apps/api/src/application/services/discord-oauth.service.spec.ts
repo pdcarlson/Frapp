@@ -474,6 +474,102 @@ describe('DiscordOAuthService — checking the setup against Discord', () => {
   });
 });
 
+describe('DiscordOAuthService — how long a verdict is trusted', () => {
+  let now: jest.SpyInstance;
+
+  beforeEach(() => {
+    captureMessage.mockClear();
+    now = jest.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('holds a bad verdict for a minute, then re-reads Discord before answering', async () => {
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({ id: CLIENT_ID, redirectUris: [] });
+    await expect(service.isAvailable()).resolves.toBe(false);
+
+    // Row added in the portal half a minute later: still the cached answer,
+    // so a wizard mount does not cost a Discord call every time.
+    bot.fetchApplication.mockResolvedValue({
+      id: CLIENT_ID,
+      redirectUris: [REDIRECT_URI],
+    });
+    now.mockReturnValue(NOW.getTime() + 30_000);
+    await expect(service.isAvailable()).resolves.toBe(false);
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+
+    // Past the minute, the FIRST reload already sees the fix. Serving the
+    // stale "broken" once more is what made an operator think the fix failed.
+    now.mockReturnValue(NOW.getTime() + 61_000);
+    await expect(service.isAvailable()).resolves.toBe(true);
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(2);
+  });
+
+  it('holds a good verdict for ten minutes', async () => {
+    const service = await build();
+    await service.isAvailable();
+    now.mockReturnValue(NOW.getTime() + 9 * 60_000);
+    await service.isAvailable();
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a misconfiguration again when its reason changes', async () => {
+    // The Redirects list edited from one wrong state to another: the operator
+    // needs the new list, not silence because the kind is the same.
+    const service = await build();
+    bot.fetchApplication.mockResolvedValueOnce({
+      id: CLIENT_ID,
+      redirectUris: ['https://api.example.test/v1/v1/discord/connect/callback'],
+    });
+    await service.isAvailable();
+    bot.fetchApplication.mockResolvedValueOnce({
+      id: CLIENT_ID,
+      redirectUris: ['https://api.example.test/v1/discord/connect/callback/'],
+    });
+    await expect(service.beginConnect(CHAPTER, USER, null)).rejects.toThrow();
+    expect(captureMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('warns once for an unsettled check whose error wording varies', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const service = await build();
+    bot.fetchApplication.mockRejectedValueOnce(
+      new DiscordApiError(
+        'GET /applications/@me did not answer within 5000 ms',
+      ),
+    );
+    await service.isAvailable();
+    bot.fetchApplication.mockRejectedValueOnce(
+      new DiscordApiError(
+        'Discord refused GET /applications/@me: 502 Bad Gateway',
+        502,
+      ),
+    );
+    await service.beginConnect(CHAPTER, USER, null);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('still answers false and 503 when Sentry itself throws', async () => {
+    // Reporting is a side effect of the verdict, never a condition of it.
+    captureMessage.mockImplementationOnce(() => {
+      throw new Error('Sentry transport down');
+    });
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({ id: CLIENT_ID, redirectUris: [] });
+    await expect(
+      service.beginConnect(CHAPTER, USER, null),
+    ).rejects.toMatchObject({ status: 503 });
+    await expect(service.isAvailable()).resolves.toBe(false);
+  });
+});
+
 describe('DiscordOAuthService — the callback’s trust boundary', () => {
   it('takes the guild from the token exchange, never from the query string', async () => {
     const service = await build();

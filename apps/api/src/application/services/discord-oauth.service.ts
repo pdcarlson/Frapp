@@ -334,18 +334,24 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
     }
   }
 
-  /** The cached verdict, refreshed in the background once it has aged out. */
+  /**
+   * The cached verdict, re-read from Discord once it has aged out.
+   *
+   * Only a good verdict is served stale while it refreshes, so the wizard
+   * never waits on Discord in the common case. A bad or unsettled one is
+   * re-read before answering: serving it once more would keep the card greyed
+   * on the first reload after someone fixes the portal, which is exactly when
+   * an operator is watching to see whether the fix worked.
+   */
   private currentApplicationCheck(): Promise<DiscordApplicationCheck> {
     const cached = this.applicationCheckResult;
     if (!cached) return this.refreshApplicationCheck();
-    const ttl =
-      cached.check.status === 'verified'
-        ? VERIFIED_CHECK_TTL_MS
-        : UNSETTLED_CHECK_TTL_MS;
-    if (Date.now() - cached.at >= ttl) {
-      // Never unhandled: a rejection here would take the process down.
-      void this.refreshApplicationCheck().catch(() => undefined);
-    }
+    const verified = cached.check.status === 'verified';
+    const ttl = verified ? VERIFIED_CHECK_TTL_MS : UNSETTLED_CHECK_TTL_MS;
+    if (Date.now() - cached.at < ttl) return Promise.resolve(cached.check);
+    if (!verified) return this.refreshApplicationCheck();
+    // Never unhandled: a rejection here would take the process down.
+    void this.refreshApplicationCheck().catch(() => undefined);
     return Promise.resolve(cached.check);
   }
 

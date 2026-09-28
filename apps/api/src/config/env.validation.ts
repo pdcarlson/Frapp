@@ -38,9 +38,10 @@ const REQUIRED_ENV_VARS = [
 // SEPARATE path, not a fallback that switches on — it works identically whether
 // or not any of these are set.
 //
-// All four are needed together; three of the four are not enough to run the
-// flow, which is why `DiscordOAuthService.isAvailable()` checks all of them
-// rather than degrading:
+// All five are needed together; four of the five are not enough to run the
+// flow, which is why `DiscordOAuthService.isConfigured()` checks all of them
+// rather than degrading (`isAvailable()` then also asks Discord whether the
+// application behind them is set up right):
 //   - DISCORD_BOT_TOKEN      ONE global Frapp bot token (not per-tenant — the
 //                            per-chapter value is a guild id, in the database).
 //   - DISCORD_CLIENT_ID      the Discord application's client id, for the

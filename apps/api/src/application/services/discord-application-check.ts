@@ -109,7 +109,7 @@ export function classifyApplicationFetchFailure(
       kind: 'bot_token_rejected',
       reason:
         'Discord refused DISCORD_BOT_TOKEN (401): it was reset in the Developer Portal or belongs to no application. ' +
-        `Every bot read fails until Infisical carries the current token (${SETUP_DOC}, step 2).`,
+        `Every bot read fails until Infisical carries the current token and the API restarts (${SETUP_DOC}, step 2).`,
     };
   }
   const detail = error instanceof Error ? error.message : String(error);

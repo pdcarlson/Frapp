@@ -1115,7 +1115,8 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
     and per-environment values are owned by
     [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) — do not restate them
     here. `GET /v1/discord/availability` answering `false` after a clean
-    promotion means a missing secret, not a missing table.
+    promotion means a missing secret or a Discord-side setup mistake, not a
+    missing table; the API's log names which (`integrations.md` § 7A).
   - The OAuth redirect URI must be registered in the Discord Developer Portal
     for the environment, and it is the **API** origin, not the app origin —
     `https://api-staging.frapp.live/v1/discord/connect/callback`, not
@@ -1124,9 +1125,14 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
     **start** of the OAuth round trip, not the end — Discord serves its own
     `Invalid OAuth2 redirect_uri` page straight off the authorize URL, before the
     consent screen, so the admin never picks a server and nothing on the callback
-    path reaches the API. (`POST /v1/discord/connect` does succeed first and
-    mints a `discord_oauth_states` row; unconsumed rows with no matching
-    `discord_connections` row are the server-side fingerprint.)
+    path reaches the API. Where Discord's answer lists the registered
+    redirects, the API now catches this first: `availability` answers `false`
+    and the log names the exact URI to add. Where it does not, the old
+    presentation stands: `POST /v1/discord/connect` succeeds and mints a
+    `discord_oauth_states` row before the error page, and unconsumed rows with no
+    matching `discord_connections` row are the fingerprint until the hourly
+    worker deletes them. Both are in
+    [`integrations.md`](deployment/integrations.md) § 7A.
   - The Message Content Intent must be ON for the app. Without it Discord answers
     `200` with `content: ""` on every message. The importer detects this and
     fails — but only once a slice has seen 25 authored messages with no content,
