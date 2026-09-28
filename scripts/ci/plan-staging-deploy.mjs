@@ -188,7 +188,14 @@ export function planFrontendUpload({ head, tip, api, live, isAncestor }) {
   // Even for the tip: staging can serve a newer commit than the tip this
   // checkout fetched (Render auto-deploy still on, #2679), and uploading then
   // would ship frontends behind an API nobody verified.
-  if (!api.readyApi) return skip(`the API staging will serve does not carry this commit's API (${api.reason})`);
+  if (!api.readyApi) {
+    // `api.reason` already says whether `main` moved on; no second suffix.
+    return {
+      upload: false,
+      uploadReason: `no API that carries this commit's API is known to be ready (API plan: ${api.reason})`,
+      verifySha: api.verifySha,
+    };
+  }
   if (isTip) return upload("this is `main`'s tip, so its web and landing ship");
   if (!Array.isArray(live) || live.length === 0) return skip("what the staging hostnames serve was not read");
 
@@ -332,7 +339,7 @@ async function main() {
       process.env.GITHUB_STEP_SUMMARY,
       `### Staging deploy plan\n\n**${plan.plan}** for \`${head}\`: ${plan.reason}.\n\n` +
         `Web and landing: **${frontends.upload ? "upload" : "no upload"}**, ${frontends.uploadReason}.\n\n` +
-        `API verified serving: ${frontends.verifySha ? `\`${frontends.verifySha}\`` : "nothing ships, so nothing is verified"}.\n`,
+        `API to verify before anything ships: ${frontends.verifySha ? `\`${frontends.verifySha}\`` : "none, since nothing ships"}.\n`,
     );
   }
 }

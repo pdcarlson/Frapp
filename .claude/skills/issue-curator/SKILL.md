@@ -145,7 +145,7 @@ and it exists for signal quality: `/next` ranks this backlog, and filler buries 
     (`get_job_logs`), and check for an open `incident` on it before filing anything.
   - Render MCP: `list_deploys` (`limit: 5`) for `frapp-api-staging` and `frapp-api-prod`. A
     green `Deploy staging` run verified the API serving the commit its plan summary names
-    ("API verified serving"): its own commit when it deployed the API, otherwise the one staging
+    ("API to verify"): its own commit when it deployed the API, otherwise the one staging
     already served, and nothing when nothing shipped. The summary also says whether web and
     landing uploaded.
     Pass `workspaceId` on every call; the id is in
