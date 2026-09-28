@@ -654,6 +654,34 @@ describe("useChatChannel — older history, the edges (#1571 review)", () => {
     expect(left === null ? [] : JSON.parse(left)).toEqual([]);
   });
 
+  it("settles a notice for a card a full page delivers, too", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
+    const { result } = await mountChannel();
+    const key = `chat:heavy:v1:${VIEWER}:${CHANNEL_ID}`;
+    window.localStorage.setItem(
+      key,
+      JSON.stringify([
+        {
+          status: "recorded",
+          clientMessageId: "cm-350",
+          channelId: CHANNEL_ID,
+          senderId: VIEWER,
+          content: "/points grant @bobby 50",
+          note: "Recorded. The card did not post.",
+          createdAt: new Date().toISOString(),
+        },
+      ]),
+    );
+
+    mocks.GET.mockResolvedValueOnce(historyPage(301, 400));
+    await act(async () => {
+      await result.current.loadNewer();
+    });
+
+    const left = window.localStorage.getItem(key);
+    expect(left === null ? [] : JSON.parse(left)).toEqual([]);
+  });
+
   it("resolves null when the forward read fails", async () => {
     mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
     const { result } = await mountChannel();

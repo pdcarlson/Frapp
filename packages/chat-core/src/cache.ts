@@ -456,6 +456,24 @@ export function oldestConfirmed(
 }
 
 /**
+ * A page of history built into a cache from nothing: its rows, then its
+ * reactions and card actions through the canonical merge. The one place a
+ * fetched page becomes a cache, so every reader of a page builds it alike: a
+ * local variant that skipped the action merge once left reloaded polls at
+ * zero votes until a live echo happened to re-deliver them.
+ */
+export function cacheFromPage(
+  rows: RawChatMessage[],
+  actions: readonly RawChatMessageAction[],
+): ChannelCache {
+  let cache = mergeServerRows(emptyCache(), rows);
+  for (const action of actions) {
+    cache = applyReactionInsert(cache, action);
+  }
+  return cache;
+}
+
+/**
  * Folds a freshly fetched newest page into the cache as it stands when the
  * fetch lands, instead of replacing it (#2486, #1571).
  *

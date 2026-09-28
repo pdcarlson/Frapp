@@ -603,32 +603,38 @@ export const MessageTimeline = forwardRef<
     scroll to its newest row cancels a jump issued in the same commit. So
     `initialTopMostItemIndex` does not apply, and the list would open wherever
     the previous channel left its scroll offset. This does what a mount would:
-    open at the newest row (unless a jump is taking the list somewhere), and
-    arm the older-history load, since the list is now off its top.
+    open at the newest row. A jump into this channel is not overridden by it:
+    the shell's jump effect runs after this one in the same commit, and a later
+    scroll replaces an earlier one; and a jump that settles on a notice leaves
+    the list here, at the newest row, rather than at the last channel's offset.
+
+    It arms the older-history load too, but only off the list's top: at the
+    top, the scroll above moves it off and that report arms it, while arming
+    now would meet the previous channel's "at the top" and read a page for this
+    one before the member scrolled at all.
 
     Only when the same list spans the switch. A switch into a channel that
     shows the skeleton, or out of one that drew no list, mounts a fresh
-    Virtuoso, which opens at its end by itself and arms on leaving its top;
-    arming it here would answer the moment at the top every open passes
-    through with an older-page read.
+    Virtuoso, which opens at its end by itself and arms on leaving its top.
+    Keyed on the channel it last saw, not on running at all, so Strict Mode's
+    second pass over a mount is not taken for a switch.
   */
   const listMounted = useRef(false);
-  // Read by the switch effect without re-running it: a jump ending must not
-  // send the list to its bottom. Declared first, so it is current there.
-  const holdFollowRef = useRef(holdFollow);
+  const seenChannel = useRef(channelId);
   useEffect(() => {
-    holdFollowRef.current = holdFollow;
-  });
-  useEffect(() => {
+    if (seenChannel.current === channelId) return;
+    seenChannel.current = channelId;
     if (!listMounted.current || !virtuoso.current || !channelId) return;
-    if (!holdFollowRef.current) {
-      virtuoso.current.scrollToIndex({
-        index: "LAST",
-        align: "end",
-        behavior: "auto",
-      });
-    }
-    setArmedFor(channelId);
+    virtuoso.current.scrollToIndex({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- arms the channel the list was just switched to, after the imperative scroll above; the list's own at-top report cannot, because it never leaves a top it is not at
+    if (!atTop) setArmedFor(channelId);
+    // `atTop` is read as of the switch on purpose; a change in it alone is
+    // not a switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
   // Declared after the switch effect, so that effect reads whether the list
   // was mounted before this commit.

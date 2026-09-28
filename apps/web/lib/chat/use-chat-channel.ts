@@ -32,10 +32,9 @@ import {
   type RawChatMessageAction,
 } from "@repo/chat-core/types";
 import {
-  applyReactionInsert,
+  cacheFromPage,
   emptyCache,
   mergeUnheldRows,
-  mergeServerRows,
   newestConfirmed,
   oldestConfirmed,
   reconcileNewestPage,
@@ -307,14 +306,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       const { rows, actions } = await fetchPage(channelId, {
         limit: FIRST_PAGE_LIMIT,
       });
-      let fresh = mergeServerRows(emptyCache(), rows);
-      // The canonical merge, not a local copy: it also appends each raw
-      // row to `message.actions`, which the poll-card tallies read — a
-      // local variant that skipped that step left reloaded polls at zero
-      // votes until a live echo happened to re-deliver them.
-      for (const action of actions) {
-        fresh = applyReactionInsert(fresh, action);
-      }
+      const fresh = cacheFromPage(rows, actions);
       // Read after every await, so it is the cache as it is now: an outbox
       // hydrate or a Realtime row that landed during the read is in it (#2486).
       let cache = reconcileNewestPage(
@@ -465,11 +457,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         if (!current) return current;
         let next: ChannelCache;
         if (full) {
-          let fresh = mergeServerRows(emptyCache(), rows);
-          for (const action of actions) {
-            fresh = applyReactionInsert(fresh, action);
-          }
-          next = reconcileNewestPage(current, fresh);
+          next = reconcileNewestPage(current, cacheFromPage(rows, actions));
           added = rows.filter((row) => !current.byId[row.id]).length;
         } else {
           const merged = mergeUnheldRows(current, rows, actions);

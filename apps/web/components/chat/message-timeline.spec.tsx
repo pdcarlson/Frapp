@@ -1,4 +1,4 @@
-import { createRef } from "react";
+import { StrictMode, createRef } from "react";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
@@ -794,7 +794,10 @@ describe("MessageTimeline older history (#1571)", () => {
     });
   });
 
-  it("leaves the scroll to a jump that is taking the list somewhere", () => {
+  it("opens at the newest row even when the switch carries a jump", () => {
+    // The shell's jump scroll runs after this in the same commit and replaces
+    // it; a jump that settles on a notice leaves the list here, at the newest
+    // row, not at the last channel's offset.
     const view = (channelId: string) => (
       <MessageTimeline
         channelId={channelId}
@@ -814,7 +817,70 @@ describe("MessageTimeline older history (#1571)", () => {
 
     rerender(view("chan-2"));
 
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+  });
+
+  it("reads no older page for a channel switched to from the list's top", () => {
+    const onLoadOlder = vi.fn();
+    const view = (channelId: string, hasOlder: boolean) => (
+      <MessageTimeline
+        channelId={channelId}
+        messages={history(1, 5)}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        hasOlder={hasOlder}
+        onLoadOlder={onLoadOlder}
+        {...timelineBlockProps(history(1, 5), VIEWER)}
+      />
+    );
+    // At the top of a channel whose history has run out.
+    const { rerender } = render(view("chan-1", false));
+    act(() => virtuosoProps.current.atTopStateChange?.(false));
+    act(() => virtuosoProps.current.atTopStateChange?.(true));
+
+    rerender(view("chan-2", true));
+    expect(onLoadOlder).not.toHaveBeenCalled();
+
+    // The switch's scroll to the newest row moves it off the top, which arms
+    // it; the member scrolling back up then reads a page.
+    act(() => virtuosoProps.current.atTopStateChange?.(false));
+    act(() => virtuosoProps.current.atTopStateChange?.(true));
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not take Strict Mode's second pass over a mount for a switch", () => {
+    const onLoadOlder = vi.fn();
+    virtuosoProps.scrollToIndex.mockClear();
+    render(
+      <StrictMode>
+        <MessageTimeline
+          channelId="chan-1"
+          messages={history(1, 5)}
+          viewerId={VIEWER}
+          nameFor={nameFor}
+          isLoading={false}
+          loadError={null}
+          onReact={vi.fn()}
+          onUnreact={vi.fn()}
+          hasOlder
+          onLoadOlder={onLoadOlder}
+          {...timelineBlockProps(history(1, 5), VIEWER)}
+        />
+      </StrictMode>,
+    );
+
+    act(() => virtuosoProps.current.atTopStateChange?.(true));
+
     expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+    expect(onLoadOlder).not.toHaveBeenCalled();
   });
 
   it("does not arm a channel whose list mounts fresh on the switch", () => {
