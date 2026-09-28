@@ -72,7 +72,8 @@
 // Every build is handed its app config: `deploy-vercel.mjs` passes a `buildEnv`
 // built from the job's Infisical injection (`staging` or `prod`), and
 // `buildVercelProject` removes every row but Vercel's system variables from the
-// pulled file, so no Vercel row reaches the build (#2810). The pull still runs
+// pulled file, so no project row outside that namespace reaches the build
+// (#2810). The pull still runs
 // for the project settings and those system variables. Every CLI step runs on
 // `buildEnv.baseEnv`, never on the ambient job environment, which holds the
 // whole injected store. A call without a `buildEnv` is refused rather than
@@ -106,14 +107,12 @@ export const VERCEL_TARGET_PREVIEW = "preview";
 /**
  * Which Vercel *environment* a target pulls its env vars from.
  *
- * This is the load-bearing line for correctness of the built artifact.
- * `NEXT_PUBLIC_*` values are inlined at build time, and whatever key the job's
- * injection lacks is filled from the pulled env, so pulling the wrong
- * environment can produce a bundle that points at the wrong API and the wrong
- * Supabase project while every status page reports success. It also sets
- * `VERCEL_ENV`, which the production config fences and the Sentry environment
- * tag read. A preview build takes its app config from Infisical `staging`
- * instead (header above). See also the header of `deploy-vercel.mjs`.
+ * This is the load-bearing line for correctness of the built artifact. The
+ * pull sets `VERCEL_ENV`, which the production config fences and the Sentry
+ * environment tag read, and the project settings `vercel build --prod` checks.
+ * App config no longer comes from it: every build takes that from Infisical,
+ * and the pulled file keeps only Vercel's system variables (header above,
+ * #2810). See also the header of `deploy-vercel.mjs`.
  */
 export function vercelEnvironmentFor(target) {
   return target === VERCEL_TARGET_PRODUCTION ? "production" : "preview";

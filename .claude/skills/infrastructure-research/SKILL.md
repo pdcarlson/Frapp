@@ -291,7 +291,8 @@ done
 
 ## Infisical sync map
 
-The sync map shows which Infisical environment feeds which Render or Vercel destination. It lives
+The sync map shows which Infisical environment feeds which Render service (the Vercel syncs are
+deleted; web and landing builds inject Infisical themselves). It lives
 in [`SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEMENT.md) under
 "5. Configure Secret Syncs". Read and update it there. It's a dated copy of the dashboard, so if the
 two disagree, the doc is wrong: fix it and update its date.
@@ -325,4 +326,5 @@ config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal
 - **Are secrets in sync?**
   1. List key names per Infisical environment. The scope traps above apply.
   2. Compare them against `ENV_REFERENCE.md`.
-  3. Confirm that each Render and Vercel sync is active.
+  3. Confirm that each Render sync is active. There is no Vercel sync to check: both pairs were
+     deleted on 2026-09-28 (`SECRETS_MANAGEMENT.md` §5).

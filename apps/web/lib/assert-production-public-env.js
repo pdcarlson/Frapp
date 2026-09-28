@@ -118,9 +118,9 @@ function assertProductionSupabaseAnonKey(raw, label) {
         "`${SUPABASE_ANON_KEY}` reference required in every environment by " +
         "ENV_REFERENCE.md § References — Framework-Specific Names; the " +
         "unprefixed `SUPABASE_ANON_KEY` alone does not reach the browser " +
-        "bundle, because Next inlines only `NEXT_PUBLIC_*`. If it is already " +
-        "set in Infisical `prod`, the Infisical→Vercel sync (#834) is the " +
-        "thing to look at, not the store.",
+        "bundle, because Next inlines only `NEXT_PUBLIC_*`. The production " +
+        "build takes it from Infisical `prod` and nowhere else (#2810): check " +
+        "its value there, and the deploy log's `App config from Infisical:` line.",
     );
   }
   const value = raw.trim();

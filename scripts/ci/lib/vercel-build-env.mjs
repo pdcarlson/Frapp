@@ -40,8 +40,12 @@
 //    `[SENSITIVE]`. Production dry run 36458267082 died on it, prerendering
 //    landing's `/` against `http://localhost:[SENSITIVE]`, most likely `PORT`
 //    from the path-`/` production sync (inferred from the value's shape). So
-//    the file is filtered to an allowlist, not a denylist, and a row added to
-//    a project later, by hand or by an integration, cannot reach a build.
+//    the file is filtered to an allowlist, not a denylist: a row added to a
+//    project later, by hand or by an integration, reaches a build only if it
+//    is named like a system variable, and the log names every row kept.
+//    Vercel's own build-tool rows (`NX_DAEMON`, `TURBO_*`, which public
+//    `vercel pull` output shows beside `VERCEL_ENV`) are removed too: neither
+//    tool runs in this build.
 // 3. Nothing else Infisical injected reaches a Vercel CLI process. The injection
 //    exports the whole store to the job, so the child environment is built from
 //    the names the job had BEFORE the injection (the baseline, recorded by
@@ -240,7 +244,9 @@ export function refuseSensitivePlaceholders({ label, source, env }) {
  * framework-prefixed copies Next.js reads in the browser, `NEXT_PUBLIC_VERCEL_*`.
  * `VERCEL_ENV` is the one that matters: the production config fences and the
  * Sentry environment tag read it. No app config key matches (a test holds
- * that), so this never lets a Vercel row supply one.
+ * that), so this never lets a Vercel row supply one. The pulled file does not
+ * say which rows Vercel generated, so a project row under one of these names
+ * passes too; the log names every row kept.
  */
 export function isVercelSystemVariable(name) {
   return name === "VERCEL" || name.startsWith("VERCEL_") || name.startsWith("NEXT_PUBLIC_VERCEL_");
