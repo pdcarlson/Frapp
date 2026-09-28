@@ -2,10 +2,11 @@
 name: needs-me
 description: >
   Sweep the places where work piles up waiting on Paul — open `incident` alerts, the PR Follow-ups
-  Human Action List and its `[human]` issues, the triage inbox, open PRs, and recent agent
-  sessions — surface the handful that genuinely need his decision or his hands, let him pick
-  exactly one, then walk that one to done. Use on "what needs me", "what am I blocking", "what do I
-  have to decide", "anything waiting on me", "unblock me", or a bare `/needs-me`.
+  Human Action List and its `[human]` issues, the triage inbox, open PRs, recent agent sessions,
+  and merged work production doesn't have yet — surface the handful that genuinely need his
+  decision or his hands, let him pick exactly one, then walk that one to done. Use on "what needs
+  me", "what am I blocking", "what do I have to decide", "anything waiting on me", "unblock me",
+  or a bare `/needs-me`.
 argument-hint: "[<area or keyword to narrow the sweep>] [--list-only]"
 ---
 
@@ -24,7 +25,7 @@ tracking issue.
 GitHub MCP only, schemas loaded first:
 `ToolSearch("select:mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_read,
 mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__list_pull_requests,
-mcp__github__pull_request_read")`.
+mcp__github__pull_request_read,mcp__github__list_tags,mcp__github__list_commits")`.
 If the MCP is unavailable, stop and say so; there is no fallback tracker
 ([`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines)).
 
@@ -42,6 +43,7 @@ except open `[human]` items, which count at any age.
 | Triage inbox | `search_issues query:"label:triage state:open"`, newest first, ~30 max | Bodies opening "Human action required", or stating a decision only Paul can make |
 | Open PRs | `list_pull_requests state:open` | Awaiting his review, red CI with no session driving it, merge conflicts, a review thread asking him a question |
 | Recent sessions | `list_sessions mine:true limit:20` (Claude Code Remote) | Titles and status only, so a stalled session is a pointer to check, not a finding. If the server isn't connected, note it and sweep the rest |
+| Production behind `main` | `list_tags`: the highest `v*` tag by version is the commit production serves, because Deploy production tags only after a live ship. Then `list_commits sha:main since:<that commit's date>`, once per `path` in `apps/landing`, `apps/web`, `apps/api` and `supabase/migrations` | Merged user-visible changes production doesn't have yet, at any age. Nothing merged reaches production until he dispatches and approves a run, and every check stays green while it waits, so no alert will raise it. One line: the tag, how many commits and days behind, and which of the four paths moved |
 
 The two `fp=… in:body` searches may miss older markers written as HTML comments; whether search
 indexes comment text hasn't been re-measured. The `[human]` and `[pr-followup]` title prefixes are
