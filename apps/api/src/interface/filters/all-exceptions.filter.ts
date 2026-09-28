@@ -103,16 +103,6 @@ function extractMessage(exception: HttpException): string | string[] {
   return exception.message;
 }
 
-/**
- * The request's correlation id, or `undefined` when neither the request-id
- * middleware nor its AsyncLocalStorage run reached this request. Undefined is
- * also the PostHog sample key there, so the runtime samples each such record
- * on its own instead of giving every one the verdict of `'unknown'` (#2374).
- */
-function correlationId(request: RequestContext): string | undefined {
-  return request.requestId ?? getRequestId();
-}
-
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
@@ -143,7 +133,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? extractMessage(exception)
         : 'Internal server error';
 
-    const requestId = correlationId(request) ?? 'unknown';
+    const requestId = request.requestId ?? getRequestId() ?? 'unknown';
 
     if (status >= 500) {
       this.logger.error(
@@ -363,22 +353,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
   ): void {
     const userHash = pseudonymizeUserId(request.appUser?.id);
     const chapterHash = pseudonymizeChapterId(request.chapterId);
-    enqueueSanitizedLog(
-      {
-        body: 'error',
-        severity: 'ERROR',
-        attributes: {
-          request_id: requestId,
-          method: request.method ?? 'UNKNOWN',
-          path: pathOnly(request.url) ?? '/',
-          status_code: status,
-          status_class: httpStatusClass(status),
-          ...(userHash ? { user_hash: userHash } : {}),
-          ...(chapterHash ? { chapter_hash: chapterHash } : {}),
-        },
+    enqueueSanitizedLog({
+      body: 'error',
+      severity: 'ERROR',
+      attributes: {
+        request_id: requestId,
+        method: request.method ?? 'UNKNOWN',
+        path: pathOnly(request.url) ?? '/',
+        status_code: status,
+        status_class: httpStatusClass(status),
+        ...(userHash ? { user_hash: userHash } : {}),
+        ...(chapterHash ? { chapter_hash: chapterHash } : {}),
       },
-      correlationId(request),
-    );
+    });
   }
 
   private enqueueSanitizedSecurityLog(
@@ -390,24 +377,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
   ): void {
     const userHash = pseudonymizeUserId(request.appUser?.id);
     const chapterHash = pseudonymizeChapterId(request.chapterId);
-    enqueueSanitizedLog(
-      {
-        body: 'security_event',
-        severity: 'WARN',
-        attributes: {
-          kind,
-          request_id: requestId,
-          method: request.method ?? 'UNKNOWN',
-          path: pathOnly(request.url) ?? '/',
-          status_code: status,
-          status_class: httpStatusClass(status),
-          ...(originHash ? { origin_hash: originHash } : {}),
-          ...(userHash ? { user_hash: userHash } : {}),
-          ...(chapterHash ? { chapter_hash: chapterHash } : {}),
-        },
+    enqueueSanitizedLog({
+      body: 'security_event',
+      severity: 'WARN',
+      attributes: {
+        kind,
+        request_id: requestId,
+        method: request.method ?? 'UNKNOWN',
+        path: pathOnly(request.url) ?? '/',
+        status_code: status,
+        status_class: httpStatusClass(status),
+        ...(originHash ? { origin_hash: originHash } : {}),
+        ...(userHash ? { user_hash: userHash } : {}),
+        ...(chapterHash ? { chapter_hash: chapterHash } : {}),
       },
-      correlationId(request),
-    );
+    });
   }
 }
 

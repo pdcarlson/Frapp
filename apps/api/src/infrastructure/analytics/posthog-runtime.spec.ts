@@ -1,12 +1,14 @@
 import { SENTRY_ERROR_CORRELATED_EVENT } from '@repo/observability';
 import { hashUserIdForAnalytics } from '@repo/validation';
 import {
+  enqueueSanitizedLog,
   PosthogRuntime,
   resetPosthogRuntimeForTests,
   shouldSample,
   startPosthogRuntime,
 } from './posthog-runtime';
 import { RecordingPosthogTransport } from './posthog-transport';
+import { runWithRequestLogStore } from '../observability/request-als';
 
 const HEX = 'a'.repeat(64);
 const USER_UUID = '3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b';
@@ -148,19 +150,16 @@ describe('PosthogRuntime', () => {
     const transport = new RecordingPosthogTransport(FIXTURES);
     const runtime = startRuntime(transport);
 
-    runtime.enqueueSanitizedLog(
-      {
-        body: 'request',
-        severity: 'INFO',
-        attributes: {
-          request_id: 'req-1',
-          path: '/v1/health',
-          status_class: '2xx',
-          user_hash: HEX,
-        },
+    runtime.enqueueSanitizedLog({
+      body: 'request',
+      severity: 'INFO',
+      attributes: {
+        request_id: 'req-1',
+        path: '/v1/health',
+        status_class: '2xx',
+        user_hash: HEX,
       },
-      'req-1',
-    );
+    });
     await runtime.flush();
 
     const logs = transport.calls.find((call) =>
@@ -212,17 +211,23 @@ describe('PosthogRuntime', () => {
       expect(kept).toBeLessThan(550);
     });
 
+    /** Records exported out of 200, each enqueued inside `requestId`'s ALS run when one is given. */
     async function exportedCount(
       rate: number,
-      sampleKey: (i: number) => string | undefined,
+      requestId?: string,
     ): Promise<number> {
       const transport = new RecordingPosthogTransport(FIXTURES);
       const runtime = startRuntime(transport, { logsSampleRate: rate });
+      // The exported wrapper, the one every production caller goes through.
+      const enqueue = () =>
+        enqueueSanitizedLog({
+          body: 'sample_probe',
+          severity: 'INFO',
+          attributes: {},
+        });
       for (let i = 0; i < 200; i++) {
-        runtime.enqueueSanitizedLog(
-          { body: 'sample_probe', severity: 'INFO', attributes: {} },
-          sampleKey(i),
-        );
+        if (requestId === undefined) enqueue();
+        else runWithRequestLogStore({ requestId }, enqueue);
       }
       await runtime.flush();
       return transport.calls
@@ -234,14 +239,19 @@ describe('PosthogRuntime', () => {
         );
     }
 
-    it('gives every record that shares a key one verdict', async () => {
-      expect([0, 200]).toContain(await exportedCount(0.5, () => 'one-key'));
+    it("gives every record of one request that request's verdict", async () => {
+      // sha256 places `req-a` at 0.429 and `req-kept` at 0.741.
+      expect(await exportedCount(0.5, 'req-a')).toBe(200);
+      expect(await exportedCount(0.5, 'req-kept')).toBe(0);
     });
 
-    it('samples each keyless record on its own', async () => {
+    it.each([
+      ['outside any request', undefined],
+      ['under an empty inbound x-request-id', ''],
+    ])('samples each record %s on its own', async (_label, requestId) => {
       // 200 fair coin flips: the band is more than five standard deviations
       // wide on each side, and all-or-nothing is what a shared key gives.
-      const kept = await exportedCount(0.5, () => undefined);
+      const kept = await exportedCount(0.5, requestId);
       expect(kept).toBeGreaterThan(60);
       expect(kept).toBeLessThan(140);
     });

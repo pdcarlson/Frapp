@@ -181,39 +181,6 @@ describe('AllExceptionsFilter', () => {
     );
   });
 
-  it.each([
-    ['error', new Error('Missing ID')],
-    ['security_event', new ForbiddenException()],
-  ])(
-    'hands PostHog no sample key for a %s record with no request id, never the shared "unknown" (#2374)',
-    (body, exception) => {
-      new AllExceptionsFilter().catch(
-        exception,
-        host({ requestId: undefined }),
-      );
-
-      expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);
-      const [record, sampleKey] =
-        jest.mocked(enqueueSanitizedLog).mock.calls[0];
-      expect(record.body).toBe(body);
-      expect(record.attributes.request_id).toBe('unknown');
-      expect(sampleKey).toBeUndefined();
-    },
-  );
-
-  it('samples on the ALS request id when the request object is unbound', () => {
-    runWithRequestLogStore({ requestId: 'req_from_als' }, () => {
-      new AllExceptionsFilter().catch(
-        new Error('ALS fallback'),
-        host({ requestId: undefined }),
-      );
-    });
-
-    expect(jest.mocked(enqueueSanitizedLog).mock.calls[0][1]).toBe(
-      'req_from_als',
-    );
-  });
-
   it('never writes the client address, and strips the query string', () => {
     new AllExceptionsFilter().catch(new UnauthorizedException(), host());
 
@@ -664,11 +631,7 @@ describe('AllExceptionsFilter', () => {
       );
 
       expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);
-      const [record, sampleKey] = jest.mocked(enqueueSanitizedLog).mock
-        .calls[0] as [
-        { body: string; attributes: Record<string, unknown> },
-        string,
-      ];
+      const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0];
       expect(record.body).toBe('request');
       expect(record.attributes).toMatchObject({
         request_id: 'req-abc',
@@ -677,7 +640,6 @@ describe('AllExceptionsFilter', () => {
         status_code: 404,
         status_class: '4xx',
       });
-      expect(sampleKey).toBe('req-abc');
       const serialized = JSON.stringify(record);
       expect(serialized).not.toContain('member@example.com');
       expect(serialized).not.toContain('Cannot GET');
