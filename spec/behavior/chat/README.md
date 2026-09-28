@@ -552,9 +552,50 @@ channel that reports a different one fails the import rather than being skipped.
   put it somewhere else, not a duplicate. Re-running the wizard from the start
   therefore does not deduplicate against an earlier import; delete the first one
   instead.
-- **Where it lands is the operator's choice, per channel**, and it is always
-  asked: `chat_channels` has no unique constraint on `(chapter_id, name)`, so a
-  same-named Frapp channel is never treated as consent to merge into it.
+- **Where it lands is the operator's choice, per channel, starting from a safe
+  default.** Every channel the bot can read starts as a *new* Frapp channel
+  with its Discord name, so a server with no conflicts needs no per-channel
+  clicks; the channels are grouped by Discord category, with bulk actions per
+  category and for the whole server. *2026-09-28, owner's decision (#2787),
+  replacing "always asked": the first real import (78 channels) had to be
+  clicked through one by one.* A new channel is the default because it cannot
+  interleave anything into a live one. **Merging is still never inferred**:
+  `chat_channels` has no unique constraint on `(chapter_id, name)`, so a new
+  name that matches another channel in the same import, or a Frapp channel the
+  admin can see, is listed as something to resolve, never treated as consent
+  to merge. **Known gap (#2799):** the check runs against the admin's own
+  channel list, so a clash with a channel hidden from them (a `PRIVATE`
+  channel they are not in, or a `ROLE_GATED` one they cannot read) goes
+  unflagged today, and a second channel with that name is created. Everything that blocks the step is listed in one place
+  (Needs attention), and that list is also what keeps Continue disabled.
+- **Nothing private in Discord becomes readable by the whole chapter by
+  default.** A new channel is either *whole chapter* (`PUBLIC`) or *restricted*
+  (`ROLE_GATED`, readable by members holding any of the permissions the admin
+  picks). A channel counts as private in Discord when some member of the
+  server could not read its history there: `@everyone` is denied View Channels
+  or Read Message History, or any role or member overwrite denies either (the
+  "hide it from pledges" shape, which Frapp has no way to express). The scan
+  also records which threads were private threads. A channel that was
+  private, holds a private thread (whose messages land in it), or whose
+  privacy the scan could not read (the roles read failed, which the scan
+  reports) starts with no visibility, and the API refuses to create it until
+  the admin chooses. Scanning again re-asks any whole-chapter choice, or
+  merge, whose channel has since turned private. An uploaded export carries no
+  permissions, so every new channel from one needs the same choice; "Set who
+  can read…" answers a whole category, or the whole server, in one go.
+- **The bot reads only what its roles can see.** Discord lists every channel to
+  a bot, including ones hidden from it, so the scan works out the bot's own
+  access per channel from Discord's permission overwrites rather than finding
+  out by failing. A channel it cannot read is listed separately and can only be
+  skipped until the chapter lets the bot see it and scans again: either by
+  allowing the bot's own Frapp role on the channel (a category allow reaches
+  only channels still synced to it), which keeps the install read-only, or by
+  giving the bot a role that can see it,
+  which is quicker but lends the shared bot token whatever else that role can
+  do ([`integrations.md` § 7A](../../../docs/internal/ops/deployment/integrations.md#7a-discord-application-setup-the-archive-importers-bot-path)). Nothing is probed that is already known unreadable, because
+  every refused request spends a rate-limit budget one bot token shares across
+  every chapter. When access cannot be worked out (the bot's roles could not be
+  read), each channel is probed once and a refusal is reported the same way.
 - **The Discord → Frapp role mapping grants nothing.** The wizard records which
   Frapp role each Discord role corresponds to, and shows it back to the admin as
   a worksheet for promoting people by hand. Nothing reads it to grant a

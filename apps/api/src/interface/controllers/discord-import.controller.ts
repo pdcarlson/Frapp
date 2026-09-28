@@ -164,7 +164,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Map each Discord channel onto a Frapp channel',
     description:
-      'Every channel needs an explicit choice — create new, merge into an existing one, or skip.',
+      'Every channel needs an explicit choice — create new, merge into an existing one, or skip. A new channel also needs `new_channel_visibility`: an export does not say which channels were private in Discord.',
   })
   setChannelMapping(
     @Param('id', ParseUUIDPipe) id: string,
@@ -196,7 +196,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Scan the connected Discord server (bot imports only)',
     description:
-      'Lists every channel and thread the bot can read and records them against this import, all set to `skip` until mapped. Also returns the guild’s roles for the worksheet, and any warnings about what could not be enumerated.',
+      'Lists every channel in the server, and the threads of each channel the bot can read, and records them against this import, all set to `skip` until mapped. Each channel carries whether the bot can read it and whether it was private in Discord. Also returns the guild’s roles for the worksheet, and any warnings about what could not be read.',
   })
   @ApiOkResponse({ type: DiscordDiscoveryResponseDto })
   discover(
@@ -212,7 +212,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Map the scanned Discord channels (bot imports only)',
     description:
-      'Send a decision for each top-level channel the scan found. Threads are not addressable — each one follows its parent’s decision, because the admin was asked about the parent and a thread is part of that conversation. A channel the scan did not return is rejected rather than added.',
+      'Send a decision for each top-level channel the scan found. Threads are not addressable — each one follows its parent’s decision, because the admin was asked about the parent and a thread is part of that conversation. A channel the scan did not return is rejected rather than added. A channel the bot cannot read can only be skipped, and a new channel needs `new_channel_visibility` unless the scan saw it was public in Discord and holding no private thread.',
   })
   setDiscoveredChannelMapping(
     @Param('id', ParseUUIDPipe) id: string,

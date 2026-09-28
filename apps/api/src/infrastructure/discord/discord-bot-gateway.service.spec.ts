@@ -152,3 +152,187 @@ describe('DiscordBotGatewayService.fetchApplication', () => {
     );
   });
 });
+
+describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
+  const GUILD = '100000000000000001';
+  const BOT = '500000000000000005';
+  const FRAPP_ROLE = '400000000000000004';
+  const BROTHER = '200000000000000002';
+  const READ = String((1n << 10n) | (1n << 16n));
+  const VIEW = String(1n << 10n);
+
+  let get: jest.SpyInstance;
+  let calls: string[];
+
+  function serve(overrides: Record<string, unknown> = {}) {
+    calls = [];
+    const routes: Record<string, unknown> = {
+      [`/guilds/${GUILD}/channels`]: [
+        { id: '10', type: 4, name: 'Brothers' },
+        // Open to everyone.
+        { id: '11', type: 0, name: 'anyone', parent_id: null },
+        // @everyone denied, Brother allowed: the Tau Nu shape.
+        {
+          id: '12',
+          type: 0,
+          name: 'brothers',
+          parent_id: '10',
+          permission_overwrites: [
+            { id: GUILD, type: 0, allow: '0', deny: VIEW },
+            { id: BROTHER, type: 0, allow: READ, deny: '0' },
+          ],
+        },
+      ],
+      [`/guilds/${GUILD}/roles`]: [
+        { id: GUILD, name: '@everyone', permissions: READ },
+        { id: FRAPP_ROLE, name: 'Frapp', permissions: READ },
+        { id: BROTHER, name: 'Brother', permissions: '0' },
+      ],
+      '/users/@me': { id: BOT },
+      [`/guilds/${GUILD}/members/${BOT}`]: { roles: [FRAPP_ROLE] },
+      [`/guilds/${GUILD}/threads/active`]: {
+        threads: [
+          {
+            id: '21',
+            type: 11,
+            name: 'open thread',
+            parent_id: '11',
+            guild_id: GUILD,
+          },
+          {
+            id: '22',
+            type: 12,
+            name: 'bids',
+            parent_id: '11',
+            guild_id: GUILD,
+          },
+        ],
+      },
+      '/channels/11/threads/archived/public': { threads: [], has_more: false },
+      '/channels/11/threads/archived/private': Object.assign(
+        new Error('Missing Permissions'),
+        { status: 403 },
+      ),
+      ...overrides,
+    };
+    get = jest
+      .spyOn(REST.prototype, 'get')
+      .mockImplementation((route: string) => {
+        calls.push(route);
+        if (!(route in routes)) {
+          return Promise.reject(
+            Object.assign(new Error(`unmocked ${route}`), { status: 404 }),
+          );
+        }
+        const answer = routes[route];
+        return answer instanceof Error
+          ? Promise.reject(answer)
+          : Promise.resolve(answer);
+      });
+  }
+
+  afterEach(() => get.mockRestore());
+
+  it('marks the channels the bot cannot read, and says so once instead of probing each', async () => {
+    serve();
+    const { channels, warnings, roles } =
+      await gateway().discoverChannels(GUILD);
+
+    // The worksheet's role names come from the same read, not a second one.
+    expect(roles.map((role) => role.name)).toEqual([
+      '@everyone',
+      'Frapp',
+      'Brother',
+    ]);
+    expect(
+      calls.filter((route) => route === `/guilds/${GUILD}/roles`),
+    ).toHaveLength(1);
+
+    const byId = new Map(channels.map((channel) => [channel.id, channel]));
+    expect(byId.get('11')).toMatchObject({
+      readable: true,
+      privateInDiscord: false,
+    });
+    expect(byId.get('12')).toMatchObject({
+      readable: false,
+      privateInDiscord: true,
+      categoryName: 'Brothers',
+    });
+    // A thread carries its parent's answers...
+    expect(byId.get('21')).toMatchObject({
+      readable: true,
+      privateInDiscord: false,
+    });
+    // ...except that a private thread stays private under a public parent.
+    expect(byId.get('22')).toMatchObject({
+      readable: true,
+      privateInDiscord: true,
+    });
+
+    // No 403-earning thread probe for a channel already known unreadable.
+    expect(calls).not.toContain('/channels/12/threads/archived/public');
+    expect(
+      warnings.filter((warning) => warning.includes('Frapp cannot read')),
+    ).toEqual([expect.stringContaining('1 channel(s) (#brothers)')]);
+    expect(warnings.join(' ')).not.toMatch(/were not imported|was imported/);
+  });
+
+  it('reads it once the bot holds the role the channel allows', async () => {
+    serve({
+      [`/guilds/${GUILD}/members/${BOT}`]: { roles: [FRAPP_ROLE, BROTHER] },
+    });
+    const { channels, warnings } = await gateway().discoverChannels(GUILD);
+    expect(channels.find((channel) => channel.id === '12')).toMatchObject({
+      readable: true,
+      privateInDiscord: true,
+    });
+    expect(warnings.join(' ')).not.toContain('Frapp cannot read');
+  });
+
+  const forbidden = () =>
+    Object.assign(new Error('Missing Access'), { status: 403 });
+
+  it("falls back to probing when the bot's own membership cannot be read, and lets Discord's answer settle it", async () => {
+    serve({
+      [`/guilds/${GUILD}/members/${BOT}`]: Object.assign(new Error('nope'), {
+        status: 500,
+      }),
+      '/channels/12/threads/archived/public': forbidden(),
+    });
+    const { channels, warnings } = await gateway().discoverChannels(GUILD);
+    const byId = new Map(channels.map((channel) => [channel.id, channel]));
+    expect(calls).toContain('/channels/12/threads/archived/public');
+    // Privacy is an @everyone question, so it is still known.
+    expect(byId.get('12')).toMatchObject({
+      readable: false,
+      privateInDiscord: true,
+    });
+    expect(byId.get('11')).toMatchObject({ readable: true });
+    // The 403 joins the one "cannot read" line; no warning per channel.
+    expect(warnings).toEqual([
+      expect.stringContaining('Frapp cannot read 1 channel(s) (#brothers)'),
+      expect.stringContaining('Private archived threads cannot be read'),
+    ]);
+  });
+
+  it('knows neither when the roles cannot be read, and tells the admin privacy is unknown', async () => {
+    serve({
+      [`/guilds/${GUILD}/roles`]: Object.assign(new Error('nope'), {
+        status: 500,
+      }),
+    });
+    const { channels, warnings, roles } =
+      await gateway().discoverChannels(GUILD);
+    expect(channels.find((channel) => channel.id === '12')).toMatchObject({
+      readable: null,
+      privateInDiscord: null,
+    });
+    // Nothing throws: the scan still returns, with no roles to map.
+    expect(roles).toEqual([]);
+    expect(warnings).toContainEqual(
+      expect.stringContaining(
+        'cannot tell which channels are private in Discord',
+      ),
+    );
+  });
+});

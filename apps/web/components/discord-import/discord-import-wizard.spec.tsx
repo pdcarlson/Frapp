@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // `vi.hoisted` runs before the hoisted `vi.mock` factory, so the spies exist
@@ -16,6 +17,7 @@ const {
   confirmConnect,
   availability,
   connection,
+  channelsQuery,
 } = vi.hoisted(() => ({
   createImport: vi.fn(),
   setChannelMapping: vi.fn(),
@@ -28,6 +30,14 @@ const {
   beginConnect: vi.fn(),
   confirmConnect: vi.fn(),
   availability: { value: { available: true } as { available: boolean } },
+  channelsQuery: {
+    value: {
+      data: [{ id: "ch-1", name: "general" }] as unknown,
+      isPending: false,
+      isError: false,
+      refetch: (() => Promise.resolve()) as () => Promise<unknown>,
+    },
+  },
   connection: {
     value: { connected: false } as {
       connected: boolean;
@@ -59,7 +69,22 @@ vi.mock("@repo/hooks", () => ({
   }),
   useStartDiscordImport: () => ({ mutateAsync: startImport, isPending: false }),
   useDiscordImportFiles: () => ({ data: [] }),
-  useChannels: () => ({ data: [{ id: "ch-1", name: "general" }] }),
+  useChannels: () => channelsQuery.value,
+  usePermissionsCatalog: () => ({
+    data: [
+      { key: "CHAPTER_CONFIG_MANAGE", permission: "chapter-config:manage" },
+      { key: "MEMBERS_VIEW", permission: "members:view" },
+    ],
+    isPending: false,
+    isError: false,
+  }),
+  useRoles: () => ({
+    data: [
+      { name: "President", permissions: ["*"] },
+      { name: "Treasurer", permissions: ["chapter-config:manage"] },
+      { name: "Cabinet", permissions: ["cabinet:read"] },
+    ],
+  }),
   // Phase 3: the bot path.
   useDiscordAvailability: () => ({ data: availability.value }),
   useDiscordConnection: () => ({
@@ -90,6 +115,7 @@ vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 import { ImportWizard } from "./import-wizard";
 import { SourceStep } from "./source-step";
 import { ChannelMappingStep } from "./channel-mapping-step";
+import { defaultChoices, mappingIssues } from "./mapping-issues";
 import { RoleMappingStep } from "./role-mapping-step";
 import { parseExportPreamble, toExportRelativePath } from "./export-preamble";
 
@@ -271,6 +297,12 @@ describe("ImportWizard — the bot path", () => {
     discoverChannels.mockReset();
     setDiscoveredMapping.mockReset();
     setDiscoveredMapping.mockResolvedValue([]);
+    channelsQuery.value = {
+      data: [{ id: "ch-1", name: "general" }],
+      isPending: false,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
   });
 
   function renderAtConsent() {
@@ -371,9 +403,11 @@ describe("ImportWizard — the bot path", () => {
       channels: [
         {
           discord_channel_id: "c1",
-          discord_channel_name: "general",
+          discord_channel_name: "random",
           discord_category: null,
           parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
         },
       ],
       roles: [],
@@ -381,17 +415,272 @@ describe("ImportWizard — the bot path", () => {
     });
 
     renderAtConsent();
-    await screen.findByText("#general");
-
-    fireEvent.click(screen.getByRole("radio", { name: /Skip/ }));
+    // No clashes and nothing private: the defaults are already an answer, so
+    // Continue works with zero per-channel clicks (#2787).
+    await screen.findByText(/Nothing needs attention/);
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() =>
-      expect(setDiscoveredMapping).toHaveBeenCalledWith(
-        expect.objectContaining({ id: "import-1" }),
-      ),
+      expect(setDiscoveredMapping).toHaveBeenCalledWith({
+        id: "import-1",
+        channels: [
+          expect.objectContaining({
+            discord_channel_id: "c1",
+            mapping_action: "create_new",
+            new_channel_name: "random",
+            new_channel_visibility: "chapter",
+          }),
+        ],
+      }),
     );
     expect(setChannelMapping).not.toHaveBeenCalled();
+  });
+
+  it("holds Continue on a channel that was private in Discord until its visibility is chosen", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c9",
+          discord_channel_name: "cabinet",
+          discord_category: "Exec",
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: true,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+
+    renderAtConsent();
+    await screen.findAllByText(/#cabinet was private in Discord/);
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    expect((continueButton as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Who can read it"), {
+      target: { value: "restricted" },
+    });
+    fireEvent.click(screen.getByLabelText(/chapter-config:manage/));
+    await waitFor(() =>
+      expect((continueButton as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(continueButton);
+
+    await waitFor(() =>
+      expect(setDiscoveredMapping).toHaveBeenCalledWith({
+        id: "import-1",
+        channels: [
+          expect.objectContaining({
+            new_channel_visibility: "restricted",
+            new_channel_required_permissions: ["chapter-config:manage"],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("asks about a public channel that holds a private thread, because the thread lands in it", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "general",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+        {
+          discord_channel_id: "t1",
+          discord_channel_name: "general › bids",
+          discord_category: "general",
+          parent_discord_channel_id: "c1",
+          readable: true,
+          private_in_discord: true,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+
+    renderAtConsent();
+    expect(
+      await screen.findByRole("button", {
+        name: /#general holds 1 private thread in Discord/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("keeps what the admin decided across a re-scan while its channel is unchanged", async () => {
+    const scan = {
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "memes",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+        {
+          discord_channel_id: "c2",
+          discord_channel_name: "exec",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: false,
+          private_in_discord: true,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    };
+    discoverChannels.mockResolvedValue(scan);
+
+    renderAtConsent();
+    await screen.findByText(/Nothing needs attention/);
+    // The "No category" group has nothing to fix, so it starts closed.
+    fireEvent.click(screen.getByRole("button", { name: /^No category/ }));
+    fireEvent.change(screen.getByLabelText("New channel name"), {
+      target: { value: "dank-memes" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+
+    await waitFor(() => expect(discoverChannels).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("New channel name") as HTMLInputElement).value,
+      ).toBe("dank-memes"),
+    );
+  });
+
+  function scanOneChannel() {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "general",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+  }
+  const continueDisabled = () =>
+    (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+      .disabled;
+
+  it("holds Continue while the existing channels are still loading, since a clash cannot be ruled out yet", async () => {
+    channelsQuery.value = {
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    scanOneChannel();
+    renderAtConsent();
+    expect(
+      await screen.findByText(/Checking the new names against your existing/),
+    ).toBeInTheDocument();
+    expect(continueDisabled()).toBe(true);
+  });
+
+  it("offers to retry, in place, when the existing channels could not be loaded", async () => {
+    const refetch = vi.fn(() => Promise.resolve());
+    channelsQuery.value = {
+      data: undefined,
+      isPending: false,
+      isError: true,
+      refetch,
+    };
+    scanOneChannel();
+    renderAtConsent();
+    expect(
+      await screen.findByText(/could not load your existing channels/),
+    ).toBeInTheDocument();
+    expect(continueDisabled()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps checking against the list it has when only a later refetch failed", async () => {
+    // A failed background refetch keeps its data (TanStack Query v5), and the
+    // names were already checked against it.
+    channelsQuery.value = {
+      data: [{ id: "ch-1", name: "general" }],
+      isPending: false,
+      isError: true,
+      refetch: () => Promise.resolve(),
+    };
+    scanOneChannel();
+    renderAtConsent();
+    // #general still clashes with the loaded list; nothing else is reported.
+    expect(
+      await screen.findAllByText(/#general already exists in Frapp/),
+    ).not.toHaveLength(0);
+    expect(
+      screen.queryByText(/could not load your existing channels/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("re-asks after a re-scan instead of trusting what the last scan defaulted", async () => {
+    const row = (
+      id: string,
+      name: string,
+      readable: boolean,
+      isPrivate: boolean,
+    ) => ({
+      discord_channel_id: id,
+      discord_channel_name: name,
+      discord_category: "Brothers",
+      parent_discord_channel_id: null,
+      readable,
+      private_in_discord: isPrivate,
+    });
+    discoverChannels
+      .mockResolvedValueOnce({
+        channels: [
+          row("c1", "rush", true, false),
+          row("c2", "exec", false, true),
+        ],
+        roles: [],
+        warnings: [],
+      })
+      .mockResolvedValueOnce({
+        // The admin gave the bot a role: #exec is readable now, and #rush has
+        // been made private in Discord since the first scan.
+        channels: [
+          row("c1", "rush", true, true),
+          row("c2", "exec", true, true),
+        ],
+        roles: [],
+        warnings: [],
+      });
+
+    renderAtConsent();
+    await screen.findByText(/Nothing needs attention/);
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+
+    expect(
+      await screen.findByRole("button", {
+        name: /#rush was private in Discord/,
+      }),
+    ).toBeInTheDocument();
+    // #exec is no longer the skip it was forced into; it is asked about.
+    expect(
+      screen.getByRole("button", { name: /#exec was private in Discord/ }),
+    ).toBeInTheDocument();
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 });
 
@@ -416,60 +705,288 @@ describe("SourceStep", () => {
   });
 });
 
-describe("ChannelMappingStep — ask, never guess", () => {
+describe("ChannelMappingStep — defaults, groups, and what still needs deciding (#2787)", () => {
   const channels = [
-    { channelId: "1", channelName: "general", category: "General" },
-    { channelId: "2", channelName: "exec", category: null },
+    {
+      channelId: "1",
+      channelName: "announcements",
+      category: "General",
+      readable: true,
+      privateInDiscord: false,
+    },
+    {
+      channelId: "2",
+      channelName: "memes",
+      category: "General",
+      readable: true,
+      privateInDiscord: false,
+    },
+    {
+      channelId: "3",
+      channelName: "cabinet",
+      category: "Exec",
+      readable: true,
+      privateInDiscord: true,
+    },
+    {
+      channelId: "4",
+      channelName: "jboard",
+      category: "Exec",
+      readable: false,
+      privateInDiscord: true,
+    },
   ];
 
-  it("starts every channel with no selection", () => {
-    // chat_channels has no unique (chapter_id, name), so a same-name Frapp
-    // channel is not evidence of anything. Nothing may be pre-selected.
+  function renderStep(
+    overrides: Partial<Parameters<typeof ChannelMappingStep>[0]> = {},
+  ) {
+    const onChange = vi.fn();
+    const onRescan = vi.fn();
+    const choices = overrides.choices ?? defaultChoices(channels);
     render(
       <ChannelMappingStep
         channels={channels}
-        choices={{}}
-        onChange={() => {}}
+        choices={choices}
+        onChange={onChange}
+        issues={mappingIssues(channels, choices, ["general"])}
+        knowsPrivacy
+        onRescan={onRescan}
+        {...overrides}
       />,
     );
+    return { onChange, onRescan };
+  }
 
-    for (const radio of screen.getAllByRole("radio")) {
-      expect(radio.getAttribute("aria-checked")).toBe("false");
-    }
+  it("groups channels by Discord category, and opens only the group that needs something", () => {
+    renderStep();
+    expect(screen.getByText("General")).toBeInTheDocument();
+    expect(screen.getByText("Exec")).toBeInTheDocument();
+    // Exec's #cabinet was private and has no visibility yet: it is open.
+    expect(screen.getByLabelText("Who can read it")).toBeInTheDocument();
+    // General has nothing to fix: summarised, not listed.
+    expect(screen.queryByText("#announcements")).not.toBeInTheDocument();
   });
 
-  it("offers merge, create and skip for each channel", () => {
-    render(
+  it("lists what blocks Continue, and jumping to one opens its row, scrolls to it and focuses it", async () => {
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView");
+    renderStep();
+    const panel = screen.getByRole("region", { name: "Needs attention" });
+    expect(panel).toHaveTextContent("Needs attention (1)");
+    // Collapse the group first: it opened itself because it has an issue.
+    fireEvent.click(screen.getByRole("button", { name: /^Exec/ }));
+    expect(screen.queryByText("#cabinet")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /#cabinet was private in Discord/ }),
+    );
+    expect(screen.getByText("#cabinet")).toBeInTheDocument();
+    const row = document.getElementById("discord-channel-3");
+    await waitFor(() =>
+      expect(row?.contains(document.activeElement)).toBe(true),
+    );
+    expect(scroll.mock.contexts).toContain(row);
+    scroll.mockRestore();
+  });
+
+  it("keeps a group that opened itself open once its last issue is fixed, so the row being edited stays put", () => {
+    const onChange = vi.fn();
+    const props = {
+      channels,
+      onChange,
+      knowsPrivacy: true,
+    };
+    const unresolved = defaultChoices(channels);
+    const { rerender } = render(
       <ChannelMappingStep
-        channels={channels}
-        choices={{}}
-        onChange={() => {}}
+        {...props}
+        choices={unresolved}
+        issues={mappingIssues(channels, unresolved, [])}
       />,
     );
-    expect(screen.getAllByRole("radiogroup")).toHaveLength(2);
-    expect(screen.getAllByRole("radio")).toHaveLength(6);
+    expect(screen.getByText("#cabinet")).toBeInTheDocument();
+    // The admin answers #cabinet in place: Exec has nothing left to fix.
+    const resolved = {
+      ...unresolved,
+      "3": { ...unresolved["3"]!, visibility: "chapter" as const },
+    };
+    rerender(
+      <ChannelMappingStep
+        {...props}
+        choices={resolved}
+        issues={mappingIssues(channels, resolved, [])}
+      />,
+    );
+    expect(screen.getByText("#cabinet")).toBeInTheDocument();
+  });
+
+  it("collapses the groups a bulk answer settles, so an answered export is not left fully expanded", () => {
+    // An export says nothing about privacy, so every row starts with a
+    // question and every group opens itself.
+    const exported = channels
+      .filter((channel) => channel.readable !== false)
+      .map(({ channelId, channelName, category }) => ({
+        channelId,
+        channelName,
+        category,
+      }));
+    function Harness() {
+      const [choices, setChoices] = useState(() => defaultChoices(exported));
+      return (
+        <ChannelMappingStep
+          channels={exported}
+          choices={choices}
+          onChange={setChoices}
+          issues={mappingIssues(exported, choices, [])}
+          knowsPrivacy={false}
+        />
+      );
+    }
+    render(<Harness />);
+    expect(screen.getByText("#announcements")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Who can read every new channel"), {
+      target: { value: "chapter" },
+    });
+    expect(screen.getByText(/Nothing needs attention/)).toBeInTheDocument();
+    expect(screen.queryByText("#announcements")).not.toBeInTheDocument();
+  });
+
+  it("ticks a bulk permission only while every new channel in scope holds it, on the same open panel", () => {
+    const restricted = {
+      ...defaultChoices(channels),
+      "3": {
+        action: "create_new" as const,
+        newName: "cabinet",
+        visibility: "restricted" as const,
+        requiredPermissions: ["chapter-config:manage"],
+      },
+    };
+    const step = (
+      choices: Parameters<typeof ChannelMappingStep>[0]["choices"],
+    ) => (
+      <ChannelMappingStep
+        channels={channels}
+        choices={choices}
+        onChange={vi.fn()}
+        issues={mappingIssues(channels, choices, [])}
+        knowsPrivacy
+      />
+    );
+    const { rerender } = render(step(restricted));
+    fireEvent.change(
+      screen.getByLabelText("Who can read the new channels in Exec"),
+      { target: { value: "restricted" } },
+    );
+    const box = () =>
+      screen.getByLabelText(/chapter-config:manage/) as HTMLInputElement;
+    expect(box().checked).toBe(true);
+
+    // Another control (the server-level one, or a row) makes the channel
+    // whole-chapter while this panel stays open: the tick must go with it.
+    rerender(
+      step({
+        ...restricted,
+        "3": { ...restricted["3"], visibility: "chapter" as const },
+      }),
+    );
+    expect(box().checked).toBe(false);
+  });
+
+  it("restricts every new channel in a category at once, and nothing outside it", () => {
+    const { onChange } = renderStep();
+    fireEvent.change(
+      screen.getByLabelText("Who can read the new channels in Exec"),
+      { target: { value: "restricted" } },
+    );
+    fireEvent.click(screen.getByLabelText(/chapter-config:manage/));
+    const next = onChange.mock.calls.at(-1)![0] as Record<
+      string,
+      { action: string; visibility?: string; requiredPermissions?: string[] }
+    >;
+    expect(next["3"]).toMatchObject({
+      visibility: "restricted",
+      requiredPermissions: ["chapter-config:manage"],
+    });
+    expect(next["4"]).toEqual({ action: "skip" });
+    expect(next["1"]!.visibility).toBe("chapter");
+  });
+
+  it("sets who can read every new channel in the server at once", () => {
+    const { onChange } = renderStep();
+    fireEvent.change(screen.getByLabelText("Who can read every new channel"), {
+      target: { value: "chapter" },
+    });
+    const next = onChange.mock.calls.at(-1)![0] as Record<
+      string,
+      { action: string; visibility?: string }
+    >;
+    expect(next["3"]).toMatchObject({
+      action: "create_new",
+      visibility: "chapter",
+    });
+    expect(next["4"]).toEqual({ action: "skip" });
+    expect(mappingIssues(channels, next as never, [])).toEqual([]);
+  });
+
+  it("skips a whole category in one click, and nothing outside it", () => {
+    const { onChange } = renderStep();
+    const skipButtons = screen.getAllByRole("button", { name: "Skip all" });
+    // [0] is the global bar; group buttons follow in category order.
+    fireEvent.click(skipButtons[1]!);
+    const next = onChange.mock.calls[0]![0] as Record<
+      string,
+      { action: string }
+    >;
+    expect(next["1"]!.action).toBe("skip");
+    expect(next["2"]!.action).toBe("skip");
+    expect(next["3"]!.action).toBe("create_new");
+  });
+
+  it("never offers an unreadable channel for import, and says how to fix it", () => {
+    const { onChange, onRescan } = renderStep();
+    fireEvent.click(screen.getByRole("button", { name: "Import all as new" }));
+    const next = onChange.mock.calls[0]![0] as Record<
+      string,
+      { action: string }
+    >;
+    expect(next["4"]!.action).toBe("skip");
+    expect(screen.getByText("Frapp can't read these (1)")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+    expect(onRescan).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for the permissions when a channel is restricted, naming who holds them", () => {
+    const choices = {
+      ...defaultChoices(channels),
+      "3": {
+        action: "create_new" as const,
+        newName: "cabinet",
+        visibility: "restricted" as const,
+        requiredPermissions: [],
+      },
+    };
+    renderStep({ choices });
+    expect(screen.getByText("chapter-config:manage")).toBeInTheDocument();
+    expect(screen.getByText("Treasurer")).toBeInTheDocument();
+    // A role's custom permission is offered even though the catalog lacks it.
+    expect(screen.getByText("cabinet:read")).toBeInTheDocument();
+  });
+
+  it("warns on the upload path that an export does not say what was private", () => {
+    renderStep({ knowsPrivacy: false, onRescan: undefined });
+    expect(
+      screen.getByText(/An export does not say which channels were private/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Scan again" }),
+    ).not.toBeInTheDocument();
   });
 
   it("asks for a target when merging into an existing channel", () => {
-    render(
-      <ChannelMappingStep
-        channels={[channels[0]!]}
-        choices={{ "1": { action: "use_existing" } }}
-        onChange={() => {}}
-      />,
-    );
+    const choices = {
+      ...defaultChoices(channels),
+      "3": { action: "use_existing" as const },
+    };
+    renderStep({ choices });
     expect(screen.getByLabelText("Merge into")).toBeInTheDocument();
-  });
-
-  it("asks for a name when creating a new channel", () => {
-    render(
-      <ChannelMappingStep
-        channels={[channels[0]!]}
-        choices={{ "1": { action: "create_new" } }}
-        onChange={() => {}}
-      />,
-    );
-    expect(screen.getByLabelText("New channel name")).toBeInTheDocument();
   });
 });
 

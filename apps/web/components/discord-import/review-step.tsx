@@ -73,6 +73,10 @@ export function ReviewStep({
                   {choice?.action === "create_new" && choice.newName
                     ? ` · #${choice.newName}`
                     : ""}
+                  {choice?.action === "create_new" &&
+                  choice.visibility === "restricted"
+                    ? " · restricted"
+                    : ""}
                 </span>
               </li>
             );

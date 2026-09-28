@@ -2171,3 +2171,44 @@ drop function if exists public.remove_user_from_private_channels(uuid, uuid);
 The same PR removes the "Add and remove a PRIVATE channel's members (#1302)" block from `scripts/check-pglite-migrations.mjs`, which would fail without the functions.
 
 **Membership written while the functions were live stays.** A rollback removes the way to change a PRIVATE channel's `member_ids`, not the members already added. They keep reading the channel, since every read goes through `canAccessChannel`'s `member_ids` check. Removing them afterwards would need a hand-written data migration, and nothing requires it. After the rollback, removing a member from the chapter no longer takes them off PRIVATE lists, so a re-invited member regains the channels they were in.
+
+## Rollback Discord import channel visibility (20260928171600)
+
+* **Migration**: `20260928171600_discord_import_channel_visibility.sql`
+
+Four columns and one CHECK on `discord_import_channels` (#2787). No data is rewritten: existing rows took `PUBLIC` and nulls.
+
+**This is a safety regression, not a neutral rollback.** Afterwards every channel an import creates is `PUBLIC` again, so a channel that was private in Discord (exec, bids, committees) becomes readable by the whole chapter when imported, and mapping rows saved as `ROLE_GATED` lose that choice. Work in this order.
+
+1. **Before deploying anything, find the imports that would publish a restricted channel.** The import worker runs inside the API process on a one-minute cron, and the previous worker creates every channel `PUBLIC`, so once the previous API is live it is too late to look. List the imports that still have `ROLE_GATED` channels to create: the worker creates one for any row with no `target_channel_id` that is not `completed` or `skipped`. A thread lands in its parent's channel, so a thread row counts only while its parent has none yet. `failed` imports are included because a failed import can be started again:
+
+   ```sql
+   select i.id, i.chapter_id, i.status, count(*) as restricted_channels
+   from public.discord_import_channels c
+   join public.discord_imports i on i.id = c.import_id
+   left join public.discord_import_channels parent
+     on parent.import_id = c.import_id
+    and parent.discord_channel_id = c.parent_discord_channel_id
+   where c.new_channel_type = 'ROLE_GATED'
+     and c.target_channel_id is null
+     and c.status not in ('completed', 'skipped')
+     and (c.parent_discord_channel_id is null or parent.target_channel_id is null)
+     and i.status in ('draft', 'ready', 'running', 'failed')
+   group by i.id, i.chapter_id, i.status;
+   ```
+
+   Cancel each one it lists: the chapter's admin presses Cancel on the Discord import page (`POST /v1/discord-imports/{id}/cancel`). Rows in `cancelled`, `completed` or `purged` imports are never picked up, so they do not count. A cancelled import cannot be changed or restarted, and a new import started after the rollback can only create channels readable by the whole chapter, so tell the chapter before cancelling.
+
+2. **Revert the web app and the API together, forward, and keep the migration file.** The API that ships with this migration writes all four columns on every scan and mapping, so dropping them under it fails every Discord import write. The web client that ships with it sends `new_channel_visibility` on every new channel, and the previous API's validation pipe rejects unknown properties (`forbidNonWhitelisted`), so that client against a reverted API fails every mapping save with a 400. So revert the #2787 code in both on `main` and ship that, but **keep `supabase/migrations/20260928171600_discord_import_channel_visibility.sql`** in the tree. Do not deploy a commit from before #2787 instead, and do not `git revert` the whole PR: either leaves the repo without a version production has applied, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`, which blocks both the rollback and the drop below.
+
+3. **Remove the columns with a new forward migration**, not by hand. Hand DDL leaves the ledger recording `20260928171600` as applied, so a later re-land would apply nothing:
+
+   ```sql
+   alter table public.discord_import_channels
+     drop constraint if exists discord_import_channels_new_channel_type_check;
+   alter table public.discord_import_channels
+     drop column if exists new_channel_required_permissions,
+     drop column if exists new_channel_type,
+     drop column if exists private_in_discord,
+     drop column if exists readable;
+   ```
