@@ -1173,10 +1173,46 @@ describe("ConnectStep — confirming what the callback parked", () => {
     ).toBe(false);
   });
 
+  it("keeps the channel-access answer when the admin goes Back from consent", async () => {
+    connection.value = { connected: true, guild_name: "Tau Nu" };
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole("checkbox", {
+        name: /given the Frapp bot a role that can see the channels/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(
+      (
+        (await screen.findByRole("checkbox", {
+          name: /given the Frapp bot a role that can see the channels/,
+        })) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+  });
+
   it("asks for the bot to be given channel access before the scan, and holds Continue until it has", async () => {
     connection.value = { connected: true, guild_name: "Tau Nu" };
     const onConnected = vi.fn();
-    render(<ConnectStep onConnected={onConnected} />);
+    function Harness() {
+      const [accessGiven, setAccessGiven] = useState(false);
+      return (
+        <ConnectStep
+          onConnected={onConnected}
+          accessGiven={accessGiven}
+          onAccessGivenChange={setAccessGiven}
+        />
+      );
+    }
+    render(<Harness />);
     expect(
       await screen.findByText(
         /Give the bot access to the channels you want to import/,

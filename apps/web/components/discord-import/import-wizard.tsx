@@ -96,6 +96,7 @@ export function ImportWizard({
   const [source, setSource] = useState<ImportSource | null>(initialSource);
   const [step, setStep] = useState<WizardStep>(initialStep);
   const [acknowledged, setAcknowledged] = useState(false);
+  const [botAccessGiven, setBotAccessGiven] = useState(false);
   const [importId, setImportId] = useState<string | null>(null);
   const [staged, setStaged] = useState<StagedExport | null>(null);
   const [scanWarnings, setScanWarnings] = useState<string[]>([]);
@@ -408,6 +409,8 @@ export function ImportWizard({
         {step === "connect" ? (
           <ConnectStep
             handshake={handshake}
+            accessGiven={botAccessGiven}
+            onAccessGivenChange={setBotAccessGiven}
             onConnected={() => setStep("consent")}
           />
         ) : null}

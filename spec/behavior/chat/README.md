@@ -489,7 +489,9 @@ channel that reports a different one fails the import rather than being skipped.
   legitimate admin is asked for nothing extra — their session already matches,
   so the dashboard confirms on arrival.
 - **The bot is installed read-only**: View Channels and Read Message History,
-  nothing else. It cannot post, edit, or remove anything. One visible
+  nothing else. With only those it cannot post, edit, or remove anything; it
+  gains more only if the chapter gives it a role that allows more, which the
+  connect step warns about (below). One visible
   consequence: Discord gates listing *private* archived threads behind Manage
   Threads, which is a permission that can also delete threads, so Frapp does
   not ask for it — private archived threads are reported as skipped, by name,

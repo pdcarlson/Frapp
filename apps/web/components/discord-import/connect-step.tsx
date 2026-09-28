@@ -42,9 +42,20 @@ export const DISCORD_CONNECT_RETURN_PATH = "/discord-import?wizard=bot";
  */
 export function ConnectStep({
   onConnected,
+  accessGiven,
+  onAccessGivenChange,
   handshake = null,
 }: {
   onConnected: () => void;
+  /**
+   * The admin's answer to "have you given the bot access to the channels?".
+   * Asked before the scan, not discovered after it: Discord shows the bot
+   * only what its roles can see, and most chapter servers hide their channels
+   * from a newcomer (on the first real import it could read 2 of 78, #2812).
+   * Held by the wizard, like the consent answer, so Back does not clear it.
+   */
+  accessGiven: boolean;
+  onAccessGivenChange: (next: boolean) => void;
   /**
    * The one-time token the OAuth callback put on the redirect.
    *
@@ -76,10 +87,6 @@ export function ConnectStep({
   // connection that succeeded.
   const attempted = useRef(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
-  // Asked before the scan, not discovered after it. Discord shows the bot only
-  // what its roles can see, and most chapter servers hide their channels from
-  // a newcomer: on the first real import the bot could read 2 of 78 (#2812).
-  const [accessGiven, setAccessGiven] = useState(false);
 
   useEffect(() => {
     if (!handshake || attempted.current) return;
@@ -169,9 +176,11 @@ export function ConnectStep({
           <p className="text-sm text-muted-foreground">
             A role that can also moderate or manage the server lends those
             powers to the bot, so take the role off Frapp once the import has
-            finished. To keep the bot read-only instead, allow the Frapp role on
-            each channel (Edit Channel → Permissions). Anything it still cannot
-            see is listed after the scan, and you can scan again.
+            finished. To keep the bot read-only instead, allow the Frapp role
+            View Channel and Read Message History on each channel (Edit Channel
+            → Permissions), or on a category for the channels still synced to
+            it. Anything it still cannot see is listed after the scan, and you
+            can scan again.
           </p>
           <label className="flex cursor-pointer items-start gap-3 pt-1 text-sm">
             <span className={dashboardCheckboxHitAreaClassName}>
@@ -179,7 +188,7 @@ export function ConnectStep({
                 type="checkbox"
                 className={dashboardTableCheckboxClassName}
                 checked={accessGiven}
-                onChange={(event) => setAccessGiven(event.target.checked)}
+                onChange={(event) => onAccessGivenChange(event.target.checked)}
               />
             </span>
             <span>
