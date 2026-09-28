@@ -14,6 +14,7 @@
  * roster projection carries no role or graduation year, so it cannot draw the
  * meta line the reference specifies.
  */
+import { memberLabel } from "@repo/hooks";
 import { initialsFor, metaLine, num, records, str } from "./narrow";
 import { formatGraduationYear } from "./profile";
 
@@ -32,8 +33,9 @@ function toRow(row: Record<string, unknown>): DirectoryRow | null {
   if (!userId) return null;
 
   // `display_name` is `NOT NULL DEFAULT ''`, so absent and empty are the same
-  // case and both fall back rather than rendering a blank row.
-  const displayName = str(row, "display_name") ?? "Unnamed member";
+  // case and both fall back rather than rendering a blank row — to the label
+  // web shows for the same member, so the two platforms agree on who it is.
+  const displayName = memberLabel(str(row, "display_name"), userId);
   return {
     userId,
     displayName,

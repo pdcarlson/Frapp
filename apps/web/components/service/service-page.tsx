@@ -13,7 +13,7 @@ import {
   useServiceEntries,
   putSignedUpload,
 } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -127,10 +127,7 @@ export function ServiceHoursPage() {
     const map = new Map<string, string>();
     for (const m of members) {
       if (m.user_id)
-        map.set(
-          String(m.user_id),
-          displayNameOrNull(m.display_name) ?? "Unnamed member",
-        );
+        map.set(String(m.user_id), memberLabel(m.display_name, m.user_id));
     }
     return map;
   }, [members]);
@@ -395,10 +392,10 @@ export function ServiceHoursPage() {
    * skeleton until the query gave up. Copy is writing.md §7's row.
    */
   /*
-   * `membersQuery` is in this gate because this screen, unlike the points
-   * board and the task board, has no sanctioned fallback label: it renders
-   * `memberNameById.get(entry.user_id) ?? entry.user_id`, so an uncached
-   * roster turns the approval queue into a list of raw UUIDs. The viewer read
+   * `membersQuery` is in this gate because this screen names every row from
+   * the roster: an uncached roster would turn the approval queue into a list of
+   * `Member 2f4a1c` fallback labels, which no officer can approve against. The
+   * viewer read
    * is deliberately *not* here — an unresolved viewer already says so in
    * words on the Approve control ("Checking who you are…"), so that half
    * degrades honestly on its own.
@@ -618,7 +615,8 @@ export function ServiceHoursPage() {
               <ul className="divide-y divide-border">
                 {pending.map((entry) => {
                   const name =
-                    memberNameById.get(entry.user_id) ?? entry.user_id;
+                    memberNameById.get(entry.user_id) ??
+                    memberFallbackLabel(entry.user_id);
                   const isOwnEntry =
                     !viewerUnknown && entry.user_id === viewerUserId;
                   const cannotApprove = isOwnEntry || viewerUnknown;
@@ -758,7 +756,9 @@ export function ServiceHoursPage() {
           ) : (
             <ul className="divide-y divide-border">
               {history.map((entry) => {
-                const name = memberNameById.get(entry.user_id) ?? entry.user_id;
+                const name =
+                  memberNameById.get(entry.user_id) ??
+                  memberFallbackLabel(entry.user_id);
                 return (
                   <li
                     key={entry.id}

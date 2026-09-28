@@ -16,7 +16,7 @@ import {
   type ReportTruncation,
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberLabel } from "@repo/hooks/display-names";
 import { formatLocaleDateTime } from "@repo/formatting";
 import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -123,13 +123,11 @@ function buildMemberOptions(members: MemberProfile[]): PickerOption[] {
     .map((member) => {
       const id = member.user_id;
       if (!id) return null;
-      const displayName = displayNameOrNull(member.display_name) ?? "";
+      // The shared label, with the email beside it rather than instead of it,
+      // so an unnamed member reads the same here as on every other surface.
+      const name = memberLabel(member.display_name, id);
       const email = member.email;
-      const label = displayName
-        ? email
-          ? `${displayName} (${email})`
-          : displayName
-        : email || `Member ${id.slice(0, 8)}`;
+      const label = email ? `${name} (${email})` : name;
       return { id, label };
     })
     .filter((option): option is PickerOption => option !== null);

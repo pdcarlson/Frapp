@@ -11,7 +11,7 @@ import {
   useOverdueInvoices,
   useTransitionInvoiceStatus,
 } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { can } from "@repo/validation";
 import { formatBareDate } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
@@ -220,7 +220,7 @@ export function InvoiceList({ id }: { id?: string }) {
       if (member.user_id) {
         map.set(
           String(member.user_id),
-          displayNameOrNull(member.display_name) ?? "Unnamed member",
+          memberLabel(member.display_name, member.user_id),
         );
       }
     }
@@ -519,8 +519,7 @@ export function InvoiceList({ id }: { id?: string }) {
                             key={member.user_id ?? "unknown"}
                             value={String(member.user_id ?? "")}
                           >
-                            {displayNameOrNull(member.display_name) ??
-                              "Unnamed member"}
+                            {memberLabel(member.display_name, member.user_id)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -747,7 +746,8 @@ export function InvoiceList({ id }: { id?: string }) {
               const selected = selectedIds.includes(invoice.id);
               const isOverdue = overdueIds.has(invoice.id);
               const memberName = canManage
-                ? (memberNameById.get(invoice.user_id) ?? invoice.user_id)
+                ? (memberNameById.get(invoice.user_id) ??
+                  memberFallbackLabel(invoice.user_id))
                 : null;
               return (
                 <li

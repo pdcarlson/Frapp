@@ -14,6 +14,7 @@
  * already makes for the drawn attendance stat no member can read.
  */
 import { parseInstant } from "@repo/formatting";
+import { memberLabel } from "@repo/hooks";
 import { formatGraduationYear } from "../more/profile";
 import {
   initialsFor,
@@ -56,7 +57,7 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     userId,
     // `display_name` is `NOT NULL DEFAULT ''`, so absent and empty are the
     // same "no name set" case — matches `DirectoryRow`'s fallback.
-    displayName: rawDisplayName ?? "Unnamed member",
+    displayName: memberLabel(rawDisplayName, userId),
     initials: initialsFor(rawDisplayName),
     email: str(data, "email"),
     bio: str(data, "bio"),
