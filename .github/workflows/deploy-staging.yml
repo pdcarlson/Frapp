@@ -19,13 +19,13 @@ name: Deploy staging
 #
 # ── `secrets: inherit`, and why it is needed ───────────────────────────────
 # `_deploy.yml`'s job names the `staging` environment itself and reads that
-# environment's secrets. GitHub releases them to a CALLED job only when the
-# caller also passes `secrets: inherit`: without it every one reads empty, even
-# with the called job's `environment:` set (run 36479856561, the first run
-# through `_deploy.yml`, whose guard stopped it before anything shipped;
-# actions/runner#4453). Where a passed secret and the environment's share a
-# name, the environment's wins. No repository secret exists (#2583), so
-# inherit hands the called job nothing but those.
+# environment's secrets. Without `secrets: inherit` here every one read empty
+# in that called job, `environment:` key and all (run 36479856561, the first
+# run through `_deploy.yml`, whose guard stopped it before anything shipped).
+# GitHub releases an environment's secrets to a called job only when the
+# caller passes `inherit` (actions/runner#4453); the first run with it proves
+# that here, recorded on #2804. No repository secret exists (#2583), so
+# inherit hands the called job nothing else.
 #
 # ── Names other things depend on ────────────────────────────────────────────
 # `migration-snapshot.yml` triggers on this workflow's NAME, "Deploy staging",

@@ -228,7 +228,7 @@ describe("_deploy.yml: the shared job's interface", () => {
     };
     const run = (overrides) =>
       spawnSync("bash", ["-c", script], { env: { PATH: process.env.PATH, ...ok, ...overrides }, encoding: "utf8" });
-    const PROOF = /secrets reached this called job through its own environment: key/;
+    const PROOF = /secrets reached this called job \(its environment: key, and the caller's secrets: inherit\)/;
 
     const green = run({});
     assert.equal(green.status, 0, green.stdout + green.stderr);

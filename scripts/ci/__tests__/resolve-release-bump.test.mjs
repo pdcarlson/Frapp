@@ -371,9 +371,11 @@ describe("the workflows that run this script grant the scope it needs", () => {
       join(repoRoot, ".github/workflows/deploy-production.yml"),
       "utf8",
     );
-    // The release job reads the PAT from its own `automation` environment. A
-    // caller pass-through could only be empty: the calling job can name no
-    // environment, and no repository copy exists (#2518, #2630).
+    // The release job reads the PAT from its own `automation` environment,
+    // which GitHub releases to a called job only when the caller passes
+    // `secrets: inherit` (v1.3.0's tag was made by the Actions token without
+    // it; actions/runner#4453). A named pass-through could only carry a
+    // repository copy, and none may exist (#2518).
     assert.match(
       text,
       /environment:\s*\n\s*name: automation/,
@@ -381,7 +383,17 @@ describe("the workflows that run this script grant the scope it needs", () => {
     );
     assert.ok(
       !deploy.includes("RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}"),
-      "deploy-production.yml must not pass RELEASE_GITHUB_TOKEN; the called job reads the environment's copy",
+      "deploy-production.yml must not pass RELEASE_GITHUB_TOKEN by name: only a repository copy could fill it",
+    );
+    // The release job alone: from its key to the next job's.
+    const jobAt = deploy.indexOf("\n  release:\n");
+    assert.notEqual(jobAt, -1, "deploy-production.yml has no release job");
+    const jobEnd = deploy.slice(jobAt + 1).search(/\n  [a-z][a-z0-9_-]*:\n/);
+    const releaseJob = jobEnd === -1 ? deploy.slice(jobAt) : deploy.slice(jobAt, jobAt + 1 + jobEnd);
+    assert.match(
+      releaseJob,
+      /^ {4}secrets: inherit$/m,
+      "deploy-production.yml's release call must pass `secrets: inherit`, or RELEASE_GITHUB_TOKEN reads empty",
     );
   });
 });
