@@ -1417,7 +1417,7 @@ export async function runStagingConformance({
   }
 
   const failingIds = openAlerts.flatMap((issue) => parseFailingIds(issue.body));
-  if (openAlerts.length > 0 && !canResolveAlert({ results, failingIds })) {
+  if (!canResolveAlert({ results, failingIds })) {
     const unresolved = failingIds.filter(
       (id) => !results.some((r) => r.id === id && r.status === PASS),
     );
