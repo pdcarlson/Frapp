@@ -44,7 +44,7 @@ import {
   TOMBSTONE_STALE_TEXT,
   TOMBSTONE_TEXT,
 } from "./block-copy";
-import { mergeServerRow } from "./cache";
+import { mergeServerRow, trimOlderThan } from "./cache";
 import {
   CHAT_MESSAGE_QUERY_ROOT,
   chatMessagesKey,
@@ -611,6 +611,37 @@ function channelIdOf(queryKey: readonly unknown[]): string | null {
     : null;
 }
 
+/** Rows per page of the re-read. Under the API's cap of 200. */
+export const MASKED_REFRESH_PAGE_LIMIT = 100;
+
+/**
+ * Pages one thread's re-read may take: five thousand messages. Past it the
+ * rows the read did not reach are trimmed from the thread rather than left as
+ * copies no read will clear (`refreshMaskedCopies`).
+ */
+export const MASKED_REFRESH_MAX_PAGES = 50;
+
+/** Epoch ms of the oldest server-masked copy from this sender, or `null`. */
+function oldestMaskedCopyTime(
+  cache: ChannelCache | undefined,
+  senderId: string,
+): number | null {
+  if (!cache) return null;
+  let oldest: number | null = null;
+  for (const message of Object.values(cache.byId)) {
+    if (
+      message.sender_id !== senderId ||
+      !message._blockEvaluated ||
+      !message.sender_blocked
+    ) {
+      continue;
+    }
+    const time = Date.parse(message.created_at);
+    if (oldest === null || time < oldest) oldest = time;
+  }
+  return oldest;
+}
+
 /** Waits between attempts of one thread's re-read: two retries, then give up. */
 export const MASKED_REFRESH_RETRY_DELAYS_MS: readonly number[] = [1_000, 3_000];
 
@@ -626,14 +657,19 @@ function wait(ms: number): Promise<void> {
  * snapshot-then-await `queryFn`, which returns the cache as it was before its
  * reaction select: a Realtime row or a send that landed in that window was
  * overwritten, and a message could vanish for the session (#2257 review,
- * finding 3). Here each affected thread's newest page is fetched on its own
- * and folded into the cache **as it is when the response lands**, through
- * `replaceMaskedCopies`, which only swaps masked copies for their clear twins.
+ * finding 3). Here each affected thread is read on its own, newest page first
+ * and back page by page until the read reaches the oldest masked copy the
+ * cache holds, and each page is folded into the cache **as it is when the
+ * response lands**, through `replaceMaskedCopies`, which only swaps masked
+ * copies for their clear twins.
  *
- * Only threads that hold a masked copy from this member are read. Older copies
- * beyond the newest page stay masked, as stale tombstones, until the thread's
- * query is next read from scratch (spec/behavior/chat/README.md, Channel
- * messages row).
+ * Only threads that hold a masked copy from this member are read. Reading
+ * back to the oldest copy, not just the newest page, is what older history
+ * needs (#1571): a thread holds the older pages a member scrolled through
+ * until it next reads its newest page from scratch (a refetch, or a jump's
+ * forward read that comes back full), and an unblock re-runs no query, so a
+ * copy there would otherwise stay a stale tombstone whose Reload could never
+ * reach it.
  *
  * **A failure is retried, then recorded — never swallowed.** Each thread's read
  * is tried up to `1 + retryDelaysMs.length` times, and a thread that no longer
@@ -675,19 +711,77 @@ export async function refreshMaskedCopies(
   }
   maskedRefresh.set(userId, "refreshing");
 
-  /** One read of a thread's newest page, folded in. `false` on any failure. */
-  async function readNewestPage(channelId: string): Promise<boolean> {
+  /**
+   * One thread's read, newest page back to its oldest masked copy, folded in
+   * page by page. `false` on a failed request; the retry resumes from `read`,
+   * the cursor the last successful page left, rather than re-reading the
+   * pages before it.
+   *
+   * The cursor overlaps by a millisecond, as the timeline's older-history read
+   * does, so a copy sharing the boundary instant with the page before it is
+   * not skipped; `replaceMaskedCopies` is idempotent, so the overlap costs
+   * nothing. The stop is strict for the same reason: a page whose oldest row
+   * shares the copy's millisecond may still have cut it off.
+   *
+   * **The bound is not a failure.** Past `MASKED_REFRESH_MAX_PAGES` the rows
+   * the read did not reach are trimmed from the thread, masked copies with
+   * them, and the read counts as done. They load again, from the server and
+   * so unmasked, when the member next scrolls back to them. Reporting it as a
+   * failure instead offered a Reload that walked the same pages and failed
+   * the same way, every time.
+   */
+  async function readMaskedRange(
+    channelId: string,
+    read: { before?: string; pages: number; reachedTime?: number },
+  ): Promise<boolean> {
+    const key = chatMessagesKey(channelId);
     try {
-      const result = await client.GET("/v1/channels/{id}/messages", {
-        params: { path: { id: channelId }, query: { limit: 50 } },
-      });
-      if (!result.response.ok || !Array.isArray(result.data)) return false;
-      const rows = result.data as RawChatMessage[];
-      queryClient.setQueryData<ChannelCache>(
-        chatMessagesKey(channelId),
-        (current) =>
+      while (read.pages < MASKED_REFRESH_MAX_PAGES) {
+        const target = oldestMaskedCopyTime(
+          queryClient.getQueryData<ChannelCache>(key),
+          userId,
+        );
+        if (target === null) return true;
+        const result = await client.GET("/v1/channels/{id}/messages", {
+          params: {
+            path: { id: channelId },
+            query: {
+              limit: MASKED_REFRESH_PAGE_LIMIT,
+              ...(read.before ? { before: read.before } : {}),
+            },
+          },
+        });
+        if (!result.response.ok || !Array.isArray(result.data)) return false;
+        const rows = result.data as RawChatMessage[];
+        read.pages += 1;
+        queryClient.setQueryData<ChannelCache>(key, (current) =>
           current ? replaceMaskedCopies(current, rows, userId) : current,
-      );
+        );
+        if (rows.length < MASKED_REFRESH_PAGE_LIMIT) return true;
+        const pageOldest = rows.reduce((oldest, row) =>
+          Date.parse(row.created_at) < Date.parse(oldest.created_at)
+            ? row
+            : oldest,
+        );
+        const pageOldestTime = Date.parse(pageOldest.created_at);
+        if (pageOldestTime < target) return true;
+        const overlapping = new Date(pageOldestTime + 1).toISOString();
+        // A full page inside one millisecond would never move the overlapping
+        // cursor, so the strict one takes over.
+        read.before =
+          overlapping === read.before ? pageOldest.created_at : overlapping;
+        read.reachedTime = pageOldestTime;
+      }
+      if (read.reachedTime !== undefined) {
+        // Inclusive of the last page's millisecond: the page may have cut
+        // off rows in it, a masked copy among them, and the read goes on only
+        // while its oldest row is not strictly older than the copy. Rows the
+        // page did carry in that millisecond go too, and reload on scroll.
+        const through = read.reachedTime + 1;
+        queryClient.setQueryData<ChannelCache>(key, (current) =>
+          current ? trimOlderThan(current, through) : current,
+        );
+      }
       return true;
     } catch {
       return false;
@@ -696,8 +790,11 @@ export async function refreshMaskedCopies(
 
   const results = await Promise.all(
     channelIds.map(async (channelId) => {
+      const read: { before?: string; pages: number; reachedTime?: number } = {
+        pages: 0,
+      };
       for (let attempt = 0; ; attempt += 1) {
-        if (await readNewestPage(channelId)) return true;
+        if (await readMaskedRange(channelId, read)) return true;
         const delay = retryDelaysMs[attempt];
         if (delay === undefined) return false;
         await wait(delay);

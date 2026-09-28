@@ -545,9 +545,10 @@ vi.mock("./message-timeline", async () => {
       onDelete?: (messageId: string) => void;
       onReply?: (message: { id: string; reply_to_id?: string | null }) => void;
       canManageChannel?: boolean;
+      holdFollow?: boolean;
     }
   >(function MessageTimeline(
-    { messages, onDelete, onReply, canManageChannel },
+    { messages, onDelete, onReply, canManageChannel, holdFollow },
     ref,
   ) {
     // Models the REAL contract: the timeline can only scroll to a message it
@@ -565,6 +566,7 @@ vi.mock("./message-timeline", async () => {
     return (
       <div data-testid="message-timeline">
         <span data-testid="can-manage-channel">{String(canManageChannel)}</span>
+        <span data-testid="hold-follow">{String(!!holdFollow)}</span>
         {/* Whether the shell offered a Reply handler at all — the read-only
             rule (#489 AC 4) is expressed by withholding the prop, so it is
             invisible without this echo. */}
@@ -594,10 +596,22 @@ vi.mock("./message-timeline", async () => {
 import { blockClearance } from "@repo/chat-core/blocks";
 import { ChatShell } from "./chat-shell";
 
+/**
+ * The notice for a jump target the channel's whole history did not hold. The
+ * mocked channel has no older history unless a case says so, so this is what
+ * a miss reads as by default (#1571).
+ */
+const NOT_IN_CHANNEL = /isn't in this channel anymore/i;
+
 function chatChannelResult(
   overrides: Partial<{
     isLoading: boolean;
     messages: typeof MESSAGES;
+    hasOlder: boolean;
+    isLoadingOlder: boolean;
+    olderError: boolean;
+    loadOlder: () => Promise<string>;
+    loadNewer: () => Promise<number | null>;
     // The composer-shell handoff (#2176) runs through both of these: the shell
     // writes with `setDraft`, and `draft` is what the editor is built from.
     draft: string;
@@ -623,6 +637,11 @@ function chatChannelResult(
     discard: vi.fn(),
     dispatchSlash: vi.fn(),
     act: vi.fn(),
+    hasOlder: overrides.hasOlder ?? false,
+    isLoadingOlder: overrides.isLoadingOlder ?? false,
+    olderError: overrides.olderError ?? false,
+    loadOlder: overrides.loadOlder ?? vi.fn(async () => "start"),
+    loadNewer: overrides.loadNewer ?? vi.fn(async () => 0),
   };
 }
 
@@ -795,17 +814,267 @@ describe("ChatShell deep-link targets", () => {
     // that is stated. Search exists to reach messages beyond the loaded
     // window, so this is the common path, not an edge case.
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
     expect(mockScrollToMessage).not.toHaveBeenCalled();
+  });
+
+  it("pages older history toward a jump target before saying anything is wrong (#1571)", async () => {
+    const loadOlder = vi.fn(async () => "loaded");
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "msg-old" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(await screen.findByText("Finding that message...")).toBeTruthy();
+    await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
+
+    // The page lands with the target in it: the jump happens, and the line
+    // that said it was looking goes.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        hasOlder: true,
+        loadOlder,
+        messages: [
+          {
+            id: "msg-old",
+            content: "from last spring",
+            created_at: "2025-04-01T00:00:00Z",
+          },
+          ...MESSAGES,
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    await waitFor(() => {
+      expect(mockScrollToMessage).toHaveBeenCalledWith("msg-old");
+    });
+    expect(screen.queryByText("Finding that message...")).toBeNull();
+  });
+
+  it("stops paging at the bound and says the target is further back", async () => {
+    const loadOlder = vi.fn(async () => "loaded");
+    searchHit.mockReturnValue({
+      message: { id: "msg-ancient" },
+      channelId: "chan-general",
+    });
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder }),
+    );
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    // Every page lands without the target. A fresh array is a changed
+    // `messages`, which is what re-runs the jump in the app.
+    for (let round = 0; round < 30; round += 1) {
+      mockUseChatChannel.mockReturnValue(
+        chatChannelResult({ hasOlder: true, loadOlder, messages: [...MESSAGES] }),
+      );
+      rerender(<ChatShell initialChannelId="chan-general" />);
+    }
+
+    expect(
+      await screen.findByText(/further back than the history loaded here/i),
+    ).toBeTruthy();
+    expect(loadOlder).toHaveBeenCalledTimes(20);
+  });
+
+  it("says loading failed when a page the jump asked for fails", async () => {
+    const loadOlder = vi.fn(async () => "error");
+    searchHit.mockReturnValue({
+      message: { id: "msg-old" },
+      channelId: "chan-general",
+    });
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder }),
+    );
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(1));
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder, olderError: true }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(
+      await screen.findByText(
+        "Couldn't load the messages needed to reach that message.",
+      ),
+    ).toBeTruthy();
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it("still tries when an earlier scroll-up had failed", async () => {
+    // `olderError` is left over from the member scrolling up; a new jump is a
+    // new request and gets its own attempt rather than inheriting the failure.
+    const loadOlder = vi.fn(async () => "loaded");
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, olderError: true, loadOlder }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "msg-old" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(await screen.findByText("Finding that message...")).toBeTruthy();
+    await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(1));
+  });
+
+  it("reads what arrived after the newest row before paging back", async () => {
+    // A notification for a message posted during a Realtime gap: newer than
+    // the cache, not older. One forward read reaches it; paging back would
+    // have spent the budget in the wrong direction and then called it gone.
+    const loadOlder = vi.fn(async () => "loaded");
+    const loadNewer = vi.fn(async () => 1);
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder, loadNewer }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "msg-just-posted" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(loadNewer).toHaveBeenCalledTimes(1);
+    expect(loadOlder).not.toHaveBeenCalled();
+
+    // The forward read lands with the target in it.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        hasOlder: true,
+        loadOlder,
+        loadNewer,
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-just-posted",
+            content: "just now",
+            created_at: "2026-01-04T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    await waitFor(() => {
+      expect(mockScrollToMessage).toHaveBeenCalledWith("msg-just-posted");
+    });
+    expect(loadOlder).not.toHaveBeenCalled();
+  });
+
+  it("gives a message-only link a fresh budget in each channel it lands in", async () => {
+    const loadOlder = vi.fn(async () => "loaded");
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder }),
+    );
+    // No channel named: the jump runs in whichever channel is active.
+    const { rerender } = render(<ChatShell initialMessageId="msg-elsewhere" />);
+    for (let round = 0; round < 30; round += 1) {
+      await act(async () => {});
+      mockUseChatChannel.mockReturnValue(
+        chatChannelResult({ hasOlder: true, loadOlder, messages: [...MESSAGES] }),
+      );
+      rerender(<ChatShell initialMessageId="msg-elsewhere" />);
+    }
+    await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(20));
+
+    // The member opens another channel: the target is still pending, and this
+    // channel has not been searched at all.
+    fireEvent.click(screen.getByTestId("pick-random"));
+
+    await waitFor(() => expect(loadOlder.mock.calls.length).toBeGreaterThan(20));
+  });
+
+  it("holds follow while a jump works, and lets go once it settles on a notice", async () => {
+    const loadOlder = vi.fn(async () => "loaded");
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: true, loadOlder }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "msg-ancient" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("hold-follow")).toHaveTextContent("false");
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(await screen.findByText("Finding that message...")).toBeTruthy();
+    expect(screen.getByTestId("hold-follow")).toHaveTextContent("true");
+
+    // The channel runs out of history without it: the notice goes up, the
+    // target stays pending, and new messages are followed again.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: false, loadOlder, messages: [...MESSAGES] }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
+    expect(screen.getByTestId("hold-follow")).toHaveTextContent("false");
+  });
+
+  it("says a read failed, not that the message is gone, when the forward read fails", async () => {
+    // A short channel: nothing older to page, so without the forward read's
+    // failure on record the verdict would be "isn't in this channel anymore".
+    const loadNewer = vi.fn(async () => null);
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: false, loadNewer }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "msg-just-posted" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(
+      await screen.findByText(
+        "Couldn't load the messages needed to reach that message.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
+  });
+
+  it("says the channel did not load, not that the message is gone", async () => {
+    mockUseChatChannel.mockReturnValue({
+      ...chatChannelResult({ hasOlder: false }),
+      loadError: new Error("Bad Gateway"),
+    });
+    searchHit.mockReturnValue({
+      message: { id: "msg-old" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(
+      await screen.findByText(
+        "Couldn't load this channel's messages to reach that message.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
   });
 
   it("waits for the live window before calling a jump target unreachable (#2249)", async () => {
     /*
       The cached first chunk resolves identity from disk, so a warm load has a
       viewer id long before the network has answered for the *messages*. This
-      guard is not about identity though — it decides whether to tell the member
-      "That message is older than the history loaded here.", and the cached tail
+      guard is not about identity though — it decides whether to page history
+      and then tell the member the message is unreachable, and the cached tail
       is by construction the rows that existed when the cache was written. A
       deep link to something posted while they were away would miss against it
       and state that, out loud, over a message the backfill is about to deliver.
@@ -827,7 +1096,7 @@ describe("ChatShell deep-link targets", () => {
 
     await waitFor(() => expect(searchHit).toHaveBeenCalled());
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).not.toBeInTheDocument();
     expect(mockScrollToMessage).not.toHaveBeenCalled();
   });
@@ -840,7 +1109,7 @@ describe("ChatShell deep-link targets", () => {
     render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
 
     // Switching channels from the rail must not leave #general's notice
@@ -852,7 +1121,7 @@ describe("ChatShell deep-link targets", () => {
       expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
     });
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).toBeNull();
   });
 
@@ -864,7 +1133,7 @@ describe("ChatShell deep-link targets", () => {
     render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
 
     // The natural "did that work?" second click. Without a nonce in the effect
@@ -874,7 +1143,7 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
 
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
   });
 
@@ -886,12 +1155,12 @@ describe("ChatShell deep-link targets", () => {
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).toBeNull();
 
     // A new message lands. Dismiss abandons the target, so this must not
@@ -907,7 +1176,7 @@ describe("ChatShell deep-link targets", () => {
     rerender(<ChatShell initialChannelId="chan-general" />);
 
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).toBeNull();
   });
 
@@ -919,7 +1188,7 @@ describe("ChatShell deep-link targets", () => {
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(
-      await screen.findByText(/older than the history loaded here/i),
+      await screen.findByText(NOT_IN_CHANNEL),
     ).toBeTruthy();
 
     // The target stays pending, so a message that arrives later still gets its
@@ -943,7 +1212,7 @@ describe("ChatShell deep-link targets", () => {
       expect(mockScrollToMessage).toHaveBeenCalledWith("msg-late");
     });
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).toBeNull();
   });
 
@@ -2502,7 +2771,7 @@ describe("ChatShell block list (#2313)", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
 
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(/waiting on your block list/i),
@@ -2519,7 +2788,7 @@ describe("ChatShell block list (#2313)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("replaces an earlier miss's notice once the target turns out to be held", () => {
+  it("replaces an earlier miss's notice once the target turns out to be held", async () => {
     blockListState.value = { ...blockListState.value, status: "unavailable" };
     searchHit.mockReturnValue({
       message: { id: "msg-late" },
@@ -2527,9 +2796,7 @@ describe("ChatShell block list (#2313)", () => {
     });
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
-    expect(
-      screen.getByText(/older than the history loaded here/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(NOT_IN_CHANNEL)).toBeInTheDocument();
 
     // It then arrives over the echo while the list is still unreadable.
     mockUseChatChannel.mockReturnValue(
@@ -2548,7 +2815,7 @@ describe("ChatShell block list (#2313)", () => {
     rerender(<ChatShell initialChannelId="chan-general" />);
 
     expect(
-      screen.queryByText(/older than the history loaded here/i),
+      screen.queryByText(NOT_IN_CHANNEL),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(/waiting on your block list/i),
