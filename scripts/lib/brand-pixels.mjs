@@ -241,6 +241,20 @@ export function assertInsetTile(fraction, label) {
 }
 
 /**
+ * Every shipped SVG in `packages/brand-assets/assets`, and whether it must
+ * paint the charcoal field. The glyph and the lockup draw the crest alone (the
+ * lockup sits in page headers with no tile, spec/ui/assets.md §3). The
+ * rasterizer, `check:brand-assets` and brand-pixels.test.mjs all walk this one
+ * list, so a vector can't be checked in one place and missed in another.
+ */
+export const SHIPPED_VECTORS = [
+  { name: "signet-emblem-B.svg", requireField: true },
+  { name: "signet-emblem-B-glyph.svg", requireField: false },
+  { name: "signet-emblem-B-rounded.svg", requireField: true },
+  { name: "frapp-lockup.svg", requireField: false },
+];
+
+/**
  * The locked pair, asserted against the SVG source rather than the pixels.
  *
  * Every shipped SVG goes through this, not just the two the rasters render

@@ -45,6 +45,7 @@ import {
   GOLD_HEX,
   ICO_SIZES,
   RENDER_AGREEMENT_MIN,
+  SHIPPED_VECTORS,
   SYNCED,
   assertGlyphCoverage,
   assertFullyOpaque,
@@ -62,23 +63,16 @@ const root = join(__dirname, "..");
 const repo = (rel) => join(root, rel);
 
 const MASTER_SVG = "packages/brand-assets/assets/signet-emblem-B.svg";
-const GLYPH_SVG = "packages/brand-assets/assets/signet-emblem-B-glyph.svg";
 const MASTER_RASTER = "packages/brand-assets/assets/signet-emblem-B-1024.png";
 const FAVICON_ICO = "packages/brand-assets/assets/signet-emblem-B.ico";
 const canonicalRaster = (size) =>
   `packages/brand-assets/assets/signet-emblem-B-${size}.png`;
 
-/**
- * Every shipped vector. `requireField` is false for the two that draw the crest
- * alone: the glyph, and the lockup, which sits on the page background with no
- * tile (spec/ui/assets.md §3).
- */
-const vectors = [
-  { rel: MASTER_SVG },
-  { rel: GLYPH_SVG, requireField: false },
-  { rel: "packages/brand-assets/assets/signet-emblem-B-rounded.svg" },
-  { rel: "packages/brand-assets/assets/frapp-lockup.svg", requireField: false },
-];
+/** Every shipped vector: `SHIPPED_VECTORS`, the one list (scripts/lib/brand-pixels.mjs). */
+const vectors = SHIPPED_VECTORS.map(({ name, requireField }) => ({
+  rel: `packages/brand-assets/assets/${name}`,
+  requireField,
+}));
 
 /**
  * Opaque RGB rasters. All of them, not a sample: the 16px favicon is the one

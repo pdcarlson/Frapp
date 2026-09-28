@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
+import { routeMetadata } from "../../lib/route-metadata";
 import { LegalDocument } from "../components/legal-document";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = routeMetadata({
   title: "FERPA Notice · Frapp",
   description:
     "How Frapp relates to FERPA: Frapp is a software provider, not an educational institution, and chapters are responsible for what they upload.",
-};
+  path: "/ferpa",
+});
 
 // A change to the text below moves `lastUpdated` when it is material, and
 // updates this page's pin in scripts/ci/__tests__/legal-policy-version.test.mjs

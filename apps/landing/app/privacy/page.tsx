@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
+import { routeMetadata } from "../../lib/route-metadata";
 import { LegalDocument } from "../components/legal-document";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = routeMetadata({
   title: "Privacy Policy · Frapp",
   description:
     "What the Frapp mobile app and web dashboard collect, how it is used, which providers process it, how long it is kept, and how to reach us.",
-};
+  path: "/privacy",
+});
 
 // A material change here moves `lastUpdated` below and bumps
 // `LEGAL_POLICY_VERSION` in `@repo/validation`, which asks every user to accept

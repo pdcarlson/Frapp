@@ -21,8 +21,13 @@
 //
 // EVERY ROUTE NAMES ITSELF. `/terms`, `/privacy` and `/ferpa` had no
 // `metadata` export, so crawlers read each as the homepage, and `/privacy`
-// is the page app review reads. Each now has its own "<Page> · Frapp"
-// title, and the floor counts them: root + OG + Twitter + the four routes.
+// is the page app review reads. Each legal route, `/support` included, now
+// builds its metadata with `routeMetadata` (apps/landing/lib/route-metadata.ts)
+// from its own "<Page> · Frapp" title and its path. A route that set only
+// `title` would still inherit the root layout's `openGraph` and `twitter`
+// objects (Next merges metadata by top-level key), so a shared link would
+// preview as the homepage; the helper restates both with the route's title and
+// `og:url`. The floor counts every title: the layout's 3 + one per route.
 //
 // THE STATUS BANNER TRACKS THE RESKIN, SO IT MOVES. The landing spec must
 // always announce its own status at the top, so a change to that status
@@ -47,6 +52,7 @@ const OG_IMAGE = "apps/landing/app/opengraph-image.tsx";
 const HOME = "apps/landing/app/page.tsx";
 const LOCKUP = "apps/landing/components/frapp-lockup.tsx";
 const SPEC = "spec/ui/landing/README.md";
+const ROUTE_METADATA = "apps/landing/lib/route-metadata.ts";
 
 const HOME_TITLE = "Frapp. Ask your chapter anything.";
 
@@ -58,7 +64,7 @@ export const ROUTE_TITLES = {
   "apps/landing/app/ferpa/page.tsx": "FERPA Notice · Frapp",
 };
 
-/** Root + OG + Twitter + /support, /terms, /privacy, /ferpa. Deleting a title must fail. */
+/** Root + OG + Twitter on the layout, and /support, /terms, /privacy, /ferpa. Deleting a title must fail. */
 const MIN_METADATA_TITLES = 7;
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next", ".turbo", "coverage", "public"]);
@@ -138,8 +144,16 @@ export function pinnedTitleProblems({ layout, routes }) {
   }
   for (const [rel, title] of Object.entries(ROUTE_TITLES)) {
     const source = routes[rel] ?? "";
-    if (!isMetadataFile(source) || !new RegExp(`title: ["']${escape(title)}["']`).test(source)) {
+    const pinned =
+      isMetadataFile(source) &&
+      /export const metadata: Metadata = routeMetadata\(\{/.test(source) &&
+      new RegExp(`title: ["']${escape(title)}["']`).test(source);
+    if (!pinned) {
       problems.push(`${rel} metadata title`);
+    }
+    const path = `/${rel.split("/").at(-2)}`;
+    if (!new RegExp(`path: ["']${escape(path)}["']`).test(source)) {
+      problems.push(`${rel} path must be ${path}`);
     }
   }
   return problems;
@@ -153,6 +167,23 @@ export function ogCardProblems(og) {
   // The wordmark drawn into the card is JSX text on a line of its own.
   if (!/^\s*Frapp\s*$/m.test(og)) {
     problems.push("OG wordmark must read Frapp");
+  }
+  return problems;
+}
+
+/** The helper must restate the social blocks, or a route inherits the homepage's. */
+export function routeHelperProblems(helper) {
+  const problems = [];
+  const og = /openGraph: \{([\s\S]*?)\n    \},/.exec(helper);
+  if (!og || !/\btitle,/.test(og[1]) || !/url: path,/.test(og[1]) || !/images: \[SHARE_IMAGE\]/.test(og[1])) {
+    problems.push("routeMetadata must set openGraph title, url and image");
+  }
+  const tw = /twitter: \{([\s\S]*?)\n    \},/.exec(helper);
+  if (!tw || !/\btitle,/.test(tw[1]) || !/card: "summary_large_image"/.test(tw[1])) {
+    problems.push("routeMetadata must set the Twitter card and title");
+  }
+  if (!new RegExp(`alt: ["']${escape(HOME_TITLE)}["']`).test(helper)) {
+    problems.push("routeMetadata's share image alt");
   }
   return problems;
 }
@@ -175,6 +206,11 @@ export function jsonLdProblems(home) {
 
 export function chromeSurfaceProblems({ lockup, spec }) {
   const problems = [];
+  // Owner, 2026-09-28: the header crest sits on the page background with no
+  // tile (spec/ui/assets.md §3). The component draws nothing with a fill.
+  if (/\bbg-/.test(lockup)) {
+    problems.push("lockup must draw the crest with no tile behind it");
+  }
   if (!/aria-label=["']Frapp["']/.test(lockup)) {
     problems.push("lockup aria-label must be Frapp");
   }
@@ -206,6 +242,20 @@ export function lockSelfProblems(source) {
   return problems;
 }
 
+/** Routes that render no `<head>` of their own: the homepage owns the root one, and /join only redirects. */
+export const NO_METADATA_ROUTES = new Set(["apps/landing/app/page.tsx", "apps/landing/app/join/page.tsx"]);
+
+/** Every other `page.tsx` needs its own metadata, and a pinned title. */
+export function routeCoverageProblems(files) {
+  const problems = [];
+  for (const { rel, source } of files) {
+    if (!rel.endsWith("/page.tsx") || NO_METADATA_ROUTES.has(rel)) continue;
+    if (!isMetadataFile(source)) problems.push(`${rel} has no metadata export`);
+    if (!(rel in ROUTE_TITLES)) problems.push(`${rel} has no pinned title in ROUTE_TITLES`);
+  }
+  return problems;
+}
+
 function routeSources() {
   return Object.fromEntries(Object.keys(ROUTE_TITLES).map((rel) => [rel, readRepo(rel)]));
 }
@@ -224,6 +274,30 @@ test("the landing site says Frapp, never Signet", () => {
 test("landing metadata titles say Frapp, one per route", () => {
   assert.deepEqual(metadataTitleProblems(liveFiles()), []);
   assert.deepEqual(pinnedTitleProblems({ layout: readRepo(LAYOUT), routes: routeSources() }), []);
+  assert.deepEqual(routeHelperProblems(readRepo(ROUTE_METADATA)), []);
+});
+
+test("a helper that stops restating the social blocks fails", () => {
+  const helper = readRepo(ROUTE_METADATA);
+  assert.deepEqual(routeHelperProblems(helper.replace("      url: path,\n", "")), [
+    "routeMetadata must set openGraph title, url and image",
+  ]);
+  assert.deepEqual(routeHelperProblems(helper.replace('      card: "summary_large_image",\n', "")), [
+    "routeMetadata must set the Twitter card and title",
+  ]);
+});
+
+test("every route but the homepage and /join names itself", () => {
+  assert.deepEqual(routeCoverageProblems(liveFiles()), []);
+});
+
+test("a new route without metadata fails", () => {
+  const rel = "apps/landing/app/accessibility/page.tsx";
+  const source = "export default function A() { return null; }\n";
+  assert.deepEqual(routeCoverageProblems([{ rel, source }]), [
+    `${rel} has no metadata export`,
+    `${rel} has no pinned title in ROUTE_TITLES`,
+  ]);
 });
 
 test("the OG card's alt text and wordmark say Frapp", () => {
@@ -275,12 +349,25 @@ test("putting Signet back in a layout metadata title fails", () => {
 test("dropping a route's metadata fails the floor and the pin", () => {
   const privacy = "apps/landing/app/privacy/page.tsx";
   const routes = routeSources();
-  routes[privacy] = routes[privacy].replace(/export const metadata[\s\S]*?\n};\n/, "");
+  routes[privacy] = routes[privacy].replace(/export const metadata[\s\S]*?\n\}\);\n/, "");
   const problems = metadataTitleProblems([
     { rel: LAYOUT, source: readRepo(LAYOUT) },
     ...Object.entries(routes).map(([rel, source]) => ({ rel, source })),
   ]);
   assert.ok(problems.includes("landing must keep the Frapp metadata titles"), problems.join("; "));
+  assert.deepEqual(pinnedTitleProblems({ layout: readRepo(LAYOUT), routes }), [
+    `${privacy} metadata title`,
+    `${privacy} path must be /privacy`,
+  ]);
+});
+
+test("a route that sets its title without the helper fails the pin", () => {
+  const privacy = "apps/landing/app/privacy/page.tsx";
+  const routes = routeSources();
+  routes[privacy] = routes[privacy].replace(
+    "export const metadata: Metadata = routeMetadata({",
+    "export const metadata: Metadata = ({",
+  );
   assert.deepEqual(pinnedTitleProblems({ layout: readRepo(LAYOUT), routes }), [`${privacy} metadata title`]);
 });
 
@@ -314,6 +401,14 @@ test("the old lockup word or aria-label fails", () => {
   ]);
   assert.deepEqual(chromeSurfaceProblems({ lockup: lockup.replace(">Frapp</span>", ">Signet</span>"), spec }), [
     "lockup wordmark must read Frapp",
+  ]);
+  const tiled = lockup.replace(
+    '<SignetCrest className="h-7 w-7" />',
+    '<span className="rounded-xs bg-surface-1"><SignetCrest className="h-6 w-6" /></span>',
+  );
+  assert.notEqual(tiled, lockup);
+  assert.deepEqual(chromeSurfaceProblems({ lockup: tiled, spec }), [
+    "lockup must draw the crest with no tile behind it",
   ]);
 });
 

@@ -34,6 +34,7 @@ import {
   ICO_SIZES,
   OFF_AXIS_MAX,
   RENDER_AGREEMENT_MIN,
+  SHIPPED_VECTORS,
   SYNCED,
   assertGlyphCoverage,
   assertFullyOpaque,
@@ -258,16 +259,24 @@ test("coverageMask splits on the antialiasing midpoint", () => {
 // ── the committed vectors (text only — no decode) ───────────────────────────
 
 test("every shipped vector paints only the locked pair", () => {
-  for (const name of ["signet-emblem-B.svg", "signet-emblem-B-rounded.svg"]) {
-    assertSvgLocked(readFileSync(join(ASSETS, name), "utf8"), name);
+  for (const { name, requireField } of SHIPPED_VECTORS) {
+    assertSvgLocked(readFileSync(join(ASSETS, name), "utf8"), name, { requireField });
   }
-  // The crest alone: the glyph, and the lockup, which sits in page headers on
-  // the page background with no tile (spec/ui/assets.md §3).
-  for (const name of ["signet-emblem-B-glyph.svg", "frapp-lockup.svg"]) {
-    assertSvgLocked(readFileSync(join(ASSETS, name), "utf8"), name, {
-      requireField: false,
-    });
-  }
+  // The list is every SVG in the package, so a new vector can't ship unchecked.
+  assert.deepEqual(
+    SHIPPED_VECTORS.map(({ name }) => name).sort(),
+    readdirSync(ASSETS).filter((name) => name.endsWith(".svg")).sort(),
+  );
+});
+
+test("the lockup draws the crest alone, with no tile", () => {
+  // Owner, 2026-09-28: page headers put the crest straight on the page
+  // background (spec/ui/assets.md §3). assertSvgLocked with requireField:false
+  // only PERMITS the field to be absent, so the absence is asserted here.
+  const lockup = readFileSync(join(ASSETS, "frapp-lockup.svg"), "utf8");
+  assert.doesNotMatch(lockup, /<rect\b/i, "frapp-lockup.svg must not draw a tile");
+  assert.doesNotMatch(lockup, /#1A1A1A/i, "frapp-lockup.svg must not paint the charcoal field");
+  assert.match(lockup, />Frapp<\/text>/, "frapp-lockup.svg's wordmark must read Frapp");
 });
 
 test("assertSvgLocked catches the three ways a vector goes off-brand", () => {

@@ -1,10 +1,11 @@
 // Which lines of a source file are copy, for the name locks.
 //
-// frapp-mobile-copy, frapp-api-copy and frapp-web-copy each walk a surface
-// for a product name that must not ship, and none may count a comment that
-// names the design system; frapp-web-titles judges the root layout the same
-// way. This is the one rule all four read by, so a fix to it reaches all four,
-// and so is the download-name pattern the three walks share.
+// frapp-mobile-copy, frapp-api-copy, frapp-web-copy and frapp-landing-copy
+// each walk a surface for a product name that must not ship, and none may
+// count a comment that names the design system; frapp-web-titles judges the
+// root layout the same way. This is the one rule all five read by, so a fix to
+// it reaches all five, and so is the download-name pattern the mobile, API and
+// web walks share.
 
 /**
  * Why lines and not a scanner. Telling a comment from a string, a regex or

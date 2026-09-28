@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
+import { routeMetadata } from "../../lib/route-metadata";
 import { LegalDocument } from "../components/legal-document";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = routeMetadata({
   title: "Support · Frapp",
   description:
     "How to get help with the Frapp mobile app and web dashboard, report a problem, or request account deletion.",
-};
+  path: "/support",
+});
 
 // Both app stores require a public support URL on the listing, and Apple's
 // review checks that it answers the questions a member would actually have:
