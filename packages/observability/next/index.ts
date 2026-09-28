@@ -19,6 +19,7 @@
 export {
   buildAnonymousBrowserSentryOptions,
   buildAnonymousServerSentryOptions,
+  SENTRY_BROWSER_TRACING_OPTIONS,
 } from "./sentry-options";
 export type { AnonymousNextSentryRuntime } from "./sentry-options";
 

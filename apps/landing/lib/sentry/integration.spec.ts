@@ -35,8 +35,6 @@ function itemsFromEnvelope<T>(envelope: unknown, type: string): T[] {
 describe("Sentry SDK integration", () => {
   let sent: ErrorEvent[] = [];
   let sentTransactions: Record<string, unknown>[] = [];
-  /** Standalone span items (`span` envelope items), each a span container. */
-  let sentSpans: unknown[] = [];
 
   beforeAll(() => {
     Sentry.init({
@@ -54,7 +52,6 @@ describe("Sentry SDK integration", () => {
               "transaction",
             ),
           );
-          sentSpans.push(...itemsFromEnvelope<unknown>(envelope, "span"));
           return Promise.resolve({ statusCode: 200 });
         },
         flush: () => Promise.resolve(true),
@@ -65,7 +62,6 @@ describe("Sentry SDK integration", () => {
   beforeEach(() => {
     sent = [];
     sentTransactions = [];
-    sentSpans = [];
   });
 
   afterAll(async () => {
@@ -122,32 +118,6 @@ describe("Sentry SDK integration", () => {
     expect(sentTransactions).toHaveLength(1);
     expect(JSON.stringify(sentTransactions[0])).not.toContain(MEMBER_EMAIL);
     expect(sentTransactions[0]?.transaction).toBe("/join");
-  });
-
-  it("scrubs a standalone span, the path INP takes past both hooks", async () => {
-    // Under the static lifecycle the browser SDK still sends INP on its own,
-    // as a `span` envelope item that neither `beforeSend` nor
-    // `beforeSendTransaction` sees. Its name and target are the clicked
-    // element's selector, aria-label included. This drives the same SDK path
-    // with production's options, so it also proves `beforeSendSpan` was
-    // wrapped with `withStaticSpan` (the SDK ignores it otherwise).
-    const member = ["Jordan", "Avery"].join(" ");
-    Sentry.startInactiveSpan({
-      name: `button.row[aria-label="Hide conversation with ${member}"]`,
-      op: "ui.interaction.click",
-      startTime: 1,
-      experimental: { standalone: true },
-      attributes: {
-        "browser.web_vital.inp.target": `button.row[aria-label="${member}"]`,
-      },
-    }).end(2);
-    await Sentry.flush(2000);
-
-    expect(sentSpans).toHaveLength(1);
-    const json = JSON.stringify(sentSpans);
-    expect(json).not.toContain(member);
-    expect(json).not.toContain("inp.target");
-    expect(json).toContain("Interaction to next paint");
   });
 
   it("does not put email, IP, token, query, or body on the envelope", async () => {

@@ -17,8 +17,8 @@
  * every middleware, guard, pipe, interceptor and filter span is lost without
  * a warning. That is why the missing-salt warning is logged by `main.ts`
  * rather than here: `Logger` lives in `@nestjs/common`.
- * `instrument.spec.ts` walks this file's imports and fails if one reaches
- * `@nestjs/*`.
+ * `instrument.spec.ts` loads this file with every `@nestjs/*` package mocked
+ * to throw, and checks that `main.ts` imports it first.
  */
 import * as Sentry from '@sentry/nestjs';
 import { buildSentryOptions } from './infrastructure/observability/sentry-options';

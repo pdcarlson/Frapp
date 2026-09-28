@@ -2,7 +2,6 @@ import {
   buildAnonymousBrowserSentryOptions,
   buildAnonymousServerSentryOptions,
 } from "@repo/observability/next";
-import { withStaticSpan } from "@sentry/nextjs";
 import type { BrowserOptions, NodeOptions } from "@sentry/nextjs";
 
 /**
@@ -31,7 +30,6 @@ function landingRuntime(dsn: string) {
     release: landingSentryRelease(),
     tracesSampleRateRaw: process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE,
     tracePropagationTargets: [] as string[],
-    withStaticSpan,
   };
 }
 

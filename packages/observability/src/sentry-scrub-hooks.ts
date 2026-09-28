@@ -11,7 +11,6 @@ import {
 export function createNoPseudonymScrubHooks(): {
   scrubError: <T>(event: T) => T | null;
   scrubTransaction: <T>(event: T) => T | null;
-  scrubStaticSpan: <T>(span: T) => T;
 } {
   const scrubber = createSentryScrubber(NO_PSEUDONYMS);
   return {
@@ -24,9 +23,6 @@ export function createNoPseudonymScrubHooks(): {
       return scrubber.scrubSentryTransaction(
         event as unknown as ScrubbableEvent,
       ) as T | null;
-    },
-    scrubStaticSpan<T>(span: T): T {
-      return scrubber.scrubSentryStaticSpan(span) as T;
     },
   };
 }

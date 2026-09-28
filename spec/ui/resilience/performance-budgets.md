@@ -148,7 +148,7 @@ They need no reporting code. `@sentry/nextjs` keeps its default integrations and
 one, `userTimingIntegration`, which turns `mark` and `measure` entries into spans on the pageload
 transaction. **Correction (2026-09-28, #2722):** this used to say the SDK defaults alone did it;
 that was SDK v10 (`_addMeasureSpans` inside `browserTracingIntegration`), and v11 made it opt-in.
-`browserTracingIntegration` is still the source of FCP, LCP, CLS, TTFB and INP — which is why this repo does **not** add a
+`browserTracingIntegration` is still the source of FCP, LCP, CLS and TTFB (INP is off until #2736) — which is why this repo does **not** add a
 `web-vitals` dependency or a second reporting path. Sampling is `tracesSampleRate` (0.1) and
 initialization is skipped entirely without `NEXT_PUBLIC_SENTRY_DSN`, so these are field metrics: they
 report nothing locally or in CI, by design.

@@ -338,7 +338,6 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
   redactFreeText: (input: string) => string;
   scrubSentryEvent: (event: ScrubbableEvent) => ScrubbableEvent | null;
   scrubSentryTransaction: (event: ScrubbableEvent) => ScrubbableEvent | null;
-  scrubSentryStaticSpan: (span: unknown) => Record<string, unknown>;
 } {
   /**
    * Best-effort PII sweep over a free-text string (exception messages, culprits,
@@ -1022,56 +1021,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     }
   }
 
-  /**
-   * `beforeSendSpan` for the SDK's static trace lifecycle (#2722).
-   *
-   * Under `traceLifecycle: 'static'`, SDK v11 still sends the browser's INP
-   * span on its own, as a standalone span envelope. That path never reaches
-   * `beforeSend` or `beforeSendTransaction`, so without this hook it ships
-   * raw. Its name and `browser.web_vital.inp.target` are the clicked
-   * element's selector, which carries its `aria-label`, `title`, `name` and
-   * `alt`, and in this app those can hold a member's or a channel's name.
-   * The same hook also sees every span of a transaction before
-   * `beforeSendTransaction` does. Rebuilding those here too is harmless,
-   * because it applies the same rules, and it is fail-closed if a new
-   * standalone span type appears.
-   *
-   * Two SDK rules shape it. A callback that **throws** makes the SDK send the
-   * span unmodified, and returning `null` is ignored the same way, so this
-   * never throws and always returns a rebuilt span. An interaction span's
-   * name is replaced outright rather than swept: a selector is not free text
-   * the sweep can reason about, and INP's value is the span's duration,
-   * which survives.
-   */
-  function scrubSentryStaticSpan(span: unknown): Record<string, unknown> {
-    try {
-      const out = scrubSpan(span);
-      const op = (span as { op?: unknown } | null)?.op;
-      if (typeof op === 'string' && op.startsWith('ui.interaction')) {
-        out.description = 'Interaction to next paint';
-      }
-      return out;
-    } catch {
-      const source = (span ?? {}) as Record<string, unknown>;
-      const skeleton: Record<string, unknown> = { data: {} };
-      for (const key of [
-        'span_id',
-        'trace_id',
-        'start_timestamp',
-        'timestamp',
-      ]) {
-        if (key in source) skeleton[key] = source[key];
-      }
-      return skeleton;
-    }
-  }
-
-  return {
-    redactFreeText,
-    scrubSentryEvent,
-    scrubSentryTransaction,
-    scrubSentryStaticSpan,
-  };
+  return { redactFreeText, scrubSentryEvent, scrubSentryTransaction };
 }
 
 /**
