@@ -240,9 +240,9 @@ describe('PosthogRuntime', () => {
     }
 
     it("gives every record of one request that request's verdict", async () => {
-      // sha256 places `req-a` at 0.429 and `req-kept` at 0.741.
+      // sha256 places `req-a` at 0.429 and `req-dropped` at 0.675.
       expect(await exportedCount(0.5, 'req-a')).toBe(200);
-      expect(await exportedCount(0.5, 'req-kept')).toBe(0);
+      expect(await exportedCount(0.5, 'req-dropped')).toBe(0);
     });
 
     it.each([
