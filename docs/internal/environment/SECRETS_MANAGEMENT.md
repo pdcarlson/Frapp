@@ -93,7 +93,7 @@ dashboard (`development` / `preview` / `production`) or a non-secret `eas.json` 
 entry. **This is not limited to `EXPO_PUBLIC_*`:** `SENTRY_AUTH_TOKEN` is build-time only and never
 bundled, yet a Release build *fails* without it in EAS — see
 [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#appsmobile-expo--eas) § apps/mobile. An Infisical entry for
-that name serves `apps/api` (Render sync) and `apps/web` (injected into the staging and production builds); it never reaches EAS. The live syncs are Render + Vercel only (next section).
+that name serves `apps/api` (Render sync) and `apps/web` (injected into the staging and production builds); it never reaches EAS. The live syncs are Render only (next section).
 
 ### 5. Configure Secret Syncs
 
@@ -133,7 +133,9 @@ which removed the rows they had written, and both projects' Production env lists
 afterwards. The production dry run that followed,
 [36458267082 attempt 4](https://github.com/pdcarlson/Frapp/actions/runs/36458267082), built both
 frontends green from Infisical `prod` alone. Its earlier attempt had failed on a `[SENSITIVE]`
-placeholder that a synced row leaked into the landing build (#2810).
+placeholder that a synced row leaked into the landing build (#2810). Since that fix, a build keeps
+only Vercel's system variables from the pulled env, so a row added to either project again doesn't
+reach a build unless it's named like one, and the build log names every row it kept and removed.
 
 **The two staging Vercel syncs are deleted (2026-09-28, [#834](https://github.com/pdcarlson/Frapp/issues/834)).**
 `vercel-web-staging` and `vercel-landing-staging` wrote Preview rows scoped to git branch `main`.
@@ -218,13 +220,17 @@ keys that app reads. No staging build reads a Vercel sync; the two staging syncs
 **How it works.** The job records its env var names, then calls the `infisical-secrets` action for
 `staging` after `npm ci` and the Vercel CLI install, so no install script sees the store.
 `scripts/ci/deploy-vercel.mjs` then runs every Vercel CLI step on the recorded names alone, gives
-`vercel build` the app's own keys, and removes those keys from the Preview env `vercel pull` writes,
-so no Vercel row can supply one. The per-app key list is `APP_CONFIG_KEYS` in
+`vercel build` the app's own keys, and keeps only Vercel's system variables from the Preview env
+`vercel pull` writes, so an ordinary project row doesn't reach the build
+([#2810](https://github.com/pdcarlson/Frapp/issues/2810)). The per-app key list is `APP_CONFIG_KEYS` in
 [`scripts/ci/lib/vercel-build-env.mjs`](../../../scripts/ci/lib/vercel-build-env.mjs), and
 `vercel-build-env.test.mjs` fails when it drifts from the `process.env` reads in `apps/web`,
 `apps/landing` and every workspace package their bundles can contain. A required key missing from
-Infisical fails the deploy before anything is built, naming the key, and so does a pull that leaves no
-env file where the strip looks. Mechanism and evidence: that file's header.
+Infisical fails the deploy before anything is built, naming the key, and so does a `[SENSITIVE]`
+placeholder value in the injection or the recorded baseline. A pull that leaves no env file where the
+filter looks fails that project's build before it runs, and so does a placeholder that would still
+reach it; on staging's single-phase path that can come after the other project has shipped. Which
+names the filter keeps, and every placeholder check: that file's header.
 
 **Runtime needs nothing from Infisical.** Next inlines `NEXT_PUBLIC_*` into client, server and proxy
 code at build, and the only non-public key either app receives, `SENTRY_AUTH_TOKEN`, is read by
@@ -235,23 +241,25 @@ deployment reads at request time.
 `deploy-production.yml` records its env names immediately before its Infisical `prod` injection, and
 both Vercel steps (build and upload) run on those names plus each app's `APP_CONFIG_KEYS`. Before
 this, every production Vercel CLI process ran on the whole `prod` store, and a Production row filled
-any app key the injection lacked. A dry run withholds `SENTRY_AUTH_TOKEN` from the build and strips
-it from the pulled file, so it mints no Sentry release
-([#2275](https://github.com/pdcarlson/Frapp/issues/2275)). A key Vercel's Production env holds that
+any app key the injection lacked. A dry run withholds `SENTRY_AUTH_TOKEN` from the build, and the
+pulled file keeps no app key, so it mints no Sentry release
+([#2275](https://github.com/pdcarlson/Frapp/issues/2275)). An app key Vercel's Production env holds that
 Infisical `prod` doesn't supply prints a `::warning::` naming it, which is how a value that only
-ever lived in Vercel shows up. With that, **no build reads a Vercel env row**, so the two production
+ever lived in Vercel shows up. With that, **no build reads app config from a Vercel env row**, so the two production
 Vercel syncs, which only copied the whole `prod` store into two frontend projects, were deleted with
 their Production rows on 2026-09-28 (§5, #834). Nothing
 here depends on Vercel's Git link or branch tracking, both of which are off.
 
 #### Blast radius
 
-Since every sync reads path `/`, each pushes backend-only secrets toward destinations that never
-consume them. What each frontend app actually reads is `APP_CONFIG_KEYS` in
+Every sync reads path `/`, so while the Vercel syncs lived, each pushed backend-only secrets toward
+frontend projects that never consumed them; the two Render syncs that remain feed the API, which
+does. What each frontend app actually reads is `APP_CONFIG_KEYS` in
 [`scripts/ci/lib/vercel-build-env.mjs`](../../../scripts/ci/lib/vercel-build-env.mjs), a list a test
 keeps equal to the source (this section used to carry its own copy, which had fallen five keys per app
 behind). Everything else in the environment — database passwords, service-role keys, Stripe secrets,
-deploy hook URLs — is pushed toward those projects without being used by them.
+deploy hook URLs — was pushed toward those projects without being used by them, until the syncs were
+deleted (staging and production both on 2026-09-28).
 
 **The Vercel syncs delivered, all four of them, until they were deleted on 2026-09-28.** On 2026-08-12 the `frapp-web`
 environment-variable list was read directly, and both its `Preview` and `Production` scopes held the
@@ -312,8 +320,8 @@ minutes confirming it:
    Attention"; the warning is about dashboard visibility, not about a detected leak.
 
 Vercel's per-variable **Rotate Variable** button replaces only Vercel's copy. It does not rotate
-anything at Supabase or Stripe, the old credential stays valid, and the next sync overwrites your new
-value. Real rotation is provider first, then Infisical — never Vercel.
+anything at Supabase or Stripe, the old credential stays valid, and no build reads Vercel's copy
+anyway. Real rotation is provider first, then Infisical — never Vercel.
 
 ### 6. Configure GitHub
 

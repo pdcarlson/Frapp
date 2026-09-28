@@ -26,22 +26,38 @@
 // `NEXT_PUBLIC_API_URL` and the two `NEXT_PUBLIC_SUPABASE_*` keys; `frapp-landing`:
 // `NEXT_PUBLIC_APP_URL`), none of the sync's `Preview · main` rows.
 //
-// ── The three rules, and why each is needed ────────────────────────────────
+// ── The four rules, and why each is needed ─────────────────────────────────
 // 1. The app keys go into `vercel build`'s environment. The CLI loads the
 //    pulled `.vercel/.env.<env>.local` with a bundled dotenv@4.0.0 whose whole
 //    merge is `process.env[key] = process.env[key] || parsed[key]`, so a
 //    non-empty value already in the environment wins over the file.
-// 2. The same keys are deleted from the pulled file. The `||` above means an
-//    EMPTY injected value loses to the file, and a key Infisical does not hold
-//    at all would be filled from it. Either way a Vercel row would feed the
-//    bundle while the log said Infisical did.
+// 2. The pulled file keeps Vercel's system variables and nothing else. The `||`
+//    above means an EMPTY injected value loses to the file, and a key Infisical
+//    does not hold at all would be filled from it: a Vercel row would feed the
+//    bundle while the log said Infisical did. Removing only the app's own keys
+//    was not enough (#2810): every other project row still reached the build,
+//    and `vercel pull` writes a Sensitive row's value as the literal
+//    `[SENSITIVE]`. Production dry run 36458267082 (attempt 3) died on it,
+//    prerendering landing's `/` against `http://localhost:[SENSITIVE]`, most
+//    likely `PORT` from the path-`/` production sync (inferred from the value's
+//    shape; attempt 4 went green once the owner deleted those rows). So
+//    the file is filtered to an allowlist, not a denylist: a row added to a
+//    project later, by hand or by an integration, reaches a build only if it
+//    is named like a system variable, and the log names every row kept.
+//    Vercel's own build-tool rows (`NX_DAEMON`, `TURBO_*`, which public
+//    `vercel pull` output shows beside `VERCEL_ENV`) are removed too: neither
+//    tool runs in this build.
 // 3. Nothing else Infisical injected reaches a Vercel CLI process. The injection
 //    exports the whole store to the job, so the child environment is built from
 //    the names the job had BEFORE the injection (the baseline, recorded by
 //    `record-env-baseline.mjs`) plus the project's own keys, never from the
 //    ambient environment wholesale.
+// 4. No value of exactly `[SENSITIVE]` reaches a build, from any source: the
+//    injected app config, the baseline, or a system row the pull kept. It is
+//    refused, naming the key, because a build that compiles a placeholder in
+//    fails somewhere unrelated, or worse, succeeds.
 //
-// Runtime is not a fourth rule, and that was checked, not assumed. Next inlines
+// Runtime is not a fifth rule, and that was checked, not assumed. Next inlines
 // `NEXT_PUBLIC_*` at build into client, Node server and proxy code alike
 // (`next/dist/build/define-env.js` spreads them unconditionally), and neither app
 // reads a non-public key at request time: `SENTRY_AUTH_TOKEN` is read only by
@@ -150,11 +166,13 @@ export function parseEnvBaseline(text) {
  *   every CLI step. The injection's other keys never reach a CLI process.
  * - `appEnv`: the project's app keys that hold a value, for `vercel build`
  *   only. An empty value counts as absent, as it does for `requireEnv`.
- * - `appKeys`: every key the app reads, set or not. These are deleted from the
- *   pulled env file, so Vercel cannot supply one.
+ * - `appKeys`: every key the app reads, set or not. The pulled env file keeps
+ *   none of them (it keeps only Vercel's system variables), so Vercel cannot
+ *   supply one; these name the ones a build goes without.
  *
- * Throws, naming keys and never values, when a required key is missing or when
- * the baseline already holds an app key. The second means the baseline was
+ * Throws, naming keys and never values, when a required key is missing, when
+ * either env holds a `[SENSITIVE]` placeholder, or when the baseline already
+ * holds an app key. That last one means the baseline was
  * recorded after the injection (so it would pass the whole store through) or
  * that an app key is set outside Infisical. Both are wrong for a build whose
  * config is supposed to come from Infisical alone.
@@ -190,31 +208,92 @@ export function infisicalBuildEnv({ label, env, baselineNames }) {
   for (const key of appKeys) {
     if (env[key]) appEnv[key] = env[key];
   }
+  // Checked here, for every project, before anything is pulled or built, so a
+  // placeholder in landing's config stops the run before web has shipped.
+  refuseSensitivePlaceholders({ label, source: "The Infisical injection", env: appEnv });
+  refuseSensitivePlaceholders({ label, source: "The job environment before the injection", env: baseEnv });
   return { baseEnv, appEnv, appKeys };
 }
 
-// The same line shape dotenv@4.0.0 in the CLI accepts, so a line this reads as
-// a key is exactly a line `vercel build` would load. The CLI writes one
-// `KEY="value"` per line with newlines escaped, so line-wise removal is exact.
-const DOTENV_KEY_RE = /^\s*([\w.-]+)\s*=/;
+/**
+ * The value `vercel pull` writes for a row whose value it may not read: a
+ * Sensitive project variable (CLI 59.11.7, `SENSITIVE_ENV_VALUE_PLACEHOLDER`).
+ */
+export const SENSITIVE_PLACEHOLDER = "[SENSITIVE]";
+
+/** The names in `env` whose value is the placeholder, sorted. Never values. */
+export function keysHoldingPlaceholder(env) {
+  return Object.keys(env)
+    .filter((key) => typeof env[key] === "string" && env[key].trim() === SENSITIVE_PLACEHOLDER)
+    .sort();
+}
+
+/** Throw, naming keys and `source`, if any value in `env` is the placeholder. */
+export function refuseSensitivePlaceholders({ label, source, env }) {
+  const keys = keysHoldingPlaceholder(env);
+  if (keys.length === 0) return;
+  throw new Error(
+    `[${label}] ${source} holds ${keys.join(", ")} with the value "${SENSITIVE_PLACEHOLDER}", which is ` +
+      `\`vercel pull\`'s placeholder for a Sensitive row it may not read. A build would compile the ` +
+      `placeholder in, so nothing was built. Set a real value at the source, or remove the row (#2810).`,
+  );
+}
 
 /**
- * Remove `keys` from the text of a pulled `.vercel/.env.<env>.local`.
- *
- * Everything else is kept as written, the Vercel system variables included
- * (`VERCEL_ENV` is what `next.config.js` derives the Sentry environment from).
- * Returns the names removed, for the log. Never the values.
+ * Whether `name` is one of Vercel's system variables, the only rows a build
+ * loads from the pulled file: `VERCEL` itself, `VERCEL_*`, and the
+ * framework-prefixed copies Next.js reads in the browser, `NEXT_PUBLIC_VERCEL_*`.
+ * `VERCEL_ENV` is the one that matters: the production config fences and the
+ * Sentry environment tag read it. No app config key matches (a test holds
+ * that), so this never lets a Vercel row supply one. The pulled file does not
+ * say which rows Vercel generated, so a project row under one of these names
+ * passes too; the log names every row kept.
  */
-export function withoutEnvKeys(text, keys) {
-  const drop = new Set(keys);
+export function isVercelSystemVariable(name) {
+  return name === "VERCEL" || name.startsWith("VERCEL_") || name.startsWith("NEXT_PUBLIC_VERCEL_");
+}
+
+// dotenv@4.0.0's line grammar, the parser `vercel build` bundles (CLI 59.11.7),
+// so a line this reads as a row is exactly a line the build would load. The CLI
+// writes one `KEY="value"` per line with newlines escaped, so line-wise
+// filtering is exact.
+const DOTENV_LINE_RE = /^\s*([\w.-]+)\s*=\s*(.*)?\s*$/;
+
+/** One pulled line as dotenv@4.0.0 reads it, or null for a line it skips. */
+function parseDotenvLine(line) {
+  const match = line.match(DOTENV_LINE_RE);
+  if (!match) return null;
+  let value = match[2] ?? "";
+  if (value.length > 0 && value.startsWith('"') && value.endsWith('"')) value = value.replace(/\\n/gm, "\n");
+  return { key: match[1], value: value.replace(/(^['"]|['"]$)/g, "").trim() };
+}
+
+/**
+ * Keep only Vercel's system variables in the text of a pulled
+ * `.vercel/.env.<env>.local`. Every other row is removed: the app's own keys,
+ * which come from Infisical, and any other project row, which no build should
+ * load (#2810). Comments and blank lines, which dotenv skips, are kept.
+ *
+ * Returns the names kept and removed, in file order, for the log, and
+ * `keptEnv`: each kept row's value exactly as dotenv@4 would load it, for the
+ * caller's `refuseSensitivePlaceholders`. The one placeholder check covers the
+ * file and the environments alike. A removed row needs no check: it never
+ * reaches the build. Never log `keptEnv`.
+ */
+export function onlyVercelSystemRows(text) {
+  const kept = [];
   const removed = [];
-  const kept = text.split("\n").filter((line) => {
-    const key = line.match(DOTENV_KEY_RE)?.[1];
-    if (key && drop.has(key)) {
-      removed.push(key);
+  const keptEnv = {};
+  const lines = text.split("\n").filter((line) => {
+    const row = parseDotenvLine(line);
+    if (!row) return true;
+    if (!isVercelSystemVariable(row.key)) {
+      removed.push(row.key);
       return false;
     }
+    kept.push(row.key);
+    keptEnv[row.key] = row.value;
     return true;
   });
-  return { text: kept.join("\n"), removed };
+  return { text: lines.join("\n"), kept, removed, keptEnv };
 }
