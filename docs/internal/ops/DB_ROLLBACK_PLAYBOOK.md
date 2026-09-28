@@ -1245,10 +1245,16 @@ After any rollback event:
 * **Migration**: `20260816140000_realtime_carrier_repair.sql`
 * **Action**: everything this migration creates is additive and separately droppable. Full revert:
   ```sql
-  -- 1. stop the change pings
-  DROP TRIGGER IF EXISTS realtime_notify_notifications    ON public.notifications;
-  DROP TRIGGER IF EXISTS realtime_notify_events           ON public.events;
-  DROP TRIGGER IF EXISTS realtime_notify_event_attendance ON public.event_attendance;
+  -- 1. stop the change pings (three statement-level triggers per table)
+  DROP TRIGGER IF EXISTS realtime_notify_notifications_ins    ON public.notifications;
+  DROP TRIGGER IF EXISTS realtime_notify_notifications_upd    ON public.notifications;
+  DROP TRIGGER IF EXISTS realtime_notify_notifications_del    ON public.notifications;
+  DROP TRIGGER IF EXISTS realtime_notify_events_ins           ON public.events;
+  DROP TRIGGER IF EXISTS realtime_notify_events_upd           ON public.events;
+  DROP TRIGGER IF EXISTS realtime_notify_events_del           ON public.events;
+  DROP TRIGGER IF EXISTS realtime_notify_event_attendance_ins ON public.event_attendance;
+  DROP TRIGGER IF EXISTS realtime_notify_event_attendance_upd ON public.event_attendance;
+  DROP TRIGGER IF EXISTS realtime_notify_event_attendance_del ON public.event_attendance;
   DROP FUNCTION IF EXISTS public.realtime_notify_notifications();
   DROP FUNCTION IF EXISTS public.realtime_notify_events();
   DROP FUNCTION IF EXISTS public.realtime_notify_event_attendance();
@@ -1259,9 +1265,10 @@ After any rollback event:
   DROP FUNCTION IF EXISTS public.realtime_can_read_chapter_scope(uuid);
   DROP FUNCTION IF EXISTS public.realtime_can_read_event_scope(uuid);
 
-  -- 3. un-publish chat and re-close the table
+  -- 3. un-publish chat and the audit log, and re-close the table
   ALTER PUBLICATION supabase_realtime DROP TABLE public.chat_messages;
   ALTER PUBLICATION supabase_realtime DROP TABLE public.chat_message_actions;
+  ALTER PUBLICATION supabase_realtime DROP TABLE public.chapter_audit_log;
   DROP POLICY IF EXISTS "chat_messages_select" ON public.chat_messages;
   ```
   **Order matters in one direction only, and it is the harmless one.** Rolling the database back without redeploying the web app does not error: the three dashboard subscriptions simply stop receiving pings (a private channel with no authorising policy is denied), and chat's `postgres_changes` handler goes quiet. That is *precisely* the pre-migration behavior — see the note below — so a DB-only rollback degrades to "realtime never worked", which is where `main` sat before this landed. There is no 500, no broken route, and no user-visible error; only staleness until a manual refresh.

@@ -16,7 +16,7 @@
  * definitions the migrations leave in effect. Treat a failure of that test as
  * "change the SQL too", never as "update the expectation", and change it with a
  * **new** migration: an edit to a shipped one never reaches a database that
- * already applied it, and a later migration overrides it on a fresh reset.
+ * already applied it, and the pin test, which replays the files, can't tell.
  *
  * Kept deliberately tiny and dependency-free so both the hook and the pin test
  * can import it without pulling in React or the Supabase client.

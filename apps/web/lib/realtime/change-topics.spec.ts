@@ -20,15 +20,19 @@ import {
  * `postgres_changes` subscription dead in production for months before #867
  * pinned it down, so it gets a test rather than a comment.
  *
- * The test reads what the migrations leave in EFFECT, not any one file. Every
- * object here was first written by `20260816140000_realtime_carrier_repair.sql`
- * and several were re-created since, so it replays `supabase/migrations/` in
- * apply order and keeps each object's last create or drop (#2593).
+ * The test reads what a fresh replay of `supabase/migrations/` leaves in
+ * effect. `20260816140000_realtime_carrier_repair.sql` first wrote these
+ * objects and several were re-created since, so it walks the files in apply
+ * order and keeps each object's last create or drop (#2593). A form of change
+ * it can't model fails the tripwire below rather than slipping past.
  *
  * If this fails, change the other half to match; do not edit the expectation.
- * On the SQL side that is always a NEW migration re-creating the object, never
- * an edit to a shipped one: `supabase db push` skips an applied version, and on
- * a fresh reset any later migration overwrites the edit.
+ * On the SQL side that is always a NEW migration that drops and re-creates the
+ * object (or `create or replace`s a function), never an edit to a shipped one:
+ * `supabase db push` skips a version a hosted database already applied, so the
+ * edit never reaches staging or production. This test replays files, not those
+ * databases, so it can't see that happen — an in-place edit that agrees with
+ * `change-topics.ts` passes here while production keeps the old SQL.
  */
 
 const MIGRATIONS_DIR = join(__dirname, "../../../../supabase/migrations");
@@ -66,6 +70,19 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * A regex source for an object name as Postgres resolves it here: optionally
+ * double-quoted and, in `public`, optionally schema-qualified. About half the
+ * migrations write function names bare, and `search_path` resolves them to
+ * `public`, so a pattern that required `public.` would miss a live redefinition.
+ * `name` is a regex source, so a caller can match a family (`realtime_notify_\w+`).
+ */
+function sqlName(name: string, schema = "public"): string {
+  const qualified = `"?${schema}"?\\s*\\.\\s*`;
+  const prefix = schema === "public" ? `(?:${qualified})?` : qualified;
+  return `${prefix}"?${name}"?(?![\\w"])`;
+}
+
 /** How one database object is created and dropped in migration text. */
 interface ObjectSpec {
   label: string;
@@ -98,12 +115,14 @@ function throughStatementEnd(sql: string, start: number): string {
   return end ? rest.slice(0, end.index) : rest;
 }
 
+const OR_REPLACE = `(?:or\\s+replace\\s+)?`;
+
 function pingFunction(table: ChangeTable): ObjectSpec {
-  const name = `public\\.realtime_notify_${table}`;
+  const name = sqlName(`realtime_notify_${table}`);
   return {
     label: `function public.realtime_notify_${table}()`,
-    create: `create\\s+(?:or\\s+replace\\s+)?function\\s+${name}\\s*\\(`,
-    drop: `drop\\s+function\\s+(?:if\\s+exists\\s+)?${name}\\b`,
+    create: `create\\s+${OR_REPLACE}function\\s+${name}\\s*\\(`,
+    drop: `drop\\s+function\\s+(?:if\\s+exists\\s+)?${name}`,
     extract: throughDollarQuotedBody,
   };
 }
@@ -111,53 +130,38 @@ function pingFunction(table: ChangeTable): ObjectSpec {
 function trigger(name: string): ObjectSpec {
   return {
     label: `trigger ${name}`,
-    create: `create\\s+(?:or\\s+replace\\s+)?trigger\\s+${name}\\b`,
-    drop: `drop\\s+trigger\\s+(?:if\\s+exists\\s+)?${name}\\b`,
+    create: `create\\s+${OR_REPLACE}(?:constraint\\s+)?trigger\\s+"?${name}"?(?![\\w"])`,
+    drop: `drop\\s+trigger\\s+(?:if\\s+exists\\s+)?"?${name}"?(?![\\w"])`,
     extract: throughStatementEnd,
   };
 }
 
-function policy(name: string, table: string): ObjectSpec {
-  const target = `"?${name}"?\\s+on\\s+${escapeRegExp(table)}\\b`;
+function policy(name: string, table: string, schema: string): ObjectSpec {
+  const target = `"?${name}"?\\s+on\\s+${sqlName(table, schema)}`;
   return {
-    label: `policy ${name} on ${table}`,
+    label: `policy ${name} on ${schema}.${table}`,
     create: `create\\s+policy\\s+${target}`,
     drop: `drop\\s+policy\\s+(?:if\\s+exists\\s+)?${target}`,
     extract: throughStatementEnd,
   };
 }
 
-function publicationMember(table: string): ObjectSpec {
-  const verb = (v: string) =>
-    `alter\\s+publication\\s+supabase_realtime\\s+${v}\\s+table\\s+(?:only\\s+)?public\\.${table}\\b`;
-  return {
-    label: `supabase_realtime publication member public.${table}`,
-    create: verb("add"),
-    drop: verb("drop"),
-    extract: throughStatementEnd,
-  };
-}
-
-interface Definition {
+interface Statement {
   migration: string;
-  text: string;
+  /** The defining text, or `null` for a drop. */
+  text: string | null;
+  /** A drop of the same object came earlier in the same migration. */
+  droppedFirst: boolean;
 }
 
-/**
- * The object's definition as the migrations leave it: the text of its last
- * create, walking files in apply order and statements in file order, or `null`
- * when a drop came last (or nothing ever created it).
- *
- * Text-level, so SQL assembled at run time (`format('%I', …)`) is invisible to
- * it; none of the objects here is built that way.
- */
-function effectiveDefinition(
+/** Every create and drop of the object, in apply order. */
+function statementsOf(
   migrations: readonly Migration[],
   spec: ObjectSpec,
-): Definition | null {
-  let current: Definition | null = null;
+): Statement[] {
+  const out: Statement[] = [];
   for (const { name, sql } of migrations) {
-    const statements = [
+    const found = [
       ...[...sql.matchAll(new RegExp(spec.create, "gi"))].map((m) => ({
         at: m.index,
         text: spec.extract(sql, m.index) as string | null,
@@ -167,17 +171,65 @@ function effectiveDefinition(
         text: null,
       })),
     ].sort((a, b) => a.at - b.at);
-    for (const { text } of statements) {
-      current = text === null ? null : { migration: name, text };
+    let droppedHere = false;
+    for (const { text } of found) {
+      out.push({ migration: name, text, droppedFirst: droppedHere });
+      if (text === null) droppedHere = true;
     }
   }
-  return current;
+  return out;
 }
 
+interface Definition {
+  migration: string;
+  text: string;
+}
+
+/**
+ * The object's definition as the migrations leave it: the text of its last
+ * create, or `null` when a drop came last (or nothing ever created it).
+ *
+ * Text-level, so SQL assembled at run time (`format('%I', …)`) is invisible to
+ * it; none of the objects here is built that way.
+ */
+function effectiveDefinition(
+  migrations: readonly Migration[],
+  spec: ObjectSpec,
+): Definition | null {
+  const last = statementsOf(migrations, spec).at(-1);
+  return last?.text == null
+    ? null
+    : { migration: last.migration, text: last.text };
+}
+
+/**
+ * The effective definition, which must exist and must have really applied.
+ *
+ * Text order is not control flow. The carrier migration creates its policies
+ * behind `if exists (… pg_policies …) then return`, so a later migration that
+ * copied that block would read here as the new definition while every hosted
+ * database, which already has the policy, skipped it. So every create after
+ * the first must either replace in place (`create or replace`) or come after a
+ * drop of the same object in the same migration.
+ */
 function requireDefinition(
   migrations: readonly Migration[],
   spec: ObjectSpec,
 ): Definition {
+  const statements = statementsOf(migrations, spec);
+  const unapplied = statements
+    .filter(
+      (s, i) =>
+        s.text !== null &&
+        !s.droppedFirst &&
+        !new RegExp(`^create\\s+or\\s+replace\\b`, "i").test(s.text) &&
+        statements.slice(0, i).some((earlier) => earlier.text !== null),
+    )
+    .map((s) => s.migration);
+  expect(
+    unapplied,
+    `${spec.label} is re-created without a drop first, so a database that already has it may skip the create`,
+  ).toEqual([]);
   const definition = effectiveDefinition(migrations, spec);
   expect(
     definition,
@@ -261,22 +313,25 @@ const TRIGGER_OPS = [
 ] as const;
 
 /**
- * Every trigger that ever executed a ping function, resolved to what is still
- * live: exactly the 3 × insert/update/delete set, each STATEMENT-level.
+ * Every trigger that ever executed a ping function, however it was named or
+ * qualified, resolved to what is still live: exactly the 3 × insert/update/
+ * delete set, each STATEMENT-level.
  *
  * Per-row turns one bulk write (markAutoAbsent inserts a row per member) into
  * N subtransactions, N broadcast frames on one topic, and 2N client
  * invalidations that each cancel the in-flight refetch. Statement level with
  * `select distinct` collapses it to one ping per scope. Collecting every name
- * that ever pointed at a ping function is what catches an extra per-row
- * trigger added beside the nine.
+ * that ever pointed at a ping function is what catches an extra per-row (or
+ * constraint, which is always per-row) trigger added beside the nine.
  */
 function checkPingTriggers(migrations: readonly Migration[]) {
   const everCreated = new Set<string>();
+  const pointsAtPing = new RegExp(
+    `create\\s+${OR_REPLACE}(?:constraint\\s+)?trigger\\s+"?(\\w+)"?[^;]*?execute\\s+(?:function|procedure)\\s+${sqlName("realtime_notify_\\w+")}`,
+    "gi",
+  );
   for (const { sql } of migrations) {
-    for (const m of sql.matchAll(
-      /create\s+(?:or\s+replace\s+)?trigger\s+(\w+)\b[^;]*?execute\s+(?:function|procedure)\s+public\.realtime_notify_/gi,
-    )) {
+    for (const m of sql.matchAll(pointsAtPing)) {
       everCreated.add((m[1] as string).toLowerCase());
     }
   }
@@ -297,7 +352,7 @@ function checkPingTriggers(migrations: readonly Migration[]) {
       );
       expect(text).toMatch(
         new RegExp(
-          `after\\s+${op}\\s+on\\s+public\\.${table}\\s+referencing\\s+${rows}\\s+table\\s+as\\s+changed\\s+for\\s+each\\s+statement\\s+execute\\s+function\\s+public\\.realtime_notify_${table}\\(\\)`,
+          `^create\\s+${OR_REPLACE}trigger\\s+\\S+\\s+after\\s+${op}\\s+on\\s+${sqlName(table)}\\s+referencing\\s+${rows}\\s+table\\s+as\\s+changed\\s+for\\s+each\\s+statement\\s+execute\\s+function\\s+${sqlName(`realtime_notify_${table}`)}\\(\\)\\s*$`,
           "i",
         ),
       );
@@ -305,27 +360,58 @@ function checkPingTriggers(migrations: readonly Migration[]) {
   }
 }
 
+/** One `when realtime.topic() ~* '^<prefix><uuid>$' then <scope call>` arm. */
+const POLICY_ARM = new RegExp(
+  `\\bwhen\\s+realtime\\.topic\\(\\)\\s*~\\*\\s*'\\^([^'\\[]+)\\[0-9a-f\\]\\{8\\}-\\[0-9a-f\\]\\{4\\}-\\[0-9a-f\\]\\{4\\}-\\[0-9a-f\\]\\{4\\}-\\[0-9a-f\\]\\{12\\}\\$'` +
+    `\\s+then\\s+public\\.(\\w+)\\(\\s*substring\\(\\s*realtime\\.topic\\(\\)\\s+from\\s+(\\d+)\\s*\\)::uuid\\s*\\)` +
+    `\\s*(?=\\bwhen\\b|\\belse\\s+false\\s+end\\b)`,
+  "gi",
+);
+
 /**
- * `realtime_messages_scoped_select` authorises each prefix, with the right
- * scope function, reading the id from right after the prefix.
+ * `realtime_messages_scoped_select` authorises each prefix with the right
+ * scope function, and nothing else gets through.
  *
- * `substring(realtime.topic() from N)` is 1-indexed, so N is the prefix length
- * + 1. One off and the uuid cast raises on every subscribe, which denies the
- * whole family — the same silent, `SUBSCRIBED`-looking failure.
+ * Postgres takes the first CASE arm that matches, so the whole CASE is read:
+ * every arm must be the full-uuid-anchored shape with a bare scope call as its
+ * result, and the fallthrough must be `else false`. One arm `then true`, one
+ * `or true`, or `else true` would hand every signed-in user another chapter's
+ * pings. `substring(realtime.topic() from N)` is 1-indexed, so N is the prefix
+ * length + 1: one off and the uuid cast raises on every subscribe, denying the
+ * whole family with the same silent, `SUBSCRIBED`-looking failure. The offset
+ * rule holds for every arm, not only the three change-ping ones.
  */
 function checkChangePolicy(migrations: readonly Migration[]) {
   const { text } = requireDefinition(
     migrations,
-    policy("realtime_messages_scoped_select", "realtime.messages"),
+    policy("realtime_messages_scoped_select", "messages", "realtime"),
   );
-  for (const table of TABLES) {
-    const prefix = prefixOf(table);
-    expect(text).toMatch(
-      new RegExp(
-        `'\\^${escapeRegExp(prefix)}\\[0-9a-f\\][^']*'\\s+then\\s+public\\.${SCOPES[table].authorise}\\(\\s*substring\\(\\s*realtime\\.topic\\(\\)\\s+from\\s+${prefix.length + 1}\\s*\\)::uuid\\s*\\)`,
-        "i",
-      ),
+  expect(text).toMatch(
+    /\bfor\s+select\s+to\s+authenticated\s+using\s*\(\s*case\s+when\b/i,
+  );
+  expect(text).toMatch(/\belse\s+false\s+end\s*\)\s*$/i);
+
+  const arms = [...text.matchAll(POLICY_ARM)].map((m) => ({
+    prefix: (m[1] as string).toLowerCase(),
+    authorise: m[2] as string,
+    from: Number(m[3]),
+  }));
+  expect(
+    arms.length,
+    "every `when` arm must be the anchored-prefix → scope-call shape",
+  ).toBe(text.match(/\bwhen\b/gi)?.length ?? 0);
+  expect(new Set(arms.map((a) => a.prefix)).size).toBe(arms.length);
+  for (const arm of arms) {
+    expect(arm.from, `substring offset for '^${arm.prefix}'`).toBe(
+      arm.prefix.length + 1,
     );
+  }
+  for (const table of TABLES) {
+    expect(arms).toContainEqual({
+      prefix: prefixOf(table),
+      authorise: SCOPES[table].authorise,
+      from: prefixOf(table).length + 1,
+    });
   }
 }
 
@@ -343,15 +429,109 @@ const PUBLISHED_TABLES = [
   "chapter_audit_log",
 ];
 
+/**
+ * `supabase_realtime`'s table list as the migrations leave it: `add`, `drop`
+ * and `set` replayed in order, each over its whole comma-separated list.
+ */
+function publishedTables(migrations: readonly Migration[]): Set<string> {
+  const members = new Set<string>();
+  const statement =
+    /alter\s+publication\s+"?supabase_realtime"?\s+(add|drop|set)\s+table\s+([^;$]*)/gi;
+  for (const { sql } of migrations) {
+    for (const m of sql.matchAll(statement)) {
+      const verb = (m[1] as string).toLowerCase();
+      let list = m[2] as string;
+      // Column lists and row filters (`t (a, b) where (…)`) carry commas too.
+      while (/\([^()]*\)/.test(list)) list = list.replace(/\([^()]*\)/g, "");
+      const tables = list
+        .replace(/\bwhere\b/gi, "")
+        .split(",")
+        .map((t) =>
+          t
+            .trim()
+            .replace(/^only\s+/i, "")
+            .replace(/\s*\*$/, "")
+            .replace(/"/g, "")
+            .replace(/^public\s*\.\s*/i, "")
+            .toLowerCase(),
+        )
+        .filter(Boolean);
+      if (verb === "set") members.clear();
+      for (const t of tables) {
+        if (verb === "drop") members.delete(t);
+        else members.add(t);
+      }
+    }
+  }
+  return members;
+}
+
 function checkPublication(migrations: readonly Migration[]) {
+  const published = publishedTables(migrations);
   for (const table of PUBLISHED_TABLES) {
-    requireDefinition(migrations, publicationMember(table));
+    expect(published, `supabase_realtime publishes ${table}`).toContain(table);
   }
   const { text } = requireDefinition(
     migrations,
-    policy("chat_messages_select", "public.chat_messages"),
+    policy("chat_messages_select", "chat_messages", "public"),
   );
   expect(text).toContain("public.can_read_chat_message(id)");
+  expect(text, "chat_messages_select must not widen with `or`").not.toMatch(
+    /\bor\b/i,
+  );
+}
+
+/**
+ * Changes this replay can't model, so they fail rather than pass unseen. Each
+ * alters a contract object in place: the create text the check reads stays
+ * the same while what the database runs changes. Change the object by
+ * dropping and re-creating it instead. (`alter policy` is also refused repo-wide by
+ * `apps/api/.../chat-read-surface-ledger.spec.ts`; this spec says so itself
+ * so it stands alone.)
+ */
+const UNMODELLED_CHANGES: [string, RegExp][] = [
+  [
+    "alter policy on a contract policy",
+    /\balter\s+policy\s+"?(?:realtime_messages_scoped_select|chat_messages_select)\b/i,
+  ],
+  [
+    "alter function on a ping function",
+    new RegExp(
+      `\\balter\\s+function\\s+${sqlName("realtime_notify_\\w+")}`,
+      "i",
+    ),
+  ],
+  [
+    "alter trigger on a ping trigger",
+    /\balter\s+trigger\s+"?realtime_notify_/i,
+  ],
+  [
+    "enable/disable of a ping trigger",
+    /\b(?:enable|disable)\s+(?:replica\s+|always\s+)?trigger\s+"?realtime_notify_/i,
+  ],
+  [
+    "disable trigger all/user on a ping table",
+    new RegExp(
+      `\\balter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?${sqlName("(?:notifications|events|event_attendance)")}\\s+disable\\s+trigger\\s+(?:all|user)\\b`,
+      "i",
+    ),
+  ],
+  [
+    "dropping or renaming the publication",
+    /\b(?:drop\s+publication\s+(?:if\s+exists\s+)?"?supabase_realtime\b|alter\s+publication\s+"?supabase_realtime"?\s+rename\b)/i,
+  ],
+  [
+    "a publication change other than add/drop/set table",
+    /\balter\s+publication\s+"?supabase_realtime"?\s+(?!(?:add|drop|set)\s+table\s)(?!rename\b)/i,
+  ],
+];
+
+function unmodelledChanges(migrations: readonly Migration[]): string[] {
+  return migrations.flatMap(({ name, sql }) =>
+    UNMODELLED_CHANGES.filter(([, pattern]) => pattern.test(sql)).map(
+      ([what]) => `${name}: ${what}`,
+    ),
+  );
 }
 
 const MIGRATIONS = loadMigrations();
@@ -387,17 +567,21 @@ describe("change-ping topic contract", () => {
     test("the ping triggers are the nine statement-level ones and no others", () =>
       checkPingTriggers(MIGRATIONS));
 
-    test("the RLS policy authorises each prefix with its own scope check", () =>
+    test("the RLS policy authorises each prefix with its own scope check, and nothing else", () =>
       checkChangePolicy(MIGRATIONS));
 
     test("chat and the audit log are published, and chat rows stay RLS-gated", () =>
       checkPublication(MIGRATIONS));
+
+    test("no migration changes a contract object in a form this replay can't model", () =>
+      expect(unmodelledChanges(MIGRATIONS)).toEqual([]));
   });
 
   /**
    * Each case appends a later migration that breaks one side of the contract
-   * and proves the check above catches it — the proof that it reads what the
-   * database runs rather than the file that first wrote it.
+   * and proves the check above catches it — the proof that it reads the newest
+   * definition, in whatever form it is written, rather than the file that
+   * first wrote it.
    */
   describe("a later migration that drifts fails the check", () => {
     const FIXTURE = "99999999999999_drift_fixture.sql";
@@ -417,7 +601,14 @@ describe("change-ping topic contract", () => {
       requireDefinition(MIGRATIONS, spec).text;
     const eventsFn = () => current(pingFunction("events"));
     const changePolicy = () =>
-      current(policy("realtime_messages_scoped_select", "realtime.messages"));
+      current(
+        policy("realtime_messages_scoped_select", "messages", "realtime"),
+      );
+    const recreatePolicy = (text: string) =>
+      withLater(
+        `drop policy if exists "realtime_messages_scoped_select" on realtime.messages;
+         ${text};`,
+      );
 
     test.each([
       [
@@ -437,9 +628,24 @@ describe("change-ping topic contract", () => {
       expect(() => checkPingFunction(drifted, "events")).toThrow();
     });
 
-    test("a dropped ping function", () => {
+    test.each([
+      ["unqualified", "realtime_notify_events"],
+      ["quoted", `"public"."realtime_notify_events"`],
+    ])("a drifted ping function written %s", (_case, spelling) => {
+      // The prefix flip alone would fail the check; it fails here only if the
+      // replay actually saw the differently spelled redefinition.
+      const respelled = swap(
+        eventsFn(),
+        /public\.realtime_notify_events/i,
+        spelling,
+      );
+      const drifted = withLater(`${swap(respelled, "'events:'", "'event:'")};`);
+      expect(() => checkPingFunction(drifted, "events")).toThrow();
+    });
+
+    test("a dropped ping function, written unqualified", () => {
       const drifted = withLater(
-        "drop function if exists public.realtime_notify_events();",
+        "drop function if exists realtime_notify_events();",
       );
       expect(() => checkPingFunction(drifted, "events")).toThrow();
     });
@@ -460,6 +666,21 @@ describe("change-ping topic contract", () => {
         `create trigger realtime_notify_events_row after insert on public.events
            for each row execute function public.realtime_notify_events();`,
       ],
+      [
+        "adds one with an unqualified target",
+        `create trigger events_row_ping after insert on public.events
+           for each row execute function realtime_notify_events();`,
+      ],
+      [
+        "adds one with a quoted name",
+        `create trigger "events_row_ping" after insert on public.events
+           for each row execute function public.realtime_notify_events();`,
+      ],
+      [
+        "adds a constraint trigger",
+        `create constraint trigger events_row_ping after insert on public.events
+           for each row execute function public.realtime_notify_events();`,
+      ],
     ])("a migration that %s", (_case, sql) => {
       expect(() => checkPingTriggers(withLater(sql))).toThrow();
     });
@@ -472,11 +693,23 @@ describe("change-ping topic contract", () => {
         "public.realtime_can_read_user_scope",
         "public.realtime_can_read_chapter_scope",
       ],
+      [
+        "lets every topic through on the fallthrough",
+        /else\s+false/i,
+        "else true",
+      ],
+      [
+        "widens an arm with `or true`",
+        "from 8)::uuid)",
+        "from 8)::uuid) or true",
+      ],
+      [
+        "puts an unscoped arm first",
+        /case\s+when/i,
+        "case when realtime.topic() ~* '^events:' then true when",
+      ],
     ])("a change-ping policy that %s", (_case, from, to) => {
-      const drifted = withLater(
-        `drop policy if exists "realtime_messages_scoped_select" on realtime.messages;
-         ${swap(changePolicy(), from, to)};`,
-      );
+      const drifted = recreatePolicy(swap(changePolicy(), from, to));
       expect(() => checkChangePolicy(drifted)).toThrow();
     });
 
@@ -487,17 +720,59 @@ describe("change-ping topic contract", () => {
       expect(() => checkChangePolicy(drifted)).toThrow();
     });
 
-    test("a table dropped from the publication", () => {
+    test("a guarded re-create that a database with the policy would skip", () => {
+      // The carrier migration's own idiom. Were it copied with a changed
+      // prefix, the replay would read the new text while staging and
+      // production, which have the policy, returned before the create.
       const drifted = withLater(
-        "alter publication supabase_realtime drop table public.chapter_audit_log;",
+        `do $$ begin
+           if exists (select 1 from pg_policies where policyname = 'realtime_messages_scoped_select') then
+             return;
+           end if;
+           execute $p$ ${changePolicy()} $p$;
+         end $$;`,
       );
-      expect(() => checkPublication(drifted)).toThrow();
+      expect(() => checkChangePolicy(drifted)).toThrow(
+        /re-created without a drop/,
+      );
     });
 
-    test("editing the shipped carrier migration changes nothing the check reads", () => {
-      // The trap the old comment set: "fix the migration to match". A later
-      // migration re-creates every ping function, so this edit never reaches
-      // the database — and must not satisfy (or fail) the check either.
+    test.each([
+      [
+        "drops a table named after another in the list",
+        "alter publication supabase_realtime drop table public.notifications, public.chapter_audit_log;",
+      ],
+      [
+        "replaces the whole list",
+        "alter publication supabase_realtime set table public.chat_messages;",
+      ],
+      [
+        "drops a quoted table",
+        `alter publication supabase_realtime drop table "public"."chapter_audit_log";`,
+      ],
+    ])("a publication change that %s", (_case, sql) => {
+      expect(() => checkPublication(withLater(sql))).toThrow();
+    });
+
+    test.each([
+      `alter policy "realtime_messages_scoped_select" on realtime.messages using (false);`,
+      "alter function realtime_notify_events() rename to realtime_notify_old;",
+      "alter table public.events disable trigger realtime_notify_events_ins;",
+      "alter table public.events disable trigger all;",
+      "alter publication supabase_realtime set (publish = 'insert');",
+      "drop publication if exists supabase_realtime;",
+    ])("an in-place change the replay can't model: %s", (sql) => {
+      expect(unmodelledChanges(withLater(sql))).toEqual([
+        expect.stringContaining(FIXTURE),
+      ]);
+    });
+
+    test("an edit to the carrier migration, overridden since, changes nothing the check reads", () => {
+      // The trap the old comment set: "fix the migration to match". Later
+      // migrations re-create every ping function, so this edit reaches no
+      // database, and it doesn't reach the check either. (An edit to the NEWEST
+      // definer would reach the check but still no hosted database: see the
+      // header.)
       const edited = MIGRATIONS.map((m) =>
         m.name === "20260816140000_realtime_carrier_repair.sql"
           ? { ...m, sql: swap(m.sql, "'events:'", "'event:'") }
