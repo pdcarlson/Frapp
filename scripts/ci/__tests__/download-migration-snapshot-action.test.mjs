@@ -10,7 +10,7 @@
 //     every mode. The gate treats an unset value as "overtaken", so an edit that
 //     dropped or reordered the export would turn every real failed apply into
 //     `stale` while the gate's own tests stayed green;
-//   - that `use` counts only Deploy API (the only workflow that migrates
+//   - that `use` counts only Deploy staging (the only workflow that migrates
 //     staging) and reports one still in flight;
 //   - that a failed deploy lookup is a warning in `use` (the required gates on
 //     main use it) and an error in `wait`;
@@ -217,7 +217,7 @@ describe("download-migration-snapshot find step", { skip }, () => {
   });
   after(() => rmSync(workspace, { recursive: true, force: true }));
 
-  it("use: exports the finish time of a Deploy API run that finished after the snapshot", () => {
+  it("use: exports the finish time of a Deploy staging run that finished after the snapshot", () => {
     const r = run({
       onStale: "use",
       fixtures: {
@@ -227,7 +227,7 @@ describe("download-migration-snapshot find step", { skip }, () => {
       },
       routes: [
         ...PUBLISHER_ROUTES,
-        ["/deploy-api\\.yml/runs.*status=completed", "api-completed.json"],
+        ["/deploy-staging\\.yml/runs.*status=completed", "api-completed.json"],
         ["/runs/11/jobs", "jobs-11.json"],
       ],
     });
@@ -236,14 +236,14 @@ describe("download-migration-snapshot find step", { skip }, () => {
     assert.match(r.output, /run-id=7001/);
   });
 
-  it("use: exports `running` while a Deploy API run is in flight", () => {
+  it("use: exports `running` while a Deploy staging run is in flight", () => {
     const r = run({
       onStale: "use",
       fixtures: { ...PUBLISHER, "api-running.json": { workflow_runs: [deployRun(12, "2026-09-23T12:20:00Z")] } },
       routes: [
         ...PUBLISHER_ROUTES,
-        ["/deploy-api\\.yml/runs.*status=completed", "none.json"],
-        ["/deploy-api\\.yml/runs.*status=in_progress", "api-running.json"],
+        ["/deploy-staging\\.yml/runs.*status=completed", "none.json"],
+        ["/deploy-staging\\.yml/runs.*status=in_progress", "api-running.json"],
       ],
     });
     assert.equal(r.status, 0, r.stderr + r.stdout);
@@ -260,7 +260,7 @@ describe("download-migration-snapshot find step", { skip }, () => {
       },
       routes: [
         ...PUBLISHER_ROUTES,
-        ["/deploy-api\\.yml/runs", "none.json"],
+        ["/deploy-staging\\.yml/runs", "none.json"],
         ["/deploy-production\\.yml/runs", "prod-completed.json"],
         ["/runs/13/jobs", "jobs-13.json"],
       ],
@@ -274,22 +274,22 @@ describe("download-migration-snapshot find step", { skip }, () => {
     const r = run({ onStale: "use", fixtures: PUBLISHER, routes: PUBLISHER_ROUTES });
     assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "unknown");
-    assert.match(r.stdout, /::warning::Could not read the recent deploy-api\.yml runs/);
+    assert.match(r.stdout, /::warning::Could not read the recent deploy-staging\.yml runs/);
     // Three attempts before it gives up.
-    assert.equal(r.calls.filter((path) => path.includes("deploy-api.yml/runs")).length, 3);
+    assert.equal(r.calls.filter((path) => path.includes("deploy-staging.yml/runs")).length, 3);
   });
 
   it("use: a failed in-progress lookup exports `unknown` too, never `none`", () => {
-    // `none` would tell the gate the snapshot is current while a Deploy API run
+    // `none` would tell the gate the snapshot is current while a Deploy staging run
     // may be applying the very migration it lacks.
     const r = run({
       onStale: "use",
       fixtures: PUBLISHER,
-      routes: [...PUBLISHER_ROUTES, ["/deploy-api\\.yml/runs.*status=completed", "none.json"]],
+      routes: [...PUBLISHER_ROUTES, ["/deploy-staging\\.yml/runs.*status=completed", "none.json"]],
     });
     assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "unknown");
-    assert.match(r.stdout, /::warning::Could not read in-progress Deploy API runs/);
+    assert.match(r.stdout, /::warning::Could not read in-progress Deploy staging runs/);
   });
 
   it("retries a transient error on every read instead of failing the step", () => {
@@ -307,7 +307,7 @@ describe("download-migration-snapshot find step", { skip }, () => {
         ["/git/ref/heads/main$", "main-ref.json", "2"],
         ["/actions/workflows/migration-snapshot\\.yml/runs", "publisher.json", "2"],
         ["/compare/pubsha\\.\\.\\.mainsha$", "compare.json", "2"],
-        ["/deploy-api\\.yml/runs.*status=completed", "api-completed.json", "2"],
+        ["/deploy-staging\\.yml/runs.*status=completed", "api-completed.json", "2"],
         ["/runs/16/jobs", "jobs-16.json", "2"],
       ],
     });
@@ -320,8 +320,8 @@ describe("download-migration-snapshot find step", { skip }, () => {
       fixtures: PUBLISHER,
       routes: [
         ...PUBLISHER_ROUTES,
-        ["/deploy-api\\.yml/runs.*status=completed", "none.json"],
-        ["/deploy-api\\.yml/runs.*status=in_progress", "none.json", "2"],
+        ["/deploy-staging\\.yml/runs.*status=completed", "none.json"],
+        ["/deploy-staging\\.yml/runs.*status=in_progress", "none.json", "2"],
       ],
     });
     assert.equal(current.status, 0, current.stderr + current.stdout);
@@ -361,7 +361,7 @@ describe("download-migration-snapshot find step", { skip }, () => {
       routes: [
         ["/git/ref/heads/main$", "HTTP429", "main-ref.json"],
         ...PUBLISHER_ROUTES.slice(1),
-        ["/deploy-api\\.yml/runs", "none.json"],
+        ["/deploy-staging\\.yml/runs", "none.json"],
       ],
     });
     assert.equal(r.status, 0, r.stderr + r.stdout);
@@ -369,7 +369,7 @@ describe("download-migration-snapshot find step", { skip }, () => {
     assert.deepEqual(r.sleeps, ["1"]);
   });
 
-  it("use: a Deploy API run from another repository (a fork's `main`) is not counted", () => {
+  it("use: a Deploy staging run from another repository (a fork's `main`) is not counted", () => {
     const r = run({
       onStale: "use",
       fixtures: {
@@ -378,7 +378,7 @@ describe("download-migration-snapshot find step", { skip }, () => {
           workflow_runs: [{ ...deployRun(14, "2026-09-23T12:10:00Z"), head_repository: { full_name: "fork/repo" } }],
         },
       },
-      routes: [...PUBLISHER_ROUTES, ["/deploy-api\\.yml/runs", "api-completed.json"]],
+      routes: [...PUBLISHER_ROUTES, ["/deploy-staging\\.yml/runs", "api-completed.json"]],
     });
     assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, "none");
@@ -394,8 +394,8 @@ describe("download-migration-snapshot find step", { skip }, () => {
       },
       routes: [
         ...PUBLISHER_ROUTES,
-        ["/deploy-api\\.yml/runs.*status=completed", "api-completed.json"],
-        ["/deploy-api\\.yml/runs.*status=in_progress", "none.json"],
+        ["/deploy-staging\\.yml/runs.*status=completed", "api-completed.json"],
+        ["/deploy-staging\\.yml/runs.*status=in_progress", "none.json"],
         ["/deploy-production\\.yml/runs", "none.json"],
       ],
     });
@@ -407,7 +407,7 @@ describe("download-migration-snapshot find step", { skip }, () => {
   it("wait: a failed lookup fails the step instead of passing an unproven snapshot", () => {
     const r = run({ onStale: "wait", fixtures: PUBLISHER, routes: PUBLISHER_ROUTES });
     assert.equal(r.status, 1);
-    assert.match(r.stdout, /::error::Could not read the recent deploy-api\.yml runs/);
+    assert.match(r.stdout, /::error::Could not read the recent deploy-staging\.yml runs/);
     assert.equal(r.env.MIGRATION_SNAPSHOT_STAGING_DEPLOY, undefined);
   });
 

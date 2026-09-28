@@ -19,8 +19,8 @@ when the environment allowlist carries the live-egress lines
 ([`CLOUD_SANDBOX.md` § Live staging egress](../../../docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress)).
 You're done when the claim is reported at the tier that actually ran ([Reporting](#reporting)).
 
-CI deploys staging web and landing with `deploy-vercel-staging.yml` after CI passes on `main`. Once
-that deploy finishes, staging serves the current build
+CI deploys staging web and landing with `deploy-staging.yml` after CI passes on `main`, once the
+staging API serves the commit. Once that deploy finishes, staging serves the current build
 ([ADR-21](../../../spec/architecture/adr/adr-21.md)).
 
 ## The three rules

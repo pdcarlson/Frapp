@@ -3,17 +3,16 @@
 # Offsite logical backup of a Supabase Postgres database (#852).
 #
 # WHY THIS EXISTS, AND WHY IT IS NOT REDUNDANT WITH SUPABASE'S OWN BACKUPS:
-# the `Frapp Live` org is on the Supabase **free** plan, and Supabase only takes
-# restorable daily backups for Pro/Team/Enterprise projects. Free-plan projects
-# get no dashboard-accessible snapshot and no PITR, and Supabase's own guidance
-# for that tier is exactly this script:
+# since 2026-09-28 the `Frapp Live` org is on Supabase Pro (#1403), which keeps
+# daily backups for 7 days. Those stay inside Supabase: they are deleted with
+# the project, and they hold no Storage files. This dump is the only copy that
+# leaves Supabase. Before Pro it was the only restorable backup of any kind, as
+# Supabase's guidance for free projects says:
 #
 #   "We recommend that free tier plan projects regularly export their data using
 #    the Supabase CLI `db dump` command and maintain off-site backups."
 #   https://supabase.com/docs/guides/platform/backups
 #
-# So this is not defence-in-depth on top of a provider snapshot. Until the org is
-# upgraded, it is the ONLY source of a restorable backup either project has:
 # db-backup.yml schedules it against `frapp-staging` (since 2026-08-27) and
 # `frapp-prod` (since 2026-09-06, #1435) through the db-offsite-backup action.
 # See DB_ROLLBACK_PLAYBOOK.md § Backup reality.

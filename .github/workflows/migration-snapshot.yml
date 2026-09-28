@@ -29,13 +29,16 @@ name: Migration snapshot
 # injection overwrites it.
 #
 # ── When it runs ────────────────────────────────────────────────────────────
-# After every `Deploy API` and `Deploy production` run, the only workflows that
-# apply migrations. That is what keeps the snapshot current, because a
+# After every `Deploy staging` and `Deploy production` run, the only workflows
+# that apply migrations. Matched by workflow NAME: renaming either without
+# updating this list stops the refresh (`deploy-staging-workflow.test.mjs`
+# asserts the staging half). That is what keeps the snapshot current, because a
 # scheduled run here starts hours late. The 4-hourly schedule is a backstop
 # for applies made outside those workflows (DB_PROMOTION_RUNBOOK repairs).
-# Off `main`, the required gates wait up to 15 minutes for a snapshot newer than
-# the latest finished deploy, then refuse the stale one
-# (`.github/actions/download-migration-snapshot`, `on-stale`), with an age limit of
+# Off `main`, the required gates wait for a snapshot newer than the latest
+# finished deploy, then refuse the stale one
+# (`.github/actions/download-migration-snapshot`, `on-stale`; its header sets
+# how long they wait), with an age limit of
 # `DEFAULT_MAX_AGE_HOURS` (`scripts/ci/lib/migration-snapshot.mjs`) as backstop.
 # A manual ledger change triggers nothing, so dispatch this after one
 # (DB_PROMOTION_RUNBOOK.md § What catches drift, and what catches bad ordering).
@@ -47,7 +50,7 @@ name: Migration snapshot
 
 on:
   workflow_run:
-    workflows: ["Deploy API", "Deploy production"]
+    workflows: ["Deploy staging", "Deploy production"]
     types: [completed]
     branches: [main]
   schedule:

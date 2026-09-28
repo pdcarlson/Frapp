@@ -156,7 +156,7 @@ export function removedMigrations({ head, base }) {
  *          neither sorts before staging's newest applied version.
  *   10:02  A merges. B rebases (branch protection is `strict: true`).
  *   10:03  B's gate re-runs. Staging has not applied A yet, so B is still green.
- *   10:06  `migrate-staging` applies A. Staging's newest is now `…120000`.
+ *   10:06  The staging deploy applies A. Staging's newest is now `…120000`.
  *   10:20  B merges. `db push` refuses `…090000`. #1373, again.
  *
  * GitHub never expires a check that passed, so the applied-floor rule cannot

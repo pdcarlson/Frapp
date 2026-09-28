@@ -154,7 +154,12 @@ ADR called *designed, not built* is built. All four *Consequences* bullets are n
   created, so it verifies by id rather than searching for a deployment by SHA, and
   `verify-deployments.yml` stays the push-triggered Render observer. *(Corrected 2026-09-25:
   `verify-deployments.yml` is retired. #2505 moved the staging API to the same deploy-and-verify-by-id
-  shape in `deploy-api.yml`.)*
+  shape in `deploy-api.yml`.)* *(Corrected 2026-09-28 (#2803): `deploy-vercel-staging.yml` and
+  `deploy-api.yml` are gone. They ran side by side, so a new frontend could go live before the
+  migration or API it called. One workflow, `deploy-staging.yml`, replaced both: its one job builds
+  web and landing before the migration and uploads them only once the API serves the commit. The
+  order is in
+  [`ci-cd.md` § How Deployments Are Gated](../../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated).)*
 - **`gitSource` is gone.** `scripts/ci/deploy-vercel-production.mjs` was **replaced** by
   `scripts/ci/deploy-vercel.mjs`, parameterised by target rather than production-only: after this ADR
   both channels are CI's job, and carrying the difference in one argument keeps them from drifting

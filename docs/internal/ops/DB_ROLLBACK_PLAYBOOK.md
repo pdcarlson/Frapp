@@ -36,11 +36,11 @@ created after the gate cannot be added to it.
 
 ## Automated Migration Context
 
-Migrations are now applied automatically in the deploy pipeline (see `.github/workflows/deploy-api.yml`):
-- **Staging:** Runs automatically on merge to `main` (no approval needed)
+Migrations are now applied automatically in the deploy pipeline:
+- **Staging:** Runs automatically on merge to `main` (no approval needed), in `.github/workflows/deploy-staging.yml`
 - **Production:** Never automatic. `deploy-production.yml` applies migrations for one named commit, and **pauses on the `production` environment's required reviewer** before it applies (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). That approval is the only human gate since #1340 retired the `main` → `production` promotion PR. Before applying, the workflow rehearses the migration against production's live applied state with `check-migration-replay.mjs`. The code-free path — apply migrations without shipping code — is now the same workflow run with `scope: migrations-only`, so it rehearses too; the separate `Migrate production` workflow that skipped the rehearsal (and SHA validation, and the guardrail preflight, and the working-tree fence) has been deleted. (The old justification for saying the environment did not gate anything — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.)
 
-If an automated migration fails, the entire deploy pipeline halts — no API deploy happens. Check the GitHub Actions run for the error output.
+If an automated migration fails, the entire deploy pipeline halts: no API deploy happens, and no web or landing upload. Check the GitHub Actions run for the error output.
 
 ## When to trigger rollback
 
@@ -106,7 +106,13 @@ Use when:
 
 Action:
 1. Freeze writes (maintenance mode if needed).
-2. Restore the most recent offsite dump — see [Restoring from an offsite dump](#restoring-from-an-offsite-dump). **There is no Supabase snapshot to restore instead**; see Backup reality below.
+2. Restore from a backup. If the damage is inside the last 7 days, start with Supabase's own daily backup (dashboard **Database → Backups**; [Backup reality](#backup-reality) below):
+   - **Restore to new project** (beta) when only some data is bad: it fills a separate project, and the rows can be copied back while the live project keeps every later write.
+   - **Restore**, in place, when the whole database has to go back: the project is down while it runs, and every write since that backup is lost.
+
+   Neither path has been rehearsed on these projects; the hosted restore drill (#1861) waits for v1 GA.
+
+   If the loss is older than the daily backups, the project itself is gone, or Storage files are involved, restore the most recent offsite dump — see [Restoring from an offsite dump](#restoring-from-an-offsite-dump).
 3. Re-deploy API once DB state is consistent.
 4. Execute incident postmortem.
 
@@ -122,7 +128,7 @@ Pro, which changed the plan and backup rows below; the project rows are unchange
 | **Plan** | **`pro`** since 2026-09-28 (was `free`); it covers *both* `frapp-staging` and `frapp-prod`. What Pro includes and costs: [`supabase.md` § Plan and quotas](deployment/supabase.md#plan-and-quotas) |
 | `frapp-staging` | `hnoyzpidbmizhbqaiity`, `us-east-1`, Postgres 17.6.1.063 |
 | `frapp-prod` | `unttyvyfezddlyafcydh`, `us-east-2`, Postgres 17.6.1.063 |
-| Supabase daily backups | **Daily, per project, last 7 days restorable** from the dashboard (**Database → Backups**), a [Pro feature](https://supabase.com/docs/guides/platform/backups). They restore the whole project in place, with downtime. They cover the database only, **not Storage objects**, and Supabase deletes them with the project. Not yet seen in the dashboard: #1403 holds that check |
+| Supabase daily backups | **Daily, per project, last 7 days restorable** from the dashboard (**Database → Backups**), a [Pro feature](https://supabase.com/docs/guides/platform/backups). They cover the database only, **not Storage objects**, and Supabase deletes them with the project. **Seen 2026-09-28** in `frapp-prod`: 8 daily physical backups dated 21–28 Sep, each taken about 08:45–09:05 UTC, so the listing reaches back before that day's upgrade. Supabase documents 7 days for Pro, so don't count on the oldest one listed. The page offers two ways back: **Restore**, which replaces the project in place with downtime, and **Restore to new project** (beta), which fills a separate project and leaves the live one alone |
 | Point-in-Time Recovery | **Not enabled.** A paid add-on on Pro (about $100 a month per project for 7 days), which needs at least the Small compute size |
 
 > **Rotating either project touches every file that names its ref — `git grep` the old ref.** Among other places, the ref is recorded in
@@ -140,8 +146,9 @@ recommends for that plan: a nightly `db dump` kept off-site. Pro adds Supabase's
 backups. The two now do different jobs:
 
 - **Supabase's daily backup is the quick restore** for a bad migration or a data loss inside the
-  last 7 days. It restores the whole project in place. It covers only the database, not Storage
-  objects, and it is lost if the project is deleted.
+  last 7 days. It can go back in place (downtime, and every later write is lost), or into a new
+  project so the good rows can be copied back. It covers only the database, not Storage objects,
+  and it is lost if the project is deleted.
 - **The offsite dump is still the only copy outside Supabase, and the only backup of Storage
   files.** Keep it running. What it covers, and since when, is
   [§ Backups: what exists](#backups-what-exists). **Check the `production/`

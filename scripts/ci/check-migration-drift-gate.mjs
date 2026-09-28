@@ -46,13 +46,24 @@
 // (`git log -1 --first-parent --format=%ct`), which is precisely "how long has
 // staging had to catch up". Default grace is 30 minutes, far shorter than a
 // working day. In CI it has to cover the whole chain from merge to snapshot:
-// CI on main, `Deploy API` (whose `migrate-staging` applies it) and the publish
+// CI on main, `Deploy staging` (whose `deploy` job applies it) and the publish
 // that run triggers. From a CI push run's creation to the end of the Deploy
 // API run it triggered took 256 to 599 seconds across the 12 most recent
 // Deploy API runs on main before 16:32Z on 2026-09-23 (each paired with the CI run that
 // finished just before it was created: a `workflow_run` run's `head_sha` is
-// main's tip when it fired, not the commit that triggered it). The publish leg
-// is unmeasured until the publisher runs on main.
+// main's tip when it fired, not the commit that triggered it). Since #2803
+// `Deploy staging` does that work plus all of the old Deploy Vercel staging
+// run's: installs and both builds before it migrates, both uploads and the
+// alias after the API, and the publish waits for all of it. For one merge
+// alone that is about 14 minutes at worst. Two migration merges a few minutes
+// apart are the tight case: the second waits for CI, for the first's whole
+// run (it holds `db-migrate-staging`), for its own, for the `updated_at` lag
+// that fires the publish (over five minutes, above) and for the publish
+// itself, about 25 to 30 minutes, at the edge of the grace. Derived, not
+// measured; the sums and their sources are in
+// `.github/actions/download-migration-snapshot/action.yml`'s header, and #2832
+// moves the publish to right after the migrations. This gate reports; it
+// blocks no merge.
 //
 // `--first-parent` is what makes that true rather than merely intended: see
 // the comment at the call site. Without it the grace was measured from the
@@ -69,9 +80,9 @@
 // PR runs its own branch's workflow, so a credential here is a credential every
 // branch holds (#2518). The staging ref then comes from
 // `.github/environments.json`. See `lib/migration-snapshot.mjs`. A snapshot can
-// be older than staging's real state: a `Deploy API` run may have finished (or
+// be older than staging's real state: a `Deploy staging` run may have finished (or
 // still be running) after it, its publish not landed yet. The download action
-// says what Deploy API has done since (`MIGRATION_SNAPSHOT_STAGING_DEPLOY`), and
+// says what Deploy staging has done since (`MIGRATION_SNAPSHOT_STAGING_DEPLOY`), and
 // `classifyGateDrift` then reports a missing migration as `stale`, not drift.
 //
 // ── Availability trade ──────────────────────────────────────────────────────
@@ -95,7 +106,7 @@
 //   SUPABASE_PROJECT_REF       — live read only: the STAGING project ref
 //   MIGRATION_SNAPSHOT_STAGING_DEPLOY — snapshot only, set by
 //                                `.github/actions/download-migration-snapshot`:
-//                                `none` when no Deploy API run has finished
+//                                `none` when no Deploy staging run has finished
 //                                since the snapshot or is in progress, else a
 //                                finish time, `running` or `unknown`. Anything
 //                                but `none`, unset included, counts as overtaken.
@@ -105,8 +116,8 @@
 //
 // Exit codes:
 //   0 — staging holds every migration on main (or the stragglers are in grace)
-//   1 — drift; or `stale` (a migration is past grace, and a Deploy API run
-//       since the snapshot may have applied it, or what Deploy API did could
+//   1 — drift; or `stale` (a migration is past grace, and a Deploy staging run
+//       since the snapshot may have applied it, or what Deploy staging did could
 //       not be read); or staging could not be read
 
 import { execFileSync } from "node:child_process";
@@ -214,19 +225,19 @@ export function readMigrationsAtRef({ ref, runGit = defaultRunGit }) {
  * migration past it is one of two things:
  *
  *   overdue      — the applied list is current: a live read, or a snapshot no
- *                  Deploy API run has finished since or is running after. Its
+ *                  Deploy staging run has finished since or is running after. Its
  *                  absence is staging's real state, a failed or missing apply.
- *   unverifiable — `snapshotBehind`: a Deploy API run finished after the
+ *   unverifiable — `snapshotBehind`: a Deploy staging run finished after the
  *                  snapshot was taken and its publish has not landed, or one is
- *                  still running, or what Deploy API did could not be read. That
+ *                  still running, or what Deploy staging did could not be read. That
  *                  run may have applied it, so the snapshot cannot say. The
  *                  verdict is `stale`, which is red and says why. Called drift,
  *                  it would blame staging for a lagging publisher. Left in
  *                  grace, it would read green for a day. Once a newer snapshot
  *                  lands, a real failed apply shows as overdue.
  *
- * Deploy API is the only workflow that migrates staging, and it triggers a
- * publish when it finishes, so "no Deploy API run since" is what makes a
+ * Deploy staging is the only workflow that migrates staging, and it triggers a
+ * publish when it finishes, so "no Deploy staging run since" is what makes a
  * snapshot's absence current. The capture time cannot: a snapshot taken
  * minutes before a migration's own deploy finished is overtaken, while one
  * taken right after a failed apply is current, and both may predate the
@@ -278,7 +289,7 @@ function isTimestamp(value) {
 
 /**
  * Why the snapshot cannot vouch for a missing migration, and what to do. From
- * `stagingDeploy`, the download action's export: a Deploy API run's finish
+ * `stagingDeploy`, the download action's export: a Deploy staging run's finish
  * time, `running`, or anything else when that could not be read.
  */
 function staleReason({ capturedMs, stagingDeploy }) {
@@ -287,7 +298,7 @@ function staleReason({ capturedMs, stagingDeploy }) {
   }`;
   if (isTimestamp(stagingDeploy)) {
     return {
-      because: `a Deploy API run on main finished at ${stagingDeploy}, after ${snapshot} was taken, and the publish it triggers has not succeeded yet`,
+      because: `a Deploy staging run on main finished at ${stagingDeploy}, after ${snapshot} was taken, and the publish it triggers has not succeeded yet`,
       advice:
         "If Migration snapshot (`.github/workflows/migration-snapshot.yml`) is still running, re-run this " +
         "check when it finishes. If it failed, fix it and re-run it on `main`. If a migration is still " +
@@ -296,14 +307,14 @@ function staleReason({ capturedMs, stagingDeploy }) {
   }
   if (stagingDeploy === "running") {
     return {
-      because: `a Deploy API run on main is still in progress, and ${snapshot} was taken before it could show what that run applies`,
+      because: `a Deploy staging run on main is still in progress, and ${snapshot} was taken before it could show what that run applies`,
       advice:
         "Re-run this check once that run and the Migration snapshot publish it triggers " +
         "(`.github/workflows/migration-snapshot.yml`) have finished.",
     };
   }
   return {
-    because: `what Deploy API has done since ${snapshot} was taken could not be read (the download step's log names the Actions API error)`,
+    because: `what Deploy staging has done since ${snapshot} was taken could not be read (the download step's log names the Actions API error)`,
     advice: "Re-run this check. This is not a verdict on staging or on the publisher.",
   };
 }
@@ -360,8 +371,8 @@ export function buildGateSummary({
       "",
       bullets(result.overdue, describeLanded),
       "",
-      "Fix: re-run the `Deploy API` workflow against the latest commit on main —",
-      "`migrate-staging` applies whatever is pending. See",
+      "Fix: re-run the `Deploy staging` workflow against the latest commit on main —",
+      "its `deploy` job's migration steps apply whatever is pending. See",
       "`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.",
       "",
     );
@@ -566,7 +577,7 @@ function getArg(name) {
  * Where staging's applied state comes from: the published snapshot when
  * `--snapshot` is given (CI), else a live read with a token (a laptop).
  *
- * For a snapshot, `snapshotBehind` says whether a Deploy API run may have
+ * For a snapshot, `snapshotBehind` says whether a Deploy staging run may have
  * changed staging since it was taken, from `MIGRATION_SNAPSHOT_STAGING_DEPLOY`,
  * which the download action exports. Only `none` counts as current: an unset
  * value (a run outside that action) is not evidence that nothing deployed.
@@ -597,13 +608,13 @@ export function resolveSource(snapshotPath, env = process.env) {
       snapshotBehind,
       stagingDeploy,
       description: !snapshotBehind
-        ? `${opened.description}; no Deploy API run since`
+        ? `${opened.description}; no Deploy staging run since`
         : `${opened.description}; ${
             isTimestamp(stagingDeploy)
-              ? `a Deploy API run finished since, at ${stagingDeploy}`
+              ? `a Deploy staging run finished since, at ${stagingDeploy}`
               : stagingDeploy === "running"
-                ? "a Deploy API run is in progress"
-                : "what Deploy API has done since is unknown"
+                ? "a Deploy staging run is in progress"
+                : "what Deploy staging has done since is unknown"
           }, so a migration past grace reads as stale, not drift`,
     };
   } catch (thrown) {
@@ -623,7 +634,7 @@ export function resolveSource(snapshotPath, env = process.env) {
 /**
  * What `main()` hands `runDriftGate`, from a resolved source and the env.
  * Exported so the wiring is tested: a snapshot's capture time must never
- * become `nowMs`, the gate's clock, and whether Deploy API has overtaken it must
+ * become `nowMs`, the gate's clock, and whether Deploy staging has overtaken it must
  * reach the classifier (#2518).
  */
 export function driftGateOptions(source, env = process.env) {

@@ -185,7 +185,7 @@ curl -s https://api.frapp.live/health           # Production; laptop only, never
 `frapp-web` and `frapp-landing` are both unlinked from Git, so `link: null` is expected. CI does the
 deploys:
 
-- `deploy-vercel-staging.yml` deploys both after CI passes on `main`.
+- `deploy-staging.yml` deploys both after CI passes on `main`, uploading them only once the staging API serves the commit.
 - `deploy-production.yml` deploys a dispatched SHA.
 
 Both go through `scripts/ci/deploy-vercel.mjs`, which stamps every deployment with

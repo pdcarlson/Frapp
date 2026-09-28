@@ -573,7 +573,7 @@ export function buildAlertIssueBody({ results, graceHours, runUrl }) {
     "### How to act on this",
     "",
     "**Pending** rows mean migrations the environment should hold never reached its database. For",
-    "staging that is everything on `main`: check whether `Deploy API` is running at all (#763) before",
+    "staging that is everything on `main`: check whether `Deploy staging` is running at all (#763) before",
     "assuming a migration problem. For production it is the latest `v*` tag's migrations, which",
     "`deploy-production.yml` applies before it mints the tag. A pending row there means the tag was",
     "minted some other way (a `release.yml` dispatch, or by hand) on a commit whose migrations never",

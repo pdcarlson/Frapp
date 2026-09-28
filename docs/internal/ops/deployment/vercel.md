@@ -11,8 +11,8 @@ neither asks Vercel to fetch a commit.
 
 | Channel | Workflow | Path |
 | --- | --- | --- |
-| Staging (web + landing) | `deploy-vercel-staging.yml`, after CI succeeds on `main` | inject Infisical `staging` → `vercel pull --environment=preview` → `vercel build` on each app's own keys → `vercel deploy --prebuilt` → alias the staging hostnames |
-| Production (web + landing) | `deploy-production.yml`, on a dispatched SHA | `vercel pull --environment=production` → `vercel build --prod` → `vercel deploy --prebuilt --prod` |
+| Staging (web + landing) | `deploy-staging.yml` (**Deploy staging**), after CI succeeds on `main` | inject Infisical `staging` → `vercel pull --environment=preview` → `vercel build` on each app's own keys → migrations, API deploy and verify → `vercel deploy --prebuilt` → alias the staging hostnames |
+| Production (web + landing) | `deploy-production.yml`, on a dispatched SHA | `vercel pull --environment=production` → `vercel build --prod` → migrations, Render deploy and health check → `vercel deploy --prebuilt --prod` |
 
 **Uploads are one archive per deploy, not one request per file (`--archive=tgz`, since
 2026-09-06).** The team is on Vercel's free plan, whose upload API allows **5000 requests per 24
@@ -25,7 +25,11 @@ parts, so the cap stops mattering. If the cap is ever hit anyway, the deploy fai
 partial is aliased) and clears on its own 24 hours after the first counted upload — or sooner on a
 paid plan, which is the owner's call, not a workflow's.
 
-Both run [`scripts/ci/deploy-vercel.mjs`](../../../../scripts/ci/deploy-vercel.mjs).
+Both run [`scripts/ci/deploy-vercel.mjs`](../../../../scripts/ci/deploy-vercel.mjs) twice:
+`DEPLOY_PHASE=build` before the migrations, and `DEPLOY_PHASE=upload` once the API passes its
+post-deploy check. There is no single-phase run. So a failed build ships nothing, and new
+frontends never go live ahead of the migration and API they call. The full order of each pipeline
+is in [`ci-cd.md` § How Deployments Are Gated](ci-cd.md#how-deployments-are-gated).
 
 ### 4.2 Environment Variables per Project
 
@@ -103,8 +107,8 @@ landing reskin had been on `main` for ten days while `www.frapp.live` still serv
 
 #### Staging hostnames
 
-CI aliases these after each staging deploy (`deploy-vercel-staging.yml` →
-`ensure-vercel-staging-alias.mjs`), pointing each hostname at the deployment id that the deploy
+CI aliases these after each staging upload (`deploy-staging.yml` →
+`ensure-vercel-staging-alias.mjs`), pointing each hostname at the deployment id that the upload
 step printed. The workflow fails on an empty id rather than letting the script fall back to its
 `githubCommitSha` search, which can exit 0 having aliased nothing. Dashboard Preview + `main`
 branch filters are leftover from the Git integration and do not attach hostnames any more.

@@ -3,11 +3,12 @@
 //
 // ── Why this file exists rather than one more assertion in the fence test ───
 // `deploy-vercel.mjs` is invoked from TWO workflows — `deploy-production.yml`
-// (twice: a `build` phase and an `upload` phase) and `deploy-vercel-staging.yml`
-// (once, phase unset) — so the contract is not a property of either file. The
-// guard that came out of #2265 lived in `deploy-production-fence.test.mjs` and
-// was production-only and `DEPLOY_SHA`-only; the same class of bug in the
-// staging caller had nothing looking at it at all.
+// and `_deploy.yml` (the job `deploy-staging.yml` calls, since #2804), each
+// twice: a `build` phase and an `upload` phase (staging since #2803; before it,
+// one unphased call) — so the contract is not a property of either file. The guard that came out of #2265 lived in
+// `deploy-production-fence.test.mjs` and was production-only and
+// `DEPLOY_SHA`-only; the same class of bug in the staging caller had nothing
+// looking at it at all.
 //
 // ── The bug class ──────────────────────────────────────────────────────────
 // Run 34892839657: the Vercel BUILD step had never carried `DEPLOY_SHA`, and
@@ -19,8 +20,8 @@
 //      step's copy kept it green. #2265 fixed that one by scoping to the call
 //      site. Here every assertion is scoped to a call site by construction.
 //   2. The guard named ONE variable. The other five were unguarded, and
-//      `VERCEL_BUILD_STASH_DIR` — required by exactly the two phases that have
-//      one — was never asserted anywhere. The required set is now read from
+//      `VERCEL_BUILD_STASH_DIR` — required by both phases — was never asserted
+//      anywhere. The required set is now read from
 //      `requiredEnvFor`, the same table `main()` reads, so a `requireEnv`
 //      added to the script tightens this guard in the same commit. Since #2673
 //      every call site, production and staging alike, also needs
@@ -30,13 +31,13 @@
 //
 // ── Why the env lookup walks three scopes ──────────────────────────────────
 // A per-step guard that only reads the step's own `env:` block would be wrong,
-// not merely strict. `deploy-vercel-staging.yml` supplies
-// `VERCEL_WEB_PROJECT_ID`, `VERCEL_LANDING_PROJECT_ID` and `VERCEL_TEAM_ID`
-// from a JOB-level `env:`, and `deploy-production.yml` declares the same three
-// at WORKFLOW level. Both are correct and both are how Actions resolves
+// not merely strict. `deploy-production.yml` declares `VERCEL_WEB_PROJECT_ID`,
+// `VERCEL_LANDING_PROJECT_ID` and `VERCEL_TEAM_ID` at WORKFLOW level, and the
+// staging caller this replaced (`deploy-vercel-staging.yml`, #2803) declared
+// them at JOB level. Both are correct and both are how Actions resolves
 // `env` — workflow, then job, then step, innermost winning. A guard that
-// ignored the outer two would fail the staging caller for a bug it does not
-// have, and the fix for a false failure is usually to delete the guard.
+// ignored the outer two would fail a caller for a bug it does not have, and
+// the fix for a false failure is usually to delete the guard.
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -47,7 +48,6 @@ import { fileURLToPath } from "node:url";
 import { workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 import {
-  DEPLOY_PHASE_ALL,
   DEPLOY_PHASE_BUILD,
   DEPLOY_PHASE_UPLOAD,
   REQUIRED_ENV_ALWAYS,
@@ -79,7 +79,8 @@ function allCallSites(script) {
 
 describe("every deploy-vercel.mjs call site satisfies the script's env contract", () => {
   // Called inside each `it`, never in the describe body. `parseDeployPhase`
-  // throws by design on an unrecognised DEPLOY_PHASE, and a throw during suite
+  // throws by design on an unset or unrecognised DEPLOY_PHASE (unset since
+  // #2803, which deleted the single-phase path), and a throw during suite
   // CONSTRUCTION prints `not ok` but exits 0 on Node 22 — so the one edit this
   // file exists to catch would instead delete every assertion in it and leave
   // `ci-scripts-tests` green. Inside an `it`, the same throw fails the run.
@@ -92,28 +93,30 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
   // about, one level up, so it gets an explicit floor.
   it("finds the call sites it is supposed to be guarding", () => {
     assert.ok(
-      sites().length >= 3,
-      `expected at least 3 deploy-vercel.mjs call sites (production build, production ` +
-        `upload, staging), found ${sites().length}: ${sites().map((s) => s.name).join(", ") || "none"}`,
+      sites().length >= 4,
+      `expected at least 4 deploy-vercel.mjs call sites (production build, production ` +
+        `upload, staging build, staging upload), found ${sites().length}: ` +
+        `${sites().map((s) => s.name).join(", ") || "none"}`,
     );
 
-    const production = sites().filter((s) => s.workflowFile === "deploy-production.yml");
-    assert.equal(production.length, 2, "deploy-production.yml should have a build and an upload call site");
-    assert.deepEqual(
-      production.map((s) => s.phase).sort(),
-      [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD],
-      "the two production call sites should be one build phase and one upload phase",
-    );
+    // Both callers run both phases, one call site each (#2803 for staging). A
+    // caller missing its build ships whatever `.vercel` holds; one missing its
+    // upload builds and ships nothing.
+    for (const workflowFile of ["deploy-production.yml", "_deploy.yml"]) {
+      const callSites = sites().filter((s) => s.workflowFile === workflowFile);
+      assert.equal(callSites.length, 2, `${workflowFile} should have a build and an upload call site`);
+      assert.deepEqual(
+        callSites.map((s) => s.phase).sort(),
+        [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD],
+        `the two ${workflowFile} call sites should be one build phase and one upload phase`,
+      );
+    }
 
-    assert.ok(
-      sites().some((s) => s.workflowFile === "deploy-vercel-staging.yml" && s.phase === DEPLOY_PHASE_ALL),
-      "the staging caller should run the unphased (all) path",
-    );
     // Each workflow must be read as the target it ships to: a staging caller
     // read as production would pass here while deploying to the wrong channel.
     assert.deepEqual(
       [...new Set(sites().map((s) => `${s.workflowFile}:${s.target}`))].sort(),
-      [`deploy-production.yml:${VERCEL_TARGET_PRODUCTION}`, `deploy-vercel-staging.yml:${VERCEL_TARGET_PREVIEW}`],
+      [`_deploy.yml:${VERCEL_TARGET_PREVIEW}`, `deploy-production.yml:${VERCEL_TARGET_PRODUCTION}`],
     );
   });
 
@@ -184,7 +187,7 @@ describe("the env contract table", () => {
   const forPhase = (phase) => requiredEnvFor({ phase, target: VERCEL_TARGET_PRODUCTION });
 
   it("covers every phase parseDeployPhase can return", () => {
-    for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD, DEPLOY_PHASE_ALL]) {
+    for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD]) {
       for (const target of [VERCEL_TARGET_PRODUCTION, VERCEL_TARGET_PREVIEW]) {
         assert.doesNotThrow(() => requiredEnvFor({ phase, target }));
       }
@@ -196,18 +199,26 @@ describe("the env contract table", () => {
   });
 
   it("refuses an unrecognised target rather than holding it to production's set", () => {
-    assert.throws(() => requiredEnvFor({ phase: DEPLOY_PHASE_ALL, target: "staging" }), /DEPLOY_TARGET/);
+    for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD]) {
+      assert.throws(() => requiredEnvFor({ phase, target: "staging" }), /DEPLOY_TARGET/);
+    }
   });
 
-  it("requires the stash directory in exactly the two phases that have one", () => {
+  it("requires the stash directory in both phases", () => {
     assert.ok(forPhase(DEPLOY_PHASE_BUILD).includes("VERCEL_BUILD_STASH_DIR"));
     assert.ok(forPhase(DEPLOY_PHASE_UPLOAD).includes("VERCEL_BUILD_STASH_DIR"));
-    assert.ok(!forPhase(DEPLOY_PHASE_ALL).includes("VERCEL_BUILD_STASH_DIR"));
+  });
+
+  // The single-phase `all`, the one phase that needed no stash, went with
+  // #2803. A call site still naming it must fail the contract, not pass it
+  // with nothing required.
+  it("has no contract for the retired single phase", () => {
+    assert.throws(() => forPhase("all"), /No environment contract recorded/);
   });
 
   it("requires DEPLOY_SHA in every phase, the build included", () => {
     assert.ok(REQUIRED_ENV_ALWAYS.includes("DEPLOY_SHA"));
-    for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD, DEPLOY_PHASE_ALL]) {
+    for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD]) {
       assert.ok(forPhase(phase).includes("DEPLOY_SHA"));
     }
   });
@@ -218,7 +229,7 @@ describe("the env contract table", () => {
   // production since #2673.
   it("requires the env baseline for every target, in every phase", () => {
     assert.ok(REQUIRED_ENV_ALWAYS.includes("VERCEL_BUILD_ENV_BASELINE"));
-    for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD, DEPLOY_PHASE_ALL]) {
+    for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD]) {
       for (const target of [VERCEL_TARGET_PRODUCTION, VERCEL_TARGET_PREVIEW]) {
         assert.ok(requiredEnvFor({ phase, target }).includes("VERCEL_BUILD_ENV_BASELINE"));
       }

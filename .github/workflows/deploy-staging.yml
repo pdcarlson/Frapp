@@ -1,0 +1,119 @@
+name: Deploy staging
+
+# STAGING: database, API, web and landing, after every merge. Triggered ONLY
+# after the CI workflow completes successfully on `main`, so broken code never
+# deploys. Staging deploys on merge, never on a pull request: it is one shared
+# database and one API, so an unmerged PR's migrations would land in it and
+# PRs would overwrite each other.
+#
+# This file only decides WHETHER to deploy, and reports the outcome. The
+# deploying itself is `_deploy.yml`, the job staging and production share
+# (epic #2802; since #2804), called with `environment: staging` and the commit
+# CI verified. Its header has the order and the plan. Production is
+# `deploy-production.yml`, a manual dispatch that names an exact commit.
+#
+# ── Why `workflow_run` and not `push` ───────────────────────────────────────
+# A push-triggered workflow starts immediately, before CI has passed. This one
+# starts when CI completes and deploys only a success, and it names the commit
+# CI verified (`workflow_run.head_sha`), never `main`'s moving tip.
+#
+# ── No secrets passed ──────────────────────────────────────────────────────
+# The call passes no `secrets:`. `_deploy.yml`'s job names the `staging`
+# environment itself and should get its secrets from there; that is derived
+# from GitHub's docs until the first run through it proves it (that header,
+# and #2804).
+#
+# ── Names other things depend on ────────────────────────────────────────────
+# `migration-snapshot.yml` triggers on this workflow's NAME, "Deploy staging",
+# and the `download-migration-snapshot` action reads this FILE's runs. The
+# `deploy-outcome` job selects `ALERT_CONFIG: deploy-staging` in
+# `scripts/ci/deploy-alert.mjs`, which keys on the job names `deploy` and
+# `deploy-outcome` and on the `plan` output. Renaming any of them breaks those
+# silently.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # `head_repository` guards against a fork's CI run triggering a deploy with
+    # this repo's secrets: `workflow_run` fires in the base repo's context.
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'main'
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: staging
+      # The commit CI verified. `github.sha` on a `workflow_run` event is the
+      # default branch's TIP, which may be a commit whose CI hasn't finished.
+      sha: ${{ github.event.workflow_run.head_sha }}
+
+  # ── Deploy outcome: alert on failure, state plainly what happened ──────────
+  # A `workflow_run` failure lands on no commit and no PR, so without this a
+  # failed staging deploy produced no commit status, no PR check and no
+  # notification. That hid a 100% deploy failure rate for 71 days (#763), and
+  # ADR-21's Git unlink froze both staging hosts for days (#1674).
+  #
+  # Writes a step summary and an annotation saying whether this run DEPLOYED,
+  # FAILED, found the API UP TO DATE (plan `current`; the frontends still
+  # uploaded), or was SUPERSEDED (plan `stale`, or a successful `forward`
+  # deploy of a commit that isn't main's tip), and upserts or closes one P1
+  # tracking issue, so "alert issue open" means "the staging deploy path is
+  # broken right now" (owner decision on #2803: P1, as Deploy API was).
+  deploy-outcome:
+    needs: [deploy]
+    # `always()` alone is NOT enough: a skipped dependency does not stop a job
+    # that uses always(), so on every CI-failed run this would report "deployed
+    # NOTHING", true but noise. Repeating the deploy job's own conditions means
+    # this job runs exactly when a deploy was eligible, and a deploy job that
+    # then did not run is escalated as a failure (a configuration defect).
+    #
+    # Keep these conditions in sync with the `deploy` job above: GitHub Actions
+    # has no way to share a job-level `if:`, and
+    # `deploy-staging-workflow.test.mjs` fails if they drift.
+    #
+    # `always()` rather than `!cancelled()`, deliberately: a CANCELLED deploy
+    # raises the alert, because `FAILED_RESULTS` in deploy-alert.mjs counts
+    # `cancelled` as a failure ("a cancelled deploy is not a deploy"). The cost:
+    # cancelling a superseded queued run by hand files an alert, which closes as
+    # soon as the run behind it deploys.
+    if: |
+      always() &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The ONLY job here with any write scope, kept job-scoped so the
+      # workflow-level `contents: read` stays as narrow as it is.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # deploy-alert.mjs is dependency-free (global fetch + node:fs on the
+      # runner's preinstalled Node): no setup-node, no npm ci.
+      - name: Report deploy outcome and alert on failure
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Required. deploy-alert.mjs serves more than one workflow and refuses
+          # to guess: an absent or unknown value is a hard error.
+          ALERT_CONFIG: deploy-staging
+          DEPLOY_NEEDS: ${{ toJSON(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/ci/deploy-alert.mjs

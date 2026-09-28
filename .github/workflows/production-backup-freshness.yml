@@ -3,8 +3,9 @@ name: Production backup freshness
 # Between-dump watch: the nightly production Postgres dump must stay fresh.
 #
 # Launch bar 2 needs a recoverable production dump. Nightly Backup
-# (`db-backup.yml`) `backup-production` is the only restorable copy of
-# `frapp-prod` until a hosted restore is rehearsed. Nothing inside that
+# (`db-backup.yml`) `backup-production` is the only copy of `frapp-prod`
+# outside Supabase (its daily backups are deleted with the project and hold
+# no Storage files). Nothing inside that
 # workflow fails closed if the job stops, skips, hangs, or ages out. The
 # reviewer watch (1956) only sees GitHub environment `production-backup`.
 #
