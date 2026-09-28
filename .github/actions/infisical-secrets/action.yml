@@ -150,8 +150,15 @@ runs:
         PRESERVE_NONEMPTY: ${{ inputs.preserve-nonempty }}
       run: bash "$GITHUB_ACTION_PATH/preserve-nonempty-env.sh" snapshot
 
+    # Pinned to a commit, not the tag (#2647): this step receives the machine
+    # identity and exports every secret of the environment it logs into, `prod`
+    # included, and a tag its publisher re-points would run new code with them
+    # unreviewed. Resolved 2026-09-28 with
+    # `git ls-remote https://github.com/Infisical/secrets-action refs/tags/v1.0.12`
+    # (a lightweight tag, so that SHA is the commit). To bump: resolve the new
+    # tag the same way and change both the SHA and the comment.
     - name: Inject ${{ inputs.env-slug }} secrets from Infisical
-      uses: Infisical/secrets-action@v1.0.12
+      uses: Infisical/secrets-action@a663da43e1541832614bfd9dcf9ab67381ea2b98 # v1.0.12
       with:
         method: "universal"
         client-id: ${{ inputs.client-id }}
