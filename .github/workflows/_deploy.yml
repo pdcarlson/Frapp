@@ -26,15 +26,15 @@ name: Deploy
 # the plan's outputs. #2805 adds production's layers the same way.
 #
 # ── Secrets: through this job's own `environment:` (#2804) ──────────────────
-# A called workflow sees none of its caller's secrets unless the caller passes
-# them, and `workflow_call` has no environment of its own. This job declares
-# `environment: ${{ inputs.environment }}`, so GitHub should release that
-# environment's secrets to it directly, after the environment's main-only rule
-# (and, for production, its reviewers). Callers pass no secrets, on purpose:
-# every secret this job reads is an environment secret. That is derived from
-# GitHub's reusable-workflow docs, not yet seen here. The first step checks it
-# on every run, and the first staging run through this file is to prove it
-# (recorded on #2804 once it has run). `workflow-secrets-scope.test.mjs` pins
+# `workflow_call` has no environment of its own. This job declares
+# `environment: ${{ inputs.environment }}`, so it gets that environment's
+# secrets, after the environment's main-only rule (and, for production, its
+# reviewers), but only because its caller passes `secrets: inherit`. Without
+# that, GitHub releases none of them to a called job and every one reads empty:
+# the first run through this file (36479856561) failed its first step that way,
+# before anything shipped (actions/runner#4453). Where an inherited secret and
+# the environment's share a name, the environment's wins, and no repository
+# secret exists (#2583). The first step checks on every run that they arrived. `workflow-secrets-scope.test.mjs` pins
 # that every caller names a main-only environment literally and runs on no
 # pull-request trigger, since the name here is an expression.
 #
@@ -127,10 +127,10 @@ jobs:
       # checkout, so a caller that asks for more gets an error, not a
       # half-built production path.
       #
-      # It also proves #2804's premise on every run: the environment's secrets
-      # reached this CALLED job through its own `environment:` key, with the
-      # caller passing none. Names only: each check is `secrets.X != ''`, so no
-      # value enters this step.
+      # It also checks on every run that the environment's secrets reached this
+      # CALLED job, which needs its own `environment:` key and the caller's
+      # `secrets: inherit` (see the header). Names only: each check is
+      # `secrets.X != ''`, so no value enters this step.
       - name: Check the inputs, and that the environment's secrets reached this job
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
@@ -161,7 +161,7 @@ jobs:
           [ "$HAS_RENDER_API_KEY" = "true" ] || missing+=(RENDER_API_KEY)
           [ "$HAS_VERCEL_API_KEY" = "true" ] || missing+=(VERCEL_API_KEY)
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::The '$TARGET_ENVIRONMENT' environment's secrets did not reach this called job: ${missing[*]}. A called workflow's job gets environment secrets only through its own environment: key; check that key and the environment's secrets (docs/internal/ci-cd/AGENT_INFRA.md § GitHub environments and bootstrap secrets)."
+            echo "::error::The '$TARGET_ENVIRONMENT' environment's secrets did not reach this called job: ${missing[*]}. A called workflow's job gets environment secrets only through its own environment: key, and only when its caller passes secrets: inherit; check both, and the environment's secrets (docs/internal/ci-cd/AGENT_INFRA.md § GitHub environments and bootstrap secrets)."
             exit 1
           fi
           echo "The '$TARGET_ENVIRONMENT' environment's secrets reached this called job through its own environment: key: INFISICAL_MACHINE_IDENTITY_ID, INFISICAL_CLIENT_SECRET, RENDER_API_KEY, VERCEL_API_KEY (names only)."

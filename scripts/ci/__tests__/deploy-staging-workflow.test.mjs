@@ -150,12 +150,13 @@ describe("deploy-staging.yml: the call into _deploy.yml", () => {
     assert.equal(args.has("scope"), false);
   });
 
-  it("passes no secrets: the called job gets staging's from its own environment", () => {
-    // The premise #2804 proves on a real run. Passing `secrets: inherit` (or a
-    // list) would hide a broken `environment:` key behind the caller's copies,
-    // and repository secrets are gone since #2583 anyway.
-    assert.equal(job("deploy").keys.has("secrets"), false);
-    assert.doesNotMatch(uncommented, /secrets:\s*inherit/);
+  // Run 36479856561: with no `secrets:` the called job's `staging` secrets all
+  // read empty, `environment:` key or not (actions/runner#4453). `inherit` is
+  // what releases them; a list would pass the caller's copies, of which none
+  // exist (#2583), and hide a broken `environment:` key behind them.
+  it("passes `secrets: inherit`, which GitHub needs to release staging's secrets to the called job", () => {
+    assert.equal(job("deploy").keys.get("secrets"), "inherit");
+    assert.equal((uncommented.match(/^\s+secrets:/gm) ?? []).length, 1, "one secrets: key, the call's");
   });
 
   it("keeps no deploy step in the caller", () => {
