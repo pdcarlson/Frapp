@@ -623,6 +623,35 @@ describe("ConnectStep — confirming what the callback parked", () => {
     ).toBe(true);
   });
 
+  it("keeps a connected chapter moving, and says why it cannot switch servers, while connecting is withdrawn", async () => {
+    availability.value = { available: false };
+    connection.value = { connected: true, guild_name: "Tau Nu" };
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Connecting a different server is not available/),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      (
+        screen.getByRole("button", {
+          name: /Connect a different server/,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
   it("does NOT confirm when there is no handshake — a plain visit binds nothing", async () => {
     render(
       <ImportWizard

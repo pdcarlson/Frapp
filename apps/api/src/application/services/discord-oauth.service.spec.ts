@@ -546,6 +546,12 @@ describe('DiscordOAuthService — how long a verdict is trusted', () => {
     now.mockReturnValue(NOW.getTime() + 9 * 60_000);
     await service.isAvailable();
     expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+
+    // Settled is not forever: Discord may start listing them, or a bad row
+    // may appear, and that has to be seen without a restart.
+    now.mockReturnValue(NOW.getTime() + 11 * 60_000);
+    await service.isAvailable();
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(2);
   });
 
   it('withdraws at once when an import met a 401 after the setup was verified', async () => {
