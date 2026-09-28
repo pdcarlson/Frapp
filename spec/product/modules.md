@@ -260,6 +260,8 @@ Disabling a paid module: removes its slash commands from the chat palette (`filt
 - **Reads are never gated.** The toggle hides and freezes a surface; it must not strand the chapter's existing data behind it, or re-enabling could not restore access.
 - **Enabled unless explicitly `false`**, matching the client's `isModuleEnabled` contract — a chapter created before a module existed has no key for it and must not be locked out of something it never turned off.
 
+**The refusal reaches clients as a `message`, not a `code`**, because `AllExceptionsFilter` drops `code` from every error response (#1020). The guard throws `moduleDisabledMessage(key)` from `@repo/validation`, and a member surface recognises the refusal with `moduleRefusalFromServerMessage` beside it, never with `codeOf(error) === "chapter.module.disabled"`, which is `null` in production (#2393). The sentence is addressed to an officer, so member surfaces show their own copy (`spec/ui/design-system/writing.md` § Module off (mobile, cross-surface)). Installed mobile builds match the exact text, so rewording it breaks every binary already shipped.
+
 Free always-on modules (chat, members, announcements, audit-log, chapter-settings) are never gated, since they cannot be toggled off. Billing and member-invoice routes are also ungated: paying dues is the recovery path for a locked chapter, so it stays reachable — the same reason `/billing` carries no `module` key in the dashboard nav.
 
 > The toggle UI lists the modules present in `MODULE_CATALOG` today. `meetings`, `vault`, and `ai` are catalogued above for roadmap/scoping but are not yet in the toggle set; they join Settings → Modules when those features ship.

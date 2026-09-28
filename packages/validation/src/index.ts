@@ -427,6 +427,55 @@ export function isModuleEnabled(
   return enabledModules?.[key] !== false;
 }
 
+const MODULE_DISABLED_PREFIX = 'The "';
+const MODULE_DISABLED_SUFFIX =
+  '" module is disabled for this chapter. Re-enable it in Settings → Modules to make changes.';
+
+/**
+ * The message `ChapterGuard.enforceModule` refuses a write with when `key` is
+ * off. The guard throws exactly this string, so it lives here rather than in
+ * the guard: the clients recognise the refusal by it, and one builder means
+ * the two cannot drift.
+ *
+ * It is addressed to an officer ("Re-enable it in Settings → Modules"), which
+ * is right for the web dashboard and wrong for a member, who cannot follow it.
+ * A member surface matches it with `moduleRefusalFromServerMessage` and shows
+ * its own copy instead.
+ */
+export function moduleDisabledMessage(key: string): string {
+  return `${MODULE_DISABLED_PREFIX}${key}${MODULE_DISABLED_SUFFIX}`;
+}
+
+/**
+ * Recognise the module gate's refusal from the server's `message`, returning
+ * the module it names, or `null` for any other message.
+ *
+ * **Why the message and not `codeOf`.** The guard also throws
+ * `code: 'chapter.module.disabled'`, but `AllExceptionsFilter` serialises only
+ * `{statusCode, error, message, requestId}`, so `codeOf` is `null` on every
+ * real response (#1020). A branch keyed on the code typechecks, passes any
+ * test that hand-builds a body with `code`, and never fires in production:
+ * that was mobile study's module branch until #2393. Nor is a bare 403 a
+ * substitute, because the same routes 403 for permission denials that must
+ * keep their own copy.
+ *
+ * The match is exact apart from the key: the whole fixed prefix and suffix
+ * must be present, and the key between them must be non-empty and unquoted.
+ */
+export function moduleRefusalFromServerMessage(
+  message: string | null | undefined,
+): { moduleKey: string } | null {
+  if (typeof message !== "string") return null;
+  if (!message.startsWith(MODULE_DISABLED_PREFIX)) return null;
+  if (!message.endsWith(MODULE_DISABLED_SUFFIX)) return null;
+  const moduleKey = message.slice(
+    MODULE_DISABLED_PREFIX.length,
+    message.length - MODULE_DISABLED_SUFFIX.length,
+  );
+  if (moduleKey.length === 0 || moduleKey.includes('"')) return null;
+  return { moduleKey };
+}
+
 // ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
 // Originally shared with the Deno Edge Functions; kept dependency-light
 // (zod only) so any future Deno consumer can still import this file

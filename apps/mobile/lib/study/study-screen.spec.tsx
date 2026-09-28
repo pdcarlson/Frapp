@@ -8,9 +8,11 @@ import * as expoRouter from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { moduleDisabledMessage } from "@repo/validation";
+import { MODULE_OFF_COPY } from "@/lib/study/errors";
 
 /**
- * s10's refusal wiring (#2297), rendered (#2416).
+ * s10's refusal wiring (#2297, and the module gate #2393), rendered (#2416).
  *
  * A refused session write must withdraw Start, and must not spin the
  * pause/resume mirror, because nothing on the device can clear the refusal.
@@ -19,7 +21,7 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
  * until a force-quit after an officer has fixed the billing.
  *
  * These replace source-string locks that proved a token was in the file, not
- * that Start was withdrawn. Deleting the `setSubscriptionRefused(true)` on the
+ * that Start was withdrawn. Deleting the `setWriteRefused(true)` on the
  * start path kept those green; it turns this suite red.
  *
  * It renders `app/(tabs)/study.tsx` but lives here: a spec under `app/` ships
@@ -35,6 +37,17 @@ const REFUSED = {
   requestId: "req_refused",
 };
 
+/**
+ * What `ChapterGuard` throws when an officer has switched `hours` off, as the
+ * filter sends it: no `code` (#1020), so only the message identifies it.
+ */
+const MODULE_OFF = {
+  statusCode: 403,
+  error: "Forbidden",
+  message: moduleDisabledMessage("hours"),
+  requestId: "req_module_off",
+};
+
 /** Any failure that is not the subscription gate. */
 const FAILED = {
   statusCode: 500,
@@ -45,6 +58,8 @@ const FAILED = {
 
 /** `MIRROR_RETRY_MS` in the screen. */
 const MIRROR_RETRY_MS = 15_000;
+/** `HEARTBEAT_INTERVAL_MS` in the screen. */
+const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 
 const CHAPTER = { enabled_modules: { hours: true } };
 const ZONES = [{ id: "zone-1", name: "Library", is_active: true }];
@@ -243,5 +258,106 @@ describe("Study pause mirror on a subscription refusal (#2297)", () => {
 
     expect(api.pause).toHaveBeenCalledTimes(2);
     act(() => tree.unmount());
+  });
+});
+
+describe("Study on a module-off refusal (#2393)", () => {
+  it("explains it in the member's terms on Start, withdraws Start, and offers it again on return", async () => {
+    api.start.mockRejectedValue(MODULE_OFF);
+    const tree = render();
+    await tapStart(tree);
+
+    expect(screenText(tree)).toContain(MODULE_OFF_COPY.start);
+    // The guard's own words tell an officer to go to Settings → Modules.
+    expect(screenText(tree)).not.toContain(MODULE_OFF.message);
+    expect(startButton(tree).props.disabled).toBe(true);
+
+    act(() => refocus());
+
+    expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.start);
+    expect(startButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  describe("with a session running", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+      sessions = LIVE_SESSION;
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("does not re-send a refused pause, and says why", async () => {
+      api.pause.mockRejectedValue(MODULE_OFF);
+      const tree = render();
+      await act(async () => {
+        appStateListener()("background");
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MIRROR_RETRY_MS + 1_000);
+      });
+
+      expect(api.pause).toHaveBeenCalledTimes(1);
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+      expect(screenText(tree)).not.toContain(MODULE_OFF.message);
+      act(() => tree.unmount());
+    });
+
+    it("says why when a heartbeat is refused, instead of swallowing it as transient", async () => {
+      api.heartbeat.mockRejectedValue(MODULE_OFF);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(api.heartbeat).toHaveBeenCalled();
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+      act(() => tree.unmount());
+    });
+
+    it("drops the copy once a write succeeds again, after an officer turns hours back on", async () => {
+      api.heartbeat
+        .mockRejectedValueOnce(MODULE_OFF)
+        .mockResolvedValue(LIVE_SESSION[0]);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+      });
+
+      expect(api.heartbeat).toHaveBeenCalledTimes(2);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
+      act(() => tree.unmount());
+    });
+
+    it("lets go of the refusal with the session when the server says it is gone", async () => {
+      // Refused, then the session is stopped elsewhere: the next beat 404s.
+      api.heartbeat
+        .mockRejectedValueOnce(MODULE_OFF)
+        .mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+      sessions = NO_SESSIONS;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+      });
+
+      // Without the release clearing the latch, Start comes back greyed out
+      // under nothing but the "already closed" notice.
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
+      expect(startButton(tree).props.disabled).toBe(false);
+      act(() => tree.unmount());
+    });
   });
 });
