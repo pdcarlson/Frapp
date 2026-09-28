@@ -715,7 +715,8 @@ jobs:
       # a bare TCP check on the port; docs/internal/ops/deployment/render.md § 5.4 cites Render's docs).
       # `/health` always 2xxs by design, so this loop is still the only thing
       # asserting the app is actually READY (DB and Storage reachable). Unlike
-      # deploy-api.yml, a missing URL FAILS rather than warning and exiting 0: a
+      # the staging smoke check this predates, a missing URL FAILS rather than
+      # warning and exiting 0: a
       # health check that silently does not run is indistinguishable from one
       # that passed.
       # NOT scope-gated, unlike the Render and Vercel steps above and below.

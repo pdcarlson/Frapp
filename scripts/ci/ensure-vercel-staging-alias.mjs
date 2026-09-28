@@ -81,7 +81,7 @@ export async function ensureVercelStagingAlias({
   //     deployment — and the staging hostname would be pointed at a bundle
   //     compiled against production env vars.
   //
-  // An id from the deployer has neither problem. `deploy-vercel-staging.yml`
+  // An id from the deployer has neither problem. `deploy-staging.yml`
   // supplies one; the search path stays for a caller that has no id to give.
   if (knownDeploymentId) {
     return assignStagingAlias({
@@ -245,7 +245,7 @@ async function main() {
     ? (process.env.VERCEL_PROJECT_ID ?? null)
     : requireEnv("VERCEL_PROJECT_ID");
   // DEPLOY_SHA wins over GITHUB_SHA — see the reserved-prefix note in the
-  // header. `deploy-vercel-staging.yml` runs on `workflow_run`, where
+  // header. `deploy-staging.yml` runs on `workflow_run`, where
   // `github.sha` is the default branch's tip rather than the commit CI verified.
   const sha = deploymentId ? null : process.env.DEPLOY_SHA || requireEnv("GITHUB_SHA");
   const label = process.env.SERVICE_LABEL ?? projectId ?? deploymentId;

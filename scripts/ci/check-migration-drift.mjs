@@ -418,7 +418,7 @@ export function buildAlertIssueBody({ results, graceHours, runUrl }) {
     "### How to act on this",
     "",
     "**Pending** rows mean migrations merged to the repo never reached the database — check whether",
-    "`Deploy API` is running at all (#763) before assuming a migration problem.",
+    "`Deploy staging` (or `Deploy production`) is running at all (#763) before assuming a migration problem.",
     "",
     "**Foreign** rows mean the database carries a version this repository has never contained.",
     "`supabase db push` refuses to run in that state. The CLI suggests",

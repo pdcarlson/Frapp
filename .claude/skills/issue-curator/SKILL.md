@@ -144,12 +144,13 @@ and it exists for signal quality: `/next` ranks this backlog, and filler buries 
     triggered by `workflow_run` fails without turning any PR check red. Read its job log
     (`get_job_logs`), and check for an open `incident` on it before filing anything.
   - Render MCP: `list_deploys` (`limit: 5`) for `frapp-api-staging` and `frapp-api-prod`. A
-    green `Deploy API` run only means Render accepted the hook, not that the build succeeded.
+    green `Deploy staging` run verified the API serving its commit unless its plan was `stale`;
+    the run summary names the plan.
     Pass `workspaceId` on every call; the id is in
     [`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md). Resolve
     each service's `srv-…` id with `list_services` rather than from memory
     ([`infrastructure-research`](../infrastructure-research/SKILL.md) has the recipe). A failed
-    staging API deploy already raises an `incident` (`deploy-api.yml`'s Deploy API alert), so look there first.
+    staging deploy already raises an `incident` (`deploy-staging.yml`'s Deploy staging alert), so look there first.
     File only a failure that no later deploy has fixed: a deploy that ended failed
     (`build_failed`, `update_failed`) and is newer than the service's `live` one. An in-progress
     deploy is neither. Production deploys are dispatched by hand, so an old

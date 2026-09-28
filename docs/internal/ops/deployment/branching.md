@@ -10,8 +10,8 @@
 > ⚠️ **2026-09-04:** "Preview deploys" in this section no longer means a *push-triggered* Vercel
 > build — both projects are unlinked from Git (ADR-21), so no push to `main` produces anything on
 > Vercel. Merging to `main` still deploys staging web and landing, but through
-> `deploy-vercel-staging.yml` after CI passes (#1578), which creates a Preview-target deployment
-> itself. Render's `frapp-api-staging` is unchanged. See [§ 4 Vercel Setup](vercel.md).
+> `deploy-vercel-staging.yml` (since #2803, `deploy-staging.yml`) after CI passes (#1578), which
+> creates a Preview-target deployment itself. Render's `frapp-api-staging` is unchanged. See [§ 4 Vercel Setup](vercel.md).
 
 **How it flows:**
 
@@ -37,10 +37,10 @@ feature/xyz ──PR──▶ main (staging) ──Deploy production (dispatch a
 | Vercel environment           | Trigger                                      | Domain example                                 |
 | ---------------------------- | -------------------------------------------- | ---------------------------------------------- |
 | **Production**               | `deploy-production.yml` (API, `target: production`) | `app.frapp.live`, `frapp.live`          |
-| **Preview** (pre-production) | `deploy-vercel-staging.yml`, after green CI on `main` | `app.staging.frapp.live`, `staging.frapp.live` |
+| **Preview** (pre-production) | `deploy-staging.yml`, after green CI on `main` and the staging API | `app.staging.frapp.live`, `staging.frapp.live` |
 | **Disabled**                 | Any other branch / PR                        | No deployment                                  |
 
-The `main` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `main` branch in Vercel's domain settings; `deploy-vercel-staging.yml` also aliases the hostname to each new deployment explicitly, because Vercel does not always attach it. Each app's `vercel.json` still carries `git.deploymentEnabled` (`"**": false` matches feature branch names that include `/`), but it is **inert** while the projects are unlinked — it governs the Git integration, and there is none. ADR-21 says to keep it regardless: it is the versioned form of a setting that is otherwise dashboard-only.
+`deploy-staging.yml` aliases each staging hostname to the new deployment explicitly. The Preview-environment domain assignment and `main` branch filter in Vercel's domain settings are leftovers of the Git integration and attach nothing ([§ 4 Vercel Setup](vercel.md#staging-hostnames)). Each app's `vercel.json` still carries `git.deploymentEnabled` (`"**": false` matches feature branch names that include `/`), but it is **inert** while the projects are unlinked — it governs the Git integration, and there is none. ADR-21 says to keep it regardless: it is the versioned form of a setting that is otherwise dashboard-only.
 
 Production deployments are **built fresh from the named commit**, not promoted from its
 `main` preview. `NEXT_PUBLIC_*` values are inlined at build time, so a preview build

@@ -13,12 +13,12 @@ looking for the command to push migrations to staging, there isn't one any more
 | Environment    | How migrations get applied                                                                                                                                                                                                                                       | Who triggers it                           |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | **Local**      | `npx supabase db push --local`                                                                                                                                                                                                                                   | You, while developing                     |
-| **Staging**    | **Automatic.** The `migrate-staging` job in [`deploy-api.yml`](../../../.github/workflows/deploy-api.yml) runs on every successful CI run on `main`                                                                                                              | Nobody — merging to `main` is the trigger |
+| **Staging**    | **Automatic.** The migration steps of the `deploy` job in [`deploy-staging.yml`](../../../.github/workflows/deploy-staging.yml) run on every successful CI run on `main`, after the web and landing builds and before the API deploy                          | Nobody — merging to `main` is the trigger |
 | **Production** | **Manual.** The [`Deploy production`](../../../.github/workflows/deploy-production.yml) workflow, which migrates and deploys one named commit together. Its `scope: migrations-only` input applies migrations _without_ shipping code, for recovery and backlogs | A human, deliberately                     |
 
 ### Staging: do not push by hand
 
-`migrate-staging` runs on **every** merge to `main`, not only merges that touch
+The staging migration runs on **every** merge to `main`, not only merges that touch
 `supabase/migrations/`. `supabase db push` applies whatever is pending and is a
 no-op when nothing is, so every merge is also a retry for anything an earlier
 run missed.
@@ -28,15 +28,15 @@ to `main` and were never applied to staging, because the job was gated on a
 path filter computed with `git diff HEAD~1 … || echo ""` — any git failure read
 as "no migrations changed" and the job skipped, green and silent.
 
-**Do not run `supabase db push` against staging from a laptop.** The workflow
-serializes its runs with a `db-migrate-staging` concurrency group, and that lock
-cannot see a run on your machine — nothing in GitHub can. A hand-applied
+**Do not run `supabase db push` against staging from a laptop.** The `deploy` job
+of `deploy-staging.yml` serializes its runs with a `db-migrate-staging`
+concurrency group, and that lock cannot see a run on your machine — nothing in GitHub can. A hand-applied
 migration also becomes a _foreign_ migration the moment its file changes or is
 renamed before merge, and a foreign row makes `supabase db push` refuse to run
 **at all** until someone reconciles it by hand.
 
-If staging needs a migration applied out of band, re-run the `Deploy API`
-workflow against the latest commit on `main`.
+If staging needs a migration applied out of band, re-run the **Deploy staging**
+run for the latest commit on `main`.
 
 ### Production: one path, two scopes
 
@@ -192,7 +192,7 @@ dispatch on a branch), when the snapshot predates the latest deploy,
 publish, then fail and name the publisher
 ([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../internal/ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets)).
 `migration-drift` never waits: it judges the newest snapshot as it is, and says
-when a `Deploy API` run has overtaken that snapshot (below).
+when a `Deploy staging` run has overtaken that snapshot (below).
 
 **After you change a migration ledger by hand, re-publish before you re-run a PR.**
 A `migration repair`, an `--include-all` apply or a hand-applied file triggers no
@@ -235,7 +235,7 @@ structurally blind to #1373.
 
 It compares `origin/main` against staging's applied history — **not** your PR's
 head — with a 30-minute grace from the moment a migration landed on `main`.
-The grace has to cover `migrate-staging` applying the migration and the
+The grace has to cover the `Deploy staging` run applying the migration and the
 snapshot publish that follows it, because the check reads the published
 snapshot, not staging.
 
@@ -266,13 +266,13 @@ job summary's first line, because red has two meanings:
 - **Cannot verify** (the `stale` verdict, #2518). A migration on `main` is past
   its grace window, and the newest snapshot cannot show whether staging has
   it. The summary names which of three reasons applies:
-  - A `Deploy API` run finished after the snapshot was taken, and the publish
+  - A `Deploy staging` run finished after the snapshot was taken, and the publish
     it triggers has not landed. The publisher is behind, not staging. If
     **Migration snapshot** is still running, re-run the check when it
     finishes. If it failed, fix it, re-run it on `main`, then re-run the check.
-  - A `Deploy API` run is still in progress. Re-run the check once it and its
+  - A `Deploy staging` run is still in progress. Re-run the check once it and its
     publish have finished.
-  - The download step could not read what `Deploy API` did (an Actions API
+  - The download step could not read what `Deploy staging` did (an Actions API
     error, named in that step's log). Re-run the check.
 
   If a migration is still missing after a fresh publish, that run reports
@@ -388,10 +388,11 @@ npm run check:api-contract
 ## After a staging apply
 
 Merging to `main` applies the migration; these are the checks that it landed
-cleanly. The `Deploy API` run's `migrate-staging` job log shows what was pending
-before the apply (it always dry-runs first) and what it applied.
+cleanly. The **Deploy staging** run's `deploy` job log shows what was pending
+before the apply (its `Run migrations (dry-run)` step always runs first) and what
+it applied.
 
-- [ ] `migrate-staging` for your merge commit is green
+- [ ] The migration steps of the **Deploy staging** run for your merge commit are green
 - [ ] `GET /health` reports `database: connected` (its aggregate `status` also
       reflects Supabase Storage reachability — an unrelated Storage hiccup can
       read `degraded` with the database fully healthy, so check the
@@ -400,9 +401,10 @@ before the apply (it always dry-runs first) and what it applied.
 - [ ] Stripe staging webhook endpoint (`/v1/webhooks/stripe`) accepts signed event
 - [ ] No migration-related errors in Render logs
 
-If `migrate-staging` failed, the API deploy for that commit was **also**
-blocked (`deploy-staging` requires it to succeed) — so a red migration is never
-paired with a deployed API that expects the new schema.
+If the migration failed, the API deploy and the web and landing upload for that
+commit were **also** skipped (they are later steps of the same job), so a red
+migration is never paired with a deployed API or frontend that expects the new
+schema.
 
 ## Production promotion
 
@@ -514,7 +516,7 @@ Post-apply production checks:
 
 - Do not apply production migrations before staging validation. Staging applies
   itself on merge to `main`, so in practice this means: let the merge land, let
-  `migrate-staging` go green, then deploy that commit to production.
+  its **Deploy staging** run go green, then deploy that commit to production.
 - Deploy the commit you validated on staging. `Deploy production` takes a SHA
   rather than a branch precisely so "what we tested" and "what shipped" are the
   same object — `main` may have moved on since.

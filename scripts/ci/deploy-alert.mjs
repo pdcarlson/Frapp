@@ -4,18 +4,21 @@
 // configurations live in `ALERT_CONFIGS` below and an unknown name is a hard
 // error, never a silent fallback.
 //
-// Written for .github/workflows/deploy-api.yml, and generalised in #1674 to
-// also watch .github/workflows/deploy-vercel-staging.yml, which shipped in
-// #1578 with no alerting of any kind. Parameterised rather than copied: a
-// second copy of an upsert-one-tracking-issue script is two places for the
-// "an open alert means it is broken right now" contract to drift.
+// Written for `deploy-api.yml`, and generalised in #1674 to also watch
+// `deploy-vercel-staging.yml`, which shipped in #1578 with no alerting of any
+// kind. Parameterised rather than copied: a second copy of an
+// upsert-one-tracking-issue script is two places for the "an open alert means
+// it is broken right now" contract to drift.
 //
 // #2431 added a third, for `verify-deployments.yml`, which watched the staging
-// API deploy Render ran on push. #2505 retired it with that push path:
-// `deploy-api.yml` now creates the staging deploy itself and polls it, so a
-// failed Render build fails its `deploy-staging` job and raises the Deploy API
-// alert below. The observer-only machinery (a verdict read from a job output,
-// a branch-tip check, "not confirmed live" copy) went with it.
+// API deploy Render ran on push. #2505 retired it with that push path, and the
+// observer-only machinery (a verdict read from a job output, a branch-tip
+// check, "not confirmed live" copy) went with it.
+//
+// #2803 merged the two staging workflows into `deploy-staging.yml`, one
+// ordered job, and their two configs into `DEPLOY_STAGING_CONFIG` below. The
+// config machinery stays general: `gateJob` and `gateOutputRows` have no user
+// today, and production's alert (#2805) is the next config.
 //
 // Closes the visibility gap recorded in issue #763:
 // `Deploy API` failed 44 of 44 executing runs for 71 days and nobody noticed,
@@ -32,28 +35,29 @@
 //
 // Only (1) was specific to a workflow with a path gate. (2) and (3) are
 // properties of every `workflow_run`-triggered deploy in this repo, which is
-// exactly why `deploy-vercel-staging.yml` needed this too: it has no skip path,
-// so a failure does go red in the Actions list, but there is still no commit
-// status, no PR check and no notification. ADR-21's Git unlink froze both
-// staging hosts and went undetected for days on precisely that gap.
+// exactly why the staging frontends' workflow needed this too: it had no skip
+// path, so a failure did go red in the Actions list, but there was still no
+// commit status, no PR check and no notification. ADR-21's Git unlink froze
+// both staging hosts and went undetected for days on precisely that gap.
 //
 // This script answers (1) and (3). It runs after every deploy/migrate job in
 // the run and:
 //
 //   * writes a step summary + annotation that states plainly whether the run
-//     DEPLOYED something or DECLINED to deploy (and, for Deploy API, whether
-//     staging was UP TO DATE or the run SUPERSEDED), so green stops being
-//     ambiguous;
+//     DEPLOYED something or DECLINED to deploy (and, for a config with a
+//     deploy plan, whether the API was UP TO DATE or the run SUPERSEDED), so
+//     green stops being ambiguous;
 //   * on failure, upserts ONE tracking issue (create / reopen / comment) rather
 //     than filing a fresh issue per failure — alert spam is how alerting gets
 //     muted;
-//   * on a later successful deploy (for Deploy API, one for main's tip),
+//   * on a later successful deploy (with a deploy plan, one for main's tip),
 //     closes that issue, so "alert issue open" reliably means "the deploy path
 //     is broken right now".
 //
 // Channel choice: GitHub Issues, matching `ci-wake.mjs` / `pr-base-sync.mjs`
-// (which post to PRs) and the tracker itself (#680 retired Linear). `Deploy API`
-// is push-driven with no PR to comment on, so an issue is the equivalent target.
+// (which post to PRs) and the tracker itself (#680 retired Linear). A staging
+// deploy is merge-driven with no PR to comment on, so an issue is the
+// equivalent target.
 // No new service, no new token — `GITHUB_TOKEN` with job-scoped `issues: write`.
 //
 // Env inputs:
@@ -94,119 +98,82 @@ export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 //
 // ⚠️ `alertTitle` is the issue LOOKUP KEY, matched by exact string. Renaming
 // one orphans whatever alert issue is currently open under the old title: it
-// could never be found again, and so would never self-close. Titles are
-// append-only in practice. That is also why the Deploy API title is NOT
-// rescoped to "staging" even though it now only watches staging.
+// could never be found again, and so would never self-close. So a config that
+// replaces another lists the old title in `retiredAlertTitles`, and a
+// successful run closes an issue still open under it (#2803).
 
 /**
- * `.github/workflows/deploy-api.yml` — the original, and the default.
+ * `.github/workflows/deploy-staging.yml`, the one staging deploy since #2803:
+ * database, API, web and landing in one ordered job.
  *
- * `migrate-production` and `deploy-production` used to be in `deployJobs`.
- * They were deleted from deploy-api.yml with the `production` branch (#1340) —
- * production now deploys through `deploy-production.yml`, a manual dispatch
- * that does its own terminal reporting in its `report` job. A name left here
- * that no workflow emits would report as a permanently missing job.
+ * It replaced two configs. `deploy-api` watched `deploy-api.yml` (P1; a
+ * `check-changes` gate, then `migrate-staging` and `deploy-staging`), and
+ * `deploy-vercel-staging` watched `deploy-vercel-staging.yml` (P2; one gateless
+ * `deploy` job). A failed merged deploy is P1, the level Deploy API used (owner
+ * decision on #2803): the frontends now ship only behind a verified API, so a
+ * failure anywhere stops staging.
+ *
+ * `gateJob` is null: the one `deploy` job carries the eligibility conditions
+ * itself, so "nothing ran" on an eligible run is never a legitimate outcome.
+ *
+ * `planOutput` is the `deploy` job's plan (scripts/ci/plan-staging-deploy.mjs),
+ * which a job result alone can't carry:
+ *   deploy  — an API deploy was attempted; the job result is the verdict.
+ *   current — the API needed no deploy and this is main's tip: a green job
+ *             means the API was verified serving and ready and the frontends
+ *             uploaded, which may close the alert, but the summary must not
+ *             say the API DEPLOYED.
+ *   forward — not main's tip, but deployed forward: a failure raises the
+ *             alert like any deploy, but success doesn't close it, since
+ *             main's tip may still be failing. The tip's run decides.
+ *   stale   — not main's tip, and nothing deployed (API or frontends): its
+ *             verdict is about an old commit, so it neither raises nor closes
+ *             the alert.
+ *
+ * `retiredAlertTitles` are the two old configs' titles. A successful run
+ * closes an issue still open under either, so neither is orphaned by the
+ * rename (titles are lookup keys; see the note above `DEPLOY_STAGING_CONFIG`).
  */
-export const DEPLOY_API_CONFIG = {
-  name: "deploy-api",
-  workflowLabel: "Deploy API",
-  workflowFile: ".github/workflows/deploy-api.yml",
-  gateJob: "check-changes",
-  deployJobs: ["migrate-staging", "deploy-staging"],
-  // No rows: `check-changes` gates on eligibility alone since #2505, and
-  // `deploy-staging` plans its deploy from the commit staging serves.
-  gateOutputRows: [],
-  // `deploy-staging`'s plan (scripts/ci/plan-staging-deploy.mjs), which a job
-  // result alone can't carry:
-  //   deploy  — a deploy was attempted; the job result is the verdict.
-  //   current — nothing needed deploying, and this is main's tip: a green
-  //             job means staging was verified serving and ready, which may
-  //             close the alert, but the summary must not say DEPLOYED.
-  //   forward — not main's tip, but deployed forward: a failure raises the
-  //             alert like any deploy, but success doesn't close it, since
-  //             main's tip may still be failing. The tip's run decides.
-  //   stale   — not main's tip, and nothing deployed: its verdict is about an
-  //             old commit, so it neither raises nor closes the alert.
-  planOutput: { job: "deploy-staging", output: "plan" },
-  // What the alert issue tells its reader closes it. Not "a later successful
-  // deploy": a `forward` deploy succeeds without closing it.
-  closesOn: "a later run for `main`'s tip deploys successfully or finds staging up to date",
-  alertTitle: "Deploy API is failing — pushes are not reaching the environment",
-  alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
-  noOpReason: "no migrate or deploy job ran",
-  // A no-op was the common, benign case while a path gate skipped the deploy
-  // jobs on docs-only pushes (46 of the 90 runs in #763). Since #2505 both jobs
-  // run on every eligible push, so a no-op means the jobs' conditions have
-  // drifted from this job's, and every merge is deploying nothing. Escalated,
-  // as for Deploy Vercel staging.
-  noOpIsUnexpected: true,
-  noOpNote:
-    "Neither `migrate-staging` nor `deploy-staging` ran, so nothing was migrated, deployed or " +
-    "verified. **A green run of this shape is not evidence that deploys work** (#763). This is " +
-    "not expected for this workflow: both jobs run on every eligible push, so reaching this " +
-    "state means their conditions have drifted from `deploy-outcome`'s.",
-  whyLines: [
-    "`Deploy API` is triggered by `workflow_run`, so its failures never appear as a PR check or a",
-    "commit status, and runs that skip every job report green. That combination hid a 100% deploy",
-    "failure rate for 71 days (#763). This issue is the notification that was missing.",
-    "",
-    "Background on the original outage: #696.",
-  ],
-};
-
-/**
- * `.github/workflows/deploy-vercel-staging.yml` — added by #1674.
- *
- * `gateJob` is **null**, not a differently-named gate: this workflow has one
- * job and no changed-path filter at all. Every consumer below has to handle
- * that, which is why it is spelled as an explicit null rather than omitted.
- *
- * P2 rather than the Deploy API alert's P1, and the difference is deliberate.
- * This watches STAGING web + landing only; production frontend deploys are
- * `deploy-production.yml`'s, which reports through its own `report` job. A
- * frozen staging host blocks verification, it does not take a customer
- * surface down — the same "degraded rather than down" reasoning
- * `ALERT_ROUTING.md` already applies to the PR base-sync alert.
- */
-export const DEPLOY_VERCEL_STAGING_CONFIG = {
-  name: "deploy-vercel-staging",
-  workflowLabel: "Deploy Vercel staging",
-  workflowFile: ".github/workflows/deploy-vercel-staging.yml",
+export const DEPLOY_STAGING_CONFIG = {
+  name: "deploy-staging",
+  workflowLabel: "Deploy staging",
+  workflowFile: ".github/workflows/deploy-staging.yml",
   gateJob: null,
   deployJobs: ["deploy"],
   gateOutputRows: [],
-  alertTitle:
+  planOutput: { job: "deploy", output: "plan" },
+  // What the alert issue tells its reader closes it. Not "a later successful
+  // deploy": a `forward` deploy succeeds without closing it.
+  closesOn: "a later run for `main`'s tip deploys successfully or finds the API up to date",
+  alertTitle: "Deploy staging is failing — merges are not reaching staging",
+  alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
+  retiredAlertTitles: [
+    "Deploy API is failing — pushes are not reaching the environment",
     "Deploy Vercel staging is failing — web and landing are not reaching staging",
-  alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P2"],
-  noOpReason: "no deploy job ran",
-  // This workflow has no path gate, so "nothing ran" is never a legitimate
-  // outcome: `deploy-outcome` carries the same `if:` as `deploy`, so whenever
-  // this job runs, `deploy` should have run too. Reaching a no-op means those
-  // two have drifted apart and every merge is now silently deploying nothing —
-  // the ADR-21 frozen-staging failure verbatim. So it is ESCALATED to a failure
-  // rather than annotated (see classifyDeployOutcome): an annotation on a
-  // `workflow_run` run page is exactly as invisible as the gap this closes.
+  ],
+  noOpReason: "the deploy job did not run",
+  // The `deploy-outcome` job carries the same conditions as `deploy`, so
+  // whenever it runs, `deploy` should have run too. Reaching a no-op means the
+  // two have drifted and every merge is silently deploying nothing (#763, and
+  // ADR-21's frozen staging hosts), so it is ESCALATED to a failure rather than
+  // annotated: an annotation on a `workflow_run` run page is as invisible as
+  // the gap this closes.
   noOpIsUnexpected: true,
   noOpNote:
-    "No deploy job ran, so nothing was uploaded to Vercel. **A green run of this shape is not " +
-    "evidence that deploys work.** This is not expected for this workflow — its `deploy-outcome` " +
-    "job carries the same trigger conditions as its `deploy` job, so reaching this state means " +
-    "those two have drifted apart.",
+    "The `deploy` job did not run, so nothing was migrated, deployed, verified or uploaded. **A " +
+    "green run of this shape is not evidence that deploys work** (#763). This is not expected for " +
+    "this workflow: `deploy-outcome` carries the same trigger conditions as `deploy`, so reaching " +
+    "this state means the two have drifted apart.",
   whyLines: [
-    "`Deploy Vercel staging` is triggered by `workflow_run`, so its failures never appear as a PR",
-    "check or a commit status — nothing turns red anywhere a human normally looks, and no",
-    "notification is sent. Staging web and landing then quietly stay on the last commit that did",
-    "deploy.",
-    "",
-    "That is not hypothetical: ADR-21 unlinked both Vercel projects from Git, which froze both",
-    "staging hosts, and it went undetected for days. This workflow (#1578) is the replacement",
-    "deploy; this issue (#1674) is the notification it shipped without.",
+    "`Deploy staging` is triggered by `workflow_run`, so its failures never appear as a PR check or",
+    "a commit status, and nothing turns red anywhere a human normally looks. Before these alerts,",
+    "that hid a 100% staging deploy failure rate for 71 days (#763), and ADR-21's Git unlink froze",
+    "both staging frontends for days (#1674). This issue is the notification that was missing.",
   ],
 };
 
 export const ALERT_CONFIGS = {
-  [DEPLOY_API_CONFIG.name]: DEPLOY_API_CONFIG,
-  [DEPLOY_VERCEL_STAGING_CONFIG.name]: DEPLOY_VERCEL_STAGING_CONFIG,
+  [DEPLOY_STAGING_CONFIG.name]: DEPLOY_STAGING_CONFIG,
 };
 
 /** When an alert closes, unless a config says otherwise (`closesOn`). */
@@ -218,7 +185,7 @@ const DEFAULT_CLOSES_ON = "a later run deploys successfully";
  */
 export const OUTCOME_COPY = {
   // "Not confirmed", not "nothing was deployed": a deploy can go live and a
-  // later check in the same job fail (Deploy API's served-commit check), and
+  // later check in the same job fail (staging's served-commit check), and
   // the run log says which step it was.
   failedTail: "Nothing is confirmed deployed by this run; its log says which step failed.",
   noOpLead: "deployed NOTHING",
@@ -239,18 +206,16 @@ export const OUTCOME_COPY = {
 // The default for the pure functions below, so a test or a caller reasoning
 // about the original watchdog need not thread a config through every call. It
 // is deliberately NOT a fallback for the CLI — see `resolveAlertConfig`.
-export const DEFAULT_ALERT_CONFIG = DEPLOY_API_CONFIG;
+export const DEFAULT_ALERT_CONFIG = DEPLOY_STAGING_CONFIG;
 
 /**
  * Throws on a missing OR unknown name. A mis-wired workflow must be loud.
  *
  * An ABSENT name throws for the same reason an unknown one does, and this is
- * the more likely mistake: a third deploy workflow copying a `deploy-outcome`
+ * the more likely mistake: another deploy workflow copying a `deploy-outcome`
  * block and dropping the `ALERT_CONFIG:` line would otherwise silently resolve
- * to Deploy API, find none of its job names in `needs`, read them all as
- * "skipped", and report a permanent no-op while looking correctly wired. Worse,
- * a workflow that happens to own a job called `deploy-staging` would reopen and
- * comment on the live P1 Deploy API alert from an unrelated failure. Every
+ * to the staging config, read its own `deploy` job as staging's, and reopen
+ * and comment on the live P1 staging alert from an unrelated failure. Every
  * call site names itself; there is no default.
  *
  * `Object.hasOwn` rather than a truthiness check on the lookup: a bare object
@@ -276,19 +241,6 @@ export function resolveAlertConfig(name) {
 export function alertJobNames(config = DEFAULT_ALERT_CONFIG) {
   return config.gateJob ? [config.gateJob, ...config.deployJobs] : [...config.deployJobs];
 }
-
-// The Deploy API alert's identity, re-exported under the names this module used
-// before #1674 parameterised it. `deploy-alert.test.mjs` imports both, and
-// asserts across every ALERT_CONFIGS entry that no two watchdogs share an alert
-// title: a shared one would let a recovered Deploy API run close a live Vercel
-// outage's alert.
-//
-// `GATE_JOB_NAME` and `DEPLOY_JOB_NAMES` were re-exported here too and are
-// gone: nothing imported them, and a dead export that looks like an API is how
-// a caller ends up reading the Deploy API's job names for a different workflow.
-// Read `DEPLOY_API_CONFIG.gateJob` / `.deployJobs` instead.
-export const ALERT_ISSUE_TITLE = DEPLOY_API_CONFIG.alertTitle;
-export const ALERT_ISSUE_LABELS = DEPLOY_API_CONFIG.alertLabels;
 
 // Results that mean the job did not do its work. `cancelled` and `timed_out`
 // are included deliberately: a cancelled deploy is not a deploy, and treating it
@@ -345,7 +297,8 @@ export function classifyDeployOutcome({ jobResults, config = DEFAULT_ALERT_CONFI
 /**
  * Flattens `toJSON(needs)` into { jobName: result }. A job absent from the
  * context (renamed or removed) reads as "skipped" rather than throwing, so a
- * future edit to deploy-api.yml degrades to silence instead of a red run.
+ * future edit to a watched workflow degrades to a reported no-op (escalated
+ * for a gateless config) instead of a crash.
  */
 export function readJobResults(needs, config = DEFAULT_ALERT_CONFIG) {
   const results = {};
@@ -357,7 +310,7 @@ export function readJobResults(needs, config = DEFAULT_ALERT_CONFIG) {
 
 /**
  * The plan a config's `planOutput` job published, or null (no `planOutput`,
- * or nothing published). See DEPLOY_API_CONFIG.
+ * or nothing published). See DEPLOY_STAGING_CONFIG.
  */
 export function readPlan(needs, config = DEFAULT_ALERT_CONFIG) {
   if (!config.planOutput) return null;
@@ -570,9 +523,14 @@ export function buildRecoveryCommentBody({
   headSha,
   runUrl,
   config = DEFAULT_ALERT_CONFIG,
+  // Set when closing an issue under one of `retiredAlertTitles`: the workflow
+  // it watched is gone, and this config's workflow replaced it.
+  retiredTitle = null,
 }) {
   const lines = [
-    `**${config.workflowLabel} recovered.** Closing.`,
+    retiredTitle
+      ? `**Replaced by ${config.workflowLabel}, which succeeded.** Closing. The workflow this alert watched no longer exists; \`${config.workflowFile}\` does its work, and its own alert is *${config.alertTitle}*.`
+      : `**${config.workflowLabel} recovered.** Closing.`,
     "",
     `\`${deployed.join("`, `")}\` succeeded on \`${headBranch ?? "unknown"}\`.`,
     "",
@@ -653,8 +611,13 @@ export async function raiseAlert({
 /**
  * Closes every open alert issue after a successful deploy. Closing them all
  * (not just the first) is what makes a duplicate created during an API blip
- * self-heal. Returns lib/alert-issue.mjs's `resolveAlert` result unchanged:
- * "closed" | "none" | "failed" | "unread".
+ * self-heal. Issues still open under one of the config's `retiredAlertTitles`
+ * close too, so a workflow that replaced another does not orphan its alert.
+ *
+ * Returns lib/alert-issue.mjs's `resolveAlert` shape, "closed" | "none" |
+ * "failed" | "unread" with the issue numbers closed, merged across titles:
+ * the worst action wins, because a title whose lookup or close failed is an
+ * alert that may still be open.
  */
 export async function resolveAlert({
   token,
@@ -666,15 +629,32 @@ export async function resolveAlert({
   runUrl,
   config = DEFAULT_ALERT_CONFIG,
 }) {
-  return resolveAlertIssue({
-    token,
-    repo,
-    fetchImpl,
-    title: config.alertTitle,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
-    buildRecoveryBody: () =>
-      buildRecoveryCommentBody({ deployed, headBranch, headSha, runUrl, config }),
-  });
+  const results = [];
+  for (const title of [config.alertTitle, ...(config.retiredAlertTitles ?? [])]) {
+    results.push(
+      await resolveAlertIssue({
+        token,
+        repo,
+        fetchImpl,
+        title,
+        lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+        buildRecoveryBody: () =>
+          buildRecoveryCommentBody({
+            deployed,
+            headBranch,
+            headSha,
+            runUrl,
+            config,
+            retiredTitle: title === config.alertTitle ? null : title,
+          }),
+      }),
+    );
+  }
+  const closed = results.flatMap((result) => result.closed);
+  const worst = ["failed", "unread", "closed", "none"].find((action) =>
+    results.some((result) => result.action === action),
+  );
+  return { action: worst, closed };
 }
 
 // ── Orchestration ───────────────────────────────────────────────────────────
@@ -868,7 +848,7 @@ async function main() {
   const needs = JSON.parse(requireEnv("DEPLOY_NEEDS"));
   // Required, not optional. This is the one place a mis-wired workflow can be
   // caught, so it is deliberately strict in both directions: a typo'd OR an
-  // absent ALERT_CONFIG would otherwise write the Deploy API alert's issue from
+  // absent ALERT_CONFIG would otherwise write the staging alert's issue from
   // the wrong workflow's job results.
   const config = resolveAlertConfig(requireEnv("ALERT_CONFIG"));
   await runDeployAlert({

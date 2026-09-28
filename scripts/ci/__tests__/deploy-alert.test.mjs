@@ -6,10 +6,7 @@ import { dirname, join } from "node:path";
 
 import {
   ALERT_CONFIGS,
-  ALERT_ISSUE_LABELS,
-  ALERT_ISSUE_TITLE,
-  DEPLOY_API_CONFIG,
-  DEPLOY_VERCEL_STAGING_CONFIG,
+  DEPLOY_STAGING_CONFIG,
   alertJobNames,
   buildAlertCommentBody,
   buildAlertIssueBody,
@@ -28,30 +25,84 @@ import {
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
-// Modeled on the two real shapes measured in #763 over 90 runs on main:
-//   * 44 runs where check-changes said api-changed=true and the deploy job then
-//     failed at the Infisical injection step (run 31278413630);
-//   * 46 runs where every deploy/migrate job skipped and the run reported green
-//     (run 31278674931) — the "green because empty" case.
+// Two kinds of config are used here, and they must not be confused.
+//
+// * The REAL one, `DEPLOY_STAGING_CONFIG` (`deploy-staging.yml`, #2803): one
+//   gateless `deploy` job that publishes a `plan` output. It is also
+//   `DEFAULT_ALERT_CONFIG`, so a test that passes it explicitly cannot tell
+//   whether `config` was threaded through or the default was used instead.
+// * STAND-INS, defined only in this file. They exercise machinery
+//   `deploy-alert.mjs` still supports with no live user (a gate job, gate
+//   output rows, several deploy jobs, a plan on one of several jobs, a benign
+//   no-op), because production's alert (#2805) is the next config and may use
+//   any of it. Being the only NON-default configs, they are also what proves
+//   each function reads the config it is handed.
 
 /**
- * A path-gated config whose no-op is benign: Deploy API's shape before #2505,
- * when `check-changes` skipped the deploy jobs on docs-only pushes. No live
- * config is shaped like this any more, but `noOpIsUnexpected: false` and the
- * gate rows are still supported, so they are tested on a stand-in.
+ * STAND-IN, not a live config. The shape of the retired `deploy-api` config
+ * (`deploy-api.yml`, deleted by #2803): a `check-changes` gate, then
+ * `migrate-staging` and `deploy-staging`, with the plan on `deploy-staging`.
+ *
+ * Its title is deliberately NOT one of `DEPLOY_STAGING_CONFIG`'s retired
+ * titles, so it can stand for "another watchdog's live alert" in the isolation
+ * tests. It declares no `retiredAlertTitles` on purpose: a config without one
+ * must still resolve.
+ */
+const API_SHAPED_CONFIG = {
+  name: "api-shaped-stand-in",
+  workflowLabel: "API-shaped stand-in",
+  workflowFile: ".github/workflows/api-shaped-stand-in.yml",
+  gateJob: "check-changes",
+  deployJobs: ["migrate-staging", "deploy-staging"],
+  gateOutputRows: [],
+  planOutput: { job: "deploy-staging", output: "plan" },
+  closesOn: "a later stand-in run for `main`'s tip deploys successfully",
+  alertTitle: "API-shaped stand-in is failing — test fixture only",
+  alertLabels: [ALERT_LOOKUP_LABEL, "area:ci", "P3"],
+  noOpReason: "no migrate or deploy job ran",
+  noOpIsUnexpected: true,
+  noOpNote: "Neither `migrate-staging` nor `deploy-staging` ran. (Stand-in note.)",
+  whyLines: ["Stand-in why-line: this config exists only in deploy-alert.test.mjs."],
+};
+
+/**
+ * STAND-IN, not a live config. A path-gated config whose no-op is benign: the
+ * retired Deploy API shape before #2505, when `check-changes` skipped the
+ * deploy jobs on docs-only pushes. No config has been shaped like this since,
+ * but `noOpIsUnexpected: false` and `gateOutputRows` are still supported. It
+ * declares no `planOutput` and no `closesOn`, so it also covers both defaults.
  */
 const GATED_CONFIG = {
-  ...DEPLOY_API_CONFIG,
+  ...API_SHAPED_CONFIG,
   name: "gated-stand-in",
+  workflowLabel: "Gated stand-in",
+  workflowFile: ".github/workflows/gated-stand-in.yml",
+  alertTitle: "Gated stand-in is failing — test fixture only",
   noOpIsUnexpected: false,
   noOpReason: "the changed-path gate skipped every migrate and deploy job",
   noOpNote: "The changed-path gate found nothing to deploy. See issue #763.",
   gateOutputRows: [{ label: "API paths changed", output: "api-changed" }],
   planOutput: undefined,
+  closesOn: undefined,
 };
 
-/** `toJSON(needs)` for a run where the path gate skipped everything. */
-function noOpNeeds() {
+/**
+ * `toJSON(needs)` for a `Deploy staging` run: its one `deploy` job, and the
+ * plan that job published (omit `plan` for a job that published none).
+ */
+function stagingNeeds(result, plan) {
+  return { deploy: { result, outputs: plan === undefined ? {} : { plan } } };
+}
+
+// `toJSON(needs)` for the stand-ins, in the retired deploy-api shape, modeled
+// on the two real shapes measured in #763 over 90 runs on main:
+//   * 44 runs where check-changes said api-changed=true and the deploy job then
+//     failed at the Infisical injection step (run 31278413630);
+//   * 46 runs where every deploy/migrate job skipped and the run reported green
+//     (run 31278674931), the "green because empty" case.
+
+/** The path gate skipped everything. */
+function apiShapedNoOpNeeds() {
   return {
     "check-changes": {
       result: "success",
@@ -62,8 +113,8 @@ function noOpNeeds() {
   };
 }
 
-/** Run 31278413630's shape: api changed, staging deploy failed, migrate skipped. */
-function failedNeeds() {
+/** Run 31278413630's shape: api changed, the deploy failed, migrate skipped. */
+function apiShapedFailedNeeds() {
   return {
     "check-changes": {
       result: "success",
@@ -74,34 +125,42 @@ function failedNeeds() {
   };
 }
 
-function deployedNeeds() {
+/** Both jobs succeeded, the deploy job having planned `plan`. */
+function apiShapedDeployedNeeds(plan = "deploy") {
   return {
     "check-changes": {
       result: "success",
       outputs: { "api-changed": "true", "migrations-changed": "true" },
     },
     "migrate-staging": { result: "success", outputs: {} },
-    "deploy-staging": { result: "success", outputs: {} },
+    "deploy-staging": { result: "success", outputs: { plan } },
   };
 }
 
-const OPEN_ALERT = {
-  number: 900,
-  title: ALERT_ISSUE_TITLE,
-  state: "open",
-};
-const CLOSED_ALERT = {
-  number: 900,
-  title: ALERT_ISSUE_TITLE,
-  state: "closed",
-};
+// The titles of the two alerts `DEPLOY_STAGING_CONFIG` replaced (#2803).
+// Literal, not read from the config, so the retired-title tests do not follow
+// an edit to the list they are checking.
+const RETIRED_API_TITLE = "Deploy API is failing — pushes are not reaching the environment";
+const RETIRED_VERCEL_TITLE =
+  "Deploy Vercel staging is failing — web and landing are not reaching staging";
+
+/** An issue as the issues API lists it. */
+function alertIssue(number, title, state = "open") {
+  return { number, title, state };
+}
+
+const OPEN_ALERT = alertIssue(900, DEPLOY_STAGING_CONFIG.alertTitle);
+const CLOSED_ALERT = alertIssue(900, DEPLOY_STAGING_CONFIG.alertTitle, "closed");
 
 /**
- * Minimal GitHub API stub. `routes` maps "METHOD /path-prefix" to a response
- * body (or a function of the request). Records every call for assertions.
+ * Minimal GitHub API stub. Every issues lookup answers with `issues` (the
+ * library filters them by exact title). `failGets` lists which lookups, by
+ * 1-based call order, answer 502; `failCloseFor` lists issue numbers whose
+ * PATCH is refused. Records every call for assertions.
  */
-function makeFetchStub({ issues = [], failCreate = false } = {}) {
+function makeFetchStub({ issues = [], failCreate = false, failGets = [], failCloseFor = [] } = {}) {
   const calls = [];
+  let gets = 0;
   const fetchImpl = async (url, options = {}) => {
     const method = options.method ?? "GET";
     const path = url.replace("https://api.github.com", "");
@@ -109,6 +168,8 @@ function makeFetchStub({ issues = [], failCreate = false } = {}) {
     calls.push({ method, path, body });
 
     if (method === "GET" && path.startsWith("/repos/o/r/issues?")) {
+      gets += 1;
+      if (failGets.includes(gets)) return jsonResponse(502, { message: "bad gateway" });
       return jsonResponse(200, issues);
     }
     if (method === "POST" && path === "/repos/o/r/issues") {
@@ -119,7 +180,9 @@ function makeFetchStub({ issues = [], failCreate = false } = {}) {
       return jsonResponse(201, { id: 1 });
     }
     if (method === "PATCH" && /\/issues\/\d+$/.test(path)) {
-      return jsonResponse(200, { number: 900 });
+      const number = Number(path.split("/").pop());
+      if (failCloseFor.includes(number)) return jsonResponse(500, { message: "boom" });
+      return jsonResponse(200, { number });
     }
     return jsonResponse(404, { message: "unexpected route" });
   };
@@ -141,25 +204,48 @@ function capturingLogger() {
   return { logger: { log: (line) => lines.push(line) }, lines };
 }
 
+/** classifyDeployOutcome over a `needs` context, read the way runDeployAlert reads it. */
+function classify(needs, config = DEPLOY_STAGING_CONFIG) {
+  return classifyDeployOutcome({ jobResults: readJobResults(needs, config), config });
+}
+
+/** The arguments every runDeployAlert call below shares. */
+const RUN = {
+  token: "t",
+  repo: "o/r",
+  runUrl: "https://example.test/run/1",
+  headBranch: "main",
+  headSha: "4de96af",
+};
+
 // ── Alert issue identity ────────────────────────────────────────────────────
 
-test("the alert issue title is NOT rescoped to staging", () => {
-  // #1340 narrowed this watchdog to staging (the production jobs moved to
-  // deploy-production.yml), and the obvious tidy-up is to say "staging" in the
-  // title. Don't: `findAlertIssues` looks the issue up by EXACT title, so a
-  // rename orphans whatever alert is open right now — it can never be found
-  // again, and therefore never self-closes. The stale-sounding title is load
-  // bearing.
+test("the staging alert's title and priority are pinned, and the titles it replaced stay closable", () => {
+  // Titles are LOOKUP KEYS: an alert issue is found by exact title, so
+  // renaming one orphans whatever alert is open under the old string. It can
+  // never be found again, and so never self-closes. #2803 merged Deploy API
+  // and Deploy Vercel staging into this one config, which renamed both. Their
+  // old titles stay listed so a successful run still closes an issue left open
+  // under either; dropping or editing one strands that issue for good.
   assert.equal(
-    ALERT_ISSUE_TITLE,
-    "Deploy API is failing — pushes are not reaching the environment",
+    DEPLOY_STAGING_CONFIG.alertTitle,
+    "Deploy staging is failing — merges are not reaching staging",
   );
+  assert.deepEqual(DEPLOY_STAGING_CONFIG.retiredAlertTitles, [
+    "Deploy API is failing — pushes are not reaching the environment",
+    "Deploy Vercel staging is failing — web and landing are not reaching staging",
+  ]);
+  // P1, the level Deploy API used (owner decision on #2803): the frontends
+  // ship only behind a verified API, so a failure anywhere stops staging.
+  assert.deepEqual(DEPLOY_STAGING_CONFIG.alertLabels, [ALERT_LOOKUP_LABEL, "area:ci", "P1"]);
 });
 
 // ── readJobResults ──────────────────────────────────────────────────────────
 
 test("readJobResults flattens the needs context", () => {
-  assert.deepEqual(readJobResults(failedNeeds()), {
+  assert.deepEqual(readJobResults(stagingNeeds("failure", "deploy")), { deploy: "failure" });
+  // A gated multi-job config reads its gate as well as every deploy job.
+  assert.deepEqual(readJobResults(apiShapedFailedNeeds(), API_SHAPED_CONFIG), {
     "check-changes": "success",
     "migrate-staging": "skipped",
     "deploy-staging": "failure",
@@ -167,68 +253,78 @@ test("readJobResults flattens the needs context", () => {
 });
 
 test("readJobResults reads a missing job as skipped rather than throwing", () => {
-  // A future rename in deploy-api.yml must degrade to silence, not a red run.
-  const results = readJobResults({ "check-changes": { result: "success" } });
+  // A job renamed or removed in a watched workflow must degrade to a reported
+  // no-op (escalated, for a gateless config), not a crash.
+  assert.deepEqual(readJobResults({}), { deploy: "skipped" });
+  const results = readJobResults({ "check-changes": { result: "success" } }, API_SHAPED_CONFIG);
   assert.equal(results["deploy-staging"], "skipped");
   assert.doesNotThrow(() => readJobResults(undefined));
+  assert.doesNotThrow(() => readJobResults(undefined, API_SHAPED_CONFIG));
 });
 
 // ── classifyDeployOutcome ───────────────────────────────────────────────────
+// The gate and multi-job cases run on the stand-ins: the real config has one
+// job and no gate. Its own cases are in the Deploy staging section below.
 
-test("a failed deploy job classifies as failed", () => {
-  const result = classifyDeployOutcome({ jobResults: readJobResults(failedNeeds()) });
+test("a failed deploy job classifies as failed, naming only that job", () => {
+  const result = classify(apiShapedFailedNeeds(), API_SHAPED_CONFIG);
   assert.equal(result.outcome, "failed");
   assert.deepEqual(result.failed, ["deploy-staging"]);
 });
 
 test("all-skipped classifies as no-op, not as a deploy", () => {
-  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()), config: GATED_CONFIG });
+  const result = classify(apiShapedNoOpNeeds(), GATED_CONFIG);
   assert.equal(result.outcome, "no-op");
   assert.deepEqual(result.deployed, []);
 });
 
-// Since #2505 both of Deploy API's jobs run on every eligible push, so a run
-// where neither did means their conditions drifted: escalate, don't shrug.
-test("Deploy API escalates an all-skipped run to a failure", () => {
-  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+test("a gated config that expects its jobs to run escalates an all-skipped run to a failure", () => {
+  // The retired Deploy API config's shape after #2505: its gate still ran, but
+  // both jobs ran on every eligible push, so a run where neither did meant their
+  // conditions had drifted. A succeeding gate must not hide that.
+  const result = classify(apiShapedNoOpNeeds(), API_SHAPED_CONFIG);
   assert.equal(result.outcome, "failed");
   assert.equal(result.escalated, true);
+  assert.deepEqual(result.failed, ["migrate-staging", "deploy-staging"]);
 });
 
-test("check-changes succeeding is not itself a deploy", () => {
+test("the gate job succeeding is not itself a deploy", () => {
   // The regression this guards: counting the gate as a deployed job would make
   // every green-because-empty run look like a successful deploy.
-  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
-  assert.ok(!result.deployed.includes("check-changes"));
+  for (const config of [API_SHAPED_CONFIG, GATED_CONFIG]) {
+    const result = classify(apiShapedNoOpNeeds(), config);
+    assert.ok(!result.deployed.includes("check-changes"), config.name);
+    assert.notEqual(result.outcome, "deployed", config.name);
+  }
 });
 
 test("successful migrate + deploy classifies as deployed", () => {
-  const result = classifyDeployOutcome({ jobResults: readJobResults(deployedNeeds()) });
+  const result = classify(apiShapedDeployedNeeds(), API_SHAPED_CONFIG);
   assert.equal(result.outcome, "deployed");
   assert.deepEqual(result.deployed, ["migrate-staging", "deploy-staging"]);
 });
 
 test("a failed gate job classifies as failed even though nothing deployed", () => {
-  const needs = noOpNeeds();
+  const needs = apiShapedNoOpNeeds();
   needs["check-changes"].result = "failure";
-  const result = classifyDeployOutcome({ jobResults: readJobResults(needs) });
+  const result = classify(needs, API_SHAPED_CONFIG);
   assert.equal(result.outcome, "failed");
   assert.deepEqual(result.failed, ["check-changes"]);
 });
 
 test("cancelled and timed_out count as failures, not as benign", () => {
   for (const badResult of ["cancelled", "timed_out"]) {
-    const needs = failedNeeds();
+    const needs = apiShapedFailedNeeds();
     needs["deploy-staging"].result = badResult;
-    const result = classifyDeployOutcome({ jobResults: readJobResults(needs) });
-    assert.equal(result.outcome, "failed", `${badResult} should alert`);
+    assert.equal(classify(needs, API_SHAPED_CONFIG).outcome, "failed", `${badResult} should alert`);
+    assert.equal(classify(stagingNeeds(badResult, "deploy")).outcome, "failed", `staging ${badResult}`);
   }
 });
 
 test("failure wins over a sibling success", () => {
-  const needs = deployedNeeds();
+  const needs = apiShapedDeployedNeeds();
   needs["deploy-staging"].result = "failure";
-  const result = classifyDeployOutcome({ jobResults: readJobResults(needs) });
+  const result = classify(needs, API_SHAPED_CONFIG);
   assert.equal(result.outcome, "failed");
   assert.deepEqual(result.deployed, ["migrate-staging"]);
 });
@@ -241,6 +337,7 @@ test("the no-op headline says plainly that nothing deployed", () => {
     failed: [],
     deployed: [],
     headBranch: "main",
+    config: GATED_CONFIG,
   });
   assert.match(headline, /deployed NOTHING/);
   assert.match(headline, /green because it declined to deploy/);
@@ -251,7 +348,7 @@ test("the run summary distinguishes a no-op from a deploy at a glance", () => {
     outcome: "no-op",
     failed: [],
     deployed: [],
-    jobResults: readJobResults(noOpNeeds()),
+    jobResults: readJobResults(apiShapedNoOpNeeds(), GATED_CONFIG),
     headBranch: "main",
     headSha: "4de96af",
     runUrl: "https://example.test/run/1",
@@ -271,15 +368,16 @@ test("the failed summary names the failing job and the commit", () => {
     outcome: "failed",
     failed: ["deploy-staging"],
     deployed: [],
-    jobResults: readJobResults(failedNeeds()),
+    jobResults: readJobResults(apiShapedFailedNeeds(), API_SHAPED_CONFIG),
     headBranch: "main",
     headSha: "4de96af",
     runUrl: "https://example.test/run/1",
     gateOutputs: { "api-changed": true, "migrations-changed": false },
     gateSucceeded: true,
+    config: API_SHAPED_CONFIG,
   });
   assert.match(summary, /FAILED — not confirmed deployed/);
-  assert.match(summary, /deploy-staging/);
+  assert.match(summary, /\| `deploy-staging` \| failure \|/);
   assert.match(summary, /4de96af/);
 });
 
@@ -287,18 +385,14 @@ test("a failed gate reports the path flags as unknown, never as 'no'", async () 
   // The gate's outputs are empty when it fails, which is NOT the same as "no
   // paths changed" — rendering the absent output as `no` states an unmeasured
   // value as fact.
-  const needs = noOpNeeds();
+  const needs = apiShapedNoOpNeeds();
   needs["check-changes"].result = "failure";
   needs["check-changes"].outputs = {};
 
   let summary = "";
   await runDeployAlert({
-    token: "t",
-    repo: "o/r",
+    ...RUN,
     needs,
-    runUrl: "https://example.test/run/4",
-    headBranch: "main",
-    headSha: "4de96af",
     fetchImpl: makeFetchStub({ issues: [] }).fetchImpl,
     writeSummary: (text) => {
       summary = text;
@@ -326,20 +420,23 @@ test("findAlertIssues pins the sort order it depends on", async () => {
 
 // ── findAlertIssues ─────────────────────────────────────────────────────────
 
-test("findAlertIssues ignores pull requests and foreign titles", () => {
+test("findAlertIssues ignores pull requests and foreign titles, retired ones included", async () => {
+  // A retired title is foreign to the lookup: only resolveAlert reads those,
+  // to close them. raiseAlert, which uses this lookup, must never comment on
+  // or reopen an issue that watched a workflow that no longer exists.
   const { fetchImpl } = makeFetchStub({
     issues: [
-      { number: 1, title: ALERT_ISSUE_TITLE, state: "open", pull_request: {} },
+      { number: 1, title: DEPLOY_STAGING_CONFIG.alertTitle, state: "open", pull_request: {} },
       { number: 2, title: "Something else", state: "open" },
+      alertIssue(3, RETIRED_API_TITLE),
       OPEN_ALERT,
     ],
   });
-  return findAlertIssues({ token: "t", repo: "o/r", fetchImpl }).then((found) => {
-    assert.deepEqual(
-      found.map((issue) => issue.number),
-      [900],
-    );
-  });
+  const found = await findAlertIssues({ token: "t", repo: "o/r", fetchImpl });
+  assert.deepEqual(
+    found.map((issue) => issue.number),
+    [900],
+  );
 });
 
 test("findAlertIssues returns [] when the lookup fails", async () => {
@@ -352,8 +449,8 @@ test("findAlertIssues returns [] when the lookup fails", async () => {
 const raiseArgs = {
   token: "t",
   repo: "o/r",
-  headline: "Deploy API FAILED",
-  failed: ["deploy-staging"],
+  headline: "Deploy staging FAILED",
+  failed: ["deploy"],
   headBranch: "main",
   headSha: "4de96af",
   runUrl: "https://example.test/run/1",
@@ -365,8 +462,8 @@ test("raiseAlert creates the issue when none exists, with the incident label and
 
   assert.deepEqual(result, { action: "created", issueNumber: 901 });
   const create = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
-  assert.equal(create.body.title, ALERT_ISSUE_TITLE);
-  assert.deepEqual(create.body.labels, ALERT_ISSUE_LABELS);
+  assert.equal(create.body.title, DEPLOY_STAGING_CONFIG.alertTitle);
+  assert.deepEqual(create.body.labels, DEPLOY_STAGING_CONFIG.alertLabels);
   // The lookup label is what keeps /next from claiming this as backlog work.
   assert.ok(create.body.labels.includes(ALERT_LOOKUP_LABEL));
   assert.deepEqual(create.body.assignees, [ALERT_ASSIGNEE]);
@@ -409,7 +506,7 @@ test("raiseAlert reports failure rather than throwing when the API rejects the c
 const resolveArgs = {
   token: "t",
   repo: "o/r",
-  deployed: ["deploy-staging"],
+  deployed: ["deploy"],
   headBranch: "main",
   headSha: "4de96af",
   runUrl: "https://example.test/run/2",
@@ -424,10 +521,15 @@ test("resolveAlert closes the open alert as completed", async () => {
   assert.deepEqual(patch.body, { state: "closed", state_reason: "completed" });
   const comment = calls.find((c) => c.path === "/repos/o/r/issues/900/comments");
   assert.match(comment.body.body, /recovered/i);
+  // Its own alert recovered; only a retired one is "replaced".
+  assert.doesNotMatch(comment.body.body, /Replaced by/);
 });
 
 test("resolveAlert is a no-op when nothing is open", async () => {
-  const { fetchImpl, calls } = makeFetchStub({ issues: [CLOSED_ALERT] });
+  // A closed issue under a retired title is left alone too.
+  const { fetchImpl, calls } = makeFetchStub({
+    issues: [CLOSED_ALERT, alertIssue(960, RETIRED_API_TITLE, "closed")],
+  });
   const result = await resolveAlert({ ...resolveArgs, fetchImpl });
 
   assert.deepEqual(result, { action: "none", closed: [] });
@@ -442,6 +544,146 @@ test("resolveAlert closes every duplicate, so an API-blip duplicate self-heals",
   assert.deepEqual(result.closed, [900, 902]);
 });
 
+// ── Retired alert titles (#2803) ────────────────────────────────────────────
+// Deploy staging replaced Deploy API and Deploy Vercel staging, and their
+// alerts' titles went with them. An issue still open under either would never
+// be looked up again, so a successful Deploy staging run closes it as
+// replaced. Only a successful run: a failure raises Deploy staging's own alert.
+
+test("a successful run closes an issue still open under a retired title, as replaced rather than recovered", async () => {
+  for (const [number, title] of [
+    [960, RETIRED_API_TITLE],
+    [961, RETIRED_VERCEL_TITLE],
+  ]) {
+    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(number, title)] });
+    const result = await runDeployAlert({
+      ...RUN,
+      needs: stagingNeeds("success", "deploy"),
+      fetchImpl,
+      writeSummary: () => {},
+      logger: silentLogger,
+      config: DEPLOY_STAGING_CONFIG,
+    });
+
+    assert.equal(result.outcome, "deployed");
+    // Its own title found nothing ("none"); the retired one closed, and
+    // "closed" outranks "none".
+    assert.deepEqual(result.alert, { action: "closed", closed: [number] }, title);
+    const patches = calls.filter((c) => c.method === "PATCH");
+    assert.deepEqual(
+      patches.map((c) => c.path),
+      [`/repos/o/r/issues/${number}`],
+    );
+    assert.deepEqual(patches[0].body, { state: "closed", state_reason: "completed" });
+
+    const comment = calls.find((c) => c.path === `/repos/o/r/issues/${number}/comments`).body.body;
+    // "Recovered" would claim the retired workflow came back. It no longer
+    // exists; the comment says what replaced it, and where its alert now lives.
+    assert.match(comment, /^\*\*Replaced by Deploy staging, which succeeded\.\*\* Closing\./);
+    assert.doesNotMatch(comment, /recovered/i);
+    assert.ok(comment.includes("`.github/workflows/deploy-staging.yml`"), title);
+    assert.ok(comment.includes(DEPLOY_STAGING_CONFIG.alertTitle), title);
+  }
+});
+
+test("one run closes its own alert and every retired one together", async () => {
+  const { fetchImpl, calls } = makeFetchStub({
+    issues: [
+      OPEN_ALERT,
+      alertIssue(960, RETIRED_API_TITLE),
+      alertIssue(961, RETIRED_VERCEL_TITLE),
+    ],
+  });
+  const result = await resolveAlert({ ...resolveArgs, fetchImpl });
+
+  assert.deepEqual(result, { action: "closed", closed: [900, 960, 961] });
+  const commentOn = (number) =>
+    calls.find((c) => c.path === `/repos/o/r/issues/${number}/comments`).body.body;
+  assert.match(commentOn(900), /^\*\*Deploy staging recovered\.\*\* Closing\./);
+  assert.doesNotMatch(commentOn(900), /Replaced by/);
+  for (const number of [960, 961]) {
+    assert.match(commentOn(number), /^\*\*Replaced by Deploy staging, which succeeded\.\*\*/);
+  }
+});
+
+test("a retired title that could not be read makes the run unread, even though its own alert closed", async () => {
+  // Titles are looked up in order: its own, then each retired one. The second
+  // lookup failing means an old alert may still be open, so the run must not
+  // log a clean closure. What did close is still reported.
+  const { fetchImpl } = makeFetchStub({
+    issues: [OPEN_ALERT, alertIssue(961, RETIRED_VERCEL_TITLE)],
+    failGets: [2],
+  });
+  const { logger, lines } = capturingLogger();
+  const result = await runDeployAlert({
+    ...RUN,
+    needs: stagingNeeds("success", "deploy"),
+    fetchImpl,
+    writeSummary: () => {},
+    logger,
+    config: DEPLOY_STAGING_CONFIG,
+  });
+
+  assert.deepEqual(result.alert, { action: "unread", closed: [900, 961] });
+  assert.ok(lines.some((line) => /::warning::.*could not be read/.test(line)));
+  assert.ok(!lines.some((line) => /closed alert issue/.test(line)));
+});
+
+test("a retired alert that would not close makes the run failed, and failed outranks unread", async () => {
+  // A failed close is an alert known to be open, which is worse than one that
+  // could not be read.
+  const first = makeFetchStub({
+    issues: [OPEN_ALERT, alertIssue(960, RETIRED_API_TITLE)],
+    failCloseFor: [960],
+  });
+  assert.deepEqual(await resolveAlert({ ...resolveArgs, fetchImpl: first.fetchImpl }), {
+    action: "failed",
+    closed: [900],
+  });
+
+  // The retired Deploy API lookup fails (unread) and the retired Vercel close
+  // fails (failed): the run is failed.
+  const second = makeFetchStub({
+    issues: [OPEN_ALERT, alertIssue(961, RETIRED_VERCEL_TITLE)],
+    failGets: [2],
+    failCloseFor: [961],
+  });
+  assert.deepEqual(await resolveAlert({ ...resolveArgs, fetchImpl: second.fetchImpl }), {
+    action: "failed",
+    closed: [900],
+  });
+});
+
+test("a failed run never touches a retired-title issue", async () => {
+  // Raising looks up only the live title. An issue under a retired one, open
+  // or closed, watched a workflow that no longer exists: commenting on it or
+  // reopening it would page the owner about a deleted workflow. A failure
+  // files Deploy staging's own alert instead, whether the deploy failed or
+  // never ran.
+  for (const needs of [stagingNeeds("failure", "deploy"), stagingNeeds("skipped")]) {
+    const { fetchImpl, calls } = makeFetchStub({
+      issues: [alertIssue(960, RETIRED_API_TITLE), alertIssue(961, RETIRED_VERCEL_TITLE, "closed")],
+    });
+    const result = await runDeployAlert({
+      ...RUN,
+      needs,
+      fetchImpl,
+      writeSummary: () => {},
+      logger: silentLogger,
+      config: DEPLOY_STAGING_CONFIG,
+    });
+
+    assert.equal(result.outcome, "failed");
+    assert.deepEqual(result.alert, { action: "created", issueNumber: 901 });
+    const create = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
+    assert.equal(create.body.title, DEPLOY_STAGING_CONFIG.alertTitle);
+    assert.ok(
+      !calls.some((c) => /\/issues\/96[01](\/|$)/.test(c.path)),
+      "no call may touch a retired-title issue",
+    );
+  }
+});
+
 // ── runDeployAlert (end to end through the real entry path) ─────────────────
 
 test("a failed run writes the summary, annotates as an error, and raises the alert", async () => {
@@ -450,12 +692,8 @@ test("a failed run writes the summary, annotates as an error, and raises the ale
   let summary = "";
 
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: failedNeeds(),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("failure", "deploy"),
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
@@ -473,12 +711,9 @@ test("a failed run writes the summary, annotates as an error, and raises the ale
 test("a successful deploy closes the open alert", async () => {
   const { fetchImpl } = makeFetchStub({ issues: [OPEN_ALERT] });
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: deployedNeeds(),
+    ...RUN,
     runUrl: "https://example.test/run/2",
-    headBranch: "main",
-    headSha: "4de96af",
+    needs: stagingNeeds("success", "deploy"),
     fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
@@ -496,12 +731,9 @@ test("a successful deploy whose alert lookup fails reports unread, never 'still 
   const fetchImpl = async () => jsonResponse(502, { message: "bad gateway" });
   const { logger, lines } = capturingLogger();
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: deployedNeeds(),
+    ...RUN,
     runUrl: "https://example.test/run/2",
-    headBranch: "main",
-    headSha: "4de96af",
+    needs: stagingNeeds("success", "deploy"),
     fetchImpl,
     writeSummary: () => {},
     logger,
@@ -515,19 +747,18 @@ test("a successful deploy whose alert lookup fails reports unread, never 'still 
 
 test("a no-op run never closes an open alert", async () => {
   // The load-bearing case: skipping every job proves nothing about whether
-  // deploys work, so closing here would silence a live outage — and no-op runs
-  // are the MAJORITY (46 of the last 90).
-  const { fetchImpl, calls } = makeFetchStub({ issues: [OPEN_ALERT] });
+  // deploys work, so closing here would silence a live outage. Under a path
+  // gate, no-op runs were the MAJORITY (46 of 90 in #763).
+  const { fetchImpl, calls } = makeFetchStub({
+    issues: [alertIssue(900, GATED_CONFIG.alertTitle)],
+  });
   const { logger, lines } = capturingLogger();
   let summary = "";
 
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: noOpNeeds(),
+    ...RUN,
     runUrl: "https://example.test/run/3",
-    headBranch: "main",
-    headSha: "4de96af",
+    needs: apiShapedNoOpNeeds(),
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
@@ -552,12 +783,9 @@ test("a no-op run does not annotate as an error", async () => {
   const { fetchImpl } = makeFetchStub({ issues: [] });
   const { logger, lines } = capturingLogger();
   await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: noOpNeeds(),
+    ...RUN,
     runUrl: "https://example.test/run/3",
-    headBranch: "main",
-    headSha: "4de96af",
+    needs: apiShapedNoOpNeeds(),
     fetchImpl,
     writeSummary: () => {},
     logger,
@@ -571,12 +799,8 @@ test("a total API outage still writes the summary and never throws", async () =>
   const fetchImpl = async () => jsonResponse(500, { message: "server error" });
   let summary = "";
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: failedNeeds(),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("failure", "deploy"),
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
@@ -594,12 +818,8 @@ test("a network-level throw is absorbed, not propagated", async () => {
     throw new Error("ECONNRESET");
   };
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: failedNeeds(),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("failure", "deploy"),
     fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
@@ -607,39 +827,30 @@ test("a network-level throw is absorbed, not propagated", async () => {
   assert.equal(result.alert.action, "failed");
 });
 
-// ── The Vercel staging configuration (#1674) ────────────────────────────────
-// #1674 made `deploy-alert.mjs` watch a second workflow (#2431 added a third;
-// its section is at the end). These cover the Vercel one and, more
-// importantly, the two ways the generalisation could quietly break the first:
-// a shared alert title (which would make two watchdogs close each other's
-// issues) and a gate job the second workflow does not have.
-
-/** `toJSON(needs)` for a failed `Deploy Vercel staging` run. */
-function vercelFailedNeeds() {
-  return { deploy: { result: "failure", outputs: {} } };
-}
-
-/** `toJSON(needs)` for a successful one. */
-function vercelDeployedNeeds() {
-  return { deploy: { result: "success", outputs: {} } };
-}
+// ── The Deploy staging configuration (#2803) ────────────────────────────────
+// The one live config: a gateless `deploy` job with a plan output. These pin
+// its behaviour, and the ways a config could quietly break another: a shared
+// alert title (two watchdogs closing each other's issues), a gate job it does
+// not have, and `config` dropped somewhere it has to be threaded through.
+// Because DEPLOY_STAGING_CONFIG is also the default, that last kind of break is
+// visible only on a non-default config, so each "names itself" test also runs
+// API_SHAPED_CONFIG, the stand-in for the next config (#2805).
 
 test("resolveAlertConfig resolves every name and refuses everything else", () => {
-  assert.equal(resolveAlertConfig("deploy-api"), DEPLOY_API_CONFIG);
-  assert.equal(
-    resolveAlertConfig("deploy-vercel-staging"),
-    DEPLOY_VERCEL_STAGING_CONFIG,
-  );
+  assert.equal(resolveAlertConfig("deploy-staging"), DEPLOY_STAGING_CONFIG);
+  for (const [name, config] of Object.entries(ALERT_CONFIGS)) {
+    assert.equal(resolveAlertConfig(name), config);
+    assert.equal(config.name, name, "a config's key and its name must agree");
+  }
 
   // A typo'd ALERT_CONFIG must be loud.
-  assert.throws(() => resolveAlertConfig("deploy-vercel"), /ALERT_CONFIG/);
+  assert.throws(() => resolveAlertConfig("deploy-stagin"), /ALERT_CONFIG/);
 
-  // An ABSENT one must be loud too, and this is the likelier mistake: a third
+  // An ABSENT one must be loud too, and this is the likelier mistake: another
   // deploy workflow copying a deploy-outcome block and dropping the line.
-  // Resolving it to Deploy API would find none of that workflow's job names in
-  // `needs`, read them all as "skipped", and report a permanent no-op while
-  // looking correctly wired — or, if it owned a job named `deploy-staging`,
-  // comment on the live P1 Deploy API alert from an unrelated failure.
+  // Resolving it to the staging config would read that workflow's own `deploy`
+  // job as staging's, and reopen or comment on the live P1 staging alert from
+  // an unrelated failure.
   for (const absent of [undefined, null, ""]) {
     assert.throws(() => resolveAlertConfig(absent), /ALERT_CONFIG/, `absent: ${absent}`);
   }
@@ -652,35 +863,65 @@ test("resolveAlertConfig resolves every name and refuses everything else", () =>
   }
 
   // The error names what is valid, or it is not actionable at 3am.
-  assert.throws(
-    () => resolveAlertConfig("nope"),
-    /deploy-api, deploy-vercel-staging/,
-  );
+  assert.throws(() => resolveAlertConfig("nope"), /Known configurations: deploy-staging\./);
+});
+
+test("the retired config names are refused, not resolved to their replacement", () => {
+  // `deploy-api.yml` and `deploy-vercel-staging.yml` were deleted by #2803 and
+  // their configs with them. A workflow still passing either name (a stale
+  // branch, a partial revert) must fail loud: quietly resolving it to
+  // deploy-staging would read its jobs as staging's and write to the live P1
+  // alert.
+  for (const retired of ["deploy-api", "deploy-vercel-staging"]) {
+    assert.throws(
+      () => resolveAlertConfig(retired),
+      (error) => {
+        assert.ok(error.message.includes(`ALERT_CONFIG "${retired}"`), error.message);
+        assert.match(error.message, /Known configurations: deploy-staging\./);
+        return true;
+      },
+      retired,
+    );
+  }
 });
 
 test("no two configurations share an alert issue identity", () => {
-  // Title is the lookup key. If any two ever matched, a green Vercel deploy
-  // would close a live Deploy API outage's alert, and vice versa.
-  assert.notEqual(
-    DEPLOY_API_CONFIG.alertTitle,
-    DEPLOY_VERCEL_STAGING_CONFIG.alertTitle,
-  );
+  // Title is the lookup key. If any two ever matched, one watchdog's green run
+  // would close the other's live outage alert.
   const titles = Object.values(ALERT_CONFIGS).map((config) => config.alertTitle);
   assert.equal(new Set(titles).size, titles.length);
-  // Both declare the lookup label. This asserts CONFIG SHAPE, not findability:
-  // `lib/alert-issue.mjs` forces `lookupLabel` into the created label set
-  // precisely so a caller cannot omit it, and that forcing — not this
-  // assertion — is what guarantees an alert can be found again. Do not read
-  // this test as making that belt-and-braces redundant.
+
+  // Nor may a live title also be a retired one, a config's own or another's.
+  // resolveAlert closes every retired title's open issue on success, so a
+  // config retiring a title another config still raises would close that
+  // watchdog's open incident with a "replaced" comment.
+  const retired = Object.values(ALERT_CONFIGS).flatMap((config) => config.retiredAlertTitles ?? []);
+  for (const title of titles) {
+    assert.ok(!retired.includes(title), `live title is also retired: ${title}`);
+  }
+
+  // Every config declares the lookup label. This asserts CONFIG SHAPE, not
+  // findability: `lib/alert-issue.mjs` forces `lookupLabel` into the created
+  // label set precisely so a caller cannot omit it, and that forcing — not
+  // this assertion — is what guarantees an alert can be found again. Do not
+  // read this test as making that belt-and-braces redundant.
   for (const config of Object.values(ALERT_CONFIGS)) {
     assert.ok(config.alertLabels.includes(ALERT_LOOKUP_LABEL), `${config.name} lookup label`);
+  }
+
+  // The stand-ins' titles are neither a live nor a retired title, or the
+  // isolation tests below, which use them as "another watchdog's alert",
+  // would pass vacuously.
+  for (const standIn of [API_SHAPED_CONFIG, GATED_CONFIG]) {
+    assert.ok(![...titles, ...retired].includes(standIn.alertTitle), standIn.name);
   }
 });
 
 test("a gateless config reports only its deploy jobs", () => {
-  assert.equal(DEPLOY_VERCEL_STAGING_CONFIG.gateJob, null);
-  assert.deepEqual(alertJobNames(DEPLOY_VERCEL_STAGING_CONFIG), ["deploy"]);
-  assert.deepEqual(alertJobNames(DEPLOY_API_CONFIG), [
+  assert.equal(DEPLOY_STAGING_CONFIG.gateJob, null);
+  assert.deepEqual(alertJobNames(DEPLOY_STAGING_CONFIG), ["deploy"]);
+  // A gated config reports its gate first.
+  assert.deepEqual(alertJobNames(API_SHAPED_CONFIG), [
     "check-changes",
     "migrate-staging",
     "deploy-staging",
@@ -688,8 +929,8 @@ test("a gateless config reports only its deploy jobs", () => {
 });
 
 test("a gateless config treats its succeeding deploy job as a deploy, not a gate", () => {
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const jobResults = readJobResults(vercelDeployedNeeds(), config);
+  const config = DEPLOY_STAGING_CONFIG;
+  const jobResults = readJobResults(stagingNeeds("success", "deploy"), config);
   assert.deepEqual(jobResults, { deploy: "success" });
 
   const { outcome, deployed, failed } = classifyDeployOutcome({ jobResults, config });
@@ -698,28 +939,41 @@ test("a gateless config treats its succeeding deploy job as a deploy, not a gate
   assert.deepEqual(failed, []);
 });
 
-test("a failed Vercel staging run classifies as failed and names the job", () => {
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const jobResults = readJobResults(vercelFailedNeeds(), config);
-  const { outcome, failed } = classifyDeployOutcome({ jobResults, config });
+test("a failed Deploy staging run classifies as failed and names the job", () => {
+  const config = DEPLOY_STAGING_CONFIG;
+  const { outcome, failed } = classify(stagingNeeds("failure", "deploy"), config);
   assert.equal(outcome, "failed");
   assert.deepEqual(failed, ["deploy"]);
 
   const headline = buildHeadline({ outcome, failed, deployed: [], headBranch: "main", config });
-  assert.match(headline, /^Deploy Vercel staging FAILED on `main`/);
-  // It must not claim to be the other watchdog.
-  assert.doesNotMatch(headline, /Deploy API/);
+  assert.match(headline, /^Deploy staging FAILED on `main`/);
+  // It must not claim to be another watchdog.
+  assert.doesNotMatch(headline, /API-shaped stand-in/);
+
+  // And a non-default config's headline is its own, so buildHeadline reads
+  // the config it is given rather than the default.
+  const standIn = buildHeadline({
+    outcome: "failed",
+    failed: ["deploy-staging"],
+    deployed: [],
+    headBranch: "main",
+    config: API_SHAPED_CONFIG,
+  });
+  assert.match(standIn, /^API-shaped stand-in FAILED on `main`/);
+  assert.doesNotMatch(standIn, /Deploy staging/);
 });
 
-test("a cancelled Vercel deploy is a failure, not a benign skip", () => {
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const jobResults = readJobResults({ deploy: { result: "cancelled" } }, config);
-  assert.equal(classifyDeployOutcome({ jobResults, config }).outcome, "failed");
+test("a cancelled or timed-out staging deploy is a failure, not a benign skip", () => {
+  for (const badResult of ["cancelled", "timed_out"]) {
+    const { outcome, failed } = classify(stagingNeeds(badResult));
+    assert.equal(outcome, "failed", badResult);
+    assert.deepEqual(failed, ["deploy"], badResult);
+  }
 });
 
 test("a gateless config's summary renders no changed-path rows", () => {
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const jobResults = readJobResults(vercelFailedNeeds(), config);
+  const config = DEPLOY_STAGING_CONFIG;
+  const jobResults = readJobResults(stagingNeeds("failure", "deploy"), config);
   const summary = buildRunSummary({
     outcome: "failed",
     failed: ["deploy"],
@@ -733,7 +987,7 @@ test("a gateless config's summary renders no changed-path rows", () => {
     config,
   });
 
-  assert.match(summary, /^## Deploy Vercel staging outcome/);
+  assert.match(summary, /^## Deploy staging outcome/);
   assert.match(summary, /\| `deploy` \| failure \|/);
   // The whole point of gateOutputRows being empty: a workflow with no path gate
   // must not print "unknown" for a question it never asks.
@@ -741,100 +995,127 @@ test("a gateless config's summary renders no changed-path rows", () => {
   assert.doesNotMatch(summary, /check-changes/);
 });
 
-test("the Vercel alert issue body names its own workflow and issue numbers", () => {
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+test("the Deploy staging alert issue body names its own workflow and history", () => {
   const body = buildAlertIssueBody({
-    headline: "Deploy Vercel staging FAILED on `main` — deploy did not succeed.",
+    headline: "Deploy staging FAILED on `main` — deploy did not succeed.",
     failed: ["deploy"],
     headBranch: "main",
     headSha: "4de96af",
     runUrl: "https://example.test/run/1",
-    config,
+    config: DEPLOY_STAGING_CONFIG,
   });
 
-  assert.match(body, /## Deploy Vercel staging is failing/);
-  assert.match(body, /\.github\/workflows\/deploy-vercel-staging\.yml/);
+  assert.match(body, /## Deploy staging is failing/);
+  assert.ok(body.includes("`.github/workflows/deploy-staging.yml`"));
+  // Both histories it inherited: Deploy API's 71-day outage and the frozen
+  // staging frontends.
+  assert.match(body, /#763/);
   assert.match(body, /ADR-21/);
-  assert.match(body, /#1578/);
-  // Must not inherit the Deploy API alert's prose or its workflow file.
+  assert.match(body, /#1674/);
+  // It must not send a responder to a workflow that no longer exists, nor
+  // inherit another config's prose.
   assert.doesNotMatch(body, /deploy-api\.yml/);
-  assert.doesNotMatch(body, /#763/);
+  assert.doesNotMatch(body, /deploy-vercel-staging\.yml/);
+  assert.doesNotMatch(body, /stand-in/i);
   // Still tells a reader not to claim it as backlog work.
   assert.ok(body.includes(`carries \`${ALERT_LOOKUP_LABEL}\``));
-});
 
-test("runDeployAlert files the Vercel alert under the Vercel title", async () => {
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
-  let summary = "";
-
-  const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: vercelFailedNeeds(),
-    runUrl: "https://example.test/run/1",
+  // A non-default config's body is its own throughout.
+  const standIn = buildAlertIssueBody({
+    headline: "API-shaped stand-in FAILED on `main` — deploy-staging did not succeed.",
+    failed: ["deploy-staging"],
     headBranch: "main",
     headSha: "4de96af",
-    fetchImpl,
-    writeSummary: (text) => {
-      summary = text;
-    },
-    logger: silentLogger,
-    config,
+    config: API_SHAPED_CONFIG,
   });
-
-  assert.equal(result.outcome, "failed");
-  assert.equal(result.alert.action, "created");
-
-  const created = calls.find((call) => call.method === "POST" && call.path === "/repos/o/r/issues");
-  assert.equal(created.body.title, DEPLOY_VERCEL_STAGING_CONFIG.alertTitle);
-  assert.notEqual(created.body.title, ALERT_ISSUE_TITLE);
-  assert.ok(created.body.labels.includes(ALERT_LOOKUP_LABEL));
-  assert.ok(created.body.labels.includes("P2"));
-  assert.match(summary, /Deploy Vercel staging/);
-
-  // The BODY too, not just the title. `raiseAlert` passes `config.alertTitle`
-  // to the library directly but builds the body through a closure, so those two
-  // can disagree: dropping `config` from the closure yields an issue titled
-  // "Deploy Vercel staging is failing…" whose body opens "## Deploy API is
-  // failing" and points at deploy-api.yml. Asserting the title alone did not
-  // catch that.
-  assert.match(created.body.body, /## Deploy Vercel staging is failing/);
-  assert.match(created.body.body, /deploy-vercel-staging\.yml/);
-  assert.doesNotMatch(created.body.body, /deploy-api\.yml/);
+  assert.match(standIn, /## API-shaped stand-in is failing/);
+  assert.ok(standIn.includes("`.github/workflows/api-shaped-stand-in.yml`"));
+  assert.ok(standIn.includes(API_SHAPED_CONFIG.whyLines[0]));
+  assert.doesNotMatch(standIn, /Deploy staging/);
+  assert.doesNotMatch(standIn, /deploy-staging\.yml/);
+  assert.doesNotMatch(standIn, /ADR-21/);
 });
 
-test("a recovered Vercel deploy closes only the Vercel alert", async () => {
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const openVercelAlert = {
-    number: 950,
-    state: "open",
-    title: DEPLOY_VERCEL_STAGING_CONFIG.alertTitle,
-  };
-  const openApiAlert = { number: 951, state: "open", title: ALERT_ISSUE_TITLE };
-  const { fetchImpl, calls } = makeFetchStub({
-    issues: [openVercelAlert, openApiAlert],
-  });
+test("runDeployAlert files each config's alert under its own title, labels and body", async () => {
+  const cases = [
+    { config: DEPLOY_STAGING_CONFIG, needs: stagingNeeds("failure", "deploy"), priority: "P1", other: API_SHAPED_CONFIG },
+    { config: API_SHAPED_CONFIG, needs: apiShapedFailedNeeds(), priority: "P3", other: DEPLOY_STAGING_CONFIG },
+  ];
+  for (const { config, needs, priority, other } of cases) {
+    const { fetchImpl, calls } = makeFetchStub({ issues: [] });
+    let summary = "";
 
-  const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: vercelDeployedNeeds(),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
-    fetchImpl,
-    writeSummary: () => {},
-    logger: silentLogger,
-    config,
-  });
+    const result = await runDeployAlert({
+      ...RUN,
+      needs,
+      fetchImpl,
+      writeSummary: (text) => {
+        summary = text;
+      },
+      logger: silentLogger,
+      config,
+    });
 
-  assert.equal(result.outcome, "deployed");
-  assert.deepEqual(result.alert.closed, [950]);
-  // The Deploy API alert must be untouched — this is the cross-watchdog
-  // regression the shared title check above exists to prevent.
-  const patched = calls.filter((call) => call.method === "PATCH").map((call) => call.path);
-  assert.deepEqual(patched, ["/repos/o/r/issues/950"]);
+    assert.equal(result.outcome, "failed", config.name);
+    assert.equal(result.alert.action, "created", config.name);
+
+    const created = calls.find((call) => call.method === "POST" && call.path === "/repos/o/r/issues");
+    assert.equal(created.body.title, config.alertTitle);
+    assert.notEqual(created.body.title, other.alertTitle);
+    assert.deepEqual(created.body.labels, config.alertLabels, config.name);
+    assert.ok(created.body.labels.includes(ALERT_LOOKUP_LABEL), config.name);
+    assert.ok(created.body.labels.includes(priority), `${config.name} is ${priority}`);
+    assert.ok(summary.startsWith(`## ${config.workflowLabel} outcome`), config.name);
+
+    // The BODY too, not just the title. `raiseAlert` passes `config.alertTitle`
+    // to the library directly but builds the body through a closure, so those
+    // two can disagree: dropping `config` from the closure yields an issue
+    // titled for one config whose body opens "## Deploy staging is failing" and
+    // points at deploy-staging.yml. Asserting the title alone did not catch
+    // that, and only the non-default config can.
+    assert.ok(created.body.body.includes(`## ${config.workflowLabel} is failing`), config.name);
+    assert.ok(created.body.body.includes(config.workflowFile), config.name);
+    assert.ok(!created.body.body.includes(`## ${other.workflowLabel} is failing`), config.name);
+    assert.ok(!created.body.body.includes(other.workflowFile), config.name);
+  }
+});
+
+test("a recovered run closes only its own alert, never another config's", async () => {
+  // Deploy staging also closes its OWN retired titles (#960 here). The
+  // stand-in retires nothing, so it must leave that issue alone as well: a
+  // retired title belongs to the config that replaced it, not to every config.
+  const issues = [
+    alertIssue(950, DEPLOY_STAGING_CONFIG.alertTitle),
+    alertIssue(951, API_SHAPED_CONFIG.alertTitle),
+    alertIssue(960, RETIRED_API_TITLE),
+  ];
+  const cases = [
+    { config: DEPLOY_STAGING_CONFIG, needs: stagingNeeds("success", "deploy"), closes: [950, 960] },
+    { config: API_SHAPED_CONFIG, needs: apiShapedDeployedNeeds(), closes: [951] },
+  ];
+  for (const { config, needs, closes } of cases) {
+    const { fetchImpl, calls } = makeFetchStub({ issues });
+
+    const result = await runDeployAlert({
+      ...RUN,
+      needs,
+      fetchImpl,
+      writeSummary: () => {},
+      logger: silentLogger,
+      config,
+    });
+
+    assert.equal(result.outcome, "deployed", config.name);
+    assert.deepEqual(result.alert, { action: "closed", closed: closes }, config.name);
+    // The cross-watchdog regression the shared-title check above exists to
+    // prevent: every other alert is untouched.
+    const patched = calls.filter((call) => call.method === "PATCH").map((call) => call.path);
+    assert.deepEqual(
+      patched,
+      closes.map((number) => `/repos/o/r/issues/${number}`),
+      config.name,
+    );
+  }
 });
 
 test("a gateless config escalates 'nothing ran' to a failure, not a benign no-op", async () => {
@@ -844,21 +1125,16 @@ test("a gateless config escalates 'nothing ran' to a failure, not a benign no-op
   // would be an annotation on a `workflow_run` page, which lands on no commit
   // and no PR. That is the ADR-21 frozen-staging failure verbatim, so it has to
   // raise a real alert.
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const jobResults = readJobResults({ deploy: { result: "skipped" } }, config);
-  const { outcome, failed } = classifyDeployOutcome({ jobResults, config });
+  const config = DEPLOY_STAGING_CONFIG;
+  const { outcome, failed } = classify(stagingNeeds("skipped"), config);
 
   assert.equal(outcome, "failed");
   assert.deepEqual(failed, ["deploy"]);
 
   const { fetchImpl, calls } = makeFetchStub({ issues: [] });
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: { deploy: { result: "skipped" } },
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("skipped"),
     fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
@@ -866,27 +1142,24 @@ test("a gateless config escalates 'nothing ran' to a failure, not a benign no-op
   });
   assert.equal(result.alert.action, "created");
   const created = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
-  assert.equal(created.body.title, DEPLOY_VERCEL_STAGING_CONFIG.alertTitle);
+  assert.equal(created.body.title, DEPLOY_STAGING_CONFIG.alertTitle);
 });
 
 test("the gated config keeps a no-op benign, and never closes an open alert", async () => {
   // The other half of the same switch. 46 of the 90 runs in #763 were
   // green-because-empty; treating those as failures would have alerted on every
   // docs-only push, and treating them as recoveries would have closed a live
-  // outage's alert. Both directions must stay wrong-proof. (Deploy API itself
-  // no longer has a path gate; see "Deploy API escalates an all-skipped run".)
+  // outage's alert. Both directions must stay wrong-proof. (No live config has
+  // had a path gate since #2505; the stand-in keeps the benign branch tested.)
   assert.equal(GATED_CONFIG.noOpIsUnexpected, false);
-  const { outcome } = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()), config: GATED_CONFIG });
-  assert.equal(outcome, "no-op");
+  assert.equal(classify(apiShapedNoOpNeeds(), GATED_CONFIG).outcome, "no-op");
 
-  const { fetchImpl, calls } = makeFetchStub({ issues: [OPEN_ALERT] });
+  const { fetchImpl, calls } = makeFetchStub({
+    issues: [alertIssue(900, GATED_CONFIG.alertTitle)],
+  });
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: noOpNeeds(),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: apiShapedNoOpNeeds(),
     fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
@@ -900,90 +1173,96 @@ test("the gated config keeps a no-op benign, and never closes an open alert", as
   );
 });
 
-test("a SECOND Vercel failure comments as Vercel, not as Deploy API", async () => {
+test("a SECOND failure comments as its own config, never as another", async () => {
   // The gap this closes: `config` is threaded into raiseAlert's buildCommentBody
-  // closure, and every other test here stubs `issues: []` — which only ever
-  // reaches the CREATE path. Deleting `config` from that closure left all tests
-  // green while, in production, the second and every later Vercel failure would
-  // comment "**Deploy API failed again.**" onto the Vercel alert issue: the
-  // wrong watchdog named in the wrong incident thread.
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const openVercelAlert = { number: 950, state: "open", title: config.alertTitle };
-  const { fetchImpl, calls } = makeFetchStub({ issues: [openVercelAlert] });
+  // closure, and a stub with `issues: []` only ever reaches the CREATE path.
+  // Deleting `config` from that closure left every create-path test green
+  // while, in production, the second and every later failure of a non-default
+  // config would comment "**Deploy staging failed again.**" onto its alert:
+  // the wrong watchdog named in the wrong incident thread.
+  const cases = [
+    { config: DEPLOY_STAGING_CONFIG, needs: stagingNeeds("failure", "deploy"), other: API_SHAPED_CONFIG },
+    { config: API_SHAPED_CONFIG, needs: apiShapedFailedNeeds(), other: DEPLOY_STAGING_CONFIG },
+  ];
+  for (const { config, needs, other } of cases) {
+    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(950, config.alertTitle)] });
 
-  const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: vercelFailedNeeds(),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
-    fetchImpl,
-    writeSummary: () => {},
-    logger: silentLogger,
-    config,
-  });
+    const result = await runDeployAlert({
+      ...RUN,
+      needs,
+      fetchImpl,
+      writeSummary: () => {},
+      logger: silentLogger,
+      config,
+    });
 
-  assert.equal(result.alert.action, "commented");
-  const comment = calls.find(
-    (c) => c.method === "POST" && c.path === "/repos/o/r/issues/950/comments",
-  );
-  assert.match(comment.body.body, /\*\*Deploy Vercel staging failed again\.\*\*/);
-  assert.doesNotMatch(comment.body.body, /Deploy API/);
+    assert.equal(result.alert.action, "commented", config.name);
+    const comment = calls.find(
+      (c) => c.method === "POST" && c.path === "/repos/o/r/issues/950/comments",
+    ).body.body;
+    assert.ok(comment.startsWith(`**${config.workflowLabel} failed again.**`), config.name);
+    assert.ok(!comment.includes(other.workflowLabel), config.name);
+  }
 });
 
-test("a reopened Vercel alert names Vercel in its reopen comment", async () => {
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const closedVercelAlert = { number: 950, state: "closed", title: config.alertTitle };
-  const { fetchImpl, calls } = makeFetchStub({ issues: [closedVercelAlert] });
+test("a reopened alert names its own config in the reopen comment", async () => {
+  const cases = [
+    { config: DEPLOY_STAGING_CONFIG, needs: stagingNeeds("failure", "deploy"), other: API_SHAPED_CONFIG },
+    { config: API_SHAPED_CONFIG, needs: apiShapedFailedNeeds(), other: DEPLOY_STAGING_CONFIG },
+  ];
+  for (const { config, needs, other } of cases) {
+    const { fetchImpl, calls } = makeFetchStub({
+      issues: [alertIssue(950, config.alertTitle, "closed")],
+    });
 
-  const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: vercelFailedNeeds(),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
-    fetchImpl,
-    writeSummary: () => {},
-    logger: silentLogger,
-    config,
-  });
+    const result = await runDeployAlert({
+      ...RUN,
+      needs,
+      fetchImpl,
+      writeSummary: () => {},
+      logger: silentLogger,
+      config,
+    });
 
-  assert.equal(result.alert.action, "reopened");
-  const comment = calls.find(
-    (c) => c.method === "POST" && c.path === "/repos/o/r/issues/950/comments",
-  );
-  assert.match(comment.body.body, /\*\*Deploy Vercel staging is failing again\*\* — reopening\./);
-  assert.doesNotMatch(comment.body.body, /Deploy API/);
+    assert.equal(result.alert.action, "reopened", config.name);
+    const comment = calls.find(
+      (c) => c.method === "POST" && c.path === "/repos/o/r/issues/950/comments",
+    ).body.body;
+    assert.ok(
+      comment.startsWith(`**${config.workflowLabel} is failing again** — reopening.`),
+      config.name,
+    );
+    assert.ok(!comment.includes(other.workflowLabel), config.name);
+  }
 });
 
-test("the Vercel recovery comment names Vercel, not Deploy API", async () => {
-  // Same hole on the resolve path: `a recovered Vercel deploy closes only the
-  // Vercel alert` asserts which issue was PATCHed but never reads the comment,
-  // so dropping `config` from buildRecoveryBody was invisible.
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const openVercelAlert = { number: 950, state: "open", title: config.alertTitle };
-  const { fetchImpl, calls } = makeFetchStub({ issues: [openVercelAlert] });
+test("the recovery comment names its own config, never another", async () => {
+  // Same hole on the resolve path: `a recovered run closes only its own alert`
+  // asserts which issue was PATCHed but never reads the comment, so dropping
+  // `config` from buildRecoveryBody was invisible.
+  const cases = [
+    { config: DEPLOY_STAGING_CONFIG, needs: stagingNeeds("success", "deploy"), other: API_SHAPED_CONFIG },
+    { config: API_SHAPED_CONFIG, needs: apiShapedDeployedNeeds(), other: DEPLOY_STAGING_CONFIG },
+  ];
+  for (const { config, needs, other } of cases) {
+    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(950, config.alertTitle)] });
 
-  await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: vercelDeployedNeeds(),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
-    fetchImpl,
-    writeSummary: () => {},
-    logger: silentLogger,
-    config,
-  });
+    await runDeployAlert({
+      ...RUN,
+      needs,
+      fetchImpl,
+      writeSummary: () => {},
+      logger: silentLogger,
+      config,
+    });
 
-  const comment = calls.find(
-    (c) => c.method === "POST" && c.path === "/repos/o/r/issues/950/comments",
-  );
-  assert.match(comment.body.body, /\*\*Deploy Vercel staging recovered\.\*\* Closing\./);
-  assert.doesNotMatch(comment.body.body, /Deploy API/);
+    const comment = calls.find(
+      (c) => c.method === "POST" && c.path === "/repos/o/r/issues/950/comments",
+    ).body.body;
+    assert.ok(comment.startsWith(`**${config.workflowLabel} recovered.** Closing.`), config.name);
+    assert.ok(!comment.includes(other.workflowLabel), config.name);
+    assert.doesNotMatch(comment, /Replaced by/, config.name);
+  }
 });
 
 // ── Every caller names itself ───────────────────────────────────────────────
@@ -1014,14 +1293,15 @@ test("every workflow running deploy-alert.mjs sets a known ALERT_CONFIG", () => 
     );
 
   // Guards the scan itself: a path typo would make the loop below vacuous.
+  // #2803 merged deploy-api.yml and deploy-vercel-staging.yml into this one.
   assert.deepEqual(
     callers.map((c) => c.name).sort(),
-    ["deploy-api.yml", "deploy-vercel-staging.yml"],
-    "expected exactly the two known callers — add the new one to this list deliberately",
+    ["deploy-staging.yml"],
+    "expected exactly the one known caller — add a new one to this list deliberately",
   );
 
   // Tolerates the forms a human will actually write: quoted or bare, with or
-  // without a trailing comment. A guard that fails on `ALERT_CONFIG: "deploy-api"`
+  // without a trailing comment. A guard that fails on `ALERT_CONFIG: "deploy-staging"`
   // trains people to distrust it. `matchAll`, not `match`, so a workflow with
   // two reporting steps has BOTH checked rather than only the first.
   const configsIn = (text) =>
@@ -1053,6 +1333,9 @@ test("every workflow running deploy-alert.mjs sets a known ALERT_CONFIG", () => 
       `ALERT_CONFIG ${config} is claimed by ${[...files].join(" and ")}`,
     );
   }
+
+  // And the one caller selects its own config.
+  assert.deepEqual([...claimedBy.get("deploy-staging")], ["deploy-staging.yml"]);
 });
 
 test("an escalated no-op explains its own job table instead of contradicting it", () => {
@@ -1061,8 +1344,8 @@ test("an escalated no-op explains its own job table instead of contradicting it"
   // cannot resolve — a red "FAILED" badge and "deploy did not succeed" above a
   // table saying `deploy | skipped` — which sends them hunting for a failed
   // build that does not exist.
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
-  const jobResults = readJobResults({ deploy: { result: "skipped" } }, config);
+  const config = DEPLOY_STAGING_CONFIG;
+  const jobResults = readJobResults(stagingNeeds("skipped"), config);
   const { outcome, failed, deployed, escalated } = classifyDeployOutcome({ jobResults, config });
   assert.equal(escalated, true);
 
@@ -1085,14 +1368,14 @@ test("an escalated no-op explains its own job table instead of contradicting it"
   });
   assert.match(summary, /NOTHING RAN/);
   // The note is what reconciles the red badge with the `skipped` row.
-  assert.match(summary, /those two have drifted apart/);
+  assert.match(summary, /the two have drifted apart/);
 });
 
 test("escalation leaves the gated config's classify shape untouched", () => {
   // `escalated` is spread in only when true, so a benign no-op returns
   // exactly the three keys it always did. A differential harness compares these
   // objects; an unconditional key would break that parity for no benefit.
-  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()), config: GATED_CONFIG });
+  const result = classify(apiShapedNoOpNeeds(), GATED_CONFIG);
   assert.deepEqual(Object.keys(result).sort(), ["deployed", "failed", "outcome"]);
   assert.equal(result.outcome, "no-op");
 });
@@ -1102,16 +1385,12 @@ test("an escalated alert issue does not call a job that never ran a failed job",
   // responder into a run with no failing step, looking for a build that never
   // started. The alert issue is the surface they read first, so the label has
   // to match what actually happened.
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const config = DEPLOY_STAGING_CONFIG;
   const { fetchImpl, calls } = makeFetchStub({ issues: [] });
 
   await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: { deploy: { result: "skipped" } },
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("skipped"),
     fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
@@ -1125,12 +1404,8 @@ test("an escalated alert issue does not call a job that never ran a failed job",
   // A genuine failure keeps the ordinary label.
   const second = makeFetchStub({ issues: [] });
   await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: vercelFailedNeeds(),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("failure", "deploy"),
     fetchImpl: second.fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
@@ -1150,18 +1425,14 @@ test("an escalated run says 'did not run' on EVERY surface, not just the summary
   // failing to pass the flag to its own buildHeadline call. The result: the
   // annotation and the alert issue said "did not succeed" while the summary
   // three lines away said "did not run at all".
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const config = DEPLOY_STAGING_CONFIG;
   const { fetchImpl, calls } = makeFetchStub({ issues: [] });
   const { logger, lines } = capturingLogger();
   let summary = "";
 
   await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: { deploy: { result: "skipped" } },
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("skipped"),
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
@@ -1188,24 +1459,20 @@ test("an escalated run says 'did not run' on EVERY surface, not just the summary
 
   // The diagnosis has to reach the durable artifact, not only the run page:
   // the issue outlives log retention and is what ALERT_ROUTING.md links to.
-  assert.match(issueBody, /those two have drifted apart/);
+  assert.match(issueBody, /the two have drifted apart/);
 });
 
 test("a genuine failure still reads as a failure on every surface", async () => {
   // The other side of the switch — the escalated copy must not leak into an
   // ordinary failed deploy, which really did try and really did fail.
-  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const config = DEPLOY_STAGING_CONFIG;
   const { fetchImpl, calls } = makeFetchStub({ issues: [] });
   const { logger, lines } = capturingLogger();
   let summary = "";
 
   await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: vercelFailedNeeds(),
-    runUrl: "https://example.test/run/1",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("failure", "deploy"),
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
@@ -1227,19 +1494,21 @@ test("a genuine failure still reads as a failure on every surface", async () => 
     assert.match(text, /did not succeed/, `${surface} must report a real failure`);
     assert.doesNotMatch(text, /did not even attempt/, `${surface} must not claim nothing ran`);
   }
-  assert.doesNotMatch(issueBody, /those two have drifted apart/);
+  assert.doesNotMatch(issueBody, /the two have drifted apart/);
 });
 
-test("both configs' copy reads the same on every surface a responder reads", () => {
+test("every config's copy reads the same on every surface a responder reads", () => {
   // `OUTCOME_COPY` is shared; pinned on the headline, the issue body and the
-  // comment, for both configs. Only what closes the issue differs: a Deploy
-  // API `forward` deploy succeeds without closing it (`closesOn`).
+  // comment, for the real config and for a stand-in that declares no
+  // `closesOn`. Only what closes the issue differs: a Deploy staging `forward`
+  // deploy succeeds without closing it, so it says so (`closesOn`); a config
+  // without a plan closes on any successful deploy (the default).
   const closesOn = new Map([
-    [DEPLOY_API_CONFIG, "a later run for `main`'s tip deploys successfully or finds staging up to date"],
-    [DEPLOY_VERCEL_STAGING_CONFIG, "a later run deploys successfully"],
+    [DEPLOY_STAGING_CONFIG, "a later run for `main`'s tip deploys successfully or finds the API up to date"],
+    [GATED_CONFIG, "a later run deploys successfully"],
   ]);
   const escape = (text) => text.replace(/[.*+?^${}()|[\]\\`]/g, "\\$&");
-  for (const config of [DEPLOY_API_CONFIG, DEPLOY_VERCEL_STAGING_CONFIG]) {
+  for (const config of [DEPLOY_STAGING_CONFIG, GATED_CONFIG]) {
     const headline = buildHeadline({
       outcome: "failed",
       failed: ["deploy"],
@@ -1278,30 +1547,26 @@ test("both configs' copy reads the same on every surface a responder reads", () 
   );
 });
 
-// ── Deploy API's plan (#2505) ───────────────────────────────────────────────
-// `deploy-staging` publishes plan-staging-deploy.mjs's verdict. A job result
-// alone can't tell a deploy from "nothing needed deploying" from "this run is
-// for an old commit", and each must be reported and alerted differently.
+// ── Deploy staging's plan (#2505, #2803) ────────────────────────────────────
+// The `deploy` job publishes plan-staging-deploy.mjs's verdict as `plan`. A
+// job result alone can't tell a deploy from "the API needed no deploy" from
+// "this run is for an old commit", and each must be reported and alerted
+// differently.
 
-function planNeeds(result, plan) {
-  const needs = deployedNeeds();
-  needs["deploy-staging"] = { result, outputs: plan === undefined ? {} : { plan } };
-  return needs;
-}
-
-test("a stale plan neither closes nor raises the alert, even with migrate-staging green", async () => {
+test("a stale plan neither closes nor raises the alert", async () => {
   // The case: an alert is open for the newest commit's failed build, and a
-  // re-run of an older run plans `stale`. Classifying it would count
-  // migrate-staging's and deploy-staging's success as a deploy and close it.
-  const { fetchImpl, calls } = makeFetchStub({ issues: [OPEN_ALERT] });
+  // re-run of an older run plans `stale`. Classifying it would count the green
+  // `deploy` job as a deploy and close the alert. A retired-title issue stays
+  // open too: a superseded run decides nothing.
+  const { fetchImpl, calls } = makeFetchStub({
+    issues: [OPEN_ALERT, alertIssue(960, RETIRED_API_TITLE)],
+  });
   let summary = "";
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: planNeeds("success", "stale"),
+    ...RUN,
     runUrl: "https://example.test/run/9",
-    headBranch: "main",
     headSha: "0ldc0mm",
+    needs: stagingNeeds("success", "stale"),
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
@@ -1316,19 +1581,36 @@ test("a stale plan neither closes nor raises the alert, even with migrate-stagin
   assert.doesNotMatch(summary, /DEPLOYED/);
 });
 
+test("a stale plan on one of several jobs is superseded even with a sibling job green", async () => {
+  // The multi-job form of the case above, on the stand-in (the retired Deploy
+  // API shape, where #2505 found it): `migrate-staging` succeeding must not
+  // turn a `stale` run into a deploy that closes the alert.
+  const { fetchImpl, calls } = makeFetchStub({
+    issues: [alertIssue(951, API_SHAPED_CONFIG.alertTitle)],
+  });
+  const result = await runDeployAlert({
+    ...RUN,
+    headSha: "0ldc0mm",
+    needs: apiShapedDeployedNeeds("stale"),
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+    config: API_SHAPED_CONFIG,
+  });
+  assert.equal(result.outcome, "superseded");
+  assert.equal(result.alert.action, "none");
+  assert.equal(calls.length, 0, "a superseded run must not touch the issues API");
+});
+
 // A queue-replaced job (GitHub cancels a pending job when a third run
 // arrives) is a failure like any other cancel. Telling it apart would rest on
-// whether GitHub publishes a cancelled job's outputs, and a hung migrate-staging
-// with no timeout would hide behind a stream of such runs.
+// whether GitHub publishes a cancelled job's outputs, and a hung deploy with no
+// timeout would hide behind a stream of such runs.
 test("a deploy job cancelled before it planned is a failure", async () => {
   const { fetchImpl } = makeFetchStub({ issues: [] });
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: planNeeds("cancelled", undefined),
-    runUrl: "https://example.test/run/9",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("cancelled"),
     fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
@@ -1342,12 +1624,8 @@ test("a deploy cancelled after it planned is still a failure", async () => {
   // `stale` or `forward` plan is superseded.
   const { fetchImpl } = makeFetchStub({ issues: [] });
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: planNeeds("cancelled", "deploy"),
-    runUrl: "https://example.test/run/9",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("cancelled", "deploy"),
     fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
@@ -1357,18 +1635,14 @@ test("a deploy cancelled after it planned is still a failure", async () => {
 });
 
 test("a current plan closes the alert but never claims DEPLOYED", async () => {
-  // `current` is only published for main's tip, after verifying staging serves
-  // and is ready, so it may close an alert. It deployed nothing, and the
+  // `current` is only published for main's tip, after verifying the API serves
+  // and is ready, so it may close an alert. The API deployed nothing, and the
   // summary must say so at a glance (#763).
   const { fetchImpl } = makeFetchStub({ issues: [OPEN_ALERT] });
   let summary = "";
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: planNeeds("success", "current"),
-    runUrl: "https://example.test/run/9",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("success", "current"),
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
@@ -1386,12 +1660,8 @@ test("a deploy plan that succeeds reports DEPLOYED with its plan row", async () 
   const { fetchImpl } = makeFetchStub({ issues: [] });
   let summary = "";
   await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: planNeeds("success", "deploy"),
-    runUrl: "https://example.test/run/9",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("success", "deploy"),
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
@@ -1410,12 +1680,8 @@ test("a successful forward deploy leaves the alert alone", async () => {
   const { fetchImpl, calls } = makeFetchStub({ issues: [OPEN_ALERT] });
   let summary = "";
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: planNeeds("success", "forward"),
-    runUrl: "https://example.test/run/9",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("success", "forward"),
     fetchImpl,
     writeSummary: (text) => {
       summary = text;
@@ -1431,12 +1697,8 @@ test("a successful forward deploy leaves the alert alone", async () => {
 test("a failed forward deploy raises the alert", async () => {
   const { fetchImpl } = makeFetchStub({ issues: [] });
   const result = await runDeployAlert({
-    token: "t",
-    repo: "o/r",
-    needs: planNeeds("failure", "forward"),
-    runUrl: "https://example.test/run/9",
-    headBranch: "main",
-    headSha: "4de96af",
+    ...RUN,
+    needs: stagingNeeds("failure", "forward"),
     fetchImpl,
     writeSummary: () => {},
     logger: silentLogger,
@@ -1446,6 +1708,13 @@ test("a failed forward deploy raises the alert", async () => {
 });
 
 test("readPlan and isSuperseded ignore a config without planOutput", () => {
-  assert.equal(readPlan(planNeeds("success", "stale"), DEPLOY_VERCEL_STAGING_CONFIG), null);
-  assert.equal(isSuperseded(planNeeds("success", "stale"), DEPLOY_VERCEL_STAGING_CONFIG), false);
+  // A `stale` plan where both plan-reading configs look for one.
+  const needs = { ...stagingNeeds("success", "stale"), ...apiShapedDeployedNeeds("stale") };
+  assert.equal(readPlan(needs, GATED_CONFIG), null);
+  assert.equal(isSuperseded(needs, GATED_CONFIG), false);
+  // Control: the same needs ARE stale to the configs that read a plan, so the
+  // results above are the missing `planOutput`'s doing.
+  assert.equal(readPlan(needs, DEPLOY_STAGING_CONFIG), "stale");
+  assert.equal(isSuperseded(needs, DEPLOY_STAGING_CONFIG), true);
+  assert.equal(readPlan(needs, API_SHAPED_CONFIG), "stale");
 });

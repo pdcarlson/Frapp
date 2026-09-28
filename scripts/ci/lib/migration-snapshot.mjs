@@ -43,12 +43,12 @@ export const SNAPSHOT_WORKFLOW = ".github/workflows/migration-snapshot.yml";
  * main freshness rule.
  *
  * The main rule lives in `.github/actions/download-migration-snapshot`: the
- * snapshot must have been read after the latest completed `Deploy API` or
+ * snapshot must have been read after the latest completed `Deploy staging` or
  * `Deploy production` run on `main`, the only workflows that apply migrations.
  * Each of them triggers a publish. Off `main` the download action waits up to
  * 15 minutes for a lagging one, then fails the gates, naming the publisher. Runs
  * on `main` take the newest snapshot as it is. The drift job's `stale` verdict
- * catches a stuck publisher once a Deploy API run has overtaken the snapshot and a
+ * catches a stuck publisher once a Deploy staging run has overtaken the snapshot and a
  * migration outlives its grace window. This limit covers the rest: an apply
  * made outside those workflows, when nothing deploys for a day and the 4-hourly
  * schedule is also failing. Scheduled runs here start hours
@@ -220,7 +220,7 @@ export function loadSnapshot(
  * which is what every gate wants: their refs, the snapshot's fetch stand-in, a
  * log line, and `capturedMs`, the moment the state was read. The drift gate's
  * grace clock runs from now, and `capturedMs` only words its report: whether a
- * Deploy API run has overtaken the snapshot comes from the download action.
+ * Deploy staging run has overtaken the snapshot comes from the download action.
  */
 export function openSnapshot(path, names, { nowMs = Date.now(), environments, readFile } = {}) {
   const refs = {};

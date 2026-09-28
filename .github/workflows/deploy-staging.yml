@@ -1,0 +1,353 @@
+name: Deploy staging
+
+# STAGING: database, API, web and landing, in one ordered job. Triggered ONLY
+# after the CI workflow completes successfully on `main`, so broken code never
+# deploys. Staging deploys on merge, never on a pull request: it is one shared
+# database and one API, so an unmerged PR's migrations would land in it and
+# PRs would overwrite each other.
+#
+# Production is `deploy-production.yml`, a manual dispatch that names an exact
+# commit. Epic #2802 moves both onto the same steps, with production's layers
+# around them.
+#
+# ── Why one job, in this order (#2803) ──────────────────────────────────────
+# Until #2803 this was two workflows fired side by side by the same CI run:
+# `deploy-api.yml` (migrate, then the Render API) and `deploy-vercel-staging.yml`
+# (web and landing). Nothing ordered them, so new frontends could go live
+# before the migration or the API they call, and a failed migration shipped
+# them anyway. Web and landing also built and uploaded in one phase, so a
+# build failure halfway left the two hosts on different commits.
+#
+# The order:
+#   install (no secrets yet) → record the env baseline → inject Infisical
+#   `staging` → BUILD web + landing → migrate (dry run, apply) → plan the API
+#   deploy → deploy the API by commit → verify it serves the commit → UPLOAD
+#   web + landing → point the staging hosts at them.
+# From the build on, that is production's order. Production still injects
+# before it installs (#2801); #2805 brings it onto this order.
+# A failure anywhere before the upload ships no frontend: a failed build before
+# anything is applied, a failed migration before the API, a failed API before
+# the frontends that call it. One job, because the built output lives in
+# `$RUNNER_TEMP` between the two Vercel phases.
+#
+# A `stale` plan (staging already serves this commit or a newer one, or `main`
+# has moved on and nothing here needs moving forward) skips the API AND the
+# frontend upload, so an older frontend never replaces a newer one. See
+# `scripts/ci/plan-staging-deploy.mjs` for the four verdicts.
+#
+# ── Why `workflow_run` and not `push` ───────────────────────────────────────
+# A push-triggered workflow starts immediately, before CI has passed. This one
+# starts when CI completes and deploys only a success, and it names the commit
+# CI verified (`workflow_run.head_sha`), never `main`'s moving tip.
+#
+# ── Where the config and secrets come from ─────────────────────────────────
+# Infisical `staging`, injected once, after every install (#834, #2672). Each
+# Vercel build gets only the keys its app reads, and every Vercel CLI process
+# runs on the names recorded just before the injection
+# (`scripts/ci/lib/vercel-build-env.mjs`). `RENDER_API_KEY`, `VERCEL_API_KEY`
+# and the Infisical bootstrap pair are `staging` environment secrets.
+# `API_HEALTHCHECK_URL` comes from the injection. Render auto-deploy must be off
+# (#2679; staging-conformance asserts it), so this job is the only thing that
+# deploys the staging API.
+#
+# ── Names other things depend on ────────────────────────────────────────────
+# `migration-snapshot.yml` triggers on this workflow's NAME, "Deploy staging",
+# and the `download-migration-snapshot` action reads this FILE's runs. The
+# `deploy-outcome` job selects `ALERT_CONFIG: deploy-staging` in
+# `scripts/ci/deploy-alert.mjs`, which keys on the job names `deploy` and
+# `deploy-outcome` and on the `plan` output. Renaming any of them breaks those
+# silently.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # `head_repository` guards against a fork's CI run triggering a deploy with
+    # this repo's secrets: `workflow_run` fires in the base repo's context.
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    environment: staging
+    # The Render poll's ceiling is 20 minutes, the served-commit check's 5, and
+    # the two builds and uploads take about 10; this bounds the job past all of
+    # them.
+    timeout-minutes: 60
+    # One staging deploy at a time, queued, never cancelled. The group keeps the
+    # migration lock's name (`DB_PROMOTION_RUNBOOK.md` documents it), since
+    # this job is now the only thing that migrates staging.
+    #
+    # `cancel-in-progress: false` is the important half: cancelling mid-`db push`
+    # is how a database ends up half-migrated, and cancelling between the API
+    # and the upload leaves the hosts on different commits. GitHub still
+    # replaces a PENDING run when a third arrives; that job ends `cancelled`,
+    # which `deploy-outcome` reports as a failure. It closes on the next run,
+    # which plans from the served commit and so carries the replaced run's
+    # changes too.
+    #
+    # Honest limit: this lock covers GitHub Actions runs only. It cannot stop a
+    # human running `supabase db push` against staging from a laptop, which is
+    # why the runbook says not to and the drift gate catches it when someone
+    # does.
+    concurrency:
+      group: db-migrate-staging
+      cancel-in-progress: false
+    # `deploy-outcome` reads the plan: a `stale` run neither raises nor closes
+    # the alert, a successful `forward` one doesn't close it (a failed one
+    # raises it), and a `current` one isn't reported as an API deploy.
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      # The commit CI verified. On a `workflow_run` event the default checkout
+      # is the default branch's TIP, and this job may queue behind the previous
+      # run, so without `ref:` a run could deploy a commit whose CI hasn't
+      # finished. The checkout also decides which `.github/actions/…` the local
+      # `uses:` below resolve.
+      - name: Checkout the commit CI verified
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # Full history: the plan diffs from the commit staging serves, which
+          # can be any number of commits back.
+          fetch-depth: 0
+          # Nothing here talks to the remote after checkout; the plan's git
+          # calls are local. Third-party actions run below, and this job holds
+          # staging secrets.
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # `vercel build` runs each app's own build, which needs the workspace's
+      # dependencies: both apps import from `packages/`.
+      - name: Install dependencies
+        run: npm ci
+
+      # Pinned, like every other CLI this repo installs in CI. An unpinned
+      # `@latest` makes the deploy path depend on whatever Vercel published
+      # this morning.
+      - name: Install Vercel CLI
+        run: npm install --global vercel@59.11.7
+
+      # Before the injection too: a third-party action, and it needs no secret.
+      - name: Setup Supabase CLI
+        uses: ./.github/actions/supabase-cli
+
+      # Names only, never values. `deploy-vercel.mjs` runs every Vercel CLI
+      # process on these names alone and hands `vercel build` its project's app
+      # keys on top, so the rest of the store the next step injects stays out of
+      # them. It must run immediately BEFORE the injection: a baseline taken
+      # after it holds the whole store, and the script refuses one that
+      # contains an app key.
+      - name: Record the job's environment names before Infisical adds to them
+        env:
+          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
+        run: node scripts/ci/record-env-baseline.mjs
+
+      # After every install on purpose, so no package's install script runs
+      # with the staging store in its environment.
+      - name: Inject staging secrets from Infisical
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "staging"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      # BUILD both bundles before anything is applied, so a failed build ships
+      # nothing. Each project's `.vercel` is stashed under $RUNNER_TEMP for the
+      # upload step (`scripts/ci/deploy-vercel.mjs`, `DEPLOY_PHASE`).
+      - name: Build the Vercel preview bundles (web + landing)
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
+          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
+          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          DEPLOY_TARGET: preview
+          DEPLOY_PHASE: build
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+          VERCEL_BUILD_STASH_DIR: ${{ runner.temp }}/vercel-builds
+          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
+        run: node scripts/ci/deploy-vercel.mjs
+
+      # Every run migrates, not only runs whose push touched
+      # `supabase/migrations/`: `supabase db push` applies whatever is pending
+      # and is a no-op when nothing is, so every merge retries a skipped or
+      # failed apply instead of waiting for the next migration-bearing push. The
+      # dry run lists what WAS pending first, so a failed apply's log says what
+      # it was trying to do.
+      - name: Run migrations (dry-run)
+        run: node scripts/run-migration.mjs --env staging --dry-run
+
+      - name: Run migrations (apply)
+        run: node scripts/run-migration.mjs --env staging
+
+      # Compare this commit with the one staging serves (`/health`'s `commit`)
+      # and with `main`'s tip. `deploy` when anything the API image is built
+      # from changed since the served commit, `current` when nothing did (both
+      # only for the tip), `forward` for a newer non-tip commit with changes,
+      # and `stale` otherwise. The reasoning is in the script header.
+      - name: Plan the deploy
+        id: plan
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/ci/plan-staging-deploy.mjs
+
+      # Deploy-by-commit through the Render API (#2505), the script
+      # `deploy-production.yml` uses. It polls the deploy it created to a
+      # terminal state, so a failed build fails this job.
+      - name: Deploy the commit to Render
+        if: steps.plan.outputs.deploy == 'true'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: srv-d6lqsq75r7bs73c2fdc0
+          SERVICE_LABEL: frapp-api-staging
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/ci/deploy-render-production.mjs
+
+      # Render's `live` only means `GET /health` answered, which the previous
+      # instance also does while the new one switches in. This polls
+      # `/health/ready` until it answers 2xx AND reports the planned commit
+      # (this run's when it deployed, else the one staging already served). It
+      # runs on a `current` plan too, so a green non-stale run always means the
+      # API was seen serving and ready before any frontend that calls it ships.
+      - name: Verify staging serves the commit
+        if: steps.plan.outputs.plan != 'stale'
+        env:
+          SERVICE_LABEL: frapp-api-staging
+          DEPLOY_SHA: ${{ steps.plan.outputs.verify_sha }}
+        run: node scripts/ci/verify-served-commit.mjs
+
+      # UPLOAD the bundles built above, only once the API they call is verified.
+      # A `stale` plan skips it: the frontends staging serves are this commit's
+      # or newer. The deployment ids are captured from stdout for the alias step.
+      - name: Upload web + landing to staging
+        id: upload
+        if: steps.plan.outputs.plan != 'stale'
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
+          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
+          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          DEPLOY_TARGET: preview
+          DEPLOY_PHASE: upload
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+          VERCEL_BUILD_STASH_DIR: ${{ runner.temp }}/vercel-builds
+          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
+        run: |
+          set -euo pipefail
+          node scripts/ci/deploy-vercel.mjs | tee "${RUNNER_TEMP:-/tmp}/vercel.log"
+          {
+            echo "web_id=$(grep -oP '^vercel_deployment_id\[frapp-web\]=\K.*' "${RUNNER_TEMP:-/tmp}/vercel.log" | tail -n1)"
+            echo "landing_id=$(grep -oP '^vercel_deployment_id\[frapp-landing\]=\K.*' "${RUNNER_TEMP:-/tmp}/vercel.log" | tail -n1)"
+          } >> "$GITHUB_OUTPUT"
+
+      # Vercel does not always attach the custom hostname to a new deployment,
+      # so the staging domain can lag a READY build.
+      #
+      # Keyed on the deployment IDs the upload created, NOT on a search by
+      # commit SHA. The search answers "no match" for reasons unrelated to the
+      # deployment being wrong (a list index that has not caught up, a lost
+      # `--meta` flag) and then exits 0, leaving the hostname on the previous
+      # build with this job green. It also has no channel filter, so for a
+      # commit deployed to both channels it could alias the staging hostname to
+      # the PRODUCTION build. See the header of the alias script.
+      #
+      # An empty id is a failure, not a skip, and the explicit `-z` check below
+      # is the ONLY thing that makes it one, so do not trim it as redundant.
+      # `set -u` does not help (the vars are set, to the empty string), and the
+      # upload step stays green when a `grep` matches nothing, because `echo`
+      # exits 0. Without the check the alias script would fall back to its
+      # SHA-search path and could exit 0 having aliased nothing.
+      - name: Point the staging hostnames at the new deployments
+        if: steps.plan.outputs.plan != 'stale'
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          WEB_DEPLOYMENT_ID: ${{ steps.upload.outputs.web_id }}
+          LANDING_DEPLOYMENT_ID: ${{ steps.upload.outputs.landing_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WEB_DEPLOYMENT_ID:-}" ] || [ -z "${LANDING_DEPLOYMENT_ID:-}" ]; then
+            echo "::error::The upload step reported no deployment id for one or both projects (web='${WEB_DEPLOYMENT_ID:-}', landing='${LANDING_DEPLOYMENT_ID:-}'). Refusing to alias a staging hostname without knowing what to point it at."
+            exit 1
+          fi
+          VERCEL_DEPLOYMENT_ID="$WEB_DEPLOYMENT_ID" \
+            VERCEL_STAGING_ALIAS=app.staging.frapp.live \
+            SERVICE_LABEL=frapp-web \
+            node scripts/ci/ensure-vercel-staging-alias.mjs
+          VERCEL_DEPLOYMENT_ID="$LANDING_DEPLOYMENT_ID" \
+            VERCEL_STAGING_ALIAS=staging.frapp.live \
+            SERVICE_LABEL=frapp-landing \
+            node scripts/ci/ensure-vercel-staging-alias.mjs
+
+  # ── Deploy outcome: alert on failure, state plainly what happened ──────────
+  # A `workflow_run` failure lands on no commit and no PR, so without this a
+  # failed staging deploy produced no commit status, no PR check and no
+  # notification. That hid a 100% deploy failure rate for 71 days (#763), and
+  # ADR-21's Git unlink froze both staging hosts for days (#1674).
+  #
+  # Writes a step summary and an annotation saying whether this run DEPLOYED,
+  # FAILED, found the API UP TO DATE (plan `current`; the frontends still
+  # uploaded), or was SUPERSEDED (plan `stale`, or a successful `forward`
+  # deploy of a commit that isn't main's tip), and upserts or closes one P1
+  # tracking issue, so "alert issue open" means "the staging deploy path is
+  # broken right now" (owner decision on #2803: P1, as Deploy API was).
+  deploy-outcome:
+    needs: [deploy]
+    # `always()` alone is NOT enough: a skipped dependency does not stop a job
+    # that uses always(), so on every CI-failed run this would report "deployed
+    # NOTHING", true but noise. Repeating the deploy job's own conditions means
+    # this job runs exactly when a deploy was eligible, and a deploy job that
+    # then did not run is escalated as a failure (a configuration defect).
+    #
+    # Keep these conditions in sync with the `deploy` job above: GitHub Actions
+    # has no way to share a job-level `if:`, and
+    # `deploy-staging-workflow.test.mjs` fails if they drift.
+    #
+    # `always()` rather than `!cancelled()`, deliberately: a CANCELLED deploy
+    # raises the alert, because `FAILED_RESULTS` in deploy-alert.mjs counts
+    # `cancelled` as a failure ("a cancelled deploy is not a deploy"). The cost:
+    # cancelling a superseded queued run by hand files an alert, which closes as
+    # soon as the run behind it deploys.
+    if: |
+      always() &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The ONLY job here with any write scope, kept job-scoped so the
+      # workflow-level `contents: read` stays as narrow as it is.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # deploy-alert.mjs is dependency-free (global fetch + node:fs on the
+      # runner's preinstalled Node): no setup-node, no npm ci.
+      - name: Report deploy outcome and alert on failure
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Required. deploy-alert.mjs serves more than one workflow and refuses
+          # to guess: an absent or unknown value is a hard error.
+          ALERT_CONFIG: deploy-staging
+          DEPLOY_NEEDS: ${{ toJSON(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/ci/deploy-alert.mjs

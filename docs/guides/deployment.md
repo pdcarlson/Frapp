@@ -33,19 +33,19 @@ For the full operator runbook (DNS, provider setup, and detailed checklists), us
   on the runner and uploads it (`vercel build --prod` then `vercel deploy --prebuilt --prod`) —
   since 2026-09-06 as two phases, the build *before* the migration applies and the upload after
   Render is healthy (`DEPLOY_PHASE` in `scripts/ci/deploy-vercel.mjs`) —
-  replacing the `gitSource` call the retired integration used to serve; the same path deploys
-  staging from `deploy-vercel-staging.yml` after CI passes. **ADR-21** in
+  replacing the `gitSource` call the retired integration used to serve; the same two phases deploy
+  staging from `deploy-staging.yml` after CI passes. **ADR-21** in
   [`spec/architecture/adr/adr-21.md`](../../spec/architecture/adr/adr-21.md) is the canonical record of the
   unlink — the per-project dates, the freeze points and every live breakage. **#1579** repaired the
   guardrail and `verify-deployments.yml`'s Vercel jobs on 2026-09-02: the assertion was
   **inverted** so a *present* Git link is the violation, rather than deleted, and the two Vercel
   verify jobs were removed. **#1578** (2026-09-04) then built the replacement: CI-driven
-  `vercel build` + `vercel deploy --prebuilt`, for staging (`deploy-vercel-staging.yml`, after
-  green CI on `main`) and production (`deploy-production.yml`, on a dispatched SHA). The `git`
+  `vercel build` + `vercel deploy --prebuilt`, for staging (`deploy-vercel-staging.yml`, now
+  `deploy-staging.yml`, after green CI on `main`) and production (`deploy-production.yml`, on a dispatched SHA). The `git`
   block and the `ignoreCommand: "exit 1"` pin in each app's `vercel.json` govern nothing while the
   projects stay unlinked, but **must not be deleted** — they are the versioned form of settings
   that are otherwise dashboard-only.
-- **Staging API deployment (Render) is automated, by commit** ([#2505](https://github.com/pdcarlson/Frapp/issues/2505), 2026-09-25): after green CI on `main`, `.github/workflows/deploy-api.yml` applies the staging migrations, deploys **that commit** to `frapp-api-staging` through the Render API when anything the API image is built from changed since the commit staging serves, and waits until `/health/ready` reports it. Render-side auto-deploy **must be off** on staging, as on production, and `scripts/ci/staging-conformance.mjs` asserts it. **Last verified: 2026-09-25** (Render API): it was still **on**; turning it off is owner step [#2679](https://github.com/pdcarlson/Frapp/issues/2679). The **production** service is deployed by `commitId` through the Render API by `deploy-production.yml`, which requires its auto-deploy to be **off** — a dashboard-only setting asserted by `scripts/ci/production-guardrails.mjs`. Production **migrations** run inside that same workflow, after a replay against production's live applied state — see `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
+- **Staging deployment is automated, by commit, in one ordered job** ([#2505](https://github.com/pdcarlson/Frapp/issues/2505), 2026-09-25; [#2803](https://github.com/pdcarlson/Frapp/issues/2803), 2026-09-28): after green CI on `main`, `.github/workflows/deploy-staging.yml` builds web and landing, applies the staging migrations, deploys **that commit** to `frapp-api-staging` through the Render API when anything the API image is built from changed since the commit staging serves, waits until `/health/ready` reports it, and only then uploads web and landing. The full order: [`ci-cd.md` § How Deployments Are Gated](../internal/ops/deployment/ci-cd.md#how-deployments-are-gated). Render-side auto-deploy **must be off** on staging, as on production, and `scripts/ci/staging-conformance.mjs` asserts it. **Last verified: 2026-09-25** (Render API): it was still **on**; turning it off is owner step [#2679](https://github.com/pdcarlson/Frapp/issues/2679). The **production** service is deployed by `commitId` through the Render API by `deploy-production.yml`, which requires its auto-deploy to be **off** — a dashboard-only setting asserted by `scripts/ci/production-guardrails.mjs`. Production **migrations** run inside that same workflow, after a replay against production's live applied state — see `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
 - **Last verified: 2026-03-22** (unverified since — no EAS access from agent sessions) — Mobile App Store / Play Store deployment is still being finalized (EAS); treat store releases as manual until the release runbook is complete.
 
 ## Deployment sources of truth

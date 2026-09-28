@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Decide whether `deploy-api.yml`'s `deploy-staging` deploys this run's commit,
+// Decide whether `deploy-staging.yml`'s `deploy` job deploys this run's commit,
 // by comparing it with the commit `frapp-api-staging` is serving now (#2505).
 //
 // ── Why the served commit, not `HEAD~1` ─────────────────────────────────────
@@ -8,10 +8,10 @@
 // (staging-conformance asserts it; #2679 turns it off). So a deploy this job
 // skips is one that never happens, and a gate that asks "did THIS push change
 // the API?" skips too much:
-//   * an API commit whose own CI failed or was replaced gets no Deploy API run,
+//   * an API commit whose own CI failed or was replaced gets no Deploy staging run,
 //     and the next push, if it touches no API path, diffs only itself;
 //   * after a failed Render build, the next docs-only merge would skip, and the
-//     Deploy API alert would close on a run that deployed nothing.
+//     Deploy staging alert would close on a run that deployed nothing.
 // Asking "has anything the image is built from changed since what staging
 // serves?" covers all of these: the diff runs from the served commit, so it
 // carries every change that has not reached staging yet.
@@ -176,7 +176,7 @@ export async function readServedCommit(healthUrl, { fetchImpl = resilientFetch }
 }
 
 /**
- * The step outputs `deploy-api.yml` reads: `plan`, `deploy`, `verify_sha`.
+ * The step outputs `deploy-staging.yml` reads: `plan`, `deploy`, `verify_sha`.
  * `reason` quotes a changed path, which git (with `-z`, unquoted) can hand
  * back containing a newline; written raw, that would start a new output line
  * such as `plan=stale`. Control characters become spaces.

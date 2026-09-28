@@ -36,11 +36,11 @@ created after the gate cannot be added to it.
 
 ## Automated Migration Context
 
-Migrations are now applied automatically in the deploy pipeline (see `.github/workflows/deploy-api.yml`):
-- **Staging:** Runs automatically on merge to `main` (no approval needed)
+Migrations are now applied automatically in the deploy pipeline:
+- **Staging:** Runs automatically on merge to `main` (no approval needed), in `.github/workflows/deploy-staging.yml`
 - **Production:** Never automatic. `deploy-production.yml` applies migrations for one named commit, and **pauses on the `production` environment's required reviewer** before it applies (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). That approval is the only human gate since #1340 retired the `main` → `production` promotion PR. Before applying, the workflow rehearses the migration against production's live applied state with `check-migration-replay.mjs`. The code-free path — apply migrations without shipping code — is now the same workflow run with `scope: migrations-only`, so it rehearses too; the separate `Migrate production` workflow that skipped the rehearsal (and SHA validation, and the guardrail preflight, and the working-tree fence) has been deleted. (The old justification for saying the environment did not gate anything — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.)
 
-If an automated migration fails, the entire deploy pipeline halts — no API deploy happens. Check the GitHub Actions run for the error output.
+If an automated migration fails, the entire deploy pipeline halts: no API deploy happens, and no web or landing upload. Check the GitHub Actions run for the error output.
 
 ## When to trigger rollback
 

@@ -735,7 +735,7 @@ test("default staging toRun includes render-auto-deploy — the function alone i
   const toRun = source.slice(source.indexOf("const toRun = checks ??"));
   assert.match(toRun, /id: "render-auto-deploy"/);
   assert.match(toRun, /checkRenderAutoDeploy\(/);
-  // Since #2505 staging expects auto-deploy OFF, like production: deploy-api.yml
+  // Since #2505 staging expects auto-deploy OFF, like production: deploy-staging.yml
   // deploys it by commit. The pre-#2505 expectation must not come back.
   assert.match(source, /autoDeploy !== "no"/);
   assert.doesNotMatch(source, /autoDeploy !== "yes"/);
@@ -824,7 +824,7 @@ test("render-auto-deploy skips rather than fails when the Render credential is a
   assert.match(result.detail, /RENDER_API_KEY/);
 });
 
-test("render-auto-deploy fails when auto-deploy is on — it builds before CI and races Deploy API", async () => {
+test("render-auto-deploy fails when auto-deploy is on — it builds before CI and races Deploy staging", async () => {
   const result = await checkRenderAutoDeploy({
     apiKey: "rk",
     serviceId: "srv-test",

@@ -302,8 +302,8 @@ describe("gitResolve", () => {
 });
 
 describe("formatPlanOutputs", () => {
-  // The keys deploy-api.yml reads (`steps.plan.outputs.plan|deploy|verify_sha`,
-  // pinned from that side by deploy-api-workflow.test.mjs).
+  // The keys deploy-staging.yml reads (`steps.plan.outputs.plan|deploy|verify_sha`,
+  // pinned from that side by deploy-staging-workflow.test.mjs).
   it("writes the keys the workflow reads", () => {
     const out = formatPlanOutputs({ plan: "deploy", deploy: true, verifySha: HEAD, reason: "r" });
     assert.match(out, /^plan=deploy$/m);

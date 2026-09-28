@@ -55,9 +55,10 @@
 // database under a half-updated production with no tag naming what was live:
 // exactly the split run 33275321347 produced. So `deploy-production.yml` now
 // builds BOTH bundles before anything is applied and uploads them after Render
-// is healthy. That needs the two halves to be callable separately, with the
-// built output surviving in between — hence `buildVercelProject`,
-// `deployPrebuiltVercelProject`, and the `stashDir` they hand off through.
+// is healthy, and `deploy-staging.yml` does the same since #2803. That needs
+// the two halves to be callable separately, with the built output surviving in
+// between — hence `buildVercelProject`, `deployPrebuiltVercelProject`, and the
+// `stashDir` they hand off through, which both require.
 //
 // The stash moves the whole `.vercel` directory, not just `.vercel/output`:
 // `vercel pull` writes `project.json` and the environment file beside the
@@ -429,6 +430,20 @@ async function keepOnlySystemRows({ label, cwd, target, keys, supplied, withheld
 }
 
 /**
+ * A build or upload without a stash has nowhere to hand its output across the
+ * two phases: the build would leave it where the next build overwrites it, and
+ * the upload would ship whatever `.vercel` holds. Refused, not defaulted.
+ */
+function requireStashDir(stashDir, label) {
+  if (!stashDir) {
+    throw new Error(
+      `[${label}] No stash dir: every Vercel deploy builds in one phase and uploads in another ` +
+        `(\`deploy-vercel.mjs\`, \`DEPLOY_PHASE\`). Pass the project's stash.`,
+    );
+  }
+}
+
+/**
  * A build or upload without a `buildEnv` would run the CLI on the ambient job
  * environment, which holds the whole Infisical store. Refused, not defaulted.
  */
@@ -445,11 +460,12 @@ function requireBuildEnv(buildEnv, label) {
 /**
  * Pull and build ONE project. Uploads nothing.
  *
- * With `stashDir` set, the whole `.vercel` directory the build produced is moved
- * there afterwards, so a later `deployPrebuiltVercelProject` can upload exactly
- * this output — after other projects have built, and after other steps have run
- * in between. Without it the output is left in place for an immediate deploy,
- * which is what `buildAndDeployVercelProject` does.
+ * The whole `.vercel` directory the build produced is moved to `stashDir`
+ * afterwards, so a later `deployPrebuiltVercelProject` can upload exactly this
+ * output, after other projects have built and other steps have run in
+ * between. `stashDir` is required: every caller builds in one phase and
+ * uploads in another (staging too since #2803), and a build left in place is
+ * one the next project's build overwrites.
  *
  * `buildEnv` (from `infisicalBuildEnv`) is required: `.vercel` is emptied
  * first, every step runs on its `baseEnv`, the pulled env file is reduced to
@@ -467,7 +483,7 @@ export async function buildVercelProject({
   sha,
   label = projectId,
   cwd,
-  stashDir = null,
+  stashDir,
   buildEnv,
   cliCommand = "vercel",
   runCommand = runCommandCapturing,
@@ -476,12 +492,13 @@ export async function buildVercelProject({
   logger = console,
 }) {
   const { baseEnv, appEnv, appKeys, withheld = [] } = requireBuildEnv(buildEnv, label);
+  requireStashDir(stashDir, label);
   const identity = { token, orgId, projectId, gitSha: sha };
   const common = { label, cwd, cliCommand, runCommand, logger };
 
   // Start from an empty `.vercel`, so the pull cannot merge in the previous
-  // project's rows (header above). On the two-phase path each build is also
-  // stashed away before the next one pulls, so this removes nothing there.
+  // project's rows (header above). Each build is also stashed away before the
+  // next one pulls, so this normally removes nothing.
   await stashFs.remove(vercelDirFor(cwd));
 
   await runVercelStep({
@@ -503,20 +520,18 @@ export async function buildVercelProject({
     args: vercelBuildArgs({ target }),
   });
 
-  if (stashDir) {
-    const vercelDir = vercelDirFor(cwd);
-    if (!(await stashFs.exists(vercelDir))) {
-      throw new Error(
-        `[${label}] \`vercel build\` exited 0 but left no ${vercelDir} to stash. ` +
-          `Nothing would be uploaded later; refusing to call this build a success.`,
-      );
-    }
-    // A stale stash from an earlier attempt must not be merged into — the
-    // upload would then carry files from two different builds.
-    await stashFs.remove(stashDir);
-    await stashFs.move(vercelDir, stashDir);
-    logger.log?.(`[${label}] Stashed the built output at ${stashDir}.`);
+  const vercelDir = vercelDirFor(cwd);
+  if (!(await stashFs.exists(vercelDir))) {
+    throw new Error(
+      `[${label}] \`vercel build\` exited 0 but left no ${vercelDir} to stash. ` +
+        `Nothing would be uploaded later; refusing to call this build a success.`,
+    );
   }
+  // A stale stash from an earlier attempt must not be merged into — the
+  // upload would then carry files from two different builds.
+  await stashFs.remove(stashDir);
+  await stashFs.move(vercelDir, stashDir);
+  logger.log?.(`[${label}] Stashed the built output at ${stashDir}.`);
 
   return { stashDir };
 }
@@ -524,12 +539,11 @@ export async function buildVercelProject({
 /**
  * Upload ONE project's already-built output, returning the deployment hostname.
  *
- * With `stashDir` set, that directory is moved back to `.vercel` first,
- * replacing whatever is there — on the production path that is the OTHER
- * project's leftovers, and uploading those would ship landing's bundle to the
- * web project while every status page reported success. A missing stash is a
- * hard failure, not a fall-through to whatever `.vercel` happens to hold, for
- * the same reason.
+ * `stashDir` (required) is moved back to `.vercel` first, replacing whatever is
+ * there: the OTHER project's leftovers, and uploading those would ship
+ * landing's bundle to the web project while every status page reported
+ * success. A missing stash is a hard failure, not a fall-through to whatever
+ * `.vercel` happens to hold, for the same reason.
  */
 export async function deployPrebuiltVercelProject({
   target,
@@ -540,7 +554,7 @@ export async function deployPrebuiltVercelProject({
   projectId,
   label = projectId,
   cwd,
-  stashDir = null,
+  stashDir,
   buildEnv,
   cliCommand = "vercel",
   runCommand = runCommandCapturing,
@@ -548,18 +562,17 @@ export async function deployPrebuiltVercelProject({
   logger = console,
 }) {
   const { baseEnv } = requireBuildEnv(buildEnv, label);
-  if (stashDir) {
-    if (!(await stashFs.exists(stashDir))) {
-      throw new Error(
-        `[${label}] No prebuilt output at ${stashDir}. The build phase for this project ` +
-          `did not run or did not complete; refusing to upload whatever \`.vercel\` holds.`,
-      );
-    }
-    const vercelDir = vercelDirFor(cwd);
-    await stashFs.remove(vercelDir);
-    await stashFs.move(stashDir, vercelDir);
-    logger.log?.(`[${label}] Restored the built output from ${stashDir}.`);
+  requireStashDir(stashDir, label);
+  if (!(await stashFs.exists(stashDir))) {
+    throw new Error(
+      `[${label}] No prebuilt output at ${stashDir}. The build phase for this project ` +
+        `did not run or did not complete; refusing to upload whatever \`.vercel\` holds.`,
+    );
   }
+  const vercelDir = vercelDirFor(cwd);
+  await stashFs.remove(vercelDir);
+  await stashFs.move(stashDir, vercelDir);
+  logger.log?.(`[${label}] Restored the built output from ${stashDir}.`);
 
   // The upload needs no app config, so it runs on the base environment alone.
   const env = vercelCliEnv({
@@ -588,16 +601,4 @@ export async function deployPrebuiltVercelProject({
   }
 
   return { host };
-}
-
-/**
- * Pull, build and deploy ONE project, returning the deployment hostname.
- *
- * The single-phase form, used where nothing needs to happen between build and
- * upload (staging). Sequential by necessity: each step consumes the previous
- * one's output on disk.
- */
-export async function buildAndDeployVercelProject(options) {
-  await buildVercelProject({ ...options, stashDir: null });
-  return deployPrebuiltVercelProject({ ...options, stashDir: null });
 }

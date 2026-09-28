@@ -43,7 +43,7 @@ export class HealthController {
     return this.buildPayload();
   }
 
-  // Strict readiness: the deploy smoke checks (deploy-api.yml, deploy-production.yml)
+  // Strict readiness: the deploy smoke checks (deploy-staging.yml, deploy-production.yml)
   // hit this path instead of /health so a degraded dependency actually fails the gate.
   //
   // The global AllExceptionsFilter flattens every HttpException response to
