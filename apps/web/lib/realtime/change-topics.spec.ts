@@ -1,6 +1,11 @@
-import { describe, expect, test } from "vitest";
+// @vitest-environment node
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { PGlite } from "@electric-sql/pglite";
+import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
+import { vector } from "@electric-sql/pglite-pgvector";
 import {
   CHANGE_EVENT,
   CHANGE_TOPIC_BUILDERS,
@@ -20,222 +25,96 @@ import {
  * `postgres_changes` subscription dead in production for months before #867
  * pinned it down, so it gets a test rather than a comment.
  *
- * The test reads what a fresh replay of `supabase/migrations/` leaves in
- * effect. `20260816140000_realtime_carrier_repair.sql` first wrote these
- * objects and several were re-created since, so it walks the files in apply
- * order and keeps each object's last create or drop (#2593). A form of change
- * it can't model fails the tripwire below rather than slipping past.
+ * It checks what the migrations leave IN EFFECT by applying every
+ * `supabase/migrations/*.sql`, in order, to an in-process Postgres (PGlite),
+ * then reading the catalogs and driving the objects. `20260816140000_realtime_
+ * carrier_repair.sql` first wrote these objects and later migrations re-create
+ * several (#2593). An earlier version of this test read that one file's text,
+ * and a text reader can't keep up with SQL: guards, CASCADE, routine lists,
+ * `format()`, block comments and extra permissive policies each slipped past a
+ * regex. Postgres resolves all of them itself.
+ *
+ * PGlite has no `realtime` schema, so {@link SUBSTRATE} stands up the three
+ * pieces the contract touches, each with Supabase's own signature:
+ * `realtime.messages` (RLS on), `realtime.topic()` (reads the `realtime.topic`
+ * setting, as Supabase's does) and `realtime.send()` (records its arguments
+ * here instead of broadcasting).
  *
  * If this fails, change the other half to match; do not edit the expectation.
- * On the SQL side that is always a NEW migration that drops and re-creates the
- * object (or `create or replace`s a function), never an edit to a shipped one:
- * `supabase db push` skips a version a hosted database already applied, so the
- * edit never reaches staging or production. This test replays files, not those
- * databases, so it can't see that happen — an in-place edit that agrees with
- * `change-topics.ts` passes here while production keeps the old SQL.
+ * On the SQL side that is always a NEW migration, never an edit to a shipped
+ * one: `supabase db push` skips a version a hosted database already applied,
+ * so the edit never reaches staging or production. This test replays files,
+ * not those databases, so it can't see that happen (#2751).
  */
 
 const MIGRATIONS_DIR = join(__dirname, "../../../../supabase/migrations");
 
-interface Migration {
-  name: string;
-  /** Executable SQL only — see {@link stripComments}. */
-  sql: string;
-}
-
 /**
- * A migration with `--` comments stripped.
- *
- * These files are deliberately comment-heavy, and their prose quotes the very
- * SQL these assertions match — the carrier migration's block explaining why
- * each send needs an exception handler names `perform realtime.send(...)` in
- * passing, and counting against the raw text found four sends where three
- * exist. Assertions about what the database *does* must read executable SQL.
+ * What a hosted Supabase database has before the first migration, reduced to
+ * what the migrations and these checks need. The `auth.*` stubs mirror
+ * `scripts/check-pglite-migrations.mjs`. The `authenticated` role must exist
+ * before the migrations run, because most of them grant or create policies
+ * only `if exists (select 1 from pg_roles where rolname = 'authenticated')`.
  */
-function stripComments(sql: string): string {
-  return sql.replace(/--[^\n]*/g, "");
-}
+const SUBSTRATE = `
+  create schema auth;
+  create function auth.uid() returns uuid language sql stable
+    as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
+  create function auth.role() returns text language sql stable
+    as $$ select 'authenticated'::text $$;
+  create function auth.jwt() returns jsonb language sql stable
+    as $$ select '{}'::jsonb $$;
+  create role authenticated nologin;
 
-function loadMigrations(): Migration[] {
-  return readdirSync(MIGRATIONS_DIR)
+  create schema realtime;
+  create table realtime.messages (
+    id bigserial primary key,
+    topic text not null,
+    extension text not null default 'broadcast',
+    event text,
+    payload jsonb,
+    private boolean not null default true
+  );
+  alter table realtime.messages enable row level security;
+  grant usage on schema realtime to authenticated;
+  grant select, insert on realtime.messages to authenticated;
+  create function realtime.topic() returns text language sql stable
+    as $$ select nullif(current_setting('realtime.topic', true), '') $$;
+  create table realtime.sent (payload jsonb, event text, topic text, private boolean);
+  create function realtime.send(
+    payload jsonb, event text, topic text, private boolean default true
+  ) returns void language sql
+    as $$ insert into realtime.sent values (payload, event, topic, private) $$;
+`;
+
+async function replayMigrations(): Promise<PGlite> {
+  const db = new PGlite({ extensions: { pgcrypto, vector } });
+  await db.waitReady;
+  await db.exec(SUBSTRATE);
+  const files = readdirSync(MIGRATIONS_DIR)
     .filter((name) => name.endsWith(".sql"))
-    .sort()
-    .map((name) => ({
-      name,
-      sql: stripComments(readFileSync(join(MIGRATIONS_DIR, name), "utf8")),
-    }));
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * A regex source for an object name as Postgres resolves it here: optionally
- * double-quoted and, in `public`, optionally schema-qualified. About half the
- * migrations write function names bare, and `search_path` resolves them to
- * `public`, so a pattern that required `public.` would miss a live redefinition.
- * `name` is a regex source, so a caller can match a family (`realtime_notify_\w+`).
- */
-function sqlName(name: string, schema = "public"): string {
-  const qualified = `"?${schema}"?\\s*\\.\\s*`;
-  const prefix = schema === "public" ? `(?:${qualified})?` : qualified;
-  return `${prefix}"?${name}"?(?![\\w"])`;
-}
-
-/** How one database object is created and dropped in migration text. */
-interface ObjectSpec {
-  label: string;
-  /** Matches where a defining statement starts. Source only; flags are added. */
-  create: string;
-  /** Matches a statement that removes the object. */
-  drop: string;
-  /** The defining statement's text, from where `create` matched. */
-  extract: (sql: string, start: number) => string;
-}
-
-/** A function body runs to the close of its dollar quote (`as $$ … $$`). */
-function throughDollarQuotedBody(sql: string, start: number): string {
-  const open = /\bas\s+(\$\w*\$)/i.exec(sql.slice(start));
-  const tag = open?.[1];
-  if (!open || !tag) return sql.slice(start);
-  const bodyStart = start + open.index + open[0].length;
-  const close = sql.indexOf(tag, bodyStart);
-  return close === -1 ? sql.slice(start) : sql.slice(start, close + tag.length);
-}
-
-/**
- * Anything else runs to its `;`, or to the dollar quote that closes it when it
- * is dynamic SQL inside `execute $p$ … $p$` — the form policies take here,
- * because they are guarded on roles and schemas that bare Postgres lacks.
- */
-function throughStatementEnd(sql: string, start: number): string {
-  const rest = sql.slice(start);
-  const end = /;|\$\w*\$/.exec(rest);
-  return end ? rest.slice(0, end.index) : rest;
-}
-
-const OR_REPLACE = `(?:or\\s+replace\\s+)?`;
-
-function pingFunction(table: ChangeTable): ObjectSpec {
-  const name = sqlName(`realtime_notify_${table}`);
-  return {
-    label: `function public.realtime_notify_${table}()`,
-    create: `create\\s+${OR_REPLACE}function\\s+${name}\\s*\\(`,
-    drop: `drop\\s+function\\s+(?:if\\s+exists\\s+)?${name}`,
-    extract: throughDollarQuotedBody,
-  };
-}
-
-function trigger(name: string): ObjectSpec {
-  return {
-    label: `trigger ${name}`,
-    create: `create\\s+${OR_REPLACE}(?:constraint\\s+)?trigger\\s+"?${name}"?(?![\\w"])`,
-    drop: `drop\\s+trigger\\s+(?:if\\s+exists\\s+)?"?${name}"?(?![\\w"])`,
-    extract: throughStatementEnd,
-  };
-}
-
-function policy(name: string, table: string, schema: string): ObjectSpec {
-  const target = `"?${name}"?\\s+on\\s+${sqlName(table, schema)}`;
-  return {
-    label: `policy ${name} on ${schema}.${table}`,
-    create: `create\\s+policy\\s+${target}`,
-    drop: `drop\\s+policy\\s+(?:if\\s+exists\\s+)?${target}`,
-    extract: throughStatementEnd,
-  };
-}
-
-interface Statement {
-  migration: string;
-  /** The defining text, or `null` for a drop. */
-  text: string | null;
-  /** A drop of the same object came earlier in the same migration. */
-  droppedFirst: boolean;
-}
-
-/** Every create and drop of the object, in apply order. */
-function statementsOf(
-  migrations: readonly Migration[],
-  spec: ObjectSpec,
-): Statement[] {
-  const out: Statement[] = [];
-  for (const { name, sql } of migrations) {
-    const found = [
-      ...[...sql.matchAll(new RegExp(spec.create, "gi"))].map((m) => ({
-        at: m.index,
-        text: spec.extract(sql, m.index) as string | null,
-      })),
-      ...[...sql.matchAll(new RegExp(spec.drop, "gi"))].map((m) => ({
-        at: m.index,
-        text: null,
-      })),
-    ].sort((a, b) => a.at - b.at);
-    let droppedHere = false;
-    for (const { text } of found) {
-      out.push({ migration: name, text, droppedFirst: droppedHere });
-      if (text === null) droppedHere = true;
+    .sort();
+  for (const file of files) {
+    try {
+      await db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    } catch (error) {
+      throw new Error(`${file} did not apply: ${String(error)}`);
     }
   }
-  return out;
-}
-
-interface Definition {
-  migration: string;
-  text: string;
+  return db;
 }
 
 /**
- * The object's definition as the migrations leave it: the text of its last
- * create, or `null` when a drop came last (or nothing ever created it).
- *
- * Text-level, so SQL assembled at run time (`format('%I', …)`) is invisible to
- * it; none of the objects here is built that way.
+ * Runs `body` in a transaction that is always rolled back, so each check and
+ * each drift fixture sees the replayed schema and nothing another one did.
  */
-function effectiveDefinition(
-  migrations: readonly Migration[],
-  spec: ObjectSpec,
-): Definition | null {
-  const last = statementsOf(migrations, spec).at(-1);
-  return last?.text == null
-    ? null
-    : { migration: last.migration, text: last.text };
-}
-
-/**
- * The effective definition, which must exist and must have really applied.
- *
- * Text order is not control flow. The carrier migration creates its policies
- * behind `if exists (… pg_policies …) then return`, so a later migration that
- * copied that block would read here as the new definition while every hosted
- * database, which already has the policy, skipped it. So every create after
- * the first must either replace in place (`create or replace`) or come after a
- * drop of the same object in the same migration.
- */
-function requireDefinition(
-  migrations: readonly Migration[],
-  spec: ObjectSpec,
-): Definition {
-  const statements = statementsOf(migrations, spec);
-  const unapplied = statements
-    .filter(
-      (s, i) =>
-        s.text !== null &&
-        !s.droppedFirst &&
-        !new RegExp(`^create\\s+or\\s+replace\\b`, "i").test(s.text) &&
-        statements.slice(0, i).some((earlier) => earlier.text !== null),
-    )
-    .map((s) => s.migration);
-  expect(
-    unapplied,
-    `${spec.label} is re-created without a drop first, so a database that already has it may skip the create`,
-  ).toEqual([]);
-  const definition = effectiveDefinition(migrations, spec);
-  expect(
-    definition,
-    `no migration leaves ${spec.label} in effect`,
-  ).not.toBeNull();
-  return definition as Definition;
+async function rolledBack<T>(db: PGlite, body: () => Promise<T>): Promise<T> {
+  await db.exec("begin");
+  try {
+    return await body();
+  } finally {
+    await db.exec("rollback");
+  }
 }
 
 /**
@@ -259,160 +138,216 @@ const SCOPES = {
 
 const TABLES = Object.keys(SCOPES) as ChangeTable[];
 
-/** The prefix the client builds, read from `change-topics.ts` itself. */
-const prefixOf = (table: ChangeTable) => changeTopic(table, "");
-
-const SEND_CALL = /perform\s+realtime\.send\((?:[^()]|\([^()]*\))*\)/gi;
-
 /**
- * The ping function scopes by the right column and sends exactly one ping on
+ * The ping function sends one private `change` ping per distinct scope, on
  * the client's topic.
  *
- * The triggers are STATEMENT-level over a transition table, so each function
- * loops `select distinct <scope column> from changed` and concatenates the
- * prefix onto that scope. Both halves are asserted — the prefix alone would not
- * catch a function reading the wrong column, which is the mistake that
- * silently sends every ping to the wrong topic.
- *
- * `realtime.send(payload, event, topic, private)` is matched POSITIONALLY,
- * inside the call's own parens: the event must be `change`, the topic the
- * client's prefix, and the fourth argument `true`. A ping sent non-private
- * would bypass `realtime.messages` RLS entirely and reach any client that
- * guessed the topic string, so that is the security-critical argument. (An
- * earlier version counted file-global `/^\s+true\s*$/` lines, which collapsed
- * to 0 on a cosmetic reflow and passed a `true` → `false` flip whenever an
- * unrelated line-final `true` existed elsewhere.)
+ * Driven, not read: a temp table carrying only the scope column gets a
+ * statement-level trigger on the effective function, and three rows over two
+ * scopes go in. A function that reads another column errors on the missing
+ * column (its handler turns that into a warning and no pings); a wrong prefix
+ * or event shows in the recorded topic; and `private` must be `true`, because
+ * a non-private ping bypasses `realtime.messages` RLS and reaches any client
+ * that guessed the topic string.
  */
-function checkPingFunction(
-  migrations: readonly Migration[],
-  table: ChangeTable,
-) {
-  const { text } = requireDefinition(migrations, pingFunction(table));
-  expect(text).toMatch(
-    new RegExp(
-      `for\\s+v_scope\\s+in\\s+select\\s+distinct\\s+${SCOPES[table].column}\\s+from\\s+changed\\b`,
-      "i",
-    ),
+async function checkPingFunction(db: PGlite, table: ChangeTable) {
+  const fn = `public.realtime_notify_${table}()`;
+  const exists = await db.query<{ oid: string | null }>(
+    `select to_regprocedure($1)::text as oid`,
+    [fn],
   );
-  const sends = text.match(SEND_CALL) ?? [];
-  expect(sends, `realtime.send calls in realtime_notify_${table}`).toHaveLength(
-    1,
-  );
-  expect(sends[0]).toMatch(
-    new RegExp(
-      `,\\s*'${CHANGE_EVENT}'\\s*,\\s*'${escapeRegExp(prefixOf(table))}'\\s*\\|\\|\\s*v_scope::text\\s*,\\s*true\\s*\\)$`,
-      "i",
-    ),
+  expect(exists.rows[0]?.oid, `${fn} exists`).not.toBeNull();
+
+  const [a, b] = [randomUUID(), randomUUID()];
+  const column = SCOPES[table].column;
+  await db.exec(`
+    create temp table ping_probe (${column} uuid);
+    create trigger ping_probe after insert on pg_temp.ping_probe
+      referencing new table as changed
+      for each statement execute function ${fn};
+    delete from realtime.sent;
+  `);
+  await db.query(`insert into ping_probe values ($1), ($1), ($2)`, [a, b]);
+  const sent = await db.query<{
+    event: string;
+    topic: string;
+    private: boolean;
+  }>(`select event, topic, private from realtime.sent order by topic`);
+  expect(sent.rows).toEqual(
+    [a, b]
+      .map((id) => changeTopic(table, id))
+      .sort()
+      .map((topic) => ({
+        event: CHANGE_EVENT,
+        topic,
+        private: true,
+      })),
   );
 }
 
-const TRIGGER_OPS = [
-  { suffix: "ins", op: "insert", rows: "new" },
-  { suffix: "upd", op: "update", rows: "new" },
-  { suffix: "del", op: "delete", rows: "old" },
+const TG = { ROW: 1, BEFORE: 2, INSERT: 4, DELETE: 8, UPDATE: 16, INSTEAD: 64 };
+const OPS = [
+  ["insert", TG.INSERT],
+  ["update", TG.UPDATE],
+  ["delete", TG.DELETE],
 ] as const;
 
 /**
- * Every trigger that ever executed a ping function, however it was named or
- * qualified, resolved to what is still live: exactly the 3 × insert/update/
- * delete set, each STATEMENT-level.
+ * Every trigger that runs a ping function, in any schema, under any name: for
+ * each table exactly one AFTER, STATEMENT-level, enabled trigger per insert,
+ * update and delete, reading the transition table the function expects.
  *
  * Per-row turns one bulk write (markAutoAbsent inserts a row per member) into
  * N subtransactions, N broadcast frames on one topic, and 2N client
  * invalidations that each cancel the in-flight refetch. Statement level with
- * `select distinct` collapses it to one ping per scope. Collecting every name
- * that ever pointed at a ping function is what catches an extra per-row (or
- * constraint, which is always per-row) trigger added beside the nine.
+ * `select distinct` collapses it to one ping per scope. A second trigger on the
+ * same op would double every ping, and a disabled one silences it.
  */
-function checkPingTriggers(migrations: readonly Migration[]) {
-  const everCreated = new Set<string>();
-  const pointsAtPing = new RegExp(
-    `create\\s+${OR_REPLACE}(?:constraint\\s+)?trigger\\s+"?(\\w+)"?[^;]*?execute\\s+(?:function|procedure)\\s+${sqlName("realtime_notify_\\w+")}`,
-    "gi",
-  );
-  for (const { sql } of migrations) {
-    for (const m of sql.matchAll(pointsAtPing)) {
-      everCreated.add((m[1] as string).toLowerCase());
-    }
-  }
-  const live = [...everCreated]
-    .filter((name) => effectiveDefinition(migrations, trigger(name)) !== null)
+async function checkPingTriggers(db: PGlite) {
+  const { rows } = await db.query<{
+    table_schema: string;
+    table_name: string;
+    fn_schema: string;
+    fn_name: string;
+    tgtype: number;
+    tgenabled: string;
+    oldtable: string | null;
+    newtable: string | null;
+  }>(`
+    select tn.nspname as table_schema, c.relname as table_name,
+           pn.nspname as fn_schema, p.proname as fn_name,
+           t.tgtype, t.tgenabled,
+           t.tgoldtable as oldtable, t.tgnewtable as newtable
+    from pg_trigger t
+    join pg_class c on c.oid = t.tgrelid
+    join pg_namespace tn on tn.oid = c.relnamespace
+    join pg_proc p on p.oid = t.tgfoid
+    join pg_namespace pn on pn.oid = p.pronamespace
+    where not t.tgisinternal and p.proname like 'realtime\\_notify\\_%'
+  `);
+  const found = rows
+    .map((r) => {
+      const ops = OPS.filter(([, bit]) => r.tgtype & bit).map(([op]) => op);
+      const shape = [
+        r.tgtype & TG.ROW ? "row" : "statement",
+        r.tgtype & (TG.BEFORE | TG.INSTEAD) ? "before" : "after",
+        r.tgenabled === "O" || r.tgenabled === "A" ? "enabled" : "disabled",
+        r.newtable
+          ? `new:${r.newtable}`
+          : r.oldtable
+            ? `old:${r.oldtable}`
+            : "no-table",
+      ].join(" ");
+      return `${r.table_schema}.${r.table_name} ${ops.join("|")} → ${r.fn_schema}.${r.fn_name} (${shape})`;
+    })
     .sort();
-  expect(live).toEqual(
+  expect(found).toEqual(
     TABLES.flatMap((table) =>
-      TRIGGER_OPS.map(({ suffix }) => `realtime_notify_${table}_${suffix}`),
+      OPS.map(
+        ([op]) =>
+          `public.${table} ${op} → public.realtime_notify_${table} (statement after enabled ${op === "delete" ? "old" : "new"}:changed)`,
+      ),
     ).sort(),
   );
+}
+
+/**
+ * `realtime_messages_scoped_select` lets a subscriber read a change topic
+ * exactly when that topic's scope function says so, called with the id parsed
+ * from the topic; every other topic is denied.
+ *
+ * Driven, not read. The three scope functions are swapped (inside the rolled-
+ * back transaction) for stand-ins that log their call and return a chosen
+ * answer, and a non-owner member of `authenticated` reads one
+ * `realtime.messages` row per topic. So a policy that grants a prefix without
+ * asking (`then true`, `or true`, an earlier catch-all arm, `else true`, a
+ * second permissive policy), asks the wrong function, or reads the id from the
+ * wrong offset (`substring(... from N)` is 1-indexed: the cast then raises on
+ * every subscribe) all fail here. What the real scope functions decide is
+ * theirs to pin, not this contract's.
+ */
+async function checkChangePolicy(db: PGlite) {
+  const answers = new Map<string, string>();
+  for (const { authorise } of Object.values(SCOPES)) {
+    const arg = await db.query<{ name: string }>(
+      `select (proargnames)[1] as name from pg_proc
+       where oid = to_regprocedure('public.' || $1 || '(uuid)')`,
+      [authorise],
+    );
+    expect(arg.rows[0]?.name, `public.${authorise}(uuid) exists`).toBeTruthy();
+    answers.set(authorise, arg.rows[0]?.name as string);
+  }
+  await db.exec(`
+    create temp table scope_calls (fn text, id uuid);
+    create role rls_probe nologin;
+    grant authenticated to rls_probe;
+    insert into realtime.messages (topic) values ('any');
+    ${[...answers]
+      .map(
+        ([fn, arg]) => `
+    create or replace function public.${fn}(${arg} uuid) returns boolean
+      language sql volatile security definer set search_path = pg_catalog, pg_temp
+      as $$ insert into pg_temp.scope_calls values ('${fn}', ${arg})
+            returning current_setting('test.scope_answer')::boolean $$;`,
+      )
+      .join("\n")}
+  `);
+
+  /** Rows the probe sees under `topic`, or the error the policy raised. */
+  const read = async (topic: string, answer: boolean) => {
+    await db.exec("savepoint probe; delete from scope_calls");
+    try {
+      await db.query(`select set_config('realtime.topic', $1, true)`, [topic]);
+      await db.query(`select set_config('test.scope_answer', $1, true)`, [
+        String(answer),
+      ]);
+      await db.exec("set local role rls_probe");
+      const seen = await db.query<{ n: number }>(
+        `select count(*)::int as n from realtime.messages`,
+      );
+      await db.exec("reset role");
+      const calls = await db.query<{ fn: string; id: string }>(
+        `select fn, id::text from scope_calls`,
+      );
+      return { visible: seen.rows[0]?.n, calls: calls.rows };
+    } catch (error) {
+      return { error: String(error) };
+    } finally {
+      await db.exec("rollback to savepoint probe; reset role");
+    }
+  };
 
   for (const table of TABLES) {
-    for (const { suffix, op, rows } of TRIGGER_OPS) {
-      const { text } = requireDefinition(
-        migrations,
-        trigger(`realtime_notify_${table}_${suffix}`),
-      );
-      expect(text).toMatch(
-        new RegExp(
-          `^create\\s+${OR_REPLACE}trigger\\s+\\S+\\s+after\\s+${op}\\s+on\\s+${sqlName(table)}\\s+referencing\\s+${rows}\\s+table\\s+as\\s+changed\\s+for\\s+each\\s+statement\\s+execute\\s+function\\s+${sqlName(`realtime_notify_${table}`)}\\(\\)\\s*$`,
-          "i",
-        ),
+    const id = randomUUID();
+    const topic = changeTopic(table, id);
+    const call = [{ fn: SCOPES[table].authorise, id }];
+    expect(await read(topic, true), `${topic} when its scope allows`).toEqual({
+      visible: 1,
+      calls: call,
+    });
+    expect(await read(topic, false), `${topic} when its scope denies`).toEqual({
+      visible: 0,
+      calls: call,
+    });
+    const prefix = changeTopic(table, "");
+    for (const other of [
+      `${prefix}not-a-uuid`,
+      `${topic}x`,
+      `x${topic}`,
+      `${prefix}`,
+    ]) {
+      expect(await read(other, true), `${other} is not a change topic`).toEqual(
+        {
+          visible: 0,
+          calls: [],
+        },
       );
     }
   }
-}
-
-/** One `when realtime.topic() ~* '^<prefix><uuid>$' then <scope call>` arm. */
-const POLICY_ARM = new RegExp(
-  `\\bwhen\\s+realtime\\.topic\\(\\)\\s*~\\*\\s*'\\^([^'\\[]+)\\[0-9a-f\\]\\{8\\}-\\[0-9a-f\\]\\{4\\}-\\[0-9a-f\\]\\{4\\}-\\[0-9a-f\\]\\{4\\}-\\[0-9a-f\\]\\{12\\}\\$'` +
-    `\\s+then\\s+public\\.(\\w+)\\(\\s*substring\\(\\s*realtime\\.topic\\(\\)\\s+from\\s+(\\d+)\\s*\\)::uuid\\s*\\)` +
-    `\\s*(?=\\bwhen\\b|\\belse\\s+false\\s+end\\b)`,
-  "gi",
-);
-
-/**
- * `realtime_messages_scoped_select` authorises each prefix with the right
- * scope function, and nothing else gets through.
- *
- * Postgres takes the first CASE arm that matches, so the whole CASE is read:
- * every arm must be the full-uuid-anchored shape with a bare scope call as its
- * result, and the fallthrough must be `else false`. One arm `then true`, one
- * `or true`, or `else true` would hand every signed-in user another chapter's
- * pings. `substring(realtime.topic() from N)` is 1-indexed, so N is the prefix
- * length + 1: one off and the uuid cast raises on every subscribe, denying the
- * whole family with the same silent, `SUBSCRIBED`-looking failure. The offset
- * rule holds for every arm, not only the three change-ping ones.
- */
-function checkChangePolicy(migrations: readonly Migration[]) {
-  const { text } = requireDefinition(
-    migrations,
-    policy("realtime_messages_scoped_select", "messages", "realtime"),
-  );
-  expect(text).toMatch(
-    /\bfor\s+select\s+to\s+authenticated\s+using\s*\(\s*case\s+when\b/i,
-  );
-  expect(text).toMatch(/\belse\s+false\s+end\s*\)\s*$/i);
-
-  const arms = [...text.matchAll(POLICY_ARM)].map((m) => ({
-    prefix: (m[1] as string).toLowerCase(),
-    authorise: m[2] as string,
-    from: Number(m[3]),
-  }));
-  expect(
-    arms.length,
-    "every `when` arm must be the anchored-prefix → scope-call shape",
-  ).toBe(text.match(/\bwhen\b/gi)?.length ?? 0);
-  expect(new Set(arms.map((a) => a.prefix)).size).toBe(arms.length);
-  for (const arm of arms) {
-    expect(arm.from, `substring offset for '^${arm.prefix}'`).toBe(
-      arm.prefix.length + 1,
-    );
-  }
-  for (const table of TABLES) {
-    expect(arms).toContainEqual({
-      prefix: prefixOf(table),
-      authorise: SCOPES[table].authorise,
-      from: prefixOf(table).length + 1,
-    });
-  }
+  expect(await read(`unknown:${randomUUID()}`, true)).toEqual({
+    visible: 0,
+    calls: [],
+  });
 }
 
 /**
@@ -421,120 +356,51 @@ function checkChangePolicy(migrations: readonly Migration[]) {
  * `chapter_audit_log` was the sixth dead subscription, and the only one outside
  * the browser: `ChatBridgeWorkerService` subscribes to its INSERTs with the
  * service-role client, which bypasses RLS, so publication membership is the
- * entire fix.
+ * entire fix. Who may read a chat row is `check:pglite-migrations`' enforcement
+ * tier's to prove; here it is only that one policy, gated on
+ * `can_read_chat_message`, is the whole read path.
  */
 const PUBLISHED_TABLES = [
-  "chat_messages",
   "chat_message_actions",
+  "chat_messages",
   "chapter_audit_log",
 ];
 
-/**
- * `supabase_realtime`'s table list as the migrations leave it: `add`, `drop`
- * and `set` replayed in order, each over its whole comma-separated list.
- */
-function publishedTables(migrations: readonly Migration[]): Set<string> {
-  const members = new Set<string>();
-  const statement =
-    /alter\s+publication\s+"?supabase_realtime"?\s+(add|drop|set)\s+table\s+([^;$]*)/gi;
-  for (const { sql } of migrations) {
-    for (const m of sql.matchAll(statement)) {
-      const verb = (m[1] as string).toLowerCase();
-      let list = m[2] as string;
-      // Column lists and row filters (`t (a, b) where (…)`) carry commas too.
-      while (/\([^()]*\)/.test(list)) list = list.replace(/\([^()]*\)/g, "");
-      const tables = list
-        .replace(/\bwhere\b/gi, "")
-        .split(",")
-        .map((t) =>
-          t
-            .trim()
-            .replace(/^only\s+/i, "")
-            .replace(/\s*\*$/, "")
-            .replace(/"/g, "")
-            .replace(/^public\s*\.\s*/i, "")
-            .toLowerCase(),
-        )
-        .filter(Boolean);
-      if (verb === "set") members.clear();
-      for (const t of tables) {
-        if (verb === "drop") members.delete(t);
-        else members.add(t);
-      }
-    }
-  }
-  return members;
+async function checkPublication(db: PGlite) {
+  const tables = await db.query<{ name: string }>(
+    `select schemaname || '.' || tablename as name from pg_publication_tables
+     where pubname = 'supabase_realtime'`,
+  );
+  expect(tables.rows.map((r) => r.name)).toEqual(
+    expect.arrayContaining(PUBLISHED_TABLES.map((t) => `public.${t}`)),
+  );
+  const publishes = await db.query(
+    `select pubinsert, pubupdate, pubdelete from pg_publication
+     where pubname = 'supabase_realtime'`,
+  );
+  expect(publishes.rows).toEqual([
+    { pubinsert: true, pubupdate: true, pubdelete: true },
+  ]);
+
+  const reads = await db.query<{ policyname: string; qual: string }>(
+    `select policyname, qual from pg_policies
+     where schemaname = 'public' and tablename = 'chat_messages'
+       and permissive = 'PERMISSIVE' and cmd in ('SELECT', 'ALL')`,
+  );
+  expect(reads.rows.map((r) => r.policyname)).toEqual(["chat_messages_select"]);
+  expect(reads.rows[0]?.qual).toContain("can_read_chat_message(id)");
+  expect(reads.rows[0]?.qual).not.toMatch(/\bOR\b/i);
 }
 
-function checkPublication(migrations: readonly Migration[]) {
-  const published = publishedTables(migrations);
-  for (const table of PUBLISHED_TABLES) {
-    expect(published, `supabase_realtime publishes ${table}`).toContain(table);
-  }
-  const { text } = requireDefinition(
-    migrations,
-    policy("chat_messages_select", "chat_messages", "public"),
-  );
-  expect(text).toContain("public.can_read_chat_message(id)");
-  expect(text, "chat_messages_select must not widen with `or`").not.toMatch(
-    /\bor\b/i,
-  );
-}
+let db: PGlite;
 
-/**
- * Changes this replay can't model, so they fail rather than pass unseen. Each
- * alters a contract object in place: the create text the check reads stays
- * the same while what the database runs changes. Change the object by
- * dropping and re-creating it instead. (`alter policy` is also refused repo-wide by
- * `apps/api/.../chat-read-surface-ledger.spec.ts`; this spec says so itself
- * so it stands alone.)
- */
-const UNMODELLED_CHANGES: [string, RegExp][] = [
-  [
-    "alter policy on a contract policy",
-    /\balter\s+policy\s+"?(?:realtime_messages_scoped_select|chat_messages_select)\b/i,
-  ],
-  [
-    "alter function on a ping function",
-    new RegExp(
-      `\\balter\\s+function\\s+${sqlName("realtime_notify_\\w+")}`,
-      "i",
-    ),
-  ],
-  [
-    "alter trigger on a ping trigger",
-    /\balter\s+trigger\s+"?realtime_notify_/i,
-  ],
-  [
-    "enable/disable of a ping trigger",
-    /\b(?:enable|disable)\s+(?:replica\s+|always\s+)?trigger\s+"?realtime_notify_/i,
-  ],
-  [
-    "disable trigger all/user on a ping table",
-    new RegExp(
-      `\\balter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?${sqlName("(?:notifications|events|event_attendance)")}\\s+disable\\s+trigger\\s+(?:all|user)\\b`,
-      "i",
-    ),
-  ],
-  [
-    "dropping or renaming the publication",
-    /\b(?:drop\s+publication\s+(?:if\s+exists\s+)?"?supabase_realtime\b|alter\s+publication\s+"?supabase_realtime"?\s+rename\b)/i,
-  ],
-  [
-    "a publication change other than add/drop/set table",
-    /\balter\s+publication\s+"?supabase_realtime"?\s+(?!(?:add|drop|set)\s+table\s)(?!rename\b)/i,
-  ],
-];
+beforeAll(async () => {
+  db = await replayMigrations();
+}, 120_000);
 
-function unmodelledChanges(migrations: readonly Migration[]): string[] {
-  return migrations.flatMap(({ name, sql }) =>
-    UNMODELLED_CHANGES.filter(([, pattern]) => pattern.test(sql)).map(
-      ([what]) => `${name}: ${what}`,
-    ),
-  );
-}
-
-const MIGRATIONS = loadMigrations();
+afterAll(async () => {
+  await db?.close();
+});
 
 describe("change-ping topic contract", () => {
   test("topic strings are exactly what the client expects", () => {
@@ -558,37 +424,39 @@ describe("change-ping topic contract", () => {
     );
   });
 
-  describe("the migrations, as applied, build the same topics", () => {
+  describe("the migrations, applied, build the same topics", () => {
     test.each(TABLES)(
-      "%s: its ping function scopes by the right column and sends the client's topic, privately",
-      (table) => checkPingFunction(MIGRATIONS, table),
+      "%s: its ping function sends one private `change` ping per scope, on the client's topic",
+      (table) => rolledBack(db, () => checkPingFunction(db, table)),
     );
 
-    test("the ping triggers are the nine statement-level ones and no others", () =>
-      checkPingTriggers(MIGRATIONS));
+    test("the ping triggers are the nine enabled statement-level ones and no others", () =>
+      rolledBack(db, () => checkPingTriggers(db)));
 
-    test("the RLS policy authorises each prefix with its own scope check, and nothing else", () =>
-      checkChangePolicy(MIGRATIONS));
+    test("the RLS policy admits each change topic only through its own scope check", () =>
+      rolledBack(db, () => checkChangePolicy(db)));
 
     test("chat and the audit log are published, and chat rows stay RLS-gated", () =>
-      checkPublication(MIGRATIONS));
-
-    test("no migration changes a contract object in a form this replay can't model", () =>
-      expect(unmodelledChanges(MIGRATIONS)).toEqual([]));
+      rolledBack(db, () => checkPublication(db)));
   });
 
   /**
-   * Each case appends a later migration that breaks one side of the contract
-   * and proves the check above catches it — the proof that it reads the newest
-   * definition, in whatever form it is written, rather than the file that
-   * first wrote it.
+   * Each case applies one more migration that breaks one side of the contract
+   * and proves a check above fails on it, with an assertion rather than an
+   * error, so a fixture that merely broke the SQL can't pass for one.
    */
   describe("a later migration that drifts fails the check", () => {
-    const FIXTURE = "99999999999999_drift_fixture.sql";
-    const withLater = (sql: string): Migration[] => [
-      ...MIGRATIONS,
-      { name: FIXTURE, sql: stripComments(sql) },
-    ];
+    const fails = async (fixture: string, check: () => Promise<void>) =>
+      rolledBack(db, async () => {
+        await db.exec(fixture);
+        const error: unknown = await check().then(
+          () => null,
+          (e: unknown) => e,
+        );
+        expect(error, "the check passed on drifted SQL").not.toBeNull();
+        expect((error as Error).name).toBe("AssertionError");
+      });
+
     /** Replaces text that must be there, so a fixture can't pass vacuously. */
     const swap = (text: string, from: string | RegExp, to: string) => {
       const next = text.replace(from, to);
@@ -597,18 +465,23 @@ describe("change-ping topic contract", () => {
       );
       return next;
     };
-    const current = (spec: ObjectSpec) =>
-      requireDefinition(MIGRATIONS, spec).text;
-    const eventsFn = () => current(pingFunction("events"));
-    const changePolicy = () =>
-      current(
-        policy("realtime_messages_scoped_select", "messages", "realtime"),
-      );
-    const recreatePolicy = (text: string) =>
-      withLater(
-        `drop policy if exists "realtime_messages_scoped_select" on realtime.messages;
-         ${text};`,
-      );
+    const eventsFn = async () =>
+      (
+        await db.query<{ def: string }>(
+          `select pg_get_functiondef('public.realtime_notify_events()'::regprocedure) as def`,
+        )
+      ).rows[0]?.def as string;
+    const changePolicyQual = async () =>
+      (
+        await db.query<{ qual: string }>(
+          `select qual from pg_policies where schemaname = 'realtime'
+           and policyname = 'realtime_messages_scoped_select'`,
+        )
+      ).rows[0]?.qual as string;
+    const recreatePolicy = (qual: string) => `
+      drop policy "realtime_messages_scoped_select" on realtime.messages;
+      create policy "realtime_messages_scoped_select" on realtime.messages
+        for select to authenticated using (${qual});`;
 
     test.each([
       [
@@ -617,171 +490,108 @@ describe("change-ping topic contract", () => {
         "select distinct user_id",
       ],
       ["renames the topic prefix", "'events:'", "'event:'"],
-      ["sends the ping non-private", /true(\s*\)\s*;)/, "false$1"],
-      [
-        "sends a second ping",
-        "perform realtime.send(",
-        "perform realtime.send(null, 'change', 'x', true); perform realtime.send(",
-      ],
-    ] as const)("a ping function that %s", (_case, from, to) => {
-      const drifted = withLater(`${swap(eventsFn(), from, to)};`);
-      expect(() => checkPingFunction(drifted, "events")).toThrow();
-    });
-
-    test.each([
-      ["unqualified", "realtime_notify_events"],
-      ["quoted", `"public"."realtime_notify_events"`],
-    ])("a drifted ping function written %s", (_case, spelling) => {
-      // The prefix flip alone would fail the check; it fails here only if the
-      // replay actually saw the differently spelled redefinition.
-      const respelled = swap(
-        eventsFn(),
-        /public\.realtime_notify_events/i,
-        spelling,
-      );
-      const drifted = withLater(`${swap(respelled, "'events:'", "'event:'")};`);
-      expect(() => checkPingFunction(drifted, "events")).toThrow();
-    });
-
-    test("a dropped ping function, written unqualified", () => {
-      const drifted = withLater(
-        "drop function if exists realtime_notify_events();",
-      );
-      expect(() => checkPingFunction(drifted, "events")).toThrow();
+      ["sends the ping non-private", /,\s*true(\s*\))/, ", false$1"],
+    ] as const)("a ping function that %s", async (_case, from, to) => {
+      const fixture = swap(await eventsFn(), from, to);
+      await fails(fixture, () => checkPingFunction(db, "events"));
     });
 
     test.each([
       [
-        "drops one of the nine",
-        "drop trigger if exists realtime_notify_events_upd on public.events;",
+        "drops a ping function with CASCADE, in a routine list",
+        "drop routine if exists public.realtime_notify_events(), public.realtime_notify_notifications() cascade;",
       ],
       [
-        "re-creates one per-row",
-        `drop trigger if exists realtime_notify_events_ins on public.events;
-         create trigger realtime_notify_events_ins after insert on public.events
-           for each row execute function public.realtime_notify_events();`,
-      ],
-      [
-        "adds a per-row trigger beside the nine",
-        `create trigger realtime_notify_events_row after insert on public.events
-           for each row execute function public.realtime_notify_events();`,
-      ],
-      [
-        "adds one with an unqualified target",
+        "adds a per-row trigger with an unqualified target",
         `create trigger events_row_ping after insert on public.events
            for each row execute function realtime_notify_events();`,
       ],
       [
-        "adds one with a quoted name",
-        `create trigger "events_row_ping" after insert on public.events
+        "adds a quoted-name constraint trigger",
+        `create constraint trigger "events_row_ping" after insert on public.events
            for each row execute function public.realtime_notify_events();`,
       ],
       [
-        "adds a constraint trigger",
-        `create constraint trigger events_row_ping after insert on public.events
-           for each row execute function public.realtime_notify_events();`,
+        "disables every trigger on a table among other actions",
+        "alter table public.events add column zz_probe int, disable trigger all;",
       ],
-    ])("a migration that %s", (_case, sql) => {
-      expect(() => checkPingTriggers(withLater(sql))).toThrow();
-    });
+      [
+        "re-creates the triggers per-row in a format() loop",
+        `do $$ declare t text; begin
+           foreach t in array array['notifications', 'events', 'event_attendance'] loop
+             execute format('drop trigger if exists %I on public.%I', 'realtime_notify_' || t || '_ins', t);
+             execute format('create trigger %I after insert on public.%I for each row execute function public.%I()',
+                            'realtime_notify_' || t || '_ins', t, 'realtime_notify_' || t);
+           end loop;
+         end $$;`,
+      ],
+    ])("a migration that %s", (_case, fixture) =>
+      fails(fixture, () => checkPingTriggers(db)),
+    );
 
     test.each([
-      ["renames a prefix", "'^attendance:", "'^attend:"],
-      ["reads the id from the wrong offset", "from 12)", "from 11)"],
+      ["reads the id from the wrong offset", "FROM 12)", "FROM 11)"],
       [
-        "authorises a prefix with another table's scope",
-        "public.realtime_can_read_user_scope",
-        "public.realtime_can_read_chapter_scope",
-      ],
-      [
-        "lets every topic through on the fallthrough",
-        /else\s+false/i,
-        "else true",
+        "asks another table's scope function",
+        "THEN realtime_can_read_user_scope(",
+        "THEN realtime_can_read_chapter_scope(",
       ],
       [
         "widens an arm with `or true`",
-        "from 8)::uuid)",
-        "from 8)::uuid) or true",
+        /(THEN realtime_can_read_chapter_scope\(\(SUBSTRING\(realtime\.topic\(\) FROM 8\)\)::uuid\))/,
+        "$1 OR true",
       ],
       [
-        "puts an unscoped arm first",
-        /case\s+when/i,
-        "case when realtime.topic() ~* '^events:' then true when",
+        "lets every topic through on the fallthrough",
+        /ELSE false/,
+        "ELSE true",
       ],
-    ])("a change-ping policy that %s", (_case, from, to) => {
-      const drifted = recreatePolicy(swap(changePolicy(), from, to));
-      expect(() => checkChangePolicy(drifted)).toThrow();
-    });
-
-    test("a dropped change-ping policy", () => {
-      const drifted = withLater(
-        `drop policy if exists "realtime_messages_scoped_select" on realtime.messages;`,
-      );
-      expect(() => checkChangePolicy(drifted)).toThrow();
-    });
-
-    test("a guarded re-create that a database with the policy would skip", () => {
-      // The carrier migration's own idiom. Were it copied with a changed
-      // prefix, the replay would read the new text while staging and
-      // production, which have the policy, returned before the create.
-      const drifted = withLater(
-        `do $$ begin
-           if exists (select 1 from pg_policies where policyname = 'realtime_messages_scoped_select') then
-             return;
-           end if;
-           execute $p$ ${changePolicy()} $p$;
-         end $$;`,
-      );
-      expect(() => checkChangePolicy(drifted)).toThrow(
-        /re-created without a drop/,
-      );
+      [
+        "puts a catch-all arm first",
+        /CASE\s+WHEN/,
+        "CASE WHEN (realtime.topic() ~* '^events:') THEN true WHEN",
+      ],
+    ])("a change-ping policy that %s", async (_case, from, to) => {
+      const fixture = recreatePolicy(swap(await changePolicyQual(), from, to));
+      await fails(fixture, () => checkChangePolicy(db));
     });
 
     test.each([
       [
-        "drops a table named after another in the list",
-        "alter publication supabase_realtime drop table public.notifications, public.chapter_audit_log;",
+        "adds a second permissive read policy",
+        `create policy "realtime_debug" on realtime.messages
+           for select to authenticated using (realtime.topic() like 'events:%');`,
+      ],
+      [
+        "drops the change-ping policy",
+        `drop policy "realtime_messages_scoped_select" on realtime.messages;`,
+      ],
+    ])("a migration that %s", (_case, fixture) =>
+      fails(fixture, () => checkChangePolicy(db)),
+    );
+
+    test.each([
+      [
+        "drops a table from a list, in dynamic SQL",
+        `do $$ begin
+           execute 'alter publication supabase_realtime drop table public.chat_message_actions, public.chapter_audit_log';
+         end $$;`,
       ],
       [
         "replaces the whole list",
         "alter publication supabase_realtime set table public.chat_messages;",
       ],
       [
-        "drops a quoted table",
-        `alter publication supabase_realtime drop table "public"."chapter_audit_log";`,
+        "stops publishing deletes",
+        "alter publication supabase_realtime set (publish = 'insert, update');",
       ],
-    ])("a publication change that %s", (_case, sql) => {
-      expect(() => checkPublication(withLater(sql))).toThrow();
-    });
-
-    test.each([
-      `alter policy "realtime_messages_scoped_select" on realtime.messages using (false);`,
-      "alter function realtime_notify_events() rename to realtime_notify_old;",
-      "alter table public.events disable trigger realtime_notify_events_ins;",
-      "alter table public.events disable trigger all;",
-      "alter publication supabase_realtime set (publish = 'insert');",
-      "drop publication if exists supabase_realtime;",
-    ])("an in-place change the replay can't model: %s", (sql) => {
-      expect(unmodelledChanges(withLater(sql))).toEqual([
-        expect.stringContaining(FIXTURE),
-      ]);
-    });
-
-    test("an edit to the carrier migration, overridden since, changes nothing the check reads", () => {
-      // The trap the old comment set: "fix the migration to match". Later
-      // migrations re-create every ping function, so this edit reaches no
-      // database, and it doesn't reach the check either. (An edit to the NEWEST
-      // definer would reach the check but still no hosted database: see the
-      // header.)
-      const edited = MIGRATIONS.map((m) =>
-        m.name === "20260816140000_realtime_carrier_repair.sql"
-          ? { ...m, sql: swap(m.sql, "'events:'", "'event:'") }
-          : m,
-      );
-      expect(() => checkPingFunction(edited, "events")).not.toThrow();
-      expect(
-        requireDefinition(edited, pingFunction("events")).migration,
-      ).not.toBe("20260816140000_realtime_carrier_repair.sql");
-    });
+      [
+        "adds a second permissive chat read policy",
+        `create policy "chat_open" on public.chat_messages
+           for select to authenticated using (true);`,
+      ],
+    ])("a migration that %s", (_case, fixture) =>
+      fails(fixture, () => checkPublication(db)),
+    );
   });
 });

@@ -413,8 +413,9 @@ dashboard subscriptions consume nothing but the fact of a change, so they get a 
 broadcast and their tables stay API-enforced. The topic strings are a cross-substrate contract
 between the SQL and `apps/web/lib/realtime/change-topics.ts`, pinned by `change-topics.spec.ts`
 precisely because drift between them is silent. Later migrations re-create the ping functions and
-the `realtime.messages` policy, so the test reads the newest definition of each, and a contract
-change is a new migration, never an edit to this one.
+the `realtime.messages` policy, so the test applies every migration to PGlite (with a stand-in
+`realtime` schema) and checks what they leave in effect, and a contract change is a new migration,
+never an edit to this one.
 
 Each of the three ping triggers wraps its `realtime.send` call in `exception when others then null`
 — deliberate, since an AFTER trigger fires inside the writing transaction and an unguarded send

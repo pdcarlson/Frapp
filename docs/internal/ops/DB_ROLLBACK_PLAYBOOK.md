@@ -1243,6 +1243,7 @@ After any rollback event:
 ## Rollback the Realtime carrier repair
 
 * **Migration**: `20260816140000_realtime_carrier_repair.sql`
+* **Precondition**: roll back [the private presence topics](#rollback-the-private-presence-topics) first. Its `realtime_messages_scoped_insert` policy calls `realtime_can_read_chapter_scope`, so step 2's `DROP FUNCTION` fails while that policy exists. It also added the `presence:chapter:` and `chat:channel:` arms to `realtime_messages_scoped_select`, so dropping that policy here also denies Directory presence and private chat channels, not only the three change pings the notes below describe.
 * **Action**: everything this migration creates is additive and separately droppable. Full revert:
   ```sql
   -- 1. stop the change pings (three statement-level triggers per table)
