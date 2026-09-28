@@ -29,12 +29,13 @@ import { serverMessageOf } from "@repo/api-sdk";
 import { useAuthSession } from "@/lib/auth-session";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import {
-  EMPTY_IDENTITY,
-  identityIsValid,
-  normalizeHex,
-  parseFoundedYear,
-  type IdentityForm,
-} from "@/lib/onboarding/chapter-wizard/identity";
+  DEFAULT_CHAPTER_ACCENT,
+  EMPTY_CHAPTER_IDENTITY,
+  chapterIdentityBranding,
+  chapterIdentityIsValid,
+  normalizeAccentInput,
+  type ChapterIdentityForm,
+} from "@repo/hooks/chapter-identity";
 import {
   inviteTokenOf,
   onboardedChapterId,
@@ -87,7 +88,7 @@ export default function CreateChapter() {
   const debouncedQuery = useDebouncedValue(rawQuery, 250);
   const [directoryId, setDirectoryId] = useState<string | null>(null);
   const [archetype, setArchetype] = useState<ArchetypeKey>("ifc");
-  const [identity, setIdentity] = useState<IdentityForm>(EMPTY_IDENTITY);
+  const [identity, setIdentity] = useState<ChapterIdentityForm>(EMPTY_CHAPTER_IDENTITY);
   const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +98,7 @@ export default function CreateChapter() {
   });
   const results = Array.isArray(searchQuery.data) ? searchQuery.data : [];
   const stepIndex = STEP_ORDER.indexOf(step);
-  const canSubmit = identityIsValid(identity) && acceptedLegal;
+  const canSubmit = chapterIdentityIsValid(identity) && acceptedLegal;
 
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     setDirectoryId(row.id);
@@ -109,7 +110,7 @@ export default function CreateChapter() {
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorAccent: normalizeHex(row.default_colors?.accent, identity.colorAccent),
+      colorAccent: normalizeAccentInput(row.default_colors?.accent),
     });
     setAcceptedLegal(false);
     setError(null);
@@ -120,7 +121,7 @@ export default function CreateChapter() {
     setDirectoryId(null);
     setArchetype("ifc");
     setIdentity({
-      ...EMPTY_IDENTITY,
+      ...EMPTY_CHAPTER_IDENTITY,
       name: rawQuery.trim(),
     });
     setAcceptedLegal(false);
@@ -143,15 +144,7 @@ export default function CreateChapter() {
         org_archetype: archetype,
         directory_id: directoryId ?? undefined,
         accept_terms_privacy: true,
-        branding: {
-          greek_letters: identity.greekLetters.trim() || undefined,
-          designation: identity.designation.trim() || undefined,
-          school_short: identity.schoolShort.trim() || undefined,
-          founded_at: parseFoundedYear(identity.foundedYear),
-          colors: {
-            accent: normalizeHex(identity.colorAccent, identity.colorAccent),
-          },
-        },
+        branding: chapterIdentityBranding(identity),
       });
       const id = onboardedChapterId(chapter);
       if (id) {
@@ -512,15 +505,15 @@ function IdentityStep({
   styles,
   tokens,
 }: {
-  identity: IdentityForm;
-  onChange: (next: IdentityForm) => void;
+  identity: ChapterIdentityForm;
+  onChange: (next: ChapterIdentityForm) => void;
   isManual: boolean;
   accepted: boolean;
   onAcceptedChange: (next: boolean) => void;
   styles: Styles;
   tokens: SignetTokens;
 }) {
-  function set<K extends keyof IdentityForm>(key: K, value: IdentityForm[K]) {
+  function set<K extends keyof ChapterIdentityForm>(key: K, value: ChapterIdentityForm[K]) {
     onChange({ ...identity, [key]: value });
   }
 
@@ -585,12 +578,12 @@ function IdentityStep({
         label="Accent color"
         value={identity.colorAccent}
         onChangeText={(value) => set("colorAccent", value)}
-        placeholder="#7A5A2F"
+        placeholder={DEFAULT_CHAPTER_ACCENT}
         autoCapitalize="characters"
         mono
         styles={styles}
         tokens={tokens}
-        swatch={normalizeHex(identity.colorAccent, identity.colorAccent)}
+        swatch={normalizeAccentInput(identity.colorAccent)}
       />
 
       {/*

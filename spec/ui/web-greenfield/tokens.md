@@ -104,9 +104,11 @@ loosened; the token moved up the scale. Details in `apps/web/components/ui/focus
 
 `apps/web/components/onboarding/chapter-wizard.tsx` carried a bare `#F2B72E` literal as its default
 accent. It now reads `signetDarkTokens.color.gold.seed` from `@repo/theme/signet`. That literal was
-exactly the kind that would have silently desynced on this change.
+exactly the kind that would have silently desynced on this change. (Since #1642 and #2102 the read
+lives in `packages/hooks/src/chapter-identity.ts`, which both the web and the mobile wizard import, so
+mobile's leftover bronze default went with it.)
 
-It deliberately does **not** import `HOUSE_SEED` from `@repo/chapter-theme`, and the file says why in
+It deliberately does **not** import `HOUSE_SEED` from `@repo/chapter-theme`, and the code says why in
 place: that package's `index.ts` re-exports through a `./signet.js` specifier Turbopack cannot
 resolve, so the import type-checks and passes vitest and then fails `next build`. Both constants
 carry the same value. Reaching for the more obvious-looking one reintroduces a build failure.
