@@ -27,9 +27,8 @@ export interface CachedChannelRow {
  * display data: they decide who receives a push containing message content.
  * The TTL bounds staleness as a backstop, but any write path that can change
  * either field must call {@link invalidate} — see `ChatService.updateChannel`
- * and `deleteChannel`. No route mutates `member_ids` after creation today
- * (#1302 tracks adding one); whoever builds it must call `invalidate` there
- * too.
+ * and `deleteChannel`, and the `member_ids` writers `leaveChannel`,
+ * `addPrivateChannelMember` and `removePrivateChannelMember` (#1302).
  *
  * `set` is fenced by an epoch counter rather than writing unconditionally.
  * Without it, a read started before a write's `invalidate()` call can still

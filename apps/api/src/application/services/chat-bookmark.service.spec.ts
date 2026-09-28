@@ -265,6 +265,33 @@ describe('ChatBookmarkService', () => {
       expect(row.message_available).toBe(true);
     });
 
+    it('reads the block list once per request, not once per bookmark', async () => {
+      // `spec/behavior/chat/README.md` § What a block does and does not hide
+      // says so (#2310). A read moved into the per-bookmark map would still
+      // mask correctly, so only the call count catches it.
+      mockRepo.findByUserAndChapter.mockResolvedValue([
+        {
+          ...bookmark,
+          message: message({ sender_id: 'user-blocked', content: 'go away' }),
+        },
+        {
+          ...bookmark,
+          id: 'bm-2',
+          message_id: 'msg-2',
+          message: message({ id: 'msg-2' }),
+        },
+      ]);
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+
+      const rows = await service.listBookmarks(CHAPTER, USER);
+
+      expect(rows.map((row) => row.message.sender_blocked)).toEqual([
+        true,
+        false,
+      ]);
+      expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledTimes(1);
+    });
+
     it('flags an unblocked bookmarked message rather than leaving the field absent', async () => {
       mockRepo.findByUserAndChapter.mockResolvedValue([
         { ...bookmark, message: message() },

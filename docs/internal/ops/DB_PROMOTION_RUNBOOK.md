@@ -560,6 +560,23 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-28: Add and remove a PRIVATE channel's members (#1302)
+
+### 20260928170000_chat_private_channel_members.sql
+
+- **Purpose**: Adds three `security invoker` RPCs, each with `search_path = public, pg_temp` and EXECUTE for `service_role` only.
+  - `add_private_channel_member(p_channel_id, p_chapter_id, p_user_id)` appends the user to a PRIVATE channel's `member_ids` unless already listed, treating a NULL list as empty.
+  - `remove_private_channel_member(...)` removes them. It refuses (returns no row) when that would take away the last current member of the chapter in the list. Removing an id whose member has left the chapter is always allowed, and removing someone not listed is a no-op that returns the row.
+  - `remove_user_from_private_channels(p_chapter_id, p_user_id)` takes a member leaving the chapter off every PRIVATE list in it and returns the ids it changed. `MemberService.remove` calls it before deleting the membership.
+
+  All three match only `PRIVATE` channels in the named chapter, and compute each new array from the row's own column, so concurrent calls serialize on the row lock. No table, column, policy or data changes. The rules are in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#channels) § Channels.
+- **Checks**: After `db push`,
+  `select proname, prosecdef, proconfig from pg_proc where proname in ('add_private_channel_member', 'remove_private_channel_member', 'remove_user_from_private_channels') order by proname;` returns three rows, each `false | {"search_path=public, pg_temp"}`.
+  `select has_function_privilege('anon', 'public.add_private_channel_member(uuid, uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.add_private_channel_member(uuid, uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | false`, and the same for `public.remove_private_channel_member(uuid, uuid, uuid)` and `public.remove_user_from_private_channels(uuid, uuid)`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
+- **Promoter notes**: Apply before, or with, the API that carries #1302; both the staging merge and a `full` production run migrate before deploying. An API that reaches a database without it answers 500 on the two new routes, and **refuses to remove any member from a chapter** (500), because `MemberService.remove` calls `remove_user_from_private_channels` first. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-private-channel-membership-20260928170000) § Rollback PRIVATE channel membership.
+
 ## 2026-09-28: Discord import channel visibility and scan readability (#2787)
 
 ### 20260928160000_discord_import_channel_visibility.sql

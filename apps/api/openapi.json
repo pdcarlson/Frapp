@@ -2365,6 +2365,82 @@
         ]
       }
     },
+    "/v1/channels/{id}/members": {
+      "post": {
+        "operationId": "ChatController_addChannelMember_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddChannelMemberDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a chapter member to a private channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/members/{userId}": {
+      "delete": {
+        "operationId": "ChatController_removeChannelMember_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove someone from a private channel (409 if it would leave no chapter member who can read it)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/categories/list": {
       "get": {
         "operationId": "ChatController_listCategories_v1",
@@ -9115,6 +9191,18 @@
         },
         "required": [
           "member_ids"
+        ]
+      },
+      "AddChannelMemberDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The `users.id` to add. Must be a member of the channel's chapter."
+          }
+        },
+        "required": [
+          "user_id"
         ]
       },
       "CreateCategoryDto": {

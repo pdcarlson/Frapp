@@ -2188,3 +2188,23 @@ Four columns and one CHECK on `discord_import_channels` (#2787). No data is rewr
      drop column if exists private_in_discord,
      drop column if exists readable;
    ```
+
+## Rollback PRIVATE channel membership (20260928170000)
+
+* **Migration**: `20260928170000_chat_private_channel_members.sql`
+
+Three new functions (#1302), `add_private_channel_member`, `remove_private_channel_member` and `remove_user_from_private_channels`, and nothing else: no table, column, policy or data changes. Their only callers are the API's `POST /v1/channels/{id}/members` and `DELETE /v1/channels/{id}/members/{userId}`, and `MemberService.remove`.
+
+**Roll back the API first, then the functions, and keep the migration file.** An API that calls the functions against a database without them answers 500 on the two routes and refuses every chapter member removal. So revert the #1302 code (the two routes, the `ChatService` methods and the `remove_user_from_private_channels` call in `MemberService.remove`), but **keep `supabase/migrations/20260928170000_chat_private_channel_members.sql`** in the tree. A plain `git revert` of the PR deletes that file, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations` on a version production has applied but the repo no longer holds. That blocks both the rollback and the drop below.
+
+Then drop the functions in a new forward migration, not by hand. Same rule as [§ Rollback per-user Terms acceptance](#rollback-per-user-terms-acceptance-20260923190000): hand DDL leaves the ledger recording `20260928170000` as applied, so a later re-land would apply nothing.
+
+```sql
+drop function if exists public.add_private_channel_member(uuid, uuid, uuid);
+drop function if exists public.remove_private_channel_member(uuid, uuid, uuid);
+drop function if exists public.remove_user_from_private_channels(uuid, uuid);
+```
+
+The same PR removes the "Add and remove a PRIVATE channel's members (#1302)" block from `scripts/check-pglite-migrations.mjs`, which would fail without the functions.
+
+**Membership written while the functions were live stays.** A rollback removes the way to change a PRIVATE channel's `member_ids`, not the members already added. They keep reading the channel, since every read goes through `canAccessChannel`'s `member_ids` check. Removing them afterwards would need a hand-written data migration, and nothing requires it. After the rollback, removing a member from the chapter no longer takes them off PRIVATE lists, so a re-invited member regains the channels they were in.

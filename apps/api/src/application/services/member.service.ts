@@ -1,11 +1,15 @@
 import {
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
+import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -81,6 +85,8 @@ export interface RecentMemberJoin extends MemberRosterEntry {
 
 @Injectable()
 export class MemberService {
+  private readonly logger = new Logger(MemberService.name);
+
   constructor(
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
@@ -91,6 +97,9 @@ export class MemberService {
     private readonly auditLogService: ChapterAuditLogService,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channelRepo: IChatChannelRepository,
+    private readonly channelCache: ChannelCacheService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<MemberSummary[]> {
@@ -393,7 +402,42 @@ export class MemberService {
     if (user?.avatar_url?.includes(`${photoFolder}/`)) {
       await this.userRepo.update(member.user_id, { avatar_url: null });
     }
-    await this.memberRepo.delete(memberId);
+    // #1302: off every PRIVATE channel in this chapter before the row goes.
+    // A left-behind id admits nobody while they are out of the chapter
+    // (`canAccessChannel` requires chapter membership first), but a re-invite
+    // creates a new `members` row for the same `users.id`, and that id would
+    // let them straight back into every private channel they were added to,
+    // full history included. Before the row delete for the photo purge's
+    // reason: a failure here blocks the removal, which is retryable, instead
+    // of leaving ids behind that no later removal of this member can reach.
+    const prunedChannelIds =
+      await this.channelRepo.removeUserFromPrivateChannels(
+        chapterId,
+        member.user_id,
+      );
+    // `member_ids` decides who is pushed a channel's messages, and a re-invite
+    // inside the cache's TTL would otherwise be pushed from the stale list
+    // (`ChannelCacheService`).
+    for (const channelId of prunedChannelIds) {
+      this.channelCache.invalidate(channelId);
+    }
+    try {
+      await this.memberRepo.delete(memberId);
+    } catch (error) {
+      // The prune has committed, so a member who is still in the chapter is
+      // now off these channels. Say which, so an officer can add them back.
+      this.logger.error(
+        'Member row delete failed after their PRIVATE channels were pruned',
+        {
+          chapterId,
+          memberId,
+          userId: member.user_id,
+          prunedChannelIds,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      throw error;
+    }
     // Written before the orphan-presidency check below, not after: that check
     // deliberately fails loud (spec/behavior/rbac.md's flag is security-load-
     // bearing, so a failure to set it must not be silently swallowed), and
@@ -405,7 +449,11 @@ export class MemberService {
       action: 'member_removed',
       targetType: 'member',
       targetId: memberId,
-      diff: { user_id: member.user_id },
+      diff: {
+        user_id: member.user_id,
+        // Which PRIVATE channels the removal took them off (#1302).
+        private_channel_ids: prunedChannelIds,
+      },
     });
     // Removing the current President is one of the two ways a chapter can be
     // orphaned (spec/behavior/rbac.md § Presidency Transfer "Edge case") — the
