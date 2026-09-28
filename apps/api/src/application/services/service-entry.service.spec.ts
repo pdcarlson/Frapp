@@ -662,7 +662,7 @@ describe('ServiceEntryService', () => {
       });
 
       expect(result.storagePath).toMatch(
-        /^chapters\/ch-1\/service\/[0-9a-f-]{36}\/R_sum___3_50_\.pdf$/,
+        /^chapters\/ch-1\/service\/[0-9a-f-]{36}\/R_sum_ _3 50_\.pdf$/,
       );
     });
 

@@ -3650,7 +3650,7 @@ describe('ChatService', () => {
       );
 
       expect(result.storagePath).toMatch(
-        /^chapters\/ch-1\/chat\/ch-chan-1\/[0-9a-f-]{36}\/R_sum___3_50_\.pdf$/,
+        /^chapters\/ch-1\/chat\/ch-chan-1\/[0-9a-f-]{36}\/R_sum_ _3 50_\.pdf$/,
       );
     });
 

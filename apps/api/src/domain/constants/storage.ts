@@ -112,37 +112,55 @@ export function flattenArchiveRelativePath(relativePath: string): string {
 }
 
 /**
+ * Matches each character a storage key segment may not keep. What it may keep
+ * is storage-api's own `VALID_OBJECT_KEY` set,
+ * `[A-Za-z0-9_/!.*'() &$=@;:+,?-]` (`supabase/storage`
+ * `src/storage/limits.ts`), minus `/`, which would add a folder, and `?`,
+ * which `@supabase/storage-js` puts into the request URL unencoded, so the key
+ * would be cut at it.
+ */
+const UNSAFE_OBJECT_KEY_CHAR = /[^A-Za-z0-9_!.*'() &$=@;:+,-]/g;
+
+/**
  * The last segment of a storage key built from a client-supplied filename.
  *
  * Every upload-URL route that puts the member's filename into the key
  * (documents, backwork, chat attachments, avatars, service proof) goes through
- * this, because the raw name breaks the upload in two ways the traversal guard
- * does not catch:
+ * this, because a raw name breaks the upload in ways the traversal guard does
+ * not catch. storage-js interpolates the key into the request URL unencoded,
+ * and against storage-api:
  *
- * - storage-api accepts only keys matching `VALID_OBJECT_KEY`
- *   (`[A-Za-z0-9_/!.*'() &$=@;:+,?-]`), so `Résumé.pdf` is refused: at the
- *   mint, which `SupabaseStorageService.getSignedUploadUrl` turns into a 500,
- *   or at the browser's PUT to the signed URL as a 400. Either way the upload
- *   fails.
- * - `@supabase/storage-js` interpolates the key into the request URL
- *   unencoded, so a `#` starts a fragment and the object lands under a key cut
- *   at it, while the API confirms the uncut path, and `%` is malformed
- *   percent-encoding.
+ * - `Résumé.pdf` (anything non-ASCII) mints, then the browser's PUT is refused
+ *   with `Invalid key`.
+ * - `Q1 50% growth.pdf` fails at the mint (a raw `%` is malformed
+ *   percent-encoding), which `SupabaseStorageService.getSignedUploadUrl` turns
+ *   into a 500.
+ * - `Rush #3.pdf` and `q?.pdf` succeed, but the object lands under a key cut
+ *   at the `#` or `?` (`Rush `, `q`) while the API confirms the uncut path, so
+ *   the row points at nothing.
  *
- * `posix.basename` drops any `/`-separated directory part; the squash then
- * replaces each character outside `[A-Za-z0-9._-]` with `_`, one for one
- * (backslashes included). The key's parent folder is a fresh uuid, so it is
- * already unique; the filename is there only so a human reading the bucket can
- * tell objects apart, and the name a member sees is stored separately (a
- * document's `title`, a chat attachment's `filename`). A `.` or `..` result is
- * left for `assertSafeObjectPath` to refuse, and every caller's extension
- * allowlist rejects those first anyway.
+ * `posix.basename` drops any `/`-separated directory part; then each character
+ * `UNSAFE_OBJECT_KEY_CHAR` matches becomes `_`, one for one (a backslash
+ * included).
  *
- * Not reversible, and never reversed: only new keys are built this way, and an
- * existing row keeps the key it was confirmed with.
+ * **The squash is deliberately no wider than that.** A name storage-api
+ * already accepted (`Meeting notes (final).pdf`, `Bob's, A&B.pdf`) comes out
+ * unchanged, because the key's last segment is also the name a member's
+ * download is saved under: chat signs with `download: true`, which sends
+ * `Content-Disposition: attachment` with no filename, so the browser takes the
+ * URL's last segment, and documents and backwork sign with no `downloadAs`.
+ * Squashing spaces or parentheses would rename every such file on disk. It
+ * also keeps the avatar key, which sits directly in the member's profile folder
+ * with no uuid folder above it, from mapping two names that both worked before
+ * to one key. The stored display name (a document's `title`, a chat
+ * attachment's `filename`) is untouched either way.
+ *
+ * A `.` or `..` result is left for `assertSafeObjectPath` to refuse, and every
+ * caller's extension allowlist rejects those first anyway. Only new keys are
+ * built this way: an existing row keeps the key it was confirmed with.
  */
 export function safeObjectFilename(filename: string): string {
-  return posix.basename(filename).replace(/[^A-Za-z0-9._-]/g, '_');
+  return posix.basename(filename).replace(UNSAFE_OBJECT_KEY_CHAR, '_');
 }
 
 /**

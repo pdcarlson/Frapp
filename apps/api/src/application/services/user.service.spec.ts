@@ -154,7 +154,7 @@ describe('UserService', () => {
       );
 
       expect(result.storagePath).toMatch(
-        /^chapters\/ch-1\/profiles\/user-1\/R_sum___3_50_\.jpg$/,
+        /^chapters\/ch-1\/profiles\/user-1\/R_sum_ _3 50_\.jpg$/,
       );
     });
 
