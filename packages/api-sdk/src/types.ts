@@ -978,6 +978,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a chapter member to a private channel */
+        post: operations["ChatController_addChannelMember_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove someone from a private channel (409 if it would leave no chapter member who can read it) */
+        delete: operations["ChatController_removeChannelMember_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/categories/list": {
         parameters: {
             query?: never;
@@ -2702,7 +2736,7 @@ export interface paths {
         get: operations["DiscordImportController_getChannels_v1"];
         /**
          * Map each Discord channel onto a Frapp channel
-         * @description Every channel needs an explicit choice — create new, merge into an existing one, or skip.
+         * @description Every channel needs an explicit choice — create new, merge into an existing one, or skip. A new channel also needs `new_channel_visibility`: an export does not say which channels were private in Discord.
          */
         put: operations["DiscordImportController_setChannelMapping_v1"];
         post?: never;
@@ -2800,7 +2834,7 @@ export interface paths {
         put?: never;
         /**
          * Scan the connected Discord server (bot imports only)
-         * @description Lists every channel and thread the bot can read and records them against this import, all set to `skip` until mapped. Also returns the guild’s roles for the worksheet, and any warnings about what could not be enumerated.
+         * @description Lists every channel in the server, and the threads of each channel the bot can read, and records them against this import, all set to `skip` until mapped. Each channel carries whether the bot can read it and whether it was private in Discord. Also returns the guild’s roles for the worksheet, and any warnings about what could not be read.
          */
         post: operations["DiscordImportController_discover_v1"];
         delete?: never;
@@ -2819,7 +2853,7 @@ export interface paths {
         get?: never;
         /**
          * Map the scanned Discord channels (bot imports only)
-         * @description Send a decision for each top-level channel the scan found. Threads are not addressable — each one follows its parent’s decision, because the admin was asked about the parent and a thread is part of that conversation. A channel the scan did not return is rejected rather than added.
+         * @description Send a decision for each top-level channel the scan found. Threads are not addressable — each one follows its parent’s decision, because the admin was asked about the parent and a thread is part of that conversation. A channel the scan did not return is rejected rather than added. A channel the bot cannot read can only be skipped, and a new channel needs `new_channel_visibility` unless the scan saw it was public in Discord and holding no private thread.
          */
         put: operations["DiscordImportController_setDiscoveredChannelMapping_v1"];
         post?: never;
@@ -3543,6 +3577,10 @@ export interface components {
         CreateGroupDmDto: {
             member_ids: string[];
             name?: string;
+        };
+        AddChannelMemberDto: {
+            /** @description The `users.id` to add. Must be a member of the channel's chapter. */
+            user_id: string;
         };
         CreateCategoryDto: {
             name: string;
@@ -4453,6 +4491,13 @@ export interface components {
             new_channel_name?: string;
             /** @default true */
             new_channel_is_read_only: boolean;
+            /**
+             * @description Who can read the channel `create_new` makes: the whole chapter, or only members holding one of `new_channel_required_permissions` (a ROLE_GATED channel). Omitted or null means not chosen, which is refused unless this is a bot import whose scan saw the channel was public in Discord and holding no private thread. An uploaded export always needs it.
+             * @enum {string}
+             */
+            new_channel_visibility?: "chapter" | "restricted";
+            /** @description Permission strings that can read a `restricted` new channel; a member needs any one. Required and non-empty when `new_channel_visibility` is `restricted`. */
+            new_channel_required_permissions?: string[];
             message_count?: number;
         };
         SetDiscordChannelMappingDto: {
@@ -4472,7 +4517,7 @@ export interface components {
             discord_role_name: string;
         };
         DiscordDiscoveryResponseDto: {
-            /** @description Every channel and thread the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. */
+            /** @description Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord, or for a thread a private thread; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. */
             channels: {
                 [key: string]: unknown;
             }[];
@@ -6098,6 +6143,49 @@ export interface operations {
         requestBody?: never;
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_addChannelMember_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddChannelMemberDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_removeChannelMember_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

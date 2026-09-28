@@ -120,7 +120,6 @@ async function build(current: DiscordImport = job()) {
   bot = {
     isConfigured: jest.fn(() => true),
     discoverChannels: jest.fn(),
-    listRoles: jest.fn(),
     verifyChannelInGuild: jest.fn(),
     fetchMessagePage: jest.fn(),
     openAttachment: jest.fn(),
@@ -506,6 +505,7 @@ describe('DiscordImportService — channel mapping', () => {
           discord_channel_name: 'general',
           mapping_action: 'create_new',
           new_channel_name: '   ',
+          new_channel_visibility: 'chapter',
         },
       ]),
     ).rejects.toThrow(/Name the new channel/);
@@ -657,6 +657,10 @@ function botChannel(overrides: Record<string, unknown> = {}) {
     cursor_before_snowflake: null,
     parent_discord_channel_id: null,
     position: 0,
+    readable: true,
+    private_in_discord: false,
+    new_channel_type: 'PUBLIC' as const,
+    new_channel_required_permissions: null,
     ...overrides,
   };
 }
@@ -719,8 +723,8 @@ describe('DiscordImportService — discovering a guild', () => {
         },
       ],
       warnings: [],
+      roles: [{ id: '3', name: 'Exec' }],
     });
-    bot.listRoles.mockResolvedValue([{ id: '3', name: 'Exec' }]);
 
     const result = await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
 
@@ -763,8 +767,8 @@ describe('DiscordImportService — discovering a guild', () => {
         },
       ],
       warnings: [],
+      roles: [],
     });
-    bot.listRoles.mockResolvedValue([]);
 
     await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
 
@@ -786,8 +790,8 @@ describe('DiscordImportService — discovering a guild', () => {
     bot.discoverChannels.mockResolvedValue({
       channels: [],
       warnings: ['Private archived threads in #general could not be read'],
+      roles: [],
     });
-    bot.listRoles.mockResolvedValue([]);
 
     const result = await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
 
@@ -830,6 +834,343 @@ describe('DiscordImportService — discovering a guild', () => {
       /different Discord server/,
     );
     expect(bot.discoverChannels).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiscordImportService — what the scan saw, and who may read what (#2787)', () => {
+  it("records the bot's access and the channel's privacy from the scan", async () => {
+    const svc = await build(job({ source: 'bot' }));
+    bot.discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          id: 'c1',
+          name: 'cabinet',
+          guildId: GUILD,
+          categoryName: 'Exec',
+          parentChannelId: null,
+          isThread: false,
+          holdsOnlyThreads: false,
+          readable: false,
+          privateInDiscord: true,
+        },
+      ],
+      warnings: [],
+      roles: [],
+    });
+
+    await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
+
+    expect(repo.replaceChannels).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, [
+      expect.objectContaining({
+        readable: false,
+        private_in_discord: true,
+        new_channel_type: 'PUBLIC',
+        new_channel_required_permissions: null,
+      }),
+    ]);
+  });
+
+  it('REFUSES to import a channel the bot cannot read', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_name: 'cabinet', readable: false }),
+    ]);
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '900000000000000001',
+          discord_channel_name: 'cabinet',
+          mapping_action: 'create_new',
+          new_channel_name: 'cabinet',
+          new_channel_visibility: 'chapter',
+        },
+      ]),
+    ).rejects.toThrow(/cannot read #cabinet/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES to merge a channel the bot cannot read, not only to create one', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_name: 'cabinet', readable: false }),
+    ]);
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '900000000000000001',
+          discord_channel_name: 'cabinet',
+          mapping_action: 'use_existing',
+          target_channel_id: OWN_CHANNEL,
+        },
+      ]),
+    ).rejects.toThrow(/cannot read #cabinet/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('still lets an unreadable channel be skipped', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([botChannel({ readable: false })]);
+    await svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: '900000000000000001',
+        discord_channel_name: 'general',
+        mapping_action: 'skip',
+      },
+    ]);
+    expect(repo.replaceChannels).toHaveBeenCalled();
+  });
+
+  it('REFUSES to create a channel that was private in Discord without an explicit visibility', async () => {
+    // The default would be PUBLIC: #cabinet readable by every member.
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_name: 'cabinet', private_in_discord: true }),
+    ]);
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '900000000000000001',
+          discord_channel_name: 'cabinet',
+          mapping_action: 'create_new',
+          new_channel_name: 'cabinet',
+        },
+      ]),
+    ).rejects.toThrow(/private in Discord/);
+  });
+
+  it('reads a null visibility as not chosen, not as a choice of the whole chapter', async () => {
+    // `@IsOptional` lets null through validation; it must not slip past here.
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_name: 'cabinet', private_in_discord: true }),
+    ]);
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '900000000000000001',
+          discord_channel_name: 'cabinet',
+          mapping_action: 'create_new',
+          new_channel_name: 'cabinet',
+          new_channel_visibility: null,
+        },
+      ]),
+    ).rejects.toThrow(/private in Discord/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('treats a channel whose privacy the scan could not read as private', async () => {
+    // The roles read that answers "private?" can fail on its own; unknown must
+    // not fall to the public default.
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_name: 'exec', private_in_discord: null }),
+    ]);
+    const decision = {
+      discord_channel_id: '900000000000000001',
+      discord_channel_name: 'exec',
+      mapping_action: 'create_new' as const,
+      new_channel_name: 'exec',
+    };
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [decision]),
+    ).rejects.toThrow(/could not tell whether #exec is private/);
+
+    await svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      { ...decision, new_channel_visibility: 'chapter' },
+    ]);
+    expect(repo.replaceChannels).toHaveBeenCalled();
+  });
+
+  it('treats a channel holding a private thread as private, because the thread lands in it', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_id: 'c1', discord_channel_name: 'general' }),
+      botChannel({
+        id: 'm-thread',
+        discord_channel_id: 't1',
+        parent_discord_channel_id: 'c1',
+        private_in_discord: true,
+      }),
+    ]);
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: 'c1',
+          discord_channel_name: 'general',
+          mapping_action: 'create_new',
+          new_channel_name: 'general',
+        },
+      ]),
+    ).rejects.toThrow(/#general holds private threads/);
+  });
+
+  it('lets a channel the scan saw was public take the whole-chapter default, ordinary threads and all', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel(),
+      // A public thread: only a PRIVATE one makes its channel need a choice.
+      botChannel({
+        id: 'm-thread',
+        discord_channel_id: 't1',
+        parent_discord_channel_id: '900000000000000001',
+        private_in_discord: false,
+      }),
+    ]);
+    await svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: '900000000000000001',
+        discord_channel_name: 'general',
+        mapping_action: 'create_new',
+        new_channel_name: 'general',
+      },
+    ]);
+    const rows = repo.replaceChannels.mock.calls[0][2] as Record<
+      string,
+      unknown
+    >[];
+    expect(rows[0]).toMatchObject({ new_channel_type: 'PUBLIC' });
+  });
+
+  it('creates it public when the admin says so explicitly', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ private_in_discord: true }),
+    ]);
+    await svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: '900000000000000001',
+        discord_channel_name: 'general',
+        mapping_action: 'create_new',
+        new_channel_name: 'general',
+        new_channel_visibility: 'chapter',
+      },
+    ]);
+    const rows = repo.replaceChannels.mock.calls[0][2] as Record<
+      string,
+      unknown
+    >[];
+    expect(rows[0]).toMatchObject({
+      new_channel_type: 'PUBLIC',
+      new_channel_required_permissions: null,
+      private_in_discord: true,
+    });
+  });
+
+  it('records a restricted channel as ROLE_GATED, and its threads inherit it', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_id: 'c1', private_in_discord: true }),
+      botChannel({
+        id: 'm-thread',
+        discord_channel_id: 't1',
+        parent_discord_channel_id: 'c1',
+        private_in_discord: true,
+      }),
+    ]);
+    await svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: 'c1',
+        discord_channel_name: 'cabinet',
+        mapping_action: 'create_new',
+        new_channel_name: 'cabinet',
+        new_channel_visibility: 'restricted',
+        new_channel_required_permissions: [
+          ' chapter-config:manage ',
+          'chapter-config:manage',
+          'billing:view',
+        ],
+      },
+    ]);
+    const rows = repo.replaceChannels.mock.calls[0][2] as Record<
+      string,
+      unknown
+    >[];
+    const shape = {
+      new_channel_type: 'ROLE_GATED',
+      new_channel_required_permissions: [
+        'chapter-config:manage',
+        'billing:view',
+      ],
+    };
+    expect(rows[0]).toMatchObject(shape);
+    expect(rows[1]).toMatchObject(shape);
+  });
+
+  it('REFUSES a restricted channel that names no permission', async () => {
+    // Chat's own rule (FRA-321): a ROLE_GATED channel gating on nothing is
+    // readable by no one but a President.
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([botChannel()]);
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '900000000000000001',
+          discord_channel_name: 'general',
+          mapping_action: 'create_new',
+          new_channel_name: 'general',
+          new_channel_visibility: 'restricted',
+          new_channel_required_permissions: ['  '],
+        },
+      ]),
+    ).rejects.toThrow(/at least one permission/);
+  });
+
+  it('REFUSES a new channel from an export with no visibility, since an export says nothing about privacy', async () => {
+    const svc = await build(job({ source: 'upload' }));
+    await expect(
+      svc.setChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: 'u1',
+          discord_channel_name: 'cabinet',
+          mapping_action: 'create_new',
+          new_channel_name: 'cabinet',
+          new_channel_visibility: null,
+        },
+      ]),
+    ).rejects.toThrow(/An export does not say whether #cabinet was private/);
+    // The web client omits the key rather than sending null.
+    await expect(
+      svc.setChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: 'u1',
+          discord_channel_name: 'cabinet',
+          mapping_action: 'create_new',
+          new_channel_name: 'cabinet',
+        },
+      ]),
+    ).rejects.toThrow(/An export does not say whether #cabinet was private/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('creates a channel from an export public or restricted as its admin chose', async () => {
+    const svc = await build(job({ source: 'upload' }));
+    await svc.setChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: 'u1',
+        discord_channel_name: 'general',
+        mapping_action: 'create_new',
+        new_channel_name: 'general',
+        new_channel_visibility: 'chapter',
+      },
+      {
+        discord_channel_id: 'u2',
+        discord_channel_name: 'cabinet',
+        mapping_action: 'create_new',
+        new_channel_name: 'cabinet',
+        new_channel_visibility: 'restricted',
+        new_channel_required_permissions: ['chapter-config:manage'],
+      },
+    ]);
+    const rows = repo.replaceChannels.mock.calls[0][2] as Record<
+      string,
+      unknown
+    >[];
+    expect(rows[0]).toMatchObject({
+      new_channel_type: 'PUBLIC',
+      readable: null,
+      private_in_discord: null,
+    });
+    expect(rows[1]).toMatchObject({ new_channel_type: 'ROLE_GATED' });
   });
 });
 

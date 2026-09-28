@@ -177,7 +177,7 @@ Deeper deploy architecture: [`../ops/deployment/`](../ops/deployment/).
 
 ## Infisical sync map
 
-The live syncs — source environment, secret path, destination scope, git branch filter, and the
+The live syncs — source environment, secret path, destination scope, and the
 date the dashboard was last read — are inventoried in exactly one place: [`SECRETS_MANAGEMENT.md` §5 "Configure Secret Syncs"](../environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs). GitHub Actions is not one of them; which workflows pull at job time instead: [`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync). Do not restate the table here.
 
 Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) and root `.infisical.json`.

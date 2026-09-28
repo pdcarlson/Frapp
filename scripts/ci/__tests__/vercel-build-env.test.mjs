@@ -16,7 +16,7 @@ import {
 } from "../lib/vercel-build-env.mjs";
 
 // Pins `lib/vercel-build-env.mjs` (#2672). The first describe is the one that
-// matters over time: once the staging syncs are deleted, a key missing from
+// matters over time: with the staging syncs deleted (2026-09-28), a key missing from
 // `APP_CONFIG_KEYS` never reaches a staging build, and nothing else would say so.
 // The build would go green on the app's fallback (localhost, or the feature off),
 // so the table is derived from the apps' own `process.env` reads here instead of

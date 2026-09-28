@@ -99,10 +99,11 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
     //    `a",b.png` serializes to `in.("a",b.png")` and PostgREST reads it as
     //    two *different* values. The real path is never queried, the object
     //    looks unreferenced, and it is deleted. Paths are attacker-influenced:
-    //    `requestChatUploadUrl` interpolates `path.basename(filename)`, and
-    //    neither the channel-prefix check nor `assertSafeStoragePath` rejects
-    //    quotes, commas or parens. `.eq()` sends the value whole, so there is
-    //    no list syntax to break.
+    //    a sent message's `storage_path` is client-claimed, and neither the
+    //    channel-prefix check nor `assertSafeStoragePath` rejects quotes,
+    //    commas or parens. The keys the API mints (`safeObjectFilename`) keep
+    //    commas and parens too, as do rows confirmed before it. `.eq()` sends
+    //    the value whole, so there is no list syntax to break.
     // 2. **A list read is capped by PostgREST `max_rows` (1000).** An over-cap
     //    read returns a plain 200 with a truncated body, so a widely reused
     //    imported object could have every one of its rows dropped from the

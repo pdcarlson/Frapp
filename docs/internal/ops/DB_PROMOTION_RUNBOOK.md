@@ -454,20 +454,23 @@ deploy, the health check, and the Vercel upload. Those are withheld by choice �
 each one writes to production or takes production traffic — not because they are
 impossible to rehearse, so do not read the list as a technical limit.
 
-One difference sits _inside_ the build, and it is the easiest thing here to
-misread: a real run compiles with `SENTRY_AUTH_TOKEN` whenever the deploy
-environment carries it, and then uploads source maps and creates a Sentry release. A dry run clears that token —
-but only the copy in the job environment, **not** the copy `vercel pull` writes
-into the pulled env file. So whenever that token is in Infisical `prod`
+One difference sits _inside_ the build: a real run compiles with
+`SENTRY_AUTH_TOKEN` when Infisical `prod` holds it
 ([which environments carry it](../environment/ENV_REFERENCE.md#appsapi-nestjs--render)),
-**a dry run may still create a Sentry release** for a commit that never shipped.
-If you are chasing production errors attributed to a version that was never
-deployed, a dry run is a live suspect, not a ruled-out one. Either way, a green
-dry-run build does not prove the real build's Sentry upload will succeed.
+and then uploads source maps and creates a Sentry release. A dry run withholds the
+token from the build and strips it from the file `vercel pull` writes, so it mints
+no release (#2275, since #2673). **Corrected 2026-09-28:** before that, the dry run
+cleared only the job-env copy, so a dry run could mint a release through the
+pulled file. That still holds for a dry run of a commit from before #2673 (for
+example a rollback rehearsal), because the build runs that commit's copy of
+`deploy-vercel.mjs`: if you are chasing production errors attributed to a version
+that never shipped, such a dry run is a live suspect. Either way, a green dry-run
+build does not prove the real build's Sentry upload will succeed.
 
 A green dry run means the commit validates, the pending migrations replay cleanly
-against production's applied state, and both bundles compile against Vercel's
-current Production variables. It is not a promise that the apply or the upload
+against production's applied state, and both bundles compile against the app
+config currently in Infisical `prod` (no Vercel Production row reaches the build
+since #2673; a `::warning::` names any key Vercel held that Infisical didn't). It is not a promise that the apply or the upload
 will succeed.
 
 If you need to apply migrations _without_ shipping code — recovering a failed
@@ -559,6 +562,38 @@ That list is **shrink-only** and enforced by a version ceiling: a migration
 created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
+
+## 2026-09-28: Discord import channel visibility and scan readability (#2787)
+
+### 20260928171600_discord_import_channel_visibility.sql
+
+- **Purpose**: Adds four columns to `public.discord_import_channels`: `readable boolean` and `private_in_discord boolean` (what the bot saw when it scanned; null when unknown, as on the upload path), `new_channel_type text not null default 'PUBLIC'`, and `new_channel_required_permissions text[]`. Adds `discord_import_channels_new_channel_type_check`, which allows `PUBLIC` or `ROLE_GATED` and requires at least one permission for `ROLE_GATED`. Existing rows take `PUBLIC` and nulls, which is what every import created until now, and which leaves a gap for imports mapped before this release (below). The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Checks**: After `db push`,
+  `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_import_channels' and column_name in ('readable','private_in_discord','new_channel_type','new_channel_required_permissions') order by 1;` returns four rows: `new_channel_required_permissions | ARRAY | YES`, `new_channel_type | text | NO | 'PUBLIC'::text`, `private_in_discord | boolean | YES`, `readable | boolean | YES`.
+  `select pg_get_constraintdef(oid) from pg_constraint where conname = 'discord_import_channels_new_channel_type_check';` names both `PUBLIC` and `ROLE_GATED` and `array_length`.
+- **Promoter notes**: Ship it before, or with, the API that writes the columns. An older API ignores them and keeps creating `PUBLIC` channels, which is its existing behaviour. A newer API against an unmigrated database fails discovery and mapping writes on the unknown columns. Re-applying is idempotent (`add column if not exists`, and the constraint is dropped and re-added). Hosted projects are not applied from a cloud-agent session. Deploy the web app with the API: the API now refuses a new channel with no `new_channel_visibility`, which the previous web build never sends, so an upload mapping saved from it (or from a tab opened before the deploy) gets a 400 until the page is reloaded.
+- **Before promoting, find imports mapped under the previous release**, bot and upload alike. Their new-channel rows keep `PUBLIC`, and neither starting nor resuming an import re-checks its mapping, so a channel that was private in Discord would still be created readable by the whole chapter. `running` counts because the worker resumes a running import, and `failed` because a failed import can be started again. The worker creates a channel for any row with no `target_channel_id` that is not `completed` or `skipped`, a `failed` row included, so those are the rows counted:
+  `select i.id, i.chapter_id, i.source, i.status, count(*) as new_channels from public.discord_import_channels c join public.discord_imports i on i.id = c.import_id where i.status in ('draft', 'ready', 'running', 'failed') and c.mapping_action = 'create_new' and c.target_channel_id is null and c.status not in ('completed', 'skipped') and c.parent_discord_channel_id is null group by i.id, i.chapter_id, i.source, i.status;`
+  Cancel each one it lists (Cancel on the chapter's Discord import page, `POST /v1/discord-imports/{id}/cancel`; a running import stops at its next checkpoint). A cancelled import cannot be changed or restarted, so tell the chapter's admin to start a new one, whose mapping step asks who can read each new channel that needs it. Staging had none on 2026-09-28, of either source: its only import was a bot draft with every channel skipped.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-import-channel-visibility-20260928171600) § Rollback Discord import channel visibility.
+
+## 2026-09-28: Add and remove a PRIVATE channel's members (#1302)
+
+### 20260928170000_chat_private_channel_members.sql
+
+- **Purpose**: Adds three `security invoker` RPCs, each with `search_path = public, pg_temp` and EXECUTE for `service_role` only.
+  - `add_private_channel_member(p_channel_id, p_chapter_id, p_user_id)` appends the user to a PRIVATE channel's `member_ids` unless already listed, treating a NULL list as empty.
+  - `remove_private_channel_member(...)` removes them. It refuses (returns no row) when that would take away the last current member of the chapter in the list. Removing an id whose member has left the chapter is always allowed, and removing someone not listed is a no-op that returns the row.
+  - `remove_user_from_private_channels(p_chapter_id, p_user_id)` takes a member leaving the chapter off every PRIVATE list in it and returns the ids it changed. `MemberService.remove` calls it before deleting the membership.
+
+  All three match only `PRIVATE` channels in the named chapter, and compute each new array from the row's own column, so concurrent calls serialize on the row lock. No table, column, policy or data changes. The rules are in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#channels) § Channels.
+- **Checks**: After `db push`,
+  `select proname, prosecdef, proconfig from pg_proc where proname in ('add_private_channel_member', 'remove_private_channel_member', 'remove_user_from_private_channels') order by proname;` returns three rows, each `false | {"search_path=public, pg_temp"}`.
+  `select has_function_privilege('anon', 'public.add_private_channel_member(uuid, uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.add_private_channel_member(uuid, uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | false`, and the same for `public.remove_private_channel_member(uuid, uuid, uuid)` and `public.remove_user_from_private_channels(uuid, uuid)`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
+- **Promoter notes**: Apply before, or with, the API that carries #1302; both the staging merge and a `full` production run migrate before deploying. An API that reaches a database without it answers 500 on the two new routes, and **refuses to remove any member from a chapter** (500), because `MemberService.remove` calls `remove_user_from_private_channels` first. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-private-channel-membership-20260928170000) § Rollback PRIVATE channel membership.
 
 ## 2026-09-27: Unread and mention counts skip a blocked sender (#2521)
 

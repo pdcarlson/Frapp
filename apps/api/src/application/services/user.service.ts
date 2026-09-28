@@ -1,4 +1,3 @@
-import * as path from 'path';
 import {
   Inject,
   Injectable,
@@ -21,6 +20,7 @@ import { User } from '#domain/entities/user.entity';
 import {
   PROFILES_BUCKET,
   profileFolderPrefix,
+  safeObjectFilename,
 } from '#domain/constants/storage';
 
 @Injectable()
@@ -70,7 +70,7 @@ export class UserService {
       );
     }
 
-    const storagePath = `${profileFolderPrefix(chapterId, userId)}/${path.basename(filename)}`;
+    const storagePath = `${profileFolderPrefix(chapterId, userId)}/${safeObjectFilename(filename)}`;
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       PROFILES_BUCKET,
       storagePath,

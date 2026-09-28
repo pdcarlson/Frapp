@@ -89,4 +89,29 @@ describe("useGetOrCreateDm channel-cache refresh (#316)", () => {
       { id: "dm-1" },
     ]);
   });
+
+  // Mobile's member sheet passes `awaitRefetch: false`: its chat home already
+  // observes ["channels"], and a refetch whose retry pauses offline must not
+  // hold the mutation pending with it.
+  it("with awaitRefetch false, resolves once the DM exists and still refetches the list", async () => {
+    const qc = makeClient();
+    const refetchChannels = vi.fn(() => new Promise(() => {}));
+    qc.setQueryDefaults(["channels"], { queryFn: refetchChannels });
+    qc.setQueryData(["channels"], [{ id: "general" }]);
+
+    mockPost.mockResolvedValueOnce({ data: { id: "dm-1" }, error: undefined });
+
+    const { result } = renderHook(
+      () => useGetOrCreateDm({ awaitRefetch: false }),
+      { wrapper: makeWrapper(qc) },
+    );
+
+    let value: unknown;
+    await act(async () => {
+      value = await result.current.mutateAsync({ member_id: "u2" });
+    });
+
+    expect(value).toEqual({ id: "dm-1" });
+    expect(refetchChannels).toHaveBeenCalledTimes(1);
+  });
 });

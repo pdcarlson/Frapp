@@ -265,6 +265,8 @@ export function useSetDiscordChannelMapping() {
         // Required, not optional: the DTO declares a default, so the generated
         // contract type makes it non-optional. Callers state it explicitly.
         new_channel_is_read_only: boolean;
+        new_channel_visibility?: "chapter" | "restricted";
+        new_channel_required_permissions?: string[];
         message_count?: number;
       }[];
     }) => {
