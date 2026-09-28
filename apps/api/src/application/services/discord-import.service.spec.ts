@@ -1997,37 +1997,78 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       );
     });
 
-    it('reuses a role of the same name rather than creating a second, and grants nothing twice', async () => {
-      // An earlier start created Rush Chair and granted Exec, then failed
-      // before recording either.
+    it("refuses, rather than adopts, a role someone added under a new role's name since", async () => {
+      // Saving would have refused the clash; adopting it at start would give
+      // its members the imported channels without anyone choosing that.
       const svc = await build(
         job({ source: 'bot', guild_id: GUILD, role_mapping: savedMapping() }),
       );
       repo.findChannels.mockResolvedValue([gated()]);
       rbac.findByChapter.mockResolvedValue([
-        role({
-          id: EXEC_ROLE,
-          name: 'Exec',
-          permissions: ['members:view', 'channels:read:exec'],
-        }),
-        role({
-          id: 'rush-role',
-          name: 'rush chair',
-          permissions: ['channels:read:rush-chair'],
-        }),
+        ...chapterRoles(),
+        role({ id: 'someone-elses', name: 'rush chair', permissions: [] }),
       ]);
 
-      await svc.start(IMPORT_ID, CHAPTER, true);
-
+      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+        /A role named "rush chair" was added since the roles were mapped/,
+      );
       expect(rbac.create).not.toHaveBeenCalled();
       expect(rbac.update).not.toHaveBeenCalled();
-      const [, , patch] = repo.update.mock.calls.at(-1);
-      expect(
-        patch.role_mapping.find(
-          (entry: { discord_role_id: string }) =>
-            entry.discord_role_id === D_RUSH,
-        ),
-      ).toMatchObject({ frapp_role_id: 'rush-role' });
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('needs roles:manage to grant a read permission to an existing role, even when it creates none', async () => {
+      const grantOnly = savedMapping().map((entry) =>
+        entry.discord_role_id === D_RUSH
+          ? {
+              ...entry,
+              action: 'ignore' as const,
+              new_role_name: null,
+              read_permission: null,
+            }
+          : entry,
+      );
+      const svc = await build(
+        job({ source: 'bot', guild_id: GUILD, role_mapping: grantOnly }),
+      );
+      repo.findChannels.mockResolvedValue([
+        gated({
+          discord_reader_role_ids: [D_EXEC],
+          new_channel_required_permissions: ['channels:read:exec'],
+        }),
+      ]);
+      rbac.findByChapter.mockResolvedValue(chapterRoles());
+
+      await expect(svc.start(IMPORT_ID, CHAPTER, false)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(rbac.update).not.toHaveBeenCalled();
+    });
+
+    it('checks the gate of a channel this import merges into, which it did not create', async () => {
+      const svc = await build(
+        job({ source: 'bot', guild_id: GUILD, role_mapping: savedMapping() }),
+      );
+      repo.findChannels.mockResolvedValue([
+        gated(),
+        botChannel({
+          id: 'row-board',
+          discord_channel_id: '900000000000000007',
+          mapping_action: 'use_existing',
+          status: 'pending',
+          target_channel_id: 'board',
+        }),
+      ]);
+      rbac.findByChapter.mockResolvedValue(chapterRoles());
+      // #board's role was deleted; its gate is left on the string.
+      channelRepo.findRoleGates.mockResolvedValue([
+        { id: 'board', required_permissions: ['channels:read:rush-chair'] },
+      ]);
+
+      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+        /channels:read:rush-chair is already in use/,
+      );
+      expect(rbac.create).not.toHaveBeenCalled();
     });
 
     it('refuses a channel whose gate no longer matches the role mapping, before creating anything', async () => {

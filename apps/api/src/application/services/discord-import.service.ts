@@ -1269,9 +1269,9 @@ export class DiscordImportService {
    * A new role is created with only the read permissions that gate an
    * imported channel, and nothing else (owner's decision on #2818). Its id is
    * recorded on the import as soon as it exists, so a start that fails part
-   * way leaves a mapping that points at it. Re-running is safe: a new role
-   * that already exists by name is used, and a permission a role already
-   * holds is not added twice.
+   * way leaves a mapping that points at it, and re-running skips it. A role
+   * someone else added under a new role's name since is refused, not
+   * adopted, and a permission a role already holds is not added twice.
    */
   private async provisionRoles(
     importId: string,
@@ -1318,15 +1318,20 @@ export class DiscordImportService {
     const byId = new Map(roles.map((role) => [role.id, role]));
     const byName = new Map(roles.map((role) => [roleNameKey(role.name), role]));
 
-    // A new role that already exists by name (an earlier start that failed,
-    // or one someone made since) is used rather than duplicated.
+    // A role named like a new one, and not recorded as this import's, was
+    // made by someone else since the mapping was saved. It is not adopted:
+    // saving would have refused the clash, and adopting it here would give
+    // its members the imported channels without anyone choosing that.
     const provisioned = mapping.map((entry) => ({ ...entry }));
     for (const entry of provisioned) {
       if (entry.action !== 'new' || entry.frapp_role_id !== null) continue;
-      const existing = byName.get(
-        roleNameKey(entry.new_role_name ?? entry.discord_role_name),
-      );
-      if (existing) entry.frapp_role_id = existing.id;
+      const name = entry.new_role_name ?? entry.discord_role_name;
+      const existing = byName.get(roleNameKey(name));
+      if (existing) {
+        throw new BadRequestException(
+          `A role named "${existing.name}" was added since the roles were mapped. Map ${entry.discord_role_name} to it, or give the new role another name, then start the import.`,
+        );
+      }
     }
 
     // The plan: roles to create, grants to add, and who may hold each
@@ -1385,9 +1390,13 @@ export class DiscordImportService {
       }
     }
     if (newlyGranted.size > 0) {
+      // Only channels this import created, never a merge target: a
+      // `use_existing` channel was there before and keeps its own gate.
       const own = new Set(
         channels.flatMap((channel) =>
-          channel.target_channel_id ? [channel.target_channel_id] : [],
+          channel.mapping_action === 'create_new' && channel.target_channel_id
+            ? [channel.target_channel_id]
+            : [],
         ),
       );
       for (const gate of await this.channelRepo.findRoleGates(chapterId)) {

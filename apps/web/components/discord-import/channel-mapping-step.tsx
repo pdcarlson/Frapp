@@ -424,7 +424,7 @@ function CategoryGroup({
   existingNames: { id: string; name: string }[];
   readersOf: ReadersOf;
   catalog: PermissionCatalogEntry[];
-  holders: ReadonlyMap<string, readonly string[]>;
+  holders: ReadonlyMap<string, readonly string[]> | undefined;
   catalogLoading: boolean;
   catalogUnavailable: boolean;
 }) {
@@ -665,7 +665,7 @@ function BulkRestrictPanel({
   scope: string;
   bulk: BulkVisibility;
   catalog: PermissionCatalogEntry[];
-  holders: ReadonlyMap<string, readonly string[]>;
+  holders: ReadonlyMap<string, readonly string[]> | undefined;
   catalogLoading: boolean;
   catalogUnavailable: boolean;
 }) {
@@ -710,7 +710,7 @@ function ChannelRow({
   /** Who "Same as Discord" resolves to; null where it is not on offer. */
   readers: SameAsDiscordReaders | null;
   catalog: PermissionCatalogEntry[];
-  holders: ReadonlyMap<string, readonly string[]>;
+  holders: ReadonlyMap<string, readonly string[]> | undefined;
   catalogLoading: boolean;
   catalogUnavailable: boolean;
 }) {

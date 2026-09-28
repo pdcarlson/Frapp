@@ -58,7 +58,18 @@ describe("matchFrappRole (#2818)", () => {
     ];
     expect(matchFrappRole("ΓΓ Class", greek)).toBeNull();
     expect(matchFrappRole("δδ class", greek)?.role.id).toBe("delta-class");
-    expect(matchFrappRole("🎮", greek)).toBeNull();
+    // Vowel signs are part of Devanagari letters, not accents to fold.
+    const hindi = [
+      ...frappRoles,
+      { id: "karyakari", name: "कार्यकारी", system_key: null },
+    ];
+    expect(matchFrappRole("कर्यकरी", hindi)).toBeNull();
+    expect(matchFrappRole("कार्यकारी", hindi)?.role.id).toBe("karyakari");
+    // An emoji-only name has no key, even beside an emoji-only Frapp role,
+    // and even when one carries a variation selector.
+    const emoji = [...frappRoles, { id: "star", name: "⭐️", system_key: null }];
+    expect(matchFrappRole("🔥", emoji)).toBeNull();
+    expect(matchFrappRole("🎮️", emoji)).toBeNull();
   });
 
   it("does not read an officer as the people they look after", () => {

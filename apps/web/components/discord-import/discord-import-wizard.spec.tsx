@@ -20,6 +20,7 @@ const {
   channelsQuery,
   myPermissions,
   rolesFail,
+  permissionsFail,
 } = vi.hoisted(() => ({
   createImport: vi.fn(),
   setChannelMapping: vi.fn(),
@@ -34,6 +35,9 @@ const {
   availability: { value: { available: true } as { available: boolean } },
   myPermissions: { value: ["*"] as string[] },
   rolesFail: { value: false },
+  // "error": no permissions ever loaded; "stale": a refetch failed but the
+  // last answer is kept, as TanStack Query v5 does.
+  permissionsFail: { value: null as null | "error" | "stale" },
   channelsQuery: {
     value: {
       data: [{ id: "ch-1", name: "general" }] as unknown,
@@ -116,8 +120,11 @@ vi.mock("@repo/hooks", () => ({
           refetch: () => Promise.resolve(),
         },
   useMyPermissions: () => ({
-    data: { permissions: myPermissions.value },
-    isError: false,
+    data:
+      permissionsFail.value === "error"
+        ? undefined
+        : { permissions: myPermissions.value },
+    isError: permissionsFail.value !== null,
     refetch: () => Promise.resolve(),
   }),
   // Phase 3: the bot path.
@@ -339,6 +346,7 @@ describe("ImportWizard — the bot path", () => {
     setRoleMapping.mockResolvedValue({});
     myPermissions.value = ["*"];
     rolesFail.value = false;
+    permissionsFail.value = null;
     channelsQuery.value = {
       data: [{ id: "ch-1", name: "general" }],
       isPending: false,
@@ -909,6 +917,33 @@ describe("ImportWizard — the bot path", () => {
         roles: { action: string }[];
       };
       expect(roles.every((role) => role.action === "ignore")).toBe(true);
+    });
+
+    it("holds every role on Ignore, and saves exactly that, when the viewer's permissions cannot be loaded", async () => {
+      permissionsFail.value = "error";
+      scanWithRoles();
+      renderAtConsent();
+      await screen.findByRole("heading", { name: "Map the roles" });
+      expect(
+        screen.getByText(/could not load your chapter.s roles/),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await waitFor(() => expect(setRoleMapping).toHaveBeenCalled());
+      const { roles } = setRoleMapping.mock.calls[0]![0] as {
+        roles: { action: string }[];
+      };
+      expect(roles.every((role) => role.action === "ignore")).toBe(true);
+    });
+
+    it("keeps using the last permissions answer when only a refetch failed", async () => {
+      permissionsFail.value = "stale";
+      scanWithRoles();
+      renderAtConsent();
+      await screen.findByRole("heading", { name: "Map the roles" });
+      expect(
+        screen.queryByText(/could not load your chapter.s roles/),
+      ).not.toBeInTheDocument();
+      expect(becomes("treasurer").value).toBe("role-treasurer");
     });
 
     it("keeps every role on Ignore for a viewer who cannot manage roles", async () => {

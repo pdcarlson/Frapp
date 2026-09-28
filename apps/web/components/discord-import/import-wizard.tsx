@@ -320,17 +320,26 @@ export function ImportWizard({
   // an all-Ignore mapping is still a valid one, so a viewer who cannot read
   // the roles list (it needs members:view) can still finish the import.
   const holdsRolesManage = can("roles:manage", myPermissions.data?.permissions);
-  const rolesLock: RoleStepLock | null = myPermissions.isError
-    ? { reason: "unavailable", retry: () => void myPermissions.refetch() }
-    : myPermissions.data !== undefined && !holdsRolesManage
-      ? { reason: "permission" }
-      : frappRolesQuery.data === undefined && frappRolesQuery.isError
-        ? {
-            reason: "unavailable",
-            retry: () => void frappRolesQuery.refetch(),
-          }
-        : null;
-  const canManageRoles = holdsRolesManage && frappRolesQuery.data !== undefined;
+  // Each "could not load" lock applies only when there is no answer at all:
+  // a background refetch that fails keeps its last data (TanStack Query v5),
+  // and that answer still stands.
+  const rolesLock: RoleStepLock | null =
+    myPermissions.data === undefined && myPermissions.isError
+      ? { reason: "unavailable", retry: () => void myPermissions.refetch() }
+      : myPermissions.data !== undefined && !holdsRolesManage
+        ? { reason: "permission" }
+        : frappRolesQuery.data === undefined && frappRolesQuery.isError
+          ? {
+              reason: "unavailable",
+              retry: () => void frappRolesQuery.refetch(),
+            }
+          : null;
+  // One predicate for what the step shows and what it saves: whenever the
+  // step says every role stays on Ignore, every role does.
+  const canManageRoles =
+    rolesLock === null &&
+    holdsRolesManage &&
+    frappRolesQuery.data !== undefined;
   const readsPrivate = useMemo(
     () => privateReads(staged?.channels ?? []),
     [staged],

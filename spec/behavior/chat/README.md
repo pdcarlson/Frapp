@@ -604,8 +604,9 @@ channel that reports a different one fails the import rather than being skipped.
   Threads do not take a private channel's default away: every thread in one
   reads as private, because it inherits the channel's answer, and it lands
   with the channel's readers, who could see it in Discord. A genuinely private
-  thread is read only when the chapter gives the bot Manage Threads, and lands
-  there too. Scanning again re-asks any whole-chapter choice, or merge, whose
+  thread is read only when the bot can see it (it was added to the thread, or
+  the chapter gave it Manage Threads, which listing archived private threads
+  needs), and it lands there too. Scanning again re-asks any whole-chapter choice, or merge, whose
   channel has since turned private, and any Same as Discord choice whose
   readers the new scan no longer names. An
   uploaded export carries no permissions, so every new channel from one needs

@@ -363,6 +363,20 @@ describe("restageChoices", () => {
     expect(next["1"]?.visibility).toBeUndefined();
   });
 
+  it("keeps a merge into a channel that was private before and after, whoever its readers now are", () => {
+    const officers = {
+      ...open("1", "officers"),
+      privateInDiscord: true,
+      readerRoleIds: ["r-exec"],
+    };
+    const merge = { action: "use_existing" as const, targetChannelId: "X" };
+    expect(
+      restageChoices([officers], { "1": merge }, [
+        { ...officers, readerRoleIds: [] },
+      ])["1"],
+    ).toEqual(merge);
+  });
+
   it("keeps a restricted choice when the channel turns out private, since it is already safe", () => {
     const first = [open("1", "exec")];
     const choices = {

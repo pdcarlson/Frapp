@@ -21,7 +21,11 @@ import type { PermissionCatalogEntry } from "./permission-checkbox-grid";
  */
 export function useGateCatalog(systemCatalog: PermissionCatalogEntry[]): {
   catalog: PermissionCatalogEntry[];
-  holders: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Undefined until the roles have loaded, so the grid claims nothing about
+   * who holds what rather than "no role holds this" for every option.
+   */
+  holders: ReadonlyMap<string, readonly string[]> | undefined;
 } {
   const rolesQuery = useRoles();
   const roles = useMemo(
@@ -40,7 +44,9 @@ export function useGateCatalog(systemCatalog: PermissionCatalogEntry[]): {
     }
     return [...systemCatalog, ...extra];
   }, [systemCatalog, roles]);
+  const rolesLoaded = rolesQuery.data !== undefined;
   const holders = useMemo(() => {
+    if (!rolesLoaded) return undefined;
     const map = new Map<string, string[]>();
     for (const role of roles) {
       for (const permission of role.permissions ?? []) {
@@ -48,6 +54,6 @@ export function useGateCatalog(systemCatalog: PermissionCatalogEntry[]): {
       }
     }
     return map;
-  }, [roles]);
+  }, [roles, rolesLoaded]);
   return { catalog, holders };
 }

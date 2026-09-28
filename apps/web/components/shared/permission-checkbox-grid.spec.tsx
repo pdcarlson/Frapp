@@ -24,4 +24,19 @@ describe("PermissionCheckboxGrid", () => {
     fireEvent.click(box);
     expect(onToggle).toHaveBeenCalledWith("channels:read:exec");
   });
+
+  it("claims nothing about holders when it is given none", () => {
+    // Chat admin passes no holders until the roles have loaded, so a slow
+    // or failed roles read never reads as "no role holds this".
+    render(
+      <PermissionCheckboxGrid
+        catalog={[{ key: "MEMBERS_VIEW", permission: "members:view" }]}
+        catalogLoading={false}
+        catalogUnavailable={false}
+        selected={new Set()}
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.queryByText("no role holds this")).not.toBeInTheDocument();
+  });
 });

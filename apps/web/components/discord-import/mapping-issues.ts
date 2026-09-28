@@ -147,11 +147,16 @@ export function restageChoices(
     if (!was || !kept) continue;
     if (channel.readable === false || was.readable === false) continue;
     const reason = privacyReason(channel);
-    // "Same as Discord" is a fact of the scan too: a channel whose readers
-    // are no longer known (or are now none) goes back to its default.
+    // "Same as Discord" is a fact of the scan too: a new channel whose
+    // visibility is its default (or unchosen) goes back to the default when
+    // whether Same as Discord is on offer changed. A merge, or a visibility
+    // the admin picked, is not tied to it.
+    const tiedToDefault =
+      kept.action === "create_new" &&
+      (kept.visibility === "discord" || kept.visibility === undefined);
     if (
       reason === privacyReason(was) &&
-      defaultVisibility(channel) === defaultVisibility(was)
+      (!tiedToDefault || defaultVisibility(channel) === defaultVisibility(was))
     ) {
       next[channel.channelId] = kept;
     } else if (kept.action === "create_new") {

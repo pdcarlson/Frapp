@@ -23,26 +23,31 @@ export interface FrappRole {
 export type MatchKind = "same-name" | "close" | null;
 
 /**
- * Letters and digits only, any case, accents folded: `Vice-President` and
- * `vice president` are the same name. Letters are any script's, not only
- * ASCII: "ΔΔ Class" and "ΓΓ Class" are different pledge classes, and
- * dropping the Greek would make them one.
+ * Letters and digits only, any case, Latin accents folded: `Vice-President`
+ * and `vice president` are the same name. Letters are any script's, not
+ * only ASCII: "ΔΔ Class" and "ΓΓ Class" are different pledge classes, and
+ * dropping the Greek would make them one. Combining marks outside the Latin
+ * accent block are kept, because in Devanagari or Thai they are part of the
+ * letters: "कार्यकारी" and "कर्यकरी" are different words.
  */
 export function nameKey(name: string): string {
-  return name
+  const key = name
     .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
+    // Latin accents, and the marks emoji carry (variation selectors, the
+    // keycap), which are not part of any word.
+    .replace(/[\u0300-\u036f\u20e3\ufe00-\ufe0f]/g, "")
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "");
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, "");
+  return /[\p{L}\p{N}]/u.test(key) ? key : "";
 }
 
 /** Words of a name, singular, without numbers: `Pledges 2026` → `pledge`. */
 function words(name: string): string[] {
   return name
     .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u0300-\u036f\u20e3\ufe00-\ufe0f]/g, "")
     .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
     .filter((word) => word.length > 0 && !/^\p{N}+$/u.test(word))
     .map((word) =>
       word.length > 3 && word.endsWith("s") && !word.endsWith("ss")
