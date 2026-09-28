@@ -316,9 +316,9 @@ jobs:
       # migrations-only run doesn't run them either: the code didn't ship, so
       # it can't close the alert. A `deploy` job that ran no step (a declined
       # approval, say) fails with production unchanged; deploy-alert.mjs reads
-      # this attempt's jobs (`actions: read`) and files nothing for it. The tag is not the alert's: a failed `release` reds the
-      # summary below, and `production-release-pin.yml`'s P1 alert catches
-      # hosts left untagged.
+      # this attempt's jobs (`actions: read`) and files nothing for it. The tag
+      # is not the alert's: a failed `release` reds the summary below, and
+      # `production-release-pin.yml`'s P1 alert catches hosts left untagged.
       - name: Checkout
         if: ${{ !cancelled() && !inputs.dry_run_only && (inputs.scope != 'migrations-only' || needs.deploy.result != 'success') }}
         uses: actions/checkout@v4
