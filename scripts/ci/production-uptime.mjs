@@ -163,20 +163,21 @@ export async function runWatchdog({
   runUrl = "",
   fetchImpl,
 }) {
-  const lookup = await findAlertIssuesDetailed({
-    token,
-    repo,
-    fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
-  });
-  const open = lookup.lookupOk
-    ? lookup.issues.find((issue) => issue.state === "open")
-    : null;
-
   if (!result.ok) {
     // A 15-minute cadence must not comment on every tick. Create or reopen
-    // only; an already-open P1 *is* the incident.
+    // only; an already-open P1 *is* the incident. A failed lookup falls
+    // through to raiseAlert, which looks again and creates on a second failure:
+    // a duplicate self-heals on recovery, silence about an outage does not.
+    const lookup = await findAlertIssuesDetailed({
+      token,
+      repo,
+      fetchImpl,
+      title: ALERT_ISSUE_TITLE,
+      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    });
+    const open = lookup.lookupOk
+      ? lookup.issues.find((issue) => issue.state === "open")
+      : null;
     if (open) {
       return {
         outcome: "fail",
@@ -199,11 +200,6 @@ export async function runWatchdog({
     return { outcome: "fail", alert: raised, lookupOk: lookup.lookupOk };
   }
 
-  if (!lookup.lookupOk) {
-    return { outcome: "pass", resolved: false, lookupOk: false };
-  }
-
-  const hadOpen = lookup.issues.some((issue) => issue.state === "open");
   const resolved = await resolveAlert({
     token,
     repo,
@@ -213,19 +209,16 @@ export async function runWatchdog({
     buildRecoveryBody: () =>
       `Production /health/ready returned 200 status=ok again.${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });
-  // `action: "failed"` is not recovery. Treating anything other than "none"
-  // as closed used to green the job while the P1 stayed open (the same
-  // false-closure `alert-issue.mjs` already refuses to report as `closed`).
-  if (resolved.action === "failed") {
-    return { outcome: "fail", resolved: false, lookupOk: true };
-  }
-  // resolveAlert looks up again. A failed second GET returns [] → "none".
-  // If this run already saw an open P1, that is not recovery.
-  if (hadOpen && resolved.action === "none") {
-    return { outcome: "fail", resolved: false, lookupOk: true };
+  // An unreadable tracker deliberately passes: production answered ready, and
+  // main() warns that nothing was closed. `action: "failed"` is not recovery.
+  // Treating anything other than "none" as closed used to green the job while
+  // the P1 stayed open (the same false-closure `alert-issue.mjs` already
+  // refuses to report as `closed`).
+  if (resolved.action === "unread") {
+    return { outcome: "pass", resolved: false, lookupOk: false };
   }
   return {
-    outcome: "pass",
+    outcome: resolved.action === "failed" ? "fail" : "pass",
     resolved: resolved.action === "closed",
     lookupOk: true,
   };

@@ -10,7 +10,10 @@ import {
   collectFindings,
   looksLikeVercelProject,
   readHealthCheckPath,
+  syncGuardrailsAlert,
+  ALERT_ISSUE_TITLE,
 } from "../production-guardrails.mjs";
+import { quiet } from "./helpers.mjs";
 
 const RENDER_SERVICE_ID = "srv-test";
 const VERCEL_PROJECTS = [
@@ -359,5 +362,87 @@ describe("health-check-path helper lives in the shared lib", () => {
     assert.match(src, /from "\.\/lib\/render-health-check-path\.mjs"/);
     assert.match(src, /export \{ EXPECTED_HEALTH_CHECK_PATH, readHealthCheckPath \}/);
     assert.doesNotMatch(src, /frapp-api-staging/);
+  });
+});
+
+describe("syncGuardrailsAlert — a clean run whose alert can't be read or closed is red (#2627)", () => {
+  function issuesFetch({ lookup, closeStatus = 200 }) {
+    const calls = [];
+    const fetchImpl = async (url, init = {}) => {
+      const method = init.method ?? "GET";
+      calls.push({ method, url: String(url), body: init.body ?? "" });
+      if (method === "GET") {
+        return typeof lookup === "number"
+          ? { ok: false, status: lookup, text: async () => "{}" }
+          : { ok: true, status: 200, text: async () => JSON.stringify(lookup) };
+      }
+      const status = method === "PATCH" ? closeStatus : 201;
+      return { ok: status < 300, status, text: async () => JSON.stringify({ number: 42 }) };
+    };
+    return { fetchImpl, calls };
+  }
+  const base = { summary: "all hold", token: "t", repo: "o/r" };
+  const openAlert = [{ number: 42, state: "open", title: ALERT_ISSUE_TITLE }];
+
+  it("exits 0 and closes the alert on a clean run", async () => {
+    const { fetchImpl } = issuesFetch({ lookup: openAlert });
+    const out = await syncGuardrailsAlert({ ...base, findings: [], fetchImpl, logger: quiet });
+    assert.deepEqual(out, { alert: { action: "closed", closed: [42] }, exitCode: 0 });
+  });
+
+  it("exits 0 when the lookup worked and nothing was open", async () => {
+    const { fetchImpl, calls } = issuesFetch({ lookup: [] });
+    const out = await syncGuardrailsAlert({ ...base, findings: [], fetchImpl, logger: quiet });
+    assert.equal(out.exitCode, 0);
+    assert.equal(calls.length, 1, "one lookup, no pre-check");
+  });
+
+  it("exits 1 with an ::error:: when the lookup fails, and writes nothing", async () => {
+    const lines = [];
+    const { fetchImpl, calls } = issuesFetch({ lookup: 502 });
+    const out = await syncGuardrailsAlert({
+      ...base,
+      findings: [],
+      fetchImpl,
+      logger: { log: (line) => lines.push(line) },
+    });
+    assert.deepEqual(out, { alert: { action: "unread", closed: [] }, exitCode: 1 });
+    assert.equal(calls.filter((c) => c.method !== "GET").length, 0);
+    assert.ok(lines.some((l) => /^::error::.*could not be read/.test(l)));
+    assert.ok(!lines.some((l) => /still open/.test(l)));
+  });
+
+  it("exits 1 with an ::error:: when the close fails", async () => {
+    const lines = [];
+    const { fetchImpl } = issuesFetch({ lookup: openAlert, closeStatus: 502 });
+    const out = await syncGuardrailsAlert({
+      ...base,
+      findings: [],
+      fetchImpl,
+      logger: { log: (line) => lines.push(line) },
+    });
+    assert.deepEqual(out, { alert: { action: "failed", closed: [] }, exitCode: 1 });
+    assert.ok(lines.some((l) => /^::error::.*could not be closed/.test(l)));
+  });
+
+  it("main() exits with syncGuardrailsAlert's exit code", () => {
+    // The only line that turns an unreadable or unclosable alert into a red
+    // scheduled run; `process.exit(findings.length ? 1 : 0)` left the rest green.
+    const source = readFileSync(new URL("../production-guardrails.mjs", import.meta.url), "utf8");
+    const main = source.slice(source.indexOf("async function main()"));
+    assert.match(main, /const \{ exitCode \} = await syncGuardrailsAlert\(/);
+    assert.match(main, /process\.exit\(exitCode\);\n\}/);
+  });
+
+  it("exits 1 on a violation, whatever the alert write did", async () => {
+    const { fetchImpl } = issuesFetch({ lookup: [] });
+    const out = await syncGuardrailsAlert({
+      ...base,
+      findings: ["frapp-api: autoDeploy is on"],
+      fetchImpl,
+      logger: quiet,
+    });
+    assert.equal(out.exitCode, 1);
+    assert.equal(out.alert.action, "created");
   });
 });

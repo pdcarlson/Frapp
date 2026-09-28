@@ -61,6 +61,7 @@ import {
   checkAuthSmtp,
   checkProjectStatus,
   classifyConformance,
+  conformanceExitCode,
   parseFailingIds,
   redactSecrets,
 } from "./staging-conformance.mjs";
@@ -289,19 +290,26 @@ export async function runProductionAuthConformance({
     lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
   });
 
+  // A failed lookup must not fall through to a close (see staging-conformance),
+  // and it reds the run (conformanceExitCode).
   if (!lookupOk) {
     writeSummary(buildRunSummary({ outcome, results, runUrl }));
-    logger.log?.(
-      "::warning::Could not read the alert issues, so no alert was closed this run. " +
-        "Nothing failed; retrying tomorrow.",
-    );
-    return { outcome, results, alert: { action: "none", closed: [] } };
+    logger.log?.(PRODUCTION_ALERT_UNREAD);
+    return { outcome, results, alert: { action: "unread", closed: [] } };
   }
 
   const openAlerts = allAlerts.filter((issue) => issue.state === "open");
 
+  // The gate just read that nothing is open, so there is nothing to close.
+  // resolveAlert would look again, and a transient failure of that second read
+  // would red a run that already knows the answer.
+  if (openAlerts.length === 0) {
+    writeSummary(buildRunSummary({ outcome, results, runUrl }));
+    return { outcome, results, alert: { action: "none", closed: [] } };
+  }
+
   const failingIds = openAlerts.flatMap((issue) => parseFailingIds(issue.body));
-  if (openAlerts.length > 0 && !canResolveAlert({ results, failingIds })) {
+  if (!canResolveAlert({ results, failingIds })) {
     const unresolved = failingIds.filter(
       (id) => !results.some((r) => r.id === id && r.status === PASS),
     );
@@ -350,15 +358,21 @@ export async function runProductionAuthConformance({
       "::error::Production Auth settings are conformant but the alert issue could not be closed. " +
         "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
     );
+  } else if (alert.action === "unread") {
+    logger.log?.(PRODUCTION_ALERT_UNREAD);
   }
   return { outcome, results, alert };
 }
 
+const PRODUCTION_ALERT_UNREAD =
+  "::error::Production Auth settings are conformant, but the alert issues could not be read, " +
+  "so none was closed this run. The next run reads them again.";
+
 async function main() {
   const token = requireEnv("GITHUB_TOKEN");
   const repo = requireEnv("GITHUB_REPOSITORY");
-  const { outcome } = await runProductionAuthConformance({ token, repo });
-  if (outcome === "failed") process.exit(1);
+  const code = conformanceExitCode(await runProductionAuthConformance({ token, repo }));
+  if (code !== 0) process.exit(code);
 }
 
 if (isInvokedDirectly(import.meta.url)) {
