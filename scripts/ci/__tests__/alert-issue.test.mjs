@@ -341,3 +341,16 @@ test("resolveAlert is a no-op when nothing is open", async () => {
   assert.equal(out.action, "none");
   assert.equal(calls.filter((c) => c.method === "PATCH").length, 0);
 });
+
+test("resolveAlert reports a failed lookup as unread, apart from a failed close (#2627)", async () => {
+  // "I could not look" is neither "nothing is open" (none) nor "a close left
+  // one open" (failed); each caller keeps its own policy for it.
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ method: init.method ?? "GET", url });
+    return { ok: false, status: 502, text: async () => "{}" };
+  };
+  const out = await resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered" });
+  assert.deepEqual(out, { action: "unread", closed: [] });
+  assert.equal(calls.length, 1, "one lookup, and nothing written");
+});

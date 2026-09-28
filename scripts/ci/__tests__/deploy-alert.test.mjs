@@ -488,6 +488,31 @@ test("a successful deploy closes the open alert", async () => {
   assert.deepEqual(result.alert.closed, [900]);
 });
 
+test("a successful deploy whose alert lookup fails reports unread, never 'still open'", async () => {
+  // A 502 on the lookup means this run cannot know whether an alert is open.
+  // Before #2627 it read as "none" (silently fine); a lib-only change briefly
+  // made it "failed", which warned that the alert "is still open" after an
+  // ordinary successful deploy.
+  const fetchImpl = async () => jsonResponse(502, { message: "bad gateway" });
+  const { logger, lines } = capturingLogger();
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: deployedNeeds(),
+    runUrl: "https://example.test/run/2",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger,
+  });
+
+  assert.equal(result.outcome, "deployed");
+  assert.deepEqual(result.alert, { action: "unread", closed: [] });
+  assert.ok(lines.some((line) => /::warning::.*could not be read/.test(line)));
+  assert.ok(!lines.some((line) => /still open/.test(line)));
+});
+
 test("a no-op run never closes an open alert", async () => {
   // The load-bearing case: skipping every job proves nothing about whether
   // deploys work, so closing here would silence a live outage — and no-op runs

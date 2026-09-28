@@ -297,20 +297,17 @@ describe("runWatchdog", () => {
     );
   });
 
-  it("does not treat a failed second lookup as recovery when an open P1 was already seen", async () => {
+  it("looks the alert up once on a clean run, and a 502 there passes without writing", async () => {
+    // The lookup is resolveAlert's own. When it fails, the tracker is
+    // unreadable: uptime deliberately passes (production answered ready) and
+    // reports lookupOk false so main() warns. Before #2627 a separate
+    // pre-check read the alerts first, and changing only the lib made this
+    // healthy run go red.
     let issueGets = 0;
     const fetchImpl = async (url, init = {}) => {
       const method = init.method ?? "GET";
       if (method === "GET" && String(url).includes("/issues?state=all")) {
         issueGets += 1;
-        if (issueGets === 1) {
-          return {
-            ok: true,
-            status: 200,
-            text: async () =>
-              JSON.stringify([{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }]),
-          };
-        }
         return { ok: false, status: 502, text: async () => "{}" };
       }
       throw new Error(`unexpected ${method} ${url}`);
@@ -322,9 +319,8 @@ describe("runWatchdog", () => {
       repo: "pdcarlson/Frapp",
       fetchImpl,
     });
-    assert.equal(out.outcome, "fail");
-    assert.equal(out.resolved, false);
-    assert.equal(issueGets, 2);
+    assert.deepEqual(out, { outcome: "pass", resolved: false, lookupOk: false });
+    assert.equal(issueGets, 1);
   });
 });
 
