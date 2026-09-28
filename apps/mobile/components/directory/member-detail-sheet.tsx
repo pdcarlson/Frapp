@@ -1,10 +1,12 @@
-import { forwardRef, useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { forwardRef, useEffect, useMemo, useRef } from "react";
+import { Alert, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   useBlockedUserIds,
   useCustomRoles,
+  useGetOrCreateDm,
   useMember,
   usePermissionList,
   useRoles,
@@ -32,6 +34,12 @@ import {
   resolveRoleNames,
   selectMemberDetail,
 } from "@/lib/directory/member-detail";
+import {
+  canMessageMember,
+  dmChannelIdOf,
+  START_DM_FAILED_BODY,
+  startDmFailedTitle,
+} from "@/lib/directory/start-dm";
 
 /**
  * s13 member profile detail — a sheet, not a route, per the issue's own scope
@@ -46,8 +54,10 @@ import {
  * the same "omit, don't fake" call `profile.tsx` makes for the drawn
  * attendance stat no member can read.
  *
- * **No DM entry.** The issue that filed this scopes DM entry to #316
- * explicitly ("Distinct from #316 — this gap is mobile profile *viewing*").
+ * **Message** (#2773) opens a 1:1 DM with the member, or the one you already
+ * have. It is the sheet's first action because starting a DM is the thing a
+ * member most often opens a profile to do. `lib/directory/start-dm.ts` owns
+ * who it is offered for.
  *
  * **Block / Unblock** (#2257) sits at the foot of another member's profile —
  * the one chat control here, because the directory is where a member you have
@@ -135,9 +145,42 @@ export const MemberDetailSheet = forwardRef<
   // list that has not loaded offers Block, which the API treats idempotently.
   const isBlocked = blockTarget ? blockList.ids.has(blockTarget.userId) : false;
 
+  const router = useRouter();
+  const dmMutation = useGetOrCreateDm();
+  const canMessage = canMessageMember({
+    memberUserId: detail?.userId ?? null,
+    viewerUserId,
+    isBlocked,
+  });
+  // The sheet stays mounted and swaps `userId` as directory rows are tapped,
+  // so a slow DM request for one member can resolve after the sheet has moved
+  // to another. The ref lets that continuation see it is stale rather than
+  // opening the wrong conversation (web's member sheet does the same).
+  const openUserIdRef = useRef(userId);
+  useEffect(() => {
+    openUserIdRef.current = userId;
+  }, [userId]);
+
   function dismiss() {
     if (typeof ref === "function" || !ref?.current) return;
     ref.current.dismiss();
+  }
+
+  async function startDm(memberUserId: string, name: string) {
+    try {
+      const channelId = dmChannelIdOf(
+        await dmMutation.mutateAsync({ member_id: memberUserId }),
+      );
+      if (openUserIdRef.current !== memberUserId) return;
+      if (!channelId) throw new Error("No channel id returned");
+      dismiss();
+      // `useGetOrCreateDm` refetches every `["channels"]` entry before it
+      // resolves, so chat home's DIRECT section already lists the new DM.
+      router.push({ pathname: "/chat-thread", params: { channelId } });
+    } catch {
+      if (openUserIdRef.current !== memberUserId) return;
+      Alert.alert(startDmFailedTitle(name), START_DM_FAILED_BODY);
+    }
   }
 
   return (
@@ -206,6 +249,18 @@ export const MemberDetailSheet = forwardRef<
               />
               <ListRow label="Joined" value={detail.joinedLabel ?? "—"} />
             </ListSection>
+
+            {canMessage ? (
+              <ListSection>
+                <ListRow
+                  label="Message"
+                  disabled={dmMutation.isPending}
+                  onPress={() =>
+                    void startDm(detail.userId, detail.displayName)
+                  }
+                />
+              </ListSection>
+            ) : null}
 
             {detail.customFields.length > 0 ? (
               <>
