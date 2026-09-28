@@ -88,11 +88,11 @@ default 307 to `www.frapp.live` and keeps the path (read from the project's doma
 2026-09-28).
 
 A merge to `main` never moves these hostnames. Only the `--prod` upload re-points them, and only a
-Deploy production run with scope `full` that isn't a dry run and gets past the migration apply
-the Render deploy and the health check reaches that upload. A dry run, a `migrations-only` run, or a run that fails
-earlier leaves them where they were. The run's `release` job then tags the shipped commit
-`vX.Y.Z`. If tagging fails after a live ship, `production-release-pin.mjs` raises its own alert.
-Anything merged since the last such run is on the staging hostnames, not here. On 2026-09-28 the
+Deploy production run with scope `full` that isn't a dry run and gets past the migration apply,
+the Render deploy and the health check reaches that upload. A dry run, a `migrations-only` run,
+or a run that fails earlier leaves them where they were. The run's `release` job then tags the
+shipped commit `vX.Y.Z`. If tagging fails after a live ship, `production-release-pin.mjs` raises
+its own alert. Anything merged since the last such run is on the staging hostnames, not here. On 2026-09-28 the
 landing reskin had been on `main` for ten days while `www.frapp.live` still served `v1.2.0`, the
 2026-09-17 deploy. That was a deploy that hadn't happened yet, not a broken alias.
 
