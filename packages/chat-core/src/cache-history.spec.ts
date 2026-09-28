@@ -9,7 +9,6 @@
 import { describe, expect, test } from "vitest";
 import {
   applyReactionInsert,
-  confirmedDepth,
   emptyCache,
   markFailed,
   mergeUnheldRows,
@@ -109,9 +108,9 @@ describe("reconcileNewestPage", () => {
     expect(next.byId.cm3).toBeUndefined();
   });
 
-  test("drops cached rows older than the read, which it cannot vouch for", () => {
+  test("drops cached rows older than the page, which it cannot vouch for", () => {
     // Deleted, edited or report-removed during an outage, or a week-old disk
-    // tail: a caller that wants them kept re-reads them into `fresh`.
+    // tail: they load again, fresh, when the member scrolls back to them.
     const current = page(1, 6);
 
     expect(ids(reconcileNewestPage(current, page(4, 6)))).toEqual([
@@ -177,23 +176,6 @@ describe("reconcileNewestPage", () => {
 
     expect(next.byId.m4?.reactions["reaction:👍"]).toEqual(["u2"]);
     expect(next.actionIndex.a1?.messageKey).toBe("m4");
-  });
-});
-
-describe("confirmedDepth", () => {
-  test("counts confirmed rows and times the oldest, skipping optimistic ones", () => {
-    const cache = upsertOptimistic(page(2, 4), queued("q1"));
-
-    expect(confirmedDepth(cache)).toEqual({
-      rows: 3,
-      oldestTime: Date.parse(row(2).created_at),
-      newestTime: Date.parse(row(4).created_at),
-    });
-    expect(confirmedDepth(undefined)).toEqual({
-      rows: 0,
-      oldestTime: null,
-      newestTime: null,
-    });
   });
 });
 

@@ -756,6 +756,63 @@ describe("MessageTimeline older history (#1571)", () => {
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
   });
 
+  it("arms the next channel on a switch while the list is not at its top", () => {
+    // A cached channel keeps the list mounted, so no "left the top" arrives
+    // for it; the switch itself has to arm it.
+    const onLoadOlder = vi.fn();
+    const view = (channelId: string) => (
+      <MessageTimeline
+        channelId={channelId}
+        messages={history(1, 5)}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        hasOlder
+        onLoadOlder={onLoadOlder}
+        {...timelineBlockProps(history(1, 5), VIEWER)}
+      />
+    );
+    const { rerender } = render(view("chan-1"));
+    act(() => virtuosoProps.current.atTopStateChange?.(false));
+
+    rerender(view("chan-2"));
+    act(() => virtuosoProps.current.atTopStateChange?.(true));
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks again when a refetch drops the page it just loaded", () => {
+    const onLoadOlder = vi.fn();
+    const view = (messages: ChatMessage[]) => (
+      <MessageTimeline
+        channelId="chan-1"
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        hasOlder
+        onLoadOlder={onLoadOlder}
+        {...timelineBlockProps(messages, VIEWER)}
+      />
+    );
+    const { rerender } = render(view(history(11, 20)));
+    scrollToTop();
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    // The page lands, then a refetch returns the thread to its newest rows,
+    // dropping it and the row that was first when the member asked.
+    rerender(view(history(1, 20)));
+    rerender(view(history(15, 20)));
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+  });
+
   it("ignores the moment at the top every open passes through", () => {
     // Virtuoso renders from the top before it scrolls to the newest row, so
     // "at the top" arrives before the list has ever left it.
@@ -857,6 +914,28 @@ describe("MessageTimeline older history (#1571)", () => {
 
     rerender(view(history(1, 20)));
 
+    expect(virtuosoProps.current.followOutput).toBe("smooth");
+  });
+
+  it("does not follow a growing list while a jump is on its way", () => {
+    const view = (messages: ChatMessage[], holdFollow: boolean) => (
+      <MessageTimeline
+        channelId="chan-1"
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        holdFollow={holdFollow}
+        {...timelineBlockProps(messages, VIEWER)}
+      />
+    );
+    const { rerender } = render(view(history(1, 5), true));
+    expect(virtuosoProps.current.followOutput).toBe(false);
+
+    rerender(view(history(1, 6), false));
     expect(virtuosoProps.current.followOutput).toBe("smooth");
   });
 

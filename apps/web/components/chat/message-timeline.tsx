@@ -392,6 +392,14 @@ export interface MessageTimelineProps {
   isLoadingOlder?: boolean;
   olderError?: boolean;
   onLoadOlder?: () => void;
+  /**
+   * A jump is on its way to a message in this channel, so a growing list must
+   * not be followed to its newest row. Following fires when the count rises
+   * while the list sits at its bottom, which is exactly what switching from a
+   * short channel into a long one looks like, and it cancelled the jump's
+   * scroll a moment after the jump had reported success.
+   */
+  holdFollow?: boolean;
 }
 
 /**
@@ -441,6 +449,7 @@ export const MessageTimeline = forwardRef<
     isLoadingOlder = false,
     olderError = false,
     onLoadOlder,
+    holdFollow = false,
   },
   ref,
 ) {
@@ -583,9 +592,20 @@ export const MessageTimeline = forwardRef<
   // re-ran the effect while it still read "at the top" and a second page
   // followed the first before the member had scrolled at all. A page that
   // drew nothing (the first row did not change) may ask again.
+  //
+  // A switch to a channel already in the cache keeps this list mounted (no
+  // skeleton, and deliberately no remount: a fresh Virtuoso's deferred scroll
+  // to its newest row cancels a jump issued in the same commit), so no "left
+  // the top" arrives for the new channel. The switch arms it instead when the
+  // list is not at its top, adjusted during render like the index above.
   const [atTop, setAtTop] = useState(false);
   const [topArrival, setTopArrival] = useState(0);
   const [armedFor, setArmedFor] = useState<string | undefined>(undefined);
+  const [seenChannel, setSeenChannel] = useState(channelId);
+  if (seenChannel !== channelId) {
+    setSeenChannel(channelId);
+    if (!atTop) setArmedFor(channelId);
+  }
   const armed = armedFor === channelId;
   const firstRowKey = rowKeys[0];
   const lastTopLoad = useRef<{ arrival: number; firstRowKey?: string } | null>(
@@ -593,8 +613,17 @@ export const MessageTimeline = forwardRef<
   );
   useEffect(() => {
     if (!armed || !atTop || !hasOlder || isLoadingOlder || olderError) return;
+    // Already answered: this arrival's page landed above the row that was
+    // first. A first row that is gone instead (a refetch dropped the older
+    // pages, the loaded one with them) leaves the member at the top with
+    // nothing loaded, so it asks again.
     const last = lastTopLoad.current;
-    if (last?.arrival === topArrival && last.firstRowKey !== firstRowKey) {
+    if (
+      last?.arrival === topArrival &&
+      last.firstRowKey !== firstRowKey &&
+      last.firstRowKey !== undefined &&
+      rowKeys.includes(last.firstRowKey)
+    ) {
       return;
     }
     lastTopLoad.current = { arrival: topArrival, firstRowKey };
@@ -604,6 +633,7 @@ export const MessageTimeline = forwardRef<
     atTop,
     topArrival,
     firstRowKey,
+    rowKeys,
     hasOlder,
     isLoadingOlder,
     olderError,
@@ -644,10 +674,14 @@ export const MessageTimeline = forwardRef<
         // target — the same silent failure this boolean exists to end, just one
         // level up.
         if (!virtuoso.current) return false;
+        // Instant, not smooth. A smooth scroll is computed once from row
+        // heights Virtuoso has only estimated, which is every row after a
+        // page lands or a channel's rows swap in, and settled tens of rows
+        // short. The instant one re-aims until the list stops changing.
         virtuoso.current.scrollToIndex({
           index,
           align: "center",
-          behavior: "smooth",
+          behavior: "auto",
         });
         return true;
       },
@@ -771,19 +805,13 @@ export const MessageTimeline = forwardRef<
   return (
     <div className="h-full">
       <Virtuoso
-        // One list per channel. A switch to a channel already in the cache
-        // skips the skeleton, so without a key the same instance carried on:
-        // it never reported leaving the top in the new channel, which is what
-        // arms the older-history load, and `initialTopMostItemIndex` (open at
-        // the newest row) applies only on mount.
-        key={channelId}
         ref={virtuoso}
         data={decorated}
         firstItemIndex={firstItemIndex}
         // Until the list is armed it is still settling onto its bottom, and
         // the live page landing over the cached tail prepends rows; following
         // those is what keeps a cold open at the newest message.
-        followOutput={prepended && armed ? false : "smooth"}
+        followOutput={holdFollow || (prepended && armed) ? false : "smooth"}
         initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
         atTopStateChange={handleAtTop}
         context={headerContext}

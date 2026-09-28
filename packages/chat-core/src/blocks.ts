@@ -771,9 +771,13 @@ export async function refreshMaskedCopies(
         read.reachedTime = pageOldestTime;
       }
       if (read.reachedTime !== undefined) {
-        const reached = read.reachedTime;
+        // Inclusive of the last page's millisecond: the page may have cut
+        // off rows in it, a masked copy among them, and the read goes on only
+        // while its oldest row is not strictly older than the copy. Rows the
+        // page did carry in that millisecond go too, and reload on scroll.
+        const through = read.reachedTime + 1;
         queryClient.setQueryData<ChannelCache>(key, (current) =>
-          current ? trimOlderThan(current, reached) : current,
+          current ? trimOlderThan(current, through) : current,
         );
       }
       return true;

@@ -456,25 +456,25 @@ export function oldestConfirmed(
 }
 
 /**
- * Folds a fresh read of a channel's history into the cache as it stands when
- * the read lands, instead of replacing it (#2486, #1571).
+ * Folds a freshly fetched newest page into the cache as it stands when the
+ * fetch lands, instead of replacing it (#2486, #1571).
  *
- * `fresh` is the read rebuilt from nothing: the newest page, and the older
- * pages the caller re-read with it (rows and reactions). The server is
- * authoritative over everything it covers, and anything cached older than it
- * goes, whatever it was: a cached row the read did not reach is not known to
- * be current (an outage, a removal, a week-old disk tail), and a caller that
- * wants older history kept re-reads it rather than trusting it. A plain
- * replace, which is what the channel query used to return, also dropped two
- * things the read cannot know about, and they are kept:
+ * The server is authoritative over the page, and anything cached older than
+ * it goes: a refetch is how a thread gets back to server truth after
+ * something it missed (an outage, a removal whose response was lost, a
+ * week-old disk tail), and an older row it did not re-read is not known to be
+ * current. Older history the member had scrolled through loads again, fresh,
+ * when they scroll back to it. A plain replace, which is what the channel
+ * query used to return, also dropped two things the page cannot know about,
+ * and they are kept:
  *
  * - **Optimistic rows** — queued, failed and unconfirmed sends. The outbox
  *   hydrate and the first-chunk seed both write them before a fetch lands, and
  *   the replace hid them until the next channel switch (#2486): a queued
  *   message that vanished, or a failed one whose Retry went with it. They are
- *   kept unless the read carries the server row that confirms them.
- * - **Rows newer than the read** — Realtime arrivals that landed while the
- *   request was in flight. A row in the same millisecond as the read's newest
+ *   kept unless the page carries the server row that confirms them.
+ * - **Rows newer than the page** — Realtime arrivals that landed while the
+ *   request was in flight. A row in the same millisecond as the page's newest
  *   is kept too: `created_at` carries microseconds the comparison cannot see,
  *   and dropping a real message is worse than keeping one the server deleted
  *   in that millisecond.
@@ -485,9 +485,9 @@ export function reconcileNewestPage(
 ): ChannelCache {
   if (!current || current.order.length === 0) return fresh;
   const lastKey = fresh.order[fresh.order.length - 1];
-  const readNewest = lastKey ? fresh.byId[lastKey] : undefined;
-  // An empty read says the channel holds nothing, so no cached row is newer.
-  const newestTime = readNewest ? timeOf(readNewest) : Number.POSITIVE_INFINITY;
+  const pageNewest = lastKey ? fresh.byId[lastKey] : undefined;
+  // An empty page says the channel holds nothing, so no cached row is newer.
+  const newestTime = pageNewest ? timeOf(pageNewest) : Number.POSITIVE_INFINITY;
 
   const byId = { ...fresh.byId };
   const newer: string[] = [];
@@ -523,30 +523,6 @@ export function reconcileNewestPage(
     next = { ...next, order: withOrderedKey(next, key) };
   }
   return next;
-}
-
-/**
- * The confirmed history a cache holds: how many rows, and the oldest and
- * newest one's times. What a refetch has to re-read to keep the history the
- * member has loaded rather than trust it (#1571).
- */
-export function confirmedDepth(cache: ChannelCache | undefined): {
-  rows: number;
-  oldestTime: number | null;
-  newestTime: number | null;
-} {
-  let rows = 0;
-  let oldestTime: number | null = null;
-  let newestTime: number | null = null;
-  for (const key of cache?.order ?? []) {
-    const message = cache!.byId[key];
-    if (message?._status !== "confirmed") continue;
-    rows += 1;
-    const time = timeOf(message);
-    if (oldestTime === null || time < oldestTime) oldestTime = time;
-    if (newestTime === null || time > newestTime) newestTime = time;
-  }
-  return { rows, oldestTime, newestTime };
 }
 
 /**

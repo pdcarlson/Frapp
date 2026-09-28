@@ -291,6 +291,30 @@ describe("refreshMaskedCopies — the read's edges (#1571 review)", () => {
     expect(cursors[2]).toBeDefined();
   });
 
+  it("trims a copy that shares the last page's millisecond at the bound", async () => {
+    const queryClient = new QueryClient();
+    let end = 1_000_000;
+    // The copy sits in the same millisecond as the 50th page's oldest row,
+    // cut off by the limit.
+    const lastEnd = end - MASKED_REFRESH_MAX_PAGES * MASKED_REFRESH_PAGE_LIMIT;
+    const edgeTime = Date.parse(historyRow(lastEnd, FRIEND).created_at);
+    const copy = historyRow(0, BLOCKED, {
+      sender_blocked: true,
+      created_at: new Date(edgeTime).toISOString().replace("Z", "000+00:00"),
+    });
+    seed(queryClient, "chan-1", [copy]);
+    api.GET.mockImplementation(async () => {
+      end -= MASKED_REFRESH_PAGE_LIMIT;
+      return fullPageEndingAt(end);
+    });
+
+    await expect(
+      refreshMaskedCopies(queryClient, api as never, BLOCKED, []),
+    ).resolves.toBe(true);
+
+    expect(cacheOf(queryClient, "chan-1").byId.h0).toBeUndefined();
+  });
+
   it("trims what it could not reach at the bound instead of failing", async () => {
     const queryClient = new QueryClient();
     const beyond = historyRow(0, BLOCKED, { sender_blocked: true });

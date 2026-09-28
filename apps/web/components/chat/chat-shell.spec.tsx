@@ -905,7 +905,7 @@ describe("ChatShell deep-link targets", () => {
 
     expect(
       await screen.findByText(
-        "Couldn't load earlier messages to reach that message.",
+        "Couldn't load the messages needed to reach that message.",
       ),
     ).toBeTruthy();
     expect(loadOlder).toHaveBeenCalledTimes(1);
@@ -994,6 +994,29 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("pick-random"));
 
     await waitFor(() => expect(loadOlder.mock.calls.length).toBeGreaterThan(20));
+  });
+
+  it("says a read failed, not that the message is gone, when the forward read fails", async () => {
+    // A short channel: nothing older to page, so without the forward read's
+    // failure on record the verdict would be "isn't in this channel anymore".
+    const loadNewer = vi.fn(async () => null);
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ hasOlder: false, loadNewer }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "msg-just-posted" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(
+      await screen.findByText(
+        "Couldn't load the messages needed to reach that message.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
   });
 
   it("says the channel did not load, not that the message is gone", async () => {

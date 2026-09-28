@@ -143,7 +143,7 @@ type UnreachableReason = "far" | "missing" | "error" | "unloaded";
 const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
   far: "That message is further back than the history loaded here. Scrolling up loads more, and it opens once it loads.",
   missing: "That message isn't in this channel anymore.",
-  error: "Couldn't load earlier messages to reach that message.",
+  error: "Couldn't load the messages needed to reach that message.",
   unloaded: "Couldn't load this channel's messages to reach that message.",
 };
 
@@ -353,8 +353,8 @@ export function ChatShell({
   //
   // `reason` is why, since older history can now be loaded (#1571): the
   // target is past what a jump pages back (`far`), the channel's history ran
-  // out without it (`missing`), loading older history failed (`error`), or
-  // the channel's messages did not load at all (`unloaded`).
+  // out without it (`missing`), a read it needed failed (`error`), or the
+  // channel's messages failed to load and the timeline shows that (`unloaded`).
   const [unreachableTarget, setUnreachableTarget] = useState<{
     messageId: string;
     channelId: string | null;
@@ -375,7 +375,15 @@ export function ChatShell({
     channelId: string | null;
     pages: number;
     caughtUp: boolean;
-  }>({ attempt: -1, messageId: "", channelId: null, pages: 0, caughtUp: false });
+    forwardFailed: boolean;
+  }>({
+    attempt: -1,
+    messageId: "",
+    channelId: null,
+    pages: 0,
+    caughtUp: false,
+    forwardFailed: false,
+  });
   const [seekTick, setSeekTick] = useState(0);
   // Bumped on every jump request so re-picking the SAME target re-runs the
   // effect. Without it, asking again for something already resolved as
@@ -1032,6 +1040,7 @@ export function ChatShell({
         channelId: activeChannelId,
         pages: 0,
         caughtUp: false,
+        forwardFailed: false,
       };
     }
     // The first move is forward, not back. A target can be newer than the
@@ -1040,10 +1049,16 @@ export function ChatShell({
     // wrong direction and then call it gone. One read of what arrived after
     // the newest row settles that; the tick re-runs this when it adds nothing.
     if (!jumpSeek.current.caughtUp) {
-      jumpSeek.current.caughtUp = true;
+      const request = jumpSeek.current;
+      request.caughtUp = true;
       setUnreachableTarget(null);
       setSeekingMessageId(pendingMessageId);
-      void loadNewer().then(() => setSeekTick((n) => n + 1));
+      void loadNewer().then((read) => {
+        // A failed forward read leaves "newer than the cache" unchecked, so
+        // no verdict below may claim the message is gone or further back.
+        if (read === null) request.forwardFailed = true;
+        setSeekTick((n) => n + 1);
+      });
       return;
     }
     const { pages } = jumpSeek.current;
@@ -1063,7 +1078,12 @@ export function ChatShell({
     setUnreachableTarget({
       messageId: pendingMessageId,
       channelId: activeChannelId,
-      reason: failed ? "error" : channel.hasOlder ? "far" : "missing",
+      reason:
+        failed || jumpSeek.current.forwardFailed
+          ? "error"
+          : channel.hasOlder
+            ? "far"
+            : "missing",
     });
   }, [
     pendingMessageId,
@@ -1884,6 +1904,11 @@ export function ChatShell({
             isLoadingOlder={channel.isLoadingOlder}
             olderError={channel.olderError}
             onLoadOlder={loadOlderHistory}
+            holdFollow={
+              pendingMessageId !== null &&
+              (pendingJumpChannelId === null ||
+                pendingJumpChannelId === activeChannelId)
+            }
             onReact={channel.react}
             onUnreact={channel.unreact}
             onReply={canReplyHere ? startReply : undefined}

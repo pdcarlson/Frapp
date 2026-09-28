@@ -447,7 +447,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Jump looking for its target (newer rows first, then older pages) | — | `Finding that message...` · `Dismiss` |
 | Jump target past the paging bound | — | `That message is further back than the history loaded here. Scrolling up loads more, and it opens once it loads.` · `Dismiss` |
 | Jump target not in the channel's history | — | `That message isn't in this channel anymore.` · `Dismiss` |
-| Jump paging failed | — | `Couldn't load earlier messages to reach that message.` · `Dismiss` |
+| Jump could not load a page it needed (newer or older) | — | `Couldn't load the messages needed to reach that message.` · `Dismiss` |
 | Jump into a channel whose messages failed to load | — | `Couldn't load this channel's messages to reach that message.` · `Dismiss` |
 | No channels | `No channels yet` | `New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear.` |
 | Empty timeline | `Nothing in this channel yet` | `Be the first to post — everyone in the channel sees it right away.` |
