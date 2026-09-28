@@ -756,6 +756,17 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
     },
   );
 
+  it('starts a queued bot import without waiting on its progress counts', async () => {
+    // Queued (`ready`) is counted for the list, so a start read through the
+    // counted path would wait on them first.
+    await build(job({ source: 'bot', status: 'ready', guild_id: GUILD }));
+    repo.findChannels.mockResolvedValue([
+      { id: 'map-1', mapping_action: 'create_new' },
+    ]);
+    await service.start(IMPORT_ID, CHAPTER);
+    expect(repo.countChannels).not.toHaveBeenCalled();
+  });
+
   it('answers a clear without waiting on progress counts', async () => {
     // A stopped bot import is counted for the list, so reading it through
     // the counted path would make the refusal wait on (and fail with) them.

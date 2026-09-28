@@ -330,6 +330,106 @@ describe('SupabaseDiscordImportRepository — findFiles paging', () => {
   });
 });
 
+/**
+ * What the counts and the clear actually write and answer, against rows with
+ * the statuses the workers leave. The tenant block above pins the scoping; this
+ * one pins the numbers a progress bar and a hidden row depend on.
+ */
+describe('SupabaseDiscordImportRepository — progress counts and clearing', () => {
+  const channel = (
+    id: string,
+    fields: Record<string, unknown>,
+    importId = IMPORT_A,
+    chapterId = CHAPTER_A,
+  ) => ({
+    id,
+    import_id: importId,
+    discord_channel_id: id,
+    discord_channel_name: id,
+    discord_imports: { chapter_id: chapterId },
+    ...fields,
+  });
+
+  function build(importStatus: string) {
+    const harness = createTenantHarness({
+      tenantColumns: {
+        discord_import_channels: 'discord_imports.chapter_id',
+      },
+      untenantedTables: ['discord_import_channels'],
+      parentTenant: {
+        discord_import_channels: {
+          column: 'import_id',
+          table: 'discord_imports',
+        },
+      },
+      collisionExempt: {
+        discord_import_channels: ['import_id', 'discord_imports'],
+      },
+      tables: {
+        discord_imports: [
+          inA({ id: IMPORT_A, status: importStatus }),
+          inB({ id: IMPORT_B, status: importStatus }),
+        ],
+        discord_import_channels: [
+          // Another chapter's finished row, which neither count may see.
+          channel(
+            'elsewhere',
+            { mapping_action: 'create_new', status: 'completed' },
+            IMPORT_B,
+            CHAPTER_B,
+          ),
+          channel('imported', {
+            mapping_action: 'create_new',
+            status: 'completed',
+          }),
+          // Discord no longer showed it to the bot: finished all the same.
+          channel('vanished', {
+            mapping_action: 'use_existing',
+            status: 'skipped',
+          }),
+          channel('waiting', {
+            mapping_action: 'create_new',
+            status: 'pending',
+          }),
+          channel('reading', {
+            mapping_action: 'create_new',
+            status: 'running',
+          }),
+          // Mapped to skip: not being imported, so in neither count.
+          channel('left-out', { mapping_action: 'skip', status: 'skipped' }),
+        ],
+      },
+    });
+    return {
+      harness,
+      repo: new SupabaseDiscordImportRepository(harness.client),
+    };
+  }
+
+  it('counts the rows being imported as the total, and the finished ones as done', async () => {
+    const { repo } = build('running');
+    expect(await repo.countChannels(IMPORT_A, CHAPTER_A)).toEqual({
+      total: 4,
+      done: 2,
+    });
+  });
+
+  it('writes cleared_at on a clearable import', async () => {
+    const { harness, repo } = build('purged');
+    const cleared = await repo.markCleared(
+      IMPORT_A,
+      CHAPTER_A,
+      ['purged'],
+      '2026-09-28T19:00:00Z',
+    );
+    expect(cleared?.cleared_at).toBe('2026-09-28T19:00:00Z');
+    expect(
+      harness.rows('discord_imports').find((r) => r.id === IMPORT_A)
+        ?.cleared_at,
+    ).toBe('2026-09-28T19:00:00Z');
+  });
+});
+
 describe('SupabaseDiscordImportRepository — channel rows past the response cap', () => {
   /** Mirrors `CHANNEL_PAGE_SIZE` in the repository under test. */
   const PAGE_SIZE = 500;

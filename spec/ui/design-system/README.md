@@ -167,7 +167,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points/points-adjustment-dialog.tsx` · the `/points` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `poll` | 4 | `components/polls/polls-page.tsx` |
 | `discord-connection` | 3 | `components/discord-import/connect-step.tsx` · `components/discord-import/import-wizard.tsx` (both **not mirrored**; `DELETE /discord/connection` has no web client yet and must adopt the gate when one lands) |
-| `discord-import` | 10 | `components/discord-import/*` (**not mirrored**) |
+| `discord-import` | 11 | `components/discord-import/*` (**not mirrored**) |
 | `report` | 4 | `components/reports/reports-page.tsx` |
 | `rush` | 3 | `components/chat/renderers/rush-card.tsx` (vote, bid; **not mirrored**) · the `/rush` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `semester-rollover` | 1 | `components/settings/settings-page.tsx` (rollover only) |
